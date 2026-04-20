@@ -1,5 +1,4 @@
 import type { NextConfig } from "next";
-import path from "path";
 
 const nextConfig: NextConfig = {
   /* config options here */
@@ -20,8 +19,6 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  // Fix workspace root detection
-  outputFileTracingRoot: path.join(__dirname, '../../'),
   // Turbopack configuration (using correct property)
   turbopack: {
     // Turbopack configuration can be added here if needed
