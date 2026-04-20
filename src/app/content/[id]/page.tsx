@@ -1,0 +1,189 @@
+/**
+ * Individual Content View Page
+ */
+
+import Link from 'next/link';
+import { notFound } from 'next/navigation';
+
+async function getContent(id: string) {
+  try {
+    const response = await fetch(`http://localhost:3000/api/test/content?id=${id}`, {
+      cache: 'no-store'
+    });
+    const data = await response.json();
+    return data.success ? data.data : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+interface PageProps {
+  params: Promise<{ id: string }>;
+}
+
+export default async function ContentPage({ params }: PageProps) {
+  const { id } = await params;
+  const content = await getContent(id);
+
+  if (!content) {
+    notFound();
+  }
+
+  const typeColors: Record<string, { bg: string; text: string; gradient: string }> = {
+    SONGS: { bg: 'bg-blue-100', text: 'text-blue-800', gradient: 'from-blue-600 to-blue-700' },
+    POEMS: { bg: 'bg-green-100', text: 'text-green-800', gradient: 'from-green-600 to-green-700' },
+    LYRICS: { bg: 'bg-yellow-100', text: 'text-yellow-800', gradient: 'from-yellow-600 to-yellow-700' },
+    STORIES: { bg: 'bg-pink-100', text: 'text-pink-800', gradient: 'from-pink-600 to-pink-700' },
+    ESSAYS: { bg: 'bg-purple-100', text: 'text-purple-800', gradient: 'from-purple-600 to-purple-700' },
+  };
+
+  const colors = typeColors[content.type] || typeColors.SONGS;
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className={`bg-gradient-to-r ${colors.gradient} text-white py-12`}>
+        <div className="container mx-auto px-4 max-w-4xl">
+          <Link href="/" className="text-white/80 hover:text-white mb-4 inline-block">
+            ← Back to Home
+          </Link>
+          <span className={`inline-block px-3 py-1 ${colors.bg} ${colors.text} rounded-full text-sm font-semibold mb-4`}>
+            {content.type}
+          </span>
+          <h1 className="text-5xl font-bold mb-4 font-tamil leading-tight">
+            {content.title}
+          </h1>
+          {content.description && (
+            <p className="text-xl text-white/90 font-tamil">
+              {content.description}
+            </p>
+          )}
+          <div className="flex items-center gap-4 mt-6 text-white/80">
+            <span className="font-tamil">
+              ஆசிரியர்: {content.author}
+            </span>
+            <span>•</span>
+            <span>
+              {content.viewCount || 0} views
+            </span>
+            <span>•</span>
+            <span>
+              {new Date(content.publishedAt || content.createdAt).toLocaleDateString('en-GB', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric'
+              })}
+            </span>
+          </div>
+        </div>
+      </header>
+
+      {/* Content */}
+      <article className="container mx-auto px-4 py-12 max-w-4xl">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 md:p-12">
+          {/* Audio Player */}
+          {content.audioUrl && (
+            <div className="mb-8 p-6 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg">
+              <div className="flex items-center gap-3 mb-3">
+                <span className="text-2xl">🎵</span>
+                <span className="font-semibold text-gray-700">Audio Available</span>
+              </div>
+              <audio
+                controls
+                className="w-full"
+                src={content.audioUrl}
+              >
+                Your browser does not support audio playback.
+              </audio>
+              {content.audioDuration && (
+                <p className="text-sm text-gray-600 mt-2">
+                  Duration: {Math.floor(content.audioDuration / 60)}:{(content.audioDuration % 60).toString().padStart(2, '0')}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Featured Image */}
+          {content.featuredImage && (
+            <div className="mb-8">
+              <img
+                src={content.featuredImage}
+                alt={content.title}
+                className="w-full rounded-lg"
+              />
+            </div>
+          )}
+
+          {/* Main Content */}
+          <div className="prose prose-lg max-w-none">
+            <pre className="whitespace-pre-wrap font-tamil text-lg leading-relaxed text-gray-800">
+              {content.body}
+            </pre>
+          </div>
+
+          {/* Categories */}
+          {content.categories && content.categories.length > 0 && (
+            <div className="mt-8 pt-6 border-t border-gray-200">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">வகைகள் (Categories)</h3>
+              <div className="flex flex-wrap gap-2">
+                {content.categories.map((category: any) => (
+                  <Link
+                    key={category.id}
+                    href={`/category/${category.slug}`}
+                    className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 font-tamil transition-colors"
+                  >
+                    {category.name}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Tags */}
+          {content.tags && content.tags.length > 0 && (
+            <div className="mt-6">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">குறிச்சொற்கள் (Tags)</h3>
+              <div className="flex flex-wrap gap-2">
+                {content.tags.map((tag: any) => (
+                  <Link
+                    key={tag.id}
+                    href={`/tag/${tag.slug}`}
+                    className="px-3 py-1 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-full text-sm font-tamil transition-colors"
+                  >
+                    #{tag.name}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Share */}
+          <div className="mt-8 pt-6 border-t border-gray-200">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">பகிர்தல் (Share)</h3>
+            <div className="flex gap-3">
+              <button className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+                Facebook
+              </button>
+              <button className="px-4 py-2 bg-sky-500 text-white rounded-lg hover:bg-sky-600 transition-colors">
+                Twitter
+              </button>
+              <button className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors">
+                WhatsApp
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Back Button */}
+        <div className="mt-8 text-center">
+          <Link
+            href="/"
+            className="inline-block px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
+          >
+            ← Back to Home
+          </Link>
+        </div>
+      </article>
+    </div>
+  );
+}
