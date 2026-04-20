@@ -11,11 +11,9 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  // Turbopack is enabled by default in Next.js 15
-  experimental: {
-    turbo: {
-      // Turbopack configuration can be added here if needed
-    },
+  // Turbopack configuration (using correct property)
+  turbopack: {
+    // Turbopack configuration can be added here if needed
   },
 };
 
