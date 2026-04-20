@@ -1,34 +1,72 @@
 /**
- * Content List Page
+ * Content List Page (Client Component)
  *
- * Shows all content with filtering and search
+ * Shows all content with edit/delete functionality
  */
 
+'use client';
+
 import Link from 'next/link';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
-async function getContent(searchParams: any) {
-  try {
-    const params = new URLSearchParams();
-    params.append('action', 'list');
+export default function ContentListPage() {
+  const router = useRouter();
+  const [content, setContent] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-    const response = await fetch(`http://localhost:3000/api/test/content?${params}`, {
-      cache: 'no-store'
-    });
-    const data = await response.json();
-    return data.success ? data.data.items : [];
-  } catch (error) {
-    console.error('Failed to fetch content:', error);
-    return [];
+  useEffect(() => {
+    loadContent();
+  }, []);
+
+  async function loadContent() {
+    try {
+      const response = await fetch('/api/test/content?action=list');
+      const data = await response.json();
+      if (data.success) {
+        setContent(data.data.items);
+      }
+    } catch (error) {
+      console.error('Failed to load content:', error);
+    } finally {
+      setLoading(false);
+    }
   }
-}
 
-interface PageProps {
-  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
-}
+  async function handleDelete(id: string, title: string) {
+    if (!confirm(`Are you sure you want to delete "${title}"?`)) {
+      return;
+    }
 
-export default async function ContentListPage({ searchParams }: PageProps) {
-  const params = await searchParams;
-  const content = await getContent(params);
+    try {
+      const response = await fetch(`/api/content?id=${id}`, {
+        method: 'DELETE',
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert('✅ Content deleted successfully!');
+        loadContent(); // Reload list
+      } else {
+        alert('❌ Failed to delete: ' + (data.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Delete error:', error);
+      alert('❌ Failed to delete content');
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="text-6xl mb-4">⏳</div>
+          <p className="text-xl text-gray-600">Loading content...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -152,13 +190,23 @@ export default async function ContentListPage({ searchParams }: PageProps) {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex items-center justify-end gap-2">
-                        <button className="text-purple-600 hover:text-purple-900">
+                        <Link
+                          href={`/admin/content/${item.id}/edit`}
+                          className="px-3 py-1 text-purple-600 hover:bg-purple-50 rounded transition-colors"
+                        >
                           Edit
-                        </button>
-                        <button className="text-blue-600 hover:text-blue-900">
+                        </Link>
+                        <Link
+                          href={`/content/${item.id}`}
+                          target="_blank"
+                          className="px-3 py-1 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                        >
                           View
-                        </button>
-                        <button className="text-red-600 hover:text-red-900">
+                        </Link>
+                        <button
+                          onClick={() => handleDelete(item.id, item._title)}
+                          className="px-3 py-1 text-red-600 hover:bg-red-50 rounded transition-colors"
+                        >
                           Delete
                         </button>
                       </div>
@@ -183,9 +231,6 @@ export default async function ContentListPage({ searchParams }: PageProps) {
             </button>
             <button className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium">
               1
-            </button>
-            <button className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
-              2
             </button>
             <button className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
               Next

@@ -1,0 +1,324 @@
+/**
+ * Edit Content Page
+ *
+ * Edit existing Tamil content
+ */
+
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+
+interface PageProps {
+  params: Promise<{ id: string }>;
+}
+
+export default function EditContentPage({ params }: PageProps) {
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [contentId, setContentId] = useState<string>('');
+  const [categories, setCategories] = useState<any[]>([]);
+  const [tags, setTags] = useState<any[]>([]);
+  const [formData, setFormData] = useState({
+    type: 'SONGS',
+    title: '',
+    body: '',
+    description: '',
+    author: '',
+    status: 'DRAFT',
+    categoryIds: [] as string[],
+    tagIds: [] as string[],
+    featuredImage: '',
+    audioUrl: '',
+    audioDuration: 0,
+  });
+
+  useEffect(() => {
+    async function loadData() {
+      const resolvedParams = await params;
+      setContentId(resolvedParams.id);
+
+      try {
+        // Load content
+        const contentRes = await fetch(`/api/test/content?id=${resolvedParams.id}`);
+        const contentData = await contentRes.json();
+
+        if (contentData.success) {
+          const content = contentData.data;
+          setFormData({
+            type: content.type,
+            title: content.title,
+            body: content.body,
+            description: content.description || '',
+            author: content.author,
+            status: content.status,
+            categoryIds: content.categoryIds || [],
+            tagIds: content.tagIds || [],
+            featuredImage: content.featuredImage || '',
+            audioUrl: content.audioUrl || '',
+            audioDuration: content.audioDuration || 0,
+          });
+        }
+
+        // Load categories and tags
+        const [categoriesRes, tagsRes] = await Promise.all([
+          fetch('/api/test/content?action=categories'),
+          fetch('/api/test/content?action=tags'),
+        ]);
+
+        const categoriesData = await categoriesRes.json();
+        const tagsData = await tagsRes.json();
+
+        if (categoriesData.success) setCategories(categoriesData.data);
+        if (tagsData.success) setTags(tagsData.data);
+      } catch (error) {
+        console.error('Failed to load data:', error);
+        alert('Failed to load content');
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, [params]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+
+    try {
+      const response = await fetch('/api/content', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: contentId,
+          ...formData,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert('✅ Content updated successfully!');
+        router.push('/admin/content');
+      } else {
+        alert('❌ Failed to update content: ' + (data.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Error updating content:', error);
+      alert('❌ Failed to update content');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const toggleCategory = (categoryId: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      categoryIds: prev.categoryIds.includes(categoryId)
+        ? prev.categoryIds.filter((id) => id !== categoryId)
+        : [...prev.categoryIds, categoryId],
+    }));
+  };
+
+  const toggleTag = (tagId: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      tagIds: prev.tagIds.includes(tagId)
+        ? prev.tagIds.filter((id) => id !== tagId)
+        : [...prev.tagIds, tagId],
+    }));
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="text-6xl mb-4">⏳</div>
+          <p className="text-xl text-gray-600">Loading content...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-4xl">
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-gray-900">Edit Content</h1>
+        <p className="text-gray-500 mt-1">Update Tamil content</p>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Content Type */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Content Type</h2>
+          <div className="grid grid-cols-5 gap-3">
+            {['SONGS', 'POEMS', 'LYRICS', 'STORIES', 'ESSAYS'].map((type) => (
+              <button
+                key={type}
+                type="button"
+                onClick={() => setFormData((prev) => ({ ...prev, type }))}
+                className={`p-4 rounded-lg border-2 transition-all ${
+                  formData.type === type
+                    ? 'border-purple-600 bg-purple-50'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className="text-2xl mb-1">
+                  {type === 'SONGS' && '🎵'}
+                  {type === 'POEMS' && '📝'}
+                  {type === 'LYRICS' && '🎤'}
+                  {type === 'STORIES' && '📖'}
+                  {type === 'ESSAYS' && '✍️'}
+                </div>
+                <div className="text-sm font-medium">{type}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Basic Information */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Basic Information</h2>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Title (தலைப்பு) *
+            </label>
+            <input
+              type="text"
+              name="title"
+              value={formData.title}
+              onChange={handleChange}
+              required
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 font-tamil text-lg"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Content (உள்ளடக்கம்) *
+            </label>
+            <textarea
+              name="body"
+              value={formData.body}
+              onChange={handleChange}
+              required
+              rows={10}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 font-tamil text-base leading-relaxed"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Description (விளக்கம்)
+            </label>
+            <textarea
+              name="description"
+              value={formData.description}
+              onChange={handleChange}
+              rows={3}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 font-tamil"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Author (ஆசிரியர்) *
+              </label>
+              <input
+                type="text"
+                name="author"
+                value={formData.author}
+                onChange={handleChange}
+                required
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 font-tamil"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Status *
+              </label>
+              <select
+                name="status"
+                value={formData.status}
+                onChange={handleChange}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+              >
+                <option value="DRAFT">Draft</option>
+                <option value="PUBLISHED">Published</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Categories */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Categories</h2>
+          <div className="flex flex-wrap gap-2">
+            {categories.map((category) => (
+              <button
+                key={category.id}
+                type="button"
+                onClick={() => toggleCategory(category.id)}
+                className={`px-4 py-2 rounded-lg border-2 transition-all font-tamil ${
+                  formData.categoryIds.includes(category.id)
+                    ? 'border-purple-600 bg-purple-50 text-purple-700'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                {category.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Tags */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Tags</h2>
+          <div className="flex flex-wrap gap-2">
+            {tags.map((tag) => (
+              <button
+                key={tag.id}
+                type="button"
+                onClick={() => toggleTag(tag.id)}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all font-tamil ${
+                  formData.tagIds.includes(tag.id)
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                #{tag.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Submit Buttons */}
+        <div className="flex items-center justify-between bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={saving}
+            className="px-8 py-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saving ? 'Saving...' : 'Update Content'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
