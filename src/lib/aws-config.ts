@@ -2,14 +2,23 @@
  * AWS Configuration
  *
  * Central configuration for all AWS services
+ *
+ * For AWS Amplify deployment: credentials are automatically provided by the service role
+ * For local development: credentials come from .env.local
  */
 
+// Only include credentials if they're explicitly set (local development)
+// In AWS Amplify, the SDK will use the service role automatically
+const credentials = process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY
+  ? {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    }
+  : undefined;
+
 export const awsConfig = {
-  region: process.env.NEXT_PUBLIC_AWS_REGION || 'us-east-1',
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
-  },
+  region: process.env.NEXT_PUBLIC_AWS_REGION || 'ca-central-1',
+  ...(credentials && { credentials }),
 };
 
 /**
