@@ -1,7 +1,6 @@
 /**
- * Public Homepage
- *
- * Main landing page with featured Tamil content
+ * முகப்பு பக்கம் - பொது
+ * தமிழ் உள்ளடக்கத்துடன் அம்சமான தரவு பக்கம்
  */
 
 import Link from 'next/link';
@@ -41,7 +40,7 @@ export default async function HomePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-purple-50 to-white">
-      {/* Hero Section */}
+      {/* தலைப்பு பகுதி */}
       <section className="relative overflow-hidden bg-gradient-to-r from-purple-600 via-purple-700 to-purple-800 text-white">
         <div className="absolute inset-0 bg-[url('/pattern.svg')] opacity-10"></div>
         <div className="container mx-auto px-4 py-20 relative">
@@ -49,47 +48,47 @@ export default async function HomePage() {
             <h1 className="text-6xl font-bold mb-6 font-tamil leading-tight">
               பூ வாசம்
             </h1>
-            <p className="text-2xl mb-4 text-purple-100">
+            <p className="text-2xl mb-4 text-purple-100 font-tamil">
               தமிழ் இலக்கிய தளம்
             </p>
-            <p className="text-xl mb-8 text-purple-200">
-              Tamil Literature Platform - Songs, Poems, Stories & More
+            <p className="text-xl mb-8 text-purple-200 font-tamil">
+              பாடல்கள், கவிதைகள், கதைகள் மற்றும் பல
             </p>
             <div className="flex justify-center gap-4 mb-12">
               <Link
                 href="/songs"
-                className="px-8 py-4 bg-white text-purple-700 rounded-xl font-semibold hover:bg-purple-50 transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
+                className="px-8 py-4 bg-white text-purple-700 rounded-xl font-semibold hover:bg-purple-50 transition-all shadow-lg hover:shadow-xl transform hover:scale-105 font-tamil"
               >
                 🎵 பாடல்கள்
               </Link>
               <Link
                 href="/poems"
-                className="px-8 py-4 bg-purple-500 text-white rounded-xl font-semibold hover:bg-purple-400 transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
+                className="px-8 py-4 bg-purple-500 text-white rounded-xl font-semibold hover:bg-purple-400 transition-all shadow-lg hover:shadow-xl transform hover:scale-105 font-tamil"
               >
                 📝 கவிதைகள்
               </Link>
             </div>
 
-            {/* Stats */}
+            {/* புள்ளிவிவரங்கள் */}
             <div className="flex justify-center gap-8 mt-12">
               <div className="text-center">
                 <div className="text-4xl font-bold">{totalContent}</div>
-                <div className="text-purple-200 text-sm">Total Content</div>
+                <div className="text-purple-200 text-sm font-tamil">மொத்த உள்ளடக்கம்</div>
               </div>
               <div className="text-center">
                 <div className="text-4xl font-bold">{stats?.songs || 0}</div>
-                <div className="text-purple-200 text-sm">Songs</div>
+                <div className="text-purple-200 text-sm font-tamil">பாடல்கள்</div>
               </div>
               <div className="text-center">
                 <div className="text-4xl font-bold">{stats?.poems || 0}</div>
-                <div className="text-purple-200 text-sm">Poems</div>
+                <div className="text-purple-200 text-sm font-tamil">கவிதைகள்</div>
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Content Types Section */}
+      {/* உள்ளடக்க வகைகள் பகுதி */}
       <section className="container mx-auto px-4 py-16">
         <h2 className="text-3xl font-bold text-center text-gray-900 mb-12 font-tamil">
           உள்ளடக்க வகைகள்
@@ -98,7 +97,6 @@ export default async function HomePage() {
           <ContentTypeCard
             icon="🎵"
             title="பாடல்கள்"
-            subtitle="Songs"
             count={stats?.songs || 0}
             href="/songs"
             color="from-blue-500 to-blue-600"
@@ -106,7 +104,6 @@ export default async function HomePage() {
           <ContentTypeCard
             icon="📝"
             title="கவிதைகள்"
-            subtitle="Poems"
             count={stats?.poems || 0}
             href="/poems"
             color="from-green-500 to-green-600"
@@ -114,7 +111,6 @@ export default async function HomePage() {
           <ContentTypeCard
             icon="🎤"
             title="பாடல் வரிகள்"
-            subtitle="Lyrics"
             count={stats?.lyrics || 0}
             href="/lyrics"
             color="from-yellow-500 to-yellow-600"
@@ -122,7 +118,6 @@ export default async function HomePage() {
           <ContentTypeCard
             icon="📖"
             title="கதைகள்"
-            subtitle="Stories"
             count={stats?.stories || 0}
             href="/stories"
             color="from-pink-500 to-pink-600"
@@ -130,7 +125,6 @@ export default async function HomePage() {
           <ContentTypeCard
             icon="✍️"
             title="கட்டுரைகள்"
-            subtitle="Essays"
             count={stats?.essays || 0}
             href="/essays"
             color="from-purple-500 to-purple-600"
@@ -138,7 +132,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* Featured Content */}
+      {/* சமீபத்திய உள்ளடக்கம் */}
       {featuredContent.length > 0 && (
         <section className="container mx-auto px-4 py-16 bg-white">
           <div className="flex items-center justify-between mb-8">
@@ -147,9 +141,9 @@ export default async function HomePage() {
             </h2>
             <Link
               href="/all"
-              className="text-purple-600 hover:text-purple-700 font-medium"
+              className="text-purple-600 hover:text-purple-700 font-medium font-tamil"
             >
-              View All →
+              அனைத்தையும் காண்க →
             </Link>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -160,36 +154,36 @@ export default async function HomePage() {
         </section>
       )}
 
-      {/* Footer */}
+      {/* அடிக்குறிப்பு */}
       <footer className="bg-gray-900 text-white py-12">
         <div className="container mx-auto px-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div>
               <h3 className="text-2xl font-bold mb-4 font-tamil">பூ வாசம்</h3>
-              <p className="text-gray-400">
+              <p className="text-gray-400 font-tamil">
                 தமிழ் இலக்கியத்தை பாதுகாக்கும் மற்றும் பரப்பும் தளம்
               </p>
             </div>
             <div>
-              <h4 className="font-semibold mb-4">Quick Links</h4>
+              <h4 className="font-semibold mb-4 font-tamil">விரைவு இணைப்புகள்</h4>
               <ul className="space-y-2 text-gray-400">
-                <li><Link href="/songs" className="hover:text-white">Songs</Link></li>
-                <li><Link href="/poems" className="hover:text-white">Poems</Link></li>
-                <li><Link href="/stories" className="hover:text-white">Stories</Link></li>
-                <li><Link href="/all" className="hover:text-white">All Content</Link></li>
+                <li><Link href="/songs" className="hover:text-white font-tamil">பாடல்கள்</Link></li>
+                <li><Link href="/poems" className="hover:text-white font-tamil">கவிதைகள்</Link></li>
+                <li><Link href="/stories" className="hover:text-white font-tamil">கதைகள்</Link></li>
+                <li><Link href="/all" className="hover:text-white font-tamil">அனைத்து உள்ளடக்கம்</Link></li>
               </ul>
             </div>
             <div>
-              <h4 className="font-semibold mb-4">About</h4>
+              <h4 className="font-semibold mb-4 font-tamil">பற்றி</h4>
               <ul className="space-y-2 text-gray-400">
-                <li><Link href="/about" className="hover:text-white">About Us</Link></li>
-                <li><Link href="/contact" className="hover:text-white">Contact</Link></li>
-                <li><Link href="/admin" className="hover:text-white">Admin</Link></li>
+                <li><Link href="/about" className="hover:text-white font-tamil">எங்களை பற்றி</Link></li>
+                <li><Link href="/contact" className="hover:text-white font-tamil">தொடர்பு</Link></li>
+                <li><Link href="/admin" className="hover:text-white font-tamil">நிர்வாகம்</Link></li>
               </ul>
             </div>
           </div>
           <div className="border-t border-gray-800 mt-8 pt-8 text-center text-gray-400">
-            <p>© 2026 Poo Vaasam. Built with ❤️ for Tamil literature.</p>
+            <p className="font-tamil">© 2026 பூ வாசம். தமிழ் இலக்கியத்திற்காக அன்புடன் உருவாக்கப்பட்டது.</p>
           </div>
         </div>
       </footer>
@@ -200,13 +194,12 @@ export default async function HomePage() {
 interface ContentTypeCardProps {
   icon: string;
   title: string;
-  subtitle: string;
   count: number;
   href: string;
   color: string;
 }
 
-function ContentTypeCard({ icon, title, subtitle, count, href, color }: ContentTypeCardProps) {
+function ContentTypeCard({ icon, title, count, href, color }: ContentTypeCardProps) {
   return (
     <Link
       href={href}
@@ -218,9 +211,6 @@ function ContentTypeCard({ icon, title, subtitle, count, href, color }: ContentT
         <h3 className="text-xl font-bold text-gray-900 group-hover:text-white transition-colors font-tamil">
           {title}
         </h3>
-        <p className="text-sm text-gray-500 group-hover:text-white/80 transition-colors">
-          {subtitle}
-        </p>
         <div className="mt-4 text-3xl font-bold text-purple-600 group-hover:text-white transition-colors">
           {count}
         </div>
@@ -238,6 +228,14 @@ function ContentCard({ content }: { content: any }) {
     ESSAYS: 'bg-purple-100 text-purple-800',
   };
 
+  const typeNames: Record<string, string> = {
+    SONGS: 'பாடல்',
+    POEMS: 'கவிதை',
+    LYRICS: 'வரிகள்',
+    STORIES: 'கதை',
+    ESSAYS: 'கட்டுரை',
+  };
+
   return (
     <Link
       href={`/content/${content.id}`}
@@ -248,8 +246,8 @@ function ContentCard({ content }: { content: any }) {
           <h3 className="text-xl font-bold text-gray-900 font-tamil group-hover:text-purple-600 transition-colors">
             {content._title}
           </h3>
-          <span className={`px-2 py-1 text-xs font-semibold rounded-full ${typeColors[content.type]}`}>
-            {content.type}
+          <span className={`px-2 py-1 text-xs font-semibold rounded-full font-tamil ${typeColors[content.type]}`}>
+            {typeNames[content.type]}
           </span>
         </div>
         <p className="text-gray-600 font-tamil text-sm line-clamp-2 mb-4">
@@ -259,8 +257,8 @@ function ContentCard({ content }: { content: any }) {
           <span className="text-gray-500 font-tamil">
             {content._author}
           </span>
-          <span className="text-purple-600 group-hover:text-purple-700 font-medium">
-            Read More →
+          <span className="text-purple-600 group-hover:text-purple-700 font-medium font-tamil">
+            மேலும் படிக்க →
           </span>
         </div>
       </div>

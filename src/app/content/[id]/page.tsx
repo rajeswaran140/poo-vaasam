@@ -37,6 +37,14 @@ export default async function ContentPage({ params }: PageProps) {
     ESSAYS: { bg: 'bg-purple-100', text: 'text-purple-800', gradient: 'from-purple-600 to-purple-700' },
   };
 
+  const typeNames: Record<string, string> = {
+    SONGS: 'பாடல்',
+    POEMS: 'கவிதை',
+    LYRICS: 'வரிகள்',
+    STORIES: 'கதை',
+    ESSAYS: 'கட்டுரை',
+  };
+
   const colors = typeColors[content.type] || typeColors.SONGS;
 
   return (
@@ -44,11 +52,11 @@ export default async function ContentPage({ params }: PageProps) {
       {/* Header */}
       <header className={`bg-gradient-to-r ${colors.gradient} text-white py-12`}>
         <div className="container mx-auto px-4 max-w-4xl">
-          <Link href="/" className="text-white/80 hover:text-white mb-4 inline-block">
-            ← Back to Home
+          <Link href="/" className="text-white/80 hover:text-white mb-4 inline-block font-tamil">
+            ← முகப்புக்குத் திரும்பு
           </Link>
-          <span className={`inline-block px-3 py-1 ${colors.bg} ${colors.text} rounded-full text-sm font-semibold mb-4`}>
-            {content.type}
+          <span className={`inline-block px-3 py-1 ${colors.bg} ${colors.text} rounded-full text-sm font-semibold mb-4 font-tamil`}>
+            {typeNames[content.type]}
           </span>
           <h1 className="text-5xl font-bold mb-4 font-tamil leading-tight">
             {content.title}
@@ -63,8 +71,8 @@ export default async function ContentPage({ params }: PageProps) {
               ஆசிரியர்: {content.author}
             </span>
             <span>•</span>
-            <span>
-              {content.viewCount || 0} views
+            <span className="font-tamil">
+              {content.viewCount || 0} பார்வைகள்
             </span>
             <span>•</span>
             <span>
@@ -86,18 +94,18 @@ export default async function ContentPage({ params }: PageProps) {
             <div className="mb-8 p-6 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg">
               <div className="flex items-center gap-3 mb-3">
                 <span className="text-2xl">🎵</span>
-                <span className="font-semibold text-gray-700">Audio Available</span>
+                <span className="font-semibold text-gray-700 font-tamil">ஒலி கிடைக்கிறது</span>
               </div>
               <audio
                 controls
                 className="w-full"
                 src={content.audioUrl}
               >
-                Your browser does not support audio playback.
+                உங்கள் உலாவி ஒலி இயக்கத்தை ஆதரிக்கவில்லை.
               </audio>
               {content.audioDuration && (
-                <p className="text-sm text-gray-600 mt-2">
-                  Duration: {Math.floor(content.audioDuration / 60)}:{(content.audioDuration % 60).toString().padStart(2, '0')}
+                <p className="text-sm text-gray-600 mt-2 font-tamil">
+                  காலம்: {Math.floor(content.audioDuration / 60)}:{(content.audioDuration % 60).toString().padStart(2, '0')}
                 </p>
               )}
             </div>
@@ -124,7 +132,7 @@ export default async function ContentPage({ params }: PageProps) {
           {/* Categories */}
           {content.categories && content.categories.length > 0 && (
             <div className="mt-8 pt-6 border-t border-gray-200">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">வகைகள் (Categories)</h3>
+              <h3 className="text-sm font-semibold text-gray-700 mb-3 font-tamil">வகைகள்</h3>
               <div className="flex flex-wrap gap-2">
                 {content.categories.map((category: any) => (
                   <Link
@@ -142,7 +150,7 @@ export default async function ContentPage({ params }: PageProps) {
           {/* Tags */}
           {content.tags && content.tags.length > 0 && (
             <div className="mt-6">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">குறிச்சொற்கள் (Tags)</h3>
+              <h3 className="text-sm font-semibold text-gray-700 mb-3 font-tamil">குறிச்சொற்கள்</h3>
               <div className="flex flex-wrap gap-2">
                 {content.tags.map((tag: any) => (
                   <Link
@@ -159,16 +167,16 @@ export default async function ContentPage({ params }: PageProps) {
 
           {/* Share */}
           <div className="mt-8 pt-6 border-t border-gray-200">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">பகிர்தல் (Share)</h3>
+            <h3 className="text-sm font-semibold text-gray-700 mb-3 font-tamil">பகிர்தல்</h3>
             <div className="flex gap-3">
-              <button className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
-                Facebook
+              <button className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-tamil">
+                முகநூல்
               </button>
-              <button className="px-4 py-2 bg-sky-500 text-white rounded-lg hover:bg-sky-600 transition-colors">
-                Twitter
+              <button className="px-4 py-2 bg-sky-500 text-white rounded-lg hover:bg-sky-600 transition-colors font-tamil">
+                ட்விட்டர்
               </button>
-              <button className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors">
-                WhatsApp
+              <button className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-tamil">
+                வாட்ஸ்அப்
               </button>
             </div>
           </div>
@@ -178,9 +186,9 @@ export default async function ContentPage({ params }: PageProps) {
         <div className="mt-8 text-center">
           <Link
             href="/"
-            className="inline-block px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
+            className="inline-block px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium font-tamil"
           >
-            ← Back to Home
+            ← முகப்புக்குத் திரும்பு
           </Link>
         </div>
       </article>

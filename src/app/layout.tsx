@@ -10,15 +10,46 @@ const notoSansTamil = Noto_Sans_Tamil({
 });
 
 export const metadata: Metadata = {
-  title: "பூ வாசம் - Poo Vaasam",
-  description: "Tamil content publishing platform for lyrics, songs, poems, stories, and essays",
-  keywords: ["Tamil", "lyrics", "songs", "poems", "stories", "essays", "Tamil literature"],
+  title: "பூ வாசம் | தமிழ் இலக்கிய தளம்",
+  description: "பாடல்கள், கவிதைகள், கதைகள் மற்றும் கட்டுரைகளுக்கான தமிழ் உள்ளடக்க வெளியீட்டு தளம். இலவசமாக தமிழ் இலக்கியங்களை படியுங்கள் மற்றும் கேளுங்கள்.",
+  keywords: [
+    "தமிழ்",
+    "பாடல்கள்",
+    "கவிதைகள்",
+    "கதைகள்",
+    "கட்டுரைகள்",
+    "தமிழ் இலக்கியம்",
+    "தமிழ் பாடல் வரிகள்",
+    "தமிழ் கவிதைகள்",
+    "இலவச தமிழ் உள்ளடக்கம்",
+  ],
   authors: [{ name: "Rajeswaran" }],
+  creator: "பூ வாசம்",
+  publisher: "பூ வாசம்",
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
+  },
+  alternates: {
+    canonical: "https://poo-vaasam.com",
+  },
   openGraph: {
-    title: "பூ வாசம் - Poo Vaasam",
-    description: "Tamil content publishing platform",
+    title: "பூ வாசம் | தமிழ் இலக்கிய தளம்",
+    description: "இலவசமாக தமிழ் பாடல்கள், கவிதைகள், கதைகள் மற்றும் கட்டுரைகளை படியுங்கள்",
     type: "website",
     locale: "ta_IN",
+    siteName: "பூ வாசம்",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "பூ வாசம் | தமிழ் இலக்கிய தளம்",
+    description: "தமிழ் உள்ளடக்க வெளியீட்டு தளம்",
   },
 };
 
