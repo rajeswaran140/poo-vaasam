@@ -13,9 +13,18 @@
     "test:integration": "jest --testPathPattern=__tests__/integration",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:all": "npm run test && npm run test:e2e"
+    "test:all": "npm run test && npm run test:e2e",
+    "aws:setup": "npm run aws:dynamodb && npm run aws:s3",
+    "aws:dynamodb": "tsx scripts/create-dynamodb-table.ts",
+    "aws:s3": "tsx scripts/create-s3-bucket.ts"
   },
   "dependencies": {
+    "@aws-amplify/ui-react": "6.15.3",
+    "@aws-sdk/client-dynamodb": "3.1032.0",
+    "@aws-sdk/client-s3": "3.1032.0",
+    "@aws-sdk/lib-dynamodb": "3.1032.0",
+    "@aws-sdk/s3-request-presigner": "3.1032.0",
+    "aws-amplify": "6.16.4",
     "next": "^15.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
@@ -36,6 +45,7 @@
     "postcss": "^8.4.0",
     "tailwindcss": "^3.4.0",
     "ts-node": "10.9.2",
+    "tsx": "4.21.0",
     "typescript": "^5.7.0"
   }
 }
