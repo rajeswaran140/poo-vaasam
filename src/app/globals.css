@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: var(--font-tamil), Arial, Helvetica, sans-serif;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Tamil text optimizations */
+.tamil-text {
+  line-height: 1.8;
+  letter-spacing: 0.01em;
+  font-feature-settings: "liga" 1, "calt" 1;
+}
+
+/* Ensure proper Tamil character rendering */
+html {
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Tamil heading styles */
+h1, h2, h3, h4, h5, h6 {
+  @apply tamil-text;
+  font-weight: 600;
+}
+
+/* Tamil paragraph styles */
+p {
+  @apply tamil-text;
+  margin-bottom: 1rem;
+}
+
+/* Improve readability for Tamil content */
+.content-body {
+  @apply tamil-text;
+  font-size: 1.125rem;
+  line-height: 2;
+  max-width: 65ch;
+}
