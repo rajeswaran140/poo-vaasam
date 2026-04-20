@@ -9,7 +9,7 @@ import { IContentRepository } from '@/domain/repositories/IContentRepository';
 import { ICategoryRepository } from '@/domain/repositories/ICategoryRepository';
 import { ITagRepository } from '@/domain/repositories/ITagRepository';
 import type { CreateContentDTO } from '@/types/content';
-import { generateUniqueSlug } from '@/lib/utils/slug';
+import { generateSlug } from '@/lib/utils/slug';
 
 /**
  * Create Content Use Case
@@ -92,19 +92,20 @@ export class CreateContentUseCase {
   }
 
   /**
-   * Ensure slug is unique
+   * Ensure slug is unique by checking database and appending counter if needed
    */
   private async ensureUniqueSlug(title: string): Promise<string> {
-    const baseSlug = title; // generateSlug is called in Content.create
-    const isUnique = await this.contentRepository.isSlugUnique(baseSlug);
+    const baseSlug = generateSlug(title);
+    let slug = baseSlug;
+    let counter = 1;
 
-    if (isUnique) {
-      return baseSlug;
+    // Keep checking until we find a unique slug
+    while (!(await this.contentRepository.isSlugUnique(slug))) {
+      slug = `${baseSlug}-${counter}`;
+      counter++;
     }
 
-    // Find all existing slugs starting with base
-    // This is simplified - in production, query for similar slugs
-    return generateUniqueSlug(baseSlug, []);
+    return slug;
   }
 
   /**

@@ -192,6 +192,7 @@ export class CategoryRepository implements ICategoryRepository {
 
   /**
    * Decrement content count
+   * Prevents count from going below zero
    */
   async decrementContentCount(id: string): Promise<void> {
     try {
@@ -200,17 +201,22 @@ export class CategoryRepository implements ICategoryRepository {
           PK: `CATEGORY#${id}`,
           SK: 'METADATA',
         },
-        updateExpression: 'SET #contentCount = if_not_exists(#contentCount, :zero) - :dec',
+        updateExpression: 'SET #contentCount = if_not_exists(#contentCount, :one) - :dec',
+        conditionExpression: '#contentCount > :zero',
         expressionAttributeNames: {
           '#contentCount': 'contentCount',
         },
         expressionAttributeValues: {
           ':zero': 0,
+          ':one': 1,
           ':dec': 1,
         },
       });
     } catch (error) {
-      handleDynamoDBError(error);
+      // Ignore ConditionalCheckFailedException - count is already at 0
+      if ((error as any).name !== 'ConditionalCheckFailedException') {
+        handleDynamoDBError(error);
+      }
     }
   }
 
