@@ -4,15 +4,15 @@
 
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 
 async function getContent(id: string) {
   try {
-    const response = await fetch(`http://localhost:3000/api/test/content?id=${id}`, {
-      cache: 'no-store'
-    });
-    const data = await response.json();
-    return data.success ? data.data : null;
+    const repo = new ContentRepository();
+    const content = await repo.findById(id);
+    return content ? content.toObject() : null;
   } catch (error) {
+    console.error('Failed to fetch content:', error);
     return null;
   }
 }

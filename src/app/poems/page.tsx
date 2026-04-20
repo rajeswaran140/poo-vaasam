@@ -5,34 +5,21 @@
 export const dynamic = 'force-dynamic';
 
 import Link from 'next/link';
+import { ContentRepository } from '@/infrastructure/database/ContentRepository';
+import { ContentType, ContentStatus } from '@/types/content';
 
 async function getPoems() {
-  // Skip data fetching during build - only fetch at runtime
-  if (process.env.NODE_ENV === 'production' && typeof window === 'undefined') {
+  try {
+    const repo = new ContentRepository();
+    const result = await repo.findByType(ContentType.POEMS, {
+      limit: 50,
+      status: ContentStatus.PUBLISHED
+    });
+    return result.items.map(item => item.toObject());
+  } catch (error) {
+    console.error('Failed to fetch poems:', error);
     return [];
   }
-
-  // Only attempt fetch in development
-  if (typeof window === 'undefined' && process.env.NODE_ENV !== 'production') {
-    try {
-      const response = await fetch('http://localhost:3000/api/test/content?action=by-type&type=POEMS', {
-        next: { revalidate: 60 },
-        signal: AbortSignal.timeout(5000)
-      });
-
-      if (!response.ok) {
-        return [];
-      }
-
-      const data = await response.json();
-      return data.success ? data.data.items : [];
-    } catch (error) {
-      console.error('Failed to fetch poems:', error);
-      return [];
-    }
-  }
-
-  return [];
 }
 
 export default async function PoemsPage() {
@@ -66,15 +53,15 @@ export default async function PoemsPage() {
                 className="group bg-white rounded-xl shadow-sm border border-gray-200 p-8 hover:shadow-xl transition-all"
               >
                 <h3 className="text-2xl font-bold text-gray-900 font-tamil mb-4 group-hover:text-green-600 transition-colors">
-                  {poem._title}
+                  {poem.title}
                 </h3>
                 <pre className="text-gray-700 font-tamil whitespace-pre-wrap leading-relaxed">
-                  {poem._body.split('\n').slice(0, 4).join('\n')}
-                  {poem._body.split('\n').length > 4 && '\n...'}
+                  {poem.body.split('\n').slice(0, 4).join('\n')}
+                  {poem.body.split('\n').length > 4 && '\n...'}
                 </pre>
                 <div className="mt-6 pt-4 border-t border-gray-200">
                   <span className="text-sm text-gray-500 font-tamil">
-                    - {poem._author}
+                    - {poem.author}
                   </span>
                 </div>
               </Link>

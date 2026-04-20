@@ -6,69 +6,47 @@
 export const dynamic = 'force-dynamic';
 
 import Link from 'next/link';
+import { ContentRepository } from '@/infrastructure/database/ContentRepository';
+import { ContentStatus, ContentType } from '@/types/content';
 
 async function getFeaturedContent() {
-  // Skip data fetching during build - only fetch at runtime
-  if (process.env.NODE_ENV === 'production' && typeof window === 'undefined') {
-    // During 'next build', skip fetching and return empty
-    // ISR will populate data after deployment
+  try {
+    const repo = new ContentRepository();
+    const result = await repo.findAll({
+      limit: 6,
+      status: ContentStatus.PUBLISHED
+    });
+    return result.items.map(item => item.toObject());
+  } catch (error) {
+    console.error('Failed to fetch content:', error);
     return [];
   }
-
-  // Only attempt fetch in development or after deployment
-  if (typeof window === 'undefined' && process.env.NODE_ENV !== 'production') {
-    try {
-      const baseUrl = 'http://localhost:3000';
-      const response = await fetch(`${baseUrl}/api/test/content?action=list`, {
-        next: { revalidate: 60 },
-        signal: AbortSignal.timeout(5000)
-      });
-
-      if (!response.ok) {
-        return [];
-      }
-
-      const data = await response.json();
-      return data.success ? data.data.items.slice(0, 6) : [];
-    } catch (error) {
-      console.error('Failed to fetch content:', error);
-      return [];
-    }
-  }
-
-  return [];
 }
 
 async function getStats() {
-  // Skip data fetching during build - only fetch at runtime
-  if (process.env.NODE_ENV === 'production' && typeof window === 'undefined') {
-    // During 'next build', skip fetching and return null
-    // ISR will populate data after deployment
+  try {
+    const repo = new ContentRepository();
+    const [songs, poems, lyrics, stories, essays, published] = await Promise.all([
+      repo.countByType(ContentType.SONGS),
+      repo.countByType(ContentType.POEMS),
+      repo.countByType(ContentType.LYRICS),
+      repo.countByType(ContentType.STORIES),
+      repo.countByType(ContentType.ESSAYS),
+      repo.countByStatus(ContentStatus.PUBLISHED),
+    ]);
+
+    return {
+      songs,
+      poems,
+      lyrics,
+      stories,
+      essays,
+      published,
+    };
+  } catch (error) {
+    console.error('Failed to fetch stats:', error);
     return null;
   }
-
-  // Only attempt fetch in development or after deployment
-  if (typeof window === 'undefined' && process.env.NODE_ENV !== 'production') {
-    try {
-      const baseUrl = 'http://localhost:3000';
-      const response = await fetch(`${baseUrl}/api/test/content?action=stats`, {
-        next: { revalidate: 60 },
-        signal: AbortSignal.timeout(5000)
-      });
-
-      if (!response.ok) {
-        return null;
-      }
-
-      const data = await response.json();
-      return data.success ? data.data : null;
-    } catch (error) {
-      console.error('Failed to fetch stats:', error);
-      return null;
-    }
-  }
-
-  return null;
 }
 
 export default async function HomePage() {
@@ -284,18 +262,18 @@ function ContentCard({ content }: { content: any }) {
       <div className="p-6">
         <div className="flex items-start justify-between mb-3">
           <h3 className="text-xl font-bold text-gray-900 font-tamil group-hover:text-purple-600 transition-colors">
-            {content._title}
+            {content.title}
           </h3>
           <span className={`px-2 py-1 text-xs font-semibold rounded-full font-tamil ${typeColors[content.type]}`}>
             {typeNames[content.type]}
           </span>
         </div>
         <p className="text-gray-600 font-tamil text-sm line-clamp-2 mb-4">
-          {content._description || content._body?.substring(0, 100)}
+          {content.description || content.body?.substring(0, 100)}
         </p>
         <div className="flex items-center justify-between text-sm">
           <span className="text-gray-500 font-tamil">
-            {content._author}
+            {content.author}
           </span>
           <span className="text-purple-600 group-hover:text-purple-700 font-medium font-tamil">
             மேலும் படிக்க →

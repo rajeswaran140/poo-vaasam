@@ -5,14 +5,31 @@
  */
 
 import Link from 'next/link';
+import { ContentRepository } from '@/infrastructure/database/ContentRepository';
+import { ContentType, ContentStatus } from '@/types/content';
 
 async function getStats() {
   try {
-    const response = await fetch('http://localhost:3000/api/test/content?action=stats', {
-      cache: 'no-store'
-    });
-    const data = await response.json();
-    return data.success ? data.data : null;
+    const repo = new ContentRepository();
+    const [songs, poems, lyrics, stories, essays, published, draft] = await Promise.all([
+      repo.countByType(ContentType.SONGS),
+      repo.countByType(ContentType.POEMS),
+      repo.countByType(ContentType.LYRICS),
+      repo.countByType(ContentType.STORIES),
+      repo.countByType(ContentType.ESSAYS),
+      repo.countByStatus(ContentStatus.PUBLISHED),
+      repo.countByStatus(ContentStatus.DRAFT),
+    ]);
+
+    return {
+      songs,
+      poems,
+      lyrics,
+      stories,
+      essays,
+      published,
+      draft,
+    };
   } catch (error) {
     console.error('Failed to fetch stats:', error);
     return null;
@@ -21,11 +38,9 @@ async function getStats() {
 
 async function getRecentContent() {
   try {
-    const response = await fetch('http://localhost:3000/api/test/content?action=list', {
-      cache: 'no-store'
-    });
-    const data = await response.json();
-    return data.success ? data.data.items : [];
+    const repo = new ContentRepository();
+    const result = await repo.findAll({ limit: 10 });
+    return result.items.map(item => item.toObject());
   } catch (error) {
     console.error('Failed to fetch content:', error);
     return [];
@@ -169,7 +184,7 @@ export default async function AdminDashboard() {
                   >
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="font-medium text-gray-900 font-tamil">
-                        {content._title}
+                        {content.title}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -178,21 +193,21 @@ export default async function AdminDashboard() {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-tamil">
-                      {content._author}
+                      {content.author}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span
                         className={`px-2 py-1 text-xs font-semibold rounded-full ${
-                          content._status === 'PUBLISHED'
+                          content.status === 'PUBLISHED'
                             ? 'bg-green-100 text-green-800'
                             : 'bg-gray-100 text-gray-800'
                         }`}
                       >
-                        {content._status}
+                        {content.status}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {content._viewCount || 0}
+                      {content.viewCount || 0}
                     </td>
                   </tr>
                 ))}

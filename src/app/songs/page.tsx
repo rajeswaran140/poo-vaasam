@@ -5,34 +5,21 @@
 export const dynamic = 'force-dynamic';
 
 import Link from 'next/link';
+import { ContentRepository } from '@/infrastructure/database/ContentRepository';
+import { ContentType, ContentStatus } from '@/types/content';
 
 async function getSongs() {
-  // Skip data fetching during build - only fetch at runtime
-  if (process.env.NODE_ENV === 'production' && typeof window === 'undefined') {
+  try {
+    const repo = new ContentRepository();
+    const result = await repo.findByType(ContentType.SONGS, {
+      limit: 50,
+      status: ContentStatus.PUBLISHED
+    });
+    return result.items.map(item => item.toObject());
+  } catch (error) {
+    console.error('Failed to fetch songs:', error);
     return [];
   }
-
-  // Only attempt fetch in development
-  if (typeof window === 'undefined' && process.env.NODE_ENV !== 'production') {
-    try {
-      const response = await fetch('http://localhost:3000/api/test/content?action=by-type&type=SONGS', {
-        next: { revalidate: 60 },
-        signal: AbortSignal.timeout(5000)
-      });
-
-      if (!response.ok) {
-        return [];
-      }
-
-      const data = await response.json();
-      return data.success ? data.data.items : [];
-    } catch (error) {
-      console.error('Failed to fetch songs:', error);
-      return [];
-    }
-  }
-
-  return [];
 }
 
 export default async function SongsPage() {
@@ -79,16 +66,16 @@ function ContentCard({ content }: { content: any }) {
     >
       <div className="p-6">
         <h3 className="text-2xl font-bold text-gray-900 font-tamil mb-3 group-hover:text-blue-600 transition-colors">
-          {content._title}
+          {content.title}
         </h3>
         <p className="text-gray-600 font-tamil text-sm line-clamp-3 mb-4 leading-relaxed">
-          {content._body}
+          {content.body}
         </p>
         <div className="flex items-center justify-between">
           <span className="text-sm text-gray-500 font-tamil">
-            {content._author}
+            {content.author}
           </span>
-          {content._audioUrl && (
+          {content.audioUrl && (
             <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-tamil">
               🎵 ஒலி
             </span>
