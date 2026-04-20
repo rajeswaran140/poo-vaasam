@@ -211,7 +211,7 @@ export async function POST(request: NextRequest) {
 
       case 'seed':
         // Seed database with test data
-        const seedResults = await this.seedDatabase();
+        const seedResults = await seedDatabase();
         return NextResponse.json({
           success: true,
           data: seedResults,
