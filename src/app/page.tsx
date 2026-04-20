@@ -3,31 +3,72 @@
  * தமிழ் உள்ளடக்கத்துடன் அம்சமான தரவு பக்கம்
  */
 
+export const dynamic = 'force-dynamic';
+
 import Link from 'next/link';
 
 async function getFeaturedContent() {
-  try {
-    const response = await fetch('http://localhost:3000/api/test/content?action=list', {
-      cache: 'no-store'
-    });
-    const data = await response.json();
-    return data.success ? data.data.items.slice(0, 6) : [];
-  } catch (error) {
-    console.error('Failed to fetch content:', error);
+  // Skip data fetching during build - only fetch at runtime
+  if (process.env.NODE_ENV === 'production' && typeof window === 'undefined') {
+    // During 'next build', skip fetching and return empty
+    // ISR will populate data after deployment
     return [];
   }
+
+  // Only attempt fetch in development or after deployment
+  if (typeof window === 'undefined' && process.env.NODE_ENV !== 'production') {
+    try {
+      const baseUrl = 'http://localhost:3000';
+      const response = await fetch(`${baseUrl}/api/test/content?action=list`, {
+        next: { revalidate: 60 },
+        signal: AbortSignal.timeout(5000)
+      });
+
+      if (!response.ok) {
+        return [];
+      }
+
+      const data = await response.json();
+      return data.success ? data.data.items.slice(0, 6) : [];
+    } catch (error) {
+      console.error('Failed to fetch content:', error);
+      return [];
+    }
+  }
+
+  return [];
 }
 
 async function getStats() {
-  try {
-    const response = await fetch('http://localhost:3000/api/test/content?action=stats', {
-      cache: 'no-store'
-    });
-    const data = await response.json();
-    return data.success ? data.data : null;
-  } catch (error) {
+  // Skip data fetching during build - only fetch at runtime
+  if (process.env.NODE_ENV === 'production' && typeof window === 'undefined') {
+    // During 'next build', skip fetching and return null
+    // ISR will populate data after deployment
     return null;
   }
+
+  // Only attempt fetch in development or after deployment
+  if (typeof window === 'undefined' && process.env.NODE_ENV !== 'production') {
+    try {
+      const baseUrl = 'http://localhost:3000';
+      const response = await fetch(`${baseUrl}/api/test/content?action=stats`, {
+        next: { revalidate: 60 },
+        signal: AbortSignal.timeout(5000)
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const data = await response.json();
+      return data.success ? data.data : null;
+    } catch (error) {
+      console.error('Failed to fetch stats:', error);
+      return null;
+    }
+  }
+
+  return null;
 }
 
 export default async function HomePage() {
@@ -42,7 +83,6 @@ export default async function HomePage() {
     <div className="min-h-screen bg-gradient-to-b from-purple-50 to-white">
       {/* தலைப்பு பகுதி */}
       <section className="relative overflow-hidden bg-gradient-to-r from-purple-600 via-purple-700 to-purple-800 text-white">
-        <div className="absolute inset-0 bg-[url('/pattern.svg')] opacity-10"></div>
         <div className="container mx-auto px-4 py-20 relative">
           <div className="max-w-4xl mx-auto text-center">
             <h1 className="text-6xl font-bold mb-6 font-tamil leading-tight">

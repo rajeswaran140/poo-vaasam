@@ -13,6 +13,7 @@ import {
   PutPublicAccessBlockCommand,
   PutBucketPolicyCommand,
   HeadBucketCommand,
+  BucketLocationConstraint,
 } from '@aws-sdk/client-s3';
 
 const client = new S3Client({
@@ -40,7 +41,7 @@ async function createBucket() {
           Bucket: BUCKET_NAME,
           ...(REGION !== 'us-east-1' && {
             CreateBucketConfiguration: {
-              LocationConstraint: REGION,
+              LocationConstraint: REGION as BucketLocationConstraint,
             },
           }),
         });

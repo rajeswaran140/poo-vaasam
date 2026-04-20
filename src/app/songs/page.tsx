@@ -2,18 +2,37 @@
  * Songs Listing Page
  */
 
+export const dynamic = 'force-dynamic';
+
 import Link from 'next/link';
 
 async function getSongs() {
-  try {
-    const response = await fetch('http://localhost:3000/api/test/content?action=by-type&type=SONGS', {
-      cache: 'no-store'
-    });
-    const data = await response.json();
-    return data.success ? data.data.items : [];
-  } catch (error) {
+  // Skip data fetching during build - only fetch at runtime
+  if (process.env.NODE_ENV === 'production' && typeof window === 'undefined') {
     return [];
   }
+
+  // Only attempt fetch in development
+  if (typeof window === 'undefined' && process.env.NODE_ENV !== 'production') {
+    try {
+      const response = await fetch('http://localhost:3000/api/test/content?action=by-type&type=SONGS', {
+        next: { revalidate: 60 },
+        signal: AbortSignal.timeout(5000)
+      });
+
+      if (!response.ok) {
+        return [];
+      }
+
+      const data = await response.json();
+      return data.success ? data.data.items : [];
+    } catch (error) {
+      console.error('Failed to fetch songs:', error);
+      return [];
+    }
+  }
+
+  return [];
 }
 
 export default async function SongsPage() {
