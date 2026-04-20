@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="ta">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧪 Poo Vaasam API Test</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Tamil:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Noto Sans Tamil', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            line-height: 1.8;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .test-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .test-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+
+        .test-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        }
+
+        .test-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .test-icon {
+            font-size: 2em;
+            margin-right: 10px;
+        }
+
+        .test-title {
+            font-size: 1.3em;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .test-button {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-family: 'Noto Sans Tamil', sans-serif;
+        }
+
+        .test-button:hover {
+            transform: scale(1.02);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+
+        .test-button:active {
+            transform: scale(0.98);
+        }
+
+        .test-result {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-size: 0.9em;
+            display: none;
+        }
+
+        .test-result.show {
+            display: block;
+        }
+
+        .loading {
+            text-align: center;
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .success {
+            color: #28a745;
+            font-weight: 600;
+        }
+
+        .error {
+            color: #dc3545;
+            font-weight: 600;
+        }
+
+        pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin: 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+        }
+
+        .tamil-text {
+            font-size: 1.1em;
+            line-height: 1.8;
+            color: #333;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .stat-box {
+            background: #667eea;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2em;
+            font-weight: 700;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎉 பூ வாசம் API Test Dashboard</h1>
+
+        <div class="test-grid">
+            <!-- Test 1: Statistics -->
+            <div class="test-card">
+                <div class="test-header">
+                    <span class="test-icon">📊</span>
+                    <span class="test-title">Statistics</span>
+                </div>
+                <button class="test-button" onclick="testStats()">
+                    Get Statistics
+                </button>
+                <div id="stats-result" class="test-result"></div>
+            </div>
+
+            <!-- Test 2: Categories -->
+            <div class="test-card">
+                <div class="test-header">
+                    <span class="test-icon">📚</span>
+                    <span class="test-title">Categories</span>
+                </div>
+                <button class="test-button" onclick="testCategories()">
+                    List Categories
+                </button>
+                <div id="categories-result" class="test-result"></div>
+            </div>
+
+            <!-- Test 3: Tags -->
+            <div class="test-card">
+                <div class="test-header">
+                    <span class="test-icon">🏷️</span>
+                    <span class="test-title">Tags</span>
+                </div>
+                <button class="test-button" onclick="testTags()">
+                    List Tags
+                </button>
+                <div id="tags-result" class="test-result"></div>
+            </div>
+
+            <!-- Test 4: Content List -->
+            <div class="test-card">
+                <div class="test-header">
+                    <span class="test-icon">📄</span>
+                    <span class="test-title">All Content</span>
+                </div>
+                <button class="test-button" onclick="testContent()">
+                    List All Content
+                </button>
+                <div id="content-result" class="test-result"></div>
+            </div>
+
+            <!-- Test 5: Songs -->
+            <div class="test-card">
+                <div class="test-header">
+                    <span class="test-icon">🎵</span>
+                    <span class="test-title">Songs Only</span>
+                </div>
+                <button class="test-button" onclick="testSongs()">
+                    Filter Songs
+                </button>
+                <div id="songs-result" class="test-result"></div>
+            </div>
+
+            <!-- Test 6: Poems -->
+            <div class="test-card">
+                <div class="test-header">
+                    <span class="test-icon">📝</span>
+                    <span class="test-title">Poems Only</span>
+                </div>
+                <button class="test-button" onclick="testPoems()">
+                    Filter Poems
+                </button>
+                <div id="poems-result" class="test-result"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3000/api/test/content';
+
+        async function testEndpoint(url, resultId) {
+            const resultDiv = document.getElementById(resultId);
+            resultDiv.innerHTML = '<div class="loading">⏳ Loading...</div>';
+            resultDiv.classList.add('show');
+
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (data.success) {
+                    resultDiv.innerHTML = '<div class="success">✅ Success!</div><pre>' +
+                        JSON.stringify(data, null, 2) + '</pre>';
+                } else {
+                    resultDiv.innerHTML = '<div class="error">❌ Error: ' +
+                        (data.error || 'Unknown error') + '</div>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = '<div class="error">❌ Error: ' + error.message + '</div>';
+            }
+        }
+
+        async function testStats() {
+            const resultDiv = document.getElementById('stats-result');
+            resultDiv.innerHTML = '<div class="loading">⏳ Loading...</div>';
+            resultDiv.classList.add('show');
+
+            try {
+                const response = await fetch(`${API_BASE}?action=stats`);
+                const data = await response.json();
+
+                if (data.success) {
+                    const stats = data.data;
+                    resultDiv.innerHTML = `
+                        <div class="success">✅ Success!</div>
+                        <div class="stats-grid">
+                            <div class="stat-box">
+                                <div class="stat-number">${stats.songs}</div>
+                                <div class="stat-label">Songs</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-number">${stats.poems}</div>
+                                <div class="stat-label">Poems</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-number">${stats.lyrics}</div>
+                                <div class="stat-label">Lyrics</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-number">${stats.published}</div>
+                                <div class="stat-label">Published</div>
+                            </div>
+                        </div>
+                        <pre style="margin-top: 15px;">${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                } else {
+                    resultDiv.innerHTML = '<div class="error">❌ Error: ' + (data.error || 'Unknown error') + '</div>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = '<div class="error">❌ Error: ' + error.message + '</div>';
+            }
+        }
+
+        async function testCategories() {
+            const resultDiv = document.getElementById('categories-result');
+            resultDiv.innerHTML = '<div class="loading">⏳ Loading...</div>';
+            resultDiv.classList.add('show');
+
+            try {
+                const response = await fetch(`${API_BASE}?action=categories`);
+                const data = await response.json();
+
+                if (data.success) {
+                    let html = '<div class="success">✅ Success! Found ' + data.data.length + ' categories</div>';
+                    html += '<div style="margin-top: 15px;">';
+                    data.data.forEach(cat => {
+                        html += `
+                            <div class="tamil-text" style="margin-bottom: 10px; padding: 10px; background: white; border-radius: 5px;">
+                                <strong>${cat.name}</strong><br>
+                                <small>Slug: ${cat.slug} | Content: ${cat.contentCount}</small>
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                    resultDiv.innerHTML = html;
+                } else {
+                    resultDiv.innerHTML = '<div class="error">❌ Error: ' + (data.error || 'Unknown error') + '</div>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = '<div class="error">❌ Error: ' + error.message + '</div>';
+            }
+        }
+
+        async function testTags() {
+            testEndpoint(`${API_BASE}?action=tags`, 'tags-result');
+        }
+
+        async function testContent() {
+            testEndpoint(`${API_BASE}?action=list`, 'content-result');
+        }
+
+        async function testSongs() {
+            testEndpoint(`${API_BASE}?action=by-type&type=SONGS`, 'songs-result');
+        }
+
+        async function testPoems() {
+            testEndpoint(`${API_BASE}?action=by-type&type=POEMS`, 'poems-result');
+        }
+    </script>
+</body>
+</html>
