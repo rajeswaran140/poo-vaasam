@@ -9,6 +9,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { TamilInput } from '@/components/admin/TamilInput';
+import { Music, Feather, Mic, BookOpen, PenTool, Star } from 'lucide-react';
 
 export default function NewContentPage() {
   const router = useRouter();
@@ -134,12 +135,12 @@ export default function NewContentPage() {
                     : 'border-gray-200 hover:border-gray-300'
                 }`}
               >
-                <div className="text-3xl mb-2">
-                  {type === 'SONGS' && <i className="lni lni-music text-purple-600"></i>}
-                  {type === 'POEMS' && <i className="lni lni-quill text-purple-600"></i>}
-                  {type === 'LYRICS' && <i className="lni lni-microphone text-purple-600"></i>}
-                  {type === 'STORIES' && <i className="lni lni-book text-purple-600"></i>}
-                  {type === 'ESSAYS' && <i className="lni lni-pencil text-purple-600"></i>}
+                <div className="mb-2 flex justify-center">
+                  {type === 'SONGS' && <Music className="w-8 h-8 text-purple-600" />}
+                  {type === 'POEMS' && <Feather className="w-8 h-8 text-purple-600" />}
+                  {type === 'LYRICS' && <Mic className="w-8 h-8 text-purple-600" />}
+                  {type === 'STORIES' && <BookOpen className="w-8 h-8 text-purple-600" />}
+                  {type === 'ESSAYS' && <PenTool className="w-8 h-8 text-purple-600" />}
                 </div>
                 <div className="text-sm font-medium">{type}</div>
               </button>
@@ -147,7 +148,7 @@ export default function NewContentPage() {
           </div>
           {formData.type === 'POEMS' && (
             <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg flex items-start gap-2">
-              <i className="lni lni-star text-purple-600 text-lg mt-0.5"></i>
+              <Star className="w-5 h-5 text-purple-600 mt-0.5 fill-purple-600" />
               <p className="text-sm text-purple-700 font-tamil">
                 <strong>Poem Mode:</strong> Your title and content will use the beautiful Baloo Thambi 2 font for an artistic poetry display!
               </p>

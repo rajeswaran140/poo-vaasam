@@ -12,6 +12,7 @@ import { useAuthenticator } from '@aws-amplify/ui-react';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import '@/lib/amplify-config';
+import { LucideIcon, LayoutDashboard, FileText, Folder, Tag, Image, Globe, Settings, LogOut, Plus } from 'lucide-react';
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -52,28 +53,28 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         </div>
 
         <nav className="mt-6">
-          <NavLink href="/admin" icon="lni lni-dashboard">
+          <NavLink href="/admin" icon={LayoutDashboard}>
             Dashboard
           </NavLink>
-          <NavLink href="/admin/content" icon="lni lni-write">
+          <NavLink href="/admin/content" icon={FileText}>
             Content
           </NavLink>
-          <NavLink href="/admin/categories" icon="lni lni-folder">
+          <NavLink href="/admin/categories" icon={Folder}>
             Categories
           </NavLink>
-          <NavLink href="/admin/tags" icon="lni lni-tag">
+          <NavLink href="/admin/tags" icon={Tag}>
             Tags
           </NavLink>
-          <NavLink href="/admin/media" icon="lni lni-image">
+          <NavLink href="/admin/media" icon={Image}>
             Media Library
           </NavLink>
 
           <div className="border-t border-purple-600 my-4 mx-4"></div>
 
-          <NavLink href="/" icon="lni lni-website">
+          <NavLink href="/" icon={Globe}>
             View Site
           </NavLink>
-          <NavLink href="/admin/settings" icon="lni lni-cog">
+          <NavLink href="/admin/settings" icon={Settings}>
             Settings
           </NavLink>
         </nav>
@@ -87,7 +88,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               onClick={handleLogout}
               className="text-xs text-purple-300 hover:text-white mt-1 transition-colors flex items-center gap-1"
             >
-              <i className="lni lni-exit"></i> Logout
+              <LogOut className="w-3 h-3" /> Logout
             </button>
           </div>
         </div>
@@ -108,7 +109,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             </div>
             <div className="flex items-center gap-4">
               <button className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium flex items-center gap-2">
-                <i className="lni lni-plus"></i> New Content
+                <Plus className="w-5 h-5" /> New Content
               </button>
             </div>
           </div>
@@ -125,17 +126,17 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
 interface NavLinkProps {
   href: string;
-  icon: string;
+  icon: LucideIcon;
   children: ReactNode;
 }
 
-function NavLink({ href, icon, children }: NavLinkProps) {
+function NavLink({ href, icon: Icon, children }: NavLinkProps) {
   return (
     <Link
       href={href}
       className="flex items-center gap-3 px-6 py-3 text-white hover:bg-purple-600 transition-colors"
     >
-      <i className={`${icon} text-xl`}></i>
+      <Icon className="w-5 h-5" />
       <span className="font-medium">{children}</span>
     </Link>
   );
