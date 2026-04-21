@@ -62,19 +62,19 @@ describe('Admin Layout Authentication', () => {
     it('should render layout when user is authenticated', () => {
       render(
         <AdminLayout>
-          <div>Test Content</div>
+          <div>Test Page Body</div>
         </AdminLayout>
       );
 
       expect(screen.getByText('தமிழகவல்')).toBeInTheDocument();
       expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
-      expect(screen.getByText('Test Content')).toBeInTheDocument();
+      expect(screen.getByText('Test Page Body')).toBeInTheDocument();
     });
 
     it('should display user email in sidebar', () => {
       render(
         <AdminLayout>
-          <div>Content</div>
+          <div>Page Body</div>
         </AdminLayout>
       );
 
@@ -84,12 +84,12 @@ describe('Admin Layout Authentication', () => {
     it('should render all navigation links', () => {
       render(
         <AdminLayout>
-          <div>Content</div>
+          <div>Page Body</div>
         </AdminLayout>
       );
 
       expect(screen.getByText('Dashboard')).toBeInTheDocument();
-      expect(screen.getByText('Content')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /content/i })).toBeInTheDocument();
       expect(screen.getByText('Categories')).toBeInTheDocument();
       expect(screen.getByText('Tags')).toBeInTheDocument();
       expect(screen.getByText('Media Library')).toBeInTheDocument();
@@ -100,7 +100,7 @@ describe('Admin Layout Authentication', () => {
     it('should render logout button', () => {
       render(
         <AdminLayout>
-          <div>Content</div>
+          <div>Page Body</div>
         </AdminLayout>
       );
 
@@ -112,7 +112,7 @@ describe('Admin Layout Authentication', () => {
 
       render(
         <AdminLayout>
-          <div>Content</div>
+          <div>Page Body</div>
         </AdminLayout>
       );
 
@@ -131,7 +131,7 @@ describe('Admin Layout Authentication', () => {
 
       render(
         <AdminLayout>
-          <div>Content</div>
+          <div>Page Body</div>
         </AdminLayout>
       );
 
@@ -149,18 +149,18 @@ describe('Admin Layout Authentication', () => {
     it('should render children content in main area', () => {
       render(
         <AdminLayout>
-          <div data-testid="child-content">Dashboard Content</div>
+          <div data-testid="child-content">Dashboard Main Area</div>
         </AdminLayout>
       );
 
       expect(screen.getByTestId('child-content')).toBeInTheDocument();
-      expect(screen.getByText('Dashboard Content')).toBeInTheDocument();
+      expect(screen.getByText('Dashboard Main Area')).toBeInTheDocument();
     });
 
     it('should show "New Content" button in header', () => {
       render(
         <AdminLayout>
-          <div>Content</div>
+          <div>Page Body</div>
         </AdminLayout>
       );
 
@@ -179,7 +179,7 @@ describe('Admin Layout Authentication', () => {
     it('should redirect to login when user is not authenticated', () => {
       render(
         <AdminLayout>
-          <div>Protected Content</div>
+          <div>Protected Page</div>
         </AdminLayout>
       );
 
@@ -189,7 +189,7 @@ describe('Admin Layout Authentication', () => {
     it('should not render layout when user is not authenticated', () => {
       const { container } = render(
         <AdminLayout>
-          <div>Protected Content</div>
+          <div>Protected Page</div>
         </AdminLayout>
       );
 
@@ -200,12 +200,12 @@ describe('Admin Layout Authentication', () => {
     it('should not display protected content', () => {
       render(
         <AdminLayout>
-          <div data-testid="protected">Secret Admin Content</div>
+          <div data-testid="protected">Secret Admin Data</div>
         </AdminLayout>
       );
 
       expect(screen.queryByTestId('protected')).not.toBeInTheDocument();
-      expect(screen.queryByText('Secret Admin Content')).not.toBeInTheDocument();
+      expect(screen.queryByText('Secret Admin Data')).not.toBeInTheDocument();
     });
   });
 
@@ -213,7 +213,7 @@ describe('Admin Layout Authentication', () => {
     it('should redirect when user logs out', () => {
       const { rerender } = render(
         <AdminLayout>
-          <div>Content</div>
+          <div>Page Body</div>
         </AdminLayout>
       );
 
@@ -228,7 +228,7 @@ describe('Admin Layout Authentication', () => {
 
       rerender(
         <AdminLayout>
-          <div>Content</div>
+          <div>Page Body</div>
         </AdminLayout>
       );
 
@@ -240,7 +240,7 @@ describe('Admin Layout Authentication', () => {
 
       rerender(
         <AdminLayout>
-          <div>Content</div>
+          <div>Page Body</div>
         </AdminLayout>
       );
 
@@ -260,7 +260,7 @@ describe('Admin Layout Authentication', () => {
 
       render(
         <AdminLayout>
-          <div>Content</div>
+          <div>Page Body</div>
         </AdminLayout>
       );
 
@@ -280,7 +280,7 @@ describe('Admin Layout Authentication', () => {
 
       render(
         <AdminLayout>
-          <div>Content</div>
+          <div>Page Body</div>
         </AdminLayout>
       );
 
@@ -303,7 +303,7 @@ describe('Admin Layout Authentication', () => {
     it('should have correct href for dashboard link', () => {
       render(
         <AdminLayout>
-          <div>Content</div>
+          <div>Page Body</div>
         </AdminLayout>
       );
 
@@ -314,18 +314,20 @@ describe('Admin Layout Authentication', () => {
     it('should have correct href for content link', () => {
       render(
         <AdminLayout>
-          <div>Content</div>
+          <div>Page Body</div>
         </AdminLayout>
       );
 
-      const contentLink = screen.getByText('Content').closest('a');
+      // Use more specific selector to avoid collision
+      const navLinks = screen.getAllByRole('link');
+      const contentLink = navLinks.find(link => link.getAttribute('href') === '/admin/content');
       expect(contentLink).toHaveAttribute('href', '/admin/content');
     });
 
     it('should have correct href for view site link', () => {
       render(
         <AdminLayout>
-          <div>Content</div>
+          <div>Page Body</div>
         </AdminLayout>
       );
 
@@ -348,7 +350,7 @@ describe('Admin Layout Authentication', () => {
     it('should have fixed sidebar', () => {
       const { container } = render(
         <AdminLayout>
-          <div>Content</div>
+          <div>Page Body</div>
         </AdminLayout>
       );
 
@@ -359,7 +361,7 @@ describe('Admin Layout Authentication', () => {
     it('should have sticky header', () => {
       const { container } = render(
         <AdminLayout>
-          <div>Content</div>
+          <div>Page Body</div>
         </AdminLayout>
       );
 
