@@ -25,7 +25,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   // Redirect to login if not authenticated
   useEffect(() => {
     if (!user) {
-      router.push('/admin/login');
+      router.push('/login');
     }
   }, [user, router]);
 
@@ -37,7 +37,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   const handleLogout = async () => {
     try {
       await signOut();
-      router.push('/admin/login');
+      router.push('/login');
     } catch (error) {
       console.error('Error signing out:', error);
     }
