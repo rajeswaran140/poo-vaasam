@@ -8,6 +8,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { TamilInput } from '@/components/admin/TamilInput';
 
 export default function NewContentPage() {
   const router = useRouter();
@@ -152,52 +153,32 @@ export default function NewContentPage() {
             Basic Information
           </h2>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Title (தலைப்பு) *
-            </label>
-            <input
-              type="text"
-              name="title"
-              value={formData.title}
-              onChange={handleChange}
-              required
-              placeholder="பூ வாசம்"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 font-tamil text-lg"
-            />
-          </div>
+          <TamilInput
+            label="Title (தலைப்பு)"
+            value={formData.title}
+            onChange={(value) => setFormData({ ...formData, title: value })}
+            placeholder="Type: vanakkam, poo, tamil"
+            required
+          />
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Content (உள்ளடக்கம்) *
-            </label>
-            <textarea
-              name="body"
-              value={formData.body}
-              onChange={handleChange}
-              required
-              rows={10}
-              placeholder="பூ வாசம் வந்து என்னை கவர்ந்ததடி..."
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 font-tamil text-base leading-relaxed"
-            />
-            <p className="text-sm text-gray-500 mt-1">
-              Enter the full content in Tamil. You can paste multiple paragraphs.
-            </p>
-          </div>
+          <TamilInput
+            label="Content (உள்ளடக்கம்)"
+            value={formData.body}
+            onChange={(value) => setFormData({ ...formData, body: value })}
+            placeholder="Type your lyrics, poem, or story..."
+            multiline
+            rows={12}
+            required
+          />
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Description (விளக்கம்)
-            </label>
-            <textarea
-              name="description"
-              value={formData.description}
-              onChange={handleChange}
-              rows={3}
-              placeholder="ஒரு அழகான தமிழ் பாடல்"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 font-tamil"
-            />
-          </div>
+          <TamilInput
+            label="Description (விளக்கம்)"
+            value={formData.description}
+            onChange={(value) => setFormData({ ...formData, description: value })}
+            placeholder="Brief description about this content"
+            multiline
+            rows={3}
+          />
 
           <div className="grid grid-cols-2 gap-4">
             <div>
