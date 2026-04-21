@@ -37,7 +37,11 @@ function LoginContent() {
 
   useEffect(() => {
     if (user) {
-      router.push('/admin');
+      // Check for redirect parameter in URL
+      const searchParams = new URLSearchParams(window.location.search);
+      const redirect = searchParams.get('redirect');
+      // Redirect to original destination or default to admin dashboard
+      router.push(redirect && redirect.startsWith('/admin') ? redirect : '/admin');
     }
   }, [user, router]);
 

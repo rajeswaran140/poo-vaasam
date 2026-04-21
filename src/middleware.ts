@@ -10,14 +10,25 @@ import type { NextRequest } from 'next/server';
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Check if accessing admin routes (except login page)
-  if (pathname.startsWith('/admin') && !pathname.startsWith('/admin/login')) {
-    // Check for auth token in cookies
-    const authToken = request.cookies.get('amplify-auth-token');
+  // Only protect /admin routes (login is at /login, not /admin/login)
+  if (pathname.startsWith('/admin')) {
+    // Check for Cognito auth tokens in cookies
+    // AWS Amplify stores tokens with pattern: CognitoIdentityServiceProvider.{clientId}.*
+    const cookies = request.cookies.getAll();
 
-    if (!authToken) {
+    // Look for any Cognito token (idToken, accessToken, or refreshToken)
+    const hasAuthToken = cookies.some(cookie =>
+      cookie.name.includes('CognitoIdentityServiceProvider') &&
+      (cookie.name.includes('.idToken') ||
+       cookie.name.includes('.accessToken') ||
+       cookie.name.includes('.LastAuthUser'))
+    );
+
+    if (!hasAuthToken) {
       // Redirect to login if not authenticated
-      const loginUrl = new URL('/admin/login', request.url);
+      const loginUrl = new URL('/login', request.url);
+      // Add redirect query param to return user after login
+      loginUrl.searchParams.set('redirect', pathname);
       return NextResponse.redirect(loginUrl);
     }
   }
