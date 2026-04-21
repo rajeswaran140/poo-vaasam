@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Noto_Sans_Tamil, Kavivanar } from "next/font/google";
 import "./globals.css";
+import { AuthProvider } from "@/components/auth/AuthProvider";
 
 const notoSansTamil = Noto_Sans_Tamil({
   subsets: ['tamil'],
@@ -68,7 +69,9 @@ export default function RootLayout({
   return (
     <html lang="ta" className={`${notoSansTamil.variable} ${kavivanar.variable}`}>
       <body className="font-tamil antialiased">
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

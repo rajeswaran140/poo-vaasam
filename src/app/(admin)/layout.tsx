@@ -1,17 +1,47 @@
+'use client';
+
 /**
  * Admin Layout
  *
- * Main layout for admin dashboard with sidebar navigation
+ * Main layout for admin dashboard with sidebar navigation and authentication
  */
 
 import Link from 'next/link';
 import { ReactNode } from 'react';
+import { useAuthenticator } from '@aws-amplify/ui-react';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
+import '@/lib/amplify-config';
 
 interface AdminLayoutProps {
   children: ReactNode;
 }
 
 export default function AdminLayout({ children }: AdminLayoutProps) {
+  const { user, signOut } = useAuthenticator((context) => [context.user]);
+  const router = useRouter();
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!user) {
+      router.push('/admin/login');
+    }
+  }, [user, router]);
+
+  // Show nothing while checking auth
+  if (!user) {
+    return null;
+  }
+
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      router.push('/admin/login');
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-100">
       {/* Sidebar */}
@@ -50,9 +80,14 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-purple-600">
           <div className="text-sm text-purple-200">
-            <p className="font-semibold">Admin User</p>
-            <button className="text-xs text-purple-300 hover:text-white mt-1">
-              Logout
+            <p className="font-semibold truncate" title={user?.signInDetails?.loginId || 'Admin'}>
+              {user?.signInDetails?.loginId || 'Admin'}
+            </p>
+            <button
+              onClick={handleLogout}
+              className="text-xs text-purple-300 hover:text-white mt-1 transition-colors"
+            >
+              🚪 Logout
             </button>
           </div>
         </div>
