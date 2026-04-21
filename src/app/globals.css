@@ -59,3 +59,24 @@ p {
   line-height: 2;
   max-width: 65ch;
 }
+
+/* Poem-specific styling with Baloo Thambi 2 font */
+.font-poem {
+  font-family: var(--font-baloo-thambi), var(--font-tamil), sans-serif;
+}
+
+.poem-text {
+  font-family: var(--font-baloo-thambi), var(--font-tamil), sans-serif;
+  line-height: 2.2;
+  letter-spacing: 0.02em;
+  font-size: 1.25rem;
+  font-weight: 500;
+  white-space: pre-wrap;
+}
+
+/* Poem title styling */
+.poem-title {
+  font-family: var(--font-baloo-thambi), var(--font-tamil), sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}

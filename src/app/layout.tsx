@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Noto_Sans_Tamil, Kavivanar } from "next/font/google";
+import { Noto_Sans_Tamil, Kavivanar, Baloo_Thambi_2 } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 
@@ -15,6 +15,13 @@ const kavivanar = Kavivanar({
   weight: ['400'],
   display: 'swap',
   variable: '--font-kavivanar',
+});
+
+const balooThambi = Baloo_Thambi_2({
+  subsets: ['tamil'],
+  weight: ['400', '500', '600', '700', '800'],
+  display: 'swap',
+  variable: '--font-baloo-thambi',
 });
 
 export const metadata: Metadata = {
@@ -67,7 +74,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ta" className={`${notoSansTamil.variable} ${kavivanar.variable}`}>
+    <html lang="ta" className={`${notoSansTamil.variable} ${kavivanar.variable} ${balooThambi.variable}`}>
       <body className="font-tamil antialiased">
         <AuthProvider>
           {children}

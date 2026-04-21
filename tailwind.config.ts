@@ -11,6 +11,7 @@ export default {
       fontFamily: {
         tamil: ['var(--font-tamil)', 'sans-serif'],
         kavivanar: ['var(--font-kavivanar)', 'cursive'],
+        poem: ['var(--font-baloo-thambi)', 'var(--font-tamil)', 'sans-serif'],
       },
       colors: {
         background: "var(--background)",
