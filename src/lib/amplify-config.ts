@@ -15,7 +15,7 @@ const amplifyConfig = {
       loginWith: {
         email: true,
       },
-      signUpVerificationMethod: 'code',
+      signUpVerificationMethod: 'code' as const,
       userAttributes: {
         email: {
           required: true,
@@ -31,7 +31,7 @@ const amplifyConfig = {
       },
     },
   },
-};
+} as const;
 
 // Configure Amplify
 Amplify.configure(amplifyConfig, { ssr: true });
