@@ -52,28 +52,28 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         </div>
 
         <nav className="mt-6">
-          <NavLink href="/admin" icon="📊">
+          <NavLink href="/admin" icon="lni lni-dashboard">
             Dashboard
           </NavLink>
-          <NavLink href="/admin/content" icon="📝">
+          <NavLink href="/admin/content" icon="lni lni-write">
             Content
           </NavLink>
-          <NavLink href="/admin/categories" icon="📚">
+          <NavLink href="/admin/categories" icon="lni lni-folder">
             Categories
           </NavLink>
-          <NavLink href="/admin/tags" icon="🏷️">
+          <NavLink href="/admin/tags" icon="lni lni-tag">
             Tags
           </NavLink>
-          <NavLink href="/admin/media" icon="🖼️">
+          <NavLink href="/admin/media" icon="lni lni-image">
             Media Library
           </NavLink>
 
           <div className="border-t border-purple-600 my-4 mx-4"></div>
 
-          <NavLink href="/" icon="🌐">
+          <NavLink href="/" icon="lni lni-website">
             View Site
           </NavLink>
-          <NavLink href="/admin/settings" icon="⚙️">
+          <NavLink href="/admin/settings" icon="lni lni-cog">
             Settings
           </NavLink>
         </nav>
@@ -85,9 +85,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             </p>
             <button
               onClick={handleLogout}
-              className="text-xs text-purple-300 hover:text-white mt-1 transition-colors"
+              className="text-xs text-purple-300 hover:text-white mt-1 transition-colors flex items-center gap-1"
             >
-              🚪 Logout
+              <i className="lni lni-exit"></i> Logout
             </button>
           </div>
         </div>
@@ -107,8 +107,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               </p>
             </div>
             <div className="flex items-center gap-4">
-              <button className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium">
-                + New Content
+              <button className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium flex items-center gap-2">
+                <i className="lni lni-plus"></i> New Content
               </button>
             </div>
           </div>
@@ -135,7 +135,7 @@ function NavLink({ href, icon, children }: NavLinkProps) {
       href={href}
       className="flex items-center gap-3 px-6 py-3 text-white hover:bg-purple-600 transition-colors"
     >
-      <span className="text-xl">{icon}</span>
+      <i className={`${icon} text-xl`}></i>
       <span className="font-medium">{children}</span>
     </Link>
   );

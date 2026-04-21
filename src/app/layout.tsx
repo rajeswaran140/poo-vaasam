@@ -75,6 +75,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ta" className={`${notoSansTamil.variable} ${kavivanar.variable} ${balooThambi.variable}`}>
+      <head>
+        <link
+          href="https://cdn.lineicons.com/4.0/lineicons.css"
+          rel="stylesheet"
+        />
+      </head>
       <body className="font-tamil antialiased">
         <AuthProvider>
           {children}

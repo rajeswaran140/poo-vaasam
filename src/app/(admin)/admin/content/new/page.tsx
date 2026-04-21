@@ -134,21 +134,22 @@ export default function NewContentPage() {
                     : 'border-gray-200 hover:border-gray-300'
                 }`}
               >
-                <div className="text-2xl mb-1">
-                  {type === 'SONGS' && '🎵'}
-                  {type === 'POEMS' && '📝'}
-                  {type === 'LYRICS' && '🎤'}
-                  {type === 'STORIES' && '📖'}
-                  {type === 'ESSAYS' && '✍️'}
+                <div className="text-3xl mb-2">
+                  {type === 'SONGS' && <i className="lni lni-music text-purple-600"></i>}
+                  {type === 'POEMS' && <i className="lni lni-quill text-purple-600"></i>}
+                  {type === 'LYRICS' && <i className="lni lni-microphone text-purple-600"></i>}
+                  {type === 'STORIES' && <i className="lni lni-book text-purple-600"></i>}
+                  {type === 'ESSAYS' && <i className="lni lni-pencil text-purple-600"></i>}
                 </div>
                 <div className="text-sm font-medium">{type}</div>
               </button>
             ))}
           </div>
           {formData.type === 'POEMS' && (
-            <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+            <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg flex items-start gap-2">
+              <i className="lni lni-star text-purple-600 text-lg mt-0.5"></i>
               <p className="text-sm text-purple-700 font-tamil">
-                ✨ <strong>Poem Mode:</strong> Your title and content will use the beautiful Baloo Thambi 2 font for an artistic poetry display!
+                <strong>Poem Mode:</strong> Your title and content will use the beautiful Baloo Thambi 2 font for an artistic poetry display!
               </p>
             </div>
           )}
