@@ -5,6 +5,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
 export default function DebugAuthPage() {
   const [config, setConfig] = useState({
@@ -79,7 +80,7 @@ export default function DebugAuthPage() {
           </div>
 
           <div className="mt-4 p-4 bg-yellow-50 rounded">
-            <h3 className="font-bold text-yellow-900 mb-2">If values show "NOT SET":</h3>
+            <h3 className="font-bold text-yellow-900 mb-2">If values show &quot;NOT SET&quot;:</h3>
             <ul className="text-sm space-y-1 text-yellow-800">
               <li>• Local: Restart dev server to load .env.local changes</li>
               <li>• Production: Verify environment variables in AWS Amplify Console</li>
@@ -88,18 +89,18 @@ export default function DebugAuthPage() {
         </div>
 
         <div className="mt-8 flex gap-4">
-          <a
+          <Link
             href="/login"
             className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700"
           >
             Go to Login Page
-          </a>
-          <a
+          </Link>
+          <Link
             href="/"
             className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
           >
             Go to Home
-          </a>
+          </Link>
         </div>
       </div>
     </div>
