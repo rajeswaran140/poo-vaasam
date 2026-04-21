@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Noto_Sans_Tamil } from "next/font/google";
+import { Noto_Sans_Tamil, Kavivanar } from "next/font/google";
 import "./globals.css";
 
 const notoSansTamil = Noto_Sans_Tamil({
@@ -7,6 +7,13 @@ const notoSansTamil = Noto_Sans_Tamil({
   weight: ['400', '500', '600', '700'],
   display: 'swap',
   variable: '--font-tamil',
+});
+
+const kavivanar = Kavivanar({
+  subsets: ['tamil'],
+  weight: ['400'],
+  display: 'swap',
+  variable: '--font-kavivanar',
 });
 
 export const metadata: Metadata = {
@@ -59,7 +66,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ta" className={notoSansTamil.variable}>
+    <html lang="ta" className={`${notoSansTamil.variable} ${kavivanar.variable}`}>
       <body className="font-tamil antialiased">
         {children}
       </body>

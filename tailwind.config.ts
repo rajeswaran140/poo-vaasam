@@ -10,6 +10,7 @@ export default {
     extend: {
       fontFamily: {
         tamil: ['var(--font-tamil)', 'sans-serif'],
+        kavivanar: ['var(--font-kavivanar)', 'cursive'],
       },
       colors: {
         background: "var(--background)",

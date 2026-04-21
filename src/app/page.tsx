@@ -63,7 +63,7 @@ export default async function HomePage() {
       <section className="relative overflow-hidden bg-gradient-to-r from-purple-600 via-purple-700 to-purple-800 text-white">
         <div className="container mx-auto px-4 py-20 relative">
           <div className="max-w-4xl mx-auto text-center">
-            <h1 className="text-6xl font-bold mb-6 font-tamil leading-tight">
+            <h1 className="text-6xl font-bold mb-6 font-kavivanar leading-tight">
               தமிழகவல்
             </h1>
             <p className="text-2xl mb-4 text-purple-100 font-tamil">
@@ -177,7 +177,7 @@ export default async function HomePage() {
         <div className="container mx-auto px-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div>
-              <h3 className="text-2xl font-bold mb-4 font-tamil">தமிழகவல்</h3>
+              <h3 className="text-2xl font-bold mb-4 font-kavivanar">தமிழகவல்</h3>
               <p className="text-gray-400 font-tamil">
                 தமிழ் இலக்கியத்தை பாதுகாக்கும் மற்றும் பரப்பும் தளம்
               </p>

@@ -17,7 +17,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       {/* Sidebar */}
       <aside className="fixed left-0 top-0 h-full w-64 bg-gradient-to-b from-purple-700 to-purple-900 text-white shadow-xl z-50">
         <div className="p-6">
-          <h1 className="text-2xl font-bold mb-2">தமிழகவல்</h1>
+          <h1 className="text-2xl font-bold mb-2 font-kavivanar">தமிழகவல்</h1>
           <p className="text-purple-200 text-sm">Admin Dashboard</p>
         </div>
 
