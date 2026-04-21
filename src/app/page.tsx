@@ -64,7 +64,7 @@ export default async function HomePage() {
         <div className="container mx-auto px-4 py-20 relative">
           <div className="max-w-4xl mx-auto text-center">
             <h1 className="text-6xl font-bold mb-6 font-tamil leading-tight">
-              பூ வாசம்
+              தமிழகவல்
             </h1>
             <p className="text-2xl mb-4 text-purple-100 font-tamil">
               தமிழ் இலக்கிய தளம்
@@ -177,7 +177,7 @@ export default async function HomePage() {
         <div className="container mx-auto px-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div>
-              <h3 className="text-2xl font-bold mb-4 font-tamil">பூ வாசம்</h3>
+              <h3 className="text-2xl font-bold mb-4 font-tamil">தமிழகவல்</h3>
               <p className="text-gray-400 font-tamil">
                 தமிழ் இலக்கியத்தை பாதுகாக்கும் மற்றும் பரப்பும் தளம்
               </p>
@@ -201,7 +201,7 @@ export default async function HomePage() {
             </div>
           </div>
           <div className="border-t border-gray-800 mt-8 pt-8 text-center text-gray-400">
-            <p className="font-tamil">© 2026 பூ வாசம். தமிழ் இலக்கியத்திற்காக அன்புடன் உருவாக்கப்பட்டது.</p>
+            <p className="font-tamil">© 2026 தமிழகவல். தமிழ் இலக்கியத்திற்காக அன்புடன் உருவாக்கப்பட்டது.</p>
           </div>
         </div>
       </footer>

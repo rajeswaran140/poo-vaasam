@@ -10,7 +10,7 @@ const notoSansTamil = Noto_Sans_Tamil({
 });
 
 export const metadata: Metadata = {
-  title: "பூ வாசம் | தமிழ் இலக்கிய தளம்",
+  title: "தமிழகவல் | தமிழ் இலக்கிய தளம்",
   description: "பாடல்கள், கவிதைகள், கதைகள் மற்றும் கட்டுரைகளுக்கான தமிழ் உள்ளடக்க வெளியீட்டு தளம். இலவசமாக தமிழ் இலக்கியங்களை படியுங்கள் மற்றும் கேளுங்கள்.",
   keywords: [
     "தமிழ்",
@@ -24,8 +24,8 @@ export const metadata: Metadata = {
     "இலவச தமிழ் உள்ளடக்கம்",
   ],
   authors: [{ name: "Rajeswaran" }],
-  creator: "பூ வாசம்",
-  publisher: "பூ வாசம்",
+  creator: "தமிழகவல்",
+  publisher: "தமிழகவல்",
   robots: {
     index: true,
     follow: true,
@@ -40,15 +40,15 @@ export const metadata: Metadata = {
     canonical: "https://poo-vaasam.com",
   },
   openGraph: {
-    title: "பூ வாசம் | தமிழ் இலக்கிய தளம்",
+    title: "தமிழகவல் | தமிழ் இலக்கிய தளம்",
     description: "இலவசமாக தமிழ் பாடல்கள், கவிதைகள், கதைகள் மற்றும் கட்டுரைகளை படியுங்கள்",
     type: "website",
     locale: "ta_IN",
-    siteName: "பூ வாசம்",
+    siteName: "தமிழகவல்",
   },
   twitter: {
     card: "summary_large_image",
-    title: "பூ வாசம் | தமிழ் இலக்கிய தளம்",
+    title: "தமிழகவல் | தமிழ் இலக்கிய தளம்",
     description: "தமிழ் உள்ளடக்க வெளியீட்டு தளம்",
   },
 };

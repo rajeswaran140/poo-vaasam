@@ -1,4 +1,4 @@
-# பூ வாசம் (Poo Vaasam) - Tamil Content Publishing Platform
+# தமிழகவல் (Tamilahaval) - Tamil Content Publishing Platform
 
 A comprehensive Tamil language content publishing web application for sharing lyrics, songs, poems, stories, and essays with integrated audio playback capabilities.
 
@@ -207,4 +207,4 @@ This project is private and proprietary.
 
 ---
 
-**பூ வாசம்** - Bringing the fragrance of Tamil literature to the digital world 🌸
+**தமிழகவல்** - Bringing the fragrance of Tamil literature to the digital world 🌸
