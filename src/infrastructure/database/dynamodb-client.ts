@@ -114,6 +114,7 @@ export class DynamoDBOperations {
     updateExpression: string;
     expressionAttributeValues: Record<string, any>;
     expressionAttributeNames?: Record<string, string>;
+    conditionExpression?: string;
   }) {
     const command = new UpdateCommand({
       TableName: TABLE_NAME,
@@ -121,6 +122,7 @@ export class DynamoDBOperations {
       UpdateExpression: params.updateExpression,
       ExpressionAttributeValues: params.expressionAttributeValues,
       ExpressionAttributeNames: params.expressionAttributeNames,
+      ConditionExpression: params.conditionExpression,
       ReturnValues: 'ALL_NEW',
     });
 
