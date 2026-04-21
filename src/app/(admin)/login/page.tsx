@@ -86,8 +86,15 @@ export default function LoginPage() {
                 // Redirect to admin dashboard when authenticated
                 if (user) {
                   router.push('/admin');
+                  return (
+                    <div className="flex items-center justify-center p-8">
+                      <div className="text-center">
+                        <div className="text-lg text-gray-600 font-tamil">Redirecting to admin dashboard...</div>
+                      </div>
+                    </div>
+                  );
                 }
-                return null;
+                return <></>;
               }}
             </Authenticator>
           </ThemeProvider>
