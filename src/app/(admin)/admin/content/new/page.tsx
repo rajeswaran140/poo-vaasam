@@ -145,6 +145,13 @@ export default function NewContentPage() {
               </button>
             ))}
           </div>
+          {formData.type === 'POEMS' && (
+            <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+              <p className="text-sm text-purple-700 font-tamil">
+                ✨ <strong>Poem Mode:</strong> Your title and content will use the beautiful Baloo Thambi 2 font for an artistic poetry display!
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Basic Information */}
@@ -158,6 +165,7 @@ export default function NewContentPage() {
             value={formData.title}
             onChange={(value) => setFormData({ ...formData, title: value })}
             placeholder="Type: vanakkam, poo, tamil"
+            className={formData.type === 'POEMS' ? 'poem-title' : ''}
             required
           />
 
@@ -166,6 +174,7 @@ export default function NewContentPage() {
             value={formData.body}
             onChange={(value) => setFormData({ ...formData, body: value })}
             placeholder="Type your lyrics, poem, or story..."
+            className={formData.type === 'POEMS' ? 'poem-text' : ''}
             multiline
             rows={12}
             required
@@ -182,17 +191,12 @@ export default function NewContentPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Author (ஆசிரியர்) *
-              </label>
-              <input
-                type="text"
-                name="author"
+              <TamilInput
+                label="Author (ஆசிரியர்)"
                 value={formData.author}
-                onChange={handleChange}
+                onChange={(value) => setFormData({ ...formData, author: value })}
+                placeholder="Type: ilaiyaraaja, kannadasan"
                 required
-                placeholder="இளையராஜா"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 font-tamil"
               />
             </div>
 
@@ -327,33 +331,21 @@ export default function NewContentPage() {
             SEO Settings
           </h2>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              SEO Title
-            </label>
-            <input
-              type="text"
-              name="seoTitle"
-              value={formData.seoTitle}
-              onChange={handleChange}
-              placeholder="Auto-generated from title if left empty"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-            />
-          </div>
+          <TamilInput
+            label="SEO Title"
+            value={formData.seoTitle}
+            onChange={(value) => setFormData({ ...formData, seoTitle: value })}
+            placeholder="Auto-generated from title if left empty"
+          />
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              SEO Description
-            </label>
-            <textarea
-              name="seoDescription"
-              value={formData.seoDescription}
-              onChange={handleChange}
-              rows={2}
-              placeholder="Auto-generated from description if left empty"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-            />
-          </div>
+          <TamilInput
+            label="SEO Description"
+            value={formData.seoDescription}
+            onChange={(value) => setFormData({ ...formData, seoDescription: value })}
+            placeholder="Auto-generated from description if left empty"
+            multiline
+            rows={2}
+          />
         </div>
 
         {/* Submit Buttons */}
