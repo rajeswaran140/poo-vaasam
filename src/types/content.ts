@@ -4,6 +4,8 @@
  * TypeScript types and interfaces for content management
  */
 
+import type { Content as ContentEntity } from '@/domain/entities/Content';
+
 /**
  * Content Types
  */
@@ -135,7 +137,7 @@ export interface ContentQueryOptions {
  * Paginated Content Response
  */
 export interface PaginatedContent {
-  items: Content[];
+  items: ContentEntity[];
   total: number;
   limit: number;
   offset: number;
