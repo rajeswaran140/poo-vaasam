@@ -136,11 +136,11 @@ export default function NewContentPage() {
                 }`}
               >
                 <div className="mb-2 flex justify-center">
-                  {type === 'SONGS' && <Music className="w-8 h-8 text-purple-600" />}
-                  {type === 'POEMS' && <Feather className="w-8 h-8 text-purple-600" />}
-                  {type === 'LYRICS' && <Mic className="w-8 h-8 text-purple-600" />}
-                  {type === 'STORIES' && <BookOpen className="w-8 h-8 text-purple-600" />}
-                  {type === 'ESSAYS' && <PenTool className="w-8 h-8 text-purple-600" />}
+                  {type === 'SONGS' && <Music className="w-8 h-8" />}
+                  {type === 'POEMS' && <Feather className="w-8 h-8" />}
+                  {type === 'LYRICS' && <Mic className="w-8 h-8" />}
+                  {type === 'STORIES' && <BookOpen className="w-8 h-8" />}
+                  {type === 'ESSAYS' && <PenTool className="w-8 h-8" />}
                 </div>
                 <div className="text-sm font-medium">{type}</div>
               </button>
@@ -148,7 +148,7 @@ export default function NewContentPage() {
           </div>
           {formData.type === 'POEMS' && (
             <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg flex items-start gap-2">
-              <Star className="w-5 h-5 text-purple-600 mt-0.5 fill-purple-600" />
+              <Star className="w-5 h-5 mt-0.5" />
               <p className="text-sm text-purple-700 font-tamil">
                 <strong>Poem Mode:</strong> Your title and content will use the beautiful Baloo Thambi 2 font for an artistic poetry display!
               </p>
