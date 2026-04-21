@@ -38,7 +38,8 @@ export class CreateContentUseCase {
     }
 
     // Ensure unique slug
-    const slug = await this.ensureUniqueSlug(dto.title);
+    // TODO: Pass slug to Content.create() once entity supports custom slugs
+    const _slug = await this.ensureUniqueSlug(dto.title);
 
     // Create content entity
     const content = Content.create({

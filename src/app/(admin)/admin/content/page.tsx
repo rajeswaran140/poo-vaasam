@@ -8,10 +8,8 @@
 
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 
 export default function ContentListPage() {
-  const router = useRouter();
   const [content, setContent] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
