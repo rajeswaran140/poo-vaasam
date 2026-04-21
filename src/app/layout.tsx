@@ -44,7 +44,7 @@ export const metadata: Metadata = {
     },
   },
   alternates: {
-    canonical: "https://poo-vaasam.com",
+    canonical: "https://tamilagaval.com",
   },
   openGraph: {
     title: "தமிழகவல் | தமிழ் இலக்கிய தளம்",
