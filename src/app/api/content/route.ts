@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { CategoryRepository } from '@/infrastructure/database/CategoryRepository';
 import { TagRepository } from '@/infrastructure/database/TagRepository';
+import { requireAuth, unauthorizedResponse } from '@/lib/auth-helper';
 
 const contentRepo = new ContentRepository();
 const categoryRepo = new CategoryRepository();
@@ -16,9 +17,18 @@ const tagRepo = new TagRepository();
 /**
  * DELETE /api/content?id=xxx
  * Delete content by ID
+ *
+ * @requires Authentication
  */
 export async function DELETE(request: NextRequest) {
   try {
+    // Verify authentication
+    try {
+      await requireAuth(request);
+    } catch {
+      return unauthorizedResponse();
+    }
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
@@ -67,9 +77,18 @@ export async function DELETE(request: NextRequest) {
 /**
  * PUT /api/content
  * Update existing content
+ *
+ * @requires Authentication
  */
 export async function PUT(request: NextRequest) {
   try {
+    // Verify authentication
+    try {
+      await requireAuth(request);
+    } catch {
+      return unauthorizedResponse();
+    }
+
     const body = await request.json();
     const { id, ...updateData } = body;
 

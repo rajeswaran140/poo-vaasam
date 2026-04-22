@@ -11,6 +11,7 @@ import { TagRepository } from '@/infrastructure/database/TagRepository';
 import { CreateContentUseCase } from '@/application/use-cases/CreateContentUseCase';
 import { GetContentUseCase } from '@/application/use-cases/GetContentUseCase';
 import { ContentType, ContentStatus } from '@/types/content';
+import { requireAuth, unauthorizedResponse } from '@/lib/auth-helper';
 
 // Initialize repositories
 const contentRepo = new ContentRepository();
@@ -34,9 +35,18 @@ const getContentUseCase = new GetContentUseCase(
  * GET /api/test/content
  *
  * Test retrieving content
+ *
+ * @requires Authentication
  */
 export async function GET(request: NextRequest) {
   try {
+    // Verify authentication
+    try {
+      await requireAuth(request);
+    } catch {
+      return unauthorizedResponse();
+    }
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     const slug = searchParams.get('slug');
@@ -153,9 +163,18 @@ export async function GET(request: NextRequest) {
  * POST /api/test/content
  *
  * Test creating content
+ *
+ * @requires Authentication
  */
 export async function POST(request: NextRequest) {
   try {
+    // Verify authentication
+    try {
+      await requireAuth(request);
+    } catch {
+      return unauthorizedResponse();
+    }
+
     const body = await request.json();
     const { action } = body;
 
