@@ -20,13 +20,19 @@ export interface AuthContext {
  */
 export async function validateAuth(request: NextRequest): Promise<AuthContext> {
   try {
+    console.log('[AUTH] Validating authentication...');
+
     // Get cookies from the request object
     const cookieHeader = request.headers.get('cookie') || '';
+    console.log('[AUTH] Cookie header exists:', !!cookieHeader);
+
     const cookies = parseCookies(cookieHeader);
+    console.log('[AUTH] Parsed cookies count:', Object.keys(cookies).length);
 
     // Check for Cognito authentication tokens
     // AWS Amplify stores tokens with pattern: CognitoIdentityServiceProvider.{clientId}.{username}.{tokenType}
     const cookieNames = Object.keys(cookies);
+    console.log('[AUTH] Cookie names:', cookieNames.filter(n => n.includes('Cognito')));
 
     const hasIdToken = cookieNames.some(name =>
       name.includes('CognitoIdentityServiceProvider') &&
@@ -43,10 +49,13 @@ export async function validateAuth(request: NextRequest): Promise<AuthContext> {
       name.includes('.LastAuthUser')
     );
 
+    console.log('[AUTH] hasIdToken:', hasIdToken, 'hasAccessToken:', hasAccessToken, 'hasLastAuthUser:', !!lastAuthUserCookie);
+
     // User is authenticated if they have either idToken or accessToken
     const isAuthenticated = hasIdToken || hasAccessToken || !!lastAuthUserCookie;
 
     if (!isAuthenticated) {
+      console.log('[AUTH] User not authenticated');
       return { isAuthenticated: false };
     }
 
@@ -55,15 +64,17 @@ export async function validateAuth(request: NextRequest): Promise<AuthContext> {
     if (lastAuthUserCookie) {
       // LastAuthUser cookie value is the username/email
       email = cookies[lastAuthUserCookie];
+      console.log('[AUTH] User email:', email);
     }
 
+    console.log('[AUTH] User authenticated successfully');
     return {
       isAuthenticated: true,
       email,
       userId: email, // Using email as userId for now
     };
   } catch (error) {
-    console.error('Auth validation error:', error);
+    console.error('[AUTH] Validation error:', error);
     return { isAuthenticated: false };
   }
 }

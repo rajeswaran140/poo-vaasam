@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seed Database - Tamil Web</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #7C3AED;
+            margin-bottom: 20px;
+        }
+        button {
+            background: #7C3AED;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #6D28D9;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 6px;
+            display: none;
+        }
+        .success {
+            background: #D1FAE5;
+            border: 1px solid #10B981;
+            color: #065F46;
+        }
+        .error {
+            background: #FEE2E2;
+            border: 1px solid #EF4444;
+            color: #991B1B;
+        }
+        .loading {
+            background: #DBEAFE;
+            border: 1px solid #3B82F6;
+            color: #1E40AF;
+        }
+        pre {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌱 Tamil Web - Database Seeder</h1>
+        <p>Create sample categories, tags, and content for testing.</p>
+
+        <button id="seedBtn" onclick="seedDatabase()">Seed Database</button>
+        <button onclick="createCategory()">Create Test Category</button>
+        <button onclick="createTag()">Create Test Tag</button>
+        <button onclick="createContent()">Create Test Content</button>
+
+        <div id="result"></div>
+    </div>
+
+    <script>
+        const API_URL = 'https://tamilagaval.com';
+
+        function showResult(message, type = 'success') {
+            const result = document.getElementById('result');
+            result.style.display = 'block';
+            result.className = type;
+            result.innerHTML = message;
+        }
+
+        async function seedDatabase() {
+            const btn = document.getElementById('seedBtn');
+            btn.disabled = true;
+            showResult('⏳ Seeding database...', 'loading');
+
+            try {
+                const response = await fetch(`${API_URL}/api/test/content`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        action: 'seed'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showResult(`
+                        <strong>✅ Database seeded successfully!</strong><br><br>
+                        <strong>Created:</strong><br>
+                        • ${data.data.categories} categories<br>
+                        • ${data.data.tags} tags<br>
+                        • ${data.data.content} content item(s)<br><br>
+                        <strong>Sample Content ID:</strong> ${data.data.sampleContentId}<br><br>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `, 'success');
+                } else {
+                    showResult(`
+                        <strong>❌ Failed to seed database</strong><br><br>
+                        Error: ${data.error || 'Unknown error'}<br><br>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `, 'error');
+                }
+            } catch (error) {
+                showResult(`
+                    <strong>❌ Request failed</strong><br><br>
+                    ${error.message}<br><br>
+                    Make sure you're logged into the admin panel.
+                `, 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function createCategory() {
+            showResult('⏳ Creating test category...', 'loading');
+
+            try {
+                const response = await fetch(`${API_URL}/api/test/content`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        action: 'create-category',
+                        name: 'தமிழ் பாடல்கள்',
+                        description: 'தமிழ் திரைப்பட பாடல்களின் தொகுப்பு'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showResult(`
+                        <strong>✅ Category created!</strong><br><br>
+                        <pre>${JSON.stringify(data.data, null, 2)}</pre>
+                    `, 'success');
+                } else {
+                    showResult(`❌ Error: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                showResult(`❌ ${error.message}`, 'error');
+            }
+        }
+
+        async function createTag() {
+            showResult('⏳ Creating test tag...', 'loading');
+
+            try {
+                const response = await fetch(`${API_URL}/api/test/content`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        action: 'create-tag',
+                        name: 'காதல்'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showResult(`
+                        <strong>✅ Tag created!</strong><br><br>
+                        <pre>${JSON.stringify(data.data, null, 2)}</pre>
+                    `, 'success');
+                } else {
+                    showResult(`❌ Error: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                showResult(`❌ ${error.message}`, 'error');
+            }
+        }
+
+        async function createContent() {
+            showResult('⏳ Creating test content...', 'loading');
+
+            try {
+                const response = await fetch(`${API_URL}/api/test/content`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        action: 'create-content',
+                        type: 'SONGS',
+                        title: 'பூ வாசம்',
+                        body: 'பூ வாசம் வந்து என்னை கவர்ந்ததடி\nகாற்றில் மிதந்து வந்த மலரே',
+                        description: 'ஒரு அழகான தமிழ் காதல் பாடல்',
+                        author: 'இளையராஜா',
+                        status: 'PUBLISHED'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showResult(`
+                        <strong>✅ Content created!</strong><br><br>
+                        <pre>${JSON.stringify(data.data, null, 2)}</pre>
+                    `, 'success');
+                } else {
+                    showResult(`❌ Error: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                showResult(`❌ ${error.message}`, 'error');
+            }
+        }
+    </script>
+</body>
+</html>

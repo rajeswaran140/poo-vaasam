@@ -40,10 +40,14 @@ const getContentUseCase = new GetContentUseCase(
  */
 export async function GET(request: NextRequest) {
   try {
+    console.log('[API] GET /api/test/content - Starting request');
+
     // Verify authentication
     try {
-      await requireAuth(request);
-    } catch {
+      const auth = await requireAuth(request);
+      console.log('[API] Authentication successful:', auth.email);
+    } catch (authError) {
+      console.error('[API] Authentication failed:', authError);
       return unauthorizedResponse();
     }
 
