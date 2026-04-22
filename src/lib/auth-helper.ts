@@ -142,10 +142,13 @@ function parseCookies(cookieHeader: string): Record<string, string> {
   }
 
   cookieHeader.split(';').forEach(cookie => {
-    const parts = cookie.trim().split('=');
-    if (parts.length === 2) {
-      const name = decodeURIComponent(parts[0]);
-      const value = decodeURIComponent(parts[1]);
+    // Split on FIRST = only, since JWT tokens contain multiple = characters (base64 padding)
+    const trimmedCookie = cookie.trim();
+    const eqIndex = trimmedCookie.indexOf('=');
+
+    if (eqIndex > 0) {
+      const name = decodeURIComponent(trimmedCookie.slice(0, eqIndex));
+      const value = decodeURIComponent(trimmedCookie.slice(eqIndex + 1));
       cookies[name] = value;
     }
   });
