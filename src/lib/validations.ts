@@ -11,9 +11,7 @@ import { ContentType, ContentStatus } from '@/types/content';
  * Content Form Validation Schema
  */
 export const contentSchema = z.object({
-  type: z.nativeEnum(ContentType, {
-    errorMap: () => ({ message: 'Please select a valid content type' }),
-  }),
+  type: z.nativeEnum(ContentType),
   title: z
     .string()
     .min(1, 'Title is required')
@@ -147,7 +145,7 @@ export function validateData<T>(
 
   // Format Zod errors into a more user-friendly structure
   const errors: Record<string, string> = {};
-  result.error.errors.forEach((err) => {
+  result.error.issues.forEach((err: z.ZodIssue) => {
     const path = err.path.join('.');
     errors[path] = err.message;
   });
