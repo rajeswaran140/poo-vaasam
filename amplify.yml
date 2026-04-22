@@ -7,7 +7,17 @@ frontend:
         - npm install --legacy-peer-deps
     build:
       commands:
+        - echo "Building with APP_AWS_ACCESS_KEY_ID=${APP_AWS_ACCESS_KEY_ID:0:10}..."
+        - echo "Building with DYNAMODB_TABLE_NAME=${DYNAMODB_TABLE_NAME}"
         - npm run build
+  env:
+    variables:
+      APP_AWS_ACCESS_KEY_ID: $APP_AWS_ACCESS_KEY_ID
+      APP_AWS_SECRET_ACCESS_KEY: $APP_AWS_SECRET_ACCESS_KEY
+      DYNAMODB_TABLE_NAME: $DYNAMODB_TABLE_NAME
+      S3_BUCKET: $S3_BUCKET
+      S3_REGION: $S3_REGION
+      AWS_REGION: $AWS_REGION
   artifacts:
     baseDirectory: .next
     files:
