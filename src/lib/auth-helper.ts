@@ -5,7 +5,6 @@
  */
 
 import { NextRequest } from 'next/server';
-import { cookies } from 'next/headers';
 
 export interface AuthContext {
   isAuthenticated: boolean;
@@ -21,29 +20,31 @@ export interface AuthContext {
  */
 export async function validateAuth(request: NextRequest): Promise<AuthContext> {
   try {
-    // Get cookies from the request
-    const cookieStore = await cookies();
-    const allCookies = cookieStore.getAll();
+    // Get cookies from the request object
+    const cookieHeader = request.headers.get('cookie') || '';
+    const cookies = parseCookies(cookieHeader);
 
     // Check for Cognito authentication tokens
     // AWS Amplify stores tokens with pattern: CognitoIdentityServiceProvider.{clientId}.{username}.{tokenType}
-    const hasIdToken = allCookies.some(cookie =>
-      cookie.name.includes('CognitoIdentityServiceProvider') &&
-      cookie.name.includes('.idToken')
+    const cookieNames = Object.keys(cookies);
+
+    const hasIdToken = cookieNames.some(name =>
+      name.includes('CognitoIdentityServiceProvider') &&
+      name.includes('.idToken')
     );
 
-    const hasAccessToken = allCookies.some(cookie =>
-      cookie.name.includes('CognitoIdentityServiceProvider') &&
-      cookie.name.includes('.accessToken')
+    const hasAccessToken = cookieNames.some(name =>
+      name.includes('CognitoIdentityServiceProvider') &&
+      name.includes('.accessToken')
     );
 
-    const lastAuthUser = allCookies.find(cookie =>
-      cookie.name.includes('CognitoIdentityServiceProvider') &&
-      cookie.name.includes('.LastAuthUser')
+    const lastAuthUserCookie = cookieNames.find(name =>
+      name.includes('CognitoIdentityServiceProvider') &&
+      name.includes('.LastAuthUser')
     );
 
     // User is authenticated if they have either idToken or accessToken
-    const isAuthenticated = hasIdToken || hasAccessToken || !!lastAuthUser;
+    const isAuthenticated = hasIdToken || hasAccessToken || !!lastAuthUserCookie;
 
     if (!isAuthenticated) {
       return { isAuthenticated: false };
@@ -51,9 +52,9 @@ export async function validateAuth(request: NextRequest): Promise<AuthContext> {
 
     // Extract user email from LastAuthUser cookie if available
     let email: string | undefined;
-    if (lastAuthUser) {
+    if (lastAuthUserCookie) {
       // LastAuthUser cookie value is the username/email
-      email = lastAuthUser.value;
+      email = cookies[lastAuthUserCookie];
     }
 
     return {
@@ -114,4 +115,29 @@ export function isAdmin(authContext: AuthContext): boolean {
   // For now, all authenticated users are considered admins
   // In future, check user roles from Cognito groups
   return authContext.isAuthenticated;
+}
+
+/**
+ * Parse cookie header string into object
+ *
+ * @param cookieHeader - Cookie header string
+ * @returns Object with cookie names as keys and values
+ */
+function parseCookies(cookieHeader: string): Record<string, string> {
+  const cookies: Record<string, string> = {};
+
+  if (!cookieHeader) {
+    return cookies;
+  }
+
+  cookieHeader.split(';').forEach(cookie => {
+    const parts = cookie.trim().split('=');
+    if (parts.length === 2) {
+      const name = decodeURIComponent(parts[0]);
+      const value = decodeURIComponent(parts[1]);
+      cookies[name] = value;
+    }
+  });
+
+  return cookies;
 }
