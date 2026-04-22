@@ -80,3 +80,23 @@ p {
   font-weight: 700;
   letter-spacing: 0.01em;
 }
+
+/* React Transliterate Custom Styling */
+.transliteration-suggestions {
+  @apply font-tamil;
+  font-size: 0.95rem;
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.15);
+  border: 2px solid rgb(233, 213, 255);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.transliteration-suggestion-item {
+  @apply font-tamil;
+  padding: 8px 12px;
+  transition: all 0.15s ease;
+}
+
+.transliteration-suggestion-item:hover {
+  background-color: rgb(243, 232, 255);
+}

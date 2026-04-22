@@ -1,14 +1,16 @@
 'use client';
 
 /**
- * Tamil Input Component
+ * Tamil Input Component with React Transliterate
  *
- * Smart input field with English-to-Tamil transliteration
- * Type in English, get Tamil output automatically
+ * Provides accurate English-to-Tamil transliteration using Google's algorithm
+ * Type in English, get accurate Tamil output with word suggestions
  */
 
-import { useState, useEffect, ChangeEvent } from 'react';
-import { transliterateTamil } from '@/lib/utils/tamil-transliteration';
+import { useState } from 'react';
+import { ReactTransliterate } from 'react-transliterate';
+import 'react-transliterate/dist/index.css';
+import { Languages, Keyboard } from 'lucide-react';
 
 interface TamilInputProps {
   value: string;
@@ -24,124 +26,113 @@ interface TamilInputProps {
 export function TamilInput({
   value,
   onChange,
-  placeholder = 'Type in English (e.g., "vanakkam")',
+  placeholder = 'Type in English to get Tamil...',
   multiline = false,
   rows = 4,
   className = '',
   label,
   required = false,
 }: TamilInputProps) {
-  const [transliterationEnabled, setTransliterationEnabled] = useState(true);
-  const [romanizedInput, setRomanizedInput] = useState('');
-
-  // Reset romanized input when value changes externally
-  useEffect(() => {
-    if (!transliterationEnabled) {
-      setRomanizedInput(value);
-    }
-  }, [value, transliterationEnabled]);
-
-  const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const inputValue = e.target.value;
-
-    if (transliterationEnabled) {
-      // Store romanized input
-      setRomanizedInput(inputValue);
-
-      // Convert to Tamil and pass to parent
-      const tamilText = transliterateTamil(inputValue);
-      onChange(tamilText);
-    } else {
-      // Direct Tamil input
-      onChange(inputValue);
-    }
-  };
-
-  const toggleTransliteration = () => {
-    const newState = !transliterationEnabled;
-    setTransliterationEnabled(newState);
-
-    if (newState) {
-      // Switching to transliteration mode - convert current value
-      setRomanizedInput('');
-    } else {
-      // Switching to direct Tamil mode
-      setRomanizedInput(value);
-    }
-  };
-
-  const inputClasses = `
-    w-full px-4 py-3 border border-gray-300 rounded-lg
-    focus:ring-2 focus:ring-purple-500 focus:border-transparent
-    transition-all duration-200
-    font-tamil
-    ${transliterationEnabled ? 'bg-purple-50 border-purple-300' : 'bg-white'}
-    ${className}
-  `;
+  const [isTransliterationEnabled, setIsTransliterationEnabled] = useState(true);
 
   return (
     <div className="space-y-2">
       {/* Label and Toggle */}
-      <div className="flex items-center justify-between">
-        {label && (
+      {label && (
+        <div className="flex items-center justify-between">
           <label className="block text-sm font-medium text-gray-700">
-            {label} {required && <span className="text-red-500">*</span>}
+            {label}
+            {required && <span className="text-red-500 ml-1">*</span>}
           </label>
-        )}
-
-        {/* Transliteration Toggle */}
-        <button
-          type="button"
-          onClick={toggleTransliteration}
-          className={`
-            flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium
-            transition-all duration-200
-            ${
-              transliterationEnabled
-                ? 'bg-purple-100 text-purple-700 border-2 border-purple-300'
-                : 'bg-gray-100 text-gray-600 border-2 border-gray-300'
+          <button
+            type="button"
+            onClick={() => setIsTransliterationEnabled(!isTransliterationEnabled)}
+            className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-full bg-purple-50 text-purple-700 hover:bg-purple-100 transition-all border-2 border-purple-200 font-medium"
+            title={
+              isTransliterationEnabled
+                ? 'Switch to direct Tamil input'
+                : 'Switch to English transliteration'
             }
-            hover:shadow-md
-          `}
-          title={transliterationEnabled ? 'Transliteration: ON (English → Tamil)' : 'Transliteration: OFF (Direct Tamil)'}
-        >
-          <span className="text-lg">🔤</span>
-          <span>{transliterationEnabled ? 'EN → தமிழ்' : 'Direct தமிழ்'}</span>
-        </button>
-      </div>
-
-      {/* Input Field */}
-      {multiline ? (
-        <textarea
-          value={transliterationEnabled ? romanizedInput : value}
-          onChange={handleInputChange}
-          placeholder={transliterationEnabled ? placeholder : 'Type in Tamil directly'}
-          rows={rows}
-          className={inputClasses}
-          required={required}
-        />
-      ) : (
-        <input
-          type="text"
-          value={transliterationEnabled ? romanizedInput : value}
-          onChange={handleInputChange}
-          placeholder={transliterationEnabled ? placeholder : 'Type in Tamil directly'}
-          className={inputClasses}
-          required={required}
-        />
-      )}
-
-      {/* Preview and Help */}
-      {transliterationEnabled && romanizedInput && (
-        <div className="flex items-start gap-2 text-sm">
-          <span className="text-gray-500">தமிழ் Output:</span>
-          <span className="font-tamil text-purple-700 font-medium">{value || '...'}</span>
+          >
+            {isTransliterationEnabled ? (
+              <>
+                <Languages className="w-3.5 h-3.5" />
+                EN → தமிழ்
+              </>
+            ) : (
+              <>
+                <Keyboard className="w-3.5 h-3.5" />
+                Direct தமிழ்
+              </>
+            )}
+          </button>
         </div>
       )}
 
-      {transliterationEnabled && (
-        <div className="text-xs text-gray-500">
-          💡 <strong>Tip:</strong> Type &quot;vanakkam&quot; → வணக்கம், &quot;poo&quot; → பூ, &quot;tamil&quot; → தமிழ்
+      {/* Input Field with Transliteration */}
+      {isTransliterationEnabled ? (
+        <ReactTransliterate
+          value={value}
+          onChangeText={onChange}
+          lang="ta"
+          placeholder={placeholder}
+          containerClassName="relative"
+          activeItemStyles={{
+            backgroundColor: '#7C3AED',
+            color: 'white',
+          }}
+          renderComponent={(props: any) =>
+            multiline ? (
+              <textarea
+                {...props}
+                rows={rows}
+                className={`w-full px-4 py-3 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent font-tamil resize-y bg-purple-50 transition-all ${className}`}
+                required={required}
+              />
+            ) : (
+              <input
+                {...props}
+                type="text"
+                className={`w-full px-4 py-3 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent font-tamil bg-purple-50 transition-all ${className}`}
+                required={required}
+              />
+            )
+          }
+        />
+      ) : (
+        // Direct Tamil Input (no transliteration)
+        <>
+          {multiline ? (
+            <textarea
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              placeholder="Type in Tamil directly using your keyboard"
+              rows={rows}
+              className={`w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent font-tamil resize-y transition-all ${className}`}
+              required={required}
+            />
+          ) : (
+            <input
+              type="text"
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              placeholder="Type in Tamil directly using your keyboard"
+              className={`w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent font-tamil transition-all ${className}`}
+              required={required}
+            />
+          )}
+        </>
+      )}
+
+      {/* Help Text */}
+      {isTransliterationEnabled && (
+        <div className="flex items-start gap-2 text-xs text-purple-700 bg-purple-50 px-3 py-2 rounded-md border border-purple-200">
+          <span className="text-base">💡</span>
+          <div>
+            <strong>How it works:</strong> Type in English and press <kbd className="px-1 py-0.5 bg-white border border-purple-300 rounded text-xs">Space</kbd> to see Tamil suggestions.
+            <br />
+            <span className="text-purple-600">Examples: vanakkam → வணக்கம், poo → பூ, tamil → தமிழ், ilayaraja → இளையராஜா</span>
+          </div>
         </div>
       )}
     </div>
