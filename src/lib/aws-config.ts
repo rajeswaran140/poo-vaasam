@@ -8,10 +8,15 @@
  */
 
 // AWS Credentials
-// Amplify doesn't allow env vars starting with "AWS_", so we use "APP_AWS_" prefix
-// Try APP_AWS_ prefix first (production), then AWS_ prefix (local development)
-const accessKeyId = process.env.APP_AWS_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID;
-const secretAccessKey = process.env.APP_AWS_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY;
+// Amplify Hosting Gen 2 doesn't pass non-NEXT_PUBLIC env vars to runtime
+// So we need to use NEXT_PUBLIC_ prefix (these get baked into the build)
+// Try multiple prefixes for compatibility
+const accessKeyId = process.env.NEXT_PUBLIC_APP_AWS_ACCESS_KEY_ID ||
+                     process.env.APP_AWS_ACCESS_KEY_ID ||
+                     process.env.AWS_ACCESS_KEY_ID;
+const secretAccessKey = process.env.NEXT_PUBLIC_APP_AWS_SECRET_ACCESS_KEY ||
+                         process.env.APP_AWS_SECRET_ACCESS_KEY ||
+                         process.env.AWS_SECRET_ACCESS_KEY;
 
 // Debug logging
 if (typeof window === 'undefined') {
@@ -41,7 +46,7 @@ export const awsConfig = {
  */
 export const dynamoDBConfig = {
   ...awsConfig,
-  tableName: process.env.DYNAMODB_TABLE_NAME || 'TamilWebContent',
+  tableName: process.env.NEXT_PUBLIC_DYNAMODB_TABLE_NAME || process.env.DYNAMODB_TABLE_NAME || 'TamilWebContent',
 };
 
 /**
