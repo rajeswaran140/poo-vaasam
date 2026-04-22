@@ -25,7 +25,7 @@ export default function NewContentPage() {
     body: '',
     description: '',
     author: '',
-    status: 'DRAFT',
+    status: 'PUBLISHED',
     categoryIds: [] as string[],
     tagIds: [] as string[],
     featuredImage: '',

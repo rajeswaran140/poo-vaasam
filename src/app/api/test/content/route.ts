@@ -59,8 +59,17 @@ export async function GET(request: NextRequest) {
     // Test different actions
     switch (action) {
       case 'list':
-        // List all published content
-        const allContent = await contentRepo.findAll({ limit: 10 });
+        // List all content (both draft and published) - admin view
+        // First get published, then draft
+        const published = await contentRepo.findAll({ limit: 50, status: ContentStatus.PUBLISHED });
+        const draft = await contentRepo.findAll({ limit: 50, status: ContentStatus.DRAFT });
+        const allContent = {
+          items: [...draft.items, ...published.items], // Show drafts first
+          total: draft.total + published.total,
+          limit: 100,
+          offset: 0,
+          hasMore: false,
+        };
         return NextResponse.json({
           success: true,
           data: allContent,
