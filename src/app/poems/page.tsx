@@ -45,24 +45,60 @@ export default async function PoemsPage() {
             <p className="text-gray-600 font-tamil">புதிய உள்ளடக்கத்திற்காக பின்னர் சரிபார்க்கவும்</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {poems.map((poem: any) => (
               <Link
                 key={poem.id}
                 href={`/content/${poem.id}`}
-                className="group bg-white rounded-xl shadow-sm border border-gray-200 p-8 hover:shadow-xl transition-all"
+                className="group flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-xl hover:border-green-300 transition-all duration-300 overflow-hidden"
               >
-                <h3 className="text-3xl font-bold text-gray-900 font-baloo-thambi-2 mb-4 group-hover:text-green-600 transition-colors">
-                  {poem.title}
-                </h3>
-                <div className="text-gray-700 font-tamil text-lg leading-relaxed whitespace-pre-wrap">
-                  {poem.body.split('\n').slice(0, 4).join('\n')}
-                  {poem.body.split('\n').length > 4 && '\n...'}
+                {/* Featured Image or Placeholder */}
+                <div className="relative w-full aspect-video bg-gradient-to-br from-green-50 to-green-100 overflow-hidden">
+                  {poem.featuredImage ? (
+                    <img
+                      src={poem.featuredImage}
+                      alt={poem.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <div className="text-center">
+                        <div className="text-6xl mb-2">📝</div>
+                        <p className="text-sm text-green-600 font-tamil">கவிதை</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div className="mt-6 pt-4 border-t border-gray-200">
-                  <span className="text-sm text-gray-500 font-tamil">
-                    - {poem.author}
-                  </span>
+
+                {/* Content */}
+                <div className="flex-1 flex flex-col p-4 sm:p-6">
+                  <h3 className="text-xl sm:text-2xl font-bold text-gray-900 font-tamil mb-3 group-hover:text-green-600 transition-colors line-clamp-2">
+                    {poem.title}
+                  </h3>
+
+                  {/* Description or Body Preview */}
+                  {poem.description ? (
+                    <p className="text-sm sm:text-base text-gray-600 font-tamil mb-4 line-clamp-3">
+                      {poem.description}
+                    </p>
+                  ) : (
+                    <div className="text-sm sm:text-base text-gray-700 font-tamil mb-4 leading-relaxed line-clamp-4">
+                      {poem.body.split('\n').slice(0, 3).join('\n')}
+                      {poem.body.split('\n').length > 3 && '...'}
+                    </div>
+                  )}
+
+                  {/* Author & Meta */}
+                  <div className="mt-auto pt-4 border-t border-gray-100 flex items-center justify-between">
+                    <span className="text-xs sm:text-sm text-gray-500 font-tamil">
+                      - {poem.author}
+                    </span>
+                    {poem.viewCount > 0 && (
+                      <span className="text-xs text-gray-400">
+                        👁️ {poem.viewCount}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </Link>
             ))}
