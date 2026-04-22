@@ -52,13 +52,13 @@ export default async function PoemsPage() {
                 href={`/content/${poem.id}`}
                 className="group bg-white rounded-xl shadow-sm border border-gray-200 p-8 hover:shadow-xl transition-all"
               >
-                <h3 className="text-2xl font-bold text-gray-900 font-tamil mb-4 group-hover:text-green-600 transition-colors">
+                <h3 className="text-3xl font-bold text-gray-900 font-baloo-thambi-2 mb-4 group-hover:text-green-600 transition-colors">
                   {poem.title}
                 </h3>
-                <pre className="text-gray-700 font-tamil whitespace-pre-wrap leading-relaxed">
+                <div className="text-gray-700 font-tamil text-lg leading-relaxed whitespace-pre-wrap">
                   {poem.body.split('\n').slice(0, 4).join('\n')}
                   {poem.body.split('\n').length > 4 && '\n...'}
-                </pre>
+                </div>
                 <div className="mt-6 pt-4 border-t border-gray-200">
                   <span className="text-sm text-gray-500 font-tamil">
                     - {poem.author}
