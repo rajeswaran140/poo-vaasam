@@ -10,6 +10,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { TamilInput } from '@/components/admin/TamilInput';
 import { Music, Feather, Mic, BookOpen, PenTool, Star } from 'lucide-react';
+import { FEATURES } from '@/config/features';
 
 export default function NewContentPage() {
   const router = useRouter();
@@ -327,28 +328,30 @@ export default function NewContentPage() {
           </div>
         </div>
 
-        {/* SEO */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            SEO Settings
-          </h2>
+        {/* SEO - Only shown if feature is enabled */}
+        {FEATURES.ADMIN.SEO_FIELDS && (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">
+              SEO Settings
+            </h2>
 
-          <TamilInput
-            label="SEO Title"
-            value={formData.seoTitle}
-            onChange={(value) => setFormData({ ...formData, seoTitle: value })}
-            placeholder="Auto-generated from title if left empty"
-          />
+            <TamilInput
+              label="SEO Title"
+              value={formData.seoTitle}
+              onChange={(value) => setFormData({ ...formData, seoTitle: value })}
+              placeholder="Auto-generated from title if left empty"
+            />
 
-          <TamilInput
-            label="SEO Description"
-            value={formData.seoDescription}
-            onChange={(value) => setFormData({ ...formData, seoDescription: value })}
-            placeholder="Auto-generated from description if left empty"
-            multiline
-            rows={2}
+            <TamilInput
+              label="SEO Description"
+              value={formData.seoDescription}
+              onChange={(value) => setFormData({ ...formData, seoDescription: value })}
+              placeholder="Auto-generated from description if left empty"
+              multiline
+              rows={2}
           />
-        </div>
+          </div>
+        )}
 
         {/* Submit Buttons */}
         <div className="flex items-center justify-between bg-white rounded-lg shadow-sm border border-gray-200 p-6">

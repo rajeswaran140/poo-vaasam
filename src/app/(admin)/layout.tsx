@@ -13,6 +13,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import '@/lib/amplify-config';
 import { LucideIcon, LayoutDashboard, FileText, Folder, Tag, Image, Globe, Settings, LogOut, Plus } from 'lucide-react';
+import { FEATURES } from '@/config/features';
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -65,18 +66,26 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           <NavLink href="/admin/tags" icon={Tag}>
             Tags
           </NavLink>
-          <NavLink href="/admin/media" icon={Image}>
-            Media Library
-          </NavLink>
+
+          {/* Media Library - Only shown if feature is enabled */}
+          {FEATURES.ADMIN.MEDIA_LIBRARY && (
+            <NavLink href="/admin/media" icon={Image}>
+              Media Library
+            </NavLink>
+          )}
 
           <div className="border-t border-purple-600 my-4 mx-4"></div>
 
           <NavLink href="/" icon={Globe}>
             View Site
           </NavLink>
-          <NavLink href="/admin/settings" icon={Settings}>
-            Settings
-          </NavLink>
+
+          {/* Settings - Only shown if feature is enabled */}
+          {FEATURES.ADMIN.SETTINGS_PAGE && (
+            <NavLink href="/admin/settings" icon={Settings}>
+              Settings
+            </NavLink>
+          )}
         </nav>
 
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-purple-600">
