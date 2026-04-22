@@ -22,10 +22,18 @@ import { dynamoDBConfig } from '@/lib/aws-config';
  * Create DynamoDB Client
  */
 const createDynamoDBClient = () => {
-  const client = new DynamoDBClient({
+  // Only include credentials if they're explicitly provided (local development)
+  // In production (AWS Amplify), omit credentials to use the IAM role automatically
+  const clientConfig: any = {
     region: dynamoDBConfig.region,
-    credentials: dynamoDBConfig.credentials,
-  });
+  };
+
+  // Only add credentials if they exist (local development)
+  if (dynamoDBConfig.credentials) {
+    clientConfig.credentials = dynamoDBConfig.credentials;
+  }
+
+  const client = new DynamoDBClient(clientConfig);
 
   // Create DocumentClient for easier object handling
   const docClient = DynamoDBDocumentClient.from(client, {
