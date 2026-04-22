@@ -23,7 +23,9 @@ export default function CategoriesPage() {
 
   async function loadCategories() {
     try {
-      const response = await fetch('/api/test/content?action=categories');
+      const response = await fetch('/api/test/content?action=categories', {
+        credentials: 'include', // Send cookies for authentication
+      });
       const data = await response.json();
       if (data.success) {
         setCategories(data.data);
@@ -41,6 +43,7 @@ export default function CategoriesPage() {
     try {
       const response = await fetch('/api/test/content', {
         method: 'POST',
+        credentials: 'include', // Send cookies for authentication
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'create-category',

@@ -20,7 +20,9 @@ export default function TagsPage() {
 
   async function loadTags() {
     try {
-      const response = await fetch('/api/test/content?action=tags');
+      const response = await fetch('/api/test/content?action=tags', {
+        credentials: 'include', // Send cookies for authentication
+      });
       const data = await response.json();
       if (data.success) {
         setTags(data.data);
@@ -38,6 +40,7 @@ export default function TagsPage() {
     try {
       const response = await fetch('/api/test/content', {
         method: 'POST',
+        credentials: 'include', // Send cookies for authentication
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'create-tag',

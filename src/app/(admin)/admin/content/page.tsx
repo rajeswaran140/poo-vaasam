@@ -19,7 +19,9 @@ export default function ContentListPage() {
 
   async function loadContent() {
     try {
-      const response = await fetch('/api/test/content?action=list');
+      const response = await fetch('/api/test/content?action=list', {
+        credentials: 'include', // Send cookies for authentication
+      });
       const data = await response.json();
       if (data.success) {
         setContent(data.data.items);
@@ -39,6 +41,7 @@ export default function ContentListPage() {
     try {
       const response = await fetch(`/api/content?id=${id}`, {
         method: 'DELETE',
+        credentials: 'include', // Send cookies for authentication
       });
 
       const data = await response.json();

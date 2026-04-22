@@ -63,6 +63,7 @@ export default function NewContentPage() {
     try {
       const response = await fetch('/api/test/content', {
         method: 'POST',
+        credentials: 'include', // Send cookies for authentication
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'create-content',

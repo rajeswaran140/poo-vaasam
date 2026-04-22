@@ -41,7 +41,9 @@ export default function EditContentPage({ params }: PageProps) {
 
       try {
         // Load content
-        const contentRes = await fetch(`/api/test/content?id=${resolvedParams.id}`);
+        const contentRes = await fetch(`/api/test/content?id=${resolvedParams.id}`, {
+          credentials: 'include', // Send cookies for authentication
+        });
         const contentData = await contentRes.json();
 
         if (contentData.success) {
@@ -63,8 +65,12 @@ export default function EditContentPage({ params }: PageProps) {
 
         // Load categories and tags
         const [categoriesRes, tagsRes] = await Promise.all([
-          fetch('/api/test/content?action=categories'),
-          fetch('/api/test/content?action=tags'),
+          fetch('/api/test/content?action=categories', {
+            credentials: 'include', // Send cookies for authentication
+          }),
+          fetch('/api/test/content?action=tags', {
+            credentials: 'include', // Send cookies for authentication
+          }),
         ]);
 
         const categoriesData = await categoriesRes.json();
@@ -89,6 +95,7 @@ export default function EditContentPage({ params }: PageProps) {
     try {
       const response = await fetch('/api/content', {
         method: 'PUT',
+        credentials: 'include', // Send cookies for authentication
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: contentId,
