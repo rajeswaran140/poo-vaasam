@@ -7,12 +7,16 @@
  * For local development: credentials come from .env.local
  */
 
-// Only include credentials if they're explicitly set (local development)
-// In AWS Amplify, the SDK will use the service role automatically
-const credentials = process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY
+// AWS Credentials
+// Amplify doesn't allow env vars starting with "AWS_", so we use "APP_AWS_" prefix
+// Try APP_AWS_ prefix first (production), then AWS_ prefix (local development)
+const accessKeyId = process.env.APP_AWS_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID;
+const secretAccessKey = process.env.APP_AWS_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY;
+
+const credentials = accessKeyId && secretAccessKey
   ? {
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      accessKeyId,
+      secretAccessKey,
     }
   : undefined;
 
