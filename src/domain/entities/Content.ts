@@ -117,6 +117,8 @@ export class Content {
     const id = this.generateId();
     const now = new Date();
     const titleSlug = generateSlug(dto.title);
+    const status = dto.status || ContentStatus.DRAFT;
+    const isPublished = status === ContentStatus.PUBLISHED;
 
     return new Content(
       id,
@@ -126,7 +128,7 @@ export class Content {
       dto.body,
       dto.description,
       dto.author,
-      dto.status || ContentStatus.DRAFT,
+      status,
       dto.featuredImage,
       dto.audioUrl,
       dto.audioDuration,
@@ -137,7 +139,7 @@ export class Content {
       dto.seoDescription,
       now,
       now,
-      undefined // Not published yet
+      isPublished ? now : undefined // Set publishedAt if created as PUBLISHED
     );
   }
 
