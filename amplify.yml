@@ -3,6 +3,7 @@ frontend:
   phases:
     preBuild:
       commands:
+        - npm config set legacy-peer-deps true
         - npm install --legacy-peer-deps
     build:
       commands:
