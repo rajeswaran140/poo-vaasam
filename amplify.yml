@@ -1,13 +1,5 @@
 version: 1
 frontend:
-  env:
-    variables:
-      APP_AWS_ACCESS_KEY_ID: $APP_AWS_ACCESS_KEY_ID
-      APP_AWS_SECRET_ACCESS_KEY: $APP_AWS_SECRET_ACCESS_KEY
-      AWS_REGION: $AWS_REGION
-      DYNAMODB_TABLE_NAME: $DYNAMODB_TABLE_NAME
-      S3_BUCKET: $S3_BUCKET
-      S3_REGION: $S3_REGION
   phases:
     preBuild:
       commands:
