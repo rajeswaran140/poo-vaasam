@@ -264,7 +264,7 @@ export function PoemReader({ content }: PoemReaderProps) {
           style={{
             // Mobile-first responsive font sizes
             fontSize: 'clamp(1rem, 2.5vw, 1.375rem)',
-            lineHeight: '1.8',
+            lineHeight: '1.584',
             letterSpacing: '0.5px',
             wordSpacing: '0.1em',
             // Better readability on all devices
