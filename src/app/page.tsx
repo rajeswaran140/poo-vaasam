@@ -90,9 +90,7 @@ export default async function HomePage() {
                 <div className="space-y-8">
                   <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-extrabold font-poem leading-tight tracking-normal">
                     <span className="block mb-3 text-white drop-shadow-2xl">படியுங்கள். கேளுங்கள்.</span>
-                    <span className="block text-yellow-300 drop-shadow-2xl" style={{
-                      textShadow: '0 0 40px rgba(253, 224, 71, 0.5), 0 0 20px rgba(253, 224, 71, 0.3)',
-                    }}>
+                    <span className="block text-yellow-300">
                       அனுபவித்து மகிழுங்கள்.
                     </span>
                   </h1>
