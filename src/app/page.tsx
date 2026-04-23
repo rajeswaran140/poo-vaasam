@@ -86,35 +86,33 @@ export default async function HomePage() {
                   <span className="font-bold font-tamil">முற்றிலும் இலவசம்</span>
                 </div>
 
-                {/* Main Headline - Reduced Font Size by 25% */}
-                <div className="space-y-6">
-                  <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-5xl font-extrabold font-tamil leading-tight tracking-tight">
-                    படியுங்கள். கேளுங்கள்.
-                    <br />
-                    <span className="bg-gradient-to-r from-orange-200 to-yellow-200 bg-clip-text text-transparent">
+                {/* Main Headline - Optimized Typography */}
+                <div className="space-y-8">
+                  <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-5xl font-extrabold font-tamil leading-snug tracking-normal">
+                    <span className="block mb-3">படியுங்கள். கேளுங்கள்.</span>
+                    <span className="block bg-gradient-to-r from-orange-200 to-yellow-200 bg-clip-text text-transparent">
                       அனுபவியுங்கள்.
                     </span>
                   </h1>
-                  <p className="text-lg sm:text-xl lg:text-2xl text-white/90 font-tamil leading-relaxed font-light max-w-3xl mx-auto">
-                    தமிழ் இலக்கியத்தின் எல்லையற்ற உலகம்.
-                    <br />
-                    எப்போதும் இலவசம்.
+                  <p className="text-lg sm:text-xl lg:text-2xl text-white/90 font-tamil leading-loose font-light max-w-3xl mx-auto">
+                    <span className="block">தமிழ் இலக்கியத்தின் எல்லையற்ற உலகம்.</span>
+                    <span className="block mt-2">எப்போதும் இலவசம்.</span>
                   </p>
                 </div>
 
-                {/* Feature Pills */}
-                <div className="flex flex-wrap gap-3 justify-center">
-                  <div className="flex items-center gap-2.5 bg-white/15 backdrop-blur-sm rounded-xl px-5 py-3 border border-white/20 shadow-lg">
+                {/* Feature Pills - Consistent Sizing */}
+                <div className="flex flex-wrap gap-4 justify-center items-center">
+                  <div className="flex items-center gap-3 bg-white/15 backdrop-blur-sm rounded-xl px-6 py-3.5 border border-white/20 shadow-lg">
                     <span className="text-2xl">📖</span>
-                    <span className="font-semibold font-tamil">வாசிப்பு</span>
+                    <span className="font-semibold font-tamil text-base">வாசிப்பு</span>
                   </div>
-                  <div className="flex items-center gap-2.5 bg-white/15 backdrop-blur-sm rounded-xl px-5 py-3 border border-white/20 shadow-lg">
+                  <div className="flex items-center gap-3 bg-white/15 backdrop-blur-sm rounded-xl px-6 py-3.5 border border-white/20 shadow-lg">
                     <span className="text-2xl">🎧</span>
-                    <span className="font-semibold font-tamil">கேட்டல்</span>
+                    <span className="font-semibold font-tamil text-base">கேட்டல்</span>
                   </div>
-                  <div className="flex items-center gap-2.5 bg-white/15 backdrop-blur-sm rounded-xl px-5 py-3 border border-white/20 shadow-lg">
+                  <div className="flex items-center gap-3 bg-white/15 backdrop-blur-sm rounded-xl px-6 py-3.5 border border-white/20 shadow-lg">
                     <span className="text-2xl">🚫</span>
-                    <span className="font-semibold font-tamil text-sm">விளம்பரங்கள் இல்லை</span>
+                    <span className="font-semibold font-tamil text-base">விளம்பரங்கள் இல்லை</span>
                   </div>
                 </div>
 
@@ -148,10 +146,10 @@ export default async function HomePage() {
         <div className="container mx-auto px-4">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-16">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4 font-tamil">
+            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-6 font-tamil leading-snug">
               ஏன் தமிழகவல்?
             </h2>
-            <p className="text-lg text-gray-300 font-tamil max-w-2xl mx-auto">
+            <p className="text-lg sm:text-xl text-gray-300 font-tamil max-w-2xl mx-auto leading-relaxed">
               முற்றிலும் இலவசமாக தமிழ் இலக்கியத்தை படிக்கவும், கேட்கவும் ஆரம்பிக்கவும்
             </p>
           </div>
@@ -162,10 +160,10 @@ export default async function HomePage() {
               <div className="w-20 h-20 bg-blue-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg">
                 <span className="text-4xl">📖</span>
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3 font-tamil">
+              <h3 className="text-xl font-bold text-gray-900 mb-4 font-tamil leading-snug">
                 வரம்பற்ற வாசிப்பு
               </h3>
-              <p className="text-gray-600 font-tamil leading-relaxed">
+              <p className="text-base text-gray-600 font-tamil leading-loose">
                 எல்லா உள்ளடக்கங்களையும் இலவசமாக படியுங்கள். எந்த வரம்பும் இல்லை, எந்த கட்டணமும் இல்லை.
               </p>
             </div>
@@ -175,10 +173,10 @@ export default async function HomePage() {
               <div className="w-20 h-20 bg-orange-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg">
                 <span className="text-4xl">🎧</span>
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3 font-tamil">
+              <h3 className="text-xl font-bold text-gray-900 mb-4 font-tamil leading-snug">
                 இலவச ஆடியோ
               </h3>
-              <p className="text-gray-600 font-tamil leading-relaxed">
+              <p className="text-base text-gray-600 font-tamil leading-loose">
                 உங்கள் பிடித்த கவிதைகளையும் பாடல்களையும் கேளுங்கள். எங்கு வேண்டுமானாலும், எப்போது வேண்டுமானாலும்.
               </p>
             </div>
@@ -188,10 +186,10 @@ export default async function HomePage() {
               <div className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg">
                 <span className="text-4xl">✨</span>
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3 font-tamil">
+              <h3 className="text-xl font-bold text-gray-900 mb-4 font-tamil leading-snug">
                 விளம்பரங்கள் இல்லை
               </h3>
-              <p className="text-gray-600 font-tamil leading-relaxed">
+              <p className="text-base text-gray-600 font-tamil leading-loose">
                 தடையற்ற அனுபவம். விளம்பரங்கள் இல்லாமல், உங்கள் வாசிப்பில் கவனம் செலுத்துங்கள்.
               </p>
             </div>
@@ -199,7 +197,7 @@ export default async function HomePage() {
 
           {/* Additional Benefits */}
           <div className="bg-gradient-to-r from-purple-100 to-pink-100 rounded-2xl p-8 md:p-12">
-            <div className="grid md:grid-cols-2 gap-6">
+            <div className="grid md:grid-cols-2 gap-8">
               <div className="flex items-start gap-4">
                 <div className="w-12 h-12 bg-purple-500 rounded-full flex items-center justify-center flex-shrink-0">
                   <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
@@ -207,8 +205,8 @@ export default async function HomePage() {
                   </svg>
                 </div>
                 <div>
-                  <h4 className="font-bold text-gray-900 mb-2 font-tamil">எந்த பதிவும் தேவையில்லை</h4>
-                  <p className="text-gray-700 text-sm font-tamil">உடனடியாக படிக்க ஆரம்பியுங்கள்</p>
+                  <h4 className="font-bold text-gray-900 mb-2 font-tamil text-base leading-normal">எந்த பதிவும் தேவையில்லை</h4>
+                  <p className="text-gray-700 font-tamil leading-relaxed">உடனடியாக படிக்க ஆரம்பியுங்கள்</p>
                 </div>
               </div>
               <div className="flex items-start gap-4">
@@ -218,8 +216,8 @@ export default async function HomePage() {
                   </svg>
                 </div>
                 <div>
-                  <h4 className="font-bold text-gray-900 mb-2 font-tamil">மொபைல் நட்பு</h4>
-                  <p className="text-gray-700 text-sm font-tamil">எந்த சாதனத்திலும் படிக்கவும் கேட்கவும்</p>
+                  <h4 className="font-bold text-gray-900 mb-2 font-tamil text-base leading-normal">மொபைல் நட்பு</h4>
+                  <p className="text-gray-700 font-tamil leading-relaxed">எந்த சாதனத்திலும் படிக்கவும் கேட்கவும்</p>
                 </div>
               </div>
               <div className="flex items-start gap-4">
@@ -229,8 +227,8 @@ export default async function HomePage() {
                   </svg>
                 </div>
                 <div>
-                  <h4 className="font-bold text-gray-900 mb-2 font-tamil">தரமான உள்ளடக்கம்</h4>
-                  <p className="text-gray-700 text-sm font-tamil">கவனமாக தேர்ந்தெடுக்கப்பட்ட இலக்கியம்</p>
+                  <h4 className="font-bold text-gray-900 mb-2 font-tamil text-base leading-normal">தரமான உள்ளடக்கம்</h4>
+                  <p className="text-gray-700 font-tamil leading-relaxed">கவனமாக தேர்ந்தெடுக்கப்பட்ட இலக்கியம்</p>
                 </div>
               </div>
               <div className="flex items-start gap-4">
@@ -240,8 +238,8 @@ export default async function HomePage() {
                   </svg>
                 </div>
                 <div>
-                  <h4 className="font-bold text-gray-900 mb-2 font-tamil">தொடர்ச்சியான புதுப்பிப்புகள்</h4>
-                  <p className="text-gray-700 text-sm font-tamil">வாரம் தோறும் புதிய உள்ளடக்கம்</p>
+                  <h4 className="font-bold text-gray-900 mb-2 font-tamil text-base leading-normal">தொடர்ச்சியான புதுப்பிப்புகள்</h4>
+                  <p className="text-gray-700 font-tamil leading-relaxed">வாரம் தோறும் புதிய உள்ளடக்கம்</p>
                 </div>
               </div>
             </div>
