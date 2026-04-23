@@ -82,13 +82,9 @@ export default async function HomePage() {
                   <span className="font-semibold font-tamil">முற்றிலும் இலவசம்</span>
                 </div>
 
-                <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6 font-kavivanar leading-tight">
-                  தமிழகவல்
-                </h1>
-
-                <p className="text-xl sm:text-2xl mb-4 text-orange-50 font-tamil leading-relaxed">
+                <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6 font-tamil leading-tight">
                   படியுங்கள். கேளுங்கள். அனுபவியுங்கள்.
-                </p>
+                </h1>
 
                 <p className="text-base sm:text-lg mb-8 text-orange-100 font-tamil leading-relaxed max-w-xl">
                   தமிழ் இலக்கியத்தின் எல்லையற்ற உலகத்தை இலவசமாக அனுபவியுங்கள். பாடல்கள், கவிதைகள், கதைகள் - எல்லாமே இலவசம்.
