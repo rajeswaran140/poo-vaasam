@@ -124,46 +124,52 @@ export function PoemReader({ content }: PoemReaderProps) {
     <div className={`relative ${modeStyles[readingMode]} transition-colors duration-300`}>
       {/* Reading Mode Toolbar */}
       <div className={`sticky top-0 z-10 border-b ${modeBorders[readingMode]} backdrop-blur-sm bg-opacity-95 ${modeStyles[readingMode]}`}>
-        <div className="container mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
+        <div className="container mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3 sm:gap-4">
           {/* Reading Mode Selector */}
-          <div className="flex gap-2">
+          <div className="flex gap-1.5 sm:gap-2">
             <button
               onClick={() => handleReadingModeChange('light')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium font-tamil transition-all ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium font-tamil transition-all ${
                 readingMode === 'light'
                   ? 'bg-gray-900 text-white'
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
               title="வெள்ளை பின்னணி"
+              aria-label="வெளிச்சம் பயன்முறை"
             >
-              ☀️ வெளிச்சம்
+              <span className="hidden sm:inline">☀️ வெளிச்சம்</span>
+              <span className="sm:hidden">☀️</span>
             </button>
             <button
               onClick={() => handleReadingModeChange('dark')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium font-tamil transition-all ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium font-tamil transition-all ${
                 readingMode === 'dark'
                   ? 'bg-white text-gray-900'
                   : 'bg-gray-700 text-gray-100 hover:bg-gray-600'
               }`}
               title="கருப்பு பின்னணி"
+              aria-label="இருட்டு பயன்முறை"
             >
-              🌙 இருட்டு
+              <span className="hidden sm:inline">🌙 இருட்டு</span>
+              <span className="sm:hidden">🌙</span>
             </button>
             <button
               onClick={() => handleReadingModeChange('sepia')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium font-tamil transition-all ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium font-tamil transition-all ${
                 readingMode === 'sepia'
                   ? 'bg-amber-900 text-amber-50'
                   : 'bg-amber-100 text-amber-900 hover:bg-amber-200'
               }`}
               title="செப்பியா பின்னணி"
+              aria-label="செப்பியா பயன்முறை"
             >
-              📜 செப்பியா
+              <span className="hidden sm:inline">📜 செப்பியா</span>
+              <span className="sm:hidden">📜</span>
             </button>
           </div>
 
           {/* Action Buttons */}
-          <div className="flex gap-2">
+          <div className="flex gap-1.5 sm:gap-2">
             <button
               onClick={handleBookmark}
               className={`p-2 rounded-lg transition-all ${
@@ -174,6 +180,7 @@ export function PoemReader({ content }: PoemReaderProps) {
                   : 'hover:bg-gray-100'
               }`}
               title={isBookmarked ? 'புத்தகக்குறியை அகற்று' : 'புத்தகக்குறியாக சேமி'}
+              aria-label={isBookmarked ? 'புத்தகக்குறியை அகற்று' : 'புத்தகக்குறியாக சேமி'}
             >
               {isBookmarked ? (
                 <BookmarkSolidIcon className="w-5 h-5 text-green-600" />
@@ -194,6 +201,7 @@ export function PoemReader({ content }: PoemReaderProps) {
                   : 'hover:bg-gray-100'
               }`}
               title={isSpeaking ? 'நிறுத்து' : 'உரை-குரல்'}
+              aria-label={isSpeaking ? 'குரல் வாசிப்பை நிறுத்து' : 'குரல் வாசிப்பைத் தொடங்கு'}
             >
               <SpeakerWaveIcon className={`w-5 h-5 ${isSpeaking ? 'animate-pulse' : ''}`} />
             </button>
@@ -208,6 +216,7 @@ export function PoemReader({ content }: PoemReaderProps) {
                   : 'hover:bg-gray-100'
               }`}
               title={selectedText ? 'தேர்ந்தெடுத்த உரையை நகலெடு' : 'கவிதையை நகலெடு'}
+              aria-label={selectedText ? 'தேர்ந்தெடுத்த உரையை நகலெடு' : 'கவிதையை நகலெடு'}
             >
               <ClipboardDocumentIcon className="w-5 h-5" />
             </button>
@@ -223,6 +232,7 @@ export function PoemReader({ content }: PoemReaderProps) {
                     : 'hover:bg-gray-100'
                 }`}
                 title="தேர்ந்தெடுத்த பகுதியை பகிர்"
+                aria-label="தேர்ந்தெடுத்த பகுதியை பகிர்"
               >
                 <ShareIcon className="w-5 h-5" />
               </button>
@@ -238,6 +248,7 @@ export function PoemReader({ content }: PoemReaderProps) {
                   : 'hover:bg-gray-100'
               }`}
               title="அச்சிடு"
+              aria-label="கவிதையை அச்சிடு"
             >
               <PrinterIcon className="w-5 h-5" />
             </button>
@@ -246,52 +257,41 @@ export function PoemReader({ content }: PoemReaderProps) {
       </div>
 
       {/* Poem Content with Enhanced Typography */}
-      <div className="container mx-auto px-4 sm:px-6 md:px-8 py-8 sm:py-10 md:py-12 max-w-7xl">
+      <div className="container mx-auto px-4 sm:px-6 md:px-8 lg:px-12 py-8 sm:py-10 md:py-12 lg:py-16 max-w-7xl">
         {/* Poem Title */}
-        <h1 className={`text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold font-poem mb-6 sm:mb-8 leading-tight ${
+        <h1 className={`text-2xl sm:text-3xl md:text-4xl lg:text-5xl xl:text-6xl font-bold font-poem mb-6 sm:mb-8 md:mb-10 leading-tight ${
           readingMode === 'dark' ? 'text-gray-100' : readingMode === 'sepia' ? 'text-amber-950' : 'text-gray-900'
         }`}>
           {content.title}
         </h1>
 
-        {/* Poem Body - Two Column Grid Layout */}
+        {/* Poem Body - Responsive Layout with Enhanced Typography */}
         <div
           ref={contentRef}
           onMouseUp={handleTextSelection}
-          className={`poem-text font-poem whitespace-pre-wrap md:grid md:grid-cols-2 md:gap-12 ${
-            readingMode === 'dark' ? 'text-gray-100 md:divide-x md:divide-gray-700' : readingMode === 'sepia' ? 'text-amber-950 md:divide-x md:divide-amber-300' : 'text-gray-900 md:divide-x md:divide-gray-300'
+          className={`poem-text font-poem whitespace-pre-wrap lg:grid lg:grid-cols-2 lg:gap-16 ${
+            readingMode === 'dark' ? 'text-gray-100 lg:divide-x lg:divide-gray-700' : readingMode === 'sepia' ? 'text-amber-950 lg:divide-x lg:divide-amber-300' : 'text-gray-900 lg:divide-x lg:divide-gray-300'
           }`}
           style={{
-            // Mobile-first responsive font sizes
-            fontSize: 'clamp(1rem, 2.5vw, 1.375rem)',
-            lineHeight: '1.584',
-            letterSpacing: '0.5px',
-            wordSpacing: '0.1em',
+            // Optimized responsive font sizes for readability
+            fontSize: 'clamp(1.0625rem, 2.5vw + 0.25rem, 1.5rem)',
+            // Enhanced line-height for Tamil poetry (1.9-2.1 range)
+            lineHeight: 'clamp(1.9, 2vw + 1.5, 2.1)',
+            letterSpacing: '0.02em',
+            wordSpacing: '0.15em',
             // Better readability on all devices
             textRendering: 'optimizeLegibility',
             WebkitFontSmoothing: 'antialiased',
             MozOsxFontSmoothing: 'grayscale',
           }}
         >
-          {/* Mobile: Full poem in single column */}
-          <div className="md:hidden">
+          {/* Mobile & Tablet: Full poem in single column */}
+          <div className="lg:hidden">
             {content.body}
-            {content.author && (
-              <div className="mt-8 pt-6 border-t border-gray-300" style={{
-                fontSize: '0.95rem',
-                lineHeight: '1.6',
-                opacity: 0.85
-              }}>
-                <div className="text-right">
-                  <div>ஊக்கம்: தமிழ்</div>
-                  <div>ஆக்கம்: {content.author}</div>
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Desktop: Split content into two columns, keeping stanzas together */}
-          <div className="hidden md:block md:pr-6">
+          <div className="hidden lg:block lg:pr-8">
             {(() => {
               // Split by stanzas (groups separated by blank lines)
               const stanzas = content.body.split(/\n\s*\n/);
@@ -300,32 +300,32 @@ export function PoemReader({ content }: PoemReaderProps) {
               return <>{firstHalf}</>;
             })()}
           </div>
-          <div className="hidden md:block md:pl-6">
+          <div className="hidden lg:block lg:pl-8">
             {(() => {
               // Split by stanzas (groups separated by blank lines)
               const stanzas = content.body.split(/\n\s*\n/);
               const midPoint = Math.ceil(stanzas.length / 2);
               const secondHalf = stanzas.slice(midPoint).join('\n\n');
-              return (
-                <>
-                  {secondHalf}
-                  {content.author && (
-                    <div className="mt-8 pt-6 border-t border-gray-300" style={{
-                      fontSize: '0.95rem',
-                      lineHeight: '1.6',
-                      opacity: 0.85
-                    }}>
-                      <div className="text-right">
-                        <div>ஊக்கம்: தமிழ்</div>
-                        <div>ஆக்கம்: {content.author}</div>
-                      </div>
-                    </div>
-                  )}
-                </>
-              );
+              return <>{secondHalf}</>;
             })()}
           </div>
         </div>
+
+        {/* Author Attribution - Consistent placement for all devices */}
+        {content.author && (
+          <div className={`mt-12 pt-8 ${
+            readingMode === 'dark' ? 'border-t border-gray-700' : readingMode === 'sepia' ? 'border-t border-amber-300' : 'border-t border-gray-300'
+          }`} style={{
+            fontSize: 'clamp(0.9rem, 1.5vw, 1.05rem)',
+            lineHeight: '1.7',
+            opacity: 0.85
+          }}>
+            <div className="text-right font-poem">
+              <div className="mb-1">ஊக்கம்: தமிழ்</div>
+              <div className="font-semibold">ஆக்கம்: {content.author}</div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Copy Notification */}

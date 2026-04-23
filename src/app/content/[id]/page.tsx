@@ -41,8 +41,8 @@ export default async function ContentPage({ params }: PageProps) {
       <div className="min-h-screen bg-gray-50">
         {/* Back Navigation - Fixed at top */}
       <div className="bg-white border-b border-gray-200">
-        <div className="container mx-auto px-4 py-3 max-w-5xl">
-          <Link href="/" className="text-gray-600 hover:text-gray-900 inline-flex items-center gap-2 font-tamil">
+        <div className="container mx-auto px-4 py-3 max-w-7xl">
+          <Link href="/" className="text-gray-600 hover:text-gray-900 inline-flex items-center gap-2 font-tamil transition-colors">
             <span>←</span>
             <span>முகப்புக்குத் திரும்புங்கள்</span>
           </Link>
@@ -50,7 +50,7 @@ export default async function ContentPage({ params }: PageProps) {
       </div>
 
       {/* Content */}
-      <article className="container mx-auto px-4 sm:px-6 py-8 sm:py-12 max-w-5xl">
+      <article className="container mx-auto px-4 sm:px-6 py-8 sm:py-12 max-w-7xl">
         <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
           {/* Audio Player */}
           {content.audioUrl && (
