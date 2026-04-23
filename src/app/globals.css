@@ -80,16 +80,20 @@ p {
   /* Mobile: 16px, Tablet: 18px, Desktop: 22px */
   font-size: clamp(1rem, 2.5vw, 1.375rem);
 
-  /* Prevent text overflow on small screens */
-  word-break: break-word;
-  overflow-wrap: break-word;
-
-  /* Optimal line length for readability */
-  max-width: 65ch;
-
-  /* Consistent spacing across devices */
-  @media (max-width: 640px) {
+  /* Mobile: Prevent text fragmentation, keep words together */
+  @media (max-width: 767px) {
     line-height: 1.496;
+    word-break: normal;
+    overflow-wrap: normal;
+    hyphens: none;
+    /* Allow natural text flow without breaking */
+  }
+
+  /* Desktop: Allow breaking only if necessary */
+  @media (min-width: 768px) {
+    word-break: break-word;
+    overflow-wrap: break-word;
+    max-width: 65ch;
   }
 
   /* Optimize for e-readers and tablets */

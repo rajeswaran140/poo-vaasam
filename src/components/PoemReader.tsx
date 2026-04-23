@@ -258,7 +258,7 @@ export function PoemReader({ content }: PoemReaderProps) {
         <div
           ref={contentRef}
           onMouseUp={handleTextSelection}
-          className={`poem-text font-poem whitespace-pre-wrap grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 ${
+          className={`poem-text font-poem whitespace-pre-wrap md:grid md:grid-cols-2 md:gap-12 ${
             readingMode === 'dark' ? 'text-gray-100 md:divide-x md:divide-gray-700' : readingMode === 'sepia' ? 'text-amber-950 md:divide-x md:divide-amber-300' : 'text-gray-900 md:divide-x md:divide-gray-300'
           }`}
           style={{
@@ -271,10 +271,6 @@ export function PoemReader({ content }: PoemReaderProps) {
             textRendering: 'optimizeLegibility',
             WebkitFontSmoothing: 'antialiased',
             MozOsxFontSmoothing: 'grayscale',
-            // Prevent text overflow on small screens
-            wordBreak: 'break-word',
-            overflowWrap: 'break-word',
-            hyphens: 'auto',
           }}
         >
           {/* Mobile: Full poem in single column */}
