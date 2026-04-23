@@ -14,6 +14,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:all": "npm run test && npm run test:e2e",
+    "test:tts": "node scripts/test-tts-config.js",
     "aws:setup": "npm run aws:dynamodb && npm run aws:s3",
     "aws:dynamodb": "tsx scripts/create-dynamodb-table.ts",
     "aws:s3": "tsx scripts/create-s3-bucket.ts"
