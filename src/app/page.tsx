@@ -58,7 +58,7 @@ export default async function HomePage() {
   const totalContent = (stats?.published || 0);
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-gray-900">
       {/* Hero Section - Audible Style */}
       <section className="relative overflow-hidden bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white">
         {/* Background Pattern */}
@@ -186,10 +186,10 @@ export default async function HomePage() {
       <section className="container mx-auto px-4 py-20">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-16">
-            <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-4 font-tamil">
+            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4 font-tamil">
               ஏன் தமிழகவல்?
             </h2>
-            <p className="text-lg text-gray-600 font-tamil max-w-2xl mx-auto">
+            <p className="text-lg text-gray-300 font-tamil max-w-2xl mx-auto">
               முற்றிலும் இலவசமாக தமிழ் இலக்கியத்தை படிக்கவும், கேட்கவும் ஆரம்பிக்கவும்
             </p>
           </div>
@@ -288,11 +288,11 @@ export default async function HomePage() {
       </section>
 
       {/* உள்ளடக்க வகைகள் பகுதி */}
-      <section className="container mx-auto px-4 py-16 bg-gray-50">
-        <h2 className="text-3xl sm:text-4xl font-bold text-center text-gray-900 mb-4 font-tamil">
+      <section className="container mx-auto px-4 py-16 bg-gray-800">
+        <h2 className="text-3xl sm:text-4xl font-bold text-center text-white mb-4 font-tamil">
           உள்ளடக்க தொகுப்புகள்
         </h2>
-        <p className="text-center text-gray-600 font-tamil mb-12 max-w-2xl mx-auto">
+        <p className="text-center text-gray-300 font-tamil mb-12 max-w-2xl mx-auto">
           எல்லா வகையான தமிழ் இலக்கியங்களையும் கண்டறியுங்கள்
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 max-w-6xl mx-auto">
@@ -336,13 +336,13 @@ export default async function HomePage() {
 
       {/* சமீபத்திய உள்ளடக்கம் */}
       {featuredContent.length > 0 && (
-        <section className="container mx-auto px-4 py-20 bg-white">
+        <section className="container mx-auto px-4 py-20 bg-gray-900">
           <div className="max-w-6xl mx-auto">
             <div className="text-center mb-12">
-              <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-4 font-tamil">
+              <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4 font-tamil">
                 சமீபத்திய உள்ளடக்கம்
               </h2>
-              <p className="text-lg text-gray-600 font-tamil">
+              <p className="text-lg text-gray-300 font-tamil">
                 புதிதாக சேர்க்கப்பட்ட கவிதைகள், பாடல்கள் மற்றும் கதைகள்
               </p>
             </div>
