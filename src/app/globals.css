@@ -67,10 +67,10 @@ p {
 
 .poem-text {
   font-family: var(--font-baloo-thambi), var(--font-tamil), sans-serif;
-  /* Enhanced line-height for Tamil poetry readability (1.9-2.1) */
-  line-height: 2.0;
-  letter-spacing: 0.02em;
-  word-spacing: 0.15em;
+  /* Tamil font-optimized line-height */
+  line-height: 1.584;
+  letter-spacing: 0.5px;
+  word-spacing: 0.1em;
   font-weight: 500;
   white-space: pre-wrap;
   text-rendering: optimizeLegibility;
@@ -80,27 +80,27 @@ p {
   /* Optimized responsive font sizing: Mobile 17px, Tablet 19px, Desktop 22-24px */
   font-size: clamp(1.0625rem, 2.5vw + 0.25rem, 1.5rem);
 
-  /* Mobile: Optimized for readability */
+  /* Mobile: Prevent text fragmentation, keep words together */
   @media (max-width: 767px) {
-    line-height: 1.95;
+    line-height: 1.496;
     word-break: normal;
     overflow-wrap: normal;
     hyphens: none;
-    /* Ensure comfortable reading on mobile */
+    /* Allow natural text flow without breaking */
     padding-bottom: 2rem;
   }
 
   /* Tablet: Balanced spacing */
   @media (min-width: 768px) and (max-width: 1023px) {
-    line-height: 2.0;
-    font-size: 1.1875rem;
+    line-height: 1.54;
+    font-size: 1.125rem;
     word-break: normal;
     overflow-wrap: normal;
   }
 
   /* Desktop: Allow two-column layout with proper spacing */
   @media (min-width: 1024px) {
-    line-height: 2.1;
+    line-height: 1.584;
     word-break: normal;
     overflow-wrap: normal;
     /* Remove max-width constraint for two-column layout */
@@ -109,7 +109,7 @@ p {
   /* Print-friendly styles */
   @media print {
     font-size: 12pt;
-    line-height: 2.0;
+    line-height: 1.408;
     color: #000;
     background: #fff;
   }

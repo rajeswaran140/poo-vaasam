@@ -272,18 +272,6 @@ export function PoemReader({ content }: PoemReaderProps) {
           className={`poem-text font-poem whitespace-pre-wrap lg:grid lg:grid-cols-2 lg:gap-16 ${
             readingMode === 'dark' ? 'text-gray-100 lg:divide-x lg:divide-gray-700' : readingMode === 'sepia' ? 'text-amber-950 lg:divide-x lg:divide-amber-300' : 'text-gray-900 lg:divide-x lg:divide-gray-300'
           }`}
-          style={{
-            // Optimized responsive font sizes for readability
-            fontSize: 'clamp(1.0625rem, 2.5vw + 0.25rem, 1.5rem)',
-            // Enhanced line-height for Tamil poetry (1.9-2.1 range)
-            lineHeight: 'clamp(1.9, 2vw + 1.5, 2.1)',
-            letterSpacing: '0.02em',
-            wordSpacing: '0.15em',
-            // Better readability on all devices
-            textRendering: 'optimizeLegibility',
-            WebkitFontSmoothing: 'antialiased',
-            MozOsxFontSmoothing: 'grayscale',
-          }}
         >
           {/* Mobile & Tablet: Full poem in single column */}
           <div className="lg:hidden">
