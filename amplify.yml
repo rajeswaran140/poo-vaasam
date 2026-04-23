@@ -3,10 +3,13 @@ frontend:
   phases:
     preBuild:
       commands:
+        - echo "Starting preBuild at $(date)"
         - npm config set legacy-peer-deps true
         - npm install --legacy-peer-deps
+        - echo "Dependencies installed at $(date)"
     build:
       commands:
+        - echo "Starting build at $(date)"
         - |
           cat > .env.production.local << EOF
           APP_AWS_ACCESS_KEY_ID=$APP_AWS_ACCESS_KEY_ID
@@ -18,6 +21,10 @@ frontend:
           EOF
         - echo "Environment file created with credentials"
         - npm run build
+        - echo "Build completed at $(date)"
+    postBuild:
+      commands:
+        - echo "Deployment preparation complete at $(date)"
   artifacts:
     baseDirectory: .next
     files:
