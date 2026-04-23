@@ -5,7 +5,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
-import { ContentSidebar } from '@/components/ContentSidebar';
+import { ContentPageClient } from '@/components/ContentPageClient';
 
 async function getContent(id: string) {
   try {
@@ -49,15 +49,13 @@ export default async function ContentPage({ params }: PageProps) {
   const colors = typeColors[content.type] || typeColors.SONGS;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Sidebar Component */}
-      <ContentSidebar
-        currentId={content.id}
-        currentType={content.type}
-        currentTitle={content.title}
-      />
-
-      {/* Back Navigation - Fixed at top */}
+    <ContentPageClient
+      contentId={content.id}
+      contentType={content.type}
+      contentTitle={content.title}
+    >
+      <div className="min-h-screen bg-gray-50">
+        {/* Back Navigation - Fixed at top */}
       <div className="bg-white border-b border-gray-200">
         <div className="container mx-auto px-4 py-3 max-w-5xl">
           <Link href="/" className="text-gray-600 hover:text-gray-900 inline-flex items-center gap-2 font-tamil">
@@ -246,5 +244,6 @@ export default async function ContentPage({ params }: PageProps) {
         </div>
       </article>
     </div>
+    </ContentPageClient>
   );
 }

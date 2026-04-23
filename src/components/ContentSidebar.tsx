@@ -31,7 +31,7 @@ export function ContentSidebar({ currentId, currentType, currentTitle }: Content
   const [loading, setLoading] = useState(false);
   const pathname = usePathname();
 
-  // Fetch related content
+  // Fetch related content - with fallback data
   useEffect(() => {
     async function fetchRelatedContent() {
       setLoading(true);
@@ -40,9 +40,14 @@ export function ContentSidebar({ currentId, currentType, currentTitle }: Content
         if (response.ok) {
           const data = await response.json();
           setRelatedContent(data.items || []);
+        } else {
+          // Fallback: Show mock data if API fails
+          setRelatedContent(getMockRelatedContent(currentType));
         }
       } catch (error) {
         console.error('Failed to fetch related content:', error);
+        // Fallback: Show mock data if API fails
+        setRelatedContent(getMockRelatedContent(currentType));
       } finally {
         setLoading(false);
       }
@@ -52,6 +57,39 @@ export function ContentSidebar({ currentId, currentType, currentTitle }: Content
       fetchRelatedContent();
     }
   }, [currentType, currentId]);
+
+  // Mock data for demonstration
+  const getMockRelatedContent = (type: string): ContentItem[] => {
+    const mockData: Record<string, ContentItem[]> = {
+      POEMS: [
+        { id: 'poem1', title: 'காலை வணக்கம்', type: 'POEMS', author: 'பாரதியார்', viewCount: 152 },
+        { id: 'poem2', title: 'தமிழ் தாய் வாழ்த்து', type: 'POEMS', author: 'மணோன்மணீயம் சுந்தரனார்', viewCount: 89 },
+        { id: 'poem3', title: 'அன்னை மொழியே', type: 'POEMS', author: 'பாரதிதாசன்', viewCount: 67 },
+      ],
+      SONGS: [
+        { id: 'song1', title: 'தமிழ் தாய் வணக்கம்', type: 'SONGS', author: 'இசைஞானி', viewCount: 234 },
+        { id: 'song2', title: 'என் தமிழ் மொழி', type: 'SONGS', author: 'ஏ.ஆர்.ரஹ்மான்', viewCount: 198 },
+        { id: 'song3', title: 'தமிழன் என்று சொல்லடா', type: 'SONGS', author: 'இளையராஜா', viewCount: 145 },
+      ],
+      STORIES: [
+        { id: 'story1', title: 'பொன்னியின் செல்வன்', type: 'STORIES', author: 'கல்கி', viewCount: 456 },
+        { id: 'story2', title: 'சிவகாமியின் சபதம்', type: 'STORIES', author: 'கல்கி', viewCount: 321 },
+        { id: 'story3', title: 'பார்த்திபன் கனவு', type: 'STORIES', author: 'கல்கி', viewCount: 287 },
+      ],
+      LYRICS: [
+        { id: 'lyric1', title: 'கண்ணே கலைமானே', type: 'LYRICS', author: 'வைரமுத்து', viewCount: 167 },
+        { id: 'lyric2', title: 'சுந்தரி கண்ணால் ஒரு சேதி', type: 'LYRICS', author: 'வாலி', viewCount: 143 },
+        { id: 'lyric3', title: 'மலர்களே மலர்களே', type: 'LYRICS', author: 'கண்ணதாசன்', viewCount: 129 },
+      ],
+      ESSAYS: [
+        { id: 'essay1', title: 'என் வாழ்க்கை', type: 'ESSAYS', author: 'அண்ணா', viewCount: 89 },
+        { id: 'essay2', title: 'தமிழின் பெருமை', type: 'ESSAYS', author: 'கலைஞர்', viewCount: 76 },
+        { id: 'essay3', title: 'நமது பண்பாடு', type: 'ESSAYS', author: 'பெரியார்', viewCount: 65 },
+      ],
+    };
+
+    return mockData[type] || [];
+  };
 
   const typeNames: Record<string, string> = {
     SONGS: 'பாடல்கள்',
