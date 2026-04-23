@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentPageClient } from '@/components/ContentPageClient';
+import { PoemReader } from '@/components/PoemReader';
 
 async function getContent(id: string) {
   try {
@@ -140,14 +141,18 @@ export default async function ContentPage({ params }: PageProps) {
             </div>
           )}
 
-          {/* Main Content - Poem Body */}
-          <div className="p-6 sm:p-8 md:p-12">
-            <div className="prose prose-lg max-w-none">
-              <pre className="whitespace-pre-wrap font-tamil text-base sm:text-lg md:text-xl leading-relaxed text-gray-800 mb-0">
-                {content.body}
-              </pre>
+          {/* Main Content - Enhanced Poem Reader for Poems */}
+          {content.type === 'POEMS' ? (
+            <PoemReader content={content} />
+          ) : (
+            <div className="p-6 sm:p-8 md:p-12">
+              <div className="prose prose-lg max-w-none">
+                <pre className="whitespace-pre-wrap font-tamil text-base sm:text-lg md:text-xl leading-relaxed text-gray-800 mb-0">
+                  {content.body}
+                </pre>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Author and Date Section - Below the Poem */}
           <div className="px-6 sm:px-8 md:px-12 pb-6 sm:pb-8 md:pb-12 border-t border-gray-200">
