@@ -70,12 +70,41 @@ p {
   line-height: 2.2;
   letter-spacing: 0.5px;
   word-spacing: 0.1em;
-  font-size: 1.25rem;
   font-weight: 500;
   white-space: pre-wrap;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  /* Responsive font sizing for different devices */
+  /* Mobile: 16px, Tablet: 18px, Desktop: 22px */
+  font-size: clamp(1rem, 2.5vw, 1.375rem);
+
+  /* Prevent text overflow on small screens */
+  word-break: break-word;
+  overflow-wrap: break-word;
+
+  /* Optimal line length for readability */
+  max-width: 65ch;
+
+  /* Better spacing on mobile */
+  @media (max-width: 640px) {
+    line-height: 2;
+  }
+
+  /* Optimize for e-readers and tablets */
+  @media (min-width: 641px) and (max-width: 1024px) {
+    font-size: 1.125rem;
+    line-height: 2.1;
+  }
+
+  /* Print-friendly styles */
+  @media print {
+    font-size: 12pt;
+    line-height: 1.8;
+    color: #000;
+    background: #fff;
+  }
 }
 
 /* Poem title styling */

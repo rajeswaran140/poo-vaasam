@@ -246,9 +246,9 @@ export function PoemReader({ content }: PoemReaderProps) {
       </div>
 
       {/* Poem Content with Enhanced Typography */}
-      <div className="container mx-auto px-4 py-12 max-w-4xl">
+      <div className="container mx-auto px-4 sm:px-6 md:px-8 py-8 sm:py-10 md:py-12 max-w-3xl lg:max-w-4xl">
         {/* Poem Title */}
-        <h1 className={`text-3xl md:text-4xl font-bold font-poem mb-8 ${
+        <h1 className={`text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold font-poem mb-6 sm:mb-8 leading-tight ${
           readingMode === 'dark' ? 'text-gray-100' : readingMode === 'sepia' ? 'text-amber-950' : 'text-gray-900'
         }`}>
           {content.title}
@@ -262,10 +262,21 @@ export function PoemReader({ content }: PoemReaderProps) {
             readingMode === 'dark' ? 'text-gray-100' : readingMode === 'sepia' ? 'text-amber-950' : 'text-gray-900'
           }`}
           style={{
-            fontSize: '1.25rem',
+            // Mobile-first responsive font sizes
+            fontSize: 'clamp(1rem, 2.5vw, 1.375rem)',
             lineHeight: '2.2',
             letterSpacing: '0.5px',
             wordSpacing: '0.1em',
+            // Better readability on all devices
+            textRendering: 'optimizeLegibility',
+            WebkitFontSmoothing: 'antialiased',
+            MozOsxFontSmoothing: 'grayscale',
+            // Prevent text overflow on small screens
+            wordBreak: 'break-word',
+            overflowWrap: 'break-word',
+            hyphens: 'auto',
+            // Optimal reading width
+            maxWidth: '65ch',
           }}
         >
           {content.body}
