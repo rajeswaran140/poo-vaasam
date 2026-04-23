@@ -68,10 +68,14 @@ p {
 .poem-text {
   font-family: var(--font-baloo-thambi), var(--font-tamil), sans-serif;
   line-height: 2.2;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.5px;
+  word-spacing: 0.1em;
   font-size: 1.25rem;
   font-weight: 500;
   white-space: pre-wrap;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Poem title styling */

@@ -147,7 +147,7 @@ export default async function ContentPage({ params }: PageProps) {
           ) : (
             <div className="p-6 sm:p-8 md:p-12">
               <div className="prose prose-lg max-w-none">
-                <pre className="whitespace-pre-wrap font-tamil text-base sm:text-lg md:text-xl leading-relaxed text-gray-800 mb-0">
+                <pre className="whitespace-pre-wrap font-poem text-lg sm:text-xl leading-loose text-gray-800 mb-0" style={{ lineHeight: '2.2', letterSpacing: '0.5px' }}>
                   {content.body}
                 </pre>
               </div>

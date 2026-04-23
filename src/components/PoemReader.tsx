@@ -246,17 +246,18 @@ export function PoemReader({ content }: PoemReaderProps) {
       </div>
 
       {/* Poem Content with Enhanced Typography */}
-      <div className="container mx-auto px-4 py-8 max-w-4xl">
+      <div className="container mx-auto px-4 py-12 max-w-4xl">
         <div
           ref={contentRef}
           onMouseUp={handleTextSelection}
-          className={`poem-text font-poem ${
+          className={`poem-text font-poem whitespace-pre-wrap ${
             readingMode === 'dark' ? 'text-gray-100' : readingMode === 'sepia' ? 'text-amber-950' : 'text-gray-900'
           }`}
           style={{
-            fontSize: '1.375rem',
-            lineHeight: '2.4',
-            letterSpacing: '0.02em',
+            fontSize: '1.25rem',
+            lineHeight: '2.2',
+            letterSpacing: '0.5px',
+            wordSpacing: '0.1em',
           }}
         >
           {content.body}

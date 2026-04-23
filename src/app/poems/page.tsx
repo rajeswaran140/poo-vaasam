@@ -43,10 +43,10 @@ export default async function PoemsPage() {
             <span className="group-hover:-translate-x-1 transition-transform">←</span>
             <span>முகப்புக்குத் திரும்பு</span>
           </Link>
-          <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold mb-4 font-tamil animate-fade-in-down">
+          <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold mb-4 font-poem leading-tight animate-fade-in-down">
             📝 கவிதைகள்
           </h1>
-          <p className="text-xl md:text-2xl text-green-100 font-tamil mb-6 animate-fade-in-up">
+          <p className="text-lg sm:text-xl md:text-2xl text-green-100 font-poem leading-relaxed mb-6 animate-fade-in-up">
             தமிழ் கவிதைகள் தொகுப்பு
           </p>
           <div className="flex flex-wrap gap-3 text-sm md:text-base">
