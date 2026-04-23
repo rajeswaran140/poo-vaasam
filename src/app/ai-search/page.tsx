@@ -67,9 +67,6 @@ export default function AISearchPage() {
               <p>
                 <strong>உதாரணம்:</strong> &ldquo;காதல் பற்றிய கவிதைகள்&rdquo; என்று தேடினால், &ldquo;காதல்&rdquo;, &ldquo;அன்பு&rdquo;, &ldquo;காதலன்&rdquo;, &ldquo;காதலி&rdquo; போன்ற சொற்கள் உள்ள அனைத்து கவிதைகளையும் கண்டுபிடிக்கும்.
               </p>
-              <p className="text-sm text-gray-600">
-                <strong>தொழில்நுட்பம்:</strong> OpenAI Embeddings API
-              </p>
             </div>
           </div>
         </div>

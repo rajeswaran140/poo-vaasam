@@ -107,7 +107,7 @@ export function TamilAudioPlayer({ text, title, voice = 'female', autoGenerate =
             {title || 'கவிதையைக் கேளுங்கள்'}
           </h3>
           <p className="text-sm text-gray-600 font-tamil">
-            Google Tamil குரல்
+            தமிழ் குரல்
           </p>
         </div>
       </div>
@@ -200,7 +200,7 @@ export function TamilAudioPlayer({ text, title, voice = 'female', autoGenerate =
       <div className="mt-4 pt-4 border-t border-purple-200">
         <p className="text-xs text-gray-600 font-tamil">
           🎙️ குரல்: {voice === 'female' ? 'பெண் குரல்' : 'ஆண் குரல்'} •
-          ⚡ Powered by Google Cloud TTS
+          ⚡ AI உருவாக்கிய குரல்
         </p>
       </div>
     </div>

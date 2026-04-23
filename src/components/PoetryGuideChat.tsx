@@ -113,7 +113,7 @@ export function PoetryGuideChat({ poemId, poemTitle, poemAuthor }: PoetryGuideCh
               <SparklesIcon className="w-5 h-5" />
               <div>
                 <h3 className="font-bold font-tamil">கவிதை வழிகாட்டி</h3>
-                <p className="text-xs text-purple-100">Claude AI உதவி</p>
+                <p className="text-xs text-purple-100">AI உதவியாளர்</p>
               </div>
             </div>
             <button
