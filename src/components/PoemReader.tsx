@@ -277,20 +277,22 @@ export function PoemReader({ content }: PoemReaderProps) {
             hyphens: 'auto',
           }}
         >
-          {/* Split content into two columns on desktop */}
+          {/* Split content into two columns on desktop, keeping stanzas together */}
           <div className="md:pr-6">
             {(() => {
-              const lines = content.body.split('\n');
-              const midPoint = Math.ceil(lines.length / 2);
-              const firstHalf = lines.slice(0, midPoint).join('\n');
+              // Split by stanzas (groups separated by blank lines)
+              const stanzas = content.body.split(/\n\s*\n/);
+              const midPoint = Math.ceil(stanzas.length / 2);
+              const firstHalf = stanzas.slice(0, midPoint).join('\n\n');
               return <>{firstHalf}</>;
             })()}
           </div>
           <div className="hidden md:block md:pl-6">
             {(() => {
-              const lines = content.body.split('\n');
-              const midPoint = Math.ceil(lines.length / 2);
-              const secondHalf = lines.slice(midPoint).join('\n');
+              // Split by stanzas (groups separated by blank lines)
+              const stanzas = content.body.split(/\n\s*\n/);
+              const midPoint = Math.ceil(stanzas.length / 2);
+              const secondHalf = stanzas.slice(midPoint).join('\n\n');
               return <>{secondHalf}</>;
             })()}
           </div>
