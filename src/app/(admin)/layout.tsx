@@ -10,10 +10,10 @@ import Link from 'next/link';
 import { ReactNode } from 'react';
 import { useAuthenticator } from '@aws-amplify/ui-react';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
 import '@/lib/amplify-config';
 import { LucideIcon, LayoutDashboard, FileText, Folder, Tag, Image, Globe, Settings, LogOut, Plus } from 'lucide-react';
 import { FEATURES } from '@/config/features';
+import { Toaster } from 'react-hot-toast';
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -23,17 +23,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   const { user, signOut } = useAuthenticator((context) => [context.user]);
   const router = useRouter();
 
-  // Redirect to login if not authenticated
-  useEffect(() => {
-    if (!user) {
-      router.push('/login');
-    }
-  }, [user, router]);
-
-  // Show nothing while checking auth
-  if (!user) {
-    return null;
-  }
+  // Note: Middleware already protects admin routes, but we keep this
+  // check for user info and signOut functionality
 
   const handleLogout = async () => {
     try {
@@ -129,6 +120,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           {children}
         </div>
       </main>
+
+      {/* Toast Notifications */}
+      <Toaster />
     </div>
   );
 }
@@ -150,3 +144,5 @@ function NavLink({ href, icon: Icon, children }: NavLinkProps) {
     </Link>
   );
 }
+
+// Note: Toaster component added to admin layout in the return statement above

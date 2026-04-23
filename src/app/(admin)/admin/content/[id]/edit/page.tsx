@@ -8,6 +8,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { TamilInput } from '@/components/admin/TamilInput';
+import showToast from '@/lib/toast';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -80,7 +82,7 @@ export default function EditContentPage({ params }: PageProps) {
         if (tagsData.success) setTags(tagsData.data);
       } catch (error) {
         console.error('Failed to load data:', error);
-        alert('Failed to load content');
+        showToast.error('உள்ளடக்கத்தை ஏற்ற முடியவில்லை');
       } finally {
         setLoading(false);
       }
@@ -106,14 +108,14 @@ export default function EditContentPage({ params }: PageProps) {
       const data = await response.json();
 
       if (data.success) {
-        alert('✅ Content updated successfully!');
+        showToast.success('உள்ளடக்கம் வெற்றிகரமாக புதுப்பிக்கப்பட்டது!');
         router.push('/admin/content');
       } else {
-        alert('❌ Failed to update content: ' + (data.error || 'Unknown error'));
+        showToast.error('புதுப்பிக்க முடியவில்லை: ' + (data.error || 'Unknown error'));
       }
     } catch (error) {
       console.error('Error updating content:', error);
-      alert('❌ Failed to update content');
+      showToast.error('உள்ளடக்கத்தை புதுப்பிக்க முடியவில்லை');
     } finally {
       setSaving(false);
     }
@@ -193,61 +195,41 @@ export default function EditContentPage({ params }: PageProps) {
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Basic Information</h2>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Title (தலைப்பு) *
-            </label>
-            <input
-              type="text"
-              name="title"
-              value={formData.title}
-              onChange={handleChange}
-              required
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 font-tamil text-lg"
-            />
-          </div>
+          <TamilInput
+            value={formData.title}
+            onChange={(value) => setFormData((prev) => ({ ...prev, title: value }))}
+            label="Title (தலைப்பு)"
+            placeholder="உள்ளடக்க தலைப்பை உள்ளிடவும்..."
+            required
+          />
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Content (உள்ளடக்கம்) *
-            </label>
-            <textarea
-              name="body"
-              value={formData.body}
-              onChange={handleChange}
-              required
-              rows={10}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 font-tamil text-base leading-relaxed"
-            />
-          </div>
+          <TamilInput
+            value={formData.body}
+            onChange={(value) => setFormData((prev) => ({ ...prev, body: value }))}
+            label="Content (உள்ளடக்கம்)"
+            placeholder="உங்கள் உள்ளடக்கத்தை இங்கே எழுதவும்..."
+            multiline
+            rows={10}
+            required
+          />
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Description (விளக்கம்)
-            </label>
-            <textarea
-              name="description"
-              value={formData.description}
-              onChange={handleChange}
-              rows={3}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 font-tamil"
-            />
-          </div>
+          <TamilInput
+            value={formData.description}
+            onChange={(value) => setFormData((prev) => ({ ...prev, description: value }))}
+            label="Description (விளக்கம்)"
+            placeholder="சுருக்கமான விளக்கம்..."
+            multiline
+            rows={3}
+          />
 
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Author (ஆசிரியர்) *
-              </label>
-              <input
-                type="text"
-                name="author"
-                value={formData.author}
-                onChange={handleChange}
-                required
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 font-tamil"
-              />
-            </div>
+            <TamilInput
+              value={formData.author}
+              onChange={(value) => setFormData((prev) => ({ ...prev, author: value }))}
+              label="Author (ஆசிரியர்)"
+              placeholder="ஆசிரியர் பெயர்..."
+              required
+            />
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
