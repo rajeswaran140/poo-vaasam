@@ -40,7 +40,7 @@ export async function GET() {
   }
 
   // Try to initialize TTS client
-  let clientStatus = {
+  const clientStatus = {
     canInitialize: false,
     error: null as string | null,
   };
@@ -56,7 +56,7 @@ export async function GET() {
 
       // Try a simple test call
       try {
-        const [result] = await client.listVoices({ languageCode: 'ta-IN' });
+        await client.listVoices({ languageCode: 'ta-IN' });
         clientStatus.canInitialize = true;
         clientStatus.error = null;
       } catch (apiError) {
@@ -68,7 +68,7 @@ export async function GET() {
       });
 
       try {
-        const [result] = await client.listVoices({ languageCode: 'ta-IN' });
+        await client.listVoices({ languageCode: 'ta-IN' });
         clientStatus.canInitialize = true;
         clientStatus.error = null;
       } catch (apiError) {
