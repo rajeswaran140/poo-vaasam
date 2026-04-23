@@ -88,13 +88,18 @@ export default async function HomePage() {
 
                 {/* Main Headline - Optimized Typography with Baloo Thambi 2 */}
                 <div className="space-y-8">
-                  <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-5xl font-extrabold font-poem leading-snug tracking-normal">
-                    <span className="block mb-3">படியுங்கள். கேளுங்கள்.</span>
-                    <span className="block bg-gradient-to-r from-orange-200 to-yellow-200 bg-clip-text text-transparent">
+                  <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-extrabold font-poem leading-tight tracking-normal">
+                    <span className="block mb-3 text-white">படியுங்கள். கேளுங்கள்.</span>
+                    <span className="block text-white drop-shadow-lg" style={{
+                      background: 'linear-gradient(to right, #fed7aa, #fef08a)',
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent',
+                      backgroundClip: 'text',
+                    }}>
                       அனுபவித்து மகிழுங்கள்.
                     </span>
                   </h1>
-                  <p className="text-lg sm:text-xl lg:text-2xl text-white/90 font-poem leading-loose font-light max-w-3xl mx-auto">
+                  <p className="text-lg sm:text-xl lg:text-2xl text-white/95 font-poem leading-relaxed font-light max-w-3xl mx-auto">
                     <span className="block">தமிழ் இலக்கியத்தின் எல்லையற்ற உலகம்.</span>
                     <span className="block mt-2">என்றும் இலவசம்.</span>
                   </p>
