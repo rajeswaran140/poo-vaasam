@@ -8,6 +8,7 @@
 
 import Link from 'next/link';
 import { Settings as SettingsIcon, Database, Shield, Bell, Globe } from 'lucide-react';
+import { FontsReference } from '@/components/admin/FontsReference';
 
 export default function SettingsPage() {
   return (
@@ -99,6 +100,9 @@ export default function SettingsPage() {
           </button>
         </div>
       </div>
+
+      {/* Tamil Fonts Reference */}
+      <FontsReference />
 
       {/* Development Notice */}
       <div className="bg-yellow-50 border-l-4 border-yellow-400 p-6 rounded-lg">
