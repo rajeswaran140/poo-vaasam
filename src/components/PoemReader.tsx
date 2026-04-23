@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { BookmarkIcon, PrinterIcon, SpeakerWaveIcon, ClipboardDocumentIcon, ShareIcon } from '@heroicons/react/24/outline';
 import { BookmarkIcon as BookmarkSolidIcon } from '@heroicons/react/24/solid';
+import { TamilAudioPlayer } from './TamilAudioPlayer';
 
 interface PoemReaderProps {
   content: any; // Accept any content object from the database
@@ -243,6 +244,15 @@ export function PoemReader({ content }: PoemReaderProps) {
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Tamil Audio Player */}
+      <div className="container mx-auto px-4 pt-8 max-w-4xl">
+        <TamilAudioPlayer
+          text={content.body}
+          title={`"${content.title}" கவிதை`}
+          voice="female"
+        />
       </div>
 
       {/* Poem Content with Enhanced Typography */}
