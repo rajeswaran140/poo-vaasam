@@ -86,15 +86,15 @@ export default async function HomePage() {
                   <span className="font-bold font-tamil">முற்றிலும் இலவசம்</span>
                 </div>
 
-                {/* Main Headline - Optimized Typography */}
+                {/* Main Headline - Optimized Typography with Baloo Thambi 2 */}
                 <div className="space-y-8">
-                  <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-5xl font-extrabold font-tamil leading-snug tracking-normal">
+                  <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-5xl font-extrabold font-poem leading-snug tracking-normal">
                     <span className="block mb-3">படியுங்கள். கேளுங்கள்.</span>
                     <span className="block bg-gradient-to-r from-orange-200 to-yellow-200 bg-clip-text text-transparent">
                       அனுபவியுங்கள்.
                     </span>
                   </h1>
-                  <p className="text-lg sm:text-xl lg:text-2xl text-white/90 font-tamil leading-loose font-light max-w-3xl mx-auto">
+                  <p className="text-lg sm:text-xl lg:text-2xl text-white/90 font-poem leading-loose font-light max-w-3xl mx-auto">
                     <span className="block">தமிழ் இலக்கியத்தின் எல்லையற்ற உலகம்.</span>
                     <span className="block mt-2">எப்போதும் இலவசம்.</span>
                   </p>
