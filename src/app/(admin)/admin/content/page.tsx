@@ -7,56 +7,122 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import showToast from '@/lib/toast';
+
+type FilterType = 'ALL' | 'SONGS' | 'POEMS' | 'LYRICS' | 'STORIES' | 'ESSAYS';
+type FilterStatus = 'ALL' | 'PUBLISHED' | 'DRAFT';
 
 export default function ContentListPage() {
   const [content, setContent] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [typeFilter, setTypeFilter] = useState<FilterType>('ALL');
+  const [statusFilter, setStatusFilter] = useState<FilterStatus>('ALL');
+  const [_lastEvaluatedKey, setLastEvaluatedKey] = useState<Record<string, any> | undefined>(undefined);
+  const [hasMore, setHasMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; id: string; title: string }>({
+    isOpen: false,
+    id: '',
+    title: '',
+  });
+  const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
-    loadContent();
-  }, []);
+  const ITEMS_PER_PAGE = 20;
 
-  async function loadContent() {
+  const loadContent = useCallback(async (reset: boolean = false) => {
     try {
-      const response = await fetch('/api/test/content?action=list', {
-        credentials: 'include', // Send cookies for authentication
+      setLoading(true);
+
+      // Build API URL based on filters
+      let url = '/api/test/content?action=list';
+
+      // Apply type filter if not ALL
+      if (typeFilter !== 'ALL') {
+        url = `/api/test/content?action=by-type&type=${typeFilter}`;
+      }
+
+      // Note: Status filter would need backend support for cursor-based pagination
+      // For now, we'll filter client-side for simplicity
+
+      const response = await fetch(url, {
+        credentials: 'include',
       });
       const data = await response.json();
+
       if (data.success) {
-        setContent(data.data.items);
+        let items = data.data.items || [];
+
+        // Apply status filter client-side
+        if (statusFilter !== 'ALL') {
+          items = items.filter((item: any) => item._status === statusFilter);
+        }
+
+        if (reset) {
+          setContent(items);
+          setCurrentPage(1);
+        } else {
+          setContent((prev) => [...prev, ...items]);
+        }
+
+        setLastEvaluatedKey(data.data.lastEvaluatedKey);
+        setHasMore(data.data.hasMore || false);
       }
     } catch (error) {
       console.error('Failed to load content:', error);
+      showToast.error('உள்ளடக்கத்தை ஏற்ற முடியவில்லை');
     } finally {
       setLoading(false);
     }
-  }
+  }, [typeFilter, statusFilter]);
 
-  async function handleDelete(id: string, title: string) {
-    if (!confirm(`Are you sure you want to delete "${title}"?`)) {
-      return;
-    }
+  useEffect(() => {
+    loadContent(true);
+  }, [loadContent]);
 
+  async function handleDeleteContent() {
+    setDeleting(true);
     try {
-      const response = await fetch(`/api/content?id=${id}`, {
+      const response = await fetch(`/api/content?id=${deleteModal.id}`, {
         method: 'DELETE',
-        credentials: 'include', // Send cookies for authentication
+        credentials: 'include',
       });
 
       const data = await response.json();
 
       if (data.success) {
-        alert('✅ Content deleted successfully!');
-        loadContent(); // Reload list
+        showToast.success('உள்ளடக்கம் நீக்கப்பட்டது!');
+        setDeleteModal({ isOpen: false, id: '', title: '' });
+        loadContent(true); // Reload list from beginning
       } else {
-        alert('❌ Failed to delete: ' + (data.error || 'Unknown error'));
+        showToast.error('நீக்க முடியவில்லை: ' + (data.error || 'Unknown error'));
       }
     } catch (error) {
       console.error('Delete error:', error);
-      alert('❌ Failed to delete content');
+      showToast.error('உள்ளடக்கத்தை நீக்க முடியவில்லை');
+    } finally {
+      setDeleting(false);
     }
   }
+
+  function handlePreviousPage() {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+    }
+  }
+
+  function handleNextPage() {
+    if (hasMore || currentPage * ITEMS_PER_PAGE < content.length) {
+      setCurrentPage(currentPage + 1);
+    }
+  }
+
+  // Calculate paginated items for display
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = startIndex + ITEMS_PER_PAGE;
+  const paginatedContent = content.slice(startIndex, endIndex);
+  const totalPages = Math.ceil(content.length / ITEMS_PER_PAGE);
 
   if (loading) {
     return (
@@ -90,17 +156,45 @@ export default function ContentListPage() {
       {/* Filters */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
         <div className="flex flex-wrap gap-4">
-          <FilterButton label="All" active />
-          <FilterButton label="Songs" />
-          <FilterButton label="Poems" />
-          <FilterButton label="Lyrics" />
-          <FilterButton label="Stories" />
-          <FilterButton label="Essays" />
+          <FilterButton
+            label="All"
+            active={typeFilter === 'ALL'}
+            onClick={() => setTypeFilter('ALL')}
+          />
+          <FilterButton
+            label="Songs"
+            active={typeFilter === 'SONGS'}
+            onClick={() => setTypeFilter('SONGS')}
+          />
+          <FilterButton
+            label="Poems"
+            active={typeFilter === 'POEMS'}
+            onClick={() => setTypeFilter('POEMS')}
+          />
+          <FilterButton
+            label="Lyrics"
+            active={typeFilter === 'LYRICS'}
+            onClick={() => setTypeFilter('LYRICS')}
+          />
+          <FilterButton
+            label="Stories"
+            active={typeFilter === 'STORIES'}
+            onClick={() => setTypeFilter('STORIES')}
+          />
+          <FilterButton
+            label="Essays"
+            active={typeFilter === 'ESSAYS'}
+            onClick={() => setTypeFilter('ESSAYS')}
+          />
           <div className="ml-auto">
-            <select className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
-              <option>All Status</option>
-              <option>Published</option>
-              <option>Draft</option>
+            <select
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as FilterStatus)}
+            >
+              <option value="ALL">All Status</option>
+              <option value="PUBLISHED">Published</option>
+              <option value="DRAFT">Draft</option>
             </select>
           </div>
         </div>
@@ -153,7 +247,7 @@ export default function ContentListPage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {content.map((item: any) => (
+                {paginatedContent.map((item: any) => (
                   <tr
                     key={item.id}
                     className="hover:bg-gray-50 transition-colors"
@@ -205,7 +299,7 @@ export default function ContentListPage() {
                           View
                         </Link>
                         <button
-                          onClick={() => handleDelete(item.id, item._title)}
+                          onClick={() => setDeleteModal({ isOpen: true, id: item.id, title: item._title })}
                           className="px-3 py-1 text-red-600 hover:bg-red-50 rounded transition-colors"
                         >
                           Delete
@@ -224,28 +318,65 @@ export default function ContentListPage() {
       {content.length > 0 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-gray-500">
-            Showing <span className="font-medium">{content.length}</span> results
+            Showing <span className="font-medium">{startIndex + 1}</span> to{' '}
+            <span className="font-medium">{Math.min(endIndex, content.length)}</span> of{' '}
+            <span className="font-medium">{content.length}</span> results
           </p>
           <div className="flex gap-2">
-            <button className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
+            <button
+              onClick={handlePreviousPage}
+              disabled={currentPage === 1}
+              className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
               Previous
             </button>
-            <button className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium">
-              1
-            </button>
-            <button className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
+
+            {/* Page numbers */}
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+              <button
+                key={page}
+                onClick={() => setCurrentPage(page)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  currentPage === page
+                    ? 'bg-purple-600 text-white'
+                    : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                {page}
+              </button>
+            ))}
+
+            <button
+              onClick={handleNextPage}
+              disabled={currentPage === totalPages}
+              className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
               Next
             </button>
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => setDeleteModal({ isOpen: false, id: '', title: '' })}
+        onConfirm={handleDeleteContent}
+        title="Delete Content?"
+        message={`நீங்கள் "${deleteModal.title}" உள்ளடக்கத்தை நிரந்தரமாக நீக்க விரும்புகிறீர்களா? இந்த செயலை மாற்ற முடியாது.`}
+        confirmText="Delete Content"
+        cancelText="Cancel"
+        isDangerous={true}
+        isLoading={deleting}
+      />
     </div>
   );
 }
 
-function FilterButton({ label, active = false }: { label: string; active?: boolean }) {
+function FilterButton({ label, active = false, onClick }: { label: string; active?: boolean; onClick?: () => void }) {
   return (
     <button
+      onClick={onClick}
       className={`px-4 py-2 rounded-lg font-medium transition-colors ${
         active
           ? 'bg-purple-600 text-white'

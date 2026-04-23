@@ -9,7 +9,6 @@
 import { useState, useEffect } from 'react';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import showToast from '@/lib/toast';
-import { Trash2 } from 'lucide-react';
 
 export default function TagsPage() {
   const [tags, setTags] = useState<any[]>([]);
