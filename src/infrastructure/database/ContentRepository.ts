@@ -49,20 +49,17 @@ export class ContentRepository implements IContentRepository {
   }
 
   /**
-   * Find content by slug
+   * Find content by slug using GSI5
    */
   async findBySlug(slug: string): Promise<Content | null> {
     try {
-      // Scan for slug (consider adding GSI for slug in production)
-      const response = await DynamoDBOperations.scan({
-        filterExpression: '#titleSlug = :slug AND #sk = :metadata',
-        expressionAttributeNames: {
-          '#titleSlug': 'titleSlug',
-          '#sk': 'SK',
-        },
+      // Query using GSI5 for efficient slug lookup
+      const response = await DynamoDBOperations.query({
+        indexName: 'GSI5',
+        keyConditionExpression: 'GSI5PK = :slugPrefix AND GSI5SK = :slug',
         expressionAttributeValues: {
+          ':slugPrefix': 'SLUG',
           ':slug': slug,
-          ':metadata': 'METADATA',
         },
         limit: 1,
       });
@@ -75,12 +72,11 @@ export class ContentRepository implements IContentRepository {
   }
 
   /**
-   * Find all content with pagination
+   * Find all content with cursor-based pagination
    */
   async findAll(options?: ContentQueryOptions): Promise<PaginatedContent> {
     try {
       const limit = options?.limit || 20;
-      const offset = options?.offset || 0;
 
       // Query using GSI4 for published content
       const response = await DynamoDBOperations.query({
@@ -89,19 +85,19 @@ export class ContentRepository implements IContentRepository {
         expressionAttributeValues: {
           ':status': options?.status || ContentStatus.PUBLISHED,
         },
-        limit: limit + offset,
+        limit,
         scanIndexForward: options?.sortOrder === 'asc',
+        exclusiveStartKey: options?.lastEvaluatedKey,
       });
 
       const items = response.Items || [];
-      const paginatedItems = items.slice(offset, offset + limit);
 
       return {
-        items: paginatedItems.map((item) => this.fromDBItem(item)),
+        items: items.map((item) => this.fromDBItem(item)),
         total: response.Count || 0,
         limit,
-        offset,
-        hasMore: items.length > offset + limit,
+        lastEvaluatedKey: response.LastEvaluatedKey,
+        hasMore: !!response.LastEvaluatedKey,
       };
     } catch (error) {
       handleDynamoDBError(error);
@@ -109,7 +105,7 @@ export class ContentRepository implements IContentRepository {
   }
 
   /**
-   * Find content by type
+   * Find content by type with cursor-based pagination
    */
   async findByType(
     type: ContentType,
@@ -117,7 +113,6 @@ export class ContentRepository implements IContentRepository {
   ): Promise<PaginatedContent> {
     try {
       const limit = options?.limit || 20;
-      const offset = options?.offset || 0;
 
       // Query using GSI1
       const response = await DynamoDBOperations.query({
@@ -126,19 +121,19 @@ export class ContentRepository implements IContentRepository {
         expressionAttributeValues: {
           ':type': `CONTENT#${type}`,
         },
-        limit: limit + offset,
+        limit,
         scanIndexForward: options?.sortOrder === 'asc',
+        exclusiveStartKey: options?.lastEvaluatedKey,
       });
 
       const items = response.Items || [];
-      const paginatedItems = items.slice(offset, offset + limit);
 
       return {
-        items: paginatedItems.map((item) => this.fromDBItem(item)),
+        items: items.map((item) => this.fromDBItem(item)),
         total: response.Count || 0,
         limit,
-        offset,
-        hasMore: items.length > offset + limit,
+        lastEvaluatedKey: response.LastEvaluatedKey,
+        hasMore: !!response.LastEvaluatedKey,
       };
     } catch (error) {
       handleDynamoDBError(error);
@@ -156,7 +151,7 @@ export class ContentRepository implements IContentRepository {
   }
 
   /**
-   * Find content by category
+   * Find content by category with cursor-based pagination
    */
   async findByCategoryId(
     categoryId: string,
@@ -164,7 +159,6 @@ export class ContentRepository implements IContentRepository {
   ): Promise<PaginatedContent> {
     try {
       const limit = options?.limit || 20;
-      const offset = options?.offset || 0;
 
       // Query using GSI2
       const response = await DynamoDBOperations.query({
@@ -173,8 +167,9 @@ export class ContentRepository implements IContentRepository {
         expressionAttributeValues: {
           ':categoryId': `CATEGORY#${categoryId}`,
         },
-        limit: limit + offset,
+        limit,
         scanIndexForward: options?.sortOrder === 'asc',
+        exclusiveStartKey: options?.lastEvaluatedKey,
       });
 
       const items = response.Items || [];
@@ -185,20 +180,26 @@ export class ContentRepository implements IContentRepository {
         return pk.replace('CONTENT#', '');
       });
 
-      // Batch get actual content items
-      const contentItems = await Promise.all(
-        contentIds.map((id) => this.findById(id))
-      );
+      // Batch get actual content items for better performance
+      const keys = contentIds.map(id => ({
+        PK: `CONTENT#${id}`,
+        SK: 'METADATA',
+      }));
 
-      const validItems = contentItems.filter((item): item is Content => item !== null);
-      const paginatedItems = validItems.slice(offset, offset + limit);
+      const contentItems = keys.length > 0
+        ? await DynamoDBOperations.batchGet(keys)
+        : [];
+
+      const validItems = contentItems
+        .map((item) => this.fromDBItem(item))
+        .filter((item): item is Content => item !== null);
 
       return {
-        items: paginatedItems,
+        items: validItems,
         total: validItems.length,
         limit,
-        offset,
-        hasMore: validItems.length > offset + limit,
+        lastEvaluatedKey: response.LastEvaluatedKey,
+        hasMore: !!response.LastEvaluatedKey,
       };
     } catch (error) {
       handleDynamoDBError(error);
@@ -206,7 +207,7 @@ export class ContentRepository implements IContentRepository {
   }
 
   /**
-   * Find content by tag
+   * Find content by tag with cursor-based pagination
    */
   async findByTagId(
     tagId: string,
@@ -214,7 +215,6 @@ export class ContentRepository implements IContentRepository {
   ): Promise<PaginatedContent> {
     try {
       const limit = options?.limit || 20;
-      const offset = options?.offset || 0;
 
       // Query using GSI3
       const response = await DynamoDBOperations.query({
@@ -223,8 +223,9 @@ export class ContentRepository implements IContentRepository {
         expressionAttributeValues: {
           ':tagId': `TAG#${tagId}`,
         },
-        limit: limit + offset,
+        limit,
         scanIndexForward: options?.sortOrder === 'asc',
+        exclusiveStartKey: options?.lastEvaluatedKey,
       });
 
       const items = response.Items || [];
@@ -235,20 +236,26 @@ export class ContentRepository implements IContentRepository {
         return pk.replace('CONTENT#', '');
       });
 
-      // Batch get actual content items
-      const contentItems = await Promise.all(
-        contentIds.map((id) => this.findById(id))
-      );
+      // Batch get actual content items for better performance
+      const keys = contentIds.map(id => ({
+        PK: `CONTENT#${id}`,
+        SK: 'METADATA',
+      }));
 
-      const validItems = contentItems.filter((item): item is Content => item !== null);
-      const paginatedItems = validItems.slice(offset, offset + limit);
+      const contentItems = keys.length > 0
+        ? await DynamoDBOperations.batchGet(keys)
+        : [];
+
+      const validItems = contentItems
+        .map((item) => this.fromDBItem(item))
+        .filter((item): item is Content => item !== null);
 
       return {
-        items: paginatedItems,
+        items: validItems,
         total: validItems.length,
         limit,
-        offset,
-        hasMore: validItems.length > offset + limit,
+        lastEvaluatedKey: response.LastEvaluatedKey,
+        hasMore: !!response.LastEvaluatedKey,
       };
     } catch (error) {
       handleDynamoDBError(error);
@@ -256,35 +263,40 @@ export class ContentRepository implements IContentRepository {
   }
 
   /**
-   * Search content (basic implementation)
+   * Search content (basic implementation using scan)
+   *
+   * WARNING: This uses DynamoDB scan which is inefficient for large datasets.
+   * For production, integrate with Amazon OpenSearch Service or Algolia.
+   * This is acceptable for development with small datasets (<1000 items).
    */
   async search(query: string, options?: ContentQueryOptions): Promise<PaginatedContent> {
     try {
       const limit = options?.limit || 20;
-      const offset = options?.offset || 0;
 
-      // Basic scan with filter (consider using OpenSearch for production)
+      // Basic scan with filter - only for development/small datasets
       const response = await DynamoDBOperations.scan({
-        filterExpression: 'contains(#title, :query) OR contains(#body, :query)',
+        filterExpression: '(contains(#title, :query) OR contains(#body, :query)) AND #sk = :metadata',
         expressionAttributeNames: {
           '#title': 'title',
           '#body': 'body',
+          '#sk': 'SK',
         },
         expressionAttributeValues: {
           ':query': query,
+          ':metadata': 'METADATA',
         },
-        limit: limit + offset,
+        limit,
+        exclusiveStartKey: options?.lastEvaluatedKey,
       });
 
       const items = response.Items || [];
-      const paginatedItems = items.slice(offset, offset + limit);
 
       return {
-        items: paginatedItems.map((item) => this.fromDBItem(item)),
+        items: items.map((item) => this.fromDBItem(item)),
         total: response.Count || 0,
         limit,
-        offset,
-        hasMore: items.length > offset + limit,
+        lastEvaluatedKey: response.LastEvaluatedKey,
+        hasMore: !!response.LastEvaluatedKey,
       };
     } catch (error) {
       handleDynamoDBError(error);
@@ -299,17 +311,46 @@ export class ContentRepository implements IContentRepository {
   }
 
   /**
-   * Delete content
+   * Delete content and all related relationships
    */
   async delete(id: string): Promise<void> {
     try {
+      // First, get the content to know which relationships to delete
+      const content = await this.findById(id);
+      if (!content) {
+        return; // Content doesn't exist, nothing to delete
+      }
+
+      // Delete main content item
       await DynamoDBOperations.delete({
         PK: `CONTENT#${id}`,
         SK: 'METADATA',
       });
 
-      // Also delete category/tag relationships
-      // This would be handled by a background job in production
+      // Delete category relationships
+      const categoryDeletePromises = content.categoryIds.map((categoryId) =>
+        DynamoDBOperations.delete({
+          PK: `CONTENT#${id}`,
+          SK: `CATEGORY#${categoryId}`,
+        }).catch((err) => {
+          console.error(`Failed to delete category relationship ${categoryId}:`, err);
+          // Don't throw, continue with other deletions
+        })
+      );
+
+      // Delete tag relationships
+      const tagDeletePromises = content.tagIds.map((tagId) =>
+        DynamoDBOperations.delete({
+          PK: `CONTENT#${id}`,
+          SK: `TAG#${tagId}`,
+        }).catch((err) => {
+          console.error(`Failed to delete tag relationship ${tagId}:`, err);
+          // Don't throw, continue with other deletions
+        })
+      );
+
+      // Execute all relationship deletions in parallel
+      await Promise.all([...categoryDeletePromises, ...tagDeletePromises]);
     } catch (error) {
       handleDynamoDBError(error);
     }
@@ -379,28 +420,23 @@ export class ContentRepository implements IContentRepository {
   }
 
   /**
-   * Get most viewed content
+   * Get most viewed content using GSI6
    */
   async getMostViewed(limit: number): Promise<Content[]> {
     try {
-      const response = await DynamoDBOperations.scan({
-        filterExpression: '#sk = :metadata AND #status = :published',
-        expressionAttributeNames: {
-          '#sk': 'SK',
-          '#status': 'status',
-        },
+      // Query using GSI6 for popular content (sorted by viewCount descending)
+      const response = await DynamoDBOperations.query({
+        indexName: 'GSI6',
+        keyConditionExpression: 'GSI6PK = :popular',
         expressionAttributeValues: {
-          ':metadata': 'METADATA',
-          ':published': ContentStatus.PUBLISHED,
+          ':popular': 'POPULAR',
         },
+        scanIndexForward: false, // Descending order (highest views first)
+        limit,
       });
 
       const items = response.Items || [];
-
-      // Sort by viewCount
-      const sorted = items.sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0));
-
-      return sorted.slice(0, limit).map((item) => this.fromDBItem(item));
+      return items.map((item) => this.fromDBItem(item));
     } catch (error) {
       handleDynamoDBError(error);
     }
@@ -462,10 +498,18 @@ export class ContentRepository implements IContentRepository {
       PK: `CONTENT#${content.id}`,
       SK: 'METADATA',
       Type: 'CONTENT',
+      // GSI1: Query by content type
       GSI1PK: `CONTENT#${content.type}`,
       GSI1SK: `${obj.publishedAt || obj.createdAt}#${content.id}`,
+      // GSI4: Query by status
       GSI4PK: content.status,
       GSI4SK: `${obj.createdAt}#${content.id}`,
+      // GSI5: Query by slug for SEO-friendly URLs
+      GSI5PK: 'SLUG',
+      GSI5SK: content.titleSlug,
+      // GSI6: Query by popularity (viewCount)
+      GSI6PK: 'POPULAR',
+      GSI6SK: `${String(content.viewCount).padStart(10, '0')}#${content.id}`,
       ...obj,
     };
   }

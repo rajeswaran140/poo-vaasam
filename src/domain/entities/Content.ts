@@ -168,15 +168,15 @@ export class Content {
     }
 
     if (dto.featuredImage !== undefined) {
-      this._featuredImage = dto.featuredImage;
+      this._featuredImage = dto.featuredImage || undefined;
     }
 
     if (dto.audioUrl !== undefined) {
-      this._audioUrl = dto.audioUrl;
+      this._audioUrl = dto.audioUrl || undefined;
     }
 
     if (dto.audioDuration !== undefined) {
-      this._audioDuration = dto.audioDuration;
+      this._audioDuration = dto.audioDuration || undefined;
     }
 
     if (dto.categoryIds !== undefined) {
@@ -188,11 +188,11 @@ export class Content {
     }
 
     if (dto.seoTitle !== undefined) {
-      this._seoTitle = dto.seoTitle;
+      this._seoTitle = dto.seoTitle || undefined;
     }
 
     if (dto.seoDescription !== undefined) {
-      this._seoDescription = dto.seoDescription;
+      this._seoDescription = dto.seoDescription || undefined;
     }
 
     if (dto.status !== undefined) {

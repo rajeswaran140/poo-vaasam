@@ -287,6 +287,7 @@ export default async function HomePage() {
             </div>
           </div>
         </div>
+        </div>
       </section>
 
       {/* உள்ளடக்க வகைகள் பகுதி */}

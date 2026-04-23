@@ -62,6 +62,10 @@ async function createTable() {
         { AttributeName: 'GSI3SK', AttributeType: 'S' },
         { AttributeName: 'GSI4PK', AttributeType: 'S' },
         { AttributeName: 'GSI4SK', AttributeType: 'S' },
+        { AttributeName: 'GSI5PK', AttributeType: 'S' },
+        { AttributeName: 'GSI5SK', AttributeType: 'S' },
+        { AttributeName: 'GSI6PK', AttributeType: 'S' },
+        { AttributeName: 'GSI6SK', AttributeType: 'S' },
       ],
 
       // Global Secondary Indexes
@@ -95,6 +99,22 @@ async function createTable() {
           KeySchema: [
             { AttributeName: 'GSI4PK', KeyType: 'HASH' },
             { AttributeName: 'GSI4SK', KeyType: 'RANGE' },
+          ],
+          Projection: { ProjectionType: 'ALL' },
+        },
+        {
+          IndexName: 'GSI5',
+          KeySchema: [
+            { AttributeName: 'GSI5PK', KeyType: 'HASH' },
+            { AttributeName: 'GSI5SK', KeyType: 'RANGE' },
+          ],
+          Projection: { ProjectionType: 'ALL' },
+        },
+        {
+          IndexName: 'GSI6',
+          KeySchema: [
+            { AttributeName: 'GSI6PK', KeyType: 'HASH' },
+            { AttributeName: 'GSI6SK', KeyType: 'RANGE' },
           ],
           Projection: { ProjectionType: 'ALL' },
         },
@@ -137,7 +157,7 @@ async function createTable() {
         console.log(`  Table Name: ${TABLE_NAME}`);
         console.log(`  Item Count: ${description.Table?.ItemCount || 0}`);
         console.log(`  Size: ${description.Table?.TableSizeBytes || 0} bytes`);
-        console.log(`  GSIs: GSI1, GSI2, GSI3, GSI4`);
+        console.log(`  GSIs: GSI1 (type), GSI2 (category), GSI3 (tag), GSI4 (status), GSI5 (slug), GSI6 (popular)`);
         return;
       }
 

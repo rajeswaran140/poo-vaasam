@@ -109,14 +109,14 @@ export interface UpdateContentDTO {
   body?: string;
   description?: string;
   author?: string;
-  featuredImage?: string;
-  audioUrl?: string;
-  audioDuration?: number;
+  featuredImage?: string | null;
+  audioUrl?: string | null;
+  audioDuration?: number | null;
   categoryIds?: string[];
   tagIds?: string[];
   status?: ContentStatus;
-  seoTitle?: string;
-  seoDescription?: string;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
 }
 
 /**
@@ -128,7 +128,8 @@ export interface ContentQueryOptions {
   categoryId?: string;
   tagId?: string;
   limit?: number;
-  offset?: number;
+  offset?: number; // Deprecated: Use lastEvaluatedKey for cursor-based pagination
+  lastEvaluatedKey?: Record<string, any>; // DynamoDB cursor for pagination
   sortBy?: 'createdAt' | 'publishedAt' | 'viewCount' | 'averageRating';
   sortOrder?: 'asc' | 'desc';
 }
@@ -140,7 +141,8 @@ export interface PaginatedContent {
   items: ContentEntity[];
   total: number;
   limit: number;
-  offset: number;
+  offset?: number; // Deprecated: for backward compatibility
+  lastEvaluatedKey?: Record<string, any>; // DynamoDB cursor for next page
   hasMore: boolean;
 }
 
