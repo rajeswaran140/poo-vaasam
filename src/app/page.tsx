@@ -91,12 +91,12 @@ export default async function HomePage() {
                   <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-5xl font-extrabold font-poem leading-snug tracking-normal">
                     <span className="block mb-3">படியுங்கள். கேளுங்கள்.</span>
                     <span className="block bg-gradient-to-r from-orange-200 to-yellow-200 bg-clip-text text-transparent">
-                      அனுபவியுங்கள்.
+                      அனுபவித்து மகிழுங்கள்.
                     </span>
                   </h1>
                   <p className="text-lg sm:text-xl lg:text-2xl text-white/90 font-poem leading-loose font-light max-w-3xl mx-auto">
                     <span className="block">தமிழ் இலக்கியத்தின் எல்லையற்ற உலகம்.</span>
-                    <span className="block mt-2">எப்போதும் இலவசம்.</span>
+                    <span className="block mt-2">என்றும் இலவசம்.</span>
                   </p>
                 </div>
 
@@ -123,7 +123,7 @@ export default async function HomePage() {
                     className="group px-10 py-5 bg-white text-orange-600 rounded-full font-bold hover:bg-orange-50 transition-all shadow-2xl hover:shadow-3xl transform hover:scale-105 font-tamil inline-flex items-center justify-center gap-3 text-lg"
                   >
                     <span className="text-2xl">📝</span>
-                    <span>இப்போதே ஆரம்பிக்கவும்</span>
+                    <span>இப்போதே தொடங்குங்கள்</span>
                     <svg className="w-6 h-6 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
                     </svg>
@@ -132,7 +132,7 @@ export default async function HomePage() {
                     href="/all"
                     className="px-10 py-5 bg-transparent backdrop-blur-sm text-white border-2 border-white/60 rounded-full font-bold hover:bg-white/15 hover:border-white transition-all transform hover:scale-105 font-tamil inline-flex items-center justify-center gap-3 text-lg"
                   >
-                    <span>உள்ளடக்கத்தை காண்க</span>
+                    <span>உள்ளடக்கத்தைக் காணுங்கள்</span>
                   </Link>
                 </div>
               </div>
@@ -150,7 +150,7 @@ export default async function HomePage() {
               ஏன் தமிழகவல்?
             </h2>
             <p className="text-lg sm:text-xl text-gray-300 font-tamil max-w-2xl mx-auto leading-relaxed">
-              முற்றிலும் இலவசமாக தமிழ் இலக்கியத்தை படிக்கவும், கேட்கவும் ஆரம்பிக்கவும்
+              முற்றிலும் இலவசமாக தமிழ் இலக்கியத்தைப் படியுங்கள், கேளுங்கள், அனுபவியுங்கள்
             </p>
           </div>
 
