@@ -247,6 +247,14 @@ export function PoemReader({ content }: PoemReaderProps) {
 
       {/* Poem Content with Enhanced Typography */}
       <div className="container mx-auto px-4 py-12 max-w-4xl">
+        {/* Poem Title */}
+        <h1 className={`text-3xl md:text-4xl font-bold font-poem mb-8 ${
+          readingMode === 'dark' ? 'text-gray-100' : readingMode === 'sepia' ? 'text-amber-950' : 'text-gray-900'
+        }`}>
+          {content.title}
+        </h1>
+
+        {/* Poem Body */}
         <div
           ref={contentRef}
           onMouseUp={handleTextSelection}
