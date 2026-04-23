@@ -31,7 +31,7 @@ export default async function LyricsPage() {
       <header className="bg-gradient-to-r from-yellow-600 to-yellow-700 text-white py-16">
         <div className="container mx-auto px-4">
           <Link href="/" className="text-yellow-100 hover:text-white mb-4 inline-block font-tamil">
-            ← முகப்புக்குத் திரும்பு
+            ← முகப்புக்குத் திரும்புங்கள்
           </Link>
           <h1 className="text-5xl font-bold mb-4 font-tamil">🎤 பாடல் வரிகள்</h1>
           <p className="text-xl text-yellow-100 font-tamil">தமிழ் பாடல் வரிகள் தொகுப்பு</p>

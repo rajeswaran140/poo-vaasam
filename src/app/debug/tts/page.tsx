@@ -76,7 +76,7 @@ export default function TTSDebugPage() {
             href="/"
             className="text-purple-600 hover:text-purple-800 mb-4 inline-flex items-center gap-2"
           >
-            ← முகப்புக்குத் திரும்பு
+            ← முகப்புக்குத் திரும்புங்கள்
           </Link>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
             🔧 TTS Configuration Debug

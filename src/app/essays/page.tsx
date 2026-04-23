@@ -31,7 +31,7 @@ export default async function EssaysPage() {
       <header className="bg-gradient-to-r from-purple-600 to-purple-700 text-white py-16">
         <div className="container mx-auto px-4">
           <Link href="/" className="text-purple-100 hover:text-white mb-4 inline-block font-tamil">
-            ← முகப்புக்குத் திரும்பு
+            ← முகப்புக்குத் திரும்புங்கள்
           </Link>
           <h1 className="text-5xl font-bold mb-4 font-tamil">✍️ கட்டுரைகள்</h1>
           <p className="text-xl text-purple-100 font-tamil">தமிழ் கட்டுரைகள் தொகுப்பு</p>

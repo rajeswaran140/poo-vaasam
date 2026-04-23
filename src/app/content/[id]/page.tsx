@@ -44,7 +44,7 @@ export default async function ContentPage({ params }: PageProps) {
         <div className="container mx-auto px-4 py-3 max-w-5xl">
           <Link href="/" className="text-gray-600 hover:text-gray-900 inline-flex items-center gap-2 font-tamil">
             <span>←</span>
-            <span>முகப்புக்குத் திரும்பு</span>
+            <span>முகப்புக்குத் திரும்புங்கள்</span>
           </Link>
         </div>
       </div>
@@ -177,7 +177,7 @@ export default async function ContentPage({ params }: PageProps) {
             href="/"
             className="inline-block px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium font-tamil"
           >
-            ← முகப்புக்குத் திரும்பு
+            ← முகப்புக்குத் திரும்புங்கள்
           </Link>
         </div>
       </article>

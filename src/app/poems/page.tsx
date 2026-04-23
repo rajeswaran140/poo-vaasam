@@ -41,7 +41,7 @@ export default async function PoemsPage() {
         <div className="container mx-auto px-4 relative z-10">
           <Link href="/" className="text-green-100 hover:text-white mb-6 inline-flex items-center gap-2 font-tamil transition-colors group">
             <span className="group-hover:-translate-x-1 transition-transform">←</span>
-            <span>முகப்புக்குத் திரும்பு</span>
+            <span>முகப்புக்குத் திரும்புங்கள்</span>
           </Link>
           <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold mb-4 font-poem leading-tight animate-fade-in-down">
             📝 கவிதைகள்

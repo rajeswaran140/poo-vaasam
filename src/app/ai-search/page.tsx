@@ -21,7 +21,7 @@ export default function AISearchPage() {
             className="text-purple-100 hover:text-white mb-6 inline-flex items-center gap-2 font-tamil transition-colors group"
           >
             <span className="group-hover:-translate-x-1 transition-transform">←</span>
-            <span>முகப்புக்குத் திரும்பு</span>
+            <span>முகப்புக்குத் திரும்புங்கள்</span>
           </Link>
           <div className="flex items-center gap-4 mb-4">
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold font-poem">
