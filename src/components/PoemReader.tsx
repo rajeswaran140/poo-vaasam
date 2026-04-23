@@ -246,7 +246,7 @@ export function PoemReader({ content }: PoemReaderProps) {
       </div>
 
       {/* Poem Content with Enhanced Typography */}
-      <div className="container mx-auto px-4 sm:px-6 md:px-8 py-8 sm:py-10 md:py-12 max-w-3xl lg:max-w-4xl">
+      <div className="container mx-auto px-4 sm:px-6 md:px-8 py-8 sm:py-10 md:py-12 max-w-7xl">
         {/* Poem Title */}
         <h1 className={`text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold font-poem mb-6 sm:mb-8 leading-tight ${
           readingMode === 'dark' ? 'text-gray-100' : readingMode === 'sepia' ? 'text-amber-950' : 'text-gray-900'
@@ -254,12 +254,12 @@ export function PoemReader({ content }: PoemReaderProps) {
           {content.title}
         </h1>
 
-        {/* Poem Body */}
+        {/* Poem Body - Two Column Grid Layout */}
         <div
           ref={contentRef}
           onMouseUp={handleTextSelection}
-          className={`poem-text font-poem whitespace-pre-wrap ${
-            readingMode === 'dark' ? 'text-gray-100' : readingMode === 'sepia' ? 'text-amber-950' : 'text-gray-900'
+          className={`poem-text font-poem whitespace-pre-wrap grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 ${
+            readingMode === 'dark' ? 'text-gray-100 md:divide-x md:divide-gray-700' : readingMode === 'sepia' ? 'text-amber-950 md:divide-x md:divide-amber-300' : 'text-gray-900 md:divide-x md:divide-gray-300'
           }`}
           style={{
             // Mobile-first responsive font sizes
@@ -275,11 +275,10 @@ export function PoemReader({ content }: PoemReaderProps) {
             wordBreak: 'break-word',
             overflowWrap: 'break-word',
             hyphens: 'auto',
-            // Optimal reading width
-            maxWidth: '65ch',
           }}
         >
-          {content.body}
+          <div className="md:pr-6">{content.body}</div>
+          <div className="hidden md:block md:pl-6">{content.body}</div>
         </div>
       </div>
 
