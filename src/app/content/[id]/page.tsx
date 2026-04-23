@@ -32,24 +32,6 @@ export default async function ContentPage({ params }: PageProps) {
     notFound();
   }
 
-  const typeColors: Record<string, { bg: string; text: string; gradient: string }> = {
-    SONGS: { bg: 'bg-blue-100', text: 'text-blue-800', gradient: 'from-blue-600 to-blue-700' },
-    POEMS: { bg: 'bg-green-100', text: 'text-green-800', gradient: 'from-green-600 to-green-700' },
-    LYRICS: { bg: 'bg-yellow-100', text: 'text-yellow-800', gradient: 'from-yellow-600 to-yellow-700' },
-    STORIES: { bg: 'bg-pink-100', text: 'text-pink-800', gradient: 'from-pink-600 to-pink-700' },
-    ESSAYS: { bg: 'bg-purple-100', text: 'text-purple-800', gradient: 'from-purple-600 to-purple-700' },
-  };
-
-  const typeNames: Record<string, string> = {
-    SONGS: 'பாடல்',
-    POEMS: 'கவிதை',
-    LYRICS: 'வரிகள்',
-    STORIES: 'கதை',
-    ESSAYS: 'கட்டுரை',
-  };
-
-  const colors = typeColors[content.type] || typeColors.SONGS;
-
   return (
     <ContentPageClient
       contentId={content.id}
@@ -65,56 +47,6 @@ export default async function ContentPage({ params }: PageProps) {
             <span>முகப்புக்குத் திரும்பு</span>
           </Link>
         </div>
-      </div>
-
-      {/* Hero Section - Image and Title Overlay */}
-      <div className="relative w-full">
-        {content.featuredImage ? (
-          <div className="relative w-full h-[300px] sm:h-[400px] md:h-[500px] lg:h-[600px] overflow-hidden">
-            {/* Featured Image */}
-            <img
-              src={content.featuredImage}
-              alt={content.title}
-              className="w-full h-full object-cover"
-            />
-            {/* Dark Overlay for Text Readability */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent"></div>
-
-            {/* Title Overlay */}
-            <div className="absolute inset-0 flex flex-col justify-end">
-              <div className="container mx-auto px-4 sm:px-6 pb-8 sm:pb-12 max-w-5xl">
-                <span className={`inline-block px-3 py-1 ${colors.bg} ${colors.text} rounded-full text-xs sm:text-sm font-semibold mb-3 sm:mb-4 font-tamil`}>
-                  {typeNames[content.type]}
-                </span>
-                <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white font-tamil leading-tight mb-2 sm:mb-3 drop-shadow-lg">
-                  {content.title}
-                </h1>
-                {content.description && (
-                  <p className="text-base sm:text-lg md:text-xl text-white/95 font-tamil max-w-3xl drop-shadow-md">
-                    {content.description}
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        ) : (
-          // Fallback gradient header when no image
-          <div className={`relative w-full bg-gradient-to-br ${colors.gradient} py-16 sm:py-20 md:py-24`}>
-            <div className="container mx-auto px-4 sm:px-6 max-w-5xl">
-              <span className={`inline-block px-3 py-1 bg-white/20 text-white rounded-full text-xs sm:text-sm font-semibold mb-3 sm:mb-4 font-tamil`}>
-                {typeNames[content.type]}
-              </span>
-              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white font-tamil leading-tight mb-2 sm:mb-3">
-                {content.title}
-              </h1>
-              {content.description && (
-                <p className="text-base sm:text-lg md:text-xl text-white/95 font-tamil max-w-3xl">
-                  {content.description}
-                </p>
-              )}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Content */}
