@@ -7,6 +7,7 @@ import { notFound } from 'next/navigation';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentPageClient } from '@/components/ContentPageClient';
 import { PoemReader } from '@/components/PoemReader';
+import { PoetryGuideChat } from '@/components/PoetryGuideChat';
 
 async function getContent(id: string) {
   try {
@@ -248,6 +249,13 @@ export default async function ContentPage({ params }: PageProps) {
           </Link>
         </div>
       </article>
+
+      {/* AI Poetry Guide Chat - Floating Button */}
+      <PoetryGuideChat
+        poemId={content.id}
+        poemTitle={content.title}
+        poemAuthor={content.author}
+      />
     </div>
     </ContentPageClient>
   );
