@@ -27,23 +27,27 @@ interface TTSOptions {
  * Initialize Google Cloud TTS Client
  */
 function getTTSClient() {
-  // For production, use service account file
+  // For Amplify deployment, use base64 encoded credentials (priority)
+  if (process.env.GOOGLE_TTS_CREDENTIALS_BASE64) {
+    try {
+      const credentials = JSON.parse(
+        Buffer.from(process.env.GOOGLE_TTS_CREDENTIALS_BASE64, 'base64').toString('utf-8')
+      );
+      return new TextToSpeechClient({ credentials });
+    } catch (error) {
+      console.error('Failed to parse GOOGLE_TTS_CREDENTIALS_BASE64:', error);
+      throw new Error('Invalid Google TTS credentials format');
+    }
+  }
+
+  // For local development, use service account file
   if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
     return new TextToSpeechClient({
       keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
     });
   }
 
-  // For Amplify deployment, use base64 encoded credentials
-  if (process.env.GOOGLE_TTS_CREDENTIALS_BASE64) {
-    const credentials = JSON.parse(
-      Buffer.from(process.env.GOOGLE_TTS_CREDENTIALS_BASE64, 'base64').toString('utf-8')
-    );
-    return new TextToSpeechClient({ credentials });
-  }
-
-  // Fallback for build time
-  return new TextToSpeechClient();
+  throw new Error('Google TTS credentials not configured');
 }
 
 /**

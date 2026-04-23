@@ -27,8 +27,9 @@ export async function POST(request: NextRequest) {
 
     // Check if Google TTS is configured
     if (!process.env.GOOGLE_APPLICATION_CREDENTIALS && !process.env.GOOGLE_TTS_CREDENTIALS_BASE64) {
+      console.error('Google TTS credentials not found in environment variables');
       return NextResponse.json(
-        { error: 'Google TTS not configured' },
+        { error: 'Google TTS not configured. Please set GOOGLE_TTS_CREDENTIALS_BASE64 environment variable.' },
         { status: 503 }
       );
     }
@@ -49,8 +50,13 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('TTS error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Failed to generate audio';
     return NextResponse.json(
-      { error: 'Failed to generate audio' },
+      {
+        error: 'Failed to generate audio',
+        details: errorMessage,
+        timestamp: new Date().toISOString()
+      },
       { status: 500 }
     );
   }
