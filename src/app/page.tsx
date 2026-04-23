@@ -6,6 +6,7 @@
 export const dynamic = 'force-dynamic';
 
 import Link from 'next/link';
+import Header from '@/components/Header';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentStatus, ContentType } from '@/types/content';
 
@@ -59,8 +60,10 @@ export default async function HomePage() {
 
   return (
     <div className="min-h-screen bg-gray-900">
+      <Header />
+
       {/* Hero Section - Audible Style */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white">
+      <section className="relative overflow-hidden bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white pt-16">
         {/* Background Pattern */}
         <div className="absolute inset-0 opacity-10">
           <div className="absolute inset-0" style={{
