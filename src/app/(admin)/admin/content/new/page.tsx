@@ -40,8 +40,8 @@ export default function NewContentPage() {
     async function loadData() {
       try {
         const [categoriesRes, tagsRes] = await Promise.all([
-          fetch('/api/test/content?action=categories'),
-          fetch('/api/test/content?action=tags'),
+          fetch('/api/categories', { credentials: 'include' }),
+          fetch('/api/tags', { credentials: 'include' }),
         ]);
 
         const categoriesData = await categoriesRes.json();
@@ -61,14 +61,11 @@ export default function NewContentPage() {
     setLoading(true);
 
     try {
-      const response = await fetch('/api/test/content', {
+      const response = await fetch('/api/admin/content', {
         method: 'POST',
-        credentials: 'include', // Send cookies for authentication
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'create-content',
-          ...formData,
-        }),
+        body: JSON.stringify(formData),
       });
 
       const data = await response.json();

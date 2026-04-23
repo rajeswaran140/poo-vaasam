@@ -23,8 +23,8 @@ export default function CategoriesPage() {
 
   async function loadCategories() {
     try {
-      const response = await fetch('/api/test/content?action=categories', {
-        credentials: 'include', // Send cookies for authentication
+      const response = await fetch('/api/categories', {
+        credentials: 'include',
       });
       const data = await response.json();
       if (data.success) {
@@ -41,14 +41,11 @@ export default function CategoriesPage() {
     e.preventDefault();
 
     try {
-      const response = await fetch('/api/test/content', {
+      const response = await fetch('/api/categories', {
         method: 'POST',
-        credentials: 'include', // Send cookies for authentication
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'create-category',
-          ...formData,
-        }),
+        body: JSON.stringify(formData),
       });
 
       const data = await response.json();

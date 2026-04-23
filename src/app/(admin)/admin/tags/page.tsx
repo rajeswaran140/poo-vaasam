@@ -28,8 +28,8 @@ export default function TagsPage() {
 
   async function loadTags() {
     try {
-      const response = await fetch('/api/test/content?action=tags', {
-        credentials: 'include', // Send cookies for authentication
+      const response = await fetch('/api/tags', {
+        credentials: 'include',
       });
       const data = await response.json();
       if (data.success) {
@@ -46,12 +46,11 @@ export default function TagsPage() {
     e.preventDefault();
 
     try {
-      const response = await fetch('/api/test/content', {
+      const response = await fetch('/api/tags', {
         method: 'POST',
-        credentials: 'include', // Send cookies for authentication
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'create-tag',
           name: tagName,
         }),
       });
@@ -75,7 +74,7 @@ export default function TagsPage() {
   async function handleDeleteTag() {
     setDeleting(true);
     try {
-      const response = await fetch(`/api/test/content?action=delete-tag&id=${deleteModal.tagId}`, {
+      const response = await fetch(`/api/tags?id=${deleteModal.tagId}`, {
         method: 'DELETE',
         credentials: 'include',
       });

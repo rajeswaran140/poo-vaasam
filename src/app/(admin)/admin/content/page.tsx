@@ -36,15 +36,17 @@ export default function ContentListPage() {
       setLoading(true);
 
       // Build API URL based on filters
-      let url = '/api/test/content?action=list';
+      let url = '/api/admin/content';
 
       // Apply type filter if not ALL
       if (typeFilter !== 'ALL') {
-        url = `/api/test/content?action=by-type&type=${typeFilter}`;
+        url = `/api/admin/content?type=${typeFilter}`;
       }
 
-      // Note: Status filter would need backend support for cursor-based pagination
-      // For now, we'll filter client-side for simplicity
+      // Apply status filter if set
+      if (statusFilter !== 'ALL') {
+        url += `${url.includes('?') ? '&' : '?'}status=${statusFilter}`;
+      }
 
       const response = await fetch(url, {
         credentials: 'include',
@@ -52,12 +54,7 @@ export default function ContentListPage() {
       const data = await response.json();
 
       if (data.success) {
-        let items = data.data.items || [];
-
-        // Apply status filter client-side
-        if (statusFilter !== 'ALL') {
-          items = items.filter((item: any) => item._status === statusFilter);
-        }
+        const items = data.data.items || [];
 
         if (reset) {
           setContent(items);

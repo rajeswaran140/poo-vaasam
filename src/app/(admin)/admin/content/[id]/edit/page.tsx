@@ -43,8 +43,8 @@ export default function EditContentPage({ params }: PageProps) {
 
       try {
         // Load content
-        const contentRes = await fetch(`/api/test/content?id=${resolvedParams.id}`, {
-          credentials: 'include', // Send cookies for authentication
+        const contentRes = await fetch(`/api/content?id=${resolvedParams.id}`, {
+          credentials: 'include',
         });
         const contentData = await contentRes.json();
 
@@ -67,11 +67,11 @@ export default function EditContentPage({ params }: PageProps) {
 
         // Load categories and tags
         const [categoriesRes, tagsRes] = await Promise.all([
-          fetch('/api/test/content?action=categories', {
-            credentials: 'include', // Send cookies for authentication
+          fetch('/api/categories', {
+            credentials: 'include',
           }),
-          fetch('/api/test/content?action=tags', {
-            credentials: 'include', // Send cookies for authentication
+          fetch('/api/tags', {
+            credentials: 'include',
           }),
         ]);
 

@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { CategoryRepository } from '@/infrastructure/database/CategoryRepository';
 import { TagRepository } from '@/infrastructure/database/TagRepository';
+import { GetContentUseCase } from '@/application/use-cases/GetContentUseCase';
 import { requireAuth, unauthorizedResponse } from '@/lib/auth-helper';
 import {
   updateContentSchema,
@@ -19,6 +20,61 @@ import {
 const contentRepo = new ContentRepository();
 const categoryRepo = new CategoryRepository();
 const tagRepo = new TagRepository();
+
+const getContentUseCase = new GetContentUseCase(
+  contentRepo,
+  categoryRepo,
+  tagRepo
+);
+
+/**
+ * GET /api/content?id=xxx
+ * Get single content by ID
+ *
+ * @requires Authentication
+ */
+export async function GET(request: NextRequest) {
+  try {
+    // Verify authentication
+    try {
+      await requireAuth(request);
+    } catch {
+      return unauthorizedResponse();
+    }
+
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: 'Content ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Get content with categories and tags
+    const content = await getContentUseCase.execute(id, false);
+
+    if (!content) {
+      return NextResponse.json(
+        { success: false, error: 'Content not found' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: content,
+      message: 'Content retrieved successfully',
+    });
+  } catch (error) {
+    console.error('[API:GET_CONTENT] Error:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to fetch content' },
+      { status: 500 }
+    );
+  }
+}
 
 /**
  * DELETE /api/content?id=xxx
