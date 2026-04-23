@@ -108,9 +108,12 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               </p>
             </div>
             <div className="flex items-center gap-4">
-              <button className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium flex items-center gap-2">
+              <Link
+                href="/admin/content/new"
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium flex items-center gap-2"
+              >
                 <Plus className="w-5 h-5" /> New Content
-              </button>
+              </Link>
             </div>
           </div>
         </header>

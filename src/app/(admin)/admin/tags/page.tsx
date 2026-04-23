@@ -7,12 +7,21 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import showToast from '@/lib/toast';
+import { Trash2 } from 'lucide-react';
 
 export default function TagsPage() {
   const [tags, setTags] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [tagName, setTagName] = useState('');
+  const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; tagId: string; tagName: string }>({
+    isOpen: false,
+    tagId: '',
+    tagName: '',
+  });
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     loadTags();
@@ -51,16 +60,41 @@ export default function TagsPage() {
       const data = await response.json();
 
       if (data.success) {
-        alert('✅ Tag created successfully!');
+        showToast.success('குறிச்சொல் வெற்றிகரமாக உருவாக்கப்பட்டது!');
         setTagName('');
         setShowForm(false);
         loadTags();
       } else {
-        alert('❌ Failed to create tag');
+        showToast.error('குறிச்சொல்லை உருவாக்க முடியவில்லை');
       }
     } catch (error) {
       console.error('Error:', error);
-      alert('❌ Failed to create tag');
+      showToast.error('குறிச்சொல்லை உருவாக்க முடியவில்லை');
+    }
+  }
+
+  async function handleDeleteTag() {
+    setDeleting(true);
+    try {
+      const response = await fetch(`/api/test/content?action=delete-tag&id=${deleteModal.tagId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        showToast.success('குறிச்சொல் நீக்கப்பட்டது!');
+        setDeleteModal({ isOpen: false, tagId: '', tagName: '' });
+        loadTags();
+      } else {
+        showToast.error('குறிச்சொல்லை நீக்க முடியவில்லை');
+      }
+    } catch (error) {
+      console.error('Error deleting tag:', error);
+      showToast.error('குறிச்சொல்லை நீக்க முடியவில்லை');
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -143,7 +177,11 @@ export default function TagsPage() {
                     {tag.contentCount || 0}
                   </span>
                   <div className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button className="w-6 h-6 bg-red-500 rounded-full text-white text-xs hover:bg-red-600">
+                    <button
+                      onClick={() => setDeleteModal({ isOpen: true, tagId: tag.id, tagName: tag.name })}
+                      className="w-6 h-6 bg-red-500 rounded-full text-white text-xs hover:bg-red-600 transition-colors"
+                      title="Delete tag"
+                    >
                       ×
                     </button>
                   </div>
@@ -179,6 +217,19 @@ export default function TagsPage() {
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => setDeleteModal({ isOpen: false, tagId: '', tagName: '' })}
+        onConfirm={handleDeleteTag}
+        title="Delete Tag?"
+        message={`நீங்கள் "${deleteModal.tagName}" குறிச்சொல்லை நிரந்தரமாக நீக்க விரும்புகிறீர்களா? இந்த செயலை மாற்ற முடியாது.`}
+        confirmText="Delete Tag"
+        cancelText="Cancel"
+        isDangerous={true}
+        isLoading={deleting}
+      />
     </div>
   );
 }
