@@ -72,58 +72,66 @@ export default async function HomePage() {
           }}></div>
         </div>
 
-        <div className="container mx-auto px-4 sm:px-6 py-16 sm:py-20 lg:py-24 relative z-10">
-          <div className="max-w-6xl mx-auto">
-            <div className="grid lg:grid-cols-2 gap-12 items-center">
+        <div className="container mx-auto px-4 sm:px-6 py-20 sm:py-24 lg:py-28 relative z-10">
+          <div className="max-w-7xl mx-auto">
+            <div className="grid lg:grid-cols-2 gap-16 items-center">
               {/* Left Content */}
-              <div className="text-center lg:text-left">
-                <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm px-4 py-2 rounded-full mb-6">
-                  <span className="text-2xl">✨</span>
-                  <span className="font-semibold font-tamil">முற்றிலும் இலவசம்</span>
+              <div className="text-center lg:text-left space-y-8">
+                {/* Free Badge */}
+                <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-md px-5 py-2.5 rounded-full border border-white/30 shadow-lg">
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                  </svg>
+                  <span className="font-bold font-tamil text-sm">முற்றிலும் இலவசம்</span>
                 </div>
 
-                <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6 font-tamil leading-tight">
-                  படியுங்கள். கேளுங்கள். அனுபவியுங்கள்.
-                </h1>
+                {/* Main Headline */}
+                <div>
+                  <h1 className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-bold font-tamil leading-[1.1] mb-4">
+                    படியுங்கள்.
+                    <br />
+                    கேளுங்கள்.
+                    <br />
+                    <span className="text-orange-200">அனுபவியுங்கள்.</span>
+                  </h1>
+                  <p className="text-lg sm:text-xl text-orange-50/90 font-tamil leading-relaxed max-w-xl mx-auto lg:mx-0">
+                    தமிழ் இலக்கியத்தின் எல்லையற்ற உலகம். எப்போதும் இலவசம்.
+                  </p>
+                </div>
 
-                <p className="text-base sm:text-lg mb-8 text-orange-100 font-tamil leading-relaxed max-w-xl">
-                  தமிழ் இலக்கியத்தின் எல்லையற்ற உலகத்தை இலவசமாக அனுபவியுங்கள். பாடல்கள், கவிதைகள், கதைகள் - எல்லாமே இலவசம்.
-                </p>
-
-                {/* Free Features */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-                  <div className="flex items-center gap-3 bg-white/10 backdrop-blur-sm rounded-lg p-4">
-                    <span className="text-3xl">📖</span>
-                    <div className="text-left">
-                      <div className="font-bold font-tamil">இலவச வாசிப்பு</div>
-                      <div className="text-sm text-orange-100 font-tamil">வரம்பற்ற அணுகல்</div>
-                    </div>
+                {/* Feature Pills */}
+                <div className="flex flex-wrap gap-3 justify-center lg:justify-start">
+                  <div className="flex items-center gap-2 bg-white/15 backdrop-blur-sm rounded-full px-4 py-2 border border-white/20">
+                    <span className="text-xl">📖</span>
+                    <span className="font-semibold font-tamil text-sm">வாசிப்பு</span>
                   </div>
-                  <div className="flex items-center gap-3 bg-white/10 backdrop-blur-sm rounded-lg p-4">
-                    <span className="text-3xl">🎧</span>
-                    <div className="text-left">
-                      <div className="font-bold font-tamil">இலவச கேட்டல்</div>
-                      <div className="text-sm text-orange-100 font-tamil">ஆடியோ உள்ளடக்கம்</div>
-                    </div>
+                  <div className="flex items-center gap-2 bg-white/15 backdrop-blur-sm rounded-full px-4 py-2 border border-white/20">
+                    <span className="text-xl">🎧</span>
+                    <span className="font-semibold font-tamil text-sm">கேட்டல்</span>
+                  </div>
+                  <div className="flex items-center gap-2 bg-white/15 backdrop-blur-sm rounded-full px-4 py-2 border border-white/20">
+                    <span className="text-xl">🚫</span>
+                    <span className="font-semibold font-tamil text-sm">விளம்பரங்கள் இல்லை</span>
                   </div>
                 </div>
 
                 {/* CTA Buttons */}
-                <div className="flex flex-col sm:flex-row justify-center lg:justify-start gap-4">
+                <div className="flex flex-col sm:flex-row justify-center lg:justify-start gap-4 pt-4">
                   <Link
                     href="/poems"
-                    className="group px-8 py-4 bg-white text-orange-600 rounded-full font-bold hover:bg-orange-50 transition-all shadow-2xl hover:shadow-3xl transform hover:scale-105 font-tamil inline-flex items-center justify-center gap-2"
+                    className="group px-8 py-4 bg-white text-orange-600 rounded-full font-bold hover:bg-orange-50 transition-all shadow-2xl hover:shadow-3xl transform hover:scale-105 font-tamil inline-flex items-center justify-center gap-3"
                   >
-                    <span>📝</span>
-                    <span>கவிதைகளை ஆரம்பிக்கவும்</span>
-                    <span className="group-hover:translate-x-1 transition-transform">→</span>
+                    <span className="text-xl">📝</span>
+                    <span>இப்போதே ஆரம்பிக்கவும்</span>
+                    <svg className="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                    </svg>
                   </Link>
                   <Link
-                    href="/songs"
-                    className="px-8 py-4 bg-orange-500/30 backdrop-blur-sm text-white border-2 border-white/50 rounded-full font-bold hover:bg-white/20 transition-all hover:border-white transform hover:scale-105 font-tamil inline-flex items-center justify-center gap-2"
+                    href="/all"
+                    className="px-8 py-4 bg-transparent backdrop-blur-sm text-white border-2 border-white/50 rounded-full font-bold hover:bg-white/10 hover:border-white transition-all transform hover:scale-105 font-tamil inline-flex items-center justify-center gap-3"
                   >
-                    <span>🎵</span>
-                    <span>பாடல்களை கண்டறியவும்</span>
+                    <span>உள்ளடக்கத்தை காண்க</span>
                   </Link>
                 </div>
               </div>
