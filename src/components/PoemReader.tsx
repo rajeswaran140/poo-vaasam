@@ -257,7 +257,7 @@ export function PoemReader({ content }: PoemReaderProps) {
       </div>
 
       {/* Poem Content with Enhanced Typography */}
-      <div className="container mx-auto px-4 sm:px-6 md:px-8 lg:px-12 py-8 sm:py-10 md:py-12 lg:py-16 max-w-7xl">
+      <div className="container mx-auto px-2 sm:px-6 md:px-8 lg:px-12 py-8 sm:py-10 md:py-12 lg:py-16 max-w-7xl">
         {/* Poem Title */}
         <h1 className={`text-2xl sm:text-3xl md:text-4xl lg:text-5xl xl:text-6xl font-bold font-poem mb-6 sm:mb-8 md:mb-10 leading-tight ${
           readingMode === 'dark' ? 'text-gray-100' : readingMode === 'sepia' ? 'text-amber-950' : 'text-gray-900'
