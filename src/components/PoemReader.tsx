@@ -277,8 +277,23 @@ export function PoemReader({ content }: PoemReaderProps) {
             hyphens: 'auto',
           }}
         >
-          <div className="md:pr-6">{content.body}</div>
-          <div className="hidden md:block md:pl-6">{content.body}</div>
+          {/* Split content into two columns on desktop */}
+          <div className="md:pr-6">
+            {(() => {
+              const lines = content.body.split('\n');
+              const midPoint = Math.ceil(lines.length / 2);
+              const firstHalf = lines.slice(0, midPoint).join('\n');
+              return <>{firstHalf}</>;
+            })()}
+          </div>
+          <div className="hidden md:block md:pl-6">
+            {(() => {
+              const lines = content.body.split('\n');
+              const midPoint = Math.ceil(lines.length / 2);
+              const secondHalf = lines.slice(midPoint).join('\n');
+              return <>{secondHalf}</>;
+            })()}
+          </div>
         </div>
       </div>
 
