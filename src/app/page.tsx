@@ -86,9 +86,9 @@ export default async function HomePage() {
                   <span className="font-bold font-tamil">முற்றிலும் இலவசம்</span>
                 </div>
 
-                {/* Main Headline - Reduced Font Size */}
+                {/* Main Headline - Reduced Font Size by 25% */}
                 <div className="space-y-6">
-                  <h1 className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-extrabold font-tamil leading-tight tracking-tight">
+                  <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-5xl font-extrabold font-tamil leading-tight tracking-tight">
                     படியுங்கள். கேளுங்கள்.
                     <br />
                     <span className="bg-gradient-to-r from-orange-200 to-yellow-200 bg-clip-text text-transparent">
