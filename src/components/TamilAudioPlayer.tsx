@@ -106,9 +106,6 @@ export function TamilAudioPlayer({ text, title, voice = 'female', autoGenerate =
           <h3 className="font-semibold text-gray-900 font-tamil">
             {title || 'கவிதையைக் கேளுங்கள்'}
           </h3>
-          <p className="text-sm text-gray-600 font-tamil">
-            தமிழ் குரல்
-          </p>
         </div>
       </div>
 
@@ -196,13 +193,6 @@ export function TamilAudioPlayer({ text, title, voice = 'female', autoGenerate =
         </div>
       )}
 
-      {/* Voice Info */}
-      <div className="mt-4 pt-4 border-t border-purple-200">
-        <p className="text-xs text-gray-600 font-tamil">
-          🎙️ குரல்: {voice === 'female' ? 'பெண் குரல்' : 'ஆண் குரல்'} •
-          ⚡ AI உருவாக்கிய குரல்
-        </p>
-      </div>
     </div>
   );
 }
