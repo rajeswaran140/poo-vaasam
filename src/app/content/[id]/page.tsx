@@ -5,6 +5,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
+import { ContentSidebar } from '@/components/ContentSidebar';
 
 async function getContent(id: string) {
   try {
@@ -49,6 +50,13 @@ export default async function ContentPage({ params }: PageProps) {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Sidebar Component */}
+      <ContentSidebar
+        currentId={content.id}
+        currentType={content.type}
+        currentTitle={content.title}
+      />
+
       {/* Back Navigation - Fixed at top */}
       <div className="bg-white border-b border-gray-200">
         <div className="container mx-auto px-4 py-3 max-w-5xl">
