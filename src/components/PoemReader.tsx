@@ -277,8 +277,25 @@ export function PoemReader({ content }: PoemReaderProps) {
             hyphens: 'auto',
           }}
         >
-          {/* Split content into two columns on desktop, keeping stanzas together */}
-          <div className="md:pr-6">
+          {/* Mobile: Full poem in single column */}
+          <div className="md:hidden">
+            {content.body}
+            {content.author && (
+              <div className="mt-8 pt-6 border-t border-gray-300" style={{
+                fontSize: '0.95rem',
+                lineHeight: '1.6',
+                opacity: 0.85
+              }}>
+                <div className="text-right">
+                  <div>ஊக்கம்: தமிழ்</div>
+                  <div>ஆக்கம்: {content.author}</div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Desktop: Split content into two columns, keeping stanzas together */}
+          <div className="hidden md:block md:pr-6">
             {(() => {
               // Split by stanzas (groups separated by blank lines)
               const stanzas = content.body.split(/\n\s*\n/);
