@@ -293,7 +293,23 @@ export function PoemReader({ content }: PoemReaderProps) {
               const stanzas = content.body.split(/\n\s*\n/);
               const midPoint = Math.ceil(stanzas.length / 2);
               const secondHalf = stanzas.slice(midPoint).join('\n\n');
-              return <>{secondHalf}</>;
+              return (
+                <>
+                  {secondHalf}
+                  {content.author && (
+                    <div className="mt-8 pt-6 border-t border-gray-300" style={{
+                      fontSize: '0.95rem',
+                      lineHeight: '1.6',
+                      opacity: 0.85
+                    }}>
+                      <div className="text-right">
+                        <div>ஊக்கம்: தமிழ்</div>
+                        <div>ஆக்கம்: {content.author}</div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
             })()}
           </div>
         </div>

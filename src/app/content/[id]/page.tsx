@@ -87,36 +87,6 @@ export default async function ContentPage({ params }: PageProps) {
             </div>
           )}
 
-          {/* Author and Date Section - Below the Poem */}
-          <div className="px-6 sm:px-8 md:px-12 pb-6 sm:pb-8 md:pb-12 border-t border-gray-200">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 pt-6">
-              <div className="flex items-center gap-2">
-                <span className="text-gray-500 font-tamil text-sm">ஆசிரியர்:</span>
-                <span className="text-lg sm:text-xl font-bold text-gray-900 font-tamil">
-                  {content.author}
-                </span>
-              </div>
-              <div className="flex items-center gap-4 text-sm text-gray-600">
-                <div className="flex items-center gap-2">
-                  <span className="font-tamil">📅</span>
-                  <span>
-                    {new Date(content.publishedAt || content.createdAt).toLocaleDateString('ta-IN', {
-                      day: 'numeric',
-                      month: 'long',
-                      year: 'numeric'
-                    })}
-                  </span>
-                </div>
-                <span>•</span>
-                <div className="flex items-center gap-2">
-                  <span>👁️</span>
-                  <span className="font-tamil">
-                    {content.viewCount || 0} பார்வைகள்
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
 
           {/* Categories */}
           {content.categories && content.categories.length > 0 && (
