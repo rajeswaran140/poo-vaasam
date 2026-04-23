@@ -62,117 +62,125 @@ export default async function HomePage() {
     <div className="min-h-screen bg-gray-900">
       <Header />
 
-      {/* Hero Section - Audible Style */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white pt-16">
+      {/* Hero Section - Full Width Two Column */}
+      <section className="relative overflow-hidden bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white pt-20">
         {/* Background Pattern */}
         <div className="absolute inset-0 opacity-10">
           <div className="absolute inset-0" style={{
             backgroundImage: `radial-gradient(circle at 2px 2px, white 1px, transparent 0)`,
-            backgroundSize: '32px 32px'
+            backgroundSize: '40px 40px'
           }}></div>
         </div>
 
-        <div className="container mx-auto px-4 sm:px-6 py-20 sm:py-24 lg:py-28 relative z-10">
-          <div className="max-w-7xl mx-auto">
-            <div className="grid lg:grid-cols-2 gap-16 items-center">
-              {/* Left Content */}
-              <div className="text-center lg:text-left space-y-8">
+        {/* Full Width Grid Container */}
+        <div className="relative z-10">
+          <div className="grid lg:grid-cols-2 min-h-[calc(100vh-5rem)]">
+            {/* Left Column - CTA Content */}
+            <div className="flex items-center justify-center lg:justify-end px-6 sm:px-12 lg:px-16 xl:px-24 py-16 lg:py-24">
+              <div className="max-w-2xl space-y-10">
                 {/* Free Badge */}
-                <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-md px-5 py-2.5 rounded-full border border-white/30 shadow-lg">
+                <div className="inline-flex items-center gap-2.5 bg-white/20 backdrop-blur-md px-6 py-3 rounded-full border border-white/30 shadow-lg">
                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                     <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
                   </svg>
-                  <span className="font-bold font-tamil text-sm">முற்றிலும் இலவசம்</span>
+                  <span className="font-bold font-tamil">முற்றிலும் இலவசம்</span>
                 </div>
 
                 {/* Main Headline */}
-                <div>
-                  <h1 className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-bold font-tamil leading-[1.1] mb-4">
+                <div className="space-y-6">
+                  <h1 className="text-5xl sm:text-6xl lg:text-7xl xl:text-8xl font-extrabold font-tamil leading-[0.95] tracking-tight">
                     படியுங்கள்.
                     <br />
                     கேளுங்கள்.
                     <br />
-                    <span className="text-orange-200">அனுபவியுங்கள்.</span>
+                    <span className="bg-gradient-to-r from-orange-200 to-yellow-200 bg-clip-text text-transparent">
+                      அனுபவியுங்கள்.
+                    </span>
                   </h1>
-                  <p className="text-lg sm:text-xl text-orange-50/90 font-tamil leading-relaxed max-w-xl mx-auto lg:mx-0">
-                    தமிழ் இலக்கியத்தின் எல்லையற்ற உலகம். எப்போதும் இலவசம்.
+                  <p className="text-xl sm:text-2xl text-white/90 font-tamil leading-relaxed font-light">
+                    தமிழ் இலக்கியத்தின் எல்லையற்ற உலகம்.
+                    <br />
+                    எப்போதும் இலவசம்.
                   </p>
                 </div>
 
                 {/* Feature Pills */}
-                <div className="flex flex-wrap gap-3 justify-center lg:justify-start">
-                  <div className="flex items-center gap-2 bg-white/15 backdrop-blur-sm rounded-full px-4 py-2 border border-white/20">
-                    <span className="text-xl">📖</span>
-                    <span className="font-semibold font-tamil text-sm">வாசிப்பு</span>
+                <div className="flex flex-wrap gap-3">
+                  <div className="flex items-center gap-2.5 bg-white/15 backdrop-blur-sm rounded-xl px-5 py-3 border border-white/20 shadow-lg">
+                    <span className="text-2xl">📖</span>
+                    <span className="font-semibold font-tamil">வாசிப்பு</span>
                   </div>
-                  <div className="flex items-center gap-2 bg-white/15 backdrop-blur-sm rounded-full px-4 py-2 border border-white/20">
-                    <span className="text-xl">🎧</span>
-                    <span className="font-semibold font-tamil text-sm">கேட்டல்</span>
+                  <div className="flex items-center gap-2.5 bg-white/15 backdrop-blur-sm rounded-xl px-5 py-3 border border-white/20 shadow-lg">
+                    <span className="text-2xl">🎧</span>
+                    <span className="font-semibold font-tamil">கேட்டல்</span>
                   </div>
-                  <div className="flex items-center gap-2 bg-white/15 backdrop-blur-sm rounded-full px-4 py-2 border border-white/20">
-                    <span className="text-xl">🚫</span>
+                  <div className="flex items-center gap-2.5 bg-white/15 backdrop-blur-sm rounded-xl px-5 py-3 border border-white/20 shadow-lg">
+                    <span className="text-2xl">🚫</span>
                     <span className="font-semibold font-tamil text-sm">விளம்பரங்கள் இல்லை</span>
                   </div>
                 </div>
 
                 {/* CTA Buttons */}
-                <div className="flex flex-col sm:flex-row justify-center lg:justify-start gap-4 pt-4">
+                <div className="flex flex-col sm:flex-row gap-4 pt-6">
                   <Link
                     href="/poems"
-                    className="group px-8 py-4 bg-white text-orange-600 rounded-full font-bold hover:bg-orange-50 transition-all shadow-2xl hover:shadow-3xl transform hover:scale-105 font-tamil inline-flex items-center justify-center gap-3"
+                    className="group px-10 py-5 bg-white text-orange-600 rounded-full font-bold hover:bg-orange-50 transition-all shadow-2xl hover:shadow-3xl transform hover:scale-105 font-tamil inline-flex items-center justify-center gap-3 text-lg"
                   >
-                    <span className="text-xl">📝</span>
+                    <span className="text-2xl">📝</span>
                     <span>இப்போதே ஆரம்பிக்கவும்</span>
-                    <svg className="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                    <svg className="w-6 h-6 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
                     </svg>
                   </Link>
                   <Link
                     href="/all"
-                    className="px-8 py-4 bg-transparent backdrop-blur-sm text-white border-2 border-white/50 rounded-full font-bold hover:bg-white/10 hover:border-white transition-all transform hover:scale-105 font-tamil inline-flex items-center justify-center gap-3"
+                    className="px-10 py-5 bg-transparent backdrop-blur-sm text-white border-2 border-white/60 rounded-full font-bold hover:bg-white/15 hover:border-white transition-all transform hover:scale-105 font-tamil inline-flex items-center justify-center gap-3 text-lg"
                   >
                     <span>உள்ளடக்கத்தை காண்க</span>
                   </Link>
                 </div>
               </div>
+            </div>
 
-              {/* Right Content - Stats & Visual */}
-              <div className="hidden lg:block">
-                <div className="relative">
-                  {/* Stats Cards */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-white/95 backdrop-blur-sm rounded-2xl p-6 shadow-2xl transform hover:scale-105 transition-transform">
-                      <div className="text-5xl mb-2">📚</div>
-                      <div className="text-4xl font-bold text-orange-600">{totalContent}</div>
-                      <div className="text-gray-600 font-tamil text-sm">மொத்த உள்ளடக்கம்</div>
-                    </div>
-                    <div className="bg-white/95 backdrop-blur-sm rounded-2xl p-6 shadow-2xl transform hover:scale-105 transition-transform">
-                      <div className="text-5xl mb-2">🎵</div>
-                      <div className="text-4xl font-bold text-blue-600">{stats?.songs || 0}</div>
-                      <div className="text-gray-600 font-tamil text-sm">பாடல்கள்</div>
-                    </div>
-                    <div className="bg-white/95 backdrop-blur-sm rounded-2xl p-6 shadow-2xl transform hover:scale-105 transition-transform">
-                      <div className="text-5xl mb-2">📝</div>
-                      <div className="text-4xl font-bold text-green-600">{stats?.poems || 0}</div>
-                      <div className="text-gray-600 font-tamil text-sm">கவிதைகள்</div>
-                    </div>
-                    <div className="bg-white/95 backdrop-blur-sm rounded-2xl p-6 shadow-2xl transform hover:scale-105 transition-transform">
-                      <div className="text-5xl mb-2">📖</div>
-                      <div className="text-4xl font-bold text-pink-600">{stats?.stories || 0}</div>
-                      <div className="text-gray-600 font-tamil text-sm">கதைகள்</div>
-                    </div>
+            {/* Right Column - Visual/Image */}
+            <div className="hidden lg:flex items-center justify-center lg:justify-start bg-gradient-to-br from-orange-600/20 to-orange-700/20 backdrop-blur-sm px-6 sm:px-12 lg:px-16 xl:px-24 py-16 lg:py-24 border-l border-white/10">
+              <div className="relative w-full max-w-2xl">
+                {/* Stats Grid */}
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="bg-white/95 backdrop-blur-xl rounded-3xl p-8 shadow-2xl transform hover:scale-105 hover:rotate-2 transition-all">
+                    <div className="text-6xl mb-4">📚</div>
+                    <div className="text-5xl font-black text-orange-600 mb-2">{totalContent}</div>
+                    <div className="text-gray-700 font-tamil font-semibold">மொத்த உள்ளடக்கம்</div>
                   </div>
-
-                  {/* Floating Badge */}
-                  <div className="absolute -top-4 -right-4 bg-gradient-to-br from-yellow-400 to-orange-500 text-white px-6 py-3 rounded-full shadow-2xl transform rotate-12 animate-pulse">
-                    <div className="font-bold text-lg font-tamil">100% இலவசம்!</div>
+                  <div className="bg-white/95 backdrop-blur-xl rounded-3xl p-8 shadow-2xl transform hover:scale-105 hover:-rotate-2 transition-all">
+                    <div className="text-6xl mb-4">🎵</div>
+                    <div className="text-5xl font-black text-blue-600 mb-2">{stats?.songs || 0}</div>
+                    <div className="text-gray-700 font-tamil font-semibold">பாடல்கள்</div>
+                  </div>
+                  <div className="bg-white/95 backdrop-blur-xl rounded-3xl p-8 shadow-2xl transform hover:scale-105 hover:-rotate-2 transition-all">
+                    <div className="text-6xl mb-4">📝</div>
+                    <div className="text-5xl font-black text-green-600 mb-2">{stats?.poems || 0}</div>
+                    <div className="text-gray-700 font-tamil font-semibold">கவிதைகள்</div>
+                  </div>
+                  <div className="bg-white/95 backdrop-blur-xl rounded-3xl p-8 shadow-2xl transform hover:scale-105 hover:rotate-2 transition-all">
+                    <div className="text-6xl mb-4">📖</div>
+                    <div className="text-5xl font-black text-pink-600 mb-2">{stats?.stories || 0}</div>
+                    <div className="text-gray-700 font-tamil font-semibold">கதைகள்</div>
                   </div>
                 </div>
+
+                {/* Floating Badge */}
+                <div className="absolute -top-8 -right-8 bg-gradient-to-br from-yellow-400 via-yellow-500 to-orange-500 text-white px-8 py-4 rounded-full shadow-2xl transform rotate-12 animate-bounce">
+                  <div className="font-black text-xl font-tamil drop-shadow-lg">100% இலவசம்!</div>
+                </div>
+
+                {/* Decorative Elements */}
+                <div className="absolute -bottom-6 -left-6 w-32 h-32 bg-white/10 rounded-full blur-3xl"></div>
+                <div className="absolute -top-10 left-1/3 w-24 h-24 bg-yellow-300/20 rounded-full blur-2xl"></div>
               </div>
             </div>
           </div>
         </div>
-
       </section>
 
       {/* Why Choose Section - Free Features */}
