@@ -12,82 +12,83 @@ export interface MusicTrack {
 }
 
 // Curated music library for different emotional contexts
+// Using Kevin MacLeod's royalty-free music from incompetech.com
 export const MUSIC_LIBRARY: Record<string, MusicTrack[]> = {
   sad: [
     {
-      url: 'https://www.bensound.com/bensound-music/bensound-sadday.mp3',
+      url: 'https://incompetech.com/music/royalty-free/mp3-royaltyfree/Heartbreaking.mp3',
       emotion: 'sad',
       mood: 'somber',
-      description: 'Sad Day - Melancholic piano piece',
+      description: 'Heartbreaking - Melancholic piano piece',
     },
     {
-      url: 'https://www.bensound.com/bensound-music/bensound-memories.mp3',
+      url: 'https://incompetech.com/music/royalty-free/mp3-royaltyfree/Gymnopedie%20No%201.mp3',
       emotion: 'sad',
       mood: 'reflective',
-      description: 'Memories - Emotional and nostalgic',
+      description: 'Gymnopedie No 1 - Emotional and nostalgic',
     },
   ],
 
   melancholic: [
     {
-      url: 'https://files.freemusicarchive.org/storage-freemusicarchive-org/music/no_curator/Kevin_MacLeod/Impact/Kevin_MacLeod_-_Sonatina_in_C_minor.mp3',
+      url: 'https://incompetech.com/music/royalty-free/mp3-royaltyfree/Heartbreaking.mp3',
       emotion: 'melancholic',
       mood: 'somber',
-      description: 'Sonatina in C minor - Classical melancholic',
+      description: 'Heartbreaking - Classical melancholic',
     },
   ],
 
   reflective: [
     {
-      url: 'https://www.bensound.com/bensound-music/bensound-slowmotion.mp3',
+      url: 'https://incompetech.com/music/royalty-free/mp3-royaltyfree/Meditation%20Impromptu%2001.mp3',
       emotion: 'reflective',
       mood: 'peaceful',
-      description: 'Slow Motion - Contemplative ambient',
+      description: 'Meditation Impromptu - Contemplative ambient',
     },
   ],
 
   devotional: [
     {
-      url: 'https://www.bensound.com/bensound-music/bensound-india.mp3',
+      url: 'https://incompetech.com/music/royalty-free/mp3-royaltyfree/Meditation%20Impromptu%2002.mp3',
       emotion: 'devotional',
       mood: 'peaceful',
-      description: 'India - Traditional spiritual ambiance',
+      description: 'Meditation Impromptu 02 - Traditional spiritual ambiance',
     },
   ],
 
   joyful: [
     {
-      url: 'https://www.bensound.com/bensound-music/bensound-ukulele.mp3',
+      url: 'https://incompetech.com/music/royalty-free/mp3-royaltyfree/Wallpaper.mp3',
       emotion: 'joyful',
       mood: 'uplifting',
-      description: 'Ukulele - Light and cheerful',
+      description: 'Wallpaper - Light and cheerful',
     },
   ],
 
   hopeful: [
     {
-      url: 'https://www.bensound.com/bensound-music/bensound-betterdays.mp3',
+      url: 'https://incompetech.com/music/royalty-free/mp3-royaltyfree/Ascending.mp3',
       emotion: 'hopeful',
       mood: 'uplifting',
-      description: 'Better Days - Inspirational and optimistic',
+      description: 'Ascending - Inspirational and optimistic',
     },
   ],
 
   romantic: [
     {
-      url: 'https://www.bensound.com/bensound-music/bensound-love.mp3',
+      url: 'https://incompetech.com/music/royalty-free/mp3-royaltyfree/Romance%20and%20Passion.mp3',
       emotion: 'romantic',
       mood: 'gentle',
-      description: 'Love - Tender and emotional',
+      description: 'Romance and Passion - Tender and emotional',
     },
   ],
 
   patriotic: [
     {
-      url: 'https://www.bensound.com/bensound-music/bensound-epic.mp3',
+      url: 'https://incompetech.com/music/royalty-free/mp3-royaltyfree/Drums%20of%20the%20Deep.mp3',
       emotion: 'patriotic',
       mood: 'powerful',
-      description: 'Epic - Majestic and inspiring',
+      description: 'Drums of the Deep - Majestic and inspiring',
     },
   ],
 };

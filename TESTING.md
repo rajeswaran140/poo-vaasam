@@ -144,8 +144,8 @@ Current test coverage:
    - Firefox: Fair quality
    - Safari: Good on Apple devices
 
-3. **Music Sources**: Using free Bensound library
-   - Some tracks may not load due to CORS
+3. **Music Sources**: Using Kevin MacLeod's royalty-free music from incompetech.com
+   - All tracks support CORS and direct streaming
    - Fallback system ensures something always plays
 
 4. **AI Analysis**: Requires OpenAI API key

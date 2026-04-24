@@ -13,7 +13,7 @@ describe('Music Library', () => {
     it('should select sad music for sad emotion', () => {
       const track = selectMusicForPoem('sad', 'somber');
       expect(track.emotion).toBe('sad');
-      expect(track.url).toContain('bensound');
+      expect(track.url).toContain('incompetech');
     });
 
     it('should select joyful music for joyful emotion', () => {
@@ -53,7 +53,7 @@ describe('Music Library', () => {
     it('should always include sad music as final fallback', () => {
       const sources = getAllMusicSources('patriotic', 'powerful');
       const hasSadFallback = sources.some(url =>
-        url.includes('sadday') || url.includes('memories')
+        url.includes('Heartbreaking') || url.includes('Gymnopedie')
       );
       expect(hasSadFallback).toBe(true);
     });
