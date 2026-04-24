@@ -3,12 +3,23 @@
 import { useState, useEffect, useRef } from 'react';
 import { BookmarkIcon, PrinterIcon, SpeakerWaveIcon, ClipboardDocumentIcon, ShareIcon, MusicalNoteIcon } from '@heroicons/react/24/outline';
 import { BookmarkIcon as BookmarkSolidIcon, MusicalNoteIcon as MusicalNoteSolidIcon } from '@heroicons/react/24/solid';
+import { getAllMusicSources, getMusicDescription } from '@/utils/musicLibrary';
 
 interface PoemReaderProps {
   content: any; // Accept any content object from the database
 }
 
 type ReadingMode = 'light' | 'dark' | 'sepia';
+
+interface PoemAnalysis {
+  emotion: string;
+  mood: string;
+  themes: string[];
+  musicRecommendation: string;
+  ttsSpeed: number;
+  ttsPitch: number;
+  summary: string;
+}
 
 export function PoemReader({ content }: PoemReaderProps) {
   const [readingMode, setReadingMode] = useState<ReadingMode>('light');
@@ -20,14 +31,56 @@ export function PoemReader({ content }: PoemReaderProps) {
   const [isMusicPlaying, setIsMusicPlaying] = useState(false);
   const [volume, setVolume] = useState(0.3);
   const [showVolumeControl, setShowVolumeControl] = useState(false);
+  const [poemAnalysis, setPoemAnalysis] = useState<PoemAnalysis | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Analyze poem on mount
+  useEffect(() => {
+    analyzePoemContext();
+  }, [content.id]);
 
   // Check if already bookmarked
   useEffect(() => {
     const bookmarks = JSON.parse(localStorage.getItem('poem-bookmarks') || '[]');
     setIsBookmarked(bookmarks.includes(content.id));
   }, [content.id]);
+
+  const analyzePoemContext = async () => {
+    setIsAnalyzing(true);
+    try {
+      const response = await fetch('/api/ai/analyze-poem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: content.title,
+          body: content.body,
+          author: content.author,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setPoemAnalysis(data.analysis);
+      }
+    } catch (error) {
+      console.error('Failed to analyze poem:', error);
+      // Use default sad/reflective analysis
+      setPoemAnalysis({
+        emotion: 'sad',
+        mood: 'somber',
+        themes: ['இழப்பு', 'நினைவுகள்'],
+        musicRecommendation: 'sad_piano',
+        ttsSpeed: 0.85,
+        ttsPitch: -1.0,
+        summary: 'உணர்ச்சிபூர்வமான கவிதை',
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   // Load reading mode preference
   useEffect(() => {
@@ -59,21 +112,56 @@ export function PoemReader({ content }: PoemReaderProps) {
     window.print();
   };
 
-  const handleTextToSpeech = () => {
-    if ('speechSynthesis' in window) {
-      if (isSpeaking) {
-        window.speechSynthesis.cancel();
-        setIsSpeaking(false);
-      } else {
-        const utterance = new SpeechSynthesisUtterance(content.body);
-        utterance.lang = 'ta-IN';
-        utterance.rate = 0.9;
-        utterance.onend = () => setIsSpeaking(false);
-        window.speechSynthesis.speak(utterance);
-        setIsSpeaking(true);
+  const handleTextToSpeech = async () => {
+    if (isSpeaking) {
+      // Stop current speech
+      if (ttsAudioRef.current) {
+        ttsAudioRef.current.pause();
+        ttsAudioRef.current = null;
       }
+      setIsSpeaking(false);
     } else {
-      alert('உங்கள் உலாவி உரை-குரல் அம்சத்தை ஆதரிக்கவில்லை');
+      const textToSpeak = selectedText || content.body;
+
+      try {
+        setIsSpeaking(true);
+
+        // Use context-aware Google TTS API for high-quality Tamil speech
+        const response = await fetch('/api/tts/context-aware', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: textToSpeak,
+            emotion: poemAnalysis?.emotion || 'reflective',
+            mood: poemAnalysis?.mood || 'somber',
+            voice: 'female', // Can be made configurable
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('TTS request failed');
+        }
+
+        // Create audio from response
+        const audioBlob = await response.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+
+        ttsAudioRef.current = new Audio(audioUrl);
+        ttsAudioRef.current.onended = () => {
+          setIsSpeaking(false);
+          URL.revokeObjectURL(audioUrl);
+        };
+        ttsAudioRef.current.onerror = () => {
+          setIsSpeaking(false);
+          URL.revokeObjectURL(audioUrl);
+        };
+
+        await ttsAudioRef.current.play();
+      } catch (error) {
+        console.error('TTS error:', error);
+        setIsSpeaking(false);
+        alert('குரல் வாசிப்பு தோல்வியடைந்தது. தயவுசெய்து மீண்டும் முயற்சிக்கவும்.');
+      }
     }
   };
 
@@ -114,19 +202,15 @@ export function PoemReader({ content }: PoemReaderProps) {
 
   const handleBackgroundMusic = () => {
     if (!audioRef.current) {
-      // Create audio element for sad/somber background music
-      // Using verified sad/emotional piano music sources
+      // Create audio element with context-aware music selection
       audioRef.current = new Audio();
       audioRef.current.loop = true;
       audioRef.current.volume = volume;
 
-      // Verified sad/emotional music sources
-      // Using Bensound and other reliable royalty-free sources
-      const sources = [
-        'https://www.bensound.com/bensound-music/bensound-sadday.mp3', // Sad Day - Piano
-        'https://www.bensound.com/bensound-music/bensound-memories.mp3', // Memories - Emotional
-        'https://files.freemusicarchive.org/storage-freemusicarchive-org/music/no_curator/Kevin_MacLeod/Impact/Kevin_MacLeod_-_Sonatina_in_C_minor.mp3', // Classical sad
-      ];
+      // Get intelligent music sources based on poem analysis
+      const sources = poemAnalysis
+        ? getAllMusicSources(poemAnalysis.emotion, poemAnalysis.mood)
+        : getAllMusicSources('sad', 'somber'); // Default fallback
 
       // Set the first source
       audioRef.current.src = sources[0];
@@ -153,6 +237,11 @@ export function PoemReader({ content }: PoemReaderProps) {
       setIsMusicPlaying(false);
       setShowVolumeControl(false);
     } else {
+      // Show music description
+      const description = poemAnalysis
+        ? getMusicDescription(poemAnalysis.emotion, poemAnalysis.mood)
+        : 'Sad Day - Melancholic piano piece';
+
       audioRef.current.play().catch(err => {
         console.error('Failed to play background music:', err);
         alert('இசையை இயக்க முடியவில்லை. மற்றொரு முறை முயற்சிக்கவும்.');
