@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { BookmarkIcon, PrinterIcon, SpeakerWaveIcon, ClipboardDocumentIcon, ShareIcon } from '@heroicons/react/24/outline';
-import { BookmarkIcon as BookmarkSolidIcon } from '@heroicons/react/24/solid';
+import { BookmarkIcon, PrinterIcon, SpeakerWaveIcon, ClipboardDocumentIcon, ShareIcon, MusicalNoteIcon } from '@heroicons/react/24/outline';
+import { BookmarkIcon as BookmarkSolidIcon, MusicalNoteIcon as MusicalNoteSolidIcon } from '@heroicons/react/24/solid';
 
 interface PoemReaderProps {
   content: any; // Accept any content object from the database
@@ -17,7 +17,9 @@ export function PoemReader({ content }: PoemReaderProps) {
   const [selectedText, setSelectedText] = useState('');
   const [showCopyNotification, setShowCopyNotification] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
+  const [isMusicPlaying, setIsMusicPlaying] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Check if already bookmarked
   useEffect(() => {
@@ -108,6 +110,36 @@ export function PoemReader({ content }: PoemReaderProps) {
     }
   };
 
+  const handleBackgroundMusic = () => {
+    if (!audioRef.current) {
+      // Create audio element for somber/emotional background music
+      // Using a royalty-free somber piano piece
+      audioRef.current = new Audio('https://assets.mixkit.co/music/preview/mixkit-sad-piano-reflection-114.mp3');
+      audioRef.current.loop = true;
+      audioRef.current.volume = 0.3; // Gentle background volume
+    }
+
+    if (isMusicPlaying) {
+      audioRef.current.pause();
+      setIsMusicPlaying(false);
+    } else {
+      audioRef.current.play().catch(err => {
+        console.error('Failed to play background music:', err);
+      });
+      setIsMusicPlaying(true);
+    }
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, []);
+
   const modeStyles = {
     light: 'bg-white text-gray-900',
     dark: 'bg-gray-900 text-gray-100',
@@ -124,9 +156,113 @@ export function PoemReader({ content }: PoemReaderProps) {
     <div className={`relative ${modeStyles[readingMode]} transition-colors duration-300`}>
       {/* Reading Mode Toolbar */}
       <div className={`sticky top-0 z-10 border-b ${modeBorders[readingMode]} backdrop-blur-sm bg-opacity-95 ${modeStyles[readingMode]}`}>
-        <div className="container mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3 sm:gap-4">
-          {/* Reading Mode Selector */}
-          <div className="flex gap-1.5 sm:gap-2">
+        <div className="container mx-auto px-2 sm:px-4 py-2 sm:py-3">
+          {/* Mobile: Stack layout */}
+          <div className="flex flex-col gap-2 sm:hidden">
+            {/* Reading Mode Buttons Row */}
+            <div className="flex gap-1.5 justify-center">
+              <button
+                onClick={() => handleReadingModeChange('light')}
+                className={`px-2 py-1.5 rounded-lg text-xs font-medium font-tamil transition-all ${
+                  readingMode === 'light'
+                    ? 'bg-gray-900 text-white'
+                    : 'bg-gray-200 text-gray-700'
+                }`}
+                aria-label="வெளிச்சம் பயன்முறை"
+              >
+                ☀️
+              </button>
+              <button
+                onClick={() => handleReadingModeChange('dark')}
+                className={`px-2 py-1.5 rounded-lg text-xs font-medium font-tamil transition-all ${
+                  readingMode === 'dark'
+                    ? 'bg-white text-gray-900'
+                    : 'bg-gray-700 text-gray-100'
+                }`}
+                aria-label="இருட்டு பயன்முறை"
+              >
+                🌙
+              </button>
+              <button
+                onClick={() => handleReadingModeChange('sepia')}
+                className={`px-2 py-1.5 rounded-lg text-xs font-medium font-tamil transition-all ${
+                  readingMode === 'sepia'
+                    ? 'bg-amber-900 text-amber-50'
+                    : 'bg-amber-100 text-amber-900'
+                }`}
+                aria-label="செப்பியா பயன்முறை"
+              >
+                📜
+              </button>
+            </div>
+
+            {/* Action Buttons Row */}
+            <div className="flex gap-1.5 justify-center overflow-x-auto">
+              <button
+                onClick={handleBackgroundMusic}
+                className={`p-1.5 rounded-lg transition-all ${
+                  isMusicPlaying ? 'bg-purple-100 text-purple-700' : ''
+                } ${
+                  readingMode === 'dark' ? 'hover:bg-gray-800' : readingMode === 'sepia' ? 'hover:bg-amber-100' : 'hover:bg-gray-100'
+                }`}
+                title={isMusicPlaying ? 'இசையை நிறுத்து' : 'பின்னணி இசை'}
+                aria-label={isMusicPlaying ? 'பின்னணி இசையை நிறுத்து' : 'பின்னணி இசையை இயக்கு'}
+              >
+                {isMusicPlaying ? (
+                  <MusicalNoteSolidIcon className="w-5 h-5 animate-pulse" />
+                ) : (
+                  <MusicalNoteIcon className="w-5 h-5" />
+                )}
+              </button>
+              <button
+                onClick={handleBookmark}
+                className={`p-1.5 rounded-lg transition-all ${
+                  readingMode === 'dark' ? 'hover:bg-gray-800' : readingMode === 'sepia' ? 'hover:bg-amber-100' : 'hover:bg-gray-100'
+                }`}
+                aria-label={isBookmarked ? 'புத்தகக்குறியை அகற்று' : 'புத்தகக்குறியாக சேமி'}
+              >
+                {isBookmarked ? (
+                  <BookmarkSolidIcon className="w-5 h-5 text-green-600" />
+                ) : (
+                  <BookmarkIcon className="w-5 h-5" />
+                )}
+              </button>
+              <button
+                onClick={handleTextToSpeech}
+                className={`p-1.5 rounded-lg transition-all ${
+                  isSpeaking ? 'bg-green-100 text-green-700' : ''
+                } ${
+                  readingMode === 'dark' ? 'hover:bg-gray-800' : readingMode === 'sepia' ? 'hover:bg-amber-100' : 'hover:bg-gray-100'
+                }`}
+                aria-label={isSpeaking ? 'குரல் வாசிப்பை நிறுத்து' : 'குரல் வாசிப்பைத் தொடங்கு'}
+              >
+                <SpeakerWaveIcon className={`w-5 h-5 ${isSpeaking ? 'animate-pulse' : ''}`} />
+              </button>
+              <button
+                onClick={handleCopyText}
+                className={`p-1.5 rounded-lg transition-all ${
+                  readingMode === 'dark' ? 'hover:bg-gray-800' : readingMode === 'sepia' ? 'hover:bg-amber-100' : 'hover:bg-gray-100'
+                }`}
+                aria-label="கவிதையை நகலெடு"
+              >
+                <ClipboardDocumentIcon className="w-5 h-5" />
+              </button>
+              <button
+                onClick={handlePrint}
+                className={`p-1.5 rounded-lg transition-all ${
+                  readingMode === 'dark' ? 'hover:bg-gray-800' : readingMode === 'sepia' ? 'hover:bg-amber-100' : 'hover:bg-gray-100'
+                }`}
+                aria-label="கவிதையை அச்சிடு"
+              >
+                <PrinterIcon className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Desktop: Original horizontal layout */}
+          <div className="hidden sm:flex flex-wrap items-center justify-between gap-3 sm:gap-4">
+            {/* Reading Mode Selector */}
+            <div className="flex gap-1.5 sm:gap-2">
             <button
               onClick={() => handleReadingModeChange('light')}
               className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium font-tamil transition-all ${
@@ -170,6 +306,27 @@ export function PoemReader({ content }: PoemReaderProps) {
 
           {/* Action Buttons */}
           <div className="flex gap-1.5 sm:gap-2">
+            <button
+              onClick={handleBackgroundMusic}
+              className={`p-2 rounded-lg transition-all ${
+                isMusicPlaying ? 'bg-purple-100 text-purple-700' : ''
+              } ${
+                readingMode === 'dark'
+                  ? 'hover:bg-gray-800'
+                  : readingMode === 'sepia'
+                  ? 'hover:bg-amber-100'
+                  : 'hover:bg-gray-100'
+              }`}
+              title={isMusicPlaying ? 'இசையை நிறுத்து' : 'பின்னணி இசை'}
+              aria-label={isMusicPlaying ? 'பின்னணி இசையை நிறுத்து' : 'பின்னணி இசையை இயக்கு'}
+            >
+              {isMusicPlaying ? (
+                <MusicalNoteSolidIcon className="w-5 h-5 animate-pulse" />
+              ) : (
+                <MusicalNoteIcon className="w-5 h-5" />
+              )}
+            </button>
+
             <button
               onClick={handleBookmark}
               className={`p-2 rounded-lg transition-all ${
@@ -252,6 +409,7 @@ export function PoemReader({ content }: PoemReaderProps) {
             >
               <PrinterIcon className="w-5 h-5" />
             </button>
+          </div>
           </div>
         </div>
       </div>
