@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
  */
 function getEmotionBasedTTSConfig(emotion?: string, mood?: string) {
   // Default configuration
-  let config = {
+  const defaultConfig = {
     speakingRate: 0.9,
     pitch: 0,
     volumeGainDb: 2.0,
@@ -79,57 +79,59 @@ function getEmotionBasedTTSConfig(emotion?: string, mood?: string) {
   switch (emotion) {
     case 'sad':
     case 'melancholic':
-      config.speakingRate = 0.75; // Slower for sadness
-      config.pitch = -2.0; // Lower pitch
-      config.volumeGainDb = 1.0; // Softer
-      break;
+      return {
+        speakingRate: 0.75,
+        pitch: -2.0,
+        volumeGainDb: 1.0,
+      };
 
     case 'joyful':
     case 'hopeful':
-      config.speakingRate = 1.0; // Normal to slightly faster
-      config.pitch = 2.0; // Higher pitch
-      config.volumeGainDb = 3.0; // Louder, more energetic
-      break;
+      return {
+        speakingRate: 1.0,
+        pitch: 2.0,
+        volumeGainDb: 3.0,
+      };
 
     case 'reflective':
     case 'longing':
-      config.speakingRate = 0.85; // Slower, contemplative
-      config.pitch = -1.0; // Slightly lower
-      config.volumeGainDb = 1.5; // Moderate
-      break;
+      return {
+        speakingRate: 0.85,
+        pitch: -1.0,
+        volumeGainDb: 1.5,
+      };
 
     case 'devotional':
-      config.speakingRate = 0.8; // Reverent pace
-      config.pitch = 0; // Natural
-      config.volumeGainDb = 2.5; // Clear and present
-      break;
+      return {
+        speakingRate: 0.8,
+        pitch: 0,
+        volumeGainDb: 2.5,
+      };
 
     case 'patriotic':
     case 'powerful':
-      config.speakingRate = 0.95; // Confident pace
-      config.pitch = 1.0; // Slightly elevated
-      config.volumeGainDb = 4.0; // Strong and clear
-      break;
+      return {
+        speakingRate: 0.95,
+        pitch: 1.0,
+        volumeGainDb: 4.0,
+      };
 
     case 'romantic':
-      config.speakingRate = 0.85; // Gentle, measured
-      config.pitch = 0.5; // Slightly warm
-      config.volumeGainDb = 2.0; // Intimate
-      break;
+      return {
+        speakingRate: 0.85,
+        pitch: 0.5,
+        volumeGainDb: 2.0,
+      };
 
     default:
       // Use mood if emotion is not specific
       if (mood === 'somber') {
-        config.speakingRate = 0.75;
-        config.pitch = -2.0;
+        return { speakingRate: 0.75, pitch: -2.0, volumeGainDb: 1.0 };
       } else if (mood === 'uplifting') {
-        config.speakingRate = 1.0;
-        config.pitch = 2.0;
+        return { speakingRate: 1.0, pitch: 2.0, volumeGainDb: 3.0 };
       } else if (mood === 'peaceful') {
-        config.speakingRate = 0.85;
-        config.pitch = 0;
+        return { speakingRate: 0.85, pitch: 0, volumeGainDb: 2.0 };
       }
+      return defaultConfig;
   }
-
-  return config;
 }

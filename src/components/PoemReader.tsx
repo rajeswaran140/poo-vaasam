@@ -32,55 +32,51 @@ export function PoemReader({ content }: PoemReaderProps) {
   const [volume, setVolume] = useState(0.3);
   const [showVolumeControl, setShowVolumeControl] = useState(false);
   const [poemAnalysis, setPoemAnalysis] = useState<PoemAnalysis | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Analyze poem on mount
   useEffect(() => {
+    const analyzePoemContext = async () => {
+      try {
+        const response = await fetch('/api/ai/analyze-poem', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: content.title,
+            body: content.body,
+            author: content.author,
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setPoemAnalysis(data.analysis);
+        }
+      } catch (error) {
+        console.error('Failed to analyze poem:', error);
+        // Use default sad/reflective analysis
+        setPoemAnalysis({
+          emotion: 'sad',
+          mood: 'somber',
+          themes: ['இழப்பு', 'நினைவுகள்'],
+          musicRecommendation: 'sad_piano',
+          ttsSpeed: 0.85,
+          ttsPitch: -1.0,
+          summary: 'உணர்ச்சிபூர்வமான கவிதை',
+        });
+      }
+    };
+
     analyzePoemContext();
-  }, [content.id]);
+  }, [content.id, content.title, content.body, content.author]);
 
   // Check if already bookmarked
   useEffect(() => {
     const bookmarks = JSON.parse(localStorage.getItem('poem-bookmarks') || '[]');
     setIsBookmarked(bookmarks.includes(content.id));
   }, [content.id]);
-
-  const analyzePoemContext = async () => {
-    setIsAnalyzing(true);
-    try {
-      const response = await fetch('/api/ai/analyze-poem', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: content.title,
-          body: content.body,
-          author: content.author,
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setPoemAnalysis(data.analysis);
-      }
-    } catch (error) {
-      console.error('Failed to analyze poem:', error);
-      // Use default sad/reflective analysis
-      setPoemAnalysis({
-        emotion: 'sad',
-        mood: 'somber',
-        themes: ['இழப்பு', 'நினைவுகள்'],
-        musicRecommendation: 'sad_piano',
-        ttsSpeed: 0.85,
-        ttsPitch: -1.0,
-        summary: 'உணர்ச்சிபூர்வமான கவிதை',
-      });
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
 
   // Load reading mode preference
   useEffect(() => {
@@ -159,7 +155,7 @@ export function PoemReader({ content }: PoemReaderProps) {
         } else {
           throw new Error('Google TTS unavailable');
         }
-      } catch (error) {
+      } catch {
         console.log('Google TTS unavailable, falling back to browser TTS');
 
         // Fallback to browser Web Speech API with emotion-aware parameters
@@ -294,11 +290,6 @@ export function PoemReader({ content }: PoemReaderProps) {
       setIsMusicPlaying(false);
       setShowVolumeControl(false);
     } else {
-      // Show music description
-      const description = poemAnalysis
-        ? getMusicDescription(poemAnalysis.emotion, poemAnalysis.mood)
-        : 'Sad Day - Melancholic piano piece';
-
       audioRef.current.play().catch(err => {
         console.error('Failed to play background music:', err);
         alert('இசையை இயக்க முடியவில்லை. மற்றொரு முறை முயற்சிக்கவும்.');
