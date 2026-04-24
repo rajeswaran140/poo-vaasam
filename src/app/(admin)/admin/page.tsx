@@ -7,6 +7,7 @@
 import Link from 'next/link';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentType, ContentStatus } from '@/types/content';
+import { PerformanceDashboard } from '@/components/admin/PerformanceDashboard';
 
 async function getStats() {
   try {
@@ -60,6 +61,9 @@ export default async function AdminDashboard() {
           Manage your Tamil content platform from here
         </p>
       </div>
+
+      {/* Performance Dashboard */}
+      <PerformanceDashboard />
 
       {/* Statistics Cards */}
       <div>
