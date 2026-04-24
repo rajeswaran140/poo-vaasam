@@ -119,14 +119,15 @@ export function PoemReader({ content }: PoemReaderProps) {
         ttsAudioRef.current.pause();
         ttsAudioRef.current = null;
       }
+      window.speechSynthesis.cancel();
       setIsSpeaking(false);
     } else {
       const textToSpeak = selectedText || content.body;
 
+      // Try Google Cloud TTS API first (if available)
       try {
         setIsSpeaking(true);
 
-        // Use context-aware Google TTS API for high-quality Tamil speech
         const response = await fetch('/api/tts/context-aware', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -134,33 +135,89 @@ export function PoemReader({ content }: PoemReaderProps) {
             text: textToSpeak,
             emotion: poemAnalysis?.emotion || 'reflective',
             mood: poemAnalysis?.mood || 'somber',
-            voice: 'female', // Can be made configurable
+            voice: 'female',
           }),
         });
 
-        if (!response.ok) {
-          throw new Error('TTS request failed');
+        if (response.ok) {
+          // Google Cloud TTS succeeded
+          const audioBlob = await response.blob();
+          const audioUrl = URL.createObjectURL(audioBlob);
+
+          ttsAudioRef.current = new Audio(audioUrl);
+          ttsAudioRef.current.onended = () => {
+            setIsSpeaking(false);
+            URL.revokeObjectURL(audioUrl);
+          };
+          ttsAudioRef.current.onerror = () => {
+            setIsSpeaking(false);
+            URL.revokeObjectURL(audioUrl);
+          };
+
+          await ttsAudioRef.current.play();
+          return; // Success, exit
+        } else {
+          throw new Error('Google TTS unavailable');
         }
-
-        // Create audio from response
-        const audioBlob = await response.blob();
-        const audioUrl = URL.createObjectURL(audioBlob);
-
-        ttsAudioRef.current = new Audio(audioUrl);
-        ttsAudioRef.current.onended = () => {
-          setIsSpeaking(false);
-          URL.revokeObjectURL(audioUrl);
-        };
-        ttsAudioRef.current.onerror = () => {
-          setIsSpeaking(false);
-          URL.revokeObjectURL(audioUrl);
-        };
-
-        await ttsAudioRef.current.play();
       } catch (error) {
-        console.error('TTS error:', error);
-        setIsSpeaking(false);
-        alert('குரல் வாசிப்பு தோல்வியடைந்தது. தயவுசெய்து மீண்டும் முயற்சிக்கவும்.');
+        console.log('Google TTS unavailable, falling back to browser TTS');
+
+        // Fallback to browser Web Speech API with emotion-aware parameters
+        if ('speechSynthesis' in window) {
+          try {
+            const utterance = new SpeechSynthesisUtterance(textToSpeak);
+            utterance.lang = 'ta-IN';
+
+            // Apply emotion-aware parameters
+            if (poemAnalysis) {
+              switch (poemAnalysis.emotion) {
+                case 'sad':
+                case 'melancholic':
+                  utterance.rate = 0.75;
+                  utterance.pitch = 0.8;
+                  break;
+                case 'joyful':
+                case 'hopeful':
+                  utterance.rate = 1.0;
+                  utterance.pitch = 1.2;
+                  break;
+                case 'reflective':
+                case 'longing':
+                  utterance.rate = 0.85;
+                  utterance.pitch = 0.9;
+                  break;
+                default:
+                  utterance.rate = 0.9;
+                  utterance.pitch = 1.0;
+              }
+            } else {
+              utterance.rate = 0.85;
+              utterance.pitch = 0.9;
+            }
+
+            // Try to use Tamil voice
+            const voices = window.speechSynthesis.getVoices();
+            const tamilVoice = voices.find(voice => voice.lang.includes('ta'));
+            if (tamilVoice) {
+              utterance.voice = tamilVoice;
+            }
+
+            utterance.onend = () => setIsSpeaking(false);
+            utterance.onerror = () => {
+              setIsSpeaking(false);
+              alert('குரல் வாசிப்பு தோல்வியடைந்தது.');
+            };
+
+            window.speechSynthesis.speak(utterance);
+          } catch (browserError) {
+            console.error('Browser TTS error:', browserError);
+            setIsSpeaking(false);
+            alert('குரல் வாசிப்பு தோல்வியடைந்தது. உங்கள் உலாவி தமிழ் குரல்களை ஆதரிக்கவில்லை.');
+          }
+        } else {
+          setIsSpeaking(false);
+          alert('உங்கள் உலாவி உரை-குரல் அம்சத்தை ஆதரிக்கவில்லை');
+        }
       }
     }
   };
