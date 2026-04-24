@@ -18,6 +18,8 @@ export function PoemReader({ content }: PoemReaderProps) {
   const [showCopyNotification, setShowCopyNotification] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
   const [isMusicPlaying, setIsMusicPlaying] = useState(false);
+  const [volume, setVolume] = useState(0.3);
+  const [showVolumeControl, setShowVolumeControl] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -112,17 +114,17 @@ export function PoemReader({ content }: PoemReaderProps) {
 
   const handleBackgroundMusic = () => {
     if (!audioRef.current) {
-      // Create audio element for somber/emotional background music
-      // Using multiple sources for better browser compatibility
+      // Create audio element for sad/somber background music
+      // Using verified sad/emotional piano music sources
       audioRef.current = new Audio();
       audioRef.current.loop = true;
-      audioRef.current.volume = 0.3; // Gentle background volume
+      audioRef.current.volume = volume;
 
-      // Try multiple royalty-free somber music sources
+      // Curated sad/emotional piano music sources
       const sources = [
-        'https://cdn.pixabay.com/audio/2022/05/13/audio_1808fbf07a.mp3', // Sad emotional piano
-        'https://cdn.pixabay.com/audio/2022/03/10/audio_c8c6d4d99e.mp3', // Emotional piano
-        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3', // Fallback ambient
+        'https://cdn.pixabay.com/audio/2022/03/23/audio_421b4280c0.mp3', // Sad Piano - Very emotional
+        'https://cdn.pixabay.com/audio/2022/08/04/audio_70d990fe3c.mp3', // Melancholic Piano
+        'https://cdn.pixabay.com/audio/2023/02/13/audio_8003b392fe.mp3', // Emotional Sad Piano
       ];
 
       // Set the first source
@@ -148,6 +150,7 @@ export function PoemReader({ content }: PoemReaderProps) {
     if (isMusicPlaying) {
       audioRef.current.pause();
       setIsMusicPlaying(false);
+      setShowVolumeControl(false);
     } else {
       audioRef.current.play().catch(err => {
         console.error('Failed to play background music:', err);
@@ -155,6 +158,14 @@ export function PoemReader({ content }: PoemReaderProps) {
         setIsMusicPlaying(false);
       });
       setIsMusicPlaying(true);
+      setShowVolumeControl(true);
+    }
+  };
+
+  const handleVolumeChange = (newVolume: number) => {
+    setVolume(newVolume);
+    if (audioRef.current) {
+      audioRef.current.volume = newVolume;
     }
   };
 
@@ -506,6 +517,44 @@ export function PoemReader({ content }: PoemReaderProps) {
       {showCopyNotification && (
         <div className="fixed bottom-8 right-8 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg font-tamil animate-fade-in-up z-50">
           ✓ நகலெடுக்கப்பட்டது!
+        </div>
+      )}
+
+      {/* Volume Control - Shows when music is playing */}
+      {showVolumeControl && isMusicPlaying && (
+        <div className="fixed bottom-8 left-8 bg-white dark:bg-gray-800 px-6 py-4 rounded-lg shadow-xl border border-gray-200 z-50">
+          <div className="flex items-center gap-4">
+            <MusicalNoteSolidIcon className="w-5 h-5 text-purple-600 animate-pulse" />
+            <div className="flex flex-col gap-2">
+              <span className="text-sm font-semibold text-gray-700 dark:text-gray-300 font-tamil">
+                ஒலி அளவு
+              </span>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-gray-500">🔉</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={volume}
+                  onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                  className="w-32 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                  aria-label="இசை ஒலி அளவு"
+                />
+                <span className="text-xs text-gray-500">🔊</span>
+                <span className="text-xs font-semibold text-purple-600 min-w-[3ch]">
+                  {Math.round(volume * 100)}%
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowVolumeControl(false)}
+              className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+              aria-label="மூடு"
+            >
+              <span className="text-gray-400 text-lg">×</span>
+            </button>
+          </div>
         </div>
       )}
     </div>
