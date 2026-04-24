@@ -120,11 +120,12 @@ export function PoemReader({ content }: PoemReaderProps) {
       audioRef.current.loop = true;
       audioRef.current.volume = volume;
 
-      // Curated sad/emotional piano music sources
+      // Verified sad/emotional music sources
+      // Using Bensound and other reliable royalty-free sources
       const sources = [
-        'https://cdn.pixabay.com/audio/2022/03/23/audio_421b4280c0.mp3', // Sad Piano - Very emotional
-        'https://cdn.pixabay.com/audio/2022/08/04/audio_70d990fe3c.mp3', // Melancholic Piano
-        'https://cdn.pixabay.com/audio/2023/02/13/audio_8003b392fe.mp3', // Emotional Sad Piano
+        'https://www.bensound.com/bensound-music/bensound-sadday.mp3', // Sad Day - Piano
+        'https://www.bensound.com/bensound-music/bensound-memories.mp3', // Memories - Emotional
+        'https://files.freemusicarchive.org/storage-freemusicarchive-org/music/no_curator/Kevin_MacLeod/Impact/Kevin_MacLeod_-_Sonatina_in_C_minor.mp3', // Classical sad
       ];
 
       // Set the first source
