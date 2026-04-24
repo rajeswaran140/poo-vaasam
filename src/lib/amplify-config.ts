@@ -34,6 +34,6 @@ const amplifyConfig = {
 } as const;
 
 // Configure Amplify
-Amplify.configure(amplifyConfig, { ssr: true });
+Amplify.configure(amplifyConfig);
 
 export default amplifyConfig;

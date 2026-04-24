@@ -81,8 +81,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-purple-600">
           <div className="text-sm text-purple-200">
-            <p className="font-semibold truncate" title={user?.signInDetails?.loginId || 'Admin'}>
-              {user?.signInDetails?.loginId || 'Admin'}
+            <p className="font-semibold truncate" title={user?.username || 'Admin'}>
+              {user?.username || 'Admin'}
             </p>
             <button
               onClick={handleLogout}
