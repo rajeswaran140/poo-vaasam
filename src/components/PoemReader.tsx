@@ -113,10 +113,36 @@ export function PoemReader({ content }: PoemReaderProps) {
   const handleBackgroundMusic = () => {
     if (!audioRef.current) {
       // Create audio element for somber/emotional background music
-      // Using a royalty-free somber piano piece
-      audioRef.current = new Audio('https://assets.mixkit.co/music/preview/mixkit-sad-piano-reflection-114.mp3');
+      // Using multiple sources for better browser compatibility
+      audioRef.current = new Audio();
       audioRef.current.loop = true;
       audioRef.current.volume = 0.3; // Gentle background volume
+
+      // Try multiple royalty-free somber music sources
+      const sources = [
+        'https://cdn.pixabay.com/audio/2022/05/13/audio_1808fbf07a.mp3', // Sad emotional piano
+        'https://cdn.pixabay.com/audio/2022/03/10/audio_c8c6d4d99e.mp3', // Emotional piano
+        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3', // Fallback ambient
+      ];
+
+      // Set the first source
+      audioRef.current.src = sources[0];
+
+      // Add error handler to try next source
+      let sourceIndex = 0;
+      audioRef.current.onerror = () => {
+        sourceIndex++;
+        if (sourceIndex < sources.length) {
+          if (audioRef.current) {
+            audioRef.current.src = sources[sourceIndex];
+            if (isMusicPlaying) {
+              audioRef.current.play().catch(err => {
+                console.error('Failed to play background music:', err);
+              });
+            }
+          }
+        }
+      };
     }
 
     if (isMusicPlaying) {
@@ -125,6 +151,8 @@ export function PoemReader({ content }: PoemReaderProps) {
     } else {
       audioRef.current.play().catch(err => {
         console.error('Failed to play background music:', err);
+        alert('இசையை இயக்க முடியவில்லை. மற்றொரு முறை முயற்சிக்கவும்.');
+        setIsMusicPlaying(false);
       });
       setIsMusicPlaying(true);
     }
