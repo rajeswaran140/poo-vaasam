@@ -77,41 +77,38 @@ p {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
-  /* Justify text for better poem presentation */
-  text-align: justify;
-  text-align-last: left;
-
   /* Optimized responsive font sizing: Mobile 17px, Tablet 19px, Desktop 22-24px */
   font-size: clamp(1.0625rem, 2.5vw + 0.25rem, 1.5rem);
 
-  /* Mobile: Preserve poem line integrity - prevent unwanted breaks */
+  /* Mobile: Natural text flow, no justification to prevent word breaks */
   @media (max-width: 767px) {
     line-height: 1.496;
-    /* CRITICAL: Prevent lines from breaking mid-lyric */
-    word-break: keep-all;
-    overflow-wrap: normal;
-    word-wrap: normal;
+    text-align: left;
+    /* Natural word breaking - allow browser to handle Tamil text properly */
+    word-break: normal;
+    overflow-wrap: break-word;
     hyphens: none;
-    /* Allow horizontal scroll if needed to preserve line integrity */
-    overflow-x: auto;
     /* Padding for better readability */
     padding-bottom: 2rem;
   }
 
-  /* Tablet: Balanced spacing, preserve line structure */
+  /* Tablet: Left-aligned for consistency */
   @media (min-width: 768px) and (max-width: 1023px) {
     line-height: 1.54;
     font-size: 1.125rem;
-    word-break: keep-all;
-    overflow-wrap: normal;
+    text-align: left;
+    word-break: normal;
+    overflow-wrap: break-word;
     hyphens: none;
   }
 
-  /* Desktop: Allow two-column layout with proper spacing */
+  /* Desktop: Justified text for two-column layout */
   @media (min-width: 1024px) {
     line-height: 1.584;
-    word-break: keep-all;
-    overflow-wrap: normal;
+    text-align: justify;
+    text-align-last: left;
+    word-break: normal;
+    overflow-wrap: break-word;
     hyphens: none;
     /* Remove max-width constraint for two-column layout */
   }
@@ -122,7 +119,7 @@ p {
     line-height: 1.408;
     color: #000;
     background: #fff;
-    word-break: keep-all;
+    text-align: left;
   }
 }
 
