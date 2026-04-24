@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { BookmarkIcon, PrinterIcon, SpeakerWaveIcon, ClipboardDocumentIcon, ShareIcon, MusicalNoteIcon } from '@heroicons/react/24/outline';
 import { BookmarkIcon as BookmarkSolidIcon, MusicalNoteIcon as MusicalNoteSolidIcon } from '@heroicons/react/24/solid';
-import { getAllMusicSources, getMusicDescription } from '@/utils/musicLibrary';
+import { getAllMusicSources } from '@/utils/musicLibrary';
 
 interface PoemReaderProps {
   content: any; // Accept any content object from the database
@@ -29,12 +29,16 @@ export function PoemReader({ content }: PoemReaderProps) {
   const [showCopyNotification, setShowCopyNotification] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
   const [isMusicPlaying, setIsMusicPlaying] = useState(false);
+  const [isMusicLoading, setIsMusicLoading] = useState(false);
+  const [musicError, setMusicError] = useState<string | null>(null);
+  const [currentMusicTrack, setCurrentMusicTrack] = useState<string>('');
   const [volume, setVolume] = useState(0.3);
   const [showVolumeControl, setShowVolumeControl] = useState(false);
   const [poemAnalysis, setPoemAnalysis] = useState<PoemAnalysis | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
+  const sourceIndexRef = useRef(0);
 
   // Analyze poem on mount
   useEffect(() => {
@@ -253,50 +257,101 @@ export function PoemReader({ content }: PoemReaderProps) {
     }
   };
 
-  const handleBackgroundMusic = () => {
-    if (!audioRef.current) {
-      // Create audio element with context-aware music selection
-      audioRef.current = new Audio();
-      audioRef.current.loop = true;
-      audioRef.current.volume = volume;
-
-      // Get intelligent music sources based on poem analysis
-      const sources = poemAnalysis
-        ? getAllMusicSources(poemAnalysis.emotion, poemAnalysis.mood)
-        : getAllMusicSources('sad', 'somber'); // Default fallback
-
-      // Set the first source
-      audioRef.current.src = sources[0];
-
-      // Add error handler to try next source
-      let sourceIndex = 0;
-      audioRef.current.onerror = () => {
-        sourceIndex++;
-        if (sourceIndex < sources.length) {
-          if (audioRef.current) {
-            audioRef.current.src = sources[sourceIndex];
-            if (isMusicPlaying) {
-              audioRef.current.play().catch(err => {
-                console.error('Failed to play background music:', err);
-              });
-            }
-          }
-        }
-      };
-    }
-
+  const handleBackgroundMusic = async () => {
     if (isMusicPlaying) {
-      audioRef.current.pause();
+      // Stop music
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
       setIsMusicPlaying(false);
       setShowVolumeControl(false);
-    } else {
-      audioRef.current.play().catch(err => {
-        console.error('Failed to play background music:', err);
-        alert('இசையை இயக்க முடியவில்லை. மற்றொரு முறை முயற்சிக்கவும்.');
-        setIsMusicPlaying(false);
-      });
-      setIsMusicPlaying(true);
-      setShowVolumeControl(true);
+      setMusicError(null);
+      return;
+    }
+
+    // Start music
+    setIsMusicLoading(true);
+    setMusicError(null);
+
+    try {
+      if (!audioRef.current) {
+        // Create audio element
+        audioRef.current = new Audio();
+        audioRef.current.loop = true;
+        audioRef.current.volume = volume;
+
+        // Get intelligent music sources based on poem analysis
+        const sources = poemAnalysis
+          ? getAllMusicSources(poemAnalysis.emotion, poemAnalysis.mood)
+          : getAllMusicSources('sad', 'somber');
+
+        sourceIndexRef.current = 0;
+
+        // Try loading sources with fallback
+        const tryNextSource = async (): Promise<boolean> => {
+          if (sourceIndexRef.current >= sources.length) {
+            return false;
+          }
+
+          const source = sources[sourceIndexRef.current];
+          if (!audioRef.current) return false;
+
+          audioRef.current.src = source;
+
+          // Get track name from URL
+          const trackName = source.split('/').pop()?.replace(/%20/g, ' ').replace('.mp3', '') || 'Unknown';
+          setCurrentMusicTrack(trackName);
+
+          try {
+            await audioRef.current.play();
+            return true;
+          } catch {
+            sourceIndexRef.current++;
+            return await tryNextSource();
+          }
+        };
+
+        // Add event listeners
+        audioRef.current.onloadeddata = () => {
+          setIsMusicLoading(false);
+        };
+
+        audioRef.current.onerror = async () => {
+          console.log(`Failed to load source ${sourceIndexRef.current}, trying next...`);
+          sourceIndexRef.current++;
+
+          if (sourceIndexRef.current < sources.length && audioRef.current) {
+            const success = await tryNextSource();
+            if (!success) {
+              setMusicError('அனைத்து இசை மூலங்களும் தோல்வியடைந்தன');
+              setIsMusicLoading(false);
+              setIsMusicPlaying(false);
+            }
+          } else {
+            setMusicError('இசையை ஏற்ற முடியவில்லை');
+            setIsMusicLoading(false);
+            setIsMusicPlaying(false);
+          }
+        };
+
+        audioRef.current.oncanplaythrough = () => {
+          setIsMusicLoading(false);
+        };
+      }
+
+      // Try to play
+      if (audioRef.current) {
+        await audioRef.current.play();
+        setIsMusicPlaying(true);
+        setShowVolumeControl(true);
+        setIsMusicLoading(false);
+        setMusicError(null);
+      }
+    } catch (err) {
+      console.error('Failed to play background music:', err);
+      setMusicError('இசையை இயக்க முடியவில்லை');
+      setIsMusicLoading(false);
+      setIsMusicPlaying(false);
     }
   };
 
@@ -377,15 +432,33 @@ export function PoemReader({ content }: PoemReaderProps) {
             <div className="flex gap-1.5 justify-center overflow-x-auto">
               <button
                 onClick={handleBackgroundMusic}
+                disabled={isMusicLoading}
                 className={`p-1.5 rounded-lg transition-all ${
                   isMusicPlaying ? 'bg-purple-100 text-purple-700' : ''
                 } ${
+                  isMusicLoading ? 'opacity-50 cursor-wait' : ''
+                } ${
+                  musicError ? 'bg-red-50 text-red-600' : ''
+                } ${
                   readingMode === 'dark' ? 'hover:bg-gray-800' : readingMode === 'sepia' ? 'hover:bg-amber-100' : 'hover:bg-gray-100'
                 }`}
-                title={isMusicPlaying ? 'இசையை நிறுத்து' : 'பின்னணி இசை'}
+                title={
+                  isMusicLoading
+                    ? 'இசையை ஏற்றுகிறது...'
+                    : musicError
+                    ? musicError
+                    : isMusicPlaying
+                    ? `நிறுத்து: ${currentMusicTrack}`
+                    : 'பின்னணி இசை'
+                }
                 aria-label={isMusicPlaying ? 'பின்னணி இசையை நிறுத்து' : 'பின்னணி இசையை இயக்கு'}
               >
-                {isMusicPlaying ? (
+                {isMusicLoading ? (
+                  <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                ) : isMusicPlaying ? (
                   <MusicalNoteSolidIcon className="w-5 h-5 animate-pulse" />
                 ) : (
                   <MusicalNoteIcon className="w-5 h-5" />
@@ -485,8 +558,13 @@ export function PoemReader({ content }: PoemReaderProps) {
           <div className="flex gap-1.5 sm:gap-2">
             <button
               onClick={handleBackgroundMusic}
+              disabled={isMusicLoading}
               className={`p-2 rounded-lg transition-all ${
                 isMusicPlaying ? 'bg-purple-100 text-purple-700' : ''
+              } ${
+                isMusicLoading ? 'opacity-50 cursor-wait' : ''
+              } ${
+                musicError ? 'bg-red-50 text-red-600' : ''
               } ${
                 readingMode === 'dark'
                   ? 'hover:bg-gray-800'
@@ -494,10 +572,23 @@ export function PoemReader({ content }: PoemReaderProps) {
                   ? 'hover:bg-amber-100'
                   : 'hover:bg-gray-100'
               }`}
-              title={isMusicPlaying ? 'இசையை நிறுத்து' : 'பின்னணி இசை'}
+              title={
+                isMusicLoading
+                  ? 'இசையை ஏற்றுகிறது...'
+                  : musicError
+                  ? musicError
+                  : isMusicPlaying
+                  ? `நிறுத்து: ${currentMusicTrack}`
+                  : 'பின்னணி இசை'
+              }
               aria-label={isMusicPlaying ? 'பின்னணி இசையை நிறுத்து' : 'பின்னணி இசையை இயக்கு'}
             >
-              {isMusicPlaying ? (
+              {isMusicLoading ? (
+                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              ) : isMusicPlaying ? (
                 <MusicalNoteSolidIcon className="w-5 h-5 animate-pulse" />
               ) : (
                 <MusicalNoteIcon className="w-5 h-5" />
@@ -664,9 +755,16 @@ export function PoemReader({ content }: PoemReaderProps) {
           <div className="flex items-center gap-4">
             <MusicalNoteSolidIcon className="w-5 h-5 text-purple-600 animate-pulse" />
             <div className="flex flex-col gap-2">
-              <span className="text-sm font-semibold text-gray-700 dark:text-gray-300 font-tamil">
-                ஒலி அளவு
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-gray-700 dark:text-gray-300 font-tamil">
+                  ஒலி அளவு
+                </span>
+                {currentMusicTrack && (
+                  <span className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[200px]">
+                    ({currentMusicTrack})
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-3">
                 <span className="text-xs text-gray-500">🔉</span>
                 <input
