@@ -1,3 +1,4 @@
+/** @jest-environment node */
 /**
  * Content API Validation Integration Tests
  *
@@ -8,24 +9,44 @@ import { NextRequest } from 'next/server';
 import { DELETE, PUT } from '@/app/api/content/route';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { Content } from '@/domain/entities/Content';
-import { ContentType, ContentStatus } from '@/types/content';
+import { ContentType } from '@/types/content';
 
 // Mock dependencies
 jest.mock('@/lib/auth-helper', () => ({
+  ...jest.requireActual('@/lib/auth-helper'),
   requireAuth: jest.fn().mockResolvedValue({ isAuthenticated: true }),
-  unauthorizedResponse: jest.fn(() => new Response('Unauthorized', { status: 401 })),
 }));
 
-jest.mock('@/infrastructure/database/ContentRepository');
-jest.mock('@/infrastructure/database/CategoryRepository');
-jest.mock('@/infrastructure/database/TagRepository');
+jest.mock('@/infrastructure/database/ContentRepository', () => ({
+  ContentRepository: jest.fn().mockReturnValue({
+    findById: jest.fn(),
+    save: jest.fn(),
+    delete: jest.fn(),
+    findAll: jest.fn(),
+    create: jest.fn(),
+  }),
+}));
+jest.mock('@/infrastructure/database/CategoryRepository', () => ({
+  CategoryRepository: jest.fn().mockReturnValue({}),
+}));
+jest.mock('@/infrastructure/database/TagRepository', () => ({
+  TagRepository: jest.fn().mockReturnValue({ decrementContentCount: jest.fn() }),
+}));
+jest.mock('@/application/use-cases/GetContentUseCase', () => ({
+  GetContentUseCase: jest.fn().mockReturnValue({ execute: jest.fn() }),
+}));
+
+const MockContentRepo = ContentRepository as jest.MockedClass<typeof ContentRepository>;
+function getRepo() {
+  return MockContentRepo.mock.results[0]?.value as {
+    findById: jest.Mock; save: jest.Mock; delete: jest.Mock; findAll: jest.Mock; create: jest.Mock;
+  };
+}
 
 describe('Content API Validation', () => {
-  let mockContentRepo: jest.Mocked<ContentRepository>;
-
   beforeEach(() => {
-    jest.clearAllMocks();
-    mockContentRepo = new ContentRepository() as jest.Mocked<ContentRepository>;
+    const r = getRepo();
+    if (r) Object.values(r).forEach(fn => (fn as jest.Mock).mockReset());
   });
 
   describe('DELETE /api/content - Validation', () => {
@@ -56,8 +77,7 @@ describe('Content API Validation', () => {
     });
 
     it('should return 404 for non-existent content', async () => {
-      mockContentRepo.findById = jest.fn().mockResolvedValue(null);
-      (ContentRepository as jest.Mock).mockImplementation(() => mockContentRepo);
+      getRepo().findById.mockResolvedValue(null);
 
       const request = new NextRequest('http://localhost:3000/api/content?id=nonexistent', {
         method: 'DELETE',
@@ -139,8 +159,7 @@ describe('Content API Validation', () => {
     });
 
     it('should return 404 for non-existent content', async () => {
-      mockContentRepo.findById = jest.fn().mockResolvedValue(null);
-      (ContentRepository as jest.Mock).mockImplementation(() => mockContentRepo);
+      getRepo().findById.mockResolvedValue(null);
 
       const request = new NextRequest('http://localhost:3000/api/content', {
         method: 'PUT',
@@ -166,9 +185,8 @@ describe('Content API Validation', () => {
         author: 'Author',
       });
 
-      mockContentRepo.findById = jest.fn().mockResolvedValue(mockContent);
-      mockContentRepo.save = jest.fn().mockResolvedValue(undefined);
-      (ContentRepository as jest.Mock).mockImplementation(() => mockContentRepo);
+      getRepo().findById.mockResolvedValue(mockContent);
+      getRepo().save.mockResolvedValue(undefined);
 
       const request = new NextRequest('http://localhost:3000/api/content', {
         method: 'PUT',
@@ -195,9 +213,8 @@ describe('Content API Validation', () => {
         author: 'Author',
       });
 
-      mockContentRepo.findById = jest.fn().mockResolvedValue(mockContent);
-      mockContentRepo.save = jest.fn().mockResolvedValue(undefined);
-      (ContentRepository as jest.Mock).mockImplementation(() => mockContentRepo);
+      getRepo().findById.mockResolvedValue(mockContent);
+      getRepo().save.mockResolvedValue(undefined);
 
       const request = new NextRequest('http://localhost:3000/api/content', {
         method: 'PUT',

@@ -1,3 +1,4 @@
+/** @jest-environment node */
 /**
  * Test Content API Route Integration Tests
  *
@@ -5,42 +6,87 @@
  */
 
 import { NextRequest } from 'next/server';
-import { GET, POST } from '@/app/api/test/content/route';
 import { ContentType, ContentStatus } from '@/types/content';
 
-// Mock auth helper
 jest.mock('@/lib/auth-helper', () => ({
+  ...jest.requireActual('@/lib/auth-helper'),
   requireAuth: jest.fn(),
-  unauthorizedResponse: jest.fn(() =>
-    new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), {
-      status: 401,
-      headers: { 'Content-Type': 'application/json' },
-    })
-  ),
 }));
 
-// Mock repositories
-jest.mock('@/infrastructure/database/ContentRepository');
-jest.mock('@/infrastructure/database/CategoryRepository');
-jest.mock('@/infrastructure/database/TagRepository');
+jest.mock('@/infrastructure/database/ContentRepository', () => ({
+  ContentRepository: jest.fn().mockReturnValue({
+    findAll: jest.fn(),
+    findByType: jest.fn(),
+    countByType: jest.fn(),
+    countByStatus: jest.fn(),
+    getMostViewed: jest.fn(),
+    getRecentlyPublished: jest.fn(),
+    create: jest.fn(),
+  }),
+}));
+jest.mock('@/infrastructure/database/CategoryRepository', () => ({
+  CategoryRepository: jest.fn().mockReturnValue({
+    findAll: jest.fn(),
+    create: jest.fn(),
+  }),
+}));
+jest.mock('@/infrastructure/database/TagRepository', () => ({
+  TagRepository: jest.fn().mockReturnValue({
+    findAll: jest.fn(),
+    create: jest.fn(),
+  }),
+}));
+jest.mock('@/application/use-cases/CreateContentUseCase', () => ({
+  CreateContentUseCase: jest.fn().mockReturnValue({ execute: jest.fn() }),
+}));
+jest.mock('@/application/use-cases/GetContentUseCase', () => ({
+  GetContentUseCase: jest.fn().mockReturnValue({ execute: jest.fn() }),
+}));
 
-// Mock use cases
-jest.mock('@/application/use-cases/CreateContentUseCase');
-jest.mock('@/application/use-cases/GetContentUseCase');
-
-import { requireAuth } from '@/lib/auth-helper';
+import { GET, POST } from '@/app/api/test/content/route';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { CategoryRepository } from '@/infrastructure/database/CategoryRepository';
 import { TagRepository } from '@/infrastructure/database/TagRepository';
+import { CreateContentUseCase } from '@/application/use-cases/CreateContentUseCase';
+import * as authHelper from '@/lib/auth-helper';
+
+const MockContentRepo = ContentRepository as jest.MockedClass<typeof ContentRepository>;
+const MockCategoryRepo = CategoryRepository as jest.MockedClass<typeof CategoryRepository>;
+const MockTagRepo = TagRepository as jest.MockedClass<typeof TagRepository>;
+const MockCreateUseCase = CreateContentUseCase as jest.MockedClass<typeof CreateContentUseCase>;
+
+function getContentRepo() {
+  return MockContentRepo.mock.results[0]?.value as {
+    findAll: jest.Mock; findByType: jest.Mock; countByType: jest.Mock;
+    countByStatus: jest.Mock; getMostViewed: jest.Mock; getRecentlyPublished: jest.Mock; create: jest.Mock;
+  };
+}
+function getCategoryRepo() {
+  return MockCategoryRepo.mock.results[0]?.value as { findAll: jest.Mock; create: jest.Mock };
+}
+function getTagRepo() {
+  return MockTagRepo.mock.results[0]?.value as { findAll: jest.Mock; create: jest.Mock };
+}
+function getCreateUseCase() {
+  return MockCreateUseCase.mock.results[0]?.value as { execute: jest.Mock };
+}
 
 describe('Test Content API Routes - Authentication', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    const cr = getContentRepo();
+    if (cr) Object.values(cr).forEach(fn => fn.mockReset());
+    const catr = getCategoryRepo();
+    if (catr) Object.values(catr).forEach(fn => fn.mockReset());
+    const tr = getTagRepo();
+    if (tr) Object.values(tr).forEach(fn => fn.mockReset());
+    const uc = getCreateUseCase();
+    if (uc) uc.execute.mockReset();
+    (authHelper.requireAuth as jest.Mock).mockResolvedValue({ isAuthenticated: true, userId: 'admin123' });
   });
 
   describe('GET /api/test/content - Protected', () => {
     it('should require authentication for all GET requests', async () => {
-      (requireAuth as jest.Mock).mockRejectedValue(new Error('Unauthorized'));
+      (authHelper.requireAuth as jest.Mock).mockRejectedValue(new Error('Unauthorized'));
 
       const request = new NextRequest(
         new Request('http://localhost:3000/api/test/content?action=list')
@@ -49,30 +95,15 @@ describe('Test Content API Routes - Authentication', () => {
       const response = await GET(request);
       const data = await response.json();
 
-      expect(requireAuth).toHaveBeenCalledWith(request);
+      expect(authHelper.requireAuth).toHaveBeenCalledWith(request);
       expect(response.status).toBe(401);
       expect(data.success).toBe(false);
       expect(data.error).toBe('Unauthorized');
     });
 
     it('should allow authenticated users to list content', async () => {
-      (requireAuth as jest.Mock).mockResolvedValue({
-        isAuthenticated: true,
-        userId: 'admin123',
-      });
-
-      const mockContentRepo = {
-        findAll: jest.fn().mockResolvedValue([
-          {
-            id: '1',
-            type: ContentType.SONGS,
-            title: 'பூ வாசம்',
-            status: ContentStatus.PUBLISHED,
-          },
-        ]),
-      };
-
-      (ContentRepository as jest.Mock).mockImplementation(() => mockContentRepo);
+      const mockItem = { id: '1', type: ContentType.SONGS, title: 'பூ வாசம்', status: ContentStatus.PUBLISHED };
+      getContentRepo().findAll.mockResolvedValue({ items: [mockItem], total: 1, limit: 50, offset: 0, hasMore: false });
 
       const request = new NextRequest(
         new Request('http://localhost:3000/api/test/content?action=list')
@@ -81,34 +112,20 @@ describe('Test Content API Routes - Authentication', () => {
       const response = await GET(request);
       const data = await response.json();
 
-      expect(requireAuth).toHaveBeenCalledWith(request);
+      expect(authHelper.requireAuth).toHaveBeenCalledWith(request);
       expect(response.status).toBe(200);
       expect(data.success).toBe(true);
-      expect(data.data).toHaveLength(1);
+      expect(data.data.items).toHaveLength(1);
       expect(data.message).toBe('Successfully retrieved content list');
     });
 
     it('should allow authenticated users to get content by type', async () => {
-      (requireAuth as jest.Mock).mockResolvedValue({
-        isAuthenticated: true,
-      });
-
-      const mockContentRepo = {
-        findByType: jest.fn().mockResolvedValue([
-          {
-            id: '1',
-            type: ContentType.SONGS,
-            title: 'பூ வாசம்',
-          },
-        ]),
-      };
-
-      (ContentRepository as jest.Mock).mockImplementation(() => mockContentRepo);
+      getContentRepo().findByType.mockResolvedValue([
+        { id: '1', type: ContentType.SONGS, title: 'பூ வாசம்' },
+      ]);
 
       const request = new NextRequest(
-        new Request(
-          `http://localhost:3000/api/test/content?action=by-type&type=${ContentType.SONGS}`
-        )
+        new Request(`http://localhost:3000/api/test/content?action=by-type&type=${ContentType.SONGS}`)
       );
 
       const response = await GET(request);
@@ -116,25 +133,14 @@ describe('Test Content API Routes - Authentication', () => {
 
       expect(response.status).toBe(200);
       expect(data.success).toBe(true);
-      expect(mockContentRepo.findByType).toHaveBeenCalledWith(
-        ContentType.SONGS,
-        { limit: 10 }
-      );
+      expect(getContentRepo().findByType).toHaveBeenCalledWith(ContentType.SONGS, { limit: 10 });
     });
 
     it('should allow authenticated users to get stats', async () => {
-      (requireAuth as jest.Mock).mockResolvedValue({
-        isAuthenticated: true,
-      });
-
-      const mockContentRepo = {
-        countByType: jest.fn().mockResolvedValue(5),
-        countByStatus: jest.fn().mockResolvedValue(10),
-        getMostViewed: jest.fn().mockResolvedValue([]),
-        getRecentlyPublished: jest.fn().mockResolvedValue([]),
-      };
-
-      (ContentRepository as jest.Mock).mockImplementation(() => mockContentRepo);
+      getContentRepo().countByType.mockResolvedValue(5);
+      getContentRepo().countByStatus.mockResolvedValue(10);
+      getContentRepo().getMostViewed.mockResolvedValue([]);
+      getContentRepo().getRecentlyPublished.mockResolvedValue([]);
 
       const request = new NextRequest(
         new Request('http://localhost:3000/api/test/content?action=stats')
@@ -151,19 +157,9 @@ describe('Test Content API Routes - Authentication', () => {
     });
 
     it('should allow authenticated users to get categories', async () => {
-      (requireAuth as jest.Mock).mockResolvedValue({
-        isAuthenticated: true,
-      });
-
-      const mockCategoryRepo = {
-        findAll: jest.fn().mockResolvedValue([
-          { id: '1', name: 'தமிழ் பாடல்கள்' },
-        ]),
-      };
-
-      (CategoryRepository as jest.Mock).mockImplementation(
-        () => mockCategoryRepo
-      );
+      getCategoryRepo().findAll.mockResolvedValue([
+        { id: '1', name: 'தமிழ் பாடல்கள்' },
+      ]);
 
       const request = new NextRequest(
         new Request('http://localhost:3000/api/test/content?action=categories')
@@ -178,15 +174,7 @@ describe('Test Content API Routes - Authentication', () => {
     });
 
     it('should allow authenticated users to get tags', async () => {
-      (requireAuth as jest.Mock).mockResolvedValue({
-        isAuthenticated: true,
-      });
-
-      const mockTagRepo = {
-        findAll: jest.fn().mockResolvedValue([{ id: '1', name: 'காதல்' }]),
-      };
-
-      (TagRepository as jest.Mock).mockImplementation(() => mockTagRepo);
+      getTagRepo().findAll.mockResolvedValue([{ id: '1', name: 'காதல்' }]);
 
       const request = new NextRequest(
         new Request('http://localhost:3000/api/test/content?action=tags')
@@ -201,10 +189,6 @@ describe('Test Content API Routes - Authentication', () => {
     });
 
     it('should return 400 for missing parameters', async () => {
-      (requireAuth as jest.Mock).mockResolvedValue({
-        isAuthenticated: true,
-      });
-
       const request = new NextRequest(
         new Request('http://localhost:3000/api/test/content')
       );
@@ -220,7 +204,7 @@ describe('Test Content API Routes - Authentication', () => {
 
   describe('POST /api/test/content - Protected', () => {
     it('should require authentication for all POST requests', async () => {
-      (requireAuth as jest.Mock).mockRejectedValue(new Error('Unauthorized'));
+      (authHelper.requireAuth as jest.Mock).mockRejectedValue(new Error('Unauthorized'));
 
       const request = new NextRequest(
         new Request('http://localhost:3000/api/test/content', {
@@ -232,35 +216,21 @@ describe('Test Content API Routes - Authentication', () => {
       const response = await POST(request);
       const data = await response.json();
 
-      expect(requireAuth).toHaveBeenCalledWith(request);
+      expect(authHelper.requireAuth).toHaveBeenCalledWith(request);
       expect(response.status).toBe(401);
       expect(data.success).toBe(false);
       expect(data.error).toBe('Unauthorized');
     });
 
     it('should allow authenticated users to create content', async () => {
-      (requireAuth as jest.Mock).mockResolvedValue({
-        isAuthenticated: true,
-        userId: 'admin123',
-      });
-
       const mockContent = {
         id: 'new123',
         type: ContentType.SONGS,
         title: 'பூ வாசம்',
-        toObject: jest.fn().mockReturnValue({
-          id: 'new123',
-          title: 'பூ வாசம்',
-        }),
+        toObject: jest.fn().mockReturnValue({ id: 'new123', title: 'பூ வாசம்' }),
       };
 
-      const mockCreateUseCase = {
-        execute: jest.fn().mockResolvedValue(mockContent),
-      };
-
-      // Mock the use case constructor
-      const CreateContentUseCase = require('@/application/use-cases/CreateContentUseCase').CreateContentUseCase;
-      CreateContentUseCase.mockImplementation(() => mockCreateUseCase);
+      getCreateUseCase().execute.mockResolvedValue(mockContent);
 
       const request = new NextRequest(
         new Request('http://localhost:3000/api/test/content', {
@@ -279,38 +249,20 @@ describe('Test Content API Routes - Authentication', () => {
       const response = await POST(request);
       const data = await response.json();
 
-      expect(requireAuth).toHaveBeenCalledWith(request);
+      expect(authHelper.requireAuth).toHaveBeenCalledWith(request);
       expect(response.status).toBe(201);
       expect(data.success).toBe(true);
       expect(data.message).toBe('Successfully created content');
     });
 
     it('should allow authenticated users to create category', async () => {
-      (requireAuth as jest.Mock).mockResolvedValue({
-        isAuthenticated: true,
-      });
-
-      const mockCategory = {
-        id: 'cat123',
-        name: 'தமிழ் பாடல்கள்',
-        slug: 'tamil-songs',
-      };
-
-      const mockCategoryRepo = {
-        create: jest.fn().mockResolvedValue(mockCategory),
-      };
-
-      (CategoryRepository as jest.Mock).mockImplementation(
-        () => mockCategoryRepo
-      );
+      const mockCategory = { id: 'cat123', name: 'தமிழ் பாடல்கள்', slug: 'tamil-songs' };
+      getCategoryRepo().create.mockResolvedValue(mockCategory);
 
       const request = new NextRequest(
         new Request('http://localhost:3000/api/test/content', {
           method: 'POST',
-          body: JSON.stringify({
-            action: 'create-category',
-            name: 'தமிழ் பாடல்கள்',
-          }),
+          body: JSON.stringify({ action: 'create-category', name: 'தமிழ் பாடல்கள்' }),
         })
       );
 
@@ -323,29 +275,13 @@ describe('Test Content API Routes - Authentication', () => {
     });
 
     it('should allow authenticated users to create tag', async () => {
-      (requireAuth as jest.Mock).mockResolvedValue({
-        isAuthenticated: true,
-      });
-
-      const mockTag = {
-        id: 'tag123',
-        name: 'காதல்',
-        slug: 'love',
-      };
-
-      const mockTagRepo = {
-        create: jest.fn().mockResolvedValue(mockTag),
-      };
-
-      (TagRepository as jest.Mock).mockImplementation(() => mockTagRepo);
+      const mockTag = { id: 'tag123', name: 'காதல்', slug: 'love' };
+      getTagRepo().create.mockResolvedValue(mockTag);
 
       const request = new NextRequest(
         new Request('http://localhost:3000/api/test/content', {
           method: 'POST',
-          body: JSON.stringify({
-            action: 'create-tag',
-            name: 'காதல்',
-          }),
+          body: JSON.stringify({ action: 'create-tag', name: 'காதல்' }),
         })
       );
 
@@ -358,16 +294,10 @@ describe('Test Content API Routes - Authentication', () => {
     });
 
     it('should return 400 for invalid action', async () => {
-      (requireAuth as jest.Mock).mockResolvedValue({
-        isAuthenticated: true,
-      });
-
       const request = new NextRequest(
         new Request('http://localhost:3000/api/test/content', {
           method: 'POST',
-          body: JSON.stringify({
-            action: 'invalid-action',
-          }),
+          body: JSON.stringify({ action: 'invalid-action' }),
         })
       );
 
@@ -382,15 +312,7 @@ describe('Test Content API Routes - Authentication', () => {
 
   describe('Error Handling', () => {
     it('should handle errors in GET requests', async () => {
-      (requireAuth as jest.Mock).mockResolvedValue({
-        isAuthenticated: true,
-      });
-
-      const mockContentRepo = {
-        findAll: jest.fn().mockRejectedValue(new Error('Database error')),
-      };
-
-      (ContentRepository as jest.Mock).mockImplementation(() => mockContentRepo);
+      getContentRepo().findAll.mockRejectedValue(new Error('Database error'));
 
       const request = new NextRequest(
         new Request('http://localhost:3000/api/test/content?action=list')
@@ -405,25 +327,12 @@ describe('Test Content API Routes - Authentication', () => {
     });
 
     it('should handle errors in POST requests', async () => {
-      (requireAuth as jest.Mock).mockResolvedValue({
-        isAuthenticated: true,
-      });
-
-      const mockCategoryRepo = {
-        create: jest.fn().mockRejectedValue(new Error('Creation failed')),
-      };
-
-      (CategoryRepository as jest.Mock).mockImplementation(
-        () => mockCategoryRepo
-      );
+      getCategoryRepo().create.mockRejectedValue(new Error('Creation failed'));
 
       const request = new NextRequest(
         new Request('http://localhost:3000/api/test/content', {
           method: 'POST',
-          body: JSON.stringify({
-            action: 'create-category',
-            name: 'Test',
-          }),
+          body: JSON.stringify({ action: 'create-category', name: 'Test' }),
         })
       );
 

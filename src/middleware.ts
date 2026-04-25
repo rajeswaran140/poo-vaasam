@@ -16,19 +16,18 @@ export function middleware(request: NextRequest) {
     // AWS Amplify stores tokens with pattern: CognitoIdentityServiceProvider.{clientId}.*
     const cookies = request.cookies.getAll();
 
-    // Look for any Cognito token (idToken, accessToken, or refreshToken)
-    const hasAuthToken = cookies.some(cookie =>
-      cookie.name.includes('CognitoIdentityServiceProvider') &&
-      (cookie.name.includes('.idToken') ||
-       cookie.name.includes('.accessToken') ||
-       cookie.name.includes('.LastAuthUser'))
-    );
+    // Look for any Cognito token (idToken, accessToken, or LastAuthUser)
+    // Validates pattern strictly — no path traversal (..) or slashes allowed
+    const cognitoPattern = /^CognitoIdentityServiceProvider\.[a-zA-Z0-9]+\.(?!.*\.\.)(?!.*\/)[^/\\]+(\.idToken|\.accessToken)$|^CognitoIdentityServiceProvider\.[a-zA-Z0-9]+\.LastAuthUser$/;
+    const hasAuthToken = cookies.some(cookie => cognitoPattern.test(cookie.name));
 
     if (!hasAuthToken) {
-      // Redirect to login if not authenticated
       const loginUrl = new URL('/login', request.url);
-      // Add redirect query param to return user after login
-      loginUrl.searchParams.set('redirect', pathname);
+      // Preserve full path including query string in redirect param
+      const redirectPath = request.nextUrl.search
+        ? `${pathname}${request.nextUrl.search}`
+        : pathname;
+      loginUrl.searchParams.set('redirect', redirectPath);
       return NextResponse.redirect(loginUrl);
     }
   }

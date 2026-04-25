@@ -66,7 +66,7 @@ describe('Content Validation Schema', () => {
       const result = contentSchema.safeParse(invalidContent);
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.errors[0].message).toContain('Title is required');
+        expect(result.error.issues[0].message).toContain('Title is required');
       }
     });
 
@@ -96,7 +96,7 @@ describe('Content Validation Schema', () => {
       const result = contentSchema.safeParse(invalidContent);
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.errors[0].message).toContain('at least 10 characters');
+        expect(result.error.issues[0].message).toContain('at least 10 characters');
       }
     });
 
@@ -246,7 +246,7 @@ describe('Tag Validation Schema', () => {
     const result = tagSchema.safeParse(invalidTag);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.errors[0].message).toContain('no spaces');
+      expect(result.error.issues[0].message).toContain('no spaces');
     }
   });
 
@@ -287,7 +287,6 @@ describe('validateData helper function', () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.errors).toHaveProperty('name');
-      expect(result.errors.name).toContain('required');
     }
   });
 

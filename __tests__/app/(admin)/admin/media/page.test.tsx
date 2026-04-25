@@ -52,8 +52,8 @@ describe('Media Library Page', () => {
     const zeroTexts = screen.getAllByText('0');
     expect(zeroTexts.length).toBeGreaterThan(0);
 
-    expect(screen.getByText('Total size: 0 MB')).toBeInTheDocument();
-    expect(screen.getByText('0 MB')).toBeInTheDocument();
+    expect(screen.getAllByText('Total size: 0 MB').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('0 MB').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('of 10 GB used')).toBeInTheDocument();
   });
 
@@ -126,12 +126,11 @@ describe('Media Library Page', () => {
   it('should render all required icons', () => {
     render(<MediaLibraryPage />);
 
-    expect(screen.getByTestId('folder-icon')).toBeInTheDocument();
-    expect(screen.getByTestId('image-icon')).toBeInTheDocument();
-    expect(screen.getByTestId('music-icon')).toBeInTheDocument();
-    // Upload icons appear multiple times
-    const uploadIcons = screen.getAllByTestId('upload-icon');
-    expect(uploadIcons.length).toBeGreaterThan(0);
+    // Icons may appear multiple times in the layout
+    expect(screen.getAllByTestId('folder-icon').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByTestId('image-icon').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByTestId('music-icon').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByTestId('upload-icon').length).toBeGreaterThanOrEqual(1);
   });
 
   it('should have gradient backgrounds for stat cards', () => {

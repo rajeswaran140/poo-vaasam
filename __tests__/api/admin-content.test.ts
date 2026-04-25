@@ -1,93 +1,78 @@
+/** @jest-environment node */
 /**
  * Unit Tests for Admin Content API
  */
 
 import { NextRequest } from 'next/server';
+import { ContentType, ContentStatus } from '@/types/content';
+
+jest.mock('@/infrastructure/database/ContentRepository', () => ({
+  ContentRepository: jest.fn().mockReturnValue({
+    findAll: jest.fn(),
+    findByType: jest.fn(),
+    create: jest.fn(),
+  }),
+}));
+jest.mock('@/infrastructure/database/CategoryRepository', () => ({
+  CategoryRepository: jest.fn().mockReturnValue({}),
+}));
+jest.mock('@/infrastructure/database/TagRepository', () => ({
+  TagRepository: jest.fn().mockReturnValue({}),
+}));
+jest.mock('@/application/use-cases/CreateContentUseCase', () => ({
+  CreateContentUseCase: jest.fn().mockReturnValue({
+    execute: jest.fn(),
+  }),
+}));
+jest.mock('@/lib/auth-helper', () => ({
+  ...jest.requireActual('@/lib/auth-helper'),
+  requireAuth: jest.fn(),
+}));
+
 import { GET, POST } from '@/app/api/admin/content/route';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
-import { CategoryRepository } from '@/infrastructure/database/CategoryRepository';
-import { TagRepository } from '@/infrastructure/database/TagRepository';
 import { CreateContentUseCase } from '@/application/use-cases/CreateContentUseCase';
-import { ContentType, ContentStatus } from '@/types/content';
-import { ContentEntity } from '@/domain/entities/Content';
 import * as authHelper from '@/lib/auth-helper';
 
-// Mock dependencies
-jest.mock('@/infrastructure/database/ContentRepository');
-jest.mock('@/infrastructure/database/CategoryRepository');
-jest.mock('@/infrastructure/database/TagRepository');
-jest.mock('@/application/use-cases/CreateContentUseCase');
-jest.mock('@/lib/auth-helper');
+const MockContentRepo = ContentRepository as jest.MockedClass<typeof ContentRepository>;
+const MockUseCase = CreateContentUseCase as jest.MockedClass<typeof CreateContentUseCase>;
+
+function getRepo() {
+  return MockContentRepo.mock.results[0]?.value as {
+    findAll: jest.Mock;
+    findByType: jest.Mock;
+    create: jest.Mock;
+  };
+}
+
+function getUseCase() {
+  return MockUseCase.mock.results[0]?.value as { execute: jest.Mock };
+}
+
+function makeContentMock(overrides: Record<string, unknown> = {}) {
+  const data = {
+    id: '1', type: ContentType.SONGS, title: 'பூ வாசம்', body: 'Content body',
+    description: 'A song', author: 'Test Author', status: ContentStatus.PUBLISHED,
+    categoryIds: [], tagIds: [], viewCount: 0, createdAt: new Date(), updatedAt: new Date(),
+    ...overrides,
+  };
+  return { toObject: () => data };
+}
 
 describe('Admin Content API', () => {
-  let mockContentRepo: jest.Mocked<ContentRepository>;
-  let mockCreateContentUseCase: jest.Mocked<CreateContentUseCase>;
-
   beforeEach(() => {
-    jest.clearAllMocks();
-    mockContentRepo = new ContentRepository() as jest.Mocked<ContentRepository>;
-    mockCreateContentUseCase = new CreateContentUseCase(
-      mockContentRepo,
-      {} as CategoryRepository,
-      {} as TagRepository
-    ) as jest.Mocked<CreateContentUseCase>;
-
-    // Mock successful authentication by default
-    (authHelper.requireAuth as jest.Mock).mockResolvedValue({
-      email: 'test@example.com',
-      sub: 'test-user-id',
-    });
+    const r = getRepo();
+    if (r) Object.values(r).forEach(fn => fn.mockReset());
+    const u = getUseCase();
+    if (u) u.execute.mockReset();
+    (authHelper.requireAuth as jest.Mock).mockResolvedValue({ email: 'test@example.com', sub: 'test-user-id' });
   });
 
   describe('GET /api/admin/content', () => {
     it('should return all content without filters', async () => {
-      const mockPublished = {
-        items: [
-          new ContentEntity({
-            id: '1',
-            type: ContentType.SONGS,
-            title: 'பூ வாசம்',
-            body: 'Content...',
-            description: 'A song',
-            author: 'Test Author',
-            status: ContentStatus.PUBLISHED,
-            categoryIds: [],
-            tagIds: [],
-            viewCount: 10,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          }),
-        ],
-        total: 1,
-        limit: 25,
-        hasMore: false,
-      };
-
-      const mockDraft = {
-        items: [
-          new ContentEntity({
-            id: '2',
-            type: ContentType.POEMS,
-            title: 'கவிதை',
-            body: 'Content...',
-            description: 'A poem',
-            author: 'Test Author',
-            status: ContentStatus.DRAFT,
-            categoryIds: [],
-            tagIds: [],
-            viewCount: 0,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          }),
-        ],
-        total: 1,
-        limit: 25,
-        hasMore: false,
-      };
-
-      mockContentRepo.findAll
-        .mockResolvedValueOnce(mockPublished)
-        .mockResolvedValueOnce(mockDraft);
+      getRepo().findAll
+        .mockResolvedValueOnce({ items: [makeContentMock()], total: 1, limit: 25, hasMore: false })
+        .mockResolvedValueOnce({ items: [makeContentMock({ id: '2', status: ContentStatus.DRAFT })], total: 1, limit: 25, hasMore: false });
 
       const request = new NextRequest('http://localhost:3000/api/admin/content');
       const response = await GET(request);
@@ -100,29 +85,7 @@ describe('Admin Content API', () => {
     });
 
     it('should filter by content type', async () => {
-      const mockResult = {
-        items: [
-          new ContentEntity({
-            id: '1',
-            type: ContentType.SONGS,
-            title: 'பூ வாசம்',
-            body: 'Content...',
-            description: 'A song',
-            author: 'Test',
-            status: ContentStatus.PUBLISHED,
-            categoryIds: [],
-            tagIds: [],
-            viewCount: 10,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          }),
-        ],
-        total: 1,
-        limit: 50,
-        hasMore: false,
-      };
-
-      mockContentRepo.findByType.mockResolvedValue(mockResult);
+      getRepo().findByType.mockResolvedValue({ items: [makeContentMock()], total: 1, limit: 50, hasMore: false });
 
       const request = new NextRequest('http://localhost:3000/api/admin/content?type=SONGS');
       const response = await GET(request);
@@ -130,21 +93,11 @@ describe('Admin Content API', () => {
 
       expect(response.status).toBe(200);
       expect(data.success).toBe(true);
-      expect(mockContentRepo.findByType).toHaveBeenCalledWith(
-        ContentType.SONGS,
-        expect.objectContaining({ limit: 50 })
-      );
+      expect(getRepo().findByType).toHaveBeenCalledWith(ContentType.SONGS, expect.objectContaining({ limit: 50 }));
     });
 
     it('should filter by status', async () => {
-      const mockResult = {
-        items: [],
-        total: 0,
-        limit: 50,
-        hasMore: false,
-      };
-
-      mockContentRepo.findAll.mockResolvedValue(mockResult);
+      getRepo().findAll.mockResolvedValue({ items: [], total: 0, limit: 50, hasMore: false });
 
       const request = new NextRequest('http://localhost:3000/api/admin/content?status=PUBLISHED');
       const response = await GET(request);
@@ -152,24 +105,12 @@ describe('Admin Content API', () => {
 
       expect(response.status).toBe(200);
       expect(data.success).toBe(true);
-      expect(mockContentRepo.findAll).toHaveBeenCalledWith(
-        expect.objectContaining({
-          status: ContentStatus.PUBLISHED,
-        })
-      );
+      expect(getRepo().findAll).toHaveBeenCalledWith(expect.objectContaining({ status: ContentStatus.PUBLISHED }));
     });
 
     it('should support custom limit', async () => {
-      const mockResult = {
-        items: [],
-        total: 0,
-        limit: 10,
-        hasMore: false,
-      };
-
-      mockContentRepo.findAll
-        .mockResolvedValueOnce(mockResult)
-        .mockResolvedValueOnce(mockResult);
+      const emptyResult = { items: [], total: 0, limit: 10, hasMore: false };
+      getRepo().findAll.mockResolvedValueOnce(emptyResult).mockResolvedValueOnce(emptyResult);
 
       const request = new NextRequest('http://localhost:3000/api/admin/content?limit=10');
       const response = await GET(request);
@@ -184,11 +125,11 @@ describe('Admin Content API', () => {
       const response = await GET(request);
 
       expect(response.status).toBe(401);
-      expect(mockContentRepo.findAll).not.toHaveBeenCalled();
+      expect(getRepo().findAll).not.toHaveBeenCalled();
     });
 
     it('should return 500 on database error', async () => {
-      mockContentRepo.findAll.mockRejectedValue(new Error('Database error'));
+      getRepo().findAll.mockRejectedValue(new Error('Database error'));
 
       const request = new NextRequest('http://localhost:3000/api/admin/content');
       const response = await GET(request);
@@ -202,34 +143,14 @@ describe('Admin Content API', () => {
 
   describe('POST /api/admin/content', () => {
     it('should create content with valid data', async () => {
-      const mockContent = new ContentEntity({
-        id: '1',
-        type: ContentType.SONGS,
-        title: 'பூ வாசம்',
-        body: 'Full content body...',
-        description: 'A beautiful song',
-        author: 'Test Author',
-        status: ContentStatus.DRAFT,
-        categoryIds: ['cat1'],
-        tagIds: ['tag1'],
-        viewCount: 0,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-
-      mockCreateContentUseCase.execute.mockResolvedValue(mockContent);
+      getUseCase().execute.mockResolvedValue(makeContentMock({ status: ContentStatus.DRAFT }));
 
       const request = new NextRequest('http://localhost:3000/api/admin/content', {
         method: 'POST',
         body: JSON.stringify({
-          type: 'SONGS',
-          title: 'பூ வாசம்',
-          body: 'Full content body...',
-          description: 'A beautiful song',
-          author: 'Test Author',
-          status: 'DRAFT',
-          categoryIds: ['cat1'],
-          tagIds: ['tag1'],
+          type: 'SONGS', title: 'பூ வாசம்', body: 'Full content body...',
+          description: 'A beautiful song', author: 'Test Author', status: 'DRAFT',
+          categoryIds: ['cat1'], tagIds: ['tag1'],
         }),
       });
 
@@ -239,16 +160,13 @@ describe('Admin Content API', () => {
       expect(response.status).toBe(201);
       expect(data.success).toBe(true);
       expect(data.message).toBe('Content created successfully');
-      expect(mockCreateContentUseCase.execute).toHaveBeenCalled();
+      expect(getUseCase().execute).toHaveBeenCalled();
     });
 
     it('should return 400 for missing required fields', async () => {
       const request = new NextRequest('http://localhost:3000/api/admin/content', {
         method: 'POST',
-        body: JSON.stringify({
-          type: 'SONGS',
-          // Missing title, body, author
-        }),
+        body: JSON.stringify({ type: 'SONGS' }),
       });
 
       const response = await POST(request);
@@ -257,18 +175,13 @@ describe('Admin Content API', () => {
       expect(response.status).toBe(400);
       expect(data.success).toBe(false);
       expect(data.error).toBe('Validation failed');
-      expect(mockCreateContentUseCase.execute).not.toHaveBeenCalled();
+      expect(getUseCase().execute).not.toHaveBeenCalled();
     });
 
     it('should return 400 for invalid content type', async () => {
       const request = new NextRequest('http://localhost:3000/api/admin/content', {
         method: 'POST',
-        body: JSON.stringify({
-          type: 'INVALID_TYPE',
-          title: 'Test',
-          body: 'Test',
-          author: 'Test',
-        }),
+        body: JSON.stringify({ type: 'INVALID_TYPE', title: 'Test', body: 'Test', author: 'Test' }),
       });
 
       const response = await POST(request);
@@ -280,32 +193,11 @@ describe('Admin Content API', () => {
     });
 
     it('should default status to DRAFT if not provided', async () => {
-      const mockContent = new ContentEntity({
-        id: '1',
-        type: ContentType.SONGS,
-        title: 'Test',
-        body: 'Test body',
-        description: '',
-        author: 'Test',
-        status: ContentStatus.DRAFT,
-        categoryIds: [],
-        tagIds: [],
-        viewCount: 0,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-
-      mockCreateContentUseCase.execute.mockResolvedValue(mockContent);
+      getUseCase().execute.mockResolvedValue(makeContentMock({ status: ContentStatus.DRAFT }));
 
       const request = new NextRequest('http://localhost:3000/api/admin/content', {
         method: 'POST',
-        body: JSON.stringify({
-          type: 'SONGS',
-          title: 'Test',
-          body: 'Test body',
-          author: 'Test',
-          // No status provided
-        }),
+        body: JSON.stringify({ type: 'SONGS', title: 'Test', body: 'Test body', author: 'Test' }),
       });
 
       const response = await POST(request);
@@ -320,18 +212,13 @@ describe('Admin Content API', () => {
 
       const request = new NextRequest('http://localhost:3000/api/admin/content', {
         method: 'POST',
-        body: JSON.stringify({
-          type: 'SONGS',
-          title: 'Test',
-          body: 'Test',
-          author: 'Test',
-        }),
+        body: JSON.stringify({ type: 'SONGS', title: 'Test', body: 'Test', author: 'Test' }),
       });
 
       const response = await POST(request);
 
       expect(response.status).toBe(401);
-      expect(mockCreateContentUseCase.execute).not.toHaveBeenCalled();
+      expect(getUseCase().execute).not.toHaveBeenCalled();
     });
   });
 });

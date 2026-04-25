@@ -33,7 +33,6 @@ const amplifyConfig = {
   },
 } as const;
 
-// Configure Amplify — ssr:true prevents AuthError on server-side render passes
-Amplify.configure(amplifyConfig, { ssr: true });
+Amplify.configure(amplifyConfig);
 
 export default amplifyConfig;

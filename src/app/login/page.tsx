@@ -8,7 +8,7 @@
 
 import { Authenticator, ThemeProvider, Theme, useAuthenticator } from '@aws-amplify/ui-react';
 import '@aws-amplify/ui-react/styles.css';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
 import '@/lib/amplify-config';
 
@@ -34,16 +34,14 @@ const customTheme: Theme = {
 function LoginContent() {
   const { user } = useAuthenticator((context) => [context.user]);
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     if (user) {
-      // Check for redirect parameter in URL
-      const searchParams = new URLSearchParams(window.location.search);
       const redirect = searchParams.get('redirect');
-      // Redirect to original destination or default to admin dashboard
       router.push(redirect && redirect.startsWith('/admin') ? redirect : '/admin');
     }
-  }, [user, router]);
+  }, [user, router, searchParams]);
 
   if (user) {
     return (

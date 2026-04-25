@@ -5,13 +5,14 @@
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthenticator } from '@aws-amplify/ui-react';
 import LoginPage from '@/app/login/page';
 
-// Mock Next.js router
+// Mock Next.js router and search params
 jest.mock('next/navigation', () => ({
   useRouter: jest.fn(),
+  useSearchParams: jest.fn(),
 }));
 
 // Mock Amplify UI React
@@ -36,16 +37,9 @@ describe('Login Page', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    (useRouter as jest.Mock).mockReturnValue({
-      push: mockPush,
-    });
-
-    // Mock window.location
-    delete (window as any).location;
-    window.location = {
-      search: '',
-      href: 'https://tamilagaval.com/login',
-    } as any;
+    (useRouter as jest.Mock).mockReturnValue({ push: mockPush });
+    // Default: no redirect param
+    (useSearchParams as jest.Mock).mockReturnValue(new URLSearchParams(''));
   });
 
   describe('Rendering', () => {
@@ -98,7 +92,7 @@ describe('Login Page', () => {
     });
 
     it('should redirect to original destination when redirect param present', async () => {
-      window.location.search = '?redirect=/admin/content/new';
+      (useSearchParams as jest.Mock).mockReturnValue(new URLSearchParams('redirect=/admin/content/new'));
 
       (useAuthenticator as jest.Mock).mockReturnValue({
         user: { username: 'test@example.com' },
@@ -112,7 +106,7 @@ describe('Login Page', () => {
     });
 
     it('should sanitize redirect param to only allow /admin paths', async () => {
-      window.location.search = '?redirect=/malicious-site';
+      (useSearchParams as jest.Mock).mockReturnValue(new URLSearchParams('redirect=/malicious-site'));
 
       (useAuthenticator as jest.Mock).mockReturnValue({
         user: { username: 'test@example.com' },
@@ -126,7 +120,7 @@ describe('Login Page', () => {
     });
 
     it('should prevent external redirect attacks', async () => {
-      window.location.search = '?redirect=https://evil.com/admin';
+      (useSearchParams as jest.Mock).mockReturnValue(new URLSearchParams('redirect=https://evil.com/admin'));
 
       (useAuthenticator as jest.Mock).mockReturnValue({
         user: { username: 'test@example.com' },
@@ -183,7 +177,7 @@ describe('Login Page', () => {
     });
 
     it('should handle multiple redirect params (use first)', async () => {
-      window.location.search = '?redirect=/admin/content&redirect=/admin/tags';
+      (useSearchParams as jest.Mock).mockReturnValue(new URLSearchParams('redirect=/admin/content&redirect=/admin/tags'));
 
       (useAuthenticator as jest.Mock).mockReturnValue({
         user: { username: 'test@example.com' },
@@ -197,7 +191,7 @@ describe('Login Page', () => {
     });
 
     it('should handle redirect param with query string', async () => {
-      window.location.search = '?redirect=/admin/content?type=POEMS';
+      (useSearchParams as jest.Mock).mockReturnValue(new URLSearchParams('redirect=/admin/content?type=POEMS'));
 
       (useAuthenticator as jest.Mock).mockReturnValue({
         user: { username: 'test@example.com' },
@@ -212,7 +206,7 @@ describe('Login Page', () => {
     });
 
     it('should handle empty redirect param', async () => {
-      window.location.search = '?redirect=';
+      (useSearchParams as jest.Mock).mockReturnValue(new URLSearchParams('redirect='));
 
       (useAuthenticator as jest.Mock).mockReturnValue({
         user: { username: 'test@example.com' },
@@ -228,7 +222,7 @@ describe('Login Page', () => {
 
   describe('Security', () => {
     it('should reject redirect to public routes', async () => {
-      window.location.search = '?redirect=/songs';
+      (useSearchParams as jest.Mock).mockReturnValue(new URLSearchParams('redirect=/songs'));
 
       (useAuthenticator as jest.Mock).mockReturnValue({
         user: { username: 'test@example.com' },
@@ -242,7 +236,7 @@ describe('Login Page', () => {
     });
 
     it('should reject javascript: protocol in redirect', async () => {
-      window.location.search = '?redirect=javascript:alert(1)';
+      (useSearchParams as jest.Mock).mockReturnValue(new URLSearchParams('redirect=javascript:alert(1)'));
 
       (useAuthenticator as jest.Mock).mockReturnValue({
         user: { username: 'test@example.com' },
@@ -256,7 +250,7 @@ describe('Login Page', () => {
     });
 
     it('should reject data: protocol in redirect', async () => {
-      window.location.search = '?redirect=data:text/html,<script>alert(1)</script>';
+      (useSearchParams as jest.Mock).mockReturnValue(new URLSearchParams('redirect=data:text/html,<script>alert(1)</script>'));
 
       (useAuthenticator as jest.Mock).mockReturnValue({
         user: { username: 'test@example.com' },

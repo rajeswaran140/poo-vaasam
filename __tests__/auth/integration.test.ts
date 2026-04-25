@@ -1,3 +1,4 @@
+/** @jest-environment node */
 /**
  * Authentication Integration Tests
  *
@@ -330,10 +331,12 @@ function createMockRequest(
 ): NextRequest {
   const url = `https://tamilagaval.com${pathname}`;
 
+  const queryString = pathname.split('?')[1] || '';
   return {
     nextUrl: {
       pathname: pathname.split('?')[0],
-      searchParams: new URLSearchParams(pathname.split('?')[1] || ''),
+      search: queryString ? `?${queryString}` : '',
+      searchParams: new URLSearchParams(queryString),
     },
     url,
     cookies: {
