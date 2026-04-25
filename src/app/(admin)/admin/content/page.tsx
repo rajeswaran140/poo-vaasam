@@ -252,11 +252,11 @@ export default function ContentListPage() {
                     <td className="px-6 py-4">
                       <div>
                         <div className="font-medium text-gray-900 font-tamil text-base">
-                          {item._title}
+                          {item.title}
                         </div>
-                        {item._description && (
+                        {item.description && (
                           <div className="text-sm text-gray-500 font-tamil mt-1 line-clamp-1">
-                            {item._description}
+                            {item.description}
                           </div>
                         )}
                       </div>
@@ -265,13 +265,13 @@ export default function ContentListPage() {
                       <TypeBadge type={item.type} />
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-tamil">
-                      {item._author}
+                      {item.author}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <StatusBadge status={item._status} />
+                      <StatusBadge status={item.status} />
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {item._viewCount || 0}
+                      {item.viewCount || 0}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {new Date(item.createdAt).toLocaleDateString('en-GB', {
@@ -296,7 +296,7 @@ export default function ContentListPage() {
                           View
                         </Link>
                         <button
-                          onClick={() => setDeleteModal({ isOpen: true, id: item.id, title: item._title })}
+                          onClick={() => setDeleteModal({ isOpen: true, id: item.id, title: item.title })}
                           className="px-3 py-1 text-red-600 hover:bg-red-50 rounded transition-colors"
                         >
                           Delete

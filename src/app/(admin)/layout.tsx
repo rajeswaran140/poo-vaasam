@@ -1,15 +1,9 @@
 'use client';
 
-/**
- * Admin Layout
- *
- * Main layout for admin dashboard with sidebar navigation and authentication
- */
-
 import Link from 'next/link';
 import { ReactNode } from 'react';
 import { useAuthenticator } from '@aws-amplify/ui-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import '@/lib/amplify-config';
 import { LucideIcon, LayoutDashboard, FileText, Folder, Tag, Image, Globe, Settings, LogOut, Plus } from 'lucide-react';
 import { FEATURES } from '@/config/features';
@@ -19,9 +13,24 @@ interface AdminLayoutProps {
   children: ReactNode;
 }
 
+const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
+  '/admin': { title: 'Dashboard', subtitle: 'Overview of your Tamil content platform' },
+  '/admin/content': { title: 'Content', subtitle: 'Manage your Tamil content library' },
+  '/admin/content/new': { title: 'New Content', subtitle: 'Add new Tamil content to your platform' },
+  '/admin/categories': { title: 'Categories', subtitle: 'Organize content into categories' },
+  '/admin/tags': { title: 'Tags', subtitle: 'Manage content tags' },
+  '/admin/media': { title: 'Media Library', subtitle: 'Manage uploaded media files' },
+  '/admin/settings': { title: 'Settings', subtitle: 'Configure your platform settings' },
+};
+
 export default function AdminLayout({ children }: AdminLayoutProps) {
   const { user, signOut } = useAuthenticator((context) => [context.user]);
   const router = useRouter();
+  const pathname = usePathname();
+  const isEditPage = pathname.includes('/edit');
+  const pageInfo = isEditPage
+    ? { title: 'Edit Content', subtitle: 'Update existing content' }
+    : (PAGE_TITLES[pathname] || { title: 'Admin', subtitle: 'Manage your platform' });
 
   // Note: Middleware already protects admin routes, but we keep this
   // check for user info and signOut functionality
@@ -101,10 +110,10 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           <div className="px-8 py-4 flex items-center justify-between">
             <div>
               <h2 className="text-2xl font-semibold text-gray-800">
-                Content Management
+                {pageInfo.title}
               </h2>
               <p className="text-sm text-gray-500 mt-1">
-                Manage your Tamil content
+                {pageInfo.subtitle}
               </p>
             </div>
             <div className="flex items-center gap-4">

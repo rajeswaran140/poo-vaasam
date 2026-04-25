@@ -11,6 +11,7 @@ import { useRouter } from 'next/navigation';
 import { TamilInput } from '@/components/admin/TamilInput';
 import { Music, Feather, Mic, BookOpen, PenTool, Star } from 'lucide-react';
 import { FEATURES } from '@/config/features';
+import showToast from '@/lib/toast';
 
 export default function NewContentPage() {
   const router = useRouter();
@@ -71,14 +72,14 @@ export default function NewContentPage() {
       const data = await response.json();
 
       if (data.success) {
-        alert('✅ Content created successfully!');
+        showToast.success('உள்ளடக்கம் வெற்றிகரமாக உருவாக்கப்பட்டது!');
         router.push('/admin/content');
       } else {
-        alert('❌ Failed to create content: ' + (data.error || 'Unknown error'));
+        showToast.error('உருவாக்க முடியவில்லை: ' + (data.error || 'Unknown error'));
       }
     } catch (error) {
       console.error('Error creating content:', error);
-      alert('❌ Failed to create content');
+      showToast.error('உள்ளடக்கத்தை உருவாக்க முடியவில்லை');
     } finally {
       setLoading(false);
     }

@@ -99,6 +99,13 @@ export default async function AdminDashboard() {
             color="bg-pink-500"
             href="/admin/content?type=STORIES"
           />
+          <StatCard
+            title="Essays"
+            value={stats?.essays || 0}
+            icon="✍️"
+            color="bg-orange-500"
+            href="/admin/content?type=ESSAYS"
+          />
         </div>
       </div>
 
