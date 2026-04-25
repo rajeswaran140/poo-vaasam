@@ -40,7 +40,7 @@ describe('PoemReader Integration Tests', () => {
     render(<PoemReader content={mockContent} />);
 
     expect(screen.getByText('அம்மா')).toBeInTheDocument();
-    expect(screen.getByText(/அம்மா என்றால் அன்பு/)).toBeInTheDocument();
+    expect(screen.getAllByText(/அம்மா என்றால் அன்பு/)[0]).toBeInTheDocument();
   });
 
   it('should call AI analysis API on mount', async () => {

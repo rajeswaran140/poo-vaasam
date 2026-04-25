@@ -1,8 +1,4 @@
-/**
- * AWS Amplify Configuration
- *
- * Configure Amplify with Cognito authentication
- */
+'use client';
 
 import { Amplify } from 'aws-amplify';
 

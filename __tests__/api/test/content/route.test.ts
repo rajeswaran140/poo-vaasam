@@ -103,7 +103,9 @@ describe('Test Content API Routes - Authentication', () => {
 
     it('should allow authenticated users to list content', async () => {
       const mockItem = { id: '1', type: ContentType.SONGS, title: 'பூ வாசம்', status: ContentStatus.PUBLISHED };
-      getContentRepo().findAll.mockResolvedValue({ items: [mockItem], total: 1, limit: 50, offset: 0, hasMore: false });
+      // Route calls findAll twice: once for published, once for draft
+      getContentRepo().findAll.mockResolvedValueOnce({ items: [mockItem], total: 1, limit: 50, offset: 0, hasMore: false });
+      getContentRepo().findAll.mockResolvedValueOnce({ items: [], total: 0, limit: 50, offset: 0, hasMore: false });
 
       const request = new NextRequest(
         new Request('http://localhost:3000/api/test/content?action=list')
