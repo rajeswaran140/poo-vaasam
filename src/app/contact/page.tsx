@@ -38,15 +38,11 @@ export default function ContactPage() {
                 எங்களை தொடர்பு கொள்ள தயங்க வேண்டாம்.
               </p>
 
-              <div className="space-y-4 mt-8">
-                <div className="flex items-start">
-                  <div className="text-2xl mr-4">📧</div>
-                  <div>
-                    <h3 className="font-bold text-lg mb-1">மின்னஞ்சல்</h3>
-                    <a href="mailto:rajeswaran.t@techsynergy.ca" className="text-purple-600 hover:underline">rajeswaran.t@techsynergy.ca</a>
-                  </div>
-                </div>
+              <p className="text-lg">
+                கீழே உள்ள படிவத்தின் மூலம் எங்களுக்கு செய்தி அனுப்புங்கள்.
+              </p>
 
+              <div className="space-y-4 mt-8">
                 <div className="flex items-start">
                   <div className="text-2xl mr-4">💬</div>
                   <div>
@@ -77,7 +73,7 @@ export default function ContactPage() {
               <div className="bg-purple-50 border border-purple-200 rounded-lg p-6 mt-6">
                 <h3 className="font-bold text-xl mb-3 text-purple-900">பங்களிப்பு வழிமுறைகள்:</h3>
                 <ul className="list-disc list-inside space-y-2 text-purple-900">
-                  <li>உங்கள் படைப்புகளை மின்னஞ்சல் மூலம் அனுப்பவும்</li>
+                  <li>மேலே உள்ள தொடர்பு படிவத்தின் மூலம் உங்கள் படைப்புகளை அனுப்பவும்</li>
                   <li>ஆசிரியர் பெயர் மற்றும் தொடர்பு விவரங்களை சேர்க்கவும்</li>
                   <li>அசல் படைப்புகள் மட்டுமே ஏற்கப்படும்</li>
                   <li>படைப்புகள் எங்கள் குழுவினால் மதிப்பாய்வு செய்யப்படும்</li>
