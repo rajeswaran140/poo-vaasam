@@ -3,7 +3,7 @@
  * தமிழ் உள்ளடக்கத்துடன் அம்சமான தரவு பக்கம்
  */
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 300;
 
 import type { Metadata } from 'next';
 import Link from 'next/link';

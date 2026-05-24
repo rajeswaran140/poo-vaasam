@@ -2,7 +2,7 @@
  * Poems Listing Page - Enhanced with Search, Filters, and Advanced Features
  */
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 300;
 
 import type { Metadata } from 'next';
 

@@ -14,6 +14,9 @@ import { JsonLd } from '@/components/JsonLd';
 import { isYouTubeUrl, getYouTubeWatchUrl, getYouTubeId } from '@/lib/utils/youtube';
 import { SITE_URL, SITE_NAME, absoluteUrl, toDescription } from '@/lib/seo';
 
+// Cache each rendered content page for 5 minutes (ISR), revalidating in the background.
+export const revalidate = 300;
+
 // cache() dedupes the DB read shared by generateMetadata and the page render
 const getContent = cache(async (id: string) => {
   try {

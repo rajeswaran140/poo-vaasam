@@ -40,6 +40,8 @@ const createContentSchema = z.object({
   audioUrl: z.preprocess(emptyToUndefined, z.string().url().optional()),
   videoUrl: z.preprocess(emptyToUndefined, z.string().url().optional()),
   audioDuration: z.number().int().min(0).optional(),
+  seoTitle: z.preprocess(emptyToUndefined, z.string().max(60).optional()),
+  seoDescription: z.preprocess(emptyToUndefined, z.string().max(160).optional()),
 });
 
 /**
@@ -185,6 +187,8 @@ export async function POST(request: NextRequest) {
       audioUrl: validation.data.audioUrl,
       videoUrl: validation.data.videoUrl,
       audioDuration: validation.data.audioDuration,
+      seoTitle: validation.data.seoTitle,
+      seoDescription: validation.data.seoDescription,
     });
 
     return NextResponse.json(

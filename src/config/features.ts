@@ -8,7 +8,7 @@
 export const FEATURES = {
   // Admin Panel Features
   ADMIN: {
-    SEO_FIELDS: false,        // SEO title and description in content forms
+    SEO_FIELDS: true,         // SEO title and description in content forms
     SETTINGS_PAGE: false,     // Settings page in admin sidebar
     MEDIA_LIBRARY: false,     // Media library page in admin sidebar
     COMMENTS: false,          // Comment moderation features
