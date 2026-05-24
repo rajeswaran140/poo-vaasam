@@ -10,7 +10,7 @@ import Link from 'next/link';
 import Header from '@/components/Header';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentStatus, ContentType } from '@/types/content';
-import { SITE, isYouTubeChannelConfigured } from '@/config/site';
+import { SITE, isYouTubeChannelConfigured, isFacebookConfigured } from '@/config/site';
 import { JsonLd } from '@/components/JsonLd';
 import { SITE_URL, SITE_NAME } from '@/lib/seo';
 
@@ -357,19 +357,34 @@ export default async function HomePage() {
               <p className="text-gray-400 font-tamil mb-4">
                 தமிழ் இலக்கியத்தை பாதுகாக்கும் மற்றும் பரப்பும் தளம்
               </p>
-              {isYouTubeChannelConfigured() && (
-                <a
-                  href={SITE.youtube.channelUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white rounded-full font-bold hover:opacity-90 transition-opacity font-tamil text-sm shadow-lg"
-                >
-                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
-                  </svg>
-                  <span>{SITE.youtube.channelLabel}</span>
-                </a>
-              )}
+              <div className="flex flex-wrap items-center gap-3">
+                {isYouTubeChannelConfigured() && (
+                  <a
+                    href={SITE.youtube.channelUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white rounded-full font-bold hover:opacity-90 transition-opacity font-tamil text-sm shadow-lg"
+                  >
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+                    </svg>
+                    <span>{SITE.youtube.channelLabel}</span>
+                  </a>
+                )}
+                {isFacebookConfigured() && (
+                  <a
+                    href={SITE.facebook.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Facebook"
+                    className="inline-flex items-center justify-center w-11 h-11 bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white rounded-full hover:opacity-90 transition-opacity shadow-lg"
+                  >
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+                    </svg>
+                  </a>
+                )}
+              </div>
             </div>
             <div>
               <h4 className="font-semibold mb-4 font-tamil">விரைவு இணைப்புகள்</h4>

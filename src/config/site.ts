@@ -14,7 +14,16 @@ export const SITE = {
     label: 'YouTube',
     channelLabel: 'YouTube', // icon + brand word only, no Tamil
   },
+  facebook: {
+    url: 'https://www.facebook.com/profile.php?id=61590184029055',
+    label: 'Facebook',
+  },
 } as const;
+
+/** True when a real Facebook URL is configured. */
+export function isFacebookConfigured(): boolean {
+  return /facebook\.com\//.test(SITE.facebook.url);
+}
 
 /**
  * True only when a real channel URL has been configured (not the placeholder).
