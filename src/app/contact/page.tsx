@@ -3,6 +3,7 @@
  */
 
 import Link from 'next/link';
+import ContactForm from '@/components/ContactForm';
 
 export default function ContactPage() {
   return (
@@ -48,6 +49,13 @@ export default function ContactPage() {
                 </div>
               </div>
             </div>
+          </section>
+
+          {/* Contact Form Section */}
+          <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 mb-8">
+            <h2 className="text-3xl font-bold text-gray-900 mb-2 font-tamil">செய்தி அனுப்புங்கள்</h2>
+            <p className="text-gray-500 mb-6">Send us a message and we&apos;ll get back to you.</p>
+            <ContactForm />
           </section>
 
           {/* Contribution Section */}

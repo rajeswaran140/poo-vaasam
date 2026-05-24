@@ -5,7 +5,7 @@ import { ReactNode } from 'react';
 import { useAuthenticator } from '@aws-amplify/ui-react';
 import { useRouter, usePathname } from 'next/navigation';
 import '@/lib/amplify-config';
-import { LucideIcon, LayoutDashboard, FileText, Folder, Tag, Image, Globe, Settings, LogOut, Plus } from 'lucide-react';
+import { LucideIcon, LayoutDashboard, FileText, Folder, Tag, Image, Globe, Settings, LogOut, Plus, Mail } from 'lucide-react';
 import { FEATURES } from '@/config/features';
 import { Toaster } from 'react-hot-toast';
 
@@ -19,6 +19,7 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   '/admin/content/new': { title: 'New Content', subtitle: 'Add new Tamil content to your platform' },
   '/admin/categories': { title: 'Categories', subtitle: 'Organize content into categories' },
   '/admin/tags': { title: 'Tags', subtitle: 'Manage content tags' },
+  '/admin/messages': { title: 'Messages', subtitle: 'Contact-form submissions' },
   '/admin/media': { title: 'Media Library', subtitle: 'Manage uploaded media files' },
   '/admin/settings': { title: 'Settings', subtitle: 'Configure your platform settings' },
 };
@@ -65,6 +66,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           </NavLink>
           <NavLink href="/admin/tags" icon={Tag}>
             Tags
+          </NavLink>
+          <NavLink href="/admin/messages" icon={Mail}>
+            Messages
           </NavLink>
 
           {/* Media Library - Only shown if feature is enabled */}
