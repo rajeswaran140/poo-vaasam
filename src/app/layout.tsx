@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Noto_Sans_Tamil, Kavivanar, Baloo_Thambi_2 } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/components/auth/AuthProvider";
+import BackToTop from "@/components/BackToTop";
 
 const notoSansTamil = Noto_Sans_Tamil({
   subsets: ['tamil'],
@@ -78,6 +79,7 @@ export default function RootLayout({
       <body className="font-tamil antialiased">
         <AuthProvider>
           {children}
+          <BackToTop />
         </AuthProvider>
       </body>
     </html>
