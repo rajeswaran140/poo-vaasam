@@ -36,7 +36,7 @@ export default function ContactPage() {
                   <div className="text-2xl mr-4">📧</div>
                   <div>
                     <h3 className="font-bold text-lg mb-1">மின்னஞ்சல்</h3>
-                    <p className="text-purple-600">info@tamilagaval.com</p>
+                    <a href="mailto:rajeswaran.t@techsynergy.ca" className="text-purple-600 hover:underline">rajeswaran.t@techsynergy.ca</a>
                   </div>
                 </div>
 
