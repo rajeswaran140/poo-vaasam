@@ -46,12 +46,6 @@ export default function Header() {
                 <span>{SITE.youtube.channelLabel}</span>
               </a>
             )}
-            <Link
-              href="/admin"
-              className="ml-2 px-5 py-2.5 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-full hover:from-orange-600 hover:to-orange-700 transition-all font-tamil text-sm font-bold shadow-lg hover:shadow-xl transform hover:scale-105"
-            >
-              நிர்வாகம்
-            </Link>
           </div>
 
           {/* Mobile Menu Button */}
@@ -118,13 +112,6 @@ export default function Header() {
                   <span>{SITE.youtube.channelLabel}</span>
                 </a>
               )}
-              <Link
-                href="/admin"
-                className="px-4 py-2 bg-orange-500 text-white rounded-full hover:bg-orange-600 transition-colors font-tamil text-sm inline-block text-center"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                நிர்வாகம்
-              </Link>
             </div>
           </div>
         )}
