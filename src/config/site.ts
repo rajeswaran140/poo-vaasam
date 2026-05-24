@@ -12,7 +12,7 @@ export const SITE = {
      */
     channelUrl: 'https://youtube.com/@RajeswaranThangarajah',
     label: 'YouTube',
-    subscribeLabel: 'சந்தா செலுத்துங்கள்', // "Subscribe"
+    channelLabel: 'எங்கள் YouTube சேனல்', // "Our YouTube channel" — free, no payment implication
   },
 } as const;
 

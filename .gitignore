@@ -86,3 +86,6 @@ playwright-report/
 playwright/.cache/
 credentials/
 .gstack/
+
+# Amplify recreation capture (contains secret env var values)
+.amplify-recreate/
