@@ -9,6 +9,7 @@ import Link from 'next/link';
 import Header from '@/components/Header';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentStatus, ContentType } from '@/types/content';
+import { SITE, isYouTubeChannelConfigured } from '@/config/site';
 
 async function getFeaturedContent() {
   try {
@@ -331,9 +332,22 @@ export default async function HomePage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div>
               <h3 className="text-2xl font-bold mb-4 font-kavivanar">தமிழகவல்</h3>
-              <p className="text-gray-400 font-tamil">
+              <p className="text-gray-400 font-tamil mb-4">
                 தமிழ் இலக்கியத்தை பாதுகாக்கும் மற்றும் பரப்பும் தளம்
               </p>
+              {isYouTubeChannelConfigured() && (
+                <a
+                  href={SITE.youtube.channelUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-red-600 text-white rounded-full font-bold hover:bg-red-700 transition-colors font-tamil text-sm shadow-lg"
+                >
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+                  </svg>
+                  <span>{SITE.youtube.subscribeLabel}</span>
+                </a>
+              )}
             </div>
             <div>
               <h4 className="font-semibold mb-4 font-tamil">விரைவு இணைப்புகள்</h4>
@@ -421,6 +435,12 @@ function ContentCard({ content }: { content: any }) {
             className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
           />
           <div className="absolute top-3 right-3 flex gap-2">
+            {content.videoUrl && (
+              <span className="px-3 py-1 bg-red-600 text-white text-xs font-bold rounded-full shadow-lg flex items-center gap-1">
+                <span>▶️</span>
+                <span className="font-tamil">காணொளி</span>
+              </span>
+            )}
             {content.audioUrl && (
               <span className="px-3 py-1 bg-orange-500 text-white text-xs font-bold rounded-full shadow-lg flex items-center gap-1">
                 <span>🎧</span>
@@ -434,12 +454,20 @@ function ContentCard({ content }: { content: any }) {
           <div className="text-center">
             <div className="text-6xl mb-2">{content.type === 'POEMS' ? '📝' : content.type === 'SONGS' ? '🎵' : '📖'}</div>
           </div>
-          {content.audioUrl && (
-            <span className="absolute top-3 right-3 px-3 py-1 bg-orange-500 text-white text-xs font-bold rounded-full shadow-lg flex items-center gap-1">
-              <span>🎧</span>
-              <span className="font-tamil">ஆடியோ</span>
-            </span>
-          )}
+          <div className="absolute top-3 right-3 flex gap-2">
+            {content.videoUrl && (
+              <span className="px-3 py-1 bg-red-600 text-white text-xs font-bold rounded-full shadow-lg flex items-center gap-1">
+                <span>▶️</span>
+                <span className="font-tamil">காணொளி</span>
+              </span>
+            )}
+            {content.audioUrl && (
+              <span className="px-3 py-1 bg-orange-500 text-white text-xs font-bold rounded-full shadow-lg flex items-center gap-1">
+                <span>🎧</span>
+                <span className="font-tamil">ஆடியோ</span>
+              </span>
+            )}
+          </div>
         </div>
       )}
 
@@ -460,7 +488,7 @@ function ContentCard({ content }: { content: any }) {
             {content.author}
           </span>
           <span className="text-orange-600 group-hover:text-orange-700 font-bold font-tamil inline-flex items-center gap-1">
-            <span>{content.audioUrl ? 'கேளுங்கள்' : 'படியுங்கள்'}</span>
+            <span>{content.videoUrl ? 'பார்க்க' : content.audioUrl ? 'கேளுங்கள்' : 'படியுங்கள்'}</span>
             <span>→</span>
           </span>
         </div>

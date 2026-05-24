@@ -59,6 +59,13 @@ export interface AudioProperties {
 }
 
 /**
+ * Video Properties (for Songs) — typically a YouTube link
+ */
+export interface VideoProperties {
+  videoUrl?: string; // YouTube watch/share/embed URL
+}
+
+/**
  * Statistics
  */
 export interface ContentStatistics {
@@ -75,6 +82,7 @@ export interface Content
   extends BaseContent,
     ContentMetadata,
     AudioProperties,
+    VideoProperties,
     ContentStatistics {
   body: string; // Main content in Tamil
   publishedAt?: Date;
@@ -94,6 +102,7 @@ export interface CreateContentDTO {
   featuredImage?: string;
   audioUrl?: string;
   audioDuration?: number;
+  videoUrl?: string;
   categoryIds?: string[];
   tagIds?: string[];
   status?: ContentStatus;
@@ -112,6 +121,7 @@ export interface UpdateContentDTO {
   featuredImage?: string | null;
   audioUrl?: string | null;
   audioDuration?: number | null;
+  videoUrl?: string | null;
   categoryIds?: string[];
   tagIds?: string[];
   status?: ContentStatus;

@@ -31,6 +31,7 @@ export default function NewContentPage() {
     tagIds: [] as string[],
     featuredImage: '',
     audioUrl: '',
+    videoUrl: '',
     audioDuration: 0,
     seoTitle: '',
     seoDescription: '',
@@ -324,6 +325,23 @@ export default function NewContentPage() {
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              YouTube Video URL (யூடியூப் காணொளி)
+            </label>
+            <input
+              type="url"
+              name="videoUrl"
+              value={formData.videoUrl}
+              onChange={handleChange}
+              placeholder="https://www.youtube.com/watch?v=..."
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Paste a YouTube link to embed the video on the song page — no file upload needed, and it promotes your channel.
+            </p>
           </div>
         </div>
 

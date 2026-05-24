@@ -23,6 +23,9 @@ const createContentUseCase = new CreateContentUseCase(
   tagRepo
 );
 
+// Treat empty-string URL fields (sent by the admin form when left blank) as absent
+const emptyToUndefined = (v: unknown) => (v === '' ? undefined : v);
+
 // Validation schemas
 const createContentSchema = z.object({
   type: z.nativeEnum(ContentType),
@@ -33,8 +36,9 @@ const createContentSchema = z.object({
   status: z.nativeEnum(ContentStatus).default(ContentStatus.DRAFT),
   categoryIds: z.array(z.string()).max(10).default([]),
   tagIds: z.array(z.string()).max(20).default([]),
-  featuredImage: z.string().url().optional(),
-  audioUrl: z.string().url().optional(),
+  featuredImage: z.preprocess(emptyToUndefined, z.string().url().optional()),
+  audioUrl: z.preprocess(emptyToUndefined, z.string().url().optional()),
+  videoUrl: z.preprocess(emptyToUndefined, z.string().url().optional()),
   audioDuration: z.number().int().min(0).optional(),
 });
 
@@ -179,6 +183,7 @@ export async function POST(request: NextRequest) {
       tagIds: validation.data.tagIds,
       featuredImage: validation.data.featuredImage,
       audioUrl: validation.data.audioUrl,
+      videoUrl: validation.data.videoUrl,
       audioDuration: validation.data.audioDuration,
     });
 

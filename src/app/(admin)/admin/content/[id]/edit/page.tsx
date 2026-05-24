@@ -33,6 +33,7 @@ export default function EditContentPage({ params }: PageProps) {
     tagIds: [] as string[],
     featuredImage: '',
     audioUrl: '',
+    videoUrl: '',
     audioDuration: 0,
   });
 
@@ -61,6 +62,7 @@ export default function EditContentPage({ params }: PageProps) {
             tagIds: content.tagIds || [],
             featuredImage: content.featuredImage || '',
             audioUrl: content.audioUrl || '',
+            videoUrl: content.videoUrl || '',
             audioDuration: content.audioDuration || 0,
           });
         }
@@ -287,6 +289,71 @@ export default function EditContentPage({ params }: PageProps) {
                 #{tag.name}
               </button>
             ))}
+          </div>
+        </div>
+
+        {/* Media */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Media (ஊடகம்)</h2>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Featured Image URL
+            </label>
+            <input
+              type="text"
+              name="featuredImage"
+              value={formData.featuredImage}
+              onChange={handleChange}
+              placeholder="https://example.com/image.jpg"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Audio File URL
+              </label>
+              <input
+                type="text"
+                name="audioUrl"
+                value={formData.audioUrl}
+                onChange={handleChange}
+                placeholder="https://example.com/audio.mp3"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Audio Duration (seconds)
+              </label>
+              <input
+                type="number"
+                name="audioDuration"
+                value={formData.audioDuration}
+                onChange={handleChange}
+                placeholder="180"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              YouTube Video URL (யூடியூப் காணொளி)
+            </label>
+            <input
+              type="url"
+              name="videoUrl"
+              value={formData.videoUrl}
+              onChange={handleChange}
+              placeholder="https://www.youtube.com/watch?v=..."
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Paste a YouTube link to embed the video on the song page — no file upload needed, and it promotes your channel.
+            </p>
           </div>
         </div>
 

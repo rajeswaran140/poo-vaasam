@@ -38,7 +38,8 @@ export class Content {
     private _seoDescription: string | undefined,
     public readonly createdAt: Date,
     private _updatedAt: Date,
-    private _publishedAt: Date | undefined
+    private _publishedAt: Date | undefined,
+    private _videoUrl: string | undefined = undefined
   ) {}
 
   // Getters
@@ -76,6 +77,10 @@ export class Content {
 
   get audioDuration(): number | undefined {
     return this._audioDuration;
+  }
+
+  get videoUrl(): string | undefined {
+    return this._videoUrl;
   }
 
   get categoryIds(): string[] {
@@ -139,7 +144,8 @@ export class Content {
       dto.seoDescription,
       now,
       now,
-      isPublished ? now : undefined // Set publishedAt if created as PUBLISHED
+      isPublished ? now : undefined, // Set publishedAt if created as PUBLISHED
+      dto.videoUrl
     );
   }
 
@@ -177,6 +183,10 @@ export class Content {
 
     if (dto.audioDuration !== undefined) {
       this._audioDuration = dto.audioDuration || undefined;
+    }
+
+    if (dto.videoUrl !== undefined) {
+      this._videoUrl = dto.videoUrl || undefined;
     }
 
     if (dto.categoryIds !== undefined) {
@@ -325,6 +335,7 @@ export class Content {
       featuredImage: this._featuredImage,
       audioUrl: this._audioUrl,
       audioDuration: this._audioDuration,
+      videoUrl: this._videoUrl,
       categoryIds: this._categoryIds,
       tagIds: this._tagIds,
       viewCount: this._viewCount,
@@ -359,7 +370,8 @@ export class Content {
       data.seoDescription,
       new Date(data.createdAt),
       new Date(data.updatedAt),
-      data.publishedAt ? new Date(data.publishedAt) : undefined
+      data.publishedAt ? new Date(data.publishedAt) : undefined,
+      data.videoUrl
     );
   }
 

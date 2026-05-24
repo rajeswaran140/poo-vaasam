@@ -7,6 +7,8 @@ import { notFound } from 'next/navigation';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentPageClient } from '@/components/ContentPageClient';
 import { PoemReader } from '@/components/PoemReader';
+import { YouTubeEmbed } from '@/components/YouTubeEmbed';
+import { isYouTubeUrl, getYouTubeWatchUrl } from '@/lib/utils/youtube';
 
 async function getContent(id: string) {
   try {
@@ -51,6 +53,26 @@ export default async function ContentPage({ params }: PageProps) {
       {/* Content */}
       <article className="container mx-auto px-4 sm:px-6 py-8 sm:py-12 max-w-7xl">
         <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+          {/* YouTube Video */}
+          {content.videoUrl && isYouTubeUrl(content.videoUrl) && (
+            <div className="p-6 sm:p-8 bg-gradient-to-r from-red-50 to-orange-50 border-b border-gray-200">
+              <div className="flex items-center gap-3 mb-4">
+                <span className="text-2xl">▶️</span>
+                <span className="font-semibold text-gray-700 font-tamil">காணொளி</span>
+              </div>
+              <YouTubeEmbed url={content.videoUrl} title={content.title} />
+              <a
+                href={getYouTubeWatchUrl(content.videoUrl) || content.videoUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-red-600 text-white rounded-full font-medium hover:bg-red-700 transition-colors font-tamil text-sm shadow-sm"
+              >
+                <span>▶️</span>
+                <span>YouTube-ல் பார்த்து சந்தா செலுத்துங்கள்</span>
+              </a>
+            </div>
+          )}
+
           {/* Audio Player */}
           {content.audioUrl && (
             <div className="p-6 sm:p-8 bg-gradient-to-r from-purple-50 to-blue-50 border-b border-gray-200">

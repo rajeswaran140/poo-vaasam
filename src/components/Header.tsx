@@ -2,9 +2,11 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
+import { SITE, isYouTubeChannelConfigured } from '@/config/site';
 
 export default function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const showYouTube = isYouTubeChannelConfigured();
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-gray-900 border-b border-gray-800 shadow-xl">
@@ -31,6 +33,19 @@ export default function Header() {
             <Link href="/all" className="px-4 py-2 text-gray-300 hover:text-white hover:bg-gray-800/50 rounded-lg transition-all font-tamil font-medium">
               அனைத்தும்
             </Link>
+            {showYouTube && (
+              <a
+                href={SITE.youtube.channelUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ml-2 px-4 py-2 inline-flex items-center gap-2 bg-red-600 text-white rounded-full hover:bg-red-700 transition-all font-tamil text-sm font-bold shadow-lg"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+                </svg>
+                <span>{SITE.youtube.subscribeLabel}</span>
+              </a>
+            )}
             <Link
               href="/admin"
               className="ml-2 px-5 py-2.5 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-full hover:from-orange-600 hover:to-orange-700 transition-all font-tamil text-sm font-bold shadow-lg hover:shadow-xl transform hover:scale-105"
@@ -89,6 +104,20 @@ export default function Header() {
               >
                 அனைத்தும்
               </Link>
+              {showYouTube && (
+                <a
+                  href={SITE.youtube.channelUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2 bg-red-600 text-white rounded-full hover:bg-red-700 transition-colors font-tamil text-sm inline-flex items-center justify-center gap-2"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+                  </svg>
+                  <span>{SITE.youtube.subscribeLabel}</span>
+                </a>
+              )}
               <Link
                 href="/admin"
                 className="px-4 py-2 bg-orange-500 text-white rounded-full hover:bg-orange-600 transition-colors font-tamil text-sm inline-block text-center"

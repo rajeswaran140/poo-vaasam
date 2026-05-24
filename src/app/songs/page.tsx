@@ -75,11 +75,18 @@ function ContentCard({ content }: { content: any }) {
           <span className="text-sm text-gray-500 font-tamil">
             {content.author}
           </span>
-          {content.audioUrl && (
-            <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-tamil">
-              🎵 ஒலி
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {content.videoUrl && (
+              <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full font-tamil">
+                ▶️ காணொளி
+              </span>
+            )}
+            {content.audioUrl && (
+              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-tamil">
+                🎵 ஒலி
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </Link>

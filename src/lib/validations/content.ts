@@ -7,6 +7,10 @@
 import { z } from 'zod';
 import { ContentType, ContentStatus } from '@/types/content';
 
+// Admin forms submit '' for blank URL fields; treat empty string as absent
+// so optional URL validation doesn't reject it.
+const emptyToUndefined = (v: unknown) => (v === '' ? undefined : v);
+
 /**
  * Create Content Validation Schema
  */
@@ -37,10 +41,14 @@ export const createContentSchema = z.object({
     .string()
     .url('Featured image must be a valid URL')
     .optional(),
-  audioUrl: z
-    .string()
-    .url('Audio URL must be a valid URL')
-    .optional(),
+  audioUrl: z.preprocess(
+    emptyToUndefined,
+    z.string().url('Audio URL must be a valid URL').optional()
+  ),
+  videoUrl: z.preprocess(
+    emptyToUndefined,
+    z.string().url('Video URL must be a valid URL').optional()
+  ),
   audioDuration: z
     .number()
     .int('Audio duration must be an integer')
@@ -98,16 +106,18 @@ export const updateContentSchema = z.object({
     .max(100, 'Author name must be less than 100 characters')
     .trim()
     .optional(),
-  featuredImage: z
-    .string()
-    .url('Featured image must be a valid URL')
-    .optional()
-    .nullable(),
-  audioUrl: z
-    .string()
-    .url('Audio URL must be a valid URL')
-    .optional()
-    .nullable(),
+  featuredImage: z.preprocess(
+    emptyToUndefined,
+    z.string().url('Featured image must be a valid URL').optional().nullable()
+  ),
+  audioUrl: z.preprocess(
+    emptyToUndefined,
+    z.string().url('Audio URL must be a valid URL').optional().nullable()
+  ),
+  videoUrl: z.preprocess(
+    emptyToUndefined,
+    z.string().url('Video URL must be a valid URL').optional().nullable()
+  ),
   audioDuration: z
     .number()
     .int('Audio duration must be an integer')
