@@ -2,15 +2,20 @@
  * Individual Content View Page
  */
 
+import type { Metadata } from 'next';
+import { cache } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentPageClient } from '@/components/ContentPageClient';
 import { PoemReader } from '@/components/PoemReader';
 import { YouTubeEmbed } from '@/components/YouTubeEmbed';
-import { isYouTubeUrl, getYouTubeWatchUrl } from '@/lib/utils/youtube';
+import { JsonLd } from '@/components/JsonLd';
+import { isYouTubeUrl, getYouTubeWatchUrl, getYouTubeId } from '@/lib/utils/youtube';
+import { SITE_URL, SITE_NAME, absoluteUrl, toDescription } from '@/lib/seo';
 
-async function getContent(id: string) {
+// cache() dedupes the DB read shared by generateMetadata and the page render
+const getContent = cache(async (id: string) => {
   try {
     const repo = new ContentRepository();
     const content = await repo.findById(id);
@@ -19,10 +24,52 @@ async function getContent(id: string) {
     console.error('Failed to fetch content:', error);
     return null;
   }
-}
+});
+
+const TYPE_LABELS: Record<string, string> = {
+  SONGS: 'பாடல்',
+  POEMS: 'கவிதை',
+  LYRICS: 'பாடல் வரிகள்',
+  STORIES: 'கதை',
+  ESSAYS: 'கட்டுரை',
+};
 
 interface PageProps {
   params: Promise<{ id: string }>;
+}
+
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { id } = await params;
+  const content = await getContent(id);
+
+  if (!content) {
+    return { title: 'உள்ளடக்கம் கிடைக்கவில்லை' };
+  }
+
+  const title = content.seoTitle || content.title;
+  const description = toDescription(content.seoDescription || content.description || content.body);
+  const url = absoluteUrl(`/content/${content.id}`);
+  const hasImage = Boolean(content.featuredImage);
+
+  return {
+    title,
+    description,
+    alternates: { canonical: `/content/${content.id}` },
+    openGraph: {
+      title,
+      description,
+      url,
+      type: 'article',
+      siteName: SITE_NAME,
+      ...(hasImage ? { images: [content.featuredImage] } : {}),
+    },
+    twitter: {
+      card: hasImage ? 'summary_large_image' : 'summary',
+      title,
+      description,
+      ...(hasImage ? { images: [content.featuredImage] } : {}),
+    },
+  };
 }
 
 export default async function ContentPage({ params }: PageProps) {
@@ -33,6 +80,45 @@ export default async function ContentPage({ params }: PageProps) {
     notFound();
   }
 
+  const pageUrl = absoluteUrl(`/content/${content.id}`);
+  const ytId = getYouTubeId(content.videoUrl);
+  const jsonLd: Record<string, unknown>[] = [
+    {
+      '@context': 'https://schema.org',
+      '@type': 'CreativeWork',
+      name: content.title,
+      headline: content.title,
+      inLanguage: 'ta',
+      author: { '@type': 'Person', name: content.author },
+      datePublished: content.publishedAt || content.createdAt,
+      dateModified: content.updatedAt || content.createdAt,
+      url: pageUrl,
+      ...(content.featuredImage ? { image: content.featuredImage } : {}),
+      ...(content.description ? { description: content.description } : {}),
+      publisher: { '@type': 'Organization', name: SITE_NAME, url: SITE_URL },
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'முகப்பு', item: SITE_URL },
+        { '@type': 'ListItem', position: 2, name: content.title, item: pageUrl },
+      ],
+    },
+  ];
+  if (ytId) {
+    jsonLd.push({
+      '@context': 'https://schema.org',
+      '@type': 'VideoObject',
+      name: content.title,
+      description: toDescription(content.description || content.body),
+      thumbnailUrl: [`https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`],
+      uploadDate: content.publishedAt || content.createdAt,
+      embedUrl: `https://www.youtube.com/embed/${ytId}`,
+      contentUrl: `https://www.youtube.com/watch?v=${ytId}`,
+    });
+  }
+
   return (
     <ContentPageClient
       contentId={content.id}
@@ -40,6 +126,7 @@ export default async function ContentPage({ params }: PageProps) {
       contentTitle={content.title}
     >
       <div className="min-h-screen bg-gray-50">
+        <JsonLd data={jsonLd} />
         {/* Back Navigation - Fixed at top */}
       <div className="bg-white border-b border-gray-200">
         <div className="container mx-auto px-4 py-3 max-w-7xl">
@@ -100,6 +187,12 @@ export default async function ContentPage({ params }: PageProps) {
             <PoemReader content={content} />
           ) : (
             <div className="p-6 sm:p-8 md:p-12">
+              <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 font-tamil mb-2">
+                {content.title}
+              </h1>
+              <p className="text-gray-500 font-tamil mb-6">
+                {TYPE_LABELS[content.type] || ''}{content.author ? ` · ${content.author}` : ''}
+              </p>
               <div className="prose prose-lg max-w-none">
                 <pre className="whitespace-pre-wrap font-poem text-lg sm:text-xl leading-loose text-gray-800 mb-0" style={{ lineHeight: '2.2', letterSpacing: '0.5px' }}>
                   {content.body}

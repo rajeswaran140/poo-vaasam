@@ -4,6 +4,14 @@
 
 export const dynamic = 'force-dynamic';
 
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'பாடல் வரிகள்',
+  description: 'தமிழ் பாடல் வரிகள் தொகுப்பு — இலவசமாகப் படியுங்கள்.',
+  alternates: { canonical: '/lyrics' },
+};
+
 import Link from 'next/link';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentType, ContentStatus } from '@/types/content';

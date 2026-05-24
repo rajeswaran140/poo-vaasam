@@ -4,6 +4,14 @@
 
 export const dynamic = 'force-dynamic';
 
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'கவிதைகள்',
+  description: 'தமிழ் கவிதைகள் தொகுப்பு — இலவசமாகப் படித்து அனுபவியுங்கள்.',
+  alternates: { canonical: '/poems' },
+};
+
 import Link from 'next/link';
 import { Suspense } from 'react';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';

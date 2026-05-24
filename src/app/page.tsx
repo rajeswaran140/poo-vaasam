@@ -5,11 +5,32 @@
 
 export const dynamic = 'force-dynamic';
 
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import Header from '@/components/Header';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentStatus, ContentType } from '@/types/content';
 import { SITE, isYouTubeChannelConfigured } from '@/config/site';
+import { JsonLd } from '@/components/JsonLd';
+import { SITE_URL, SITE_NAME } from '@/lib/seo';
+
+export const metadata: Metadata = {
+  alternates: { canonical: '/' },
+};
+
+const websiteJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  name: SITE_NAME,
+  url: SITE_URL,
+  inLanguage: 'ta',
+  description: 'பாடல்கள், கவிதைகள், கதைகள் மற்றும் கட்டுரைகளுக்கான இலவச தமிழ் இலக்கிய தளம்.',
+  potentialAction: {
+    '@type': 'SearchAction',
+    target: { '@type': 'EntryPoint', urlTemplate: `${SITE_URL}/ai-search?q={search_term_string}` },
+    'query-input': 'required name=search_term_string',
+  },
+};
 
 async function getFeaturedContent() {
   try {
@@ -61,6 +82,7 @@ export default async function HomePage() {
 
   return (
     <div className="min-h-screen bg-gray-900">
+      <JsonLd data={websiteJsonLd} />
       <Header />
 
       {/* Hero Section - Centered */}
@@ -432,6 +454,8 @@ function ContentCard({ content }: { content: any }) {
           <img
             src={content.featuredImage}
             alt={content.title}
+            loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
           />
           <div className="absolute top-3 right-3 flex gap-2">

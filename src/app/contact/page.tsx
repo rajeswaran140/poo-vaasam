@@ -3,7 +3,14 @@
  */
 
 import Link from 'next/link';
+import type { Metadata } from 'next';
 import ContactForm from '@/components/ContactForm';
+
+export const metadata: Metadata = {
+  title: 'தொடர்பு',
+  description: 'தமிழகவல் தளத்தைத் தொடர்பு கொள்ளுங்கள் — கருத்துக்கள், பரிந்துரைகள், பங்களிப்புகள்.',
+  alternates: { canonical: '/contact' },
+};
 
 export default function ContactPage() {
   return (

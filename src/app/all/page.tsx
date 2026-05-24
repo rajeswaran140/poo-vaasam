@@ -4,6 +4,14 @@
 
 export const dynamic = 'force-dynamic';
 
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'அனைத்து உள்ளடக்கம்',
+  description: 'தமிழகவல் தளத்தின் அனைத்து பாடல்கள், கவிதைகள், கதைகள் மற்றும் கட்டுரைகள்.',
+  alternates: { canonical: '/all' },
+};
+
 import Link from 'next/link';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentStatus } from '@/types/content';

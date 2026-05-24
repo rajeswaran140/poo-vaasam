@@ -26,7 +26,11 @@ const balooThambi = Baloo_Thambi_2({
 });
 
 export const metadata: Metadata = {
-  title: "தமிழகவல் | தமிழ் இலக்கிய தளம்",
+  metadataBase: new URL("https://tamilagaval.com"),
+  title: {
+    default: "தமிழகவல் | தமிழ் இலக்கிய தளம்",
+    template: "%s | தமிழகவல்",
+  },
   description: "பாடல்கள், கவிதைகள், கதைகள் மற்றும் கட்டுரைகளுக்கான தமிழ் உள்ளடக்க வெளியீட்டு தளம். இலவசமாக தமிழ் இலக்கியங்களை படியுங்கள் மற்றும் கேளுங்கள்.",
   keywords: [
     "தமிழ்",
@@ -51,9 +55,6 @@ export const metadata: Metadata = {
       'max-image-preview': 'large',
       'max-snippet': -1,
     },
-  },
-  alternates: {
-    canonical: "https://tamilagaval.com",
   },
   openGraph: {
     title: "தமிழகவல் | தமிழ் இலக்கிய தளம்",

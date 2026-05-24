@@ -3,6 +3,13 @@
  */
 
 import Link from 'next/link';
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'எங்களைப் பற்றி',
+  description: 'தமிழகவல் — தமிழ் இலக்கியத்தைப் பாதுகாக்கும் மற்றும் பரப்பும் இலவச தளம் பற்றி.',
+  alternates: { canonical: '/about' },
+};
 
 export default function AboutPage() {
   return (
