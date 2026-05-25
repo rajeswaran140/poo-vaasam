@@ -51,9 +51,36 @@ function getTTSClient() {
   throw new Error('Google TTS credentials not configured');
 }
 
+// Chirp3-HD rejects overly long "sentences" (and poem line-breaks aren't always
+// treated as sentence ends), so split into small chunks and join the audio.
+const MAX_TTS_CHUNK_CHARS = 240;
+
+function chunkForTTS(text: string, max: number = MAX_TTS_CHUNK_CHARS): string[] {
+  const chunks: string[] = [];
+  let cur = '';
+  const flush = () => {
+    if (cur.trim()) chunks.push(cur.trim());
+    cur = '';
+  };
+  for (const line of text.split(/\n/)) {
+    if (cur && (cur + '\n' + line).length > max) flush();
+    if (line.length > max) {
+      // Split an over-long single line on whitespace.
+      for (const word of line.split(/\s+/)) {
+        if (cur && (cur + ' ' + word).length > max) flush();
+        cur = cur ? cur + ' ' + word : word;
+      }
+    } else {
+      cur = cur ? cur + '\n' + line : line;
+    }
+  }
+  flush();
+  return chunks.length ? chunks : [text];
+}
+
 /**
  * Convert Tamil text to speech
- * Returns audio content as Buffer
+ * Returns audio content as Buffer (chunks are synthesized and concatenated)
  */
 export async function synthesizeTamilSpeech(
   text: string,
@@ -69,28 +96,33 @@ export async function synthesizeTamilSpeech(
   try {
     const client = getTTSClient();
 
-    const request: google.cloud.texttospeech.v1.ISynthesizeSpeechRequest = {
-      input: { text },
-      voice: {
-        languageCode: 'ta-IN',
-        name: voice,
-      },
-      audioConfig: {
-        audioEncoding: 'MP3',
-        speakingRate,
-        volumeGainDb,
-        // Chirp3-HD voices reject the `pitch` parameter; only send it for others.
-        ...(voice.includes('Chirp3') ? {} : { pitch }),
-      },
+    const audioConfig: google.cloud.texttospeech.v1.IAudioConfig = {
+      audioEncoding: 'MP3',
+      speakingRate,
+      volumeGainDb,
+      // Chirp3-HD voices reject the `pitch` parameter; only send it for others.
+      ...(voice.includes('Chirp3') ? {} : { pitch }),
     };
 
-    const [response] = await client.synthesizeSpeech(request);
+    const chunks = chunkForTTS(text);
+    const buffers: Buffer[] = [];
 
-    if (!response.audioContent) {
+    for (const chunk of chunks) {
+      const [response] = await client.synthesizeSpeech({
+        input: { text: chunk },
+        voice: { languageCode: 'ta-IN', name: voice },
+        audioConfig,
+      });
+      if (response.audioContent) {
+        buffers.push(Buffer.from(response.audioContent as Uint8Array));
+      }
+    }
+
+    if (buffers.length === 0) {
       throw new Error('No audio content received from Google TTS');
     }
 
-    return Buffer.from(response.audioContent as Uint8Array);
+    return Buffer.concat(buffers);
   } catch (error) {
     console.error('Error synthesizing Tamil speech:', error);
     throw new Error('Failed to generate audio');
