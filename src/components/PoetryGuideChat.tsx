@@ -98,7 +98,7 @@ export function PoetryGuideChat({ poemId, poemTitle, poemAuthor }: PoetryGuideCh
           <span className="absolute -top-2 -right-2 flex h-6 w-6">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-6 w-6 bg-pink-500 items-center justify-center text-xs font-bold">
-              AI
+              ✨
             </span>
           </span>
         </button>
@@ -113,7 +113,7 @@ export function PoetryGuideChat({ poemId, poemTitle, poemAuthor }: PoetryGuideCh
               <SparklesIcon className="w-5 h-5" />
               <div>
                 <h3 className="font-bold font-tamil">கவிதை வழிகாட்டி</h3>
-                <p className="text-xs text-purple-100">AI உதவியாளர்</p>
+                <p className="text-xs text-purple-100">உதவியாளர்</p>
               </div>
             </div>
             <button

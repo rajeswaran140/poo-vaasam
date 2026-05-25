@@ -97,9 +97,9 @@ export function SemanticSearch() {
           </button>
         </div>
 
-        {/* AI Badge */}
+        {/* Search Badge */}
         <div className="absolute -top-3 left-4 px-3 py-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xs rounded-full font-bold">
-          AI-இயக்கப்பட்ட தேடல்
+          ஸ்மார்ட் தேடல்
         </div>
       </form>
 

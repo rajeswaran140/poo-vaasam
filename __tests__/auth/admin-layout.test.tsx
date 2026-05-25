@@ -34,6 +34,7 @@ jest.mock('lucide-react', () => ({
   Settings: () => <div data-testid="icon-settings" />,
   LogOut: () => <div data-testid="icon-logout" />,
   Plus: () => <div data-testid="icon-plus" />,
+  Mail: () => <div data-testid="icon-messages" />,
 }));
 
 describe('Admin Layout Authentication', () => {

@@ -157,7 +157,7 @@ export function PerformanceDashboard() {
         <MetricCard
           title="API Calls Saved"
           value={data.performance.estimatedSavings.apiCalls.toString()}
-          subtitle="OpenAI API requests avoided"
+          subtitle="API requests avoided"
           icon={<Zap className="w-6 h-6" />}
           color="bg-yellow-500"
         />
