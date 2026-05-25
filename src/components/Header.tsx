@@ -33,6 +33,9 @@ export default function Header() {
             <Link href="/all" className="px-4 py-2 text-gray-300 hover:text-white hover:bg-gray-800/50 rounded-lg transition-all font-tamil font-medium">
               அனைத்தும்
             </Link>
+            <Link href="/music-composition" className="px-4 py-2 text-gray-300 hover:text-white hover:bg-gray-800/50 rounded-lg transition-all font-tamil font-medium">
+              இசையமைப்பு
+            </Link>
             {showYouTube && (
               <a
                 href={SITE.youtube.channelUrl}
@@ -97,6 +100,13 @@ export default function Header() {
                 onClick={() => setMobileMenuOpen(false)}
               >
                 அனைத்தும்
+              </Link>
+              <Link
+                href="/music-composition"
+                className="text-gray-300 hover:text-orange-500 transition-colors font-tamil"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                இசையமைப்பு
               </Link>
               {showYouTube && (
                 <a

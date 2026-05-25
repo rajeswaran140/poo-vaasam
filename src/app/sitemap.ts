@@ -7,7 +7,7 @@ import { ContentStatus } from '@/types/content';
 export const revalidate = 3600;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const staticPaths = ['', '/songs', '/poems', '/lyrics', '/stories', '/essays', '/all', '/about', '/contact', '/ai-search'];
+  const staticPaths = ['', '/songs', '/poems', '/lyrics', '/stories', '/essays', '/all', '/music-composition', '/about', '/contact', '/ai-search'];
   const staticRoutes: MetadataRoute.Sitemap = staticPaths.map((p) => ({
     url: `${SITE_URL}${p}`,
     lastModified: new Date(),

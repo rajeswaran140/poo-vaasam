@@ -1,12 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 type Status = { type: 'idle' | 'sending' | 'success' | 'error'; message?: string };
 
 export default function ContactForm() {
   const [form, setForm] = useState({ name: '', email: '', subject: '', message: '', company: '' });
   const [status, setStatus] = useState<Status>({ type: 'idle' });
+
+  // Pre-fill the subject from a ?subject= link (e.g. the "Order" CTAs).
+  useEffect(() => {
+    const subject = new URLSearchParams(window.location.search).get('subject');
+    if (subject) setForm((prev) => ({ ...prev, subject }));
+  }, []);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>

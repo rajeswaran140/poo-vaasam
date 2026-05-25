@@ -271,6 +271,26 @@ export default async function HomePage() {
         </div>
       </section>
 
+      {/* Music Composition Service */}
+      <section className="bg-gradient-to-r from-purple-600 to-purple-800 py-20">
+        <div className="container mx-auto px-4">
+          <div className="max-w-4xl mx-auto text-center text-white">
+            <div className="text-5xl mb-4">🎼</div>
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4 font-tamil">இசையமைப்பு சேவை</h2>
+            <p className="text-lg text-purple-100 font-tamil mb-8 max-w-2xl mx-auto leading-relaxed">
+              உங்கள் பாடல் வரிகளுக்கு தனிப்பட்ட இசை — குறைந்த விலையில் அமைத்து தருகிறோம்.
+            </p>
+            <Link
+              href="/music-composition"
+              className="inline-flex items-center gap-2 px-8 py-4 bg-white text-purple-700 rounded-full font-bold hover:bg-purple-50 transition-all shadow-2xl transform hover:scale-105 font-tamil text-lg"
+            >
+              <span>🎵</span>
+              <span>மேலும் அறிய</span>
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* உள்ளடக்க வகைகள் பகுதி */}
       <section className="container mx-auto px-4 py-16 bg-gray-800">
         <h2 className="text-3xl sm:text-4xl font-bold text-center text-white mb-4 font-tamil">
@@ -392,6 +412,7 @@ export default async function HomePage() {
                 <li><Link href="/songs" className="hover:text-white font-tamil">பாடல்கள்</Link></li>
                 <li><Link href="/poems" className="hover:text-white font-tamil">கவிதைகள்</Link></li>
                 <li><Link href="/stories" className="hover:text-white font-tamil">கதைகள்</Link></li>
+                <li><Link href="/music-composition" className="hover:text-white font-tamil">இசையமைப்பு சேவை</Link></li>
                 <li><Link href="/all" className="hover:text-white font-tamil">அனைத்து உள்ளடக்கம்</Link></li>
               </ul>
             </div>
