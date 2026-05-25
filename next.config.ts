@@ -10,6 +10,16 @@ const nextConfig: NextConfig = {
   compress: true,
   poweredByHeader: false,
 
+  // Bake server-only secrets into the build. Amplify exposes app env vars at
+  // BUILD time but not to the SSR runtime, so we inline them here (compile-time
+  // substitution). Only server code references these, so they are NOT emitted
+  // into client bundles.
+  env: {
+    GOOGLE_TTS_CREDENTIALS_BASE64: process.env.GOOGLE_TTS_CREDENTIALS_BASE64 || '',
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
+  },
+
   // Image optimization
   images: {
     formats: ['image/avif', 'image/webp'],
