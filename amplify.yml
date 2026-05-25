@@ -18,6 +18,9 @@ frontend:
           S3_BUCKET=$S3_BUCKET
           S3_REGION=$S3_REGION
           AWS_REGION=$AWS_REGION
+          GOOGLE_TTS_CREDENTIALS_BASE64=$GOOGLE_TTS_CREDENTIALS_BASE64
+          OPENAI_API_KEY=$OPENAI_API_KEY
+          ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
           EOF
         - echo "Environment file created with credentials"
         - npm run build
