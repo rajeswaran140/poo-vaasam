@@ -167,6 +167,7 @@ export default async function AdminDashboard() {
               </Link>
             </div>
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
@@ -224,6 +225,7 @@ export default async function AdminDashboard() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       </div>

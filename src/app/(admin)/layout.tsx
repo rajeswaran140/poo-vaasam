@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ReactNode } from 'react';
+import { ReactNode, useState, useEffect } from 'react';
 import { useAuthenticator } from '@aws-amplify/ui-react';
 import { useRouter, usePathname } from 'next/navigation';
 import '@/lib/amplify-config';
@@ -28,6 +28,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   const { user, signOut } = useAuthenticator((context) => [context.user]);
   const router = useRouter();
   const pathname = usePathname();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Close the mobile drawer whenever the route changes.
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [pathname]);
   const isEditPage = pathname.includes('/edit');
   const pageInfo = isEditPage
     ? { title: 'Edit Content', subtitle: 'Update existing content' }
@@ -47,8 +52,21 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
   return (
     <div className="min-h-screen bg-gray-100">
+      {/* Mobile backdrop */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className="fixed left-0 top-0 h-full w-64 bg-gradient-to-b from-purple-700 to-purple-900 text-white shadow-xl z-50">
+      <aside
+        className={`fixed left-0 top-0 h-full w-64 bg-gradient-to-b from-purple-700 to-purple-900 text-white shadow-xl z-50 transform transition-transform duration-300 md:translate-x-0 ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
         <div className="p-6">
           <h1 className="text-2xl font-bold mb-2 font-kavivanar">தமிழகவல்</h1>
           <p className="text-purple-200 text-sm">Admin Dashboard</p>
@@ -108,31 +126,43 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       </aside>
 
       {/* Main Content */}
-      <main className="ml-64 min-h-screen">
+      <main className="ml-0 md:ml-64 min-h-screen">
         {/* Header */}
         <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40">
-          <div className="px-8 py-4 flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-semibold text-gray-800">
-                {pageInfo.title}
-              </h2>
-              <p className="text-sm text-gray-500 mt-1">
-                {pageInfo.subtitle}
-              </p>
+          <div className="px-4 sm:px-8 py-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(true)}
+                className="md:hidden p-2 -ml-2 text-gray-600 hover:text-gray-900 flex-shrink-0"
+                aria-label="Open menu"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+              <div className="min-w-0">
+                <h2 className="text-xl sm:text-2xl font-semibold text-gray-800 truncate">
+                  {pageInfo.title}
+                </h2>
+                <p className="text-sm text-gray-500 mt-1 truncate">
+                  {pageInfo.subtitle}
+                </p>
+              </div>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 flex-shrink-0">
               <Link
                 href="/admin/content/new"
                 className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium flex items-center gap-2"
               >
-                <Plus className="w-5 h-5" /> New Content
+                <Plus className="w-5 h-5" /> <span className="hidden sm:inline">New Content</span>
               </Link>
             </div>
           </div>
         </header>
 
         {/* Page Content */}
-        <div className="p-8">
+        <div className="p-4 sm:p-8">
           {children}
         </div>
       </main>

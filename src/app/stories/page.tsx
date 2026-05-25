@@ -41,7 +41,7 @@ export default async function StoriesPage() {
           <Link href="/" className="text-pink-100 hover:text-white mb-4 inline-block font-tamil">
             ← முகப்புக்குத் திரும்புங்கள்
           </Link>
-          <h1 className="text-5xl font-bold mb-4 font-tamil">📖 கதைகள்</h1>
+          <h1 className="text-3xl sm:text-5xl font-bold mb-4 font-tamil">📖 கதைகள்</h1>
           <p className="text-xl text-pink-100 font-tamil">தமிழ் கதைகள் தொகுப்பு</p>
         </div>
       </header>
