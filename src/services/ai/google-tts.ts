@@ -6,12 +6,13 @@
 import { TextToSpeechClient } from '@google-cloud/text-to-speech';
 import { google } from '@google-cloud/text-to-speech/build/protos/protos';
 
-// Tamil voices available in Google TTS
+// Tamil voices — Chirp3-HD (Google's most natural, generative voices).
+// Note: Chirp3-HD voices do NOT support the `pitch` parameter (see audioConfig below).
 export const TAMIL_VOICES = {
-  FEMALE_A: 'ta-IN-Wavenet-A',
-  MALE_B: 'ta-IN-Wavenet-B',
-  FEMALE_C: 'ta-IN-Wavenet-C',
-  MALE_D: 'ta-IN-Wavenet-D',
+  FEMALE_A: 'ta-IN-Chirp3-HD-Aoede',
+  MALE_B: 'ta-IN-Chirp3-HD-Charon',
+  FEMALE_C: 'ta-IN-Chirp3-HD-Kore',
+  MALE_D: 'ta-IN-Chirp3-HD-Puck',
 } as const;
 
 export type TamilVoice = typeof TAMIL_VOICES[keyof typeof TAMIL_VOICES];
@@ -77,9 +78,9 @@ export async function synthesizeTamilSpeech(
       audioConfig: {
         audioEncoding: 'MP3',
         speakingRate,
-        pitch,
         volumeGainDb,
-        effectsProfileId: ['headphone-class-device'], // Optimize for headphones
+        // Chirp3-HD voices reject the `pitch` parameter; only send it for others.
+        ...(voice.includes('Chirp3') ? {} : { pitch }),
       },
     };
 
