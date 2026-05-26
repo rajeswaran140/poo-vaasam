@@ -39,7 +39,8 @@ export class Content {
     public readonly createdAt: Date,
     private _updatedAt: Date,
     private _publishedAt: Date | undefined,
-    private _videoUrl: string | undefined = undefined
+    private _videoUrl: string | undefined = undefined,
+    private _previewVideoUrl: string | undefined = undefined
   ) {}
 
   // Getters
@@ -81,6 +82,10 @@ export class Content {
 
   get videoUrl(): string | undefined {
     return this._videoUrl;
+  }
+
+  get previewVideoUrl(): string | undefined {
+    return this._previewVideoUrl;
   }
 
   get categoryIds(): string[] {
@@ -145,7 +150,8 @@ export class Content {
       now,
       now,
       isPublished ? now : undefined, // Set publishedAt if created as PUBLISHED
-      dto.videoUrl
+      dto.videoUrl,
+      dto.previewVideoUrl
     );
   }
 
@@ -187,6 +193,10 @@ export class Content {
 
     if (dto.videoUrl !== undefined) {
       this._videoUrl = dto.videoUrl || undefined;
+    }
+
+    if (dto.previewVideoUrl !== undefined) {
+      this._previewVideoUrl = dto.previewVideoUrl || undefined;
     }
 
     if (dto.categoryIds !== undefined) {
@@ -336,6 +346,7 @@ export class Content {
       audioUrl: this._audioUrl,
       audioDuration: this._audioDuration,
       videoUrl: this._videoUrl,
+      previewVideoUrl: this._previewVideoUrl,
       categoryIds: this._categoryIds,
       tagIds: this._tagIds,
       viewCount: this._viewCount,
@@ -371,7 +382,8 @@ export class Content {
       new Date(data.createdAt),
       new Date(data.updatedAt),
       data.publishedAt ? new Date(data.publishedAt) : undefined,
-      data.videoUrl
+      data.videoUrl,
+      data.previewVideoUrl
     );
   }
 

@@ -62,7 +62,8 @@ export interface AudioProperties {
  * Video Properties (for Songs) — typically a YouTube link
  */
 export interface VideoProperties {
-  videoUrl?: string; // YouTube watch/share/embed URL
+  videoUrl?: string; // YouTube watch/share/embed URL (full video — viewers are sent here)
+  previewVideoUrl?: string; // Short preview clip uploaded to S3 and played on-site
 }
 
 /**
@@ -103,6 +104,7 @@ export interface CreateContentDTO {
   audioUrl?: string;
   audioDuration?: number;
   videoUrl?: string;
+  previewVideoUrl?: string;
   categoryIds?: string[];
   tagIds?: string[];
   status?: ContentStatus;
@@ -122,6 +124,7 @@ export interface UpdateContentDTO {
   audioUrl?: string | null;
   audioDuration?: number | null;
   videoUrl?: string | null;
+  previewVideoUrl?: string | null;
   categoryIds?: string[];
   tagIds?: string[];
   status?: ContentStatus;

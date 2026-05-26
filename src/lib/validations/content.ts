@@ -49,6 +49,10 @@ export const createContentSchema = z.object({
     emptyToUndefined,
     z.string().url('Video URL must be a valid URL').optional()
   ),
+  previewVideoUrl: z.preprocess(
+    emptyToUndefined,
+    z.string().url('Preview video URL must be a valid URL').optional()
+  ),
   audioDuration: z
     .number()
     .int('Audio duration must be an integer')
@@ -117,6 +121,10 @@ export const updateContentSchema = z.object({
   videoUrl: z.preprocess(
     emptyToUndefined,
     z.string().url('Video URL must be a valid URL').optional().nullable()
+  ),
+  previewVideoUrl: z.preprocess(
+    emptyToUndefined,
+    z.string().url('Preview video URL must be a valid URL').optional().nullable()
   ),
   audioDuration: z
     .number()

@@ -143,6 +143,36 @@ export default async function ContentPage({ params }: PageProps) {
       {/* Content */}
       <article className="container mx-auto px-4 sm:px-6 py-8 sm:py-12 max-w-7xl">
         <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+          {/* Preview Video — short clip uploaded to the site */}
+          {content.previewVideoUrl && (
+            <div className="p-6 sm:p-8 bg-gradient-to-r from-orange-50 to-red-50 border-b border-gray-200">
+              <div className="flex items-center gap-3 mb-3">
+                <span className="text-2xl">🎬</span>
+                <span className="font-semibold text-gray-700 font-tamil">முன்னோட்டக் காணொளி</span>
+              </div>
+              <video
+                controls
+                playsInline
+                preload="metadata"
+                className="w-full max-h-[480px] rounded-lg bg-black"
+                src={content.previewVideoUrl}
+              >
+                உங்கள் உலாவி காணொளி இயக்கத்தை ஆதரிக்கவில்லை.
+              </video>
+              {content.videoUrl && isYouTubeUrl(content.videoUrl) && (
+                <a
+                  href={getYouTubeWatchUrl(content.videoUrl) || content.videoUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-red-600 text-white rounded-full font-medium hover:bg-red-700 transition-colors font-tamil text-sm shadow-sm"
+                >
+                  <span>▶️</span>
+                  <span>முழு காணொளியை YouTube-ல் பார்க்கவும்</span>
+                </a>
+              )}
+            </div>
+          )}
+
           {/* YouTube Video */}
           {content.videoUrl && isYouTubeUrl(content.videoUrl) && (
             <div className="p-6 sm:p-8 bg-gradient-to-r from-red-50 to-orange-50 border-b border-gray-200">

@@ -142,22 +142,34 @@ export class S3Operations {
   static async getSignedUploadUrl(
     key: string,
     contentType: string,
-    expiresIn: number = 3600
+    expiresIn: number = 3600,
+    options?: { tagging?: string }
   ) {
     const command = new PutObjectCommand({
       Bucket: BUCKET_NAME,
       Key: key,
       ContentType: contentType,
+      // When a tag is signed in, the client MUST send a matching
+      // `x-amz-tagging` header on the PUT or the signature is rejected.
+      ...(options?.tagging ? { Tagging: options.tagging } : {}),
     });
 
     return await getSignedUrl(s3Client, command, { expiresIn });
   }
 
   /**
+   * Public HTTPS URL for an object. Readable by anyone only if the object is
+   * tagged `public=true` (see the bucket policy in scripts/create-s3-bucket.ts).
+   */
+  static getPublicUrl(key: string): string {
+    return `https://${BUCKET_NAME}.s3.${s3Config.region}.amazonaws.com/${key}`;
+  }
+
+  /**
    * Generate a unique key for file upload
    */
   static generateFileKey(params: {
-    folder: 'audio' | 'images' | 'temp';
+    folder: 'audio' | 'images' | 'video' | 'temp';
     filename: string;
     userId?: string;
   }): string {
@@ -180,10 +192,12 @@ export const FILE_CONSTRAINTS = {
   maxSize: {
     image: 10 * 1024 * 1024, // 10MB
     audio: 50 * 1024 * 1024, // 50MB
+    video: 50 * 1024 * 1024, // 50MB — short preview clips only (full videos live on YouTube)
   },
   allowedTypes: {
     image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
     audio: ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg'],
+    video: ['video/mp4', 'video/webm', 'video/quicktime', 'video/ogg'],
   },
 };
 
@@ -192,7 +206,7 @@ export const FILE_CONSTRAINTS = {
  */
 export function validateFile(params: {
   file: File;
-  type: 'image' | 'audio';
+  type: 'image' | 'audio' | 'video';
 }): { valid: boolean; error?: string } {
   const { file, type } = params;
 

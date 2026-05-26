@@ -9,6 +9,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { TamilInput } from '@/components/admin/TamilInput';
+import { MediaUploadField } from '@/components/admin/MediaUploadField';
 import { FEATURES } from '@/config/features';
 import showToast from '@/lib/toast';
 
@@ -35,6 +36,7 @@ export default function EditContentPage({ params }: PageProps) {
     featuredImage: '',
     audioUrl: '',
     videoUrl: '',
+    previewVideoUrl: '',
     audioDuration: 0,
     seoTitle: '',
     seoDescription: '',
@@ -66,6 +68,7 @@ export default function EditContentPage({ params }: PageProps) {
             featuredImage: content.featuredImage || '',
             audioUrl: content.audioUrl || '',
             videoUrl: content.videoUrl || '',
+            previewVideoUrl: content.previewVideoUrl || '',
             audioDuration: content.audioDuration || 0,
             seoTitle: content.seoTitle || '',
             seoDescription: content.seoDescription || '',
@@ -301,52 +304,45 @@ export default function EditContentPage({ params }: PageProps) {
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Media (ஊடகம்)</h2>
 
+          <MediaUploadField
+            kind="image"
+            label="Featured Image"
+            value={formData.featuredImage}
+            onChange={(url) => setFormData((prev) => ({ ...prev, featuredImage: url }))}
+          />
+
+          <MediaUploadField
+            kind="audio"
+            label="Audio File (song)"
+            value={formData.audioUrl}
+            onChange={(url) => setFormData((prev) => ({ ...prev, audioUrl: url }))}
+          />
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Featured Image URL
+              Audio Duration (seconds)
             </label>
             <input
-              type="text"
-              name="featuredImage"
-              value={formData.featuredImage}
+              type="number"
+              name="audioDuration"
+              value={formData.audioDuration}
               onChange={handleChange}
-              placeholder="https://example.com/image.jpg"
+              placeholder="180"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Audio File URL
-              </label>
-              <input
-                type="text"
-                name="audioUrl"
-                value={formData.audioUrl}
-                onChange={handleChange}
-                placeholder="https://example.com/audio.mp3"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Audio Duration (seconds)
-              </label>
-              <input
-                type="number"
-                name="audioDuration"
-                value={formData.audioDuration}
-                onChange={handleChange}
-                placeholder="180"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
-            </div>
-          </div>
+          <MediaUploadField
+            kind="video"
+            label="Preview Video (short clip)"
+            value={formData.previewVideoUrl}
+            onChange={(url) => setFormData((prev) => ({ ...prev, previewVideoUrl: url }))}
+            helpText="Short teaser clip played on the page. Keep the full video on YouTube and link it below."
+          />
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              YouTube Video URL (யூடியூப் காணொளி)
+              Full Video — YouTube link (முழு காணொளி)
             </label>
             <input
               type="url"
@@ -357,7 +353,7 @@ export default function EditContentPage({ params }: PageProps) {
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
             <p className="text-xs text-gray-500 mt-1">
-              Paste a YouTube link to embed the video on the song page — no file upload needed, and it promotes your channel.
+              Viewers watching the preview are sent here for the full video — promoting the website and your YouTube channel.
             </p>
           </div>
         </div>
