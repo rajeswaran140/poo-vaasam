@@ -53,7 +53,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ url, cached: false });
   } catch (error) {
     // Never break the reader — fall back to the existing library.
-    console.error('[API:POEM_MUSIC] Error:', error);
+    const e = error as { name?: string; message?: string; $metadata?: { httpStatusCode?: number } };
+    console.error('[API:POEM_MUSIC] Error:', e?.name, e?.$metadata?.httpStatusCode, e?.message);
     return NextResponse.json({ url: null });
   }
 }

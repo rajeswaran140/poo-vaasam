@@ -54,7 +54,10 @@ export const dynamoDBConfig = {
  */
 export const s3Config = {
   ...awsConfig,
-  bucket: process.env.S3_BUCKET || 'tamil-web-media',
+  // The tamil-web-media bucket lives in us-east-1 (verified via get-bucket-location).
+  // AWS_REGION (ca-central-1) is the app/DynamoDB region; S3 must target the bucket's region.
+  region: 'us-east-1',
+  bucket: process.env.NEXT_PUBLIC_S3_BUCKET || process.env.S3_BUCKET || 'tamil-web-media',
 };
 
 /**
