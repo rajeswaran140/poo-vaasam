@@ -15,6 +15,7 @@ import {
   HeadBucketCommand,
   BucketLocationConstraint,
 } from '@aws-sdk/client-s3';
+import { mediaCorsRules } from '../src/config/cors';
 
 const client = new S3Client({
   region: process.env.NEXT_PUBLIC_AWS_REGION || 'us-east-1',
@@ -58,19 +59,7 @@ async function createBucket() {
     const corsCommand = new PutBucketCorsCommand({
       Bucket: BUCKET_NAME,
       CORSConfiguration: {
-        CORSRules: [
-          {
-            AllowedHeaders: ['*'],
-            AllowedMethods: ['GET', 'PUT', 'POST', 'DELETE', 'HEAD'],
-            AllowedOrigins: [
-              'http://localhost:3000',
-              'https://*.amplifyapp.com',
-              process.env.NEXT_PUBLIC_APP_URL || '*',
-            ],
-            ExposeHeaders: ['ETag'],
-            MaxAgeSeconds: 3000,
-          },
-        ],
+        CORSRules: mediaCorsRules(),
       },
     });
 

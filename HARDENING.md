@@ -42,6 +42,13 @@ Then verify a non-admin gets 403 from `/api/admin/*`.
 
 ### 2. Rotate & relocate secrets 🔧
 > Tracked separately as an accepted dev-stage risk. **This is the pre-prod trigger to resolve it.**
+>
+> **2026-05-26 audit of the live site (tamilagaval.com):** the AWS key is **NOT
+> in the browser bundle** (scanned homepage + /login chunks; tree-shaken out) —
+> the residual exposure is the plaintext Amplify env vars (`amplify:GetApp`) +
+> long-lived IAM key, not client JS. The media-bucket CORS was tightened from
+> `AllowedOrigins:['*']` to an explicit allow-list (`src/config/cors.ts`).
+> Still to do below: rotate the key and drop the `NEXT_PUBLIC_*AWS*` env vars.
 
 The Amplify app stores production secrets as **plaintext env vars**, and the
 AWS access key was additionally mirrored into `NEXT_PUBLIC_*` (shipped to the

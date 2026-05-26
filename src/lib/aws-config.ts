@@ -18,13 +18,6 @@ const secretAccessKey = process.env.NEXT_PUBLIC_APP_AWS_SECRET_ACCESS_KEY ||
                          process.env.APP_AWS_SECRET_ACCESS_KEY ||
                          process.env.AWS_SECRET_ACCESS_KEY;
 
-// Debug logging
-if (typeof window === 'undefined') {
-  console.log('[AWS-CONFIG] APP_AWS_ACCESS_KEY_ID:', process.env.APP_AWS_ACCESS_KEY_ID ? 'SET' : 'NOT SET');
-  console.log('[AWS-CONFIG] AWS_ACCESS_KEY_ID:', process.env.AWS_ACCESS_KEY_ID ? 'SET' : 'NOT SET');
-  console.log('[AWS-CONFIG] DYNAMODB_TABLE_NAME:', process.env.DYNAMODB_TABLE_NAME || 'NOT SET');
-}
-
 const credentials = accessKeyId && secretAccessKey
   ? {
       accessKeyId,
