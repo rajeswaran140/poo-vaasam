@@ -7,10 +7,10 @@
  * PoemReader falls back to the existing royalty-free library (no behavior change).
  */
 export const LYRIA = {
-  /** Flip to true once Vertex AI + Lyria are enabled and a live test passes. */
-  enabled: false,
-  /** GCP project that has Vertex AI + Lyria enabled (inline via next.config if needed). */
-  project: process.env.GOOGLE_VERTEX_PROJECT || '',
+  /** Verified live on webcore-dev (Vertex AI + Lyria enabled, SA authorized). */
+  enabled: true,
+  /** GCP project with Vertex AI + Lyria enabled. */
+  project: process.env.GOOGLE_VERTEX_PROJECT || 'webcore-dev',
   location: 'us-central1',
   model: 'lyria-002',
 } as const;
