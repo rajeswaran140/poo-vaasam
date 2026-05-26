@@ -30,12 +30,15 @@ Status legend: ✅ done in repo · 🔧 config/infra action required · 📝 fut
 ## P0 — Required before any production launch
 
 ### 1. Configure RBAC 🔧
-With no admin group and no `ADMIN_EMAILS`, `isAdmin()` **fails closed in
-production** (denies everyone) — so the admin portal will not work in prod until
-you do one of:
+Current dev-stage posture: with no admin group and no `ADMIN_EMAILS`, **any
+authenticated (verified-Cognito) user is treated as admin** and a warning is
+logged. This is fine while the pool only contains trusted admins, but tighten
+before real launch by doing one of:
 - Create a Cognito group named `admin` (or `administrators`) and add admin users, **or**
-- Set `ADMIN_EMAILS="you@tamilagaval.com,other@..."` as an Amplify env var.
-Verify post-deploy that an admin can reach `/admin` and a non-admin gets 403 from `/api/admin/*`.
+- Set `ADMIN_EMAILS="you@tamilagaval.com,other@..."` (note: read at runtime, so
+  it must be inlined via `next.config.ts` `env:` like the other server vars, not
+  just set in the Amplify console).
+Then verify a non-admin gets 403 from `/api/admin/*`.
 
 ### 2. Rotate & relocate secrets 🔧
 > Tracked separately as an accepted dev-stage risk. **This is the pre-prod trigger to resolve it.**

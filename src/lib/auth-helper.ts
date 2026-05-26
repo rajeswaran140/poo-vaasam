@@ -157,9 +157,10 @@ export async function requireAdmin(request: NextRequest): Promise<AuthContext> {
  * admin group OR their email is in the `ADMIN_EMAILS` allow-list.
  *
  * If no RBAC is configured (token has no admin group AND `ADMIN_EMAILS` is
- * unset) we fall back to "any authenticated user is admin" in non-production so
- * local development keeps working, but we FAIL CLOSED in production. Configure
- * `ADMIN_EMAILS` or a Cognito admin group before launch — see HARDENING.md.
+ * unset) we fall back to "any authenticated user is admin". Reaching this point
+ * already required a valid, verified Cognito session, so this is a reasonable
+ * dev-stage posture; we log a warning in production so it's visible. Tighten by
+ * setting `ADMIN_EMAILS` or a Cognito admin group before launch — see HARDENING.md.
  */
 export function isAdmin(authContext: AuthContext): boolean {
   if (!authContext.isAuthenticated) return false;
@@ -176,12 +177,11 @@ export function isAdmin(authContext: AuthContext): boolean {
     );
   }
 
-  // No RBAC configured.
+  // No RBAC configured: allow any authenticated user, but make it visible in prod.
   if (process.env.NODE_ENV === 'production') {
     logger.warn(
-      'isAdmin: no RBAC configured (set ADMIN_EMAILS or a Cognito admin group); denying in production'
+      'isAdmin: no RBAC configured (set ADMIN_EMAILS or a Cognito admin group); allowing any authenticated user'
     );
-    return false;
   }
   return true;
 }

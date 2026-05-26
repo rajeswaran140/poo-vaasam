@@ -95,5 +95,5 @@ See `TESTING.md` for comprehensive manual testing guide.
 - **Music Sources**: Using Kevin MacLeod's royalty-free music from incompetech.com
 - **TTS**: Google Cloud TTS (Chirp3-HD Tamil voice) is the primary engine; requires `GOOGLE_TTS_CREDENTIALS_BASE64`. Browser Web Speech API is the fallback when unavailable.
 - **AI Analysis**: Requires `OPENAI_API_KEY` (and `ANTHROPIC_API_KEY` for Claude features) in `.env.local`
-- **Admin access**: API routes under `/api/admin/*` and the test route require an admin. Configure admins via a Cognito `admin` group or the `ADMIN_EMAILS` env var (comma-separated). With neither set, any authenticated user is treated as admin in dev but **denied in production** — see `HARDENING.md`.
+- **Admin access**: API routes under `/api/admin/*` and the test route require an admin. Configure admins via a Cognito `admin` group or the `ADMIN_EMAILS` env var (comma-separated). With neither set, any authenticated (verified-Cognito) user is treated as admin and a warning is logged — tighten before launch (see `HARDENING.md`).
 - **Tamil Typography**: Baloo Thambi 2 font with specific line-height values (1.584 for desktop, 1.496 for mobile)

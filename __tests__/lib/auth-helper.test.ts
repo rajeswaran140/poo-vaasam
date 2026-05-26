@@ -183,11 +183,21 @@ describe('isAdmin — RBAC', () => {
     expect(isAdmin({ isAuthenticated: true, email: 'anyone@x.com', groups: [] })).toBe(true);
   });
 
-  it('FAILS CLOSED in production when no RBAC is configured', () => {
+  it('allows any authenticated user in production when no RBAC is configured (dev-stage posture)', () => {
     const prev = process.env.NODE_ENV;
     try {
       process.env.NODE_ENV = 'production';
-      expect(isAdmin({ isAuthenticated: true, email: 'anyone@x.com', groups: [] })).toBe(false);
+      expect(isAdmin({ isAuthenticated: true, email: 'anyone@x.com', groups: [] })).toBe(true);
+    } finally {
+      process.env.NODE_ENV = prev;
+    }
+  });
+
+  it('still denies an UNauthenticated user even with no RBAC configured', () => {
+    const prev = process.env.NODE_ENV;
+    try {
+      process.env.NODE_ENV = 'production';
+      expect(isAdmin({ isAuthenticated: false })).toBe(false);
     } finally {
       process.env.NODE_ENV = prev;
     }
