@@ -281,9 +281,25 @@ export function PoemReader({ content }: PoemReaderProps) {
         audioRef.current.volume = volume;
 
         // Get intelligent music sources based on poem analysis
-        const sources = poemAnalysis
+        let sources = poemAnalysis
           ? getAllMusicSources(poemAnalysis.emotion, poemAnalysis.mood)
           : getAllMusicSources('sad', 'somber');
+
+        // Prepend an AI-generated (Lyria) track if one is available/cached for
+        // this poem. Any failure leaves `sources` unchanged, so playback falls
+        // back to the royalty-free library via the existing tryNextSource logic.
+        try {
+          const params = new URLSearchParams({ contentId: content.id });
+          if (poemAnalysis?.emotion) params.set('emotion', poemAnalysis.emotion);
+          if (poemAnalysis?.mood) params.set('mood', poemAnalysis.mood);
+          const musicRes = await fetch(`/api/poem-music?${params.toString()}`);
+          if (musicRes.ok) {
+            const data = await musicRes.json();
+            if (data?.url) sources = [data.url, ...sources];
+          }
+        } catch {
+          // ignore — use library sources
+        }
 
         sourceIndexRef.current = 0;
 
