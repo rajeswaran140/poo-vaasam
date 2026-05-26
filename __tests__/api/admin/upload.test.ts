@@ -68,7 +68,7 @@ describe('POST /api/admin/upload — auth', () => {
 });
 
 describe('POST /api/admin/upload — presigning', () => {
-  it('returns a presigned URL, public URL and public-tag headers for valid audio', async () => {
+  it('returns a presigned URL + public URL for valid audio, signing only Content-Type', async () => {
     const res = await POST(
       makeRequest({ filename: 'song.mp3', contentType: 'audio/mpeg', kind: 'audio', size: 1024 })
     );
@@ -78,15 +78,15 @@ describe('POST /api/admin/upload — presigning', () => {
     expect(json.success).toBe(true);
     expect(json.data.uploadUrl).toBe('https://signed.example/put?sig=abc');
     expect(json.data.publicUrl).toContain('tamil-web-media');
-    expect(json.data.headers['x-amz-tagging']).toBe('public=true');
     expect(json.data.headers['Content-Type']).toBe('audio/mpeg');
+    // No x-amz-tagging: presigned URLs can't sign it, and public read is by path.
+    expect(json.data.headers['x-amz-tagging']).toBeUndefined();
 
-    // The presigned PUT must be signed WITH the public tag.
+    // Presigned PUT is created with no extra (unsignable) options.
     expect(S3Operations.getSignedUploadUrl).toHaveBeenCalledWith(
       expect.any(String),
       'audio/mpeg',
-      expect.any(Number),
-      { tagging: 'public=true' }
+      expect.any(Number)
     );
   });
 

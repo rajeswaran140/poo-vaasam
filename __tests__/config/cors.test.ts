@@ -3,7 +3,12 @@
  * Guards against regressing to a wildcard (`*`) origin.
  */
 
-import { ALLOWED_WEB_ORIGINS, mediaCorsRules } from '@/config/cors';
+import {
+  ALLOWED_WEB_ORIGINS,
+  mediaCorsRules,
+  mediaBucketPolicy,
+  PUBLIC_MEDIA_PREFIXES,
+} from '@/config/cors';
 
 describe('media CORS config', () => {
   it('never allows all origins (no wildcard "*")', () => {
@@ -30,5 +35,20 @@ describe('media CORS config', () => {
     );
     expect(rules[0].AllowedOrigins).toBe(ALLOWED_WEB_ORIGINS);
     expect(rules[0].AllowedOrigins).not.toContain('*');
+  });
+});
+
+describe('media bucket policy', () => {
+  it('grants public read by PATH for the media prefixes, with no tag condition', () => {
+    const policy = mediaBucketPolicy('my-bucket');
+    const stmt = policy.Statement[0];
+
+    expect(stmt.Effect).toBe('Allow');
+    expect(stmt.Action).toBe('s3:GetObject');
+    // Tag-based conditions broke uploads (presigned PUTs can't sign x-amz-tagging).
+    expect(stmt).not.toHaveProperty('Condition');
+    for (const prefix of PUBLIC_MEDIA_PREFIXES) {
+      expect(stmt.Resource).toContain(`arn:aws:s3:::my-bucket/${prefix}/*`);
+    }
   });
 });

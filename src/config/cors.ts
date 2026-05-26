@@ -15,6 +15,31 @@ export const ALLOWED_WEB_ORIGINS: string[] = [
   'https://www.tamilagaval.com',
 ];
 
+/**
+ * Object-key prefixes that are served publicly. Public read is granted by PATH
+ * (below) rather than per-object tags: presigned PUTs can't reliably sign an
+ * `x-amz-tagging` header, so tag-based public-read made every upload fail.
+ */
+export const PUBLIC_MEDIA_PREFIXES = ['audio', 'images', 'video'] as const;
+
+/** Public-read bucket policy: anyone can GET objects under the media prefixes. */
+export function mediaBucketPolicy(bucket: string) {
+  return {
+    Version: '2012-10-17',
+    Statement: [
+      {
+        Sid: 'PublicReadMedia',
+        Effect: 'Allow',
+        Principal: '*',
+        Action: 's3:GetObject',
+        Resource: PUBLIC_MEDIA_PREFIXES.map(
+          (prefix) => `arn:aws:s3:::${bucket}/${prefix}/*`
+        ),
+      },
+    ],
+  };
+}
+
 /** S3 CORS rules permitting browser uploads/reads of media from known origins. */
 export function mediaCorsRules() {
   return [

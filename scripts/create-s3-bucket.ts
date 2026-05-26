@@ -15,7 +15,7 @@ import {
   HeadBucketCommand,
   BucketLocationConstraint,
 } from '@aws-sdk/client-s3';
-import { mediaCorsRules } from '../src/config/cors';
+import { mediaCorsRules, mediaBucketPolicy } from '../src/config/cors';
 
 const client = new S3Client({
   region: process.env.NEXT_PUBLIC_AWS_REGION || 'us-east-1',
@@ -83,23 +83,7 @@ async function createBucket() {
 
     // Set bucket policy for public read access
     console.log('\n📜 Setting bucket policy...');
-    const bucketPolicy = {
-      Version: '2012-10-17',
-      Statement: [
-        {
-          Sid: 'PublicReadGetObject',
-          Effect: 'Allow',
-          Principal: '*',
-          Action: 's3:GetObject',
-          Resource: `arn:aws:s3:::${BUCKET_NAME}/*`,
-          Condition: {
-            StringLike: {
-              's3:ExistingObjectTag/public': 'true',
-            },
-          },
-        },
-      ],
-    };
+    const bucketPolicy = mediaBucketPolicy(BUCKET_NAME);
 
     const policyCommand = new PutBucketPolicyCommand({
       Bucket: BUCKET_NAME,

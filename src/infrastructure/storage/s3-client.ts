@@ -142,16 +142,12 @@ export class S3Operations {
   static async getSignedUploadUrl(
     key: string,
     contentType: string,
-    expiresIn: number = 3600,
-    options?: { tagging?: string }
+    expiresIn: number = 3600
   ) {
     const command = new PutObjectCommand({
       Bucket: BUCKET_NAME,
       Key: key,
       ContentType: contentType,
-      // When a tag is signed in, the client MUST send a matching
-      // `x-amz-tagging` header on the PUT or the signature is rejected.
-      ...(options?.tagging ? { Tagging: options.tagging } : {}),
     });
 
     return await getSignedUrl(s3Client, command, { expiresIn });

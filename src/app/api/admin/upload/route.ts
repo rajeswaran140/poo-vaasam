@@ -20,8 +20,6 @@ import { S3Operations, FILE_CONSTRAINTS } from '@/infrastructure/storage/s3-clie
 
 export const dynamic = 'force-dynamic';
 
-// Bucket policy grants public read only to objects carrying this tag.
-const PUBLIC_TAG = 'public=true';
 // Presigned URLs are short-lived; allow enough time for large (up to ~1GB) uploads.
 const UPLOAD_URL_TTL_SECONDS = 60 * 60;
 
@@ -96,8 +94,7 @@ export async function POST(request: NextRequest) {
     const uploadUrl = await S3Operations.getSignedUploadUrl(
       key,
       contentType,
-      UPLOAD_URL_TTL_SECONDS,
-      { tagging: PUBLIC_TAG }
+      UPLOAD_URL_TTL_SECONDS
     );
     const publicUrl = S3Operations.getPublicUrl(key);
 
@@ -107,11 +104,11 @@ export async function POST(request: NextRequest) {
         uploadUrl,
         publicUrl,
         key,
-        // The browser must send exactly these headers on the PUT, or the
-        // presigned signature (which covers them) will be rejected by S3.
+        // The browser must send exactly this header on the PUT — it's the only
+        // header signed into the presigned URL. (Public read is granted by path
+        // via the bucket policy, so no x-amz-tagging is needed.)
         headers: {
           'Content-Type': contentType,
-          'x-amz-tagging': PUBLIC_TAG,
         },
       },
     });
