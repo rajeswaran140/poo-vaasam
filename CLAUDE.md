@@ -4,11 +4,12 @@ This is a Tamil poetry web application built with Next.js 15, featuring AI-power
 
 ## Project Overview
 
-- **Framework**: Next.js 15.5.15 with App Router
+- **Framework**: Next.js 15 with App Router
 - **Styling**: Tailwind CSS
-- **Database**: Supabase
-- **AI**: OpenAI GPT-4 for poem emotion analysis
-- **Audio**: Context-aware music selection + Browser Web Speech API for Tamil TTS
+- **Database**: AWS DynamoDB (single-table design) + S3 for media assets
+- **AI**: OpenAI GPT-4 and Anthropic Claude for poem emotion/theme analysis
+- **Audio**: Google Cloud TTS (Chirp3-HD Tamil voice) with browser Web Speech API fallback; context-aware background music
+- **Auth**: AWS Cognito — API routes verify the Cognito ID-token JWT (signature + expiry) via `aws-jwt-verify`
 - **Deployment**: AWS Amplify
 
 ## gstack
@@ -71,7 +72,7 @@ Use the `/browse` skill from gstack for all web browsing. Never use `mcp__claude
 
 ## Key Features
 
-1. **AI Poem Analysis** - OpenAI GPT-4 analyzes Tamil poems for emotion, mood, and themes
+1. **AI Poem Analysis** - OpenAI GPT-4 / Anthropic Claude analyze Tamil poems for emotion, mood, and themes
 2. **Context-Aware Music** - Intelligent music selection based on poem emotion (Kevin MacLeod royalty-free music)
 3. **Tamil TTS** - Browser-based Tamil text-to-speech with emotion-aware parameters
 4. **Reading Modes** - Light, dark, and sepia modes for comfortable reading
@@ -92,6 +93,7 @@ See `TESTING.md` for comprehensive manual testing guide.
 ## Important Notes
 
 - **Music Sources**: Using Kevin MacLeod's royalty-free music from incompetech.com
-- **TTS**: Google Cloud TTS is optional (disabled due to billing), falls back to browser Web Speech API
-- **AI Analysis**: Requires `OPENAI_API_KEY` in `.env.local`
+- **TTS**: Google Cloud TTS (Chirp3-HD Tamil voice) is the primary engine; requires `GOOGLE_TTS_CREDENTIALS_BASE64`. Browser Web Speech API is the fallback when unavailable.
+- **AI Analysis**: Requires `OPENAI_API_KEY` (and `ANTHROPIC_API_KEY` for Claude features) in `.env.local`
+- **Admin access**: API routes under `/api/admin/*` and the test route require an admin. Configure admins via a Cognito `admin` group or the `ADMIN_EMAILS` env var (comma-separated). With neither set, any authenticated user is treated as admin in dev but **denied in production** — see `HARDENING.md`.
 - **Tamil Typography**: Baloo Thambi 2 font with specific line-height values (1.584 for desktop, 1.496 for mobile)

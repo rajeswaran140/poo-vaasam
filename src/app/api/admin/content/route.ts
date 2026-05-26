@@ -9,7 +9,7 @@ import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { CategoryRepository } from '@/infrastructure/database/CategoryRepository';
 import { TagRepository } from '@/infrastructure/database/TagRepository';
 import { CreateContentUseCase } from '@/application/use-cases/CreateContentUseCase';
-import { requireAuth, unauthorizedResponse } from '@/lib/auth-helper';
+import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
 import { ContentType, ContentStatus } from '@/types/content';
 import { z } from 'zod';
 
@@ -58,11 +58,11 @@ const createContentSchema = z.object({
  */
 export async function GET(request: NextRequest) {
   try {
-    // Verify authentication
+    // Verify admin authentication
     try {
-      await requireAuth(request);
-    } catch {
-      return unauthorizedResponse();
+      await requireAdmin(request);
+    } catch (authError) {
+      return authErrorResponse(authError);
     }
 
     const { searchParams } = new URL(request.url);
@@ -151,11 +151,11 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    // Verify authentication
+    // Verify admin authentication
     try {
-      await requireAuth(request);
-    } catch {
-      return unauthorizedResponse();
+      await requireAdmin(request);
+    } catch (authError) {
+      return authErrorResponse(authError);
     }
 
     // Parse and validate request body

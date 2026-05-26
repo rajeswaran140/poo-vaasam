@@ -1,5 +1,30 @@
 import type { NextConfig } from "next";
 
+// Content Security Policy.
+// Notes on why each non-trivial source is allowed:
+// - script-src 'unsafe-inline'/'unsafe-eval': Next.js App Router injects inline
+//   bootstrap scripts, and `next dev` relies on eval for HMR. This is an
+//   intentionally permissive baseline — see HARDENING.md for nonce-based hardening.
+// - style-src 'unsafe-inline': Next and react-hot-toast emit inline styles.
+//   Fonts are self-hosted via next/font, so no fonts.gstatic.com is needed.
+// - img-src https: (YouTube thumbnails i.ytimg.com + S3); media-src https:
+//   (incompetech.com royalty-free audio + S3); frame-src for YouTube embeds.
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'self'",
+  "form-action 'self'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data:",
+  "connect-src 'self' https:",
+  "media-src 'self' blob: https:",
+  "frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com",
+  "upgrade-insecure-requests",
+].join('; ');
+
 const nextConfig: NextConfig = {
   /* config options here */
   reactStrictMode: true,
@@ -38,6 +63,10 @@ const nextConfig: NextConfig = {
       {
         source: '/:path*',
         headers: [
+          {
+            key: 'Content-Security-Policy',
+            value: contentSecurityPolicy
+          },
           {
             key: 'X-DNS-Prefetch-Control',
             value: 'on'

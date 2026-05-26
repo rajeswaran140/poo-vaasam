@@ -6,16 +6,16 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { DynamoDBOperations } from '@/infrastructure/database/dynamodb-client';
-import { requireAuth, unauthorizedResponse } from '@/lib/auth-helper';
+import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
     try {
-      await requireAuth(request);
-    } catch {
-      return unauthorizedResponse();
+      await requireAdmin(request);
+    } catch (authError) {
+      return authErrorResponse(authError);
     }
 
     // Low-volume admin read: scan + filter on the CONTACT# key namespace.

@@ -10,7 +10,7 @@ import { ContentType, ContentStatus } from '@/types/content';
 
 jest.mock('@/lib/auth-helper', () => ({
   ...jest.requireActual('@/lib/auth-helper'),
-  requireAuth: jest.fn(),
+  requireAdmin: jest.fn(),
 }));
 
 jest.mock('@/infrastructure/database/ContentRepository', () => ({
@@ -81,12 +81,12 @@ describe('Test Content API Routes - Authentication', () => {
     if (tr) Object.values(tr).forEach(fn => fn.mockReset());
     const uc = getCreateUseCase();
     if (uc) uc.execute.mockReset();
-    (authHelper.requireAuth as jest.Mock).mockResolvedValue({ isAuthenticated: true, userId: 'admin123' });
+    (authHelper.requireAdmin as jest.Mock).mockResolvedValue({ isAuthenticated: true, userId: 'admin123' });
   });
 
   describe('GET /api/test/content - Protected', () => {
     it('should require authentication for all GET requests', async () => {
-      (authHelper.requireAuth as jest.Mock).mockRejectedValue(new Error('Unauthorized'));
+      (authHelper.requireAdmin as jest.Mock).mockRejectedValue(new Error('Unauthorized'));
 
       const request = new NextRequest(
         new Request('http://localhost:3000/api/test/content?action=list')
@@ -95,7 +95,7 @@ describe('Test Content API Routes - Authentication', () => {
       const response = await GET(request);
       const data = await response.json();
 
-      expect(authHelper.requireAuth).toHaveBeenCalledWith(request);
+      expect(authHelper.requireAdmin).toHaveBeenCalledWith(request);
       expect(response.status).toBe(401);
       expect(data.success).toBe(false);
       expect(data.error).toBe('Unauthorized');
@@ -114,7 +114,7 @@ describe('Test Content API Routes - Authentication', () => {
       const response = await GET(request);
       const data = await response.json();
 
-      expect(authHelper.requireAuth).toHaveBeenCalledWith(request);
+      expect(authHelper.requireAdmin).toHaveBeenCalledWith(request);
       expect(response.status).toBe(200);
       expect(data.success).toBe(true);
       expect(data.data.items).toHaveLength(1);
@@ -206,7 +206,7 @@ describe('Test Content API Routes - Authentication', () => {
 
   describe('POST /api/test/content - Protected', () => {
     it('should require authentication for all POST requests', async () => {
-      (authHelper.requireAuth as jest.Mock).mockRejectedValue(new Error('Unauthorized'));
+      (authHelper.requireAdmin as jest.Mock).mockRejectedValue(new Error('Unauthorized'));
 
       const request = new NextRequest(
         new Request('http://localhost:3000/api/test/content', {
@@ -218,7 +218,7 @@ describe('Test Content API Routes - Authentication', () => {
       const response = await POST(request);
       const data = await response.json();
 
-      expect(authHelper.requireAuth).toHaveBeenCalledWith(request);
+      expect(authHelper.requireAdmin).toHaveBeenCalledWith(request);
       expect(response.status).toBe(401);
       expect(data.success).toBe(false);
       expect(data.error).toBe('Unauthorized');
@@ -251,7 +251,7 @@ describe('Test Content API Routes - Authentication', () => {
       const response = await POST(request);
       const data = await response.json();
 
-      expect(authHelper.requireAuth).toHaveBeenCalledWith(request);
+      expect(authHelper.requireAdmin).toHaveBeenCalledWith(request);
       expect(response.status).toBe(201);
       expect(data.success).toBe(true);
       expect(data.message).toBe('Successfully created content');
@@ -345,5 +345,43 @@ describe('Test Content API Routes - Authentication', () => {
       expect(data.success).toBe(false);
       expect(data.error).toBe('Creation failed');
     });
+  });
+});
+
+describe('Test Content API Routes - Production guard', () => {
+  const prevNodeEnv = process.env.NODE_ENV;
+  afterEach(() => {
+    process.env.NODE_ENV = prevNodeEnv;
+  });
+
+  it('returns 404 for GET in production without checking auth', async () => {
+    process.env.NODE_ENV = 'production';
+    (authHelper.requireAdmin as jest.Mock).mockClear();
+
+    const request = new NextRequest(
+      new Request('http://localhost:3000/api/test/content?action=list')
+    );
+    const response = await GET(request);
+    const data = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(data.success).toBe(false);
+    expect(authHelper.requireAdmin).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 for the POST seed action in production', async () => {
+    process.env.NODE_ENV = 'production';
+    (authHelper.requireAdmin as jest.Mock).mockClear();
+
+    const request = new NextRequest(
+      new Request('http://localhost:3000/api/test/content', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'seed' }),
+      })
+    );
+    const response = await POST(request);
+
+    expect(response.status).toBe(404);
+    expect(authHelper.requireAdmin).not.toHaveBeenCalled();
   });
 });

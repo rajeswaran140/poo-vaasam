@@ -29,6 +29,7 @@
     "@google-cloud/text-to-speech": "^6.4.0",
     "@heroicons/react": "^2.2.0",
     "aws-amplify": "^5.3.33",
+    "aws-jwt-verify": "^5.1.1",
     "lucide-react": "1.8.0",
     "next": "^15.5.18",
     "openai": "^6.34.0",

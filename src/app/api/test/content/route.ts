@@ -11,7 +11,22 @@ import { TagRepository } from '@/infrastructure/database/TagRepository';
 import { CreateContentUseCase } from '@/application/use-cases/CreateContentUseCase';
 import { GetContentUseCase } from '@/application/use-cases/GetContentUseCase';
 import { ContentType, ContentStatus } from '@/types/content';
-import { requireAuth, unauthorizedResponse } from '@/lib/auth-helper';
+import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
+
+/**
+ * This route exposes database seeding and ad-hoc create helpers intended for
+ * local development only. It must never be reachable in production, even by an
+ * authenticated admin.
+ */
+function productionGuard() {
+  if (process.env.NODE_ENV === 'production') {
+    return NextResponse.json(
+      { success: false, error: 'Not found' },
+      { status: 404 }
+    );
+  }
+  return null;
+}
 
 // Initialize repositories
 const contentRepo = new ContentRepository();
@@ -39,16 +54,15 @@ const getContentUseCase = new GetContentUseCase(
  * @requires Authentication
  */
 export async function GET(request: NextRequest) {
-  try {
-    console.log('[API] GET /api/test/content - Starting request');
+  const blocked = productionGuard();
+  if (blocked) return blocked;
 
-    // Verify authentication
+  try {
+    // Verify admin authentication
     try {
-      const auth = await requireAuth(request);
-      console.log('[API] Authentication successful:', auth.email);
+      await requireAdmin(request);
     } catch (authError) {
-      console.error('[API] Authentication failed:', authError);
-      return unauthorizedResponse();
+      return authErrorResponse(authError);
     }
 
     const { searchParams } = new URL(request.url);
@@ -180,12 +194,15 @@ export async function GET(request: NextRequest) {
  * @requires Authentication
  */
 export async function POST(request: NextRequest) {
+  const blocked = productionGuard();
+  if (blocked) return blocked;
+
   try {
-    // Verify authentication
+    // Verify admin authentication
     try {
-      await requireAuth(request);
-    } catch {
-      return unauthorizedResponse();
+      await requireAdmin(request);
+    } catch (authError) {
+      return authErrorResponse(authError);
     }
 
     const body = await request.json();

@@ -26,7 +26,7 @@ jest.mock('@/application/use-cases/CreateContentUseCase', () => ({
 }));
 jest.mock('@/lib/auth-helper', () => ({
   ...jest.requireActual('@/lib/auth-helper'),
-  requireAuth: jest.fn(),
+  requireAdmin: jest.fn(),
 }));
 
 import { GET, POST } from '@/app/api/admin/content/route';
@@ -65,7 +65,7 @@ describe('Admin Content API', () => {
     if (r) Object.values(r).forEach(fn => fn.mockReset());
     const u = getUseCase();
     if (u) u.execute.mockReset();
-    (authHelper.requireAuth as jest.Mock).mockResolvedValue({ email: 'test@example.com', sub: 'test-user-id' });
+    (authHelper.requireAdmin as jest.Mock).mockResolvedValue({ email: 'test@example.com', sub: 'test-user-id' });
   });
 
   describe('GET /api/admin/content', () => {
@@ -119,7 +119,7 @@ describe('Admin Content API', () => {
     });
 
     it('should return 401 when not authenticated', async () => {
-      (authHelper.requireAuth as jest.Mock).mockRejectedValue(new Error('Unauthorized'));
+      (authHelper.requireAdmin as jest.Mock).mockRejectedValue(new Error('Unauthorized'));
 
       const request = new NextRequest('http://localhost:3000/api/admin/content');
       const response = await GET(request);
@@ -208,7 +208,7 @@ describe('Admin Content API', () => {
     });
 
     it('should return 401 when not authenticated', async () => {
-      (authHelper.requireAuth as jest.Mock).mockRejectedValue(new Error('Unauthorized'));
+      (authHelper.requireAdmin as jest.Mock).mockRejectedValue(new Error('Unauthorized'));
 
       const request = new NextRequest('http://localhost:3000/api/admin/content', {
         method: 'POST',
