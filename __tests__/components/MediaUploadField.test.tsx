@@ -2,6 +2,12 @@
  * Tests for MediaUploadField — the admin media uploader.
  */
 
+// The component calls adminFetch (which attaches the Cognito token). Delegate
+// it to the mocked global.fetch so these tests exercise the upload flow.
+jest.mock('@/lib/client-auth', () => ({
+  adminFetch: (input: RequestInfo | URL, init?: RequestInit) => fetch(input, init),
+}));
+
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MediaUploadField } from '@/components/admin/MediaUploadField';
 

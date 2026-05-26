@@ -191,7 +191,7 @@ export class S3Operations {
 export const FILE_CONSTRAINTS = {
   maxSize: {
     image: 10 * 1024 * 1024, // 10MB
-    audio: 50 * 1024 * 1024, // 50MB
+    audio: 1000 * 1024 * 1024, // 1000MB — long-form audio / large MP3
     video: 50 * 1024 * 1024, // 50MB — short preview clips only (full videos live on YouTube)
   },
   allowedTypes: {

@@ -42,6 +42,18 @@ function makeRequest(cookies: Record<string, string> = {}): NextRequest {
   });
 }
 
+function makeBearerRequest(
+  token: string,
+  cookies: Record<string, string> = {}
+): NextRequest {
+  const cookieHeader = Object.entries(cookies)
+    .map(([k, v]) => `${k}=${v}`)
+    .join('; ');
+  const headers: Record<string, string> = { authorization: `Bearer ${token}` };
+  if (cookieHeader) headers.cookie = cookieHeader;
+  return new NextRequest('http://localhost/api/admin/content', { headers });
+}
+
 const ORIGINAL_ENV = { ...process.env };
 
 beforeEach(() => {
@@ -73,6 +85,20 @@ describe('validateAuth — JWT verification', () => {
     expect(result.userId).toBe('user-123');
     expect(result.email).toBe('poet@tamilagaval.com');
     expect(result.groups).toEqual(['readers', 'admin']);
+  });
+
+  it('authenticates via an Authorization: Bearer token', async () => {
+    mockVerify.mockResolvedValue({ sub: 'u1', email: 'a@b.com', 'cognito:groups': ['admin'] });
+    const result = await validateAuth(makeBearerRequest('header.jwt.token'));
+    expect(mockVerify).toHaveBeenCalledWith('header.jwt.token');
+    expect(result.isAuthenticated).toBe(true);
+    expect(result.email).toBe('a@b.com');
+  });
+
+  it('prefers the Bearer token over the cookie', async () => {
+    mockVerify.mockResolvedValue({ sub: 'u1' });
+    await validateAuth(makeBearerRequest('header-token', { [ID_TOKEN_COOKIE]: 'cookie-token' }));
+    expect(mockVerify).toHaveBeenCalledWith('header-token');
   });
 
   it('REJECTS a forged/invalid token (verification throws)', async () => {

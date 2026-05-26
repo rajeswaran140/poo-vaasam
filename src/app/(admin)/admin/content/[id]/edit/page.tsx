@@ -10,6 +10,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { TamilInput } from '@/components/admin/TamilInput';
 import { MediaUploadField } from '@/components/admin/MediaUploadField';
+import { adminFetch } from '@/lib/client-auth';
 import { FEATURES } from '@/config/features';
 import showToast from '@/lib/toast';
 
@@ -105,9 +106,8 @@ export default function EditContentPage({ params }: PageProps) {
     setSaving(true);
 
     try {
-      const response = await fetch('/api/content', {
+      const response = await adminFetch('/api/content', {
         method: 'PUT',
-        credentials: 'include', // Send cookies for authentication
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: contentId,

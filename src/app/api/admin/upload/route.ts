@@ -22,8 +22,8 @@ export const dynamic = 'force-dynamic';
 
 // Bucket policy grants public read only to objects carrying this tag.
 const PUBLIC_TAG = 'public=true';
-// Presigned URLs are short-lived; the client uploads immediately.
-const UPLOAD_URL_TTL_SECONDS = 15 * 60;
+// Presigned URLs are short-lived; allow enough time for large (up to ~1GB) uploads.
+const UPLOAD_URL_TTL_SECONDS = 60 * 60;
 
 const FOLDER_BY_KIND = {
   audio: 'audio',

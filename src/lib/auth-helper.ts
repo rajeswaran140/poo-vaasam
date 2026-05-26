@@ -84,18 +84,11 @@ export function __resetVerifierForTests(): void {
  * or an unconfigured verifier) yields `{ isAuthenticated: false }`.
  */
 export async function validateAuth(request: NextRequest): Promise<AuthContext> {
-  const cookieHeader = request.headers.get('cookie') || '';
-  const cookies = parseCookies(cookieHeader);
-
-  // Amplify stores the JWT under:
-  // CognitoIdentityServiceProvider.{clientId}.{username}.idToken
-  const idTokenName = Object.keys(cookies).find(
-    (name) =>
-      name.includes('CognitoIdentityServiceProvider') &&
-      name.endsWith('.idToken')
-  );
-
-  if (!idTokenName) {
+  // Prefer an explicit Bearer token (Amplify keeps Cognito tokens in browser
+  // storage, not cookies, so the client sends the current ID token in the
+  // Authorization header); fall back to the Cognito idToken cookie.
+  const token = bearerToken(request) ?? cookieIdToken(request);
+  if (!token) {
     return { isAuthenticated: false };
   }
 
@@ -105,7 +98,7 @@ export async function validateAuth(request: NextRequest): Promise<AuthContext> {
   }
 
   try {
-    const payload = await verifier.verify(cookies[idTokenName]);
+    const payload = await verifier.verify(token);
 
     const rawGroups = payload['cognito:groups'];
     const groups = Array.isArray(rawGroups)
@@ -209,6 +202,24 @@ function jsonError(message: string, status: number) {
     status,
     headers: { 'Content-Type': 'application/json' },
   });
+}
+
+/** Extract a Bearer token from the Authorization header, if present. */
+function bearerToken(request: NextRequest): string | undefined {
+  const header = request.headers.get('authorization') || '';
+  if (/^bearer\s+/i.test(header)) {
+    return header.replace(/^bearer\s+/i, '').trim() || undefined;
+  }
+  return undefined;
+}
+
+/** Extract the Cognito ID-token value from request cookies, if present. */
+function cookieIdToken(request: NextRequest): string | undefined {
+  const cookies = parseCookies(request.headers.get('cookie') || '');
+  const name = Object.keys(cookies).find(
+    (n) => n.includes('CognitoIdentityServiceProvider') && n.endsWith('.idToken')
+  );
+  return name ? cookies[name] : undefined;
 }
 
 /**

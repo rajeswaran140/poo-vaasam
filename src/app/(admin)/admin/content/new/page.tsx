@@ -10,6 +10,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { TamilInput } from '@/components/admin/TamilInput';
 import { MediaUploadField } from '@/components/admin/MediaUploadField';
+import { adminFetch } from '@/lib/client-auth';
 import { Music, Feather, Mic, BookOpen, PenTool, Star } from 'lucide-react';
 import { FEATURES } from '@/config/features';
 import showToast from '@/lib/toast';
@@ -65,9 +66,8 @@ export default function NewContentPage() {
     setLoading(true);
 
     try {
-      const response = await fetch('/api/admin/content', {
+      const response = await adminFetch('/api/admin/content', {
         method: 'POST',
-        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });

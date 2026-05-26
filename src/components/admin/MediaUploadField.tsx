@@ -15,14 +15,15 @@
 
 import { useRef, useState } from 'react';
 import { Upload, Loader2, X } from 'lucide-react';
+import { adminFetch } from '@/lib/client-auth';
 
 export type MediaKind = 'audio' | 'image' | 'video';
 
 const KIND_CONFIG: Record<MediaKind, { accept: string; maxBytes: number; hint: string }> = {
   audio: {
     accept: 'audio/mpeg,audio/mp3,audio/wav,audio/ogg',
-    maxBytes: 50 * 1024 * 1024,
-    hint: 'MP3, WAV or OGG · up to 50MB',
+    maxBytes: 1000 * 1024 * 1024,
+    hint: 'MP3, WAV or OGG · up to 1000MB',
   },
   image: {
     accept: 'image/jpeg,image/png,image/gif,image/webp',
@@ -64,10 +65,11 @@ export function MediaUploadField({ kind, label, value, onChange, helpText }: Med
     setUploading(true);
     try {
       // 1. Ask our admin API for a short-lived presigned PUT URL.
-      const presignRes = await fetch('/api/admin/upload', {
+      //    adminFetch attaches the Cognito ID token (Bearer) so the server can
+      //    authenticate even though Amplify keeps tokens client-side.
+      const presignRes = await adminFetch('/api/admin/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({
           filename: file.name,
           contentType: file.type,
