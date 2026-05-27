@@ -16,7 +16,7 @@ export const revalidate = 1800; // 30 minutes
 
 const PAGE_TITLE = 'காணொளிகள் — தமிழகவல்';
 const PAGE_DESCRIPTION =
-  'தமிழகவல் YouTube சேனலின் சமீபத்திய காணொளிகள் — பாருங்கள், சந்தா செலுத்துங்கள்.';
+  'தமிழகவல் YouTube சேனலின் சமீபத்திய காணொளிகள்.';
 
 export const metadata: Metadata = {
   title: PAGE_TITLE,
@@ -47,7 +47,7 @@ export default async function VideosPage() {
       {videos.length > 0 && <JsonLd data={videosItemListJsonLd(videos)} />}
       <Header />
       <main className="container mx-auto px-4 sm:px-6 py-10 max-w-6xl">
-        <section className="mb-10 overflow-hidden rounded-2xl bg-gradient-to-br from-red-600 via-red-700 to-orange-700 text-white shadow-xl">
+        <section className="mb-10 overflow-hidden rounded-2xl bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white shadow-xl">
           <div className="px-6 py-12 sm:px-12 sm:py-16 text-center">
             <div className="inline-flex items-center gap-2 bg-white/15 backdrop-blur-sm px-4 py-1.5 rounded-full border border-white/25 mb-5">
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -62,8 +62,8 @@ export default async function VideosPage() {
               எங்கள் YouTube சேனலின் சமீபத்திய காணொளிகள்.
             </p>
             <SubscribeButton
-              label="YouTube-ல் சந்தா செலுத்துங்கள்"
-              className="inline-flex items-center gap-2 px-7 py-3.5 bg-white text-red-700 rounded-full font-bold hover:bg-red-50 transition-colors shadow-lg"
+              label="YouTube"
+              className="inline-flex items-center gap-2 px-7 py-3.5 bg-white text-orange-600 rounded-full font-bold hover:bg-orange-50 transition-colors shadow-lg"
             />
             {videos.length > 0 && (
               <p className="mt-6 text-white/80 font-tamil text-sm">{videos.length} காணொளிகள்</p>

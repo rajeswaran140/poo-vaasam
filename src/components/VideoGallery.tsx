@@ -46,7 +46,7 @@ export function VideoGallery({ videos }: { videos: ChannelVideo[] }) {
                 className="w-full h-full object-cover opacity-90 transition group-hover:opacity-100"
               />
               <span className="absolute inset-0 flex items-center justify-center">
-                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-red-600/90 shadow-lg transition group-hover:bg-red-600">
+                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-orange-600/90 shadow-lg transition group-hover:bg-orange-600">
                   <Play className="ml-1 h-7 w-7 fill-white text-white" />
                 </span>
               </span>

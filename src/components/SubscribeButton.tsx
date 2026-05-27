@@ -11,9 +11,9 @@ interface SubscribeButtonProps {
 }
 
 const DEFAULT_CLASS =
-  'inline-flex items-center gap-2 px-6 py-3 bg-red-600 text-white rounded-full font-semibold hover:bg-red-700 transition-colors shadow-sm';
+  'inline-flex items-center gap-2 px-6 py-3 bg-orange-600 text-white rounded-full font-semibold hover:bg-orange-700 transition-colors shadow-sm';
 
-export function SubscribeButton({ label = 'Subscribe', className }: SubscribeButtonProps) {
+export function SubscribeButton({ label = 'YouTube', className }: SubscribeButtonProps) {
   return (
     <a
       href={youtubeSubscribeUrl()}

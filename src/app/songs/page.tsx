@@ -85,7 +85,7 @@ function ContentCard({ content }: { content: any }) {
           </span>
           <div className="flex items-center gap-2">
             {content.videoUrl && (
-              <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full font-tamil">
+              <span className="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded-full font-tamil">
                 ▶️ காணொளி
               </span>
             )}

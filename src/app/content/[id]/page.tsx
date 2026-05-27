@@ -145,7 +145,7 @@ export default async function ContentPage({ params }: PageProps) {
         <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
           {/* Preview Video — short clip uploaded to the site */}
           {content.previewVideoUrl && (
-            <div className="p-6 sm:p-8 bg-gradient-to-r from-orange-50 to-red-50 border-b border-gray-200">
+            <div className="p-6 sm:p-8 bg-gradient-to-r from-orange-50 to-orange-100 border-b border-gray-200">
               <div className="flex items-center gap-3 mb-3">
                 <span className="text-2xl">🎬</span>
                 <span className="font-semibold text-gray-700 font-tamil">முன்னோட்டக் காணொளி</span>
@@ -164,7 +164,7 @@ export default async function ContentPage({ params }: PageProps) {
                   href={getYouTubeWatchUrl(content.videoUrl) || content.videoUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-red-600 text-white rounded-full font-medium hover:bg-red-700 transition-colors font-tamil text-sm shadow-sm"
+                  className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-orange-600 text-white rounded-full font-medium hover:bg-orange-700 transition-colors font-tamil text-sm shadow-sm"
                 >
                   <span>▶️</span>
                   <span>முழு காணொளியை YouTube-ல் பார்க்கவும்</span>
@@ -175,7 +175,7 @@ export default async function ContentPage({ params }: PageProps) {
 
           {/* YouTube Video */}
           {content.videoUrl && isYouTubeUrl(content.videoUrl) && (
-            <div className="p-6 sm:p-8 bg-gradient-to-r from-red-50 to-orange-50 border-b border-gray-200">
+            <div className="p-6 sm:p-8 bg-gradient-to-r from-orange-50 to-orange-100 border-b border-gray-200">
               <div className="flex items-center gap-3 mb-4">
                 <span className="text-2xl">▶️</span>
                 <span className="font-semibold text-gray-700 font-tamil">காணொளி</span>
@@ -185,7 +185,7 @@ export default async function ContentPage({ params }: PageProps) {
                 href={getYouTubeWatchUrl(content.videoUrl) || content.videoUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-red-600 text-white rounded-full font-medium hover:bg-red-700 transition-colors font-tamil text-sm shadow-sm"
+                className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-orange-600 text-white rounded-full font-medium hover:bg-orange-700 transition-colors font-tamil text-sm shadow-sm"
               >
                 <span>▶️</span>
                 <span>Watch on YouTube</span>

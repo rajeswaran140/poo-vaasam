@@ -176,7 +176,7 @@ export default async function HomePage() {
             <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
               <h2 className="text-3xl font-bold text-white font-kavivanar">சமீபத்திய காணொளிகள்</h2>
               <div className="flex items-center gap-4">
-                <SubscribeButton label="சந்தா செலுத்துங்கள்" />
+                <SubscribeButton label="YouTube" />
                 <Link href="/videos" className="text-orange-400 hover:text-orange-300 font-tamil font-medium">
                   அனைத்தும் →
                 </Link>
@@ -200,7 +200,7 @@ export default async function HomePage() {
                       className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition"
                     />
                     <span className="absolute inset-0 flex items-center justify-center">
-                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-red-600/90 shadow-lg">
+                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-orange-600/90 shadow-lg">
                         <svg className="w-6 h-6 text-white ml-0.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                           <path d="M8 5v14l11-7z" />
                         </svg>
@@ -549,7 +549,7 @@ function ContentCard({ content }: { content: any }) {
           />
           <div className="absolute top-3 right-3 flex gap-2">
             {content.videoUrl && (
-              <span className="px-3 py-1 bg-red-600 text-white text-xs font-bold rounded-full shadow-lg flex items-center gap-1">
+              <span className="px-3 py-1 bg-orange-700 text-white text-xs font-bold rounded-full shadow-lg flex items-center gap-1">
                 <span>▶️</span>
                 <span className="font-tamil">காணொளி</span>
               </span>
@@ -569,7 +569,7 @@ function ContentCard({ content }: { content: any }) {
           </div>
           <div className="absolute top-3 right-3 flex gap-2">
             {content.videoUrl && (
-              <span className="px-3 py-1 bg-red-600 text-white text-xs font-bold rounded-full shadow-lg flex items-center gap-1">
+              <span className="px-3 py-1 bg-orange-700 text-white text-xs font-bold rounded-full shadow-lg flex items-center gap-1">
                 <span>▶️</span>
                 <span className="font-tamil">காணொளி</span>
               </span>
