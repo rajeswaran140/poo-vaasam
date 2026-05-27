@@ -2,12 +2,16 @@ import type { MetadataRoute } from 'next';
 import { SITE_URL } from '@/lib/seo';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentStatus } from '@/types/content';
+import { isYouTubeVideosConfigured } from '@/config/site';
 
 // Regenerate hourly rather than per-request.
 export const revalidate = 3600;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticPaths = ['', '/songs', '/poems', '/lyrics', '/stories', '/essays', '/all', '/music-composition', '/about', '/contact', '/ai-search'];
+  if (isYouTubeVideosConfigured()) {
+    staticPaths.push('/videos');
+  }
   const staticRoutes: MetadataRoute.Sitemap = staticPaths.map((p) => ({
     url: `${SITE_URL}${p}`,
     lastModified: new Date(),

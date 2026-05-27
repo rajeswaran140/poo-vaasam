@@ -6,17 +6,33 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Header from '@/components/Header';
-import { fetchChannelVideos } from '@/lib/youtube-feed';
+import { fetchChannelVideos, videosItemListJsonLd } from '@/lib/youtube-feed';
 import { SITE, isYouTubeVideosConfigured } from '@/config/site';
 import { VideoGallery } from '@/components/VideoGallery';
 import { SubscribeButton } from '@/components/SubscribeButton';
+import { JsonLd } from '@/components/JsonLd';
 
 export const revalidate = 1800; // 30 minutes
 
+const PAGE_TITLE = 'காணொளிகள் — தமிழகவல்';
+const PAGE_DESCRIPTION =
+  'தமிழகவல் YouTube சேனலின் சமீபத்திய காணொளிகள் — பாருங்கள், சந்தா செலுத்துங்கள்.';
+
 export const metadata: Metadata = {
-  title: 'காணொளிகள் — தமிழகவல்',
-  description: 'தமிழகவல் YouTube சேனலின் சமீபத்திய காணொளிகள்.',
+  title: PAGE_TITLE,
+  description: PAGE_DESCRIPTION,
   alternates: { canonical: '/videos' },
+  openGraph: {
+    title: PAGE_TITLE,
+    description: PAGE_DESCRIPTION,
+    url: '/videos',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: PAGE_TITLE,
+    description: PAGE_DESCRIPTION,
+  },
 };
 
 export default async function VideosPage() {
@@ -28,6 +44,7 @@ export default async function VideosPage() {
 
   return (
     <>
+      {videos.length > 0 && <JsonLd data={videosItemListJsonLd(videos)} />}
       <Header />
       <main className="container mx-auto px-4 sm:px-6 py-10 max-w-6xl">
         <section className="text-center mb-10">

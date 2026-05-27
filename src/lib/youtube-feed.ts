@@ -11,6 +11,7 @@
 export interface ChannelVideo {
   id: string;
   title: string;
+  description: string;
   publishedAt: string;
   thumbnail: string;
   watchUrl: string;
@@ -45,10 +46,14 @@ export function parseChannelFeed(xml: string, limit = 12): ChannelVideo[] {
       entry.match(/<title>([\s\S]*?)<\/title>/)?.[1]?.trim() ?? ''
     );
     const publishedAt = entry.match(/<published>([^<]+)<\/published>/)?.[1] ?? '';
+    const description = decodeEntities(
+      entry.match(/<media:description>([\s\S]*?)<\/media:description>/)?.[1]?.trim() ?? ''
+    );
 
     videos.push({
       id,
       title,
+      description,
       publishedAt,
       thumbnail: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
       watchUrl: `https://www.youtube.com/watch?v=${id}`,
@@ -83,4 +88,28 @@ export async function fetchChannelVideos(
   } catch {
     return [];
   }
+}
+
+/**
+ * Schema.org ItemList of VideoObjects for the videos page — makes the videos
+ * eligible for Google video rich results (more discovery → more subscribers).
+ */
+export function videosItemListJsonLd(videos: ChannelVideo[]): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    itemListElement: videos.map((video, index) => ({
+      '@type': 'ListItem',
+      position: index + 1,
+      item: {
+        '@type': 'VideoObject',
+        name: video.title,
+        description: video.description || video.title,
+        thumbnailUrl: video.thumbnail,
+        uploadDate: video.publishedAt,
+        contentUrl: video.watchUrl,
+        embedUrl: `https://www.youtube.com/embed/${video.id}`,
+      },
+    })),
+  };
 }

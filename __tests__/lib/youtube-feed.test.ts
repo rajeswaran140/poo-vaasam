@@ -3,7 +3,7 @@
  * Tests for the YouTube RSS feed parser/fetcher.
  */
 
-import { parseChannelFeed, fetchChannelVideos } from '@/lib/youtube-feed';
+import { parseChannelFeed, fetchChannelVideos, videosItemListJsonLd } from '@/lib/youtube-feed';
 
 const SAMPLE_FEED = `<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
@@ -16,7 +16,7 @@ const SAMPLE_FEED = `<?xml version="1.0" encoding="UTF-8"?>
   <title>பூ வாசம் &amp; காதல்</title>
   <link rel="alternate" href="https://www.youtube.com/watch?v=gfywsN483lI"/>
   <published>2026-05-01T10:00:00+00:00</published>
-  <media:group><media:thumbnail url="https://i.ytimg.com/vi/gfywsN483lI/hqdefault.jpg"/></media:group>
+  <media:group><media:thumbnail url="https://i.ytimg.com/vi/gfywsN483lI/hqdefault.jpg"/><media:description>ஒரு அழகான பாடல்</media:description></media:group>
  </entry>
  <entry>
   <id>yt:video:abcdefghijk</id>
@@ -39,11 +39,13 @@ describe('parseChannelFeed', () => {
     expect(videos[0]).toEqual({
       id: 'gfywsN483lI',
       title: 'பூ வாசம் & காதல்', // &amp; decoded
+      description: 'ஒரு அழகான பாடல்',
       publishedAt: '2026-05-01T10:00:00+00:00',
       thumbnail: 'https://i.ytimg.com/vi/gfywsN483lI/hqdefault.jpg',
       watchUrl: 'https://www.youtube.com/watch?v=gfywsN483lI',
     });
     expect(videos[1].id).toBe('abcdefghijk');
+    expect(videos[1].description).toBe(''); // entry 2 has no media:description
     expect(videos.map((v) => v.title)).not.toContain('Channel Name Should Be Ignored');
   });
 
@@ -80,5 +82,28 @@ describe('fetchChannelVideos', () => {
 
     global.fetch = jest.fn().mockRejectedValue(new Error('network')) as unknown as typeof fetch;
     expect(await fetchChannelVideos('UCabcdefghijklmnopqrstuv')).toEqual([]);
+  });
+});
+
+describe('videosItemListJsonLd', () => {
+  it('builds a schema.org ItemList of VideoObjects', () => {
+    const ld = videosItemListJsonLd(parseChannelFeed(SAMPLE_FEED)) as {
+      '@type': string;
+      itemListElement: Array<{ position: number; item: Record<string, string> }>;
+    };
+
+    expect(ld['@type']).toBe('ItemList');
+    expect(ld.itemListElement).toHaveLength(2);
+
+    const first = ld.itemListElement[0];
+    expect(first.position).toBe(1);
+    expect(first.item['@type']).toBe('VideoObject');
+    expect(first.item.name).toBe('பூ வாசம் & காதல்');
+    expect(first.item.description).toBe('ஒரு அழகான பாடல்');
+    expect(first.item.embedUrl).toBe('https://www.youtube.com/embed/gfywsN483lI');
+    expect(first.item.thumbnailUrl).toBe('https://i.ytimg.com/vi/gfywsN483lI/hqdefault.jpg');
+
+    // Entry without a description falls back to its title.
+    expect(ld.itemListElement[1].item.description).toBe('Second Video');
   });
 });
