@@ -1,29 +1,29 @@
 /**
- * Songs Listing Page
+ * Songs Listing Page — Spotify-style music player.
  */
 
 export const revalidate = 300;
 
 import type { Metadata } from 'next';
+import Header from '@/components/Header';
+import { ContentRepository } from '@/infrastructure/database/ContentRepository';
+import { ContentType, ContentStatus } from '@/types/content';
+import { MusicPlayer, type Track } from '@/components/music/MusicPlayer';
 
 export const metadata: Metadata = {
   title: 'பாடல்கள்',
-  description: 'தமிழ் பாடல்கள் தொகுப்பு — இலவசமாகப் படியுங்கள், கேளுங்கள், பாருங்கள்.',
+  description: 'தமிழ் பாடல்கள் தொகுப்பு — இலவசமாகக் கேளுங்கள், படியுங்கள், பாருங்கள்.',
   alternates: { canonical: '/songs' },
 };
-
-import Link from 'next/link';
-import { ContentRepository } from '@/infrastructure/database/ContentRepository';
-import { ContentType, ContentStatus } from '@/types/content';
 
 async function getSongs() {
   try {
     const repo = new ContentRepository();
     const result = await repo.findByType(ContentType.SONGS, {
-      limit: 50,
-      status: ContentStatus.PUBLISHED
+      limit: 100,
+      status: ContentStatus.PUBLISHED,
     });
-    return result.items.map(item => item.toObject());
+    return result.items.map((item) => item.toObject());
   } catch (error) {
     console.error('Failed to fetch songs:', error);
     return [];
@@ -32,71 +32,58 @@ async function getSongs() {
 
 export default async function SongsPage() {
   const songs = await getSongs();
+  const tracks: Track[] = songs.map((s: Record<string, unknown>) => ({
+    id: String(s.id),
+    title: String(s.title),
+    artist: String(s.author || ''),
+    src: typeof s.audioUrl === 'string' ? s.audioUrl : '',
+    cover: typeof s.featuredImage === 'string' ? s.featuredImage : undefined,
+    duration: typeof s.audioDuration === 'number' ? s.audioDuration : undefined,
+  }));
+  const playableCount = tracks.filter((t) => t.src).length;
+  const totalMin = Math.round(tracks.reduce((sum, t) => sum + (t.duration || 0), 0) / 60);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-gradient-to-r from-blue-600 to-blue-700 text-white py-16">
-        <div className="container mx-auto px-4">
-          <Link href="/" className="text-blue-100 hover:text-white mb-4 inline-block font-tamil">
-            ← முகப்புக்குத் திரும்புங்கள்
-          </Link>
-          <h1 className="text-3xl sm:text-5xl font-bold mb-4 font-tamil">🎵 பாடல்கள்</h1>
-          <p className="text-xl text-blue-100 font-tamil">தமிழ் பாடல்கள் தொகுப்பு</p>
-        </div>
-      </header>
+    <div className="min-h-screen">
+      <Header />
+      <main>
+        {/* Full-width Spotify-style playlist header (fades into the dark page) */}
+        <section className="w-full bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white">
+          <div className="w-full px-6 pb-10 pt-24 sm:px-10 lg:px-16">
+            <div className="flex flex-col gap-6 sm:flex-row sm:items-end">
+              <div className="flex h-40 w-40 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-orange-400 to-orange-700 shadow-2xl sm:h-52 sm:w-52">
+                <span className="text-7xl">🎵</span>
+              </div>
+              <div className="min-w-0">
+                <p className="mb-2 font-tamil text-xs font-semibold uppercase tracking-wide text-white/80">
+                  தொகுப்பு
+                </p>
+                <h1 className="mb-4 font-kavivanar text-4xl font-extrabold leading-tight sm:text-6xl lg:text-7xl">
+                  பாடல்கள்
+                </h1>
+                <p className="mb-2 font-tamil text-white/90">தமிழ் பாடல்கள் தொகுப்பு — என்றும் இலவசம்</p>
+                {playableCount > 0 && (
+                  <p className="font-tamil text-sm text-white/80">
+                    {playableCount} பாடல்கள்{totalMin > 0 ? ` · ${totalMin} நிமிடம்` : ''}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
 
-      {/* Content */}
-      <div className="container mx-auto px-4 py-12">
-        {songs.length === 0 ? (
-          <div className="text-center py-20">
-            <div className="text-6xl mb-4">🎵</div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-2 font-tamil">இன்னும் பாடல்கள் இல்லை</h2>
-            <p className="text-gray-600 font-tamil">புதிய உள்ளடக்கத்திற்காக பின்னர் சரிபார்க்கவும்</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {songs.map((song: any) => (
-              <ContentCard key={song.id} content={song} />
-            ))}
-          </div>
-        )}
-      </div>
+        <div className="container mx-auto px-4 py-8">
+          {tracks.length === 0 ? (
+            <div className="py-20 text-center">
+              <div className="mb-4 text-6xl">🎵</div>
+              <h2 className="mb-2 font-tamil text-2xl font-bold text-white">இன்னும் பாடல்கள் இல்லை</h2>
+              <p className="font-tamil text-gray-400">புதிய உள்ளடக்கத்திற்காகப் பின்னர் சரிபார்க்கவும்</p>
+            </div>
+          ) : (
+            <MusicPlayer tracks={tracks} />
+          )}
+        </div>
+      </main>
     </div>
-  );
-}
-
-function ContentCard({ content }: { content: any }) {
-  return (
-    <Link
-      href={`/content/${content.id}`}
-      className="group bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-xl transition-all transform hover:scale-[1.02]"
-    >
-      <div className="p-6">
-        <h3 className="text-2xl font-bold text-gray-900 font-tamil mb-3 group-hover:text-blue-600 transition-colors">
-          {content.title}
-        </h3>
-        <p className="text-gray-600 font-tamil text-sm line-clamp-3 mb-4 leading-relaxed">
-          {content.body}
-        </p>
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-500 font-tamil">
-            {content.author}
-          </span>
-          <div className="flex items-center gap-2">
-            {content.videoUrl && (
-              <span className="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded-full font-tamil">
-                ▶️ காணொளி
-              </span>
-            )}
-            {content.audioUrl && (
-              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-tamil">
-                🎵 ஒலி
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-    </Link>
   );
 }
