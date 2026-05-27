@@ -2,56 +2,69 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { SITE, isYouTubeChannelConfigured, isYouTubeVideosConfigured } from '@/config/site';
+
+const YouTubeIcon = () => (
+  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+  </svg>
+);
 
 export default function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const pathname = usePathname();
   const showYouTube = isYouTubeChannelConfigured();
   const showVideos = isYouTubeVideosConfigured();
 
+  const navLinks = [
+    { href: '/poems', label: 'கவிதைகள்' },
+    { href: '/songs', label: 'பாடல்கள்' },
+    { href: '/stories', label: 'கதைகள்' },
+    { href: '/all', label: 'அனைத்தும்' },
+    { href: '/music-composition', label: 'இசையமைப்பு' },
+    ...(showVideos ? [{ href: '/videos', label: 'காணொளிகள்' }] : []),
+  ];
+
+  const isActive = (href: string) => !!pathname && (pathname === href || pathname.startsWith(`${href}/`));
+
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-gray-900 border-b border-gray-800 shadow-xl">
-      <nav className="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-20">
+    <header className="fixed top-0 left-0 right-0 z-50 border-b border-gray-800 bg-gray-900/95 shadow-xl backdrop-blur-md">
+      {/* Full-width nav (content spans edge to edge) */}
+      <nav className="w-full px-4 sm:px-6 lg:px-10">
+        <div className="flex h-20 items-center justify-between">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-3 group">
-            <span className="text-2xl sm:text-3xl font-bold text-orange-500 font-kavivanar group-hover:text-orange-400 transition-colors">
+          <Link href="/" className="group flex items-center gap-3">
+            <span className="font-kavivanar text-2xl font-bold tracking-tight text-orange-500 transition-colors group-hover:text-orange-400 sm:text-3xl">
               தமிழகவல்
             </span>
           </Link>
 
           {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center gap-1 lg:gap-2">
-            <Link href="/poems" className="px-4 py-2 text-gray-300 hover:text-white hover:bg-gray-800/50 rounded-lg transition-all font-tamil font-medium">
-              கவிதைகள்
-            </Link>
-            <Link href="/songs" className="px-4 py-2 text-gray-300 hover:text-white hover:bg-gray-800/50 rounded-lg transition-all font-tamil font-medium">
-              பாடல்கள்
-            </Link>
-            <Link href="/stories" className="px-4 py-2 text-gray-300 hover:text-white hover:bg-gray-800/50 rounded-lg transition-all font-tamil font-medium">
-              கதைகள்
-            </Link>
-            <Link href="/all" className="px-4 py-2 text-gray-300 hover:text-white hover:bg-gray-800/50 rounded-lg transition-all font-tamil font-medium">
-              அனைத்தும்
-            </Link>
-            <Link href="/music-composition" className="px-4 py-2 text-gray-300 hover:text-white hover:bg-gray-800/50 rounded-lg transition-all font-tamil font-medium">
-              இசையமைப்பு
-            </Link>
-            {showVideos && (
-              <Link href="/videos" className="px-4 py-2 text-gray-300 hover:text-white hover:bg-gray-800/50 rounded-lg transition-all font-tamil font-medium">
-                காணொளிகள்
-              </Link>
-            )}
+          <div className="hidden items-center gap-1 md:flex lg:gap-2">
+            {navLinks.map((item) => {
+              const active = isActive(item.href);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={active ? 'page' : undefined}
+                  className={`rounded-lg px-4 py-2 font-tamil font-medium transition-all ${
+                    active ? 'bg-gray-800/70 text-orange-400' : 'text-gray-300 hover:bg-gray-800/50 hover:text-white'
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
             {showYouTube && (
               <a
                 href={SITE.youtube.channelUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="ml-2 px-4 py-2 inline-flex items-center gap-2 bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white rounded-full hover:opacity-90 transition-all font-tamil text-sm font-bold shadow-lg"
+                className="ml-2 inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 px-4 py-2 font-tamil text-sm font-bold text-white shadow-lg transition-all hover:opacity-90"
               >
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
-                </svg>
+                <YouTubeIcon />
                 <span>{SITE.youtube.channelLabel}</span>
               </a>
             )}
@@ -59,16 +72,17 @@ export default function Header() {
 
           {/* Mobile Menu Button */}
           <button
-            className="md:hidden text-gray-300 hover:text-orange-500 p-2.5 -mr-2.5"
+            className="-mr-2.5 p-2.5 text-gray-300 hover:text-orange-500 md:hidden"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             aria-label="Toggle menu"
+            aria-expanded={mobileMenuOpen}
           >
             {mobileMenuOpen ? (
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             ) : (
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             )}
@@ -77,63 +91,33 @@ export default function Header() {
 
         {/* Mobile Menu */}
         {mobileMenuOpen && (
-          <div className="md:hidden py-4 border-t border-gray-800">
-            <div className="flex flex-col gap-4">
-              <Link
-                href="/poems"
-                className="text-gray-300 hover:text-orange-500 transition-colors font-tamil"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                கவிதைகள்
-              </Link>
-              <Link
-                href="/songs"
-                className="text-gray-300 hover:text-orange-500 transition-colors font-tamil"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                பாடல்கள்
-              </Link>
-              <Link
-                href="/stories"
-                className="text-gray-300 hover:text-orange-500 transition-colors font-tamil"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                கதைகள்
-              </Link>
-              <Link
-                href="/all"
-                className="text-gray-300 hover:text-orange-500 transition-colors font-tamil"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                அனைத்தும்
-              </Link>
-              <Link
-                href="/music-composition"
-                className="text-gray-300 hover:text-orange-500 transition-colors font-tamil"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                இசையமைப்பு
-              </Link>
-              {showVideos && (
-                <Link
-                  href="/videos"
-                  className="text-gray-300 hover:text-orange-500 transition-colors font-tamil"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  காணொளிகள்
-                </Link>
-              )}
+          <div className="border-t border-gray-800 py-4 md:hidden">
+            <div className="flex flex-col gap-1">
+              {navLinks.map((item) => {
+                const active = isActive(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    aria-current={active ? 'page' : undefined}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={`rounded-lg px-3 py-2.5 font-tamil transition-colors ${
+                      active ? 'bg-gray-800/70 text-orange-400' : 'text-gray-300 hover:text-orange-500'
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
               {showYouTube && (
                 <a
                   href={SITE.youtube.channelUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-4 py-2 bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white rounded-full hover:opacity-90 transition-colors font-tamil text-sm inline-flex items-center justify-center gap-2"
+                  className="mt-2 inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 px-4 py-2 font-tamil text-sm text-white transition-colors hover:opacity-90"
                   onClick={() => setMobileMenuOpen(false)}
                 >
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
-                  </svg>
+                  <YouTubeIcon />
                   <span>{SITE.youtube.channelLabel}</span>
                 </a>
               )}
