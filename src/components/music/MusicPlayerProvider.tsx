@@ -1,30 +1,28 @@
 'use client';
 
 /**
- * Spotify-style music player for the songs page.
+ * Global music player.
  *
- * Renders Play-all / shuffle / repeat controls, a clickable track list, and a
- * persistent bottom player bar (play/pause, prev/next, seek, time, volume).
- * Plays each song's audioUrl (S3). Tracks without audio are shown but not
- * playable and link to their lyrics page.
+ * Mounted once in the root layout so playback (and the bottom bar) persist as
+ * visitors navigate between pages — Spotify-style. Page UIs (e.g. the songs
+ * list) drive it via the useMusicPlayer() context.
  */
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import Link from 'next/link';
-import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Music, Shuffle, Repeat } from 'lucide-react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Music } from 'lucide-react';
 
 export interface Track {
   id: string;
   title: string;
   artist: string;
-  src: string; // audioUrl ('' when the song has no audio yet)
-  cover?: string; // featuredImage
-  duration?: number; // seconds
+  src: string; // audioUrl ('' if the song has no audio yet)
+  cover?: string;
+  duration?: number;
 }
 
 type RepeatMode = 'off' | 'all' | 'one';
 
-/** Format seconds as m:ss (exported for testing). */
+/** Format seconds as m:ss. */
 export function formatTime(seconds: number): string {
   if (!seconds || !Number.isFinite(seconds) || seconds < 0) return '0:00';
   const m = Math.floor(seconds / 60);
@@ -42,7 +40,7 @@ function safePlay(audio: HTMLAudioElement | null) {
   }
 }
 
-function Cover({ src, alt, className }: { src?: string; alt: string; className: string }) {
+export function Cover({ src, alt, className }: { src?: string; alt: string; className: string }) {
   if (src) {
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={src} alt={alt} loading="lazy" className={`${className} object-cover`} />;
@@ -54,8 +52,31 @@ function Cover({ src, alt, className }: { src?: string; alt: string; className: 
   );
 }
 
-export function MusicPlayer({ tracks }: { tracks: Track[] }) {
+interface PlayerContextValue {
+  current: Track | null;
+  isPlaying: boolean;
+  shuffle: boolean;
+  repeat: RepeatMode;
+  /** Replace the queue and start playing from startIndex. */
+  playQueue: (tracks: Track[], startIndex: number) => void;
+  toggle: () => void;
+  next: () => void;
+  prev: () => void;
+  toggleShuffle: () => void;
+  cycleRepeat: () => void;
+}
+
+const PlayerContext = createContext<PlayerContextValue | null>(null);
+
+export function useMusicPlayer(): PlayerContextValue {
+  const ctx = useContext(PlayerContext);
+  if (!ctx) throw new Error('useMusicPlayer must be used within MusicPlayerProvider');
+  return ctx;
+}
+
+export function MusicPlayerProvider({ children }: { children: React.ReactNode }) {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const [queue, setQueue] = useState<Track[]>([]);
   const [index, setIndex] = useState<number | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [time, setTime] = useState(0);
@@ -65,23 +86,19 @@ export function MusicPlayer({ tracks }: { tracks: Track[] }) {
   const [shuffle, setShuffle] = useState(false);
   const [repeat, setRepeat] = useState<RepeatMode>('off');
 
-  const current = index != null ? tracks[index] : null;
-  const anyPlaying = !!current && isPlaying;
-
-  // Indices of tracks that actually have audio.
+  const current = index != null ? queue[index] ?? null : null;
   const playable = useMemo(
-    () => tracks.reduce<number[]>((acc, t, i) => (t.src ? (acc.push(i), acc) : acc), []),
-    [tracks]
+    () => queue.reduce<number[]>((acc, t, i) => (t.src ? (acc.push(i), acc) : acc), []),
+    [queue]
   );
 
-  const randomOther = useCallback(() => {
-    if (playable.length <= 1) return index ?? playable[0] ?? null;
+  const randomOther = useCallback((): number | null => {
+    if (playable.length <= 1) return index;
     let r = index;
     while (r === index) r = playable[Math.floor(Math.random() * playable.length)];
     return r;
   }, [playable, index]);
 
-  // Next track. `auto` = triggered by song ending (respects repeat/stop).
   const pickNext = useCallback(
     (auto: boolean): number | null => {
       if (playable.length === 0) return null;
@@ -90,9 +107,8 @@ export function MusicPlayer({ tracks }: { tracks: Track[] }) {
       if (shuffle) return randomOther();
       const pos = playable.indexOf(index);
       if (pos < playable.length - 1) return playable[pos + 1];
-      // reached the end
-      if (!auto || repeat === 'all') return playable[0]; // wrap
-      return null; // auto + repeat off -> stop
+      if (!auto || repeat === 'all') return playable[0];
+      return null;
     },
     [playable, index, repeat, shuffle, randomOther]
   );
@@ -104,16 +120,16 @@ export function MusicPlayer({ tracks }: { tracks: Track[] }) {
     return pos > 0 ? playable[pos - 1] : playable[playable.length - 1];
   }, [playable, index, shuffle, randomOther]);
 
-  const next = () => {
+  const next = useCallback(() => {
     const i = pickNext(true);
     if (i != null) setIndex(i);
-  };
-  const prev = () => {
+  }, [pickNext]);
+  const prev = useCallback(() => {
     const i = pickPrev();
     if (i != null) setIndex(i);
-  };
+  }, [pickPrev]);
 
-  const handleEnded = () => {
+  const handleEnded = useCallback(() => {
     if (repeat === 'one') {
       const a = audioRef.current;
       if (a) { a.currentTime = 0; safePlay(a); }
@@ -127,126 +143,51 @@ export function MusicPlayer({ tracks }: { tracks: Track[] }) {
       return;
     }
     setIndex(i);
-  };
+  }, [repeat, pickNext, index]);
 
-  // Autoplay whenever the selected track changes.
+  const playQueue = useCallback((tracks: Track[], startIndex: number) => {
+    setQueue(tracks);
+    setIndex(startIndex);
+  }, []);
+
+  const toggle = useCallback(() => {
+    const a = audioRef.current;
+    if (!a || current == null) return;
+    if (a.paused) safePlay(a);
+    else a.pause();
+  }, [current]);
+
+  const toggleShuffle = useCallback(() => setShuffle((s) => !s), []);
+  const cycleRepeat = useCallback(
+    () => setRepeat((r) => (r === 'off' ? 'all' : r === 'all' ? 'one' : 'off')),
+    []
+  );
+
+  // Autoplay whenever the playing track changes.
   useEffect(() => {
-    if (current) { setTime(0); safePlay(audioRef.current); }
+    if (current) {
+      setTime(0);
+      safePlay(audioRef.current);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index]);
+  }, [current?.src]);
 
   useEffect(() => {
-    if (audioRef.current) { audioRef.current.volume = volume; audioRef.current.muted = muted; }
+    if (audioRef.current) {
+      audioRef.current.volume = volume;
+      audioRef.current.muted = muted;
+    }
   }, [volume, muted]);
 
-  const togglePlay = () => {
-    if (current == null) { if (playable.length) setIndex(playable[0]); return; }
-    const a = audioRef.current;
-    if (!a) return;
-    if (a.paused) safePlay(a); else a.pause();
-  };
-
-  const playAll = () => {
-    const a = audioRef.current;
-    if (current && a) { if (a.paused) safePlay(a); else a.pause(); return; }
-    if (playable.length) setIndex(shuffle ? playable[Math.floor(Math.random() * playable.length)] : playable[0]);
-  };
-
-  const cycleRepeat = () => setRepeat((r) => (r === 'off' ? 'all' : r === 'all' ? 'one' : 'off'));
-
-  const onRow = (i: number) => {
-    if (!tracks[i].src) return;
-    if (i === index) togglePlay();
-    else setIndex(i);
-  };
+  const value = useMemo<PlayerContextValue>(
+    () => ({ current, isPlaying, shuffle, repeat, playQueue, toggle, next, prev, toggleShuffle, cycleRepeat }),
+    [current, isPlaying, shuffle, repeat, playQueue, toggle, next, prev, toggleShuffle, cycleRepeat]
+  );
 
   return (
-    <div className="pb-36">
-      {/* Play-all / shuffle / repeat */}
-      {playable.length > 0 && (
-        <div className="mx-auto mb-6 flex max-w-3xl items-center gap-5 px-3 sm:px-4">
-          <button
-            onClick={playAll}
-            aria-label="Play all"
-            className="flex h-14 w-14 items-center justify-center rounded-full bg-orange-600 text-white shadow-lg transition hover:scale-105 hover:bg-orange-500"
-          >
-            {anyPlaying ? <Pause className="h-7 w-7" /> : <Play className="ml-1 h-7 w-7" />}
-          </button>
-          <button
-            onClick={() => setShuffle((s) => !s)}
-            aria-label="Shuffle"
-            aria-pressed={shuffle}
-            title="குலுக்கு"
-            className={`transition hover:text-white ${shuffle ? 'text-orange-400' : 'text-gray-400'}`}
-          >
-            <Shuffle className="h-5 w-5" />
-          </button>
-          <button
-            onClick={cycleRepeat}
-            aria-label="Repeat"
-            title="மீண்டும்"
-            className={`relative transition hover:text-white ${repeat !== 'off' ? 'text-orange-400' : 'text-gray-400'}`}
-          >
-            <Repeat className="h-5 w-5" />
-            {repeat === 'one' && <span className="absolute -right-2 -top-1.5 text-[10px] font-bold">1</span>}
-          </button>
-        </div>
-      )}
-
-      <ol className="max-w-3xl mx-auto divide-y divide-white/5">
-        {tracks.map((t, i) => {
-          const active = i === index;
-          const isPlayable = !!t.src;
-          return (
-            <li key={t.id}>
-              <div
-                onClick={() => onRow(i)}
-                role={isPlayable ? 'button' : undefined}
-                tabIndex={isPlayable ? 0 : undefined}
-                onKeyDown={(e) => {
-                  if (isPlayable && (e.key === 'Enter' || e.key === ' ')) {
-                    e.preventDefault();
-                    onRow(i);
-                  }
-                }}
-                className={`group flex items-center gap-3 sm:gap-4 px-3 sm:px-4 py-2.5 rounded-md transition-colors ${
-                  isPlayable ? 'cursor-pointer hover:bg-white/5' : 'opacity-60'
-                } ${active ? 'bg-white/10' : ''}`}
-              >
-                <div className="w-6 shrink-0 text-center text-sm text-gray-400">
-                  {isPlayable ? (
-                    active && isPlaying ? (
-                      <Pause className="w-4 h-4 text-orange-400 mx-auto" />
-                    ) : (
-                      <>
-                        <span className="group-hover:hidden">{i + 1}</span>
-                        <Play className="w-4 h-4 mx-auto hidden group-hover:block text-white" />
-                      </>
-                    )
-                  ) : (
-                    <Music className="w-4 h-4 mx-auto text-gray-600" />
-                  )}
-                </div>
-                <Cover src={t.cover} alt={t.title} className="w-11 h-11 rounded shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className={`truncate font-tamil ${active ? 'text-orange-400' : 'text-white'}`}>{t.title}</div>
-                  <div className="truncate text-sm text-gray-400 font-tamil">{t.artist}</div>
-                </div>
-                <Link
-                  href={`/content/${t.id}`}
-                  onClick={(e) => e.stopPropagation()}
-                  className="hidden sm:block text-xs text-gray-400 hover:text-orange-400 font-tamil px-2 shrink-0"
-                >
-                  பாடல் வரிகள்
-                </Link>
-                <span className="text-xs text-gray-500 w-10 text-right shrink-0 tabular-nums">
-                  {isPlayable && t.duration ? formatTime(t.duration) : ''}
-                </span>
-              </div>
-            </li>
-          );
-        })}
-      </ol>
+    <PlayerContext.Provider value={value}>
+      {children}
+      {current && <div aria-hidden className="h-24" />}
 
       <audio
         ref={audioRef}
@@ -276,7 +217,7 @@ export function MusicPlayer({ tracks }: { tracks: Track[] }) {
                   <SkipBack className="h-5 w-5" />
                 </button>
                 <button
-                  onClick={togglePlay}
+                  onClick={toggle}
                   aria-label={isPlaying ? 'Pause' : 'Play'}
                   className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-600 text-white shadow hover:bg-orange-500"
                 >
@@ -328,6 +269,6 @@ export function MusicPlayer({ tracks }: { tracks: Track[] }) {
           </div>
         </div>
       )}
-    </div>
+    </PlayerContext.Provider>
   );
 }

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Noto_Sans_Tamil, Kavivanar, Baloo_Thambi_2 } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/components/auth/AuthProvider";
+import { MusicPlayerProvider } from "@/components/music/MusicPlayerProvider";
 import BackToTop from "@/components/BackToTop";
 
 const notoSansTamil = Noto_Sans_Tamil({
@@ -79,8 +80,10 @@ export default function RootLayout({
     <html lang="ta" className={`${notoSansTamil.variable} ${kavivanar.variable} ${balooThambi.variable}`}>
       <body className="font-tamil antialiased">
         <AuthProvider>
-          {children}
-          <BackToTop />
+          <MusicPlayerProvider>
+            {children}
+            <BackToTop />
+          </MusicPlayerProvider>
         </AuthProvider>
       </body>
     </html>

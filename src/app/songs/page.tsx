@@ -8,7 +8,8 @@ import type { Metadata } from 'next';
 import Header from '@/components/Header';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentType, ContentStatus } from '@/types/content';
-import { MusicPlayer, type Track } from '@/components/music/MusicPlayer';
+import { SongList } from '@/components/music/SongList';
+import type { Track } from '@/components/music/MusicPlayerProvider';
 
 export const metadata: Metadata = {
   title: 'பாடல்கள்',
@@ -80,7 +81,7 @@ export default async function SongsPage() {
               <p className="font-tamil text-gray-400">புதிய உள்ளடக்கத்திற்காகப் பின்னர் சரிபார்க்கவும்</p>
             </div>
           ) : (
-            <MusicPlayer tracks={tracks} />
+            <SongList tracks={tracks} />
           )}
         </div>
       </main>
