@@ -10,7 +10,9 @@ import Link from 'next/link';
 import Header from '@/components/Header';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentStatus, ContentType } from '@/types/content';
-import { SITE, isYouTubeChannelConfigured, isFacebookConfigured } from '@/config/site';
+import { SITE, isYouTubeChannelConfigured, isFacebookConfigured, isYouTubeVideosConfigured } from '@/config/site';
+import { fetchChannelVideos } from '@/lib/youtube-feed';
+import { SubscribeButton } from '@/components/SubscribeButton';
 import { JsonLd } from '@/components/JsonLd';
 import { SITE_URL, SITE_NAME } from '@/lib/seo';
 
@@ -73,9 +75,12 @@ async function getStats() {
 }
 
 export default async function HomePage() {
-  const [featuredContent, stats] = await Promise.all([
+  const [featuredContent, stats, latestVideos] = await Promise.all([
     getFeaturedContent(),
-    getStats()
+    getStats(),
+    isYouTubeVideosConfigured()
+      ? fetchChannelVideos(SITE.youtube.channelId, 4)
+      : Promise.resolve([]),
   ]);
 
   const totalContent = (stats?.published || 0);
@@ -163,6 +168,54 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* Latest YouTube videos — funnel to the channel */}
+      {latestVideos.length > 0 && (
+        <section className="bg-gray-900 pt-16 pb-4">
+          <div className="container mx-auto px-4 max-w-6xl">
+            <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
+              <h2 className="text-3xl font-bold text-white font-kavivanar">சமீபத்திய காணொளிகள்</h2>
+              <div className="flex items-center gap-4">
+                <SubscribeButton label="சந்தா செலுத்துங்கள்" />
+                <Link href="/videos" className="text-orange-400 hover:text-orange-300 font-tamil font-medium">
+                  அனைத்தும் →
+                </Link>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {latestVideos.map((video) => (
+                <a
+                  key={video.id}
+                  href={video.watchUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group block rounded-xl overflow-hidden bg-gray-800 border border-gray-700 hover:border-orange-500/50 transition"
+                >
+                  <div className="relative aspect-video bg-black">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={video.thumbnail}
+                      alt={video.title}
+                      loading="lazy"
+                      className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition"
+                    />
+                    <span className="absolute inset-0 flex items-center justify-center">
+                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-red-600/90 shadow-lg">
+                        <svg className="w-6 h-6 text-white ml-0.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
+                      </span>
+                    </span>
+                  </div>
+                  <div className="p-3">
+                    <h3 className="line-clamp-2 text-sm text-gray-200 font-tamil">{video.title}</h3>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Why Choose Section - Free Features */}
       <section className="bg-gray-900 py-20">

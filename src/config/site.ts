@@ -11,6 +11,11 @@ export const SITE = {
      * real channel, the YouTube/Subscribe links are hidden site-wide.
      */
     channelUrl: 'https://youtube.com/@RajeswaranThangarajah',
+    /**
+     * Channel ID (UC…, 24 chars) — required for the RSS-backed videos feed.
+     * Empty = the /videos page, homepage strip and Subscribe CTAs stay hidden.
+     */
+    channelId: 'UCZCuphXleq-mXVYgvqh-OlQ',
     label: 'YouTube',
     channelLabel: 'YouTube', // icon + brand word only, no Tamil
   },
@@ -32,4 +37,19 @@ export function isFacebookConfigured(): boolean {
 export function isYouTubeChannelConfigured(): boolean {
   const url = SITE.youtube.channelUrl;
   return /youtube\.com\/(@|channel\/|c\/|user\/)/.test(url) && !url.includes('CHANGE_ME');
+}
+
+/** Validate a YouTube channel ID (UC + 22 url-safe chars). */
+export function isValidYouTubeChannelId(id: string): boolean {
+  return /^UC[A-Za-z0-9_-]{22}$/.test(id);
+}
+
+/** True when a real channel ID is set, enabling the RSS-backed videos feed/UI. */
+export function isYouTubeVideosConfigured(): boolean {
+  return isValidYouTubeChannelId(SITE.youtube.channelId);
+}
+
+/** One-click "Subscribe" URL — opens YouTube's subscribe-confirmation dialog. */
+export function youtubeSubscribeUrl(): string {
+  return `${SITE.youtube.channelUrl.replace(/\/+$/, '')}?sub_confirmation=1`;
 }

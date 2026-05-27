@@ -2,11 +2,12 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { SITE, isYouTubeChannelConfigured } from '@/config/site';
+import { SITE, isYouTubeChannelConfigured, isYouTubeVideosConfigured } from '@/config/site';
 
 export default function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const showYouTube = isYouTubeChannelConfigured();
+  const showVideos = isYouTubeVideosConfigured();
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-gray-900 border-b border-gray-800 shadow-xl">
@@ -36,6 +37,11 @@ export default function Header() {
             <Link href="/music-composition" className="px-4 py-2 text-gray-300 hover:text-white hover:bg-gray-800/50 rounded-lg transition-all font-tamil font-medium">
               இசையமைப்பு
             </Link>
+            {showVideos && (
+              <Link href="/videos" className="px-4 py-2 text-gray-300 hover:text-white hover:bg-gray-800/50 rounded-lg transition-all font-tamil font-medium">
+                காணொளிகள்
+              </Link>
+            )}
             {showYouTube && (
               <a
                 href={SITE.youtube.channelUrl}
@@ -108,6 +114,15 @@ export default function Header() {
               >
                 இசையமைப்பு
               </Link>
+              {showVideos && (
+                <Link
+                  href="/videos"
+                  className="text-gray-300 hover:text-orange-500 transition-colors font-tamil"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  காணொளிகள்
+                </Link>
+              )}
               {showYouTube && (
                 <a
                   href={SITE.youtube.channelUrl}
