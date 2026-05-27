@@ -57,4 +57,26 @@ describe('MusicPlayer', () => {
     expect(screen.queryByLabelText('Seek')).not.toBeInTheDocument();
     expect(window.HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
   });
+
+  it('exposes Play-all, Shuffle and Repeat controls', () => {
+    render(<MusicPlayer tracks={tracks} />);
+    expect(screen.getByLabelText('Play all')).toBeInTheDocument();
+    expect(screen.getByLabelText('Shuffle')).toBeInTheDocument();
+    expect(screen.getByLabelText('Repeat')).toBeInTheDocument();
+  });
+
+  it('Play-all starts the queue and reveals the player bar', () => {
+    render(<MusicPlayer tracks={tracks} />);
+    fireEvent.click(screen.getByLabelText('Play all'));
+    expect(screen.getByLabelText('Seek')).toBeInTheDocument();
+    expect(window.HTMLMediaElement.prototype.play).toHaveBeenCalled();
+  });
+
+  it('Shuffle toggles its pressed state', () => {
+    render(<MusicPlayer tracks={tracks} />);
+    const shuffle = screen.getByLabelText('Shuffle');
+    expect(shuffle).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(shuffle);
+    expect(shuffle).toHaveAttribute('aria-pressed', 'true');
+  });
 });
