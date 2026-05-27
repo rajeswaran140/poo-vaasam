@@ -46,7 +46,7 @@ export default async function VideosPage() {
     <>
       {videos.length > 0 && <JsonLd data={videosItemListJsonLd(videos)} />}
       <Header />
-      <main className="container mx-auto px-4 sm:px-6 py-10 max-w-6xl">
+      <main className="min-h-screen container mx-auto px-4 sm:px-6 py-10 max-w-6xl">
         <section className="mb-10 overflow-hidden rounded-2xl bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white shadow-xl">
           <div className="px-6 py-12 sm:px-12 sm:py-16 text-center">
             <div className="inline-flex items-center gap-2 bg-white/15 backdrop-blur-sm px-4 py-1.5 rounded-full border border-white/25 mb-5">

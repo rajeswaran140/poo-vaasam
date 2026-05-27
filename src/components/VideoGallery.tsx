@@ -16,7 +16,7 @@ export function VideoGallery({ videos }: { videos: ChannelVideo[] }) {
 
   if (!videos.length) {
     return (
-      <p className="text-center text-gray-500 py-12 font-tamil">
+      <p className="text-center text-gray-400 py-12 font-tamil">
         விரைவில் காணொளிகள் இங்கே தோன்றும்.
       </p>
     );
@@ -27,7 +27,7 @@ export function VideoGallery({ videos }: { videos: ChannelVideo[] }) {
       {videos.map((video) => (
         <div
           key={video.id}
-          className="rounded-xl overflow-hidden bg-white border border-gray-200 shadow-sm"
+          className="rounded-xl overflow-hidden bg-gray-800 border border-gray-700 shadow-sm"
         >
           {activeId === video.id ? (
             <YouTubeEmbed url={video.watchUrl} title={video.title} />
@@ -53,7 +53,7 @@ export function VideoGallery({ videos }: { videos: ChannelVideo[] }) {
             </button>
           )}
           <div className="p-4">
-            <h3 className="line-clamp-2 font-tamil text-sm text-gray-900">{video.title}</h3>
+            <h3 className="line-clamp-2 font-tamil text-sm text-gray-100">{video.title}</h3>
           </div>
         </div>
       ))}

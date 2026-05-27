@@ -3,7 +3,10 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
+  /* Dark body canvas (matches the gray-900 homepage). Pages that set their own
+     full-screen background paint over this; bg-less pages (e.g. /videos) show it.
+     Foreground stays dark so the self-styled light pages keep readable text. */
+  --background: #111827;
   --foreground: #171717;
 }
 
