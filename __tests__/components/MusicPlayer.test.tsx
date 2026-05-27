@@ -13,6 +13,13 @@ const tracks: Track[] = [
   { id: 's2', title: 'No Audio Song', artist: 'Anon', src: '' },
 ];
 
+const three: Track[] = [
+  { id: 'a', title: 'Track A', artist: 'x', src: 'a.mp3', duration: 60 },
+  { id: 'b', title: 'Track B', artist: 'x', src: 'b.mp3', duration: 60 },
+  { id: 'c', title: 'Track C', artist: 'x', src: 'c.mp3', duration: 60 },
+];
+const audioSrc = (c: HTMLElement) => c.querySelector('audio')?.getAttribute('src');
+
 describe('formatTime', () => {
   it('formats seconds as m:ss', () => {
     expect(formatTime(0)).toBe('0:00');
@@ -78,5 +85,50 @@ describe('MusicPlayer', () => {
     expect(shuffle).toHaveAttribute('aria-pressed', 'false');
     fireEvent.click(shuffle);
     expect(shuffle).toHaveAttribute('aria-pressed', 'true');
+  });
+});
+
+describe('MusicPlayer — queue navigation & repeat', () => {
+  it('Next and Previous move through the queue', () => {
+    const { container } = render(<MusicPlayer tracks={three} />);
+    fireEvent.click(screen.getByText('Track A'));
+    expect(audioSrc(container)).toBe('a.mp3');
+    fireEvent.click(screen.getByLabelText('Next'));
+    expect(audioSrc(container)).toBe('b.mp3');
+    fireEvent.click(screen.getByLabelText('Previous'));
+    expect(audioSrc(container)).toBe('a.mp3');
+  });
+
+  it('autoplays the next track when the current one ends', () => {
+    const { container } = render(<MusicPlayer tracks={three} />);
+    fireEvent.click(screen.getByText('Track A'));
+    fireEvent.ended(container.querySelector('audio')!);
+    expect(audioSrc(container)).toBe('b.mp3');
+  });
+
+  it('stops at the end of the queue when repeat is off', () => {
+    const { container } = render(<MusicPlayer tracks={three} />);
+    fireEvent.click(screen.getByText('Track C'));
+    fireEvent.ended(container.querySelector('audio')!);
+    expect(audioSrc(container)).toBe('c.mp3'); // did not wrap/advance
+  });
+
+  it('repeat-all wraps from the last track back to the first', () => {
+    const { container } = render(<MusicPlayer tracks={three} />);
+    fireEvent.click(screen.getByText('Track C'));
+    fireEvent.click(screen.getByLabelText('Repeat')); // off -> all
+    fireEvent.ended(container.querySelector('audio')!);
+    expect(audioSrc(container)).toBe('a.mp3');
+  });
+
+  it('repeat-one replays the same track on end', () => {
+    const { container } = render(<MusicPlayer tracks={three} />);
+    fireEvent.click(screen.getByText('Track B'));
+    fireEvent.click(screen.getByLabelText('Repeat')); // off -> all
+    fireEvent.click(screen.getByLabelText('Repeat')); // all -> one
+    (window.HTMLMediaElement.prototype.play as jest.Mock).mockClear();
+    fireEvent.ended(container.querySelector('audio')!);
+    expect(audioSrc(container)).toBe('b.mp3'); // same track
+    expect(window.HTMLMediaElement.prototype.play).toHaveBeenCalled(); // replayed
   });
 });
