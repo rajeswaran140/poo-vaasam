@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { SITE, isYouTubeChannelConfigured, isYouTubeVideosConfigured } from '@/config/site';
 
@@ -11,26 +11,63 @@ const YouTubeIcon = () => (
   </svg>
 );
 
+const Chevron = ({ className = '' }: { className?: string }) => (
+  <svg className={`h-4 w-4 ${className}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+  </svg>
+);
+
+// Content-type pages, grouped under a single "படைப்புகள்" menu.
+const BROWSE_LINKS = [
+  { href: '/poems', label: 'கவிதைகள்' },
+  { href: '/songs', label: 'பாடல்கள்' },
+  { href: '/lyrics', label: 'பாடல் வரிகள்' },
+  { href: '/stories', label: 'கதைகள்' },
+  { href: '/essays', label: 'கட்டுரைகள்' },
+  { href: '/all', label: 'அனைத்தும்' },
+];
+
 export default function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const pathname = usePathname();
   const showYouTube = isYouTubeChannelConfigured();
   const showVideos = isYouTubeVideosConfigured();
 
-  const navLinks = [
-    { href: '/poems', label: 'கவிதைகள்' },
-    { href: '/songs', label: 'பாடல்கள்' },
-    { href: '/stories', label: 'கதைகள்' },
-    { href: '/all', label: 'அனைத்தும்' },
+  // Distinct, non-content-type destinations stay at the top level.
+  const topLinks = [
     { href: '/music-composition', label: 'இசையமைப்பு' },
     ...(showVideos ? [{ href: '/videos', label: 'காணொளிகள்' }] : []),
   ];
 
   const isActive = (href: string) => !!pathname && (pathname === href || pathname.startsWith(`${href}/`));
+  const browseActive = BROWSE_LINKS.some((l) => isActive(l.href));
+  const close = () => setMobileMenuOpen(false);
+
+  // Lock background scroll + close on Escape while the mobile menu is open.
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobileMenuOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [mobileMenuOpen]);
+
+  // Auto-close the menu on navigation.
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
+
+  const mobileLinkClass = (active: boolean) =>
+    `rounded-lg font-tamil transition-colors ${active ? 'bg-gray-800/70 text-orange-400' : 'text-gray-300 hover:text-orange-500'}`;
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 border-b border-gray-800 bg-gray-900/95 shadow-xl backdrop-blur-md">
-      {/* Full-width nav (content spans edge to edge) */}
       <nav className="w-full px-4 sm:px-6 lg:px-10">
         <div className="flex h-20 items-center justify-between">
           {/* Logo */}
@@ -42,7 +79,41 @@ export default function Header() {
 
           {/* Desktop Navigation */}
           <div className="hidden items-center gap-1 md:flex lg:gap-2">
-            {navLinks.map((item) => {
+            {/* Browse dropdown */}
+            <div className="group relative">
+              <button
+                type="button"
+                aria-haspopup="true"
+                aria-current={browseActive ? 'page' : undefined}
+                className={`inline-flex items-center gap-1 rounded-lg px-4 py-2 font-tamil font-medium transition-all ${
+                  browseActive ? 'bg-gray-800/70 text-orange-400' : 'text-gray-300 hover:bg-gray-800/50 hover:text-white'
+                }`}
+              >
+                படைப்புகள்
+                <Chevron className="transition-transform group-hover:rotate-180" />
+              </button>
+              <div className="absolute left-0 top-full hidden pt-2 group-hover:block group-focus-within:block">
+                <div className="min-w-[12rem] rounded-xl border border-gray-800 bg-gray-900/95 p-1.5 shadow-2xl backdrop-blur-md">
+                  {BROWSE_LINKS.map((item) => {
+                    const active = isActive(item.href);
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        aria-current={active ? 'page' : undefined}
+                        className={`block rounded-lg px-3 py-2 font-tamil transition-colors ${
+                          active ? 'bg-gray-800 text-orange-400' : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                        }`}
+                      >
+                        {item.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {topLinks.map((item) => {
               const active = isActive(item.href);
               return (
                 <Link
@@ -57,6 +128,7 @@ export default function Header() {
                 </Link>
               );
             })}
+
             {showYouTube && (
               <a
                 href={SITE.youtube.channelUrl}
@@ -73,9 +145,10 @@ export default function Header() {
           {/* Mobile Menu Button */}
           <button
             className="-mr-2.5 p-2.5 text-gray-300 hover:text-orange-500 md:hidden"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            aria-label="Toggle menu"
+            onClick={() => setMobileMenuOpen((o) => !o)}
+            aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
             aria-expanded={mobileMenuOpen}
+            aria-controls="mobile-menu"
           >
             {mobileMenuOpen ? (
               <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -89,40 +162,61 @@ export default function Header() {
           </button>
         </div>
 
-        {/* Mobile Menu */}
+        {/* Mobile Menu — dimmed backdrop + scrollable panel */}
         {mobileMenuOpen && (
-          <div className="border-t border-gray-800 py-4 md:hidden">
-            <div className="flex flex-col gap-1">
-              {navLinks.map((item) => {
-                const active = isActive(item.href);
-                return (
+          <>
+            <div
+              className="fixed inset-0 top-20 z-40 bg-black/60 md:hidden"
+              onClick={close}
+              aria-hidden="true"
+            />
+            <div
+              id="mobile-menu"
+              className="relative z-50 max-h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain border-t border-gray-800 bg-gray-900 py-4 md:hidden"
+            >
+              <div className="flex flex-col gap-1">
+                <p className="px-3 pt-1 font-tamil text-xs font-semibold uppercase tracking-wide text-gray-500">படைப்புகள்</p>
+                {BROWSE_LINKS.map((item) => (
                   <Link
                     key={item.href}
                     href={item.href}
-                    aria-current={active ? 'page' : undefined}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className={`rounded-lg px-3 py-2.5 font-tamil transition-colors ${
-                      active ? 'bg-gray-800/70 text-orange-400' : 'text-gray-300 hover:text-orange-500'
-                    }`}
+                    aria-current={isActive(item.href) ? 'page' : undefined}
+                    onClick={close}
+                    className={`py-2.5 pl-5 pr-3 ${mobileLinkClass(isActive(item.href))}`}
                   >
                     {item.label}
                   </Link>
-                );
-              })}
-              {showYouTube && (
-                <a
-                  href={SITE.youtube.channelUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-2 inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 px-4 py-2 font-tamil text-sm text-white transition-colors hover:opacity-90"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  <YouTubeIcon />
-                  <span>{SITE.youtube.channelLabel}</span>
-                </a>
-              )}
+                ))}
+
+                <div className="my-1 border-t border-gray-800/60" />
+
+                {topLinks.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    aria-current={isActive(item.href) ? 'page' : undefined}
+                    onClick={close}
+                    className={`px-3 py-2.5 ${mobileLinkClass(isActive(item.href))}`}
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+
+                {showYouTube && (
+                  <a
+                    href={SITE.youtube.channelUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-2 inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 px-4 py-2 font-tamil text-sm text-white transition-colors hover:opacity-90"
+                    onClick={close}
+                  >
+                    <YouTubeIcon />
+                    <span>{SITE.youtube.channelLabel}</span>
+                  </a>
+                )}
+              </div>
             </div>
-          </div>
+          </>
         )}
       </nav>
     </header>
