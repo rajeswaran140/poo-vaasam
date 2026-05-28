@@ -1,58 +1,37 @@
-# Songs Upload — Notes & Action Items
+# Songs Upload — Resolution & Notes
 
-_Captured 2026-05-27. Diagnosis of the "uploaded 2 songs but nothing plays" issue + how to fix._
+_Updated 2026-05-28. The two songs are now live on /songs, and the admin create/upload path is fixed._
 
-## TL;DR
-Your 2 audio files **did** upload to S3 and are publicly playable — but **no song record links to them** (`audioUrl` is empty on every song), so the player has nothing to play. Attach the URLs below to a song and they'll work.
+## TL;DR — DONE
+Both songs are **published and playable** on https://tamilagaval.com/songs:
+- **அந்தி மேகமே** (`cnt_1779939400084_vgk04g3q9`)
+- **அருவி முத்தம்** (`cnt_1779939400328_g850xot1y`)
 
----
-
-## 1. Ready-to-paste audio URLs (no re-upload needed)
-
-The audio is already in S3 (verified: HTTP 206, `audio/wav`, range/seeking works). Just attach each URL to a song.
-
-**அந்தி மேகமே** (70 MB)
-```
-https://tamil-web-media.s3.us-east-1.amazonaws.com/audio/poem-music/%E0%AE%85%E0%AE%A8%E0%AF%8D%E0%AE%A4%E0%AE%BF%20%E0%AE%AE%E0%AF%87%E0%AE%95%E0%AE%AE%E0%AF%87.wav
-```
-
-**அருவி முத்தம்** (41 MB)
-```
-https://tamil-web-media.s3.us-east-1.amazonaws.com/audio/poem-music/%E0%AE%85%E0%AE%B0%E0%AF%81%E0%AE%B5%E0%AE%BF%20%E0%AE%AE%E0%AF%81%E0%AE%A4%E0%AF%8D%E0%AE%A4%E0%AE%AE%E0%AF%8D.wav
-```
-
-### How to attach
-1. **Admin → New Content** → Type: **பாடல்கள் (Songs)**
-2. Fill **Title** + **Author** (Author = the artist shown in the player)
-3. **Media → Audio File** → **paste** one URL above into the field (it accepts a URL, no Upload needed)
-4. *(optional)* set **Audio Duration (seconds)** so the track time shows
-5. **Status: Published → Save.** Repeat for the second song.
+They were created via the live admin API using the audio already in S3. Title/author/body were set to sensible placeholders (`author = ரஜேஸ்வரன் தங்கராஜா`, body = a short Tamil line) — **edit them in Admin → Content** to add real lyrics/credits.
 
 ---
 
-## 2. Why it didn't work
+## What was actually wrong (three separate bugs)
 
-- The files landed under the **`audio/poem-music/`** prefix — that's the page's **"generate / listen" (TTS)** cache, **not** the admin song uploader.
-- The thing that makes a song playable is its **`audioUrl`** field. The song uploader's **Audio File** control (Upload *or* paste-URL) is what sets it. The TTS/generate flow does not.
-- Result: audio exists in storage, but it's orphaned — not connected to any song.
+1. **Amplify config was v6-shaped on a v5 library.** `src/lib/amplify-config.ts` used `Auth: { Cognito: {...} }` (Amplify v6) but the project runs **aws-amplify v5.3.33**, which reads `Auth.{region,userPoolId,userPoolWebClientId}` flat. The Auth module was never configured → `Auth.currentSession()` failed → no token. **Fixed:** flat v5 config.
 
-## 3. Recommendation: use MP3, not WAV
-These are uncompressed **WAV** (70 MB & 41 MB). They play, but every visitor downloads the full file. **Re-export as MP3** (~5–7 MB each) and upload via the **Upload** button — ~10× smaller and far better for streaming. The pasted-WAV approach above is fine for a quick test.
+2. **Tokens lived in localStorage, but the server only reads cookies.** v5 defaults to localStorage. `src/middleware.ts` gates `/admin` on a Cognito *cookie*, and the API reads the idToken *cookie*. So you only reached `/admin` on a stale leftover cookie and every admin call was rejected ("no token presented"). **Fixed:** configured v5 `cookieStorage` (domain `tamilagaval.com`, Secure, SameSite=Lax). **→ You must sign out and sign back in once** so the session is written to cookies.
 
-## 4. Current data state (FYI)
-- The database currently has **1 published song** ("பூ வாசம்", no audio) + 2 poems — none with audio.
-- The live `/songs` page is showing a **stale 5-min cache** (ISR `revalidate=300`).
+3. **The live DynamoDB table was missing `GSI5`.** The create path calls `findBySlug`, which queries **GSI5** (slug → content). Neither `TamilWebContent` table had it, so creates 500'd with _"table does not have the specified index: GSI5"_. **Fixed:** added GSI5 (GSI5PK/GSI5SK, projection ALL) to **ca-central-1/TamilWebContent**.
+
+The "image upload unauthorized" error was the same token problem (#1/#2) on the presign endpoint — fixed by the same change.
 
 ---
 
-## 5. Open issue — region split (data hygiene, not urgent)
-Content is split across **two `TamilWebContent` DynamoDB tables**:
-- **us-east-1** — the live table the app reads/writes (1 song + 1 poem).
-- **ca-central-1** — a stray copy (1 poem). Plus the duplicate table itself.
+## Region facts (corrected — the earlier note here was wrong)
+- **The live table is `TamilWebContent` in ca-central-1.** The SSR Lambda runs in ca-central-1, so the injected `AWS_REGION` drives the single-region DynamoDB client. (Verified: live `/poems` shows the ca-central-1 row "அம்மா".)
+- A second `TamilWebContent` in **us-east-1** (8 items, incl. an orphan song "பூ வாசம்" with no audio) is **not read by the site**. It's stale — migrate the useful rows to ca-central-1 and delete the rest as a cleanup task.
+- **S3 is pinned to us-east-1** (`tamil-web-media`), so media URLs are us-east-1 even though content data is ca-central-1. That's expected.
 
-Recommend **consolidating to one region** (us-east-1, matching the S3 bucket) before adding lots of content, to avoid confusion. Can be done as a separate task.
+## Recommendation: MP3, not WAV
+The current audio is uncompressed **WAV** (70 MB & 41 MB) — they stream (HTTP 206) but every visitor downloads the whole file. Re-export as **MP3** (~5–7 MB) and re-upload via the admin uploader for ~10× smaller, faster playback. Updating the `audioUrl` in the song edit form is all that's needed.
 
-## 6. What Claude will do on request
-- **Force an instant refresh** (redeploy) after you attach audio, so the song shows immediately instead of waiting for the 5-min cache.
-- **Verify the player + cross-page persistence** live once a song has audio.
-- **Consolidate the two regions** (data-hygiene cleanup) if you want.
+## Open follow-ups
+- **Re-login once** to migrate your session into cookies (required after the fix).
+- **Consolidate the two regions** (move/clean up the stray us-east-1 table). GSI5 only exists on ca-central-1.
+- Optional pre-launch: aws-amplify v5→v6 migration (clears npm vulns); set `ADMIN_EMAILS` to tighten RBAC.
