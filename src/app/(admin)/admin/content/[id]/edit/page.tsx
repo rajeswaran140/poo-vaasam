@@ -305,13 +305,6 @@ export default function EditContentPage({ params }: PageProps) {
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Media (ஊடகம்)</h2>
 
           <MediaUploadField
-            kind="image"
-            label="Featured Image"
-            value={formData.featuredImage}
-            onChange={(url) => setFormData((prev) => ({ ...prev, featuredImage: url }))}
-          />
-
-          <MediaUploadField
             kind="audio"
             label="Audio File (song)"
             value={formData.audioUrl}

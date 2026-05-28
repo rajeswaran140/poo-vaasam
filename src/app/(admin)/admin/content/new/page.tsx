@@ -283,13 +283,6 @@ export default function NewContentPage() {
           </h2>
 
           <MediaUploadField
-            kind="image"
-            label="Featured Image"
-            value={formData.featuredImage}
-            onChange={(url) => setFormData((prev) => ({ ...prev, featuredImage: url }))}
-          />
-
-          <MediaUploadField
             kind="audio"
             label="Audio File (song)"
             value={formData.audioUrl}
