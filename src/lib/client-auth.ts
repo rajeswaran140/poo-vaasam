@@ -12,14 +12,35 @@
 
 import { Auth } from 'aws-amplify';
 
+/**
+ * Read the ID token straight from where Amplify persists it (browser storage).
+ * Fallback for when Auth.currentSession() can't run (config quirks) but the
+ * user is in fact signed in.
+ */
+function idTokenFromStorage(): string | null {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    const clientId = process.env.NEXT_PUBLIC_USER_POOL_CLIENT_ID;
+    if (!clientId) return null;
+    const prefix = `CognitoIdentityServiceProvider.${clientId}`;
+    const lastUser = localStorage.getItem(`${prefix}.LastAuthUser`);
+    if (!lastUser) return null;
+    return localStorage.getItem(`${prefix}.${lastUser}.idToken`);
+  } catch {
+    return null;
+  }
+}
+
 /** Current Cognito ID-token JWT, or null if not signed in / unavailable. */
 export async function getIdToken(): Promise<string | null> {
   try {
     const session = await Auth.currentSession();
-    return session.getIdToken().getJwtToken();
+    const token = session.getIdToken().getJwtToken();
+    if (token) return token;
   } catch {
-    return null;
+    /* fall through to storage */
   }
+  return idTokenFromStorage();
 }
 
 /** fetch() that attaches the admin's Cognito ID token (Bearer) and cookies. */

@@ -87,8 +87,11 @@ export async function validateAuth(request: NextRequest): Promise<AuthContext> {
   // Prefer an explicit Bearer token (Amplify keeps Cognito tokens in browser
   // storage, not cookies, so the client sends the current ID token in the
   // Authorization header); fall back to the Cognito idToken cookie.
-  const token = bearerToken(request) ?? cookieIdToken(request);
+  const bearer = bearerToken(request);
+  const cookieTok = cookieIdToken(request);
+  const token = bearer ?? cookieTok;
   if (!token) {
+    logger.warn('Auth: no token presented', { bearer: !!bearer, cookie: !!cookieTok });
     return { isAuthenticated: false };
   }
 
