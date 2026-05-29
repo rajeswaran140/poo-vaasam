@@ -9,7 +9,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import Header from '@/components/Header';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
-import { ContentStatus, ContentType } from '@/types/content';
+import { ContentType } from '@/types/content';
 import { SITE, liveContentSections, isYouTubeChannelConfigured, isFacebookConfigured, isYouTubeVideosConfigured } from '@/config/site';
 import { fetchChannelVideos } from '@/lib/youtube-feed';
 import { SubscribeButton } from '@/components/SubscribeButton';
@@ -18,6 +18,7 @@ import { SITE_URL, SITE_NAME } from '@/lib/seo';
 
 export const metadata: Metadata = {
   alternates: { canonical: '/' },
+  description: 'ரஜேஸ்வரன் தங்கராஜாவின் தமிழ் கவிதைகளும் பாடல்களும் — இலவசமாகப் படியுங்கள், கேளுங்கள். YouTube-ல் காணொளிகளும்.',
 };
 
 const websiteJsonLd = {
@@ -26,7 +27,7 @@ const websiteJsonLd = {
   name: SITE_NAME,
   url: SITE_URL,
   inLanguage: 'ta',
-  description: 'பாடல்கள், கவிதைகள், கதைகள் மற்றும் கட்டுரைகளுக்கான இலவச தமிழ் இலக்கிய தளம்.',
+  description: 'ரஜேஸ்வரன் தங்கராஜாவின் தமிழ் கவிதைகளும் பாடல்களும் — என்றும் இலவசம்.',
   potentialAction: {
     '@type': 'SearchAction',
     target: { '@type': 'EntryPoint', urlTemplate: `${SITE_URL}/ai-search?q={search_term_string}` },
@@ -34,60 +35,48 @@ const websiteJsonLd = {
   },
 };
 
-async function getFeaturedContent() {
+// The site is one creator's body of work, so advertise the author (Person)
+// with links to their channels — helps Google connect the site to the creator.
+const personSameAs: string[] = [
+  ...(isYouTubeChannelConfigured() ? [SITE.youtube.channelUrl] : []),
+  ...(isFacebookConfigured() ? [SITE.facebook.url] : []),
+];
+
+const personJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'Person',
+  name: 'Rajeswaran Thangarajah',
+  alternateName: 'ரஜேஸ்வரன் தங்கராஜா',
+  url: SITE_URL,
+  jobTitle: 'Tamil poet and lyricist',
+  ...(personSameAs.length > 0 ? { sameAs: personSameAs } : {}),
+};
+
+/** Published counts keyed by content type, for the live sections only. */
+async function getSectionCounts(): Promise<Record<string, number>> {
   try {
     const repo = new ContentRepository();
-    const result = await repo.findAll({
-      limit: 6,
-      status: ContentStatus.PUBLISHED
-    });
-    return result.items.map(item => item.toObject());
+    const sections = liveContentSections();
+    const counts = await Promise.all(sections.map((s) => repo.countByType(s.type as ContentType)));
+    return Object.fromEntries(sections.map((s, i) => [s.type, counts[i]]));
   } catch (error) {
-    console.error('Failed to fetch content:', error);
-    return [];
-  }
-}
-
-async function getStats() {
-  try {
-    const repo = new ContentRepository();
-    const [songs, poems, lyrics, stories, essays, published] = await Promise.all([
-      repo.countByType(ContentType.SONGS),
-      repo.countByType(ContentType.POEMS),
-      repo.countByType(ContentType.LYRICS),
-      repo.countByType(ContentType.STORIES),
-      repo.countByType(ContentType.ESSAYS),
-      repo.countByStatus(ContentStatus.PUBLISHED),
-    ]);
-
-    return {
-      songs,
-      poems,
-      lyrics,
-      stories,
-      essays,
-      published,
-    };
-  } catch (error) {
-    console.error('Failed to fetch stats:', error);
-    return null;
+    console.error('Failed to fetch section counts:', error);
+    return {};
   }
 }
 
 export default async function HomePage() {
-  const [featuredContent, stats, latestVideos] = await Promise.all([
-    getFeaturedContent(),
-    getStats(),
+  const [counts, latestVideos] = await Promise.all([
+    getSectionCounts(),
     isYouTubeVideosConfigured()
       ? fetchChannelVideos(SITE.youtube.channelId, 4)
       : Promise.resolve([]),
   ]);
 
-  const totalContent = (stats?.published || 0);
-
   return (
     <div className="min-h-screen bg-gray-900">
       <JsonLd data={websiteJsonLd} />
+      <JsonLd data={personJsonLd} />
       <Header />
 
       {/* Hero Section - Centered */}
@@ -123,7 +112,7 @@ export default async function HomePage() {
                     </span>
                   </h1>
                   <p className="text-lg sm:text-xl lg:text-2xl text-white/95 font-poem leading-relaxed font-light max-w-3xl mx-auto">
-                    <span className="block">தமிழ் இலக்கியத்தின் எல்லையற்ற உலகம்.</span>
+                    <span className="block">தமிழ் கவிதைகளும் பாடல்களும்.</span>
                     <span className="block mt-2">என்றும் இலவசம்.</span>
                   </p>
                 </div>
@@ -147,21 +136,21 @@ export default async function HomePage() {
                 {/* CTA Buttons - Centered */}
                 <div className="flex flex-col sm:flex-row gap-4 pt-6 justify-center">
                   <Link
-                    href="/poems"
+                    href="/songs"
                     className="group px-10 py-5 bg-white text-orange-600 rounded-full font-bold hover:bg-orange-50 transition-all shadow-2xl hover:shadow-3xl transform hover:scale-105 font-tamil inline-flex items-center justify-center gap-3 text-lg"
                   >
-                    <span className="text-2xl">📝</span>
+                    <span className="text-2xl">🎵</span>
                     <span>இப்போதே தொடங்குங்கள்</span>
                     <svg className="w-6 h-6 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
                     </svg>
                   </Link>
-                  <Link
-                    href="/all"
-                    className="px-10 py-5 bg-transparent backdrop-blur-sm text-white border-2 border-white/60 rounded-full font-bold hover:bg-white/15 hover:border-white transition-all transform hover:scale-105 font-tamil inline-flex items-center justify-center gap-3 text-lg"
-                  >
-                    <span>உள்ளடக்கத்தைக் காணுங்கள்</span>
-                  </Link>
+                  {isYouTubeChannelConfigured() && (
+                    <SubscribeButton
+                      label="YouTube-ல் Subscribe செய்க"
+                      className="px-10 py-5 bg-red-600 text-white rounded-full font-bold hover:bg-red-700 transition-all shadow-2xl transform hover:scale-105 font-tamil inline-flex items-center justify-center gap-3 text-lg"
+                    />
+                  )}
                 </div>
               </div>
             </div>
@@ -226,7 +215,7 @@ export default async function HomePage() {
               ஏன் தமிழகவல்?
             </h2>
             <p className="text-lg sm:text-xl text-gray-300 font-tamil max-w-2xl mx-auto leading-relaxed">
-              முற்றிலும் இலவசமாக தமிழ் இலக்கியத்தைப் படியுங்கள், கேளுங்கள், அனுபவியுங்கள்
+              முற்றிலும் இலவசமாக தமிழ் கவிதைகளையும் பாடல்களையும் படியுங்கள், கேளுங்கள், அனுபவியுங்கள்
             </p>
           </div>
 
@@ -303,8 +292,8 @@ export default async function HomePage() {
                   </svg>
                 </div>
                 <div>
-                  <h4 className="font-bold text-gray-900 mb-2 font-tamil text-base leading-normal">தரமான உள்ளடக்கம்</h4>
-                  <p className="text-gray-700 font-tamil leading-relaxed">கவனமாக தேர்ந்தெடுக்கப்பட்ட இலக்கியம்</p>
+                  <h4 className="font-bold text-gray-900 mb-2 font-tamil text-base leading-normal">சொந்தப் படைப்புகள்</h4>
+                  <p className="text-gray-700 font-tamil leading-relaxed">ரஜேஸ்வரனின் சொந்தக் கவிதைகளும் பாடல்களும்</p>
                 </div>
               </div>
               <div className="flex items-start gap-4">
@@ -350,7 +339,7 @@ export default async function HomePage() {
           உள்ளடக்க தொகுப்புகள்
         </h2>
         <p className="text-center text-gray-300 font-tamil mb-12 max-w-2xl mx-auto">
-          எல்லா வகையான தமிழ் இலக்கியங்களையும் கண்டறியுங்கள்
+          தமிழ் கவிதைகளும் பாடல்களும் — ஒரே இடத்தில்
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-3xl mx-auto">
           {liveContentSections().map((s) => (
@@ -358,43 +347,13 @@ export default async function HomePage() {
               key={s.href}
               icon={s.icon}
               title={s.label}
-              count={(stats as Record<string, number> | null)?.[s.type.toLowerCase()] ?? 0}
+              count={counts[s.type] ?? 0}
               href={s.href}
               color={s.color}
             />
           ))}
         </div>
       </section>
-
-      {/* சமீபத்திய உள்ளடக்கம் */}
-      {featuredContent.length > 0 && (
-        <section className="container mx-auto px-4 py-20 bg-gray-900">
-          <div className="max-w-6xl mx-auto">
-            <div className="text-center mb-12">
-              <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4 font-tamil">
-                சமீபத்திய உள்ளடக்கம்
-              </h2>
-              <p className="text-lg text-gray-300 font-tamil">
-                புதிதாக சேர்க்கப்பட்ட கவிதைகள், பாடல்கள் மற்றும் கதைகள்
-              </p>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-              {featuredContent.map((content: any) => (
-                <ContentCard key={content.id} content={content} />
-              ))}
-            </div>
-            <div className="text-center">
-              <Link
-                href="/all"
-                className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-full font-bold hover:from-orange-600 hover:to-orange-700 transition-all shadow-lg hover:shadow-xl transform hover:scale-105 font-tamil"
-              >
-                <span>எல்லா உள்ளடக்கத்தையும் காண்க</span>
-                <span>→</span>
-              </Link>
-            </div>
-          </div>
-        </section>
-      )}
 
       {/* அடிக்குறிப்பு */}
       <footer className="bg-gray-900 text-white py-12">
@@ -403,7 +362,7 @@ export default async function HomePage() {
             <div>
               <h3 className="text-2xl font-bold mb-4 font-kavivanar">தமிழகவல்</h3>
               <p className="text-gray-400 font-tamil mb-4">
-                தமிழ் இலக்கியத்தை பாதுகாக்கும் மற்றும் பரப்பும் தளம்
+                தமிழ் கவிதைகளும் பாடல்களும் — ரஜேஸ்வரனின் சொந்தப் படைப்புகள்
               </p>
               <div className="flex flex-wrap items-center gap-3">
                 {isYouTubeChannelConfigured() && (
@@ -454,7 +413,7 @@ export default async function HomePage() {
             </div>
           </div>
           <div className="border-t border-gray-800 mt-8 pt-8 text-center text-gray-400">
-            <p className="font-tamil">© 2026 தமிழகவல். தமிழ் இலக்கியத்திற்காக அன்புடன் உருவாக்கப்பட்டது.</p>
+            <p className="font-tamil">© 2026 தமிழகவல். தமிழ் கவிதைகளுக்கும் பாடல்களுக்கும் அன்புடன் உருவாக்கப்பட்டது.</p>
           </div>
         </div>
       </footer>
@@ -490,97 +449,3 @@ function ContentTypeCard({ icon, title, count, href, color }: ContentTypeCardPro
   );
 }
 
-function ContentCard({ content }: { content: any }) {
-  const typeColors: Record<string, string> = {
-    SONGS: 'bg-blue-100 text-blue-800',
-    POEMS: 'bg-green-100 text-green-800',
-    LYRICS: 'bg-yellow-100 text-yellow-800',
-    STORIES: 'bg-pink-100 text-pink-800',
-    ESSAYS: 'bg-purple-100 text-purple-800',
-  };
-
-  const typeNames: Record<string, string> = {
-    SONGS: 'பாடல்',
-    POEMS: 'கவிதை',
-    LYRICS: 'வரிகள்',
-    STORIES: 'கதை',
-    ESSAYS: 'கட்டுரை',
-  };
-
-  return (
-    <Link
-      href={`/content/${content.id}`}
-      className="group bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden hover:shadow-2xl hover:border-orange-300 transition-all transform hover:scale-[1.03]"
-    >
-      {/* Featured Image or Gradient */}
-      {content.featuredImage ? (
-        <div className="relative h-48 overflow-hidden">
-          <img
-            src={content.featuredImage}
-            alt={content.title}
-            loading="lazy"
-            decoding="async"
-            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
-          />
-          <div className="absolute top-3 right-3 flex gap-2">
-            {content.videoUrl && (
-              <span className="px-3 py-1 bg-orange-700 text-white text-xs font-bold rounded-full shadow-lg flex items-center gap-1">
-                <span>▶️</span>
-                <span className="font-tamil">காணொளி</span>
-              </span>
-            )}
-            {content.audioUrl && (
-              <span className="px-3 py-1 bg-orange-500 text-white text-xs font-bold rounded-full shadow-lg flex items-center gap-1">
-                <span>🎧</span>
-                <span className="font-tamil">ஆடியோ</span>
-              </span>
-            )}
-          </div>
-        </div>
-      ) : (
-        <div className="h-48 bg-gradient-to-br from-orange-100 to-orange-200 flex items-center justify-center relative">
-          <div className="text-center">
-            <div className="text-6xl mb-2">{content.type === 'POEMS' ? '📝' : content.type === 'SONGS' ? '🎵' : '📖'}</div>
-          </div>
-          <div className="absolute top-3 right-3 flex gap-2">
-            {content.videoUrl && (
-              <span className="px-3 py-1 bg-orange-700 text-white text-xs font-bold rounded-full shadow-lg flex items-center gap-1">
-                <span>▶️</span>
-                <span className="font-tamil">காணொளி</span>
-              </span>
-            )}
-            {content.audioUrl && (
-              <span className="px-3 py-1 bg-orange-500 text-white text-xs font-bold rounded-full shadow-lg flex items-center gap-1">
-                <span>🎧</span>
-                <span className="font-tamil">ஆடியோ</span>
-              </span>
-            )}
-          </div>
-        </div>
-      )}
-
-      <div className="p-6">
-        <div className="flex items-start justify-between mb-3">
-          <h3 className="text-xl font-bold text-gray-900 font-tamil group-hover:text-orange-600 transition-colors line-clamp-2 flex-1">
-            {content.title}
-          </h3>
-          <span className={`px-2 py-1 text-xs font-semibold rounded-full font-tamil ml-2 flex-shrink-0 ${typeColors[content.type]}`}>
-            {typeNames[content.type]}
-          </span>
-        </div>
-        <p className="text-gray-600 font-tamil text-sm line-clamp-3 mb-4 leading-relaxed">
-          {content.description || content.body?.substring(0, 120)}
-        </p>
-        <div className="flex items-center justify-between text-sm pt-4 border-t border-gray-100">
-          <span className="text-gray-500 font-tamil">
-            {content.author}
-          </span>
-          <span className="text-orange-600 group-hover:text-orange-700 font-bold font-tamil inline-flex items-center gap-1">
-            <span>{content.videoUrl ? 'பார்க்க' : content.audioUrl ? 'கேளுங்கள்' : 'படியுங்கள்'}</span>
-            <span>→</span>
-          </span>
-        </div>
-      </div>
-    </Link>
-  );
-}
