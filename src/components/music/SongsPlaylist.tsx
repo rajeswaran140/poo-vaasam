@@ -9,7 +9,7 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Play, Pause, Shuffle, Repeat, Search, X, Music } from 'lucide-react';
+import { Play, Pause, Shuffle, Repeat, Music } from 'lucide-react';
 import { useMusicPlayer } from './MusicPlayerProvider';
 import { SongList, type SongRow } from './SongList';
 
@@ -54,16 +54,9 @@ export function SongsPlaylist({ tracks }: { tracks: SongRow[] }) {
   const player = useMusicPlayer();
   const currentId = player.current?.id;
 
-  const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortMode>('newest');
 
-  const sorted = useMemo(() => sortRows(tracks, sort), [tracks, sort]);
-  const displayed = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return q
-      ? sorted.filter((t) => t.title.toLowerCase().includes(q) || t.artist.toLowerCase().includes(q))
-      : sorted;
-  }, [sorted, query]);
+  const displayed = useMemo(() => sortRows(tracks, sort), [tracks, sort]);
 
   // Hero metadata reflects the whole playlist (stable identity), not the filter.
   const playableCount = tracks.filter((t) => t.src).length;
@@ -197,29 +190,9 @@ export function SongsPlaylist({ tracks }: { tracks: SongRow[] }) {
         ) : (
           <>
             {showToolbar && (
-              <div className="mx-auto mb-4 flex max-w-3xl flex-col gap-3 px-3 sm:flex-row sm:items-center sm:px-4">
-                <div className="relative flex-1">
-                  <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
-                  <input
-                    type="search"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="பாடல் / பாடகரைத் தேடுங்கள்…"
-                    aria-label="பாடல்களைத் தேடு"
-                    className="w-full rounded-full border border-white/10 bg-white/5 py-2 pl-9 pr-9 font-tamil text-sm text-white placeholder:text-gray-500 focus:border-orange-400/60 focus:outline-none focus:ring-1 focus:ring-orange-400/40"
-                  />
-                  {query && (
-                    <button
-                      onClick={() => setQuery('')}
-                      aria-label="தேடலை அழி"
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-1 text-gray-400 hover:text-white"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-                <label className="flex shrink-0 items-center gap-2 font-tamil text-sm text-gray-400">
-                  <span className="hidden sm:inline">வரிசைப்படுத்து:</span>
+              <div className="mx-auto mb-4 flex max-w-3xl items-center justify-end px-3 sm:px-4">
+                <label className="flex items-center gap-2 font-tamil text-sm text-gray-400">
+                  <span>வரிசைப்படுத்து:</span>
                   <select
                     value={sort}
                     onChange={(e) => setSort(e.target.value as SortMode)}
@@ -236,15 +209,7 @@ export function SongsPlaylist({ tracks }: { tracks: SongRow[] }) {
               </div>
             )}
 
-            {displayed.length === 0 ? (
-              <div className="mx-auto max-w-3xl px-3 py-12 text-center sm:px-4">
-                <p className="font-tamil text-gray-400">
-                  “{query}” என்பதற்குப் பாடல்கள் எதுவும் கிடைக்கவில்லை.
-                </p>
-              </div>
-            ) : (
-              <SongList rows={displayed} />
-            )}
+            <SongList rows={displayed} />
           </>
         )}
       </div>

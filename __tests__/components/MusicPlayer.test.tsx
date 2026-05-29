@@ -211,7 +211,7 @@ describe('session persistence', () => {
   });
 });
 
-describe('search + sort toolbar', () => {
+describe('sort toolbar', () => {
   // 6 tracks (>= the toolbar threshold), with distinct titles/durations/dates.
   const many: SongRow[] = [
     { id: 'm1', title: 'Zebra', artist: 'Anil', src: 'z.mp3', duration: 100, addedAt: 1 },
@@ -226,32 +226,10 @@ describe('search + sort toolbar', () => {
 
   it('is hidden for a small catalogue and shown once it is large enough', () => {
     const { unmount } = renderList(three);
-    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('வரிசைப்படுத்து')).toBeNull();
     unmount();
     renderList(many);
-    expect(screen.getByRole('searchbox')).toBeInTheDocument();
     expect(screen.getByLabelText('வரிசைப்படுத்து')).toBeInTheDocument();
-  });
-
-  it('filters rows by title (case-insensitive)', () => {
-    renderList(many);
-    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'app' } });
-    expect(screen.getByText('Apple')).toBeInTheDocument();
-    expect(screen.queryByText('Zebra')).not.toBeInTheDocument();
-  });
-
-  it('filters rows by artist', () => {
-    renderList(many);
-    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'chitra' } });
-    expect(screen.getByText('Mango')).toBeInTheDocument();
-    expect(screen.queryByText('Apple')).not.toBeInTheDocument();
-  });
-
-  it('shows a no-results message when nothing matches', () => {
-    renderList(many);
-    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'zzzzz' } });
-    expect(screen.queryByRole('listitem')).not.toBeInTheDocument();
-    expect(screen.getByText(/கிடைக்கவில்லை/)).toBeInTheDocument();
   });
 
   it('defaults to newest-first (by addedAt)', () => {
@@ -265,12 +243,5 @@ describe('search + sort toolbar', () => {
     expect(rowTitles()).toEqual(['Apple', 'Banana', 'Cherry', 'Date', 'Mango', 'Zebra']);
     fireEvent.change(screen.getByLabelText('வரிசைப்படுத்து'), { target: { value: 'duration' } });
     expect(rowTitles()).toEqual(['Cherry', 'Apple', 'Mango', 'Date', 'Zebra', 'Banana']);
-  });
-
-  it('play-all starts the first track of the current filtered view', () => {
-    const { container } = renderList(many);
-    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'cherry' } });
-    fireEvent.click(screen.getByRole('button', { name: PLAY_ALL }));
-    expect(audioSrc(container)).toBe('c.mp3');
   });
 });
