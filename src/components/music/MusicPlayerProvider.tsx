@@ -330,15 +330,15 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
             </div>
 
             <div className="mx-auto flex max-w-xl flex-1 flex-col items-center gap-1.5">
-              <div className="flex items-center gap-5">
-                <button onClick={prev} aria-label="Previous" className="text-gray-300 transition-all duration-150 hover:scale-110 hover:text-white active:scale-95">
+              <div className="flex items-center gap-3 sm:gap-5">
+                <button onClick={prev} aria-label="Previous" className="flex h-11 w-11 items-center justify-center text-gray-300 transition-all duration-150 hover:scale-110 hover:text-white active:scale-95">
                   <SkipBack className="h-5 w-5" />
                 </button>
                 <button
                   onClick={toggle}
                   aria-label={isPlaying ? 'Pause' : 'Play'}
                   aria-busy={loading}
-                  className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-600 text-white shadow-lg shadow-orange-900/30 transition-all duration-150 hover:scale-105 hover:bg-orange-500 active:scale-95"
+                  className="flex h-11 w-11 items-center justify-center rounded-full bg-orange-600 text-white shadow-lg shadow-orange-900/30 transition-all duration-150 hover:scale-105 hover:bg-orange-500 active:scale-95"
                 >
                   {loading ? (
                     <span
@@ -351,7 +351,7 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
                     <Play className="ml-0.5 h-5 w-5" />
                   )}
                 </button>
-                <button onClick={next} aria-label="Next" className="text-gray-300 transition-all duration-150 hover:scale-110 hover:text-white active:scale-95">
+                <button onClick={next} aria-label="Next" className="flex h-11 w-11 items-center justify-center text-gray-300 transition-all duration-150 hover:scale-110 hover:text-white active:scale-95">
                   <SkipForward className="h-5 w-5" />
                 </button>
               </div>
@@ -370,7 +370,7 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
                     setTime(v);
                   }}
                   aria-label="Seek"
-                  className="h-1 flex-1 cursor-pointer accent-orange-500"
+                  className="h-2.5 flex-1 cursor-pointer accent-orange-500"
                 />
                 <span className="w-9 text-[11px] tabular-nums text-gray-400">{formatTime(duration)}</span>
               </div>

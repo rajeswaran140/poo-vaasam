@@ -156,7 +156,7 @@ export function SongsPlaylist({ tracks }: { tracks: SongRow[] }) {
 
           {/* Primary controls */}
           {playableCount > 0 && (
-            <div className="mt-8 flex items-center gap-4">
+            <div className="mt-8 flex flex-wrap items-center gap-3 sm:gap-4">
               <button
                 onClick={playAll}
                 className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 font-tamil text-base font-bold text-orange-700 shadow-xl shadow-black/20 transition-all duration-200 hover:scale-105 hover:bg-orange-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 active:scale-95"

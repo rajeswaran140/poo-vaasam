@@ -99,7 +99,7 @@ export function SongList({ rows }: { rows: SongRow[] }) {
               <Link
                 href={`/content/${t.id}`}
                 aria-label={`${t.title} — பாடல் வரிகள்`}
-                className="shrink-0 px-2 font-tamil text-gray-400 hover:text-orange-400 focus-visible:text-orange-400 focus-visible:outline-none"
+                className="flex shrink-0 items-center px-2 py-2.5 font-tamil text-gray-400 hover:text-orange-400 focus-visible:text-orange-400 focus-visible:outline-none"
               >
                 <span className="hidden text-xs sm:inline">பாடல் வரிகள்</span>
                 <ChevronRight className="h-4 w-4 sm:hidden" aria-hidden />
