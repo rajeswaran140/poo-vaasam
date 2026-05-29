@@ -321,9 +321,6 @@ export default async function HomePage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div>
               <h3 className="text-2xl font-bold mb-4 font-kavivanar">தமிழகவல்</h3>
-              <p className="text-gray-400 font-tamil mb-4">
-                தமிழ் கவிதைகளும் பாடல்களும் — ரஜேஸ்வரனின் சொந்தப் படைப்புகள்
-              </p>
               <div className="flex flex-wrap items-center gap-3">
                 {isYouTubeChannelConfigured() && (
                   <a

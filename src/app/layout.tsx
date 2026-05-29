@@ -4,6 +4,8 @@ import "./globals.css";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import { MusicPlayerProvider } from "@/components/music/MusicPlayerProvider";
 import BackToTop from "@/components/BackToTop";
+import { GoogleAnalytics } from "@/components/analytics/GoogleAnalytics";
+import { GA_ID, GOOGLE_SITE_VERIFICATION } from "@/lib/analytics";
 
 const notoSansTamil = Noto_Sans_Tamil({
   subsets: ['tamil'],
@@ -68,6 +70,8 @@ export const metadata: Metadata = {
     title: "தமிழகவல் | தமிழ் கவிதைகள் & பாடல்கள்",
     description: "தமிழ் கவிதைகளும் பாடல்களும் — படியுங்கள், கேளுங்கள். என்றும் இலவசம்.",
   },
+  // Search Console HTML-tag verification (only emitted when configured).
+  ...(GOOGLE_SITE_VERIFICATION ? { verification: { google: GOOGLE_SITE_VERIFICATION } } : {}),
 };
 
 export default function RootLayout({
@@ -84,6 +88,7 @@ export default function RootLayout({
             <BackToTop />
           </MusicPlayerProvider>
         </AuthProvider>
+        <GoogleAnalytics gaId={GA_ID} />
       </body>
     </html>
   );
