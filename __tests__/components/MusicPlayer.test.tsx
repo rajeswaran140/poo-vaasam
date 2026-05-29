@@ -1,6 +1,9 @@
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MusicPlayerProvider, formatTime, type Track } from '@/components/music/MusicPlayerProvider';
-import { SongList, type SongRow } from '@/components/music/SongList';
+import { SongsPlaylist, type SongRow } from '@/components/music/SongsPlaylist';
+
+/** The hero's primary CTA carries a Tamil accessible name. */
+const PLAY_ALL = 'அனைத்தையும் இயக்கு';
 
 const STORAGE_KEY = 'tamilagaval:player:v1';
 
@@ -22,7 +25,7 @@ afterEach(() => jest.clearAllMocks());
 const renderList = (tracks: Track[]) =>
   render(
     <MusicPlayerProvider>
-      <SongList tracks={tracks} />
+      <SongsPlaylist tracks={tracks} />
     </MusicPlayerProvider>
   );
 const audioSrc = (c: HTMLElement) => c.querySelector('audio')?.getAttribute('src') ?? null;
@@ -80,14 +83,14 @@ describe('SongList + global player', () => {
 
   it('exposes Play-all, Shuffle and Repeat controls', () => {
     renderList(tracks);
-    expect(screen.getByLabelText('Play all')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: PLAY_ALL })).toBeInTheDocument();
     expect(screen.getByLabelText('Shuffle')).toBeInTheDocument();
     expect(screen.getByLabelText('Repeat')).toBeInTheDocument();
   });
 
   it('Play-all starts the queue', () => {
     const { container } = renderList(three);
-    fireEvent.click(screen.getByLabelText('Play all'));
+    fireEvent.click(screen.getByRole('button', { name: PLAY_ALL }));
     expect(audioSrc(container)).toBe('a.mp3');
     expect(window.HTMLMediaElement.prototype.play).toHaveBeenCalled();
   });
@@ -267,7 +270,7 @@ describe('search + sort toolbar', () => {
   it('play-all starts the first track of the current filtered view', () => {
     const { container } = renderList(many);
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'cherry' } });
-    fireEvent.click(screen.getByLabelText('Play all'));
+    fireEvent.click(screen.getByRole('button', { name: PLAY_ALL }));
     expect(audioSrc(container)).toBe('c.mp3');
   });
 });

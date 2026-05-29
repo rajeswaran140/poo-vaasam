@@ -336,6 +336,14 @@ img[loading="lazy"]:not([src]) {
   animation: player-slide-up 0.4s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* Slowly spinning hero "vinyl" — only applied while a track is playing. */
+@keyframes vinyl-spin {
+  to { transform: rotate(360deg); }
+}
+.animate-vinyl {
+  animation: vinyl-spin 9s linear infinite;
+}
+
 /* Respect users who prefer less motion */
 @media (prefers-reduced-motion: reduce) {
   .eq > span { animation: none; transform: scaleY(0.6); }
@@ -343,5 +351,6 @@ img[loading="lazy"]:not([src]) {
   .animate-fade-in-up,
   .animate-fade-in-down,
   .animate-fade-in,
+  .animate-vinyl,
   .animate-shimmer { animation: none; }
 }
