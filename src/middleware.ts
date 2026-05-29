@@ -1,16 +1,25 @@
 /**
  * Next.js Middleware
  *
- * Protects admin routes with authentication check
+ * 1. Canonical host: 301-redirect www → apex so the site has a single
+ *    indexable host (fixes duplicate-host issues in Search Console).
+ * 2. Protects admin routes with an authentication check.
  */
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export function middleware(request: NextRequest) {
+  // 1. Canonicalise the host before anything else.
+  const host = request.headers?.get('host') ?? '';
+  if (host.startsWith('www.')) {
+    const apexUrl = new URL(`${request.nextUrl.pathname}${request.nextUrl.search}`, `https://${host.slice(4)}`);
+    return NextResponse.redirect(apexUrl, 301);
+  }
+
   const { pathname } = request.nextUrl;
 
-  // Only protect /admin routes (login is at /login, not /admin/login)
+  // 2. Only protect /admin routes (login is at /login, not /admin/login)
   if (pathname.startsWith('/admin')) {
     // Check for Cognito auth tokens in cookies
     // AWS Amplify stores tokens with pattern: CognitoIdentityServiceProvider.{clientId}.*
@@ -36,7 +45,7 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    '/admin/:path*',
-  ],
+  // Run on everything except Next internals/assets, so the www→apex canonical
+  // redirect applies site-wide (pages, sitemap.xml, robots.txt).
+  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
 };

@@ -12,7 +12,7 @@ jest.mock('next/server', () => ({
   ...jest.requireActual('next/server'),
   NextResponse: {
     next: jest.fn(() => ({ type: 'next' })),
-    redirect: jest.fn((url) => ({ type: 'redirect', url: url.toString() })),
+    redirect: jest.fn((url, status) => ({ type: 'redirect', url: url.toString(), status })),
   },
 }));
 
@@ -139,6 +139,60 @@ describe('Authentication Middleware', () => {
     });
   });
 
+  describe('Host canonicalization (www → apex)', () => {
+    it('301-redirects www to the apex host, preserving the path', () => {
+      const request = createMockRequest('/songs', [], 'www.tamilagaval.com');
+
+      const response = middleware(request);
+
+      expect(response).toHaveProperty('type', 'redirect');
+      expect((response as any).status).toBe(301);
+      const url = (NextResponse.redirect as jest.Mock).mock.calls[0][0];
+      expect(url.host).toBe('tamilagaval.com');
+      expect(url.pathname).toBe('/songs');
+    });
+
+    it('preserves the query string when redirecting www to apex', () => {
+      const request = createMockRequest('/all?type=SONGS&sort=newest', [], 'www.tamilagaval.com');
+
+      middleware(request);
+
+      const url = (NextResponse.redirect as jest.Mock).mock.calls[0][0];
+      expect(url.toString()).toBe('https://tamilagaval.com/all?type=SONGS&sort=newest');
+    });
+
+    it('redirects www for sitemap.xml and robots.txt too', () => {
+      for (const path of ['/sitemap.xml', '/robots.txt']) {
+        jest.clearAllMocks();
+        const request = createMockRequest(path, [], 'www.tamilagaval.com');
+        middleware(request);
+        const url = (NextResponse.redirect as jest.Mock).mock.calls[0][0];
+        expect(url.toString()).toBe(`https://tamilagaval.com${path}`);
+      }
+    });
+
+    it('canonicalizes the host before the admin auth check (no login bounce on www)', () => {
+      const request = createMockRequest('/admin', [], 'www.tamilagaval.com');
+
+      const response = middleware(request);
+
+      expect(response).toHaveProperty('type', 'redirect');
+      expect((response as any).status).toBe(301);
+      const url = (NextResponse.redirect as jest.Mock).mock.calls[0][0];
+      expect(url.host).toBe('tamilagaval.com');
+      expect(url.pathname).toBe('/admin'); // not /login
+    });
+
+    it('does not redirect requests already on the apex host', () => {
+      const request = createMockRequest('/songs', [], 'tamilagaval.com');
+
+      const response = middleware(request);
+
+      expect(response).toEqual({ type: 'next' });
+      expect(NextResponse.redirect).not.toHaveBeenCalled();
+    });
+  });
+
   describe('Edge Cases', () => {
     it('should handle multiple Cognito cookies correctly', () => {
       const request = createMockRequest('/admin', [
@@ -178,15 +232,22 @@ describe('Authentication Middleware', () => {
 
 // Helper function to create mock NextRequest
 function createMockRequest(
-  pathname: string,
-  cookies: Array<{ name: string; value: string }>
+  pathnameWithQuery: string,
+  cookies: Array<{ name: string; value: string }>,
+  host = 'tamilagaval.com'
 ): NextRequest {
-  const url = `https://tamilagaval.com${pathname}`;
+  const [pathname, query] = pathnameWithQuery.split('?');
+  const search = query ? `?${query}` : '';
+  const url = `https://${host}${pathnameWithQuery}`;
 
   return {
+    headers: {
+      get: (name: string) => (name.toLowerCase() === 'host' ? host : null),
+    },
     nextUrl: {
       pathname,
-      searchParams: new URLSearchParams(pathname.split('?')[1] || ''),
+      search,
+      searchParams: new URLSearchParams(query || ''),
     },
     url,
     cookies: {
