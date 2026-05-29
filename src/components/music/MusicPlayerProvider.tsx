@@ -9,7 +9,7 @@
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Music } from 'lucide-react';
+import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Music, Shuffle, Repeat, ChevronDown } from 'lucide-react';
 
 export interface Track {
   id: string;
@@ -93,6 +93,8 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
   const [muted, setMuted] = useState(false);
   const [shuffle, setShuffle] = useState(false);
   const [repeat, setRepeat] = useState<RepeatMode>('off');
+  // Full-screen "Now Playing" view (mobile-first, app-style).
+  const [expanded, setExpanded] = useState(false);
 
   // When restoring a session on load we re-hydrate the queue without autoplaying
   // (browsers block autoplay without a gesture) and seek to the saved position.
@@ -265,6 +267,27 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
     try { navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused'; } catch { /* noop */ }
   }, [isPlaying]);
 
+  // Lock background scroll + close the full-screen player on Escape while open.
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setExpanded(false); };
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [expanded]);
+
+  const onSeek = (v: number) => {
+    const a = audioRef.current;
+    if (a) a.currentTime = v;
+    setTime(v);
+  };
+  const onVolume = (v: number) => { setVolume(v); setMuted(false); };
+  const toggleMute = () => setMuted((m) => !m);
+
   const value = useMemo<PlayerContextValue>(
     () => ({ current, isPlaying, loading, error, shuffle, repeat, playQueue, toggle, next, prev, toggleShuffle, cycleRepeat }),
     [current, isPlaying, loading, error, shuffle, repeat, playQueue, toggle, next, prev, toggleShuffle, cycleRepeat]
@@ -314,7 +337,12 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
             </p>
           )}
           <div className="container mx-auto flex items-center gap-3 px-3 py-3 sm:gap-4 sm:px-4">
-            <div className="flex w-2/5 min-w-0 items-center gap-3 sm:w-1/4">
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              aria-label="இயக்கப்படும் பாடலை விரிவாக்கு"
+              className="flex w-2/5 min-w-0 items-center gap-3 rounded-lg text-left transition-colors hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-400/60 sm:w-1/4"
+            >
               <Cover src={current.cover} alt={current.title} className="h-12 w-12 rounded shadow-md shrink-0" />
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
@@ -327,7 +355,7 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
                 </div>
                 <div className="truncate text-xs text-gray-400 font-tamil">{current.artist}</div>
               </div>
-            </div>
+            </button>
 
             <div className="mx-auto flex max-w-xl flex-1 flex-col items-center gap-1.5">
               <div className="flex items-center gap-3 sm:gap-5">
@@ -363,12 +391,7 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
                   max={duration || 0}
                   value={time}
                   step="any"
-                  onChange={(e) => {
-                    const a = audioRef.current;
-                    const v = Number(e.target.value);
-                    if (a) a.currentTime = v;
-                    setTime(v);
-                  }}
+                  onChange={(e) => onSeek(Number(e.target.value))}
                   aria-label="Seek"
                   className="h-2.5 flex-1 cursor-pointer accent-orange-500"
                 />
@@ -377,7 +400,7 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
             </div>
 
             <div className="hidden w-1/4 items-center justify-end gap-2 md:flex">
-              <button onClick={() => setMuted((m) => !m)} aria-label="Mute" className="text-gray-300 hover:text-white">
+              <button onClick={toggleMute} aria-label="Mute" className="text-gray-300 hover:text-white">
                 {muted || volume === 0 ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
               </button>
               <input
@@ -386,16 +409,127 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
                 max={1}
                 step={0.01}
                 value={muted ? 0 : volume}
-                onChange={(e) => {
-                  setVolume(Number(e.target.value));
-                  setMuted(false);
-                }}
+                onChange={(e) => onVolume(Number(e.target.value))}
                 aria-label="Volume"
                 className="h-1 w-24 cursor-pointer accent-orange-500"
               />
             </div>
           </div>
         </section>
+      )}
+
+      {expanded && current && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="இயக்கப்படும் பாடல்"
+          className="animate-player-slide-up fixed inset-0 z-[60] flex flex-col bg-gradient-to-b from-gray-900 via-gray-950 to-black px-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-[calc(env(safe-area-inset-top)+0.75rem)] text-white"
+        >
+          {/* Top bar: collapse */}
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => setExpanded(false)}
+              aria-label="மூடு"
+              className="-ml-2 flex h-11 w-11 items-center justify-center text-gray-300 transition-colors hover:text-white"
+            >
+              <ChevronDown className="h-7 w-7" />
+            </button>
+            <span className="font-tamil text-xs uppercase tracking-wide text-gray-400">இயக்கப்படுகிறது</span>
+            <span aria-hidden className="h-11 w-11" />
+          </div>
+
+          {/* Artwork + title */}
+          <div className="flex flex-1 flex-col items-center justify-center gap-8">
+            <Cover
+              src={current.cover}
+              alt={current.title}
+              className="aspect-square w-full max-w-[18rem] rounded-2xl shadow-2xl ring-1 ring-white/10"
+            />
+            <div className="w-full max-w-md text-center">
+              <h2 className="truncate font-kavivanar text-2xl font-bold">{current.title}</h2>
+              <p className="mt-1 truncate font-tamil text-gray-400">{current.artist}</p>
+            </div>
+          </div>
+
+          {/* Controls */}
+          <div className="mx-auto w-full max-w-md space-y-5">
+            {error && (
+              <p role="alert" className="rounded-lg bg-red-600/90 px-3 py-2 text-center text-sm font-tamil">
+                {error}
+              </p>
+            )}
+
+            <div className="flex items-center gap-3">
+              <span className="w-10 text-right text-xs tabular-nums text-gray-400">{formatTime(time)}</span>
+              <input
+                type="range"
+                min={0}
+                max={duration || 0}
+                value={time}
+                step="any"
+                onChange={(e) => onSeek(Number(e.target.value))}
+                aria-label="Seek"
+                className="h-2.5 flex-1 cursor-pointer accent-orange-500"
+              />
+              <span className="w-10 text-xs tabular-nums text-gray-400">{formatTime(duration)}</span>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <button
+                onClick={toggleShuffle}
+                aria-label="Shuffle"
+                aria-pressed={shuffle}
+                className={`flex h-12 w-12 items-center justify-center transition active:scale-95 ${shuffle ? 'text-orange-400' : 'text-gray-400 hover:text-white'}`}
+              >
+                <Shuffle className="h-6 w-6" />
+              </button>
+              <button onClick={prev} aria-label="Previous" className="flex h-14 w-14 items-center justify-center text-gray-200 transition hover:text-white active:scale-95">
+                <SkipBack className="h-8 w-8" />
+              </button>
+              <button
+                onClick={toggle}
+                aria-label={isPlaying ? 'Pause' : 'Play'}
+                aria-busy={loading}
+                className="flex h-16 w-16 items-center justify-center rounded-full bg-orange-600 text-white shadow-xl shadow-orange-900/40 transition hover:scale-105 hover:bg-orange-500 active:scale-95"
+              >
+                {loading ? (
+                  <span aria-hidden className="h-6 w-6 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                ) : isPlaying ? (
+                  <Pause className="h-7 w-7" />
+                ) : (
+                  <Play className="ml-1 h-7 w-7" />
+                )}
+              </button>
+              <button onClick={next} aria-label="Next" className="flex h-14 w-14 items-center justify-center text-gray-200 transition hover:text-white active:scale-95">
+                <SkipForward className="h-8 w-8" />
+              </button>
+              <button
+                onClick={cycleRepeat}
+                aria-label={repeat === 'off' ? 'Repeat' : repeat === 'all' ? 'Repeat all' : 'Repeat one'}
+                className={`relative flex h-12 w-12 items-center justify-center transition active:scale-95 ${repeat !== 'off' ? 'text-orange-400' : 'text-gray-400 hover:text-white'}`}
+              >
+                <Repeat className="h-6 w-6" />
+                {repeat === 'one' && <span className="absolute right-1.5 top-1.5 text-[10px] font-bold">1</span>}
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button onClick={toggleMute} aria-label="Mute" className="-ml-2 flex h-11 w-11 items-center justify-center text-gray-300 transition-colors hover:text-white">
+                {muted || volume === 0 ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+              </button>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={muted ? 0 : volume}
+                onChange={(e) => onVolume(Number(e.target.value))}
+                aria-label="Volume"
+                className="h-2.5 flex-1 cursor-pointer accent-orange-500"
+              />
+            </div>
+          </div>
+        </div>
       )}
     </PlayerContext.Provider>
   );
