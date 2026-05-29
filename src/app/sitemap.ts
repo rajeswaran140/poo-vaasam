@@ -10,6 +10,16 @@ export const revalidate = 3600;
 
 type VideoEntry = NonNullable<MetadataRoute.Sitemap[number]['videos']>[number];
 
+// Next.js does not XML-escape video title/description fields, so a raw "&",
+// "<" or ">" (common in YouTube descriptions) would corrupt the sitemap.
+const xmlEscape = (s: string) =>
+  s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const videosEnabled = isYouTubeVideosConfigured();
 
@@ -27,9 +37,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   if (videosEnabled) {
     const videos = await fetchChannelVideos(SITE.youtube.channelId, 50);
     videoEntries = videos.map((v) => ({
-      title: v.title,
+      title: xmlEscape(v.title),
       thumbnail_loc: v.thumbnail,
-      description: v.description || v.title,
+      // Video sitemap descriptions are capped at 2048 chars; trim then escape.
+      description: xmlEscape((v.description || v.title).slice(0, 1900)),
       player_loc: `https://www.youtube.com/embed/${v.id}`,
       ...(v.publishedAt ? { publication_date: v.publishedAt } : {}),
     }));

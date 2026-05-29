@@ -20,6 +20,14 @@ jest.mock('@/lib/youtube-feed', () => ({
       publishedAt: '2026-05-01T00:00:00Z',
       thumbnail: 'https://i.ytimg.com/vi/abcdef12345/hqdefault.jpg',
     },
+    {
+      // Special characters that would corrupt the XML if not escaped.
+      id: 'zyxwvu98765',
+      title: 'Music & Production <Live>',
+      description: 'Lyrics & music © 2026 <TamilAgaval>',
+      publishedAt: '2026-05-02T00:00:00Z',
+      thumbnail: 'https://i.ytimg.com/vi/zyxwvu98765/hqdefault.jpg',
+    },
   ]),
 }));
 
@@ -47,4 +55,17 @@ it('attaches YouTube video entries to the /videos page', async () => {
   });
   // Non-video pages must not carry video entries.
   expect(routes.find((r) => r.url.endsWith('/songs'))?.videos).toBeUndefined();
+});
+
+it('XML-escapes special characters in video title/description', async () => {
+  const routes = await sitemap();
+  const videos = routes.find((r) => r.url.endsWith('/videos'))?.videos ?? [];
+  const special = videos.find((v) => v.player_loc?.includes('zyxwvu98765'));
+
+  expect(special?.title).toBe('Music &amp; Production &lt;Live&gt;');
+  expect(special?.description).toBe('Lyrics &amp; music © 2026 &lt;TamilAgaval&gt;');
+  // No raw &, < or > should survive in any video field.
+  for (const v of videos) {
+    expect(/&(?!amp;|lt;|gt;|quot;|apos;)|<|>/.test(`${v.title}${v.description}`)).toBe(false);
+  }
 });
