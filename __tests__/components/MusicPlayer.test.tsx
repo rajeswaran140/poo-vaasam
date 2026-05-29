@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MusicPlayerProvider, formatTime, type Track } from '@/components/music/MusicPlayerProvider';
-import { SongList } from '@/components/music/SongList';
+import { SongList, type SongRow } from '@/components/music/SongList';
 
 const STORAGE_KEY = 'tamilagaval:player:v1';
 
@@ -136,7 +136,7 @@ describe('SongList + global player', () => {
     const { container } = renderList(three);
     fireEvent.click(screen.getByText('Track B'));
     fireEvent.click(screen.getByLabelText('Repeat')); // off -> all
-    fireEvent.click(screen.getByLabelText('Repeat')); // all -> one
+    fireEvent.click(screen.getByLabelText('Repeat all')); // all -> one
     (window.HTMLMediaElement.prototype.play as jest.Mock).mockClear();
     fireEvent.ended(container.querySelector('audio')!);
     expect(audioSrc(container)).toBe('b.mp3');
@@ -205,5 +205,69 @@ describe('session persistence', () => {
     expect(within(region).getByText('Track B')).toBeInTheDocument();
     // restored sessions stay paused — no autoplay without a user gesture
     expect(window.HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+  });
+});
+
+describe('search + sort toolbar', () => {
+  // 6 tracks (>= the toolbar threshold), with distinct titles/durations/dates.
+  const many: SongRow[] = [
+    { id: 'm1', title: 'Zebra', artist: 'Anil', src: 'z.mp3', duration: 100, addedAt: 1 },
+    { id: 'm2', title: 'Apple', artist: 'Bala', src: 'a.mp3', duration: 300, addedAt: 6 },
+    { id: 'm3', title: 'Mango', artist: 'Chitra', src: 'm.mp3', duration: 200, addedAt: 3 },
+    { id: 'm4', title: 'Banana', artist: 'Deepa', src: 'b.mp3', duration: 50, addedAt: 5 },
+    { id: 'm5', title: 'Cherry', artist: 'Esan', src: 'c.mp3', duration: 400, addedAt: 2 },
+    { id: 'm6', title: 'Date', artist: 'Farah', src: 'd.mp3', duration: 150, addedAt: 4 },
+  ];
+  const rowTitles = () =>
+    screen.getAllByRole('listitem').map((li) => li.querySelector('.font-tamil')?.textContent);
+
+  it('is hidden for a small catalogue and shown once it is large enough', () => {
+    const { unmount } = renderList(three);
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
+    unmount();
+    renderList(many);
+    expect(screen.getByRole('searchbox')).toBeInTheDocument();
+    expect(screen.getByLabelText('வரிசைப்படுத்து')).toBeInTheDocument();
+  });
+
+  it('filters rows by title (case-insensitive)', () => {
+    renderList(many);
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'app' } });
+    expect(screen.getByText('Apple')).toBeInTheDocument();
+    expect(screen.queryByText('Zebra')).not.toBeInTheDocument();
+  });
+
+  it('filters rows by artist', () => {
+    renderList(many);
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'chitra' } });
+    expect(screen.getByText('Mango')).toBeInTheDocument();
+    expect(screen.queryByText('Apple')).not.toBeInTheDocument();
+  });
+
+  it('shows a no-results message when nothing matches', () => {
+    renderList(many);
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'zzzzz' } });
+    expect(screen.queryByRole('listitem')).not.toBeInTheDocument();
+    expect(screen.getByText(/கிடைக்கவில்லை/)).toBeInTheDocument();
+  });
+
+  it('defaults to newest-first (by addedAt)', () => {
+    renderList(many);
+    expect(rowTitles()).toEqual(['Apple', 'Banana', 'Date', 'Mango', 'Cherry', 'Zebra']);
+  });
+
+  it('sorts by title and by duration', () => {
+    renderList(many);
+    fireEvent.change(screen.getByLabelText('வரிசைப்படுத்து'), { target: { value: 'title' } });
+    expect(rowTitles()).toEqual(['Apple', 'Banana', 'Cherry', 'Date', 'Mango', 'Zebra']);
+    fireEvent.change(screen.getByLabelText('வரிசைப்படுத்து'), { target: { value: 'duration' } });
+    expect(rowTitles()).toEqual(['Cherry', 'Apple', 'Mango', 'Date', 'Zebra', 'Banana']);
+  });
+
+  it('play-all starts the first track of the current filtered view', () => {
+    const { container } = renderList(many);
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'cherry' } });
+    fireEvent.click(screen.getByLabelText('Play all'));
+    expect(audioSrc(container)).toBe('c.mp3');
   });
 });

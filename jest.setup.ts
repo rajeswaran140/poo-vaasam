@@ -17,3 +17,9 @@ if (typeof Response === 'undefined') {
 if (typeof Headers === 'undefined') {
   global.Headers = class Headers {} as any;
 }
+
+// jsdom doesn't implement scrollIntoView; stub it so components that call it
+// (e.g. the songs list scrolling the active row into view) don't throw.
+if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = function () {};
+}

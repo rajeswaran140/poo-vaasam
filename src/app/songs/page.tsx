@@ -8,8 +8,7 @@ import type { Metadata } from 'next';
 import Header from '@/components/Header';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentType, ContentStatus } from '@/types/content';
-import { SongList } from '@/components/music/SongList';
-import type { Track } from '@/components/music/MusicPlayerProvider';
+import { SongList, type SongRow } from '@/components/music/SongList';
 import { JsonLd } from '@/components/JsonLd';
 import { SITE_NAME, absoluteUrl } from '@/lib/seo';
 
@@ -35,6 +34,17 @@ export const metadata: Metadata = {
   },
 };
 
+/** Normalise a createdAt value (Date | ISO string | epoch) to epoch ms. */
+function toEpochMs(value: unknown): number | undefined {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') {
+    const t = Date.parse(value);
+    return Number.isNaN(t) ? undefined : t;
+  }
+  return undefined;
+}
+
 /** Seconds → ISO-8601 duration (e.g. 185 → "PT3M5S") for schema.org. */
 function isoDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -58,13 +68,14 @@ async function getSongs() {
 
 export default async function SongsPage() {
   const songs = await getSongs();
-  const tracks: Track[] = songs.map((s: Record<string, unknown>) => ({
+  const tracks: SongRow[] = songs.map((s: Record<string, unknown>) => ({
     id: String(s.id),
     title: String(s.title),
     artist: String(s.author || ''),
     src: typeof s.audioUrl === 'string' ? s.audioUrl : '',
     cover: typeof s.featuredImage === 'string' ? s.featuredImage : undefined,
     duration: typeof s.audioDuration === 'number' ? s.audioDuration : undefined,
+    addedAt: toEpochMs(s.createdAt),
   }));
   const playableCount = tracks.filter((t) => t.src).length;
   const totalMin = Math.round(tracks.reduce((sum, t) => sum + (t.duration || 0), 0) / 60);
@@ -122,7 +133,7 @@ export default async function SongsPage() {
                   தொகுப்பு
                 </span>
                 <h1 className="mb-4 font-kavivanar text-5xl font-extrabold leading-tight drop-shadow-md sm:text-6xl lg:text-7xl">
-                  பாடல்கள்
+                  {PAGE_TITLE}
                 </h1>
                 <p className="mb-2 font-tamil text-white/90">தமிழ் பாடல்கள் தொகுப்பு — என்றும் இலவசம்</p>
                 {playableCount > 0 && (
