@@ -325,7 +325,7 @@ export default async function HomePage() {
             <div>
               <h3 className="text-2xl font-bold mb-3 font-kavivanar">தமிழகவல்</h3>
               <p className="text-gray-400 font-tamil text-sm mb-5">
-                தமிழ் கவிதைகள் · பாடல்கள் · காணொளிகள்
+                தமிழ் கவிதைகள் · பாடல்கள் · காணொளிகள் · என்றும் இலவசம்
               </p>
               <div className="flex flex-wrap items-center gap-3">
                 {isYouTubeChannelConfigured() && (
