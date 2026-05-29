@@ -49,12 +49,6 @@ export default async function VideosPage() {
       <main className="min-h-screen container mx-auto px-4 sm:px-6 py-10 max-w-6xl">
         <section className="mb-10 overflow-hidden rounded-2xl bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white shadow-xl">
           <div className="px-6 py-12 sm:px-12 sm:py-16 text-center">
-            <div className="inline-flex items-center gap-2 bg-white/15 backdrop-blur-sm px-4 py-1.5 rounded-full border border-white/25 mb-5">
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
-              </svg>
-              <span className="font-tamil text-sm font-semibold">{SITE.youtube.channelLabel}</span>
-            </div>
             <h1 className="text-4xl sm:text-5xl font-bold font-kavivanar mb-4 drop-shadow-lg">
               காணொளிகள்
             </h1>
