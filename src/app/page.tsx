@@ -8,8 +8,6 @@ export const revalidate = 300;
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import Header from '@/components/Header';
-import { ContentRepository } from '@/infrastructure/database/ContentRepository';
-import { ContentType } from '@/types/content';
 import { SITE, liveContentSections, isYouTubeChannelConfigured, isFacebookConfigured, isYouTubeVideosConfigured } from '@/config/site';
 import { fetchChannelVideos } from '@/lib/youtube-feed';
 import { SubscribeButton } from '@/components/SubscribeButton';
@@ -52,26 +50,10 @@ const personJsonLd = {
   ...(personSameAs.length > 0 ? { sameAs: personSameAs } : {}),
 };
 
-/** Published counts keyed by content type, for the live sections only. */
-async function getSectionCounts(): Promise<Record<string, number>> {
-  try {
-    const repo = new ContentRepository();
-    const sections = liveContentSections();
-    const counts = await Promise.all(sections.map((s) => repo.countByType(s.type as ContentType)));
-    return Object.fromEntries(sections.map((s, i) => [s.type, counts[i]]));
-  } catch (error) {
-    console.error('Failed to fetch section counts:', error);
-    return {};
-  }
-}
-
 export default async function HomePage() {
-  const [counts, latestVideos] = await Promise.all([
-    getSectionCounts(),
-    isYouTubeVideosConfigured()
-      ? fetchChannelVideos(SITE.youtube.channelId, 4)
-      : Promise.resolve([]),
-  ]);
+  const latestVideos = isYouTubeVideosConfigured()
+    ? await fetchChannelVideos(SITE.youtube.channelId, 4)
+    : [];
 
   return (
     <div className="min-h-screen bg-gray-900">
@@ -148,7 +130,7 @@ export default async function HomePage() {
                   {isYouTubeChannelConfigured() && (
                     <SubscribeButton
                       label="YouTube-ல் Subscribe செய்க"
-                      className="px-10 py-5 bg-red-600 text-white rounded-full font-bold hover:bg-red-700 transition-all shadow-2xl transform hover:scale-105 font-tamil inline-flex items-center justify-center gap-3 text-lg"
+                      className="px-10 py-5 bg-orange-700 text-white rounded-full font-bold hover:bg-orange-800 transition-all shadow-2xl transform hover:scale-105 font-tamil inline-flex items-center justify-center gap-3 text-lg"
                     />
                   )}
                 </div>
@@ -333,28 +315,6 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* உள்ளடக்க வகைகள் பகுதி */}
-      <section className="container mx-auto px-4 py-16 bg-gray-800">
-        <h2 className="text-3xl sm:text-4xl font-bold text-center text-white mb-4 font-tamil">
-          உள்ளடக்க தொகுப்புகள்
-        </h2>
-        <p className="text-center text-gray-300 font-tamil mb-12 max-w-2xl mx-auto">
-          தமிழ் கவிதைகளும் பாடல்களும் — ஒரே இடத்தில்
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-3xl mx-auto">
-          {liveContentSections().map((s) => (
-            <ContentTypeCard
-              key={s.href}
-              icon={s.icon}
-              title={s.label}
-              count={counts[s.type] ?? 0}
-              href={s.href}
-              color={s.color}
-            />
-          ))}
-        </div>
-      </section>
-
       {/* அடிக்குறிப்பு */}
       <footer className="bg-gray-900 text-white py-12">
         <div className="container mx-auto px-4">
@@ -421,31 +381,4 @@ export default async function HomePage() {
   );
 }
 
-interface ContentTypeCardProps {
-  icon: string;
-  title: string;
-  count: number;
-  href: string;
-  color: string;
-}
-
-function ContentTypeCard({ icon, title, count, href, color }: ContentTypeCardProps) {
-  return (
-    <Link
-      href={href}
-      className="group relative overflow-hidden rounded-xl bg-white shadow-lg hover:shadow-2xl transition-all transform hover:scale-105"
-    >
-      <div className={`absolute inset-0 bg-gradient-to-br ${color} opacity-0 group-hover:opacity-100 transition-opacity`}></div>
-      <div className="relative p-6 text-center">
-        <div className="text-5xl mb-3">{icon}</div>
-        <h3 className="text-xl font-bold text-gray-900 group-hover:text-white transition-colors font-tamil">
-          {title}
-        </h3>
-        <div className="mt-4 text-3xl font-bold text-purple-600 group-hover:text-white transition-colors">
-          {count}
-        </div>
-      </div>
-    </Link>
-  );
-}
 
