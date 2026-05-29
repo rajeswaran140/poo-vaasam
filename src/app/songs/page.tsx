@@ -98,22 +98,36 @@ export default async function SongsPage() {
       <Header />
       <main>
         {/* Full-width Spotify-style playlist header (fades into the dark page) */}
-        <section className="w-full bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white">
-          <div className="w-full px-6 pb-10 pt-24 sm:px-10 lg:px-16">
+        <section className="relative w-full overflow-hidden bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white">
+          {/* soft top-corner highlight */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_120%_at_12%_-15%,rgba(255,255,255,0.38),transparent_55%)]"
+          />
+          {/* fade into the dark page below */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-gray-900"
+          />
+
+          <div className="relative w-full px-6 pb-14 pt-24 sm:px-10 lg:px-16">
             <div className="flex flex-col gap-6 sm:flex-row sm:items-end">
-              <div className="flex h-40 w-40 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-orange-400 to-orange-700 shadow-2xl sm:h-52 sm:w-52">
-                <span className="text-7xl">🎵</span>
+              <div className="group flex h-40 w-40 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-400 to-orange-700 shadow-2xl ring-1 ring-white/20 transition-transform duration-500 ease-out hover:scale-[1.03] animate-fade-in sm:h-52 sm:w-52">
+                <span className="text-7xl drop-shadow-lg transition-transform duration-500 ease-out group-hover:scale-110">
+                  🎵
+                </span>
               </div>
-              <div className="min-w-0">
-                <p className="mb-2 font-tamil text-xs font-semibold uppercase tracking-wide text-white/80">
+              <div className="min-w-0 animate-fade-in-up">
+                <span className="mb-3 inline-flex items-center rounded-full bg-white/15 px-3 py-1 font-tamil text-xs font-semibold uppercase tracking-wide text-white ring-1 ring-white/25 backdrop-blur-sm">
                   தொகுப்பு
-                </p>
-                <h1 className="mb-4 font-kavivanar text-4xl font-extrabold leading-tight sm:text-6xl lg:text-7xl">
+                </span>
+                <h1 className="mb-4 font-kavivanar text-5xl font-extrabold leading-tight drop-shadow-md sm:text-6xl lg:text-7xl">
                   பாடல்கள்
                 </h1>
                 <p className="mb-2 font-tamil text-white/90">தமிழ் பாடல்கள் தொகுப்பு — என்றும் இலவசம்</p>
                 {playableCount > 0 && (
-                  <p className="font-tamil text-sm text-white/80">
+                  <p className="flex items-center gap-2 font-tamil text-sm text-white/85">
+                    <span aria-hidden className="inline-flex h-1.5 w-1.5 rounded-full bg-white/80" />
                     {playableCount} பாடல்கள்{totalMin > 0 ? ` · ${totalMin} நிமிடம்` : ''}
                   </p>
                 )}

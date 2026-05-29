@@ -306,7 +306,7 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
         <section
           role="region"
           aria-label="இசை இயக்கி"
-          className="fixed bottom-0 left-0 right-0 z-50 border-t border-gray-800 bg-gray-900/95 backdrop-blur"
+          className="animate-player-slide-up fixed bottom-0 left-0 right-0 z-50 border-t border-white/10 bg-gray-900/95 shadow-[0_-8px_30px_rgba(0,0,0,0.45)] backdrop-blur"
         >
           {error && (
             <p role="alert" className="bg-red-600/90 px-4 py-1.5 text-center text-xs font-tamil text-white">
@@ -315,23 +315,30 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
           )}
           <div className="container mx-auto flex items-center gap-3 px-3 py-3 sm:gap-4 sm:px-4">
             <div className="flex w-2/5 min-w-0 items-center gap-3 sm:w-1/4">
-              <Cover src={current.cover} alt={current.title} className="h-12 w-12 rounded shrink-0" />
+              <Cover src={current.cover} alt={current.title} className="h-12 w-12 rounded shadow-md shrink-0" />
               <div className="min-w-0">
-                <div className="truncate text-sm text-white font-tamil">{current.title}</div>
+                <div className="flex items-center gap-1.5">
+                  {isPlaying && !loading && (
+                    <span className="eq h-3 shrink-0 text-orange-400" aria-hidden>
+                      <span /><span /><span /><span />
+                    </span>
+                  )}
+                  <span className="truncate text-sm text-white font-tamil">{current.title}</span>
+                </div>
                 <div className="truncate text-xs text-gray-400 font-tamil">{current.artist}</div>
               </div>
             </div>
 
             <div className="mx-auto flex max-w-xl flex-1 flex-col items-center gap-1.5">
               <div className="flex items-center gap-5">
-                <button onClick={prev} aria-label="Previous" className="text-gray-300 hover:text-white">
+                <button onClick={prev} aria-label="Previous" className="text-gray-300 transition-all duration-150 hover:scale-110 hover:text-white active:scale-95">
                   <SkipBack className="h-5 w-5" />
                 </button>
                 <button
                   onClick={toggle}
                   aria-label={isPlaying ? 'Pause' : 'Play'}
                   aria-busy={loading}
-                  className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-600 text-white shadow hover:bg-orange-500"
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-600 text-white shadow-lg shadow-orange-900/30 transition-all duration-150 hover:scale-105 hover:bg-orange-500 active:scale-95"
                 >
                   {loading ? (
                     <span
@@ -344,7 +351,7 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
                     <Play className="ml-0.5 h-5 w-5" />
                   )}
                 </button>
-                <button onClick={next} aria-label="Next" className="text-gray-300 hover:text-white">
+                <button onClick={next} aria-label="Next" className="text-gray-300 transition-all duration-150 hover:scale-110 hover:text-white active:scale-95">
                   <SkipForward className="h-5 w-5" />
                 </button>
               </div>

@@ -36,7 +36,7 @@ export function SongList({ tracks }: { tracks: Track[] }) {
           <button
             onClick={playAll}
             aria-label="Play all"
-            className="flex h-14 w-14 items-center justify-center rounded-full bg-orange-600 text-white shadow-lg transition hover:scale-105 hover:bg-orange-500"
+            className="flex h-14 w-14 items-center justify-center rounded-full bg-orange-600 text-white shadow-xl shadow-orange-900/30 ring-2 ring-orange-400/0 transition-all duration-200 hover:scale-105 hover:bg-orange-500 hover:ring-orange-300/40 active:scale-95"
           >
             {anyPlaying ? <Pause className="h-7 w-7" /> : <Play className="ml-1 h-7 w-7" />}
           </button>
@@ -44,14 +44,14 @@ export function SongList({ tracks }: { tracks: Track[] }) {
             onClick={player.toggleShuffle}
             aria-label="Shuffle"
             aria-pressed={player.shuffle}
-            className={`transition hover:text-white ${player.shuffle ? 'text-orange-400' : 'text-gray-400'}`}
+            className={`transition-all duration-200 hover:scale-110 hover:text-white active:scale-95 ${player.shuffle ? 'text-orange-400' : 'text-gray-400'}`}
           >
             <Shuffle className="h-5 w-5" />
           </button>
           <button
             onClick={player.cycleRepeat}
             aria-label="Repeat"
-            className={`relative transition hover:text-white ${player.repeat !== 'off' ? 'text-orange-400' : 'text-gray-400'}`}
+            className={`relative transition-all duration-200 hover:scale-110 hover:text-white active:scale-95 ${player.repeat !== 'off' ? 'text-orange-400' : 'text-gray-400'}`}
           >
             <Repeat className="h-5 w-5" />
             {player.repeat === 'one' && <span className="absolute -right-2 -top-1.5 text-[10px] font-bold">1</span>}
@@ -75,27 +75,40 @@ export function SongList({ tracks }: { tracks: Track[] }) {
                     onRow(i);
                   }
                 }}
-                className={`group flex items-center gap-3 sm:gap-4 px-3 sm:px-4 py-2.5 rounded-md transition-colors ${
-                  isPlayable ? 'cursor-pointer hover:bg-white/5' : 'opacity-60'
-                } ${active ? 'bg-white/10' : ''}`}
+                className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all duration-200 sm:gap-4 sm:px-4 ${
+                  isPlayable
+                    ? 'cursor-pointer hover:bg-gradient-to-r hover:from-white/10 hover:to-transparent'
+                    : 'opacity-60'
+                } ${active ? 'bg-white/10 shadow-sm shadow-black/20 ring-1 ring-white/10' : ''}`}
               >
                 <div className="w-6 shrink-0 text-center text-sm text-gray-400">
                   {isPlayable ? (
                     active && player.isPlaying ? (
-                      <Pause className="w-4 h-4 text-orange-400 mx-auto" />
+                      <>
+                        <span className="eq text-orange-400 group-hover:hidden" aria-hidden>
+                          <span /><span /><span /><span />
+                        </span>
+                        <Pause className="mx-auto hidden h-4 w-4 text-orange-400 group-hover:block" />
+                      </>
+                    ) : active ? (
+                      <Play className="mx-auto h-4 w-4 text-orange-400" />
                     ) : (
                       <>
                         <span className="group-hover:hidden">{i + 1}</span>
-                        <Play className="w-4 h-4 mx-auto hidden group-hover:block text-white" />
+                        <Play className="mx-auto hidden h-4 w-4 text-white group-hover:block" />
                       </>
                     )
                   ) : (
-                    <Music className="w-4 h-4 mx-auto text-gray-600" />
+                    <Music className="mx-auto h-4 w-4 text-gray-600" />
                   )}
                 </div>
-                <Cover src={t.cover} alt={t.title} className="w-11 h-11 rounded shrink-0" />
+                <Cover
+                  src={t.cover}
+                  alt={t.title}
+                  className="h-11 w-11 shrink-0 rounded shadow-sm transition duration-200 group-hover:scale-105 group-hover:shadow-md"
+                />
                 <div className="flex-1 min-w-0">
-                  <div className={`truncate font-tamil ${active ? 'text-orange-400' : 'text-white'}`}>{t.title}</div>
+                  <div className={`truncate font-tamil transition-colors ${active ? 'text-orange-400' : 'text-white group-hover:text-white'}`}>{t.title}</div>
                   <div className="truncate text-sm text-gray-400 font-tamil">{t.artist}</div>
                 </div>
                 <Link

@@ -299,3 +299,49 @@ img[loading="lazy"]:not([src]) {
 .animate-fade-in {
   animation: fade-in 0.3s ease-out;
 }
+
+/* --- Music player polish (visual / motion only) --- */
+
+/* Animated "now playing" equalizer bars. Colour follows `currentColor`. */
+.eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+}
+.eq > span {
+  display: block;
+  width: 3px;
+  height: 100%;
+  border-radius: 9999px;
+  background: currentColor;
+  transform-origin: bottom;
+  animation: equalizer 0.9s ease-in-out infinite;
+}
+.eq > span:nth-child(2) { animation-delay: 0.25s; }
+.eq > span:nth-child(3) { animation-delay: 0.45s; }
+.eq > span:nth-child(4) { animation-delay: 0.15s; }
+
+@keyframes equalizer {
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
+}
+
+/* Bottom player bar entrance */
+@keyframes player-slide-up {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.animate-player-slide-up {
+  animation: player-slide-up 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Respect users who prefer less motion */
+@media (prefers-reduced-motion: reduce) {
+  .eq > span { animation: none; transform: scaleY(0.6); }
+  .animate-player-slide-up,
+  .animate-fade-in-up,
+  .animate-fade-in-down,
+  .animate-fade-in,
+  .animate-shimmer { animation: none; }
+}
