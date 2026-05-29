@@ -12,7 +12,7 @@ import { VideoGallery } from '@/components/VideoGallery';
 import { SubscribeButton } from '@/components/SubscribeButton';
 import { JsonLd } from '@/components/JsonLd';
 
-export const revalidate = 1800; // 30 minutes
+export const revalidate = 300; // 5 minutes — so channel deletions propagate quickly
 
 const PAGE_TITLE = 'காணொளிகள் — தமிழகவல்';
 const PAGE_DESCRIPTION =

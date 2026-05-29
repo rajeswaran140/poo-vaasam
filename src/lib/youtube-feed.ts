@@ -17,7 +17,7 @@ export interface ChannelVideo {
   watchUrl: string;
 }
 
-const FEED_REVALIDATE_SECONDS = 1800; // 30 minutes
+const FEED_REVALIDATE_SECONDS = 300; // 5 minutes — keep channel deletions visible quickly
 
 function decodeEntities(text: string): string {
   return text
