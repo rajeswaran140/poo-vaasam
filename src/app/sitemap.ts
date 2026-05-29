@@ -2,18 +2,38 @@ import type { MetadataRoute } from 'next';
 import { SITE_URL } from '@/lib/seo';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentStatus } from '@/types/content';
-import { isYouTubeVideosConfigured } from '@/config/site';
+import { SITE, isYouTubeVideosConfigured } from '@/config/site';
+import { fetchChannelVideos } from '@/lib/youtube-feed';
 
 // Regenerate hourly rather than per-request.
 export const revalidate = 3600;
 
+type VideoEntry = NonNullable<MetadataRoute.Sitemap[number]['videos']>[number];
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const videosEnabled = isYouTubeVideosConfigured();
+
   // Section/landing pages that surface content, and lower-priority info pages.
   const sectionPaths = ['', '/songs', '/poems', '/lyrics', '/stories', '/essays', '/all', '/music-composition'];
-  if (isYouTubeVideosConfigured()) {
+  if (videosEnabled) {
     sectionPaths.push('/videos');
   }
   const infoPaths = ['/about', '/contact'];
+
+  // YouTube videos attached to the /videos page so they're eligible for video
+  // search. fetchChannelVideos returns [] on any error, so this never breaks
+  // the sitemap.
+  let videoEntries: VideoEntry[] = [];
+  if (videosEnabled) {
+    const videos = await fetchChannelVideos(SITE.youtube.channelId, 50);
+    videoEntries = videos.map((v) => ({
+      title: v.title,
+      thumbnail_loc: v.thumbnail,
+      description: v.description || v.title,
+      player_loc: `https://www.youtube.com/embed/${v.id}`,
+      ...(v.publishedAt ? { publication_date: v.publishedAt } : {}),
+    }));
+  }
 
   let contentRoutes: MetadataRoute.Sitemap = [];
   // Newest content change drives the site-wide lastmod, so static pages only
@@ -56,6 +76,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     lastModified,
     changeFrequency: 'weekly',
     priority: p === '' ? 1 : 0.8,
+    ...(p === '/videos' && videoEntries.length > 0 ? { videos: videoEntries } : {}),
   }));
 
   const infoRoutes: MetadataRoute.Sitemap = infoPaths.map((p) => ({
