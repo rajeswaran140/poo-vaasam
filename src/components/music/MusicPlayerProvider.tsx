@@ -22,6 +22,8 @@ export interface Track {
 
 type RepeatMode = 'off' | 'all' | 'one';
 
+const STORAGE_KEY = 'tamilagaval:player:v1';
+
 /** Format seconds as m:ss. */
 export function formatTime(seconds: number): string {
   if (!seconds || !Number.isFinite(seconds) || seconds < 0) return '0:00';
@@ -55,6 +57,10 @@ export function Cover({ src, alt, className }: { src?: string; alt: string; clas
 interface PlayerContextValue {
   current: Track | null;
   isPlaying: boolean;
+  /** True while the current track is buffering (waiting for data). */
+  loading: boolean;
+  /** Set when the current track fails to load/decode; null otherwise. */
+  error: string | null;
   shuffle: boolean;
   repeat: RepeatMode;
   /** Replace the queue and start playing from startIndex. */
@@ -79,12 +85,19 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
   const [queue, setQueue] = useState<Track[]>([]);
   const [index, setIndex] = useState<number | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
   const [shuffle, setShuffle] = useState(false);
   const [repeat, setRepeat] = useState<RepeatMode>('off');
+
+  // When restoring a session on load we re-hydrate the queue without autoplaying
+  // (browsers block autoplay without a gesture) and seek to the saved position.
+  const skipNextAutoplay = useRef(false);
+  const pendingSeek = useRef(0);
 
   const current = index != null ? queue[index] ?? null : null;
   const playable = useMemo(
@@ -163,12 +176,35 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
     []
   );
 
-  // Autoplay whenever the playing track changes.
+  // Restore the previous session (queue + position) once, on mount. Paused.
   useEffect(() => {
-    if (current) {
-      setTime(0);
-      safePlay(audioRef.current);
+    try {
+      const raw = sessionStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const s = JSON.parse(raw);
+      if (Array.isArray(s.queue) && s.queue.length && typeof s.index === 'number') {
+        skipNextAutoplay.current = true;
+        pendingSeek.current = typeof s.time === 'number' ? s.time : 0;
+        setQueue(s.queue);
+        setIndex(s.index);
+        setShuffle(!!s.shuffle);
+        setRepeat(s.repeat === 'all' || s.repeat === 'one' ? s.repeat : 'off');
+      }
+    } catch {
+      /* ignore corrupt/blocked storage */
     }
+  }, []);
+
+  // Autoplay whenever the playing track changes (but not on a restored session).
+  useEffect(() => {
+    if (!current) return;
+    setTime(0);
+    setError(null);
+    if (skipNextAutoplay.current) {
+      skipNextAutoplay.current = false;
+      return;
+    }
+    safePlay(audioRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.src]);
 
@@ -179,9 +215,59 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
     }
   }, [volume, muted]);
 
+  // Persist what's playing (and roughly where) so a reload can restore it.
+  useEffect(() => {
+    try {
+      if (index == null || queue.length === 0) {
+        sessionStorage.removeItem(STORAGE_KEY);
+        return;
+      }
+      sessionStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ queue, index, shuffle, repeat, time: Math.floor(time) })
+      );
+    } catch {
+      /* ignore */
+    }
+    // Persist on track/mode change and roughly once per second (Math.floor(time)).
+  }, [queue, index, shuffle, repeat, time]);
+
+  // Media Session: lock-screen / notification metadata + hardware controls.
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+    const ms = navigator.mediaSession;
+    if (!current) {
+      ms.metadata = null;
+      return;
+    }
+    try {
+      ms.metadata = new window.MediaMetadata({
+        title: current.title,
+        artist: current.artist,
+        album: 'தமிழகவல்',
+        artwork: current.cover ? [{ src: current.cover, sizes: '512x512', type: 'image/png' }] : [],
+      });
+    } catch {
+      /* MediaMetadata unavailable */
+    }
+    const set = (action: MediaSessionAction, handler: (() => void) | null) => {
+      try { ms.setActionHandler(action, handler); } catch { /* unsupported action */ }
+    };
+    set('play', () => safePlay(audioRef.current));
+    set('pause', () => audioRef.current?.pause());
+    set('previoustrack', prev);
+    set('nexttrack', next);
+    set('seekto', null);
+  }, [current, prev, next]);
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+    try { navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused'; } catch { /* noop */ }
+  }, [isPlaying]);
+
   const value = useMemo<PlayerContextValue>(
-    () => ({ current, isPlaying, shuffle, repeat, playQueue, toggle, next, prev, toggleShuffle, cycleRepeat }),
-    [current, isPlaying, shuffle, repeat, playQueue, toggle, next, prev, toggleShuffle, cycleRepeat]
+    () => ({ current, isPlaying, loading, error, shuffle, repeat, playQueue, toggle, next, prev, toggleShuffle, cycleRepeat }),
+    [current, isPlaying, loading, error, shuffle, repeat, playQueue, toggle, next, prev, toggleShuffle, cycleRepeat]
   );
 
   return (
@@ -193,15 +279,40 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
         ref={audioRef}
         src={current?.src || undefined}
         preload="metadata"
-        onPlay={() => setIsPlaying(true)}
+        onPlay={() => { setIsPlaying(true); setError(null); }}
         onPause={() => setIsPlaying(false)}
         onEnded={handleEnded}
         onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
-        onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+        onLoadStart={() => { setLoading(true); setError(null); }}
+        onWaiting={() => setLoading(true)}
+        onPlaying={() => setLoading(false)}
+        onCanPlay={() => setLoading(false)}
+        onLoadedMetadata={(e) => {
+          setDuration(e.currentTarget.duration);
+          if (pendingSeek.current > 0) {
+            try { e.currentTarget.currentTime = pendingSeek.current; } catch { /* noop */ }
+            setTime(pendingSeek.current);
+            pendingSeek.current = 0;
+          }
+        }}
+        onError={() => {
+          setLoading(false);
+          setIsPlaying(false);
+          setError('இந்தப் பாடலை இயக்க முடியவில்லை. பிறகு முயற்சிக்கவும்.');
+        }}
       />
 
       {current && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-gray-800 bg-gray-900/95 backdrop-blur">
+        <section
+          role="region"
+          aria-label="இசை இயக்கி"
+          className="fixed bottom-0 left-0 right-0 z-50 border-t border-gray-800 bg-gray-900/95 backdrop-blur"
+        >
+          {error && (
+            <p role="alert" className="bg-red-600/90 px-4 py-1.5 text-center text-xs font-tamil text-white">
+              {error}
+            </p>
+          )}
           <div className="container mx-auto flex items-center gap-3 px-3 py-3 sm:gap-4 sm:px-4">
             <div className="flex w-2/5 min-w-0 items-center gap-3 sm:w-1/4">
               <Cover src={current.cover} alt={current.title} className="h-12 w-12 rounded shrink-0" />
@@ -219,9 +330,19 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
                 <button
                   onClick={toggle}
                   aria-label={isPlaying ? 'Pause' : 'Play'}
+                  aria-busy={loading}
                   className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-600 text-white shadow hover:bg-orange-500"
                 >
-                  {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="ml-0.5 h-5 w-5" />}
+                  {loading ? (
+                    <span
+                      aria-hidden
+                      className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+                    />
+                  ) : isPlaying ? (
+                    <Pause className="h-5 w-5" />
+                  ) : (
+                    <Play className="ml-0.5 h-5 w-5" />
+                  )}
                 </button>
                 <button onClick={next} aria-label="Next" className="text-gray-300 hover:text-white">
                   <SkipForward className="h-5 w-5" />
@@ -267,7 +388,7 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
               />
             </div>
           </div>
-        </div>
+        </section>
       )}
     </PlayerContext.Provider>
   );

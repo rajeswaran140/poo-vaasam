@@ -10,6 +10,7 @@ import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentPageClient } from '@/components/ContentPageClient';
 import { PoemReader } from '@/components/PoemReader';
 import { YouTubeEmbed } from '@/components/YouTubeEmbed';
+import { DetailAudioPlayer } from '@/components/music/DetailAudioPlayer';
 import { JsonLd } from '@/components/JsonLd';
 import { isYouTubeUrl, getYouTubeWatchUrl, getYouTubeId } from '@/lib/utils/youtube';
 import { SITE_URL, SITE_NAME, absoluteUrl, toDescription } from '@/lib/seo';
@@ -193,25 +194,24 @@ export default async function ContentPage({ params }: PageProps) {
             </div>
           )}
 
-          {/* Audio Player */}
+          {/* Audio — driven through the global player (single audio element) */}
           {content.audioUrl && (
             <div className="p-6 sm:p-8 bg-gradient-to-r from-purple-50 to-blue-50 border-b border-gray-200">
               <div className="flex items-center gap-3 mb-3">
                 <span className="text-2xl">🎵</span>
                 <span className="font-semibold text-gray-700 font-tamil">ஒலி கிடைக்கிறது</span>
               </div>
-              <audio
-                controls
-                className="w-full"
-                src={content.audioUrl}
-              >
-                உங்கள் உலாவி ஒலி இயக்கத்தை ஆதரிக்கவில்லை.
-              </audio>
-              {content.audioDuration && (
-                <p className="text-sm text-gray-600 mt-2 font-tamil">
-                  காலம்: {Math.floor(content.audioDuration / 60)}:{(content.audioDuration % 60).toString().padStart(2, '0')}
-                </p>
-              )}
+              <DetailAudioPlayer
+                track={{
+                  id: content.id,
+                  title: content.title,
+                  artist: content.author || '',
+                  src: content.audioUrl,
+                  cover: content.featuredImage || undefined,
+                  duration:
+                    typeof content.audioDuration === 'number' ? content.audioDuration : undefined,
+                }}
+              />
             </div>
           )}
 

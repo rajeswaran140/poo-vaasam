@@ -10,12 +10,37 @@ import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentType, ContentStatus } from '@/types/content';
 import { SongList } from '@/components/music/SongList';
 import type { Track } from '@/components/music/MusicPlayerProvider';
+import { JsonLd } from '@/components/JsonLd';
+import { SITE_NAME, absoluteUrl } from '@/lib/seo';
+
+const PAGE_TITLE = 'பாடல்கள்';
+const PAGE_DESCRIPTION =
+  'தமிழ் பாடல்கள் தொகுப்பு — இலவசமாகக் கேளுங்கள், படியுங்கள், பாருங்கள்.';
 
 export const metadata: Metadata = {
-  title: 'பாடல்கள்',
-  description: 'தமிழ் பாடல்கள் தொகுப்பு — இலவசமாகக் கேளுங்கள், படியுங்கள், பாருங்கள்.',
+  title: PAGE_TITLE,
+  description: PAGE_DESCRIPTION,
   alternates: { canonical: '/songs' },
+  openGraph: {
+    title: `${PAGE_TITLE} | ${SITE_NAME}`,
+    description: PAGE_DESCRIPTION,
+    url: '/songs',
+    type: 'music.playlist',
+    siteName: SITE_NAME,
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: `${PAGE_TITLE} | ${SITE_NAME}`,
+    description: PAGE_DESCRIPTION,
+  },
 };
+
+/** Seconds → ISO-8601 duration (e.g. 185 → "PT3M5S") for schema.org. */
+function isoDuration(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `PT${m}M${s}S`;
+}
 
 async function getSongs() {
   try {
@@ -44,8 +69,32 @@ export default async function SongsPage() {
   const playableCount = tracks.filter((t) => t.src).length;
   const totalMin = Math.round(tracks.reduce((sum, t) => sum + (t.duration || 0), 0) / 60);
 
+  const playlistJsonLd =
+    playableCount > 0
+      ? {
+          '@context': 'https://schema.org',
+          '@type': 'MusicPlaylist',
+          name: PAGE_TITLE,
+          description: PAGE_DESCRIPTION,
+          url: absoluteUrl('/songs'),
+          numTracks: playableCount,
+          track: tracks
+            .filter((t) => t.src)
+            .map((t, i) => ({
+              '@type': 'MusicRecording',
+              position: i + 1,
+              name: t.title,
+              url: absoluteUrl(`/content/${t.id}`),
+              byArtist: { '@type': 'Person', name: t.artist },
+              audio: { '@type': 'AudioObject', contentUrl: t.src },
+              ...(t.duration ? { duration: isoDuration(t.duration) } : {}),
+            })),
+        }
+      : null;
+
   return (
     <div className="min-h-screen">
+      {playlistJsonLd && <JsonLd data={playlistJsonLd} />}
       <Header />
       <main>
         {/* Full-width Spotify-style playlist header (fades into the dark page) */}

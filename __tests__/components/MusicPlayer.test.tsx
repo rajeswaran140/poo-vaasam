@@ -1,12 +1,22 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MusicPlayerProvider, formatTime, type Track } from '@/components/music/MusicPlayerProvider';
 import { SongList } from '@/components/music/SongList';
 
-// jsdom doesn't implement media playback.
+const STORAGE_KEY = 'tamilagaval:player:v1';
+
+// jsdom doesn't implement media playback or the Media Session API.
 beforeAll(() => {
   window.HTMLMediaElement.prototype.play = jest.fn().mockResolvedValue(undefined);
   window.HTMLMediaElement.prototype.pause = jest.fn();
+  (window as any).MediaMetadata = class {
+    constructor(init: Record<string, unknown>) { Object.assign(this, init); }
+  };
+  Object.defineProperty(navigator, 'mediaSession', {
+    configurable: true,
+    value: { metadata: null, playbackState: 'none', setActionHandler: jest.fn() },
+  });
 });
+beforeEach(() => sessionStorage.clear());
 afterEach(() => jest.clearAllMocks());
 
 const renderList = (tracks: Track[]) =>
@@ -131,5 +141,69 @@ describe('SongList + global player', () => {
     fireEvent.ended(container.querySelector('audio')!);
     expect(audioSrc(container)).toBe('b.mp3');
     expect(window.HTMLMediaElement.prototype.play).toHaveBeenCalled();
+  });
+});
+
+describe('player bar: buffering, errors, a11y', () => {
+  it('wraps the bar in a labelled "Now playing" region', () => {
+    renderList(tracks);
+    fireEvent.click(screen.getByText('பூ வாசம்'));
+    expect(screen.getByRole('region', { name: 'இசை இயக்கி' })).toBeInTheDocument();
+  });
+
+  it('shows a buffering state while waiting, and clears it on canplay', () => {
+    const { container } = renderList(tracks);
+    fireEvent.click(screen.getByText('பூ வாசம்'));
+    const audio = container.querySelector('audio')!;
+    expect(screen.getByLabelText('Play')).toHaveAttribute('aria-busy', 'false');
+    fireEvent.waiting(audio);
+    expect(screen.getByLabelText('Play')).toHaveAttribute('aria-busy', 'true');
+    fireEvent.canPlay(audio);
+    expect(screen.getByLabelText('Play')).toHaveAttribute('aria-busy', 'false');
+  });
+
+  it('surfaces an error alert when the audio fails to load', () => {
+    const { container } = renderList(tracks);
+    fireEvent.click(screen.getByText('பூ வாசம்'));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.error(container.querySelector('audio')!);
+    expect(screen.getByRole('alert')).toHaveTextContent('இயக்க முடியவில்லை');
+  });
+
+  it('sets Media Session metadata for the playing track', () => {
+    renderList(tracks);
+    fireEvent.click(screen.getByText('பூ வாசம்'));
+    expect((navigator.mediaSession.metadata as any)?.title).toBe('பூ வாசம்');
+    expect((navigator.mediaSession.metadata as any)?.artist).toBe('இளையராஜா');
+  });
+
+  it('exposes a lyrics link on every row (visible on mobile too)', () => {
+    renderList(tracks);
+    expect(
+      screen.getByRole('link', { name: 'பூ வாசம் — பாடல் வரிகள்' })
+    ).toHaveAttribute('href', '/content/s1');
+  });
+});
+
+describe('session persistence', () => {
+  it('persists the queue + position to sessionStorage while playing', () => {
+    const { container } = renderList(three);
+    fireEvent.click(screen.getByText('Track B'));
+    fireEvent.timeUpdate(container.querySelector('audio')!, { target: { currentTime: 12 } });
+    const saved = JSON.parse(sessionStorage.getItem(STORAGE_KEY)!);
+    expect(saved.index).toBe(1);
+    expect(saved.queue).toHaveLength(3);
+  });
+
+  it('restores a saved session (bar reappears) without autoplaying', () => {
+    sessionStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ queue: three, index: 1, shuffle: false, repeat: 'off', time: 12 })
+    );
+    renderList(three);
+    const region = screen.getByRole('region', { name: 'இசை இயக்கி' });
+    expect(within(region).getByText('Track B')).toBeInTheDocument();
+    // restored sessions stay paused — no autoplay without a user gesture
+    expect(window.HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
   });
 });

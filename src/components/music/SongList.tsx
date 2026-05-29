@@ -7,7 +7,7 @@
  */
 
 import Link from 'next/link';
-import { Play, Pause, Music, Shuffle, Repeat } from 'lucide-react';
+import { Play, Pause, Music, Shuffle, Repeat, ChevronRight } from 'lucide-react';
 import { useMusicPlayer, Cover, formatTime, type Track } from './MusicPlayerProvider';
 
 export function SongList({ tracks }: { tracks: Track[] }) {
@@ -101,9 +101,11 @@ export function SongList({ tracks }: { tracks: Track[] }) {
                 <Link
                   href={`/content/${t.id}`}
                   onClick={(e) => e.stopPropagation()}
-                  className="hidden sm:block text-xs text-gray-400 hover:text-orange-400 font-tamil px-2 shrink-0"
+                  aria-label={`${t.title} — பாடல் வரிகள்`}
+                  className="text-gray-400 hover:text-orange-400 font-tamil px-2 shrink-0"
                 >
-                  பாடல் வரிகள்
+                  <span className="hidden text-xs sm:inline">பாடல் வரிகள்</span>
+                  <ChevronRight className="h-4 w-4 sm:hidden" aria-hidden />
                 </Link>
                 <span className="text-xs text-gray-500 w-10 text-right shrink-0 tabular-nums">
                   {isPlayable && t.duration ? formatTime(t.duration) : ''}
