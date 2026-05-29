@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
-import { SITE, isYouTubeChannelConfigured, isYouTubeVideosConfigured } from '@/config/site';
+import { SITE, CONTENT_SECTIONS, isYouTubeChannelConfigured, isYouTubeVideosConfigured } from '@/config/site';
 
 const YouTubeIcon = () => (
   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -17,13 +17,11 @@ const Chevron = ({ className = '' }: { className?: string }) => (
   </svg>
 );
 
-// Content-type pages, grouped under a single "படைப்புகள்" menu.
+// Content-type pages, grouped under a single "படைப்புகள்" menu. Driven by the
+// shared section registry (songs/poems lead; empty sections stay hidden), with
+// the "all" aggregate appended.
 const BROWSE_LINKS = [
-  { href: '/poems', label: 'கவிதைகள்' },
-  { href: '/songs', label: 'பாடல்கள்' },
-  { href: '/lyrics', label: 'பாடல் வரிகள்' },
-  { href: '/stories', label: 'கதைகள்' },
-  { href: '/essays', label: 'கட்டுரைகள்' },
+  ...CONTENT_SECTIONS.filter((s) => s.live).map((s) => ({ href: s.href, label: s.label })),
   { href: '/all', label: 'அனைத்தும்' },
 ];
 

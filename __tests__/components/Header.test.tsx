@@ -47,4 +47,13 @@ describe('Header — navigation', () => {
     render(<Header />);
     expect(screen.getByRole('button', { name: /படைப்புகள்/ })).toBeInTheDocument();
   });
+
+  it('surfaces the live sections (songs, poems) and hides empty ones (stories, essays, lyrics)', () => {
+    render(<Header />);
+    expect(screen.getAllByRole('link', { name: 'பாடல்கள்' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('link', { name: 'கவிதைகள்' }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('link', { name: 'கதைகள்' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'கட்டுரைகள்' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'பாடல் வரிகள்' })).toBeNull();
+  });
 });

@@ -2,7 +2,7 @@ import type { MetadataRoute } from 'next';
 import { SITE_URL } from '@/lib/seo';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentStatus } from '@/types/content';
-import { SITE, isYouTubeVideosConfigured } from '@/config/site';
+import { SITE, liveContentSections, isYouTubeVideosConfigured } from '@/config/site';
 import { fetchChannelVideos } from '@/lib/youtube-feed';
 
 // Regenerate hourly rather than per-request.
@@ -23,8 +23,9 @@ const xmlEscape = (s: string) =>
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const videosEnabled = isYouTubeVideosConfigured();
 
-  // Section/landing pages that surface content, and lower-priority info pages.
-  const sectionPaths = ['', '/songs', '/poems', '/lyrics', '/stories', '/essays', '/all', '/music-composition'];
+  // Section/landing pages: home, the live content sections (empty ones are
+  // excluded via the shared registry), the aggregate, and the service page.
+  const sectionPaths = ['', ...liveContentSections().map((s) => s.href), '/all', '/music-composition'];
   if (videosEnabled) {
     sectionPaths.push('/videos');
   }

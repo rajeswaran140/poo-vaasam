@@ -10,7 +10,7 @@ import Link from 'next/link';
 import Header from '@/components/Header';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentStatus, ContentType } from '@/types/content';
-import { SITE, isYouTubeChannelConfigured, isFacebookConfigured, isYouTubeVideosConfigured } from '@/config/site';
+import { SITE, liveContentSections, isYouTubeChannelConfigured, isFacebookConfigured, isYouTubeVideosConfigured } from '@/config/site';
 import { fetchChannelVideos } from '@/lib/youtube-feed';
 import { SubscribeButton } from '@/components/SubscribeButton';
 import { JsonLd } from '@/components/JsonLd';
@@ -352,42 +352,17 @@ export default async function HomePage() {
         <p className="text-center text-gray-300 font-tamil mb-12 max-w-2xl mx-auto">
           எல்லா வகையான தமிழ் இலக்கியங்களையும் கண்டறியுங்கள்
         </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 max-w-6xl mx-auto">
-          <ContentTypeCard
-            icon="🎵"
-            title="பாடல்கள்"
-            count={stats?.songs || 0}
-            href="/songs"
-            color="from-blue-500 to-blue-600"
-          />
-          <ContentTypeCard
-            icon="📝"
-            title="கவிதைகள்"
-            count={stats?.poems || 0}
-            href="/poems"
-            color="from-green-500 to-green-600"
-          />
-          <ContentTypeCard
-            icon="🎤"
-            title="பாடல் வரிகள்"
-            count={stats?.lyrics || 0}
-            href="/lyrics"
-            color="from-yellow-500 to-yellow-600"
-          />
-          <ContentTypeCard
-            icon="📖"
-            title="கதைகள்"
-            count={stats?.stories || 0}
-            href="/stories"
-            color="from-pink-500 to-pink-600"
-          />
-          <ContentTypeCard
-            icon="✍️"
-            title="கட்டுரைகள்"
-            count={stats?.essays || 0}
-            href="/essays"
-            color="from-purple-500 to-purple-600"
-          />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-3xl mx-auto">
+          {liveContentSections().map((s) => (
+            <ContentTypeCard
+              key={s.href}
+              icon={s.icon}
+              title={s.label}
+              count={(stats as Record<string, number> | null)?.[s.type.toLowerCase()] ?? 0}
+              href={s.href}
+              color={s.color}
+            />
+          ))}
         </div>
       </section>
 
@@ -462,9 +437,9 @@ export default async function HomePage() {
             <div>
               <h4 className="font-semibold mb-4 font-tamil">விரைவு இணைப்புகள்</h4>
               <ul className="space-y-2 text-gray-400">
-                <li><Link href="/songs" className="hover:text-white font-tamil">பாடல்கள்</Link></li>
-                <li><Link href="/poems" className="hover:text-white font-tamil">கவிதைகள்</Link></li>
-                <li><Link href="/stories" className="hover:text-white font-tamil">கதைகள்</Link></li>
+                {liveContentSections().map((s) => (
+                  <li key={s.href}><Link href={s.href} className="hover:text-white font-tamil">{s.label}</Link></li>
+                ))}
                 <li><Link href="/music-composition" className="hover:text-white font-tamil">இசையமைப்பு சேவை</Link></li>
                 <li><Link href="/all" className="hover:text-white font-tamil">அனைத்து உள்ளடக்கம்</Link></li>
               </ul>

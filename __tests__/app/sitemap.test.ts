@@ -38,7 +38,12 @@ it('includes /videos and the core static routes', async () => {
 
   expect(urls.some((u) => u.endsWith('/videos'))).toBe(true);
   expect(urls.some((u) => u.endsWith('/songs'))).toBe(true);
+  expect(urls.some((u) => u.endsWith('/poems'))).toBe(true);
   expect(urls.some((u) => u.endsWith('.com') || u.endsWith('.com/'))).toBe(true); // home
+  // Empty sections are excluded via the live-section registry.
+  for (const empty of ['/lyrics', '/stories', '/essays']) {
+    expect(urls.some((u) => u.endsWith(empty))).toBe(false);
+  }
 });
 
 it('attaches YouTube video entries to the /videos page', async () => {

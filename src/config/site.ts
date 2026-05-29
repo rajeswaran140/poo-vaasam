@@ -25,6 +25,26 @@ export const SITE = {
   },
 } as const;
 
+/**
+ * Content sections in priority order (songs & poems lead — Raj is a
+ * writer/lyricist showcasing his own work). `live: false` hides a section
+ * everywhere it's driven from this list — nav, homepage cards and sitemap —
+ * until it has content. Flip a section to `live: true` when you publish that
+ * type. lyrics/stories/essays are empty for now.
+ */
+export const CONTENT_SECTIONS = [
+  { type: 'SONGS', href: '/songs', label: 'பாடல்கள்', icon: '🎵', color: 'from-blue-500 to-blue-600', live: true },
+  { type: 'POEMS', href: '/poems', label: 'கவிதைகள்', icon: '📝', color: 'from-green-500 to-green-600', live: true },
+  { type: 'LYRICS', href: '/lyrics', label: 'பாடல் வரிகள்', icon: '🎤', color: 'from-yellow-500 to-yellow-600', live: false },
+  { type: 'STORIES', href: '/stories', label: 'கதைகள்', icon: '📖', color: 'from-pink-500 to-pink-600', live: false },
+  { type: 'ESSAYS', href: '/essays', label: 'கட்டுரைகள்', icon: '✍️', color: 'from-purple-500 to-purple-600', live: false },
+] as const;
+
+/** Content sections currently live (have content / ready to surface). */
+export function liveContentSections() {
+  return CONTENT_SECTIONS.filter((s) => s.live);
+}
+
 /** True when a real Facebook URL is configured. */
 export function isFacebookConfigured(): boolean {
   return /facebook\.com\//.test(SITE.facebook.url);
