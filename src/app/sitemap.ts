@@ -8,18 +8,18 @@ import { isYouTubeVideosConfigured } from '@/config/site';
 export const revalidate = 3600;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const staticPaths = ['', '/songs', '/poems', '/lyrics', '/stories', '/essays', '/all', '/music-composition', '/about', '/contact', '/ai-search'];
+  // Section/landing pages that surface content, and lower-priority info pages.
+  const sectionPaths = ['', '/songs', '/poems', '/lyrics', '/stories', '/essays', '/all', '/music-composition'];
   if (isYouTubeVideosConfigured()) {
-    staticPaths.push('/videos');
+    sectionPaths.push('/videos');
   }
-  const staticRoutes: MetadataRoute.Sitemap = staticPaths.map((p) => ({
-    url: `${SITE_URL}${p}`,
-    lastModified: new Date(),
-    changeFrequency: 'weekly',
-    priority: p === '' ? 1 : 0.7,
-  }));
+  const infoPaths = ['/about', '/contact'];
 
   let contentRoutes: MetadataRoute.Sitemap = [];
+  // Newest content change drives the site-wide lastmod, so static pages only
+  // look "modified" when content actually changes (not on every regeneration).
+  let siteLastMod = new Date(0);
+
   try {
     const repo = new ContentRepository();
     let cursor: Record<string, unknown> | undefined;
@@ -36,16 +36,34 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
     contentRoutes = items.map((entity) => {
       const c = entity.toObject();
+      const updated = c.updatedAt ? new Date(String(c.updatedAt)) : new Date();
+      if (updated > siteLastMod) siteLastMod = updated;
       return {
         url: `${SITE_URL}/content/${c.id}`,
-        lastModified: c.updatedAt ? new Date(String(c.updatedAt)) : new Date(),
+        lastModified: updated,
         changeFrequency: 'monthly',
-        priority: 0.8,
+        priority: 0.7,
       };
     });
   } catch (error) {
     console.error('[sitemap] failed to load content, returning static routes only:', error);
   }
 
-  return [...staticRoutes, ...contentRoutes];
+  const lastModified = siteLastMod.getTime() > 0 ? siteLastMod : new Date();
+
+  const sectionRoutes: MetadataRoute.Sitemap = sectionPaths.map((p) => ({
+    url: `${SITE_URL}${p}`,
+    lastModified,
+    changeFrequency: 'weekly',
+    priority: p === '' ? 1 : 0.8,
+  }));
+
+  const infoRoutes: MetadataRoute.Sitemap = infoPaths.map((p) => ({
+    url: `${SITE_URL}${p}`,
+    lastModified,
+    changeFrequency: 'monthly',
+    priority: 0.5,
+  }));
+
+  return [...sectionRoutes, ...infoRoutes, ...contentRoutes];
 }
