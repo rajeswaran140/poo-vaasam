@@ -69,6 +69,10 @@ export default async function PoemsPage() {
           <h1 className="font-kavivanar text-5xl font-extrabold leading-tight drop-shadow-md sm:text-6xl lg:text-7xl">
             கவிதைகள்
           </h1>
+          {/* Romanised keyword line — matches how people actually search. */}
+          <p className="mt-2 text-sm font-medium uppercase tracking-[0.18em] text-white/80">
+            Tamil Poems &amp; Kavithai
+          </p>
           <p className="mt-3 font-tamil text-white/90 sm:text-lg">தமிழ் கவிதைகள் தொகுப்பு</p>
           <div className="mt-5 flex flex-wrap items-center gap-2 font-tamil text-sm">
             {poems.length > 0 && (

@@ -148,9 +148,13 @@ export function SongsPlaylist({ tracks }: { tracks: SongRow[] }) {
               <span className="mb-3 inline-flex items-center rounded-full bg-white/15 px-3 py-1 font-tamil text-xs font-semibold uppercase tracking-wide text-white ring-1 ring-white/25 backdrop-blur-sm">
                 தொகுப்பு
               </span>
-              <h1 className="mb-4 font-kavivanar text-5xl font-extrabold leading-tight drop-shadow-md sm:text-6xl lg:text-7xl">
+              <h1 className="mb-2 font-kavivanar text-5xl font-extrabold leading-tight drop-shadow-md sm:text-6xl lg:text-7xl">
                 {PAGE_TITLE}
               </h1>
+              {/* Romanised keyword line — matches how people actually search. */}
+              <p className="mb-3 text-sm font-medium uppercase tracking-[0.18em] text-white/80">
+                Tamil Songs &amp; Paadal Varigal
+              </p>
               <p className="mb-3 font-tamil text-white/90">{TAGLINE}</p>
               <div className="flex flex-wrap items-center gap-2 font-tamil text-sm">
                 {playableCount > 0 && (
