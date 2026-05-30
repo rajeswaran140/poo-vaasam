@@ -67,41 +67,79 @@ export interface SubscribeClickRow {
   eventCount: number;
 }
 
+export interface SubscribeClicksData {
+  rows: SubscribeClickRow[];
+  /** Total count across all rows — also populated when the breakdown query
+   *  fails but the un-broken-down total query succeeds (custom dimension
+   *  not yet registered). */
+  total: number;
+  /** Optional state hint surfaced on the dashboard. */
+  note?: 'dimension-not-registered';
+}
+
 /**
  * Aggregated `subscribe_click` counts broken down by the `source` event
  * parameter (home_hero / floater / footer / about / videos_hero /
  * home_latest_videos). Last N days.
+ *
+ * If the breakdown fails with INVALID_ARGUMENT — the most common reason is
+ * that `source` hasn't been registered as a GA4 Custom Dimension yet — we
+ * automatically retry without the dimension to surface at least the total
+ * count, so the dashboard isn't blank while waiting on GA4 admin setup.
  */
 export async function fetchSubscribeClicksBySource(
   daysBack = 28
-): Promise<Result<SubscribeClickRow[]>> {
+): Promise<Result<SubscribeClicksData>> {
   const client = getClient();
   const property = propertyPath();
   if (!client || !property) return { ok: false, error: 'GA4 client not initialised' };
 
+  const baseFilter = {
+    filter: {
+      fieldName: 'eventName',
+      stringFilter: { matchType: 'EXACT', value: 'subscribe_click' },
+    },
+  };
+  const dateRanges = [{ startDate: `${daysBack}daysAgo`, endDate: 'today' }];
+
   try {
     const [res] = await client.runReport({
       property,
-      dateRanges: [{ startDate: `${daysBack}daysAgo`, endDate: 'today' }],
+      dateRanges,
       dimensions: [{ name: 'customEvent:source' }],
       metrics: [{ name: 'eventCount' }],
-      dimensionFilter: {
-        filter: {
-          fieldName: 'eventName',
-          stringFilter: { matchType: 'EXACT', value: 'subscribe_click' },
-        },
-      },
+      dimensionFilter: baseFilter,
       limit: 50,
       orderBys: [{ metric: { metricName: 'eventCount' }, desc: true }],
     } as any);
 
-    const data = (res.rows ?? []).map((row: any) => ({
+    const rows = (res.rows ?? []).map((row: any) => ({
       source: row.dimensionValues?.[0]?.value || '(not set)',
       eventCount: Number(row.metricValues?.[0]?.value ?? 0),
     }));
-    return { ok: true, data };
+    const total = rows.reduce((sum, r) => sum + r.eventCount, 0);
+    return { ok: true, data: { rows, total } };
   } catch (err) {
     const error = errMessage(err);
+    // INVALID_ARGUMENT here almost always means `customEvent:source` isn't
+    // a registered custom dimension yet. Retry without the dimension so the
+    // dashboard can still show the running total.
+    if (/INVALID_ARGUMENT|customEvent/i.test(error)) {
+      try {
+        const [res] = await client.runReport({
+          property,
+          dateRanges,
+          metrics: [{ name: 'eventCount' }],
+          dimensionFilter: baseFilter,
+        } as any);
+        const total = Number(res.rows?.[0]?.metricValues?.[0]?.value ?? 0);
+        return { ok: true, data: { rows: [], total, note: 'dimension-not-registered' } };
+      } catch (fallbackErr) {
+        const fallbackError = errMessage(fallbackErr);
+        console.error('[ga4-api] subscribe_click total fallback failed:', fallbackError);
+        return { ok: false, error: fallbackError };
+      }
+    }
     console.error('[ga4-api] subscribe_click query failed:', error);
     return { ok: false, error };
   }

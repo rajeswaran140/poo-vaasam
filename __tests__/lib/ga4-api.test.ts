@@ -61,7 +61,7 @@ describe('fetchSubscribeClicksBySource', () => {
     expect(runReport).not.toHaveBeenCalled();
   });
 
-  it('maps rows into { source, eventCount } shape', async () => {
+  it('maps rows + computes total when the breakdown succeeds', async () => {
     runReport.mockResolvedValueOnce([{
       rows: [
         { dimensionValues: [{ value: 'home_hero' }], metricValues: [{ value: '42' }] },
@@ -72,19 +72,41 @@ describe('fetchSubscribeClicksBySource', () => {
     const out = await fetchSubscribeClicksBySource(28);
     expect(out).toEqual({
       ok: true,
-      data: [
-        { source: 'home_hero', eventCount: 42 },
-        { source: 'floater', eventCount: 15 },
-      ],
+      data: {
+        rows: [
+          { source: 'home_hero', eventCount: 42 },
+          { source: 'floater', eventCount: 15 },
+        ],
+        total: 57,
+      },
     });
   });
 
-  it('surfaces the upstream error message on API failure', async () => {
+  it('surfaces the upstream error message on hard failure', async () => {
     runReport.mockRejectedValueOnce(new Error('7 PERMISSION_DENIED: insufficient permissions'));
     jest.spyOn(console, 'error').mockImplementation(() => {});
     const out = await fetchSubscribeClicksBySource();
     expect(out.ok).toBe(false);
     if (!out.ok) expect(out.error).toMatch(/PERMISSION_DENIED/);
+  });
+
+  it('falls back to total-only when customEvent:source isn\'t registered', async () => {
+    // First call (with dimension) fails with INVALID_ARGUMENT.
+    runReport.mockRejectedValueOnce(new Error('3 INVALID_ARGUMENT: invalid dimension customEvent:source'));
+    // Second call (without dimension) succeeds with a total.
+    runReport.mockResolvedValueOnce([{
+      rows: [{ metricValues: [{ value: '12' }] }],
+    }]);
+
+    const out = await fetchSubscribeClicksBySource();
+    expect(out).toEqual({
+      ok: true,
+      data: { rows: [], total: 12, note: 'dimension-not-registered' },
+    });
+    expect(runReport).toHaveBeenCalledTimes(2);
+    // The fallback request must not carry the dimension.
+    const fallbackArgs = runReport.mock.calls[1]?.[0] as any;
+    expect(fallbackArgs.dimensions).toBeUndefined();
   });
 
   it('filters by subscribe_click event name', async () => {

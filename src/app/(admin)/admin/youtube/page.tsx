@@ -120,12 +120,13 @@ export default async function YouTubeAdminPage() {
   // Unwrap GA4 Results — if either failed, render its .error verbatim on the
   // dashboard so we can see "PERMISSION_DENIED" / "invalid dimension" etc.
   // instead of an indistinguishable empty state.
-  const clicks = ga4ClicksRes?.ok ? ga4ClicksRes.data : [];
+  const clicksData = ga4ClicksRes?.ok ? ga4ClicksRes.data : null;
   const clicksError = ga4ClicksRes && !ga4ClicksRes.ok ? ga4ClicksRes.error : null;
   const traffic = ga4TrafficRes?.ok ? ga4TrafficRes.data : null;
   const trafficError = ga4TrafficRes && !ga4TrafficRes.ok ? ga4TrafficRes.error : null;
-  const totalSubscribeClicks = clicks.reduce((sum, r) => sum + r.eventCount, 0);
-  const maxSubscribeClicks = Math.max(1, ...clicks.map((r) => r.eventCount));
+  const totalSubscribeClicks = clicksData?.total ?? 0;
+  const clickRows = clicksData?.rows ?? [];
+  const maxSubscribeClicks = Math.max(1, ...clickRows.map((r) => r.eventCount));
 
   return (
     <div className="space-y-8">
@@ -174,13 +175,30 @@ export default async function YouTubeAdminPage() {
               <pre className="overflow-x-auto rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-900">
                 {clicksError}
               </pre>
-            ) : clicks.length === 0 ? (
+            ) : clicksData?.note === 'dimension-not-registered' ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                <p className="mb-2">
+                  <strong>Custom dimension not registered yet.</strong> Total above is the running count of all <code>subscribe_click</code> events; the per-CTA breakdown will appear once you register the dimension.
+                </p>
+                <p className="mb-1 text-xs">
+                  Register in GA4: <strong>Admin → Custom definitions → Create custom dimension</strong>
+                </p>
+                <ul className="ml-4 list-disc text-xs">
+                  <li>Dimension name: <code>CTA Source</code></li>
+                  <li>Scope: <code>Event</code></li>
+                  <li>Event parameter: <code>source</code></li>
+                </ul>
+                <p className="mt-2 text-xs">
+                  GA4 only tags events received <em>after</em> registration — breakdowns appear over the following 24–48h.
+                </p>
+              </div>
+            ) : clickRows.length === 0 ? (
               <p className="rounded-lg bg-gray-50 p-4 text-sm text-gray-500">
-                No subscribe_click events recorded yet. The event fires on every Subscribe CTA — once visitors click, breakdowns will appear here. (Custom dimension <code>customEvent:source</code> may take 24h to register the first time.)
+                No subscribe_click events recorded yet. The event fires on every Subscribe CTA — once visitors click, breakdowns will appear here.
               </p>
             ) : (
               <ul className="space-y-2">
-                {clicks.map((row) => {
+                {clickRows.map((row) => {
                   const pct = Math.round((row.eventCount / maxSubscribeClicks) * 100);
                   return (
                     <li key={row.source} className="text-sm">
