@@ -1,0 +1,164 @@
+/**
+ * YouTube Data API v3 client — read-only public stats for the admin dashboard.
+ *
+ * Two endpoints we care about for Phase 1:
+ *   - channels.list     → channel snapshot (subs, total views, video count)
+ *   - playlistItems +   → newest N videos in the channel's uploads playlist
+ *     videos.list         → per-video statistics (views/likes/comments/duration)
+ *
+ * Cached via Next's fetch cache so the API key's 10k-units/day quota goes a
+ * long way (one stats refresh per hour ≈ ~24 channel calls + ~24 video-stats
+ * calls per day → well under 100 units).
+ *
+ * Requires YOUTUBE_API_KEY (NOT NEXT_PUBLIC_ — server-only). When unset every
+ * helper returns null so the admin dashboard can degrade to "API key not
+ * configured" instead of breaking.
+ */
+
+const REVALIDATE_SECONDS = 3600; // 1 hour
+
+export interface ChannelStats {
+  channelId: string;
+  title: string;
+  subscriberCount: number;
+  viewCount: number;
+  videoCount: number;
+  uploadsPlaylistId: string;
+}
+
+export interface VideoStats {
+  id: string;
+  title: string;
+  publishedAt: string;       // ISO 8601
+  thumbnail: string;
+  viewCount: number;
+  likeCount: number;
+  commentCount: number;
+  /** Raw ISO-8601 duration (e.g. "PT3M15S"); pretty-formatted via formatDuration. */
+  duration: string;
+  /** Seconds, parsed from duration. */
+  durationSeconds: number;
+}
+
+/** Parse the YouTube ISO-8601 duration (PT#H#M#S) into total seconds. */
+export function parseIsoDurationSeconds(iso: string): number {
+  if (!iso) return 0;
+  const m = iso.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+  if (!m) return 0;
+  const [, h, mn, s] = m;
+  return (Number(h) || 0) * 3600 + (Number(mn) || 0) * 60 + (Number(s) || 0);
+}
+
+/** Format seconds as H:MM:SS (drops the hour when zero). */
+export function formatDuration(totalSeconds: number): string {
+  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return '0:00';
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = Math.floor(totalSeconds % 60);
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+
+/** True when an API key is configured — gate the admin UI on this. */
+export function isYouTubeApiConfigured(): boolean {
+  return Boolean(process.env.YOUTUBE_API_KEY);
+}
+
+async function ytFetch<T>(url: string): Promise<T | null> {
+  const key = process.env.YOUTUBE_API_KEY;
+  if (!key) return null;
+  const sep = url.includes('?') ? '&' : '?';
+  try {
+    const res = await fetch(`${url}${sep}key=${key}`, {
+      next: { revalidate: REVALIDATE_SECONDS },
+    });
+    if (!res.ok) {
+      console.error(`[youtube-api] ${res.status} ${url}`);
+      return null;
+    }
+    return (await res.json()) as T;
+  } catch (err) {
+    console.error('[youtube-api] fetch failed:', err);
+    return null;
+  }
+}
+
+interface ChannelsResponse {
+  items?: Array<{
+    id: string;
+    snippet?: { title?: string };
+    statistics?: { subscriberCount?: string; viewCount?: string; videoCount?: string };
+    contentDetails?: { relatedPlaylists?: { uploads?: string } };
+  }>;
+}
+
+export async function fetchChannelStats(channelId: string): Promise<ChannelStats | null> {
+  if (!channelId) return null;
+  const url = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,contentDetails&id=${encodeURIComponent(channelId)}`;
+  const data = await ytFetch<ChannelsResponse>(url);
+  const item = data?.items?.[0];
+  if (!item) return null;
+  return {
+    channelId: item.id,
+    title: item.snippet?.title ?? '',
+    subscriberCount: Number(item.statistics?.subscriberCount ?? 0),
+    viewCount: Number(item.statistics?.viewCount ?? 0),
+    videoCount: Number(item.statistics?.videoCount ?? 0),
+    uploadsPlaylistId: item.contentDetails?.relatedPlaylists?.uploads ?? '',
+  };
+}
+
+interface PlaylistItemsResponse {
+  items?: Array<{
+    contentDetails?: { videoId?: string };
+  }>;
+  nextPageToken?: string;
+}
+
+interface VideosResponse {
+  items?: Array<{
+    id: string;
+    snippet?: { title?: string; publishedAt?: string; thumbnails?: { medium?: { url?: string }; default?: { url?: string } } };
+    statistics?: { viewCount?: string; likeCount?: string; commentCount?: string };
+    contentDetails?: { duration?: string };
+  }>;
+}
+
+/**
+ * Fetch the latest N videos in the channel's uploads playlist, with full
+ * statistics. Two API calls: one to list video IDs (≤50/page), one to hydrate
+ * statistics for those IDs.
+ */
+export async function fetchChannelVideoStats(
+  channelId: string,
+  limit = 50
+): Promise<VideoStats[]> {
+  const channel = await fetchChannelStats(channelId);
+  if (!channel?.uploadsPlaylistId) return [];
+
+  const cappedLimit = Math.min(Math.max(limit, 1), 50);
+  const playlistUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&maxResults=${cappedLimit}&playlistId=${encodeURIComponent(channel.uploadsPlaylistId)}`;
+  const playlist = await ytFetch<PlaylistItemsResponse>(playlistUrl);
+  const ids = (playlist?.items ?? [])
+    .map((i) => i.contentDetails?.videoId)
+    .filter((v): v is string => Boolean(v));
+  if (ids.length === 0) return [];
+
+  const videosUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id=${encodeURIComponent(ids.join(','))}`;
+  const videos = await ytFetch<VideosResponse>(videosUrl);
+  return (videos?.items ?? []).map((v) => {
+    const duration = v.contentDetails?.duration ?? '';
+    return {
+      id: v.id,
+      title: v.snippet?.title ?? '',
+      publishedAt: v.snippet?.publishedAt ?? '',
+      thumbnail:
+        v.snippet?.thumbnails?.medium?.url ?? v.snippet?.thumbnails?.default?.url ?? '',
+      viewCount: Number(v.statistics?.viewCount ?? 0),
+      likeCount: Number(v.statistics?.likeCount ?? 0),
+      commentCount: Number(v.statistics?.commentCount ?? 0),
+      duration,
+      durationSeconds: parseIsoDurationSeconds(duration),
+    };
+  });
+}
