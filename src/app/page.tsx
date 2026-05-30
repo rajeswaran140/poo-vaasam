@@ -374,6 +374,7 @@ export default async function HomePage() {
               <ul className="space-y-2 text-gray-400">
                 <li><Link href="/about" className="hover:text-white font-tamil focus-visible:outline-none focus-visible:underline">எங்களை பற்றி</Link></li>
                 <li><Link href="/contact" className="hover:text-white font-tamil focus-visible:outline-none focus-visible:underline">தொடர்பு</Link></li>
+                <li><Link href="/privacy" className="hover:text-white font-tamil focus-visible:outline-none focus-visible:underline">தனியுரிமை</Link></li>
               </ul>
             </div>
           </div>
