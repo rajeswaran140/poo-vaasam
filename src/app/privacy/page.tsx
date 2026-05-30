@@ -50,7 +50,7 @@ export default function PrivacyPage() {
               எத்தனை பேர் வருகிறார்கள், எந்தப் பக்கங்கள் பிரபலமாக உள்ளன என்பதைப் புரிந்துகொள்ள Google Analytics 4 பயன்படுத்தப்படுகிறது. உங்கள் IP முகவரி <strong className="text-white">அநாமதேயப்படுத்தப்படுகிறது</strong> (anonymize_ip) — அதாவது உங்களைத் தனிப்பட்ட நபராக அடையாளம் காண முடியாது.
             </p>
             <p>
-              உங்கள் உலாவியின் "Do Not Track" அமைப்பு அல்லது{' '}
+              உங்கள் உலாவியின் &ldquo;Do Not Track&rdquo; அமைப்பு அல்லது{' '}
               <a
                 href="https://tools.google.com/dlpage/gaoptout"
                 target="_blank"
