@@ -186,7 +186,7 @@ export default async function ContentPage({ params }: PageProps) {
         <JsonLd data={jsonLd} />
         <Header />
 
-        <article className="container mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
+        <article className="container mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12">
           {/* Romanised SEO eyebrow — visible to readers and indexed by crawlers. */}
           <p className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-orange-400/80 sm:text-sm">
             {enType} · by {content.author || 'Rajeswaran Thangarajah'}
