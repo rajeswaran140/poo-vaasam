@@ -21,37 +21,45 @@ import {
   type VideoStats,
 } from '@/lib/youtube-api';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
-import { ContentType, ContentStatus } from '@/types/content';
+import { ContentStatus } from '@/types/content';
+import { videoMatchesContent } from '@/lib/youtube-match';
 
 export const revalidate = 1800; // 30 min — pairs with the 1-hr upstream fetch cache
 
 const numberFmt = new Intl.NumberFormat('en-US');
 
 /**
- * Heuristic: a YouTube video is "matched" on the site when a published
- * SONGS/POEMS/LYRICS record references its video URL or shares the same title.
- * Imperfect but good enough as a publishing hint until we add an explicit
- * youtubeVideoId column.
+ * Cross-reference YouTube uploads against published content of any type. Uses
+ * the fuzzy matcher in lib/youtube-match so YouTube's descriptive titles
+ * ("அந்தி மேகமே. . . எங்கே சாய்கின்றாய். . .") still match the short DB
+ * title ("அந்தி மேகமே"), and so a populated videoUrl always wins outright.
  */
 async function getMatchedVideoIds(videos: VideoStats[]): Promise<Set<string>> {
   if (videos.length === 0) return new Set();
   const matched = new Set<string>();
   try {
     const repo = new ContentRepository();
-    const types: ContentType[] = [ContentType.SONGS, ContentType.POEMS, ContentType.LYRICS];
-    const titles = new Map(videos.map((v) => [v.title.trim().toLowerCase(), v.id]));
+    // Page through ALL published content — any record may carry a YouTube
+    // link or a title that matches an upload, not just SONGS/POEMS/LYRICS.
+    let cursor: Record<string, unknown> | undefined;
+    type Entity = Awaited<ReturnType<typeof repo.findAll>>['items'][number];
+    const items: Entity[] = [];
+    for (let i = 0; i < 10; i++) {
+      const res = await repo.findAll({
+        limit: 100,
+        status: ContentStatus.PUBLISHED,
+        lastEvaluatedKey: cursor,
+      });
+      items.push(...res.items);
+      cursor = res.lastEvaluatedKey;
+      if (!cursor) break;
+    }
 
-    for (const type of types) {
-      const res = await repo.findByType(type, { limit: 200, status: ContentStatus.PUBLISHED });
-      for (const item of res.items) {
-        const c = item.toObject();
-        const videoUrl = String(c.videoUrl ?? '');
-        for (const v of videos) {
-          if (videoUrl.includes(v.id)) matched.add(v.id);
-        }
-        const titleKey = String(c.title ?? '').trim().toLowerCase();
-        const hit = titles.get(titleKey);
-        if (hit) matched.add(hit);
+    for (const item of items) {
+      const c = item.toObject();
+      for (const v of videos) {
+        if (matched.has(v.id)) continue;
+        if (videoMatchesContent(v, c)) matched.add(v.id);
       }
     }
   } catch (err) {
