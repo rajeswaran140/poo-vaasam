@@ -28,9 +28,9 @@ export const DEFAULT_SONG_THEME: SongTheme = 'love';
  * Songs not listed here fall back to DEFAULT_SONG_THEME.
  */
 export const SONG_THEME_BY_ID: Record<string, SongTheme> = {
-  cnt_1780067292588_frlxbwfzh: 'mother',  // இரை தேட சென்றதாய்
+  cnt_1780067292588_frlxbwfzh: 'nature',  // இரை தேட சென்றதாய்
   cnt_1779939400084_vgk04g3q9: 'nature',  // அந்தி மேகமே
-  cnt_1780066149991_18z5eyynd: 'tamil',   // முத்தமிழின் மூன்றெழுத்தில்
+  cnt_1780066149991_18z5eyynd: 'mother',  // முத்தமிழின் மூன்றெழுத்தில்
   // Everything else → 'love' (என்ன மாயம், தூக்கணாங்குருவி போல, ஒரு நாள் திருநாள்,
   // அன்பெனும் தேரில், அக்கம் பக்கம், முடிவில்லா முகத்தினில்).
 };
