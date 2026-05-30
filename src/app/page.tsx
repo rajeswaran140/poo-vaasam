@@ -135,6 +135,7 @@ export default async function HomePage() {
                   {isYouTubeChannelConfigured() && (
                     <SubscribeButton
                       label="YouTube-ல் Subscribe செய்க"
+                      source="home_hero"
                       className="px-10 py-5 bg-orange-700 text-white rounded-full font-bold hover:bg-orange-800 transition-all shadow-2xl transform hover:scale-105 font-tamil inline-flex items-center justify-center gap-3 text-lg"
                     />
                   )}
@@ -152,7 +153,7 @@ export default async function HomePage() {
             <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
               <h2 className="text-3xl font-bold text-white font-kavivanar">சமீபத்திய காணொளிகள்</h2>
               <div className="flex items-center gap-4">
-                <SubscribeButton label="YouTube" />
+                <SubscribeButton label="YouTube" source="home_latest_videos" />
                 <Link href="/videos" className="text-orange-400 hover:text-orange-300 font-tamil font-medium">
                   அனைத்தும் →
                 </Link>
@@ -335,7 +336,7 @@ export default async function HomePage() {
               <div className="flex flex-wrap items-center gap-3">
                 {isYouTubeChannelConfigured() && (
                   <a
-                    href={youtubeSubscribeUrl()}
+                    href={youtubeSubscribeUrl('footer')}
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label="YouTube"

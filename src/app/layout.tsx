@@ -4,6 +4,7 @@ import "./globals.css";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import { MusicPlayerProvider } from "@/components/music/MusicPlayerProvider";
 import BackToTop from "@/components/BackToTop";
+import { FloatingSubscribe } from "@/components/FloatingSubscribe";
 import { GoogleAnalytics } from "@/components/analytics/GoogleAnalytics";
 import { GA_ID, GOOGLE_SITE_VERIFICATION } from "@/lib/analytics";
 
@@ -93,6 +94,7 @@ export default function RootLayout({
           <MusicPlayerProvider>
             {children}
             <BackToTop />
+            <FloatingSubscribe />
           </MusicPlayerProvider>
         </AuthProvider>
         <GoogleAnalytics gaId={GA_ID} />

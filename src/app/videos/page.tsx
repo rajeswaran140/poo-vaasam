@@ -64,6 +64,7 @@ export default async function VideosPage() {
             </p>
             <SubscribeButton
               label="YouTube"
+              source="videos_hero"
               className="inline-flex items-center gap-2 px-7 py-3.5 bg-white text-orange-600 rounded-full font-bold hover:bg-orange-50 transition-colors shadow-lg"
             />
             {videos.length > 0 && (

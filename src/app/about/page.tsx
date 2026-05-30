@@ -136,7 +136,7 @@ export default function AboutPage() {
           <div className="flex flex-wrap items-center justify-center gap-3">
             {isYouTubeChannelConfigured() && (
               <a
-                href={youtubeSubscribeUrl()}
+                href={youtubeSubscribeUrl('about')}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 px-6 py-3 font-tamil text-sm font-bold text-white shadow-lg transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"

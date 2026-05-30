@@ -69,7 +69,22 @@ export function isYouTubeVideosConfigured(): boolean {
   return isValidYouTubeChannelId(SITE.youtube.channelId);
 }
 
-/** One-click "Subscribe" URL — opens YouTube's subscribe-confirmation dialog. */
-export function youtubeSubscribeUrl(): string {
-  return `${SITE.youtube.channelUrl.replace(/\/+$/, '')}?sub_confirmation=1`;
+/**
+ * One-click "Subscribe" URL — opens YouTube's subscribe-confirmation dialog.
+ * Pass a `source` to UTM-tag the click so GA can report which CTA on the site
+ * actually drove the subscribe (hero vs footer vs floater vs videos-page …).
+ * YouTube preserves the query string on the redirect to the channel page, so
+ * the UTM lands in Google Analytics when the user comes back via any link
+ * we control downstream.
+ */
+export function youtubeSubscribeUrl(source?: string): string {
+  const base = `${SITE.youtube.channelUrl.replace(/\/+$/, '')}?sub_confirmation=1`;
+  if (!source) return base;
+  const utm = new URLSearchParams({
+    utm_source: 'tamilagaval',
+    utm_medium: 'site_cta',
+    utm_campaign: 'youtube_subscribe',
+    utm_content: source,
+  });
+  return `${base}&${utm.toString()}`;
 }
