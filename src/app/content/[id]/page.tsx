@@ -182,17 +182,17 @@ export default async function ContentPage({ params }: PageProps) {
       contentType={content.type}
       contentTitle={content.title}
     >
-      <div className="min-h-screen bg-gray-900">
+      <div className="min-h-screen bg-gray-50">
         <JsonLd data={jsonLd} />
         <Header />
 
         <article className="container mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12">
           {/* Romanised SEO eyebrow — visible to readers and indexed by crawlers. */}
-          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-orange-400/80 sm:text-sm">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-orange-600 sm:text-sm">
             {enType} · by {content.author || 'Rajeswaran Thangarajah'}
           </p>
 
-          <div className="overflow-hidden rounded-2xl bg-white shadow-2xl shadow-black/30 ring-1 ring-white/5">
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
 
             {/* Preview Video — short clip uploaded to the site */}
             {content.previewVideoUrl && (
@@ -288,9 +288,9 @@ export default async function ContentPage({ params }: PageProps) {
             )}
           </div>
 
-          {/* Share row — dark band sits below the article card. */}
-          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5 sm:p-6">
-            <h3 className="mb-3 font-tamil text-sm font-semibold uppercase tracking-wide text-gray-300">
+          {/* Share row — sits below the article card on the light page chrome. */}
+          <div className="mt-6 rounded-xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
+            <h3 className="mb-3 font-tamil text-sm font-semibold uppercase tracking-wide text-gray-700">
               பகிர்தல்
             </h3>
             <ShareRow url={pageUrl} title={content.title} />

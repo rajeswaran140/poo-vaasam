@@ -66,7 +66,7 @@ export function ShareRow({ url, title }: ShareRowProps) {
   };
 
   const linkClass =
-    'inline-flex items-center justify-center gap-2 rounded-full bg-white/5 px-4 py-2 font-tamil text-sm text-gray-200 ring-1 ring-white/10 transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/60';
+    'inline-flex items-center justify-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-4 py-2 font-tamil text-sm text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/60';
 
   return (
     <div className="flex flex-wrap gap-2">
@@ -90,7 +90,7 @@ export function ShareRow({ url, title }: ShareRowProps) {
         aria-label={copied ? 'இணைப்பு நகலெடுக்கப்பட்டது' : 'இணைப்பை நகலெடு'}
         className={linkClass}
       >
-        {copied ? <Check className="h-4 w-4 text-orange-400" aria-hidden /> : <Link2 className="h-4 w-4" aria-hidden />}
+        {copied ? <Check className="h-4 w-4 text-orange-600" aria-hidden /> : <Link2 className="h-4 w-4" aria-hidden />}
         {copied ? 'நகலெடுக்கப்பட்டது' : 'இணைப்பு'}
       </button>
     </div>
