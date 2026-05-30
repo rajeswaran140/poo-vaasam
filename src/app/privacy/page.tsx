@@ -9,12 +9,15 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import Header from '@/components/Header';
 
-const PAGE_TITLE = 'தனியுரிமை';
-const PAGE_DESCRIPTION = 'தமிழகவல் தளம் என்ன தகவல்களைச் சேகரிக்கிறது மற்றும் ஏன் என்பதைப் பற்றிய எளிய விளக்கம்.';
+// Crawler-facing metadata in English (this page is purely a disclosure;
+// the visible UI on /privacy is in Tamil for actual readers).
+const META_TITLE = 'Privacy';
+const META_DESCRIPTION =
+  'Privacy notice for Tamilagaval — what data is collected (anonymised analytics) and how to opt out.';
 
 export const metadata: Metadata = {
-  title: PAGE_TITLE,
-  description: PAGE_DESCRIPTION,
+  title: META_TITLE,
+  description: META_DESCRIPTION,
   alternates: { canonical: '/privacy' },
   robots: { index: true, follow: true },
 };
@@ -29,9 +32,11 @@ export default function PrivacyPage() {
         <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-gray-900" />
         <div className="relative container mx-auto px-6 py-16 sm:px-10">
           <h1 className="font-kavivanar text-4xl font-extrabold leading-tight drop-shadow-md sm:text-5xl">
-            {PAGE_TITLE}
+            தனியுரிமை
           </h1>
-          <p className="mt-3 max-w-2xl font-tamil text-white/90">{PAGE_DESCRIPTION}</p>
+          <p className="mt-3 max-w-2xl font-tamil text-white/90">
+            தமிழகவல் தளம் என்ன தகவல்களைச் சேகரிக்கிறது மற்றும் ஏன் என்பதைப் பற்றிய எளிய விளக்கம்.
+          </p>
         </div>
       </section>
 

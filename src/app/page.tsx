@@ -16,7 +16,7 @@ import { SITE_URL, SITE_NAME } from '@/lib/seo';
 
 export const metadata: Metadata = {
   alternates: { canonical: '/' },
-  description: 'ரஜேஸ்வரன் தங்கராஜாவின் தமிழ் கவிதைகளும் பாடல்களும் — இலவசமாகப் படியுங்கள், கேளுங்கள். YouTube-ல் காணொளிகளும்.',
+  description: 'Free Tamil poems, songs and YouTube videos by lyricist Rajeswaran Thangarajah. Read tamil kavithai, listen to paadal varigal — always free.',
 };
 
 const websiteJsonLd = {
@@ -25,7 +25,7 @@ const websiteJsonLd = {
   name: SITE_NAME,
   url: SITE_URL,
   inLanguage: 'ta',
-  description: 'ரஜேஸ்வரன் தங்கராஜாவின் தமிழ் கவிதைகளும் பாடல்களும் — என்றும் இலவசம்.',
+  description: 'Free Tamil poems, songs and YouTube videos by lyricist Rajeswaran Thangarajah — tamil kavithai, paadal varigal, always free.',
   potentialAction: {
     '@type': 'SearchAction',
     target: { '@type': 'EntryPoint', urlTemplate: `${SITE_URL}/ai-search?q={search_term_string}` },
@@ -47,6 +47,7 @@ const personJsonLd = {
   alternateName: 'ரஜேஸ்வரன் தங்கராஜா',
   url: SITE_URL,
   jobTitle: 'Tamil poet and lyricist',
+  description: 'Tamil writer and lyricist publishing original poems, songs and videos at tamilagaval.com',
   ...(personSameAs.length > 0 ? { sameAs: personSameAs } : {}),
 };
 

@@ -30,24 +30,31 @@ const balooThambi = Baloo_Thambi_2({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://tamilagaval.com"),
+  // Tamil-script searches barely happen — the SEO posture is romanised English
+  // (tamil kavithai / paadal varigal / rajeswaran thangarajah / tamilagaval)
+  // even though the visible UI stays Tamil for actual readers.
   title: {
-    default: "தமிழகவல் | தமிழ் கவிதைகள் & பாடல்கள்",
-    template: "%s | தமிழகவல்",
+    default: "Tamilagaval — Tamil Poems, Songs & Lyrics by Rajeswaran Thangarajah",
+    template: "%s | Tamilagaval",
   },
-  description: "ரஜேஸ்வரன் தங்கராஜாவின் தமிழ் கவிதைகள், பாடல்கள் மற்றும் காணொளிகள் — இலவசமாகப் படியுங்கள், கேளுங்கள், பாருங்கள்.",
+  description: "Free Tamil poems, songs and YouTube videos by lyricist Rajeswaran Thangarajah. Read tamil kavithai, listen to paadal varigal — always free.",
   keywords: [
-    "தமிழ்",
-    "தமிழ் கவிதைகள்",
-    "தமிழ் பாடல்கள்",
-    "கவிதைகள்",
-    "பாடல்கள்",
-    "தமிழ் பாடல் வரிகள்",
-    "ரஜேஸ்வரன் தங்கராஜா",
-    "இலவச தமிழ் கவிதைகள்",
+    "tamil kavithai",
+    "tamil paadal",
+    "tamil paadal varigal",
+    "tamil songs",
+    "tamil poems",
+    "tamil lyrics",
+    "kavithai lyrics",
+    "rajeswaran thangarajah",
+    "tamilagaval",
+    "free tamil poetry",
+    "tamil songs free",
+    "tamil song lyrics",
   ],
   authors: [{ name: "Rajeswaran Thangarajah" }],
-  creator: "ரஜேஸ்வரன் தங்கராஜா",
-  publisher: "தமிழகவல்",
+  creator: "Rajeswaran Thangarajah",
+  publisher: "Tamilagaval",
   robots: {
     index: true,
     follow: true,
@@ -59,16 +66,16 @@ export const metadata: Metadata = {
     },
   },
   openGraph: {
-    title: "தமிழகவல் | தமிழ் கவிதைகள் & பாடல்கள்",
-    description: "தமிழ் கவிதைகளும் பாடல்களும் — படியுங்கள், கேளுங்கள். என்றும் இலவசம்.",
+    title: "Tamilagaval — Tamil Poems, Songs & Lyrics by Rajeswaran Thangarajah",
+    description: "Free Tamil poems, songs and YouTube videos by lyricist Rajeswaran Thangarajah. Tamil kavithai, paadal varigal — always free.",
     type: "website",
     locale: "ta_IN",
-    siteName: "தமிழகவல்",
+    siteName: "Tamilagaval",
   },
   twitter: {
     card: "summary_large_image",
-    title: "தமிழகவல் | தமிழ் கவிதைகள் & பாடல்கள்",
-    description: "தமிழ் கவிதைகளும் பாடல்களும் — படியுங்கள், கேளுங்கள். என்றும் இலவசம்.",
+    title: "Tamilagaval — Tamil Poems, Songs & Lyrics by Rajeswaran Thangarajah",
+    description: "Free Tamil poems, songs and YouTube videos by lyricist Rajeswaran Thangarajah. Tamil kavithai, paadal varigal — always free.",
   },
   // Search Console HTML-tag verification (only emitted when configured).
   ...(GOOGLE_SITE_VERIFICATION ? { verification: { google: GOOGLE_SITE_VERIFICATION } } : {}),

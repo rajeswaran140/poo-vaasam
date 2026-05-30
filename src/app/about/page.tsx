@@ -12,21 +12,24 @@ import { JsonLd } from '@/components/JsonLd';
 import { SITE, isYouTubeChannelConfigured, isFacebookConfigured, youtubeSubscribeUrl, isYouTubeVideosConfigured } from '@/config/site';
 import { SITE_URL } from '@/lib/seo';
 
-const PAGE_TITLE = 'எங்களைப் பற்றி';
-const PAGE_DESCRIPTION =
-  'தமிழகவல் — ரஜேஸ்வரன் தங்கராஜாவின் தமிழ் கவிதைகள், பாடல்கள் மற்றும் YouTube காணொளிகளுக்கான இலவச தளம்.';
+// Crawler-facing metadata is romanised English; the visible UI on /about
+// stays Tamil. Real queries here are "rajeswaran thangarajah" /
+// "tamilagaval about".
+const META_TITLE = 'About Rajeswaran Thangarajah';
+const META_DESCRIPTION =
+  'Tamilagaval is the personal home of Tamil writer and lyricist Rajeswaran Thangarajah — Tamil poems, songs and YouTube videos, always free.';
 
 export const metadata: Metadata = {
-  title: PAGE_TITLE,
-  description: PAGE_DESCRIPTION,
+  title: META_TITLE,
+  description: META_DESCRIPTION,
   alternates: { canonical: '/about' },
   openGraph: {
-    title: PAGE_TITLE,
-    description: PAGE_DESCRIPTION,
+    title: META_TITLE,
+    description: META_DESCRIPTION,
     url: '/about',
     type: 'profile',
   },
-  twitter: { card: 'summary_large_image', title: PAGE_TITLE, description: PAGE_DESCRIPTION },
+  twitter: { card: 'summary_large_image', title: META_TITLE, description: META_DESCRIPTION },
 };
 
 const personSameAs: string[] = [
@@ -41,7 +44,7 @@ const personJsonLd = {
   alternateName: 'ரஜேஸ்வரன் தங்கராஜா',
   url: `${SITE_URL}/about`,
   jobTitle: 'Tamil poet and lyricist',
-  description: 'Tamil writer and lyricist publishing original poems, songs and videos at tamilagaval.com',
+  description: 'Tamil writer and lyricist publishing original poems, songs and videos at tamilagaval.com. Tamil kavithai and paadal varigal — always free.',
   ...(personSameAs.length > 0 ? { sameAs: personSameAs } : {}),
 };
 

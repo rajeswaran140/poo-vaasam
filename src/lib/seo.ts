@@ -3,7 +3,9 @@
  */
 
 export const SITE_URL = 'https://tamilagaval.com';
-export const SITE_NAME = 'தமிழகவல்';
+// Brand name in romanised form — SITE_NAME flows into JSON-LD + OG, which are
+// crawler-facing. The visible UI keeps "தமிழகவல்" as its own string.
+export const SITE_NAME = 'Tamilagaval';
 
 /** Build an absolute URL from a path. */
 export function absoluteUrl(path = ''): string {

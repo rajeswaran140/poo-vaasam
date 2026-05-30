@@ -14,24 +14,27 @@ import { JsonLd } from '@/components/JsonLd';
 
 export const revalidate = 300; // 5 minutes — so channel deletions propagate quickly
 
-const PAGE_TITLE = 'காணொளிகள் — தமிழகவல்';
-const PAGE_DESCRIPTION =
-  'தமிழகவல் YouTube சேனலின் சமீபத்திய காணொளிகள்.';
+// Crawler-facing metadata is romanised English (real queries:
+// "rajeswaran thangarajah youtube", "tamil videos"); the visible page heading
+// on /videos stays "காணொளிகள்".
+const META_TITLE = 'Tamil Videos by Rajeswaran Thangarajah';
+const META_DESCRIPTION =
+  'Latest videos from the Tamilagaval YouTube channel — Tamil poems, songs and lyrics by Rajeswaran Thangarajah.';
 
 export const metadata: Metadata = {
-  title: PAGE_TITLE,
-  description: PAGE_DESCRIPTION,
+  title: META_TITLE,
+  description: META_DESCRIPTION,
   alternates: { canonical: '/videos' },
   openGraph: {
-    title: PAGE_TITLE,
-    description: PAGE_DESCRIPTION,
+    title: META_TITLE,
+    description: META_DESCRIPTION,
     url: '/videos',
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
-    title: PAGE_TITLE,
-    description: PAGE_DESCRIPTION,
+    title: META_TITLE,
+    description: META_DESCRIPTION,
   },
 };
 

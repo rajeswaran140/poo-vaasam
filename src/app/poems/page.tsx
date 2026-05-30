@@ -6,10 +6,27 @@ export const revalidate = 300;
 
 import type { Metadata } from 'next';
 
+// Crawler-facing metadata is romanised English (real queries: tamil kavithai /
+// tamil poems); the visible <h1> on the page stays "கவிதைகள்".
+const META_TITLE = 'Tamil Poems & Kavithai';
+const META_DESCRIPTION =
+  'Free Tamil poems and kavithai by Rajeswaran Thangarajah — read, share. Always free.';
+
 export const metadata: Metadata = {
-  title: 'கவிதைகள்',
-  description: 'தமிழ் கவிதைகள் தொகுப்பு — இலவசமாகப் படித்து அனுபவியுங்கள்.',
+  title: META_TITLE,
+  description: META_DESCRIPTION,
   alternates: { canonical: '/poems' },
+  openGraph: {
+    title: `${META_TITLE} | Tamilagaval`,
+    description: META_DESCRIPTION,
+    url: '/poems',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: `${META_TITLE} | Tamilagaval`,
+    description: META_DESCRIPTION,
+  },
 };
 
 import { Suspense } from 'react';

@@ -13,25 +13,29 @@ import { themeForSong } from '@/config/song-themes';
 import { JsonLd } from '@/components/JsonLd';
 import { SITE_NAME, absoluteUrl } from '@/lib/seo';
 
-const PAGE_TITLE = 'பாடல்கள்';
-const PAGE_DESCRIPTION =
-  'தமிழ் பாடல்கள் தொகுப்பு — இலவசமாகக் கேளுங்கள், படியுங்கள், பாருங்கள்.';
+// Crawler-facing title/description use romanised English so the page ranks for
+// real queries (tamil songs / paadal varigal); the visible <h1> on the page
+// stays "பாடல்கள்".
+const META_TITLE = 'Tamil Songs & Paadal Varigal';
+const META_DESCRIPTION =
+  'Free Tamil songs and paadal varigal by Rajeswaran Thangarajah — listen, read the lyrics, share. Always free.';
+const JSONLD_NAME = 'Tamil Songs & Paadal Varigal — Tamilagaval';
 
 export const metadata: Metadata = {
-  title: PAGE_TITLE,
-  description: PAGE_DESCRIPTION,
+  title: META_TITLE,
+  description: META_DESCRIPTION,
   alternates: { canonical: '/songs' },
   openGraph: {
-    title: `${PAGE_TITLE} | ${SITE_NAME}`,
-    description: PAGE_DESCRIPTION,
+    title: `${META_TITLE} | ${SITE_NAME}`,
+    description: META_DESCRIPTION,
     url: '/songs',
     type: 'music.playlist',
     siteName: SITE_NAME,
   },
   twitter: {
     card: 'summary_large_image',
-    title: `${PAGE_TITLE} | ${SITE_NAME}`,
-    description: PAGE_DESCRIPTION,
+    title: `${META_TITLE} | ${SITE_NAME}`,
+    description: META_DESCRIPTION,
   },
 };
 
@@ -89,8 +93,8 @@ export default async function SongsPage() {
       ? {
           '@context': 'https://schema.org',
           '@type': 'MusicPlaylist',
-          name: PAGE_TITLE,
-          description: PAGE_DESCRIPTION,
+          name: JSONLD_NAME,
+          description: META_DESCRIPTION,
           url: absoluteUrl('/songs'),
           numTracks: playableCount,
           track: tracks
