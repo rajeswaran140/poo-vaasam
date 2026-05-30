@@ -15,11 +15,15 @@ const contentSecurityPolicy = [
   "object-src 'none'",
   "frame-ancestors 'self'",
   "form-action 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  // GA4 needs googletagmanager.com (loader) + google-analytics.com (events).
+  // Without these, the gtag <script> is blocked → 0 events ever reach GA4.
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  "connect-src 'self' https:",
+  // connect-src https: already covers google-analytics.com/g/collect, but
+  // listing the GA hostnames explicitly makes the dependency obvious.
+  "connect-src 'self' https: https://www.google-analytics.com https://*.analytics.google.com",
   "media-src 'self' blob: https:",
   "frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com",
   "upgrade-insecure-requests",
