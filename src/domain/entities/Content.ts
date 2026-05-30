@@ -40,7 +40,8 @@ export class Content {
     private _updatedAt: Date,
     private _publishedAt: Date | undefined,
     private _videoUrl: string | undefined = undefined,
-    private _previewVideoUrl: string | undefined = undefined
+    private _previewVideoUrl: string | undefined = undefined,
+    private _youtubeVideoId: string | undefined = undefined
   ) {}
 
   // Getters
@@ -86,6 +87,10 @@ export class Content {
 
   get previewVideoUrl(): string | undefined {
     return this._previewVideoUrl;
+  }
+
+  get youtubeVideoId(): string | undefined {
+    return this._youtubeVideoId;
   }
 
   get categoryIds(): string[] {
@@ -151,7 +156,8 @@ export class Content {
       now,
       isPublished ? now : undefined, // Set publishedAt if created as PUBLISHED
       dto.videoUrl,
-      dto.previewVideoUrl
+      dto.previewVideoUrl,
+      dto.youtubeVideoId
     );
   }
 
@@ -197,6 +203,10 @@ export class Content {
 
     if (dto.previewVideoUrl !== undefined) {
       this._previewVideoUrl = dto.previewVideoUrl || undefined;
+    }
+
+    if (dto.youtubeVideoId !== undefined) {
+      this._youtubeVideoId = dto.youtubeVideoId || undefined;
     }
 
     if (dto.categoryIds !== undefined) {
@@ -347,6 +357,7 @@ export class Content {
       audioDuration: this._audioDuration,
       videoUrl: this._videoUrl,
       previewVideoUrl: this._previewVideoUrl,
+      youtubeVideoId: this._youtubeVideoId,
       categoryIds: this._categoryIds,
       tagIds: this._tagIds,
       viewCount: this._viewCount,
@@ -383,7 +394,8 @@ export class Content {
       new Date(data.updatedAt),
       data.publishedAt ? new Date(data.publishedAt) : undefined,
       data.videoUrl,
-      data.previewVideoUrl
+      data.previewVideoUrl,
+      data.youtubeVideoId
     );
   }
 

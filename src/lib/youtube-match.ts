@@ -68,16 +68,28 @@ export function normalizeTitle(input: string): string {
 /**
  * Decide whether a YouTube video matches a content record. Pure & exported
  * so the page-level matcher (which reads from DynamoDB) can stay a thin loop.
+ *
+ * Match precedence:
+ *   1. content.youtubeVideoId === video.id  (the new explicit field — best)
+ *   2. videoUrl contains the video.id        (auto-derive from the URL — works
+ *                                             for records that pre-date the
+ *                                             explicit field with no backfill)
+ *   3. Normalised-title fuzzy match           (last resort — survives YouTube
+ *                                             title decorations like "| TamilAgaval")
  */
 export function videoMatchesContent(
   video: { id: string; title: string },
-  content: { title?: unknown; videoUrl?: unknown }
+  content: { title?: unknown; videoUrl?: unknown; youtubeVideoId?: unknown }
 ): boolean {
-  // 1. videoUrl carries the YouTube ID → definitive match.
+  // 1. Explicit youtubeVideoId — the canonical, no-ambiguity match.
+  const explicitId = typeof content.youtubeVideoId === 'string' ? content.youtubeVideoId : '';
+  if (explicitId && video.id && explicitId === video.id) return true;
+
+  // 2. videoUrl carries the YouTube ID — auto-derive, no schema migration needed.
   const videoUrl = typeof content.videoUrl === 'string' ? content.videoUrl : '';
   if (videoUrl && video.id && videoUrl.includes(video.id)) return true;
 
-  // 2. Fuzzy title match.
+  // 3. Fuzzy title fallback.
   const a = normalizeTitle(typeof content.title === 'string' ? content.title : '');
   const b = normalizeTitle(video.title);
   if (!a || !b) return false;

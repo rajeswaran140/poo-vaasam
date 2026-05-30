@@ -49,10 +49,30 @@ describe('normalizeTitle', () => {
 describe('videoMatchesContent', () => {
   const v = (title: string, id = 'vid1') => ({ id, title });
 
+  it('matches when youtubeVideoId equals the video id (preferred, exact)', () => {
+    expect(
+      videoMatchesContent(v('totally different title', 'gfywsN483lI'), {
+        title: 'whatever',
+        youtubeVideoId: 'gfywsN483lI',
+      })
+    ).toBe(true);
+  });
+
   it('matches when the videoUrl contains the YouTube ID (definitive)', () => {
     expect(
       videoMatchesContent(v('totally different title', 'gfywsN483lI'), {
         title: 'whatever',
+        videoUrl: 'https://www.youtube.com/watch?v=gfywsN483lI',
+      })
+    ).toBe(true);
+  });
+
+  it('youtubeVideoId mismatch does not block fallback paths from matching', () => {
+    // Explicit ID is wrong, but the videoUrl carries the right one — should still match.
+    expect(
+      videoMatchesContent(v('whatever', 'gfywsN483lI'), {
+        title: 'whatever',
+        youtubeVideoId: 'WRONGIDWRON',
         videoUrl: 'https://www.youtube.com/watch?v=gfywsN483lI',
       })
     ).toBe(true);

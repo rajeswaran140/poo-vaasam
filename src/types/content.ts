@@ -64,6 +64,12 @@ export interface AudioProperties {
 export interface VideoProperties {
   videoUrl?: string; // YouTube watch/share/embed URL (full video — viewers are sent here)
   previewVideoUrl?: string; // Short preview clip uploaded to S3 and played on-site
+  /**
+   * Canonical 11-char YouTube video ID. Optional — when set it's the
+   * source of truth for "is this YouTube upload on the site?" matching.
+   * When unset, callers can derive it from videoUrl via getYouTubeId().
+   */
+  youtubeVideoId?: string;
 }
 
 /**
@@ -105,6 +111,7 @@ export interface CreateContentDTO {
   audioDuration?: number;
   videoUrl?: string;
   previewVideoUrl?: string;
+  youtubeVideoId?: string;
   categoryIds?: string[];
   tagIds?: string[];
   status?: ContentStatus;
@@ -125,6 +132,7 @@ export interface UpdateContentDTO {
   audioDuration?: number | null;
   videoUrl?: string | null;
   previewVideoUrl?: string | null;
+  youtubeVideoId?: string | null;
   categoryIds?: string[];
   tagIds?: string[];
   status?: ContentStatus;

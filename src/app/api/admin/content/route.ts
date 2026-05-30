@@ -40,6 +40,9 @@ const createContentSchema = z.object({
   audioUrl: z.preprocess(emptyToUndefined, z.string().url().optional()),
   videoUrl: z.preprocess(emptyToUndefined, z.string().url().optional()),
   previewVideoUrl: z.preprocess(emptyToUndefined, z.string().url().optional()),
+  // 11-char YouTube video ID — alphanumeric + - and _ (the URL-safe base64
+  // alphabet YouTube uses for video IDs).
+  youtubeVideoId: z.preprocess(emptyToUndefined, z.string().regex(/^[A-Za-z0-9_-]{11}$/, 'Must be an 11-character YouTube video ID').optional()),
   audioDuration: z.number().int().min(0).optional(),
   seoTitle: z.preprocess(emptyToUndefined, z.string().max(60).optional()),
   seoDescription: z.preprocess(emptyToUndefined, z.string().max(160).optional()),
@@ -188,6 +191,7 @@ export async function POST(request: NextRequest) {
       audioUrl: validation.data.audioUrl,
       videoUrl: validation.data.videoUrl,
       previewVideoUrl: validation.data.previewVideoUrl,
+      youtubeVideoId: validation.data.youtubeVideoId,
       audioDuration: validation.data.audioDuration,
       seoTitle: validation.data.seoTitle,
       seoDescription: validation.data.seoDescription,

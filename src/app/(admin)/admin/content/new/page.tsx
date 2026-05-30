@@ -11,6 +11,7 @@ import { useRouter } from 'next/navigation';
 import { TamilInput } from '@/components/admin/TamilInput';
 import { MediaUploadField } from '@/components/admin/MediaUploadField';
 import { adminFetch } from '@/lib/client-auth';
+import { getYouTubeId } from '@/lib/utils/youtube';
 import { Music, Feather, Mic, BookOpen, PenTool, Star } from 'lucide-react';
 import { FEATURES } from '@/config/features';
 import showToast from '@/lib/toast';
@@ -35,6 +36,7 @@ export default function NewContentPage() {
     audioUrl: '',
     videoUrl: '',
     previewVideoUrl: '',
+    youtubeVideoId: '',
     audioDuration: 0,
     seoTitle: '',
     seoDescription: '',
@@ -319,12 +321,41 @@ export default function NewContentPage() {
               type="url"
               name="videoUrl"
               value={formData.videoUrl}
-              onChange={handleChange}
+              onChange={(e) => {
+                const url = e.target.value;
+                // Auto-derive the canonical ID from the URL whenever the
+                // dedicated field is still empty — so paste-and-save just works.
+                setFormData((prev) => ({
+                  ...prev,
+                  videoUrl: url,
+                  youtubeVideoId: prev.youtubeVideoId || getYouTubeId(url) || '',
+                }));
+              }}
               placeholder="https://www.youtube.com/watch?v=..."
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
             <p className="text-xs text-gray-500 mt-1">
               Viewers watching the preview are sent here for the full video — promoting the website and your YouTube channel.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              YouTube Video ID
+            </label>
+            <input
+              type="text"
+              name="youtubeVideoId"
+              value={formData.youtubeVideoId}
+              onChange={handleChange}
+              placeholder="dQw4w9WgXcQ"
+              pattern="[A-Za-z0-9_\-]{11}"
+              maxLength={11}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              The 11-char ID from the YouTube URL (auto-filled when you paste a link above). Used by{' '}
+              <code>/admin/youtube</code> to match channel uploads to this content with zero ambiguity.
             </p>
           </div>
         </div>

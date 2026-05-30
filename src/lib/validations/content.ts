@@ -126,6 +126,11 @@ export const updateContentSchema = z.object({
     emptyToUndefined,
     z.string().url('Preview video URL must be a valid URL').optional().nullable()
   ),
+  // Canonical 11-char YouTube ID — accepted as either explicit ID or empty.
+  youtubeVideoId: z.preprocess(
+    emptyToUndefined,
+    z.string().regex(/^[A-Za-z0-9_-]{11}$/, 'Must be an 11-character YouTube video ID').optional().nullable()
+  ),
   audioDuration: z
     .number()
     .int('Audio duration must be an integer')
