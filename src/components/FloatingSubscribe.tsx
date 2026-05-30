@@ -11,6 +11,7 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { isYouTubeChannelConfigured, youtubeSubscribeUrl } from '@/config/site';
+import { trackSubscribeClick } from '@/lib/analytics-events';
 
 const DISMISS_KEY = 'tamilagaval:subscribe-floater:dismissed';
 
@@ -43,6 +44,7 @@ export function FloatingSubscribe() {
         rel="noopener noreferrer"
         aria-label="YouTube சந்தா"
         title="YouTube சந்தா"
+        onClick={() => trackSubscribeClick('floater')}
         className="group inline-flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white shadow-2xl shadow-black/40 ring-1 ring-white/20 transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
       >
         <svg className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">

@@ -1,9 +1,14 @@
+'use client';
+
 /**
  * YouTube Subscribe button — links to the channel's subscribe-confirmation
- * dialog (?sub_confirmation=1) to make subscribing one click.
+ * dialog (?sub_confirmation=1) to make subscribing one click. Fires a GA4
+ * `subscribe_click` event with the call-site `source` on every click, so we
+ * can attribute conversions by CTA location.
  */
 
 import { youtubeSubscribeUrl } from '@/config/site';
+import { trackSubscribeClick } from '@/lib/analytics-events';
 
 interface SubscribeButtonProps {
   label?: string;
@@ -21,6 +26,7 @@ export function SubscribeButton({ label = 'YouTube', className, source }: Subscr
       href={youtubeSubscribeUrl(source)}
       target="_blank"
       rel="noopener noreferrer"
+      onClick={() => trackSubscribeClick(source ?? 'unknown')}
       className={className ?? DEFAULT_CLASS}
     >
       <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
