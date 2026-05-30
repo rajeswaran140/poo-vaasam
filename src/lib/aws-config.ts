@@ -7,16 +7,18 @@
  * For local development: credentials come from .env.local
  */
 
-// AWS Credentials
-// Amplify Hosting Gen 2 doesn't pass non-NEXT_PUBLIC env vars to runtime
-// So we need to use NEXT_PUBLIC_ prefix (these get baked into the build)
-// Try multiple prefixes for compatibility
-const accessKeyId = process.env.NEXT_PUBLIC_APP_AWS_ACCESS_KEY_ID ||
-                     process.env.APP_AWS_ACCESS_KEY_ID ||
-                     process.env.AWS_ACCESS_KEY_ID;
-const secretAccessKey = process.env.NEXT_PUBLIC_APP_AWS_SECRET_ACCESS_KEY ||
-                         process.env.APP_AWS_SECRET_ACCESS_KEY ||
-                         process.env.AWS_SECRET_ACCESS_KEY;
+// AWS Credentials — SERVER-ONLY. Amplify SSR's Lambda receives every env
+// var at runtime, so non-NEXT_PUBLIC_ keys are available here (and never
+// shipped to the browser). The earlier comment claiming NEXT_PUBLIC_ was
+// required for runtime was wrong and caused the access key to leak into
+// the client bundle. NEXT_PUBLIC_ fallbacks are kept only as a transition
+// shim until they're removed from the Amplify env panel.
+const accessKeyId = process.env.APP_AWS_ACCESS_KEY_ID ||
+                     process.env.AWS_ACCESS_KEY_ID ||
+                     process.env.NEXT_PUBLIC_APP_AWS_ACCESS_KEY_ID;
+const secretAccessKey = process.env.APP_AWS_SECRET_ACCESS_KEY ||
+                         process.env.AWS_SECRET_ACCESS_KEY ||
+                         process.env.NEXT_PUBLIC_APP_AWS_SECRET_ACCESS_KEY;
 
 const credentials = accessKeyId && secretAccessKey
   ? {
@@ -39,7 +41,8 @@ export const awsConfig = {
  */
 export const dynamoDBConfig = {
   ...awsConfig,
-  tableName: process.env.NEXT_PUBLIC_DYNAMODB_TABLE_NAME || process.env.DYNAMODB_TABLE_NAME || 'TamilWebContent',
+  // Server-only — DynamoDB is never queried from the browser.
+  tableName: process.env.DYNAMODB_TABLE_NAME || process.env.NEXT_PUBLIC_DYNAMODB_TABLE_NAME || 'TamilWebContent',
 };
 
 /**
@@ -50,7 +53,8 @@ export const s3Config = {
   // The tamil-web-media bucket lives in us-east-1 (verified via get-bucket-location).
   // AWS_REGION (ca-central-1) is the app/DynamoDB region; S3 must target the bucket's region.
   region: 'us-east-1',
-  bucket: process.env.NEXT_PUBLIC_S3_BUCKET || process.env.S3_BUCKET || 'tamil-web-media',
+  // Server-only — S3 SDK calls happen from the SSR Lambda + API routes.
+  bucket: process.env.S3_BUCKET || process.env.NEXT_PUBLIC_S3_BUCKET || 'tamil-web-media',
 };
 
 /**
