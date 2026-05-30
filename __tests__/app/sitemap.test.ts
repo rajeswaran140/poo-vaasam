@@ -42,6 +42,7 @@ it('includes /videos and the core static routes', async () => {
   expect(urls.some((u) => u.endsWith('/about'))).toBe(true);
   expect(urls.some((u) => u.endsWith('/contact'))).toBe(true);
   expect(urls.some((u) => u.endsWith('/privacy'))).toBe(true);
+  expect(urls.some((u) => u.endsWith('/terms'))).toBe(true);
   expect(urls.some((u) => u.endsWith('.com') || u.endsWith('.com/'))).toBe(true); // home
   // Empty sections are excluded via the live-section registry.
   for (const empty of ['/lyrics', '/stories', '/essays']) {

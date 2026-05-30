@@ -29,7 +29,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   if (videosEnabled) {
     sectionPaths.push('/videos');
   }
-  const infoPaths = ['/about', '/contact', '/privacy'];
+  const infoPaths = ['/about', '/contact', '/privacy', '/terms'];
 
   // YouTube videos attached to the /videos page so they're eligible for video
   // search. fetchChannelVideos returns [] on any error, so this never breaks
