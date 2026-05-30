@@ -12,10 +12,12 @@ import Link from 'next/link';
 import { Play, Pause, Music, ChevronRight } from 'lucide-react';
 import { useMusicPlayer, Cover, formatTime, type Track } from './MusicPlayerProvider';
 
-/** A track plus the metadata the listing needs for sorting. */
+/** A track plus the metadata the listing needs for sorting and filtering. */
 export interface SongRow extends Track {
   /** createdAt as epoch ms, for "newest" sort. */
   addedAt?: number;
+  /** Theme key from src/config/song-themes.ts, for the filter chips. */
+  theme?: string;
 }
 
 export function SongList({ rows }: { rows: SongRow[] }) {

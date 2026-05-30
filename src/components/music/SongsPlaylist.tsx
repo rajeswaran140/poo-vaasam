@@ -12,6 +12,7 @@ import { useMemo, useState } from 'react';
 import { Play, Pause, Shuffle, Repeat, Music } from 'lucide-react';
 import { useMusicPlayer } from './MusicPlayerProvider';
 import { SongList, type SongRow } from './SongList';
+import { SONG_THEMES, SONG_THEME_LABELS, type SongTheme } from '@/config/song-themes';
 
 export type { SongRow } from './SongList';
 
@@ -50,13 +51,35 @@ function sortRows(rows: SongRow[], mode: SortMode): SongRow[] {
   return copy;
 }
 
+type ThemeFilter = SongTheme | 'all';
+
 export function SongsPlaylist({ tracks }: { tracks: SongRow[] }) {
   const player = useMusicPlayer();
   const currentId = player.current?.id;
 
   const [sort, setSort] = useState<SortMode>('newest');
+  const [themeFilter, setThemeFilter] = useState<ThemeFilter>('all');
 
-  const displayed = useMemo(() => sortRows(tracks, sort), [tracks, sort]);
+  // Count songs per theme; chips show counts so listeners know what's there.
+  const themeCounts = useMemo(() => {
+    const counts: Partial<Record<SongTheme, number>> = {};
+    for (const t of tracks) {
+      const key = t.theme as SongTheme | undefined;
+      if (key && SONG_THEMES.includes(key)) counts[key] = (counts[key] ?? 0) + 1;
+    }
+    return counts;
+  }, [tracks]);
+
+  // Only surface themes that actually have at least one song.
+  const availableThemes = SONG_THEMES.filter((t) => (themeCounts[t] ?? 0) > 0);
+  // Show the chip row only when there are at least two themes worth choosing between.
+  const showThemeChips = availableThemes.length >= 2;
+
+  const filtered = useMemo(
+    () => (themeFilter === 'all' ? tracks : tracks.filter((t) => t.theme === themeFilter)),
+    [tracks, themeFilter]
+  );
+  const displayed = useMemo(() => sortRows(filtered, sort), [filtered, sort]);
 
   // Hero metadata reflects the whole playlist (stable identity), not the filter.
   const playableCount = tracks.filter((t) => t.src).length;
@@ -189,6 +212,41 @@ export function SongsPlaylist({ tracks }: { tracks: SongRow[] }) {
           </div>
         ) : (
           <>
+            {showThemeChips && (
+              <nav
+                aria-label="பாடல் பகுப்புகள்"
+                className="mx-auto mb-4 flex max-w-3xl flex-wrap items-center gap-2 px-3 sm:px-4"
+              >
+                <button
+                  type="button"
+                  onClick={() => setThemeFilter('all')}
+                  aria-pressed={themeFilter === 'all'}
+                  className={`rounded-full border px-3.5 py-1.5 font-tamil text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/60 ${
+                    themeFilter === 'all'
+                      ? 'border-orange-400/40 bg-orange-500/20 text-white'
+                      : 'border-white/10 bg-white/5 text-gray-300 hover:bg-white/10'
+                  }`}
+                >
+                  அனைத்தும் <span className="ml-1 text-xs text-gray-400">{tracks.length}</span>
+                </button>
+                {availableThemes.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setThemeFilter(t)}
+                    aria-pressed={themeFilter === t}
+                    className={`rounded-full border px-3.5 py-1.5 font-tamil text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/60 ${
+                      themeFilter === t
+                        ? 'border-orange-400/40 bg-orange-500/20 text-white'
+                        : 'border-white/10 bg-white/5 text-gray-300 hover:bg-white/10'
+                    }`}
+                  >
+                    {SONG_THEME_LABELS[t]} <span className="ml-1 text-xs text-gray-400">{themeCounts[t]}</span>
+                  </button>
+                ))}
+              </nav>
+            )}
+
             {showToolbar && (
               <div className="mx-auto mb-4 flex max-w-3xl items-center justify-end px-3 sm:px-4">
                 <label className="flex items-center gap-2 font-tamil text-sm text-gray-400">
@@ -209,7 +267,13 @@ export function SongsPlaylist({ tracks }: { tracks: SongRow[] }) {
               </div>
             )}
 
-            <SongList rows={displayed} />
+            {displayed.length === 0 ? (
+              <p className="mx-auto max-w-3xl px-3 py-8 text-center font-tamil text-gray-400 sm:px-4">
+                இந்தப் பகுப்பில் பாடல்கள் இல்லை.
+              </p>
+            ) : (
+              <SongList rows={displayed} />
+            )}
           </>
         )}
       </div>

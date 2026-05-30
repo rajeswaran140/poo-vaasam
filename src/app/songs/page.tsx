@@ -9,6 +9,7 @@ import Header from '@/components/Header';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentType, ContentStatus } from '@/types/content';
 import { SongsPlaylist, type SongRow } from '@/components/music/SongsPlaylist';
+import { themeForSong } from '@/config/song-themes';
 import { JsonLd } from '@/components/JsonLd';
 import { SITE_NAME, absoluteUrl } from '@/lib/seo';
 
@@ -68,15 +69,19 @@ async function getSongs() {
 
 export default async function SongsPage() {
   const songs = await getSongs();
-  const tracks: SongRow[] = songs.map((s: Record<string, unknown>) => ({
-    id: String(s.id),
-    title: String(s.title),
-    artist: String(s.author || ''),
-    src: typeof s.audioUrl === 'string' ? s.audioUrl : '',
-    cover: typeof s.featuredImage === 'string' ? s.featuredImage : undefined,
-    duration: typeof s.audioDuration === 'number' ? s.audioDuration : undefined,
-    addedAt: toEpochMs(s.createdAt),
-  }));
+  const tracks: SongRow[] = songs.map((s: Record<string, unknown>) => {
+    const id = String(s.id);
+    return {
+      id,
+      title: String(s.title),
+      artist: String(s.author || ''),
+      src: typeof s.audioUrl === 'string' ? s.audioUrl : '',
+      cover: typeof s.featuredImage === 'string' ? s.featuredImage : undefined,
+      duration: typeof s.audioDuration === 'number' ? s.audioDuration : undefined,
+      addedAt: toEpochMs(s.createdAt),
+      theme: themeForSong(id),
+    };
+  });
   const playableCount = tracks.filter((t) => t.src).length;
 
   const playlistJsonLd =
