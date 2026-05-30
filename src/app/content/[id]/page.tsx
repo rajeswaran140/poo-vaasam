@@ -1,24 +1,31 @@
 /**
- * Individual Content View Page
+ * /content/[id] — individual poem / song / story view.
+ *
+ * Outer page chrome is dark (matches the rest of the site); the article card
+ * itself stays light for comfortable reading (Medium pattern). Crawler-facing
+ * title and description lead with romanised English so the page ranks for
+ * "tamil poem" / "tamil mother poem" / etc., while the visible UI stays Tamil.
  */
 
 import type { Metadata } from 'next';
 import { cache } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import Header from '@/components/Header';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentPageClient } from '@/components/ContentPageClient';
 import { PoemReader } from '@/components/PoemReader';
 import { YouTubeEmbed } from '@/components/YouTubeEmbed';
 import { DetailAudioPlayer } from '@/components/music/DetailAudioPlayer';
 import { JsonLd } from '@/components/JsonLd';
+import { ShareRow } from '@/components/content/ShareRow';
 import { isYouTubeUrl, getYouTubeWatchUrl, getYouTubeId } from '@/lib/utils/youtube';
 import { SITE_URL, SITE_NAME, absoluteUrl, toDescription } from '@/lib/seo';
 
-// Cache each rendered content page for 5 minutes (ISR), revalidating in the background.
+// Cache each rendered content page for 5 minutes (ISR).
 export const revalidate = 300;
 
-// cache() dedupes the DB read shared by generateMetadata and the page render
+// cache() dedupes the DB read shared by generateMetadata and the page render.
 const getContent = cache(async (id: string) => {
   try {
     const repo = new ContentRepository();
@@ -30,12 +37,40 @@ const getContent = cache(async (id: string) => {
   }
 });
 
+/** Tamil section label shown on the page. */
 const TYPE_LABELS: Record<string, string> = {
   SONGS: 'பாடல்',
   POEMS: 'கவிதை',
   LYRICS: 'பாடல் வரிகள்',
   STORIES: 'கதை',
   ESSAYS: 'கட்டுரை',
+};
+
+/** Romanised label used in <title>/<meta> + the visible SEO eyebrow. */
+const TYPE_LABEL_EN: Record<string, string> = {
+  SONGS: 'Tamil Song',
+  POEMS: 'Tamil Poem',
+  LYRICS: 'Tamil Lyrics',
+  STORIES: 'Tamil Story',
+  ESSAYS: 'Tamil Essay',
+};
+
+/** Schema.org type per content kind — sharper than always-CreativeWork. */
+const SCHEMA_TYPE: Record<string, string | string[]> = {
+  SONGS: ['CreativeWork', 'MusicComposition'],
+  POEMS: ['CreativeWork', 'Poem'],
+  LYRICS: ['CreativeWork', 'MusicComposition'],
+  STORIES: ['CreativeWork', 'ShortStory'],
+  ESSAYS: 'Article',
+};
+
+/** Browse destination for the "more like this" CTA at the bottom of the page. */
+const BROWSE_HREF: Record<string, { href: string; label: string }> = {
+  SONGS: { href: '/songs', label: 'மேலும் பாடல்கள்' },
+  POEMS: { href: '/poems', label: 'மேலும் கவிதைகள்' },
+  LYRICS: { href: '/songs', label: 'மேலும் பாடல்கள்' },
+  STORIES: { href: '/all', label: 'அனைத்து உள்ளடக்கம்' },
+  ESSAYS: { href: '/all', label: 'அனைத்து உள்ளடக்கம்' },
 };
 
 interface PageProps {
@@ -50,18 +85,32 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     return { title: 'உள்ளடக்கம் கிடைக்கவில்லை' };
   }
 
-  const title = content.seoTitle || content.title;
-  const description = toDescription(content.seoDescription || content.description || content.body);
+  const enType = TYPE_LABEL_EN[content.type] || 'Tamil Poetry';
+  // Compose: "{Tamil title} — Tamil Poem by Rajeswaran Thangarajah".
+  // seoTitle (if set in admin) wins outright — bypasses both the Tamil title
+  // and the romanised suffix.
+  const title =
+    content.seoTitle ||
+    `${content.title} — ${enType} by ${content.author || 'Rajeswaran Thangarajah'}`;
+
+  // Description prefers an explicit seoDescription; otherwise build a romanised
+  // sentence that's useful as a SERP snippet (Google currently pulls the raw
+  // first line of the poem, which reads as fragmented art rather than a
+  // recognisable description).
+  const description =
+    content.seoDescription ||
+    `${enType} "${content.title}" by ${content.author || 'Rajeswaran Thangarajah'} on Tamilagaval — read for free.`;
+
   const url = absoluteUrl(`/content/${content.id}`);
   const hasImage = Boolean(content.featuredImage);
 
   return {
     title,
-    description,
+    description: toDescription(description),
     alternates: { canonical: `/content/${content.id}` },
     openGraph: {
       title,
-      description,
+      description: toDescription(description),
       url,
       type: 'article',
       siteName: SITE_NAME,
@@ -70,7 +119,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     twitter: {
       card: hasImage ? 'summary_large_image' : 'summary',
       title,
-      description,
+      description: toDescription(description),
       ...(hasImage ? { images: [content.featuredImage] } : {}),
     },
   };
@@ -86,14 +135,17 @@ export default async function ContentPage({ params }: PageProps) {
 
   const pageUrl = absoluteUrl(`/content/${content.id}`);
   const ytId = getYouTubeId(content.videoUrl);
+  const enType = TYPE_LABEL_EN[content.type] || 'Tamil Poetry';
+  const browseTo = BROWSE_HREF[content.type] || { href: '/all', label: 'அனைத்து உள்ளடக்கம்' };
+
   const jsonLd: Record<string, unknown>[] = [
     {
       '@context': 'https://schema.org',
-      '@type': 'CreativeWork',
+      '@type': SCHEMA_TYPE[content.type] || 'CreativeWork',
       name: content.title,
       headline: content.title,
       inLanguage: 'ta',
-      author: { '@type': 'Person', name: content.author },
+      author: { '@type': 'Person', name: content.author || 'Rajeswaran Thangarajah' },
       datePublished: content.publishedAt || content.createdAt,
       dateModified: content.updatedAt || content.createdAt,
       url: pageUrl,
@@ -106,7 +158,8 @@ export default async function ContentPage({ params }: PageProps) {
       '@type': 'BreadcrumbList',
       itemListElement: [
         { '@type': 'ListItem', position: 1, name: 'முகப்பு', item: SITE_URL },
-        { '@type': 'ListItem', position: 2, name: content.title, item: pageUrl },
+        { '@type': 'ListItem', position: 2, name: enType, item: `${SITE_URL}${browseTo.href}` },
+        { '@type': 'ListItem', position: 3, name: content.title, item: pageUrl },
       ],
     },
   ];
@@ -129,176 +182,132 @@ export default async function ContentPage({ params }: PageProps) {
       contentType={content.type}
       contentTitle={content.title}
     >
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-gray-900">
         <JsonLd data={jsonLd} />
-        {/* Back Navigation - Fixed at top */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="container mx-auto px-4 py-3 max-w-7xl">
-          <Link href="/" className="text-gray-600 hover:text-gray-900 inline-flex items-center gap-2 font-tamil transition-colors">
-            <span>←</span>
-            <span>முகப்புக்குத் திரும்புங்கள்</span>
-          </Link>
-        </div>
-      </div>
+        <Header />
 
-      {/* Content */}
-      <article className="container mx-auto px-4 sm:px-6 py-8 sm:py-12 max-w-7xl">
-        <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
-          {/* Preview Video — short clip uploaded to the site */}
-          {content.previewVideoUrl && (
-            <div className="p-6 sm:p-8 bg-gradient-to-r from-orange-50 to-orange-100 border-b border-gray-200">
-              <div className="flex items-center gap-3 mb-3">
-                <span className="text-2xl">🎬</span>
-                <span className="font-semibold text-gray-700 font-tamil">முன்னோட்டக் காணொளி</span>
+        <article className="container mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
+          {/* Romanised SEO eyebrow — visible to readers and indexed by crawlers. */}
+          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-orange-400/80 sm:text-sm">
+            {enType} · by {content.author || 'Rajeswaran Thangarajah'}
+          </p>
+
+          <div className="overflow-hidden rounded-2xl bg-white shadow-2xl shadow-black/30 ring-1 ring-white/5">
+
+            {/* Preview Video — short clip uploaded to the site */}
+            {content.previewVideoUrl && (
+              <div className="border-b border-gray-200 bg-gradient-to-r from-orange-50 to-orange-100 p-6 sm:p-8">
+                <div className="mb-3 flex items-center gap-3">
+                  <span className="text-2xl">🎬</span>
+                  <span className="font-tamil font-semibold text-gray-700">முன்னோட்டக் காணொளி</span>
+                </div>
+                <video
+                  controls
+                  playsInline
+                  preload="metadata"
+                  className="w-full max-h-[480px] rounded-lg bg-black"
+                  src={content.previewVideoUrl}
+                >
+                  உங்கள் உலாவி காணொளி இயக்கத்தை ஆதரிக்கவில்லை.
+                </video>
+                {content.videoUrl && isYouTubeUrl(content.videoUrl) && (
+                  <a
+                    href={getYouTubeWatchUrl(content.videoUrl) || content.videoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-4 inline-flex items-center gap-2 rounded-full bg-orange-600 px-5 py-2.5 font-tamil text-sm font-medium text-white shadow-sm transition-colors hover:bg-orange-700"
+                  >
+                    <span>▶️</span>
+                    <span>முழு காணொளியை YouTube-ல் பார்க்கவும்</span>
+                  </a>
+                )}
               </div>
-              <video
-                controls
-                playsInline
-                preload="metadata"
-                className="w-full max-h-[480px] rounded-lg bg-black"
-                src={content.previewVideoUrl}
-              >
-                உங்கள் உலாவி காணொளி இயக்கத்தை ஆதரிக்கவில்லை.
-              </video>
-              {content.videoUrl && isYouTubeUrl(content.videoUrl) && (
+            )}
+
+            {/* YouTube Video */}
+            {content.videoUrl && isYouTubeUrl(content.videoUrl) && (
+              <div className="border-b border-gray-200 bg-gradient-to-r from-orange-50 to-orange-100 p-6 sm:p-8">
+                <div className="mb-4 flex items-center gap-3">
+                  <span className="text-2xl">▶️</span>
+                  <span className="font-tamil font-semibold text-gray-700">காணொளி</span>
+                </div>
+                <YouTubeEmbed url={content.videoUrl} title={content.title} />
                 <a
                   href={getYouTubeWatchUrl(content.videoUrl) || content.videoUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-orange-600 text-white rounded-full font-medium hover:bg-orange-700 transition-colors font-tamil text-sm shadow-sm"
+                  className="mt-4 inline-flex items-center gap-2 rounded-full bg-orange-600 px-5 py-2.5 font-tamil text-sm font-medium text-white shadow-sm transition-colors hover:bg-orange-700"
                 >
                   <span>▶️</span>
-                  <span>முழு காணொளியை YouTube-ல் பார்க்கவும்</span>
+                  <span>YouTube-ல் பார்</span>
                 </a>
-              )}
-            </div>
-          )}
-
-          {/* YouTube Video */}
-          {content.videoUrl && isYouTubeUrl(content.videoUrl) && (
-            <div className="p-6 sm:p-8 bg-gradient-to-r from-orange-50 to-orange-100 border-b border-gray-200">
-              <div className="flex items-center gap-3 mb-4">
-                <span className="text-2xl">▶️</span>
-                <span className="font-semibold text-gray-700 font-tamil">காணொளி</span>
               </div>
-              <YouTubeEmbed url={content.videoUrl} title={content.title} />
-              <a
-                href={getYouTubeWatchUrl(content.videoUrl) || content.videoUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-orange-600 text-white rounded-full font-medium hover:bg-orange-700 transition-colors font-tamil text-sm shadow-sm"
-              >
-                <span>▶️</span>
-                <span>Watch on YouTube</span>
-              </a>
-            </div>
-          )}
+            )}
 
-          {/* Audio — driven through the global player (single audio element) */}
-          {content.audioUrl && (
-            <div className="p-6 sm:p-8 bg-gradient-to-r from-purple-50 to-blue-50 border-b border-gray-200">
-              <div className="flex items-center gap-3 mb-3">
-                <span className="text-2xl">🎵</span>
-                <span className="font-semibold text-gray-700 font-tamil">ஒலி கிடைக்கிறது</span>
+            {/* Audio — driven through the global player (single audio element) */}
+            {content.audioUrl && (
+              <div className="border-b border-gray-200 bg-gradient-to-r from-amber-50 to-orange-50 p-6 sm:p-8">
+                <div className="mb-3 flex items-center gap-3">
+                  <span className="text-2xl">🎵</span>
+                  <span className="font-tamil font-semibold text-gray-700">ஒலி கிடைக்கிறது</span>
+                </div>
+                <DetailAudioPlayer
+                  track={{
+                    id: content.id,
+                    title: content.title,
+                    artist: content.author || '',
+                    src: content.audioUrl,
+                    cover: content.featuredImage || undefined,
+                    duration:
+                      typeof content.audioDuration === 'number' ? content.audioDuration : undefined,
+                  }}
+                />
               </div>
-              <DetailAudioPlayer
-                track={{
-                  id: content.id,
-                  title: content.title,
-                  artist: content.author || '',
-                  src: content.audioUrl,
-                  cover: content.featuredImage || undefined,
-                  duration:
-                    typeof content.audioDuration === 'number' ? content.audioDuration : undefined,
-                }}
-              />
-            </div>
-          )}
+            )}
 
-          {/* Main Content - Enhanced Poem Reader for Poems */}
-          {content.type === 'POEMS' ? (
-            <PoemReader content={content} />
-          ) : (
-            <div className="p-6 sm:p-8 md:p-12">
-              <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 font-tamil mb-2">
-                {content.title}
-              </h1>
-              <p className="text-gray-500 font-tamil mb-6">
-                {TYPE_LABELS[content.type] || ''}{content.author ? ` · ${content.author}` : ''}
-              </p>
-              <div className="prose prose-lg max-w-none">
-                <pre className="whitespace-pre-wrap font-poem text-lg sm:text-xl leading-loose text-gray-800 mb-0" style={{ lineHeight: '2.2', letterSpacing: '0.5px' }}>
-                  {content.body}
-                </pre>
-              </div>
-            </div>
-          )}
-
-
-          {/* Categories */}
-          {content.categories && content.categories.length > 0 && (
-            <div className="px-6 sm:px-8 md:px-12 py-6 border-t border-gray-200">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3 font-tamil">வகைகள்</h3>
-              <div className="flex flex-wrap gap-2">
-                {content.categories.map((category: any) => (
-                  <Link
-                    key={category.id}
-                    href={`/category/${category.slug}`}
-                    className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 font-tamil transition-colors"
+            {/* Main Content - Enhanced Poem Reader for Poems */}
+            {content.type === 'POEMS' ? (
+              <PoemReader content={content} />
+            ) : (
+              <div className="p-6 sm:p-8 md:p-12">
+                <h1 className="mb-2 font-tamil text-3xl font-bold text-gray-900 sm:text-4xl">
+                  {content.title}
+                </h1>
+                <p className="mb-6 font-tamil text-gray-500">
+                  {TYPE_LABELS[content.type] || ''}{content.author ? ` · ${content.author}` : ''}
+                </p>
+                <div className="prose prose-lg max-w-none">
+                  <pre
+                    className="mb-0 whitespace-pre-wrap font-poem text-lg leading-loose text-gray-800 sm:text-xl"
+                    style={{ lineHeight: '2.2', letterSpacing: '0.5px' }}
                   >
-                    {category.name}
-                  </Link>
-                ))}
+                    {content.body}
+                  </pre>
+                </div>
               </div>
-            </div>
-          )}
-
-          {/* Tags */}
-          {content.tags && content.tags.length > 0 && (
-            <div className="px-6 sm:px-8 md:px-12 py-6 border-t border-gray-200">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3 font-tamil">குறிச்சொற்கள்</h3>
-              <div className="flex flex-wrap gap-2">
-                {content.tags.map((tag: any) => (
-                  <Link
-                    key={tag.id}
-                    href={`/tag/${tag.slug}`}
-                    className="px-3 py-1 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-full text-sm font-tamil transition-colors"
-                  >
-                    #{tag.name}
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Share */}
-          <div className="px-6 sm:px-8 md:px-12 py-6 border-t border-gray-200">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3 font-tamil">பகிர்தல்</h3>
-            <div className="flex flex-wrap gap-3">
-              <button className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-tamil text-sm">
-                முகநூல்
-              </button>
-              <button className="px-4 py-2 bg-sky-500 text-white rounded-lg hover:bg-sky-600 transition-colors font-tamil text-sm">
-                ட்விட்டர்
-              </button>
-              <button className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-tamil text-sm">
-                வாட்ஸ்அப்
-              </button>
-            </div>
+            )}
           </div>
-        </div>
 
-        {/* Back Button */}
-        <div className="mt-8 text-center">
-          <Link
-            href="/"
-            className="inline-block px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium font-tamil"
-          >
-            ← முகப்புக்குத் திரும்புங்கள்
-          </Link>
-        </div>
-      </article>
-    </div>
+          {/* Share row — dark band sits below the article card. */}
+          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5 sm:p-6">
+            <h3 className="mb-3 font-tamil text-sm font-semibold uppercase tracking-wide text-gray-300">
+              பகிர்தல்
+            </h3>
+            <ShareRow url={pageUrl} title={content.title} />
+          </div>
+
+          {/* Forward-looking CTA: send the reader to more of the same kind, not "back". */}
+          <div className="mt-8 text-center">
+            <Link
+              href={browseTo.href}
+              className="inline-flex items-center gap-2 rounded-full bg-orange-600 px-6 py-3 font-tamil font-medium text-white shadow-lg transition-colors hover:bg-orange-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
+            >
+              <span>{browseTo.label}</span>
+              <span aria-hidden>→</span>
+            </Link>
+          </div>
+        </article>
+      </div>
     </ContentPageClient>
   );
 }
