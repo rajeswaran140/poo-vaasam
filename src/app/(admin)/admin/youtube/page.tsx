@@ -23,6 +23,11 @@ import {
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentStatus } from '@/types/content';
 import { videoMatchesContent } from '@/lib/youtube-match';
+import {
+  fetchSubscribeClicksBySource,
+  fetchTrafficSnapshot,
+  isGA4Configured,
+} from '@/lib/ga4-api';
 
 export const revalidate = 1800; // 30 min — pairs with the 1-hr upstream fetch cache
 
@@ -93,9 +98,12 @@ export default async function YouTubeAdminPage() {
     );
   }
 
-  const [channel, videos] = await Promise.all([
+  const ga4On = isGA4Configured();
+  const [channel, videos, ga4Clicks, ga4Traffic] = await Promise.all([
     fetchChannelStats(SITE.youtube.channelId),
     fetchChannelVideoStats(SITE.youtube.channelId, 50),
+    ga4On ? fetchSubscribeClicksBySource(28) : Promise.resolve([]),
+    ga4On ? fetchTrafficSnapshot(28) : Promise.resolve(null),
   ]);
 
   if (!channel) {
@@ -108,6 +116,8 @@ export default async function YouTubeAdminPage() {
 
   const matched = await getMatchedVideoIds(videos);
   const unmatched = videos.filter((v) => !matched.has(v.id));
+  const totalSubscribeClicks = ga4Clicks.reduce((sum, r) => sum + r.eventCount, 0);
+  const maxSubscribeClicks = Math.max(1, ...ga4Clicks.map((r) => r.eventCount));
 
   return (
     <div className="space-y-8">
@@ -135,6 +145,71 @@ export default async function YouTubeAdminPage() {
         <StatCard label="Total views" value={numberFmt.format(channel.viewCount)} />
         <StatCard label="Videos published" value={numberFmt.format(channel.videoCount)} />
       </section>
+
+      {/* GA4 — site signals */}
+      {ga4On ? (
+        <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          {/* Subscribe CTA performance — the headline Phase 2 card. */}
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm lg:col-span-2">
+            <div className="mb-3 flex items-end justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                  Subscribe CTA · last 28 days
+                </p>
+                <p className="text-2xl font-bold tabular-nums text-gray-900">
+                  {numberFmt.format(totalSubscribeClicks)} <span className="text-sm font-normal text-gray-500">clicks</span>
+                </p>
+              </div>
+              <p className="text-xs text-gray-500">Source: GA4 subscribe_click event</p>
+            </div>
+            {ga4Clicks.length === 0 ? (
+              <p className="rounded-lg bg-gray-50 p-4 text-sm text-gray-500">
+                No subscribe_click events recorded yet. The event fires on every Subscribe CTA — once visitors click, breakdowns will appear here. (Custom dimension <code>customEvent:source</code> may take 24h to register the first time.)
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {ga4Clicks.map((row) => {
+                  const pct = Math.round((row.eventCount / maxSubscribeClicks) * 100);
+                  return (
+                    <li key={row.source} className="text-sm">
+                      <div className="mb-1 flex justify-between">
+                        <span className="font-medium text-gray-800">{row.source}</span>
+                        <span className="tabular-nums text-gray-600">{numberFmt.format(row.eventCount)}</span>
+                      </div>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-gray-100">
+                        <div className="h-full rounded-full bg-orange-500" style={{ width: `${pct}%` }} />
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+
+          {/* Traffic snapshot */}
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <p className="mb-3 text-xs font-medium uppercase tracking-wide text-gray-500">
+              Site traffic · last {ga4Traffic?.daysBack ?? 28} days
+            </p>
+            {ga4Traffic ? (
+              <div className="space-y-3">
+                <TrafficRow label="Users" value={numberFmt.format(ga4Traffic.totalUsers)} />
+                <TrafficRow label="Sessions" value={numberFmt.format(ga4Traffic.sessions)} />
+                <TrafficRow label="Pageviews" value={numberFmt.format(ga4Traffic.pageViews)} />
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">No data yet.</p>
+            )}
+          </div>
+        </section>
+      ) : (
+        <section className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+          <p className="mb-1 font-semibold">GA4 analytics not yet configured</p>
+          <p className="text-xs">
+            Set <code>GA4_PROPERTY_ID</code> and <code>GA4_SERVICE_ACCOUNT_KEY</code> in Amplify env vars, grant the SA Viewer on the GA4 property, and the &ldquo;Subscribe CTA&rdquo; + &ldquo;Site traffic&rdquo; cards will appear here.
+          </p>
+        </section>
+      )}
 
       {/* "Not on the site" gap list — actionable publishing hints */}
       {unmatched.length > 0 && (
@@ -232,6 +307,15 @@ function StatCard({ label, value }: { label: string; value: string }) {
     <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
       <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
       <p className="mt-1 text-3xl font-bold text-gray-900 tabular-nums">{value}</p>
+    </div>
+  );
+}
+
+function TrafficRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between">
+      <span className="text-sm text-gray-600">{label}</span>
+      <span className="text-xl font-bold tabular-nums text-gray-900">{value}</span>
     </div>
   );
 }
