@@ -54,10 +54,10 @@ describe('fetchSubscribeClicksBySource', () => {
     process.env.GA4_SERVICE_ACCOUNT_KEY = validKey;
   });
 
-  it('returns [] when env is not configured', async () => {
+  it('returns { ok: false } when env is not configured', async () => {
     delete process.env.GA4_PROPERTY_ID;
     const out = await fetchSubscribeClicksBySource();
-    expect(out).toEqual([]);
+    expect(out).toEqual({ ok: false, error: expect.any(String) });
     expect(runReport).not.toHaveBeenCalled();
   });
 
@@ -70,17 +70,21 @@ describe('fetchSubscribeClicksBySource', () => {
     }]);
 
     const out = await fetchSubscribeClicksBySource(28);
-    expect(out).toEqual([
-      { source: 'home_hero', eventCount: 42 },
-      { source: 'floater', eventCount: 15 },
-    ]);
+    expect(out).toEqual({
+      ok: true,
+      data: [
+        { source: 'home_hero', eventCount: 42 },
+        { source: 'floater', eventCount: 15 },
+      ],
+    });
   });
 
-  it('returns [] and logs on API failure', async () => {
-    runReport.mockRejectedValueOnce(new Error('quota exceeded'));
+  it('surfaces the upstream error message on API failure', async () => {
+    runReport.mockRejectedValueOnce(new Error('7 PERMISSION_DENIED: insufficient permissions'));
     jest.spyOn(console, 'error').mockImplementation(() => {});
     const out = await fetchSubscribeClicksBySource();
-    expect(out).toEqual([]);
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.error).toMatch(/PERMISSION_DENIED/);
   });
 
   it('filters by subscribe_click event name', async () => {
@@ -98,10 +102,10 @@ describe('fetchTrafficSnapshot', () => {
     process.env.GA4_SERVICE_ACCOUNT_KEY = validKey;
   });
 
-  it('returns null when env is not configured', async () => {
+  it('returns { ok: false } when env is not configured', async () => {
     delete process.env.GA4_SERVICE_ACCOUNT_KEY;
     const out = await fetchTrafficSnapshot();
-    expect(out).toBeNull();
+    expect(out).toEqual({ ok: false, error: expect.any(String) });
   });
 
   it('parses users/sessions/pageviews from the totals row', async () => {
@@ -111,17 +115,16 @@ describe('fetchTrafficSnapshot', () => {
 
     const out = await fetchTrafficSnapshot(28);
     expect(out).toEqual({
-      totalUsers: 500,
-      sessions: 750,
-      pageViews: 1800,
-      daysBack: 28,
+      ok: true,
+      data: { totalUsers: 500, sessions: 750, pageViews: 1800, daysBack: 28 },
     });
   });
 
-  it('returns null on API failure', async () => {
-    runReport.mockRejectedValueOnce(new Error('permission denied'));
+  it('surfaces the upstream error on API failure', async () => {
+    runReport.mockRejectedValueOnce(new Error('7 PERMISSION_DENIED: viewer required'));
     jest.spyOn(console, 'error').mockImplementation(() => {});
     const out = await fetchTrafficSnapshot();
-    expect(out).toBeNull();
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.error).toMatch(/PERMISSION_DENIED/);
   });
 });

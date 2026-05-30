@@ -5,14 +5,17 @@
  * `GA4_PROPERTY_ID`. The SA needs Viewer on the GA4 property (granted in
  * GA4 Admin → Property Access Management — IAM doesn't cover this).
  *
- * Every helper returns null/[] when the env isn't fully wired, so the admin
- * page degrades to a "GA4 not configured" banner instead of throwing.
+ * Helpers return a Result discriminated union so the dashboard can render
+ * actual error messages ("PERMISSION_DENIED: …") instead of swallowing
+ * failures into indistinguishable "no data yet" empty states.
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { BetaAnalyticsDataClient } from '@google-analytics/data';
 
 let cachedClient: BetaAnalyticsDataClient | null = null;
+
+export type Result<T> = { ok: true; data: T } | { ok: false; error: string };
 
 export function isGA4Configured(): boolean {
   return Boolean(process.env.GA4_PROPERTY_ID && process.env.GA4_SERVICE_ACCOUNT_KEY);
@@ -48,6 +51,17 @@ function propertyPath(): string | null {
   return id ? `properties/${id}` : null;
 }
 
+/** Pull the most useful, human-readable message out of a Google API error. */
+function errMessage(err: unknown): string {
+  if (err instanceof Error) {
+    // GoogleError sometimes has .details / .code / .reason — but .message is
+    // usually the most useful single line ("3 INVALID_ARGUMENT: ..." or
+    // "7 PERMISSION_DENIED: User does not have sufficient permissions…").
+    return err.message;
+  }
+  return String(err);
+}
+
 export interface SubscribeClickRow {
   source: string;
   eventCount: number;
@@ -58,10 +72,12 @@ export interface SubscribeClickRow {
  * parameter (home_hero / floater / footer / about / videos_hero /
  * home_latest_videos). Last N days.
  */
-export async function fetchSubscribeClicksBySource(daysBack = 28): Promise<SubscribeClickRow[]> {
+export async function fetchSubscribeClicksBySource(
+  daysBack = 28
+): Promise<Result<SubscribeClickRow[]>> {
   const client = getClient();
   const property = propertyPath();
-  if (!client || !property) return [];
+  if (!client || !property) return { ok: false, error: 'GA4 client not initialised' };
 
   try {
     const [res] = await client.runReport({
@@ -79,13 +95,15 @@ export async function fetchSubscribeClicksBySource(daysBack = 28): Promise<Subsc
       orderBys: [{ metric: { metricName: 'eventCount' }, desc: true }],
     } as any);
 
-    return (res.rows ?? []).map((row: any) => ({
+    const data = (res.rows ?? []).map((row: any) => ({
       source: row.dimensionValues?.[0]?.value || '(not set)',
       eventCount: Number(row.metricValues?.[0]?.value ?? 0),
     }));
+    return { ok: true, data };
   } catch (err) {
-    console.error('[ga4-api] subscribe_click query failed:', err);
-    return [];
+    const error = errMessage(err);
+    console.error('[ga4-api] subscribe_click query failed:', error);
+    return { ok: false, error };
   }
 }
 
@@ -96,10 +114,10 @@ export interface TrafficSnapshot {
   daysBack: number;
 }
 
-export async function fetchTrafficSnapshot(daysBack = 28): Promise<TrafficSnapshot | null> {
+export async function fetchTrafficSnapshot(daysBack = 28): Promise<Result<TrafficSnapshot>> {
   const client = getClient();
   const property = propertyPath();
-  if (!client || !property) return null;
+  if (!client || !property) return { ok: false, error: 'GA4 client not initialised' };
 
   try {
     const [res] = await client.runReport({
@@ -113,13 +131,17 @@ export async function fetchTrafficSnapshot(daysBack = 28): Promise<TrafficSnapsh
     } as any);
     const m = res.rows?.[0]?.metricValues;
     return {
-      totalUsers: Number(m?.[0]?.value ?? 0),
-      sessions: Number(m?.[1]?.value ?? 0),
-      pageViews: Number(m?.[2]?.value ?? 0),
-      daysBack,
+      ok: true,
+      data: {
+        totalUsers: Number(m?.[0]?.value ?? 0),
+        sessions: Number(m?.[1]?.value ?? 0),
+        pageViews: Number(m?.[2]?.value ?? 0),
+        daysBack,
+      },
     };
   } catch (err) {
-    console.error('[ga4-api] traffic snapshot failed:', err);
-    return null;
+    const error = errMessage(err);
+    console.error('[ga4-api] traffic snapshot failed:', error);
+    return { ok: false, error };
   }
 }

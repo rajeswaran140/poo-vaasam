@@ -53,8 +53,8 @@ it('returns 503 when GA4 is not configured', async () => {
 
 it('clamps `days` to the 1..90 range', async () => {
   mockedIsConfigured.mockReturnValue(true);
-  mockedClicks.mockResolvedValue([]);
-  mockedTraffic.mockResolvedValue(null);
+  mockedClicks.mockResolvedValue({ ok: true, data: [] });
+  mockedTraffic.mockResolvedValue({ ok: false, error: 'no data' });
 
   await GET(req('?days=500'));
   expect(mockedClicks).toHaveBeenCalledWith(90);
@@ -65,19 +65,27 @@ it('clamps `days` to the 1..90 range', async () => {
 
 it('returns aggregated payload on happy path', async () => {
   mockedIsConfigured.mockReturnValue(true);
-  mockedClicks.mockResolvedValue([
-    { source: 'home_hero', eventCount: 42 },
-    { source: 'floater', eventCount: 17 },
-  ]);
-  mockedTraffic.mockResolvedValue({ totalUsers: 500, sessions: 750, pageViews: 1800, daysBack: 28 });
+  mockedClicks.mockResolvedValue({
+    ok: true,
+    data: [
+      { source: 'home_hero', eventCount: 42 },
+      { source: 'floater', eventCount: 17 },
+    ],
+  });
+  mockedTraffic.mockResolvedValue({
+    ok: true,
+    data: { totalUsers: 500, sessions: 750, pageViews: 1800, daysBack: 28 },
+  });
 
   const res = await GET(req('?days=28'));
   expect(res.status).toBe(200);
   const body = await res.json();
   expect(body.success).toBe(true);
   expect(body.days).toBe(28);
-  expect(body.subscribeClicks).toHaveLength(2);
-  expect(body.traffic.totalUsers).toBe(500);
+  expect(body.subscribeClicks.ok).toBe(true);
+  expect(body.subscribeClicks.data).toHaveLength(2);
+  expect(body.traffic.ok).toBe(true);
+  expect(body.traffic.data.totalUsers).toBe(500);
   // Both upstream calls fired in parallel.
   expect(mockedClicks).toHaveBeenCalledTimes(1);
   expect(mockedTraffic).toHaveBeenCalledTimes(1);

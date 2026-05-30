@@ -99,10 +99,10 @@ export default async function YouTubeAdminPage() {
   }
 
   const ga4On = isGA4Configured();
-  const [channel, videos, ga4Clicks, ga4Traffic] = await Promise.all([
+  const [channel, videos, ga4ClicksRes, ga4TrafficRes] = await Promise.all([
     fetchChannelStats(SITE.youtube.channelId),
     fetchChannelVideoStats(SITE.youtube.channelId, 50),
-    ga4On ? fetchSubscribeClicksBySource(28) : Promise.resolve([]),
+    ga4On ? fetchSubscribeClicksBySource(28) : Promise.resolve(null),
     ga4On ? fetchTrafficSnapshot(28) : Promise.resolve(null),
   ]);
 
@@ -116,8 +116,16 @@ export default async function YouTubeAdminPage() {
 
   const matched = await getMatchedVideoIds(videos);
   const unmatched = videos.filter((v) => !matched.has(v.id));
-  const totalSubscribeClicks = ga4Clicks.reduce((sum, r) => sum + r.eventCount, 0);
-  const maxSubscribeClicks = Math.max(1, ...ga4Clicks.map((r) => r.eventCount));
+
+  // Unwrap GA4 Results — if either failed, render its .error verbatim on the
+  // dashboard so we can see "PERMISSION_DENIED" / "invalid dimension" etc.
+  // instead of an indistinguishable empty state.
+  const clicks = ga4ClicksRes?.ok ? ga4ClicksRes.data : [];
+  const clicksError = ga4ClicksRes && !ga4ClicksRes.ok ? ga4ClicksRes.error : null;
+  const traffic = ga4TrafficRes?.ok ? ga4TrafficRes.data : null;
+  const trafficError = ga4TrafficRes && !ga4TrafficRes.ok ? ga4TrafficRes.error : null;
+  const totalSubscribeClicks = clicks.reduce((sum, r) => sum + r.eventCount, 0);
+  const maxSubscribeClicks = Math.max(1, ...clicks.map((r) => r.eventCount));
 
   return (
     <div className="space-y-8">
@@ -162,13 +170,17 @@ export default async function YouTubeAdminPage() {
               </div>
               <p className="text-xs text-gray-500">Source: GA4 subscribe_click event</p>
             </div>
-            {ga4Clicks.length === 0 ? (
+            {clicksError ? (
+              <pre className="overflow-x-auto rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-900">
+                {clicksError}
+              </pre>
+            ) : clicks.length === 0 ? (
               <p className="rounded-lg bg-gray-50 p-4 text-sm text-gray-500">
                 No subscribe_click events recorded yet. The event fires on every Subscribe CTA — once visitors click, breakdowns will appear here. (Custom dimension <code>customEvent:source</code> may take 24h to register the first time.)
               </p>
             ) : (
               <ul className="space-y-2">
-                {ga4Clicks.map((row) => {
+                {clicks.map((row) => {
                   const pct = Math.round((row.eventCount / maxSubscribeClicks) * 100);
                   return (
                     <li key={row.source} className="text-sm">
@@ -189,13 +201,17 @@ export default async function YouTubeAdminPage() {
           {/* Traffic snapshot */}
           <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
             <p className="mb-3 text-xs font-medium uppercase tracking-wide text-gray-500">
-              Site traffic · last {ga4Traffic?.daysBack ?? 28} days
+              Site traffic · last {traffic?.daysBack ?? 28} days
             </p>
-            {ga4Traffic ? (
+            {trafficError ? (
+              <pre className="overflow-x-auto rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-900">
+                {trafficError}
+              </pre>
+            ) : traffic ? (
               <div className="space-y-3">
-                <TrafficRow label="Users" value={numberFmt.format(ga4Traffic.totalUsers)} />
-                <TrafficRow label="Sessions" value={numberFmt.format(ga4Traffic.sessions)} />
-                <TrafficRow label="Pageviews" value={numberFmt.format(ga4Traffic.pageViews)} />
+                <TrafficRow label="Users" value={numberFmt.format(traffic.totalUsers)} />
+                <TrafficRow label="Sessions" value={numberFmt.format(traffic.sessions)} />
+                <TrafficRow label="Pageviews" value={numberFmt.format(traffic.pageViews)} />
               </div>
             ) : (
               <p className="text-sm text-gray-500">No data yet.</p>
