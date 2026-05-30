@@ -29,7 +29,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   if (videosEnabled) {
     sectionPaths.push('/videos');
   }
-  const infoPaths = ['/about', '/contact'];
+  const infoPaths = ['/about', '/contact', '/privacy'];
 
   // YouTube videos attached to the /videos page so they're eligible for video
   // search. fetchChannelVideos returns [] on any error, so this never breaks
@@ -83,11 +83,19 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   const lastModified = siteLastMod.getTime() > 0 ? siteLastMod : new Date();
 
+  // Primary content destinations (songs/poems/videos) outrank /all and
+  // /music-composition so crawl budget skews toward the pages we want indexed.
+  const PRIORITY_BY_PATH: Record<string, number> = {
+    '': 1,
+    '/songs': 0.9,
+    '/poems': 0.9,
+    '/videos': 0.9,
+  };
   const sectionRoutes: MetadataRoute.Sitemap = sectionPaths.map((p) => ({
     url: `${SITE_URL}${p}`,
     lastModified,
     changeFrequency: 'weekly',
-    priority: p === '' ? 1 : 0.8,
+    priority: PRIORITY_BY_PATH[p] ?? 0.7,
     ...(p === '/videos' && videoEntries.length > 0 ? { videos: videoEntries } : {}),
   }));
 

@@ -39,11 +39,27 @@ it('includes /videos and the core static routes', async () => {
   expect(urls.some((u) => u.endsWith('/videos'))).toBe(true);
   expect(urls.some((u) => u.endsWith('/songs'))).toBe(true);
   expect(urls.some((u) => u.endsWith('/poems'))).toBe(true);
+  expect(urls.some((u) => u.endsWith('/about'))).toBe(true);
+  expect(urls.some((u) => u.endsWith('/contact'))).toBe(true);
+  expect(urls.some((u) => u.endsWith('/privacy'))).toBe(true);
   expect(urls.some((u) => u.endsWith('.com') || u.endsWith('.com/'))).toBe(true); // home
   // Empty sections are excluded via the live-section registry.
   for (const empty of ['/lyrics', '/stories', '/essays']) {
     expect(urls.some((u) => u.endsWith(empty))).toBe(false);
   }
+});
+
+it('ranks primary content destinations above secondary ones', async () => {
+  const routes = await sitemap();
+  const priority = (url: string) =>
+    routes.find((r) => r.url.endsWith(url))?.priority;
+
+  expect(priority('.com')).toBe(1);                  // home wins
+  expect(priority('/songs')).toBe(0.9);              // primary content
+  expect(priority('/poems')).toBe(0.9);
+  expect(priority('/videos')).toBe(0.9);
+  expect(priority('/all')).toBeLessThan(0.9);        // secondary
+  expect(priority('/music-composition')).toBeLessThan(0.9);
 });
 
 it('attaches YouTube video entries to the /videos page', async () => {
