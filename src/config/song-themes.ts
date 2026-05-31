@@ -9,7 +9,7 @@
  * Replace this with DynamoDB `categoryIds` once the admin form sets them.
  */
 
-export const SONG_THEMES = ['love', 'mother', 'nature', 'tamil'] as const;
+export const SONG_THEMES = ['love', 'mother', 'nature', 'tamil', 'homeland'] as const;
 export type SongTheme = (typeof SONG_THEMES)[number];
 
 /** Tamil chip labels — kept short so the filter row stays one line on mobile. */
@@ -18,6 +18,7 @@ export const SONG_THEME_LABELS: Record<SongTheme, string> = {
   mother: 'அன்னை',
   nature: 'இயற்கை',
   tamil: 'தமிழ்',
+  homeland: 'தாயகம்',
 };
 
 /** Default theme for any song not listed in SONG_THEME_BY_ID. */
@@ -28,9 +29,10 @@ export const DEFAULT_SONG_THEME: SongTheme = 'love';
  * Songs not listed here fall back to DEFAULT_SONG_THEME.
  */
 export const SONG_THEME_BY_ID: Record<string, SongTheme> = {
-  cnt_1780067292588_frlxbwfzh: 'nature',  // இரை தேட சென்றதாய்
-  cnt_1780066149991_18z5eyynd: 'mother',  // முத்தமிழின் மூன்றெழுத்தில்
-  cnt_1780067292560_ixhyejnr3: 'mother',  // அன்பெனும் தேரில்
+  cnt_1780067292588_frlxbwfzh: 'nature',    // இரை தேட சென்றதாய்
+  cnt_1780066149991_18z5eyynd: 'mother',    // முத்தமிழின் மூன்றெழுத்தில்
+  cnt_1780067292560_ixhyejnr3: 'mother',    // அன்பெனும் தேரில்
+  cnt_1780193983131_fjtgmrgm3: 'homeland',  // என் தேசமே என் சுவாசமே
   // Everything else → 'love' (என்ன மாயம், தூக்கணாங்குருவி போல, ஒரு நாள் திருநாள்,
   // அக்கம் பக்கம், முடிவில்லா முகத்தினில், அந்தி மேகமே).
 };
