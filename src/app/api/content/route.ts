@@ -184,8 +184,11 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Update content using domain entity method
-    existingContent.update(updateData);
+    // Update content using domain entity method.
+    // Zod widens workflowState back to `string | null` after preprocess; the
+    // entity's update() re-validates against WORKFLOW_STATES, so the cast is
+    // safe — and lets us keep the strict enum on UpdateContentDTO.
+    existingContent.update(updateData as Parameters<typeof existingContent.update>[0]);
     await contentRepo.save(existingContent);
 
     return NextResponse.json({

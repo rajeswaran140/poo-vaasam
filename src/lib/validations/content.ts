@@ -5,7 +5,7 @@
  */
 
 import { z } from 'zod';
-import { ContentType, ContentStatus } from '@/types/content';
+import { ContentType, ContentStatus, WORKFLOW_STATES } from '@/types/content';
 
 // Admin forms submit '' for blank URL fields; treat empty string as absent
 // so optional URL validation doesn't reject it.
@@ -131,6 +131,12 @@ export const updateContentSchema = z.object({
     emptyToUndefined,
     z.string().regex(/^[A-Za-z0-9_-]{11}$/, 'Must be an 11-character YouTube video ID').optional().nullable()
   ),
+  // Studio assets — all optional, URL-validated, nullable for clear-on-edit.
+  wavUrl: z.preprocess(emptyToUndefined, z.string().url('WAV URL must be a valid URL').optional().nullable()),
+  stemsUrl: z.preprocess(emptyToUndefined, z.string().url('Stems URL must be a valid URL').optional().nullable()),
+  midiUrl: z.preprocess(emptyToUndefined, z.string().url('MIDI URL must be a valid URL').optional().nullable()),
+  thumbnailUrl: z.preprocess(emptyToUndefined, z.string().url('Thumbnail URL must be a valid URL').optional().nullable()),
+  workflowState: z.preprocess(emptyToUndefined, z.enum(WORKFLOW_STATES as unknown as [string, ...string[]]).optional().nullable()),
   audioDuration: z
     .number()
     .int('Audio duration must be an integer')

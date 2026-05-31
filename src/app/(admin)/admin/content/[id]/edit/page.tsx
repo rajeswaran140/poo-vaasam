@@ -12,6 +12,27 @@ import { TamilInput } from '@/components/admin/TamilInput';
 import { MediaUploadField } from '@/components/admin/MediaUploadField';
 import { adminFetch } from '@/lib/client-auth';
 import { getYouTubeId } from '@/lib/utils/youtube';
+import { WORKFLOW_STATES, WORKFLOW_LABELS } from '@/types/content';
+
+// Small reusable input for the Studio asset URLs (matches the new-content page).
+function EditAssetInput({ name, label, placeholder, value, onChange }: {
+  name: string; label: string; placeholder: string; value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
+      <input
+        type="url"
+        name={name}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+      />
+    </div>
+  );
+}
 import { FEATURES } from '@/config/features';
 import showToast from '@/lib/toast';
 
@@ -40,6 +61,11 @@ export default function EditContentPage({ params }: PageProps) {
     videoUrl: '',
     previewVideoUrl: '',
     youtubeVideoId: '',
+    wavUrl: '',
+    stemsUrl: '',
+    midiUrl: '',
+    thumbnailUrl: '',
+    workflowState: '',
     audioDuration: 0,
     seoTitle: '',
     seoDescription: '',
@@ -75,6 +101,11 @@ export default function EditContentPage({ params }: PageProps) {
             // Pre-fill the canonical ID from the URL when the dedicated
             // field is empty — keeps existing records "just working".
             youtubeVideoId: content.youtubeVideoId || getYouTubeId(content.videoUrl || '') || '',
+            wavUrl: content.wavUrl || '',
+            stemsUrl: content.stemsUrl || '',
+            midiUrl: content.midiUrl || '',
+            thumbnailUrl: content.thumbnailUrl || '',
+            workflowState: content.workflowState || '',
             audioDuration: content.audioDuration || 0,
             seoTitle: content.seoTitle || '',
             seoDescription: content.seoDescription || '',
@@ -381,6 +412,33 @@ export default function EditContentPage({ params }: PageProps) {
             <p className="text-xs text-gray-500 mt-1">
               The 11-char ID from the YouTube URL (auto-filled when you paste a link above). Used by{' '}
               <code>/admin/youtube</code> to match channel uploads to this content with zero ambiguity.
+            </p>
+          </div>
+
+          {/* Studio asset library — Phase 1 of the AI Studio roadmap */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <EditAssetInput name="wavUrl" label="WAV (master)" placeholder="https://… .wav" value={formData.wavUrl} onChange={handleChange} />
+            <EditAssetInput name="stemsUrl" label="Stems (zip)" placeholder="https://… stems.zip" value={formData.stemsUrl} onChange={handleChange} />
+            <EditAssetInput name="midiUrl" label="MIDI" placeholder="https://… .mid" value={formData.midiUrl} onChange={handleChange} />
+            <EditAssetInput name="thumbnailUrl" label="Thumbnail (1280×720)" placeholder="https://… thumb.jpg" value={formData.thumbnailUrl} onChange={handleChange} />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Workflow state</label>
+            <select
+              name="workflowState"
+              value={formData.workflowState}
+              onChange={handleChange}
+              className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+            >
+              <option value="">— (inferred from status)</option>
+              {WORKFLOW_STATES.map((s) => (
+                <option key={s} value={s}>{WORKFLOW_LABELS[s]}</option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              Optional. Tracks where this item sits in the Studio production pipeline. Visible at{' '}
+              <code>/admin/workflow</code>.
             </p>
           </div>
         </div>

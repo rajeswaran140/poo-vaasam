@@ -42,6 +42,7 @@ jest.mock('lucide-react', () => ({
   Menu: () => <div data-testid="icon-menu" />,
   Sun: () => <div data-testid="icon-sun" />,
   Moon: () => <div data-testid="icon-moon" />,
+  Kanban: () => <div data-testid="icon-workflow" />,
 }));
 
 describe('Admin Layout Authentication', () => {

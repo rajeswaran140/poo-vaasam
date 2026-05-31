@@ -73,6 +73,50 @@ export interface VideoProperties {
 }
 
 /**
+ * Studio asset library (Phase 1 of the AI Studio roadmap) — production
+ * artefacts beyond the playable MP3. Each is an optional S3 URL; expand
+ * to typed arrays later if a song ever needs multiple files of one kind.
+ */
+export interface StudioAssets {
+  wavUrl?: string;       // Master WAV
+  stemsUrl?: string;     // Stems bundle (zip of vocals/drums/bass/etc.)
+  midiUrl?: string;      // MIDI source
+  thumbnailUrl?: string; // YouTube-style 1280x720 still (distinct from featuredImage)
+}
+
+/**
+ * Production lifecycle — 9 sequential states. Stored on Content as a string
+ * so we can extend without a migration; the union below is the source of
+ * truth for valid values and ordering.
+ */
+export const WORKFLOW_STATES = [
+  'draft',
+  'lyrics_complete',
+  'ai_reviewed',
+  'music_generated',
+  'midi_reviewed',
+  'stems_uploaded',
+  'video_created',
+  'published_youtube',
+  'published_site',
+] as const;
+
+export type WorkflowState = (typeof WORKFLOW_STATES)[number];
+
+/** Human-readable column headers for the /admin/workflow kanban. */
+export const WORKFLOW_LABELS: Record<WorkflowState, string> = {
+  draft: 'Draft',
+  lyrics_complete: 'Lyrics',
+  ai_reviewed: 'AI Review',
+  music_generated: 'Music',
+  midi_reviewed: 'MIDI',
+  stems_uploaded: 'Stems',
+  video_created: 'Video',
+  published_youtube: 'YouTube',
+  published_site: 'Live',
+};
+
+/**
  * Statistics
  */
 export interface ContentStatistics {
@@ -90,11 +134,14 @@ export interface Content
     ContentMetadata,
     AudioProperties,
     VideoProperties,
+    StudioAssets,
     ContentStatistics {
   body: string; // Main content in Tamil
   publishedAt?: Date;
   categoryIds: string[];
   tagIds: string[];
+  /** Studio production-pipeline state; undefined on legacy rows. */
+  workflowState?: WorkflowState;
 }
 
 /**
@@ -112,6 +159,11 @@ export interface CreateContentDTO {
   videoUrl?: string;
   previewVideoUrl?: string;
   youtubeVideoId?: string;
+  wavUrl?: string;
+  stemsUrl?: string;
+  midiUrl?: string;
+  thumbnailUrl?: string;
+  workflowState?: WorkflowState;
   categoryIds?: string[];
   tagIds?: string[];
   status?: ContentStatus;
@@ -133,6 +185,11 @@ export interface UpdateContentDTO {
   videoUrl?: string | null;
   previewVideoUrl?: string | null;
   youtubeVideoId?: string | null;
+  wavUrl?: string | null;
+  stemsUrl?: string | null;
+  midiUrl?: string | null;
+  thumbnailUrl?: string | null;
+  workflowState?: WorkflowState | null;
   categoryIds?: string[];
   tagIds?: string[];
   status?: ContentStatus;

@@ -8,8 +8,10 @@
 import {
   ContentType,
   ContentStatus,
+  WORKFLOW_STATES,
   type CreateContentDTO,
   type UpdateContentDTO,
+  type WorkflowState,
 } from '@/types/content';
 import { generateSlug } from '@/lib/utils/slug';
 
@@ -41,7 +43,12 @@ export class Content {
     private _publishedAt: Date | undefined,
     private _videoUrl: string | undefined = undefined,
     private _previewVideoUrl: string | undefined = undefined,
-    private _youtubeVideoId: string | undefined = undefined
+    private _youtubeVideoId: string | undefined = undefined,
+    private _wavUrl: string | undefined = undefined,
+    private _stemsUrl: string | undefined = undefined,
+    private _midiUrl: string | undefined = undefined,
+    private _thumbnailUrl: string | undefined = undefined,
+    private _workflowState: WorkflowState | undefined = undefined
   ) {}
 
   // Getters
@@ -92,6 +99,12 @@ export class Content {
   get youtubeVideoId(): string | undefined {
     return this._youtubeVideoId;
   }
+
+  get wavUrl(): string | undefined { return this._wavUrl; }
+  get stemsUrl(): string | undefined { return this._stemsUrl; }
+  get midiUrl(): string | undefined { return this._midiUrl; }
+  get thumbnailUrl(): string | undefined { return this._thumbnailUrl; }
+  get workflowState(): WorkflowState | undefined { return this._workflowState; }
 
   get categoryIds(): string[] {
     return [...this._categoryIds]; // Return copy to prevent mutation
@@ -157,7 +170,12 @@ export class Content {
       isPublished ? now : undefined, // Set publishedAt if created as PUBLISHED
       dto.videoUrl,
       dto.previewVideoUrl,
-      dto.youtubeVideoId
+      dto.youtubeVideoId,
+      dto.wavUrl,
+      dto.stemsUrl,
+      dto.midiUrl,
+      dto.thumbnailUrl,
+      dto.workflowState
     );
   }
 
@@ -207,6 +225,16 @@ export class Content {
 
     if (dto.youtubeVideoId !== undefined) {
       this._youtubeVideoId = dto.youtubeVideoId || undefined;
+    }
+
+    if (dto.wavUrl !== undefined) this._wavUrl = dto.wavUrl || undefined;
+    if (dto.stemsUrl !== undefined) this._stemsUrl = dto.stemsUrl || undefined;
+    if (dto.midiUrl !== undefined) this._midiUrl = dto.midiUrl || undefined;
+    if (dto.thumbnailUrl !== undefined) this._thumbnailUrl = dto.thumbnailUrl || undefined;
+    if (dto.workflowState !== undefined) {
+      this._workflowState = dto.workflowState && (WORKFLOW_STATES as readonly string[]).includes(dto.workflowState)
+        ? (dto.workflowState as WorkflowState)
+        : undefined;
     }
 
     if (dto.categoryIds !== undefined) {
@@ -358,6 +386,11 @@ export class Content {
       videoUrl: this._videoUrl,
       previewVideoUrl: this._previewVideoUrl,
       youtubeVideoId: this._youtubeVideoId,
+      wavUrl: this._wavUrl,
+      stemsUrl: this._stemsUrl,
+      midiUrl: this._midiUrl,
+      thumbnailUrl: this._thumbnailUrl,
+      workflowState: this._workflowState,
       categoryIds: this._categoryIds,
       tagIds: this._tagIds,
       viewCount: this._viewCount,
@@ -395,7 +428,14 @@ export class Content {
       data.publishedAt ? new Date(data.publishedAt) : undefined,
       data.videoUrl,
       data.previewVideoUrl,
-      data.youtubeVideoId
+      data.youtubeVideoId,
+      data.wavUrl,
+      data.stemsUrl,
+      data.midiUrl,
+      data.thumbnailUrl,
+      data.workflowState && (WORKFLOW_STATES as readonly string[]).includes(data.workflowState)
+        ? (data.workflowState as WorkflowState)
+        : undefined
     );
   }
 

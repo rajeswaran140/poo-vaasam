@@ -10,7 +10,7 @@ import { CategoryRepository } from '@/infrastructure/database/CategoryRepository
 import { TagRepository } from '@/infrastructure/database/TagRepository';
 import { CreateContentUseCase } from '@/application/use-cases/CreateContentUseCase';
 import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
-import { ContentType, ContentStatus } from '@/types/content';
+import { ContentType, ContentStatus, WORKFLOW_STATES } from '@/types/content';
 import { z } from 'zod';
 
 const contentRepo = new ContentRepository();
@@ -43,6 +43,11 @@ const createContentSchema = z.object({
   // 11-char YouTube video ID — alphanumeric + - and _ (the URL-safe base64
   // alphabet YouTube uses for video IDs).
   youtubeVideoId: z.preprocess(emptyToUndefined, z.string().regex(/^[A-Za-z0-9_-]{11}$/, 'Must be an 11-character YouTube video ID').optional()),
+  wavUrl: z.preprocess(emptyToUndefined, z.string().url().optional()),
+  stemsUrl: z.preprocess(emptyToUndefined, z.string().url().optional()),
+  midiUrl: z.preprocess(emptyToUndefined, z.string().url().optional()),
+  thumbnailUrl: z.preprocess(emptyToUndefined, z.string().url().optional()),
+  workflowState: z.preprocess(emptyToUndefined, z.enum(WORKFLOW_STATES as unknown as [string, ...string[]]).optional()),
   audioDuration: z.number().int().min(0).optional(),
   seoTitle: z.preprocess(emptyToUndefined, z.string().max(60).optional()),
   seoDescription: z.preprocess(emptyToUndefined, z.string().max(160).optional()),
@@ -192,6 +197,11 @@ export async function POST(request: NextRequest) {
       videoUrl: validation.data.videoUrl,
       previewVideoUrl: validation.data.previewVideoUrl,
       youtubeVideoId: validation.data.youtubeVideoId,
+      wavUrl: validation.data.wavUrl,
+      stemsUrl: validation.data.stemsUrl,
+      midiUrl: validation.data.midiUrl,
+      thumbnailUrl: validation.data.thumbnailUrl,
+      workflowState: validation.data.workflowState as never,
       audioDuration: validation.data.audioDuration,
       seoTitle: validation.data.seoTitle,
       seoDescription: validation.data.seoDescription,
