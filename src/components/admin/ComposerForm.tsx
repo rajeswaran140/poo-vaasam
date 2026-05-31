@@ -6,10 +6,18 @@
  * instruments / titles / SUNO prompt / YouTube description). Each long
  * text block has a copy button so the brief can be pasted straight into
  * SUNO or YouTube Studio.
+ *
+ * UX notes:
+ *  - Real <form> so Cmd/Ctrl+Enter submits (browsers don't submit on plain
+ *    Enter from a textarea — explicit keydown handler covers that).
+ *  - Last successful result is preserved when a subsequent compose fails,
+ *    so the admin doesn't lose work to a transient error.
+ *  - Results region is aria-live="polite" so screen readers announce when
+ *    the brief lands.
  */
 
-import { useId, useState } from 'react';
-import { Copy, Check, Sparkles } from 'lucide-react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { Copy, Check, Sparkles, RotateCw } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 
 interface Analysis {
@@ -24,6 +32,9 @@ interface Analysis {
   youtube_description: string;
 }
 
+const MAX_LYRICS = 8000;
+const WARN_AT = 7500;
+
 export function ComposerForm() {
   const [lyrics, setLyrics] = useState('');
   const [result, setResult] = useState<Analysis | null>(null);
@@ -33,7 +44,8 @@ export function ComposerForm() {
 
   const run = async () => {
     setError(null);
-    setResult(null);
+    // NOTE: we intentionally do NOT clear `result` here — keeps the last
+    // successful brief on-screen if this call fails.
     setLoading(true);
     try {
       const res = await adminFetch('/api/admin/compose', {
@@ -53,49 +65,113 @@ export function ComposerForm() {
 
   const canRun = lyrics.trim().length > 0 && !loading;
 
+  const onSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (canRun) run();
+  };
+
+  // Cmd/Ctrl+Enter submits without the user mousing to the button.
+  const onTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && canRun) {
+      e.preventDefault();
+      run();
+    }
+  };
+
+  const charsClass =
+    lyrics.length >= MAX_LYRICS
+      ? 'text-red-600 dark:text-red-400'
+      : lyrics.length >= WARN_AT
+        ? 'text-amber-600 dark:text-amber-400'
+        : 'text-gray-500 dark:text-gray-400';
+
   return (
     <div className="space-y-6">
       {/* Input */}
-      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+      <form
+        onSubmit={onSubmit}
+        className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900"
+      >
         <label htmlFor={lyricsId} className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200">
           Tamil lyrics
         </label>
         <textarea
           id={lyricsId}
           value={lyrics}
+          maxLength={MAX_LYRICS}
           onChange={(e) => setLyrics(e.target.value)}
-          placeholder="இங்கே பாடல் வரிகளை ஒட்டவும் (Paste Tamil lyrics here)…"
+          onKeyDown={onTextareaKeyDown}
+          placeholder="இங்கே பாடல் வரிகளை ஒட்டவும் (Paste Tamil lyrics here)… Cmd/Ctrl+Enter to compose."
           rows={10}
           className="w-full rounded-lg border border-gray-300 px-4 py-3 font-tamil text-sm leading-relaxed focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
         />
         <div className="mt-3 flex items-center justify-between gap-3">
-          <p className="text-xs text-gray-500 dark:text-gray-400">{lyrics.length} chars · max 8,000</p>
-          <button
-            type="button"
-            disabled={!canRun}
-            onClick={run}
-            className="inline-flex items-center gap-2 rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <Sparkles className="h-4 w-4" />
-            {loading ? 'Composing…' : 'Compose brief'}
-          </button>
+          <p className={`text-xs tabular-nums ${charsClass}`}>
+            {lyrics.length.toLocaleString()} / {MAX_LYRICS.toLocaleString()} chars
+          </p>
+          <div className="flex items-center gap-3">
+            {loading && (
+              <span className="text-xs text-gray-500 dark:text-gray-400">~5–10s</span>
+            )}
+            <button
+              type="submit"
+              disabled={!canRun}
+              className="inline-flex items-center gap-2 rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {loading ? (
+                <span aria-hidden className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+              ) : (
+                <Sparkles className="h-4 w-4" aria-hidden />
+              )}
+              {loading ? 'Composing…' : 'Compose brief'}
+            </button>
+          </div>
         </div>
-      </div>
+      </form>
 
       {error && (
-        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-200">
-          {error}
+        <div role="alert" className="flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-200">
+          <span className="flex-1">{error}</span>
+          <button
+            type="button"
+            onClick={run}
+            disabled={!canRun}
+            className="inline-flex items-center gap-1 rounded border border-red-300 px-2 py-1 text-xs font-medium hover:bg-red-100 disabled:opacity-50 dark:border-red-700 dark:hover:bg-red-900/30"
+          >
+            <RotateCw className="h-3 w-3" /> Retry
+          </button>
         </div>
       )}
 
-      {result && <Results result={result} />}
+      {result && (
+        <section
+          aria-label="Composer results"
+          aria-live="polite"
+          data-testid="composer-results"
+        >
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              Result
+            </h2>
+            <button
+              type="button"
+              onClick={run}
+              disabled={!canRun}
+              className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+            >
+              <RotateCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} /> Regenerate
+            </button>
+          </div>
+          <Results result={result} />
+        </section>
+      )}
     </div>
   );
 }
 
 function Results({ result }: { result: Analysis }) {
   return (
-    <div className="space-y-4" data-testid="composer-results">
+    <div className="space-y-4">
       {/* Quick-stat grid */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <Stat label="Emotion" value={result.emotion} tamil />
@@ -174,13 +250,23 @@ function Card({ label, children, copyText }: { label: string; children: React.Re
 
 function CopyButton({ text, ariaLabel }: { text: string; ariaLabel: string }) {
   const [copied, setCopied] = useState(false);
+  // Track the timeout so we can cancel on unmount — avoids a setState
+  // after-unmount warning in dev + the tiny memory leak in prod.
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+  }, []);
+
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => setCopied(false), 1500);
     } catch { /* clipboard blocked — silently ignore */ }
   };
+
   return (
     <button
       type="button"

@@ -8,7 +8,8 @@
 
 import { ComposerForm } from '@/components/admin/ComposerForm';
 
-export const revalidate = 60;
+// No `revalidate` — this page has no server data; it's a thin shell around
+// a client form that calls the admin API.
 
 export default function AdminComposePage() {
   const aiReady = Boolean(process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== 'dummy-key-for-build');
