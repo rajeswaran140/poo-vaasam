@@ -23,6 +23,7 @@ import {
   ChevronRight,
   Menu,
   Kanban,
+  Sparkles,
 } from 'lucide-react';
 import { FEATURES } from '@/config/features';
 import { Toaster } from 'react-hot-toast';
@@ -43,6 +44,7 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   '/admin/tags': { title: 'Tags', subtitle: 'Manage content tags' },
   '/admin/messages': { title: 'Messages', subtitle: 'Contact-form submissions' },
   '/admin/songs': { title: 'Songs', subtitle: 'Audio library — themes, durations, play counts' },
+  '/admin/compose': { title: 'Compose', subtitle: 'AI brief from Tamil lyrics — SUNO prompt + metadata' },
   '/admin/workflow': { title: 'Workflow', subtitle: 'Production pipeline — draft → published' },
   '/admin/youtube': { title: 'YouTube', subtitle: 'Channel stats and publishing gaps' },
   '/admin/media': { title: 'Media Library', subtitle: 'Manage uploaded media files' },
@@ -146,6 +148,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             <NavLink href="/admin/tags" icon={Tag} collapsed={collapsed} active={pathname === '/admin/tags'}>Tags</NavLink>
             <NavLink href="/admin/messages" icon={Mail} collapsed={collapsed} active={pathname === '/admin/messages'}>Messages</NavLink>
             <NavLink href="/admin/songs" icon={Music} collapsed={collapsed} active={pathname === '/admin/songs'}>Songs</NavLink>
+            <NavLink href="/admin/compose" icon={Sparkles} collapsed={collapsed} active={pathname === '/admin/compose'}>Compose</NavLink>
             <NavLink href="/admin/workflow" icon={Kanban} collapsed={collapsed} active={pathname === '/admin/workflow'}>Workflow</NavLink>
             <NavLink href="/admin/youtube" icon={PlaySquare} collapsed={collapsed} active={pathname === '/admin/youtube'}>YouTube</NavLink>
 
