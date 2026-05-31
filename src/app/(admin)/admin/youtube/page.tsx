@@ -32,6 +32,12 @@ import {
   type EngagementData,
   type Result,
 } from '@/lib/ga4-api';
+import {
+  fetchChannelAnalyticsSnapshot,
+  fetchVideoAnalytics,
+  isYouTubeAnalyticsConfigured,
+} from '@/lib/youtube-analytics';
+import { generateYouTubeRecommendations } from '@/services/ai/youtube-recommendations';
 
 export const revalidate = 1800; // 30 min — pairs with the 1-hr upstream fetch cache
 
@@ -103,13 +109,16 @@ export default async function YouTubeAdminPage() {
   }
 
   const ga4On = isGA4Configured();
-  const [channel, videos, ga4ClicksRes, ga4TrafficRes, ga4AudioRes, ga4YouTubeRes] = await Promise.all([
+  const ytaOn = isYouTubeAnalyticsConfigured();
+  const [channel, videos, ga4ClicksRes, ga4TrafficRes, ga4AudioRes, ga4YouTubeRes, ytaChannelRes, ytaVideosRes] = await Promise.all([
     fetchChannelStats(SITE.youtube.channelId),
     fetchChannelVideoStats(SITE.youtube.channelId, 50),
     ga4On ? fetchSubscribeClicksBySource(28) : Promise.resolve(null),
     ga4On ? fetchTrafficSnapshot(28) : Promise.resolve(null),
     ga4On ? fetchAudioPlays(28) : Promise.resolve(null),
     ga4On ? fetchYouTubeOpens(28) : Promise.resolve(null),
+    ytaOn ? fetchChannelAnalyticsSnapshot(28) : Promise.resolve(null),
+    ytaOn ? fetchVideoAnalytics(28) : Promise.resolve(null),
   ]);
 
   if (!channel) {
@@ -133,6 +142,18 @@ export default async function YouTubeAdminPage() {
   const totalSubscribeClicks = clicksData?.total ?? 0;
   const clickRows = clicksData?.rows ?? [];
   const maxSubscribeClicks = Math.max(1, ...clickRows.map((r) => r.eventCount));
+
+  // YouTube Analytics + AI recommendations — best-effort, page renders
+  // regardless. AI call only fires when BOTH analytics queries succeed so
+  // Claude isn't asked to reason about an empty dataset.
+  const ytaChannel = ytaChannelRes?.ok ? ytaChannelRes.data : null;
+  const ytaVideos = ytaVideosRes?.ok ? ytaVideosRes.data : [];
+  const ytaError = ytaChannelRes && !ytaChannelRes.ok ? ytaChannelRes.error : null;
+  const titlesByVideoId = Object.fromEntries(videos.map((v) => [v.id, v.title]));
+  const recommendations =
+    ytaChannel && ytaVideos.length > 0
+      ? await generateYouTubeRecommendations({ channel: ytaChannel, videos: ytaVideos, titles: titlesByVideoId })
+      : null;
 
   return (
     <div className="space-y-8">
@@ -247,6 +268,95 @@ export default async function YouTubeAdminPage() {
           <p className="mb-1 font-semibold">GA4 analytics not yet configured</p>
           <p className="text-xs">
             Set <code>GA4_PROPERTY_ID</code> and <code>GA4_SERVICE_ACCOUNT_KEY</code> in Amplify env vars, grant the SA Viewer on the GA4 property, and the &ldquo;Subscribe CTA&rdquo; + &ldquo;Site traffic&rdquo; cards will appear here.
+          </p>
+        </section>
+      )}
+
+      {/* Phase 3 — owner-scoped Analytics + AI recommendations */}
+      {ytaOn ? (
+        <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          {/* Channel-wide totals */}
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+              Subscribers · last 28 days
+            </p>
+            <p className="text-2xl font-bold tabular-nums text-gray-900">
+              {ytaChannel ? `+${numberFmt.format(ytaChannel.subscribersGained)}` : '—'}
+              {ytaChannel && ytaChannel.subscribersLost > 0 && (
+                <span className="ml-2 text-sm font-normal text-gray-500">
+                  −{numberFmt.format(ytaChannel.subscribersLost)} lost
+                </span>
+              )}
+            </p>
+            {ytaChannel && (
+              <p className="mt-1 text-xs text-gray-500">
+                {numberFmt.format(ytaChannel.views)} views ·{' '}
+                {Math.round(ytaChannel.estimatedMinutesWatched).toLocaleString()} min watched ·{' '}
+                avg {Math.round(ytaChannel.averageViewDuration)}s
+              </p>
+            )}
+            {ytaError && (
+              <pre className="mt-3 overflow-x-auto rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-900">
+                {ytaError}
+              </pre>
+            )}
+          </div>
+
+          {/* Per-video subscriber gains */}
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <p className="mb-3 text-xs font-medium uppercase tracking-wide text-gray-500">
+              Subs gained per video · last 28 days
+            </p>
+            {ytaVideos.length === 0 ? (
+              <p className="rounded-lg bg-gray-50 p-4 text-sm text-gray-500">
+                No per-video data yet.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {ytaVideos.slice(0, 5).map((v) => {
+                  const title = titlesByVideoId[v.videoId] ?? v.videoId;
+                  return (
+                    <li key={v.videoId} className="text-sm">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="truncate font-medium text-gray-800" title={title}>{title}</span>
+                        <span className="tabular-nums text-gray-600">+{v.subscribersGained}</span>
+                      </div>
+                      <p className="text-[10px] text-gray-500">
+                        {numberFmt.format(v.views)} views · avg {Math.round(v.averageViewDuration)}s
+                      </p>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+
+          {/* AI recommendations */}
+          <div className="rounded-xl border border-orange-200 bg-orange-50 p-5 shadow-sm lg:col-span-1">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-orange-700">
+              AI recommendations
+            </p>
+            {!recommendations ? (
+              <p className="text-sm text-orange-900">Generated when analytics return data.</p>
+            ) : recommendations.ok ? (
+              <ul className="list-disc space-y-2 pl-4 text-sm text-orange-900">
+                {recommendations.data.map((r, i) => <li key={i}>{r}</li>)}
+              </ul>
+            ) : (
+              <pre className="overflow-x-auto rounded border border-red-200 bg-white p-2 text-xs text-red-900">
+                {recommendations.error}
+              </pre>
+            )}
+          </div>
+        </section>
+      ) : (
+        <section className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+          <p className="mb-1 font-semibold">YouTube Analytics (owner-scoped) not configured</p>
+          <p className="text-xs">
+            One-time OAuth setup needed: run <code>scripts/get-youtube-refresh-token.ts</code>,
+            then set <code>YOUTUBE_OAUTH_CLIENT_ID</code>, <code>YOUTUBE_OAUTH_CLIENT_SECRET</code>,
+            and <code>YOUTUBE_REFRESH_TOKEN</code> in Amplify env. Until then per-video subscriber
+            gains, retention metrics, and AI recommendations stay hidden.
           </p>
         </section>
       )}
