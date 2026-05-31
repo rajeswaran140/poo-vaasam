@@ -16,6 +16,8 @@ import {
   isGA4Configured,
   fetchSubscribeClicksBySource,
   fetchTrafficSnapshot,
+  fetchAudioPlays,
+  fetchYouTubeOpens,
 } from '@/lib/ga4-api';
 
 const validKey = Buffer.from(
@@ -146,6 +148,83 @@ describe('fetchTrafficSnapshot', () => {
     runReport.mockRejectedValueOnce(new Error('7 PERMISSION_DENIED: viewer required'));
     jest.spyOn(console, 'error').mockImplementation(() => {});
     const out = await fetchTrafficSnapshot();
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.error).toMatch(/PERMISSION_DENIED/);
+  });
+});
+
+describe('fetchAudioPlays', () => {
+  beforeEach(() => {
+    process.env.GA4_PROPERTY_ID = '123';
+    process.env.GA4_SERVICE_ACCOUNT_KEY = validKey;
+  });
+
+  it('queries audio_play events broken down by song_title', async () => {
+    runReport.mockResolvedValueOnce([{
+      rows: [
+        { dimensionValues: [{ value: 'அந்தி மேகமே' }], metricValues: [{ value: '120' }] },
+        { dimensionValues: [{ value: 'என்ன மாயம்' }], metricValues: [{ value: '75' }] },
+      ],
+    }]);
+
+    const out = await fetchAudioPlays(28);
+    expect(out).toEqual({
+      ok: true,
+      data: {
+        rows: [
+          { label: 'அந்தி மேகமே', eventCount: 120 },
+          { label: 'என்ன மாயம்', eventCount: 75 },
+        ],
+        total: 195,
+      },
+    });
+
+    const args = runReport.mock.calls[0]?.[0] as any;
+    expect(args.dimensions[0].name).toBe('customEvent:song_title');
+    expect(args.dimensionFilter.filter.stringFilter.value).toBe('audio_play');
+  });
+
+  it('falls back to total-only when the song_title dimension is unregistered', async () => {
+    runReport.mockRejectedValueOnce(new Error('3 INVALID_ARGUMENT: invalid dimension customEvent:song_title'));
+    runReport.mockResolvedValueOnce([{ rows: [{ metricValues: [{ value: '8' }] }] }]);
+
+    const out = await fetchAudioPlays();
+    expect(out).toEqual({
+      ok: true,
+      data: { rows: [], total: 8, note: 'dimension-not-registered' },
+    });
+  });
+});
+
+describe('fetchYouTubeOpens', () => {
+  beforeEach(() => {
+    process.env.GA4_PROPERTY_ID = '123';
+    process.env.GA4_SERVICE_ACCOUNT_KEY = validKey;
+  });
+
+  it('queries youtube_open events broken down by destination', async () => {
+    runReport.mockResolvedValueOnce([{
+      rows: [
+        { dimensionValues: [{ value: 'video:abc123' }], metricValues: [{ value: '42' }] },
+        { dimensionValues: [{ value: 'channel' }], metricValues: [{ value: '11' }] },
+      ],
+    }]);
+
+    const out = await fetchYouTubeOpens(28);
+    expect(out.ok).toBe(true);
+    if (out.ok) {
+      expect(out.data.total).toBe(53);
+      expect(out.data.rows).toHaveLength(2);
+    }
+    const args = runReport.mock.calls[0]?.[0] as any;
+    expect(args.dimensions[0].name).toBe('customEvent:destination');
+    expect(args.dimensionFilter.filter.stringFilter.value).toBe('youtube_open');
+  });
+
+  it('returns the hard error when neither query works', async () => {
+    runReport.mockRejectedValueOnce(new Error('7 PERMISSION_DENIED: viewer required'));
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    const out = await fetchYouTubeOpens();
     expect(out.ok).toBe(false);
     if (!out.ok) expect(out.error).toMatch(/PERMISSION_DENIED/);
   });

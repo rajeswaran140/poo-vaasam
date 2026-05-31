@@ -19,6 +19,7 @@ import { YouTubeEmbed } from '@/components/YouTubeEmbed';
 import { DetailAudioPlayer } from '@/components/music/DetailAudioPlayer';
 import { JsonLd } from '@/components/JsonLd';
 import { ShareRow } from '@/components/content/ShareRow';
+import { TrackedYouTubeOpen } from '@/components/TrackedYouTubeOpen';
 import { isYouTubeUrl, getYouTubeWatchUrl, getYouTubeId } from '@/lib/utils/youtube';
 import { SITE_URL, SITE_NAME, absoluteUrl, toDescription } from '@/lib/seo';
 
@@ -211,15 +212,15 @@ export default async function ContentPage({ params }: PageProps) {
                   உங்கள் உலாவி காணொளி இயக்கத்தை ஆதரிக்கவில்லை.
                 </video>
                 {content.videoUrl && isYouTubeUrl(content.videoUrl) && (
-                  <a
+                  <TrackedYouTubeOpen
                     href={getYouTubeWatchUrl(content.videoUrl) || content.videoUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    destination={ytId ? `video:${ytId}` : 'video'}
+                    source="content_preview_cta"
                     className="mt-4 inline-flex items-center gap-2 rounded-full bg-orange-600 px-5 py-2.5 font-tamil text-sm font-medium text-white shadow-sm transition-colors hover:bg-orange-700"
                   >
                     <span>▶️</span>
                     <span>முழு காணொளியை YouTube-ல் பார்க்கவும்</span>
-                  </a>
+                  </TrackedYouTubeOpen>
                 )}
               </div>
             )}
@@ -232,15 +233,15 @@ export default async function ContentPage({ params }: PageProps) {
                   <span className="font-tamil font-semibold text-gray-700">காணொளி</span>
                 </div>
                 <YouTubeEmbed url={content.videoUrl} title={content.title} />
-                <a
+                <TrackedYouTubeOpen
                   href={getYouTubeWatchUrl(content.videoUrl) || content.videoUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  destination={ytId ? `video:${ytId}` : 'video'}
+                  source="content_video_cta"
                   className="mt-4 inline-flex items-center gap-2 rounded-full bg-orange-600 px-5 py-2.5 font-tamil text-sm font-medium text-white shadow-sm transition-colors hover:bg-orange-700"
                 >
                   <span>▶️</span>
                   <span>YouTube-ல் பார்</span>
-                </a>
+                </TrackedYouTubeOpen>
               </div>
             )}
 

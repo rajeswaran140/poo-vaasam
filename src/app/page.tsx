@@ -12,6 +12,7 @@ import { SITE, liveContentSections, isYouTubeChannelConfigured, isFacebookConfig
 import { fetchChannelVideos } from '@/lib/youtube-feed';
 import { SubscribeButton } from '@/components/SubscribeButton';
 import { TrackedYouTubeAnchor } from '@/components/TrackedYouTubeAnchor';
+import { TrackedYouTubeOpen } from '@/components/TrackedYouTubeOpen';
 import { JsonLd } from '@/components/JsonLd';
 import { SITE_URL, SITE_NAME } from '@/lib/seo';
 
@@ -162,11 +163,11 @@ export default async function HomePage() {
             </div>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {latestVideos.map((video) => (
-                <a
+                <TrackedYouTubeOpen
                   key={video.id}
                   href={video.watchUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  destination={`video:${video.id}`}
+                  source="home_latest_videos"
                   className="group block rounded-xl overflow-hidden bg-gray-800 border border-gray-700 hover:border-orange-500/50 transition"
                 >
                   <div className="relative aspect-video bg-black">
@@ -188,7 +189,7 @@ export default async function HomePage() {
                   <div className="p-3">
                     <h3 className="line-clamp-2 text-sm text-gray-200 font-tamil">{video.title}</h3>
                   </div>
-                </a>
+                </TrackedYouTubeOpen>
               ))}
             </div>
           </div>

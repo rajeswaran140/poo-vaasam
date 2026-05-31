@@ -31,3 +31,24 @@ function gtag(): GtagFn | null {
 export function trackSubscribeClick(source: string): void {
   gtag()?.('event', 'subscribe_click', { source });
 }
+
+/**
+ * Fire when audio starts playing for a new track (not on resume / pause /
+ * scrub). Powered by the MusicPlayerProvider autoplay effect — one event per
+ * track-start, including queue advances. Title is sent so we can break down
+ * by song on the admin dashboard without joining on song_id.
+ */
+export function trackAudioPlay(songId: string, songTitle: string): void {
+  gtag()?.('event', 'audio_play', { song_id: songId, song_title: songTitle });
+}
+
+/**
+ * Fire when any non-Subscribe YouTube outbound click happens — channel
+ * homepage, a specific video, the /videos thumbnail grid, etc. `destination`
+ * is a stable key (e.g. "channel", "video:abc123", "videos-grid") so the
+ * dashboard can group click-throughs by what was opened, not which page the
+ * click came from. Subscribe clicks stay on their own event for clarity.
+ */
+export function trackYouTubeOpen(destination: string, source?: string): void {
+  gtag()?.('event', 'youtube_open', source ? { destination, source } : { destination });
+}

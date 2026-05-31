@@ -10,6 +10,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Music, Shuffle, Repeat, ChevronDown } from 'lucide-react';
+import { trackAudioPlay } from '@/lib/analytics-events';
 
 export interface Track {
   id: string;
@@ -207,6 +208,10 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
       return;
     }
     safePlay(audioRef.current);
+    // Track only when audio is actually about to play (not on session restore).
+    // Fires once per track-start, including queue advances — matches how a
+    // listener would describe "I played this song."
+    if (current.src) trackAudioPlay(current.id, current.title);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.src]);
 

@@ -152,6 +152,91 @@ export interface TrafficSnapshot {
   daysBack: number;
 }
 
+export interface EngagementRow {
+  /** Breakdown key — song_title for audio_play, destination for youtube_open. */
+  label: string;
+  eventCount: number;
+}
+
+export interface EngagementData {
+  rows: EngagementRow[];
+  total: number;
+  note?: 'dimension-not-registered';
+}
+
+/**
+ * Shared helper for "count events of type X, broken down by event-parameter Y,
+ * with a graceful fallback to the un-broken-down total when the custom
+ * dimension isn't registered in GA4 yet." Powers both audio_play and
+ * youtube_open queries.
+ */
+async function fetchEventBreakdown(
+  eventName: string,
+  paramName: string,
+  daysBack: number
+): Promise<Result<EngagementData>> {
+  const client = getClient();
+  const property = propertyPath();
+  if (!client || !property) return { ok: false, error: 'GA4 client not initialised' };
+
+  const baseFilter = {
+    filter: {
+      fieldName: 'eventName',
+      stringFilter: { matchType: 'EXACT', value: eventName },
+    },
+  };
+  const dateRanges = [{ startDate: `${daysBack}daysAgo`, endDate: 'today' }];
+
+  try {
+    const [res] = await client.runReport({
+      property,
+      dateRanges,
+      dimensions: [{ name: `customEvent:${paramName}` }],
+      metrics: [{ name: 'eventCount' }],
+      dimensionFilter: baseFilter,
+      limit: 50,
+      orderBys: [{ metric: { metricName: 'eventCount' }, desc: true }],
+    } as any);
+
+    const rows = (res.rows ?? []).map((row: any) => ({
+      label: row.dimensionValues?.[0]?.value || '(not set)',
+      eventCount: Number(row.metricValues?.[0]?.value ?? 0),
+    }));
+    const total = rows.reduce((sum, r) => sum + r.eventCount, 0);
+    return { ok: true, data: { rows, total } };
+  } catch (err) {
+    const error = errMessage(err);
+    if (/INVALID_ARGUMENT|customEvent/i.test(error)) {
+      try {
+        const [res] = await client.runReport({
+          property,
+          dateRanges,
+          metrics: [{ name: 'eventCount' }],
+          dimensionFilter: baseFilter,
+        } as any);
+        const total = Number(res.rows?.[0]?.metricValues?.[0]?.value ?? 0);
+        return { ok: true, data: { rows: [], total, note: 'dimension-not-registered' } };
+      } catch (fallbackErr) {
+        const fallbackError = errMessage(fallbackErr);
+        console.error(`[ga4-api] ${eventName} total fallback failed:`, fallbackError);
+        return { ok: false, error: fallbackError };
+      }
+    }
+    console.error(`[ga4-api] ${eventName} query failed:`, error);
+    return { ok: false, error };
+  }
+}
+
+/** Top-played songs over the last N days (audio_play events, by song_title). */
+export function fetchAudioPlays(daysBack = 28): Promise<Result<EngagementData>> {
+  return fetchEventBreakdown('audio_play', 'song_title', daysBack);
+}
+
+/** YouTube outbound clicks over the last N days (youtube_open events, by destination). */
+export function fetchYouTubeOpens(daysBack = 28): Promise<Result<EngagementData>> {
+  return fetchEventBreakdown('youtube_open', 'destination', daysBack);
+}
+
 export async function fetchTrafficSnapshot(daysBack = 28): Promise<Result<TrafficSnapshot>> {
   const client = getClient();
   const property = propertyPath();

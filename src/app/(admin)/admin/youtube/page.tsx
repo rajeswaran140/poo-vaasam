@@ -26,7 +26,11 @@ import { videoMatchesContent } from '@/lib/youtube-match';
 import {
   fetchSubscribeClicksBySource,
   fetchTrafficSnapshot,
+  fetchAudioPlays,
+  fetchYouTubeOpens,
   isGA4Configured,
+  type EngagementData,
+  type Result,
 } from '@/lib/ga4-api';
 
 export const revalidate = 1800; // 30 min — pairs with the 1-hr upstream fetch cache
@@ -99,11 +103,13 @@ export default async function YouTubeAdminPage() {
   }
 
   const ga4On = isGA4Configured();
-  const [channel, videos, ga4ClicksRes, ga4TrafficRes] = await Promise.all([
+  const [channel, videos, ga4ClicksRes, ga4TrafficRes, ga4AudioRes, ga4YouTubeRes] = await Promise.all([
     fetchChannelStats(SITE.youtube.channelId),
     fetchChannelVideoStats(SITE.youtube.channelId, 50),
     ga4On ? fetchSubscribeClicksBySource(28) : Promise.resolve(null),
     ga4On ? fetchTrafficSnapshot(28) : Promise.resolve(null),
+    ga4On ? fetchAudioPlays(28) : Promise.resolve(null),
+    ga4On ? fetchYouTubeOpens(28) : Promise.resolve(null),
   ]);
 
   if (!channel) {
@@ -245,6 +251,26 @@ export default async function YouTubeAdminPage() {
         </section>
       )}
 
+      {/* Engagement — audio plays + YouTube outbound clicks */}
+      {ga4On && (
+        <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <EngagementCard
+            title="Top audio plays · last 28 days"
+            footnote="audio_play event, by song_title"
+            res={ga4AudioRes}
+            emptyMessage="No audio plays recorded yet. The event fires whenever a track starts; numbers appear as soon as visitors play songs."
+            dimensionRegisterHints={{ name: 'Song Title', param: 'song_title' }}
+          />
+          <EngagementCard
+            title="YouTube outbound · last 28 days"
+            footnote="youtube_open event, by destination"
+            res={ga4YouTubeRes}
+            emptyMessage="No YouTube outbound clicks yet. The event fires when visitors click any non-Subscribe YouTube link (channel/video/embed)."
+            dimensionRegisterHints={{ name: 'YouTube Destination', param: 'destination' }}
+          />
+        </section>
+      )}
+
       {/* "Not on the site" gap list — actionable publishing hints */}
       {unmatched.length > 0 && (
         <section className="rounded-xl border border-orange-200 bg-orange-50 p-5">
@@ -341,6 +367,84 @@ function StatCard({ label, value }: { label: string; value: string }) {
     <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
       <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
       <p className="mt-1 text-3xl font-bold text-gray-900 tabular-nums">{value}</p>
+    </div>
+  );
+}
+
+/**
+ * Generic engagement card — handles all four states the dimension-aware
+ * GA4 helper can return: hard error (red), dimension-not-registered
+ * (amber + how-to), total > 0 with breakdown (bar list), zero events.
+ */
+function EngagementCard({
+  title,
+  footnote,
+  res,
+  emptyMessage,
+  dimensionRegisterHints,
+}: {
+  title: string;
+  footnote: string;
+  res: Result<EngagementData> | null;
+  emptyMessage: string;
+  dimensionRegisterHints: { name: string; param: string };
+}) {
+  const data = res?.ok ? res.data : null;
+  const error = res && !res.ok ? res.error : null;
+  const total = data?.total ?? 0;
+  const rows = data?.rows ?? [];
+  const max = Math.max(1, ...rows.map((r) => r.eventCount));
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div className="mb-3 flex items-end justify-between gap-3">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{title}</p>
+          <p className="text-2xl font-bold tabular-nums text-gray-900">
+            {numberFmt.format(total)}
+            <span className="ml-1 text-sm font-normal text-gray-500">events</span>
+          </p>
+        </div>
+        <p className="text-xs text-gray-500">{footnote}</p>
+      </div>
+      {error ? (
+        <pre className="overflow-x-auto rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-900">
+          {error}
+        </pre>
+      ) : data?.note === 'dimension-not-registered' ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="mb-2">
+            <strong>Custom dimension not registered yet.</strong> Total above is correct; the breakdown will appear once you register the dimension.
+          </p>
+          <p className="mb-1 text-xs">
+            GA4: <strong>Admin → Custom definitions → Create custom dimension</strong>
+          </p>
+          <ul className="ml-4 list-disc text-xs">
+            <li>Dimension name: <code>{dimensionRegisterHints.name}</code></li>
+            <li>Scope: <code>Event</code></li>
+            <li>Event parameter: <code>{dimensionRegisterHints.param}</code></li>
+          </ul>
+        </div>
+      ) : rows.length === 0 ? (
+        <p className="rounded-lg bg-gray-50 p-4 text-sm text-gray-500">{emptyMessage}</p>
+      ) : (
+        <ul className="space-y-2">
+          {rows.map((row) => {
+            const pct = Math.round((row.eventCount / max) * 100);
+            return (
+              <li key={row.label} className="text-sm">
+                <div className="mb-1 flex justify-between gap-3">
+                  <span className="truncate font-medium text-gray-800" title={row.label}>{row.label}</span>
+                  <span className="tabular-nums text-gray-600">{numberFmt.format(row.eventCount)}</span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-gray-100">
+                  <div className="h-full rounded-full bg-orange-500" style={{ width: `${pct}%` }} />
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

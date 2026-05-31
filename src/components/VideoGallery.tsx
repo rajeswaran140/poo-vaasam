@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { Play } from 'lucide-react';
 import { YouTubeEmbed } from '@/components/YouTubeEmbed';
 import type { ChannelVideo } from '@/lib/youtube-feed';
+import { trackYouTubeOpen } from '@/lib/analytics-events';
 
 export function VideoGallery({ videos }: { videos: ChannelVideo[] }) {
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -34,7 +35,10 @@ export function VideoGallery({ videos }: { videos: ChannelVideo[] }) {
           ) : (
             <button
               type="button"
-              onClick={() => setActiveId(video.id)}
+              onClick={() => {
+                setActiveId(video.id);
+                trackYouTubeOpen(`video:${video.id}`, 'videos_page');
+              }}
               className="group relative block w-full aspect-video bg-black"
               aria-label={`Play: ${video.title}`}
             >
