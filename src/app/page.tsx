@@ -46,7 +46,7 @@ const personJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'Person',
   name: 'Rajeswaran Thangarajah',
-  alternateName: 'ரஜேஸ்வரன் தங்கராஜா',
+  alternateName: 'இராஜேஸ்வரன் தங்கராஜா',
   url: SITE_URL,
   jobTitle: 'Tamil poet and lyricist',
   description: 'Tamil writer and lyricist publishing original poems, songs and videos at tamilagaval.com',
@@ -387,7 +387,7 @@ export default async function HomePage() {
             </div>
           </div>
           <div className="border-t border-gray-800 mt-8 pt-8 text-center text-gray-400">
-            <p className="font-tamil">© {new Date().getFullYear()} ரஜேஸ்வரன் தங்கராஜா · தமிழகவல்</p>
+            <p className="font-tamil">© {new Date().getFullYear()} இராஜேஸ்வரன் தங்கராஜா · தமிழகவல்</p>
           </div>
         </div>
       </footer>

@@ -98,7 +98,7 @@ export default async function AdminDashboard() {
     <div className="space-y-8">
       {/* Welcome banner — compact, brand-aligned */}
       <div className="rounded-2xl bg-gradient-to-r from-orange-500 to-orange-700 p-6 text-white shadow-lg">
-        <h1 className="font-kavivanar text-2xl font-bold">வணக்கம், ரஜேஸ்வரன்</h1>
+        <h1 className="font-kavivanar text-2xl font-bold">வணக்கம், இராஜேஸ்வரன்</h1>
         <p className="mt-1 text-sm text-orange-50/90">
           {totalLive} live content {totalLive === 1 ? 'item' : 'items'} ·{' '}
           {stats?.published ?? 0} published · {stats?.draft ?? 0} draft

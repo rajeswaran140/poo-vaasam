@@ -42,7 +42,7 @@ const personJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'Person',
   name: 'Rajeswaran Thangarajah',
-  alternateName: 'ரஜேஸ்வரன் தங்கராஜா',
+  alternateName: 'இராஜேஸ்வரன் தங்கராஜா',
   url: `${SITE_URL}/about`,
   jobTitle: 'Tamil poet and lyricist',
   description: 'Tamil writer and lyricist publishing original poems, songs and videos at tamilagaval.com. Tamil kavithai and paadal varigal — always free.',
@@ -78,7 +78,7 @@ export default function AboutPage() {
             Tamilagaval · Tamil Poems &amp; Songs by Rajeswaran Thangarajah
           </p>
           <p className="mt-4 max-w-2xl font-tamil text-lg text-white/90 sm:text-xl">
-            ரஜேஸ்வரன் தங்கராஜாவின் சொந்தக் கவிதைகளும் பாடல்களும் — ஒரே இடத்தில், என்றும் இலவசம்.
+            இராஜேஸ்வரன் தங்கராஜாவின் சொந்தக் கவிதைகளும் பாடல்களும் — ஒரே இடத்தில், என்றும் இலவசம்.
           </p>
         </div>
       </section>
@@ -89,7 +89,7 @@ export default function AboutPage() {
           <h2 className="mb-4 font-kavivanar text-3xl font-bold text-white sm:text-4xl">இந்த தளம் என்ன?</h2>
           <div className="space-y-4 font-tamil leading-relaxed text-gray-300">
             <p>
-              தமிழகவல் என்பது ரஜேஸ்வரன் தங்கராஜாவின் சொந்தக் கவிதைகளையும் பாடல்களையும் ஒரே இடத்தில் கொண்டுவரும் தனிப்பட்ட தளம். இது ஒரு பொது தமிழ் இலக்கிய தொகுப்பு அல்ல — இது ஒரு எழுத்தாளரின் படைப்புகளை வாசகருக்கு நேரடியாக கொண்டுசேர்க்கும் முயற்சி.
+              தமிழகவல் என்பது இராஜேஸ்வரன் தங்கராஜாவின் சொந்தக் கவிதைகளையும் பாடல்களையும் ஒரே இடத்தில் கொண்டுவரும் தனிப்பட்ட தளம். இது ஒரு பொது தமிழ் இலக்கிய தொகுப்பு அல்ல — இது ஒரு எழுத்தாளரின் படைப்புகளை வாசகருக்கு நேரடியாக கொண்டுசேர்க்கும் முயற்சி.
             </p>
             <p>
               கவிதைகளைப் படிக்கலாம், பாடல்களைக் கேட்கலாம், YouTube சேனலின் காணொளிகளைப் பார்க்கலாம் — அனைத்தும் இங்கேயே. பதிவு செய்யத் தேவையில்லை. கட்டணம் இல்லை.
@@ -120,7 +120,7 @@ export default function AboutPage() {
           <h2 className="mb-4 font-kavivanar text-3xl font-bold text-white sm:text-4xl">யார் இதைத் தொகுக்கிறார்?</h2>
           <div className="space-y-4 font-tamil leading-relaxed text-gray-300">
             <p>
-              <strong className="text-white">ரஜேஸ்வரன் தங்கராஜா</strong> — தமிழ் எழுத்தாளரும் பாடலாசிரியரும். அன்றாட வாழ்க்கையின் சிறு தருணங்களையும் உணர்வுகளையும் கவிதையாகவும் பாடலாகவும் வடிக்கிறார்.
+              <strong className="text-white">இராஜேஸ்வரன் தங்கராஜா</strong> — தமிழ் எழுத்தாளரும் பாடலாசிரியரும். அன்றாட வாழ்க்கையின் சிறு தருணங்களையும் உணர்வுகளையும் கவிதையாகவும் பாடலாகவும் வடிக்கிறார்.
             </p>
             <p>
               புதிய படைப்புகள் தளத்திலும் YouTube சேனலிலும் தொடர்ந்து வெளியாகின்றன. சந்தா செலுத்துங்கள் — புதியவை வரும்போதே உங்களுக்குத் தெரியும்.
