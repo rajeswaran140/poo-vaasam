@@ -9,7 +9,7 @@ import Header from '@/components/Header';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentType, ContentStatus } from '@/types/content';
 import { SongsPlaylist, type SongRow } from '@/components/music/SongsPlaylist';
-import { themeForSong } from '@/config/song-themes';
+import { themeForSongWithOverride } from '@/config/song-themes';
 import { JsonLd } from '@/components/JsonLd';
 import { SITE_NAME, absoluteUrl } from '@/lib/seo';
 
@@ -83,7 +83,7 @@ export default async function SongsPage() {
       cover: typeof s.featuredImage === 'string' ? s.featuredImage : undefined,
       duration: typeof s.audioDuration === 'number' ? s.audioDuration : undefined,
       addedAt: toEpochMs(s.createdAt),
-      theme: themeForSong(id),
+      theme: themeForSongWithOverride(id, s.theme),
     };
   });
   const playableCount = tracks.filter((t) => t.src).length;

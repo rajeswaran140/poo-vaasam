@@ -40,3 +40,19 @@ export const SONG_THEME_BY_ID: Record<string, SongTheme> = {
 export function themeForSong(id: string): SongTheme {
   return SONG_THEME_BY_ID[id] ?? DEFAULT_SONG_THEME;
 }
+
+/**
+ * Same as themeForSong, but lets a per-song DB override win over the hand
+ * curated config map. Use this when you've loaded a song record and have
+ * its theme override string (admin /admin/songs writes this field via
+ * /api/admin/songs/[id]/theme).
+ */
+export function themeForSongWithOverride(
+  id: string,
+  override: unknown
+): SongTheme {
+  if (typeof override === 'string' && (SONG_THEMES as readonly string[]).includes(override)) {
+    return override as SongTheme;
+  }
+  return themeForSong(id);
+}

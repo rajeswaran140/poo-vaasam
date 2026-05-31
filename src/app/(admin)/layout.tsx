@@ -5,7 +5,7 @@ import { ReactNode, useState, useEffect } from 'react';
 import { useAuthenticator } from '@aws-amplify/ui-react';
 import { useRouter, usePathname } from 'next/navigation';
 import '@/lib/amplify-config';
-import { LucideIcon, LayoutDashboard, FileText, Folder, Tag, Image, Globe, Settings, LogOut, Plus, Mail, PlaySquare } from 'lucide-react';
+import { LucideIcon, LayoutDashboard, FileText, Folder, Tag, Image, Globe, Settings, LogOut, Plus, Mail, PlaySquare, Music } from 'lucide-react';
 import { FEATURES } from '@/config/features';
 import { Toaster } from 'react-hot-toast';
 
@@ -20,6 +20,7 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   '/admin/categories': { title: 'Categories', subtitle: 'Organize content into categories' },
   '/admin/tags': { title: 'Tags', subtitle: 'Manage content tags' },
   '/admin/messages': { title: 'Messages', subtitle: 'Contact-form submissions' },
+  '/admin/songs': { title: 'Songs', subtitle: 'Audio library — themes, durations, play counts' },
   '/admin/youtube': { title: 'YouTube', subtitle: 'Channel stats and publishing gaps' },
   '/admin/media': { title: 'Media Library', subtitle: 'Manage uploaded media files' },
   '/admin/settings': { title: 'Settings', subtitle: 'Configure your platform settings' },
@@ -88,6 +89,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           </NavLink>
           <NavLink href="/admin/messages" icon={Mail}>
             Messages
+          </NavLink>
+          <NavLink href="/admin/songs" icon={Music}>
+            Songs
           </NavLink>
           <NavLink href="/admin/youtube" icon={PlaySquare}>
             YouTube
