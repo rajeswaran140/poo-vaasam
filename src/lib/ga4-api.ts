@@ -232,6 +232,16 @@ export function fetchAudioPlays(daysBack = 28): Promise<Result<EngagementData>> 
   return fetchEventBreakdown('audio_play', 'song_title', daysBack);
 }
 
+/**
+ * Same as fetchAudioPlays but grouped by the immutable `song_id` parameter
+ * instead of the human-readable title. Used by the /admin/songs per-row plays
+ * column — a song that gets renamed in DB still aggregates correctly because
+ * `song_id` (cnt_…) never changes once published.
+ */
+export function fetchAudioPlaysBySongId(daysBack = 28): Promise<Result<EngagementData>> {
+  return fetchEventBreakdown('audio_play', 'song_id', daysBack);
+}
+
 /** YouTube outbound clicks over the last N days (youtube_open events, by destination). */
 export function fetchYouTubeOpens(daysBack = 28): Promise<Result<EngagementData>> {
   return fetchEventBreakdown('youtube_open', 'destination', daysBack);
