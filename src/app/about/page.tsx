@@ -73,10 +73,6 @@ export default function AboutPage() {
           <h1 className="font-kavivanar text-5xl font-extrabold leading-tight drop-shadow-md sm:text-6xl lg:text-7xl">
             தமிழகவல்
           </h1>
-          {/* Romanised keyword line — matches how people actually search. */}
-          <p className="mt-2 text-sm font-medium uppercase tracking-[0.18em] text-white/80">
-            Tamilagaval · Tamil Poems &amp; Songs by Rajeswaran Thangarajah
-          </p>
           <p className="mt-4 max-w-2xl font-tamil text-lg text-white/90 sm:text-xl">
             இராஜேஸ்வரன் தங்கராஜாவின் சொந்தக் கவிதைகளும் பாடல்களும் — ஒரே இடத்தில், என்றும் இலவசம்.
           </p>

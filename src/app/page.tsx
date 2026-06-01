@@ -90,10 +90,6 @@ export default async function HomePage() {
 
                 {/* Main Headline - Optimized Typography with Baloo Thambi 2 */}
                 <div className="space-y-8">
-                  {/* Romanised keyword eyebrow — matches how people actually search. */}
-                  <p className="text-xs sm:text-sm font-semibold uppercase tracking-[0.22em] text-white/80">
-                    Tamilagaval · Tamil Poems &amp; Songs by Rajeswaran Thangarajah
-                  </p>
                   <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-extrabold font-poem leading-tight tracking-normal">
                     <span className="block mb-3 text-white drop-shadow-2xl">படியுங்கள். கேளுங்கள்.</span>
                     <span className="block text-yellow-300">

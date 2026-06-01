@@ -55,10 +55,6 @@ export default async function VideosPage() {
             <h1 className="text-4xl sm:text-5xl font-bold font-kavivanar mb-2 drop-shadow-lg">
               காணொளிகள்
             </h1>
-            {/* Romanised keyword line — matches how people actually search. */}
-            <p className="mb-4 text-sm font-medium uppercase tracking-[0.18em] text-white/80">
-              Tamil Videos by Rajeswaran Thangarajah
-            </p>
             <p className="text-white/90 font-tamil text-lg max-w-2xl mx-auto mb-8">
               எங்கள் YouTube சேனலின் சமீபத்திய காணொளிகள்.
             </p>
