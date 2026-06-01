@@ -11,7 +11,6 @@
  * the (admin) layout, so no client-side auth check is needed.
  */
 
-import Link from 'next/link';
 import { SITE, isYouTubeVideosConfigured } from '@/config/site';
 import {
   fetchChannelStats,
@@ -464,10 +463,6 @@ export default async function YouTubeAdminPage() {
         </div>
       </section>
 
-      <p className="text-xs text-gray-500">
-        Want subscriber-gain per video and traffic sources?{' '}
-        <Link href="/admin" className="text-orange-600 hover:underline">Phase 3</Link> adds the YouTube Analytics API (OAuth-gated).
-      </p>
     </div>
   );
 }
