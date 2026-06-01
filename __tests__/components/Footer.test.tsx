@@ -29,15 +29,22 @@ describe('Footer', () => {
   it('renders core about-section links', () => {
     render(<Footer />);
     expect(screen.getByRole('link', { name: 'எங்களை பற்றி' })).toHaveAttribute('href', '/about');
-    expect(screen.getByRole('link', { name: 'தொடர்பு' })).toHaveAttribute('href', '/contact');
     expect(screen.getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', '/privacy');
     expect(screen.getByRole('link', { name: 'Terms' })).toHaveAttribute('href', '/terms');
   });
 
-  it('renders the dynamic-year copyright with the Tamil byline', () => {
+  it('routes the contact link to the TechSynergy corporate site', () => {
+    render(<Footer />);
+    const contact = screen.getByRole('link', { name: 'தொடர்பு' });
+    expect(contact).toHaveAttribute('href', 'https://techsynergy.ca/');
+    expect(contact).toHaveAttribute('target', '_blank');
+    expect(contact).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
+  it('renders the dynamic-year copyright with the TechSynergy Corp byline', () => {
     render(<Footer />);
     const year = new Date().getFullYear();
-    expect(screen.getByText(new RegExp(`© ${year}.*இராஜேஸ்வரன் தங்கராஜா.*தமிழகவல்`))).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(`© ${year} TechSynergy Corp\\. All rights reserved\\.`))).toBeInTheDocument();
   });
 
   it('exposes a YouTube social link when the channel is configured', () => {

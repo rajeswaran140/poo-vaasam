@@ -45,9 +45,9 @@ describe('Music Composition page — metadata', () => {
 });
 
 describe('Music Composition page — audit fixes', () => {
-  it('renders the shared Footer at the bottom (carries the Tamil byline)', () => {
+  it('renders the shared Footer at the bottom (carries the TechSynergy Corp byline)', () => {
     render(<MusicCompositionPage />);
-    expect(screen.getByText(/இராஜேஸ்வரன் தங்கராஜா.*தமிழகவல்/)).toBeInTheDocument();
+    expect(screen.getByText(/TechSynergy Corp\. All rights reserved\./)).toBeInTheDocument();
   });
 
   it('YouTube channel fallback uses a tracked subscribe anchor', () => {
