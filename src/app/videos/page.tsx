@@ -1,12 +1,13 @@
 /**
  * /videos — gallery of the channel's latest YouTube uploads, with a Subscribe
- * CTA. Hidden (404) until a channel ID is configured in src/config/site.ts.
+ * CTA in the hero and another below the gallery. Hidden (404) until a channel
+ * ID is configured in src/config/site.ts.
  */
 
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Header from '@/components/Header';
-import { fetchChannelVideos, videosItemListJsonLd } from '@/lib/youtube-feed';
+import { fetchChannelVideos, videosItemListJsonLd, thumbnailVariants } from '@/lib/youtube-feed';
 import { SITE, isYouTubeVideosConfigured } from '@/config/site';
 import { VideoGallery } from '@/components/VideoGallery';
 import { SubscribeButton } from '@/components/SubscribeButton';
@@ -21,22 +22,33 @@ const META_TITLE = 'Tamil Videos by Rajeswaran Thangarajah';
 const META_DESCRIPTION =
   'Latest videos from the Tamilagaval YouTube channel — Tamil poems, songs and lyrics by Rajeswaran Thangarajah.';
 
-export const metadata: Metadata = {
-  title: META_TITLE,
-  description: META_DESCRIPTION,
-  alternates: { canonical: '/videos' },
-  openGraph: {
+export async function generateMetadata(): Promise<Metadata> {
+  // OG image = the latest video's thumbnail (so each share preview reflects
+  // current top content). Falls back to a static value if the feed is empty.
+  let ogImage = 'https://i.ytimg.com/vi/gfywsN483lI/maxresdefault.jpg';
+  if (isYouTubeVideosConfigured()) {
+    const videos = await fetchChannelVideos(SITE.youtube.channelId, 1);
+    if (videos[0]) ogImage = thumbnailVariants(videos[0].id)[3]; // maxresdefault
+  }
+  return {
     title: META_TITLE,
     description: META_DESCRIPTION,
-    url: '/videos',
-    type: 'website',
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: META_TITLE,
-    description: META_DESCRIPTION,
-  },
-};
+    alternates: { canonical: '/videos' },
+    openGraph: {
+      title: META_TITLE,
+      description: META_DESCRIPTION,
+      url: '/videos',
+      type: 'website',
+      images: [{ url: ogImage, width: 1280, height: 720 }],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: META_TITLE,
+      description: META_DESCRIPTION,
+      images: [ogImage],
+    },
+  };
+}
 
 export default async function VideosPage() {
   if (!isYouTubeVideosConfigured()) {
@@ -70,6 +82,19 @@ export default async function VideosPage() {
         </section>
 
         <VideoGallery videos={videos} />
+
+        {videos.length > 0 && (
+          <section className="mt-12 text-center">
+            <p className="font-tamil text-gray-300 mb-4">
+              புதிய காணொளிகளை தவறவிடாமல் பெற, எங்களை சந்தாதாரராக சேருங்கள்.
+            </p>
+            <SubscribeButton
+              label="YouTube"
+              source="videos_footer"
+              className="inline-flex items-center gap-2 px-7 py-3.5 bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white rounded-full font-bold hover:opacity-90 transition-opacity shadow-lg"
+            />
+          </section>
+        )}
       </main>
     </>
   );

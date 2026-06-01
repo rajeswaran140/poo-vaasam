@@ -3,7 +3,7 @@
  * Tests for the YouTube RSS feed parser/fetcher.
  */
 
-import { parseChannelFeed, fetchChannelVideos, videosItemListJsonLd } from '@/lib/youtube-feed';
+import { parseChannelFeed, fetchChannelVideos, videosItemListJsonLd, thumbnailVariants } from '@/lib/youtube-feed';
 
 const SAMPLE_FEED = `<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
@@ -85,11 +85,23 @@ describe('fetchChannelVideos', () => {
   });
 });
 
+describe('thumbnailVariants', () => {
+  it('returns mq/hq/sd/maxres URLs in ascending resolution order', () => {
+    const urls = thumbnailVariants('gfywsN483lI');
+    expect(urls).toEqual([
+      'https://i.ytimg.com/vi/gfywsN483lI/mqdefault.jpg',
+      'https://i.ytimg.com/vi/gfywsN483lI/hqdefault.jpg',
+      'https://i.ytimg.com/vi/gfywsN483lI/sddefault.jpg',
+      'https://i.ytimg.com/vi/gfywsN483lI/maxresdefault.jpg',
+    ]);
+  });
+});
+
 describe('videosItemListJsonLd', () => {
   it('builds a schema.org ItemList of VideoObjects', () => {
     const ld = videosItemListJsonLd(parseChannelFeed(SAMPLE_FEED)) as {
       '@type': string;
-      itemListElement: Array<{ position: number; item: Record<string, string> }>;
+      itemListElement: Array<{ position: number; item: Record<string, string | string[]> }>;
     };
 
     expect(ld['@type']).toBe('ItemList');
@@ -101,7 +113,15 @@ describe('videosItemListJsonLd', () => {
     expect(first.item.name).toBe('பூ வாசம் & காதல்');
     expect(first.item.description).toBe('ஒரு அழகான பாடல்');
     expect(first.item.embedUrl).toBe('https://www.youtube.com/embed/gfywsN483lI');
-    expect(first.item.thumbnailUrl).toBe('https://i.ytimg.com/vi/gfywsN483lI/hqdefault.jpg');
+
+    // thumbnailUrl is now an array of multi-resolution URLs (Google prefers
+    // this for richer video snippets).
+    expect(first.item.thumbnailUrl).toEqual([
+      'https://i.ytimg.com/vi/gfywsN483lI/mqdefault.jpg',
+      'https://i.ytimg.com/vi/gfywsN483lI/hqdefault.jpg',
+      'https://i.ytimg.com/vi/gfywsN483lI/sddefault.jpg',
+      'https://i.ytimg.com/vi/gfywsN483lI/maxresdefault.jpg',
+    ]);
 
     // Entry without a description falls back to its title.
     expect(ld.itemListElement[1].item.description).toBe('Second Video');

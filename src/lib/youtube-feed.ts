@@ -90,6 +90,17 @@ export async function fetchChannelVideos(
   }
 }
 
+/** Multi-resolution thumbnail URLs for a YouTube video — Google prefers an
+ *  array of sizes for richer video snippets. */
+export function thumbnailVariants(videoId: string): string[] {
+  return [
+    `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
+    `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+    `https://i.ytimg.com/vi/${videoId}/sddefault.jpg`,
+    `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
+  ];
+}
+
 /**
  * Schema.org ItemList of VideoObjects for the videos page — makes the videos
  * eligible for Google video rich results (more discovery → more subscribers).
@@ -105,7 +116,7 @@ export function videosItemListJsonLd(videos: ChannelVideo[]): Record<string, unk
         '@type': 'VideoObject',
         name: video.title,
         description: video.description || video.title,
-        thumbnailUrl: video.thumbnail,
+        thumbnailUrl: thumbnailVariants(video.id),
         uploadDate: video.publishedAt,
         contentUrl: video.watchUrl,
         embedUrl: `https://www.youtube.com/embed/${video.id}`,
