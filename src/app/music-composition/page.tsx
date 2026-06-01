@@ -5,16 +5,35 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import Header from '@/components/Header';
+import { Footer } from '@/components/Footer';
 import { JsonLd } from '@/components/JsonLd';
 import { YouTubeEmbed } from '@/components/YouTubeEmbed';
+import { TrackedYouTubeAnchor } from '@/components/TrackedYouTubeAnchor';
 import { SITE_URL, SITE_NAME } from '@/lib/seo';
-import { SITE, isYouTubeChannelConfigured } from '@/config/site';
+import { isYouTubeChannelConfigured, youtubeSubscribeUrl } from '@/config/site';
 import { MUSIC, hasMusicSamples, hasWhatsApp, whatsappLink } from '@/config/music';
 
+const META_TITLE = 'இசையமைப்பு சேவை';
+const META_DESCRIPTION =
+  'உங்கள் தமிழ் பாடல் வரிகளுக்கு தனிப்பட்ட இசை — மலிவான விலையில். தமிழகவல் இசையமைப்பு சேவை: இலவச மதிப்பீடு.';
+
 export const metadata: Metadata = {
-  title: 'இசையமைப்பு சேவை',
-  description: 'உங்கள் தமிழ் பாடல் வரிகளுக்கு தனிப்பட்ட இசை — மலிவான விலையில். தமிழகவல் இசையமைப்பு சேவை: இலவச மதிப்பீடு.',
+  title: META_TITLE,
+  description: META_DESCRIPTION,
   alternates: { canonical: '/music-composition' },
+  openGraph: {
+    title: `${META_TITLE} | ${SITE_NAME}`,
+    description: META_DESCRIPTION,
+    url: '/music-composition',
+    siteName: SITE_NAME,
+    locale: 'ta_IN',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: `${META_TITLE} | ${SITE_NAME}`,
+    description: META_DESCRIPTION,
+  },
 };
 
 const ORDER_HREF = '/contact?subject=Music%20Composition%20Request';
@@ -197,17 +216,17 @@ export default function MusicCompositionPage() {
                 எங்கள் இசை மாதிரிகளை YouTube சேனலில் கேளுங்கள்.
               </p>
               {showChannelFallback && (
-                <a
-                  href={SITE.youtube.channelUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <TrackedYouTubeAnchor
+                  href={youtubeSubscribeUrl('music_composition_samples')}
+                  source="music_composition_samples"
+                  ariaLabel="YouTube"
                   className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white rounded-full font-bold hover:opacity-90 transition-opacity shadow-lg text-sm"
                 >
                   <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                     <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
                   </svg>
                   <span>YouTube</span>
-                </a>
+                </TrackedYouTubeAnchor>
               )}
             </div>
           )}
@@ -251,22 +270,23 @@ export default function MusicCompositionPage() {
 
       {/* Final CTA */}
       <section className="container mx-auto px-4 py-20 text-center">
-        <div className="max-w-2xl mx-auto bg-gradient-to-r from-purple-600 to-purple-800 rounded-2xl p-10">
+        <div className="max-w-2xl mx-auto bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 rounded-2xl p-10">
           <h2 className="text-3xl font-bold text-white mb-4 font-tamil">
             உங்கள் பாடலுக்கு இசை வேண்டுமா?
           </h2>
-          <p className="text-purple-100 font-tamil mb-8">
+          <p className="text-orange-50 font-tamil mb-8">
             இன்றே உங்கள் இசையமைப்பு கோரிக்கையை அனுப்புங்கள் — இலவச மதிப்பீடு.
           </p>
           <Link
             href={ORDER_HREF}
-            className="inline-flex items-center gap-2 px-8 py-4 bg-white text-purple-700 rounded-full font-bold hover:bg-purple-50 transition-all shadow-lg transform hover:scale-105 font-tamil text-lg"
+            className="inline-flex items-center gap-2 px-8 py-4 bg-white text-orange-600 rounded-full font-bold hover:bg-orange-50 transition-all shadow-lg transform hover:scale-105 font-tamil text-lg"
           >
             <span aria-hidden="true">🎵</span>
             <span>இசையமைப்பு கோரிக்கை</span>
           </Link>
         </div>
       </section>
+      <Footer />
     </div>
   );
 }

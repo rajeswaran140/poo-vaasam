@@ -1,5 +1,9 @@
 import { render, screen } from '@testing-library/react';
-import MusicCompositionPage from '@/app/music-composition/page';
+import MusicCompositionPage, { metadata } from '@/app/music-composition/page';
+
+beforeEach(() => {
+  (window as unknown as { gtag?: () => void }).gtag = jest.fn();
+});
 
 describe('Music Composition page', () => {
   it('renders the H1 service heading', () => {
@@ -22,5 +26,48 @@ describe('Music Composition page', () => {
     render(<MusicCompositionPage />);
     expect(screen.getByText('விலை எவ்வளவு?')).toBeInTheDocument();
     expect(screen.getByText(/எப்படி ஆர்டர்/)).toBeInTheDocument();
+  });
+});
+
+describe('Music Composition page — metadata', () => {
+  it('exposes openGraph.url so social shares normalize on the canonical URL', () => {
+    expect(metadata.openGraph?.url).toBe('/music-composition');
+  });
+
+  it('declares siteName + Tamil locale on openGraph', () => {
+    expect(metadata.openGraph?.siteName).toBeTruthy();
+    expect(metadata.openGraph?.locale).toBe('ta_IN');
+  });
+
+  it('keeps canonical aligned with openGraph.url', () => {
+    expect(metadata.alternates?.canonical).toBe('/music-composition');
+  });
+});
+
+describe('Music Composition page — audit fixes', () => {
+  it('renders the shared Footer at the bottom (carries the Tamil byline)', () => {
+    render(<MusicCompositionPage />);
+    expect(screen.getByText(/இராஜேஸ்வரன் தங்கராஜா.*தமிழகவல்/)).toBeInTheDocument();
+  });
+
+  it('YouTube channel fallback uses a tracked subscribe anchor', () => {
+    render(<MusicCompositionPage />);
+    // Both the samples fallback AND the Footer expose aria-label="YouTube";
+    // the samples link carries the music_composition_samples source on its
+    // UTM, which lets us pick it out specifically.
+    const samplesYt = screen
+      .getAllByLabelText('YouTube')
+      .find((a) => a.getAttribute('href')?.includes('music_composition_samples'));
+    expect(samplesYt).toBeDefined();
+    expect(samplesYt!.getAttribute('href')).toMatch(/sub_confirmation=1/);
+    expect(samplesYt!.getAttribute('target')).toBe('_blank');
+    expect(samplesYt!.getAttribute('rel')).toBe('noopener noreferrer');
+  });
+
+  it('final CTA card uses the orange brand gradient, not purple', () => {
+    const { container } = render(<MusicCompositionPage />);
+    expect(container.querySelector('[class*="from-purple-"]')).toBeNull();
+    expect(container.querySelector('[class*="to-purple-"]')).toBeNull();
+    expect(container.querySelector('[class*="from-orange-500"]')).not.toBeNull();
   });
 });
