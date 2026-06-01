@@ -11,6 +11,7 @@ import { useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { Play, Pause, Music, ChevronRight } from 'lucide-react';
 import { useMusicPlayer, Cover, formatTime, type Track } from './MusicPlayerProvider';
+import { TrackedYouTubeOpen } from '@/components/TrackedYouTubeOpen';
 
 /** A track plus the metadata the listing needs for sorting and filtering. */
 export interface SongRow extends Track {
@@ -18,6 +19,8 @@ export interface SongRow extends Track {
   addedAt?: number;
   /** Theme key from src/config/song-themes.ts, for the filter chips. */
   theme?: string;
+  /** Linked YouTube video ID, if the song has been published as a video. */
+  youtubeVideoId?: string;
 }
 
 export function SongList({ rows }: { rows: SongRow[] }) {
@@ -98,6 +101,17 @@ export function SongList({ rows }: { rows: SongRow[] }) {
                 <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">{lead}</div>
               )}
 
+              {t.youtubeVideoId && (
+                <TrackedYouTubeOpen
+                  href={`https://www.youtube.com/watch?v=${t.youtubeVideoId}`}
+                  destination={`video:${t.youtubeVideoId}`}
+                  source="songs_list"
+                  ariaLabel={`Watch ${t.title} on YouTube`}
+                  className="hidden shrink-0 items-center px-2 py-2.5 text-xs text-gray-400 hover:text-orange-400 focus-visible:text-orange-400 focus-visible:outline-none sm:inline-flex"
+                >
+                  YouTube ↗
+                </TrackedYouTubeOpen>
+              )}
               <Link
                 href={`/content/${t.id}`}
                 aria-label={`${t.title} — பாடல் வரிகள்`}

@@ -13,6 +13,7 @@ import { Play, Pause, Shuffle, Repeat, Music } from 'lucide-react';
 import { useMusicPlayer } from './MusicPlayerProvider';
 import { SongList, type SongRow } from './SongList';
 import { SONG_THEMES, SONG_THEME_LABELS, type SongTheme } from '@/config/song-themes';
+import { SubscribeButton } from '@/components/SubscribeButton';
 
 export type { SongRow } from './SongList';
 
@@ -151,10 +152,6 @@ export function SongsPlaylist({ tracks }: { tracks: SongRow[] }) {
               <h1 className="mb-2 font-kavivanar text-5xl font-extrabold leading-tight drop-shadow-md sm:text-6xl lg:text-7xl">
                 {PAGE_TITLE}
               </h1>
-              {/* Romanised keyword line — matches how people actually search. */}
-              <p className="mb-3 text-sm font-medium uppercase tracking-[0.18em] text-white/80">
-                Tamil Songs &amp; Paadal Varigal
-              </p>
               <p className="mb-3 font-tamil text-white/90">{TAGLINE}</p>
               <div className="flex flex-wrap items-center gap-2 font-tamil text-sm">
                 {playableCount > 0 && (
@@ -202,6 +199,11 @@ export function SongsPlaylist({ tracks }: { tracks: SongRow[] }) {
                 <Repeat className="h-6 w-6" />
                 {player.repeat === 'one' && <span className="absolute -right-2 -top-1.5 text-[10px] font-bold">1</span>}
               </button>
+              <SubscribeButton
+                label="YouTube"
+                source="songs_hero"
+                className="ml-auto inline-flex items-center gap-2 rounded-full bg-black/30 px-5 py-2.5 font-tamil text-sm font-semibold text-white ring-1 ring-white/30 backdrop-blur-sm transition-all hover:bg-black/40"
+              />
             </div>
           )}
         </div>
@@ -278,6 +280,17 @@ export function SongsPlaylist({ tracks }: { tracks: SongRow[] }) {
             ) : (
               <SongList rows={displayed} />
             )}
+
+            <div className="mx-auto mt-10 max-w-3xl px-3 text-center sm:px-4">
+              <p className="mb-4 font-tamil text-sm text-gray-300">
+                புதிய பாடல்களை தவறவிடாமல் பெற, எங்களை சந்தாதாரராக சேருங்கள்.
+              </p>
+              <SubscribeButton
+                label="YouTube"
+                source="songs_footer"
+                className="inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 px-7 py-3.5 font-tamil font-bold text-white shadow-lg transition-opacity hover:opacity-90"
+              />
+            </div>
           </>
         )}
       </div>

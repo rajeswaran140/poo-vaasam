@@ -6,6 +6,7 @@ export const revalidate = 300;
 
 import type { Metadata } from 'next';
 import Header from '@/components/Header';
+import { Footer } from '@/components/Footer';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentType, ContentStatus } from '@/types/content';
 import { SongsPlaylist, type SongRow } from '@/components/music/SongsPlaylist';
@@ -21,23 +22,14 @@ const META_DESCRIPTION =
   'Free Tamil songs and paadal varigal by Rajeswaran Thangarajah — listen, read the lyrics, share. Always free.';
 const JSONLD_NAME = 'Tamil Songs & Paadal Varigal — Tamilagaval';
 
-export const metadata: Metadata = {
-  title: META_TITLE,
-  description: META_DESCRIPTION,
-  alternates: { canonical: '/songs' },
-  openGraph: {
-    title: `${META_TITLE} | ${SITE_NAME}`,
-    description: META_DESCRIPTION,
-    url: '/songs',
-    type: 'music.playlist',
-    siteName: SITE_NAME,
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: `${META_TITLE} | ${SITE_NAME}`,
-    description: META_DESCRIPTION,
-  },
-};
+/**
+ * Best available share image:
+ * - First song's featuredImage if set
+ * - Otherwise the top YouTube video's maxres thumbnail (real photo of the work)
+ * Keeps WhatsApp/FB/X previews from being blank.
+ */
+const FALLBACK_OG_IMAGE =
+  'https://i.ytimg.com/vi/gfywsN483lI/maxresdefault.jpg';
 
 /** Normalise a createdAt value (Date | ISO string | epoch) to epoch ms. */
 function toEpochMs(value: unknown): number | undefined {
@@ -71,6 +63,35 @@ async function getSongs() {
   }
 }
 
+export async function generateMetadata(): Promise<Metadata> {
+  // Pick the first song's cover image if any has one set, otherwise fall back
+  // to a static thumbnail so share previews are never blank.
+  const songs = await getSongs();
+  const firstCover = songs
+    .map((s: Record<string, unknown>) => (typeof s.featuredImage === 'string' ? s.featuredImage : ''))
+    .find((src: string) => src.length > 0);
+  const ogImage = firstCover || FALLBACK_OG_IMAGE;
+  return {
+    title: META_TITLE,
+    description: META_DESCRIPTION,
+    alternates: { canonical: '/songs' },
+    openGraph: {
+      title: `${META_TITLE} | ${SITE_NAME}`,
+      description: META_DESCRIPTION,
+      url: '/songs',
+      type: 'music.playlist',
+      siteName: SITE_NAME,
+      images: [{ url: ogImage, width: 1280, height: 720 }],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: `${META_TITLE} | ${SITE_NAME}`,
+      description: META_DESCRIPTION,
+      images: [ogImage],
+    },
+  };
+}
+
 export default async function SongsPage() {
   const songs = await getSongs();
   const tracks: SongRow[] = songs.map((s: Record<string, unknown>) => {
@@ -84,9 +105,13 @@ export default async function SongsPage() {
       duration: typeof s.audioDuration === 'number' ? s.audioDuration : undefined,
       addedAt: toEpochMs(s.createdAt),
       theme: themeForSongWithOverride(id, s.theme),
+      youtubeVideoId: typeof s.youtubeVideoId === 'string' ? s.youtubeVideoId : undefined,
     };
   });
   const playableCount = tracks.filter((t) => t.src).length;
+
+  const firstCover = tracks.map((t) => t.cover).find((c) => !!c);
+  const playlistImage = firstCover || FALLBACK_OG_IMAGE;
 
   const playlistJsonLd =
     playableCount > 0
@@ -96,6 +121,8 @@ export default async function SongsPage() {
           name: JSONLD_NAME,
           description: META_DESCRIPTION,
           url: absoluteUrl('/songs'),
+          inLanguage: 'ta',
+          image: playlistImage,
           numTracks: playableCount,
           track: tracks
             .filter((t) => t.src)
@@ -104,6 +131,7 @@ export default async function SongsPage() {
               position: i + 1,
               name: t.title,
               url: absoluteUrl(`/content/${t.id}`),
+              inLanguage: 'ta',
               byArtist: { '@type': 'Person', name: t.artist },
               audio: { '@type': 'AudioObject', contentUrl: t.src },
               ...(t.duration ? { duration: isoDuration(t.duration) } : {}),
@@ -112,12 +140,13 @@ export default async function SongsPage() {
       : null;
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen flex flex-col">
       {playlistJsonLd && <JsonLd data={playlistJsonLd} />}
       <Header />
-      <main>
+      <main className="flex-1">
         <SongsPlaylist tracks={tracks} />
       </main>
+      <Footer />
     </div>
   );
 }

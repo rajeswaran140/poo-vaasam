@@ -7,6 +7,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Header from '@/components/Header';
+import { Footer } from '@/components/Footer';
 import { fetchChannelVideos, videosItemListJsonLd, thumbnailVariants } from '@/lib/youtube-feed';
 import { SITE, isYouTubeVideosConfigured } from '@/config/site';
 import { VideoGallery } from '@/components/VideoGallery';
@@ -96,6 +97,7 @@ export default async function VideosPage() {
           </section>
         )}
       </main>
+      <Footer />
     </>
   );
 }

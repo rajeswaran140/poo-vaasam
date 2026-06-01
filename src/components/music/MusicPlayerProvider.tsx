@@ -9,6 +9,7 @@
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import Image from 'next/image';
 import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Music, Shuffle, Repeat, ChevronDown } from 'lucide-react';
 import { trackAudioPlay } from '@/lib/analytics-events';
 
@@ -45,8 +46,17 @@ function safePlay(audio: HTMLAudioElement | null) {
 
 export function Cover({ src, alt, className }: { src?: string; alt: string; className: string }) {
   if (src) {
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={src} alt={alt} loading="lazy" className={`${className} object-cover`} />;
+    return (
+      <Image
+        src={src}
+        alt={alt}
+        width={96}
+        height={96}
+        loading="lazy"
+        sizes="48px"
+        className={`${className} object-cover`}
+      />
+    );
   }
   return (
     <div className={`${className} flex items-center justify-center bg-gradient-to-br from-orange-500 to-orange-700`}>
