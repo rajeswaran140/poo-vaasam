@@ -52,13 +52,25 @@ it('returns 400 when lyrics are too long', async () => {
 });
 
 it('returns 503 when AI is not configured', async () => {
-  mockedCompose.mockResolvedValueOnce({ ok: false, error: 'ANTHROPIC_API_KEY not configured' });
+  mockedCompose.mockResolvedValueOnce({ ok: false, code: 'not_configured', error: 'AI is not configured.' });
   const res = await POST(req({ lyrics: 'lyrics' }));
   expect(res.status).toBe(503);
 });
 
+it('returns 503 when the API key is rejected (auth error)', async () => {
+  mockedCompose.mockResolvedValueOnce({ ok: false, code: 'auth', error: 'The Claude API key is invalid.' });
+  const res = await POST(req({ lyrics: 'lyrics' }));
+  expect(res.status).toBe(503);
+});
+
+it('returns 429 when rate-limited', async () => {
+  mockedCompose.mockResolvedValueOnce({ ok: false, code: 'rate_limit', error: 'Rate-limited.' });
+  const res = await POST(req({ lyrics: 'lyrics' }));
+  expect(res.status).toBe(429);
+});
+
 it('returns 502 on generic upstream failure', async () => {
-  mockedCompose.mockResolvedValueOnce({ ok: false, error: 'rate limit exceeded' });
+  mockedCompose.mockResolvedValueOnce({ ok: false, code: 'upstream', error: 'The AI service failed to respond.' });
   const res = await POST(req({ lyrics: 'lyrics' }));
   expect(res.status).toBe(502);
 });

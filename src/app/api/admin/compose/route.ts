@@ -34,8 +34,15 @@ export async function POST(request: NextRequest) {
 
   const result = await composeFromLyrics(parsed.data.lyrics);
   if (!result.ok) {
-    // Distinguish "not configured" (503) from generic upstream failure (502).
-    const status = /not configured|API key/i.test(result.error) ? 503 : 502;
+    // Map the classified error code to an HTTP status. The message is already
+    // user-safe (composer never returns raw upstream JSON), so we pass it through.
+    const status = {
+      not_configured: 503, // server misconfigured (key missing)
+      auth: 503,           // key present but rejected — also a config problem
+      rate_limit: 429,
+      bad_response: 502,
+      upstream: 502,
+    }[result.code];
     return NextResponse.json({ success: false, error: result.error }, { status });
   }
 

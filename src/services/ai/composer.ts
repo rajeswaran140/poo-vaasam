@@ -84,23 +84,43 @@ function parseJson(raw: string): ComposerAnalysis {
   };
 }
 
+/**
+ * Error classification so the API route can map failures to the right HTTP
+ * status and a clean, user-safe message — without leaking raw upstream JSON
+ * (status codes, request_ids) to the admin UI.
+ *  - not_configured: key missing / placeholder
+ *  - auth:           key present but rejected (invalid / expired / revoked)
+ *  - rate_limit:     429 from Anthropic
+ *  - upstream:       any other API / network failure
+ *  - bad_response:   call succeeded but the model output wasn't parseable JSON
+ */
+export type ComposeErrorCode =
+  | 'not_configured'
+  | 'auth'
+  | 'rate_limit'
+  | 'upstream'
+  | 'bad_response';
+
 export type ComposeResult =
   | { ok: true; data: ComposerAnalysis }
-  | { ok: false; error: string };
+  | { ok: false; code: ComposeErrorCode; error: string };
 
 export async function composeFromLyrics(
   lyricsInput: string,
   model = DEFAULT_MODEL
 ): Promise<ComposeResult> {
   const lyrics = String(lyricsInput ?? '').trim();
-  if (!lyrics) return { ok: false, error: 'Lyrics are required' };
+  if (!lyrics) return { ok: false, code: 'upstream', error: 'Lyrics are required' };
   if (lyrics.length > MAX_LYRICS_CHARS) {
-    return { ok: false, error: `Lyrics exceed ${MAX_LYRICS_CHARS} characters` };
+    return { ok: false, code: 'upstream', error: `Lyrics exceed ${MAX_LYRICS_CHARS} characters` };
   }
 
   const client = getClient();
-  if (!client) return { ok: false, error: 'ANTHROPIC_API_KEY not configured' };
+  if (!client) {
+    return { ok: false, code: 'not_configured', error: 'AI is not configured (ANTHROPIC_API_KEY missing).' };
+  }
 
+  let text: string;
   try {
     const res = await client.messages.create({
       model,
@@ -110,15 +130,30 @@ export async function composeFromLyrics(
     });
 
     // Claude returns content as an array of blocks; we asked for plain text.
-    const text = res.content
+    text = res.content
       .map((block) => (block.type === 'text' ? block.text : ''))
       .join('')
       .trim();
+  } catch (err) {
+    // Log the FULL upstream detail server-side; return a clean, user-safe
+    // message to the caller (no request_ids / raw JSON leakage).
+    const status = (err as { status?: number })?.status;
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error(`[ai/composer] Anthropic call failed (status=${status ?? 'n/a'}):`, detail);
 
+    if (status === 401 || status === 403) {
+      return { ok: false, code: 'auth', error: 'The Claude API key is invalid, expired, or lacks access. Update ANTHROPIC_API_KEY.' };
+    }
+    if (status === 429) {
+      return { ok: false, code: 'rate_limit', error: 'The AI service is rate-limited right now. Please retry in a moment.' };
+    }
+    return { ok: false, code: 'upstream', error: 'The AI service failed to respond. Please try again.' };
+  }
+
+  try {
     return { ok: true, data: parseJson(text) };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error('[ai/composer] failed:', msg);
-    return { ok: false, error: msg };
+    console.error('[ai/composer] response parse failed:', err instanceof Error ? err.message : String(err), '\nraw:', text.slice(0, 500));
+    return { ok: false, code: 'bad_response', error: 'The AI returned an unexpected format. Please try again.' };
   }
 }

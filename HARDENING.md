@@ -58,6 +58,20 @@ browser bundle). Before launch:
 - **Remove all `NEXT_PUBLIC_*AWS*` vars** — route AWS calls through SSR/server actions only.
 - Move secrets to AWS Secrets Manager and reference them; do not use plaintext Amplify env vars.
 
+> ⚠️ **Key-rotation gotcha (build-time inlining).** Server secrets
+> (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_TTS_CREDENTIALS_BASE64`, and
+> `ADMIN_EMAILS`) are **compile-time-inlined** via `next.config.ts` `env:` —
+> Amplify exposes app env vars at build time but not to the SSR runtime. The
+> deployed app therefore runs whatever the value was **at the last build**.
+> Editing the value in the Amplify console **does not take effect until you
+> redeploy** (`aws amplify start-job --job-type RELEASE`). When rotating any of
+> these, update the console value *and* trigger a release.
+>
+> _Incident 2026-06-02:_ `/admin/compose` returned 401 `invalid x-api-key` in
+> prod. Cause: a truncated 40-char `ANTHROPIC_API_KEY` was baked into the
+> 2026-06-01 build; the console value had since been corrected to a valid
+> 108-char key but no redeploy had run. Fixed by redeploying `master` (job #119).
+
 ### 3. Verify the live login + auth flow 🔧
 Because the auth model changed, smoke-test on the deployed URL:
 - Log in via Cognito → confirm `/admin` loads and `/api/admin/content` returns data.
@@ -119,4 +133,4 @@ npm audit --omit=dev   # report-only; fail on new high/critical
 
 ---
 
-_Last updated: 2026-05-26 (post security/code audit)._
+_Last updated: 2026-06-02 (added build-time key-inlining rotation gotcha + compose 401 incident)._
