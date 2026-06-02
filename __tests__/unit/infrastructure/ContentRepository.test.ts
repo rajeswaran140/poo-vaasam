@@ -126,11 +126,16 @@ describe('ContentRepository', () => {
         status: ContentStatus.PUBLISHED,
       });
 
+      // status is now applied as a FilterExpression so DRAFT/ARCHIVED rows
+      // can't leak onto public listings.
       expect(DynamoDBOperations.query).toHaveBeenCalledWith({
         indexName: 'GSI1',
         keyConditionExpression: 'GSI1PK = :type',
+        filterExpression: '#status = :status',
+        expressionAttributeNames: { '#status': 'status' },
         expressionAttributeValues: {
           ':type': `CONTENT#${ContentType.POEMS}`,
+          ':status': ContentStatus.PUBLISHED,
         },
         limit: 50,
         scanIndexForward: false,
@@ -138,6 +143,18 @@ describe('ContentRepository', () => {
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].type).toBe(ContentType.POEMS);
+    });
+
+    it('omits the status filter when no status is requested', async () => {
+      (DynamoDBOperations.query as jest.Mock).mockResolvedValue({ Items: [], Count: 0 });
+      await repository.findByType(ContentType.SONGS, { limit: 10 });
+      expect(DynamoDBOperations.query).toHaveBeenCalledWith({
+        indexName: 'GSI1',
+        keyConditionExpression: 'GSI1PK = :type',
+        expressionAttributeValues: { ':type': `CONTENT#${ContentType.SONGS}` },
+        limit: 10,
+        scanIndexForward: false,
+      });
     });
   });
 

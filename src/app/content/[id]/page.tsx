@@ -13,6 +13,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import Header from '@/components/Header';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
+import { ContentStatus } from '@/types/content';
 import { ContentPageClient } from '@/components/ContentPageClient';
 import { PoemReader } from '@/components/PoemReader';
 import { YouTubeEmbed } from '@/components/YouTubeEmbed';
@@ -23,8 +24,41 @@ import { TrackedYouTubeOpen } from '@/components/TrackedYouTubeOpen';
 import { isYouTubeUrl, getYouTubeWatchUrl, getYouTubeId } from '@/lib/utils/youtube';
 import { SITE_URL, SITE_NAME, absoluteUrl, toDescription } from '@/lib/seo';
 
-// Cache each rendered content page for 5 minutes (ISR).
-export const revalidate = 300;
+// Fully static, regenerated only at build/deploy. We deliberately do NOT use
+// time-based ISR (`revalidate`): the runtime has no DynamoDB creds, so a
+// background revalidation would re-run getContent → null → notFound() and could
+// replace the good build-time page with a 404. Content edits go live on redeploy.
+export const revalidate = false;
+
+// Prerender every published detail page at BUILD time. The Amplify SSR runtime
+// has no DynamoDB credentials (they live only in the build's .env.production.local),
+// so on-demand rendering of a non-prerendered id calls findById → no creds →
+// notFound() → 404. Generating all published ids at build (where creds exist)
+// fixes that; `dynamicParams = false` makes anything else 404 immediately
+// instead of attempting a doomed runtime DB read. New content needs a redeploy
+// to get its page — consistent with /songs. See HARDENING.md.
+export const dynamicParams = false;
+
+export async function generateStaticParams(): Promise<{ id: string }[]> {
+  try {
+    const repo = new ContentRepository();
+    const ids: { id: string }[] = [];
+    let lastEvaluatedKey: Record<string, unknown> | undefined;
+    do {
+      const page = await repo.findAll({
+        status: ContentStatus.PUBLISHED,
+        limit: 200,
+        lastEvaluatedKey,
+      });
+      for (const item of page.items) ids.push({ id: item.id });
+      lastEvaluatedKey = page.lastEvaluatedKey as Record<string, unknown> | undefined;
+    } while (lastEvaluatedKey);
+    return ids;
+  } catch (error) {
+    console.error('generateStaticParams (content) failed:', error);
+    return [];
+  }
+}
 
 // cache() dedupes the DB read shared by generateMetadata and the page render.
 const getContent = cache(async (id: string) => {

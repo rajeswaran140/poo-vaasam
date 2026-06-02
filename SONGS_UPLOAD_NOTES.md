@@ -31,6 +31,14 @@ The "image upload unauthorized" error was the same token problem (#1/#2) on the 
 ## Recommendation: MP3, not WAV
 The current audio is uncompressed **WAV** (70 MB & 41 MB) — they stream (HTTP 206) but every visitor downloads the whole file. Re-export as **MP3** (~5–7 MB) and re-upload via the admin uploader for ~10× smaller, faster playback. Updating the `audioUrl` in the song edit form is all that's needed.
 
+> **TASK — transcode the catalogue to MP3.** As of 2026-06-02, 9 of 11 songs in
+> `s3://tamil-web-media/audio/poem-music/` are still WAV (41–74 MB each),
+> including the newest, **அரிதான பெரும் பாசம்.wav** (55 MB,
+> `cnt_1780419293978_31gt0nq13`). For each: re-export to MP3, upload via the
+> admin uploader (or to the same S3 prefix), and update the song's `audioUrl`.
+> Only `முத்தமிழின் மூன்றெழுத்தில்` and `முடிவில்லா முகத்தினில்` are already MP3.
+> (Transcoding/re-upload is a manual step — not done in code.)
+
 ## Open follow-ups
 - **Re-login once** to migrate your session into cookies (required after the fix).
 - **Consolidate the two regions** (move/clean up the stray us-east-1 table). GSI5 only exists on ca-central-1.

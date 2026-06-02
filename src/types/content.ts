@@ -48,6 +48,12 @@ export interface ContentMetadata {
   featuredImage?: string;
   seoTitle?: string;
   seoDescription?: string;
+  /**
+   * Per-song browse theme/category (love | mother | nature | tamil | homeland).
+   * Set via /api/admin/songs/[id]/theme; consumed by /songs through
+   * themeForSongWithOverride(). Falls back to the SONG_THEME_BY_ID map.
+   */
+  theme?: string;
 }
 
 /**

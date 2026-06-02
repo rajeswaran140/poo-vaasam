@@ -114,12 +114,24 @@ export class ContentRepository implements IContentRepository {
     try {
       const limit = options?.limit || 20;
 
+      // GSI1 keys on type only, so a status filter must be applied as a
+      // FilterExpression — otherwise DRAFT/ARCHIVED rows leak onto public
+      // listings that pass `status: PUBLISHED`.
+      const filterByStatus = options?.status !== undefined;
+
       // Query using GSI1
       const response = await DynamoDBOperations.query({
         indexName: 'GSI1',
         keyConditionExpression: 'GSI1PK = :type',
+        ...(filterByStatus
+          ? {
+              filterExpression: '#status = :status',
+              expressionAttributeNames: { '#status': 'status' },
+            }
+          : {}),
         expressionAttributeValues: {
           ':type': `CONTENT#${type}`,
+          ...(filterByStatus ? { ':status': options!.status } : {}),
         },
         limit,
         scanIndexForward: options?.sortOrder === 'asc',

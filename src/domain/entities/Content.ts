@@ -48,10 +48,17 @@ export class Content {
     private _stemsUrl: string | undefined = undefined,
     private _midiUrl: string | undefined = undefined,
     private _thumbnailUrl: string | undefined = undefined,
-    private _workflowState: WorkflowState | undefined = undefined
+    private _workflowState: WorkflowState | undefined = undefined,
+    // Per-song browse theme/category (love | mother | nature | tamil | homeland).
+    // Set by /api/admin/songs/[id]/theme; read by /songs via themeForSongWithOverride.
+    private _theme: string | undefined = undefined
   ) {}
 
   // Getters
+  get theme(): string | undefined {
+    return this._theme;
+  }
+
   get title(): string {
     return this._title;
   }
@@ -393,6 +400,7 @@ export class Content {
       workflowState: this._workflowState,
       categoryIds: this._categoryIds,
       tagIds: this._tagIds,
+      theme: this._theme,
       viewCount: this._viewCount,
       seoTitle: this._seoTitle,
       seoDescription: this._seoDescription,
@@ -435,7 +443,8 @@ export class Content {
       data.thumbnailUrl,
       data.workflowState && (WORKFLOW_STATES as readonly string[]).includes(data.workflowState)
         ? (data.workflowState as WorkflowState)
-        : undefined
+        : undefined,
+      typeof data.theme === 'string' ? data.theme : undefined
     );
   }
 

@@ -94,6 +94,7 @@ export class DynamoDBOperations {
     keyConditionExpression: string;
     expressionAttributeValues: Record<string, any>;
     expressionAttributeNames?: Record<string, string>;
+    filterExpression?: string;
     indexName?: string;
     limit?: number;
     scanIndexForward?: boolean;
@@ -104,6 +105,7 @@ export class DynamoDBOperations {
       KeyConditionExpression: params.keyConditionExpression,
       ExpressionAttributeValues: params.expressionAttributeValues,
       ExpressionAttributeNames: params.expressionAttributeNames,
+      FilterExpression: params.filterExpression,
       IndexName: params.indexName,
       Limit: params.limit,
       ScanIndexForward: params.scanIndexForward,
