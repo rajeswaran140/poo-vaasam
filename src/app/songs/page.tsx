@@ -2,12 +2,16 @@
  * Songs Listing Page — Spotify-style music player.
  */
 
-// Render per-request rather than as a build-time prerender. Amplify's SSR
-// compute doesn't run Next's time-based ISR revalidation reliably (its
-// incremental cache isn't persisted across Lambda instances), so a `revalidate`
-// route freezes at build time — newly published songs never appear until the
-// next deploy. Dynamic rendering reads DynamoDB fresh on every request.
-export const dynamic = 'force-dynamic';
+// MUST stay a build-time prerender. Songs come from DynamoDB, whose IAM
+// credentials (APP_AWS_*) are only present at BUILD time (written to
+// .env.production.local by amplify.yml); they are NOT inlined for the SSR
+// runtime, so a `force-dynamic` render reads no creds and returns an empty
+// list. The trade-off is that a newly published song only appears after the
+// next deploy (Amplify doesn't run Next's ISR revalidation reliably either).
+// To make this dynamic, first give the SSR runtime DB credentials — either
+// inline APP_AWS_* in next.config.ts `env:` or grant the Amplify compute role
+// DynamoDB read access. See HARDENING.md.
+export const revalidate = 300;
 
 import type { Metadata } from 'next';
 import Header from '@/components/Header';
