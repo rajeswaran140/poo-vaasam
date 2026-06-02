@@ -14,7 +14,13 @@ import { VideoGallery } from '@/components/VideoGallery';
 import { SubscribeButton } from '@/components/SubscribeButton';
 import { JsonLd } from '@/components/JsonLd';
 
-export const revalidate = 300; // 5 minutes — so channel deletions propagate quickly
+// Render per-request rather than as a build-time prerender. Amplify's SSR
+// compute does not run Next's time-based ISR revalidation reliably (the
+// incremental cache isn't persisted across Lambda instances), so a prerendered
+// `revalidate` route freezes at build time and new uploads never appear.
+// Dynamic rendering + the in-process feed cache in youtube-feed.ts keeps the
+// gallery fresh (within FEED_REVALIDATE_SECONDS) without depending on ISR.
+export const dynamic = 'force-dynamic';
 
 // Crawler-facing metadata is romanised English (real queries:
 // "rajeswaran thangarajah youtube", "tamil videos"); the visible page heading

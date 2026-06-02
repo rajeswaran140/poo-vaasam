@@ -9,7 +9,10 @@ import { NextResponse } from 'next/server';
 import { fetchChannelVideos } from '@/lib/youtube-feed';
 import { SITE, isYouTubeVideosConfigured, youtubeSubscribeUrl } from '@/config/site';
 
-export const revalidate = 1800; // 30 minutes
+// Dynamic for the same reason as /videos: Amplify doesn't run ISR revalidation,
+// so a cached route response would freeze at build. Freshness comes from the
+// in-process feed cache in youtube-feed.ts.
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const configured = isYouTubeVideosConfigured();

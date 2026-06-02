@@ -3,7 +3,7 @@
  * Tests for the YouTube RSS feed parser/fetcher.
  */
 
-import { parseChannelFeed, fetchChannelVideos, videosItemListJsonLd, thumbnailVariants } from '@/lib/youtube-feed';
+import { parseChannelFeed, fetchChannelVideos, videosItemListJsonLd, thumbnailVariants, _resetFeedCache } from '@/lib/youtube-feed';
 
 const SAMPLE_FEED = `<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
@@ -60,6 +60,10 @@ describe('parseChannelFeed', () => {
 });
 
 describe('fetchChannelVideos', () => {
+  // The fetcher keeps an in-process TTL cache keyed by channel ID; clear it
+  // between cases so a successful fetch doesn't bleed into later assertions.
+  beforeEach(() => _resetFeedCache());
+
   it('returns [] when no channel ID is given (no network call)', async () => {
     const fetchMock = jest.fn();
     global.fetch = fetchMock as unknown as typeof fetch;
@@ -76,12 +80,44 @@ describe('fetchChannelVideos', () => {
     expect(videos[0].id).toBe('gfywsN483lI');
   });
 
-  it('returns [] on a non-OK response or thrown error', async () => {
+  it('returns [] on a non-OK response or thrown error (no prior cache)', async () => {
     global.fetch = jest.fn().mockResolvedValue({ ok: false }) as unknown as typeof fetch;
     expect(await fetchChannelVideos('UCabcdefghijklmnopqrstuv')).toEqual([]);
 
+    _resetFeedCache();
     global.fetch = jest.fn().mockRejectedValue(new Error('network')) as unknown as typeof fetch;
     expect(await fetchChannelVideos('UCabcdefghijklmnopqrstuv')).toEqual([]);
+  });
+
+  it('serves the in-process cache within the TTL without re-fetching', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValue({ ok: true, text: async () => SAMPLE_FEED });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await fetchChannelVideos('UCabcdefghijklmnopqrstuv');
+    await fetchChannelVideos('UCabcdefghijklmnopqrstuv');
+    // Second call within TTL is served from memory — only one network hit.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to the last good result when a fetch fails after the TTL expires', async () => {
+    jest.useFakeTimers();
+    try {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValue({ ok: true, text: async () => SAMPLE_FEED }) as unknown as typeof fetch;
+      expect(await fetchChannelVideos('UCabcdefghijklmnopqrstuv')).toHaveLength(2); // prime cache
+
+      // Advance past the 5-minute TTL so the next call must re-fetch.
+      jest.advanceTimersByTime(6 * 60 * 1000);
+
+      global.fetch = jest.fn().mockRejectedValue(new Error('network')) as unknown as typeof fetch;
+      // Fetch fails, but we still have last-good data → serve it instead of blanking.
+      expect(await fetchChannelVideos('UCabcdefghijklmnopqrstuv')).toHaveLength(2);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
 

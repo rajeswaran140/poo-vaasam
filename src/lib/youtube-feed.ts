@@ -65,10 +65,28 @@ export function parseChannelFeed(xml: string, limit = 12): ChannelVideo[] {
   return videos;
 }
 
+// In-process feed cache, keyed by channel ID. We deliberately do NOT use Next's
+// `fetch` data cache (`next: { revalidate }`) here: it shares the same
+// incremental cache that Amplify's SSR compute does not persist across Lambda
+// instances, so time-based revalidation never fires and the feed freezes at the
+// last build (a new upload never appears). A simple module-level TTL cache lives
+// in the warm Lambda's memory instead — fresh within FEED_REVALIDATE_SECONDS,
+// cheap, and immune to the platform's incremental-cache behaviour.
+interface FeedCacheEntry {
+  at: number;
+  videos: ChannelVideo[];
+}
+const feedCache = new Map<string, FeedCacheEntry>();
+
+/** Test-only: clear the in-process feed cache so cases don't bleed into each other. */
+export function _resetFeedCache(): void {
+  feedCache.clear();
+}
+
 /**
- * Fetch the channel's latest videos from the RSS feed (cached).
- * Returns [] on any failure or when no channel ID is configured, so callers
- * can render safely.
+ * Fetch the channel's latest videos from the RSS feed (in-process TTL cache).
+ * Returns the last good result on a transient failure, [] when nothing has ever
+ * been fetched or no channel ID is configured — so callers always render safely.
  */
 export async function fetchChannelVideos(
   channelId: string,
@@ -76,17 +94,26 @@ export async function fetchChannelVideos(
 ): Promise<ChannelVideo[]> {
   if (!channelId) return [];
 
+  const now = Date.now();
+  const cached = feedCache.get(channelId);
+  if (cached && now - cached.at < FEED_REVALIDATE_SECONDS * 1000) {
+    return cached.videos.slice(0, limit);
+  }
+
   const url = `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`;
 
   try {
     const res = await fetch(url, {
-      next: { revalidate: FEED_REVALIDATE_SECONDS },
+      cache: 'no-store', // always hit YouTube; freshness is governed by feedCache above
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; tamilagaval/1.0)' },
     });
-    if (!res.ok) return [];
-    return parseChannelFeed(await res.text(), limit);
+    if (!res.ok) return cached ? cached.videos.slice(0, limit) : [];
+    // Parse the whole feed (YouTube returns ~15 entries) and cache it; slice per caller.
+    const videos = parseChannelFeed(await res.text(), 50);
+    feedCache.set(channelId, { at: now, videos });
+    return videos.slice(0, limit);
   } catch {
-    return [];
+    return cached ? cached.videos.slice(0, limit) : [];
   }
 }
 
