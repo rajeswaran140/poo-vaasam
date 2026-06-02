@@ -45,7 +45,7 @@ const claudeResponse = (text: string) => ({
 it('returns { ok: false } when ANTHROPIC_API_KEY is missing', async () => {
   delete process.env.ANTHROPIC_API_KEY;
   const r = await composeFromLyrics('any');
-  expect(r).toEqual({ ok: false, error: expect.stringMatching(/not configured/i) });
+  expect(r).toMatchObject({ ok: false, code: 'not_configured', error: expect.stringMatching(/not configured|missing/i) });
   expect(create).not.toHaveBeenCalled();
 });
 
@@ -97,12 +97,34 @@ it('fills sensible defaults when the response is partial', async () => {
   }
 });
 
-it('surfaces upstream errors as { ok: false, error }', async () => {
+it('maps a generic upstream error to a clean message without leaking raw text', async () => {
   jest.spyOn(console, 'error').mockImplementation(() => {});
-  create.mockRejectedValueOnce(new Error('rate limit exceeded'));
+  create.mockRejectedValueOnce(new Error('socket hang up: internal-host:443'));
   const r = await composeFromLyrics('lyrics');
   expect(r.ok).toBe(false);
-  if (!r.ok) expect(r.error).toMatch(/rate limit/);
+  if (!r.ok) {
+    expect(r.code).toBe('upstream');
+    expect(r.error).not.toMatch(/internal-host/); // raw upstream detail stays server-side
+  }
+});
+
+it('classifies a 401 as an auth error and hides the raw x-api-key message', async () => {
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+  create.mockRejectedValueOnce(Object.assign(new Error('401 {"error":"invalid x-api-key"}'), { status: 401 }));
+  const r = await composeFromLyrics('lyrics');
+  expect(r.ok).toBe(false);
+  if (!r.ok) {
+    expect(r.code).toBe('auth');
+    expect(r.error).not.toMatch(/x-api-key/);
+  }
+});
+
+it('classifies a 429 as a rate-limit error', async () => {
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+  create.mockRejectedValueOnce(Object.assign(new Error('429 too many requests'), { status: 429 }));
+  const r = await composeFromLyrics('lyrics');
+  expect(r.ok).toBe(false);
+  if (!r.ok) expect(r.code).toBe('rate_limit');
 });
 
 it('returns { ok: false } when JSON is unparseable', async () => {
