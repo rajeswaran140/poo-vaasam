@@ -2,7 +2,12 @@
  * Songs Listing Page — Spotify-style music player.
  */
 
-export const revalidate = 300;
+// Render per-request rather than as a build-time prerender. Amplify's SSR
+// compute doesn't run Next's time-based ISR revalidation reliably (its
+// incremental cache isn't persisted across Lambda instances), so a `revalidate`
+// route freezes at build time — newly published songs never appear until the
+// next deploy. Dynamic rendering reads DynamoDB fresh on every request.
+export const dynamic = 'force-dynamic';
 
 import type { Metadata } from 'next';
 import Header from '@/components/Header';

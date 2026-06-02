@@ -32,6 +32,7 @@ export const SONG_THEME_BY_ID: Record<string, SongTheme> = {
   cnt_1780067292588_frlxbwfzh: 'nature',    // இரை தேட சென்றதாய்
   cnt_1780066149991_18z5eyynd: 'mother',    // முத்தமிழின் மூன்றெழுத்தில்
   cnt_1780067292560_ixhyejnr3: 'mother',    // அன்பெனும் தேரில்
+  cnt_1780419293978_31gt0nq13: 'mother',    // அரிதான பெரும் பாசம் (யூடியூப்: c61mxpSgAAA)
   cnt_1780193983131_fjtgmrgm3: 'homeland',  // என் தேசமே என் சுவாசமே
   // Everything else → 'love' (என்ன மாயம், தூக்கணாங்குருவி போல, ஒரு நாள் திருநாள்,
   // அக்கம் பக்கம், முடிவில்லா முகத்தினில், அந்தி மேகமே).
