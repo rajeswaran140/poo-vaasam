@@ -39,6 +39,8 @@ const SAMPLE = {
 // errors come back as a normal non-ok JSON response.
 const ok = (b: unknown) => ({ ok: true, status: 200, text: async () => JSON.stringify(b) } as unknown as Response);
 const fail = (s: number, b: unknown) => ({ ok: false, status: s, json: async () => b } as unknown as Response);
+// The Save-brief call reads res.json() (normal JSON, not the compose stream).
+const okJson = (b: unknown) => ({ ok: true, status: 201, json: async () => b } as unknown as Response);
 
 beforeEach(() => mockedFetch.mockReset());
 
@@ -146,4 +148,23 @@ it('error banner exposes its own Retry button', async () => {
   await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
 
   expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
+});
+
+it('saves the brief (POST /api/admin/briefs) with the chosen SUNO style, and shows Saved', async () => {
+  mockedFetch.mockResolvedValueOnce(ok({ success: true, data: SAMPLE })); // compose
+  render(<ComposerForm />);
+  fireEvent.change(screen.getByLabelText('Tamil lyrics'), { target: { value: 'அரிதான' } });
+  fireEvent.click(screen.getByRole('button', { name: /compose brief/i }));
+  await waitFor(() => expect(screen.getByRole('button', { name: /save brief/i })).toBeInTheDocument());
+
+  mockedFetch.mockResolvedValueOnce(okJson({ success: true, data: { id: 'brief_1' } })); // save
+  fireEvent.click(screen.getByRole('button', { name: /save brief/i }));
+
+  await waitFor(() => expect(screen.getByRole('button', { name: /saved/i })).toBeInTheDocument());
+  const saveCall = mockedFetch.mock.calls.find((c) => c[0] === '/api/admin/briefs');
+  expect(saveCall).toBeTruthy();
+  const sent = JSON.parse(saveCall![1].body);
+  expect(sent.lyrics).toBe('அரிதான');
+  expect(sent.analysis.emotion).toBe('காதல்');
+  expect(sent.decision.chosenSunoStyle).toBe('Traditional Tamil'); // SAMPLE's only style
 });

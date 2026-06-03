@@ -17,7 +17,7 @@ import Anthropic from '@anthropic-ai/sdk';
 // alive (see route.ts). If a deploy ever shows the response is buffered (504
 // returns), fall back to 'claude-haiku-4-5-20251001' (~18s, fits without
 // streaming).
-const DEFAULT_MODEL = 'claude-sonnet-4-6';
+export const DEFAULT_MODEL = 'claude-sonnet-4-6';
 const MAX_LYRICS_CHARS = 8000;
 
 /** One style-tagged SUNO prompt variant (e.g. style "Devotional"). */

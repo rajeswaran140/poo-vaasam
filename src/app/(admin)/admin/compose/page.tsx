@@ -17,12 +17,12 @@ export default function AdminComposePage() {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">AI Composer</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Music Director</h1>
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
           Paste Tamil lyrics → get a full production brief: ranked emotions, mood, theme, key, BPM, instrumentation,
           a recommended voice, title candidates, several style-tagged SUNO prompts, a thumbnail image prompt,
-          bilingual (Tamil + English) YouTube descriptions, and a Reel/Short idea. Copy buttons throughout — nothing is
-          saved back to the DB; this is a draft-tool.
+          bilingual (Tamil + English) YouTube descriptions, and a Reel/Short idea. Copy buttons throughout, and
+          <strong> Save brief</strong> to keep it as the durable, model-agnostic source of truth for the song.
         </p>
       </header>
 

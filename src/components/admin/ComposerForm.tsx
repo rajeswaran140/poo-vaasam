@@ -180,7 +180,77 @@ export function ComposerForm() {
             </button>
           </div>
           <Results result={result} />
+          <SaveBrief lyrics={lyrics} result={result} />
         </section>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Persist the brief as the durable source of truth (Phase 2). Captures the
+ * admin's decision — which SUNO style they're going with — as a signal for the
+ * catalogue/taste knowledge base. Idempotent-ish: each click saves a new brief.
+ */
+function SaveBrief({ lyrics, result }: { lyrics: string; result: Analysis }) {
+  const styles = result.suno_prompts.map((s) => s.style);
+  const [chosenStyle, setChosenStyle] = useState<string>(styles[0] ?? '');
+  const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    setState('saving');
+    setError(null);
+    try {
+      const res = await adminFetch('/api/admin/briefs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lyrics,
+          analysis: result,
+          decision: chosenStyle ? { chosenSunoStyle: chosenStyle } : {},
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.success) throw new Error(body.error || `HTTP ${res.status}`);
+      setState('saved');
+    } catch (err) {
+      setState('error');
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  return (
+    <div className="mt-5 flex flex-wrap items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/60">
+      <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Save this brief</span>
+      {styles.length > 0 && (
+        <label className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+          chosen style:
+          <select
+            value={chosenStyle}
+            onChange={(e) => {
+              setChosenStyle(e.target.value);
+              if (state === 'saved') setState('idle');
+            }}
+            aria-label="Chosen SUNO style"
+            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+          >
+            {styles.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </label>
+      )}
+      <button
+        type="button"
+        onClick={save}
+        disabled={state === 'saving' || state === 'saved'}
+        className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {state === 'saving' ? 'Saving…' : state === 'saved' ? 'Saved ✓' : 'Save brief'}
+      </button>
+      {state === 'error' && (
+        <span role="alert" className="text-xs text-red-600 dark:text-red-400">{error}</span>
       )}
     </div>
   );
