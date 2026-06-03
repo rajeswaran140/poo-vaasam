@@ -47,6 +47,33 @@ export async function getIdToken(): Promise<string | null> {
 let handlingExpiry = false;
 
 /**
+ * Force-delete every Cognito cookie via document.cookie.
+ *
+ * Amplify's `Auth.signOut()` is NOT enough when the session is already expired:
+ * it tries to *revoke* the refresh token server-side first, that call fails on
+ * an expired/revoked token, and it bails before clearing local storage — so the
+ * stale cookies linger forever and the app stays wedged in a 401 loop (the app
+ * looks logged in but every call fails, and signing out again can't fix it).
+ *
+ * To delete a cookie you must replay the exact attributes it was set with
+ * (see amplify-config.ts: domain=apex, path=/, Secure, SameSite=Lax), so we
+ * expire it across those plus a bare path=/ variant to be safe.
+ */
+export function clearCognitoCookies(): void {
+  if (typeof document === 'undefined') return;
+  const host = window.location.hostname;
+  const base = host.endsWith('tamilagaval.com') ? 'tamilagaval.com' : host;
+  const past = 'Thu, 01 Jan 1970 00:00:00 GMT';
+  for (const part of document.cookie.split(';')) {
+    const name = part.split('=')[0].trim();
+    if (!name.startsWith('CognitoIdentityServiceProvider')) continue;
+    document.cookie = `${name}=; expires=${past}; path=/; domain=${base}; secure; samesite=lax`;
+    document.cookie = `${name}=; expires=${past}; path=/; domain=.${base}; secure; samesite=lax`;
+    document.cookie = `${name}=; expires=${past}; path=/`;
+  }
+}
+
+/**
  * Recover from a dead admin session. A 401 means the Cognito session is
  * expired/invalid, yet the stale Cognito cookies linger (30-day cookie life vs
  * a much shorter token life) so the app still *looks* logged in and silently
@@ -60,8 +87,10 @@ async function handleExpiredSession(): Promise<void> {
   try {
     await Auth.signOut();
   } catch {
-    /* ignore — we redirect regardless */
+    /* ignore — signOut throws when revoking an already-expired token */
   }
+  // Belt-and-suspenders: signOut often can't purge an expired session, so force it.
+  clearCognitoCookies();
   const here = `${window.location.pathname}${window.location.search}`;
   window.location.assign(`/login?redirect=${encodeURIComponent(here)}`);
 }

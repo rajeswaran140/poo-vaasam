@@ -5,6 +5,7 @@ import { ReactNode, useState, useEffect } from 'react';
 import { useAuthenticator } from '@aws-amplify/ui-react';
 import { useRouter, usePathname } from 'next/navigation';
 import '@/lib/amplify-config';
+import { clearCognitoCookies } from '@/lib/client-auth';
 import {
   LucideIcon,
   LayoutDashboard,
@@ -90,9 +91,14 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   const handleLogout = async () => {
     try {
       await signOut();
-      router.push('/login');
     } catch (error) {
       console.error('Error signing out:', error);
+    } finally {
+      // signOut can't purge an already-expired session — force-clear the stale
+      // Cognito cookies so logout always works and we don't get wedged in a
+      // looks-logged-in-but-401 state.
+      clearCognitoCookies();
+      router.push('/login');
     }
   };
 
