@@ -104,7 +104,7 @@ export function ComposerForm() {
           </p>
           <div className="flex items-center gap-3">
             {loading && (
-              <span className="text-xs text-gray-500 dark:text-gray-400">~20–40s</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">~15–25s</span>
             )}
             <button
               type="submit"

@@ -11,7 +11,12 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 
-const DEFAULT_MODEL = 'claude-sonnet-4-6';
+// Haiku 4.5, not Sonnet: the full Brief v2 output runs ~35s on Sonnet, which
+// exceeds Amplify's managed-CloudFront ~30s origin timeout (not configurable) →
+// 504. Haiku produces the same brief in ~18s with comfortable margin and solid
+// Tamil quality. For higher-nuance output we'd need response streaming (SSE) to
+// dodge the timeout while keeping Sonnet — see the compose roadmap.
+const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
 const MAX_LYRICS_CHARS = 8000;
 
 /** One style-tagged SUNO prompt variant (e.g. style "Devotional"). */
