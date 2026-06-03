@@ -43,6 +43,29 @@ export async function getIdToken(): Promise<string | null> {
   return idTokenFromStorage();
 }
 
+// Guard so concurrent 401s don't fire multiple sign-out/redirects.
+let handlingExpiry = false;
+
+/**
+ * Recover from a dead admin session. A 401 means the Cognito session is
+ * expired/invalid, yet the stale Cognito cookies linger (30-day cookie life vs
+ * a much shorter token life) so the app still *looks* logged in and silently
+ * 401s every call. Clear the stale session and bounce to /login so the admin
+ * can re-authenticate, preserving where they were.
+ */
+async function handleExpiredSession(): Promise<void> {
+  if (typeof window === 'undefined' || handlingExpiry) return;
+  if (window.location.pathname.startsWith('/login')) return;
+  handlingExpiry = true;
+  try {
+    await Auth.signOut();
+  } catch {
+    /* ignore — we redirect regardless */
+  }
+  const here = `${window.location.pathname}${window.location.search}`;
+  window.location.assign(`/login?redirect=${encodeURIComponent(here)}`);
+}
+
 /** fetch() that attaches the admin's Cognito ID token (Bearer) and cookies. */
 export async function adminFetch(
   input: RequestInfo | URL,
@@ -51,5 +74,7 @@ export async function adminFetch(
   const token = await getIdToken();
   const headers = new Headers(init.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);
-  return fetch(input, { ...init, headers, credentials: 'include' });
+  const res = await fetch(input, { ...init, headers, credentials: 'include' });
+  if (res.status === 401) await handleExpiredSession();
+  return res;
 }
