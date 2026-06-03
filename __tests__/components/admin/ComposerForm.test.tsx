@@ -35,7 +35,9 @@ const SAMPLE = {
   youtube_description_english: 'A tender Tamil love song.\n\n#tamilsong',
   reel: { hook: 'ஒரு வரி', caption: 'A love song', hashtags: ['#tamil'] },
 };
-const ok = (b: unknown) => ({ ok: true, status: 200, json: async () => b } as unknown as Response);
+// Success is read as a stream/text by the client (heartbeat-streamed route);
+// errors come back as a normal non-ok JSON response.
+const ok = (b: unknown) => ({ ok: true, status: 200, text: async () => JSON.stringify(b) } as unknown as Response);
 const fail = (s: number, b: unknown) => ({ ok: false, status: s, json: async () => b } as unknown as Response);
 
 beforeEach(() => mockedFetch.mockReset());

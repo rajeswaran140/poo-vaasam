@@ -1,7 +1,8 @@
 /** @jest-environment node */
 /**
- * Tests for POST /api/admin/compose — admin gate, body validation,
- * 503 when AI not configured, 502 on upstream failure, happy path.
+ * Tests for POST /api/admin/compose — admin gate, body validation, and the
+ * heartbeat-streamed brief (success + error are streamed as a 200 whose body
+ * ends in the `{ success, data|error }` JSON; auth/validation stay plain JSON).
  */
 
 import { NextRequest } from 'next/server';
@@ -51,31 +52,30 @@ it('returns 400 when lyrics are too long', async () => {
   expect(res.status).toBe(400);
 });
 
-it('returns 503 when AI is not configured', async () => {
-  mockedCompose.mockResolvedValueOnce({ ok: false, code: 'not_configured', error: 'AI is not configured.' });
-  const res = await POST(req({ lyrics: 'lyrics' }));
-  expect(res.status).toBe(503);
-});
+// Read a heartbeat-streamed response: drain the body and parse the trailing JSON.
+async function readStreamed(res: Response): Promise<{ success?: boolean; data?: { emotion?: string }; error?: string }> {
+  const text = (await res.text()).trim();
+  return JSON.parse(text);
+}
 
-it('returns 503 when the API key is rejected (auth error)', async () => {
+it('streams a clean error (200) when the composer fails', async () => {
   mockedCompose.mockResolvedValueOnce({ ok: false, code: 'auth', error: 'The Claude API key is invalid.' });
   const res = await POST(req({ lyrics: 'lyrics' }));
-  expect(res.status).toBe(503);
+  expect(res.status).toBe(200); // streamed; the failure is carried in the body
+  const body = await readStreamed(res);
+  expect(body.success).toBe(false);
+  expect(body.error).toMatch(/invalid/i);
 });
 
-it('returns 429 when rate-limited', async () => {
-  mockedCompose.mockResolvedValueOnce({ ok: false, code: 'rate_limit', error: 'Rate-limited.' });
-  const res = await POST(req({ lyrics: 'lyrics' }));
-  expect(res.status).toBe(429);
-});
-
-it('returns 502 on generic upstream failure', async () => {
+it('does not leak raw upstream detail in the streamed error', async () => {
   mockedCompose.mockResolvedValueOnce({ ok: false, code: 'upstream', error: 'The AI service failed to respond.' });
   const res = await POST(req({ lyrics: 'lyrics' }));
-  expect(res.status).toBe(502);
+  const body = await readStreamed(res);
+  expect(body.success).toBe(false);
+  expect(body.error).toBe('The AI service failed to respond.');
 });
 
-it('returns 200 + structured payload on success', async () => {
+it('streams the structured brief on success', async () => {
   mockedCompose.mockResolvedValueOnce({
     ok: true,
     data: {
@@ -86,14 +86,15 @@ it('returns 200 + structured payload on success', async () => {
       suggested_bpm: 90,
       suggested_instruments: ['Veena'],
       song_titles: ['T1'],
-      suno_prompt: 'prompt',
-      youtube_description: 'desc',
+      suno_prompts: [{ style: 'Default', prompt: 'prompt' }],
+      youtube_description_tamil: 'desc-ta',
+      youtube_description_english: 'desc-en',
     },
   });
   const res = await POST(req({ lyrics: 'lyrics' }));
   expect(res.status).toBe(200);
-  const body = await res.json();
+  const body = await readStreamed(res);
   expect(body.success).toBe(true);
-  expect(body.data.emotion).toBe('காதல்');
+  expect(body.data?.emotion).toBe('காதல்');
   expect(mockedCompose).toHaveBeenCalledWith('lyrics');
 });

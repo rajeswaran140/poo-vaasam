@@ -46,9 +46,33 @@ export function ComposerForm() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ lyrics }),
       });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body.success) throw new Error(body.error || `HTTP ${res.status}`);
-      setResult(body.data as Analysis);
+      // Auth/validation failures come back as a normal JSON error response.
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${res.status}`);
+      }
+      // Success path is a heartbeat-padded stream ending in the JSON payload —
+      // accumulate it, then parse the trimmed text (the padding is whitespace).
+      let raw = '';
+      if (res.body?.getReader) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          raw += decoder.decode(value, { stream: true });
+        }
+      } else {
+        raw = await res.text();
+      }
+      let body: { success?: boolean; data?: Analysis; error?: string };
+      try {
+        body = JSON.parse(raw.trim());
+      } catch {
+        throw new Error('The server returned a malformed response.');
+      }
+      if (!body.success || !body.data) throw new Error(body.error || 'Compose failed');
+      setResult(body.data);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
