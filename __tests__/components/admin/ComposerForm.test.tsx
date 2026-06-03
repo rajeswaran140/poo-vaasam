@@ -21,14 +21,19 @@ import { adminFetch } from '@/lib/client-auth';
 const mockedFetch = adminFetch as jest.Mock;
 const SAMPLE = {
   emotion: 'காதல்',
+  emotion_breakdown: ['காதல்'], // length 1 → breakdown card hidden, so the 'காதல்' stat stays unique for assertions
   mood: 'Tender',
   theme: 'Love',
   suggested_key: 'D Minor',
   suggested_bpm: 72,
   suggested_instruments: ['Veena', 'Flute'],
-  song_titles: ['இரவின் அன்பு', 'நிலவின் நிழல்', 'காதல் மழை'],
-  suno_prompt: 'Slow Tamil ballad in D minor at 72 BPM…',
-  youtube_description: 'A tender Tamil love song.\n\n#tamilsong',
+  recommended_voice: ['Male Baritone', 'Female Adult'],
+  song_titles: ['இரவின் அன்பு', 'நிலவின் நிழல்', 'மழை'],
+  suno_prompts: [{ style: 'Traditional Tamil', prompt: 'Slow Tamil ballad in D minor at 72 BPM…' }],
+  thumbnail_prompt: 'A cinematic Tamil scene at golden hour.',
+  youtube_description_tamil: 'ஒரு மென்மையான பாடல்.',
+  youtube_description_english: 'A tender Tamil love song.\n\n#tamilsong',
+  reel: { hook: 'ஒரு வரி', caption: 'A love song', hashtags: ['#tamil'] },
 };
 const ok = (b: unknown) => ({ ok: true, status: 200, json: async () => b } as unknown as Response);
 const fail = (s: number, b: unknown) => ({ ok: false, status: s, json: async () => b } as unknown as Response);

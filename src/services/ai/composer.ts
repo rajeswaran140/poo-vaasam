@@ -14,16 +14,34 @@ import Anthropic from '@anthropic-ai/sdk';
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
 const MAX_LYRICS_CHARS = 8000;
 
+/** One style-tagged SUNO prompt variant (e.g. style "Devotional"). */
+export interface SunoVariant {
+  style: string;
+  prompt: string;
+}
+
+/** A short-form (Reel/Short) idea drawn from the lyrics. */
+export interface ReelIdea {
+  hook: string;       // punchy Tamil line for the opening of a Short
+  caption: string;    // short English caption
+  hashtags: string[]; // 3-6 punchy hashtags
+}
+
 export interface ComposerAnalysis {
-  emotion: string;
+  emotion: string;                  // dominant Tamil emotion
+  emotion_breakdown: string[];      // ranked Tamil emotions, dominant first (NO numbers — ranking only)
   mood: string;
   theme: string;
   suggested_key: string;
   suggested_bpm: number;
   suggested_instruments: string[];
+  recommended_voice: string[];      // ranked voice fit, best first
   song_titles: string[];
-  suno_prompt: string;
-  youtube_description: string;
+  suno_prompts: SunoVariant[];      // 3-5 style-tagged SUNO prompts
+  thumbnail_prompt: string;         // English image-gen prompt for the YouTube thumbnail
+  youtube_description_tamil: string;
+  youtube_description_english: string;
+  reel: ReelIdea;
 }
 
 function getClient(): Anthropic | null {
@@ -32,29 +50,44 @@ function getClient(): Anthropic | null {
   return new Anthropic({ apiKey: key });
 }
 
-const SYSTEM_PROMPT = `You are an AI music-production assistant for a Tamil songwriter and lyricist. Given Tamil song lyrics, you analyse them and produce a complete production brief.
+const SYSTEM_PROMPT = `You are an AI music director for a Tamil songwriter and lyricist. Given Tamil song lyrics, you analyse them and produce a complete production brief.
 
 You respond with ONE JSON object and NOTHING else (no prose, no markdown fences). The JSON must match this exact schema:
 
 {
-  "emotion": "<one-word Tamil emotion, e.g. காதல், அன்னை, துயரம், மகிழ்ச்சி>",
+  "emotion": "<one-word Tamil emotion that DOMINATES, e.g. காதல், அன்னை, துயரம், மகிழ்ச்சி>",
+  "emotion_breakdown": ["<dominant Tamil emotion>", "<next>", "<next>", ...],
   "mood": "<2-4 English adjectives, e.g. Melancholic and reflective>",
   "theme": "<short English theme phrase, e.g. Homeland nostalgia>",
   "suggested_key": "<Western key, e.g. D Minor, A Major>",
   "suggested_bpm": <integer 40-200>,
   "suggested_instruments": ["<lead>", "<accompaniment 1>", "<accompaniment 2>", ...],
+  "recommended_voice": ["<best-fit voice>", "<next>", ...],
   "song_titles": ["<title 1 in Tamil>", "<title 2>", "<title 3>"],
-  "suno_prompt": "<one paragraph, English, describes the style/instrumentation/tempo/mood for SUNO music-gen — DO NOT include the lyrics themselves>",
-  "youtube_description": "<3-5 sentence English description with #tamil #tamilsong relevant hashtags at the end>"
+  "suno_prompts": [
+    { "style": "<style name>", "prompt": "<one English paragraph for SUNO — style/instrumentation/tempo/mood, NO lyrics>" }
+  ],
+  "thumbnail_prompt": "<one English image-generation prompt for the YouTube thumbnail>",
+  "youtube_description_tamil": "<3-5 sentence Tamil description, hashtags at the end>",
+  "youtube_description_english": "<3-5 sentence English description, hashtags at the end>",
+  "reel": {
+    "hook": "<one punchy Tamil line (from or inspired by the lyrics) to open a Short>",
+    "caption": "<short English caption>",
+    "hashtags": ["<3-6 punchy hashtags>"]
+  }
 }
 
 Rules:
 - Output JSON ONLY. No introduction, no explanation, no markdown.
-- Pick the emotion that DOMINATES the lyrics. If unclear, default to "காதல்".
-- Instruments should be 4-6 items, lead first. Lean Tamil-classical (Veena, Flute, Nadaswaram, Mridangam, Tabla) when the mood is traditional; Western (Piano, Strings, Guitar) when contemporary.
+- emotion = the dominant emotion; emotion_breakdown = 3-5 emotions RANKED most→least present. Ranking only — DO NOT output numbers, percentages, or scores anywhere.
+- Instruments: 4-6 items, lead first. Lean Tamil-classical (Veena, Flute, Nadaswaram, Mridangam, Tabla) when traditional; Western (Piano, Strings, Guitar) when contemporary.
+- recommended_voice: 2-4 ranked, best fit first. Choose from: Male Baritone, Male Tenor, Female Adult, Young Female, Elder Male, Child, Duet.
 - BPM: ballad 60-80, mid 90-120, upbeat 130-160.
-- Titles should be evocative phrases drawn from or inspired by the lyrics — not generic.
-- Hashtags: 5-8 max, all relevant. Include #tamilagaval.`;
+- Titles: evocative phrases drawn from or inspired by the lyrics — not generic.
+- suno_prompts: provide 3-5 DISTINCT style variants. Draw styles from: Traditional Tamil (Carnatic), Tamil film ballad, Devotional, Village folk, Modern acoustic, Bharathiyar-inspired. Each prompt is one self-contained English paragraph and must NOT contain the lyrics.
+- thumbnail_prompt: vivid, cinematic, culturally Tamil imagery matching the song's emotion. Describe scene/lighting/composition for a 16:9 YouTube thumbnail. Do not request embedded text.
+- youtube_description_tamil and youtube_description_english convey the SAME meaning in each language; end each with 5-8 relevant hashtags including #tamilagaval.
+- Keep ALL copy and imagery strictly apolitical — no flags, political movements, parties, or partisan references.`;
 
 /**
  * Best-effort JSON extraction — Claude sometimes (rarely) wraps output in
@@ -67,20 +100,49 @@ function parseJson(raw: string): ComposerAnalysis {
   if (fence) cleaned = fence[1].trim();
   const parsed = JSON.parse(cleaned) as Partial<ComposerAnalysis>;
 
+  const strArray = (v: unknown): string[] => (Array.isArray(v) ? v.map(String).filter(Boolean) : []);
+
+  // SUNO variants: accept the structured array; tolerate a legacy single
+  // `suno_prompt` string or an array of plain strings.
+  const rawSuno = (parsed as { suno_prompts?: unknown; suno_prompt?: unknown }).suno_prompts
+    ?? (parsed as { suno_prompt?: unknown }).suno_prompt;
+  const suno_prompts: SunoVariant[] = Array.isArray(rawSuno)
+    ? rawSuno
+        .map((v) =>
+          v && typeof v === 'object'
+            ? { style: String((v as SunoVariant).style ?? 'Default'), prompt: String((v as SunoVariant).prompt ?? '') }
+            : { style: 'Default', prompt: String(v) }
+        )
+        .filter((s) => s.prompt)
+    : typeof rawSuno === 'string' && rawSuno
+      ? [{ style: 'Default', prompt: rawSuno }]
+      : [];
+
+  const rawReel = (parsed.reel ?? {}) as Partial<ReelIdea>;
+
   // Light shape validation — fill defaults rather than throwing so a
   // partially-malformed response still gives the UI something useful.
   return {
     emotion: String(parsed.emotion ?? 'காதல்'),
+    emotion_breakdown: strArray(parsed.emotion_breakdown).length
+      ? strArray(parsed.emotion_breakdown)
+      : [String(parsed.emotion ?? 'காதல்')],
     mood: String(parsed.mood ?? ''),
     theme: String(parsed.theme ?? ''),
     suggested_key: String(parsed.suggested_key ?? ''),
     suggested_bpm: Number.isFinite(parsed.suggested_bpm) ? Number(parsed.suggested_bpm) : 90,
-    suggested_instruments: Array.isArray(parsed.suggested_instruments)
-      ? parsed.suggested_instruments.map(String)
-      : [],
-    song_titles: Array.isArray(parsed.song_titles) ? parsed.song_titles.map(String) : [],
-    suno_prompt: String(parsed.suno_prompt ?? ''),
-    youtube_description: String(parsed.youtube_description ?? ''),
+    suggested_instruments: strArray(parsed.suggested_instruments),
+    recommended_voice: strArray(parsed.recommended_voice),
+    song_titles: strArray(parsed.song_titles),
+    suno_prompts,
+    thumbnail_prompt: String(parsed.thumbnail_prompt ?? ''),
+    youtube_description_tamil: String(parsed.youtube_description_tamil ?? ''),
+    youtube_description_english: String(parsed.youtube_description_english ?? ''),
+    reel: {
+      hook: String(rawReel.hook ?? ''),
+      caption: String(rawReel.caption ?? ''),
+      hashtags: strArray(rawReel.hashtags),
+    },
   };
 }
 
@@ -124,7 +186,7 @@ export async function composeFromLyrics(
   try {
     const res = await client.messages.create({
       model,
-      max_tokens: 1500,
+      max_tokens: 3500, // larger brief: ranked emotions, 3-5 SUNO variants, bilingual desc, thumbnail, reel
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: lyrics }],
     });

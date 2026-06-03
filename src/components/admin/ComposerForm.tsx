@@ -19,18 +19,11 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Copy, Check, Sparkles, RotateCw } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
+// type-only import — erased at build, so the server-only composer module
+// (which pulls the Anthropic SDK) is never bundled into this client component.
+import type { ComposerAnalysis } from '@/services/ai/composer';
 
-interface Analysis {
-  emotion: string;
-  mood: string;
-  theme: string;
-  suggested_key: string;
-  suggested_bpm: number;
-  suggested_instruments: string[];
-  song_titles: string[];
-  suno_prompt: string;
-  youtube_description: string;
-}
+type Analysis = ComposerAnalysis;
 
 const MAX_LYRICS = 8000;
 const WARN_AT = 7500;
@@ -111,7 +104,7 @@ export function ComposerForm() {
           </p>
           <div className="flex items-center gap-3">
             {loading && (
-              <span className="text-xs text-gray-500 dark:text-gray-400">~5–10s</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">~20–40s</span>
             )}
             <button
               type="submit"
@@ -169,7 +162,26 @@ export function ComposerForm() {
   );
 }
 
+function Chips({ items, tamil }: { items: string[]; tamil?: boolean }) {
+  return (
+    <ul className="flex flex-wrap gap-2">
+      {items.map((it, i) => (
+        <li
+          key={`${i}-${it}`}
+          className={`rounded-full bg-orange-100 px-3 py-1 text-xs font-medium text-orange-800 dark:bg-orange-500/20 dark:text-orange-300 ${tamil ? 'font-tamil' : ''}`}
+        >
+          {it}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function Results({ result }: { result: Analysis }) {
+  const reelCopy = [result.reel.hook, result.reel.caption, result.reel.hashtags.join(' ')]
+    .filter(Boolean)
+    .join('\n\n');
+
   return (
     <div className="space-y-4">
       {/* Quick-stat grid */}
@@ -181,16 +193,34 @@ function Results({ result }: { result: Analysis }) {
         <Stat label="BPM" value={String(result.suggested_bpm)} />
       </div>
 
+      {/* Emotional breakdown — ranked, most→least present (no scores: an LLM
+          can't produce calibrated probabilities, so we never show fake %). */}
+      {result.emotion_breakdown.length > 1 && (
+        <Card label="Emotional breakdown (ranked)">
+          <ol className="flex flex-wrap items-center gap-2">
+            {result.emotion_breakdown.map((e, i) => (
+              <li key={`${i}-${e}`} className="flex items-center gap-2">
+                {i > 0 && <span aria-hidden className="text-gray-400">›</span>}
+                <span className="rounded-full bg-orange-100 px-3 py-1 font-tamil text-xs font-medium text-orange-800 dark:bg-orange-500/20 dark:text-orange-300">
+                  {e}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </Card>
+      )}
+
       {/* Instruments */}
       {result.suggested_instruments.length > 0 && (
         <Card label="Instruments">
-          <ul className="flex flex-wrap gap-2">
-            {result.suggested_instruments.map((i) => (
-              <li key={i} className="rounded-full bg-orange-100 px-3 py-1 text-xs font-medium text-orange-800 dark:bg-orange-500/20 dark:text-orange-300">
-                {i}
-              </li>
-            ))}
-          </ul>
+          <Chips items={result.suggested_instruments} />
+        </Card>
+      )}
+
+      {/* Recommended voice — ranked best fit first */}
+      {result.recommended_voice.length > 0 && (
+        <Card label="Recommended voice (ranked)">
+          <Chips items={result.recommended_voice} />
         </Card>
       )}
 
@@ -208,17 +238,53 @@ function Results({ result }: { result: Analysis }) {
         </Card>
       )}
 
-      {/* SUNO prompt */}
-      {result.suno_prompt && (
-        <Card label="SUNO prompt" copyText={result.suno_prompt}>
-          <p className="text-sm text-gray-700 dark:text-gray-300">{result.suno_prompt}</p>
+      {/* SUNO prompts — one card per style variant */}
+      {result.suno_prompts.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            SUNO prompts — {result.suno_prompts.length} styles
+          </h3>
+          {result.suno_prompts.map((v, i) => (
+            <Card key={`${i}-${v.style}`} label={`🎵 ${v.style}`} copyText={v.prompt}>
+              <p className="text-sm text-gray-700 dark:text-gray-300">{v.prompt}</p>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Thumbnail (image-gen) prompt */}
+      {result.thumbnail_prompt && (
+        <Card label="Thumbnail prompt (image-gen)" copyText={result.thumbnail_prompt}>
+          <p className="text-sm text-gray-700 dark:text-gray-300">{result.thumbnail_prompt}</p>
         </Card>
       )}
 
-      {/* YouTube description */}
-      {result.youtube_description && (
-        <Card label="YouTube description" copyText={result.youtube_description}>
-          <p className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">{result.youtube_description}</p>
+      {/* YouTube description — Tamil */}
+      {result.youtube_description_tamil && (
+        <Card label="YouTube description — தமிழ்" copyText={result.youtube_description_tamil}>
+          <p className="whitespace-pre-wrap font-tamil text-sm text-gray-700 dark:text-gray-300">{result.youtube_description_tamil}</p>
+        </Card>
+      )}
+
+      {/* YouTube description — English */}
+      {result.youtube_description_english && (
+        <Card label="YouTube description — English" copyText={result.youtube_description_english}>
+          <p className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">{result.youtube_description_english}</p>
+        </Card>
+      )}
+
+      {/* Reel / Short idea */}
+      {(result.reel.hook || result.reel.caption || result.reel.hashtags.length > 0) && (
+        <Card label="Reel / Short" copyText={reelCopy}>
+          <div className="space-y-2">
+            {result.reel.hook && (
+              <p className="font-tamil text-base font-medium text-gray-900 dark:text-gray-100">{result.reel.hook}</p>
+            )}
+            {result.reel.caption && (
+              <p className="text-sm text-gray-700 dark:text-gray-300">{result.reel.caption}</p>
+            )}
+            {result.reel.hashtags.length > 0 && <Chips items={result.reel.hashtags} />}
+          </div>
         </Card>
       )}
     </div>

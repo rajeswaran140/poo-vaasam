@@ -19,8 +19,9 @@ export default function AdminComposePage() {
       <header>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">AI Composer</h1>
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Paste Tamil lyrics → get a production brief (emotion, mood, theme, key, BPM, instrumentation), 3 title
-          candidates, a SUNO music-generation prompt, and a YouTube description. Copy buttons throughout — nothing is
+          Paste Tamil lyrics → get a full production brief: ranked emotions, mood, theme, key, BPM, instrumentation,
+          a recommended voice, title candidates, several style-tagged SUNO prompts, a thumbnail image prompt,
+          bilingual (Tamil + English) YouTube descriptions, and a Reel/Short idea. Copy buttons throughout — nothing is
           saved back to the DB; this is a draft-tool.
         </p>
       </header>
