@@ -9,13 +9,14 @@
  * Replace this with DynamoDB `categoryIds` once the admin form sets them.
  */
 
-export const SONG_THEMES = ['love', 'mother', 'nature', 'tamil', 'homeland'] as const;
+export const SONG_THEMES = ['love', 'mother', 'father', 'nature', 'tamil', 'homeland'] as const;
 export type SongTheme = (typeof SONG_THEMES)[number];
 
 /** Tamil chip labels — kept short so the filter row stays one line on mobile. */
 export const SONG_THEME_LABELS: Record<SongTheme, string> = {
   love: 'காதல்',
   mother: 'அன்னை',
+  father: 'அப்பா',
   nature: 'இயற்கை',
   tamil: 'தமிழ்',
   homeland: 'தாயகம்',

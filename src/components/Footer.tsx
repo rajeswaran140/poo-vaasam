@@ -14,6 +14,7 @@ import {
   youtubeSubscribeUrl,
 } from '@/config/site';
 import { TrackedYouTubeAnchor } from '@/components/TrackedYouTubeAnchor';
+import { SubscribeForm } from '@/components/SubscribeForm';
 
 export function Footer() {
   return (
@@ -87,6 +88,10 @@ export function Footer() {
               <li><Link href="/terms" className="hover:text-white font-tamil focus-visible:outline-none focus-visible:underline">Terms</Link></li>
             </ul>
           </div>
+        </div>
+        {/* Newsletter — the audience we own, independent of any algorithm. */}
+        <div className="border-t border-gray-800 mt-8 pt-8 flex justify-center">
+          <SubscribeForm source="footer" />
         </div>
         <div className="border-t border-gray-800 mt-8 pt-8 text-center text-gray-400">
           <p>© {new Date().getFullYear()} TechSynergy Corp. All rights reserved.</p>
