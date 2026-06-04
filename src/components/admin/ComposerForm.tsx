@@ -33,18 +33,38 @@ export function ComposerForm() {
   const [result, setResult] = useState<Analysis | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // Bumped on every successful compose; used to key <SaveBrief> so it remounts
+  // fresh per brief (otherwise its "Saved ✓" / chosen-style state leaks across
+  // a Regenerate and the new brief can't be saved).
+  const [runId, setRunId] = useState(0);
   const lyricsId = useId();
+
+  // Abort an in-flight compose on unmount (the call is ~30s) and guard against
+  // setState-after-unmount in the finally/catch.
+  const abortRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      abortRef.current?.abort();
+    };
+  }, []);
 
   const run = async () => {
     setError(null);
     // NOTE: we intentionally do NOT clear `result` here — keeps the last
     // successful brief on-screen if this call fails.
     setLoading(true);
+    abortRef.current?.abort(); // supersede any prior in-flight call
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
       const res = await adminFetch('/api/admin/compose', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ lyrics }),
+        signal: controller.signal,
       });
       // Auth/validation failures come back as a normal JSON error response.
       if (!res.ok) {
@@ -72,11 +92,15 @@ export function ComposerForm() {
         throw new Error('The server returned a malformed response.');
       }
       if (!body.success || !body.data) throw new Error(body.error || 'Compose failed');
+      if (!mountedRef.current) return;
       setResult(body.data);
+      setRunId((n) => n + 1); // fresh <SaveBrief> for the new brief
     } catch (err) {
+      // A superseded/unmounted request isn't a user-facing error.
+      if (controller.signal.aborted || !mountedRef.current) return;
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoading(false);
+      if (mountedRef.current && abortRef.current === controller) setLoading(false);
     }
   };
 
@@ -128,7 +152,7 @@ export function ComposerForm() {
           </p>
           <div className="flex items-center gap-3">
             {loading && (
-              <span className="text-xs text-gray-500 dark:text-gray-400">~15–25s</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">~25–35s</span>
             )}
             <button
               type="submit"
@@ -180,7 +204,7 @@ export function ComposerForm() {
             </button>
           </div>
           <Results result={result} />
-          <SaveBrief lyrics={lyrics} result={result} />
+          <SaveBrief key={runId} lyrics={lyrics} result={result} />
         </section>
       )}
     </div>

@@ -168,3 +168,43 @@ it('saves the brief (POST /api/admin/briefs) with the chosen SUNO style, and sho
   expect(sent.analysis.emotion).toBe('காதல்');
   expect(sent.decision.chosenSunoStyle).toBe('Traditional Tamil'); // SAMPLE's only style
 });
+
+// Regression: after Save then Regenerate, <SaveBrief> must reset — otherwise it
+// stays stuck on "Saved ✓" (new brief unsavable) with a stale style dropdown.
+it('re-enables Save and refreshes the chosen style after Regenerate (no stuck "Saved ✓")', async () => {
+  mockedFetch.mockResolvedValueOnce(ok({ success: true, data: SAMPLE })); // compose A
+  render(<ComposerForm />);
+  fireEvent.change(screen.getByLabelText('Tamil lyrics'), { target: { value: 'lyrics A' } });
+  fireEvent.click(screen.getByRole('button', { name: /compose brief/i }));
+  await waitFor(() => expect(screen.getByRole('button', { name: /save brief/i })).toBeInTheDocument());
+
+  // Save brief A → "Saved ✓"
+  mockedFetch.mockResolvedValueOnce(okJson({ success: true, data: { id: 'b1' } }));
+  fireEvent.click(screen.getByRole('button', { name: /save brief/i }));
+  await waitFor(() => expect(screen.getByRole('button', { name: /saved/i })).toBeInTheDocument());
+
+  // Regenerate → brief B with a DIFFERENT SUNO style
+  mockedFetch.mockResolvedValueOnce(ok({
+    success: true,
+    data: { ...SAMPLE, emotion: 'அன்னை', suno_prompts: [{ style: 'Village folk', prompt: 'Folk in G…' }] },
+  }));
+  fireEvent.click(screen.getByRole('button', { name: /regenerate/i }));
+  await waitFor(() => expect(screen.getByText('அன்னை')).toBeInTheDocument());
+
+  // Save is actionable again, not locked on "Saved ✓"…
+  expect(await screen.findByRole('button', { name: /save brief/i })).toBeEnabled();
+  expect(screen.queryByRole('button', { name: /saved/i })).not.toBeInTheDocument();
+  // …and the dropdown reflects brief B's style, not A's stale one.
+  expect((screen.getByLabelText('Chosen SUNO style') as HTMLSelectElement).value).toBe('Village folk');
+});
+
+it('passes an AbortSignal to the compose request (so it can be cancelled on unmount)', async () => {
+  mockedFetch.mockResolvedValueOnce(ok({ success: true, data: SAMPLE }));
+  render(<ComposerForm />);
+  fireEvent.change(screen.getByLabelText('Tamil lyrics'), { target: { value: 'lyrics' } });
+  fireEvent.click(screen.getByRole('button', { name: /compose brief/i }));
+
+  await waitFor(() => expect(mockedFetch).toHaveBeenCalled());
+  const init = mockedFetch.mock.calls[0][1];
+  expect(init.signal).toBeInstanceOf(AbortSignal);
+});

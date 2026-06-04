@@ -74,6 +74,14 @@ it('parses a clean JSON response into the structured shape', async () => {
   }
 });
 
+it('requests enough max_tokens headroom for the full Brief v2 (avoids mid-JSON truncation)', async () => {
+  create.mockResolvedValueOnce(claudeResponse(JSON.stringify(SAMPLE)));
+  await composeFromLyrics('காதல் வரிகள்');
+  expect(create).toHaveBeenCalledTimes(1);
+  const args = create.mock.calls[0][0] as { max_tokens: number };
+  expect(args.max_tokens).toBeGreaterThanOrEqual(4096);
+});
+
 it('strips a ```json fence when Claude wraps the output', async () => {
   create.mockResolvedValueOnce(claudeResponse('```json\n' + JSON.stringify(SAMPLE) + '\n```'));
   const r = await composeFromLyrics('lyrics');

@@ -192,7 +192,11 @@ export async function composeFromLyrics(
   try {
     const res = await client.messages.create({
       model,
-      max_tokens: 3500, // larger brief: ranked emotions, 3-5 SUNO variants, bilingual desc, thumbnail, reel
+      // Headroom for the full Brief v2 (ranked emotions, 3-5 SUNO paragraphs,
+      // BILINGUAL YouTube descriptions, thumbnail prompt, reel). 3500 could
+      // truncate the JSON mid-object → parse failure after a ~30s call; 5000
+      // leaves comfortable margin at negligible extra cost.
+      max_tokens: 5000,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: lyrics }],
     });
