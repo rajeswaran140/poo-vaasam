@@ -49,6 +49,13 @@ const nextConfig: NextConfig = {
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
     // Read at runtime by the /videos Data API fallback (when the RSS feed flakes).
     YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY || '',
+    // DynamoDB access for runtime SSR/API routes (e.g. saving a brief). Amplify's
+    // SSR runtime doesn't get a usable role token, so the app key must be inlined
+    // (server-only; not emitted to client bundles). Enables runtime DB reads/writes.
+    APP_AWS_ACCESS_KEY_ID: process.env.APP_AWS_ACCESS_KEY_ID || '',
+    APP_AWS_SECRET_ACCESS_KEY: process.env.APP_AWS_SECRET_ACCESS_KEY || '',
+    AWS_REGION: process.env.AWS_REGION || 'ca-central-1',
+    DYNAMODB_TABLE_NAME: process.env.DYNAMODB_TABLE_NAME || 'TamilWebContent',
   },
 
   // Image optimization
