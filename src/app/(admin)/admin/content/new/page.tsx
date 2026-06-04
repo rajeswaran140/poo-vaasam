@@ -21,14 +21,14 @@ function AssetInput({ name, label, placeholder, value, onChange }: {
 }) {
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
+      <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">{label}</label>
       <input
         type="url"
         name={name}
         value={value}
         onChange={onChange}
         placeholder={placeholder}
-        className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+        className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
       />
     </div>
   );
@@ -160,16 +160,16 @@ export default function NewContentPage() {
   return (
     <div className="max-w-4xl">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">Create New Content</h1>
-        <p className="text-gray-500 mt-1">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Create New Content</h1>
+        <p className="text-gray-500 mt-1 dark:text-gray-400">
           Add new Tamil content to your platform
         </p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Content Type */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 dark:bg-gray-900 dark:border-gray-800">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4 dark:text-gray-100">
             Content Type
           </h2>
           <div className="grid grid-cols-5 gap-3">
@@ -180,8 +180,8 @@ export default function NewContentPage() {
                 onClick={() => setFormData((prev) => ({ ...prev, type }))}
                 className={`p-4 rounded-lg border-2 transition-all ${
                   formData.type === type
-                    ? 'border-purple-600 bg-purple-50'
-                    : 'border-gray-200 hover:border-gray-300'
+                    ? 'border-purple-600 bg-purple-50 dark:border-purple-500 dark:bg-purple-950/40'
+                    : 'border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600'
                 }`}
               >
                 <div className="mb-2 flex justify-center">
@@ -196,9 +196,9 @@ export default function NewContentPage() {
             ))}
           </div>
           {formData.type === 'POEMS' && (
-            <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg flex items-start gap-2">
+            <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg flex items-start gap-2 dark:bg-purple-950/30 dark:border-purple-800">
               <Star className="w-5 h-5 mt-0.5" />
-              <p className="text-sm text-purple-700 font-tamil">
+              <p className="text-sm text-purple-700 dark:text-purple-200 font-tamil">
                 <strong>Poem Mode:</strong> Your title and content will use the beautiful Baloo Thambi 2 font for an artistic poetry display!
               </p>
             </div>
@@ -206,8 +206,8 @@ export default function NewContentPage() {
         </div>
 
         {/* Basic Information */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 dark:bg-gray-900 dark:border-gray-800 space-y-4">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4 dark:text-gray-100">
             Basic Information
           </h2>
 
@@ -252,14 +252,14 @@ export default function NewContentPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                 Status *
               </label>
               <select
                 name="status"
                 value={formData.status}
                 onChange={handleChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500"
               >
                 <option value="DRAFT">Draft (வரைவு)</option>
                 <option value="PUBLISHED">Published (வெளியிடப்பட்டது)</option>
@@ -269,12 +269,12 @@ export default function NewContentPage() {
         </div>
 
         {/* Categories */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 dark:bg-gray-900 dark:border-gray-800">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4 dark:text-gray-100">
             Categories (வகைகள்)
           </h2>
           {categories.length === 0 ? (
-            <p className="text-gray-500">
+            <p className="text-gray-500 dark:text-gray-400">
               {dataError
                 ? 'Could not load categories — your session may have expired. Try reloading.'
                 : 'Loading categories...'}
@@ -288,8 +288,8 @@ export default function NewContentPage() {
                   onClick={() => toggleCategory(category.id)}
                   className={`px-4 py-2 rounded-lg border-2 transition-all font-tamil ${
                     formData.categoryIds.includes(category.id)
-                      ? 'border-purple-600 bg-purple-50 text-purple-700'
-                      : 'border-gray-200 hover:border-gray-300'
+                      ? 'border-purple-600 bg-purple-50 dark:border-purple-500 dark:bg-purple-950/40 text-purple-700 dark:text-purple-200'
+                      : 'border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600'
                   }`}
                 >
                   {category.name}
@@ -300,12 +300,12 @@ export default function NewContentPage() {
         </div>
 
         {/* Tags */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 dark:bg-gray-900 dark:border-gray-800">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4 dark:text-gray-100">
             Tags (குறிச்சொற்கள்)
           </h2>
           {tags.length === 0 ? (
-            <p className="text-gray-500">
+            <p className="text-gray-500 dark:text-gray-400">
               {dataError
                 ? 'Could not load tags — your session may have expired. Try reloading.'
                 : 'Loading tags...'}
@@ -320,7 +320,7 @@ export default function NewContentPage() {
                   className={`px-3 py-1 rounded-full text-sm font-medium transition-all font-tamil ${
                     formData.tagIds.includes(tag.id)
                       ? 'bg-purple-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'
                   }`}
                 >
                   #{tag.name}
@@ -331,8 +331,8 @@ export default function NewContentPage() {
         </div>
 
         {/* Media */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 dark:bg-gray-900 dark:border-gray-800 space-y-4">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4 dark:text-gray-100">
             Media (ஊடகம்)
           </h2>
 
@@ -344,7 +344,7 @@ export default function NewContentPage() {
           />
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
               Audio Duration (seconds)
             </label>
             <input
@@ -362,7 +362,7 @@ export default function NewContentPage() {
                 }))
               }
               placeholder="180"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
           </div>
 
@@ -375,7 +375,7 @@ export default function NewContentPage() {
           />
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
               Full Video — YouTube link (முழு காணொளி)
             </label>
             <input
@@ -393,15 +393,15 @@ export default function NewContentPage() {
                 }));
               }}
               placeholder="https://www.youtube.com/watch?v=..."
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
               Viewers watching the preview are sent here for the full video — promoting the website and your YouTube channel.
             </p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
               YouTube Video ID
             </label>
             <input
@@ -412,9 +412,9 @@ export default function NewContentPage() {
               placeholder="dQw4w9WgXcQ"
               pattern="[A-Za-z0-9_\-]{11}"
               maxLength={11}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
               The 11-char ID from the YouTube URL (auto-filled when you paste a link above). Used by{' '}
               <code>/admin/youtube</code> to match channel uploads to this content with zero ambiguity.
             </p>
@@ -429,19 +429,19 @@ export default function NewContentPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Workflow state</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Workflow state</label>
             <select
               name="workflowState"
               value={formData.workflowState}
               onChange={handleChange}
-              className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+              className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
             >
               <option value="">— (inferred from status)</option>
               {WORKFLOW_STATES.map((s) => (
                 <option key={s} value={s}>{WORKFLOW_LABELS[s]}</option>
               ))}
             </select>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
               Optional. If left blank, the workflow kanban places PUBLISHED items in <em>Live</em> and everything else in <em>Draft</em>.
             </p>
           </div>
@@ -449,8 +449,8 @@ export default function NewContentPage() {
 
         {/* SEO - Only shown if feature is enabled */}
         {FEATURES.ADMIN.SEO_FIELDS && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 dark:bg-gray-900 dark:border-gray-800 space-y-4">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4 dark:text-gray-100">
               SEO Settings
             </h2>
 
@@ -473,11 +473,11 @@ export default function NewContentPage() {
         )}
 
         {/* Submit Buttons */}
-        <div className="flex items-center justify-between bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center justify-between bg-white rounded-lg shadow-sm border border-gray-200 p-6 dark:bg-gray-900 dark:border-gray-800">
           <button
             type="button"
             onClick={() => router.back()}
-            className="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+            className="px-6 py-3 border border-gray-300 rounded-lg dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 text-gray-700 font-medium hover:bg-gray-50 transition-colors"
           >
             Cancel
           </button>

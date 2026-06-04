@@ -40,14 +40,14 @@ export function TamilInput({
       {/* Label and Toggle */}
       {label && (
         <div className="flex items-center justify-between">
-          <label className="block text-sm font-medium text-gray-700">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
             {label}
             {required && <span className="text-red-500 ml-1">*</span>}
           </label>
           <button
             type="button"
             onClick={() => setIsTransliterationEnabled(!isTransliterationEnabled)}
-            className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-full bg-purple-50 text-purple-700 hover:bg-purple-100 transition-all border-2 border-purple-200 font-medium"
+            className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-full bg-purple-50 text-purple-700 hover:bg-purple-100 transition-all border-2 border-purple-200 font-medium dark:bg-purple-950/40 dark:text-purple-200 dark:border-purple-800 dark:hover:bg-purple-900/50"
             title={
               isTransliterationEnabled
                 ? 'Switch to direct Tamil input'
@@ -86,14 +86,14 @@ export function TamilInput({
               <textarea
                 {...props}
                 rows={rows}
-                className={`w-full px-4 py-3 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent font-tamil resize-y bg-purple-50 transition-all ${className}`}
+                className={`w-full px-4 py-3 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent font-tamil resize-y bg-purple-50 transition-all dark:border-purple-700 dark:bg-gray-800 dark:text-gray-100 ${className}`}
                 required={required}
               />
             ) : (
               <input
                 {...props}
                 type="text"
-                className={`w-full px-4 py-3 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent font-tamil bg-purple-50 transition-all ${className}`}
+                className={`w-full px-4 py-3 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent font-tamil bg-purple-50 transition-all dark:border-purple-700 dark:bg-gray-800 dark:text-gray-100 ${className}`}
                 required={required}
               />
             )
@@ -108,7 +108,7 @@ export function TamilInput({
               onChange={(e) => onChange(e.target.value)}
               placeholder="Type in Tamil directly using your keyboard"
               rows={rows}
-              className={`w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent font-tamil resize-y transition-all ${className}`}
+              className={`w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent font-tamil dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 resize-y transition-all ${className}`}
               required={required}
             />
           ) : (
@@ -117,7 +117,7 @@ export function TamilInput({
               value={value}
               onChange={(e) => onChange(e.target.value)}
               placeholder="Type in Tamil directly using your keyboard"
-              className={`w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent font-tamil transition-all ${className}`}
+              className={`w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent font-tamil dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 transition-all ${className}`}
               required={required}
             />
           )}
@@ -126,7 +126,7 @@ export function TamilInput({
 
       {/* Help Text */}
       {isTransliterationEnabled && (
-        <div className="flex items-start gap-2 text-xs text-purple-700 bg-purple-50 px-3 py-2 rounded-md border border-purple-200">
+        <div className="flex items-start gap-2 text-xs text-purple-700 bg-purple-50 px-3 py-2 rounded-md border border-purple-200 dark:text-purple-200 dark:bg-purple-950/30 dark:border-purple-800">
           <span className="text-base">💡</span>
           <div>
             <strong>How it works:</strong> Type in English and press <kbd className="px-1 py-0.5 bg-white border border-purple-300 rounded text-xs">Space</kbd> to see Tamil suggestions.

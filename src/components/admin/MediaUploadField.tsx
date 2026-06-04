@@ -101,7 +101,7 @@ export function MediaUploadField({ kind, label, value, onChange, helpText }: Med
 
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
+      <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">{label}</label>
 
       <div className="flex items-center gap-2">
         <input
@@ -109,7 +109,7 @@ export function MediaUploadField({ kind, label, value, onChange, helpText }: Med
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="https://… or upload a file →"
-          className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+          className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
         />
         <button
           type="button"
@@ -147,7 +147,7 @@ export function MediaUploadField({ kind, label, value, onChange, helpText }: Med
         onChange={(e) => handleFiles(e.target.files)}
       />
 
-      <p className="text-xs text-gray-500 mt-1">{helpText || cfg.hint}</p>
+      <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">{helpText || cfg.hint}</p>
       {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
 
       {/* Preview */}
