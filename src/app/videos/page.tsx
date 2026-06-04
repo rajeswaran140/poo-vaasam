@@ -13,6 +13,7 @@ import { SITE, isYouTubeVideosConfigured } from '@/config/site';
 import { VideoGallery } from '@/components/VideoGallery';
 import { SubscribeButton } from '@/components/SubscribeButton';
 import { JsonLd } from '@/components/JsonLd';
+import Image from 'next/image';
 
 // Render per-request rather than as a build-time prerender. Amplify's SSR
 // compute does not run Next's time-based ISR revalidation reliably (the
@@ -63,45 +64,109 @@ export default async function VideosPage() {
   }
 
   const videos = await fetchChannelVideos(SITE.youtube.channelId, 24);
+  // Feature the latest video in the hero once there are enough for a grid below.
+  const featured = videos.length >= 3 ? videos[0] : null;
+  const galleryVideos = featured ? videos.slice(1) : videos;
 
   return (
     <>
       {videos.length > 0 && <JsonLd data={videosItemListJsonLd(videos)} />}
       <Header />
-      <main className="min-h-screen container mx-auto px-4 sm:px-6 py-10 max-w-6xl">
-        <section className="mb-10 overflow-hidden rounded-2xl bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white shadow-xl">
-          <div className="px-6 py-12 sm:px-12 sm:py-16 text-center">
-            <h1 className="text-4xl sm:text-5xl font-bold font-kavivanar mb-2 drop-shadow-lg">
-              காணொளிகள்
-            </h1>
-            <p className="text-white/90 font-tamil text-lg max-w-2xl mx-auto mb-8">
-              எங்கள் YouTube சேனலின் சமீபத்திய காணொளிகள்.
-            </p>
-            <SubscribeButton
-              label="YouTube"
-              source="videos_hero"
-              className="inline-flex items-center gap-2 px-7 py-3.5 bg-white text-orange-600 rounded-full font-bold hover:bg-orange-50 transition-colors shadow-lg"
-            />
-            {videos.length > 0 && (
-              <p className="mt-6 text-white/80 font-tamil text-sm">{videos.length} காணொளிகள்</p>
-            )}
+      <main className="min-h-screen flex flex-col">
+        {/* Full-bleed hero — matches the /songs hero treatment. */}
+        <section className="relative w-full overflow-hidden bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_120%_at_12%_-15%,rgba(255,255,255,0.38),transparent_55%)]"
+          />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(90%_90%_at_100%_115%,rgba(255,170,70,0.45),transparent_60%)]"
+          />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-gray-900"
+          />
+
+          <div className="relative w-full px-6 pb-16 pt-24 sm:px-10 lg:px-16">
+            <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0 animate-fade-in-up">
+                <span className="mb-3 inline-flex items-center rounded-full bg-white/15 px-3 py-1 font-tamil text-xs font-semibold uppercase tracking-wide text-white ring-1 ring-white/25 backdrop-blur-sm">
+                  தமிழகவல் · YouTube
+                </span>
+                <h1 className="mb-2 font-kavivanar text-5xl font-extrabold leading-tight drop-shadow-md sm:text-6xl lg:text-7xl">
+                  காணொளிகள்
+                </h1>
+                <p className="mb-4 max-w-xl font-tamil text-white/90">
+                  ரஜேஸ்வரன் தங்கராஜாவின் தமிழ் பாடல்களும் கவிதைகளும் — காணொளி வடிவில்.
+                </p>
+                <div className="mb-6 flex flex-wrap items-center gap-2 font-tamil text-sm">
+                  {videos.length > 0 && (
+                    <span className="inline-flex items-center rounded-full bg-white/15 px-3 py-1 text-white ring-1 ring-white/20 backdrop-blur-sm">
+                      {videos.length} காணொளிகள்
+                    </span>
+                  )}
+                  <span className="inline-flex items-center rounded-full bg-white/15 px-3 py-1 text-white ring-1 ring-white/20 backdrop-blur-sm">
+                    என்றும் இலவசம்
+                  </span>
+                </div>
+                <SubscribeButton
+                  label="YouTube"
+                  source="videos_hero"
+                  className="inline-flex items-center gap-2 rounded-full bg-white px-7 py-3.5 font-tamil text-base font-bold text-orange-700 shadow-xl shadow-black/20 transition-all duration-200 hover:scale-105 hover:bg-orange-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 active:scale-95"
+                />
+              </div>
+
+              {/* Featured latest video */}
+              {featured && (
+                <a
+                  href={featured.watchUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`சமீபத்திய காணொளி: ${featured.title}`}
+                  className="group relative block w-full shrink-0 overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/25 animate-fade-in lg:w-[28rem]"
+                >
+                  <Image
+                    src={featured.thumbnail}
+                    alt={featured.title}
+                    width={480}
+                    height={360}
+                    sizes="(min-width: 1024px) 28rem, 100vw"
+                    className="aspect-video w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  />
+                  <span aria-hidden className="absolute inset-0 flex items-center justify-center">
+                    <span className="flex h-16 w-16 items-center justify-center rounded-full bg-black/55 ring-2 ring-white/70 transition group-hover:bg-orange-600/90">
+                      <svg className="ml-1 h-7 w-7 fill-white text-white" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    </span>
+                  </span>
+                  <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-4 pt-10">
+                    <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide text-orange-200">சமீபத்தியது</span>
+                    <span className="line-clamp-2 font-tamil text-sm font-medium text-white drop-shadow">{featured.title}</span>
+                  </span>
+                </a>
+              )}
+            </div>
           </div>
         </section>
 
-        <VideoGallery videos={videos} />
+        <div className="container mx-auto max-w-6xl px-4 py-10 sm:px-6">
+          <VideoGallery videos={galleryVideos} />
 
-        {videos.length > 0 && (
-          <section className="mt-12 text-center">
-            <p className="font-tamil text-gray-300 mb-4">
-              புதிய காணொளிகளை தவறவிடாமல் பெற, எங்களை சந்தாதாரராக சேருங்கள்.
-            </p>
-            <SubscribeButton
-              label="YouTube"
-              source="videos_footer"
-              className="inline-flex items-center gap-2 px-7 py-3.5 bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white rounded-full font-bold hover:opacity-90 transition-opacity shadow-lg"
-            />
-          </section>
-        )}
+          {videos.length > 0 && (
+            <section className="mt-12 text-center">
+              <p className="mb-4 font-tamil text-gray-300">
+                புதிய காணொளிகளை தவறவிடாமல் பெற, எங்களை சந்தாதாரராக சேருங்கள்.
+              </p>
+              <SubscribeButton
+                label="YouTube"
+                source="videos_footer"
+                className="inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 px-7 py-3.5 font-tamil font-bold text-white shadow-lg transition-opacity hover:opacity-90"
+              />
+            </section>
+          )}
+        </div>
       </main>
       <Footer />
     </>
