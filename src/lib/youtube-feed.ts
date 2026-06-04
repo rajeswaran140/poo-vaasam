@@ -17,6 +17,8 @@ export interface ChannelVideo {
   publishedAt: string;
   thumbnail: string;
   watchUrl: string;
+  /** ISO-8601 duration (e.g. "PT3M5S"), attached best-effort from the Data API. */
+  duration?: string;
 }
 
 const FEED_REVALIDATE_SECONDS = 300; // 5 minutes — keep channel deletions visible quickly
@@ -161,6 +163,34 @@ async function fetchViaDataApi(channelId: string): Promise<ChannelVideo[]> {
 }
 
 /**
+ * Attach ISO-8601 durations to videos (best-effort) via the Data API
+ * `videos.list` (one batched call, 1 quota unit). Improves the VideoObject
+ * JSON-LD (Google shows duration in video rich results). No-op without a key
+ * or on any failure. Mutates `videos` in place.
+ */
+async function attachDurations(videos: ChannelVideo[]): Promise<void> {
+  const key = process.env.YOUTUBE_API_KEY;
+  if (!key || videos.length === 0) return;
+  try {
+    const ids = videos.map((v) => v.id).slice(0, 50).join(',');
+    const url = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${encodeURIComponent(ids)}&key=${encodeURIComponent(key)}`;
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) return;
+    const json = (await res.json()) as { items?: { id?: string; contentDetails?: { duration?: string } }[] };
+    const byId = new Map<string, string>();
+    for (const it of json.items ?? []) {
+      if (it?.id && typeof it.contentDetails?.duration === 'string') byId.set(it.id, it.contentDetails.duration);
+    }
+    for (const v of videos) {
+      const d = byId.get(v.id);
+      if (d) v.duration = d;
+    }
+  } catch {
+    /* best-effort — JSON-LD simply omits duration */
+  }
+}
+
+/**
  * Fetch the channel's latest videos, resilient to YouTube's flaky RSS feed:
  * RSS first → Data API fallback → last-good in-process cache. Returns [] only
  * when every source fails and nothing was ever cached / no channel configured,
@@ -185,9 +215,10 @@ export async function fetchChannelVideos(
   }
 
   if (videos.length > 0) {
-    // Mirror thumbnails to S3 (self-heals new uploads) before caching, so the
-    // self-hosted thumbnail URLs are guaranteed to exist when the page renders.
-    await ensureThumbnailsMirrored(videos.map((v) => v.id));
+    // In parallel (and best-effort): mirror new thumbnails to S3 so the
+    // self-hosted URLs exist at render, and attach durations for the JSON-LD.
+    // The in-process caches keep both near-free on warm instances.
+    await Promise.all([ensureThumbnailsMirrored(videos.map((v) => v.id)), attachDurations(videos)]);
     feedCache.set(channelId, { at: now, videos });
     return videos.slice(0, limit);
   }
@@ -225,6 +256,7 @@ export function videosItemListJsonLd(videos: ChannelVideo[]): Record<string, unk
         uploadDate: video.publishedAt,
         contentUrl: video.watchUrl,
         embedUrl: `https://www.youtube.com/embed/${video.id}`,
+        ...(video.duration ? { duration: video.duration } : {}),
       },
     })),
   };

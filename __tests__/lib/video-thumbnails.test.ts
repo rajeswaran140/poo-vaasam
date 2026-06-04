@@ -14,7 +14,7 @@ jest.mock('@/infrastructure/storage/s3-client', () => ({
   },
 }));
 
-import { ensureThumbnailsMirrored } from '@/lib/video-thumbnails';
+import { ensureThumbnailsMirrored, _resetMirrorCache } from '@/lib/video-thumbnails';
 
 const ID = 'abcdefghijk'; // valid 11-char id
 const KEY = `images/video-thumbs/${ID}.jpg`;
@@ -23,6 +23,7 @@ const origFetch = global.fetch;
 beforeEach(() => {
   fileExists.mockReset();
   uploadFile.mockReset();
+  _resetMirrorCache(); // the in-process "already mirrored" set persists across calls
 });
 afterEach(() => {
   global.fetch = origFetch;
@@ -86,4 +87,12 @@ it('never throws when S3 errors (resilient)', async () => {
   global.fetch = jest.fn() as unknown as typeof fetch;
   await expect(ensureThumbnailsMirrored([ID])).resolves.toBeUndefined();
   expect(uploadFile).not.toHaveBeenCalled();
+});
+
+it('does not re-hit S3 for an id already confirmed present this process', async () => {
+  fileExists.mockResolvedValue(true);
+  await ensureThumbnailsMirrored([ID]); // first call confirms + caches
+  await ensureThumbnailsMirrored([ID]); // second call should be a no-op
+  await ensureThumbnailsMirrored([ID]);
+  expect(fileExists).toHaveBeenCalledTimes(1); // only the first hit S3
 });

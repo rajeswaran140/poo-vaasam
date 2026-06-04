@@ -144,12 +144,30 @@ describe('fetchChannelVideos', () => {
     delete process.env.YOUTUBE_API_KEY;
   });
 
-  it('does NOT call the Data API when RSS succeeds', async () => {
+  it('does NOT use the Data API fallback (playlistItems) when RSS succeeds', async () => {
     process.env.YOUTUBE_API_KEY = 'test-key';
-    const fetchMock = jest.fn().mockResolvedValue({ ok: true, text: async () => SAMPLE_FEED });
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValue({ ok: true, text: async () => SAMPLE_FEED, json: async () => ({ items: [] }) });
     global.fetch = fetchMock as unknown as typeof fetch;
     await fetchChannelVideos('UCabcdefghijklmnopqrstuv');
-    expect(fetchMock).toHaveBeenCalledTimes(1); // RSS only — no fallback
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(urls.some((u) => u.includes('feeds/videos.xml'))).toBe(true); // RSS was used
+    expect(urls.some((u) => u.includes('playlistItems'))).toBe(false); // no Data API fallback
+    delete process.env.YOUTUBE_API_KEY;
+  });
+
+  it('attaches ISO-8601 durations from the Data API when a key is present', async () => {
+    process.env.YOUTUBE_API_KEY = 'test-key';
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: true, text: async () => SAMPLE_FEED }) // RSS
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ items: [{ id: 'gfywsN483lI', contentDetails: { duration: 'PT3M5S' } }] }),
+      }) as unknown as typeof fetch; // videos.list
+    const videos = await fetchChannelVideos('UCabcdefghijklmnopqrstuv');
+    expect(videos.find((v) => v.id === 'gfywsN483lI')?.duration).toBe('PT3M5S');
     delete process.env.YOUTUBE_API_KEY;
   });
 });
@@ -221,6 +239,29 @@ describe('videosItemListJsonLd', () => {
 
     // Entry without a description falls back to its title.
     expect(ld.itemListElement[1].item.description).toBe('Second Video');
+  });
+
+  const baseVideo = {
+    id: 'gfywsN483lI',
+    title: 'T',
+    description: 'd',
+    publishedAt: '2026-01-01T00:00:00Z',
+    thumbnail: s3ThumbnailUrl('gfywsN483lI'),
+    watchUrl: 'https://www.youtube.com/watch?v=gfywsN483lI',
+  };
+
+  it('includes the VideoObject duration when present', () => {
+    const ld = videosItemListJsonLd([{ ...baseVideo, duration: 'PT4M12S' }]) as {
+      itemListElement: Array<{ item: Record<string, unknown> }>;
+    };
+    expect(ld.itemListElement[0].item.duration).toBe('PT4M12S');
+  });
+
+  it('omits the duration key when absent (no empty/undefined value)', () => {
+    const ld = videosItemListJsonLd([baseVideo]) as {
+      itemListElement: Array<{ item: Record<string, unknown> }>;
+    };
+    expect('duration' in ld.itemListElement[0].item).toBe(false);
   });
 });
 
