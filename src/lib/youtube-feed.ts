@@ -83,10 +83,76 @@ export function _resetFeedCache(): void {
   feedCache.clear();
 }
 
+/** Uploads playlist id for a channel: `UC…` → `UU…`. */
+function uploadsPlaylistId(channelId: string): string {
+  return channelId.startsWith('UC') ? `UU${channelId.slice(2)}` : channelId;
+}
+
 /**
- * Fetch the channel's latest videos from the RSS feed (in-process TTL cache).
- * Returns the last good result on a transient failure, [] when nothing has ever
- * been fetched or no channel ID is configured — so callers always render safely.
+ * Parse a YouTube Data API `playlistItems.list` response into video entries
+ * (pure — testable). Skips items without a valid 11-char video id.
+ */
+export function parseDataApiItems(json: unknown, limit = 12): ChannelVideo[] {
+  const items = (json as { items?: unknown[] })?.items;
+  if (!Array.isArray(items)) return [];
+  const videos: ChannelVideo[] = [];
+  for (const raw of items) {
+    const sn = (raw as { snippet?: Record<string, unknown> })?.snippet ?? {};
+    const id = (sn.resourceId as { videoId?: string })?.videoId;
+    if (typeof id !== 'string' || !/^[\w-]{11}$/.test(id)) continue;
+    videos.push({
+      id,
+      title: decodeEntities(String(sn.title ?? '').trim()),
+      description: decodeEntities(String(sn.description ?? '').trim()),
+      publishedAt: String(sn.publishedAt ?? ''),
+      thumbnail: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+      watchUrl: `https://www.youtube.com/watch?v=${id}`,
+    });
+    if (videos.length >= limit) break;
+  }
+  return videos;
+}
+
+/** Primary source: the public RSS feed (free, no quota). [] on any failure. */
+async function fetchViaRss(channelId: string): Promise<ChannelVideo[]> {
+  const url = `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`;
+  try {
+    const res = await fetch(url, {
+      cache: 'no-store',
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; tamilagaval/1.0)' },
+    });
+    if (!res.ok) return [];
+    return parseChannelFeed(await res.text(), 50);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fallback source: YouTube Data API `playlistItems.list` on the uploads
+ * playlist (1 quota unit). Used only when the RSS feed flakes (it intermittently
+ * 404/500s). Needs YOUTUBE_API_KEY at runtime (inlined via next.config.ts).
+ */
+async function fetchViaDataApi(channelId: string): Promise<ChannelVideo[]> {
+  const key = process.env.YOUTUBE_API_KEY;
+  if (!key) return [];
+  const url =
+    `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50` +
+    `&playlistId=${encodeURIComponent(uploadsPlaylistId(channelId))}&key=${encodeURIComponent(key)}`;
+  try {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) return [];
+    return parseDataApiItems(await res.json(), 50);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetch the channel's latest videos, resilient to YouTube's flaky RSS feed:
+ * RSS first → Data API fallback → last-good in-process cache. Returns [] only
+ * when every source fails and nothing was ever cached / no channel configured,
+ * so callers always render safely.
  */
 export async function fetchChannelVideos(
   channelId: string,
@@ -100,21 +166,18 @@ export async function fetchChannelVideos(
     return cached.videos.slice(0, limit);
   }
 
-  const url = `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`;
+  // 1) RSS (free). 2) Data API fallback when RSS returns nothing.
+  let videos = await fetchViaRss(channelId);
+  if (videos.length === 0) {
+    videos = await fetchViaDataApi(channelId);
+  }
 
-  try {
-    const res = await fetch(url, {
-      cache: 'no-store', // always hit YouTube; freshness is governed by feedCache above
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; tamilagaval/1.0)' },
-    });
-    if (!res.ok) return cached ? cached.videos.slice(0, limit) : [];
-    // Parse the whole feed (YouTube returns ~15 entries) and cache it; slice per caller.
-    const videos = parseChannelFeed(await res.text(), 50);
+  if (videos.length > 0) {
     feedCache.set(channelId, { at: now, videos });
     return videos.slice(0, limit);
-  } catch {
-    return cached ? cached.videos.slice(0, limit) : [];
   }
+  // Both sources failed — serve the last good result rather than blanking.
+  return cached ? cached.videos.slice(0, limit) : [];
 }
 
 /** Multi-resolution thumbnail URLs for a YouTube video — Google prefers an

@@ -47,6 +47,8 @@ const nextConfig: NextConfig = {
     GOOGLE_TTS_CREDENTIALS_BASE64: process.env.GOOGLE_TTS_CREDENTIALS_BASE64 || '',
     OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
+    // Read at runtime by the /videos Data API fallback (when the RSS feed flakes).
+    YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY || '',
   },
 
   // Image optimization

@@ -3,7 +3,7 @@
  * Tests for the YouTube RSS feed parser/fetcher.
  */
 
-import { parseChannelFeed, fetchChannelVideos, videosItemListJsonLd, thumbnailVariants, _resetFeedCache } from '@/lib/youtube-feed';
+import { parseChannelFeed, parseDataApiItems, fetchChannelVideos, videosItemListJsonLd, thumbnailVariants, _resetFeedCache } from '@/lib/youtube-feed';
 
 const SAMPLE_FEED = `<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
@@ -118,6 +118,63 @@ describe('fetchChannelVideos', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it('falls back to the YouTube Data API when the RSS feed fails', async () => {
+    process.env.YOUTUBE_API_KEY = 'test-key';
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: false }) // RSS feed flakes
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          items: [
+            { snippet: { title: 'API Video', description: 'd', publishedAt: '2026-06-04T00:00:00Z', resourceId: { videoId: 'abcdefghijk' } } },
+          ],
+        }),
+      }) as unknown as typeof fetch;
+
+    const videos = await fetchChannelVideos('UCabcdefghijklmnopqrstuv');
+    expect(videos).toHaveLength(1);
+    expect(videos[0].id).toBe('abcdefghijk');
+    expect(videos[0].title).toBe('API Video');
+    delete process.env.YOUTUBE_API_KEY;
+  });
+
+  it('does NOT call the Data API when RSS succeeds', async () => {
+    process.env.YOUTUBE_API_KEY = 'test-key';
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true, text: async () => SAMPLE_FEED });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    await fetchChannelVideos('UCabcdefghijklmnopqrstuv');
+    expect(fetchMock).toHaveBeenCalledTimes(1); // RSS only — no fallback
+    delete process.env.YOUTUBE_API_KEY;
+  });
+});
+
+describe('parseDataApiItems', () => {
+  it('maps playlistItems snippets to videos and skips invalid ids', () => {
+    const videos = parseDataApiItems({
+      items: [
+        { snippet: { title: 'A', description: 'da', publishedAt: 'p', resourceId: { videoId: 'abcdefghijk' } } },
+        { snippet: { title: 'bad-id', resourceId: { videoId: 'short' } } }, // skipped: not 11 chars
+        { snippet: { title: 'no-resource' } }, // skipped: no videoId
+      ],
+    });
+    expect(videos).toHaveLength(1);
+    expect(videos[0]).toEqual({
+      id: 'abcdefghijk',
+      title: 'A',
+      description: 'da',
+      publishedAt: 'p',
+      thumbnail: 'https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg',
+      watchUrl: 'https://www.youtube.com/watch?v=abcdefghijk',
+    });
+  });
+
+  it('returns [] for missing/garbage input', () => {
+    expect(parseDataApiItems({})).toEqual([]);
+    expect(parseDataApiItems(null)).toEqual([]);
+    expect(parseDataApiItems({ items: 'nope' })).toEqual([]);
   });
 });
 
