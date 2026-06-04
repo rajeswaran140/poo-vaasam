@@ -41,6 +41,7 @@ async function getAllSongs(): Promise<SongRow[]> {
         videoUrl: typeof o.videoUrl === 'string' ? o.videoUrl : undefined,
         youtubeVideoId: typeof o.youtubeVideoId === 'string' ? o.youtubeVideoId : undefined,
         theme: typeof o.theme === 'string' ? o.theme : undefined,
+        featuredImage: typeof o.featuredImage === 'string' ? o.featuredImage : undefined,
         createdAt,
       };
     });

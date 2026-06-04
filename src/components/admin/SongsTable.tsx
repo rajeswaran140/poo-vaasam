@@ -15,6 +15,7 @@ import { useId, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { SONG_THEMES, SONG_THEME_LABELS, type SongTheme, themeForSongWithOverride } from '@/config/song-themes';
 import { ThemeSelect } from '@/components/admin/ThemeSelect';
+import { GenerateCoverButton } from '@/components/admin/GenerateCoverButton';
 import { getYouTubeId } from '@/lib/utils/youtube';
 
 const numberFmt = new Intl.NumberFormat('en-US');
@@ -35,6 +36,7 @@ export interface SongRow {
   videoUrl?: string;
   youtubeVideoId?: string;
   theme?: string;
+  featuredImage?: string;
   createdAt?: string;
 }
 
@@ -197,6 +199,7 @@ export function SongsTable({ songs, playsBySongId, ga4PlaysWorking }: Props) {
                         <Link href={`/admin/content/${s.id}/edit`} className="text-orange-600 hover:underline">
                           Edit
                         </Link>
+                        <GenerateCoverButton songId={s.id} hasCover={!!s.featuredImage} />
                         <Link
                           href={`/content/${s.id}`}
                           target="_blank"
