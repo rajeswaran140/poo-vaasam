@@ -67,6 +67,13 @@ browser bundle). Before launch:
 > redeploy** (`aws amplify start-job --job-type RELEASE`). When rotating any of
 > these, update the console value *and* trigger a release.
 >
+> _2026-06-04:_ inlining was expanded to `YOUTUBE_API_KEY` (/videos Data API
+> fallback) and — notably — `APP_AWS_ACCESS_KEY_ID`/`APP_AWS_SECRET_ACCESS_KEY`
+> so the SSR **runtime** can reach DynamoDB (Amplify gives the runtime no usable
+> role token). The AWS app key is now baked into the server build artifact —
+> accepted dev-stage tradeoff to unblock runtime DB writes (Save-brief); proper
+> pre-prod fix is a scoped runtime IAM role / Secrets Manager.
+>
 > _Incident 2026-06-02:_ `/admin/compose` returned 401 `invalid x-api-key` in
 > prod. Cause: a truncated 40-char `ANTHROPIC_API_KEY` was baked into the
 > 2026-06-01 build; the console value had since been corrected to a valid
