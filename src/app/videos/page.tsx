@@ -94,12 +94,14 @@ export default async function VideosPage() {
                 <span className="mb-3 inline-flex items-center rounded-full bg-white/15 px-3 py-1 font-tamil text-xs font-semibold uppercase tracking-wide text-white ring-1 ring-white/25 backdrop-blur-sm">
                   தமிழகவல் · YouTube
                 </span>
-                <h1 className="mb-2 font-kavivanar text-5xl font-extrabold leading-tight drop-shadow-md sm:text-6xl lg:text-7xl">
+                <h1 className="mb-4 font-kavivanar text-5xl font-extrabold leading-tight drop-shadow-md sm:text-6xl lg:text-7xl">
                   காணொளிகள்
                 </h1>
-                <p className="mb-4 max-w-xl font-tamil text-white/90">
-                  ரஜேஸ்வரன் தங்கராஜாவின் தமிழ் பாடல்களும் கவிதைகளும் — காணொளி வடிவில்.
-                </p>
+                <div className="mb-6 max-w-xl space-y-1.5 font-tamil text-base leading-relaxed text-white/90 sm:text-lg">
+                  <p>ஊக்கம்: <span className="font-semibold text-white">தமிழ்</span></p>
+                  <p>ஆக்கம்: <span className="font-semibold text-white">தமிழகவல்</span></p>
+                  <p>பாடல் வரிகள், கவிதைகள், கதைகள்: <span className="font-semibold text-white">இராஜ்</span></p>
+                </div>
                 <div className="mb-6 flex flex-wrap items-center gap-2 font-tamil text-sm">
                   {videos.length > 0 && (
                     <span className="inline-flex items-center rounded-full bg-white/15 px-3 py-1 text-white ring-1 ring-white/20 backdrop-blur-sm">
