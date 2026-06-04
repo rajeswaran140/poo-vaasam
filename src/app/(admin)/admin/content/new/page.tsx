@@ -37,11 +37,20 @@ import { Music, Feather, Mic, BookOpen, PenTool, Star } from 'lucide-react';
 import { FEATURES } from '@/config/features';
 import showToast from '@/lib/toast';
 
+/** A selectable category/tag — only the fields this form renders. */
+interface TaxonomyOption {
+  id: string;
+  name: string;
+}
+
 export default function NewContentPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [categories, setCategories] = useState<any[]>([]);
-  const [tags, setTags] = useState<any[]>([]);
+  const [categories, setCategories] = useState<TaxonomyOption[]>([]);
+  const [tags, setTags] = useState<TaxonomyOption[]>([]);
+  // True when the categories/tags load failed (e.g. an expired session), so the
+  // panels show an actionable message instead of an endless "Loading…".
+  const [dataError, setDataError] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -72,10 +81,18 @@ export default function NewContentPage() {
   useEffect(() => {
     async function loadData() {
       try {
+        // adminFetch attaches the fresh Cognito Bearer token (the cookie token
+        // is often stale) and triggers re-login on 401 — both endpoints require
+        // auth, so a plain cookie-only fetch would silently 401 and leave these
+        // panels stuck on "Loading…".
         const [categoriesRes, tagsRes] = await Promise.all([
-          fetch('/api/categories', { credentials: 'include' }),
-          fetch('/api/tags', { credentials: 'include' }),
+          adminFetch('/api/categories'),
+          adminFetch('/api/tags'),
         ]);
+
+        if (!categoriesRes.ok || !tagsRes.ok) {
+          throw new Error(`categories ${categoriesRes.status} / tags ${tagsRes.status}`);
+        }
 
         const categoriesData = await categoriesRes.json();
         const tagsData = await tagsRes.json();
@@ -84,6 +101,7 @@ export default function NewContentPage() {
         if (tagsData.success) setTags(tagsData.data);
       } catch (error) {
         console.error('Failed to load data:', error);
+        setDataError(true);
       }
     }
     loadData();
@@ -256,7 +274,11 @@ export default function NewContentPage() {
             Categories (வகைகள்)
           </h2>
           {categories.length === 0 ? (
-            <p className="text-gray-500">Loading categories...</p>
+            <p className="text-gray-500">
+              {dataError
+                ? 'Could not load categories — your session may have expired. Try reloading.'
+                : 'Loading categories...'}
+            </p>
           ) : (
             <div className="flex flex-wrap gap-2">
               {categories.map((category) => (
@@ -283,7 +305,11 @@ export default function NewContentPage() {
             Tags (குறிச்சொற்கள்)
           </h2>
           {tags.length === 0 ? (
-            <p className="text-gray-500">Loading tags...</p>
+            <p className="text-gray-500">
+              {dataError
+                ? 'Could not load tags — your session may have expired. Try reloading.'
+                : 'Loading tags...'}
+            </p>
           ) : (
             <div className="flex flex-wrap gap-2">
               {tags.map((tag) => (
@@ -324,8 +350,17 @@ export default function NewContentPage() {
             <input
               type="number"
               name="audioDuration"
-              value={formData.audioDuration}
-              onChange={handleChange}
+              min={0}
+              // A number input's onChange value is a string; store it as a
+              // number so the API's numeric schema accepts it (otherwise the
+              // whole create 400s on "Validation failed").
+              value={formData.audioDuration || ''}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  audioDuration: e.target.value === '' ? 0 : Number(e.target.value),
+                }))
+              }
               placeholder="180"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
             />

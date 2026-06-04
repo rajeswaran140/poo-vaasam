@@ -151,7 +151,9 @@ export class Content {
 
     const id = this.generateId();
     const now = new Date();
-    const titleSlug = generateSlug(dto.title);
+    // Prefer a caller-supplied unique slug (the use case ensures uniqueness
+    // against existing content); fall back to deriving one from the title.
+    const titleSlug = dto.slug ? generateSlug(dto.slug) : generateSlug(dto.title);
     const status = dto.status || ContentStatus.DRAFT;
     const isPublished = status === ContentStatus.PUBLISHED;
 

@@ -156,6 +156,8 @@ export interface Content
 export interface CreateContentDTO {
   type: ContentType;
   title: string;
+  /** Pre-computed unique slug. When omitted, the entity derives one from the title. */
+  slug?: string;
   body: string;
   description: string;
   author: string;

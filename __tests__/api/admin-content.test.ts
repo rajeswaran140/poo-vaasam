@@ -220,5 +220,62 @@ describe('Admin Content API', () => {
       expect(response.status).toBe(401);
       expect(getUseCase().execute).not.toHaveBeenCalled();
     });
+
+    // The admin form's <input type="number"> emits its value as a STRING.
+    // The schema must coerce it, otherwise a typed duration 400s the create.
+    it('coerces a string audioDuration ("180") into a number — no 400', async () => {
+      getUseCase().execute.mockResolvedValue(makeContentMock());
+
+      const request = new NextRequest('http://localhost:3000/api/admin/content', {
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'SONGS', title: 'Test', body: 'Test body', author: 'Test',
+          audioDuration: '180',
+        }),
+      });
+
+      const response = await POST(request);
+
+      expect(response.status).toBe(201);
+      expect(getUseCase().execute).toHaveBeenCalledWith(
+        expect.objectContaining({ audioDuration: 180 })
+      );
+    });
+
+    it('treats an empty-string audioDuration as absent (undefined)', async () => {
+      getUseCase().execute.mockResolvedValue(makeContentMock());
+
+      const request = new NextRequest('http://localhost:3000/api/admin/content', {
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'SONGS', title: 'Test', body: 'Test body', author: 'Test',
+          audioDuration: '',
+        }),
+      });
+
+      const response = await POST(request);
+
+      expect(response.status).toBe(201);
+      expect(getUseCase().execute).toHaveBeenCalledWith(
+        expect.objectContaining({ audioDuration: undefined })
+      );
+    });
+
+    it('still rejects a non-numeric audioDuration with 400', async () => {
+      const request = new NextRequest('http://localhost:3000/api/admin/content', {
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'SONGS', title: 'Test', body: 'Test body', author: 'Test',
+          audioDuration: 'not-a-number',
+        }),
+      });
+
+      const response = await POST(request);
+      const data = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data.error).toBe('Validation failed');
+      expect(getUseCase().execute).not.toHaveBeenCalled();
+    });
   });
 });

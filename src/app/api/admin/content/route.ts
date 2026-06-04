@@ -48,7 +48,9 @@ const createContentSchema = z.object({
   midiUrl: z.preprocess(emptyToUndefined, z.string().url().optional()),
   thumbnailUrl: z.preprocess(emptyToUndefined, z.string().url().optional()),
   workflowState: z.preprocess(emptyToUndefined, z.enum(WORKFLOW_STATES as unknown as [string, ...string[]]).optional()),
-  audioDuration: z.number().int().min(0).optional(),
+  // The admin form's number input emits a string ("180"); coerce so a typed
+  // duration validates instead of failing the whole create with a 400.
+  audioDuration: z.preprocess(emptyToUndefined, z.coerce.number().int().min(0).optional()),
   seoTitle: z.preprocess(emptyToUndefined, z.string().max(60).optional()),
   seoDescription: z.preprocess(emptyToUndefined, z.string().max(160).optional()),
 });

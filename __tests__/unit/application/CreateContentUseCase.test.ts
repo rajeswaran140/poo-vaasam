@@ -149,6 +149,28 @@ describe('CreateContentUseCase', () => {
 
       expect(mockContentRepository.isSlugUnique).toHaveBeenCalledWith('tamil-story-123');
     });
+
+    // Regression: the uniqueness loop used to compute a slug then DISCARD it,
+    // so duplicate-titled content collided on the title-derived slug. The
+    // resolved unique slug must actually reach the created entity.
+    it('applies the resolved unique slug to the created content', async () => {
+      mockContentRepository.isSlugUnique
+        .mockResolvedValueOnce(false) // hello-world taken
+        .mockResolvedValueOnce(true); // hello-world-1 is free
+
+      const dto = {
+        type: ContentType.SONGS,
+        title: 'Hello World',
+        body: 'Test body',
+        description: 'Test description',
+        author: 'Test Author',
+      };
+
+      const content = await useCase.execute(dto);
+
+      expect(content.titleSlug).toBe('hello-world-1');
+      expect(mockContentRepository.save).toHaveBeenCalled();
+    });
   });
 
   describe('execute', () => {
