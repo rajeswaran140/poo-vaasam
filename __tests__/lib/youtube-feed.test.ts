@@ -223,3 +223,11 @@ describe('videosItemListJsonLd', () => {
     expect(ld.itemListElement[1].item.description).toBe('Second Video');
   });
 });
+
+describe('s3ThumbnailUrl', () => {
+  it('points at the self-hosted S3 bucket, not YouTube', () => {
+    const url = s3ThumbnailUrl('abcdefghijk');
+    expect(url).toBe('https://tamil-web-media.s3.us-east-1.amazonaws.com/images/video-thumbs/abcdefghijk.jpg');
+    expect(url).not.toMatch(/ytimg|youtube/);
+  });
+});
