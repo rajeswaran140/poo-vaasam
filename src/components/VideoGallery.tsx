@@ -68,6 +68,7 @@ export function VideoGallery({ videos }: { videos: ChannelVideo[] }) {
                 width={480}
                 height={360}
                 loading="lazy"
+                unoptimized
                 sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
                 className="w-full h-full object-cover opacity-90 transition group-hover:opacity-100"
               />

@@ -3,7 +3,10 @@
  * Tests for the YouTube RSS feed parser/fetcher.
  */
 
-import { parseChannelFeed, parseDataApiItems, fetchChannelVideos, videosItemListJsonLd, thumbnailVariants, _resetFeedCache } from '@/lib/youtube-feed';
+// fetchChannelVideos mirrors thumbnails to S3; stub it so tests stay hermetic.
+jest.mock('@/lib/video-thumbnails', () => ({ ensureThumbnailsMirrored: jest.fn().mockResolvedValue(undefined) }));
+
+import { parseChannelFeed, parseDataApiItems, fetchChannelVideos, videosItemListJsonLd, thumbnailVariants, s3ThumbnailUrl, _resetFeedCache } from '@/lib/youtube-feed';
 
 const SAMPLE_FEED = `<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
@@ -41,7 +44,7 @@ describe('parseChannelFeed', () => {
       title: 'பூ வாசம் & காதல்', // &amp; decoded
       description: 'ஒரு அழகான பாடல்',
       publishedAt: '2026-05-01T10:00:00+00:00',
-      thumbnail: 'https://i.ytimg.com/vi/gfywsN483lI/hqdefault.jpg',
+      thumbnail: s3ThumbnailUrl('gfywsN483lI'), // self-hosted, not ytimg
       watchUrl: 'https://www.youtube.com/watch?v=gfywsN483lI',
     });
     expect(videos[1].id).toBe('abcdefghijk');
@@ -166,7 +169,7 @@ describe('parseDataApiItems', () => {
       title: 'A',
       description: 'da',
       publishedAt: 'p',
-      thumbnail: 'https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg',
+      thumbnail: s3ThumbnailUrl('abcdefghijk'), // self-hosted, not ytimg
       watchUrl: 'https://www.youtube.com/watch?v=abcdefghijk',
     });
   });

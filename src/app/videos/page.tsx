@@ -133,6 +133,7 @@ export default async function VideosPage() {
                     alt={featured.title}
                     width={480}
                     height={360}
+                    unoptimized
                     sizes="(min-width: 1024px) 28rem, 100vw"
                     className="aspect-video w-full object-cover transition-transform duration-300 group-hover:scale-105"
                   />

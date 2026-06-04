@@ -8,6 +8,8 @@
  * Feed: https://www.youtube.com/feeds/videos.xml?channel_id=UC...
  */
 
+import { ensureThumbnailsMirrored } from '@/lib/video-thumbnails';
+
 export interface ChannelVideo {
   id: string;
   title: string;
@@ -18,6 +20,16 @@ export interface ChannelVideo {
 }
 
 const FEED_REVALIDATE_SECONDS = 300; // 5 minutes — keep channel deletions visible quickly
+
+/**
+ * Self-hosted (S3) thumbnail URL for a video — NOT YouTube's CDN. Mirrored by
+ * ensureThumbnailsMirrored() so it doesn't depend on i.ytimg.com at view time
+ * (some networks/regions block it). Pure string builder (no AWS SDK) so the
+ * feed parsers stay light.
+ */
+export function s3ThumbnailUrl(videoId: string): string {
+  return `https://tamil-web-media.s3.us-east-1.amazonaws.com/images/video-thumbs/${videoId}.jpg`;
+}
 
 function decodeEntities(text: string): string {
   return text
@@ -55,7 +67,7 @@ export function parseChannelFeed(xml: string, limit = 12): ChannelVideo[] {
       title,
       description,
       publishedAt,
-      thumbnail: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+      thumbnail: s3ThumbnailUrl(id),
       watchUrl: `https://www.youtube.com/watch?v=${id}`,
     });
 
@@ -105,7 +117,7 @@ export function parseDataApiItems(json: unknown, limit = 12): ChannelVideo[] {
       title: decodeEntities(String(sn.title ?? '').trim()),
       description: decodeEntities(String(sn.description ?? '').trim()),
       publishedAt: String(sn.publishedAt ?? ''),
-      thumbnail: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+      thumbnail: s3ThumbnailUrl(id),
       watchUrl: `https://www.youtube.com/watch?v=${id}`,
     });
     if (videos.length >= limit) break;
@@ -173,6 +185,9 @@ export async function fetchChannelVideos(
   }
 
   if (videos.length > 0) {
+    // Mirror thumbnails to S3 (self-heals new uploads) before caching, so the
+    // self-hosted thumbnail URLs are guaranteed to exist when the page renders.
+    await ensureThumbnailsMirrored(videos.map((v) => v.id));
     feedCache.set(channelId, { at: now, videos });
     return videos.slice(0, limit);
   }
