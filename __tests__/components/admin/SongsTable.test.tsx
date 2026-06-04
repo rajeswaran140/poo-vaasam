@@ -8,6 +8,10 @@
 jest.mock('@/lib/client-auth', () => ({
   adminFetch: jest.fn(),
 }));
+// SongsTable now renders GenerateCoverButton, which uses useRouter().
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ refresh: jest.fn(), push: jest.fn() }),
+}));
 
 import { render, screen, fireEvent } from '@testing-library/react';
 import { SongsTable, type SongRow } from '@/components/admin/SongsTable';
