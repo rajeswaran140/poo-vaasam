@@ -13,6 +13,7 @@ import {
   HeadObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { createPresignedPost, type PresignedPost } from '@aws-sdk/s3-presigned-post';
 import { s3Config } from '@/lib/aws-config';
 
 /**
@@ -151,6 +152,31 @@ export class S3Operations {
     });
 
     return await getSignedUrl(s3Client, command, { expiresIn });
+  }
+
+  /**
+   * Presigned POST for a browser upload. Unlike a presigned PUT, a POST policy
+   * can carry a `content-length-range` condition, so S3 itself *rejects* an
+   * object larger than `maxSize` (a presigned PUT cannot enforce size — the cap
+   * is only advisory there). The content type is pinned too. Returns the form
+   * `url` + `fields` the browser must POST (the file part last).
+   */
+  static async getSignedUploadPost(
+    key: string,
+    contentType: string,
+    maxSize: number,
+    expiresIn: number = 3600
+  ): Promise<PresignedPost> {
+    return await createPresignedPost(s3Client, {
+      Bucket: BUCKET_NAME,
+      Key: key,
+      Conditions: [
+        ['content-length-range', 0, maxSize],
+        ['eq', '$Content-Type', contentType],
+      ],
+      Fields: { 'Content-Type': contentType },
+      Expires: expiresIn,
+    });
   }
 
   /**

@@ -14,7 +14,10 @@ jest.mock('@/lib/auth-helper', () => ({
 jest.mock('@/infrastructure/storage/s3-client', () => ({
   S3Operations: {
     generateFileKey: jest.fn(() => 'audio/123_song.mp3'),
-    getSignedUploadUrl: jest.fn(async () => 'https://signed.example/put?sig=abc'),
+    getSignedUploadPost: jest.fn(async () => ({
+      url: 'https://tamil-web-media.s3.us-east-1.amazonaws.com/',
+      fields: { key: 'audio/123_song.mp3', 'Content-Type': 'audio/mpeg', policy: 'POLICY', 'x-amz-signature': 'SIG' },
+    })),
     getPublicUrl: jest.fn(
       () => 'https://tamil-web-media.s3.us-east-1.amazonaws.com/audio/123_song.mp3'
     ),
@@ -57,7 +60,7 @@ describe('POST /api/admin/upload — auth', () => {
     (authHelper.requireAdmin as jest.Mock).mockRejectedValue(new AuthError('Forbidden', 403));
     const res = await POST(makeRequest({ filename: 'a.mp3', contentType: 'audio/mpeg', kind: 'audio' }));
     expect(res.status).toBe(403);
-    expect(S3Operations.getSignedUploadUrl).not.toHaveBeenCalled();
+    expect(S3Operations.getSignedUploadPost).not.toHaveBeenCalled();
   });
 
   it('returns 401 when unauthenticated', async () => {
@@ -68,7 +71,7 @@ describe('POST /api/admin/upload — auth', () => {
 });
 
 describe('POST /api/admin/upload — presigning', () => {
-  it('returns a presigned URL + public URL for valid audio, signing only Content-Type', async () => {
+  it('returns a presigned POST (url + fields) + public URL for valid audio', async () => {
     const res = await POST(
       makeRequest({ filename: 'song.mp3', contentType: 'audio/mpeg', kind: 'audio', size: 1024 })
     );
@@ -76,16 +79,19 @@ describe('POST /api/admin/upload — presigning', () => {
 
     expect(res.status).toBe(200);
     expect(json.success).toBe(true);
-    expect(json.data.uploadUrl).toBe('https://signed.example/put?sig=abc');
+    expect(json.data.uploadUrl).toBe('https://tamil-web-media.s3.us-east-1.amazonaws.com/');
+    expect(json.data.fields.key).toBe('audio/123_song.mp3');
+    expect(json.data.fields['Content-Type']).toBe('audio/mpeg');
     expect(json.data.publicUrl).toContain('tamil-web-media');
-    expect(json.data.headers['Content-Type']).toBe('audio/mpeg');
-    // No x-amz-tagging: presigned URLs can't sign it, and public read is by path.
-    expect(json.data.headers['x-amz-tagging']).toBeUndefined();
+    // Old PUT-only `headers` shape is gone.
+    expect(json.data.headers).toBeUndefined();
 
-    // Presigned PUT is created with no extra (unsignable) options.
-    expect(S3Operations.getSignedUploadUrl).toHaveBeenCalledWith(
+    // The POST policy is created with the content type AND the size cap, so S3
+    // enforces content-length-range server-side.
+    expect(S3Operations.getSignedUploadPost).toHaveBeenCalledWith(
       expect.any(String),
       'audio/mpeg',
+      50 * 1024 * 1024, // audio cap from the mocked FILE_CONSTRAINTS
       expect.any(Number)
     );
   });
@@ -103,7 +109,7 @@ describe('POST /api/admin/upload — presigning', () => {
       makeRequest({ filename: 'x.pdf', contentType: 'application/pdf', kind: 'audio' })
     );
     expect(res.status).toBe(400);
-    expect(S3Operations.getSignedUploadUrl).not.toHaveBeenCalled();
+    expect(S3Operations.getSignedUploadPost).not.toHaveBeenCalled();
   });
 
   it('rejects files over the size cap', async () => {
@@ -116,7 +122,7 @@ describe('POST /api/admin/upload — presigning', () => {
       })
     );
     expect(res.status).toBe(400);
-    expect(S3Operations.getSignedUploadUrl).not.toHaveBeenCalled();
+    expect(S3Operations.getSignedUploadPost).not.toHaveBeenCalled();
   });
 
   it('rejects a malformed body', async () => {

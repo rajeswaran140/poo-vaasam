@@ -46,7 +46,7 @@ describe('MediaUploadField', () => {
     expect(onChange).toHaveBeenCalledWith('https://example.com/song.mp3');
   });
 
-  it('uploads a selected file via presigned URL and returns the public URL', async () => {
+  it('uploads a selected file via a presigned POST (fields first, file last) and returns the public URL', async () => {
     const onChange = jest.fn();
     const fetchMock = jest
       .fn()
@@ -55,13 +55,13 @@ describe('MediaUploadField', () => {
         json: async () => ({
           success: true,
           data: {
-            uploadUrl: 'https://s3.example/put?sig=1',
+            uploadUrl: 'https://tamil-web-media.s3.us-east-1.amazonaws.com/',
+            fields: { key: 'audio/song.mp3', 'Content-Type': 'audio/mpeg', policy: 'POLICY', 'x-amz-signature': 'SIG' },
             publicUrl: 'https://tamil-web-media.s3.us-east-1.amazonaws.com/audio/song.mp3',
-            headers: { 'Content-Type': 'audio/mpeg', 'x-amz-tagging': 'public=true' },
           },
         }),
       })
-      .mockResolvedValueOnce({ ok: true });
+      .mockResolvedValueOnce({ ok: true }); // S3 returns 204 on success
     global.fetch = fetchMock as unknown as typeof fetch;
 
     const { container } = render(
@@ -78,10 +78,21 @@ describe('MediaUploadField', () => {
       )
     );
 
-    // First call: our presign endpoint. Second: the S3 PUT.
+    // First call: our presign endpoint. Second: the S3 POST.
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/upload');
-    expect(fetchMock.mock.calls[1][0]).toBe('https://s3.example/put?sig=1');
+    expect(fetchMock.mock.calls[1][0]).toBe('https://tamil-web-media.s3.us-east-1.amazonaws.com/');
+
+    // The S3 request is a multipart POST whose body carries the policy fields
+    // plus the file part appended LAST (S3 requires that ordering).
+    const s3Init = fetchMock.mock.calls[1][1] as RequestInit;
+    expect(s3Init.method).toBe('POST');
+    const body = s3Init.body as FormData;
+    expect(body).toBeInstanceOf(FormData);
+    expect(body.get('key')).toBe('audio/song.mp3');
+    expect(body.get('Content-Type')).toBe('audio/mpeg');
+    const keys = Array.from(body.keys());
+    expect(keys[keys.length - 1]).toBe('file'); // file appended last
   });
 
   it('rejects an oversized file before calling the network', async () => {

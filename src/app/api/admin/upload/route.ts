@@ -1,11 +1,12 @@
 /**
  * Admin Media Upload API
  *
- * POST /api/admin/upload — returns a short-lived presigned S3 PUT URL so the
- * browser can upload media directly to S3 (bypassing the serverless
- * request-body size limit). The object is tagged `public=true` so it is
- * publicly readable per the bucket policy and can be played/displayed on the
- * public site.
+ * POST /api/admin/upload — returns a short-lived presigned S3 POST (url +
+ * fields) so the browser can upload media directly to S3 (bypassing the
+ * serverless request-body size limit). A POST policy carries a
+ * `content-length-range` condition, so S3 *enforces* the size cap server-side
+ * (a presigned PUT can't — there the cap was only advisory). Objects land under
+ * a public-read prefix per the bucket policy and play/display on the site.
  *
  * Supports: audio (songs), images (featured images), and short video previews.
  * Full videos are NOT uploaded — those are linked to YouTube via videoUrl.
@@ -91,9 +92,12 @@ export async function POST(request: NextRequest) {
       userId: auth.userId,
     });
 
-    const uploadUrl = await S3Operations.getSignedUploadUrl(
+    // Presigned POST with a content-length-range condition — S3 rejects an
+    // upload over the cap even if the client lied about `size` above.
+    const { url, fields } = await S3Operations.getSignedUploadPost(
       key,
       contentType,
+      maxSize,
       UPLOAD_URL_TTL_SECONDS
     );
     const publicUrl = S3Operations.getPublicUrl(key);
@@ -101,15 +105,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: {
-        uploadUrl,
+        // The browser POSTs multipart/form-data to `uploadUrl` with every entry
+        // of `fields` first and the file part LAST. (Public read is granted by
+        // path via the bucket policy, so no per-object tagging is needed.)
+        uploadUrl: url,
+        fields,
         publicUrl,
         key,
-        // The browser must send exactly this header on the PUT — it's the only
-        // header signed into the presigned URL. (Public read is granted by path
-        // via the bucket policy, so no x-amz-tagging is needed.)
-        headers: {
-          'Content-Type': contentType,
-        },
       },
     });
   } catch (error) {

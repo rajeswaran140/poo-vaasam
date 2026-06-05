@@ -82,9 +82,15 @@ export function MediaUploadField({ kind, label, value, onChange, helpText }: Med
         throw new Error(presign.error || 'Could not start upload');
       }
 
-      // 2. Upload the file straight to S3 (bypasses the serverless body limit).
-      const { uploadUrl, publicUrl, headers } = presign.data;
-      const putRes = await fetch(uploadUrl, { method: 'PUT', headers, body: file });
+      // 2. POST the file straight to S3 via the presigned form (bypasses the
+      //    serverless body limit). All policy `fields` go first; the `file` part
+      //    MUST be appended last or S3 rejects the POST. S3's content-length-range
+      //    condition enforces the size cap here, even if step 1 was bypassed.
+      const { uploadUrl, fields, publicUrl } = presign.data;
+      const formData = new FormData();
+      Object.entries(fields as Record<string, string>).forEach(([k, v]) => formData.append(k, v));
+      formData.append('file', file);
+      const putRes = await fetch(uploadUrl, { method: 'POST', body: formData });
       if (!putRes.ok) {
         throw new Error('Upload to storage failed');
       }
