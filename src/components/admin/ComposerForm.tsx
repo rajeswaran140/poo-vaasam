@@ -32,6 +32,9 @@ export function ComposerForm() {
   const [lyrics, setLyrics] = useState('');
   const [result, setResult] = useState<Analysis | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Whether the last error is worth retrying. Auth / not-configured failures are
+  // not — retrying just fails again, so we hide the Retry control for them.
+  const [retryable, setRetryable] = useState(true);
   const [loading, setLoading] = useState(false);
   // Bumped on every successful compose; used to key <SaveBrief> so it remounts
   // fresh per brief (otherwise its "Saved ✓" / chosen-style state leaks across
@@ -53,6 +56,7 @@ export function ComposerForm() {
 
   const run = async () => {
     setError(null);
+    setRetryable(true);
     // NOTE: we intentionally do NOT clear `result` here — keeps the last
     // successful brief on-screen if this call fails.
     setLoading(true);
@@ -85,19 +89,24 @@ export function ComposerForm() {
       } else {
         raw = await res.text();
       }
-      let body: { success?: boolean; data?: Analysis; error?: string };
+      let body: { success?: boolean; data?: Analysis; error?: string; code?: string };
       try {
         body = JSON.parse(raw.trim());
       } catch {
         throw new Error('The server returned a malformed response.');
       }
-      if (!body.success || !body.data) throw new Error(body.error || 'Compose failed');
+      if (!body.success || !body.data) {
+        // Carry the structured code so the catch can decide retryability.
+        throw Object.assign(new Error(body.error || 'Compose failed'), { code: body.code });
+      }
       if (!mountedRef.current) return;
       setResult(body.data);
       setRunId((n) => n + 1); // fresh <SaveBrief> for the new brief
     } catch (err) {
       // A superseded/unmounted request isn't a user-facing error.
       if (controller.signal.aborted || !mountedRef.current) return;
+      const code = (err as { code?: string })?.code;
+      setRetryable(code !== 'auth' && code !== 'not_configured');
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       if (mountedRef.current && abortRef.current === controller) setLoading(false);
@@ -173,14 +182,16 @@ export function ComposerForm() {
       {error && (
         <div role="alert" className="flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-200">
           <span className="flex-1">{error}</span>
-          <button
-            type="button"
-            onClick={run}
-            disabled={!canRun}
-            className="inline-flex items-center gap-1 rounded border border-red-300 px-2 py-1 text-xs font-medium hover:bg-red-100 disabled:opacity-50 dark:border-red-700 dark:hover:bg-red-900/30"
-          >
-            <RotateCw className="h-3 w-3" /> Retry
-          </button>
+          {retryable && (
+            <button
+              type="button"
+              onClick={run}
+              disabled={!canRun}
+              className="inline-flex items-center gap-1 rounded border border-red-300 px-2 py-1 text-xs font-medium hover:bg-red-100 disabled:opacity-50 dark:border-red-700 dark:hover:bg-red-900/30"
+            >
+              <RotateCw className="h-3 w-3" /> Retry
+            </button>
+          )}
         </div>
       )}
 

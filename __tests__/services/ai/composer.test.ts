@@ -1,7 +1,8 @@
 /** @jest-environment node */
 /**
- * Tests for src/services/ai/composer.ts — env-gate, happy-path parse,
- * markdown-fence tolerance, partial-response defaults, upstream failure.
+ * Tests for src/services/ai/composer.ts — env-gate, tool-enforced JSON,
+ * schema validation (no silent semantic defaults), bpm clamp, reel default,
+ * truncation detection, abort-signal forwarding, and upstream error mapping.
  */
 
 const create = jest.fn();
@@ -26,20 +27,30 @@ afterAll(() => {
   process.env.ANTHROPIC_API_KEY = originalEnv;
 });
 
+// A complete, schema-valid brief.
 const SAMPLE = {
   emotion: 'காதல்',
+  emotion_breakdown: ['காதல்', 'ஏக்கம்'],
   mood: 'Tender and reflective',
   theme: 'Longing',
   suggested_key: 'D Minor',
   suggested_bpm: 72,
   suggested_instruments: ['Veena', 'Flute', 'Tabla', 'Strings'],
+  recommended_voice: ['Female Adult', 'Male Tenor'],
   song_titles: ['இரவின் அன்பு', 'நிலவின் நிழல்', 'காதல் மழை'],
-  suno_prompt: 'Slow Tamil ballad in D minor at 72 BPM, lead Veena over warm strings and gentle tabla, intimate and reflective.',
-  youtube_description: 'A tender Tamil love song.\n\n#tamilsong #tamilagaval',
+  suno_prompts: [{ style: 'Tamil film ballad', prompt: 'Slow Tamil ballad in D minor at 72 BPM, lead Veena over warm strings.' }],
+  thumbnail_prompt: 'Cinematic moonlit Tamil courtyard at golden hour.',
+  youtube_description_tamil: 'ஒரு மென்மையான காதல் பாடல். #tamilagaval',
+  youtube_description_english: 'A tender Tamil love song. #tamilagaval',
+  reel: { hook: 'நிலவே', caption: 'A love song', hashtags: ['#tamil', '#shorts'] },
 };
 
-const claudeResponse = (text: string) => ({
-  content: [{ type: 'text', text }],
+// A Claude response that answers via the forced `submit_brief` tool.
+const toolResponse = (input: unknown, extra: Record<string, unknown> = {}) => ({
+  content: [{ type: 'tool_use', name: 'submit_brief', input }],
+  stop_reason: 'tool_use',
+  usage: { input_tokens: 120, output_tokens: 1200 },
+  ...extra,
 });
 
 it('returns { ok: false } when ANTHROPIC_API_KEY is missing', async () => {
@@ -62,8 +73,8 @@ it('rejects lyrics over the size cap', async () => {
   expect(create).not.toHaveBeenCalled();
 });
 
-it('parses a clean JSON response into the structured shape', async () => {
-  create.mockResolvedValueOnce(claudeResponse(JSON.stringify(SAMPLE)));
+it('parses a valid tool_use response into the structured shape', async () => {
+  create.mockResolvedValueOnce(toolResponse(SAMPLE));
   const r = await composeFromLyrics('காதல் வரிகள்');
   expect(r.ok).toBe(true);
   if (r.ok) {
@@ -71,37 +82,91 @@ it('parses a clean JSON response into the structured shape', async () => {
     expect(r.data.suggested_bpm).toBe(72);
     expect(r.data.song_titles).toHaveLength(3);
     expect(r.data.suggested_instruments[0]).toBe('Veena');
+    expect(r.data.suno_prompts[0].style).toBe('Tamil film ballad');
+    expect(r.data.youtube_description_english).toMatch(/#tamilagaval/);
   }
 });
 
-it('requests enough max_tokens headroom for the full Brief v2 (avoids mid-JSON truncation)', async () => {
-  create.mockResolvedValueOnce(claudeResponse(JSON.stringify(SAMPLE)));
+it('forces tool use, low temperature, and enough max_tokens headroom', async () => {
+  create.mockResolvedValueOnce(toolResponse(SAMPLE));
   await composeFromLyrics('காதல் வரிகள்');
   expect(create).toHaveBeenCalledTimes(1);
-  const args = create.mock.calls[0][0] as { max_tokens: number };
+  const args = create.mock.calls[0][0] as {
+    max_tokens: number;
+    temperature: number;
+    tools: Array<{ name: string; input_schema: unknown }>;
+    tool_choice: { type: string; name: string };
+  };
   expect(args.max_tokens).toBeGreaterThanOrEqual(4096);
+  expect(args.temperature).toBeLessThan(1);
+  expect(args.tool_choice).toEqual({ type: 'tool', name: 'submit_brief' });
+  expect(args.tools[0].name).toBe('submit_brief');
+  expect(args.tools[0].input_schema).toMatchObject({ type: 'object' });
 });
 
-it('strips a ```json fence when Claude wraps the output', async () => {
-  create.mockResolvedValueOnce(claudeResponse('```json\n' + JSON.stringify(SAMPLE) + '\n```'));
-  const r = await composeFromLyrics('lyrics');
-  expect(r.ok).toBe(true);
-  if (r.ok) expect(r.data.theme).toBe('Longing');
+it('forwards the abort signal to the Anthropic call (cancellable on disconnect)', async () => {
+  create.mockResolvedValueOnce(toolResponse(SAMPLE));
+  const ac = new AbortController();
+  await composeFromLyrics('lyrics', { signal: ac.signal });
+  const opts = create.mock.calls[0][1] as { signal?: AbortSignal };
+  expect(opts.signal).toBe(ac.signal);
 });
 
-it('fills sensible defaults when the response is partial', async () => {
-  create.mockResolvedValueOnce(claudeResponse(JSON.stringify({
-    emotion: 'அன்னை',
-    suggested_instruments: ['Flute'],
-    // BPM missing → defaults to 90; titles missing → []
-  })));
+it('honours a model override (e.g. Haiku fallback)', async () => {
+  create.mockResolvedValueOnce(toolResponse(SAMPLE));
+  await composeFromLyrics('lyrics', { model: 'claude-haiku-4-5-20251001' });
+  expect((create.mock.calls[0][0] as { model: string }).model).toBe('claude-haiku-4-5-20251001');
+});
+
+it('clamps an out-of-range BPM instead of rejecting the whole brief', async () => {
+  create.mockResolvedValueOnce(toolResponse({ ...SAMPLE, suggested_bpm: 5000 }));
   const r = await composeFromLyrics('lyrics');
   expect(r.ok).toBe(true);
-  if (r.ok) {
-    expect(r.data.emotion).toBe('அன்னை');
-    expect(r.data.suggested_bpm).toBe(90);
-    expect(r.data.song_titles).toEqual([]);
-    expect(r.data.suggested_instruments).toEqual(['Flute']);
+  if (r.ok) expect(r.data.suggested_bpm).toBe(90); // .catch(90) fallback
+});
+
+it('defaults a missing reel to a well-formed empty idea', async () => {
+  const { reel: _omit, ...noReel } = SAMPLE;
+  create.mockResolvedValueOnce(toolResponse(noReel));
+  const r = await composeFromLyrics('lyrics');
+  expect(r.ok).toBe(true);
+  if (r.ok) expect(r.data.reel).toEqual({ hook: '', caption: '', hashtags: [] });
+});
+
+it('does NOT fabricate semantic fields — an incomplete brief is a bad_response', async () => {
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+  // `theme` (required) is missing → must fail, not silently default.
+  const { theme: _omit, ...partial } = SAMPLE;
+  create.mockResolvedValueOnce(toolResponse(partial));
+  const r = await composeFromLyrics('lyrics');
+  expect(r.ok).toBe(false);
+  if (!r.ok) expect(r.code).toBe('bad_response');
+});
+
+it('rejects an empty required array (e.g. no SUNO prompts) as bad_response', async () => {
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+  create.mockResolvedValueOnce(toolResponse({ ...SAMPLE, suno_prompts: [] }));
+  const r = await composeFromLyrics('lyrics');
+  expect(r.ok).toBe(false);
+  if (!r.ok) expect(r.code).toBe('bad_response');
+});
+
+it('returns bad_response when the model answers with prose instead of the tool', async () => {
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+  create.mockResolvedValueOnce({ content: [{ type: 'text', text: 'here is your brief...' }], stop_reason: 'end_turn', usage: { output_tokens: 50 } });
+  const r = await composeFromLyrics('lyrics');
+  expect(r.ok).toBe(false);
+  if (!r.ok) expect(r.code).toBe('bad_response');
+});
+
+it('detects a max_tokens truncation as a distinct bad_response', async () => {
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+  create.mockResolvedValueOnce(toolResponse(SAMPLE, { stop_reason: 'max_tokens' }));
+  const r = await composeFromLyrics('lyrics');
+  expect(r.ok).toBe(false);
+  if (!r.ok) {
+    expect(r.code).toBe('bad_response');
+    expect(r.error).toMatch(/cut off|too long/i);
   }
 });
 
@@ -133,11 +198,4 @@ it('classifies a 429 as a rate-limit error', async () => {
   const r = await composeFromLyrics('lyrics');
   expect(r.ok).toBe(false);
   if (!r.ok) expect(r.code).toBe('rate_limit');
-});
-
-it('returns { ok: false } when JSON is unparseable', async () => {
-  create.mockResolvedValueOnce(claudeResponse('not json at all'));
-  jest.spyOn(console, 'error').mockImplementation(() => {});
-  const r = await composeFromLyrics('lyrics');
-  expect(r.ok).toBe(false);
 });

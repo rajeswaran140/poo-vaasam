@@ -53,18 +53,20 @@ it('returns 400 when lyrics are too long', async () => {
 });
 
 // Read a heartbeat-streamed response: drain the body and parse the trailing JSON.
-async function readStreamed(res: Response): Promise<{ success?: boolean; data?: { emotion?: string }; error?: string }> {
+async function readStreamed(res: Response): Promise<{ success?: boolean; data?: { emotion?: string }; error?: string; code?: string }> {
   const text = (await res.text()).trim();
   return JSON.parse(text);
 }
 
-it('streams a clean error (200) when the composer fails', async () => {
+it('streams a clean error (200) when the composer fails, carrying the code', async () => {
   mockedCompose.mockResolvedValueOnce({ ok: false, code: 'auth', error: 'The Claude API key is invalid.' });
   const res = await POST(req({ lyrics: 'lyrics' }));
   expect(res.status).toBe(200); // streamed; the failure is carried in the body
   const body = await readStreamed(res);
   expect(body.success).toBe(false);
   expect(body.error).toMatch(/invalid/i);
+  // The structured code is propagated so the client can suppress a pointless retry.
+  expect(body.code).toBe('auth');
 });
 
 it('does not leak raw upstream detail in the streamed error', async () => {
@@ -96,5 +98,6 @@ it('streams the structured brief on success', async () => {
   const body = await readStreamed(res);
   expect(body.success).toBe(true);
   expect(body.data?.emotion).toBe('காதல்');
-  expect(mockedCompose).toHaveBeenCalledWith('lyrics');
+  // Called with the lyrics + an abort signal so the route can cancel on disconnect.
+  expect(mockedCompose).toHaveBeenCalledWith('lyrics', expect.objectContaining({ signal: expect.any(AbortSignal) }));
 });

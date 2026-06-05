@@ -92,7 +92,8 @@ ${poemContext.body}`;
     }
 
     const response = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
+      // Keep in step with the composer's current Sonnet (see composer.ts).
+      model: 'claude-sonnet-4-6',
       max_tokens: 2048,
       system: systemPrompt,
       messages: messages.map(msg => ({

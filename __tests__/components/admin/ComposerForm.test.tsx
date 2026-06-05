@@ -150,6 +150,20 @@ it('error banner exposes its own Retry button', async () => {
   expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
 });
 
+it('hides Retry for a non-retryable (auth) failure but still shows the error', async () => {
+  // Streamed failure carrying code:'auth' — retrying would just fail again.
+  mockedFetch.mockResolvedValueOnce(
+    ok({ success: false, error: 'The Claude API key is invalid.', code: 'auth' })
+  );
+  render(<ComposerForm />);
+
+  fireEvent.change(screen.getByLabelText('Tamil lyrics'), { target: { value: 'lyrics' } });
+  fireEvent.click(screen.getByRole('button', { name: /compose brief/i }));
+
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/key is invalid/i));
+  expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
+});
+
 it('saves the brief (POST /api/admin/briefs) with the chosen SUNO style, and shows Saved', async () => {
   mockedFetch.mockResolvedValueOnce(ok({ success: true, data: SAMPLE })); // compose
   render(<ComposerForm />);

@@ -28,7 +28,24 @@ import * as auth from '@/lib/auth-helper';
 
 const mockedRequireAdmin = auth.requireAdmin as jest.Mock;
 
-const analysis = { emotion: 'அன்னை', suno_prompts: [{ style: 'Traditional Tamil', prompt: 'p' }] };
+// A complete, schema-valid analysis — the briefs route now validates the full
+// composer schema before persisting the durable record.
+const analysis = {
+  emotion: 'அன்னை',
+  emotion_breakdown: ['அன்னை', 'பாசம்'],
+  mood: 'Warm and devotional',
+  theme: 'A mother’s love',
+  suggested_key: 'C Major',
+  suggested_bpm: 80,
+  suggested_instruments: ['Flute', 'Veena', 'Tabla', 'Strings'],
+  recommended_voice: ['Female Adult', 'Elder Male'],
+  song_titles: ['அன்னையின் அன்பு', 'தாய்மை', 'பாசமலர்'],
+  suno_prompts: [{ style: 'Traditional Tamil', prompt: 'Gentle devotional piece led by flute over soft tabla.' }],
+  thumbnail_prompt: 'A warm village dawn with a mother and child, soft light.',
+  youtube_description_tamil: 'தாயன்பைப் போற்றும் பாடல். #tamilagaval',
+  youtube_description_english: 'A song honouring a mother’s love. #tamilagaval',
+  reel: { hook: 'அன்னையே', caption: 'For every mother', hashtags: ['#tamil', '#amma'] },
+};
 
 const post = (body: unknown) =>
   new NextRequest('https://tamilagaval.com/api/admin/briefs', { method: 'POST', body: JSON.stringify(body) });
@@ -52,6 +69,23 @@ it('POST returns 400 on invalid payload (missing analysis)', async () => {
   const res = await POST(post({ lyrics: 'l' }));
   expect(res.status).toBe(400);
   expect(mockSave).not.toHaveBeenCalled();
+});
+
+it('POST rejects a partial/degraded analysis (durable record must be complete)', async () => {
+  // Only the dominant emotion — would have slipped through the old loose
+  // `.passthrough()` validation; now refused so we never persist a half-brief.
+  const res = await POST(post({ lyrics: 'l', analysis: { emotion: 'அன்னை' } }));
+  expect(res.status).toBe(400);
+  expect(mockSave).not.toHaveBeenCalled();
+});
+
+it('POST strips unknown keys from analysis before persisting', async () => {
+  mockSave.mockResolvedValueOnce({ id: 'brief_x' });
+  const res = await POST(post({ lyrics: 'l', analysis: { ...analysis, injected: 'evil', __proto__hack: 1 } }));
+  expect(res.status).toBe(201);
+  const savedAnalysis = mockSave.mock.calls[0][0].analysis;
+  expect(savedAnalysis).not.toHaveProperty('injected');
+  expect(savedAnalysis.emotion).toBe('அன்னை');
 });
 
 it('POST saves and returns 201 with the brief', async () => {

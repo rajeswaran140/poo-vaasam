@@ -10,14 +10,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
 import { BriefRepository } from '@/infrastructure/database/BriefRepository';
+import { composerAnalysisSchema } from '@/services/ai/composerSchema';
 
 export const dynamic = 'force-dynamic';
 
 const createSchema = z.object({
   lyrics: z.string().min(1, 'Lyrics required').max(8000),
-  // The structured brief. Validated loosely (passthrough) — the composer is the
-  // source of its shape; we only require the dominant emotion to be present.
-  analysis: z.object({ emotion: z.string().min(1) }).passthrough(),
+  // The structured brief is validated against the FULL composer schema — this
+  // record is the durable "source of truth", so we refuse to persist a
+  // malformed / partial / unknown-shaped analysis. Unknown keys are stripped.
+  analysis: composerAnalysisSchema,
   contentId: z.string().min(1).optional(),
   decision: z
     .object({ chosenSunoStyle: z.string().optional(), notes: z.string().optional() })
@@ -39,10 +41,11 @@ export async function POST(request: NextRequest) {
 
   try {
     const repo = new BriefRepository();
-    // `analysis` is validated loosely above; cast to the composer's type for storage.
+    // `analysis` is fully validated against the composer schema above, so it
+    // already matches the stored type — no cast needed.
     const brief = await repo.save({
       lyrics: parsed.data.lyrics,
-      analysis: parsed.data.analysis as never,
+      analysis: parsed.data.analysis,
       contentId: parsed.data.contentId,
       decision: parsed.data.decision,
     });
