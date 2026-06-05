@@ -19,8 +19,8 @@ export default function AdminComposePage() {
       <header>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Music Director</h1>
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Paste Tamil lyrics → get a full production brief: ranked emotions, mood, theme, key, BPM, instrumentation,
-          a recommended voice, title candidates, several style-tagged SUNO prompts, a thumbnail image prompt,
+          Paste Tamil lyrics → get a full production brief: ranked emotions, mood, theme, key, BPM, instruments and
+          ragas (from a curated India &amp; Sri Lanka catalog), a recommended voice, title candidates, several style-tagged SUNO prompts, a thumbnail image prompt,
           bilingual (Tamil + English) YouTube descriptions, and a Reel/Short idea. Copy buttons throughout, and
           <strong> Save brief</strong> to keep it as the durable, model-agnostic source of truth for the song.
         </p>

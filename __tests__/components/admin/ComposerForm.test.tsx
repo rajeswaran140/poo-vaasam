@@ -27,6 +27,7 @@ const SAMPLE = {
   suggested_key: 'D Minor',
   suggested_bpm: 72,
   suggested_instruments: ['Veena', 'Flute'],
+  suggested_ragas: ['Keeravani', 'Sahana'],
   recommended_voice: ['Male Baritone', 'Female Adult'],
   song_titles: ['இரவின் அன்பு', 'நிலவின் நிழல்', 'மழை'],
   suno_prompts: [{ style: 'Traditional Tamil', prompt: 'Slow Tamil ballad in D minor at 72 BPM…' }],
@@ -86,6 +87,9 @@ it('submits via the button and shows the structured result', async () => {
   expect(screen.getByTestId('composer-results').getAttribute('aria-live')).toBe('polite');
   expect(screen.getByText('காதல்')).toBeInTheDocument();
   expect(screen.getByText('72')).toBeInTheDocument();
+  // Grounded ragas render in their own ranked card.
+  expect(screen.getByText('Suggested ragas (ranked)')).toBeInTheDocument();
+  expect(screen.getByText('Keeravani')).toBeInTheDocument();
 });
 
 it('Cmd+Enter on the textarea submits the form', async () => {

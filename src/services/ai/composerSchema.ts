@@ -57,7 +57,11 @@ export const composerAnalysisSchema = z.object({
   suggested_instruments: z
     .array(z.string().min(1))
     .min(1)
-    .describe('4-6 instruments, lead first. Lean Tamil-classical when traditional, Western when contemporary.'),
+    .describe('4-6 instruments, lead first, chosen ONLY from the provided Indian & Sri Lankan instrument palette (use the exact names).'),
+  suggested_ragas: z
+    .array(z.string().min(1))
+    .min(1)
+    .describe('2-4 ragas RANKED best-fit first, chosen ONLY from the provided raga palette by matching each raga\'s rasa to the song\'s emotion.'),
   recommended_voice: z
     .array(z.string().min(1))
     .min(1)

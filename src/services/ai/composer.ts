@@ -22,6 +22,8 @@ import {
   composerAnalysisJsonSchema,
   type ComposerAnalysis,
 } from './composerSchema';
+import { instrumentPalette, canonicalInstrumentNames } from '@/data/instruments';
+import { ragaPalette, canonicalRagaNames } from '@/data/ragas';
 
 // Re-export the schema-derived types so existing importers
 // (`@/services/ai/composer`) keep working unchanged.
@@ -50,12 +52,20 @@ const REQUEST_TIMEOUT_MS = 60_000;
 
 const TOOL_NAME = 'submit_brief';
 
+// The instrument + raga palettes are injected so the model can only choose from
+// our curated Indian & Sri Lankan catalogs (see src/data/*). Output is also
+// validated against the catalogs after the call, so the brief never names an
+// instrument or raga that doesn't exist.
 const SYSTEM_PROMPT = `You are an AI music director for a Tamil songwriter and lyricist. Given Tamil song lyrics, you analyse them and produce a complete production brief by calling the ${TOOL_NAME} tool. Provide your entire answer as the tool's arguments — do not write any prose.
 
 Rules:
 - emotion = the single dominant emotion; emotion_breakdown = 3-5 emotions RANKED most→least present. Ranking only — DO NOT output numbers, percentages, or scores anywhere.
-- Instruments: 4-6 items, lead first. Lean Tamil-classical (Veena, Flute, Nadaswaram, Mridangam, Tabla) when traditional; Western (Piano, Strings, Guitar) when contemporary.
+- suggested_instruments: 4-6 items, lead first. Choose ONLY from this palette of Indian & Sri Lankan instruments, using the EXACT names — do not invent or substitute (no generic "Strings"/"Percussion", no Western instruments):
+${instrumentPalette()}
+- suggested_ragas: 2-4 ragas, ranked best-fit first. Choose ONLY from this raga palette, using the EXACT names. Match each raga's rasa (in parentheses) to the song's dominant emotion:
+${ragaPalette()}
 - recommended_voice: 2-4 ranked, best fit first. Choose from: Male Baritone, Male Tenor, Female Adult, Young Female, Elder Male, Child, Duet.
+- suggested_key: the Western key that best approximates the chosen lead raga (so it can be set in SUNO/DAWs).
 - BPM: ballad 60-80, mid 90-120, upbeat 130-160.
 - Titles: evocative Tamil phrases drawn from or inspired by the lyrics — not generic.
 - suno_prompts: provide 3-5 DISTINCT style variants. Draw styles from: Traditional Tamil (Carnatic), Tamil film ballad, Devotional, Village folk, Modern acoustic, Bharathiyar-inspired. Each prompt is one self-contained English paragraph and must NOT contain the lyrics.
@@ -187,5 +197,27 @@ export async function composeFromLyrics(
     return { ok: false, code: 'bad_response', error: 'The AI returned an incomplete brief. Please try again.' };
   }
 
-  return { ok: true, data: parsed.data };
+  // Ground the instrument & raga lists against the curated India/Sri Lanka
+  // catalogs: canonicalise spellings and DROP anything not in a catalog, so the
+  // brief only ever names real instruments/ragas. If grounding would empty a
+  // list (model went fully off-palette), keep the model's originals rather than
+  // return zero — the prompt makes this rare; we log it for visibility.
+  const groundedInstruments = canonicalInstrumentNames(parsed.data.suggested_instruments);
+  const groundedRagas = canonicalRagaNames(parsed.data.suggested_ragas);
+  if (groundedInstruments.length < parsed.data.suggested_instruments.length || groundedRagas.length < parsed.data.suggested_ragas.length) {
+    console.info('[ai/composer] grounded palette', JSON.stringify({
+      instrumentsIn: parsed.data.suggested_instruments.length,
+      instrumentsKept: groundedInstruments.length,
+      ragasIn: parsed.data.suggested_ragas.length,
+      ragasKept: groundedRagas.length,
+    }));
+  }
+
+  const data: ComposerAnalysis = {
+    ...parsed.data,
+    suggested_instruments: groundedInstruments.length ? groundedInstruments : parsed.data.suggested_instruments,
+    suggested_ragas: groundedRagas.length ? groundedRagas : parsed.data.suggested_ragas,
+  };
+
+  return { ok: true, data };
 }

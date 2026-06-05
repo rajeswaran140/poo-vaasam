@@ -87,6 +87,7 @@ it('streams the structured brief on success', async () => {
       suggested_key: 'C Major',
       suggested_bpm: 90,
       suggested_instruments: ['Veena'],
+      suggested_ragas: ['Mohanam'],
       song_titles: ['T1'],
       suno_prompts: [{ style: 'Default', prompt: 'prompt' }],
       youtube_description_tamil: 'desc-ta',

@@ -36,6 +36,7 @@ const SAMPLE = {
   suggested_key: 'D Minor',
   suggested_bpm: 72,
   suggested_instruments: ['Veena', 'Flute', 'Tabla', 'Strings'],
+  suggested_ragas: ['Keeravani', 'Sahana'],
   recommended_voice: ['Female Adult', 'Male Tenor'],
   song_titles: ['இரவின் அன்பு', 'நிலவின் நிழல்', 'காதல் மழை'],
   suno_prompts: [{ style: 'Tamil film ballad', prompt: 'Slow Tamil ballad in D minor at 72 BPM, lead Veena over warm strings.' }],
@@ -85,6 +86,37 @@ it('parses a valid tool_use response into the structured shape', async () => {
     expect(r.data.suno_prompts[0].style).toBe('Tamil film ballad');
     expect(r.data.youtube_description_english).toMatch(/#tamilagaval/);
   }
+});
+
+it('grounds instruments & ragas against the catalog (drops off-catalog "Strings")', async () => {
+  create.mockResolvedValueOnce(toolResponse(SAMPLE));
+  const r = await composeFromLyrics('lyrics');
+  expect(r.ok).toBe(true);
+  if (r.ok) {
+    // 'Strings' is not a catalog instrument → dropped; the rest canonicalised.
+    expect(r.data.suggested_instruments).toEqual(['Veena', 'Flute', 'Tabla']);
+    expect(r.data.suggested_ragas).toEqual(['Keeravani', 'Sahana']);
+  }
+});
+
+it('canonicalises misspelled instruments/ragas to their official names', async () => {
+  create.mockResolvedValueOnce(
+    toolResponse({ ...SAMPLE, suggested_instruments: ['mrudangam', 'bansuri'], suggested_ragas: ['mohana', 'kirwani'] })
+  );
+  const r = await composeFromLyrics('lyrics');
+  expect(r.ok).toBe(true);
+  if (r.ok) {
+    expect(r.data.suggested_instruments).toEqual(['Mridangam', 'Flute']);
+    expect(r.data.suggested_ragas).toEqual(['Mohanam', 'Keeravani']);
+  }
+});
+
+it('injects the instrument & raga palettes into the system prompt', async () => {
+  create.mockResolvedValueOnce(toolResponse(SAMPLE));
+  await composeFromLyrics('lyrics');
+  const sys = (create.mock.calls[0][0] as { system: string }).system;
+  expect(sys).toContain('Mridangam'); // instrument palette
+  expect(sys).toContain('Mohanam');   // raga palette
 });
 
 it('forces tool use, low temperature, and enough max_tokens headroom', async () => {

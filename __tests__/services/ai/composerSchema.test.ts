@@ -18,6 +18,7 @@ const VALID = {
   suggested_key: 'D Minor',
   suggested_bpm: 72,
   suggested_instruments: ['Veena', 'Flute'],
+  suggested_ragas: ['Mohanam', 'Kalyani'],
   recommended_voice: ['Female Adult'],
   song_titles: ['இரவின் அன்பு'],
   suno_prompts: [{ style: 'Devotional', prompt: 'A gentle devotional piece.' }],
@@ -61,6 +62,11 @@ it('fills a missing reel with a well-formed empty idea', () => {
 it('rejects a missing required semantic field (no silent default)', () => {
   const { theme: _drop, ...noTheme } = VALID;
   expect(composerAnalysisSchema.safeParse(noTheme).success).toBe(false);
+});
+
+it('requires suggested_ragas (the brief must recommend ragas)', () => {
+  const { suggested_ragas: _drop, ...noRagas } = VALID;
+  expect(composerAnalysisSchema.safeParse(noRagas).success).toBe(false);
 });
 
 it('rejects empty required arrays', () => {

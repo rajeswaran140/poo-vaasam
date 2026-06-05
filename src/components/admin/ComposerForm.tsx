@@ -339,10 +339,26 @@ function Results({ result }: { result: Analysis }) {
         </Card>
       )}
 
-      {/* Instruments */}
+      {/* Instruments — grounded in the India/Sri Lanka catalog */}
       {result.suggested_instruments.length > 0 && (
         <Card label="Instruments">
           <Chips items={result.suggested_instruments} />
+        </Card>
+      )}
+
+      {/* Suggested ragas (ranked) — grounded in the Carnatic/Hindustani catalog */}
+      {result.suggested_ragas && result.suggested_ragas.length > 0 && (
+        <Card label="Suggested ragas (ranked)">
+          <ol className="flex flex-wrap items-center gap-2">
+            {result.suggested_ragas.map((r, i) => (
+              <li key={`${i}-${r}`} className="flex items-center gap-2">
+                {i > 0 && <span aria-hidden className="text-gray-400">›</span>}
+                <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-medium text-orange-800 dark:bg-orange-500/20 dark:text-orange-300">
+                  {r}
+                </span>
+              </li>
+            ))}
+          </ol>
         </Card>
       )}
 
