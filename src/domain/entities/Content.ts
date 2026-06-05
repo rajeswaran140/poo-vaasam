@@ -504,6 +504,6 @@ export class Content {
 
   private static generateId(): string {
     // Generate a unique ID (UUID-like)
-    return `cnt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `cnt_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
   }
 }

@@ -32,6 +32,7 @@ jest.mock('@/lib/auth-helper', () => ({
 import { GET, POST } from '@/app/api/admin/content/route';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { CreateContentUseCase } from '@/application/use-cases/CreateContentUseCase';
+import { DomainError } from '@/application/errors';
 import * as authHelper from '@/lib/auth-helper';
 
 const MockContentRepo = ContentRepository as jest.MockedClass<typeof ContentRepository>;
@@ -276,6 +277,44 @@ describe('Admin Content API', () => {
       expect(response.status).toBe(400);
       expect(data.error).toBe('Validation failed');
       expect(getUseCase().execute).not.toHaveBeenCalled();
+    });
+
+    // A domain rule failure (e.g. a category id that doesn't exist) is safe to
+    // show and maps to 400 with its own message.
+    it('maps a DomainError to 400 with the actionable message', async () => {
+      getUseCase().execute.mockRejectedValue(new DomainError('Categories not found: cat_x'));
+
+      const request = new NextRequest('http://localhost:3000/api/admin/content', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'SONGS', title: 'T', body: 'B', author: 'A', categoryIds: ['cat_x'] }),
+      });
+
+      const response = await POST(request);
+      const data = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data.error).toBe('Categories not found: cat_x');
+    });
+
+    // M2: an unexpected/infrastructure error must NOT leak its raw message
+    // (DynamoDB internals, table names) to the client.
+    it('returns a generic 500 without leaking raw internal error detail', async () => {
+      jest.spyOn(console, 'error').mockImplementation(() => {});
+      getUseCase().execute.mockRejectedValue(
+        new Error('ValidationException: table TamilWebContent index GSI5 misconfigured')
+      );
+
+      const request = new NextRequest('http://localhost:3000/api/admin/content', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'SONGS', title: 'T', body: 'B', author: 'A' }),
+      });
+
+      const response = await POST(request);
+      const data = await response.json();
+
+      expect(response.status).toBe(500);
+      expect(data.error).toBe('Failed to create content. Please try again.');
+      expect(data.error).not.toMatch(/TamilWebContent|GSI5|ValidationException/);
     });
   });
 });

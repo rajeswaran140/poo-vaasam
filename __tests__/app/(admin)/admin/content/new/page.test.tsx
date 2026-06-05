@@ -73,6 +73,48 @@ describe('NewContentPage — taxonomy loading', () => {
   });
 });
 
+describe('NewContentPage — create defaults & errors', () => {
+  // L1: publishing should be deliberate; the form must default to DRAFT.
+  it('submits status DRAFT by default (publish is a deliberate choice)', async () => {
+    mockAdminFetch.mockImplementation((url: string) => {
+      if (url === '/api/categories' || url === '/api/tags') return Promise.resolve(jsonRes({ success: true, data: [] }));
+      return Promise.resolve(jsonRes({ success: true, data: { id: 'x' } }, true, 201));
+    });
+
+    render(<NewContentPage />);
+    fireEvent.change(screen.getByLabelText(/^Title/), { target: { value: 'Draft Song' } });
+    fireEvent.change(screen.getByLabelText(/^Content/), { target: { value: 'Lyrics' } });
+    fireEvent.change(screen.getByLabelText(/^Author/), { target: { value: 'Raj' } });
+    fireEvent.click(screen.getByRole('button', { name: /create content/i }));
+
+    await waitFor(() => {
+      const postCall = mockAdminFetch.mock.calls.find((c) => c[0] === '/api/admin/content');
+      expect(postCall).toBeTruthy();
+      expect(JSON.parse(postCall![1].body).status).toBe('DRAFT');
+    });
+  });
+
+  // L2: surface the API's field-level validation errors, not "Unknown error".
+  it('shows field-level validation errors returned by the API', async () => {
+    mockAdminFetch.mockImplementation((url: string) => {
+      if (url === '/api/categories' || url === '/api/tags') return Promise.resolve(jsonRes({ success: true, data: [] }));
+      return Promise.resolve(
+        jsonRes({ success: false, error: 'Validation failed', errors: { title: ['Required'], body: ['Too short'] } }, false, 400)
+      );
+    });
+
+    render(<NewContentPage />);
+    fireEvent.change(screen.getByLabelText(/^Title/), { target: { value: 'x' } });
+    fireEvent.change(screen.getByLabelText(/^Content/), { target: { value: 'y' } });
+    fireEvent.change(screen.getByLabelText(/^Author/), { target: { value: 'z' } });
+    fireEvent.click(screen.getByRole('button', { name: /create content/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('title: Required');
+    expect(alert).toHaveTextContent('body: Too short');
+  });
+});
+
 describe('NewContentPage — audioDuration coercion', () => {
   it('submits a numeric audioDuration (the number input string is coerced)', async () => {
     mockAdminFetch.mockImplementation((url: string) => {

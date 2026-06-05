@@ -322,13 +322,19 @@ describe('ContentRepository Improvements', () => {
 
       await repository.delete(mockContent.id);
 
-      // Should delete main content + 2 categories + 2 tags = 5 delete operations
-      expect(mockDynamoDBOps.delete).toHaveBeenCalledTimes(5);
+      // Should delete main content + slug guard + 2 categories + 2 tags = 6 ops
+      expect(mockDynamoDBOps.delete).toHaveBeenCalledTimes(6);
 
       // Verify main content deletion
       expect(mockDynamoDBOps.delete).toHaveBeenCalledWith({
         PK: `CONTENT#${mockContent.id}`,
         SK: 'METADATA',
+      });
+
+      // Verify the slug-uniqueness guard is released so the slug can be reused
+      expect(mockDynamoDBOps.delete).toHaveBeenCalledWith({
+        PK: `SLUG#${mockContent.titleSlug}`,
+        SK: 'SLUG',
       });
 
       // Verify category relationship deletions

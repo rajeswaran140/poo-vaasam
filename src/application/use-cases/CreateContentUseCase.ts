@@ -10,6 +10,10 @@ import { ICategoryRepository } from '@/domain/repositories/ICategoryRepository';
 import { ITagRepository } from '@/domain/repositories/ITagRepository';
 import type { CreateContentDTO } from '@/types/content';
 import { generateSlug } from '@/lib/utils/slug';
+import { DomainError, SlugConflictError } from '@/application/errors';
+
+// Bound the slug-conflict retry so a pathological collision can't spin forever.
+const MAX_SLUG_ATTEMPTS = 5;
 
 /**
  * Create Content Use Case
@@ -37,31 +41,48 @@ export class CreateContentUseCase {
       await this.validateTags(dto.tagIds);
     }
 
-    // Ensure a slug that doesn't collide with existing content.
-    const slug = await this.ensureUniqueSlug(dto.title);
+    // Pick a slug that doesn't collide with existing content (best-effort
+    // pre-check against the eventually-consistent slug index).
+    const baseSlug = await this.ensureUniqueSlug(dto.title);
 
-    // Create content entity
-    const content = Content.create({
-      ...dto,
-      slug,
-      categoryIds: dto.categoryIds || [],
-      tagIds: dto.tagIds || [],
-    });
+    // Atomically persist the content + its slug guard + relationship rows. The
+    // guard is the authoritative uniqueness check; if the pre-check raced a
+    // concurrent create, retry with a bumped slug.
+    let slug = baseSlug;
+    let content: Content | undefined;
+    for (let attempt = 0; attempt <= MAX_SLUG_ATTEMPTS; attempt++) {
+      content = Content.create({
+        ...dto,
+        slug,
+        categoryIds: dto.categoryIds || [],
+        tagIds: dto.tagIds || [],
+      });
+      try {
+        await this.contentRepository.create(content);
+        break;
+      } catch (err) {
+        if (err instanceof SlugConflictError && attempt < MAX_SLUG_ATTEMPTS) {
+          slug = `${baseSlug}-${attempt + 1}`;
+          continue;
+        }
+        throw err;
+      }
+    }
+    // `content` is always assigned (the loop body runs at least once and either
+    // breaks on success or rethrows); assert for the type checker.
+    const created = content!;
 
-    // Save content
-    await this.contentRepository.save(content);
-
-    // Update category counts
+    // Update taxonomy counts. These live on separate aggregates and are written
+    // best-effort outside the content transaction; they're now backed by the
+    // relationship rows the transaction wrote.
     if (dto.categoryIds) {
       await this.incrementCategoryCounts(dto.categoryIds);
     }
-
-    // Update tag counts
     if (dto.tagIds) {
       await this.incrementTagCounts(dto.tagIds);
     }
 
-    return content;
+    return created;
   }
 
   /**
@@ -75,7 +96,7 @@ export class CreateContentUseCase {
     const missing = categoryIds.filter((id, index) => !categories[index]);
 
     if (missing.length > 0) {
-      throw new Error(`Categories not found: ${missing.join(', ')}`);
+      throw new DomainError(`Categories not found: ${missing.join(', ')}`);
     }
   }
 
@@ -88,7 +109,7 @@ export class CreateContentUseCase {
     if (tags.length !== tagIds.length) {
       const foundIds = tags.map((t) => t.id);
       const missing = tagIds.filter((id) => !foundIds.includes(id));
-      throw new Error(`Tags not found: ${missing.join(', ')}`);
+      throw new DomainError(`Tags not found: ${missing.join(', ')}`);
     }
   }
 

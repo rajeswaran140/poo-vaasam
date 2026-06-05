@@ -11,6 +11,7 @@ import { TagRepository } from '@/infrastructure/database/TagRepository';
 import { CreateContentUseCase } from '@/application/use-cases/CreateContentUseCase';
 import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
 import { ContentType, ContentStatus, WORKFLOW_STATES } from '@/types/content';
+import { DomainError } from '@/application/errors';
 import { z } from 'zod';
 
 const contentRepo = new ContentRepository();
@@ -218,14 +219,20 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
+    // Expected business-rule failures (e.g. "Categories not found") are safe to
+    // show and map to 400. Everything else is an internal fault: log the detail
+    // server-side and return a generic message so DynamoDB/internal text never
+    // leaks to the client.
+    if (error instanceof DomainError) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: 400 }
+      );
+    }
+
     console.error('[API:ADMIN_CREATE_CONTENT] Error:', error);
-
-    const errorMessage = error instanceof Error
-      ? error.message
-      : 'Failed to create content';
-
     return NextResponse.json(
-      { success: false, error: errorMessage },
+      { success: false, error: 'Failed to create content. Please try again.' },
       { status: 500 }
     );
   }

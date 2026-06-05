@@ -43,9 +43,28 @@ interface TaxonomyOption {
   name: string;
 }
 
+/**
+ * Build a human-readable message from an API error body. The create endpoint
+ * returns Zod `fieldErrors` under `errors` on a 400 — surface them per-field so
+ * the admin sees exactly what to fix instead of a generic "Unknown error".
+ */
+function formatApiError(data: { error?: string; errors?: Record<string, string[] | undefined> }): string {
+  if (data.errors && typeof data.errors === 'object') {
+    const parts = Object.entries(data.errors)
+      .filter(([, msgs]) => Array.isArray(msgs) && msgs.length > 0)
+      .map(([field, msgs]) => `${field}: ${(msgs as string[]).join(', ')}`);
+    if (parts.length > 0) return parts.join(' · ');
+  }
+  return data.error || 'Unknown error';
+}
+
 export default function NewContentPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  // The last submit failure, shown inline above the buttons. When the API
+  // returns field-level validation errors we render them so the admin knows
+  // exactly what to fix instead of a generic "Unknown error".
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [categories, setCategories] = useState<TaxonomyOption[]>([]);
   const [tags, setTags] = useState<TaxonomyOption[]>([]);
   // True when the categories/tags load failed (e.g. an expired session), so the
@@ -59,7 +78,10 @@ export default function NewContentPage() {
     body: '',
     description: '',
     author: '',
-    status: 'PUBLISHED',
+    // Default to DRAFT — publishing should be a deliberate choice (and on this
+    // SSG site a freshly-PUBLISHED item isn't public until the next redeploy,
+    // so accidental publish-on-create is a confusing footgun).
+    status: 'DRAFT',
     categoryIds: [] as string[],
     tagIds: [] as string[],
     featuredImage: '',
@@ -110,6 +132,7 @@ export default function NewContentPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setSubmitError(null);
 
     try {
       const response = await adminFetch('/api/admin/content', {
@@ -124,11 +147,15 @@ export default function NewContentPage() {
         showToast.success('உள்ளடக்கம் வெற்றிகரமாக உருவாக்கப்பட்டது!');
         router.push('/admin/content');
       } else {
-        showToast.error('உருவாக்க முடியவில்லை: ' + (data.error || 'Unknown error'));
+        const message = formatApiError(data);
+        setSubmitError(message);
+        showToast.error('உருவாக்க முடியவில்லை: ' + message);
       }
     } catch (error) {
       console.error('Error creating content:', error);
-      showToast.error('உள்ளடக்கத்தை உருவாக்க முடியவில்லை');
+      const message = 'உள்ளடக்கத்தை உருவாக்க முடியவில்லை';
+      setSubmitError(message);
+      showToast.error(message);
     } finally {
       setLoading(false);
     }
@@ -469,6 +496,16 @@ export default function NewContentPage() {
               multiline
               rows={2}
           />
+          </div>
+        )}
+
+        {/* Inline submit error — field-level when the API returns validation details */}
+        {submitError && (
+          <div
+            role="alert"
+            className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200"
+          >
+            {submitError}
           </div>
         )}
 

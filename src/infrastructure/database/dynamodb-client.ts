@@ -15,6 +15,7 @@ import {
   ScanCommand,
   BatchWriteCommand,
   BatchGetCommand,
+  TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { dynamoDBConfig } from '@/lib/aws-config';
 
@@ -204,6 +205,25 @@ export class DynamoDBOperations {
 
     const response = await dynamoDBClient.send(command);
     return response.Responses?.[TABLE_NAME] || [];
+  }
+
+  /**
+   * Atomically write several items in a single transaction. Each entry is a
+   * `{ Put | Update | Delete | ConditionCheck: {...} }` whose `TableName` is
+   * injected here, so callers pass only the operation body (Item / Key /
+   * ConditionExpression / …). Either every item commits or none do — used to
+   * keep a content row, its slug-uniqueness guard, and its taxonomy
+   * relationship rows consistent. Throws `TransactionCanceledException` if any
+   * condition (e.g. a duplicate slug guard) fails.
+   */
+  static async transactWrite(items: Array<Record<string, any>>) {
+    const TransactItems = items.map((entry) => {
+      const op = Object.keys(entry)[0];
+      return { [op]: { TableName: TABLE_NAME, ...entry[op] } };
+    });
+
+    const command = new TransactWriteCommand({ TransactItems });
+    return await dynamoDBClient.send(command);
   }
 }
 

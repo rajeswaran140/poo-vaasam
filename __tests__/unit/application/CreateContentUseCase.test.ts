@@ -10,10 +10,12 @@ import { IContentRepository } from '@/domain/repositories/IContentRepository';
 import { ICategoryRepository } from '@/domain/repositories/ICategoryRepository';
 import { ITagRepository } from '@/domain/repositories/ITagRepository';
 import { ContentType, ContentStatus } from '@/types/content';
+import { DomainError, SlugConflictError } from '@/application/errors';
 
 // Mock repositories
 const mockContentRepository: jest.Mocked<IContentRepository> = {
   save: jest.fn(),
+  create: jest.fn(),
   findById: jest.fn(),
   findBySlug: jest.fn(),
   findAll: jest.fn(),
@@ -89,7 +91,7 @@ describe('CreateContentUseCase', () => {
 
       // Verify isSlugUnique was called with the generated slug
       expect(mockContentRepository.isSlugUnique).toHaveBeenCalledWith('பூ-வாசம்');
-      expect(mockContentRepository.save).toHaveBeenCalled();
+      expect(mockContentRepository.create).toHaveBeenCalled();
     });
 
     it('should append counter if slug already exists', async () => {
@@ -169,7 +171,7 @@ describe('CreateContentUseCase', () => {
       const content = await useCase.execute(dto);
 
       expect(content.titleSlug).toBe('hello-world-1');
-      expect(mockContentRepository.save).toHaveBeenCalled();
+      expect(mockContentRepository.create).toHaveBeenCalled();
     });
   });
 
@@ -238,6 +240,78 @@ describe('CreateContentUseCase', () => {
       };
 
       await expect(useCase.execute(dto)).rejects.toThrow('Categories not found');
+    });
+
+    it('throws a typed DomainError (not a generic Error) for missing taxonomy', async () => {
+      mockCategoryRepository.findById.mockResolvedValue(null);
+
+      await expect(
+        useCase.execute({
+          type: ContentType.LYRICS,
+          title: 'Test',
+          body: 'Body',
+          description: '',
+          author: 'A',
+          categoryIds: ['nope'],
+        })
+      ).rejects.toBeInstanceOf(DomainError);
+    });
+
+    // M1/M4: persistence goes through the atomic create (content + slug guard +
+    // relationship rows), carrying the selected category/tag ids.
+    it('persists via the atomic create with the selected categories and tags', async () => {
+      mockContentRepository.isSlugUnique.mockResolvedValue(true);
+      mockCategoryRepository.findById.mockResolvedValue({
+        id: 'cat_1', name: 'C', slug: 'c', description: '', contentCount: 0, createdAt: new Date(),
+      });
+      mockTagRepository.findByIds.mockResolvedValue([
+        { id: 'tag_1', name: 'T', slug: 't', contentCount: 0, createdAt: new Date() },
+      ]);
+
+      await useCase.execute({
+        type: ContentType.SONGS,
+        title: 'Linked Song',
+        body: 'Body',
+        description: '',
+        author: 'A',
+        categoryIds: ['cat_1'],
+        tagIds: ['tag_1'],
+      });
+
+      expect(mockContentRepository.create).toHaveBeenCalledTimes(1);
+      const created = mockContentRepository.create.mock.calls[0][0] as Content;
+      expect(created.categoryIds).toEqual(['cat_1']);
+      expect(created.tagIds).toEqual(['tag_1']);
+      expect(mockContentRepository.save).not.toHaveBeenCalled();
+    });
+
+    // M3: the atomic create's slug guard is authoritative — on a race it throws
+    // SlugConflictError and the use case retries with a bumped slug.
+    it('retries with a bumped slug when create reports a slug conflict', async () => {
+      mockContentRepository.isSlugUnique.mockResolvedValue(true);
+      mockContentRepository.create
+        .mockRejectedValueOnce(new SlugConflictError('hello-world'))
+        .mockResolvedValueOnce(undefined);
+
+      const content = await useCase.execute({
+        type: ContentType.SONGS,
+        title: 'Hello World',
+        body: 'Body',
+        description: '',
+        author: 'A',
+      });
+
+      expect(mockContentRepository.create).toHaveBeenCalledTimes(2);
+      expect(content.titleSlug).toBe('hello-world-1');
+    });
+
+    it('gives up after the retry budget is exhausted (rethrows the conflict)', async () => {
+      mockContentRepository.isSlugUnique.mockResolvedValue(true);
+      mockContentRepository.create.mockRejectedValue(new SlugConflictError('x'));
+
+      await expect(
+        useCase.execute({ type: ContentType.SONGS, title: 'X', body: 'B', description: '', author: 'A' })
+      ).rejects.toBeInstanceOf(SlugConflictError);
     });
   });
 });

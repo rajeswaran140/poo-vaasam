@@ -13,6 +13,7 @@ import {
   type PaginatedContent,
 } from '@/types/content';
 import { DynamoDBOperations, handleDynamoDBError } from './dynamodb-client';
+import { SlugConflictError } from '@/application/errors';
 
 /**
  * DynamoDB Content Repository
@@ -21,13 +22,98 @@ import { DynamoDBOperations, handleDynamoDBError } from './dynamodb-client';
  */
 export class ContentRepository implements IContentRepository {
   /**
-   * Save content to DynamoDB
+   * Save content to DynamoDB (overwrites; used for updates).
    */
   async save(content: Content): Promise<void> {
     try {
       const item = this.toDBItem(content);
       await DynamoDBOperations.put(item);
     } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  /**
+   * Atomically create a new content row plus the records that must stay
+   * consistent with it, in a single transaction:
+   *  - the content METADATA item (guarded by `attribute_not_exists` so a
+   *    re-used id can never clobber an existing row),
+   *  - a SLUG#<slug> guard item (guarded the same way) — this is the *hard*
+   *    slug-uniqueness check that closes the read-then-write race the
+   *    use case's pre-check can't (GSI5 is eventually consistent),
+   *  - one relationship row per category/tag, carrying GSI2/GSI3 keys so the
+   *    item actually surfaces in findByCategoryId / findByTagId (previously
+   *    these rows were never written, so taxonomy browse returned nothing and
+   *    the incremented counts had no backing).
+   *
+   * Throws `SlugConflictError` when the slug guard already exists.
+   */
+  async create(content: Content): Promise<void> {
+    try {
+      const obj = content.toObject();
+      const createdAt = obj.createdAt as string;
+
+      const transactItems: Array<Record<string, any>> = [
+        {
+          Put: {
+            Item: this.toDBItem(content),
+            ConditionExpression: 'attribute_not_exists(PK)',
+          },
+        },
+        {
+          Put: {
+            Item: {
+              PK: `SLUG#${content.titleSlug}`,
+              SK: 'SLUG',
+              Type: 'SLUG',
+              contentId: content.id,
+              createdAt,
+            },
+            ConditionExpression: 'attribute_not_exists(PK)',
+          },
+        },
+      ];
+
+      for (const categoryId of content.categoryIds) {
+        transactItems.push({
+          Put: {
+            Item: {
+              PK: `CONTENT#${content.id}`,
+              SK: `CATEGORY#${categoryId}`,
+              Type: 'CONTENT_CATEGORY',
+              GSI2PK: `CATEGORY#${categoryId}`,
+              GSI2SK: `${createdAt}#${content.id}`,
+              contentId: content.id,
+              categoryId,
+            },
+          },
+        });
+      }
+
+      for (const tagId of content.tagIds) {
+        transactItems.push({
+          Put: {
+            Item: {
+              PK: `CONTENT#${content.id}`,
+              SK: `TAG#${tagId}`,
+              Type: 'CONTENT_TAG',
+              GSI3PK: `TAG#${tagId}`,
+              GSI3SK: `${createdAt}#${content.id}`,
+              contentId: content.id,
+              tagId,
+            },
+          },
+        });
+      }
+
+      await DynamoDBOperations.transactWrite(transactItems);
+    } catch (error) {
+      // A cancelled transaction here means a guard condition failed; with a
+      // timestamp+random id, a PK collision is effectively impossible, so the
+      // realistic cause is a duplicate slug — surface it for the retry.
+      if ((error as { name?: string })?.name === 'TransactionCanceledException') {
+        throw new SlugConflictError(content.titleSlug);
+      }
       handleDynamoDBError(error);
     }
   }
@@ -338,6 +424,17 @@ export class ContentRepository implements IContentRepository {
         PK: `CONTENT#${id}`,
         SK: 'METADATA',
       });
+
+      // Release the slug-uniqueness guard so the slug can be reused. Idempotent:
+      // a no-op for legacy content created before guards existed.
+      try {
+        await DynamoDBOperations.delete({
+          PK: `SLUG#${content.titleSlug}`,
+          SK: 'SLUG',
+        });
+      } catch (err) {
+        console.error(`Failed to delete slug guard ${content.titleSlug}:`, err);
+      }
 
       // Delete category relationships
       const categoryDeletePromises = content.categoryIds.map((categoryId) =>

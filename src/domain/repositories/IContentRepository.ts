@@ -15,9 +15,16 @@ import { ContentType, ContentStatus, type ContentQueryOptions, type PaginatedCon
  */
 export interface IContentRepository {
   /**
-   * Save a content entity
+   * Save a content entity (overwrites; used for updates).
    */
   save(content: Content): Promise<void>;
+
+  /**
+   * Atomically create a NEW content entity together with its slug-uniqueness
+   * guard and its category/tag relationship rows. Throws `SlugConflictError`
+   * if the slug is already taken.
+   */
+  create(content: Content): Promise<void>;
 
   /**
    * Find content by ID
