@@ -12,7 +12,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRagas, type RagaTradition } from '@/data/ragas';
 
-export const dynamic = 'force-static';
+// Must be dynamic: the handler reads query params (tradition/mood/q). With
+// `force-static` Next would prerender one empty-param response and ignore the
+// filters. Cache-Control below keeps responses cacheable.
+export const dynamic = 'force-dynamic';
 
 export function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams;

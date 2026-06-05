@@ -16,7 +16,11 @@ import {
   type InstrumentCategory,
 } from '@/data/instruments';
 
-export const dynamic = 'force-static';
+// Must be dynamic: the handler reads query params (region/category/…). With
+// `force-static` Next would prerender ONE response with empty params at build
+// time and serve it for every request, silently ignoring the filters. The
+// Cache-Control header below still makes responses cacheable at the CDN/browser.
+export const dynamic = 'force-dynamic';
 
 export function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams;

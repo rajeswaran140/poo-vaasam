@@ -4,9 +4,14 @@
  */
 
 import { NextRequest } from 'next/server';
-import { GET } from '@/app/api/instruments/route';
+import { GET, dynamic } from '@/app/api/instruments/route';
 
 const call = (qs = '') => GET(new NextRequest(`http://localhost:3000/api/instruments${qs}`));
+
+it('is a dynamic route so query-param filters actually run (not force-static)', () => {
+  // force-static would prerender one empty-param response and ignore filters.
+  expect(dynamic).toBe('force-dynamic');
+});
 
 it('returns the full catalog with a cache header', async () => {
   const res = call();

@@ -4,9 +4,13 @@
  */
 
 import { NextRequest } from 'next/server';
-import { GET } from '@/app/api/ragas/route';
+import { GET, dynamic } from '@/app/api/ragas/route';
 
 const call = (qs = '') => GET(new NextRequest(`http://localhost:3000/api/ragas${qs}`));
+
+it('is a dynamic route so query-param filters actually run (not force-static)', () => {
+  expect(dynamic).toBe('force-dynamic');
+});
 
 it('returns the full catalog with a cache header', async () => {
   const res = call();
