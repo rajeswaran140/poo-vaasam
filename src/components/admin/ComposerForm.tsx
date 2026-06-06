@@ -27,6 +27,19 @@ type Analysis = ComposerAnalysis;
 
 const MAX_LYRICS = 8000;
 const WARN_AT = 7500;
+// Compose now runs as an async job (the worker Lambda generates the Sonnet brief
+// off-Amplify). Poll the job until it's done; the worker caps at 120s.
+const POLL_INTERVAL_MS = 2500;
+const POLL_TIMEOUT_MS = 130_000;
+
+/** Sleep that resolves early if the request is aborted (unmount / supersede). */
+function delay(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) return resolve();
+    const t = setTimeout(resolve, ms);
+    signal.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });
+  });
+}
 
 export function ComposerForm() {
   const [lyrics, setLyrics] = useState('');
@@ -64,43 +77,53 @@ export function ComposerForm() {
     const controller = new AbortController();
     abortRef.current = controller;
     try {
+      // 1. Enqueue the job. Auth/validation failures come back as a normal
+      //    non-ok JSON response; success returns a job id to poll.
       const res = await adminFetch('/api/admin/compose', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ lyrics }),
         signal: controller.signal,
       });
-      // Auth/validation failures come back as a normal JSON error response.
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || `HTTP ${res.status}`);
       }
-      // Success path is a heartbeat-padded stream ending in the JSON payload —
-      // accumulate it, then parse the trimmed text (the padding is whitespace).
-      let raw = '';
-      if (res.body?.getReader) {
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          raw += decoder.decode(value, { stream: true });
+      const { jobId } = (await res.json()) as { jobId?: string };
+      if (!jobId) throw new Error('The server did not start the job.');
+
+      // 2. Poll until the worker finishes (Sonnet generates ~30-40s off-platform).
+      //    Poll immediately, then wait between polls — so an already-finished job
+      //    resolves at once.
+      const deadline = Date.now() + POLL_TIMEOUT_MS;
+      let data: Analysis | undefined;
+      for (;;) {
+        if (controller.signal.aborted || !mountedRef.current) return;
+        const sres = await adminFetch(`/api/admin/compose/${jobId}`, { signal: controller.signal });
+        if (!sres.ok) {
+          const body = await sres.json().catch(() => ({}));
+          throw new Error(body.error || `HTTP ${sres.status}`);
         }
-      } else {
-        raw = await res.text();
+        const body = (await sres.json()) as {
+          status?: string;
+          result?: Analysis;
+          error?: { code?: string; message?: string };
+        };
+        if (body.status === 'done' && body.result) {
+          data = body.result;
+          break;
+        }
+        if (body.status === 'error') {
+          throw Object.assign(new Error(body.error?.message || 'Compose failed'), { code: body.error?.code });
+        }
+        if (Date.now() > deadline) {
+          throw new Error('Composing is taking longer than expected. Please try again.');
+        }
+        await delay(POLL_INTERVAL_MS, controller.signal);
       }
-      let body: { success?: boolean; data?: Analysis; error?: string; code?: string };
-      try {
-        body = JSON.parse(raw.trim());
-      } catch {
-        throw new Error('The server returned a malformed response.');
-      }
-      if (!body.success || !body.data) {
-        // Carry the structured code so the catch can decide retryability.
-        throw Object.assign(new Error(body.error || 'Compose failed'), { code: body.code });
-      }
+
       if (!mountedRef.current) return;
-      setResult(body.data);
+      setResult(data);
       setRunId((n) => n + 1); // fresh <SaveBrief> for the new brief
     } catch (err) {
       // A superseded/unmounted request isn't a user-facing error.
@@ -161,7 +184,7 @@ export function ComposerForm() {
           </p>
           <div className="flex items-center gap-3">
             {loading && (
-              <span className="text-xs text-gray-500 dark:text-gray-400">~25–35s</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">~30–45s</span>
             )}
             <button
               type="submit"

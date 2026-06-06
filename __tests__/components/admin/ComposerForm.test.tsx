@@ -1,9 +1,12 @@
 /** @jest-environment jsdom */
 /**
- * Tests for ComposerForm — covers the audit fix bundle: form submit
- * (Cmd+Enter + button), maxLength cap, warn-state char counter,
- * regenerate button, error doesn't wipe previous result, aria-live
- * results region.
+ * Tests for ComposerForm — async compose flow (enqueue + poll), form submit
+ * (Cmd+Enter + button), maxLength cap, warn-state counter, regenerate, error
+ * doesn't wipe previous result, grounded-ragas card, Save brief, abort signal.
+ *
+ * Compose now POSTs /api/admin/compose (→ jobId) then polls
+ * GET /api/admin/compose/[jobId] until done/error. Each successful compose is
+ * therefore TWO adminFetch calls; `queueCompose()` queues both.
  */
 
 jest.mock('@/lib/client-auth', () => ({ adminFetch: jest.fn() }));
@@ -21,7 +24,7 @@ import { adminFetch } from '@/lib/client-auth';
 const mockedFetch = adminFetch as jest.Mock;
 const SAMPLE = {
   emotion: 'காதல்',
-  emotion_breakdown: ['காதல்'], // length 1 → breakdown card hidden, so the 'காதல்' stat stays unique for assertions
+  emotion_breakdown: ['காதல்'], // length 1 → breakdown card hidden, so the 'காதல்' stat stays unique
   mood: 'Tender',
   theme: 'Love',
   suggested_key: 'D Minor',
@@ -36,14 +39,26 @@ const SAMPLE = {
   youtube_description_english: 'A tender Tamil love song.\n\n#tamilsong',
   reel: { hook: 'ஒரு வரி', caption: 'A love song', hashtags: ['#tamil'] },
 };
-// Success is read as a stream/text by the client (heartbeat-streamed route);
-// errors come back as a normal non-ok JSON response.
-const ok = (b: unknown) => ({ ok: true, status: 200, text: async () => JSON.stringify(b) } as unknown as Response);
+
+let jobSeq = 0;
+const enqueued = () =>
+  ({ ok: true, status: 202, json: async () => ({ success: true, jobId: `job_${++jobSeq}`, status: 'processing' }) } as unknown as Response);
+const statusDone = (result: unknown) =>
+  ({ ok: true, status: 200, json: async () => ({ success: true, status: 'done', result }) } as unknown as Response);
+const statusErr = (error: { code?: string; message?: string }) =>
+  ({ ok: true, status: 200, json: async () => ({ success: true, status: 'error', error }) } as unknown as Response);
 const fail = (s: number, b: unknown) => ({ ok: false, status: s, json: async () => b } as unknown as Response);
-// The Save-brief call reads res.json() (normal JSON, not the compose stream).
 const okJson = (b: unknown) => ({ ok: true, status: 201, json: async () => b } as unknown as Response);
 
-beforeEach(() => mockedFetch.mockReset());
+// Queue a full successful compose: POST enqueue, then the first poll returns done.
+const queueCompose = (result: unknown) => {
+  mockedFetch.mockResolvedValueOnce(enqueued()).mockResolvedValueOnce(statusDone(result));
+};
+
+beforeEach(() => {
+  mockedFetch.mockReset();
+  jobSeq = 0;
+});
 
 it('renders the form, textarea, and a disabled submit button when empty', () => {
   render(<ComposerForm />);
@@ -71,36 +86,36 @@ it('counter turns amber at 7500 and red at 8000', () => {
   expect(screen.getByText(/8,000 \/ 8,000/).className).toMatch(/red/);
 });
 
-it('submits via the button and shows the structured result', async () => {
-  mockedFetch.mockResolvedValueOnce(ok({ success: true, data: SAMPLE }));
+it('enqueues a compose and shows the polled result', async () => {
+  queueCompose(SAMPLE);
   render(<ComposerForm />);
 
   fireEvent.change(screen.getByLabelText('Tamil lyrics'), { target: { value: 'காதல் வரிகள்' } });
   fireEvent.click(screen.getByRole('button', { name: /compose brief/i }));
 
-  await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1));
-  const [url, init] = mockedFetch.mock.calls[0];
-  expect(url).toBe('/api/admin/compose');
-  expect(JSON.parse(init.body)).toEqual({ lyrics: 'காதல் வரிகள்' });
+  // First call is the enqueue POST with the lyrics body.
+  await waitFor(() => expect(mockedFetch.mock.calls[0]?.[0]).toBe('/api/admin/compose'));
+  expect(JSON.parse(mockedFetch.mock.calls[0][1].body)).toEqual({ lyrics: 'காதல் வரிகள்' });
+  // Second call polls the job status.
+  await waitFor(() => expect(String(mockedFetch.mock.calls[1]?.[0])).toMatch(/^\/api\/admin\/compose\/job_/));
 
   await waitFor(() => expect(screen.getByTestId('composer-results')).toBeInTheDocument());
   expect(screen.getByTestId('composer-results').getAttribute('aria-live')).toBe('polite');
   expect(screen.getByText('காதல்')).toBeInTheDocument();
   expect(screen.getByText('72')).toBeInTheDocument();
-  // Grounded ragas render in their own ranked card.
   expect(screen.getByText('Suggested ragas (ranked)')).toBeInTheDocument();
   expect(screen.getByText('Keeravani')).toBeInTheDocument();
 });
 
 it('Cmd+Enter on the textarea submits the form', async () => {
-  mockedFetch.mockResolvedValueOnce(ok({ success: true, data: SAMPLE }));
+  queueCompose(SAMPLE);
   render(<ComposerForm />);
 
   const textarea = screen.getByLabelText('Tamil lyrics');
   fireEvent.change(textarea, { target: { value: 'lyrics' } });
   fireEvent.keyDown(textarea, { key: 'Enter', metaKey: true });
 
-  await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(mockedFetch).toHaveBeenCalledWith('/api/admin/compose', expect.anything()));
 });
 
 it('plain Enter does NOT submit', () => {
@@ -111,54 +126,49 @@ it('plain Enter does NOT submit', () => {
   expect(mockedFetch).not.toHaveBeenCalled();
 });
 
-it('shows a Regenerate button beside the result that re-fires the request', async () => {
-  mockedFetch.mockResolvedValueOnce(ok({ success: true, data: SAMPLE }));
+it('Regenerate re-fires the request and shows the new brief', async () => {
+  queueCompose(SAMPLE);
   render(<ComposerForm />);
 
   fireEvent.change(screen.getByLabelText('Tamil lyrics'), { target: { value: 'lyrics' } });
   fireEvent.click(screen.getByRole('button', { name: /compose brief/i }));
   await waitFor(() => expect(screen.getByTestId('composer-results')).toBeInTheDocument());
 
-  mockedFetch.mockResolvedValueOnce(ok({ success: true, data: { ...SAMPLE, emotion: 'அன்னை' } }));
+  queueCompose({ ...SAMPLE, emotion: 'அன்னை' });
   fireEvent.click(screen.getByRole('button', { name: /regenerate/i }));
 
-  await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(2));
   await waitFor(() => expect(screen.getByText('அன்னை')).toBeInTheDocument());
 });
 
 it('keeps the previous result when a subsequent compose fails (shows error inline)', async () => {
-  mockedFetch.mockResolvedValueOnce(ok({ success: true, data: SAMPLE }));
+  queueCompose(SAMPLE);
   render(<ComposerForm />);
 
   fireEvent.change(screen.getByLabelText('Tamil lyrics'), { target: { value: 'lyrics' } });
   fireEvent.click(screen.getByRole('button', { name: /compose brief/i }));
   await waitFor(() => expect(screen.getByText('காதல்')).toBeInTheDocument());
 
-  // Second attempt fails.
-  mockedFetch.mockResolvedValueOnce(fail(502, { success: false, error: 'upstream borked' }));
+  // Second attempt: the enqueue POST itself fails.
+  mockedFetch.mockResolvedValueOnce(fail(502, { success: false, error: 'enqueue borked' }));
   fireEvent.click(screen.getByRole('button', { name: /regenerate/i }));
 
-  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('upstream borked'));
-  // Previous result still visible.
-  expect(screen.getByText('காதல்')).toBeInTheDocument();
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('enqueue borked'));
+  expect(screen.getByText('காதல்')).toBeInTheDocument(); // previous result still visible
 });
 
-it('error banner exposes its own Retry button', async () => {
-  mockedFetch.mockResolvedValueOnce(fail(502, { success: false, error: 'boom' }));
+it('surfaces a worker error from the status poll', async () => {
+  mockedFetch.mockResolvedValueOnce(enqueued()).mockResolvedValueOnce(statusErr({ code: 'rate_limit', message: 'rate limited, retry' }));
   render(<ComposerForm />);
 
   fireEvent.change(screen.getByLabelText('Tamil lyrics'), { target: { value: 'lyrics' } });
   fireEvent.click(screen.getByRole('button', { name: /compose brief/i }));
-  await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
 
-  expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/rate limited/i));
+  expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument(); // rate_limit is retryable
 });
 
-it('hides Retry for a non-retryable (auth) failure but still shows the error', async () => {
-  // Streamed failure carrying code:'auth' — retrying would just fail again.
-  mockedFetch.mockResolvedValueOnce(
-    ok({ success: false, error: 'The Claude API key is invalid.', code: 'auth' })
-  );
+it('hides Retry for a non-retryable (auth) job error but still shows it', async () => {
+  mockedFetch.mockResolvedValueOnce(enqueued()).mockResolvedValueOnce(statusErr({ code: 'auth', message: 'The Claude API key is invalid.' }));
   render(<ComposerForm />);
 
   fireEvent.change(screen.getByLabelText('Tamil lyrics'), { target: { value: 'lyrics' } });
@@ -169,13 +179,13 @@ it('hides Retry for a non-retryable (auth) failure but still shows the error', a
 });
 
 it('saves the brief (POST /api/admin/briefs) with the chosen SUNO style, and shows Saved', async () => {
-  mockedFetch.mockResolvedValueOnce(ok({ success: true, data: SAMPLE })); // compose
+  queueCompose(SAMPLE);
   render(<ComposerForm />);
   fireEvent.change(screen.getByLabelText('Tamil lyrics'), { target: { value: 'அரிதான' } });
   fireEvent.click(screen.getByRole('button', { name: /compose brief/i }));
   await waitFor(() => expect(screen.getByRole('button', { name: /save brief/i })).toBeInTheDocument());
 
-  mockedFetch.mockResolvedValueOnce(okJson({ success: true, data: { id: 'brief_1' } })); // save
+  mockedFetch.mockResolvedValueOnce(okJson({ success: true, data: { id: 'brief_1' } }));
   fireEvent.click(screen.getByRole('button', { name: /save brief/i }));
 
   await waitFor(() => expect(screen.getByRole('button', { name: /saved/i })).toBeInTheDocument());
@@ -184,45 +194,36 @@ it('saves the brief (POST /api/admin/briefs) with the chosen SUNO style, and sho
   const sent = JSON.parse(saveCall![1].body);
   expect(sent.lyrics).toBe('அரிதான');
   expect(sent.analysis.emotion).toBe('காதல்');
-  expect(sent.decision.chosenSunoStyle).toBe('Traditional Tamil'); // SAMPLE's only style
+  expect(sent.decision.chosenSunoStyle).toBe('Traditional Tamil');
 });
 
-// Regression: after Save then Regenerate, <SaveBrief> must reset — otherwise it
-// stays stuck on "Saved ✓" (new brief unsavable) with a stale style dropdown.
+// Regression: after Save then Regenerate, <SaveBrief> must reset.
 it('re-enables Save and refreshes the chosen style after Regenerate (no stuck "Saved ✓")', async () => {
-  mockedFetch.mockResolvedValueOnce(ok({ success: true, data: SAMPLE })); // compose A
+  queueCompose(SAMPLE);
   render(<ComposerForm />);
   fireEvent.change(screen.getByLabelText('Tamil lyrics'), { target: { value: 'lyrics A' } });
   fireEvent.click(screen.getByRole('button', { name: /compose brief/i }));
   await waitFor(() => expect(screen.getByRole('button', { name: /save brief/i })).toBeInTheDocument());
 
-  // Save brief A → "Saved ✓"
   mockedFetch.mockResolvedValueOnce(okJson({ success: true, data: { id: 'b1' } }));
   fireEvent.click(screen.getByRole('button', { name: /save brief/i }));
   await waitFor(() => expect(screen.getByRole('button', { name: /saved/i })).toBeInTheDocument());
 
-  // Regenerate → brief B with a DIFFERENT SUNO style
-  mockedFetch.mockResolvedValueOnce(ok({
-    success: true,
-    data: { ...SAMPLE, emotion: 'அன்னை', suno_prompts: [{ style: 'Village folk', prompt: 'Folk in G…' }] },
-  }));
+  queueCompose({ ...SAMPLE, emotion: 'அன்னை', suno_prompts: [{ style: 'Village folk', prompt: 'Folk in G…' }] });
   fireEvent.click(screen.getByRole('button', { name: /regenerate/i }));
   await waitFor(() => expect(screen.getByText('அன்னை')).toBeInTheDocument());
 
-  // Save is actionable again, not locked on "Saved ✓"…
   expect(await screen.findByRole('button', { name: /save brief/i })).toBeEnabled();
   expect(screen.queryByRole('button', { name: /saved/i })).not.toBeInTheDocument();
-  // …and the dropdown reflects brief B's style, not A's stale one.
   expect((screen.getByLabelText('Chosen SUNO style') as HTMLSelectElement).value).toBe('Village folk');
 });
 
-it('passes an AbortSignal to the compose request (so it can be cancelled on unmount)', async () => {
-  mockedFetch.mockResolvedValueOnce(ok({ success: true, data: SAMPLE }));
+it('passes an AbortSignal to the compose request (cancellable on unmount)', async () => {
+  queueCompose(SAMPLE);
   render(<ComposerForm />);
   fireEvent.change(screen.getByLabelText('Tamil lyrics'), { target: { value: 'lyrics' } });
   fireEvent.click(screen.getByRole('button', { name: /compose brief/i }));
 
   await waitFor(() => expect(mockedFetch).toHaveBeenCalled());
-  const init = mockedFetch.mock.calls[0][1];
-  expect(init.signal).toBeInstanceOf(AbortSignal);
+  expect(mockedFetch.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
 });

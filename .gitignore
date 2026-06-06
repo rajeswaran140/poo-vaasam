@@ -89,3 +89,5 @@ credentials/
 
 # Amplify recreation capture (contains secret env var values)
 .amplify-recreate/
+worker-dist/
+worker.zip

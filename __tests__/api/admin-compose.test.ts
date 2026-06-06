@@ -1,8 +1,8 @@
 /** @jest-environment node */
 /**
- * Tests for POST /api/admin/compose — admin gate, body validation, and the
- * heartbeat-streamed brief (success + error are streamed as a 200 whose body
- * ends in the `{ success, data|error }` JSON; auth/validation stay plain JSON).
+ * Tests for POST /api/admin/compose — the async enqueue route. Admin-gated.
+ * It creates a `processing` job and fire-and-forget invokes the worker Lambda,
+ * returning the job id (202). Auth (401/403) and body-validation (400) short out.
  */
 
 import { NextRequest } from 'next/server';
@@ -12,39 +12,47 @@ jest.mock('@/lib/auth-helper', () => ({
   requireAdmin: jest.fn(),
 }));
 
-jest.mock('@/services/ai/composer', () => ({
-  composeFromLyrics: jest.fn(),
+const mockCreate = jest.fn();
+jest.mock('@/infrastructure/database/ComposeJobRepository', () => ({
+  ComposeJobRepository: jest.fn().mockImplementation(() => ({ create: mockCreate })),
+}));
+
+const mockSend = jest.fn();
+jest.mock('@aws-sdk/client-lambda', () => ({
+  LambdaClient: jest.fn().mockImplementation(() => ({ send: mockSend })),
+  InvokeCommand: jest.fn().mockImplementation((input) => ({ input })),
 }));
 
 import { POST } from '@/app/api/admin/compose/route';
+import { InvokeCommand } from '@aws-sdk/client-lambda';
 import * as auth from '@/lib/auth-helper';
-import * as composer from '@/services/ai/composer';
+
+const MockInvoke = InvokeCommand as unknown as jest.Mock;
 
 const mockedRequireAdmin = auth.requireAdmin as jest.Mock;
-const mockedCompose = composer.composeFromLyrics as jest.Mock;
-
 const req = (body: unknown) =>
-  new NextRequest('https://tamilagaval.com/api/admin/compose', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
+  new NextRequest('https://tamilagaval.com/api/admin/compose', { method: 'POST', body: JSON.stringify(body) });
 
 beforeEach(() => {
   jest.clearAllMocks();
   mockedRequireAdmin.mockResolvedValue({ isAuthenticated: true });
+  mockCreate.mockResolvedValue({ id: 'compose_x', status: 'processing' });
+  mockSend.mockResolvedValue({ StatusCode: 202 });
 });
 
-it('returns 403 when caller is not admin', async () => {
+it('returns 403 when caller is not admin (no job created)', async () => {
   const { AuthError } = jest.requireActual('@/lib/auth-helper');
   mockedRequireAdmin.mockRejectedValueOnce(new AuthError('Forbidden', 403));
   const res = await POST(req({ lyrics: 'காதல்' }));
   expect(res.status).toBe(403);
-  expect(mockedCompose).not.toHaveBeenCalled();
+  expect(mockCreate).not.toHaveBeenCalled();
+  expect(mockSend).not.toHaveBeenCalled();
 });
 
 it('returns 400 when lyrics are missing', async () => {
   const res = await POST(req({}));
   expect(res.status).toBe(400);
+  expect(mockCreate).not.toHaveBeenCalled();
 });
 
 it('returns 400 when lyrics are too long', async () => {
@@ -52,53 +60,31 @@ it('returns 400 when lyrics are too long', async () => {
   expect(res.status).toBe(400);
 });
 
-// Read a heartbeat-streamed response: drain the body and parse the trailing JSON.
-async function readStreamed(res: Response): Promise<{ success?: boolean; data?: { emotion?: string }; error?: string; code?: string }> {
-  const text = (await res.text()).trim();
-  return JSON.parse(text);
-}
-
-it('streams a clean error (200) when the composer fails, carrying the code', async () => {
-  mockedCompose.mockResolvedValueOnce({ ok: false, code: 'auth', error: 'The Claude API key is invalid.' });
-  const res = await POST(req({ lyrics: 'lyrics' }));
-  expect(res.status).toBe(200); // streamed; the failure is carried in the body
-  const body = await readStreamed(res);
-  expect(body.success).toBe(false);
-  expect(body.error).toMatch(/invalid/i);
-  // The structured code is propagated so the client can suppress a pointless retry.
-  expect(body.code).toBe('auth');
-});
-
-it('does not leak raw upstream detail in the streamed error', async () => {
-  mockedCompose.mockResolvedValueOnce({ ok: false, code: 'upstream', error: 'The AI service failed to respond.' });
-  const res = await POST(req({ lyrics: 'lyrics' }));
-  const body = await readStreamed(res);
-  expect(body.success).toBe(false);
-  expect(body.error).toBe('The AI service failed to respond.');
-});
-
-it('streams the structured brief on success', async () => {
-  mockedCompose.mockResolvedValueOnce({
-    ok: true,
-    data: {
-      emotion: 'காதல்',
-      mood: 'Tender',
-      theme: 'Love',
-      suggested_key: 'C Major',
-      suggested_bpm: 90,
-      suggested_instruments: ['Veena'],
-      suggested_ragas: ['Mohanam'],
-      song_titles: ['T1'],
-      suno_prompts: [{ style: 'Default', prompt: 'prompt' }],
-      youtube_description_tamil: 'desc-ta',
-      youtube_description_english: 'desc-en',
-    },
-  });
-  const res = await POST(req({ lyrics: 'lyrics' }));
-  expect(res.status).toBe(200);
-  const body = await readStreamed(res);
+it('enqueues a job and async-invokes the worker, returning 202 + jobId', async () => {
+  const res = await POST(req({ lyrics: 'காதல் வரிகள்' }));
+  expect(res.status).toBe(202);
+  const body = await res.json();
   expect(body.success).toBe(true);
-  expect(body.data?.emotion).toBe('காதல்');
-  // Called with the lyrics + an abort signal so the route can cancel on disconnect.
-  expect(mockedCompose).toHaveBeenCalledWith('lyrics', expect.objectContaining({ signal: expect.any(AbortSignal) }));
+  expect(body.jobId).toMatch(/^compose_/);
+  expect(body.status).toBe('processing');
+
+  // A processing job is created with the same id...
+  expect(mockCreate).toHaveBeenCalledWith(body.jobId);
+  // ...and the worker is invoked async (Event) with { jobId, lyrics }.
+  expect(mockSend).toHaveBeenCalledTimes(1);
+  const cmdInput = MockInvoke.mock.calls[0][0] as { InvocationType: string; FunctionName: string; Payload: Uint8Array };
+  expect(cmdInput.InvocationType).toBe('Event');
+  expect(cmdInput.FunctionName).toBe('tamilagaval-compose-worker');
+  const payload = JSON.parse(Buffer.from(cmdInput.Payload).toString());
+  expect(payload).toEqual({ jobId: body.jobId, lyrics: 'காதல் வரிகள்' });
+});
+
+it('returns 502 when the worker invoke fails', async () => {
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+  mockSend.mockRejectedValueOnce(new Error('lambda unavailable'));
+  const res = await POST(req({ lyrics: 'lyrics' }));
+  expect(res.status).toBe(502);
+  const body = await res.json();
+  expect(body.success).toBe(false);
+  expect(body.error).not.toMatch(/lambda unavailable/); // raw detail not leaked
 });
