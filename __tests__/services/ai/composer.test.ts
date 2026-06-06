@@ -119,14 +119,23 @@ it('injects the instrument & raga palettes into the system prompt', async () => 
   expect(sys).toContain('Mohanam');   // raga palette
 });
 
-it('threads the chosen raga into a SUNO prompt that omits it', async () => {
-  // SAMPLE's prompt names Veena (an instrument) but no raga → raga appended.
+it('threads the chosen raga + key/scale into a SUNO prompt that omits it', async () => {
+  // SAMPLE's prompt names Veena (an instrument) but no raga → raga + key appended.
   create.mockResolvedValueOnce(toolResponse(SAMPLE));
   const r = await composeFromLyrics('lyrics');
   expect(r.ok).toBe(true);
   if (r.ok) {
-    expect(r.data.suno_prompts[0].prompt).toMatch(/set in raga Keeravani/i);
+    expect(r.data.suno_prompts[0].prompt).toMatch(/raga Keeravani/i);
+    expect(r.data.suno_prompts[0].prompt).toMatch(/harmonic minor/i); // raga-derived scale
   }
+});
+
+it('enriches suggested_key into a key+scale derived from the lead raga', async () => {
+  // SAMPLE: suggested_key "D Minor", lead raga Keeravani (harmonic minor).
+  create.mockResolvedValueOnce(toolResponse(SAMPLE));
+  const r = await composeFromLyrics('lyrics');
+  expect(r.ok).toBe(true);
+  if (r.ok) expect(r.data.suggested_key).toBe('D harmonic minor');
 });
 
 it('appends both instruments and raga when a SUNO prompt names neither', async () => {
@@ -142,8 +151,8 @@ it('appends both instruments and raga when a SUNO prompt names neither', async (
   }
 });
 
-it('leaves a SUNO prompt untouched when it already names both', async () => {
-  const prompt = 'Devotional piece on Veena, set in raga Keeravani, with gentle tabla.';
+it('leaves a SUNO prompt untouched when it already names instruments, raga, and scale', async () => {
+  const prompt = 'Devotional piece on Veena in D harmonic minor, set in raga Keeravani, with gentle tabla.';
   create.mockResolvedValueOnce(
     toolResponse({ ...SAMPLE, suno_prompts: [{ style: 'Devotional', prompt }] })
   );

@@ -10,9 +10,10 @@ import {
   getRagas,
   canonicalRagaNames,
   ragaPalette,
+  ragaScaleKey,
 } from '@/data/ragas';
 
-it('has a non-trivial catalog with unique ids and moods', () => {
+it('has a non-trivial catalog with unique ids, moods, and a scale', () => {
   expect(RAGAS.length).toBeGreaterThanOrEqual(20);
   const ids = RAGAS.map((r) => r.id);
   expect(new Set(ids).size).toBe(ids.length);
@@ -20,7 +21,20 @@ it('has a non-trivial catalog with unique ids and moods', () => {
     expect(r.name).toBeTruthy();
     expect(['Carnatic', 'Hindustani']).toContain(r.tradition);
     expect(r.moods.length).toBeGreaterThan(0);
+    expect(r.scale).toBeTruthy(); // every raga carries a Western scale hint
   }
+});
+
+describe('ragaScaleKey', () => {
+  it('combines the tonic with the lead raga scale', () => {
+    expect(ragaScaleKey('D Minor', 'Keeravani')).toBe('D harmonic minor');
+    expect(ragaScaleKey('A Major', 'Mohanam')).toBe('A major pentatonic');
+    expect(ragaScaleKey('C# Minor', 'kirwani')).toBe('C# harmonic minor'); // alias resolves
+  });
+  it('falls back to the original key when raga/tonic is unresolved', () => {
+    expect(ragaScaleKey('D Minor', 'Not A Raga')).toBe('D Minor');
+    expect(ragaScaleKey('', 'Keeravani')).toBe('');
+  });
 });
 
 it('resolves aliases, case and cross-system equivalents', () => {

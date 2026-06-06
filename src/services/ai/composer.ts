@@ -23,7 +23,7 @@ import {
   type ComposerAnalysis,
 } from './composerSchema';
 import { instrumentPalette, canonicalInstrumentNames } from '@/data/instruments';
-import { ragaPalette, canonicalRagaNames } from '@/data/ragas';
+import { ragaPalette, canonicalRagaNames, ragaScaleKey } from '@/data/ragas';
 
 // Re-export the schema-derived types so existing importers
 // (`@/services/ai/composer`) keep working unchanged.
@@ -108,15 +108,21 @@ export interface ComposeOptions {
  * that appends a concise production tag only when a paragraph omits them, so
  * the SUNO text never drifts vague or off-catalog.
  */
-function threadPaletteIntoSuno(prompt: string, instruments: string[], ragas: string[]): string {
+function threadPaletteIntoSuno(prompt: string, instruments: string[], ragas: string[], keyScale: string): string {
   const text = prompt.trim();
   const lower = text.toLowerCase();
   const mentionsInstrument = instruments.some((i) => lower.includes(i.toLowerCase()));
   const mentionsRaga = ragas.some((r) => lower.includes(r.toLowerCase()));
 
+  // Key/scale is its own clause so it threads in even when the model already
+  // named the raga; skip it only if the scale descriptor is already present.
+  const scaleNeedle = keyScale.toLowerCase().replace(/^[a-g][#b]?\s*/, '');
+  const mentionsScale = !!keyScale && (lower.includes(keyScale.toLowerCase()) || (!!scaleNeedle && lower.includes(scaleNeedle)));
+
   const parts: string[] = [];
   if (!mentionsInstrument && instruments.length) parts.push(`featuring ${instruments.slice(0, 3).join(', ')}`);
-  if (!mentionsRaga && ragas.length) parts.push(`set in raga ${ragas[0]}`);
+  if (!mentionsRaga && ragas.length) parts.push(`in raga ${ragas[0]}`);
+  if (!mentionsScale && keyScale) parts.push(`in the key of ${keyScale}`);
   if (!parts.length) return text;
 
   const tail = parts.join(', ');
@@ -238,15 +244,19 @@ export async function composeFromLyrics(
 
   const finalInstruments = groundedInstruments.length ? groundedInstruments : parsed.data.suggested_instruments;
   const finalRagas = groundedRagas.length ? groundedRagas : parsed.data.suggested_ragas;
+  // Enrich the key into a SUNO/DAW-friendly key+scale derived from the lead raga
+  // (e.g. "D harmonic minor"), then thread that into each SUNO paragraph.
+  const keyScale = ragaScaleKey(parsed.data.suggested_key, finalRagas[0]);
 
   const data: ComposerAnalysis = {
     ...parsed.data,
     suggested_instruments: finalInstruments,
     suggested_ragas: finalRagas,
-    // Ensure each SUNO style paragraph explicitly names its raga + instruments.
+    suggested_key: keyScale,
+    // Ensure each SUNO style paragraph explicitly names its raga + instruments + key/scale.
     suno_prompts: parsed.data.suno_prompts.map((v) => ({
       ...v,
-      prompt: threadPaletteIntoSuno(v.prompt, finalInstruments, finalRagas),
+      prompt: threadPaletteIntoSuno(v.prompt, finalInstruments, finalRagas, keyScale),
     })),
   };
 
