@@ -119,6 +119,39 @@ it('injects the instrument & raga palettes into the system prompt', async () => 
   expect(sys).toContain('Mohanam');   // raga palette
 });
 
+it('threads the chosen raga into a SUNO prompt that omits it', async () => {
+  // SAMPLE's prompt names Veena (an instrument) but no raga → raga appended.
+  create.mockResolvedValueOnce(toolResponse(SAMPLE));
+  const r = await composeFromLyrics('lyrics');
+  expect(r.ok).toBe(true);
+  if (r.ok) {
+    expect(r.data.suno_prompts[0].prompt).toMatch(/set in raga Keeravani/i);
+  }
+});
+
+it('appends both instruments and raga when a SUNO prompt names neither', async () => {
+  create.mockResolvedValueOnce(
+    toolResponse({ ...SAMPLE, suno_prompts: [{ style: 'Modern', prompt: 'Upbeat modern pop track.' }] })
+  );
+  const r = await composeFromLyrics('lyrics');
+  expect(r.ok).toBe(true);
+  if (r.ok) {
+    const p = r.data.suno_prompts[0].prompt;
+    expect(p).toMatch(/featuring Veena/i);  // grounded lead instruments
+    expect(p).toMatch(/raga Keeravani/i);   // grounded lead raga
+  }
+});
+
+it('leaves a SUNO prompt untouched when it already names both', async () => {
+  const prompt = 'Devotional piece on Veena, set in raga Keeravani, with gentle tabla.';
+  create.mockResolvedValueOnce(
+    toolResponse({ ...SAMPLE, suno_prompts: [{ style: 'Devotional', prompt }] })
+  );
+  const r = await composeFromLyrics('lyrics');
+  expect(r.ok).toBe(true);
+  if (r.ok) expect(r.data.suno_prompts[0].prompt).toBe(prompt);
+});
+
 it('forces tool use, low temperature, and enough max_tokens headroom', async () => {
   create.mockResolvedValueOnce(toolResponse(SAMPLE));
   await composeFromLyrics('காதல் வரிகள்');

@@ -68,7 +68,7 @@ ${ragaPalette()}
 - suggested_key: the Western key that best approximates the chosen lead raga (so it can be set in SUNO/DAWs).
 - BPM: ballad 60-80, mid 90-120, upbeat 130-160.
 - Titles: evocative Tamil phrases drawn from or inspired by the lyrics — not generic.
-- suno_prompts: provide 3-5 DISTINCT style variants. Draw styles from: Traditional Tamil (Carnatic), Tamil film ballad, Devotional, Village folk, Modern acoustic, Bharathiyar-inspired. Each prompt is one self-contained English paragraph and must NOT contain the lyrics.
+- suno_prompts: provide 3-5 DISTINCT style variants. Draw styles from: Traditional Tamil (Carnatic), Tamil film ballad, Devotional, Village folk, Modern acoustic, Bharathiyar-inspired. Each prompt is one self-contained English paragraph and must NOT contain the lyrics. In EACH prompt, explicitly name (a) the raga it is built on (use an exact name from the raga palette) and (b) the specific instruments it features (use exact names from the instrument palette), choosing instruments that suit that particular style variant.
 - thumbnail_prompt: vivid, cinematic, culturally Tamil imagery matching the song's emotion. Describe scene/lighting/composition for a 16:9 YouTube thumbnail. Do not request embedded text.
 - youtube_description_tamil and youtube_description_english convey the SAME meaning in each language; end each with 5-8 relevant hashtags including #tamilagaval.
 - Keep ALL copy and imagery strictly apolitical — no flags, political movements, parties, or partisan references.`;
@@ -99,6 +99,28 @@ export interface ComposeOptions {
   model?: string;
   /** Abort signal — cancels the upstream call on client disconnect / supersede. */
   signal?: AbortSignal;
+}
+
+/**
+ * Guarantee a SUNO prompt explicitly names its raga + instruments. The prompt
+ * rule asks the model to do this naturally per-variant; this is the safety net
+ * that appends a concise production tag only when a paragraph omits them, so
+ * the SUNO text never drifts vague or off-catalog.
+ */
+function threadPaletteIntoSuno(prompt: string, instruments: string[], ragas: string[]): string {
+  const text = prompt.trim();
+  const lower = text.toLowerCase();
+  const mentionsInstrument = instruments.some((i) => lower.includes(i.toLowerCase()));
+  const mentionsRaga = ragas.some((r) => lower.includes(r.toLowerCase()));
+
+  const parts: string[] = [];
+  if (!mentionsInstrument && instruments.length) parts.push(`featuring ${instruments.slice(0, 3).join(', ')}`);
+  if (!mentionsRaga && ragas.length) parts.push(`set in raga ${ragas[0]}`);
+  if (!parts.length) return text;
+
+  const tail = parts.join(', ');
+  const sep = /[.!?]$/.test(text) ? ' ' : '. ';
+  return `${text}${sep}${tail.charAt(0).toUpperCase()}${tail.slice(1)}.`;
 }
 
 function getClient(): Anthropic | null {
@@ -213,10 +235,18 @@ export async function composeFromLyrics(
     }));
   }
 
+  const finalInstruments = groundedInstruments.length ? groundedInstruments : parsed.data.suggested_instruments;
+  const finalRagas = groundedRagas.length ? groundedRagas : parsed.data.suggested_ragas;
+
   const data: ComposerAnalysis = {
     ...parsed.data,
-    suggested_instruments: groundedInstruments.length ? groundedInstruments : parsed.data.suggested_instruments,
-    suggested_ragas: groundedRagas.length ? groundedRagas : parsed.data.suggested_ragas,
+    suggested_instruments: finalInstruments,
+    suggested_ragas: finalRagas,
+    // Ensure each SUNO style paragraph explicitly names its raga + instruments.
+    suno_prompts: parsed.data.suno_prompts.map((v) => ({
+      ...v,
+      prompt: threadPaletteIntoSuno(v.prompt, finalInstruments, finalRagas),
+    })),
   };
 
   return { ok: true, data };
