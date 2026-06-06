@@ -29,13 +29,16 @@ import { ragaPalette, canonicalRagaNames } from '@/data/ragas';
 // (`@/services/ai/composer`) keep working unchanged.
 export type { ComposerAnalysis, SunoVariant, ReelIdea } from './composerSchema';
 
-// Sonnet 4.6 for best Tamil/musical nuance. Its ~33s generation exceeds
-// Amplify's managed-CloudFront ~30s origin timeout, so the /api/admin/compose
-// route streams a heartbeat byte every few seconds to keep the connection
-// alive (see route.ts). If a deploy ever shows the response is buffered (504
-// returns), fall back to 'claude-haiku-4-5-20251001' (~18s, fits without
-// streaming).
-export const DEFAULT_MODEL = 'claude-sonnet-4-6';
+// Haiku 4.5 (~18s) is the default because it completes well inside Amplify's
+// managed-CloudFront ~30s origin timeout EVEN IF the heartbeat stream is
+// buffered rather than flushed (the buffering question was never confirmed —
+// see HARDENING #131). Sonnet 4.6 (~33s, and longer now that the brief includes
+// ragas + raga/instrument-named SUNO prompts) sits past that timeout and was
+// returning HTTP 500/504 in prod. The brief's structured fields (instruments,
+// ragas, schema) are catalog-grounded, so Haiku stays accurate where it counts;
+// pass { model: 'claude-sonnet-4-6' } to opt back into Sonnet once compose runs
+// as an async job (the durable fix).
+export const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
 const MAX_LYRICS_CHARS = 8000;
 // Headroom for the full Brief v2 (ranked emotions, 3-5 SUNO paragraphs,
 // BILINGUAL YouTube descriptions, thumbnail prompt, reel). Tamil is token-dense,
