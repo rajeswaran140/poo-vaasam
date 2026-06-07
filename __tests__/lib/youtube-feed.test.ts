@@ -32,7 +32,25 @@ const SAMPLE_FEED = `<?xml version="1.0" encoding="UTF-8"?>
 const originalFetch = global.fetch;
 afterEach(() => {
   global.fetch = originalFetch;
+  delete process.env.YOUTUBE_API_KEY; // never leak a key into the no-key cases
 });
+
+/** Build a minimal channel RSS feed with `n` entries (11-char ids). */
+function feedOf(ids: string[]): string {
+  const entries = ids
+    .map(
+      (id) =>
+        `<entry><yt:videoId>${id}</yt:videoId><title>t</title><published>2026-01-01T00:00:00Z</published></entry>`
+    )
+    .join('');
+  return `<feed>${entries}</feed>`;
+}
+/** playlistItems-shaped items for a set of ids. */
+function apiItems(ids: string[]) {
+  return ids.map((id) => ({ snippet: { title: id, resourceId: { videoId: id } } }));
+}
+/** A unique, valid 11-char video id for index i. */
+const vid = (i: number): string => `v${i}`.padEnd(11, '0');
 
 describe('parseChannelFeed', () => {
   it('parses entries into video objects (ignoring the channel header title)', () => {
@@ -155,6 +173,38 @@ describe('fetchChannelVideos', () => {
     expect(urls.some((u) => u.includes('feeds/videos.xml'))).toBe(true); // RSS was used
     expect(urls.some((u) => u.includes('playlistItems'))).toBe(false); // no Data API fallback
     delete process.env.YOUTUBE_API_KEY;
+  });
+
+  it('escalates to the paginated Data API when RSS comes back full (capped), paging past 50', async () => {
+    process.env.YOUTUBE_API_KEY = 'test-key';
+    const rssIds = Array.from({ length: 15 }, (_, i) => vid(i)); // RSS at its ~15 cap → suspect truncation
+    const apiPage1 = Array.from({ length: 50 }, (_, i) => vid(i));
+    const apiPage2 = Array.from({ length: 10 }, (_, i) => vid(50 + i));
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: true, text: async () => feedOf(rssIds) }) // RSS (full → escalate)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ items: apiItems(apiPage1), nextPageToken: 'PG2' }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ items: apiItems(apiPage2) }) }) // page 2 via token
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ items: [] }) }); // durations videos.list
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const videos = await fetchChannelVideos('UCabcdefghijklmnopqrstuv', 60);
+    expect(videos).toHaveLength(60); // 50 + 10 — well beyond the 15-item RSS cap
+
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(urls.some((u) => u.includes('playlistItems'))).toBe(true);
+    expect(urls.some((u) => u.includes('pageToken=PG2'))).toBe(true); // followed the page token
+  });
+
+  it('does NOT escalate to the Data API when RSS returns a short (complete) list', async () => {
+    process.env.YOUTUBE_API_KEY = 'test-key';
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValue({ ok: true, text: async () => SAMPLE_FEED, json: async () => ({ items: [] }) });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    await fetchChannelVideos('UCabcdefghijklmnopqrstuv');
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(urls.some((u) => u.includes('playlistItems'))).toBe(false); // 2 < 15 → RSS is enough, no quota spent
   });
 
   it('attaches ISO-8601 durations from the Data API when a key is present', async () => {

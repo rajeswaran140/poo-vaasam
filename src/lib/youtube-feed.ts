@@ -1,9 +1,12 @@
 /**
- * YouTube channel feed (RSS).
+ * YouTube channel feed.
  *
- * Fetches a channel's latest uploads from YouTube's public Atom RSS feed —
- * no API key, no quota. The fetch is cached via Next's `revalidate`, so the
- * site stays fresh without hammering YouTube.
+ * Primary source is YouTube's public Atom RSS feed — free, no API key, no quota.
+ * But RSS caps at ~15 items, so once the channel outgrows that it can't be the
+ * whole catalogue. When RSS comes back full (≥ RSS_FEED_CAP — so there may be
+ * more) or fails, we escalate to the YouTube Data API uploads playlist, which is
+ * paginated (no cap) and more reliable. That keeps the common small-channel case
+ * quota-free while staying complete as the catalogue grows.
  *
  * Feed: https://www.youtube.com/feeds/videos.xml?channel_id=UC...
  */
@@ -22,6 +25,12 @@ export interface ChannelVideo {
 }
 
 const FEED_REVALIDATE_SECONDS = 300; // 5 minutes — keep channel deletions visible quickly
+
+// YouTube's channel RSS feed returns at most ~15 entries. If we get a page that
+// full, treat it as possibly-truncated and reach for the Data API instead.
+const RSS_FEED_CAP = 15;
+// Safety bound on Data API pagination (50 items/page → up to 250 videos).
+const MAX_DATA_API_PAGES = 5;
 
 /**
  * Self-hosted (S3) thumbnail URL for a video — NOT YouTube's CDN. Mirrored by
@@ -143,23 +152,38 @@ async function fetchViaRss(channelId: string): Promise<ChannelVideo[]> {
 }
 
 /**
- * Fallback source: YouTube Data API `playlistItems.list` on the uploads
- * playlist (1 quota unit). Used only when the RSS feed flakes (it intermittently
- * 404/500s). Needs YOUTUBE_API_KEY at runtime (inlined via next.config.ts).
+ * Complete source: YouTube Data API `playlistItems.list` on the uploads
+ * playlist. Pages through the playlist (50/page, 1 quota unit each) following
+ * `nextPageToken` until it has at least `want` videos or runs out — so it isn't
+ * subject to the RSS ~15-item cap. Used when RSS looks truncated or flakes.
+ * Needs YOUTUBE_API_KEY at runtime (inlined via next.config.ts). [] without a
+ * key or on any failure.
  */
-async function fetchViaDataApi(channelId: string): Promise<ChannelVideo[]> {
+async function fetchViaDataApi(channelId: string, want: number): Promise<ChannelVideo[]> {
   const key = process.env.YOUTUBE_API_KEY;
   if (!key) return [];
-  const url =
-    `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50` +
-    `&playlistId=${encodeURIComponent(uploadsPlaylistId(channelId))}&key=${encodeURIComponent(key)}`;
-  try {
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) return [];
-    return parseDataApiItems(await res.json(), 50);
-  } catch {
-    return [];
+  const playlistId = uploadsPlaylistId(channelId);
+  const out: ChannelVideo[] = [];
+  let pageToken: string | undefined;
+
+  for (let page = 0; page < MAX_DATA_API_PAGES; page++) {
+    const url =
+      `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50` +
+      `&playlistId=${encodeURIComponent(playlistId)}&key=${encodeURIComponent(key)}` +
+      (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '');
+    let json: unknown;
+    try {
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) break;
+      json = await res.json();
+    } catch {
+      break;
+    }
+    out.push(...parseDataApiItems(json, 50));
+    pageToken = (json as { nextPageToken?: string })?.nextPageToken;
+    if (!pageToken || out.length >= want) break;
   }
+  return out;
 }
 
 /**
@@ -208,10 +232,13 @@ export async function fetchChannelVideos(
     return cached.videos.slice(0, limit);
   }
 
-  // 1) RSS (free). 2) Data API fallback when RSS returns nothing.
+  // 1) RSS (free). 2) Escalate to the paginated Data API when RSS either failed
+  //    (0) or came back full (≥ cap → likely truncated), so the catalogue isn't
+  //    silently capped at ~15 as it grows. Keep whichever list is more complete.
   let videos = await fetchViaRss(channelId);
-  if (videos.length === 0) {
-    videos = await fetchViaDataApi(channelId);
+  if ((videos.length === 0 || videos.length >= RSS_FEED_CAP) && process.env.YOUTUBE_API_KEY) {
+    const viaApi = await fetchViaDataApi(channelId, limit);
+    if (viaApi.length > videos.length) videos = viaApi;
   }
 
   if (videos.length > 0) {
