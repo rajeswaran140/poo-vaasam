@@ -17,9 +17,9 @@ import type { Metadata } from 'next';
 import Header from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
-import { ContentType, ContentStatus } from '@/types/content';
+import { SongCatalog } from '@/application/use-cases/SongCatalog';
+import type { PublicSongDTO } from '@/domain/songs/PublicSong';
 import { SongsPlaylist, type SongRow } from '@/components/music/SongsPlaylist';
-import { themeForSongWithOverride } from '@/config/song-themes';
 import { JsonLd } from '@/components/JsonLd';
 import { SITE_NAME, absoluteUrl } from '@/lib/seo';
 
@@ -40,17 +40,6 @@ const JSONLD_NAME = 'Tamil Songs & Paadal Varigal — Tamilagaval';
 const FALLBACK_OG_IMAGE =
   'https://i.ytimg.com/vi/gfywsN483lI/maxresdefault.jpg';
 
-/** Normalise a createdAt value (Date | ISO string | epoch) to epoch ms. */
-function toEpochMs(value: unknown): number | undefined {
-  if (value instanceof Date) return value.getTime();
-  if (typeof value === 'number') return value;
-  if (typeof value === 'string') {
-    const t = Date.parse(value);
-    return Number.isNaN(t) ? undefined : t;
-  }
-  return undefined;
-}
-
 /** Seconds → ISO-8601 duration (e.g. 185 → "PT3M5S") for schema.org. */
 function isoDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -58,14 +47,14 @@ function isoDuration(seconds: number): string {
   return `PT${m}M${s}S`;
 }
 
-async function getSongs() {
+/**
+ * Published, playable songs as the shared public DTO. Goes through the same
+ * SongCatalog use case + PublicSong projection that backs GET /api/songs, so
+ * the page and the API can never disagree about what a song is.
+ */
+async function getSongs(): Promise<PublicSongDTO[]> {
   try {
-    const repo = new ContentRepository();
-    const result = await repo.findByType(ContentType.SONGS, {
-      limit: 100,
-      status: ContentStatus.PUBLISHED,
-    });
-    return result.items.map((item) => item.toObject());
+    return await new SongCatalog(new ContentRepository()).listPublished(100);
   } catch (error) {
     console.error('Failed to fetch songs:', error);
     return [];
@@ -76,9 +65,7 @@ export async function generateMetadata(): Promise<Metadata> {
   // Pick the first song's cover image if any has one set, otherwise fall back
   // to a static thumbnail so share previews are never blank.
   const songs = await getSongs();
-  const firstCover = songs
-    .map((s: Record<string, unknown>) => (typeof s.featuredImage === 'string' ? s.featuredImage : ''))
-    .find((src: string) => src.length > 0);
+  const firstCover = songs.map((s) => s.coverUrl).find((src): src is string => !!src);
   const ogImage = firstCover || FALLBACK_OG_IMAGE;
   return {
     title: META_TITLE,
@@ -103,20 +90,19 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function SongsPage() {
   const songs = await getSongs();
-  const tracks: SongRow[] = songs.map((s: Record<string, unknown>) => {
-    const id = String(s.id);
-    return {
-      id,
-      title: String(s.title),
-      artist: String(s.author || ''),
-      src: typeof s.audioUrl === 'string' ? s.audioUrl : '',
-      cover: typeof s.featuredImage === 'string' ? s.featuredImage : undefined,
-      duration: typeof s.audioDuration === 'number' ? s.audioDuration : undefined,
-      addedAt: toEpochMs(s.createdAt),
-      theme: themeForSongWithOverride(id, s.theme),
-      youtubeVideoId: typeof s.youtubeVideoId === 'string' ? s.youtubeVideoId : undefined,
-    };
-  });
+  // Adapt the public DTO to the playlist UI's row shape (presentation only —
+  // the domain rules already ran in SongCatalog/PublicSong).
+  const tracks: SongRow[] = songs.map((s) => ({
+    id: s.id,
+    title: s.title,
+    artist: s.artist,
+    src: s.audio.url,
+    cover: s.coverUrl,
+    duration: s.audio.durationSeconds,
+    addedAt: Date.parse(s.publishedAt) || undefined,
+    theme: s.theme,
+    youtubeVideoId: s.youtubeVideoId,
+  }));
   const playableCount = tracks.filter((t) => t.src).length;
 
   const firstCover = tracks.map((t) => t.cover).find((c) => !!c);
