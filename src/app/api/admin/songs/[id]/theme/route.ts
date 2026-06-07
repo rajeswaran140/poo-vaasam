@@ -14,19 +14,13 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import {
-  DynamoDBClient,
-  UpdateItemCommand,
-} from '@aws-sdk/client-dynamodb';
 import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
 import { SONG_THEMES } from '@/config/song-themes';
-import { awsConfig, dynamoDBConfig } from '@/lib/aws-config';
+import { setSongTheme } from '@/lib/song-theme-write';
 
 const schema = z.object({
   theme: z.union([z.enum(SONG_THEMES as unknown as [string, ...string[]]), z.literal('')]),
 });
-
-const db = new DynamoDBClient(awsConfig);
 
 export async function PATCH(
   request: NextRequest,
@@ -54,21 +48,7 @@ export async function PATCH(
   const { theme } = parsed.data;
 
   try {
-    await db.send(
-      new UpdateItemCommand({
-        TableName: dynamoDBConfig.tableName,
-        Key: { PK: { S: `CONTENT#${id}` }, SK: { S: 'METADATA' } },
-        // Empty string = clear the override (REMOVE), else set it.
-        ...(theme === ''
-          ? { UpdateExpression: 'REMOVE theme' }
-          : {
-              UpdateExpression: 'SET theme = :t',
-              ExpressionAttributeValues: { ':t': { S: theme } },
-            }),
-        // Make sure the row actually exists before we touch it.
-        ConditionExpression: 'attribute_exists(PK)',
-      })
-    );
+    await setSongTheme(id, theme);
     return NextResponse.json({ success: true, id, theme });
   } catch (err) {
     if ((err as { name?: string }).name === 'ConditionalCheckFailedException') {

@@ -33,6 +33,12 @@ jest.mock('@/lib/derive-song-duration', () => ({
   deriveDurationSeconds: (...a: unknown[]) => mockDerive(...a),
 }));
 jest.mock('@/infrastructure/storage/s3-client', () => ({ S3Operations: { getRange: jest.fn() } }));
+const mockSetTheme = jest.fn();
+jest.mock('@/lib/song-theme-write', () => ({ setSongTheme: (...a: unknown[]) => mockSetTheme(...a) }));
+const mockGenCover = jest.fn();
+jest.mock('@/application/use-cases/GenerateSongCover', () => ({
+  generateSongCover: (...a: unknown[]) => mockGenCover(...a),
+}));
 
 import { POST } from '@/app/api/admin/songs/publish/route';
 import * as auth from '@/lib/auth-helper';
@@ -52,6 +58,8 @@ beforeEach(() => {
   mockFindByType.mockResolvedValue({ items: [] });
   mockFetchUploads.mockResolvedValue([]);
   mockDerive.mockResolvedValue(undefined);
+  mockSetTheme.mockResolvedValue(undefined);
+  mockGenCover.mockResolvedValue({ ok: true, featuredImage: `${S3}/images/song-covers/cnt_new-1.png` });
   mockExecute.mockImplementation(async (dto: Record<string, unknown>) => ({
     toObject: () => ({
       id: 'cnt_new',
@@ -120,4 +128,29 @@ it('uses an explicit youtubeVideoId + audioDuration verbatim (no lookups)', asyn
   expect(mockExecute).toHaveBeenCalledWith(
     expect.objectContaining({ youtubeVideoId: 'bbbbbbbbbbb', audioDuration: 200 })
   );
+});
+
+it('sets the theme and generates a cover after creating', async () => {
+  const res = await POST(req({ title: 'Themed Song', audioUrl: `${S3}/a.wav`, theme: 'mother' }));
+  const body = await res.json();
+  expect(res.status).toBe(201);
+  expect(mockSetTheme).toHaveBeenCalledWith('cnt_new', 'mother');
+  expect(mockGenCover).toHaveBeenCalledWith('cnt_new');
+  expect(body.data.theme).toBe('mother');
+  expect(body.data.featuredImage).toContain('song-covers');
+});
+
+it('still publishes (201) when cover generation fails — best-effort', async () => {
+  mockGenCover.mockResolvedValueOnce({ ok: false, status: 503, error: 'OpenAI not configured' });
+  const res = await POST(req({ title: 'No Cover Song', audioUrl: `${S3}/a.wav` }));
+  const body = await res.json();
+  expect(res.status).toBe(201); // publish is not rolled back
+  expect(body.data.featuredImage).toBeNull();
+  expect(body.data.coverError).toBe('OpenAI not configured');
+});
+
+it('skips cover generation when generateCover is false', async () => {
+  const res = await POST(req({ title: 'Bare Song', audioUrl: `${S3}/a.wav`, generateCover: false }));
+  expect(res.status).toBe(201);
+  expect(mockGenCover).not.toHaveBeenCalled();
 });

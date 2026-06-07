@@ -23,6 +23,9 @@ import { matchVideoByTitle } from '@/lib/song-video-match';
 import { isShort } from '@/lib/youtube-shorts';
 import { deriveDurationSeconds } from '@/lib/derive-song-duration';
 import { S3Operations } from '@/infrastructure/storage/s3-client';
+import { setSongTheme } from '@/lib/song-theme-write';
+import { generateSongCover } from '@/application/use-cases/GenerateSongCover';
+import { SONG_THEMES } from '@/config/song-themes';
 import { SITE } from '@/config/site';
 
 export const runtime = 'nodejs';
@@ -41,6 +44,8 @@ const publishSchema = z.object({
     .regex(/^[A-Za-z0-9_-]{11}$/, 'Must be an 11-character YouTube video ID')
     .optional(),
   audioDuration: z.coerce.number().int().positive().optional(),
+  theme: z.union([z.enum(SONG_THEMES as unknown as [string, ...string[]]), z.literal('')]).optional(),
+  generateCover: z.boolean().optional().default(true),
 });
 
 export async function POST(request: NextRequest) {
@@ -114,15 +119,40 @@ export async function POST(request: NextRequest) {
     });
 
     const obj = content.toObject();
+    const songId = obj.id as string;
+
+    // Post-create steps are BEST-EFFORT: a theme or cover failure must never
+    // unpublish a song that was created successfully.
+    let appliedTheme: string | undefined;
+    if (input.theme) {
+      try {
+        await setSongTheme(songId, input.theme);
+        appliedTheme = input.theme;
+      } catch (e) {
+        console.error('[publish] theme write failed', e);
+      }
+    }
+
+    let featuredImage: string | undefined;
+    let coverError: string | undefined;
+    if (input.generateCover) {
+      const cover = await generateSongCover(songId);
+      if (cover.ok) featuredImage = cover.featuredImage;
+      else coverError = cover.error;
+    }
+
     return NextResponse.json(
       {
         success: true,
         data: {
-          id: obj.id,
+          id: songId,
           title: obj.title,
           audioDuration: obj.audioDuration ?? null,
           youtubeVideoId: obj.youtubeVideoId ?? null,
           matched: Boolean(youtubeVideoId && !input.youtubeVideoId),
+          theme: appliedTheme ?? null,
+          featuredImage: featuredImage ?? null,
+          ...(coverError ? { coverError } : {}),
         },
       },
       { status: 201 }
