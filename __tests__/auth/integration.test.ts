@@ -12,7 +12,7 @@ import { middleware } from '@/middleware';
 jest.mock('next/server', () => ({
   ...jest.requireActual('next/server'),
   NextResponse: {
-    next: jest.fn(() => ({ type: 'next' })),
+    next: jest.fn(() => ({ type: 'next', headers: new Headers() })),
     redirect: jest.fn((url) => ({ type: 'redirect', url: url.toString() })),
   },
 }));
@@ -39,7 +39,7 @@ describe('Authentication Integration Tests', () => {
       const response2 = middleware(request2);
 
       // Step 3: User can now access admin routes
-      expect(response2).toEqual({ type: 'next' });
+      expect(response2).toMatchObject({ type: 'next' });
     });
 
     it('should maintain session across multiple requests', () => {
@@ -71,7 +71,7 @@ describe('Authentication Integration Tests', () => {
       routes.forEach((route) => {
         const request = createMockRequest(route, cookies);
         const response = middleware(request);
-        expect(response).toEqual({ type: 'next' });
+        expect(response).toMatchObject({ type: 'next' });
       });
     });
   });
@@ -87,7 +87,7 @@ describe('Authentication Integration Tests', () => {
       ]);
 
       let response = middleware(authenticatedRequest);
-      expect(response).toEqual({ type: 'next' });
+      expect(response).toMatchObject({ type: 'next' });
 
       // Session expires (cookies cleared)
       const expiredRequest = createMockRequest('/admin/content', []);
@@ -108,7 +108,7 @@ describe('Authentication Integration Tests', () => {
       const response = middleware(request);
 
       // Should still allow access (LastAuthUser indicates recent session)
-      expect(response).toEqual({ type: 'next' });
+      expect(response).toMatchObject({ type: 'next' });
     });
   });
 
@@ -127,7 +127,7 @@ describe('Authentication Integration Tests', () => {
       ]);
 
       let response = middleware(user1Request);
-      expect(response).toEqual({ type: 'next' });
+      expect(response).toMatchObject({ type: 'next' });
 
       // User 2 authenticated (different session)
       const user2Request = createMockRequest('/admin/content', [
@@ -142,7 +142,7 @@ describe('Authentication Integration Tests', () => {
       ]);
 
       response = middleware(user2Request);
-      expect(response).toEqual({ type: 'next' });
+      expect(response).toMatchObject({ type: 'next' });
     });
   });
 
@@ -205,7 +205,7 @@ describe('Authentication Integration Tests', () => {
           },
         ]);
         response = middleware(request);
-        expect(response).toEqual({ type: 'next' });
+        expect(response).toMatchObject({ type: 'next' });
 
         // Unauthenticated again
         request = createMockRequest(route, []);
@@ -247,7 +247,7 @@ describe('Authentication Integration Tests', () => {
       // All should succeed
       requests.forEach((request) => {
         const response = middleware(request);
-        expect(response).toEqual({ type: 'next' });
+        expect(response).toMatchObject({ type: 'next' });
       });
     });
   });
@@ -272,7 +272,7 @@ describe('Authentication Integration Tests', () => {
         const request = createMockRequest(route, []);
         const response = middleware(request);
 
-        expect(response).toEqual({ type: 'next' });
+        expect(response).toMatchObject({ type: 'next' });
       });
     });
 
