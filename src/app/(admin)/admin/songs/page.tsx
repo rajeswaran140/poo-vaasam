@@ -83,12 +83,20 @@ export default async function AdminSongsPage() {
             {publishedCount} published{draftCount > 0 ? ` · ${draftCount} draft` : ''} · {formatDuration(totalDuration)} total
           </p>
         </div>
-        <Link
-          href="/admin/content/new"
-          className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700"
-        >
-          + New song
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/admin/songs/publish"
+            className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-bold text-white hover:bg-orange-700"
+          >
+            ⚡ Publish song
+          </Link>
+          <Link
+            href="/admin/content/new"
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            + New (manual)
+          </Link>
+        </div>
       </header>
 
       <details className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
