@@ -10,20 +10,27 @@
 
 import Script from 'next/script';
 import { usePathname } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 declare global {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  interface Window { gtag?: (...args: any[]) => void; dataLayer?: unknown[] }
+  interface Window { gtag?: (...args: unknown[]) => void; dataLayer?: unknown[] }
 }
 
 export function GoogleAnalytics({ gaId }: { gaId: string }) {
   const pathname = usePathname();
 
+  // `gtag('config')` already sends the initial page_view, so fire manual ones
+  // ONLY on subsequent client-side route changes — skip the first effect run so
+  // the landing page isn't double-counted. (GA4 derives the path from
+  // page_location; the old UA-style `page_path` param was ignored.)
+  const isFirstRun = useRef(true);
   useEffect(() => {
+    if (isFirstRun.current) {
+      isFirstRun.current = false;
+      return;
+    }
     if (!gaId || typeof window === 'undefined' || typeof window.gtag !== 'function') return;
     window.gtag('event', 'page_view', {
-      page_path: window.location.pathname + window.location.search,
       page_location: window.location.href,
       page_title: document.title,
     });
@@ -42,7 +49,7 @@ export function GoogleAnalytics({ gaId }: { gaId: string }) {
         function gtag(){dataLayer.push(arguments);}
         window.gtag = gtag;
         gtag('js', new Date());
-        gtag('config', '${gaId}', { anonymize_ip: true });
+        gtag('config', '${gaId}');
       `}</Script>
     </>
   );
