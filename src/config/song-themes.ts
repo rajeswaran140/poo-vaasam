@@ -36,9 +36,10 @@ export const SONG_THEME_BY_ID: Record<string, SongTheme> = {
   cnt_1780419293978_31gt0nq13: 'mother',    // அரிதான பெரும் பாசம் (யூடியூப்: c61mxpSgAAA)
   cnt_1780855949386_2y4i1y64d: 'mother',    // கண்ணோடு நீர் அள்ளி (யூடியூப்: DozdKmt0cLY)
   cnt_1780856529972_6vrbl2icr: 'mother',    // செவ்விழி ஓவியமே (யூடியூப்: h1WgaJW9khI) — தாய் மகள் பாசப் பாடல்
+  cnt_1780856975823_fmfd5xgpf: 'mother',    // அம்மா சொன்ன கதை (site-only — no YouTube video yet)
   cnt_1780193983131_fjtgmrgm3: 'homeland',  // என் தேசமே என் சுவாசமே
   // Everything else → 'love' (என்ன மாயம், தூக்கணாங்குருவி போல, ஒரு நாள் திருநாள்,
-  // அக்கம் பக்கம், முடிவில்லா முகத்தினில், அந்தி மேகமே).
+  // அக்கம் பக்கம், முடிவில்லா முகத்தினில், அந்தி மேகமே, பொன்வானம் சாயுதே).
 };
 
 export function themeForSong(id: string): SongTheme {
