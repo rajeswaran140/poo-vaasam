@@ -5,6 +5,7 @@ import { AuthProvider } from "@/components/auth/AuthProvider";
 import { MusicPlayerProvider } from "@/components/music/MusicPlayerProvider";
 import BackToTop from "@/components/BackToTop";
 import { FloatingSubscribe } from "@/components/FloatingSubscribe";
+import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 import { GoogleAnalytics } from "@/components/analytics/GoogleAnalytics";
 import { GA_ID, GOOGLE_SITE_VERIFICATION } from "@/lib/analytics";
 
@@ -103,6 +104,7 @@ export default function RootLayout({
       <body className="font-tamil antialiased">
         <AuthProvider>
           <MusicPlayerProvider>
+            <InstallPrompt />
             {children}
             <BackToTop />
             <FloatingSubscribe />
