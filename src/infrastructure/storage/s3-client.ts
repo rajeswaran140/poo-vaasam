@@ -80,6 +80,27 @@ export class S3Operations {
   }
 
   /**
+   * Read the first `end + 1` bytes of an object (an HTTP Range request), so a
+   * caller can inspect a file header (e.g. a WAV's fmt/data chunks for duration)
+   * without downloading the whole file. Returns the bytes as a Uint8Array.
+   */
+  static async getRange(key: string, end: number): Promise<Uint8Array> {
+    const command = new GetObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: key,
+      Range: `bytes=0-${end}`,
+    });
+    const response = await s3Client.send(command);
+    const body = response.Body as
+      | { transformToByteArray?: () => Promise<Uint8Array> }
+      | undefined;
+    if (!body?.transformToByteArray) {
+      throw new S3Error('S3 range response had no readable body', 'EmptyBody', 502);
+    }
+    return await body.transformToByteArray();
+  }
+
+  /**
    * Delete a file from S3
    */
   static async deleteFile(key: string) {
