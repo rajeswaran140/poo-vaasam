@@ -25,6 +25,7 @@ import { deriveDurationSeconds } from '@/lib/derive-song-duration';
 import { S3Operations } from '@/infrastructure/storage/s3-client';
 import { setSongTheme } from '@/lib/song-theme-write';
 import { generateSongCover } from '@/application/use-cases/GenerateSongCover';
+import { triggerRelease } from '@/lib/amplify-deploy';
 import { SONG_THEMES } from '@/config/song-themes';
 import { SITE } from '@/config/site';
 
@@ -46,6 +47,7 @@ const publishSchema = z.object({
   audioDuration: z.coerce.number().int().positive().optional(),
   theme: z.union([z.enum(SONG_THEMES as unknown as [string, ...string[]]), z.literal('')]).optional(),
   generateCover: z.boolean().optional().default(true),
+  deploy: z.boolean().optional().default(true),
 });
 
 export async function POST(request: NextRequest) {
@@ -141,6 +143,20 @@ export async function POST(request: NextRequest) {
       else coverError = cover.error;
     }
 
+    // Go live: kick off an Amplify RELEASE so the build-time /songs picks it up.
+    let deploy: { jobId: string | null } | undefined;
+    let deployError: string | undefined;
+    if (input.deploy) {
+      const appId = process.env.AMPLIFY_APP_ID;
+      if (!appId) {
+        deployError = 'AMPLIFY_APP_ID not configured';
+      } else {
+        const d = await triggerRelease(appId, process.env.AMPLIFY_BRANCH || 'master');
+        if (d.ok) deploy = { jobId: d.jobId ?? null };
+        else deployError = d.error;
+      }
+    }
+
     return NextResponse.json(
       {
         success: true,
@@ -153,6 +169,8 @@ export async function POST(request: NextRequest) {
           theme: appliedTheme ?? null,
           featuredImage: featuredImage ?? null,
           ...(coverError ? { coverError } : {}),
+          ...(deploy ? { deploy } : {}),
+          ...(deployError ? { deployError } : {}),
         },
       },
       { status: 201 }

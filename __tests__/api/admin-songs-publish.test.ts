@@ -39,6 +39,8 @@ const mockGenCover = jest.fn();
 jest.mock('@/application/use-cases/GenerateSongCover', () => ({
   generateSongCover: (...a: unknown[]) => mockGenCover(...a),
 }));
+const mockTrigger = jest.fn();
+jest.mock('@/lib/amplify-deploy', () => ({ triggerRelease: (...a: unknown[]) => mockTrigger(...a) }));
 
 import { POST } from '@/app/api/admin/songs/publish/route';
 import * as auth from '@/lib/auth-helper';
@@ -60,6 +62,8 @@ beforeEach(() => {
   mockDerive.mockResolvedValue(undefined);
   mockSetTheme.mockResolvedValue(undefined);
   mockGenCover.mockResolvedValue({ ok: true, featuredImage: `${S3}/images/song-covers/cnt_new-1.png` });
+  mockTrigger.mockResolvedValue({ ok: true, jobId: '181' });
+  process.env.AMPLIFY_APP_ID = 'd3rkmepk4popv0';
   mockExecute.mockImplementation(async (dto: Record<string, unknown>) => ({
     toObject: () => ({
       id: 'cnt_new',
@@ -68,6 +72,9 @@ beforeEach(() => {
       youtubeVideoId: dto.youtubeVideoId ?? null,
     }),
   }));
+});
+afterEach(() => {
+  delete process.env.AMPLIFY_APP_ID;
 });
 
 it('403s for a non-admin (no create)', async () => {
@@ -153,4 +160,25 @@ it('skips cover generation when generateCover is false', async () => {
   const res = await POST(req({ title: 'Bare Song', audioUrl: `${S3}/a.wav`, generateCover: false }));
   expect(res.status).toBe(201);
   expect(mockGenCover).not.toHaveBeenCalled();
+});
+
+it('triggers an Amplify deploy and returns the jobId', async () => {
+  const res = await POST(req({ title: 'Deployed Song', audioUrl: `${S3}/a.wav` }));
+  const body = await res.json();
+  expect(mockTrigger).toHaveBeenCalledWith('d3rkmepk4popv0', 'master');
+  expect(body.data.deploy).toEqual({ jobId: '181' });
+});
+
+it('skips deploy when deploy is false', async () => {
+  const res = await POST(req({ title: 'No Deploy Song', audioUrl: `${S3}/a.wav`, deploy: false }));
+  expect(res.status).toBe(201);
+  expect(mockTrigger).not.toHaveBeenCalled();
+});
+
+it('still publishes (201) when the deploy trigger fails', async () => {
+  mockTrigger.mockResolvedValueOnce({ ok: false, error: 'AccessDenied: amplify:StartJob' });
+  const res = await POST(req({ title: 'Deploy Fails Song', audioUrl: `${S3}/a.wav` }));
+  const body = await res.json();
+  expect(res.status).toBe(201);
+  expect(body.data.deployError).toContain('AccessDenied');
 });

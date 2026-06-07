@@ -56,6 +56,11 @@ const nextConfig: NextConfig = {
     APP_AWS_SECRET_ACCESS_KEY: process.env.APP_AWS_SECRET_ACCESS_KEY || '',
     AWS_REGION: process.env.AWS_REGION || 'ca-central-1',
     DYNAMODB_TABLE_NAME: process.env.DYNAMODB_TABLE_NAME || 'TamilWebContent',
+    // Lets the admin "Publish Song" flow trigger a RELEASE deploy so new content
+    // goes live (the public pages are build-time). Needs amplify:StartJob on the
+    // runtime app user.
+    AMPLIFY_APP_ID: process.env.AMPLIFY_APP_ID || 'd3rkmepk4popv0',
+    AMPLIFY_BRANCH: process.env.AMPLIFY_BRANCH || 'master',
   },
 
   // Image optimization
