@@ -13,9 +13,8 @@ import {
   fetchVideoAnalytics,
   isYouTubeAnalyticsConfigured,
 } from '@/lib/youtube-analytics';
-import { fetchChannelVideoStats, isYouTubeApiConfigured } from '@/lib/youtube-api';
 import { SITE } from '@/config/site';
-import { generateYouTubeRecommendations } from '@/services/ai/youtube-recommendations';
+import { YtRecsRepository } from '@/infrastructure/database/YtRecsRepository';
 
 export async function GET(request: NextRequest) {
   try {
@@ -40,22 +39,13 @@ export async function GET(request: NextRequest) {
     fetchVideoAnalytics(days),
   ]);
 
-  // Look up titles via the public Data API (already wired in Phase 1) so AI
-  // recommendations can name songs instead of just video IDs.
-  let titles: Record<string, string> = {};
-  if (wantRecs && channel.ok && videos.ok && isYouTubeApiConfigured()) {
-    const vids = await fetchChannelVideoStats(SITE.youtube.channelId, 50);
-    titles = Object.fromEntries(vids.map((v) => [v.id, v.title]));
-  }
-
-  // AI recs are best-effort — failure here shouldn't 500 the whole route.
-  let recommendations: { ok: true; data: string[] } | { ok: false; error: string } | null = null;
-  if (wantRecs && channel.ok && videos.ok) {
-    recommendations = await generateYouTubeRecommendations({
-      channel: channel.data,
-      videos: videos.data,
-      titles,
-    });
+  // Recommendations are READ FROM THE CACHE (regenerated only via
+  // POST /api/admin/youtube/recommendations) — the LLM never runs in this route,
+  // so it can't blow the Amplify request ceiling.
+  let recommendations: { ok: true; data: string[] } | null = null;
+  if (wantRecs) {
+    const cached = await new YtRecsRepository().get(SITE.youtube.channelId).catch(() => null);
+    if (cached) recommendations = { ok: true, data: cached.recommendations };
   }
 
   return NextResponse.json({

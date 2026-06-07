@@ -36,7 +36,8 @@ import {
   fetchVideoAnalytics,
   isYouTubeAnalyticsConfigured,
 } from '@/lib/youtube-analytics';
-import { generateYouTubeRecommendations } from '@/services/ai/youtube-recommendations';
+import { YtRecsRepository } from '@/infrastructure/database/YtRecsRepository';
+import { RefreshRecsButton } from '@/components/admin/RefreshRecsButton';
 
 export const revalidate = 1800; // 30 min — pairs with the 1-hr upstream fetch cache
 
@@ -149,10 +150,10 @@ export default async function YouTubeAdminPage() {
   const ytaVideos = ytaVideosRes?.ok ? ytaVideosRes.data : [];
   const ytaError = ytaChannelRes && !ytaChannelRes.ok ? ytaChannelRes.error : null;
   const titlesByVideoId = Object.fromEntries(videos.map((v) => [v.id, v.title]));
-  const recommendations =
-    ytaChannel && ytaVideos.length > 0
-      ? await generateYouTubeRecommendations({ channel: ytaChannel, videos: ytaVideos, titles: titlesByVideoId })
-      : null;
+  // Recommendations are generated on demand (admin "Refresh") and cached — NEVER
+  // an LLM call in this render path (an Anthropic call can't reliably fit the
+  // Amplify ~30s request ceiling; same constraint that moved compose async).
+  const cachedRecs = await new YtRecsRepository().get(SITE.youtube.channelId).catch(() => null);
 
   return (
     <div className="space-y-8">
@@ -171,7 +172,7 @@ export default async function YouTubeAdminPage() {
             </a>
           </p>
         </div>
-        <p className="text-xs text-gray-500 dark:text-gray-400">Cached for 30 min · YouTube API for 1 hour</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">YouTube Data API cached ~1h · AI recs on demand</p>
       </header>
 
       {/* Snapshot cards */}
@@ -330,21 +331,27 @@ export default async function YouTubeAdminPage() {
             )}
           </div>
 
-          {/* AI recommendations */}
+          {/* AI recommendations — cached; regenerated on demand via Refresh (no LLM in render) */}
           <div className="rounded-xl border border-orange-200 bg-orange-50 dark:border-orange-900/40 dark:bg-orange-900/20 p-5 shadow-sm lg:col-span-1">
-            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-orange-700 dark:text-orange-300">
-              AI recommendations
-            </p>
-            {!recommendations ? (
-              <p className="text-sm text-orange-900 dark:text-orange-200">Generated when analytics return data.</p>
-            ) : recommendations.ok ? (
-              <ul className="list-disc space-y-2 pl-4 text-sm text-orange-900 dark:text-orange-200">
-                {recommendations.data.map((r, i) => <li key={i}>{r}</li>)}
-              </ul>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-xs font-medium uppercase tracking-wide text-orange-700 dark:text-orange-300">
+                AI recommendations
+              </p>
+              <RefreshRecsButton hasExisting={!!cachedRecs && cachedRecs.recommendations.length > 0} />
+            </div>
+            {!cachedRecs || cachedRecs.recommendations.length === 0 ? (
+              <p className="text-sm text-orange-900 dark:text-orange-200">
+                None yet — click <strong>Generate recommendations</strong> to analyse the last 28 days.
+              </p>
             ) : (
-              <pre className="overflow-x-auto rounded border border-red-200 bg-white dark:bg-gray-900 p-2 text-xs text-red-900 dark:text-red-200">
-                {recommendations.error}
-              </pre>
+              <>
+                <ul className="list-disc space-y-2 pl-4 text-sm text-orange-900 dark:text-orange-200">
+                  {cachedRecs.recommendations.map((r, i) => <li key={i}>{r}</li>)}
+                </ul>
+                <p className="mt-3 text-[10px] text-orange-700 dark:text-orange-400">
+                  Updated {new Date(cachedRecs.generatedAt).toLocaleString()}
+                </p>
+              </>
             )}
           </div>
         </section>

@@ -33,6 +33,7 @@ const WANT = [
   { parameterName: 'source', displayName: 'CTA Source' },
   { parameterName: 'song_id', displayName: 'Song ID' },
   { parameterName: 'destination', displayName: 'YouTube Destination' },
+  { parameterName: 'song_title', displayName: 'Song Title' },
 ];
 
 const client = new JWT({
