@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Noto_Sans_Tamil, Kavivanar, Baloo_Thambi_2 } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/components/auth/AuthProvider";
@@ -78,8 +78,19 @@ export const metadata: Metadata = {
     title: "Tamilagaval — Tamil Poems, Songs & Lyrics by Rajeswaran Thangarajah",
     description: "Free Tamil poems, songs and YouTube videos by lyricist Rajeswaran Thangarajah. Tamil kavithai, paadal varigal — always free.",
   },
+  // Installed-PWA presentation on iOS (standalone launch, dark status bar).
+  appleWebApp: {
+    capable: true,
+    title: "தமிழகவல்",
+    statusBarStyle: "black-translucent",
+  },
   // Search Console HTML-tag verification (only emitted when configured).
   ...(GOOGLE_SITE_VERIFICATION ? { verification: { google: GOOGLE_SITE_VERIFICATION } } : {}),
+};
+
+export const viewport: Viewport = {
+  // Brand orange tints the mobile browser/OS chrome and the PWA status bar.
+  themeColor: "#ea580c",
 };
 
 export default function RootLayout({
