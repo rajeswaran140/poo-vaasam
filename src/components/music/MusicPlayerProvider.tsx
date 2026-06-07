@@ -10,6 +10,13 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
+import {
+  clearMediaSession,
+  setActionHandlers,
+  setMetadata,
+  setPlaybackState,
+  updatePositionState,
+} from './media-session';
 import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Music, Shuffle, Repeat, ChevronDown } from 'lucide-react';
 import { trackAudioPlay } from '@/lib/analytics-events';
 
@@ -249,33 +256,51 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
     // Persist on track/mode change and roughly once per second (Math.floor(time)).
   }, [queue, index, shuffle, repeat, time]);
 
-  // Media Session: lock-screen / notification metadata + hardware controls.
+  // Media Session: lock-screen / notification "now playing" — metadata, the
+  // play/pause indicator, the elapsed-time scrubber, and transport + seek
+  // controls. The browser-API glue lives in ./media-session (pure + tested);
+  // these effects just feed it the current player state.
   useEffect(() => {
-    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
-    const ms = navigator.mediaSession;
     if (!current) {
-      ms.metadata = null;
+      clearMediaSession();
       return;
     }
-    try {
-      ms.metadata = new window.MediaMetadata({
-        title: current.title,
-        artist: current.artist,
-        album: 'தமிழகவல்',
-        artwork: current.cover ? [{ src: current.cover, sizes: '512x512', type: 'image/png' }] : [],
-      });
-    } catch {
-      /* MediaMetadata unavailable */
-    }
-    const set = (action: MediaSessionAction, handler: (() => void) | null) => {
-      try { ms.setActionHandler(action, handler); } catch { /* unsupported action */ }
-    };
-    set('play', () => safePlay(audioRef.current));
-    set('pause', () => audioRef.current?.pause());
-    set('previoustrack', prev);
-    set('nexttrack', next);
-    set('seekto', null);
+    setMetadata({
+      title: current.title,
+      artist: current.artist,
+      album: 'தமிழகவல்',
+      artwork: current.cover,
+    });
+    setActionHandlers({
+      play: () => safePlay(audioRef.current),
+      pause: () => audioRef.current?.pause(),
+      previoustrack: prev,
+      nexttrack: next,
+      seekto: (t) => {
+        const a = audioRef.current;
+        if (a) a.currentTime = t;
+      },
+      seekbackward: (off) => {
+        const a = audioRef.current;
+        if (a) a.currentTime = Math.max(0, a.currentTime - off);
+      },
+      seekforward: (off) => {
+        const a = audioRef.current;
+        if (a) a.currentTime = Math.min(a.duration || Infinity, a.currentTime + off);
+      },
+    });
+    return () => clearMediaSession();
   }, [current, prev, next]);
+
+  // Reflect play/pause on the OS surface so the lock-screen button is correct.
+  useEffect(() => {
+    setPlaybackState(current ? (isPlaying ? 'playing' : 'paused') : 'none');
+  }, [current, isPlaying]);
+
+  // Keep the lock-screen scrubber in step with playback.
+  useEffect(() => {
+    if (current) updatePositionState({ duration, position: time });
+  }, [current, duration, time]);
 
   useEffect(() => {
     if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
