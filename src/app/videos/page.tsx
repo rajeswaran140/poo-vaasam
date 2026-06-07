@@ -11,6 +11,8 @@ import { Footer } from '@/components/Footer';
 import { fetchChannelVideos, videosItemListJsonLd, thumbnailVariants } from '@/lib/youtube-feed';
 import { SITE, isYouTubeVideosConfigured } from '@/config/site';
 import { VideoGallery } from '@/components/VideoGallery';
+import { ShortsRow } from '@/components/ShortsRow';
+import { partitionShorts } from '@/lib/youtube-shorts';
 import { SubscribeButton } from '@/components/SubscribeButton';
 import { JsonLd } from '@/components/JsonLd';
 import Image from 'next/image';
@@ -63,14 +65,18 @@ export default async function VideosPage() {
     notFound();
   }
 
-  const videos = await fetchChannelVideos(SITE.youtube.channelId, 24);
-  // Feature the latest video in the hero once there are enough for a grid below.
+  const all = await fetchChannelVideos(SITE.youtube.channelId, 24);
+  // Shorts (≤3 min, portrait) are presented in their own row so they don't
+  // render letterboxed inside the 16:9 grid alongside the full songs.
+  const { shorts, videos } = partitionShorts(all);
+  // Feature the latest long-form video in the hero once there are enough for a
+  // grid below (a Short doesn't suit the 16:9 hero).
   const featured = videos.length >= 3 ? videos[0] : null;
   const galleryVideos = featured ? videos.slice(1) : videos;
 
   return (
     <>
-      {videos.length > 0 && <JsonLd data={videosItemListJsonLd(videos)} />}
+      {all.length > 0 && <JsonLd data={videosItemListJsonLd(all)} />}
       <Header />
       <main className="min-h-screen flex flex-col">
         {/* Full-bleed hero — matches the /songs hero treatment. */}
@@ -106,6 +112,11 @@ export default async function VideosPage() {
                   {videos.length > 0 && (
                     <span className="inline-flex items-center rounded-full bg-white/15 px-3 py-1 text-white ring-1 ring-white/20 backdrop-blur-sm">
                       {videos.length} காணொளிகள்
+                    </span>
+                  )}
+                  {shorts.length > 0 && (
+                    <span className="inline-flex items-center rounded-full bg-white/15 px-3 py-1 text-white ring-1 ring-white/20 backdrop-blur-sm">
+                      {shorts.length} Shorts
                     </span>
                   )}
                   <span className="inline-flex items-center rounded-full bg-white/15 px-3 py-1 text-white ring-1 ring-white/20 backdrop-blur-sm">
@@ -157,7 +168,14 @@ export default async function VideosPage() {
         <div className="container mx-auto max-w-6xl px-4 py-10 sm:px-6">
           <VideoGallery videos={galleryVideos} />
 
-          {videos.length > 0 && (
+          {shorts.length > 0 && (
+            <section className="mt-12">
+              <h2 className="mb-5 font-kavivanar text-3xl text-white">Shorts</h2>
+              <ShortsRow shorts={shorts} />
+            </section>
+          )}
+
+          {all.length > 0 && (
             <section className="mt-12 text-center">
               <p className="mb-4 font-tamil text-gray-300">
                 புதிய காணொளிகளை தவறவிடாமல் பெற, எங்களை சந்தாதாரராக சேருங்கள்.
