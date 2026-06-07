@@ -11,7 +11,7 @@ import { middleware } from '@/middleware';
 jest.mock('next/server', () => ({
   ...jest.requireActual('next/server'),
   NextResponse: {
-    next: jest.fn(() => ({ type: 'next' })),
+    next: jest.fn(() => ({ type: 'next', headers: new Headers() })),
     redirect: jest.fn((url, status) => ({ type: 'redirect', url: url.toString(), status })),
   },
 }));
@@ -29,7 +29,7 @@ describe('Authentication Middleware', () => {
 
       const response = middleware(request);
 
-      expect(response).toEqual({ type: 'next' });
+      expect(response).toMatchObject({ type: 'next' });
       expect(NextResponse.next).toHaveBeenCalled();
       expect(NextResponse.redirect).not.toHaveBeenCalled();
     });
@@ -41,7 +41,7 @@ describe('Authentication Middleware', () => {
 
       const response = middleware(request);
 
-      expect(response).toEqual({ type: 'next' });
+      expect(response).toMatchObject({ type: 'next' });
       expect(NextResponse.next).toHaveBeenCalled();
     });
 
@@ -52,7 +52,7 @@ describe('Authentication Middleware', () => {
 
       const response = middleware(request);
 
-      expect(response).toEqual({ type: 'next' });
+      expect(response).toMatchObject({ type: 'next' });
       expect(NextResponse.next).toHaveBeenCalled();
     });
 
@@ -123,7 +123,7 @@ describe('Authentication Middleware', () => {
         const request = createMockRequest(route, []);
         const response = middleware(request);
 
-        expect(response).toEqual({ type: 'next' });
+        expect(response).toMatchObject({ type: 'next' });
         expect(NextResponse.next).toHaveBeenCalled();
         expect(NextResponse.redirect).not.toHaveBeenCalled();
       });
@@ -134,7 +134,7 @@ describe('Authentication Middleware', () => {
 
       const response = middleware(request);
 
-      expect(response).toEqual({ type: 'next' });
+      expect(response).toMatchObject({ type: 'next' });
       expect(NextResponse.next).toHaveBeenCalled();
     });
   });
@@ -188,7 +188,7 @@ describe('Authentication Middleware', () => {
 
       const response = middleware(request);
 
-      expect(response).toEqual({ type: 'next' });
+      expect(response).toMatchObject({ type: 'next' });
       expect(NextResponse.redirect).not.toHaveBeenCalled();
     });
   });
@@ -203,7 +203,7 @@ describe('Authentication Middleware', () => {
 
       const response = middleware(request);
 
-      expect(response).toEqual({ type: 'next' });
+      expect(response).toMatchObject({ type: 'next' });
       expect(NextResponse.next).toHaveBeenCalled();
     });
 
@@ -224,9 +224,32 @@ describe('Authentication Middleware', () => {
 
       const response = middleware(request);
 
-      expect(response).toEqual({ type: 'next' });
+      expect(response).toMatchObject({ type: 'next' });
       expect(NextResponse.next).toHaveBeenCalled();
     });
+  });
+});
+
+describe('Content freshness (Cache-Control)', () => {
+  it('forces browser revalidation on content list pages + homepage', () => {
+    for (const path of ['/', '/songs', '/poems', '/videos', '/lyrics', '/stories', '/essays']) {
+      jest.clearAllMocks();
+      const response = middleware(createMockRequest(path, [])) as unknown as { headers: Headers };
+      const cc = response.headers.get('Cache-Control') || '';
+      expect(cc).toContain('max-age=0'); // browser must revalidate
+      expect(cc).toContain('s-maxage=300'); // CDN still caches
+      expect(cc).toMatch(/stale-while-revalidate=\d+/);
+      // not the ~1-year default that caused stale snapshots
+      expect(cc).not.toContain('stale-while-revalidate=31535700');
+    }
+  });
+
+  it('does NOT override caching on other public pages', () => {
+    for (const path of ['/about', '/contact', '/content/cnt_123']) {
+      jest.clearAllMocks();
+      const response = middleware(createMockRequest(path, [])) as unknown as { headers: Headers };
+      expect(response.headers.get('Cache-Control')).toBeNull();
+    }
   });
 });
 

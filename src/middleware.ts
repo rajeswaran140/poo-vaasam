@@ -4,10 +4,21 @@
  * 1. Canonical host: 301-redirect www → apex so the site has a single
  *    indexable host (fixes duplicate-host issues in Search Console).
  * 2. Protects admin routes with an authentication check.
+ * 3. Forces browser revalidation of content list pages (see below).
  */
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+
+// Content list pages are regenerated each deploy. Next's ISR Cache-Control ships
+// a ~1-year `stale-while-revalidate`, so a RETURNING visitor is served their
+// last-seen snapshot (e.g. an old, shorter song list) until a background
+// revalidation completes — they had to hard-refresh to see new songs. Override
+// it so the browser always revalidates (a cheap 304 via the ETag when nothing
+// changed) while CloudFront still caches for s-maxage. Set in middleware because
+// Next overwrites Cache-Control set via next.config headers() for these routes.
+const FRESH_CONTENT_PATHS = new Set(['/', '/songs', '/poems', '/videos', '/lyrics', '/stories', '/essays']);
+const FRESH_CACHE_CONTROL = 'public, max-age=0, s-maxage=300, stale-while-revalidate=60';
 
 export function middleware(request: NextRequest) {
   // 1. Canonicalise the host before anything else.
@@ -41,7 +52,12 @@ export function middleware(request: NextRequest) {
     }
   }
 
-  return NextResponse.next();
+  const response = NextResponse.next();
+  // Keep returning visitors from being shown a long-stale content snapshot.
+  if (FRESH_CONTENT_PATHS.has(pathname)) {
+    response.headers.set('Cache-Control', FRESH_CACHE_CONTROL);
+  }
+  return response;
 }
 
 export const config = {
