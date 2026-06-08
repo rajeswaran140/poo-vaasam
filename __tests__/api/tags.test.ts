@@ -14,10 +14,10 @@ jest.mock('@/infrastructure/database/TagRepository', () => ({
   }),
 }));
 
-// Partial mock: keep unauthorizedResponse real, only mock requireAuth
+// Partial mock: keep authErrorResponse + AuthError real, only mock requireAdmin
 jest.mock('@/lib/auth-helper', () => ({
   ...jest.requireActual('@/lib/auth-helper'),
-  requireAuth: jest.fn(),
+  requireAdmin: jest.fn(),
 }));
 
 import { GET, POST, DELETE } from '@/app/api/tags/route';
@@ -39,7 +39,7 @@ describe('Tags API', () => {
   beforeEach(() => {
     const r = getRepo();
     if (r) Object.values(r).forEach(fn => fn.mockReset());
-    (authHelper.requireAuth as jest.Mock).mockResolvedValue({ email: 'test@example.com', sub: 'test-user-id' });
+    (authHelper.requireAdmin as jest.Mock).mockResolvedValue({ email: 'test@example.com', sub: 'test-user-id' });
   });
 
   describe('GET /api/tags', () => {
@@ -66,12 +66,23 @@ describe('Tags API', () => {
     });
 
     it('should return 401 when not authenticated', async () => {
-      (authHelper.requireAuth as jest.Mock).mockRejectedValue(new Error('Unauthorized'));
+      (authHelper.requireAdmin as jest.Mock).mockRejectedValue(new Error('Unauthorized'));
 
       const request = new NextRequest('http://localhost:3000/api/tags');
       const response = await GET(request);
 
       expect(response.status).toBe(401);
+      expect(getRepo().findAll).not.toHaveBeenCalled();
+    });
+
+    it('should return 403 for an authenticated non-admin (requireAdmin, status preserved)', async () => {
+      const { AuthError } = jest.requireActual('@/lib/auth-helper');
+      (authHelper.requireAdmin as jest.Mock).mockRejectedValue(new AuthError('Forbidden', 403));
+
+      const request = new NextRequest('http://localhost:3000/api/tags');
+      const response = await GET(request);
+
+      expect(response.status).toBe(403);
       expect(getRepo().findAll).not.toHaveBeenCalled();
     });
 
@@ -155,7 +166,7 @@ describe('Tags API', () => {
     });
 
     it('should return 401 when not authenticated', async () => {
-      (authHelper.requireAuth as jest.Mock).mockRejectedValue(new Error('Unauthorized'));
+      (authHelper.requireAdmin as jest.Mock).mockRejectedValue(new Error('Unauthorized'));
 
       const request = new NextRequest('http://localhost:3000/api/tags', {
         method: 'POST',
@@ -209,7 +220,7 @@ describe('Tags API', () => {
     });
 
     it('should return 401 when not authenticated', async () => {
-      (authHelper.requireAuth as jest.Mock).mockRejectedValue(new Error('Unauthorized'));
+      (authHelper.requireAdmin as jest.Mock).mockRejectedValue(new Error('Unauthorized'));
 
       const request = new NextRequest('http://localhost:3000/api/tags?id=1', { method: 'DELETE' });
       const response = await DELETE(request);

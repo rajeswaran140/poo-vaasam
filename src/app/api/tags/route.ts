@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { TagRepository } from '@/infrastructure/database/TagRepository';
-import { requireAuth, unauthorizedResponse } from '@/lib/auth-helper';
+import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
 import { z } from 'zod';
 
 const tagRepo = new TagRepository();
@@ -29,11 +29,11 @@ const deleteTagSchema = z.object({
  */
 export async function GET(request: NextRequest) {
   try {
-    // Verify authentication
+    // Verify admin authentication (401 unauthenticated, 403 non-admin)
     try {
-      await requireAuth(request);
-    } catch {
-      return unauthorizedResponse();
+      await requireAdmin(request);
+    } catch (err) {
+      return authErrorResponse(err);
     }
 
     const tags = await tagRepo.findAll();
@@ -60,11 +60,11 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    // Verify authentication
+    // Verify admin authentication (401 unauthenticated, 403 non-admin)
     try {
-      await requireAuth(request);
-    } catch {
-      return unauthorizedResponse();
+      await requireAdmin(request);
+    } catch (err) {
+      return authErrorResponse(err);
     }
 
     // Parse and validate request body
@@ -118,11 +118,11 @@ export async function POST(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
-    // Verify authentication
+    // Verify admin authentication (401 unauthenticated, 403 non-admin)
     try {
-      await requireAuth(request);
-    } catch {
-      return unauthorizedResponse();
+      await requireAdmin(request);
+    } catch (err) {
+      return authErrorResponse(err);
     }
 
     // Extract and validate query params

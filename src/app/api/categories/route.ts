@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { CategoryRepository } from '@/infrastructure/database/CategoryRepository';
-import { requireAuth, unauthorizedResponse } from '@/lib/auth-helper';
+import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
 import { z } from 'zod';
 
 const categoryRepo = new CategoryRepository();
@@ -30,11 +30,11 @@ const deleteCategorySchema = z.object({
  */
 export async function GET(request: NextRequest) {
   try {
-    // Verify authentication
+    // Verify admin authentication (401 unauthenticated, 403 non-admin)
     try {
-      await requireAuth(request);
-    } catch {
-      return unauthorizedResponse();
+      await requireAdmin(request);
+    } catch (err) {
+      return authErrorResponse(err);
     }
 
     const categories = await categoryRepo.findAll();
@@ -61,11 +61,11 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    // Verify authentication
+    // Verify admin authentication (401 unauthenticated, 403 non-admin)
     try {
-      await requireAuth(request);
-    } catch {
-      return unauthorizedResponse();
+      await requireAdmin(request);
+    } catch (err) {
+      return authErrorResponse(err);
     }
 
     // Parse and validate request body
@@ -120,11 +120,11 @@ export async function POST(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
-    // Verify authentication
+    // Verify admin authentication (401 unauthenticated, 403 non-admin)
     try {
-      await requireAuth(request);
-    } catch {
-      return unauthorizedResponse();
+      await requireAdmin(request);
+    } catch (err) {
+      return authErrorResponse(err);
     }
 
     // Extract and validate query params
