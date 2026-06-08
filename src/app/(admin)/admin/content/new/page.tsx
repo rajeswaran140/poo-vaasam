@@ -36,6 +36,14 @@ function AssetInput({ name, label, placeholder, value, onChange }: {
 import { Music, Feather, Mic, BookOpen, PenTool, Star } from 'lucide-react';
 import { FEATURES } from '@/config/features';
 import showToast from '@/lib/toast';
+import { FIELD_LIMITS } from '@/lib/content/authoring';
+import { useFormDraft } from '@/components/admin/authoring/useFormDraft';
+import { useUnsavedGuard } from '@/components/admin/authoring/useUnsavedGuard';
+import { DraftBanner } from '@/components/admin/authoring/DraftBanner';
+import { SlugPreview } from '@/components/admin/authoring/SlugPreview';
+import { TextMetricsBar } from '@/components/admin/authoring/TextMetricsBar';
+import { ContentPreview } from '@/components/admin/authoring/ContentPreview';
+import { SeoSnippet } from '@/components/admin/authoring/SeoSnippet';
 
 /** A selectable category/tag — only the fields this form renders. */
 interface TaxonomyOption {
@@ -99,6 +107,11 @@ export default function NewContentPage() {
     seoDescription: '',
   });
 
+  // Autosave the in-progress form so a session expiry / tab close / accidental
+  // navigation never loses the writer's work; warn before leaving when dirty.
+  const draft = useFormDraft('new', formData, setFormData);
+  useUnsavedGuard(draft.isDirty && !loading);
+
   // Load categories and tags
   useEffect(() => {
     async function loadData() {
@@ -144,6 +157,7 @@ export default function NewContentPage() {
       const data = await response.json();
 
       if (data.success) {
+        draft.clear(); // saved to the server — drop the local draft
         showToast.success('உள்ளடக்கம் வெற்றிகரமாக உருவாக்கப்பட்டது!');
         router.push('/admin/content');
       } else {
@@ -194,6 +208,8 @@ export default function NewContentPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        <DraftBanner draft={draft.draftAvailable} onRestore={draft.restore} onDismiss={draft.dismiss} />
+
         {/* Content Type */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 dark:bg-gray-900 dark:border-gray-800">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 dark:text-gray-100">
@@ -238,31 +254,42 @@ export default function NewContentPage() {
             Basic Information
           </h2>
 
-          <TamilInput
-            label="Title (தலைப்பு)"
-            value={formData.title}
-            onChange={(value) => setFormData({ ...formData, title: value })}
-            placeholder="Type: vanakkam, poo, tamil"
-            className={formData.type === 'POEMS' ? 'poem-title' : ''}
-            required
-          />
+          <div>
+            <TamilInput
+              label="Title (தலைப்பு)"
+              value={formData.title}
+              onChange={(value) => setFormData({ ...formData, title: value })}
+              placeholder="Type: vanakkam, poo, tamil"
+              className={formData.type === 'POEMS' ? 'poem-title' : ''}
+              counterMax={FIELD_LIMITS.title}
+              required
+            />
+            <SlugPreview title={formData.title} />
+          </div>
 
-          <TamilInput
-            label="Content (உள்ளடக்கம்)"
-            value={formData.body}
-            onChange={(value) => setFormData({ ...formData, body: value })}
-            placeholder="Type your lyrics, poem, or story..."
-            className={formData.type === 'POEMS' ? 'poem-text' : ''}
-            multiline
-            rows={12}
-            required
-          />
+          <div className="space-y-2">
+            <TamilInput
+              label="Content (உள்ளடக்கம்)"
+              value={formData.body}
+              onChange={(value) => setFormData({ ...formData, body: value })}
+              placeholder="Type your lyrics, poem, or story..."
+              className={formData.type === 'POEMS' ? 'poem-text' : ''}
+              multiline
+              rows={12}
+              required
+            />
+            <div className="flex items-center justify-between gap-3">
+              <TextMetricsBar text={formData.body} />
+              <ContentPreview title={formData.title} body={formData.body} isPoem={formData.type === 'POEMS'} />
+            </div>
+          </div>
 
           <TamilInput
             label="Description (விளக்கம்)"
             value={formData.description}
             onChange={(value) => setFormData({ ...formData, description: value })}
             placeholder="Brief description about this content"
+            counterMax={FIELD_LIMITS.description}
             multiline
             rows={3}
           />
@@ -274,6 +301,7 @@ export default function NewContentPage() {
                 value={formData.author}
                 onChange={(value) => setFormData({ ...formData, author: value })}
                 placeholder="Type: ilaiyaraaja, kannadasan"
+                counterMax={FIELD_LIMITS.author}
                 required
               />
             </div>
@@ -486,6 +514,7 @@ export default function NewContentPage() {
               value={formData.seoTitle}
               onChange={(value) => setFormData({ ...formData, seoTitle: value })}
               placeholder="Auto-generated from title if left empty"
+              counterMax={FIELD_LIMITS.seoTitle}
             />
 
             <TamilInput
@@ -493,9 +522,17 @@ export default function NewContentPage() {
               value={formData.seoDescription}
               onChange={(value) => setFormData({ ...formData, seoDescription: value })}
               placeholder="Auto-generated from description if left empty"
+              counterMax={FIELD_LIMITS.seoDescription}
               multiline
               rows={2}
           />
+
+            <SeoSnippet
+              title={formData.title}
+              description={formData.description}
+              seoTitle={formData.seoTitle}
+              seoDescription={formData.seoDescription}
+            />
           </div>
         )}
 
@@ -518,13 +555,20 @@ export default function NewContentPage() {
           >
             Cancel
           </button>
-          <button
-            type="submit"
-            disabled={loading}
-            className="px-8 py-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? 'Creating...' : 'Create Content'}
-          </button>
+          <div className="flex items-center gap-4">
+            {draft.savedAt && (
+              <span className="text-xs text-gray-400 dark:text-gray-500" aria-live="polite">
+                Draft saved ✓
+              </span>
+            )}
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-8 py-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? 'Creating...' : 'Create Content'}
+            </button>
+          </div>
         </div>
       </form>
     </div>

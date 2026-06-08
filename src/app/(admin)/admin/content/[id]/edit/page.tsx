@@ -35,6 +35,14 @@ function EditAssetInput({ name, label, placeholder, value, onChange }: {
 }
 import { FEATURES } from '@/config/features';
 import showToast from '@/lib/toast';
+import { FIELD_LIMITS } from '@/lib/content/authoring';
+import { useFormDraft } from '@/components/admin/authoring/useFormDraft';
+import { useUnsavedGuard } from '@/components/admin/authoring/useUnsavedGuard';
+import { DraftBanner } from '@/components/admin/authoring/DraftBanner';
+import { SlugPreview } from '@/components/admin/authoring/SlugPreview';
+import { TextMetricsBar } from '@/components/admin/authoring/TextMetricsBar';
+import { ContentPreview } from '@/components/admin/authoring/ContentPreview';
+import { SeoSnippet } from '@/components/admin/authoring/SeoSnippet';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -70,6 +78,12 @@ export default function EditContentPage({ params }: PageProps) {
     seoTitle: '',
     seoDescription: '',
   });
+
+  // Autosave edits so a session expiry / tab close never loses work. Baseline is
+  // gated on !loading so the LOADED content (not the empty initial form) is the
+  // dirty reference; keyed per content id.
+  const draft = useFormDraft(`edit:${contentId}`, formData, setFormData, { enabled: !loading });
+  useUnsavedGuard(draft.isDirty && !saving);
 
   useEffect(() => {
     async function loadData() {
@@ -112,14 +126,12 @@ export default function EditContentPage({ params }: PageProps) {
           });
         }
 
-        // Load categories and tags
+        // Load categories and tags. adminFetch attaches the fresh Cognito
+        // Bearer token — these endpoints require admin, so a cookie-only fetch
+        // can silently fail when the cookie token is stale.
         const [categoriesRes, tagsRes] = await Promise.all([
-          fetch('/api/categories', {
-            credentials: 'include',
-          }),
-          fetch('/api/tags', {
-            credentials: 'include',
-          }),
+          adminFetch('/api/categories'),
+          adminFetch('/api/tags'),
         ]);
 
         const categoriesData = await categoriesRes.json();
@@ -154,6 +166,7 @@ export default function EditContentPage({ params }: PageProps) {
       const data = await response.json();
 
       if (data.success) {
+        draft.clear(); // saved to the server — drop the local draft
         showToast.success('உள்ளடக்கம் வெற்றிகரமாக புதுப்பிக்கப்பட்டது!');
         router.push('/admin/content');
       } else {
@@ -209,6 +222,8 @@ export default function EditContentPage({ params }: PageProps) {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        <DraftBanner draft={draft.draftAvailable} onRestore={draft.restore} onDismiss={draft.dismiss} />
+
         {/* Content Type */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Content Type</h2>
@@ -241,29 +256,41 @@ export default function EditContentPage({ params }: PageProps) {
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Basic Information</h2>
 
-          <TamilInput
-            value={formData.title}
-            onChange={(value) => setFormData((prev) => ({ ...prev, title: value }))}
-            label="Title (தலைப்பு)"
-            placeholder="உள்ளடக்க தலைப்பை உள்ளிடவும்..."
-            required
-          />
+          <div>
+            <TamilInput
+              value={formData.title}
+              onChange={(value) => setFormData((prev) => ({ ...prev, title: value }))}
+              label="Title (தலைப்பு)"
+              placeholder="உள்ளடக்க தலைப்பை உள்ளிடவும்..."
+              counterMax={FIELD_LIMITS.title}
+              required
+            />
+            <SlugPreview title={formData.title} />
+          </div>
 
-          <TamilInput
-            value={formData.body}
-            onChange={(value) => setFormData((prev) => ({ ...prev, body: value }))}
-            label="Content (உள்ளடக்கம்)"
-            placeholder="உங்கள் உள்ளடக்கத்தை இங்கே எழுதவும்..."
-            multiline
-            rows={10}
-            required
-          />
+          <div className="space-y-2">
+            <TamilInput
+              value={formData.body}
+              onChange={(value) => setFormData((prev) => ({ ...prev, body: value }))}
+              label="Content (உள்ளடக்கம்)"
+              placeholder="உங்கள் உள்ளடக்கத்தை இங்கே எழுதவும்..."
+              className={formData.type === 'POEMS' ? 'poem-text' : ''}
+              multiline
+              rows={10}
+              required
+            />
+            <div className="flex items-center justify-between gap-3">
+              <TextMetricsBar text={formData.body} />
+              <ContentPreview title={formData.title} body={formData.body} isPoem={formData.type === 'POEMS'} />
+            </div>
+          </div>
 
           <TamilInput
             value={formData.description}
             onChange={(value) => setFormData((prev) => ({ ...prev, description: value }))}
             label="Description (விளக்கம்)"
             placeholder="சுருக்கமான விளக்கம்..."
+            counterMax={FIELD_LIMITS.description}
             multiline
             rows={3}
           />
@@ -274,6 +301,7 @@ export default function EditContentPage({ params }: PageProps) {
               onChange={(value) => setFormData((prev) => ({ ...prev, author: value }))}
               label="Author (ஆசிரியர்)"
               placeholder="ஆசிரியர் பெயர்..."
+              counterMax={FIELD_LIMITS.author}
               required
             />
 
@@ -452,14 +480,22 @@ export default function EditContentPage({ params }: PageProps) {
               value={formData.seoTitle}
               onChange={(value) => setFormData({ ...formData, seoTitle: value })}
               placeholder="Auto-generated from title if left empty"
+              counterMax={FIELD_LIMITS.seoTitle}
             />
             <TamilInput
               label="SEO Description"
               value={formData.seoDescription}
               onChange={(value) => setFormData({ ...formData, seoDescription: value })}
               placeholder="Auto-generated from description if left empty"
+              counterMax={FIELD_LIMITS.seoDescription}
               multiline
               rows={2}
+            />
+            <SeoSnippet
+              title={formData.title}
+              description={formData.description}
+              seoTitle={formData.seoTitle}
+              seoDescription={formData.seoDescription}
             />
           </div>
         )}
@@ -473,13 +509,20 @@ export default function EditContentPage({ params }: PageProps) {
           >
             Cancel
           </button>
-          <button
-            type="submit"
-            disabled={saving}
-            className="px-8 py-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {saving ? 'Saving...' : 'Update Content'}
-          </button>
+          <div className="flex items-center gap-4">
+            {draft.savedAt && (
+              <span className="text-xs text-gray-400" aria-live="polite">
+                Draft saved ✓
+              </span>
+            )}
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-8 py-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {saving ? 'Saving...' : 'Update Content'}
+            </button>
+          </div>
         </div>
       </form>
     </div>

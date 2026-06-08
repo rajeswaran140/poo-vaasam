@@ -11,6 +11,7 @@ import { useState } from 'react';
 import { ReactTransliterate } from 'react-transliterate';
 import 'react-transliterate/dist/index.css';
 import { Languages, Keyboard } from 'lucide-react';
+import { CharCount } from '@/components/admin/authoring/CharCount';
 
 interface TamilInputProps {
   value: string;
@@ -21,6 +22,8 @@ interface TamilInputProps {
   className?: string;
   label?: string;
   required?: boolean;
+  /** When set, shows a live character counter (n/max) in the label row. */
+  counterMax?: number;
 }
 
 export function TamilInput({
@@ -32,6 +35,7 @@ export function TamilInput({
   className = '',
   label,
   required = false,
+  counterMax,
 }: TamilInputProps) {
   const [isTransliterationEnabled, setIsTransliterationEnabled] = useState(true);
 
@@ -39,11 +43,13 @@ export function TamilInput({
     <div className="space-y-2">
       {/* Label and Toggle */}
       {label && (
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
             {label}
             {required && <span className="text-red-500 ml-1">*</span>}
           </label>
+          <div className="flex items-center gap-2">
+          {counterMax != null && <CharCount value={value} max={counterMax} />}
           <button
             type="button"
             onClick={() => setIsTransliterationEnabled(!isTransliterationEnabled)}
@@ -66,6 +72,7 @@ export function TamilInput({
               </>
             )}
           </button>
+          </div>
         </div>
       )}
 
@@ -75,6 +82,10 @@ export function TamilInput({
           value={value}
           onChangeText={onChange}
           lang="ta"
+          // Accuracy: Google's Tamil IME. Show more candidates so typed text
+          // resolves to precise Tamil (e.g. "tamil" → தமிழ்); Space commits the
+          // highlighted suggestion (library default via triggerKeys).
+          maxOptions={7}
           placeholder={placeholder}
           containerClassName="relative"
           activeItemStyles={{
