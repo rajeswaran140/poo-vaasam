@@ -58,6 +58,32 @@ export const s3Config = {
 };
 
 /**
+ * Public base URL for SERVING media (audio, covers, thumbnails).
+ *
+ * Prefer the CDN (CloudFront) so the S3 bucket can stay PRIVATE — visitors hit
+ * the distribution, never S3 directly. Falls back to the direct S3 URL only if
+ * `MEDIA_BASE_URL` is unset (e.g. local dev before the env is configured).
+ * Server-only: every media URL is built server-side and serialized into the
+ * (build-time) pages, so the browser only ever sees the final string.
+ */
+const mediaBaseUrl = (
+  process.env.MEDIA_BASE_URL ||
+  `https://${s3Config.bucket}.s3.${s3Config.region}.amazonaws.com`
+).replace(/\/+$/, '');
+
+export const mediaConfig = { baseUrl: mediaBaseUrl };
+
+/**
+ * Build a public URL for an S3 object key, routed through the media base
+ * (CDN). Path segments are percent-encoded so Tamil/space-containing keys
+ * (e.g. `audio/poem-music/அந்தி மேகமே.mp3`) produce a valid URL.
+ */
+export function mediaUrl(key: string): string {
+  const cleanKey = key.replace(/^\/+/, '');
+  return `${mediaBaseUrl}/${cleanKey.split('/').map(encodeURIComponent).join('/')}`;
+}
+
+/**
  * Cognito Configuration (exposed to browser for Auth UI)
  * Uses NEXT_PUBLIC_ prefix because Amplify UI components need these values
  */

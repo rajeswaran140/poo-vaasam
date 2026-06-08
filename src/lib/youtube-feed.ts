@@ -12,6 +12,7 @@
  */
 
 import { ensureThumbnailsMirrored } from '@/lib/video-thumbnails';
+import { mediaUrl } from '@/lib/aws-config';
 
 export interface ChannelVideo {
   id: string;
@@ -39,7 +40,7 @@ const MAX_DATA_API_PAGES = 5;
  * feed parsers stay light.
  */
 export function s3ThumbnailUrl(videoId: string): string {
-  return `https://tamil-web-media.s3.us-east-1.amazonaws.com/images/video-thumbs/${videoId}.jpg`;
+  return mediaUrl(`images/video-thumbs/${videoId}.jpg`);
 }
 
 function decodeEntities(text: string): string {

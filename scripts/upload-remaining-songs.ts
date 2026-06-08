@@ -20,7 +20,9 @@ import { ContentType, ContentStatus } from '@/types/content';
 const WRITE = process.env.WRITE === '1';
 const BUCKET = 'tamil-web-media';
 const PREFIX = 'audio/poem-music/';
-const S3_BASE = `https://${BUCKET}.s3.us-east-1.amazonaws.com`;
+// Serve via the media CDN (MEDIA_BASE_URL) so new songs get a CDN audioUrl and
+// the S3 bucket can stay private; fall back to the direct S3 URL if unset.
+const S3_BASE = (process.env.MEDIA_BASE_URL || `https://${BUCKET}.s3.us-east-1.amazonaws.com`).replace(/\/+$/, '');
 const AUDIO = /\.(mp3|wav|m4a|aac|ogg)$/i;
 const AUTHOR = 'இராஜ்';
 

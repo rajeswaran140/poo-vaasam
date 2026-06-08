@@ -14,7 +14,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createPresignedPost, type PresignedPost } from '@aws-sdk/s3-presigned-post';
-import { s3Config } from '@/lib/aws-config';
+import { s3Config, mediaUrl } from '@/lib/aws-config';
 
 /**
  * Create S3 Client
@@ -60,7 +60,8 @@ export class S3Operations {
     await s3Client.send(command);
 
     return {
-      url: `https://${BUCKET_NAME}.s3.${s3Config.region}.amazonaws.com/${params.key}`,
+      // Serve via the media base (CDN) so the bucket can stay private.
+      url: mediaUrl(params.key),
       key: params.key,
       bucket: BUCKET_NAME,
     };
