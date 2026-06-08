@@ -65,7 +65,7 @@ export default async function HomePage() {
       <Header />
 
       {/* Hero Section - Centered */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white pt-20">
+      <section className="relative overflow-hidden bg-orange-600 text-white pt-20">
         {/* Background Pattern */}
         <div className="absolute inset-0 opacity-10">
           <div className="absolute inset-0" style={{
@@ -143,12 +143,6 @@ export default async function HomePage() {
             </div>
           </div>
         </div>
-
-        {/* Fade the orange hero into the dark page below (matches /songs) */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-gray-900"
-        />
       </section>
 
       {/* Latest YouTube videos — funnel to the channel */}
