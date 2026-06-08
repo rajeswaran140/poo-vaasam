@@ -30,6 +30,32 @@ const S3_BASE = 'https://tamil-web-media.s3.us-east-1.amazonaws.com';
 const keyFromUrl = (url: string) => decodeURIComponent(new URL(url).pathname.replace(/^\/+/, ''));
 const urlFromKey = (key: string) => `${S3_BASE}/${key.split('/').map(encodeURIComponent).join('/')}`;
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Download a (large) WAV master to disk. S3 intermittently closes the
+ * connection mid-transfer on the bigger files (~100MB), so retry the whole
+ * download a few times with linear backoff before giving up on the song.
+ * Returns false (instead of throwing) so one bad download skips that song
+ * rather than aborting the entire run.
+ */
+async function downloadToFile(url: string, dest: string, attempts = 4): Promise<boolean> {
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) { console.error(`        skip: WAV not reachable (${res.status})`); return false; }
+      writeFileSync(dest, Buffer.from(await res.arrayBuffer()));
+      return true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (i === attempts) { console.error(`        skip: download failed after ${attempts} tries (${msg})`); return false; }
+      console.error(`        retry ${i}/${attempts - 1}: download dropped (${msg})`);
+      await sleep(2000 * i);
+    }
+  }
+  return false;
+}
+
 async function main() {
   const repo = new ContentRepository();
   const page = await repo.findByType(ContentType.SONGS, { status: ContentStatus.PUBLISHED, limit: 300 });
@@ -53,12 +79,10 @@ async function main() {
     console.log(`${WRITE ? 'CONVERT' : 'PLAN  '}: ${String(s.obj.title)}\n        ${wavKey} -> ${mp3Key}`);
     if (!WRITE) { done++; continue; }
 
-    // 1) download the WAV master (public URL).
+    // 1) download the WAV master (public URL), retrying on mid-transfer drops.
     const wavPath = join(tmp, 'in.wav');
     const mp3Path = join(tmp, 'out.mp3');
-    const res = await fetch(urlFromKey(wavKey));
-    if (!res.ok) { console.error(`        skip: WAV not reachable (${res.status})`); continue; }
-    writeFileSync(wavPath, Buffer.from(await res.arrayBuffer()));
+    if (!(await downloadToFile(urlFromKey(wavKey), wavPath))) continue;
 
     // 2) transcode → MP3 (libmp3lame).
     const ff = spawnSync(FFMPEG, ['-y', '-i', wavPath, '-codec:a', 'libmp3lame', '-b:a', BITRATE, mp3Path], { stdio: 'ignore' });
