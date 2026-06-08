@@ -61,6 +61,13 @@ const nextConfig: NextConfig = {
     // runtime app user.
     AMPLIFY_APP_ID: process.env.AMPLIFY_APP_ID || 'd3rkmepk4popv0',
     AMPLIFY_BRANCH: process.env.AMPLIFY_BRANCH || 'master',
+    // CDN base for serving media (CloudFront, since the S3 bucket is private).
+    // MUST be inlined: video thumbnails are built via mediaUrl() at build time,
+    // so without this the build falls back to the now-private S3 URL → 403 (the
+    // thumbnails silently break, even though song audio/covers — whose CloudFront
+    // URLs live in DynamoDB — keep working). Defaults to the distribution domain
+    // so a missing env var can't reintroduce the broken S3-direct fallback.
+    MEDIA_BASE_URL: process.env.MEDIA_BASE_URL || 'https://d2cdoh43143xxa.cloudfront.net',
   },
 
   // Image optimization
