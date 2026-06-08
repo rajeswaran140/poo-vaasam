@@ -88,7 +88,7 @@ export function TamilInput({
           // one (library default via triggerKeys).
           maxOptions={9}
           placeholder={placeholder}
-          containerClassName="relative"
+          containerClassName="relative tamil-translit"
           activeItemStyles={{
             backgroundColor: '#7C3AED',
             color: 'white',
