@@ -202,11 +202,12 @@ export class S3Operations {
   }
 
   /**
-   * Public HTTPS URL for an object. Readable by anyone only if the object is
-   * tagged `public=true` (see the bucket policy in scripts/create-s3-bucket.ts).
+   * Public HTTPS URL for an object, routed through the media base (CloudFront).
+   * The S3 bucket itself is private (OAC) — only the CDN can read it — so this
+   * must NOT return a direct S3 URL or the link would 403.
    */
   static getPublicUrl(key: string): string {
-    return `https://${BUCKET_NAME}.s3.${s3Config.region}.amazonaws.com/${key}`;
+    return mediaUrl(key);
   }
 
   /**
@@ -227,6 +228,22 @@ export class S3Operations {
 
     return `${params.folder}/${timestamp}_${random}_${sanitizedFilename}`;
   }
+}
+
+/**
+ * Normalise a request/browser-supplied content type to the canonical one we
+ * want stored on the S3 object. Browsers report `audio/mp3` for MP3 files,
+ * which is a non-standard MIME type — the registered type is `audio/mpeg`.
+ * Storing the canonical type keeps every song consistent (and avoids the
+ * `audio/mp3` objects the early uploads produced). Unknown types pass through.
+ */
+const CONTENT_TYPE_ALIASES: Record<string, string> = {
+  'audio/mp3': 'audio/mpeg',
+  'audio/x-mpeg': 'audio/mpeg',
+  'audio/x-wav': 'audio/wav',
+};
+export function normalizeContentType(contentType: string): string {
+  return CONTENT_TYPE_ALIASES[contentType.trim().toLowerCase()] ?? contentType;
 }
 
 /**

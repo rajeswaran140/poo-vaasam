@@ -17,7 +17,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
-import { S3Operations, FILE_CONSTRAINTS } from '@/infrastructure/storage/s3-client';
+import { S3Operations, FILE_CONSTRAINTS, normalizeContentType } from '@/infrastructure/storage/s3-client';
 
 export const dynamic = 'force-dynamic';
 
@@ -74,6 +74,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Store the canonical MIME type (e.g. browser-sent audio/mp3 -> audio/mpeg)
+    // so every object has a standard Content-Type. The presigned POST below
+    // pins this value, so S3 stores exactly this.
+    const storedContentType = normalizeContentType(contentType);
+
     // Enforce the size cap server-side (the browser also checks, but don't trust it).
     const maxSize = FILE_CONSTRAINTS.maxSize[kind];
     if (typeof size === 'number' && size > maxSize) {
@@ -96,7 +101,7 @@ export async function POST(request: NextRequest) {
     // upload over the cap even if the client lied about `size` above.
     const { url, fields } = await S3Operations.getSignedUploadPost(
       key,
-      contentType,
+      storedContentType,
       maxSize,
       UPLOAD_URL_TTL_SECONDS
     );

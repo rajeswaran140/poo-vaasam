@@ -19,9 +19,11 @@ jest.mock('@/infrastructure/storage/s3-client', () => ({
       fields: { key: 'audio/123_song.mp3', 'Content-Type': 'audio/mpeg', policy: 'POLICY', 'x-amz-signature': 'SIG' },
     })),
     getPublicUrl: jest.fn(
-      () => 'https://tamil-web-media.s3.us-east-1.amazonaws.com/audio/123_song.mp3'
+      () => 'https://dxxxx.cloudfront.net/audio/123_song.mp3'
     ),
   },
+  normalizeContentType: (ct: string) =>
+    ({ 'audio/mp3': 'audio/mpeg', 'audio/x-wav': 'audio/wav' }[ct] ?? ct),
   FILE_CONSTRAINTS: {
     maxSize: { image: 10 * 1024 * 1024, audio: 50 * 1024 * 1024, video: 50 * 1024 * 1024 },
     allowedTypes: {
@@ -82,7 +84,9 @@ describe('POST /api/admin/upload — presigning', () => {
     expect(json.data.uploadUrl).toBe('https://tamil-web-media.s3.us-east-1.amazonaws.com/');
     expect(json.data.fields.key).toBe('audio/123_song.mp3');
     expect(json.data.fields['Content-Type']).toBe('audio/mpeg');
-    expect(json.data.publicUrl).toContain('tamil-web-media');
+    // publicUrl is the CDN URL (S3 bucket is private behind CloudFront).
+    expect(json.data.publicUrl).toContain('cloudfront.net');
+    expect(json.data.publicUrl).not.toContain('s3.us-east-1.amazonaws.com');
     // Old PUT-only `headers` shape is gone.
     expect(json.data.headers).toBeUndefined();
 
@@ -92,6 +96,21 @@ describe('POST /api/admin/upload — presigning', () => {
       expect.any(String),
       'audio/mpeg',
       50 * 1024 * 1024, // audio cap from the mocked FILE_CONSTRAINTS
+      expect.any(Number)
+    );
+  });
+
+  it('normalises a browser-sent audio/mp3 to audio/mpeg for storage', async () => {
+    const res = await POST(
+      makeRequest({ filename: 'song.mp3', contentType: 'audio/mp3', kind: 'audio', size: 1024 })
+    );
+    expect(res.status).toBe(200);
+    // The presigned POST must PIN the canonical type, so S3 stores audio/mpeg
+    // even though the browser reported the non-standard audio/mp3.
+    expect(S3Operations.getSignedUploadPost).toHaveBeenCalledWith(
+      expect.any(String),
+      'audio/mpeg',
+      expect.any(Number),
       expect.any(Number)
     );
   });
