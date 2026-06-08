@@ -82,10 +82,11 @@ export function TamilInput({
           value={value}
           onChangeText={onChange}
           lang="ta"
-          // Accuracy: Google's Tamil IME. Show more candidates so typed text
-          // resolves to precise Tamil (e.g. "tamil" → தமிழ்); Space commits the
-          // highlighted suggestion (library default via triggerKeys).
-          maxOptions={7}
+          // Accuracy + completeness: Google's Tamil IME. Show up to 9 candidates
+          // so alternatives surface (e.g. "malai" → மலை / மாலை / மழை …); the
+          // writer picks with ↑↓ + Enter or click. Space commits the highlighted
+          // one (library default via triggerKeys).
+          maxOptions={9}
           placeholder={placeholder}
           containerClassName="relative"
           activeItemStyles={{
@@ -140,9 +141,12 @@ export function TamilInput({
         <div className="flex items-start gap-2 text-xs text-purple-700 bg-purple-50 px-3 py-2 rounded-md border border-purple-200 dark:text-purple-200 dark:bg-purple-950/30 dark:border-purple-800">
           <span className="text-base">💡</span>
           <div>
-            <strong>How it works:</strong> Type in English and press <kbd className="px-1 py-0.5 bg-white border border-purple-300 rounded text-xs">Space</kbd> to see Tamil suggestions.
+            <strong>How it works:</strong> Type in English — a list of Tamil suggestions appears. Use{' '}
+            <kbd className="px-1 py-0.5 bg-white border border-purple-300 rounded text-xs">↑</kbd>{' '}
+            <kbd className="px-1 py-0.5 bg-white border border-purple-300 rounded text-xs">↓</kbd> then{' '}
+            <kbd className="px-1 py-0.5 bg-white border border-purple-300 rounded text-xs">Enter</kbd> (or click) to choose; <kbd className="px-1 py-0.5 bg-white border border-purple-300 rounded text-xs">Space</kbd> accepts the highlighted word.
             <br />
-            <span className="text-purple-600">Examples: vanakkam → வணக்கம், poo → பூ, tamil → தமிழ், ilayaraja → இளையராஜா</span>
+            <span className="text-purple-600">Some words have several spellings — e.g. <strong>malai</strong> → மலை / மாலை / மழை. Pick the one you mean.</span>
           </div>
         </div>
       )}
