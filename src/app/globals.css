@@ -177,16 +177,12 @@ html {
   scroll-behavior: smooth;
 }
 
-/* Image lazy loading optimization */
-img[loading="lazy"] {
-  opacity: 0;
-  transition: opacity 0.3s ease-in;
-}
-
-img[loading="lazy"].loaded,
-img[loading="lazy"]:not([src]) {
-  opacity: 1;
-}
+/* NOTE: a former rule here set `img[loading="lazy"] { opacity: 0 }` and only
+   revealed images once a `.loaded` class was added by JS. That JS no longer
+   exists (and Next.js <Image> never gets `.loaded`), so the rule left every
+   lazy image — including the /videos thumbnails (Next <Image loading="lazy">)
+   and home thumbnails — permanently invisible. Removed: browsers handle lazy
+   loading natively; no opacity gate needed. */
 
 /* Print styles for poems */
 @media print {
