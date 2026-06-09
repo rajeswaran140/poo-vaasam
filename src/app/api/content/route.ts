@@ -9,7 +9,7 @@ import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { CategoryRepository } from '@/infrastructure/database/CategoryRepository';
 import { TagRepository } from '@/infrastructure/database/TagRepository';
 import { GetContentUseCase } from '@/application/use-cases/GetContentUseCase';
-import { requireAuth, unauthorizedResponse } from '@/lib/auth-helper';
+import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
 import { ContentStatus } from '@/types/content';
 import { triggerReleaseFromEnv, shouldDeployForContent } from '@/lib/amplify-deploy';
 import {
@@ -31,17 +31,19 @@ const getContentUseCase = new GetContentUseCase(
 
 /**
  * GET /api/content?id=xxx
- * Get single content by ID
+ * Get single content by ID. Returns content of any status (drafts included),
+ * so this is an admin-only authoring read — the public site reads published
+ * content via the statically-rendered pages and /api/songs, not this route.
  *
- * @requires Authentication
+ * @requires Admin
  */
 export async function GET(request: NextRequest) {
   try {
-    // Verify authentication
+    // Verify the caller is an admin (this returns unpublished/draft content)
     try {
-      await requireAuth(request);
-    } catch {
-      return unauthorizedResponse();
+      await requireAdmin(request);
+    } catch (e) {
+      return authErrorResponse(e);
     }
 
     const { searchParams } = new URL(request.url);
@@ -82,15 +84,15 @@ export async function GET(request: NextRequest) {
  * DELETE /api/content?id=xxx
  * Delete content by ID
  *
- * @requires Authentication
+ * @requires Admin
  */
 export async function DELETE(request: NextRequest) {
   try {
-    // Verify authentication
+    // Verify the caller is an admin
     try {
-      await requireAuth(request);
-    } catch {
-      return unauthorizedResponse();
+      await requireAdmin(request);
+    } catch (e) {
+      return authErrorResponse(e);
     }
 
     // Extract and validate query params
@@ -149,15 +151,15 @@ export async function DELETE(request: NextRequest) {
  * PUT /api/content
  * Update existing content
  *
- * @requires Authentication
+ * @requires Admin
  */
 export async function PUT(request: NextRequest) {
   try {
-    // Verify authentication
+    // Verify the caller is an admin
     try {
-      await requireAuth(request);
-    } catch {
-      return unauthorizedResponse();
+      await requireAdmin(request);
+    } catch (e) {
+      return authErrorResponse(e);
     }
 
     // Parse and validate request body

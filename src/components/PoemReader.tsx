@@ -381,9 +381,23 @@ export function PoemReader({ content }: PoemReaderProps) {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      // Background music
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current = null;
+      }
+      // Google-TTS playback (a detached Audio element) — without this it keeps
+      // reading aloud over the next page after an in-app navigation.
+      if (ttsAudioRef.current) {
+        ttsAudioRef.current.pause();
+        if (ttsAudioRef.current.src.startsWith('blob:')) {
+          URL.revokeObjectURL(ttsAudioRef.current.src);
+        }
+        ttsAudioRef.current = null;
+      }
+      // Browser Web Speech API fallback
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
       }
     };
   }, []);

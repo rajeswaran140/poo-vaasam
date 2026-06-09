@@ -5,10 +5,17 @@
  * Returns performance metrics for the embedding cache system
  */
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import embeddingCache from '@/services/ai/embeddingCache';
+import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  try {
+    await requireAdmin(request);
+  } catch (e) {
+    return authErrorResponse(e);
+  }
+
   try {
     const stats = embeddingCache.getStats();
 
@@ -34,7 +41,13 @@ export async function GET() {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
+  try {
+    await requireAdmin(request);
+  } catch (e) {
+    return authErrorResponse(e);
+  }
+
   try {
     embeddingCache.clear();
 

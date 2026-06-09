@@ -91,10 +91,10 @@ export default function EditContentPage({ params }: PageProps) {
       setContentId(resolvedParams.id);
 
       try {
-        // Load content
-        const contentRes = await fetch(`/api/content?id=${resolvedParams.id}`, {
-          credentials: 'include',
-        });
+        // Load content. /api/content is admin-only and returns drafts, so use
+        // adminFetch to attach the fresh Cognito Bearer token (a cookie-only
+        // fetch can silently 401/403 when the cookie token is stale).
+        const contentRes = await adminFetch(`/api/content?id=${resolvedParams.id}`);
         const contentData = await contentRes.json();
 
         if (contentData.success) {

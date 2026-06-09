@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { useState, useEffect, useCallback } from 'react';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import showToast from '@/lib/toast';
+import { adminFetch } from '@/lib/client-auth';
 
 type FilterType = 'ALL' | 'SONGS' | 'POEMS' | 'LYRICS' | 'STORIES' | 'ESSAYS';
 type FilterStatus = 'ALL' | 'PUBLISHED' | 'DRAFT';
@@ -81,9 +82,8 @@ export default function ContentListPage() {
   async function handleDeleteContent() {
     setDeleting(true);
     try {
-      const response = await fetch(`/api/content?id=${deleteModal.id}`, {
+      const response = await adminFetch(`/api/content?id=${deleteModal.id}`, {
         method: 'DELETE',
-        credentials: 'include',
       });
 
       const data = await response.json();

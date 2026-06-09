@@ -44,12 +44,15 @@ export function PoemsGrid({ poems }: PoemsGridProps) {
     // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
+      // Guard every field: a published poem may have a null/undefined body or
+      // title (e.g. lyrics not yet filled in), and an unguarded access here
+      // throws during render and blanks the entire grid for anonymous visitors.
       filtered = filtered.filter(
         p =>
-          p.title.toLowerCase().includes(query) ||
-          p.body.toLowerCase().includes(query) ||
-          p.author.toLowerCase().includes(query) ||
-          p.description?.toLowerCase().includes(query)
+          (p.title ?? '').toLowerCase().includes(query) ||
+          (p.body ?? '').toLowerCase().includes(query) ||
+          (p.author ?? '').toLowerCase().includes(query) ||
+          (p.description ?? '').toLowerCase().includes(query)
       );
     }
 
@@ -73,10 +76,10 @@ export function PoemsGrid({ poems }: PoemsGridProps) {
         });
         break;
       case 'popular':
-        filtered = [...filtered].sort((a, b) => b.viewCount - a.viewCount);
+        filtered = [...filtered].sort((a, b) => (b.viewCount ?? 0) - (a.viewCount ?? 0));
         break;
       case 'alphabetical':
-        filtered = [...filtered].sort((a, b) => a.title.localeCompare(b.title, 'ta'));
+        filtered = [...filtered].sort((a, b) => (a.title ?? '').localeCompare(b.title ?? '', 'ta'));
         break;
       case 'random':
         filtered = [...filtered].sort(() => Math.random() - 0.5);
@@ -276,8 +279,8 @@ export function PoemsGrid({ poems }: PoemsGridProps) {
                   </p>
                 ) : (
                   <div className="text-sm sm:text-base text-gray-700 font-tamil mb-4 leading-relaxed line-clamp-4">
-                    {poem.body.split('\n').slice(0, 3).join('\n')}
-                    {poem.body.split('\n').length > 3 && '...'}
+                    {(poem.body ?? '').split('\n').slice(0, 3).join('\n')}
+                    {(poem.body ?? '').split('\n').length > 3 && '...'}
                   </div>
                 )}
 

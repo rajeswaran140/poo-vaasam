@@ -14,7 +14,9 @@ import { ContentType } from '@/types/content';
 // Mock dependencies
 jest.mock('@/lib/auth-helper', () => ({
   ...jest.requireActual('@/lib/auth-helper'),
-  requireAuth: jest.fn().mockResolvedValue({ isAuthenticated: true }),
+  // /api/content is admin-gated; this suite covers input validation, so let the
+  // admin check pass and focus assertions on the request-body validation.
+  requireAdmin: jest.fn().mockResolvedValue({ isAuthenticated: true, email: 'admin@example.com' }),
 }));
 
 jest.mock('@/infrastructure/database/ContentRepository', () => ({

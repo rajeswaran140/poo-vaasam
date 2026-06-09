@@ -31,7 +31,7 @@ jest.mock('@/application/use-cases/GetContentUseCase', () => ({
 }));
 jest.mock('@/lib/auth-helper', () => ({
   ...jest.requireActual('@/lib/auth-helper'),
-  requireAuth: jest.fn(),
+  requireAdmin: jest.fn(),
 }));
 
 import { GET, PUT, DELETE } from '@/app/api/content/route';
@@ -69,17 +69,32 @@ describe('Content API Routes - Authentication', () => {
     if (r) Object.values(r).forEach(fn => fn.mockReset());
     const uc = getGetUseCase();
     if (uc) uc.execute.mockReset();
-    (authHelper.requireAuth as jest.Mock).mockResolvedValue({ email: 'test@example.com', sub: 'admin' });
+    (authHelper.requireAdmin as jest.Mock).mockResolvedValue({ email: 'test@example.com', sub: 'admin' });
   });
 
   describe('GET /api/content', () => {
     it('should require authentication for GET requests', async () => {
-      (authHelper.requireAuth as jest.Mock).mockRejectedValue(new Error('Unauthorized'));
+      (authHelper.requireAdmin as jest.Mock).mockRejectedValue(new Error('Unauthorized'));
 
       const request = new NextRequest('http://localhost:3000/api/content?id=123');
       const response = await GET(request);
 
       expect(response.status).toBe(401);
+    });
+
+    it('should reject an authenticated non-admin with 403 (drafts must not leak)', async () => {
+      (authHelper.requireAdmin as jest.Mock).mockRejectedValue(
+        new authHelper.AuthError('Forbidden', 403)
+      );
+
+      const request = new NextRequest('http://localhost:3000/api/content?id=123');
+      const response = await GET(request);
+      const data = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(data.success).toBe(false);
+      // The use-case must never run for a non-admin
+      expect(getGetUseCase().execute).not.toHaveBeenCalled();
     });
 
     it('should return content by ID when authenticated', async () => {
@@ -118,7 +133,7 @@ describe('Content API Routes - Authentication', () => {
 
   describe('DELETE /api/content - Protected', () => {
     it('should require authentication for DELETE requests', async () => {
-      (authHelper.requireAuth as jest.Mock).mockRejectedValue(new Error('Unauthorized'));
+      (authHelper.requireAdmin as jest.Mock).mockRejectedValue(new Error('Unauthorized'));
 
       const request = new NextRequest('http://localhost:3000/api/content?id=123', { method: 'DELETE' });
       const response = await DELETE(request);
@@ -128,7 +143,19 @@ describe('Content API Routes - Authentication', () => {
       expect(data.success).toBe(false);
     });
 
-    it('should allow authenticated users to delete content', async () => {
+    it('should reject an authenticated non-admin with 403 and not delete', async () => {
+      (authHelper.requireAdmin as jest.Mock).mockRejectedValue(
+        new authHelper.AuthError('Forbidden', 403)
+      );
+
+      const request = new NextRequest('http://localhost:3000/api/content?id=123', { method: 'DELETE' });
+      const response = await DELETE(request);
+
+      expect(response.status).toBe(403);
+      expect(getRepo().delete).not.toHaveBeenCalled();
+    });
+
+    it('should allow admins to delete content', async () => {
       getRepo().findById.mockResolvedValue({ id: '123', categoryIds: [], tagIds: [] });
       getRepo().delete.mockResolvedValue(undefined);
 
@@ -153,7 +180,7 @@ describe('Content API Routes - Authentication', () => {
 
   describe('PUT /api/content - Protected', () => {
     it('should require authentication for PUT requests', async () => {
-      (authHelper.requireAuth as jest.Mock).mockRejectedValue(new Error('Unauthorized'));
+      (authHelper.requireAdmin as jest.Mock).mockRejectedValue(new Error('Unauthorized'));
 
       const request = new NextRequest('http://localhost:3000/api/content?id=123', {
         method: 'PUT',
@@ -166,7 +193,22 @@ describe('Content API Routes - Authentication', () => {
       expect(data.success).toBe(false);
     });
 
-    it('should allow authenticated users to update content', async () => {
+    it('should reject an authenticated non-admin with 403 and not save', async () => {
+      (authHelper.requireAdmin as jest.Mock).mockRejectedValue(
+        new authHelper.AuthError('Forbidden', 403)
+      );
+
+      const request = new NextRequest('http://localhost:3000/api/content?id=123', {
+        method: 'PUT',
+        body: JSON.stringify({ id: '123', title: 'Updated', body: 'x' }),
+      });
+      const response = await PUT(request);
+
+      expect(response.status).toBe(403);
+      expect(getRepo().save).not.toHaveBeenCalled();
+    });
+
+    it('should allow admins to update content', async () => {
       const existingMock = makeContentMock();
       getRepo().findById.mockResolvedValue(existingMock);
       getRepo().save.mockResolvedValue(undefined);

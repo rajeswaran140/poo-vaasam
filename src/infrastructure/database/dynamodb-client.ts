@@ -59,6 +59,22 @@ export const dynamoDBClient = createDynamoDBClient();
  */
 export const TABLE_NAME = dynamoDBConfig.tableName;
 
+// Batch-operation tuning: DynamoDB returns unprocessed keys/items under
+// throttling; we retry them a few times with linear backoff before giving up.
+const MAX_BATCH_RETRIES = 5;
+const BATCH_BACKOFF_MS = 50;
+
+/** Split an array into chunks of at most `size`. */
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 /**
  * DynamoDB Operations Helper
  */
@@ -175,36 +191,74 @@ export class DynamoDBOperations {
   }
 
   /**
-   * Batch write items
+   * Batch write items.
+   *
+   * DynamoDB caps BatchWriteItem at 25 items per request and returns any items
+   * it didn't process (throttling/capacity) in `UnprocessedItems`. We therefore
+   * chunk to 25 and retry the unprocessed remainder with exponential backoff so
+   * writes are never silently lost.
    */
   static async batchWrite(items: Record<string, any>[]) {
-    const command = new BatchWriteCommand({
-      RequestItems: {
-        [TABLE_NAME]: items.map((item) => ({
-          PutRequest: {
-            Item: item,
-          },
-        })),
-      },
-    });
+    for (const chunk of chunkArray(items, 25)) {
+      let requests = chunk.map((item) => ({ PutRequest: { Item: item } }));
+      let attempt = 0;
 
-    return await dynamoDBClient.send(command);
+      while (requests.length > 0) {
+        const response = await dynamoDBClient.send(
+          new BatchWriteCommand({ RequestItems: { [TABLE_NAME]: requests } })
+        );
+
+        const unprocessed = response.UnprocessedItems?.[TABLE_NAME];
+        if (!unprocessed || unprocessed.length === 0) break;
+
+        if (++attempt > MAX_BATCH_RETRIES) {
+          throw new Error(
+            `batchWrite: ${unprocessed.length} item(s) still unprocessed after ${MAX_BATCH_RETRIES} retries`
+          );
+        }
+        requests = unprocessed as typeof requests;
+        await sleep(BATCH_BACKOFF_MS * attempt);
+      }
+    }
   }
 
   /**
-   * Batch get items
+   * Batch get items.
+   *
+   * DynamoDB caps BatchGetItem at 100 keys per request and returns any keys it
+   * didn't return (throttling) in `UnprocessedKeys`. We chunk to 100 and retry
+   * the unprocessed remainder with backoff so reads are never silently
+   * truncated (which would drop content from category/tag listings).
    */
   static async batchGet(keys: Record<string, any>[]) {
-    const command = new BatchGetCommand({
-      RequestItems: {
-        [TABLE_NAME]: {
-          Keys: keys,
-        },
-      },
-    });
+    const results: Record<string, any>[] = [];
 
-    const response = await dynamoDBClient.send(command);
-    return response.Responses?.[TABLE_NAME] || [];
+    for (const chunk of chunkArray(keys, 100)) {
+      let pending = chunk;
+      let attempt = 0;
+
+      while (pending.length > 0) {
+        const response = await dynamoDBClient.send(
+          new BatchGetCommand({ RequestItems: { [TABLE_NAME]: { Keys: pending } } })
+        );
+
+        const items = response.Responses?.[TABLE_NAME] ?? [];
+        results.push(...items);
+
+        const unprocessed = response.UnprocessedKeys?.[TABLE_NAME]?.Keys;
+        if (!unprocessed || unprocessed.length === 0) break;
+
+        if (++attempt > MAX_BATCH_RETRIES) {
+          throw new Error(
+            `batchGet: ${unprocessed.length} key(s) still unprocessed after ${MAX_BATCH_RETRIES} retries`
+          );
+        }
+        pending = unprocessed as typeof pending;
+        await sleep(BATCH_BACKOFF_MS * attempt);
+      }
+    }
+
+    return results;
   }
 
   /**
