@@ -30,9 +30,15 @@ jest.mock('@/lib/youtube-uploads', () => ({
 }));
 const mockDerive = jest.fn();
 jest.mock('@/lib/derive-song-duration', () => ({
+  // Keep the real s3KeyFromUrl (used by the audio-existence verify); stub only
+  // the duration derivation.
+  ...jest.requireActual('@/lib/derive-song-duration'),
   deriveDurationSeconds: (...a: unknown[]) => mockDerive(...a),
 }));
-jest.mock('@/infrastructure/storage/s3-client', () => ({ S3Operations: { getRange: jest.fn() } }));
+const mockFileExists = jest.fn();
+jest.mock('@/infrastructure/storage/s3-client', () => ({
+  S3Operations: { getRange: jest.fn(), fileExists: (...a: unknown[]) => mockFileExists(...a) },
+}));
 const mockSetTheme = jest.fn();
 jest.mock('@/lib/song-theme-write', () => ({ setSongTheme: (...a: unknown[]) => mockSetTheme(...a) }));
 const mockGenCover = jest.fn();
@@ -58,6 +64,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   (auth.requireAdmin as jest.Mock).mockResolvedValue({ isAuthenticated: true });
   mockFindByType.mockResolvedValue({ items: [] });
+  mockFileExists.mockResolvedValue(true);
   mockFetchUploads.mockResolvedValue([]);
   mockDerive.mockResolvedValue(undefined);
   mockSetTheme.mockResolvedValue(undefined);
@@ -113,6 +120,18 @@ it('treats the duplicate-title check as case-insensitive', async () => {
   const res = await POST(req({ title: '  existing song  ', audioUrl: `${S3}/a.wav` }));
   expect(res.status).toBe(409);
   expect(mockExecute).not.toHaveBeenCalled();
+});
+
+it('422s when the audio object does not exist in storage (no create)', async () => {
+  mockFileExists.mockResolvedValueOnce(false);
+  const res = await POST(req({ title: 'Ghost Audio Song', audioUrl: `${S3}/audio/missing.wav` }));
+  expect(res.status).toBe(422);
+  expect(mockExecute).not.toHaveBeenCalled();
+});
+
+it('verifies the derived audio key before publishing', async () => {
+  await POST(req({ title: 'Keyed Song', audioUrl: `${S3}/audio/poem-music/x.wav` }));
+  expect(mockFileExists).toHaveBeenCalledWith('audio/poem-music/x.wav');
 });
 
 it('creates a PUBLISHED song with the WAV-derived duration', async () => {

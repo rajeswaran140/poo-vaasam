@@ -229,8 +229,11 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
     // Fires once per track-start, including queue advances — matches how a
     // listener would describe "I played this song."
     if (current.src) trackAudioPlay(current.id, current.title);
+    // Key on the track IDENTITY, not its src: two different songs can share an
+    // audio URL (placeholder/sample reuse), and keying on src would skip the
+    // restart + play event when advancing between them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current?.src]);
+  }, [current?.id]);
 
   useEffect(() => {
     if (audioRef.current) {
@@ -238,6 +241,17 @@ export function MusicPlayerProvider({ children }: { children: React.ReactNode })
       audioRef.current.muted = muted;
     }
   }, [volume, muted]);
+
+  // Stall watchdog: on a flaky mobile connection `onWaiting`/`onLoadStart` can
+  // set loading=true and never get a matching `onPlaying`/`onCanPlay`, leaving
+  // the spinner (and the aria-busy play button) stuck forever. If loading hasn't
+  // cleared within 15s, drop it so the control is usable again — if playback
+  // does eventually start, `onPlay` re-clears any error.
+  useEffect(() => {
+    if (!loading) return;
+    const t = setTimeout(() => setLoading(false), 15000);
+    return () => clearTimeout(t);
+  }, [loading, current?.id]);
 
   // Persist what's playing (and roughly where) so a reload can restore it.
   useEffect(() => {

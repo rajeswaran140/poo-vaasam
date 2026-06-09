@@ -36,6 +36,17 @@ export function alternatesFor(path = '/') {
   };
 }
 
+/**
+ * Extract a Satori-compatible font URL from a Google Fonts `css2` response.
+ * Satori (the OG-image renderer) parses ttf/otf/woff but NOT woff2, so we only
+ * accept those formats; returns null when the CSS has no usable URL (caller
+ * then falls back to a Latin-only card rather than rendering tofu).
+ */
+export function parseGoogleFontUrl(css: string): string | null {
+  const match = css.match(/url\((https:\/\/[^)]+\.(?:ttf|otf|woff))\)/i);
+  return match ? match[1] : null;
+}
+
 /** Romanised content-type labels — crawler/share-card facing (not the UI). */
 export const ROMANISED_TYPE_LABEL: Record<string, string> = {
   SONGS: 'Tamil Song',

@@ -21,7 +21,7 @@ import { ContentType, ContentStatus } from '@/types/content';
 import { fetchChannelUploadsWithDurations } from '@/lib/youtube-uploads';
 import { matchVideoByTitle } from '@/lib/song-video-match';
 import { isShort } from '@/lib/youtube-shorts';
-import { deriveDurationSeconds } from '@/lib/derive-song-duration';
+import { deriveDurationSeconds, s3KeyFromUrl } from '@/lib/derive-song-duration';
 import { S3Operations } from '@/infrastructure/storage/s3-client';
 import { setSongTheme } from '@/lib/song-theme-write';
 import { generateSongCover } from '@/application/use-cases/GenerateSongCover';
@@ -94,6 +94,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: 'A song with this title is already published' },
         { status: 409 }
+      );
+    }
+
+    // Verify the audio object actually exists in storage BEFORE publishing —
+    // otherwise a typo'd/not-yet-uploaded key would create a live, playable-
+    // looking song whose audio 404s.
+    const audioKey = s3KeyFromUrl(input.audioUrl);
+    const audioExists = audioKey ? await S3Operations.fileExists(audioKey) : false;
+    if (!audioExists) {
+      return NextResponse.json(
+        { success: false, error: 'Audio file not found in storage — upload it before publishing.' },
+        { status: 422 }
       );
     }
 

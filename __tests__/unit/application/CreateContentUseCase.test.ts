@@ -176,7 +176,9 @@ describe('CreateContentUseCase', () => {
   });
 
   describe('execute', () => {
-    it('should create content and increment category counts', async () => {
+    // Counts are now bumped inside the repository's create transaction (atomic),
+    // so the use case must NOT do a separate, drift-prone increment.
+    it('creates content with a category and does NOT increment separately (atomic in create)', async () => {
       mockContentRepository.isSlugUnique.mockResolvedValue(true);
       mockCategoryRepository.findById.mockResolvedValue({
         id: 'cat_1',
@@ -196,12 +198,14 @@ describe('CreateContentUseCase', () => {
         categoryIds: ['cat_1'],
       };
 
-      await useCase.execute(dto);
+      const content = await useCase.execute(dto);
 
-      expect(mockCategoryRepository.incrementContentCount).toHaveBeenCalledWith('cat_1');
+      expect(mockContentRepository.create).toHaveBeenCalledTimes(1);
+      expect(content.categoryIds).toEqual(['cat_1']);
+      expect(mockCategoryRepository.incrementContentCount).not.toHaveBeenCalled();
     });
 
-    it('should create content and increment tag counts', async () => {
+    it('creates content with a tag and does NOT increment separately (atomic in create)', async () => {
       mockContentRepository.isSlugUnique.mockResolvedValue(true);
       mockTagRepository.findByIds.mockResolvedValue([
         {
@@ -222,9 +226,11 @@ describe('CreateContentUseCase', () => {
         tagIds: ['tag_1'],
       };
 
-      await useCase.execute(dto);
+      const content = await useCase.execute(dto);
 
-      expect(mockTagRepository.incrementContentCount).toHaveBeenCalledWith('tag_1');
+      expect(mockContentRepository.create).toHaveBeenCalledTimes(1);
+      expect(content.tagIds).toEqual(['tag_1']);
+      expect(mockTagRepository.incrementContentCount).not.toHaveBeenCalled();
     });
 
     it('should throw error if category does not exist', async () => {

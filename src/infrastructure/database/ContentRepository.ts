@@ -75,6 +75,7 @@ export class ContentRepository implements IContentRepository {
       ];
 
       for (const categoryId of content.categoryIds) {
+        // Relationship row…
         transactItems.push({
           Put: {
             Item: {
@@ -86,6 +87,17 @@ export class ContentRepository implements IContentRepository {
               contentId: content.id,
               categoryId,
             },
+          },
+        });
+        // …and the denormalised count bump, IN THE SAME TRANSACTION so the
+        // counter can't drift from the relationship rows on a partial failure
+        // (it was previously incremented best-effort after the transaction).
+        transactItems.push({
+          Update: {
+            Key: { PK: `CATEGORY#${categoryId}`, SK: 'METADATA' },
+            UpdateExpression: 'SET #contentCount = if_not_exists(#contentCount, :zero) + :inc',
+            ExpressionAttributeNames: { '#contentCount': 'contentCount' },
+            ExpressionAttributeValues: { ':zero': 0, ':inc': 1 },
           },
         });
       }
@@ -102,6 +114,14 @@ export class ContentRepository implements IContentRepository {
               contentId: content.id,
               tagId,
             },
+          },
+        });
+        transactItems.push({
+          Update: {
+            Key: { PK: `TAG#${tagId}`, SK: 'METADATA' },
+            UpdateExpression: 'SET #contentCount = if_not_exists(#contentCount, :zero) + :inc',
+            ExpressionAttributeNames: { '#contentCount': 'contentCount' },
+            ExpressionAttributeValues: { ':zero': 0, ':inc': 1 },
           },
         });
       }

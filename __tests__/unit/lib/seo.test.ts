@@ -6,6 +6,7 @@ import {
   ogCardLines,
   ROMANISED_TYPE_LABEL,
   DEFAULT_AUTHOR,
+  parseGoogleFontUrl,
 } from '@/lib/seo';
 
 describe('absoluteUrl', () => {
@@ -80,5 +81,23 @@ describe('ogCardLines', () => {
   it('falls back to generic label for an unknown/missing type (no tofu, no crash)', () => {
     expect(ogCardLines({}).title).toBe('Tamil Poetry');
     expect(ogCardLines({ type: 'WUT' }).title).toBe('Tamil Poetry');
+  });
+});
+
+describe('parseGoogleFontUrl', () => {
+  it('extracts a ttf URL from a Google Fonts css2 response', () => {
+    const css = `@font-face{font-family:'Noto Sans Tamil';src:url(https://fonts.gstatic.com/abc/v1/font.ttf) format('truetype');}`;
+    expect(parseGoogleFontUrl(css)).toBe('https://fonts.gstatic.com/abc/v1/font.ttf');
+  });
+
+  it('accepts otf/woff but rejects woff2 (Satori cannot parse it)', () => {
+    expect(parseGoogleFontUrl("src:url(https://x/y.otf) format('opentype')")).toBe('https://x/y.otf');
+    expect(parseGoogleFontUrl("src:url(https://x/y.woff) format('woff')")).toBe('https://x/y.woff');
+    expect(parseGoogleFontUrl("src:url(https://x/y.woff2) format('woff2')")).toBeNull();
+  });
+
+  it('returns null when there is no usable font URL', () => {
+    expect(parseGoogleFontUrl('')).toBeNull();
+    expect(parseGoogleFontUrl('not a font css')).toBeNull();
   });
 });

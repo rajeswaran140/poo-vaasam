@@ -25,8 +25,8 @@ export interface DeriveDurationInput {
   readRange: (key: string, end: number) => Promise<Uint8Array>;
 }
 
-/** Extract the object key from a public S3 URL (decoding percent-escapes). */
-function s3KeyFromUrl(url: string): string | null {
+/** Extract the object key from a public S3 / CDN URL (decoding percent-escapes). */
+export function s3KeyFromUrl(url: string): string | null {
   try {
     return decodeURIComponent(new URL(url).pathname.replace(/^\/+/, '')) || null;
   } catch {

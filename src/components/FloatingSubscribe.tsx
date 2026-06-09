@@ -12,11 +12,14 @@ import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { isYouTubeChannelConfigured, youtubeSubscribeUrl } from '@/config/site';
 import { trackSubscribeClick } from '@/lib/analytics-events';
+import { useMusicPlayer } from '@/components/music/MusicPlayerProvider';
 
 const DISMISS_KEY = 'tamilagaval:subscribe-floater:dismissed';
 
 export function FloatingSubscribe() {
   const [dismissed, setDismissed] = useState(true); // start hidden to avoid SSR/CSR flicker
+  // Lift above the fixed player bar (~6rem) when a track is loaded.
+  const { current } = useMusicPlayer();
 
   useEffect(() => {
     if (!isYouTubeChannelConfigured()) return;
@@ -37,7 +40,7 @@ export function FloatingSubscribe() {
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex items-center gap-1 animate-fade-in-up">
+    <div className={`fixed right-6 z-50 flex items-center gap-1 animate-fade-in-up ${current ? 'bottom-28' : 'bottom-6'}`}>
       <a
         href={youtubeSubscribeUrl('floater')}
         target="_blank"

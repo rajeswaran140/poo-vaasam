@@ -53,15 +53,16 @@ describe('ContentRepository.create', () => {
     ops.delete.mockResolvedValue(undefined);
   });
 
-  it('writes content + slug guard + relationship rows in ONE transaction', async () => {
+  it('writes content + slug guard + relationship rows + atomic count bumps in ONE transaction', async () => {
     const content = makeContent();
     await repo.create(content);
 
     expect(ops.transactWrite).toHaveBeenCalledTimes(1);
     const items = ops.transactWrite.mock.calls[0][0] as Array<Record<string, any>>;
 
-    // 1 content + 1 slug guard + 1 category + 2 tags = 5
-    expect(items).toHaveLength(5);
+    // 1 content + 1 slug guard + (1 category row + 1 category count) +
+    // (2 tag rows + 2 tag counts) = 8
+    expect(items).toHaveLength(8);
 
     const contentPut = items.find((i) => i.Put?.Item?.SK === 'METADATA')!;
     expect(contentPut.Put.ConditionExpression).toBe('attribute_not_exists(PK)');
@@ -79,6 +80,20 @@ describe('ContentRepository.create', () => {
     const tagRows = items.filter((i) => String(i.Put?.Item?.SK).startsWith('TAG#'));
     expect(tagRows).toHaveLength(2);
     expect(tagRows.map((r) => r.Put.Item.GSI3PK).sort()).toEqual(['TAG#tag_1', 'TAG#tag_2']);
+
+    // Atomic count bumps: one Update per category and per tag METADATA item.
+    const countUpdates = items.filter((i) => i.Update);
+    expect(countUpdates).toHaveLength(3);
+    const updateKeys = countUpdates.map((u) => `${u.Update.Key.PK}/${u.Update.Key.SK}`).sort();
+    expect(updateKeys).toEqual([
+      'CATEGORY#cat_1/METADATA',
+      'TAG#tag_1/METADATA',
+      'TAG#tag_2/METADATA',
+    ]);
+    for (const u of countUpdates) {
+      expect(u.Update.UpdateExpression).toContain('contentCount');
+      expect(u.Update.ExpressionAttributeValues[':inc']).toBe(1);
+    }
   });
 
   it('writes only content + slug guard when there are no categories/tags', async () => {

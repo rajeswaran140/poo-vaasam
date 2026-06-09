@@ -72,15 +72,9 @@ export class CreateContentUseCase {
     // breaks on success or rethrows); assert for the type checker.
     const created = content!;
 
-    // Update taxonomy counts. These live on separate aggregates and are written
-    // best-effort outside the content transaction; they're now backed by the
-    // relationship rows the transaction wrote.
-    if (dto.categoryIds) {
-      await this.incrementCategoryCounts(dto.categoryIds);
-    }
-    if (dto.tagIds) {
-      await this.incrementTagCounts(dto.tagIds);
-    }
+    // Taxonomy content-counts are bumped INSIDE the repository's create
+    // transaction (atomic with the relationship rows), so there is no separate,
+    // drift-prone post-write step here anymore.
 
     return created;
   }
@@ -128,23 +122,5 @@ export class CreateContentUseCase {
     }
 
     return slug;
-  }
-
-  /**
-   * Increment category content counts
-   */
-  private async incrementCategoryCounts(categoryIds: string[]): Promise<void> {
-    await Promise.all(
-      categoryIds.map((id) => this.categoryRepository.incrementContentCount(id))
-    );
-  }
-
-  /**
-   * Increment tag content counts
-   */
-  private async incrementTagCounts(tagIds: string[]): Promise<void> {
-    await Promise.all(
-      tagIds.map((id) => this.tagRepository.incrementContentCount(id))
-    );
   }
 }
