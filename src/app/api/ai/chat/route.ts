@@ -6,8 +6,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateChatResponse } from '@/services/ai/claude';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
+import { RateLimiter, checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
+
+// Unauthenticated + spends an Anthropic call per request — cap per IP.
+const limiter = new RateLimiter({ windowMs: 60_000, max: 20 });
 
 export async function POST(request: NextRequest) {
+  const rl = checkRateLimit(limiter, request);
+  if (!rl.allowed) return rateLimitedResponse(rl);
+
   try {
     const body = await request.json();
     const { messages, poemId } = body;

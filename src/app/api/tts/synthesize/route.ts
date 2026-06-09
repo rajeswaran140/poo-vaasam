@@ -5,8 +5,15 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { generatePoemAudio, estimateAudioDuration } from '@/services/ai/google-tts';
+import { RateLimiter, checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
+
+// Unauthenticated + drives billable Google Cloud TTS — cap per IP.
+const limiter = new RateLimiter({ windowMs: 60_000, max: 20 });
 
 export async function POST(request: NextRequest) {
+  const rl = checkRateLimit(limiter, request);
+  if (!rl.allowed) return rateLimitedResponse(rl);
+
   try {
     const body = await request.json();
     const { text, voice = 'female' } = body;

@@ -7,8 +7,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentStatus } from '@/types/content';
 import { generateEmbedding, cosineSimilarity } from '@/services/ai/openai';
+import { RateLimiter, checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
+
+// Unauthenticated + generates an OpenAI embedding for the query (and up to 100
+// items) per request — an amplification vector, so cap per IP.
+const limiter = new RateLimiter({ windowMs: 60_000, max: 30 });
 
 export async function POST(request: NextRequest) {
+  const rl = checkRateLimit(limiter, request);
+  if (!rl.allowed) return rateLimitedResponse(rl);
+
   const startTime = Date.now();
 
   try {

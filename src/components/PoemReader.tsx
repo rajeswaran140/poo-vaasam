@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { BookmarkIcon, PrinterIcon, SpeakerWaveIcon, ClipboardDocumentIcon, ShareIcon, MusicalNoteIcon } from '@heroicons/react/24/outline';
 import { BookmarkIcon as BookmarkSolidIcon, MusicalNoteIcon as MusicalNoteSolidIcon } from '@heroicons/react/24/solid';
 import { getAllMusicSources } from '@/utils/musicLibrary';
@@ -21,6 +21,18 @@ interface PoemAnalysis {
   summary: string;
 }
 
+// Used when the analysis API is unavailable or hasn't run — a gentle, reflective
+// default that suits most of the catalogue.
+const DEFAULT_ANALYSIS: PoemAnalysis = {
+  emotion: 'sad',
+  mood: 'somber',
+  themes: ['இழப்பு', 'நினைவுகள்'],
+  musicRecommendation: 'sad_piano',
+  ttsSpeed: 0.85,
+  ttsPitch: 0.9,
+  summary: 'உணர்ச்சிபூர்வமான கவிதை',
+};
+
 export function PoemReader({ content }: PoemReaderProps) {
   const [readingMode, setReadingMode] = useState<ReadingMode>('light');
   const [isBookmarked, setIsBookmarked] = useState(false);
@@ -34,15 +46,20 @@ export function PoemReader({ content }: PoemReaderProps) {
   const [currentMusicTrack, setCurrentMusicTrack] = useState<string>('');
   const [volume, setVolume] = useState(0.3);
   const [showVolumeControl, setShowVolumeControl] = useState(false);
-  const [poemAnalysis, setPoemAnalysis] = useState<PoemAnalysis | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
   const sourceIndexRef = useRef(0);
+  // Deduped lazy emotion analysis (see ensureAnalysis).
+  const analysisPromiseRef = useRef<Promise<PoemAnalysis> | null>(null);
 
-  // Analyze poem on mount
-  useEffect(() => {
-    const analyzePoemContext = async () => {
+  // Analyse the poem's emotion ONLY when the reader actually starts background
+  // music or TTS — not on page view. This keeps the LLM call out of the
+  // anonymous render path (a visit no longer spends an OpenAI request) and is
+  // deduped so it runs at most once per mounted poem.
+  const ensureAnalysis = useCallback((): Promise<PoemAnalysis> => {
+    if (analysisPromiseRef.current) return analysisPromiseRef.current;
+    const promise = (async (): Promise<PoemAnalysis> => {
       try {
         const response = await fetch('/api/ai/analyze-poem', {
           method: 'POST',
@@ -53,28 +70,18 @@ export function PoemReader({ content }: PoemReaderProps) {
             author: content.author,
           }),
         });
-
         if (response.ok) {
           const data = await response.json();
-          setPoemAnalysis(data.analysis);
+          if (data?.analysis) return data.analysis as PoemAnalysis;
         }
       } catch (error) {
         console.error('Failed to analyze poem:', error);
-        // Use default sad/reflective analysis
-        setPoemAnalysis({
-          emotion: 'sad',
-          mood: 'somber',
-          themes: ['இழப்பு', 'நினைவுகள்'],
-          musicRecommendation: 'sad_piano',
-          ttsSpeed: 0.85,
-          ttsPitch: -1.0,
-          summary: 'உணர்ச்சிபூர்வமான கவிதை',
-        });
       }
-    };
-
-    analyzePoemContext();
-  }, [content.id, content.title, content.body, content.author]);
+      return DEFAULT_ANALYSIS;
+    })();
+    analysisPromiseRef.current = promise;
+    return promise;
+  }, [content.title, content.body, content.author]);
 
   // Check if already bookmarked
   useEffect(() => {
@@ -123,6 +130,8 @@ export function PoemReader({ content }: PoemReaderProps) {
       setIsSpeaking(false);
     } else {
       const textToSpeak = selectedText || content.body;
+      // Lazily analyse now (first interaction), not on page view.
+      const analysis = await ensureAnalysis();
 
       // Try Google Cloud TTS API first (if available)
       try {
@@ -133,8 +142,8 @@ export function PoemReader({ content }: PoemReaderProps) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             text: textToSpeak,
-            emotion: poemAnalysis?.emotion || 'reflective',
-            mood: poemAnalysis?.mood || 'somber',
+            emotion: analysis.emotion,
+            mood: analysis.mood,
             voice: 'female',
           }),
         });
@@ -169,30 +178,25 @@ export function PoemReader({ content }: PoemReaderProps) {
             utterance.lang = 'ta-IN';
 
             // Apply emotion-aware parameters
-            if (poemAnalysis) {
-              switch (poemAnalysis.emotion) {
-                case 'sad':
-                case 'melancholic':
-                  utterance.rate = 0.75;
-                  utterance.pitch = 0.8;
-                  break;
-                case 'joyful':
-                case 'hopeful':
-                  utterance.rate = 1.0;
-                  utterance.pitch = 1.2;
-                  break;
-                case 'reflective':
-                case 'longing':
-                  utterance.rate = 0.85;
-                  utterance.pitch = 0.9;
-                  break;
-                default:
-                  utterance.rate = 0.9;
-                  utterance.pitch = 1.0;
-              }
-            } else {
-              utterance.rate = 0.85;
-              utterance.pitch = 0.9;
+            switch (analysis.emotion) {
+              case 'sad':
+              case 'melancholic':
+                utterance.rate = 0.75;
+                utterance.pitch = 0.8;
+                break;
+              case 'joyful':
+              case 'hopeful':
+                utterance.rate = 1.0;
+                utterance.pitch = 1.2;
+                break;
+              case 'reflective':
+              case 'longing':
+                utterance.rate = 0.85;
+                utterance.pitch = 0.9;
+                break;
+              default:
+                utterance.rate = 0.9;
+                utterance.pitch = 1.0;
             }
 
             // Try to use Tamil voice
@@ -273,6 +277,9 @@ export function PoemReader({ content }: PoemReaderProps) {
     setIsMusicLoading(true);
     setMusicError(null);
 
+    // Lazily analyse now (first interaction), not on page view.
+    const analysis = await ensureAnalysis();
+
     try {
       if (!audioRef.current) {
         // Create audio element
@@ -281,17 +288,15 @@ export function PoemReader({ content }: PoemReaderProps) {
         audioRef.current.volume = volume;
 
         // Get intelligent music sources based on poem analysis
-        let sources = poemAnalysis
-          ? getAllMusicSources(poemAnalysis.emotion, poemAnalysis.mood)
-          : getAllMusicSources('sad', 'somber');
+        let sources = getAllMusicSources(analysis.emotion, analysis.mood);
 
         // Prepend an AI-generated (Lyria) track if one is available/cached for
         // this poem. Any failure leaves `sources` unchanged, so playback falls
         // back to the royalty-free library via the existing tryNextSource logic.
         try {
           const params = new URLSearchParams({ contentId: content.id });
-          if (poemAnalysis?.emotion) params.set('emotion', poemAnalysis.emotion);
-          if (poemAnalysis?.mood) params.set('mood', poemAnalysis.mood);
+          params.set('emotion', analysis.emotion);
+          params.set('mood', analysis.mood);
           const musicRes = await fetch(`/api/poem-music?${params.toString()}`);
           if (musicRes.ok) {
             const data = await musicRes.json();

@@ -43,8 +43,33 @@ describe('PoemReader Integration Tests', () => {
     expect(screen.getAllByText(/அம்மா என்றால் அன்பு/)[0]).toBeInTheDocument();
   });
 
-  it('should call AI analysis API on mount', async () => {
+  it('does NOT call the AI analysis API on mount (LLM stays out of the render path)', async () => {
     render(<PoemReader content={mockContent} />);
+
+    // Let mount effects (bookmark/reading-mode) flush.
+    await waitFor(() => expect(screen.getByText('அம்மா')).toBeInTheDocument());
+
+    expect(global.fetch).not.toHaveBeenCalledWith(
+      '/api/ai/analyze-poem',
+      expect.anything()
+    );
+  });
+
+  it('analyses lazily — only when the reader starts background music', async () => {
+    global.Audio = jest.fn().mockImplementation(() => ({
+      play: jest.fn().mockResolvedValue(undefined),
+      pause: jest.fn(),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      loop: false,
+      volume: 0.3,
+    })) as any;
+
+    render(<PoemReader content={mockContent} />);
+
+    expect(global.fetch).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getAllByLabelText(/பின்னணி இசை/)[0]);
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith(
@@ -85,12 +110,7 @@ describe('PoemReader Integration Tests', () => {
 
     render(<PoemReader content={mockContent} />);
 
-    // Wait for analysis
-    await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalled();
-    });
-
-    // Click music button (desktop version)
+    // Click music button (desktop version) — analysis now runs lazily here.
     const musicButtons = screen.getAllByLabelText(/பின்னணி இசை/);
     fireEvent.click(musicButtons[0]);
 
@@ -119,10 +139,6 @@ describe('PoemReader Integration Tests', () => {
     })) as any;
 
     render(<PoemReader content={mockContent} />);
-
-    await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalled();
-    });
 
     const musicButtons = screen.getAllByLabelText(/பின்னணி இசை/);
     fireEvent.click(musicButtons[0]);
