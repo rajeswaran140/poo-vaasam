@@ -10,7 +10,7 @@
 import { useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { Play, Pause, Music, ChevronRight } from 'lucide-react';
-import { useMusicPlayer, Cover, formatTime, type Track } from './MusicPlayerProvider';
+import { useMusicPlayer, formatTime, type Track } from './MusicPlayerProvider';
 import { TrackedYouTubeOpen } from '@/components/TrackedYouTubeOpen';
 
 /** A track plus the metadata the listing needs for sorting and filtering. */
@@ -68,11 +68,13 @@ export function SongList({ rows }: { rows: SongRow[] }) {
                 <Music className="mx-auto h-4 w-4 text-gray-600" aria-hidden />
               )}
             </span>
-            <Cover
-              src={t.cover}
-              alt={t.title}
-              className="h-11 w-11 shrink-0 rounded shadow-sm transition duration-200 group-hover:scale-105 group-hover:shadow-md"
-            />
+            {/* Uniform music-note tile instead of per-song cover art. */}
+            <span
+              aria-hidden
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded bg-gradient-to-br from-orange-500/30 to-orange-700/30 shadow-sm ring-1 ring-white/10 transition duration-200 group-hover:scale-105 group-hover:shadow-md"
+            >
+              <Music className="h-5 w-5 text-orange-300" />
+            </span>
             <span className="min-w-0 flex-1">
               <span className={`block truncate font-tamil transition-colors ${active ? 'text-orange-400' : 'text-white'}`}>{t.title}</span>
               <span className="block truncate text-sm text-gray-400 font-tamil">{t.artist}</span>

@@ -70,4 +70,16 @@ describe('SongList — basic render', () => {
     expect(screen.getByText('அந்தி மேகமே')).toBeInTheDocument();
     expect(screen.getByText('இராஜ்')).toBeInTheDocument();
   });
+
+  it('renders a uniform music-note tile, not the per-song cover image', () => {
+    const { container } = renderList([
+      trackFactory({ cover: 'https://example.s3.amazonaws.com/anthi.jpg' }),
+    ]);
+    // The cover <img> is gone…
+    expect(
+      container.querySelector('img[src="https://example.s3.amazonaws.com/anthi.jpg"]')
+    ).toBeNull();
+    // …replaced by a lucide music-note SVG icon.
+    expect(container.querySelector('svg.lucide-music')).toBeInTheDocument();
+  });
 });
