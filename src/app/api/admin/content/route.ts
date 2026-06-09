@@ -12,6 +12,7 @@ import { CreateContentUseCase } from '@/application/use-cases/CreateContentUseCa
 import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
 import { ContentType, ContentStatus, WORKFLOW_STATES } from '@/types/content';
 import { DomainError } from '@/application/errors';
+import { triggerReleaseFromEnv } from '@/lib/amplify-deploy';
 import { z } from 'zod';
 
 const contentRepo = new ContentRepository();
@@ -210,10 +211,20 @@ export async function POST(request: NextRequest) {
       seoDescription: validation.data.seoDescription,
     });
 
+    // Auto go-live: the public pages are built at deploy time, so a PUBLISHED
+    // create must trigger a redeploy or it stays invisible until the next build.
+    // Best-effort — a deploy failure never fails the create.
+    let deploy: { triggered: boolean; jobId?: string; error?: string } = { triggered: false };
+    if (validation.data.status === ContentStatus.PUBLISHED) {
+      const d = await triggerReleaseFromEnv();
+      deploy = { triggered: d.ok, jobId: d.jobId, error: d.ok ? undefined : d.error };
+    }
+
     return NextResponse.json(
       {
         success: true,
         data: content.toObject(),
+        deploy,
         message: 'Content created successfully',
       },
       { status: 201 }

@@ -10,6 +10,8 @@ import { CategoryRepository } from '@/infrastructure/database/CategoryRepository
 import { TagRepository } from '@/infrastructure/database/TagRepository';
 import { GetContentUseCase } from '@/application/use-cases/GetContentUseCase';
 import { requireAuth, unauthorizedResponse } from '@/lib/auth-helper';
+import { ContentStatus } from '@/types/content';
+import { triggerReleaseFromEnv, shouldDeployForContent } from '@/lib/amplify-deploy';
 import {
   updateContentSchema,
   deleteContentSchema,
@@ -184,6 +186,10 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    // Capture the pre-update published state so we can rebuild the static site
+    // when this change affects what's public (publish / edit-live / unpublish).
+    const wasPublished = existingContent.toObject().status === ContentStatus.PUBLISHED;
+
     // Update content using domain entity method.
     // Zod widens workflowState back to `string | null` after preprocess; the
     // entity's update() re-validates against WORKFLOW_STATES, so the cast is
@@ -191,9 +197,18 @@ export async function PUT(request: NextRequest) {
     existingContent.update(updateData as Parameters<typeof existingContent.update>[0]);
     await contentRepo.save(existingContent);
 
+    // Auto go-live: best-effort redeploy when the public site is affected.
+    const isPublished = existingContent.toObject().status === ContentStatus.PUBLISHED;
+    let deploy: { triggered: boolean; jobId?: string; error?: string } = { triggered: false };
+    if (shouldDeployForContent(wasPublished, isPublished)) {
+      const d = await triggerReleaseFromEnv();
+      deploy = { triggered: d.ok, jobId: d.jobId, error: d.ok ? undefined : d.error };
+    }
+
     return NextResponse.json({
       success: true,
       data: existingContent.toObject(),
+      deploy,
       message: 'Content updated successfully',
     });
   } catch (error) {

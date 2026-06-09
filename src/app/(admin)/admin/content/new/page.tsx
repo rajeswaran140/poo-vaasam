@@ -158,7 +158,11 @@ export default function NewContentPage() {
 
       if (data.success) {
         draft.clear(); // saved to the server — drop the local draft
-        showToast.success('உள்ளடக்கம் வெற்றிகரமாக உருவாக்கப்பட்டது!');
+        showToast.success(
+          data.deploy?.triggered
+            ? 'உருவாக்கப்பட்டது — ~5 நிமிடத்தில் நேரலையில் வரும் (going live ~5 min)'
+            : 'உள்ளடக்கம் வெற்றிகரமாக உருவாக்கப்பட்டது!'
+        );
         router.push('/admin/content');
       } else {
         const message = formatApiError(data);

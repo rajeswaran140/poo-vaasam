@@ -167,7 +167,11 @@ export default function EditContentPage({ params }: PageProps) {
 
       if (data.success) {
         draft.clear(); // saved to the server — drop the local draft
-        showToast.success('உள்ளடக்கம் வெற்றிகரமாக புதுப்பிக்கப்பட்டது!');
+        showToast.success(
+          data.deploy?.triggered
+            ? 'புதுப்பிக்கப்பட்டது — ~5 நிமிடத்தில் நேரலையில் வரும் (going live ~5 min)'
+            : 'உள்ளடக்கம் வெற்றிகரமாக புதுப்பிக்கப்பட்டது!'
+        );
         router.push('/admin/content');
       } else {
         showToast.error('புதுப்பிக்க முடியவில்லை: ' + (data.error || 'Unknown error'));

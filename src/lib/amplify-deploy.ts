@@ -38,3 +38,21 @@ export async function triggerRelease(appId: string, branchName: string): Promise
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
+
+/** Trigger a release using the app id/branch from env (AMPLIFY_APP_ID /
+ *  AMPLIFY_BRANCH). Best-effort: returns a non-ok result, never throws. */
+export async function triggerReleaseFromEnv(): Promise<TriggerDeployResult> {
+  const appId = process.env.AMPLIFY_APP_ID;
+  if (!appId) return { ok: false, error: 'AMPLIFY_APP_ID not configured' };
+  return triggerRelease(appId, process.env.AMPLIFY_BRANCH || 'master');
+}
+
+/**
+ * Whether a content create/update should trigger a go-live deploy. The public
+ * pages are built at deploy time, so any change to what's PUBLISHED must
+ * rebuild: publishing, editing a live item, or unpublishing all change the
+ * static site. Pure draft work does not.
+ */
+export function shouldDeployForContent(wasPublished: boolean, isPublished: boolean): boolean {
+  return wasPublished || isPublished;
+}
