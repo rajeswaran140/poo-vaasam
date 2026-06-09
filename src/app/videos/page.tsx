@@ -15,6 +15,7 @@ import { ShortsRow } from '@/components/ShortsRow';
 import { partitionShorts } from '@/lib/youtube-shorts';
 import { SubscribeButton } from '@/components/SubscribeButton';
 import { JsonLd } from '@/components/JsonLd';
+import { alternatesFor } from '@/lib/seo';
 import Image from 'next/image';
 
 // Render per-request rather than as a build-time prerender. Amplify's SSR
@@ -43,7 +44,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: META_TITLE,
     description: META_DESCRIPTION,
-    alternates: { canonical: '/videos' },
+    alternates: alternatesFor('/videos'),
     openGraph: {
       title: META_TITLE,
       description: META_DESCRIPTION,

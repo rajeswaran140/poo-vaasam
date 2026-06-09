@@ -1,4 +1,12 @@
-import { absoluteUrl, toDescription, SITE_URL } from '@/lib/seo';
+import {
+  absoluteUrl,
+  toDescription,
+  SITE_URL,
+  alternatesFor,
+  ogCardLines,
+  ROMANISED_TYPE_LABEL,
+  DEFAULT_AUTHOR,
+} from '@/lib/seo';
 
 describe('absoluteUrl', () => {
   it('prefixes a leading-slash path with the site URL', () => {
@@ -32,5 +40,45 @@ describe('toDescription', () => {
   it('handles empty/undefined input', () => {
     expect(toDescription('')).toBe('');
     expect(toDescription(undefined as unknown as string)).toBe('');
+  });
+});
+
+describe('alternatesFor', () => {
+  it('returns a path canonical plus self-referencing ta + x-default hreflang', () => {
+    const alt = alternatesFor('/poems');
+    expect(alt.canonical).toBe('/poems');
+    expect(alt.languages).toEqual({
+      ta: `${SITE_URL}/poems`,
+      'x-default': `${SITE_URL}/poems`,
+    });
+  });
+
+  it('normalises a missing leading slash', () => {
+    expect(alternatesFor('songs').canonical).toBe('/songs');
+    expect(alternatesFor('songs').languages.ta).toBe(`${SITE_URL}/songs`);
+  });
+
+  it('defaults to the site root', () => {
+    expect(alternatesFor().canonical).toBe('/');
+    expect(alternatesFor().languages['x-default']).toBe(`${SITE_URL}/`);
+  });
+});
+
+describe('ogCardLines', () => {
+  it('uses the romanised type label and author', () => {
+    const lines = ogCardLines({ type: 'SONGS', author: 'Ammaiyar' });
+    expect(lines.title).toBe(ROMANISED_TYPE_LABEL.SONGS);
+    expect(lines.title).toBe('Tamil Song');
+    expect(lines.subtitle).toBe('by Ammaiyar');
+    expect(lines.kicker).toBe('TAMILAGAVAL');
+  });
+
+  it('falls back to the default author when none is given', () => {
+    expect(ogCardLines({ type: 'POEMS' }).subtitle).toBe(`by ${DEFAULT_AUTHOR}`);
+  });
+
+  it('falls back to generic label for an unknown/missing type (no tofu, no crash)', () => {
+    expect(ogCardLines({}).title).toBe('Tamil Poetry');
+    expect(ogCardLines({ type: 'WUT' }).title).toBe('Tamil Poetry');
   });
 });

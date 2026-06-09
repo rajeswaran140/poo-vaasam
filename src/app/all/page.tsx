@@ -5,11 +5,31 @@
 export const revalidate = 300;
 
 import type { Metadata } from 'next';
+import { alternatesFor, SITE_NAME, absoluteUrl } from '@/lib/seo';
+
+// Romanised title/description so this page ranks for the same romanised queries
+// the rest of the site targets (tamil songs / poems / kavithai), consistent
+// with /songs and /poems. The visible UI below stays Tamil for readers.
+const TITLE = 'All Tamil Poems, Songs, Stories & Essays';
+const DESCRIPTION =
+  'Browse every Tamil poem, song, story and essay on Tamilagaval by Rajeswaran Thangarajah — read and listen for free.';
 
 export const metadata: Metadata = {
-  title: 'அனைத்து உள்ளடக்கம்',
-  description: 'தமிழகவல் தளத்தின் அனைத்து பாடல்கள், கவிதைகள், கதைகள் மற்றும் கட்டுரைகள்.',
-  alternates: { canonical: '/all' },
+  title: TITLE,
+  description: DESCRIPTION,
+  alternates: alternatesFor('/all'),
+  openGraph: {
+    title: `${TITLE} | ${SITE_NAME}`,
+    description: DESCRIPTION,
+    url: absoluteUrl('/all'),
+    type: 'website',
+    siteName: SITE_NAME,
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: `${TITLE} | ${SITE_NAME}`,
+    description: DESCRIPTION,
+  },
 };
 
 import Link from 'next/link';

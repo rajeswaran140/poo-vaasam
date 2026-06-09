@@ -45,6 +45,16 @@ export function liveContentSections() {
   return CONTENT_SECTIONS.filter((s) => s.live);
 }
 
+/**
+ * True when the given content-type's section is live. Used to `noindex` the
+ * still-empty section pages (lyrics/stories/essays) so crawlers don't index
+ * thin/empty pages as soft-404s; flips to indexable automatically when the
+ * section's `live` flag is turned on.
+ */
+export function isContentSectionLive(type: string): boolean {
+  return CONTENT_SECTIONS.some((s) => s.type === type && s.live);
+}
+
 /** True when a real Facebook URL is configured. */
 export function isFacebookConfigured(): boolean {
   return /facebook\.com\//.test(SITE.facebook.url);

@@ -5,6 +5,7 @@
 export const revalidate = 300;
 
 import type { Metadata } from 'next';
+import { alternatesFor } from '@/lib/seo';
 
 // Crawler-facing metadata is romanised English (real queries: tamil kavithai /
 // tamil poems); the visible <h1> on the page stays "கவிதைகள்".
@@ -15,7 +16,7 @@ const META_DESCRIPTION =
 export const metadata: Metadata = {
   title: META_TITLE,
   description: META_DESCRIPTION,
-  alternates: { canonical: '/poems' },
+  alternates: alternatesFor('/poems'),
   openGraph: {
     title: `${META_TITLE} | Tamilagaval`,
     description: META_DESCRIPTION,

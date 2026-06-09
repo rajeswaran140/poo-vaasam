@@ -21,7 +21,7 @@ import { SongCatalog } from '@/application/use-cases/SongCatalog';
 import type { PublicSongDTO } from '@/domain/songs/PublicSong';
 import { SongsPlaylist, type SongRow } from '@/components/music/SongsPlaylist';
 import { JsonLd } from '@/components/JsonLd';
-import { SITE_NAME, absoluteUrl } from '@/lib/seo';
+import { SITE_NAME, absoluteUrl, alternatesFor } from '@/lib/seo';
 
 // Crawler-facing title/description use romanised English so the page ranks for
 // real queries (tamil songs / paadal varigal); the visible <h1> on the page
@@ -70,7 +70,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: META_TITLE,
     description: META_DESCRIPTION,
-    alternates: { canonical: '/songs' },
+    alternates: alternatesFor('/songs'),
     openGraph: {
       title: `${META_TITLE} | ${SITE_NAME}`,
       description: META_DESCRIPTION,

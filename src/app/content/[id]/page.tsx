@@ -22,7 +22,7 @@ import { JsonLd } from '@/components/JsonLd';
 import { ShareRow } from '@/components/content/ShareRow';
 import { TrackedYouTubeOpen } from '@/components/TrackedYouTubeOpen';
 import { isYouTubeUrl, getYouTubeWatchUrl, getYouTubeId } from '@/lib/utils/youtube';
-import { SITE_URL, SITE_NAME, absoluteUrl, toDescription } from '@/lib/seo';
+import { SITE_URL, SITE_NAME, absoluteUrl, toDescription, alternatesFor } from '@/lib/seo';
 
 // Fully static, regenerated only at build/deploy. We deliberately do NOT use
 // time-based ISR (`revalidate`): the runtime has no DynamoDB creds, so a
@@ -142,17 +142,20 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return {
     title,
     description: toDescription(description),
-    alternates: { canonical: `/content/${content.id}` },
+    alternates: alternatesFor(`/content/${content.id}`),
     openGraph: {
       title,
       description: toDescription(description),
       url,
       type: 'article',
       siteName: SITE_NAME,
+      // When the content has its own image, use it; otherwise the co-located
+      // opengraph-image.tsx generates a branded card automatically.
       ...(hasImage ? { images: [content.featuredImage] } : {}),
     },
     twitter: {
-      card: hasImage ? 'summary_large_image' : 'summary',
+      // There's always a large image now (featuredImage or the generated card).
+      card: 'summary_large_image',
       title,
       description: toDescription(description),
       ...(hasImage ? { images: [content.featuredImage] } : {}),

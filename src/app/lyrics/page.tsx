@@ -5,11 +5,16 @@
 export const revalidate = 300;
 
 import type { Metadata } from 'next';
+import { alternatesFor } from '@/lib/seo';
+import { isContentSectionLive } from '@/config/site';
 
 export const metadata: Metadata = {
   title: 'பாடல் வரிகள்',
   description: 'தமிழ் பாடல் வரிகள் தொகுப்பு — இலவசமாகப் படியுங்கள்.',
-  alternates: { canonical: '/lyrics' },
+  alternates: alternatesFor('/lyrics'),
+  // Section is still empty — keep it out of the search index (avoids a thin
+  // soft-404). Flips back to indexable when LYRICS goes live in site config.
+  ...(isContentSectionLive('LYRICS') ? {} : { robots: { index: false, follow: true } }),
 };
 
 import Link from 'next/link';

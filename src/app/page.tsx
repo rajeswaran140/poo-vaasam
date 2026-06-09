@@ -15,10 +15,10 @@ import { partitionShorts } from '@/lib/youtube-shorts';
 import { SubscribeButton } from '@/components/SubscribeButton';
 import { TrackedYouTubeOpen } from '@/components/TrackedYouTubeOpen';
 import { JsonLd } from '@/components/JsonLd';
-import { SITE_URL, SITE_NAME } from '@/lib/seo';
+import { SITE_URL, SITE_NAME, alternatesFor } from '@/lib/seo';
 
 export const metadata: Metadata = {
-  alternates: { canonical: '/' },
+  alternates: alternatesFor('/'),
   description: 'Free Tamil poems, songs and YouTube videos by lyricist Rajeswaran Thangarajah. Read tamil kavithai, listen to paadal varigal — always free.',
 };
 

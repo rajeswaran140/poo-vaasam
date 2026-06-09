@@ -9,7 +9,7 @@ import { Footer } from '@/components/Footer';
 import { JsonLd } from '@/components/JsonLd';
 import { YouTubeEmbed } from '@/components/YouTubeEmbed';
 import { TrackedYouTubeAnchor } from '@/components/TrackedYouTubeAnchor';
-import { SITE_URL, SITE_NAME } from '@/lib/seo';
+import { SITE_URL, SITE_NAME, alternatesFor } from '@/lib/seo';
 import { isYouTubeChannelConfigured, youtubeSubscribeUrl } from '@/config/site';
 import { MUSIC, hasMusicSamples, hasWhatsApp, whatsappLink } from '@/config/music';
 
@@ -20,7 +20,7 @@ const META_DESCRIPTION =
 export const metadata: Metadata = {
   title: META_TITLE,
   description: META_DESCRIPTION,
-  alternates: { canonical: '/music-composition' },
+  alternates: alternatesFor('/music-composition'),
   openGraph: {
     title: `${META_TITLE} | ${SITE_NAME}`,
     description: META_DESCRIPTION,

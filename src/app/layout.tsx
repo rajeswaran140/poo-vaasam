@@ -101,6 +101,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ta" className={`${notoSansTamil.variable} ${kavivanar.variable} ${balooThambi.variable}`}>
+      <head>
+        {/* Warm the TLS connection to the media CDN and YouTube thumbnail host
+            so the first audio/thumbnail byte arrives sooner on high-latency
+            rural IN/LK connections (the diaspora's home-region audience). */}
+        <link rel="preconnect" href="https://d2cdoh43143xxa.cloudfront.net" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://i.ytimg.com" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://d2cdoh43143xxa.cloudfront.net" />
+        <link rel="dns-prefetch" href="https://i.ytimg.com" />
+      </head>
       <body className="font-tamil antialiased">
         <AuthProvider>
           <MusicPlayerProvider>

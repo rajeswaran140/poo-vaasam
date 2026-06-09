@@ -5,11 +5,15 @@
 export const revalidate = 300;
 
 import type { Metadata } from 'next';
+import { alternatesFor } from '@/lib/seo';
+import { isContentSectionLive } from '@/config/site';
 
 export const metadata: Metadata = {
   title: 'கட்டுரைகள்',
   description: 'தமிழ் கட்டுரைகள் தொகுப்பு — இலவசமாகப் படியுங்கள்.',
-  alternates: { canonical: '/essays' },
+  alternates: alternatesFor('/essays'),
+  // Section is still empty — keep it out of the search index until it goes live.
+  ...(isContentSectionLive('ESSAYS') ? {} : { robots: { index: false, follow: true } }),
 };
 
 import Link from 'next/link';

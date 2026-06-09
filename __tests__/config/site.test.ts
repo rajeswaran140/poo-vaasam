@@ -6,6 +6,8 @@ import {
   isValidYouTubeChannelId,
   isYouTubeVideosConfigured,
   youtubeSubscribeUrl,
+  isContentSectionLive,
+  liveContentSections,
   SITE,
 } from '@/config/site';
 
@@ -32,5 +34,29 @@ describe('isYouTubeVideosConfigured', () => {
 describe('youtubeSubscribeUrl', () => {
   it('appends the subscribe-confirmation param to the channel URL', () => {
     expect(youtubeSubscribeUrl()).toBe(`${SITE.youtube.channelUrl}?sub_confirmation=1`);
+  });
+});
+
+describe('isContentSectionLive', () => {
+  it('is true for live sections (songs, poems) so they stay indexable', () => {
+    expect(isContentSectionLive('SONGS')).toBe(true);
+    expect(isContentSectionLive('POEMS')).toBe(true);
+  });
+
+  it('is false for still-empty sections (lyrics, stories, essays) → noindex', () => {
+    expect(isContentSectionLive('LYRICS')).toBe(false);
+    expect(isContentSectionLive('STORIES')).toBe(false);
+    expect(isContentSectionLive('ESSAYS')).toBe(false);
+  });
+
+  it('is false for an unknown type', () => {
+    expect(isContentSectionLive('NOPE')).toBe(false);
+  });
+
+  it('agrees with liveContentSections()', () => {
+    const liveTypes = liveContentSections().map((s) => s.type);
+    for (const t of ['SONGS', 'POEMS', 'LYRICS', 'STORIES', 'ESSAYS']) {
+      expect(isContentSectionLive(t)).toBe(liveTypes.includes(t as typeof liveTypes[number]));
+    }
   });
 });

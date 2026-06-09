@@ -11,7 +11,7 @@ import Header from '@/components/Header';
 import { JsonLd } from '@/components/JsonLd';
 import { SITE, isYouTubeChannelConfigured, isFacebookConfigured, youtubeSubscribeUrl, isYouTubeVideosConfigured } from '@/config/site';
 import { TrackedYouTubeAnchor } from '@/components/TrackedYouTubeAnchor';
-import { SITE_URL } from '@/lib/seo';
+import { SITE_URL, alternatesFor } from '@/lib/seo';
 
 // Crawler-facing metadata is romanised English; the visible UI on /about
 // stays Tamil. Real queries here are "rajeswaran thangarajah" /
@@ -23,7 +23,7 @@ const META_DESCRIPTION =
 export const metadata: Metadata = {
   title: META_TITLE,
   description: META_DESCRIPTION,
-  alternates: { canonical: '/about' },
+  alternates: alternatesFor('/about'),
   openGraph: {
     title: META_TITLE,
     description: META_DESCRIPTION,
