@@ -11,6 +11,7 @@ import Header from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import { SITE, isYouTubeChannelConfigured, isYouTubeVideosConfigured, isFacebookConfigured } from '@/config/site';
 import { fetchChannelVideos } from '@/lib/youtube-feed';
+import { partitionShorts } from '@/lib/youtube-shorts';
 import { SubscribeButton } from '@/components/SubscribeButton';
 import { TrackedYouTubeOpen } from '@/components/TrackedYouTubeOpen';
 import { JsonLd } from '@/components/JsonLd';
@@ -54,9 +55,13 @@ const personJsonLd = {
 };
 
 export default async function HomePage() {
-  const latestVideos = isYouTubeVideosConfigured()
-    ? await fetchChannelVideos(SITE.youtube.channelId, 4)
+  // Fetch a few extra so partitioning out Shorts still leaves ~4 long-form
+  // videos for the 16:9 grid — a vertical Short doesn't belong in this row
+  // (Shorts get their own row on /videos).
+  const feed = isYouTubeVideosConfigured()
+    ? await fetchChannelVideos(SITE.youtube.channelId, 10)
     : [];
+  const latestVideos = partitionShorts(feed).videos.slice(0, 4);
 
   return (
     <div className="min-h-screen bg-gray-900">

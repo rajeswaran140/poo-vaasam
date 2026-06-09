@@ -83,6 +83,14 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'i.ytimg.com',
       },
+      {
+        // Media now serves from CloudFront (MEDIA_BASE_URL); without this the
+        // next/image optimizer 400s on every CDN image (video thumbnails on
+        // /videos, covers) → blank/black. Wildcard so a distribution swap
+        // doesn't reintroduce the breakage.
+        protocol: 'https',
+        hostname: '**.cloudfront.net',
+      },
     ],
   },
 
