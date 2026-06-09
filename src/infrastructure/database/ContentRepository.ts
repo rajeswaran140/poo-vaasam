@@ -205,8 +205,7 @@ export class ContentRepository implements IContentRepository {
       // listings that pass `status: PUBLISHED`.
       const filterByStatus = options?.status !== undefined;
 
-      // Query using GSI1
-      const response = await DynamoDBOperations.query({
+      const buildQuery = (exclusiveStartKey?: Record<string, unknown>) => ({
         indexName: 'GSI1',
         keyConditionExpression: 'GSI1PK = :type',
         ...(filterByStatus
@@ -221,17 +220,61 @@ export class ContentRepository implements IContentRepository {
         },
         limit,
         scanIndexForward: options?.sortOrder === 'asc',
-        exclusiveStartKey: options?.lastEvaluatedKey,
+        exclusiveStartKey,
       });
 
-      const items = response.Items || [];
+      // Without a status filter the GSI1 `Limit` is exact, so a single query
+      // returns a full page.
+      if (!filterByStatus) {
+        const response = await DynamoDBOperations.query(buildQuery(options?.lastEvaluatedKey));
+        const items = response.Items || [];
+        return {
+          items: items.map((item) => this.fromDBItem(item)),
+          total: response.Count || 0,
+          limit,
+          lastEvaluatedKey: response.LastEvaluatedKey,
+          hasMore: !!response.LastEvaluatedKey,
+        };
+      }
+
+      // With a status filter, DynamoDB applies `Limit` to scanned items BEFORE
+      // the FilterExpression, so any single page can come back under-filled (or
+      // empty) even though more matching items exist. Page through until we have
+      // `limit` matching items or the index is exhausted, then return an
+      // item-level cursor so the caller resumes exactly after the last item we
+      // returned (a page-level cursor would skip items past `limit` on the final
+      // page).
+      const collected: Record<string, any>[] = [];
+      let startKey = options?.lastEvaluatedKey;
+      let lastIncludedKey: Record<string, unknown> | undefined;
+
+      do {
+        const response = await DynamoDBOperations.query(buildQuery(startKey));
+        for (const item of response.Items || []) {
+          if (collected.length >= limit) break;
+          collected.push(item);
+          lastIncludedKey = {
+            PK: item.PK,
+            SK: item.SK,
+            GSI1PK: item.GSI1PK,
+            GSI1SK: item.GSI1SK,
+          };
+        }
+        startKey = response.LastEvaluatedKey;
+      } while (collected.length < limit && startKey);
+
+      // If we filled the page there may be more matching items (either later in
+      // the index, or even beyond `limit` on the last page we read) → hand back
+      // the last included item as the cursor. A follow-up call simply returns []
+      // (hasMore=false) when nothing remains.
+      const nextCursor = collected.length >= limit ? lastIncludedKey : undefined;
 
       return {
-        items: items.map((item) => this.fromDBItem(item)),
-        total: response.Count || 0,
+        items: collected.map((item) => this.fromDBItem(item)),
+        total: collected.length,
         limit,
-        lastEvaluatedKey: response.LastEvaluatedKey,
-        hasMore: !!response.LastEvaluatedKey,
+        lastEvaluatedKey: nextCursor,
+        hasMore: !!nextCursor,
       };
     } catch (error) {
       handleDynamoDBError(error);
@@ -584,6 +627,10 @@ export class ContentRepository implements IContentRepository {
           SK: 'METADATA',
         },
         updateExpression: 'SET #viewCount = if_not_exists(#viewCount, :zero) + :inc',
+        // Only bump an existing item. Without this, a view event racing a delete
+        // resurrects a partial CONTENT#<id> row (just viewCount), producing a
+        // ghost item that breaks fromDBItem (missing required fields).
+        conditionExpression: 'attribute_exists(PK)',
         expressionAttributeNames: {
           '#viewCount': 'viewCount',
         },
@@ -593,6 +640,10 @@ export class ContentRepository implements IContentRepository {
         },
       });
     } catch (error) {
+      // The content was deleted concurrently — a lost view increment is fine.
+      if (error instanceof Error && error.name === 'ConditionalCheckFailedException') {
+        return;
+      }
       handleDynamoDBError(error);
     }
   }

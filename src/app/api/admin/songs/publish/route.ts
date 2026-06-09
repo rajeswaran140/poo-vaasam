@@ -70,12 +70,27 @@ export async function POST(request: NextRequest) {
   try {
     const contentRepo = new ContentRepository();
 
-    // Don't publish a title that's already a published song.
-    const published = await contentRepo.findByType(ContentType.SONGS, {
-      status: ContentStatus.PUBLISHED,
-      limit: 300,
-    });
-    if (published.items.some((c) => c.title.trim() === input.title)) {
+    // Don't publish a title that's already a published song. Page through the
+    // whole published set (case-insensitive) rather than trusting a single
+    // bounded page — a fixed cap would silently miss duplicates as the
+    // catalogue grows.
+    const target = input.title.trim().toLowerCase();
+    let cursor: Record<string, unknown> | undefined;
+    let isDuplicate = false;
+    do {
+      const page = await contentRepo.findByType(ContentType.SONGS, {
+        status: ContentStatus.PUBLISHED,
+        limit: 100,
+        lastEvaluatedKey: cursor,
+      });
+      if (page.items.some((c) => (c.title ?? '').trim().toLowerCase() === target)) {
+        isDuplicate = true;
+        break;
+      }
+      cursor = page.lastEvaluatedKey as Record<string, unknown> | undefined;
+    } while (cursor);
+
+    if (isDuplicate) {
       return NextResponse.json(
         { success: false, error: 'A song with this title is already published' },
         { status: 409 }

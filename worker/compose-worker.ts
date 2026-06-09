@@ -48,17 +48,36 @@ export const handler = async (event: ComposeJobEvent) => {
     patch = { status: 'error', result: null, error: { code: 'upstream', message: 'The AI service failed. Please try again.' } };
   }
 
-  await ddb.send(
-    new UpdateCommand({
-      TableName: TABLE,
-      Key: { PK: `COMPOSEJOB#${jobId}`, SK: 'METADATA' },
-      // UpdateItem upserts — the start route creates the 'processing' item, but
-      // this also self-heals if it's missing.
-      UpdateExpression: 'SET #s = :s, #r = :r, #e = :e, updatedAt = :u',
-      ExpressionAttributeNames: { '#s': 'status', '#r': 'result', '#e': 'error' },
-      ExpressionAttributeValues: { ':s': patch.status, ':r': patch.result, ':e': patch.error, ':u': new Date().toISOString() },
-    })
-  );
+  try {
+    await ddb.send(
+      new UpdateCommand({
+        TableName: TABLE,
+        Key: { PK: `COMPOSEJOB#${jobId}`, SK: 'METADATA' },
+        // UpdateItem upserts — the start route creates the 'processing' item, but
+        // this also self-heals if it's missing. Async Lambda invocations are
+        // at-least-once, so guard the transition: only write when the job is
+        // missing or still 'processing'. This makes the worker idempotent — a
+        // duplicate/late retry can't overwrite an already-terminal result.
+        UpdateExpression: 'SET #s = :s, #r = :r, #e = :e, updatedAt = :u',
+        ConditionExpression: 'attribute_not_exists(PK) OR #s = :processing',
+        ExpressionAttributeNames: { '#s': 'status', '#r': 'result', '#e': 'error' },
+        ExpressionAttributeValues: {
+          ':s': patch.status,
+          ':r': patch.result,
+          ':e': patch.error,
+          ':u': new Date().toISOString(),
+          ':processing': 'processing',
+        },
+      })
+    );
+  } catch (err) {
+    // A concurrent/duplicate run already wrote a terminal result — that's fine.
+    if (err instanceof Error && err.name === 'ConditionalCheckFailedException') {
+      console.info('[compose-worker] job already terminal, skipping write', JSON.stringify({ jobId }));
+      return { ok: true, jobId, status: 'already-terminal' };
+    }
+    throw err;
+  }
 
   console.info('[compose-worker] complete', JSON.stringify({ jobId, status: patch.status }));
   return { ok: true, jobId, status: patch.status };

@@ -156,6 +156,88 @@ describe('ContentRepository', () => {
         scanIndexForward: false,
       });
     });
+
+    // Build a raw GSI1 item with the keys findByType needs for an item cursor.
+    const rawItem = (n: number) => ({
+      id: `cnt_${n}`,
+      type: ContentType.SONGS,
+      title: `Song ${n}`,
+      titleSlug: `song-${n}`,
+      body: 'b',
+      description: '',
+      author: 'A',
+      status: ContentStatus.PUBLISHED,
+      categoryIds: [],
+      tagIds: [],
+      viewCount: 0,
+      createdAt: new Date('2026-01-01').toISOString(),
+      updatedAt: new Date('2026-01-01').toISOString(),
+      PK: `CONTENT#cnt_${n}`,
+      SK: 'METADATA',
+      GSI1PK: `CONTENT#${ContentType.SONGS}`,
+      GSI1SK: `2026#cnt_${n}`,
+    });
+
+    it('pages through under-filled filtered responses until `limit` matches are collected', async () => {
+      // DynamoDB applies Limit before the filter, so each page yields only 2
+      // matching rows. We need a full page of 5.
+      (DynamoDBOperations.query as jest.Mock)
+        .mockResolvedValueOnce({ Items: [rawItem(1), rawItem(2)], LastEvaluatedKey: { p: 1 } })
+        .mockResolvedValueOnce({ Items: [rawItem(3), rawItem(4)], LastEvaluatedKey: { p: 2 } })
+        .mockResolvedValueOnce({ Items: [rawItem(5), rawItem(6)], LastEvaluatedKey: { p: 3 } });
+
+      const result = await repository.findByType(ContentType.SONGS, {
+        limit: 5,
+        status: ContentStatus.PUBLISHED,
+      });
+
+      // Three internal queries to gather 5 (not stopping at the first short page).
+      expect(DynamoDBOperations.query).toHaveBeenCalledTimes(3);
+      expect(result.items).toHaveLength(5);
+      // Filled the page and more remain → item-level cursor (the 5th item), not
+      // the page cursor, so item #6 (read but not returned) isn't skipped.
+      expect(result.hasMore).toBe(true);
+      expect(result.lastEvaluatedKey).toEqual({
+        PK: 'CONTENT#cnt_5',
+        SK: 'METADATA',
+        GSI1PK: `CONTENT#${ContentType.SONGS}`,
+        GSI1SK: '2026#cnt_5',
+      });
+    });
+
+    it('stops with no cursor when the index is exhausted before `limit`', async () => {
+      (DynamoDBOperations.query as jest.Mock)
+        .mockResolvedValueOnce({ Items: [rawItem(1)], LastEvaluatedKey: { p: 1 } })
+        .mockResolvedValueOnce({ Items: [rawItem(2)], LastEvaluatedKey: undefined });
+
+      const result = await repository.findByType(ContentType.SONGS, {
+        limit: 5,
+        status: ContentStatus.PUBLISHED,
+      });
+
+      expect(DynamoDBOperations.query).toHaveBeenCalledTimes(2);
+      expect(result.items).toHaveLength(2);
+      expect(result.hasMore).toBe(false);
+      expect(result.lastEvaluatedKey).toBeUndefined();
+    });
+
+    it('resumes from a provided item-level cursor', async () => {
+      (DynamoDBOperations.query as jest.Mock).mockResolvedValueOnce({
+        Items: [rawItem(7)],
+        LastEvaluatedKey: undefined,
+      });
+      const cursor = { PK: 'CONTENT#cnt_6', SK: 'METADATA', GSI1PK: `CONTENT#${ContentType.SONGS}`, GSI1SK: '2026#cnt_6' };
+
+      await repository.findByType(ContentType.SONGS, {
+        limit: 5,
+        status: ContentStatus.PUBLISHED,
+        lastEvaluatedKey: cursor,
+      });
+
+      expect(DynamoDBOperations.query).toHaveBeenCalledWith(
+        expect.objectContaining({ exclusiveStartKey: cursor })
+      );
+    });
   });
 
   describe('findById', () => {
@@ -265,6 +347,28 @@ describe('ContentRepository', () => {
       expect(obj).not.toHaveProperty('_title');
       expect(obj).not.toHaveProperty('_author');
       expect(obj).not.toHaveProperty('_body');
+    });
+  });
+
+  describe('incrementViewCount', () => {
+    it('guards the update with attribute_exists(PK) so it cannot resurrect a deleted item', async () => {
+      (DynamoDBOperations.update as jest.Mock).mockResolvedValue({});
+      await repository.incrementViewCount('cnt_1');
+      expect(DynamoDBOperations.update).toHaveBeenCalledWith(
+        expect.objectContaining({ conditionExpression: 'attribute_exists(PK)' })
+      );
+    });
+
+    it('swallows ConditionalCheckFailedException (content deleted mid-view)', async () => {
+      const err = new Error('The conditional request failed');
+      err.name = 'ConditionalCheckFailedException';
+      (DynamoDBOperations.update as jest.Mock).mockRejectedValue(err);
+      await expect(repository.incrementViewCount('cnt_gone')).resolves.toBeUndefined();
+    });
+
+    it('rethrows other DynamoDB errors', async () => {
+      (DynamoDBOperations.update as jest.Mock).mockRejectedValue(new Error('ProvisionedThroughputExceeded'));
+      await expect(repository.incrementViewCount('cnt_1')).rejects.toThrow('ProvisionedThroughputExceeded');
     });
   });
 });

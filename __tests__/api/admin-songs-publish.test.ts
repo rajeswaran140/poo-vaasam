@@ -98,6 +98,23 @@ it('409s when the title is already a published song', async () => {
   expect(mockExecute).not.toHaveBeenCalled();
 });
 
+it('detects a duplicate on a later page (paginates the whole published set)', async () => {
+  mockFindByType
+    .mockResolvedValueOnce({ items: [{ title: 'Some Other Song' }], lastEvaluatedKey: { k: 1 } })
+    .mockResolvedValueOnce({ items: [{ title: 'Hidden Duplicate' }] });
+  const res = await POST(req({ title: 'Hidden Duplicate', audioUrl: `${S3}/a.wav` }));
+  expect(res.status).toBe(409);
+  expect(mockFindByType).toHaveBeenCalledTimes(2);
+  expect(mockExecute).not.toHaveBeenCalled();
+});
+
+it('treats the duplicate-title check as case-insensitive', async () => {
+  mockFindByType.mockResolvedValueOnce({ items: [{ title: 'Existing Song' }] });
+  const res = await POST(req({ title: '  existing song  ', audioUrl: `${S3}/a.wav` }));
+  expect(res.status).toBe(409);
+  expect(mockExecute).not.toHaveBeenCalled();
+});
+
 it('creates a PUBLISHED song with the WAV-derived duration', async () => {
   mockDerive.mockResolvedValueOnce(254);
   const res = await POST(req({ title: 'Brand New Song', audioUrl: `${S3}/audio/poem-music/x.wav` }));
