@@ -300,6 +300,15 @@ describe('videosItemListJsonLd', () => {
     watchUrl: 'https://www.youtube.com/watch?v=gfywsN483lI',
   };
 
+  it('reports numberOfItems matching the list length', () => {
+    const ld = videosItemListJsonLd(parseChannelFeed(SAMPLE_FEED)) as { numberOfItems: number; itemListElement: unknown[] };
+    expect(ld.numberOfItems).toBe(2);
+    expect(ld.numberOfItems).toBe(ld.itemListElement.length);
+
+    const empty = videosItemListJsonLd([]) as { numberOfItems: number };
+    expect(empty.numberOfItems).toBe(0);
+  });
+
   it('includes the VideoObject duration when present', () => {
     const ld = videosItemListJsonLd([{ ...baseVideo, duration: 'PT4M12S' }]) as {
       itemListElement: Array<{ item: Record<string, unknown> }>;

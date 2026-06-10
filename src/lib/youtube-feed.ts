@@ -273,6 +273,7 @@ export function videosItemListJsonLd(videos: ChannelVideo[]): Record<string, unk
   return {
     '@context': 'https://schema.org',
     '@type': 'ItemList',
+    numberOfItems: videos.length,
     itemListElement: videos.map((video, index) => ({
       '@type': 'ListItem',
       position: index + 1,

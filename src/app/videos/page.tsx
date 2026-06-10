@@ -8,7 +8,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Header from '@/components/Header';
 import { Footer } from '@/components/Footer';
-import { fetchChannelVideos, videosItemListJsonLd, thumbnailVariants } from '@/lib/youtube-feed';
+import { fetchChannelVideos, videosItemListJsonLd, s3ThumbnailUrl } from '@/lib/youtube-feed';
 import { SITE, isYouTubeVideosConfigured } from '@/config/site';
 import { VideoGallery } from '@/components/VideoGallery';
 import { ShortsRow } from '@/components/ShortsRow';
@@ -34,12 +34,19 @@ const META_DESCRIPTION =
   'Latest videos from the Tamilagaval YouTube channel — Tamil poems, songs and lyrics by Rajeswaran Thangarajah.';
 
 export async function generateMetadata(): Promise<Metadata> {
-  // OG image = the latest video's thumbnail (so each share preview reflects
-  // current top content). Falls back to a static value if the feed is empty.
-  let ogImage = 'https://i.ytimg.com/vi/gfywsN483lI/maxresdefault.jpg';
+  // Share image = the latest LONG-FORM video's mirrored thumbnail — the same
+  // image the on-page hero uses. This is high-res, region-safe, and 404-safe
+  // (we mirror it to S3), unlike the previous `i.ytimg maxresdefault of the
+  // latest upload`, which (a) could be a Short's portrait frame in a 16:9 card
+  // and (b) 404s for any video that lacks a maxres variant. We partition first
+  // so a Short never becomes the share image. Static fallback when the feed is
+  // empty/unconfigured. Shares the in-process feed cache with the page render.
+  let ogImage = s3ThumbnailUrl('gfywsN483lI');
   if (isYouTubeVideosConfigured()) {
-    const videos = await fetchChannelVideos(SITE.youtube.channelId, 1);
-    if (videos[0]) ogImage = thumbnailVariants(videos[0].id)[3]; // maxresdefault
+    const all = await fetchChannelVideos(SITE.youtube.channelId, 24);
+    const { videos } = partitionShorts(all);
+    const lead = videos[0] ?? all[0];
+    if (lead) ogImage = lead.thumbnail;
   }
   return {
     title: META_TITLE,
