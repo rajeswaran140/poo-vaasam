@@ -87,23 +87,12 @@ export default async function VideosPage() {
       {all.length > 0 && <JsonLd data={videosItemListJsonLd(all)} />}
       <Header />
       <main id="main" className="min-h-screen flex flex-col">
-        {/* Full-bleed hero — matches the /songs hero treatment. */}
-        <section className="relative w-full overflow-hidden bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white">
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_120%_at_12%_-15%,rgba(255,255,255,0.38),transparent_55%)]"
-          />
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-0 bg-[radial-gradient(90%_90%_at_100%_115%,rgba(255,170,70,0.45),transparent_60%)]"
-          />
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-gray-900"
-          />
-
+        {/* Full-width hero — two-column grid: CTA + latest video. No background
+            gradient; sits on the page's dark base (text stays white). */}
+        <section className="relative w-full overflow-hidden text-white">
           <div className="relative w-full px-6 pb-16 pt-24 sm:px-10 lg:px-16">
-            <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+            <div className="grid w-full items-center gap-8 lg:grid-cols-2">
+              {/* Column 1 — CTA */}
               <div className="min-w-0 animate-fade-in-up">
                 <span className="mb-3 inline-flex items-center rounded-full bg-white/15 px-3 py-1 font-tamil text-xs font-semibold uppercase tracking-wide text-white ring-1 ring-white/25 backdrop-blur-sm">
                   தமிழகவல் · YouTube
@@ -138,14 +127,14 @@ export default async function VideosPage() {
                 />
               </div>
 
-              {/* Featured latest video */}
+              {/* Column 2 — latest video (links to YouTube) */}
               {featured && (
                 <a
                   href={featured.watchUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label={`சமீபத்திய காணொளி: ${featured.title}`}
-                  className="group relative block w-full shrink-0 overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/25 animate-fade-in lg:w-[28rem]"
+                  className="group relative block w-full overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/25 animate-fade-in"
                 >
                   <Image
                     src={featured.thumbnail}
@@ -153,7 +142,7 @@ export default async function VideosPage() {
                     width={1280}
                     height={720}
                     priority
-                    sizes="(min-width: 1024px) 28rem, 100vw"
+                    sizes="(min-width: 1024px) 50vw, 100vw"
                     className="aspect-video w-full object-cover transition-transform duration-300 group-hover:scale-105"
                   />
                   <span aria-hidden className="absolute inset-0 flex items-center justify-center">
