@@ -33,6 +33,7 @@
     "@aws-sdk/s3-request-presigner": "^3.700.0",
     "@google-analytics/data": "^6.1.0",
     "@google-cloud/text-to-speech": "^6.4.0",
+    "@google/genai": "^2.8.0",
     "@heroicons/react": "^2.2.0",
     "aws-amplify": "^5.3.33",
     "aws-jwt-verify": "^5.1.1",

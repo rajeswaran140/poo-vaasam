@@ -21,6 +21,9 @@ frontend:
           GOOGLE_TTS_CREDENTIALS_BASE64=$GOOGLE_TTS_CREDENTIALS_BASE64
           OPENAI_API_KEY=$OPENAI_API_KEY
           ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
+          GEMINI_API_KEY=$GEMINI_API_KEY
+          GEMINI_MODEL=$GEMINI_MODEL
+          COMPOSER_ENGINE=$COMPOSER_ENGINE
           EOF
         - echo "Environment file created with credentials"
         - npm run build
