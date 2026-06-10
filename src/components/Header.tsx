@@ -66,6 +66,14 @@ export default function Header() {
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 border-b border-gray-800 bg-gray-900/95 shadow-xl backdrop-blur-md">
+      {/* Skip link — first focusable element; lets keyboard users bypass the nav
+          (WCAG 2.4.1). Visually hidden until focused; targets the page's <main id="main">. */}
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[60] focus:rounded-lg focus:bg-orange-600 focus:px-4 focus:py-2 focus:font-tamil focus:text-white focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-white"
+      >
+        உள்ளடக்கத்திற்கு செல்
+      </a>
       <nav className="w-full px-4 sm:px-6 lg:px-10">
         <div className="flex h-20 items-center justify-between">
           {/* Logo */}

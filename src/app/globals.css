@@ -352,4 +352,16 @@ html {
   .animate-fade-in,
   .animate-vinyl,
   .animate-shimmer { animation: none; }
+
+  /* Disable smooth scrolling and make any remaining transition/animation
+     (e.g. hover:scale, group-hover transforms) effectively instant. */
+  html { scroll-behavior: auto; }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

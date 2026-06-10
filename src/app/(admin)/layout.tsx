@@ -196,7 +196,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         </aside>
 
         {/* Main content area — margin flexes with sidebar width */}
-        <main className={`min-h-screen ml-0 ${mainMargin} transition-[margin] duration-300`}>
+        <main id="main" className={`min-h-screen ml-0 ${mainMargin} transition-[margin] duration-300`}>
           {/* Header */}
           <header className="sticky top-0 z-40 border-b border-gray-200 bg-white/90 backdrop-blur shadow-sm dark:border-gray-800 dark:bg-gray-900/90">
             <div className="flex items-center justify-between gap-3 px-4 py-4 sm:px-8">

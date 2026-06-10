@@ -132,7 +132,7 @@ export default async function SongsPage() {
     <div className="min-h-screen flex flex-col">
       {playlistJsonLd && <JsonLd data={playlistJsonLd} />}
       <Header />
-      <main className="flex-1">
+      <main id="main" className="flex-1">
         <SongsPlaylist tracks={tracks} />
       </main>
       <Footer />

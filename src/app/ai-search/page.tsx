@@ -51,7 +51,7 @@ export default function AISearchPage() {
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-12">
+      <main id="main" className="container mx-auto px-4 py-12">
         <SemanticSearch />
 
         {/* Info Section */}

@@ -41,6 +41,16 @@ describe('ShortsRow', () => {
     expect(trackYouTubeOpen).toHaveBeenCalledWith(`video:${SID}`, 'videos_shorts');
   });
 
+  it('moves focus to the embed wrapper and announces now-playing on click (a11y)', () => {
+    render(<ShortsRow shorts={[short(SID, 'Title')]} />);
+    fireEvent.click(screen.getByRole('button', { name: /Play Short/ }));
+
+    const wrapper = screen.getByLabelText('Now playing: Title');
+    expect(wrapper).toHaveFocus();
+    expect(wrapper).toHaveAttribute('tabindex', '-1');
+    expect(screen.getByText('Now playing: Title')).toHaveAttribute('aria-live', 'polite');
+  });
+
   it('keeps a direct YouTube link for each short', () => {
     render(<ShortsRow shorts={[short(SID, 'Title')]} />);
     const item = screen.getByRole('listitem');

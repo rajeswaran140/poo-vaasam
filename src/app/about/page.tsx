@@ -79,7 +79,7 @@ export default function AboutPage() {
         </div>
       </section>
 
-      <main className="container mx-auto max-w-3xl px-4 py-12 sm:px-6">
+      <main id="main" className="container mx-auto max-w-3xl px-4 py-12 sm:px-6">
         {/* What this site is */}
         <section className="mb-10">
           <h2 className="mb-4 font-kavivanar text-3xl font-bold text-white sm:text-4xl">இந்த தளம் என்ன?</h2>

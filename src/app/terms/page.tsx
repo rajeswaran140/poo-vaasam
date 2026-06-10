@@ -42,7 +42,7 @@ export default function TermsPage() {
         </div>
       </section>
 
-      <main className="container mx-auto max-w-3xl px-4 py-12 sm:px-6">
+      <main id="main" className="container mx-auto max-w-3xl px-4 py-12 sm:px-6">
         <p className="mb-8 text-sm text-gray-500">
           கடைசியாகப் புதுப்பிக்கப்பட்டது · Last updated: {LAST_UPDATED}
         </p>

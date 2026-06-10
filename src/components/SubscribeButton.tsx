@@ -26,6 +26,7 @@ export function SubscribeButton({ label = 'YouTube', className, source }: Subscr
       href={youtubeSubscribeUrl(source)}
       target="_blank"
       rel="noopener noreferrer"
+      aria-label="Subscribe on YouTube"
       onClick={() => trackSubscribeClick(source ?? 'unknown')}
       className={className ?? DEFAULT_CLASS}
     >

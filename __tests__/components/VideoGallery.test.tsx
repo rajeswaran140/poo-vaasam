@@ -6,7 +6,7 @@
  * gtag is mocked here so click handlers don't blow up.
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { VideoGallery } from '@/components/VideoGallery';
 import type { ChannelVideo } from '@/lib/youtube-feed';
 
@@ -79,5 +79,24 @@ describe('VideoGallery — populated state', () => {
   it('renders the play overlay (button) for unactivated cards', () => {
     render(<VideoGallery videos={[videoFactory()]} />);
     expect(screen.getByLabelText('Play: அந்தி மேகமே')).toBeInTheDocument();
+  });
+
+  it('moves focus to the embed wrapper and announces now-playing on play (a11y)', () => {
+    render(<VideoGallery videos={[videoFactory()]} />);
+    fireEvent.click(screen.getByLabelText('Play: அந்தி மேகமே'));
+
+    // Focus moved off the (now-removed) button onto the embed wrapper.
+    const wrapper = screen.getByLabelText('Now playing: அந்தி மேகமே');
+    expect(wrapper).toHaveFocus();
+    expect(wrapper).toHaveAttribute('tabindex', '-1');
+
+    // The polite live region announces the change for screen readers.
+    const live = screen.getByText('Now playing: அந்தி மேகமே');
+    expect(live).toHaveAttribute('aria-live', 'polite');
+  });
+
+  it('gives the secondary YouTube link a ≥44px touch target', () => {
+    render(<VideoGallery videos={[videoFactory()]} />);
+    expect(screen.getByLabelText(/Watch அந்தி மேகமே on YouTube/)).toHaveClass('min-h-[44px]');
   });
 });

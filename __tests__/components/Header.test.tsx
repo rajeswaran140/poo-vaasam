@@ -36,6 +36,22 @@ describe('Header — mobile menu', () => {
   });
 });
 
+describe('Header — skip link', () => {
+  it('renders a skip-to-content link targeting #main, hidden until focused', () => {
+    render(<Header />);
+    const skip = screen.getByRole('link', { name: 'உள்ளடக்கத்திற்கு செல்' });
+    expect(skip).toHaveAttribute('href', '#main');
+    expect(skip).toHaveClass('sr-only');           // visually hidden by default
+    expect(skip.className).toContain('focus:not-sr-only'); // revealed on focus
+  });
+
+  it('is the first focusable element in the header (before the nav)', () => {
+    const { container } = render(<Header />);
+    const focusables = container.querySelectorAll('a[href], button');
+    expect(focusables[0]).toHaveAttribute('href', '#main');
+  });
+});
+
 describe('Header — navigation', () => {
   it('marks the current route as active (aria-current)', () => {
     render(<Header />);

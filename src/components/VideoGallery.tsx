@@ -8,7 +8,7 @@
  */
 
 import Image from 'next/image';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Play } from 'lucide-react';
 import { YouTubeEmbed } from '@/components/YouTubeEmbed';
 import { TrackedYouTubeOpen } from '@/components/TrackedYouTubeOpen';
@@ -24,6 +24,15 @@ function excerpt(text: string, max = 140): string {
 
 export function VideoGallery({ videos }: { videos: ChannelVideo[] }) {
   const [activeId, setActiveId] = useState<string | null>(null);
+  const embedRef = useRef<HTMLDivElement>(null);
+  const activeTitle = videos.find((v) => v.id === activeId)?.title ?? '';
+
+  // Swapping a card's play button for the inline embed removes the focused
+  // button from the DOM. Move focus to the embed wrapper so keyboard / screen-
+  // reader users keep their place (WCAG 2.4.3) instead of dropping to <body>.
+  useEffect(() => {
+    if (activeId) embedRef.current?.focus();
+  }, [activeId]);
 
   if (!videos.length) {
     return (
@@ -44,14 +53,19 @@ export function VideoGallery({ videos }: { videos: ChannelVideo[] }) {
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+    <>
+      {/* Announce the now-playing video to assistive tech. */}
+      <div aria-live="polite" className="sr-only">{activeTitle ? `Now playing: ${activeTitle}` : ''}</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
       {videos.map((video) => (
         <div
           key={video.id}
           className="rounded-xl overflow-hidden bg-gray-800 border border-gray-700 shadow-sm flex flex-col"
         >
           {activeId === video.id ? (
-            <YouTubeEmbed url={video.watchUrl} title={video.title} />
+            <div ref={embedRef} tabIndex={-1} aria-label={`Now playing: ${video.title}`} className="outline-none">
+              <YouTubeEmbed url={video.watchUrl} title={video.title} />
+            </div>
           ) : (
             <button
               type="button"
@@ -89,7 +103,7 @@ export function VideoGallery({ videos }: { videos: ChannelVideo[] }) {
               href={video.watchUrl}
               destination={`video:${video.id}`}
               source="videos_card_link"
-              className="mt-auto inline-flex items-center self-start text-xs text-orange-400 hover:text-orange-300"
+              className="mt-auto inline-flex min-h-[44px] items-center self-start py-2 text-xs text-orange-400 hover:text-orange-300"
               ariaLabel={`Watch ${video.title} on YouTube`}
             >
               YouTube ↗
@@ -97,6 +111,7 @@ export function VideoGallery({ videos }: { videos: ChannelVideo[] }) {
           </div>
         </div>
       ))}
-    </div>
+      </div>
+    </>
   );
 }

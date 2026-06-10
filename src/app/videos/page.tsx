@@ -86,7 +86,7 @@ export default async function VideosPage() {
     <>
       {all.length > 0 && <JsonLd data={videosItemListJsonLd(all)} />}
       <Header />
-      <main className="min-h-screen flex flex-col">
+      <main id="main" className="min-h-screen flex flex-col">
         {/* Full-bleed hero — matches the /songs hero treatment. */}
         <section className="relative w-full overflow-hidden bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white">
           <div

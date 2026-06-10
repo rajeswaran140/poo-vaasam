@@ -40,7 +40,7 @@ export default function PrivacyPage() {
         </div>
       </section>
 
-      <main className="container mx-auto max-w-3xl px-4 py-12 sm:px-6">
+      <main id="main" className="container mx-auto max-w-3xl px-4 py-12 sm:px-6">
         <div className="space-y-10 leading-relaxed text-gray-300">
 
           <section>
