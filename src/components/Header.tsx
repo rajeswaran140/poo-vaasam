@@ -140,7 +140,7 @@ export default function Header() {
                 href={SITE.youtube.channelUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="ml-2 inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 px-4 py-2 font-tamil text-sm font-bold text-white shadow-lg transition-all hover:opacity-90"
+                className="ml-2 inline-flex items-center gap-2 rounded-full bg-orange-600 px-4 py-2 font-tamil text-sm font-bold text-white shadow-lg transition-colors hover:bg-orange-700"
               >
                 <YouTubeIcon />
                 <span>{SITE.youtube.channelLabel}</span>
@@ -213,7 +213,7 @@ export default function Header() {
                     href={SITE.youtube.channelUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="mt-2 inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 px-4 py-2 font-tamil text-sm text-white transition-colors hover:opacity-90"
+                    className="mt-2 inline-flex items-center justify-center gap-2 rounded-full bg-orange-600 px-4 py-2 font-tamil text-sm text-white transition-colors hover:bg-orange-700"
                     onClick={close}
                   >
                     <YouTubeIcon />
