@@ -100,21 +100,7 @@ export function SongsPlaylist({ tracks }: { tracks: SongRow[] }) {
   return (
     <>
       {/* Full-width Spotify-style action hero (fades into the dark page) */}
-      <section className="relative w-full overflow-hidden bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white">
-        {/* layered glows */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_120%_at_12%_-15%,rgba(255,255,255,0.38),transparent_55%)]"
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(90%_90%_at_100%_115%,rgba(255,170,70,0.45),transparent_60%)]"
-        />
-        {/* fade into the dark page below */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-gray-900"
-        />
+      <section className="relative w-full overflow-hidden text-white">
 
         <div className="relative w-full px-6 pb-14 pt-24 sm:px-10 lg:px-16">
           <div className="flex flex-col gap-6 sm:flex-row sm:items-end">
@@ -288,7 +274,7 @@ export function SongsPlaylist({ tracks }: { tracks: SongRow[] }) {
               <SubscribeButton
                 label="YouTube"
                 source="songs_footer"
-                className="inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 px-7 py-3.5 font-tamil font-bold text-white shadow-lg transition-opacity hover:opacity-90"
+                className="inline-flex items-center gap-2 rounded-full bg-orange-600 px-7 py-3.5 font-tamil font-bold text-white shadow-lg transition-colors hover:bg-orange-700"
               />
             </div>
           </>

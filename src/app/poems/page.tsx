@@ -59,9 +59,7 @@ export default async function PoemsPage() {
       <Header />
 
       {/* Brand hero — orange-on-dark, matches the rest of the site. */}
-      <section className="relative w-full overflow-hidden bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white">
-        <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_120%_at_12%_-15%,rgba(255,255,255,0.35),transparent_55%)]" />
-        <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-gray-900" />
+      <section className="relative w-full overflow-hidden text-white">
 
         <div className="relative container mx-auto px-6 py-20 sm:px-10">
           <span className="mb-3 inline-flex items-center rounded-full bg-white/15 px-3 py-1 font-tamil text-xs font-semibold uppercase tracking-wide text-white ring-1 ring-white/25 backdrop-blur-sm">

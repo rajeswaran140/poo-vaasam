@@ -64,10 +64,12 @@ describe('Music Composition page — audit fixes', () => {
     expect(samplesYt!.getAttribute('rel')).toBe('noopener noreferrer');
   });
 
-  it('final CTA card uses the orange brand gradient, not purple', () => {
+  it('final CTA card uses the solid orange brand, not purple or a gradient', () => {
     const { container } = render(<MusicCompositionPage />);
     expect(container.querySelector('[class*="from-purple-"]')).toBeNull();
     expect(container.querySelector('[class*="to-purple-"]')).toBeNull();
-    expect(container.querySelector('[class*="from-orange-500"]')).not.toBeNull();
+    // Brand gradient was flattened to solid orange site-wide.
+    expect(container.querySelector('[class*="from-orange-500"]')).toBeNull();
+    expect(container.querySelector('[class*="bg-orange-600"]')).not.toBeNull();
   });
 });

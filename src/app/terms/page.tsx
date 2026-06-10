@@ -26,9 +26,7 @@ export default function TermsPage() {
     <div className="min-h-screen bg-gray-900 text-white">
       <Header />
 
-      <section className="relative w-full overflow-hidden bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 text-white">
-        <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_120%_at_12%_-15%,rgba(255,255,255,0.35),transparent_55%)]" />
-        <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-gray-900" />
+      <section className="relative w-full overflow-hidden text-white">
         <div className="relative container mx-auto px-6 py-16 sm:px-10">
           <h1 className="font-kavivanar text-4xl font-extrabold leading-tight drop-shadow-md sm:text-5xl">
             விதிமுறைகள் · Terms
