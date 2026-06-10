@@ -91,7 +91,7 @@ export default async function VideosPage() {
             gradient; sits on the page's dark base (text stays white). */}
         <section className="relative w-full overflow-hidden text-white">
           <div className="relative w-full px-6 pb-16 pt-24 sm:px-10 lg:px-16">
-            <div className="grid w-full items-center gap-8 lg:grid-cols-2">
+            <div className="grid w-full items-center gap-8 lg:grid-cols-[5fr_7fr] lg:gap-14">
               {/* Column 1 — CTA */}
               <div className="min-w-0 animate-fade-in-up">
                 <span className="mb-3 inline-flex items-center rounded-full bg-white/15 px-3 py-1 font-tamil text-xs font-semibold uppercase tracking-wide text-white ring-1 ring-white/25 backdrop-blur-sm">
@@ -180,7 +180,7 @@ export default async function VideosPage() {
               <SubscribeButton
                 label="YouTube"
                 source="videos_footer"
-                className="inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 px-7 py-3.5 font-tamil font-bold text-white shadow-lg transition-opacity hover:opacity-90"
+                className="inline-flex items-center gap-2 rounded-full bg-orange-600 px-7 py-3.5 font-tamil font-bold text-white shadow-lg transition-colors hover:bg-orange-700"
               />
             </section>
           )}
