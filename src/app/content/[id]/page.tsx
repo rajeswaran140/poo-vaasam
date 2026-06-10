@@ -10,8 +10,10 @@
 import type { Metadata } from 'next';
 import { cache } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { notFound } from 'next/navigation';
 import Header from '@/components/Header';
+import { getSongHero } from '@/config/song-heroes';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentStatus } from '@/types/content';
 import { ContentPageClient } from '@/components/ContentPageClient';
@@ -175,6 +177,9 @@ export default async function ContentPage({ params }: PageProps) {
   const ytId = getYouTubeId(content.videoUrl);
   const enType = TYPE_LABEL_EN[content.type] || 'Tamil Poetry';
   const browseTo = BROWSE_HREF[content.type] || { href: '/all', label: 'அனைத்து உள்ளடக்கம்' };
+  // Bespoke full-bleed hero for select songs (e.g. தாயகம்). When present it
+  // provides the page's <h1>, so the in-card title/eyebrow are suppressed below.
+  const hero = getSongHero(content.id);
 
   const jsonLd: Record<string, unknown>[] = [
     {
@@ -224,11 +229,42 @@ export default async function ContentPage({ params }: PageProps) {
         <JsonLd data={jsonLd} />
         <Header />
 
+        {/* Bespoke full-bleed hero (select songs only). Responsive: the height
+            and type scale by breakpoint; the image covers + centres at any size. */}
+        {hero && (
+          <section className="relative w-full overflow-hidden bg-gray-900">
+            <Image
+              src={hero.image}
+              alt={hero.heading}
+              fill
+              priority
+              sizes="100vw"
+              className="object-cover object-center"
+            />
+            <div
+              aria-hidden
+              className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/45 to-black/25"
+            />
+            <div className="relative mx-auto flex min-h-[340px] max-w-7xl flex-col justify-end px-4 pb-10 pt-32 sm:min-h-[440px] sm:px-6 sm:pb-14 lg:min-h-[500px]">
+              <p className="mb-2 font-tamil text-xs font-semibold uppercase tracking-[0.22em] text-orange-300 sm:text-sm">
+                {enType} · {content.author || 'இராஜ்'}
+              </p>
+              <h1 className="font-kavivanar text-5xl font-extrabold leading-tight text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.6)] sm:text-6xl lg:text-7xl">
+                {hero.heading}
+              </h1>
+              <p className="mt-3 font-tamil text-base text-white/85 sm:text-lg">{content.title}</p>
+            </div>
+          </section>
+        )}
+
         <article className="container mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12">
-          {/* Romanised SEO eyebrow — visible to readers and indexed by crawlers. */}
-          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-orange-600 sm:text-sm">
-            {enType} · by {content.author || 'Rajeswaran Thangarajah'}
-          </p>
+          {/* Romanised SEO eyebrow — visible to readers and indexed by crawlers.
+              Suppressed when the hero already shows it. */}
+          {!hero && (
+            <p className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-orange-600 sm:text-sm">
+              {enType} · by {content.author || 'Rajeswaran Thangarajah'}
+            </p>
+          )}
 
           <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
 
@@ -308,12 +344,17 @@ export default async function ContentPage({ params }: PageProps) {
               <PoemReader content={content} />
             ) : (
               <div className="p-6 sm:p-8 md:p-12">
-                <h1 className="mb-2 font-tamil text-3xl font-bold text-gray-900 sm:text-4xl">
-                  {content.title}
-                </h1>
-                <p className="mb-6 font-tamil text-gray-500">
-                  {TYPE_LABELS[content.type] || ''}{content.author ? ` · ${content.author}` : ''}
-                </p>
+                {/* The hero already provides the page <h1>; avoid a duplicate. */}
+                {!hero && (
+                  <>
+                    <h1 className="mb-2 font-tamil text-3xl font-bold text-gray-900 sm:text-4xl">
+                      {content.title}
+                    </h1>
+                    <p className="mb-6 font-tamil text-gray-500">
+                      {TYPE_LABELS[content.type] || ''}{content.author ? ` · ${content.author}` : ''}
+                    </p>
+                  </>
+                )}
                 <div className="prose prose-lg max-w-none">
                   <pre
                     className="mb-0 whitespace-pre-wrap font-poem text-lg leading-loose text-gray-800 sm:text-xl"
