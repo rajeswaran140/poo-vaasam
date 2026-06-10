@@ -19,10 +19,11 @@ export interface SongHero {
 }
 
 export const SONG_HEROES: Record<string, SongHero> = {
-  // எங்கள் தேசம் — presented under the homeland heading தாயகம் (Thayagam).
+  // எங்கள் தேசம் — bespoke designed banner (text baked into the artwork), shown
+  // clean and in full. `heading` is kept for assistive tech / future visible use.
   cnt_1781049094952_wstyqacm4: {
     heading: 'தாயகம்',
-    imageKey: 'images/song-covers/engal-thesam.png',
+    imageKey: 'images/song-covers/thayagam-hero.png',
   },
 };
 

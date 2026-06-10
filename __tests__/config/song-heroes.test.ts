@@ -8,7 +8,7 @@ describe('getSongHero', () => {
     expect(hero).toBeDefined();
     expect(hero!.heading).toBe('தாயகம்');
     // image resolves through mediaUrl → ends with the encoded key path
-    expect(hero!.image).toContain('images/song-covers/engal-thesam.png');
+    expect(hero!.image).toContain('images/song-covers/thayagam-hero.png');
     expect(hero!.image).toMatch(/^https?:\/\//);
   });
 

@@ -229,31 +229,25 @@ export default async function ContentPage({ params }: PageProps) {
         <JsonLd data={jsonLd} />
         <Header />
 
-        {/* Bespoke full-bleed hero (select songs only). Responsive: the height
-            and type scale by breakpoint; the image covers + centres at any size. */}
+        {/* Bespoke image hero (select songs only). The artwork carries its own
+            text, so we show it clean and in FULL — no crop, no overlay, no
+            rendered heading. Responsive: full-bleed on mobile, framed within the
+            content width on larger screens; the image keeps its natural ratio.
+            The page heading is provided to SEO / screen-readers via sr-only h1. */}
         {hero && (
-          <section className="relative w-full overflow-hidden bg-gray-900">
-            <Image
-              src={hero.image}
-              alt={hero.heading}
-              fill
-              priority
-              sizes="100vw"
-              className="object-cover object-center"
-            />
-            <div
-              aria-hidden
-              className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/45 to-black/25"
-            />
-            <div className="relative mx-auto flex min-h-[340px] max-w-7xl flex-col justify-end px-4 pb-10 pt-32 sm:min-h-[440px] sm:px-6 sm:pb-14 lg:min-h-[500px]">
-              <p className="mb-2 font-tamil text-xs font-semibold uppercase tracking-[0.22em] text-orange-300 sm:text-sm">
-                {enType} · {content.author || 'இராஜ்'}
-              </p>
-              <h1 className="font-kavivanar text-5xl font-extrabold leading-tight text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.6)] sm:text-6xl lg:text-7xl">
-                {hero.heading}
-              </h1>
-              <p className="mt-3 font-tamil text-base text-white/85 sm:text-lg">{content.title}</p>
+          <section className="w-full bg-gray-50">
+            <div className="mx-auto max-w-7xl sm:px-6 sm:pt-6">
+              <Image
+                src={hero.image}
+                alt={content.title}
+                width={1672}
+                height={941}
+                priority
+                sizes="(max-width: 1280px) 100vw, 1216px"
+                className="h-auto w-full sm:rounded-xl"
+              />
             </div>
+            <h1 className="sr-only">{content.title}</h1>
           </section>
         )}
 
