@@ -7,6 +7,7 @@ import {
   ROMANISED_TYPE_LABEL,
   DEFAULT_AUTHOR,
   parseGoogleFontUrl,
+  actionVerb,
 } from '@/lib/seo';
 
 describe('absoluteUrl', () => {
@@ -81,6 +82,20 @@ describe('ogCardLines', () => {
   it('falls back to generic label for an unknown/missing type (no tofu, no crash)', () => {
     expect(ogCardLines({}).title).toBe('Tamil Poetry');
     expect(ogCardLines({ type: 'WUT' }).title).toBe('Tamil Poetry');
+  });
+});
+
+describe('actionVerb', () => {
+  it('is "listen" for audio content (songs, lyrics)', () => {
+    expect(actionVerb('SONGS')).toBe('listen');
+    expect(actionVerb('LYRICS')).toBe('listen');
+  });
+
+  it('is "read" for text content and unknown types', () => {
+    expect(actionVerb('POEMS')).toBe('read');
+    expect(actionVerb('STORIES')).toBe('read');
+    expect(actionVerb('ESSAYS')).toBe('read');
+    expect(actionVerb('WHATEVER')).toBe('read');
   });
 });
 

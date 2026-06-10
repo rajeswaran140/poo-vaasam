@@ -120,8 +120,14 @@ export function ContentSidebar({ currentId, currentType, currentTitle }: Content
         {isOpen ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
       </button>
 
-      {/* Sidebar */}
+      {/* Sidebar — when closed it's only translated off-screen (still in the
+          DOM), so mark it aria-hidden + inert so its heading and controls leave
+          the accessibility tree and tab order until opened. */}
       <div
+        role="complementary"
+        aria-label="தொடர்புடைய உள்ளடக்கம்"
+        aria-hidden={!isOpen}
+        inert={!isOpen}
         className={`fixed right-0 top-0 h-full w-72 bg-white shadow-2xl z-40 transform transition-transform duration-300 ${
           isOpen ? 'translate-x-0' : 'translate-x-full'
         }`}

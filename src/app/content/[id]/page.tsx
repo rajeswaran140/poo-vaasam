@@ -25,7 +25,8 @@ import { JsonLd } from '@/components/JsonLd';
 import { ShareRow } from '@/components/content/ShareRow';
 import { TrackedYouTubeOpen } from '@/components/TrackedYouTubeOpen';
 import { isYouTubeUrl, getYouTubeWatchUrl, getYouTubeId } from '@/lib/utils/youtube';
-import { SITE_URL, SITE_NAME, absoluteUrl, toDescription, alternatesFor } from '@/lib/seo';
+import { SITE_URL, SITE_NAME, absoluteUrl, toDescription, alternatesFor, actionVerb } from '@/lib/seo';
+import { isoDuration } from '@/lib/iso-duration';
 
 // Fully static, regenerated only at build/deploy. We deliberately do NOT use
 // time-based ISR (`revalidate`): the runtime has no DynamoDB creds, so a
@@ -132,15 +133,17 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     `${content.title} — ${enType} by ${content.author || 'Rajeswaran Thangarajah'}`;
 
   // Description prefers an explicit seoDescription; otherwise build a romanised
-  // sentence that's useful as a SERP snippet (Google currently pulls the raw
-  // first line of the poem, which reads as fragmented art rather than a
-  // recognisable description).
+  // sentence that's useful as a SERP snippet. The verb matches the medium —
+  // songs are "listen free", text is "read for free".
   const description =
     content.seoDescription ||
-    `${enType} "${content.title}" by ${content.author || 'Rajeswaran Thangarajah'} on Tamilagaval — read for free.`;
+    `${enType} "${content.title}" by ${content.author || 'Rajeswaran Thangarajah'} on Tamilagaval — ${actionVerb(content.type)} for free.`;
 
   const url = absoluteUrl(contentPath(content.id));
-  const hasImage = Boolean(content.featuredImage);
+  // Prefer a bespoke hero's designed artwork as the share image (it carries the
+  // title), falling back to the content's own cover.
+  const shareImage = getSongHero(content.id)?.image || content.featuredImage;
+  const hasImage = Boolean(shareImage);
 
   return {
     title,
@@ -152,16 +155,16 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       url,
       type: 'article',
       siteName: SITE_NAME,
-      // When the content has its own image, use it; otherwise the co-located
+      // When there's an image, use it; otherwise the co-located
       // opengraph-image.tsx generates a branded card automatically.
-      ...(hasImage ? { images: [content.featuredImage] } : {}),
+      ...(hasImage ? { images: [shareImage as string] } : {}),
     },
     twitter: {
-      // There's always a large image now (featuredImage or the generated card).
+      // There's always a large image now (share image or the generated card).
       card: 'summary_large_image',
       title,
       description: toDescription(description),
-      ...(hasImage ? { images: [content.featuredImage] } : {}),
+      ...(hasImage ? { images: [shareImage as string] } : {}),
     },
   };
 }
@@ -182,6 +185,13 @@ export default async function ContentPage({ params }: PageProps) {
   // provides the page's <h1>, so the in-card title/eyebrow are suppressed below.
   const hero = getSongHero(content.id);
 
+  // Designed hero art (if any) is the canonical share/structured-data image.
+  const structuredImage = hero?.image || content.featuredImage;
+  const audioDurationIso =
+    typeof content.audioDuration === 'number' && content.audioDuration > 0
+      ? isoDuration(content.audioDuration)
+      : undefined;
+
   const jsonLd: Record<string, unknown>[] = [
     {
       '@context': 'https://schema.org',
@@ -193,8 +203,19 @@ export default async function ContentPage({ params }: PageProps) {
       datePublished: content.publishedAt || content.createdAt,
       dateModified: content.updatedAt || content.createdAt,
       url: pageUrl,
-      ...(content.featuredImage ? { image: content.featuredImage } : {}),
+      ...(structuredImage ? { image: structuredImage } : {}),
       ...(content.description ? { description: content.description } : {}),
+      // Make a song's audio + length machine-readable (rich-result signals).
+      ...(content.audioUrl
+        ? {
+            audio: {
+              '@type': 'AudioObject',
+              contentUrl: content.audioUrl,
+              ...(audioDurationIso ? { duration: audioDurationIso } : {}),
+            },
+          }
+        : {}),
+      ...(audioDurationIso ? { duration: audioDurationIso } : {}),
       publisher: { '@type': 'Organization', name: SITE_NAME, url: SITE_URL },
     },
     {
@@ -240,7 +261,7 @@ export default async function ContentPage({ params }: PageProps) {
             <div className="mx-auto max-w-7xl sm:px-6 sm:pt-6">
               <Image
                 src={hero.image}
-                alt={content.title}
+                alt={`${hero.heading} — ${content.title}, ${enType} by ${content.author || 'இராஜ்'}`}
                 width={1672}
                 height={941}
                 priority

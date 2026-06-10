@@ -47,6 +47,15 @@ export function parseGoogleFontUrl(css: string): string | null {
   return match ? match[1] : null;
 }
 
+/**
+ * The verb that fits how a content type is consumed — songs/lyrics are listened
+ * to, everything else is read. Used in meta descriptions so a song page doesn't
+ * say "read for free".
+ */
+export function actionVerb(type: string): 'listen' | 'read' {
+  return type === 'SONGS' || type === 'LYRICS' ? 'listen' : 'read';
+}
+
 /** Romanised content-type labels — crawler/share-card facing (not the UI). */
 export const ROMANISED_TYPE_LABEL: Record<string, string> = {
   SONGS: 'Tamil Song',

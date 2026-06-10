@@ -23,15 +23,17 @@ export function ContentPageClient({
 }: ContentPageClientProps) {
   return (
     <>
-      {/* Sidebar Component */}
+      {/* Main Content first so the page <h1> precedes the (fixed, off-canvas)
+          sidebar in the DOM/heading order. The sidebar is position:fixed, so
+          rendering it after has no visual effect. */}
+      {children}
+
+      {/* Off-canvas related-content sidebar */}
       <ContentSidebar
         currentId={contentId}
         currentType={contentType}
         currentTitle={contentTitle}
       />
-
-      {/* Main Content */}
-      {children}
     </>
   );
 }
