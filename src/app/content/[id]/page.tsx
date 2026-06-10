@@ -14,6 +14,7 @@ import Image from 'next/image';
 import { notFound } from 'next/navigation';
 import Header from '@/components/Header';
 import { getSongHero } from '@/config/song-heroes';
+import { contentPath } from '@/config/vanity-paths';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentStatus } from '@/types/content';
 import { ContentPageClient } from '@/components/ContentPageClient';
@@ -138,13 +139,13 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     content.seoDescription ||
     `${enType} "${content.title}" by ${content.author || 'Rajeswaran Thangarajah'} on Tamilagaval — read for free.`;
 
-  const url = absoluteUrl(`/content/${content.id}`);
+  const url = absoluteUrl(contentPath(content.id));
   const hasImage = Boolean(content.featuredImage);
 
   return {
     title,
     description: toDescription(description),
-    alternates: alternatesFor(`/content/${content.id}`),
+    alternates: alternatesFor(contentPath(content.id)),
     openGraph: {
       title,
       description: toDescription(description),
@@ -173,7 +174,7 @@ export default async function ContentPage({ params }: PageProps) {
     notFound();
   }
 
-  const pageUrl = absoluteUrl(`/content/${content.id}`);
+  const pageUrl = absoluteUrl(contentPath(content.id));
   const ytId = getYouTubeId(content.videoUrl);
   const enType = TYPE_LABEL_EN[content.type] || 'Tamil Poetry';
   const browseTo = BROWSE_HREF[content.type] || { href: '/all', label: 'அனைத்து உள்ளடக்கம்' };

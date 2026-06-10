@@ -3,6 +3,7 @@ import { SITE_URL } from '@/lib/seo';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentStatus } from '@/types/content';
 import { SITE, liveContentSections, isYouTubeVideosConfigured } from '@/config/site';
+import { contentPath } from '@/config/vanity-paths';
 import { fetchChannelVideos } from '@/lib/youtube-feed';
 
 // Regenerate hourly rather than per-request.
@@ -71,7 +72,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       const updated = c.updatedAt ? new Date(String(c.updatedAt)) : new Date();
       if (updated > siteLastMod) siteLastMod = updated;
       return {
-        url: `${SITE_URL}/content/${c.id}`,
+        url: `${SITE_URL}${contentPath(c.id)}`,
         lastModified: updated,
         changeFrequency: 'monthly',
         priority: 0.7,

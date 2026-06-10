@@ -29,9 +29,32 @@ const contentSecurityPolicy = [
   "upgrade-insecure-requests",
 ].join('; ');
 
+// Vanity URLs: serve a content item at a pretty path, and 301 its /content/<id>
+// URL to the pretty one. Keep in sync with src/config/vanity-paths.ts (next.config
+// runs before the @/ alias is available, so the small mapping is mirrored here).
+const VANITY = [
+  { path: '/thayagam', id: 'cnt_1781049094952_wstyqacm4' }, // எங்கள் தேசம்
+];
+
 const nextConfig: NextConfig = {
   /* config options here */
   reactStrictMode: true,
+
+  // Old /content/<id> URLs permanently redirect to the vanity path…
+  async redirects() {
+    return VANITY.map((v) => ({
+      source: `/content/${v.id}`,
+      destination: v.path,
+      permanent: true,
+    }));
+  },
+  // …and the vanity path serves the existing content page (URL stays pretty).
+  async rewrites() {
+    return VANITY.map((v) => ({
+      source: v.path,
+      destination: `/content/${v.id}`,
+    }));
+  },
 
   // Production optimizations
   output: 'standalone',

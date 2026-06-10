@@ -12,6 +12,7 @@ import Link from 'next/link';
 import { Play, Pause, Music, ChevronRight } from 'lucide-react';
 import { useMusicPlayer, formatTime, type Track } from './MusicPlayerProvider';
 import { TrackedYouTubeOpen } from '@/components/TrackedYouTubeOpen';
+import { contentPath } from '@/config/vanity-paths';
 
 /** A track plus the metadata the listing needs for sorting and filtering. */
 export interface SongRow extends Track {
@@ -115,7 +116,7 @@ export function SongList({ rows }: { rows: SongRow[] }) {
                 </TrackedYouTubeOpen>
               )}
               <Link
-                href={`/content/${t.id}`}
+                href={contentPath(t.id)}
                 aria-label={`${t.title} — பாடல் வரிகள்`}
                 className="flex shrink-0 items-center px-2 py-2.5 font-tamil text-gray-400 hover:text-orange-400 focus-visible:text-orange-400 focus-visible:outline-none"
               >
