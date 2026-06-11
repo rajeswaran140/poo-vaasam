@@ -5,6 +5,8 @@ import { ContentStatus } from '@/types/content';
 import { SITE, liveContentSections, isYouTubeVideosConfigured } from '@/config/site';
 import { contentPath } from '@/config/vanity-paths';
 import { fetchChannelVideos } from '@/lib/youtube-feed';
+import { SongCatalog } from '@/application/use-cases/SongCatalog';
+import { eligibleCollectionThemes } from '@/config/song-collections';
 
 // Regenerate hourly rather than per-request.
 export const revalidate = 3600;
@@ -107,5 +109,21 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.5,
   }));
 
-  return [...sectionRoutes, ...infoRoutes, ...contentRoutes];
+  // Theme collection pages (/songs/[theme]) — only themes with enough songs to
+  // have a generated page, kept in sync with the page's generateStaticParams by
+  // using the same SongCatalog source.
+  let collectionRoutes: MetadataRoute.Sitemap = [];
+  try {
+    const songs = await new SongCatalog(new ContentRepository()).listPublished(100);
+    collectionRoutes = eligibleCollectionThemes(songs.map((s) => s.theme)).map((theme) => ({
+      url: `${SITE_URL}/songs/${theme}`,
+      lastModified,
+      changeFrequency: 'weekly',
+      priority: 0.8,
+    }));
+  } catch (error) {
+    console.error('[sitemap] failed to load song collections:', error);
+  }
+
+  return [...sectionRoutes, ...collectionRoutes, ...infoRoutes, ...contentRoutes];
 }
