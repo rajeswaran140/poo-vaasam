@@ -23,6 +23,8 @@ import { SongsPlaylist, type SongRow } from '@/components/music/SongsPlaylist';
 import { JsonLd } from '@/components/JsonLd';
 import { SITE_NAME, absoluteUrl, alternatesFor } from '@/lib/seo';
 import { isoDuration } from '@/lib/iso-duration';
+import Link from 'next/link';
+import { eligibleCollectionThemes, SONG_COLLECTIONS } from '@/config/song-collections';
 
 // Crawler-facing title/description use romanised English so the page ranks for
 // real queries (tamil songs / paadal varigal); the visible <h1> on the page
@@ -98,6 +100,9 @@ export default async function SongsPage() {
     youtubeVideoId: s.youtubeVideoId,
   }));
   const playableCount = tracks.filter((t) => t.src).length;
+  // Crawlable internal links to the SEO theme collection pages (only themes
+  // with enough songs to have a page).
+  const collectionThemes = eligibleCollectionThemes(songs.map((s) => s.theme));
 
   const firstCover = tracks.map((t) => t.cover).find((c) => !!c);
   const playlistImage = firstCover || FALLBACK_OG_IMAGE;
@@ -134,6 +139,29 @@ export default async function SongsPage() {
       <Header />
       <main id="main" className="flex-1">
         <SongsPlaylist tracks={tracks} />
+        {collectionThemes.length > 0 && (
+          <nav
+            aria-label="Browse Tamil songs by theme"
+            className="container mx-auto max-w-6xl px-4 pb-12 sm:px-6"
+          >
+            <h2 className="mb-3 font-tamil text-sm font-semibold uppercase tracking-wide text-gray-400">
+              தலைப்பு வாரியாக · Browse by theme
+            </h2>
+            <ul className="flex flex-wrap gap-2">
+              {collectionThemes.map((t) => (
+                <li key={t}>
+                  <Link
+                    href={`/songs/${t}`}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-gray-700 px-3 py-1.5 text-sm text-gray-300 transition-colors hover:border-orange-500/50 hover:text-orange-400"
+                  >
+                    <span className="font-tamil">{SONG_COLLECTIONS[t].tamilTitle}</span>
+                    <span className="text-gray-500">· {SONG_COLLECTIONS[t].englishTitle}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        )}
       </main>
       <Footer />
     </div>
