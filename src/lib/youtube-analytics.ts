@@ -152,6 +152,38 @@ export async function fetchVideoAnalytics(daysBack = 28): Promise<Result<VideoAn
   }
 }
 
+/**
+ * Per-second audience-retention curve for a single video: rows of
+ * [elapsedVideoTimeRatio, audienceWatchRatio]. Owner-scoped; only available
+ * for videos with enough finalized data (a brand-new upload returns []).
+ */
+export async function fetchRetentionCurve(
+  videoId: string,
+  daysBack = 90
+): Promise<Result<Array<[number, number]>>> {
+  if (!isYouTubeAnalyticsConfigured()) {
+    return { ok: false, error: 'YouTube Analytics OAuth not configured' };
+  }
+  if (!videoId) return { ok: false, error: 'videoId is required' };
+  const { startDate, endDate } = dateRange(daysBack);
+  try {
+    const res = await runReport({
+      ids: 'channel==MINE',
+      startDate,
+      endDate,
+      metrics: 'audienceWatchRatio',
+      dimensions: 'elapsedVideoTimeRatio',
+      filters: `video==${videoId}`,
+      sort: 'elapsedVideoTimeRatio',
+    });
+    if (!res) return { ok: false, error: 'No response from YouTube Analytics' };
+    const rows = (res.rows ?? []).map((r): [number, number] => [Number(r[0]), Number(r[1])]);
+    return { ok: true, data: rows };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 /** Channel-wide aggregates for the last N days. */
 export async function fetchChannelAnalyticsSnapshot(daysBack = 28): Promise<Result<ChannelAnalyticsSnapshot>> {
   if (!isYouTubeAnalyticsConfigured()) {

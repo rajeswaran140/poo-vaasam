@@ -34,6 +34,7 @@ import {
 import { YtRecsRepository } from '@/infrastructure/database/YtRecsRepository';
 import { RefreshRecsButton } from '@/components/admin/RefreshRecsButton';
 import { YouTubeVideosPanel } from '@/components/admin/YouTubeVideosPanel';
+import { RetentionInsightPanel } from '@/components/admin/RetentionInsightPanel';
 import { mergeVideoRows } from '@/lib/youtube-dashboard';
 
 const ANALYTICS_DAYS = 28;
@@ -108,6 +109,13 @@ export default async function YouTubeAdminPage() {
   // counts + owner Analytics metrics, merged once on the server. The panel
   // re-queries Analytics client-side when the date range changes.
   const videoRows = mergeVideoRows(videos, ytaVideos);
+  // Benchmark for retention comparison = the video with the highest measured
+  // retention (no hardcoded ID). The Retention panel compares each video's
+  // first-10% hold against this template's.
+  const benchmarkRow = videoRows
+    .filter((r) => r.retentionPct != null)
+    .sort((a, b) => (b.retentionPct ?? 0) - (a.retentionPct ?? 0))[0];
+  const retentionVideos = videoRows.map((r) => ({ id: r.id, title: r.title, durationSeconds: r.durationSeconds }));
   const ytaError = ytaChannelRes && !ytaChannelRes.ok ? ytaChannelRes.error : null;
   const titlesByVideoId = Object.fromEntries(videos.map((v) => [v.id, v.title]));
   // Recommendations are generated on demand (admin "Refresh") and cached — NEVER
@@ -346,6 +354,14 @@ export default async function YouTubeAdminPage() {
           />
         </section>
       )}
+
+      {/* Retention intelligence — per-video hook verdict vs the best-retention
+          template (the first-15s lever). */}
+      <RetentionInsightPanel
+        videos={retentionVideos}
+        benchmark={benchmarkRow ? { id: benchmarkRow.id, title: benchmarkRow.title } : undefined}
+        ytaConfigured={ytaOn}
+      />
 
       {/* Interactive videos panel — pagination, sort, filter, CSV export,
           and a live date-range selector (re-queries owner Analytics). */}
