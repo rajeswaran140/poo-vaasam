@@ -16,7 +16,6 @@ const mkRow = (over: Partial<VideoRow> & { id: string }): VideoRow => ({
   estimatedMinutesWatched: over.estimatedMinutesWatched ?? null,
   averageViewDuration: over.averageViewDuration ?? null,
   retentionPct: over.retentionPct ?? null,
-  onSite: over.onSite ?? false,
 });
 
 // 23 rows: titles "Song 00".."Song 22", ascending viewCounts, descending dates.
@@ -26,7 +25,6 @@ const manyRows = Array.from({ length: 23 }, (_, i) =>
     title: `Song ${String(i).padStart(2, '0')}`,
     viewCount: i * 10,
     publishedAt: `2026-06-${String(i + 1).padStart(2, '0')}T00:00:00Z`,
-    onSite: i % 2 === 0,
   })
 );
 
@@ -73,13 +71,6 @@ describe('YouTubeVideosPanel', () => {
     fireEvent.change(screen.getByPlaceholderText('Search title…'), { target: { value: 'Song 2' } });
     // "Song 2" matches Song 20, 21, 22 -> 3 matches
     expect(screen.getByText('1–3 of 3')).toBeInTheDocument();
-  });
-
-  it('filters by on-site status', () => {
-    render(<YouTubeVideosPanel initialRows={manyRows} ytaConfigured={false} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Missing' }));
-    // odd indices are off-site -> 11 of them
-    expect(screen.getByText('1–10 of 11')).toBeInTheDocument();
   });
 
   it('hides owner-analytics columns when Analytics is not configured', () => {

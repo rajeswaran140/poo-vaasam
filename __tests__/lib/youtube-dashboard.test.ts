@@ -45,7 +45,6 @@ const row = (over: Partial<VideoRow> & { id: string }): VideoRow => ({
   estimatedMinutesWatched: over.estimatedMinutesWatched ?? null,
   averageViewDuration: over.averageViewDuration ?? null,
   retentionPct: over.retentionPct ?? null,
-  onSite: over.onSite ?? false,
 });
 
 describe('computeRetentionPct', () => {
@@ -61,26 +60,19 @@ describe('computeRetentionPct', () => {
 });
 
 describe('mergeVideoRows', () => {
-  it('merges analytics + on-site flag and computes retention', () => {
+  it('merges analytics into Data-API rows and computes retention', () => {
     const rows = mergeVideoRows(
       [vs({ id: 'a', viewCount: 1000, durationSeconds: 240 }), vs({ id: 'b' })],
-      [an({ videoId: 'a', views: 800, subscribersGained: 5, averageViewDuration: 120, estimatedMinutesWatched: 99 })],
-      new Set(['b'])
+      [an({ videoId: 'a', views: 800, subscribersGained: 5, averageViewDuration: 120, estimatedMinutesWatched: 99 })]
     );
     const a = rows.find((r) => r.id === 'a')!;
     const b = rows.find((r) => r.id === 'b')!;
     expect(a.realViews).toBe(800);
     expect(a.subscribersGained).toBe(5);
     expect(a.retentionPct).toBe(50);
-    expect(a.onSite).toBe(false);
     // no analytics row for b -> analytics fields null
     expect(b.realViews).toBeNull();
     expect(b.retentionPct).toBeNull();
-    expect(b.onSite).toBe(true);
-  });
-  it('accepts an array of matched ids (not just a Set)', () => {
-    const rows = mergeVideoRows([vs({ id: 'a' })], [], ['a']);
-    expect(rows[0].onSite).toBe(true);
   });
 });
 
@@ -128,24 +120,17 @@ describe('sortVideoRows', () => {
 
 describe('filterVideoRows', () => {
   const rows = [
-    row({ id: 'a', title: 'அன்னை பாடல்', onSite: true }),
-    row({ id: 'b', title: 'Love Song', onSite: false }),
-    row({ id: 'c', title: 'love letter', onSite: true }),
+    row({ id: 'a', title: 'அன்னை பாடல்' }),
+    row({ id: 'b', title: 'Love Song' }),
+    row({ id: 'c', title: 'love letter' }),
   ];
   it('filters by case-insensitive title substring', () => {
     expect(filterVideoRows(rows, { query: 'love' }).map((r) => r.id)).toEqual(['b', 'c']);
     expect(filterVideoRows(rows, { query: 'அன்னை' }).map((r) => r.id)).toEqual(['a']);
   });
-  it('filters by on-site flag', () => {
-    expect(filterVideoRows(rows, { onSite: 'on' }).map((r) => r.id)).toEqual(['a', 'c']);
-    expect(filterVideoRows(rows, { onSite: 'off' }).map((r) => r.id)).toEqual(['b']);
-    expect(filterVideoRows(rows, { onSite: 'all' })).toHaveLength(3);
-  });
-  it('combines query + on-site', () => {
-    expect(filterVideoRows(rows, { query: 'love', onSite: 'on' }).map((r) => r.id)).toEqual(['c']);
-  });
   it('empty/whitespace query matches all', () => {
     expect(filterVideoRows(rows, { query: '   ' })).toHaveLength(3);
+    expect(filterVideoRows(rows, {})).toHaveLength(3);
   });
 });
 
@@ -175,13 +160,13 @@ describe('paginate', () => {
 
 describe('videoRowsToCsv', () => {
   it('emits a header and one line per row', () => {
-    const csv = videoRowsToCsv([row({ id: 'a', title: 'Hello', viewCount: 10, realViews: 8, onSite: true })]);
+    const csv = videoRowsToCsv([row({ id: 'a', title: 'Hello', viewCount: 10, realViews: 8 })]);
     const lines = csv.split('\n');
     expect(lines[0]).toContain('Title');
     expect(lines[0]).toContain('Real views');
     expect(lines).toHaveLength(2);
     expect(lines[1]).toContain('Hello');
-    expect(lines[1]).toContain('yes');
+    expect(lines[1]).toContain('8');
   });
   it('escapes commas, quotes and newlines; nulls become empty', () => {
     const csv = videoRowsToCsv([row({ id: 'x', title: 'a, "b"\nc', realViews: null })]);

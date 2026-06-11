@@ -1,15 +1,17 @@
 /**
  * Pure, framework-free helpers for the /admin/youtube videos panel.
  *
- * The panel merges two data sources into one comprehensive per-video row:
+ * The panel merges two YouTube data sources into one comprehensive per-video
+ * row:
  *   - YouTube Data API (lifetime public counts: views/likes/comments/duration)
  *   - YouTube Analytics API (date-ranged owner metrics: real views, subs
  *     gained, watch time, average view duration → a retention proxy)
- * plus the site's "on site / missing" cross-reference flag.
  *
- * Everything here is a pure function so it can be exhaustively unit-tested and
- * reused on both the server (initial merge) and the client (re-merge when the
- * admin changes the date range, sorts, filters, paginates, or exports CSV).
+ * This is purely a YouTube view — it does NOT cross-reference the site's audio
+ * song catalogue. Everything here is a pure function so it can be exhaustively
+ * unit-tested and reused on both the server (initial merge) and the client
+ * (re-merge when the admin changes the date range, sorts, filters, paginates,
+ * or exports CSV).
  */
 
 import type { VideoStats } from '@/lib/youtube-api';
@@ -31,8 +33,6 @@ export interface VideoRow {
   estimatedMinutesWatched: number | null;
   averageViewDuration: number | null; // seconds
   retentionPct: number | null; // averageViewDuration / durationSeconds * 100
-  // Site cross-reference
-  onSite: boolean;
 }
 
 export type SortKey =
@@ -49,7 +49,6 @@ export type SortKey =
   | 'retentionPct';
 
 export type SortDir = 'asc' | 'desc';
-export type OnSiteFilter = 'all' | 'on' | 'off';
 
 /**
  * Retention proxy: what fraction of the video the average viewer watched.
@@ -66,13 +65,8 @@ export function computeRetentionPct(
   return Math.round((averageViewDuration / durationSeconds) * 100);
 }
 
-/** Build the merged rows from the two upstream datasets + the on-site set. */
-export function mergeVideoRows(
-  videos: VideoStats[],
-  analytics: VideoAnalyticsRow[],
-  matchedIds: Set<string> | Iterable<string>
-): VideoRow[] {
-  const matched = matchedIds instanceof Set ? matchedIds : new Set(matchedIds);
+/** Build the merged rows from the two upstream YouTube datasets. */
+export function mergeVideoRows(videos: VideoStats[], analytics: VideoAnalyticsRow[]): VideoRow[] {
   const byId = new Map(analytics.map((a) => [a.videoId, a]));
   return videos.map((v) => {
     const a = byId.get(v.id) ?? null;
@@ -90,7 +84,6 @@ export function mergeVideoRows(
       estimatedMinutesWatched: a ? a.estimatedMinutesWatched : null,
       averageViewDuration,
       retentionPct: computeRetentionPct(averageViewDuration, v.durationSeconds),
-      onSite: matched.has(v.id),
     };
   });
 }
@@ -142,19 +135,11 @@ export function sortVideoRows(rows: VideoRow[], key: SortKey, dir: SortDir): Vid
   });
 }
 
-/** Filter by a free-text title query and the on-site flag. */
-export function filterVideoRows(
-  rows: VideoRow[],
-  opts: { query?: string; onSite?: OnSiteFilter }
-): VideoRow[] {
+/** Filter by a free-text title query. */
+export function filterVideoRows(rows: VideoRow[], opts: { query?: string }): VideoRow[] {
   const q = (opts.query ?? '').trim().toLowerCase();
-  const onSite = opts.onSite ?? 'all';
-  return rows.filter((r) => {
-    if (q && !r.title.toLowerCase().includes(q)) return false;
-    if (onSite === 'on' && !r.onSite) return false;
-    if (onSite === 'off' && r.onSite) return false;
-    return true;
-  });
+  if (!q) return [...rows];
+  return rows.filter((r) => r.title.toLowerCase().includes(q));
 }
 
 export interface Page<T> {
@@ -187,7 +172,6 @@ const CSV_COLUMNS: Array<{ header: string; get: (r: VideoRow) => string | number
   { header: 'Watch time (min)', get: (r) => (r.estimatedMinutesWatched == null ? null : Math.round(r.estimatedMinutesWatched)) },
   { header: 'Avg view (s)', get: (r) => (r.averageViewDuration == null ? null : Math.round(r.averageViewDuration)) },
   { header: 'Retention %', get: (r) => r.retentionPct },
-  { header: 'On site', get: (r) => (r.onSite ? 'yes' : 'no') },
   { header: 'Video ID', get: (r) => r.id },
 ];
 
