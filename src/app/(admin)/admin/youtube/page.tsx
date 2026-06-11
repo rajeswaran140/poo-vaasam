@@ -16,7 +16,6 @@ import {
   fetchChannelStats,
   fetchChannelVideoStats,
   isYouTubeApiConfigured,
-  formatDuration,
   type VideoStats,
 } from '@/lib/youtube-api';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
@@ -38,6 +37,10 @@ import {
 } from '@/lib/youtube-analytics';
 import { YtRecsRepository } from '@/infrastructure/database/YtRecsRepository';
 import { RefreshRecsButton } from '@/components/admin/RefreshRecsButton';
+import { YouTubeVideosPanel } from '@/components/admin/YouTubeVideosPanel';
+import { mergeVideoRows } from '@/lib/youtube-dashboard';
+
+const ANALYTICS_DAYS = 28;
 
 export const revalidate = 1800; // 30 min — pairs with the 1-hr upstream fetch cache
 
@@ -113,12 +116,12 @@ export default async function YouTubeAdminPage() {
   const [channel, videos, ga4ClicksRes, ga4TrafficRes, ga4AudioRes, ga4YouTubeRes, ytaChannelRes, ytaVideosRes] = await Promise.all([
     fetchChannelStats(SITE.youtube.channelId),
     fetchChannelVideoStats(SITE.youtube.channelId, 50),
-    ga4On ? fetchSubscribeClicksBySource(28) : Promise.resolve(null),
-    ga4On ? fetchTrafficSnapshot(28) : Promise.resolve(null),
-    ga4On ? fetchAudioPlays(28) : Promise.resolve(null),
-    ga4On ? fetchYouTubeOpens(28) : Promise.resolve(null),
-    ytaOn ? fetchChannelAnalyticsSnapshot(28) : Promise.resolve(null),
-    ytaOn ? fetchVideoAnalytics(28) : Promise.resolve(null),
+    ga4On ? fetchSubscribeClicksBySource(ANALYTICS_DAYS) : Promise.resolve(null),
+    ga4On ? fetchTrafficSnapshot(ANALYTICS_DAYS) : Promise.resolve(null),
+    ga4On ? fetchAudioPlays(ANALYTICS_DAYS) : Promise.resolve(null),
+    ga4On ? fetchYouTubeOpens(ANALYTICS_DAYS) : Promise.resolve(null),
+    ytaOn ? fetchChannelAnalyticsSnapshot(ANALYTICS_DAYS) : Promise.resolve(null),
+    ytaOn ? fetchVideoAnalytics(ANALYTICS_DAYS) : Promise.resolve(null),
   ]);
 
   if (!channel) {
@@ -148,10 +151,10 @@ export default async function YouTubeAdminPage() {
   // Claude isn't asked to reason about an empty dataset.
   const ytaChannel = ytaChannelRes?.ok ? ytaChannelRes.data : null;
   const ytaVideos = ytaVideosRes?.ok ? ytaVideosRes.data : [];
-  // Real (Analytics) per-video views, keyed by id — shown beside the public Data
-  // API counts in the table. The public counter freezes/lags on new uploads;
-  // these validated numbers don't (they carry a ~1–2 day processing delay).
-  const realViewsById = new Map(ytaVideos.map((v) => [v.videoId, v.views]));
+  // Comprehensive per-video rows for the interactive panel: public Data-API
+  // counts + owner Analytics metrics + the on-site flag, merged once on the
+  // server. The panel re-queries Analytics client-side when the range changes.
+  const videoRows = mergeVideoRows(videos, ytaVideos, matched);
   const ytaError = ytaChannelRes && !ytaChannelRes.ok ? ytaChannelRes.error : null;
   const titlesByVideoId = Object.fromEntries(videos.map((v) => [v.id, v.title]));
   // Recommendations are generated on demand (admin "Refresh") and cached — NEVER
@@ -417,71 +420,9 @@ export default async function YouTubeAdminPage() {
         </section>
       )}
 
-      {/* Videos table */}
-      <section>
-        <h2 className="mb-1 text-lg font-semibold text-gray-900 dark:text-gray-100">Latest videos</h2>
-        <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
-          <strong>Views</strong> = public counter — can freeze/lag for hours on new uploads.{' '}
-          <strong>Real views</strong> = YouTube Analytics (last 28 days) — doesn&apos;t freeze, ~1–2 day processing delay.{' '}
-          When they disagree, trust <strong>Real views</strong>.{!ytaOn && ' (Connect YouTube Analytics below to populate this column.)'}
-        </p>
-        <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-gray-50 dark:bg-gray-800/60 text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              <tr>
-                <th className="px-4 py-3">Video</th>
-                <th className="px-4 py-3 text-right">Views <span className="font-normal normal-case text-gray-400">(public)</span></th>
-                <th className="px-4 py-3 text-right">Real views <span className="font-normal normal-case text-gray-400">(28d)</span></th>
-                <th className="px-4 py-3 text-right">Likes</th>
-                <th className="px-4 py-3 text-right">Comments</th>
-                <th className="px-4 py-3 text-right">Duration</th>
-                <th className="px-4 py-3 text-right">On site</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-              {videos.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">No videos returned.</td></tr>
-              ) : (
-                videos.map((v) => {
-                  const isMatched = matched.has(v.id);
-                  return (
-                    <tr key={v.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                      <td className="px-4 py-3">
-                        <a
-                          href={`https://www.youtube.com/watch?v=${v.id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="block truncate font-medium text-gray-900 dark:text-gray-100 hover:text-orange-600"
-                          title={v.title}
-                        >
-                          {v.title}
-                        </a>
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          {v.publishedAt ? new Date(v.publishedAt).toLocaleDateString() : '—'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-gray-500 dark:text-gray-400">{numberFmt.format(v.viewCount)}</td>
-                      <td className="px-4 py-3 text-right tabular-nums font-semibold text-gray-900 dark:text-gray-100">
-                        {realViewsById.has(v.id) ? numberFmt.format(realViewsById.get(v.id)!) : <span className="text-gray-400">—</span>}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums">{numberFmt.format(v.likeCount)}</td>
-                      <td className="px-4 py-3 text-right tabular-nums">{numberFmt.format(v.commentCount)}</td>
-                      <td className="px-4 py-3 text-right tabular-nums text-gray-600 dark:text-gray-400">{formatDuration(v.durationSeconds)}</td>
-                      <td className="px-4 py-3 text-right">
-                        {isMatched ? (
-                          <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-500/20 dark:text-green-300">✓</span>
-                        ) : (
-                          <span className="inline-flex items-center rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800 dark:text-orange-300 dark:bg-orange-500/20">missing</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      {/* Interactive videos panel — pagination, sort, filter, CSV export,
+          and a live date-range selector (re-queries owner Analytics). */}
+      <YouTubeVideosPanel initialRows={videoRows} ytaConfigured={ytaOn} initialDays={ANALYTICS_DAYS} />
 
     </div>
   );

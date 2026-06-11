@@ -16,10 +16,12 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-const SRC = readFileSync(
-  join(process.cwd(), 'src/app/(admin)/admin/youtube/page.tsx'),
-  'utf8'
-);
+const read = (p: string) => readFileSync(join(process.cwd(), p), 'utf8');
+const PAGE_SRC = read('src/app/(admin)/admin/youtube/page.tsx');
+// The videos table moved into this interactive client panel; the guard follows
+// it there so the dark-mode invariant still covers every rendered surface.
+const PANEL_SRC = read('src/components/admin/YouTubeVideosPanel.tsx');
+const SRC = `${PAGE_SRC}\n${PANEL_SRC}`;
 
 // Light-mode surface/text utilities that MUST be paired with a dark: variant.
 // (Accent colors like bg-orange-500 bar fills and orange-600 links are
@@ -44,8 +46,8 @@ describe('/admin/youtube — dark-mode coverage', () => {
   });
 
   it('keeps the header and section headings readable in dark mode', () => {
-    // Both the page <h1> and the "Latest videos" <h2> sat dark-on-dark before.
-    expect(/text-2xl font-bold text-gray-900 dark:text-gray-100/.test(SRC)).toBe(true);
-    expect(/text-lg font-semibold text-gray-900 dark:text-gray-100/.test(SRC)).toBe(true);
+    // Page <h1> stays in page.tsx; the videos <h2> now lives in the panel.
+    expect(/text-2xl font-bold text-gray-900 dark:text-gray-100/.test(PAGE_SRC)).toBe(true);
+    expect(/text-lg font-semibold text-gray-900 dark:text-gray-100/.test(PANEL_SRC)).toBe(true);
   });
 });
