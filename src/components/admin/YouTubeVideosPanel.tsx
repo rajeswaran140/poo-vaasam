@@ -22,7 +22,6 @@ import {
   paginate,
   sortVideoRows,
   videoRowsToCsv,
-  type OnSiteFilter,
   type SortDir,
   type SortKey,
   type VideoRow,
@@ -69,7 +68,6 @@ export function YouTubeVideosPanel({
   const [rangeError, setRangeError] = useState<string | null>(null);
 
   const [query, setQuery] = useState('');
-  const [onSite, setOnSite] = useState<OnSiteFilter>('all');
   const [sortKey, setSortKey] = useState<SortKey>('publishedAt');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [page, setPage] = useState(1);
@@ -81,7 +79,7 @@ export function YouTubeVideosPanel({
   );
 
   // filter -> sort -> paginate (all pure, all tested)
-  const filtered = useMemo(() => filterVideoRows(rows, { query, onSite }), [rows, query, onSite]);
+  const filtered = useMemo(() => filterVideoRows(rows, { query }), [rows, query]);
   const sorted = useMemo(() => sortVideoRows(filtered, sortKey, sortDir), [filtered, sortKey, sortDir]);
   const pageData = useMemo(() => paginate(sorted, page, pageSize), [sorted, page, pageSize]);
 
@@ -169,20 +167,6 @@ export function YouTubeVideosPanel({
           />
         </label>
 
-        <div role="group" aria-label="Filter by on-site status" className="inline-flex rounded-lg border border-gray-300 dark:border-gray-700 overflow-hidden text-sm">
-          {(['all', 'on', 'off'] as const).map((f) => (
-            <button
-              key={f}
-              type="button"
-              aria-pressed={onSite === f}
-              onClick={() => { setOnSite(f); setPage(1); }}
-              className={`px-3 py-1.5 font-medium ${onSite === f ? 'bg-orange-500 text-white' : 'bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'}`}
-            >
-              {f === 'all' ? 'All' : f === 'on' ? 'On site' : 'Missing'}
-            </button>
-          ))}
-        </div>
-
         {ytaConfigured && (
           <label className="ml-auto flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
             Range
@@ -234,13 +218,12 @@ export function YouTubeVideosPanel({
                   </th>
                 );
               })}
-              <th scope="col" className="px-4 py-3 text-right">On site</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
             {pageData.items.length === 0 ? (
               <tr>
-                <td colSpan={visibleColumns.length + 1} className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
+                <td colSpan={visibleColumns.length} className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
                   No videos match the current filters.
                 </td>
               </tr>
@@ -273,13 +256,6 @@ export function YouTubeVideosPanel({
                   <td className="px-4 py-3 text-right tabular-nums">{numberFmt.format(v.likeCount)}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{numberFmt.format(v.commentCount)}</td>
                   <td className="px-4 py-3 text-right tabular-nums text-gray-600 dark:text-gray-400">{formatDuration(v.durationSeconds)}</td>
-                  <td className="px-4 py-3 text-right">
-                    {v.onSite ? (
-                      <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-500/20 dark:text-green-300">✓</span>
-                    ) : (
-                      <span className="inline-flex items-center rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800 dark:text-orange-300 dark:bg-orange-500/20">missing</span>
-                    )}
-                  </td>
                 </tr>
               ))
             )}

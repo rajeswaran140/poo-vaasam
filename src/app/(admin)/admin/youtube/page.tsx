@@ -1,11 +1,11 @@
 /**
- * /admin/youtube — Phase 1 YouTube analytics dashboard.
+ * /admin/youtube — YouTube analytics dashboard.
  *
- * Shows a channel snapshot (subs, total views, video count) and the latest
- * videos with view/like/comment counts and duration. Cross-references each
- * YouTube video against the site's content table to flag videos that have
- * no matching /content/[id] page — those are the obvious next things to
- * publish on the site.
+ * A purely YouTube-focused view: a channel snapshot (subs, total views, video
+ * count), GA4 site signals, owner-scoped Analytics + AI recommendations, and
+ * an interactive per-video panel. It does NOT cross-reference the site's audio
+ * song catalogue — this page is about the channel, not about which songs are
+ * published on the site.
  *
  * Server component. Reads happen here; the page itself is admin-gated via
  * the (admin) layout, so no client-side auth check is needed.
@@ -16,11 +16,7 @@ import {
   fetchChannelStats,
   fetchChannelVideoStats,
   isYouTubeApiConfigured,
-  type VideoStats,
 } from '@/lib/youtube-api';
-import { ContentRepository } from '@/infrastructure/database/ContentRepository';
-import { ContentStatus } from '@/types/content';
-import { videoMatchesContent } from '@/lib/youtube-match';
 import {
   fetchSubscribeClicksBySource,
   fetchTrafficSnapshot,
@@ -45,46 +41,6 @@ const ANALYTICS_DAYS = 28;
 export const revalidate = 1800; // 30 min — pairs with the 1-hr upstream fetch cache
 
 const numberFmt = new Intl.NumberFormat('en-US');
-
-/**
- * Cross-reference YouTube uploads against published content of any type. Uses
- * the fuzzy matcher in lib/youtube-match so YouTube's descriptive titles
- * ("அந்தி மேகமே. . . எங்கே சாய்கின்றாய். . .") still match the short DB
- * title ("அந்தி மேகமே"), and so a populated videoUrl always wins outright.
- */
-async function getMatchedVideoIds(videos: VideoStats[]): Promise<Set<string>> {
-  if (videos.length === 0) return new Set();
-  const matched = new Set<string>();
-  try {
-    const repo = new ContentRepository();
-    // Page through ALL published content — any record may carry a YouTube
-    // link or a title that matches an upload, not just SONGS/POEMS/LYRICS.
-    let cursor: Record<string, unknown> | undefined;
-    type Entity = Awaited<ReturnType<typeof repo.findAll>>['items'][number];
-    const items: Entity[] = [];
-    for (let i = 0; i < 10; i++) {
-      const res = await repo.findAll({
-        limit: 100,
-        status: ContentStatus.PUBLISHED,
-        lastEvaluatedKey: cursor,
-      });
-      items.push(...res.items);
-      cursor = res.lastEvaluatedKey;
-      if (!cursor) break;
-    }
-
-    for (const item of items) {
-      const c = item.toObject();
-      for (const v of videos) {
-        if (matched.has(v.id)) continue;
-        if (videoMatchesContent(v, c)) matched.add(v.id);
-      }
-    }
-  } catch (err) {
-    console.error('[admin/youtube] failed to load content for matching:', err);
-  }
-  return matched;
-}
 
 export default async function YouTubeAdminPage() {
   if (!isYouTubeVideosConfigured()) {
@@ -132,9 +88,6 @@ export default async function YouTubeAdminPage() {
     );
   }
 
-  const matched = await getMatchedVideoIds(videos);
-  const unmatched = videos.filter((v) => !matched.has(v.id));
-
   // Unwrap GA4 Results — if either failed, render its .error verbatim on the
   // dashboard so we can see "PERMISSION_DENIED" / "invalid dimension" etc.
   // instead of an indistinguishable empty state.
@@ -152,9 +105,9 @@ export default async function YouTubeAdminPage() {
   const ytaChannel = ytaChannelRes?.ok ? ytaChannelRes.data : null;
   const ytaVideos = ytaVideosRes?.ok ? ytaVideosRes.data : [];
   // Comprehensive per-video rows for the interactive panel: public Data-API
-  // counts + owner Analytics metrics + the on-site flag, merged once on the
-  // server. The panel re-queries Analytics client-side when the range changes.
-  const videoRows = mergeVideoRows(videos, ytaVideos, matched);
+  // counts + owner Analytics metrics, merged once on the server. The panel
+  // re-queries Analytics client-side when the date range changes.
+  const videoRows = mergeVideoRows(videos, ytaVideos);
   const ytaError = ytaChannelRes && !ytaChannelRes.ok ? ytaChannelRes.error : null;
   const titlesByVideoId = Object.fromEntries(videos.map((v) => [v.id, v.title]));
   // Recommendations are generated on demand (admin "Refresh") and cached — NEVER
@@ -391,32 +344,6 @@ export default async function YouTubeAdminPage() {
             emptyMessage="No YouTube outbound clicks yet. The event fires when visitors click any non-Subscribe YouTube link (channel/video/embed)."
             dimensionRegisterHints={{ name: 'YouTube Destination', param: 'destination' }}
           />
-        </section>
-      )}
-
-      {/* "Not on the site" gap list — actionable publishing hints */}
-      {unmatched.length > 0 && (
-        <section className="rounded-xl border border-orange-200 bg-orange-50 dark:border-orange-900/40 dark:bg-orange-900/20 p-5">
-          <h2 className="mb-2 text-sm font-semibold text-orange-900 dark:text-orange-200">
-            {unmatched.length} video{unmatched.length === 1 ? '' : 's'} not yet on the site
-          </h2>
-          <p className="mb-3 text-xs text-orange-800 dark:text-orange-300">
-            These YouTube uploads have no matching <code>/content/[id]</code> entry. Publishing them on the site funnels organic search back to the channel.
-          </p>
-          <ul className="space-y-1 text-sm">
-            {unmatched.map((v) => (
-              <li key={v.id} className="truncate">
-                <a
-                  href={`https://www.youtube.com/watch?v=${v.id}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-orange-700 dark:text-orange-300 hover:underline"
-                >
-                  {v.title}
-                </a>
-              </li>
-            ))}
-          </ul>
         </section>
       )}
 
