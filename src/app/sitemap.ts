@@ -5,11 +5,15 @@ import { ContentStatus } from '@/types/content';
 import { SITE, liveContentSections, isYouTubeVideosConfigured } from '@/config/site';
 import { contentPath } from '@/config/vanity-paths';
 import { fetchChannelVideos } from '@/lib/youtube-feed';
+import { isoDurationToSeconds } from '@/lib/iso-duration';
 import { SongCatalog } from '@/application/use-cases/SongCatalog';
 import { eligibleCollectionThemes } from '@/config/song-collections';
 
 // Regenerate hourly rather than per-request.
 export const revalidate = 3600;
+
+// Google's video sitemap caps <video:duration> at 8 hours, expressed in seconds.
+const MAX_VIDEO_DURATION_SECONDS = 28800;
 
 type VideoEntry = NonNullable<MetadataRoute.Sitemap[number]['videos']>[number];
 
@@ -40,14 +44,22 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   let videoEntries: VideoEntry[] = [];
   if (videosEnabled) {
     const videos = await fetchChannelVideos(SITE.youtube.channelId, 50);
-    videoEntries = videos.map((v) => ({
-      title: xmlEscape(v.title),
-      thumbnail_loc: v.thumbnail,
-      // Video sitemap descriptions are capped at 2048 chars; trim then escape.
-      description: xmlEscape((v.description || v.title).slice(0, 1900)),
-      player_loc: `https://www.youtube.com/embed/${v.id}`,
-      ...(v.publishedAt ? { publication_date: v.publishedAt } : {}),
-    }));
+    videoEntries = videos.map((v) => {
+      // Durations are attached best-effort; only emit <video:duration> when we
+      // have a sane, in-range value (Google rejects 0 / > 8h).
+      const durationSeconds = v.duration ? isoDurationToSeconds(v.duration) : 0;
+      return {
+        title: xmlEscape(v.title),
+        thumbnail_loc: v.thumbnail,
+        // Video sitemap descriptions are capped at 2048 chars; trim then escape.
+        description: xmlEscape((v.description || v.title).slice(0, 1900)),
+        player_loc: `https://www.youtube.com/embed/${v.id}`,
+        ...(durationSeconds > 0 && durationSeconds <= MAX_VIDEO_DURATION_SECONDS
+          ? { duration: durationSeconds }
+          : {}),
+        ...(v.publishedAt ? { publication_date: v.publishedAt } : {}),
+      };
+    });
   }
 
   let contentRoutes: MetadataRoute.Sitemap = [];

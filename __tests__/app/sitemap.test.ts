@@ -19,9 +19,11 @@ jest.mock('@/lib/youtube-feed', () => ({
       description: 'A sample description',
       publishedAt: '2026-05-01T00:00:00Z',
       thumbnail: 'https://i.ytimg.com/vi/abcdef12345/hqdefault.jpg',
+      duration: 'PT5M36S', // 336s — should surface as <video:duration>
     },
     {
       // Special characters that would corrupt the XML if not escaped.
+      // No duration → the entry must omit the duration field entirely.
       id: 'zyxwvu98765',
       title: 'Music & Production <Live>',
       description: 'Lyrics & music © 2026 <TamilAgaval>',
@@ -74,7 +76,12 @@ it('attaches YouTube video entries to the /videos page', async () => {
     description: 'A sample description',
     player_loc: 'https://www.youtube.com/embed/abcdef12345',
     publication_date: '2026-05-01T00:00:00Z',
+    duration: 336, // PT5M36S parsed to seconds
   });
+  // A video without a duration omits the field entirely (no duration: 0/undefined).
+  const noDuration = videosRoute?.videos?.find((v) => v.player_loc?.includes('zyxwvu98765'));
+  expect(noDuration).toBeDefined();
+  expect('duration' in (noDuration as object)).toBe(false);
   // Non-video pages must not carry video entries.
   expect(routes.find((r) => r.url.endsWith('/songs'))?.videos).toBeUndefined();
 });
