@@ -11,12 +11,12 @@ import { Footer } from '@/components/Footer';
 import { fetchChannelVideos, videosItemListJsonLd, s3ThumbnailUrl } from '@/lib/youtube-feed';
 import { SITE, isYouTubeVideosConfigured } from '@/config/site';
 import { VideoGallery } from '@/components/VideoGallery';
-import { FeaturedVideoHero } from '@/components/FeaturedVideoHero';
 import { ShortsRow } from '@/components/ShortsRow';
 import { partitionShorts } from '@/lib/youtube-shorts';
 import { SubscribeButton } from '@/components/SubscribeButton';
 import { JsonLd } from '@/components/JsonLd';
 import { alternatesFor, breadcrumbJsonLd } from '@/lib/seo';
+import Image from 'next/image';
 
 // Render per-request rather than as a build-time prerender. Amplify's SSR
 // compute does not run Next's time-based ISR revalidation reliably (the
@@ -133,9 +133,37 @@ export default async function VideosPage() {
                 />
               </div>
 
-              {/* Column 2 — latest video: inline click-to-play (counts as a
-                  real YouTube view), with a Watch-on-YouTube fallback. */}
-              {featured && <FeaturedVideoHero video={featured} />}
+              {/* Column 2 — latest video (links to YouTube) */}
+              {featured && (
+                <a
+                  href={featured.watchUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`சமீபத்திய காணொளி: ${featured.title}`}
+                  className="group relative block w-full overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/25 animate-fade-in"
+                >
+                  <Image
+                    src={featured.thumbnail}
+                    alt={featured.title}
+                    width={1280}
+                    height={720}
+                    priority
+                    sizes="(min-width: 1024px) 50vw, 100vw"
+                    className="aspect-video w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  />
+                  <span aria-hidden className="absolute inset-0 flex items-center justify-center">
+                    <span className="flex h-16 w-16 items-center justify-center rounded-full bg-black/55 ring-2 ring-white/70 transition group-hover:bg-orange-600/90">
+                      <svg className="ml-1 h-7 w-7 fill-white text-white" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    </span>
+                  </span>
+                  <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-4 pt-10">
+                    <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide text-orange-200">சமீபத்தியது</span>
+                    <span className="line-clamp-2 font-tamil text-sm font-medium text-white drop-shadow">{featured.title}</span>
+                  </span>
+                </a>
+              )}
             </div>
           </div>
         </section>

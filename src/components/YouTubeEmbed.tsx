@@ -13,23 +13,12 @@ interface YouTubeEmbedProps {
   title?: string;
   /** Render a 9:16 portrait frame (for YouTube Shorts). */
   vertical?: boolean;
-  /**
-   * Start playback immediately. Only pass this when the embed is mounted in
-   * response to a user gesture (e.g. a click-to-play poster) — the click is the
-   * gesture that lets the autoplay start with sound AND makes YouTube count it
-   * as a real view. Auto-mounting an `autoplay` embed on page load would be
-   * muted by the browser and would NOT count.
-   */
-  autoplay?: boolean;
 }
 
-export function YouTubeEmbed({ url, title, vertical = false, autoplay = false }: YouTubeEmbedProps) {
+export function YouTubeEmbed({ url, title, vertical = false }: YouTubeEmbedProps) {
   const embedUrl = getYouTubeEmbedUrl(url);
 
   if (!embedUrl) return null;
-
-  // rel=0 keeps the post-play related strip to the same channel.
-  const src = autoplay ? `${embedUrl}?autoplay=1&rel=0` : embedUrl;
 
   return (
     <div
@@ -38,7 +27,7 @@ export function YouTubeEmbed({ url, title, vertical = false, autoplay = false }:
     >
       <iframe
         className="absolute inset-0 h-full w-full"
-        src={src}
+        src={embedUrl}
         title={title || 'YouTube video player'}
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
         allowFullScreen

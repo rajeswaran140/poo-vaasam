@@ -13,18 +13,6 @@ describe('YouTubeEmbed', () => {
     expect(iframe?.getAttribute('allowfullscreen')).not.toBeNull();
   });
 
-  it('appends autoplay=1 only when the autoplay prop is set (user-gesture mount)', () => {
-    const off = render(<YouTubeEmbed url="https://youtu.be/dQw4w9WgXcQ" />);
-    expect(off.container.querySelector('iframe')?.getAttribute('src')).toBe(
-      'https://www.youtube.com/embed/dQw4w9WgXcQ'
-    );
-
-    const on = render(<YouTubeEmbed url="https://youtu.be/dQw4w9WgXcQ" autoplay />);
-    expect(on.container.querySelector('iframe')?.getAttribute('src')).toBe(
-      'https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1&rel=0'
-    );
-  });
-
   it('renders nothing for a non-YouTube URL', () => {
     const { container } = render(<YouTubeEmbed url="https://example.com/song.mp3" />);
     expect(container.querySelector('iframe')).toBeNull();
