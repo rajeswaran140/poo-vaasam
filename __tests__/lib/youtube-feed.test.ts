@@ -277,6 +277,8 @@ describe('videosItemListJsonLd', () => {
     expect(first.item.name).toBe('பூ வாசம் & காதல்');
     expect(first.item.description).toBe('ஒரு அழகான பாடல்');
     expect(first.item.embedUrl).toBe('https://www.youtube.com/embed/gfywsN483lI');
+    // Tamil-language signal for regional/language ranking of the videos.
+    expect(first.item.inLanguage).toBe('ta');
 
     // thumbnailUrl is now an array of multi-resolution URLs (Google prefers
     // this for richer video snippets).

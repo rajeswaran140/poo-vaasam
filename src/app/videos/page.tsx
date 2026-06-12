@@ -15,7 +15,7 @@ import { ShortsRow } from '@/components/ShortsRow';
 import { partitionShorts } from '@/lib/youtube-shorts';
 import { SubscribeButton } from '@/components/SubscribeButton';
 import { JsonLd } from '@/components/JsonLd';
-import { alternatesFor } from '@/lib/seo';
+import { alternatesFor, breadcrumbJsonLd } from '@/lib/seo';
 import Image from 'next/image';
 
 // Render per-request rather than as a build-time prerender. Amplify's SSR
@@ -29,9 +29,9 @@ export const dynamic = 'force-dynamic';
 // Crawler-facing metadata is romanised English (real queries:
 // "rajeswaran thangarajah youtube", "tamil videos"); the visible page heading
 // on /videos stays "காணொளிகள்".
-const META_TITLE = 'Tamil Videos by Rajeswaran Thangarajah';
+const META_TITLE = 'Tamil Videos by Rajeswaran Thangarajah — Songs & Poems';
 const META_DESCRIPTION =
-  'Latest videos from the Tamilagaval YouTube channel — Tamil poems, songs and lyrics by Rajeswaran Thangarajah.';
+  'Watch original Tamil songs, poems and lyric videos from the Tamilagaval YouTube channel by Rajeswaran Thangarajah. New uploads regularly — always free.';
 
 export async function generateMetadata(): Promise<Metadata> {
   // Share image = the latest LONG-FORM video's mirrored thumbnail — the same
@@ -84,6 +84,12 @@ export default async function VideosPage() {
 
   return (
     <>
+      <JsonLd
+        data={breadcrumbJsonLd([
+          { name: 'Tamilagaval', path: '/' },
+          { name: 'Videos', path: '/videos' },
+        ])}
+      />
       {all.length > 0 && <JsonLd data={videosItemListJsonLd(all)} />}
       <Header />
       <main id="main" className="min-h-screen flex flex-col">

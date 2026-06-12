@@ -285,6 +285,9 @@ export function videosItemListJsonLd(videos: ChannelVideo[]): Record<string, unk
         uploadDate: video.publishedAt,
         contentUrl: video.watchUrl,
         embedUrl: `https://www.youtube.com/embed/${video.id}`,
+        // The catalogue is Tamil songs/poems — declaring the language helps
+        // Google surface these for Tamil-language and diaspora-region queries.
+        inLanguage: 'ta',
         ...(video.duration ? { duration: video.duration } : {}),
       },
     })),

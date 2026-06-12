@@ -3,6 +3,7 @@ import {
   toDescription,
   SITE_URL,
   alternatesFor,
+  breadcrumbJsonLd,
   ogCardLines,
   ROMANISED_TYPE_LABEL,
   DEFAULT_AUTHOR,
@@ -63,6 +64,48 @@ describe('alternatesFor', () => {
   it('defaults to the site root', () => {
     expect(alternatesFor().canonical).toBe('/');
     expect(alternatesFor().languages['x-default']).toBe(`${SITE_URL}/`);
+  });
+});
+
+describe('breadcrumbJsonLd', () => {
+  it('builds a schema.org BreadcrumbList with absolute item URLs and 1-based positions', () => {
+    const ld = breadcrumbJsonLd([
+      { name: 'Tamilagaval', path: '/' },
+      { name: 'Videos', path: '/videos' },
+    ]) as {
+      '@context': string;
+      '@type': string;
+      itemListElement: Array<{ '@type': string; position: number; name: string; item: string }>;
+    };
+
+    expect(ld['@context']).toBe('https://schema.org');
+    expect(ld['@type']).toBe('BreadcrumbList');
+    expect(ld.itemListElement).toHaveLength(2);
+
+    expect(ld.itemListElement[0]).toEqual({
+      '@type': 'ListItem',
+      position: 1,
+      name: 'Tamilagaval',
+      item: `${SITE_URL}/`,
+    });
+    expect(ld.itemListElement[1]).toEqual({
+      '@type': 'ListItem',
+      position: 2,
+      name: 'Videos',
+      item: `${SITE_URL}/videos`,
+    });
+  });
+
+  it('normalises a path missing its leading slash', () => {
+    const ld = breadcrumbJsonLd([{ name: 'Songs', path: 'songs' }]) as {
+      itemListElement: Array<{ item: string }>;
+    };
+    expect(ld.itemListElement[0].item).toBe(`${SITE_URL}/songs`);
+  });
+
+  it('returns an empty list for no crumbs (no crash)', () => {
+    const ld = breadcrumbJsonLd([]) as { itemListElement: unknown[] };
+    expect(ld.itemListElement).toEqual([]);
   });
 });
 

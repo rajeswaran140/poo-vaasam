@@ -37,6 +37,27 @@ export function alternatesFor(path = '/') {
 }
 
 /**
+ * Build a schema.org BreadcrumbList for SERP breadcrumb rich results. Each crumb
+ * is `{name, path}`; paths are absolutised. Names are crawler-facing, so callers
+ * pass romanised labels (matching the romanised metadata titles), not the Tamil
+ * UI strings. Returns an empty list for no crumbs rather than throwing.
+ */
+export function breadcrumbJsonLd(
+  crumbs: { name: string; path: string }[]
+): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: crumbs.map((crumb, index) => ({
+      '@type': 'ListItem',
+      position: index + 1,
+      name: crumb.name,
+      item: absoluteUrl(crumb.path),
+    })),
+  };
+}
+
+/**
  * Extract a Satori-compatible font URL from a Google Fonts `css2` response.
  * Satori (the OG-image renderer) parses ttf/otf/woff but NOT woff2, so we only
  * accept those formats; returns null when the CSS has no usable URL (caller

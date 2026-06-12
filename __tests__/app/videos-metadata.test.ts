@@ -81,3 +81,15 @@ it('keeps title/description/canonical intact', async () => {
   expect(m.title).toMatch(/Tamil Videos/i);
   expect(m.openGraph?.url).toBe('/videos');
 });
+
+it('uses a keyword-rich description covering songs, poems and the brand', async () => {
+  isConfigured.mockReturnValue(true);
+  fetchChannelVideos.mockResolvedValueOnce([LONG_A]);
+  const m = await generateMetadata();
+  const desc = String(m.description);
+  expect(desc).toMatch(/Tamil songs/i);
+  expect(desc).toMatch(/poems/i);
+  expect(desc).toMatch(/Tamilagaval/);
+  // Description stays within a sane meta length (Google truncates ~160).
+  expect(desc.length).toBeLessThanOrEqual(160);
+});
