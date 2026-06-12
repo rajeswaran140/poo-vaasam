@@ -29,8 +29,10 @@ import {
 import {
   fetchChannelAnalyticsSnapshot,
   fetchVideoAnalytics,
+  fetchDailySeries,
   isYouTubeAnalyticsConfigured,
 } from '@/lib/youtube-analytics';
+import { buildDigest, type Digest } from '@/lib/youtube-digest';
 import { YtRecsRepository } from '@/infrastructure/database/YtRecsRepository';
 import { RefreshRecsButton } from '@/components/admin/RefreshRecsButton';
 import { YouTubeVideosPanel } from '@/components/admin/YouTubeVideosPanel';
@@ -70,7 +72,7 @@ export default async function YouTubeAdminPage() {
 
   const ga4On = isGA4Configured();
   const ytaOn = isYouTubeAnalyticsConfigured();
-  const [channel, videos, ga4ClicksRes, ga4TrafficRes, ga4AudioRes, ga4YouTubeRes, ytaChannelRes, ytaVideosRes] = await Promise.all([
+  const [channel, videos, ga4ClicksRes, ga4TrafficRes, ga4AudioRes, ga4YouTubeRes, ytaChannelRes, ytaVideosRes, dailyRes] = await Promise.all([
     fetchChannelStats(SITE.youtube.channelId),
     fetchChannelVideoStats(SITE.youtube.channelId, 50),
     ga4On ? fetchSubscribeClicksBySource(ANALYTICS_DAYS) : Promise.resolve(null),
@@ -79,6 +81,7 @@ export default async function YouTubeAdminPage() {
     ga4On ? fetchYouTubeOpens(ANALYTICS_DAYS) : Promise.resolve(null),
     ytaOn ? fetchChannelAnalyticsSnapshot(ANALYTICS_DAYS) : Promise.resolve(null),
     ytaOn ? fetchVideoAnalytics(ANALYTICS_DAYS) : Promise.resolve(null),
+    ytaOn ? fetchDailySeries(ANALYTICS_DAYS) : Promise.resolve(null),
   ]);
 
   if (!channel) {
@@ -105,6 +108,10 @@ export default async function YouTubeAdminPage() {
   // Claude isn't asked to reason about an empty dataset.
   const ytaChannel = ytaChannelRes?.ok ? ytaChannelRes.data : null;
   const ytaVideos = ytaVideosRes?.ok ? ytaVideosRes.data : [];
+  // Weekly digest + anomaly signal (week-over-week growth + stall/real-drop
+  // classification) from the daily series. Built server-side; pure math.
+  const dailySeries = dailyRes?.ok ? dailyRes.data : null;
+  const digest = dailySeries && dailySeries.length > 0 ? buildDigest(dailySeries, ytaVideos) : null;
   // Comprehensive per-video rows for the interactive panel: public Data-API
   // counts + owner Analytics metrics, merged once on the server. The panel
   // re-queries Analytics client-side when the date range changes.
@@ -149,6 +156,9 @@ export default async function YouTubeAdminPage() {
         <StatCard label="Total views" value={numberFmt.format(channel.viewCount)} />
         <StatCard label="Videos published" value={numberFmt.format(channel.videoCount)} />
       </section>
+
+      {/* Weekly digest + anomaly signal */}
+      {digest && <DigestCard digest={digest} />}
 
       {/* GA4 — site signals */}
       {ga4On ? (
@@ -368,6 +378,55 @@ export default async function YouTubeAdminPage() {
       <YouTubeVideosPanel initialRows={videoRows} ytaConfigured={ytaOn} initialDays={ANALYTICS_DAYS} />
 
     </div>
+  );
+}
+
+const ANOMALY_STYLE: Record<Digest['anomaly']['status'], string> = {
+  normal: 'bg-green-100 text-green-800 dark:bg-green-500/20 dark:text-green-300',
+  surging: 'bg-green-100 text-green-800 dark:bg-green-500/20 dark:text-green-300',
+  cooling: 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300',
+  stalled: 'bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300',
+  insufficient: 'bg-gray-100 text-gray-700 dark:bg-gray-700/40 dark:text-gray-300',
+};
+
+function DeltaMetric({ label, m, unit = '' }: { label: string; m: Digest['weekOverWeek']['views']; unit?: string }) {
+  const up = m.deltaPct != null && m.deltaPct >= 0;
+  return (
+    <div className="rounded-lg bg-gray-50 dark:bg-gray-800/50 p-3">
+      <p className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400">{label} · this week</p>
+      <p className="text-xl font-bold tabular-nums text-gray-900 dark:text-gray-100">
+        {numberFmt.format(m.current)}{unit}
+      </p>
+      {m.deltaPct != null ? (
+        <p className={`text-xs font-medium ${up ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+          {up ? '▲' : '▼'} {Math.abs(m.deltaPct)}% vs last week
+        </p>
+      ) : (
+        <p className="text-xs text-gray-400">no prior week</p>
+      )}
+    </div>
+  );
+}
+
+function DigestCard({ digest }: { digest: Digest }) {
+  return (
+    <section aria-labelledby="digest-heading" className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 id="digest-heading" className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">This week</h2>
+        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${ANOMALY_STYLE[digest.anomaly.status]}`}>
+          {digest.anomaly.status}
+        </span>
+      </div>
+      <p className="mb-3 text-base font-semibold text-gray-900 dark:text-gray-100">{digest.headline}</p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <DeltaMetric label="Views" m={digest.weekOverWeek.views} />
+        <DeltaMetric label="Subscribers" m={digest.weekOverWeek.subscribersGained} />
+        <DeltaMetric label="Watch time" m={digest.weekOverWeek.watchTimeMinutes} unit=" min" />
+      </div>
+      {(digest.anomaly.status === 'stalled' || digest.anomaly.status === 'cooling') && (
+        <p className="mt-3 text-xs text-gray-600 dark:text-gray-400">{digest.anomaly.message}</p>
+      )}
+    </section>
   );
 }
 
