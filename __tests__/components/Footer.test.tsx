@@ -33,12 +33,12 @@ describe('Footer', () => {
     expect(screen.getByRole('link', { name: 'Terms' })).toHaveAttribute('href', '/terms');
   });
 
-  it('routes the contact link to the TechSynergy corporate site', () => {
+  it('routes the contact link to the internal /contact page', () => {
     render(<Footer />);
     const contact = screen.getByRole('link', { name: 'தொடர்பு' });
-    expect(contact).toHaveAttribute('href', 'https://techsynergy.ca/');
-    expect(contact).toHaveAttribute('target', '_blank');
-    expect(contact).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(contact).toHaveAttribute('href', '/contact');
+    // internal nav — not an external new-tab link
+    expect(contact).not.toHaveAttribute('target');
   });
 
   it('renders the dynamic-year copyright with the TechSynergy Corp byline', () => {
