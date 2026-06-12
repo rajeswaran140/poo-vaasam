@@ -21,7 +21,7 @@ import { SongCatalog } from '@/application/use-cases/SongCatalog';
 import type { PublicSongDTO } from '@/domain/songs/PublicSong';
 import { SongsPlaylist, type SongRow } from '@/components/music/SongsPlaylist';
 import { JsonLd } from '@/components/JsonLd';
-import { SITE_NAME, absoluteUrl, alternatesFor } from '@/lib/seo';
+import { SITE_NAME, absoluteUrl, alternatesFor, breadcrumbJsonLd } from '@/lib/seo';
 import { isoDuration } from '@/lib/iso-duration';
 import Link from 'next/link';
 import { eligibleCollectionThemes, SONG_COLLECTIONS } from '@/config/song-collections';
@@ -133,8 +133,16 @@ export default async function SongsPage() {
         }
       : null;
 
+  // SERP breadcrumb (முகப்பு › பாடல்கள்) — mirrors the /songs/[theme] crumb
+  // convention so the section reads consistently in search results.
+  const breadcrumbLd = breadcrumbJsonLd([
+    { name: 'முகப்பு', path: '/' },
+    { name: 'பாடல்கள்', path: '/songs' },
+  ]);
+
   return (
     <div className="min-h-screen flex flex-col">
+      <JsonLd data={breadcrumbLd} />
       {playlistJsonLd && <JsonLd data={playlistJsonLd} />}
       <Header />
       <main id="main" className="flex-1">

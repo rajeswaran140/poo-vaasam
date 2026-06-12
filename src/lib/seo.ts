@@ -38,9 +38,10 @@ export function alternatesFor(path = '/') {
 
 /**
  * Build a schema.org BreadcrumbList for SERP breadcrumb rich results. Each crumb
- * is `{name, path}`; paths are absolutised. Names are crawler-facing, so callers
- * pass romanised labels (matching the romanised metadata titles), not the Tamil
- * UI strings. Returns an empty list for no crumbs rather than throwing.
+ * is `{name, path}`; paths are absolutised. `name` is the crawler-facing display
+ * label — romanised on the English-metadata pages (e.g. /videos), Tamil where the
+ * section already labels its breadcrumb in Tamil (e.g. the /songs collection).
+ * Returns an empty list for no crumbs rather than throwing.
  */
 export function breadcrumbJsonLd(
   crumbs: { name: string; path: string }[]

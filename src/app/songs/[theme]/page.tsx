@@ -19,7 +19,7 @@ import { SongCatalog } from '@/application/use-cases/SongCatalog';
 import type { PublicSongDTO } from '@/domain/songs/PublicSong';
 import { JsonLd } from '@/components/JsonLd';
 import { SubscribeButton } from '@/components/SubscribeButton';
-import { SITE_NAME, SITE_URL, absoluteUrl, alternatesFor, toDescription } from '@/lib/seo';
+import { SITE_NAME, SITE_URL, absoluteUrl, alternatesFor, breadcrumbJsonLd, toDescription } from '@/lib/seo';
 import { contentPath } from '@/config/vanity-paths';
 import { SONG_THEME_LABELS } from '@/config/song-themes';
 import {
@@ -101,19 +101,15 @@ export default async function SongCollectionPage({ params }: PageProps) {
       })),
     },
   };
-  const breadcrumbJsonLd = {
-    '@context': 'https://schema.org',
-    '@type': 'BreadcrumbList',
-    itemListElement: [
-      { '@type': 'ListItem', position: 1, name: 'முகப்பு', item: SITE_URL },
-      { '@type': 'ListItem', position: 2, name: 'பாடல்கள்', item: `${SITE_URL}/songs` },
-      { '@type': 'ListItem', position: 3, name: c.tamilTitle, item: absoluteUrl(`/songs/${theme}`) },
-    ],
-  };
+  const breadcrumbLd = breadcrumbJsonLd([
+    { name: 'முகப்பு', path: '/' },
+    { name: 'பாடல்கள்', path: '/songs' },
+    { name: c.tamilTitle, path: `/songs/${theme}` },
+  ]);
 
   return (
     <div className="min-h-screen flex flex-col text-gray-100">
-      <JsonLd data={[collectionJsonLd, breadcrumbJsonLd]} />
+      <JsonLd data={[collectionJsonLd, breadcrumbLd]} />
       <Header />
       <main id="main" className="flex-1">
         <section className="w-full px-6 pb-8 pt-24 sm:px-10 lg:px-16">
