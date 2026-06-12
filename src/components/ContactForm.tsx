@@ -65,9 +65,10 @@ export default function ContactForm() {
             name="name"
             type="text"
             required
+            autoComplete="name"
             value={form.name}
             onChange={handleChange}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
             placeholder="Your name"
           />
         </div>
@@ -80,9 +81,11 @@ export default function ContactForm() {
             name="email"
             type="email"
             required
+            autoComplete="email"
+            inputMode="email"
             value={form.email}
             onChange={handleChange}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
             placeholder="you@example.com"
           />
         </div>
@@ -98,7 +101,7 @@ export default function ContactForm() {
           type="text"
           value={form.subject}
           onChange={handleChange}
-          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
           placeholder="What is this about?"
         />
       </div>
@@ -114,26 +117,29 @@ export default function ContactForm() {
           rows={6}
           value={form.message}
           onChange={handleChange}
-          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 resize-y"
+          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 resize-y"
           placeholder="Write your message..."
         />
       </div>
 
-      {status.type === 'success' && (
-        <div className="rounded-lg bg-green-50 border border-green-200 text-green-800 px-4 py-3">
-          {status.message}
-        </div>
-      )}
-      {status.type === 'error' && (
-        <div className="rounded-lg bg-red-50 border border-red-200 text-red-800 px-4 py-3">
-          {status.message}
-        </div>
-      )}
+      {/* Status is announced to screen readers via the live region */}
+      <div aria-live="polite">
+        {status.type === 'success' && (
+          <div role="status" className="rounded-lg bg-green-50 border border-green-200 text-green-800 px-4 py-3">
+            {status.message}
+          </div>
+        )}
+        {status.type === 'error' && (
+          <div role="alert" className="rounded-lg bg-red-50 border border-red-200 text-red-800 px-4 py-3">
+            {status.message}
+          </div>
+        )}
+      </div>
 
       <button
         type="submit"
         disabled={sending}
-        className="px-8 py-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="px-8 py-3 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {sending ? 'Sending…' : 'Send Message'}
       </button>
