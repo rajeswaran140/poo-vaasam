@@ -8,8 +8,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { DynamoDBOperations, handleDynamoDBError } from '@/infrastructure/database/dynamodb-client';
+import { RateLimiter, checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
+
+// Contact submissions are low-frequency for a real person; cap a single IP so a
+// bot that gets past the honeypot can't flood DynamoDB with messages.
+const limiter = new RateLimiter({ windowMs: 60_000, max: 5 });
 
 const contactSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100).trim(),
@@ -24,6 +29,9 @@ const contactSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
+    const rl = checkRateLimit(limiter, request);
+    if (!rl.allowed) return rateLimitedResponse(rl);
+
     const body = await request.json().catch(() => null);
     if (!body) {
       return NextResponse.json({ success: false, error: 'Invalid request body' }, { status: 400 });
