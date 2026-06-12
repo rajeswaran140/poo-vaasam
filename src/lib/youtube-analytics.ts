@@ -184,6 +184,41 @@ export async function fetchRetentionCurve(
   }
 }
 
+export interface DailyAnalyticsRow {
+  date: string;
+  views: number;
+  subscribersGained: number;
+  estimatedMinutesWatched: number;
+}
+
+/** Daily channel series (views/subs/watch-time per day) for the last N days. */
+export async function fetchDailySeries(daysBack = 28): Promise<Result<DailyAnalyticsRow[]>> {
+  if (!isYouTubeAnalyticsConfigured()) {
+    return { ok: false, error: 'YouTube Analytics OAuth not configured' };
+  }
+  const { startDate, endDate } = dateRange(daysBack);
+  try {
+    const res = await runReport({
+      ids: 'channel==MINE',
+      startDate,
+      endDate,
+      metrics: 'views,subscribersGained,estimatedMinutesWatched',
+      dimensions: 'day',
+      sort: 'day',
+    });
+    if (!res) return { ok: false, error: 'No response from YouTube Analytics' };
+    const rows = (res.rows ?? []).map((r): DailyAnalyticsRow => ({
+      date: String(r[0]),
+      views: Number(r[1] ?? 0),
+      subscribersGained: Number(r[2] ?? 0),
+      estimatedMinutesWatched: Number(r[3] ?? 0),
+    }));
+    return { ok: true, data: rows };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 /** Channel-wide aggregates for the last N days. */
 export async function fetchChannelAnalyticsSnapshot(daysBack = 28): Promise<Result<ChannelAnalyticsSnapshot>> {
   if (!isYouTubeAnalyticsConfigured()) {
