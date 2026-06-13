@@ -360,7 +360,7 @@ export default async function ContentPage({ params }: PageProps) {
             <h3 className="mb-3 font-tamil text-sm font-semibold uppercase tracking-wide text-gray-700">
               பகிர்தல்
             </h3>
-            <ShareRow url={pageUrl} title={content.title} />
+            <ShareRow url={pageUrl} title={content.title} verb={actionVerb(content.type)} />
           </div>
 
           {/* Forward-looking CTA: send the reader to more of the same kind, not "back". */}

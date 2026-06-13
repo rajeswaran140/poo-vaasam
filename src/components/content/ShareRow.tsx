@@ -9,6 +9,7 @@
 
 import { useState } from 'react';
 import { Link2, Check, Share2 } from 'lucide-react';
+import { whatsappShareUrl } from '@/lib/whatsapp-share';
 
 // Inline brand glyphs — lucide-react no longer ships Facebook/Twitter logos,
 // and matching the brand marks correctly is worth a few lines of SVG.
@@ -33,9 +34,11 @@ const WhatsAppIcon = ({ className = '' }: { className?: string }) => (
 interface ShareRowProps {
   url: string;
   title: string;
+  /** Tunes the WhatsApp call-to-action: songs "listen", text "read". */
+  verb?: 'listen' | 'read';
 }
 
-export function ShareRow({ url, title }: ShareRowProps) {
+export function ShareRow({ url, title, verb = 'listen' }: ShareRowProps) {
   const [copied, setCopied] = useState(false);
   const canNativeShare =
     typeof navigator !== 'undefined' && typeof navigator.share === 'function';
@@ -45,7 +48,8 @@ export function ShareRow({ url, title }: ShareRowProps) {
 
   const fb = `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`;
   const tw = `https://twitter.com/intent/tweet?text=${encodedTitle}&url=${encodedUrl}`;
-  const wa = `https://wa.me/?text=${encodedTitle}%20${encodedUrl}`;
+  // WhatsApp = the primary channel for this audience → a warm pre-filled message.
+  const wa = whatsappShareUrl({ title, url, verb });
 
   const onCopy = async () => {
     try {
@@ -67,9 +71,15 @@ export function ShareRow({ url, title }: ShareRowProps) {
 
   const linkClass =
     'inline-flex items-center justify-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-4 py-2 font-tamil text-sm text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/60';
+  // WhatsApp is the primary call-to-action — brand-green, leads the row.
+  const waClass =
+    'inline-flex items-center justify-center gap-2 rounded-full border border-transparent bg-[#25D366] px-4 py-2 font-tamil text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#1ebe57] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#25D366]/60';
 
   return (
     <div className="flex flex-wrap gap-2">
+      <a href={wa} target="_blank" rel="noopener noreferrer" aria-label="Share on WhatsApp" className={waClass}>
+        <WhatsAppIcon className="h-4 w-4" /> WhatsApp
+      </a>
       {canNativeShare && (
         <button type="button" onClick={onNativeShare} aria-label="Share" className={linkClass}>
           <Share2 className="h-4 w-4" aria-hidden /> பகிர்
@@ -80,9 +90,6 @@ export function ShareRow({ url, title }: ShareRowProps) {
       </a>
       <a href={tw} target="_blank" rel="noopener noreferrer" aria-label="Share on X" className={linkClass}>
         <XIcon className="h-4 w-4" /> X
-      </a>
-      <a href={wa} target="_blank" rel="noopener noreferrer" aria-label="Share on WhatsApp" className={linkClass}>
-        <WhatsAppIcon className="h-4 w-4" /> WhatsApp
       </a>
       <button
         type="button"
