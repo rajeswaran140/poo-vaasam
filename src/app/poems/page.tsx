@@ -5,7 +5,7 @@
 export const revalidate = 300;
 
 import type { Metadata } from 'next';
-import { alternatesFor } from '@/lib/seo';
+import { alternatesFor, absoluteUrl, SITE_NAME } from '@/lib/seo';
 
 // Crawler-facing metadata is romanised English (real queries: tamil kavithai /
 // tamil poems); the visible <h1> on the page stays "கவிதைகள்".
@@ -36,6 +36,9 @@ import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentType, ContentStatus } from '@/types/content';
 import { PoemsGrid } from '@/components/PoemsGrid';
 import { PoemsGridSkeleton } from '@/components/PoemCardSkeleton';
+import { JsonLd } from '@/components/JsonLd';
+import { breadcrumbJsonLd } from '@/lib/seo';
+import { poemsCollectionJsonLd, type PoemListItem } from '@/lib/poems-jsonld';
 
 async function getPoems() {
   try {
@@ -54,8 +57,19 @@ async function getPoems() {
 export default async function PoemsPage() {
   const poems = await getPoems();
 
+  const breadcrumb = breadcrumbJsonLd([
+    { name: 'முகப்பு', path: '/' },
+    { name: 'கவிதைகள்', path: '/poems' },
+  ]);
+  const collection = poemsCollectionJsonLd(poems as PoemListItem[], {
+    name: `${META_TITLE} — ${SITE_NAME}`,
+    description: META_DESCRIPTION,
+    url: absoluteUrl('/poems'),
+  });
+
   return (
     <div className="min-h-screen bg-gray-900">
+      <JsonLd data={[breadcrumb, collection]} />
       <Header />
 
       {/* Brand hero — orange-on-dark, matches the rest of the site. */}
