@@ -75,6 +75,16 @@ describe('content generateMetadata', () => {
     expect(m.description).toContain('read for free');
   });
 
+  it('romanises a Tamil-script author in the crawler-facing title + description', async () => {
+    mockFindById.mockResolvedValue(
+      asEntity({ id: 'cnt_ta', type: 'SONGS', title: 'எங்கள் தேசம்', author: 'இராஜ்' })
+    );
+    const m = await meta('cnt_ta');
+    expect(m.title).toContain('Rajeswaran Thangarajah');
+    expect(m.title).not.toContain('இராஜ்');
+    expect(m.description).toContain('Rajeswaran Thangarajah');
+  });
+
   it('sets og:type to music.song for a song, article for a poem', async () => {
     mockFindById.mockResolvedValue(asEntity({ id: 'cnt_s', type: 'SONGS', title: 'S', author: 'A' }));
     expect((await meta('cnt_s')).openGraph?.type).toBe('music.song');

@@ -27,7 +27,7 @@ import { JsonLd } from '@/components/JsonLd';
 import { ShareRow } from '@/components/content/ShareRow';
 import { TrackedYouTubeOpen } from '@/components/TrackedYouTubeOpen';
 import { isYouTubeUrl, getYouTubeWatchUrl, getYouTubeId } from '@/lib/utils/youtube';
-import { SITE_URL, SITE_NAME, absoluteUrl, toDescription, alternatesFor, actionVerb } from '@/lib/seo';
+import { SITE_URL, SITE_NAME, absoluteUrl, toDescription, alternatesFor, actionVerb, crawlerAuthor } from '@/lib/seo';
 import { isoDuration } from '@/lib/iso-duration';
 
 // Fully static, regenerated only at build/deploy. We deliberately do NOT use
@@ -129,14 +129,14 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   // and the romanised suffix.
   const title =
     content.seoTitle ||
-    `${content.title} — ${enType} by ${content.author || 'Rajeswaran Thangarajah'}`;
+    `${content.title} — ${enType} by ${crawlerAuthor(content.author)}`;
 
   // Description prefers an explicit seoDescription; otherwise build a romanised
   // sentence that's useful as a SERP snippet. The verb matches the medium —
   // songs are "listen free", text is "read for free".
   const description =
     content.seoDescription ||
-    `${enType} "${content.title}" by ${content.author || 'Rajeswaran Thangarajah'} on Tamilagaval — ${actionVerb(content.type)} for free.`;
+    `${enType} "${content.title}" by ${crawlerAuthor(content.author)} on Tamilagaval — ${actionVerb(content.type)} for free.`;
 
   const url = absoluteUrl(contentPath(content.id));
   // Prefer a bespoke hero's designed artwork as the share image (it carries the
@@ -225,7 +225,7 @@ export default async function ContentPage({ params }: PageProps) {
             <div className="mx-auto max-w-7xl sm:px-6 sm:pt-6">
               <Image
                 src={hero.image}
-                alt={`${hero.heading} — ${content.title}, ${enType} by ${content.author || 'இராஜ்'}`}
+                alt={`${hero.heading} — ${content.title}, ${enType} by ${crawlerAuthor(content.author)}`}
                 width={1672}
                 height={941}
                 priority

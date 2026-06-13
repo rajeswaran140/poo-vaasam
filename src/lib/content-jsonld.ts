@@ -7,10 +7,8 @@
  * by a YouTube video) a VideoObject.
  */
 
-import { SITE_URL, SITE_NAME } from '@/lib/seo';
+import { SITE_URL, SITE_NAME, crawlerAuthor } from '@/lib/seo';
 import { ContentType } from '@/types/content';
-
-const DEFAULT_AUTHOR = 'Rajeswaran Thangarajah';
 
 /**
  * Schema.org @type per content kind — sharper than always-CreativeWork.
@@ -56,7 +54,8 @@ export function contentJsonLd(
   content: ContentJsonLdInput,
   opts: ContentJsonLdOptions
 ): Record<string, unknown>[] {
-  const authorName = content.author || DEFAULT_AUTHOR;
+  // Crawler-facing → romanised (the visible UI keeps the stored Tamil name).
+  const authorName = crawlerAuthor(content.author);
   const isSong = content.type === ContentType.SONGS;
   const published = content.publishedAt || content.createdAt;
 

@@ -26,7 +26,9 @@ describe('contentJsonLd — song', () => {
   it('models a song as a MusicRecording with byArtist + audio (not MusicComposition)', () => {
     const main = mainOf(contentJsonLd(song, baseOpts));
     expect(main['@type']).toBe('MusicRecording');
-    expect(main.byArtist).toEqual({ '@type': 'Person', name: 'இராஜ்' });
+    // Crawler-facing author is romanised even though the stored value is Tamil.
+    expect(main.byArtist).toEqual({ '@type': 'Person', name: 'Rajeswaran Thangarajah' });
+    expect(main.author).toEqual({ '@type': 'Person', name: 'Rajeswaran Thangarajah' });
     expect(main.audio).toEqual({
       '@type': 'AudioObject',
       contentUrl: 'https://cdn.example/engal-thesam.mp3',
@@ -34,8 +36,13 @@ describe('contentJsonLd — song', () => {
     });
     expect(main.duration).toBe('PT5M36S');
     expect(main.inLanguage).toBe('ta');
-    expect(main.author).toEqual({ '@type': 'Person', name: 'இராஜ்' });
     expect(main.image).toBe(`${SITE_URL}/images/thayagam-hero.png`);
+  });
+
+  it('preserves an already-romanised stored author', () => {
+    const main = mainOf(contentJsonLd({ ...song, author: 'Raj' }, baseOpts));
+    expect(main.author).toEqual({ '@type': 'Person', name: 'Raj' });
+    expect(main.byArtist).toEqual({ '@type': 'Person', name: 'Raj' });
   });
 
   it('builds a 3-level breadcrumb whose parent matches the section (முகப்பு › பாடல்கள் › title)', () => {

@@ -90,6 +90,20 @@ export const ROMANISED_TYPE_LABEL: Record<string, string> = {
 export const DEFAULT_AUTHOR = 'Rajeswaran Thangarajah';
 
 /**
+ * Author name for crawler-facing strings (title / meta / JSON-LD). The visible
+ * UI keeps the stored author as-is (often Tamil script, e.g. "இராஜ்"), but the
+ * English metadata should read a romanised name so it matches name searches and
+ * the rest of the site. A stored name that already contains Latin letters is
+ * treated as meta-ready; a Tamil-only name maps to the canonical romanised
+ * author (the site is single-author). Empty → the default author.
+ */
+export function crawlerAuthor(author?: string | null): string {
+  const a = (author ?? '').trim();
+  if (!a) return DEFAULT_AUTHOR;
+  return /[A-Za-z]/.test(a) ? a : DEFAULT_AUTHOR;
+}
+
+/**
  * Romanised lines for a per-content social share card (Open Graph image).
  *
  * The card is intentionally Latin-only: the OG renderer (Satori) has no Tamil

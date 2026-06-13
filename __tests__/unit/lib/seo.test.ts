@@ -4,6 +4,7 @@ import {
   SITE_URL,
   alternatesFor,
   breadcrumbJsonLd,
+  crawlerAuthor,
   ogCardLines,
   ROMANISED_TYPE_LABEL,
   DEFAULT_AUTHOR,
@@ -106,6 +107,24 @@ describe('breadcrumbJsonLd', () => {
   it('returns an empty list for no crumbs (no crash)', () => {
     const ld = breadcrumbJsonLd([]) as { itemListElement: unknown[] };
     expect(ld.itemListElement).toEqual([]);
+  });
+});
+
+describe('crawlerAuthor', () => {
+  it('maps a Tamil-only author to the canonical romanised name', () => {
+    expect(crawlerAuthor('இராஜ்')).toBe(DEFAULT_AUTHOR);
+  });
+
+  it('keeps an already-romanised (Latin) author as-is', () => {
+    expect(crawlerAuthor('Raj')).toBe('Raj');
+    expect(crawlerAuthor('Rajeswaran Thangarajah')).toBe('Rajeswaran Thangarajah');
+  });
+
+  it('falls back to the default author for empty/whitespace/nullish input', () => {
+    expect(crawlerAuthor('')).toBe(DEFAULT_AUTHOR);
+    expect(crawlerAuthor('   ')).toBe(DEFAULT_AUTHOR);
+    expect(crawlerAuthor(undefined)).toBe(DEFAULT_AUTHOR);
+    expect(crawlerAuthor(null)).toBe(DEFAULT_AUTHOR);
   });
 });
 
