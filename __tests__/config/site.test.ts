@@ -8,6 +8,9 @@ import {
   youtubeSubscribeUrl,
   isContentSectionLive,
   liveContentSections,
+  isFacebookConfigured,
+  isInstagramConfigured,
+  socialProfileUrls,
   SITE,
 } from '@/config/site';
 
@@ -34,6 +37,24 @@ describe('isYouTubeVideosConfigured', () => {
 describe('youtubeSubscribeUrl', () => {
   it('appends the subscribe-confirmation param to the channel URL', () => {
     expect(youtubeSubscribeUrl()).toBe(`${SITE.youtube.channelUrl}?sub_confirmation=1`);
+  });
+});
+
+describe('social profiles', () => {
+  it('detects a configured Facebook URL and an unset Instagram URL', () => {
+    expect(isFacebookConfigured()).toBe(/facebook\.com\//.test(SITE.facebook.url));
+    // Instagram is intentionally empty until the Business account exists.
+    expect(isInstagramConfigured()).toBe(/instagram\.com\//.test(SITE.instagram.url));
+  });
+
+  it('socialProfileUrls() lists only configured profiles (for JSON-LD sameAs)', () => {
+    const urls = socialProfileUrls();
+    expect(urls).toContain(SITE.youtube.channelUrl);
+    if (isFacebookConfigured()) expect(urls).toContain(SITE.facebook.url);
+    // No instagram.com entry while Instagram is unconfigured.
+    expect(urls.some((u) => /instagram\.com\//.test(u))).toBe(isInstagramConfigured());
+    // No empty strings leak in.
+    expect(urls.every((u) => u.length > 0)).toBe(true);
   });
 });
 

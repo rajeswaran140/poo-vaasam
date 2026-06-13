@@ -9,7 +9,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import Header from '@/components/Header';
 import { Footer } from '@/components/Footer';
-import { SITE, isYouTubeChannelConfigured, isYouTubeVideosConfigured, isFacebookConfigured } from '@/config/site';
+import { SITE, isYouTubeChannelConfigured, isYouTubeVideosConfigured, socialProfileUrls } from '@/config/site';
 import { fetchChannelVideos } from '@/lib/youtube-feed';
 import { partitionShorts } from '@/lib/youtube-shorts';
 import { SubscribeButton } from '@/components/SubscribeButton';
@@ -38,10 +38,9 @@ const websiteJsonLd = {
 
 // The site is one creator's body of work, so advertise the author (Person)
 // with links to their channels — helps Google connect the site to the creator.
-const personSameAs: string[] = [
-  ...(isYouTubeChannelConfigured() ? [SITE.youtube.channelUrl] : []),
-  ...(isFacebookConfigured() ? [SITE.facebook.url] : []),
-];
+// YouTube + Facebook + Instagram (each only when configured) — one source of
+// truth so /, /about and the footer always agree.
+const personSameAs = socialProfileUrls();
 
 const personJsonLd = {
   '@context': 'https://schema.org',

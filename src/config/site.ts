@@ -23,6 +23,13 @@ export const SITE = {
     url: 'https://www.facebook.com/profile.php?id=61590184029055',
     label: 'Facebook',
   },
+  instagram: {
+    // Set to the Instagram profile URL once a Business/Creator account exists
+    // (https://www.instagram.com/<handle>). Empty = hidden site-wide, so this
+    // lights up everywhere (sameAs, follow row) the moment it's filled in.
+    url: '',
+    label: 'Instagram',
+  },
 } as const;
 
 /**
@@ -58,6 +65,24 @@ export function isContentSectionLive(type: string): boolean {
 /** True when a real Facebook URL is configured. */
 export function isFacebookConfigured(): boolean {
   return /facebook\.com\//.test(SITE.facebook.url);
+}
+
+/** True when a real Instagram URL is configured. */
+export function isInstagramConfigured(): boolean {
+  return /instagram\.com\//.test(SITE.instagram.url);
+}
+
+/**
+ * Public social-profile URLs that are actually configured. Used for JSON-LD
+ * `sameAs` (consolidates the brand's profiles in Google's knowledge graph) and
+ * the social follow rows — one source of truth so every surface stays in sync.
+ */
+export function socialProfileUrls(): string[] {
+  return [
+    ...(isYouTubeChannelConfigured() ? [SITE.youtube.channelUrl] : []),
+    ...(isFacebookConfigured() ? [SITE.facebook.url] : []),
+    ...(isInstagramConfigured() ? [SITE.instagram.url] : []),
+  ];
 }
 
 /**

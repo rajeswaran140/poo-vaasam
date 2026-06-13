@@ -9,7 +9,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import Header from '@/components/Header';
 import { JsonLd } from '@/components/JsonLd';
-import { SITE, isYouTubeChannelConfigured, isFacebookConfigured, youtubeSubscribeUrl, isYouTubeVideosConfigured } from '@/config/site';
+import { isYouTubeChannelConfigured, youtubeSubscribeUrl, isYouTubeVideosConfigured, socialProfileUrls } from '@/config/site';
 import { TrackedYouTubeAnchor } from '@/components/TrackedYouTubeAnchor';
 import { SITE_URL, alternatesFor } from '@/lib/seo';
 
@@ -33,10 +33,9 @@ export const metadata: Metadata = {
   twitter: { card: 'summary_large_image', title: META_TITLE, description: META_DESCRIPTION },
 };
 
-const personSameAs: string[] = [
-  ...(isYouTubeChannelConfigured() ? [SITE.youtube.channelUrl] : []),
-  ...(isFacebookConfigured() ? [SITE.facebook.url] : []),
-];
+// YouTube + Facebook + Instagram (each only when configured) — one source of
+// truth so /, /about and the footer always agree.
+const personSameAs = socialProfileUrls();
 
 const personJsonLd = {
   '@context': 'https://schema.org',
