@@ -4,6 +4,8 @@ import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { MagnifyingGlassIcon, FunnelIcon, SparklesIcon, HeartIcon } from '@heroicons/react/24/outline';
 import { HeartIcon as HeartSolidIcon } from '@heroicons/react/24/solid';
+import { matchesSearch } from '@/lib/search-match';
+import { PoemCover } from '@/components/PoemCover';
 
 interface PoemsGridProps {
   poems: any[]; // Accept any array of content objects from the database
@@ -41,18 +43,18 @@ export function PoemsGrid({ poems }: PoemsGridProps) {
   const filteredAndSortedPoems = useMemo(() => {
     let filtered = poems;
 
-    // Search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      // Guard every field: a published poem may have a null/undefined body or
-      // title (e.g. lyrics not yet filled in), and an unguarded access here
-      // throws during render and blanks the entire grid for anonymous visitors.
+    // Search filter — Tamil-robust (NFC-normalized substring match), so typing
+    // Tamil reliably matches Tamil content regardless of normalization form.
+    // Guard every field: a published poem may have a null/undefined body or
+    // title (e.g. lyrics not yet filled in), and an unguarded access here
+    // throws during render and blanks the entire grid for anonymous visitors.
+    if (searchQuery.trim()) {
       filtered = filtered.filter(
         p =>
-          (p.title ?? '').toLowerCase().includes(query) ||
-          (p.body ?? '').toLowerCase().includes(query) ||
-          (p.author ?? '').toLowerCase().includes(query) ||
-          (p.description ?? '').toLowerCase().includes(query)
+          matchesSearch(p.title ?? '', searchQuery) ||
+          matchesSearch(p.body ?? '', searchQuery) ||
+          matchesSearch(p.author ?? '', searchQuery) ||
+          matchesSearch(p.description ?? '', searchQuery)
       );
     }
 
@@ -234,23 +236,7 @@ export function PoemsGrid({ poems }: PoemsGridProps) {
             >
               {/* Featured Image or Placeholder */}
               <div className="relative w-full aspect-video bg-gradient-to-br from-green-50 to-green-100 overflow-hidden">
-                {poem.featuredImage ? (
-                  <img
-                    src={poem.featuredImage}
-                    alt={poem.title}
-                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                    loading="lazy"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="text-6xl mb-2 group-hover:scale-110 transition-transform duration-300">
-                        📝
-                      </div>
-                      <p className="text-sm text-green-600 font-tamil">கவிதை</p>
-                    </div>
-                  </div>
-                )}
+                <PoemCover title={poem.title} featuredImage={poem.featuredImage} />
 
                 {/* Like Button Overlay */}
                 <button
