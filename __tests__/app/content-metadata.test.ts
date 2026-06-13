@@ -74,4 +74,12 @@ describe('content generateMetadata', () => {
     const m = await meta('cnt_poem');
     expect(m.description).toContain('read for free');
   });
+
+  it('sets og:type to music.song for a song, article for a poem', async () => {
+    mockFindById.mockResolvedValue(asEntity({ id: 'cnt_s', type: 'SONGS', title: 'S', author: 'A' }));
+    expect((await meta('cnt_s')).openGraph?.type).toBe('music.song');
+
+    mockFindById.mockResolvedValue(asEntity({ id: 'cnt_p', type: 'POEMS', title: 'P', author: 'A' }));
+    expect((await meta('cnt_p')).openGraph?.type).toBe('article');
+  });
 });

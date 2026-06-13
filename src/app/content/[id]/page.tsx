@@ -16,7 +16,9 @@ import Header from '@/components/Header';
 import { getSongHero } from '@/config/song-heroes';
 import { contentPath } from '@/config/vanity-paths';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
-import { ContentStatus } from '@/types/content';
+import { ContentStatus, ContentType } from '@/types/content';
+import { CONTENT_SECTIONS } from '@/config/site';
+import { contentJsonLd, type ContentJsonLdInput } from '@/lib/content-jsonld';
 import { ContentPageClient } from '@/components/ContentPageClient';
 import { PoemReader } from '@/components/PoemReader';
 import { YouTubeEmbed } from '@/components/YouTubeEmbed';
@@ -94,14 +96,11 @@ const TYPE_LABEL_EN: Record<string, string> = {
   ESSAYS: 'Tamil Essay',
 };
 
-/** Schema.org type per content kind — sharper than always-CreativeWork. */
-const SCHEMA_TYPE: Record<string, string | string[]> = {
-  SONGS: ['CreativeWork', 'MusicComposition'],
-  POEMS: ['CreativeWork', 'Poem'],
-  LYRICS: ['CreativeWork', 'MusicComposition'],
-  STORIES: ['CreativeWork', 'ShortStory'],
-  ESSAYS: 'Article',
-};
+/** Tamil section label by section href — the canonical names used on the
+ *  section pages' own breadcrumbs (keeps /content's parent crumb in sync). */
+const SECTION_LABEL_BY_HREF: Record<string, string> = Object.fromEntries(
+  CONTENT_SECTIONS.map((s) => [s.href, s.label])
+);
 
 /** Browse destination for the "more like this" CTA at the bottom of the page. */
 const BROWSE_HREF: Record<string, { href: string; label: string }> = {
@@ -153,7 +152,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       title,
       description: toDescription(description),
       url,
-      type: 'article',
+      // A song is `music.song` (richer music cards); everything else is an article.
+      type: content.type === ContentType.SONGS ? 'music.song' : 'article',
       siteName: SITE_NAME,
       // When there's an image, use it; otherwise the co-located
       // opengraph-image.tsx generates a branded card automatically.
@@ -192,54 +192,18 @@ export default async function ContentPage({ params }: PageProps) {
       ? isoDuration(content.audioDuration)
       : undefined;
 
-  const jsonLd: Record<string, unknown>[] = [
-    {
-      '@context': 'https://schema.org',
-      '@type': SCHEMA_TYPE[content.type] || 'CreativeWork',
-      name: content.title,
-      headline: content.title,
-      inLanguage: 'ta',
-      author: { '@type': 'Person', name: content.author || 'Rajeswaran Thangarajah' },
-      datePublished: content.publishedAt || content.createdAt,
-      dateModified: content.updatedAt || content.createdAt,
-      url: pageUrl,
-      ...(structuredImage ? { image: structuredImage } : {}),
-      ...(content.description ? { description: content.description } : {}),
-      // Make a song's audio + length machine-readable (rich-result signals).
-      ...(content.audioUrl
-        ? {
-            audio: {
-              '@type': 'AudioObject',
-              contentUrl: content.audioUrl,
-              ...(audioDurationIso ? { duration: audioDurationIso } : {}),
-            },
-          }
-        : {}),
-      ...(audioDurationIso ? { duration: audioDurationIso } : {}),
-      publisher: { '@type': 'Organization', name: SITE_NAME, url: SITE_URL },
-    },
-    {
-      '@context': 'https://schema.org',
-      '@type': 'BreadcrumbList',
-      itemListElement: [
-        { '@type': 'ListItem', position: 1, name: 'முகப்பு', item: SITE_URL },
-        { '@type': 'ListItem', position: 2, name: enType, item: `${SITE_URL}${browseTo.href}` },
-        { '@type': 'ListItem', position: 3, name: content.title, item: pageUrl },
-      ],
-    },
-  ];
-  if (ytId) {
-    jsonLd.push({
-      '@context': 'https://schema.org',
-      '@type': 'VideoObject',
-      name: content.title,
-      description: toDescription(content.description || content.body),
-      thumbnailUrl: [`https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`],
-      uploadDate: content.publishedAt || content.createdAt,
-      embedUrl: `https://www.youtube.com/embed/${ytId}`,
-      contentUrl: `https://www.youtube.com/watch?v=${ytId}`,
-    });
-  }
+  // Breadcrumb parent = the browse destination, labelled with the section's own
+  // Tamil name (so it matches that section page's breadcrumb) — or "all content"
+  // for the /all aggregate.
+  const parentLabel = SECTION_LABEL_BY_HREF[browseTo.href] ?? 'அனைத்து உள்ளடக்கம்';
+  const jsonLd = contentJsonLd(content as ContentJsonLdInput, {
+    canonicalUrl: pageUrl,
+    image: structuredImage,
+    audioDurationIso,
+    parent: { name: parentLabel, url: `${SITE_URL}${browseTo.href}` },
+    youtubeId: ytId,
+    videoDescription: toDescription(content.description || content.body),
+  });
 
   return (
     <ContentPageClient
