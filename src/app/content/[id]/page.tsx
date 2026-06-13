@@ -19,6 +19,8 @@ import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentStatus, ContentType } from '@/types/content';
 import { CONTENT_SECTIONS } from '@/config/site';
 import { contentJsonLd, type ContentJsonLdInput } from '@/lib/content-jsonld';
+import { themeForSongWithOverride } from '@/config/song-themes';
+import { themeSongLabelEn } from '@/config/song-collections';
 import { ContentPageClient } from '@/components/ContentPageClient';
 import { PoemReader } from '@/components/PoemReader';
 import { YouTubeEmbed } from '@/components/YouTubeEmbed';
@@ -133,10 +135,16 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   // Description prefers an explicit seoDescription; otherwise build a romanised
   // sentence that's useful as a SERP snippet. The verb matches the medium —
-  // songs are "listen free", text is "read for free".
+  // songs are "listen free", text is "read for free". For songs we theme the
+  // type label (e.g. "Tamil Homeland Song") so the snippet carries the themed
+  // keyword instead of a generic "Tamil Song".
+  const descType =
+    content.type === ContentType.SONGS
+      ? themeSongLabelEn(themeForSongWithOverride(content.id, content.theme))
+      : enType;
   const description =
     content.seoDescription ||
-    `${enType} "${content.title}" by ${crawlerAuthor(content.author)} on Tamilagaval — ${actionVerb(content.type)} for free.`;
+    `${descType} "${content.title}" by ${crawlerAuthor(content.author)} on Tamilagaval — ${actionVerb(content.type)} for free.`;
 
   const url = absoluteUrl(contentPath(content.id));
   // Prefer a bespoke hero's designed artwork as the share image (it carries the

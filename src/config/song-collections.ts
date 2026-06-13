@@ -86,6 +86,16 @@ export function isCollectionTheme(value: string): value is SongTheme {
 }
 
 /**
+ * Singular English label for ONE song of a theme, e.g. "Tamil Homeland Song"
+ * (derived from the collection's plural title). Used to theme a song page's
+ * crawler-facing meta description so the snippet carries the themed keyword
+ * (homeland / mother / love …) instead of a generic "Tamil Song".
+ */
+export function themeSongLabelEn(theme: SongTheme): string {
+  return SONG_COLLECTIONS[theme].englishTitle.replace(/Songs$/, 'Song');
+}
+
+/**
  * Themes that currently have enough songs to warrant a collection page.
  * `songThemes` = the resolved theme of every published, playable song
  * (PublicSongDTO.theme). Order follows SONG_THEMES for stable output.

@@ -8,8 +8,25 @@ import {
   isCollectionTheme,
   SONG_COLLECTIONS,
   MIN_SONGS_FOR_COLLECTION,
+  themeSongLabelEn,
 } from '@/config/song-collections';
 import { SONG_THEMES } from '@/config/song-themes';
+
+describe('themeSongLabelEn', () => {
+  it('gives a singular themed song label per theme (homeland → "Tamil Homeland Song")', () => {
+    expect(themeSongLabelEn('homeland')).toBe('Tamil Homeland Song');
+    expect(themeSongLabelEn('mother')).toBe('Tamil Mother Song');
+    expect(themeSongLabelEn('love')).toBe('Tamil Love Song');
+  });
+
+  it('singularises every theme label (no trailing "Songs")', () => {
+    for (const theme of SONG_THEMES) {
+      const label = themeSongLabelEn(theme);
+      expect(label.endsWith('Song')).toBe(true);
+      expect(label.endsWith('Songs')).toBe(false);
+    }
+  });
+});
 
 describe('song-collections', () => {
   it('has a complete, lyrics-free collection entry for every theme', () => {

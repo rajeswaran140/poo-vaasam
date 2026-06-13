@@ -67,6 +67,15 @@ describe('content generateMetadata', () => {
     expect(m.description).not.toContain('read for free');
   });
 
+  it('weaves the song theme into the fallback description (Tamil Homeland Song)', async () => {
+    mockFindById.mockResolvedValue(
+      asEntity({ id: 'cnt_h', type: 'SONGS', title: 'எங்கள் தேசம்', author: 'இராஜ்', theme: 'homeland' })
+    );
+    const m = await meta('cnt_h');
+    expect(m.description).toContain('Tamil Homeland Song');
+    expect(m.description).toContain('listen for free');
+  });
+
   it('says "read for free" for a poem', async () => {
     mockFindById.mockResolvedValue(
       asEntity({ id: 'cnt_poem', type: 'POEMS', title: 'Y', author: 'A' })
