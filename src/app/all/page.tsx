@@ -5,7 +5,7 @@
 export const revalidate = 300;
 
 import type { Metadata } from 'next';
-import { alternatesFor, SITE_NAME, absoluteUrl } from '@/lib/seo';
+import { alternatesFor, SITE_NAME, absoluteUrl, breadcrumbJsonLd } from '@/lib/seo';
 
 // Romanised title/description so this page ranks for the same romanised queries
 // the rest of the site targets (tamil songs / poems / kavithai), consistent
@@ -35,6 +35,9 @@ export const metadata: Metadata = {
 import Link from 'next/link';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentStatus } from '@/types/content';
+import { JsonLd } from '@/components/JsonLd';
+import { collectionPageJsonLd, type CollectionItem } from '@/lib/collection-jsonld';
+import { contentPath } from '@/config/vanity-paths';
 
 async function getAllContent() {
   try {
@@ -53,8 +56,19 @@ async function getAllContent() {
 export default async function AllContentPage() {
   const content = await getAllContent();
 
+  const breadcrumb = breadcrumbJsonLd([
+    { name: 'முகப்பு', path: '/' },
+    { name: 'அனைத்து உள்ளடக்கம்', path: '/all' },
+  ]);
+  const collection = collectionPageJsonLd(content as CollectionItem[], {
+    name: `${TITLE} — ${SITE_NAME}`,
+    description: DESCRIPTION,
+    url: absoluteUrl('/all'),
+  });
+
   return (
     <div className="min-h-screen bg-gray-50">
+      <JsonLd data={[breadcrumb, collection]} />
       {/* Header */}
       <header className="bg-gradient-to-r from-purple-600 to-purple-700 text-white py-16">
         <div className="container mx-auto px-4">
@@ -105,7 +119,7 @@ function ContentCard({ content }: { content: any }) {
 
   return (
     <Link
-      href={`/content/${content.id}`}
+      href={contentPath(content.id)}
       className="group bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-xl transition-all transform hover:scale-[1.02]"
     >
       <div className="p-6">

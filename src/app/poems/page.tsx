@@ -38,7 +38,7 @@ import { PoemsGrid } from '@/components/PoemsGrid';
 import { PoemsGridSkeleton } from '@/components/PoemCardSkeleton';
 import { JsonLd } from '@/components/JsonLd';
 import { breadcrumbJsonLd } from '@/lib/seo';
-import { poemsCollectionJsonLd, type PoemListItem } from '@/lib/poems-jsonld';
+import { collectionPageJsonLd, type CollectionItem } from '@/lib/collection-jsonld';
 
 async function getPoems() {
   try {
@@ -61,7 +61,7 @@ export default async function PoemsPage() {
     { name: 'முகப்பு', path: '/' },
     { name: 'கவிதைகள்', path: '/poems' },
   ]);
-  const collection = poemsCollectionJsonLd(poems as PoemListItem[], {
+  const collection = collectionPageJsonLd(poems as CollectionItem[], {
     name: `${META_TITLE} — ${SITE_NAME}`,
     description: META_DESCRIPTION,
     url: absoluteUrl('/poems'),
