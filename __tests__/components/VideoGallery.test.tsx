@@ -101,6 +101,24 @@ describe('VideoGallery — populated state', () => {
   });
 });
 
+describe('VideoGallery — duration & upload-date metadata', () => {
+  it('renders a YouTube-style duration badge when a duration is known', () => {
+    render(<VideoGallery videos={[videoFactory({ duration: 'PT4M21S' })]} />);
+    expect(screen.getByText('4:21')).toBeInTheDocument();
+  });
+
+  it('omits the duration badge when the duration is unknown', () => {
+    render(<VideoGallery videos={[videoFactory({ duration: undefined })]} />);
+    expect(screen.queryByText(/^\d+:\d{2}$/)).not.toBeInTheDocument();
+  });
+
+  it('shows a Tamil relative upload date using the shared `now`', () => {
+    // publishedAt is 2026-05-27; pin now to exactly 3 days later.
+    render(<VideoGallery videos={[videoFactory()]} now={Date.parse('2026-05-30T10:00:00Z')} />);
+    expect(screen.getByText('3 நாட்கள் முன்')).toBeInTheDocument();
+  });
+});
+
 describe('VideoGallery — pagination ("Load more")', () => {
   const three = () => [
     videoFactory({ id: 'aaaaaaaaaaa', title: 'One' }),

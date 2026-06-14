@@ -16,6 +16,7 @@ import { partitionShorts } from '@/lib/youtube-shorts';
 import { SubscribeButton } from '@/components/SubscribeButton';
 import { JsonLd } from '@/components/JsonLd';
 import { alternatesFor, breadcrumbJsonLd } from '@/lib/seo';
+import { formatVideoDuration, relativeTimeTamil } from '@/lib/video-format';
 import Image from 'next/image';
 
 // Render per-request rather than as a build-time prerender. Amplify's SSR
@@ -81,6 +82,11 @@ export default async function VideosPage() {
   // grid below (a Short doesn't suit the 16:9 hero).
   const featured = videos.length >= 3 ? videos[0] : null;
   const galleryVideos = featured ? videos.slice(1) : videos;
+  // One reference instant for every relative date, shared with the client
+  // components so SSR and hydration render identical text.
+  const now = Date.now();
+  const featuredDuration = featured ? formatVideoDuration(featured.duration) : null;
+  const featuredUploaded = featured ? relativeTimeTamil(featured.publishedAt, now) : '';
 
   return (
     <>
@@ -152,15 +158,21 @@ export default async function VideosPage() {
                     className="aspect-video w-full object-cover transition-transform duration-300 group-hover:scale-105"
                   />
                   <span aria-hidden className="absolute inset-0 flex items-center justify-center">
-                    <span className="flex h-16 w-16 items-center justify-center rounded-full bg-black/55 ring-2 ring-white/70 transition group-hover:bg-orange-600/90">
+                    <span className="flex h-16 w-16 items-center justify-center rounded-full bg-black/55 ring-2 ring-white/70 transition group-hover:scale-110 group-hover:bg-orange-600/90">
                       <svg className="ml-1 h-7 w-7 fill-white text-white" viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M8 5v14l11-7z" />
                       </svg>
                     </span>
                   </span>
-                  <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-4 pt-10">
+                  {featuredDuration && (
+                    <span className="absolute right-2.5 top-2.5 rounded bg-black/80 px-2 py-0.5 text-xs font-semibold tabular-nums text-white">
+                      {featuredDuration}
+                    </span>
+                  )}
+                  <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-4 pt-10">
                     <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide text-orange-200">சமீபத்தியது</span>
                     <span className="line-clamp-2 font-tamil text-sm font-medium text-white drop-shadow">{featured.title}</span>
+                    {featuredUploaded && <span className="mt-0.5 block font-tamil text-xs text-white/70">{featuredUploaded}</span>}
                   </span>
                 </a>
               )}
@@ -171,12 +183,12 @@ export default async function VideosPage() {
         <div className="container mx-auto max-w-6xl px-4 py-10 sm:px-6">
           {/* Bound descriptions before they cross into the client gallery — the
               full YouTube descriptions otherwise bloat the RSC hydration payload. */}
-          <VideoGallery videos={withTruncatedDescriptions(galleryVideos)} />
+          <VideoGallery videos={withTruncatedDescriptions(galleryVideos)} now={now} />
 
           {shorts.length > 0 && (
             <section className="mt-12">
               <h2 className="mb-5 font-kavivanar text-3xl text-white">Shorts</h2>
-              <ShortsRow shorts={withTruncatedDescriptions(shorts)} />
+              <ShortsRow shorts={withTruncatedDescriptions(shorts)} now={now} />
             </section>
           )}
 

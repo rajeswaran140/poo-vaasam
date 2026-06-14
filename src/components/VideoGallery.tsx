@@ -15,6 +15,7 @@ import { TrackedYouTubeOpen } from '@/components/TrackedYouTubeOpen';
 import type { ChannelVideo } from '@/lib/youtube-feed';
 import { SITE } from '@/config/site';
 import { trackYouTubeOpen } from '@/lib/analytics-events';
+import { formatVideoDuration, relativeTimeTamil } from '@/lib/video-format';
 
 function excerpt(text: string, max = 140): string {
   const cleaned = text.replace(/\s+/g, ' ').trim();
@@ -22,7 +23,17 @@ function excerpt(text: string, max = 140): string {
   return cleaned.slice(0, max - 1).trimEnd() + '…';
 }
 
-export function VideoGallery({ videos, initialCount = 9 }: { videos: ChannelVideo[]; initialCount?: number }) {
+export function VideoGallery({
+  videos,
+  initialCount = 9,
+  now = Date.now(),
+}: {
+  videos: ChannelVideo[];
+  initialCount?: number;
+  /** Reference instant for relative dates; the server passes one so SSR and
+   *  hydration format identically. */
+  now?: number;
+}) {
   const [activeId, setActiveId] = useState<string | null>(null);
   // Only the first `initialCount` cards render initially — this is what the
   // server prerenders, so it bounds the SSR HTML (the page's main weight). The
@@ -62,10 +73,13 @@ export function VideoGallery({ videos, initialCount = 9 }: { videos: ChannelVide
       {/* Announce the now-playing video to assistive tech. */}
       <div aria-live="polite" className="sr-only">{activeTitle ? `Now playing: ${activeTitle}` : ''}</div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-      {visible.map((video) => (
+      {visible.map((video) => {
+        const duration = formatVideoDuration(video.duration);
+        const uploaded = relativeTimeTamil(video.publishedAt, now);
+        return (
         <div
           key={video.id}
-          className="rounded-xl overflow-hidden bg-gray-800 border border-gray-700 shadow-sm flex flex-col"
+          className="group/card flex flex-col overflow-hidden rounded-xl border border-gray-700 bg-gray-800 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-orange-500/40 hover:shadow-xl hover:shadow-black/30"
         >
           {activeId === video.id ? (
             <div ref={embedRef} tabIndex={-1} aria-label={`Now playing: ${video.title}`} className="outline-none">
@@ -88,19 +102,25 @@ export function VideoGallery({ videos, initialCount = 9 }: { videos: ChannelVide
                 height={360}
                 loading="lazy"
                 sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
-                className="w-full h-full object-cover opacity-90 transition group-hover:opacity-100"
+                className="h-full w-full object-cover opacity-90 transition duration-300 group-hover:scale-105 group-hover:opacity-100"
               />
               <span className="absolute inset-0 flex items-center justify-center">
-                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-orange-600/90 shadow-lg transition group-hover:bg-orange-600">
+                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-orange-600/90 shadow-lg transition group-hover:scale-110 group-hover:bg-orange-600">
                   <Play className="ml-1 h-7 w-7 fill-white text-white" />
                 </span>
               </span>
+              {duration && (
+                <span className="absolute bottom-1.5 right-1.5 rounded bg-black/80 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-white">
+                  {duration}
+                </span>
+              )}
             </button>
           )}
-          <div className="p-4 flex-1 flex flex-col gap-2">
+          <div className="p-4 flex-1 flex flex-col gap-1.5">
             <h3 className="line-clamp-2 font-tamil text-sm text-gray-100">{video.title}</h3>
+            {uploaded && <p className="font-tamil text-xs text-gray-500">{uploaded}</p>}
             {video.description && (
-              <p className="line-clamp-2 font-tamil text-xs text-gray-400">
+              <p className="mt-0.5 line-clamp-2 font-tamil text-xs text-gray-400">
                 {excerpt(video.description)}
               </p>
             )}
@@ -115,7 +135,8 @@ export function VideoGallery({ videos, initialCount = 9 }: { videos: ChannelVide
             </TrackedYouTubeOpen>
           </div>
         </div>
-      ))}
+        );
+      })}
       </div>
       {videos.length > limit && (
         <div className="mt-8 text-center">
