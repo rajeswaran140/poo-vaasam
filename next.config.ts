@@ -72,6 +72,17 @@ const nextConfig: NextConfig = {
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
     // Read at runtime by the /videos Data API fallback (when the RSS feed flakes).
     YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY || '',
+    // YouTube Analytics OAuth (owner-scoped reports) + GA4 Data API. Like the
+    // other secrets, Amplify's SSR runtime doesn't expose app env vars, so these
+    // MUST be inlined or the admin dashboards fall back to "not configured" at
+    // runtime — and the per-video retention / recommendations / digest routes
+    // (force-dynamic) silently fail. Server-only; not in client bundles.
+    // Rotating any of these requires a redeploy to re-inline.
+    YOUTUBE_OAUTH_CLIENT_ID: process.env.YOUTUBE_OAUTH_CLIENT_ID || '',
+    YOUTUBE_OAUTH_CLIENT_SECRET: process.env.YOUTUBE_OAUTH_CLIENT_SECRET || '',
+    YOUTUBE_REFRESH_TOKEN: process.env.YOUTUBE_REFRESH_TOKEN || '',
+    GA4_PROPERTY_ID: process.env.GA4_PROPERTY_ID || '',
+    GA4_SERVICE_ACCOUNT_KEY: process.env.GA4_SERVICE_ACCOUNT_KEY || '',
     // DynamoDB access for runtime SSR/API routes (e.g. saving a brief). Amplify's
     // SSR runtime doesn't get a usable role token, so the app key must be inlined
     // (server-only; not emitted to client bundles). Enables runtime DB reads/writes.

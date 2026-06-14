@@ -41,7 +41,13 @@ import { mergeVideoRows } from '@/lib/youtube-dashboard';
 
 const ANALYTICS_DAYS = 28;
 
-export const revalidate = 1800; // 30 min — pairs with the 1-hr upstream fetch cache
+// Fetch at request time, not at build. Amplify's SSR runtime doesn't run ISR
+// (the incremental cache isn't shared across Lambdas), so a `revalidate` route
+// freezes at build — which is how a build-time Analytics 401 (e.g. a stale
+// refresh token at that moment) got baked in and stuck. Dynamic + the inlined
+// OAuth/GA4 creds (next.config.ts) means the dashboard refreshes its own access
+// token each request and self-heals. Admin-only, low traffic — latency is fine.
+export const dynamic = 'force-dynamic';
 
 const numberFmt = new Intl.NumberFormat('en-US');
 
