@@ -8,7 +8,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Header from '@/components/Header';
 import { Footer } from '@/components/Footer';
-import { fetchChannelVideos, videosItemListJsonLd, s3ThumbnailUrl } from '@/lib/youtube-feed';
+import { fetchChannelVideos, videosItemListJsonLd, s3ThumbnailUrl, withTruncatedDescriptions } from '@/lib/youtube-feed';
 import { SITE, isYouTubeVideosConfigured } from '@/config/site';
 import { VideoGallery } from '@/components/VideoGallery';
 import { ShortsRow } from '@/components/ShortsRow';
@@ -169,12 +169,14 @@ export default async function VideosPage() {
         </section>
 
         <div className="container mx-auto max-w-6xl px-4 py-10 sm:px-6">
-          <VideoGallery videos={galleryVideos} />
+          {/* Bound descriptions before they cross into the client gallery — the
+              full YouTube descriptions otherwise bloat the RSC hydration payload. */}
+          <VideoGallery videos={withTruncatedDescriptions(galleryVideos)} />
 
           {shorts.length > 0 && (
             <section className="mt-12">
               <h2 className="mb-5 font-kavivanar text-3xl text-white">Shorts</h2>
-              <ShortsRow shorts={shorts} />
+              <ShortsRow shorts={withTruncatedDescriptions(shorts)} />
             </section>
           )}
 

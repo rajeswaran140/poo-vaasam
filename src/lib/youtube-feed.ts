@@ -13,6 +13,16 @@
 
 import { ensureThumbnailsMirrored } from '@/lib/video-thumbnails';
 import { mediaUrl } from '@/lib/aws-config';
+import { toDescription } from '@/lib/seo';
+
+/**
+ * Full YouTube descriptions run up to ~1.6k chars; with 24 videos they bloat
+ * both the VideoObject JSON-LD and (worse) the RSC hydration payload passed to
+ * the client gallery — which only renders a 2-line excerpt. Bound them before
+ * they cross either boundary. ~200 chars is ample for the JSON-LD (Google
+ * truncates) and the on-card excerpt.
+ */
+const VIDEO_DESCRIPTION_MAX = 200;
 
 export interface ChannelVideo {
   id: string;
@@ -266,6 +276,19 @@ export function thumbnailVariants(videoId: string): string[] {
 }
 
 /**
+ * Bound each video's `description` before the array is passed to a client
+ * component (VideoGallery / ShortsRow). Those components only render a 2-line
+ * excerpt, but the FULL description otherwise gets serialized into the RSC
+ * hydration payload — the dominant cost of the /videos page weight. Pure.
+ */
+export function withTruncatedDescriptions(
+  videos: ChannelVideo[],
+  max = VIDEO_DESCRIPTION_MAX
+): ChannelVideo[] {
+  return videos.map((v) => ({ ...v, description: toDescription(v.description, max) }));
+}
+
+/**
  * Schema.org ItemList of VideoObjects for the videos page — makes the videos
  * eligible for Google video rich results (more discovery → more subscribers).
  */
@@ -280,7 +303,7 @@ export function videosItemListJsonLd(videos: ChannelVideo[]): Record<string, unk
       item: {
         '@type': 'VideoObject',
         name: video.title,
-        description: video.description || video.title,
+        description: toDescription(video.description || video.title, VIDEO_DESCRIPTION_MAX),
         thumbnailUrl: thumbnailVariants(video.id),
         uploadDate: video.publishedAt,
         contentUrl: video.watchUrl,

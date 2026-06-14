@@ -6,7 +6,7 @@
 // fetchChannelVideos mirrors thumbnails to S3; stub it so tests stay hermetic.
 jest.mock('@/lib/video-thumbnails', () => ({ ensureThumbnailsMirrored: jest.fn().mockResolvedValue(undefined) }));
 
-import { parseChannelFeed, parseDataApiItems, fetchChannelVideos, videosItemListJsonLd, thumbnailVariants, s3ThumbnailUrl, _resetFeedCache } from '@/lib/youtube-feed';
+import { parseChannelFeed, parseDataApiItems, fetchChannelVideos, videosItemListJsonLd, thumbnailVariants, s3ThumbnailUrl, withTruncatedDescriptions, _resetFeedCache } from '@/lib/youtube-feed';
 
 const SAMPLE_FEED = `<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
@@ -323,6 +323,48 @@ describe('videosItemListJsonLd', () => {
       itemListElement: Array<{ item: Record<string, unknown> }>;
     };
     expect('duration' in ld.itemListElement[0].item).toBe(false);
+  });
+
+  it('truncates long VideoObject descriptions (keeps the JSON-LD lean)', () => {
+    const longDesc = 'அ '.repeat(900); // ~1800 chars
+    const ld = videosItemListJsonLd([{ ...baseVideo, description: longDesc }]) as {
+      itemListElement: Array<{ item: { description: string } }>;
+    };
+    const desc = ld.itemListElement[0].item.description;
+    expect(desc.length).toBeLessThanOrEqual(200);
+    expect(desc.endsWith('…')).toBe(true);
+  });
+});
+
+describe('withTruncatedDescriptions', () => {
+  const v = {
+    id: 'gfywsN483lI',
+    title: 'T',
+    description: 'x'.repeat(500),
+    publishedAt: '2026-01-01T00:00:00Z',
+    thumbnail: s3ThumbnailUrl('gfywsN483lI'),
+    watchUrl: 'https://www.youtube.com/watch?v=gfywsN483lI',
+  };
+
+  it('bounds long descriptions with an ellipsis, preserving every other field', () => {
+    const [out] = withTruncatedDescriptions([v]);
+    expect(out.description.length).toBeLessThanOrEqual(200);
+    expect(out.description.endsWith('…')).toBe(true);
+    expect(out.id).toBe(v.id);
+    expect(out.title).toBe(v.title);
+    expect(out.thumbnail).toBe(v.thumbnail);
+    expect(out.watchUrl).toBe(v.watchUrl);
+  });
+
+  it('leaves a short description untouched and keeps an empty one empty', () => {
+    expect(withTruncatedDescriptions([{ ...v, description: 'short' }])[0].description).toBe('short');
+    expect(withTruncatedDescriptions([{ ...v, description: '' }])[0].description).toBe('');
+  });
+
+  it('does not mutate the input array/objects', () => {
+    const input = [{ ...v }];
+    withTruncatedDescriptions(input);
+    expect(input[0].description.length).toBe(500);
   });
 });
 
