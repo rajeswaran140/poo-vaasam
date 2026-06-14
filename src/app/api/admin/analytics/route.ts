@@ -28,6 +28,7 @@ import {
   type Result,
 } from '@/lib/ga4-api';
 import { fetchContentViewSummary, type ContentViewSummary } from '@/lib/site-analytics';
+import { fetchEventSummary, type EventSummary } from '@/lib/analytics-store';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,16 +47,24 @@ export async function GET(request: NextRequest) {
   const daysParam = Number(request.nextUrl.searchParams.get('days') ?? '28');
   const days = Number.isFinite(daysParam) ? Math.max(1, Math.min(90, daysParam)) : 28;
 
-  // First-party content views — independent of GA4, so fetch regardless.
+  // First-party signals — independent of GA4, so fetch regardless. Content
+  // views accrue from the view beacon; events from the /api/events beacon
+  // (ad-block-resilient plays/shares/outbound clicks).
   let contentViews: ContentViewSummary | null = null;
   try {
     contentViews = await fetchContentViewSummary(10);
   } catch (err) {
     console.error('[analytics] first-party content views failed:', err);
   }
+  let events: EventSummary | null = null;
+  try {
+    events = await fetchEventSummary(days, 8);
+  } catch (err) {
+    console.error('[analytics] first-party events failed:', err);
+  }
 
   if (!isGA4Configured()) {
-    return NextResponse.json({ success: true, ga4Configured: false, days, contentViews, ga4: null });
+    return NextResponse.json({ success: true, ga4Configured: false, days, contentViews, events, ga4: null });
   }
 
   const [snapshot, timeseries, topPages, sources, geo, devices, audioPlays, subscribeClicks, youtubeOpens] =
@@ -76,6 +85,7 @@ export async function GET(request: NextRequest) {
     ga4Configured: true,
     days,
     contentViews,
+    events,
     ga4: {
       snapshot: unwrap(snapshot),
       timeseries: unwrap(timeseries),

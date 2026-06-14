@@ -21,11 +21,17 @@ interface EngRow { label: string; eventCount: number }
 interface Engagement { rows: EngRow[]; total: number; note?: string }
 interface ViewedContent { id: string; title: string; type: string; path: string; viewCount: number }
 interface ContentViews { totalViews: number; itemCount: number; top: ViewedContent[] }
+interface EventSummaryUI {
+  total: number;
+  totals: { type: string; count: number }[];
+  byType: Record<string, { target: string; count: number }[]>;
+}
 
 interface Payload {
   ga4Configured: boolean;
   days: number;
   contentViews: ContentViews | null;
+  events: EventSummaryUI | null;
   ga4: null | {
     snapshot: Section<Snapshot>;
     timeseries: Section<{ points: DayPoint[]; daysBack: number }>;
@@ -42,6 +48,13 @@ interface Payload {
 const pick = <T,>(s: Section<T> | undefined): { data?: T; error?: string } =>
   !s ? {} : 'data' in s ? { data: s.data } : { error: s.error };
 const nf = (n: number) => n.toLocaleString();
+
+const EVENT_LABEL: Record<string, string> = {
+  play: 'Plays', share: 'Shares', youtube: 'YouTube opens', subscribe: 'Subscribe clicks', install: 'PWA installs',
+};
+const EVENT_UNIT: Record<string, string> = {
+  play: 'plays', share: 'shares', youtube: 'opens', subscribe: 'clicks', install: 'installs',
+};
 
 export default function AnalyticsPage() {
   const [days, setDays] = useState(28);
@@ -154,6 +167,28 @@ export default function AnalyticsPage() {
             </Card>
           </div>
 
+          {/* First-party events — owned in DynamoDB, so they survive ad-blockers
+              that drop GA4. Shares (esp. WhatsApp) + installs aren't in GA4. */}
+          {payload.events && payload.events.total > 0 && (
+            <div className="space-y-3">
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
+                First-party events
+                <span className="ml-2 font-normal text-xs text-gray-400">ad-block-resilient · {nf(payload.events.total)} in last {days}d</span>
+              </h2>
+              <div className="grid gap-4 lg:grid-cols-3">
+                {payload.events.totals.map(({ type, count }) => (
+                  <Card key={type} title={`${EVENT_LABEL[type] ?? type} (${nf(count)})`}>
+                    <Table
+                      rows={(payload.events?.byType[type] ?? []).map((t) => ({ k: t.target, v: t.count }))}
+                      unit={EVENT_UNIT[type] ?? ''}
+                      empty="No breakdown yet."
+                    />
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* First-party top-viewed content */}
           {payload.contentViews && payload.contentViews.top.length > 0 && (
             <Card title="Most-viewed content (on-site, all time)">
@@ -194,7 +229,7 @@ function Table({ rows, unit, empty }: { rows: { k: string; sub?: string; v: numb
         <li key={`${r.k}-${i}`}>
           <div className="flex items-baseline justify-between gap-2 text-sm">
             <span className="truncate font-tamil text-gray-700 dark:text-gray-200" title={r.sub || r.k}>{r.k || '(not set)'}</span>
-            <span className="shrink-0 tabular-nums text-gray-500 dark:text-gray-400">{r.v.toLocaleString()} {unit}</span>
+            <span className="shrink-0 tabular-nums text-gray-500 dark:text-gray-400">{r.v.toLocaleString()}{unit ? ` ${unit}` : ''}</span>
           </div>
           <div className="mt-1 h-1 rounded bg-gray-100 dark:bg-gray-700">
             <div className="h-1 rounded bg-orange-500/70" style={{ width: `${(r.v / max) * 100}%` }} />

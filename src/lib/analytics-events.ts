@@ -23,6 +23,34 @@ function gtag(): GtagFn | null {
 }
 
 /**
+ * Fire a first-party beacon to /api/events alongside GA4. Survives ad-blockers
+ * that drop gtag, so the admin dashboard keeps a floor of truth. Fire-and-forget
+ * — never throws, never blocks navigation (sendBeacon is built for unload).
+ */
+function beacon(type: string, target?: string): void {
+  if (typeof navigator === 'undefined') return;
+  const body = JSON.stringify(target ? { type, target } : { type });
+  try {
+    if (typeof navigator.sendBeacon === 'function') {
+      navigator.sendBeacon('/api/events', new Blob([body], { type: 'application/json' }));
+      return;
+    }
+  } catch {
+    // fall through to fetch
+  }
+  try {
+    void fetch('/api/events', {
+      method: 'POST',
+      body,
+      keepalive: true,
+      headers: { 'Content-Type': 'application/json' },
+    }).catch(() => {});
+  } catch {
+    // ignore — analytics must never break the page
+  }
+}
+
+/**
  * Fire when a visitor clicks any "Subscribe" CTA. The `source` mirrors the
  * UTM `utm_content` value we tag the outbound URL with, so attribution lines
  * up across both the GA4 event (site-side) and YouTube channel inbound
@@ -30,6 +58,7 @@ function gtag(): GtagFn | null {
  */
 export function trackSubscribeClick(source: string): void {
   gtag()?.('event', 'subscribe_click', { source });
+  beacon('subscribe', source);
 }
 
 /**
@@ -40,6 +69,7 @@ export function trackSubscribeClick(source: string): void {
  */
 export function trackAudioPlay(songId: string, songTitle: string): void {
   gtag()?.('event', 'audio_play', { song_id: songId, song_title: songTitle });
+  beacon('play', songId);
 }
 
 /**
@@ -51,4 +81,21 @@ export function trackAudioPlay(songId: string, songTitle: string): void {
  */
 export function trackYouTubeOpen(destination: string, source?: string): void {
   gtag()?.('event', 'youtube_open', source ? { destination, source } : { destination });
+  beacon('youtube', destination);
+}
+
+/**
+ * Fire when a visitor shares content. `channel` is the share surface
+ * (whatsapp / facebook / copy / native) — WhatsApp is the #1 diaspora channel,
+ * so proving shares happen there is the whole point of owning this first-party.
+ */
+export function trackShare(channel: string): void {
+  gtag()?.('event', 'share', { method: channel });
+  beacon('share', channel);
+}
+
+/** Fire when the visitor installs the PWA (accepted the install prompt). */
+export function trackInstall(): void {
+  gtag()?.('event', 'pwa_install');
+  beacon('install', 'pwa');
 }

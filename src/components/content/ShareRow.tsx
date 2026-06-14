@@ -10,6 +10,7 @@
 import { useState } from 'react';
 import { Link2, Check, Share2 } from 'lucide-react';
 import { whatsappShareUrl } from '@/lib/whatsapp-share';
+import { trackShare } from '@/lib/analytics-events';
 
 // Inline brand glyphs — lucide-react no longer ships Facebook/Twitter logos,
 // and matching the brand marks correctly is worth a few lines of SVG.
@@ -54,6 +55,7 @@ export function ShareRow({ url, title, verb = 'listen' }: ShareRowProps) {
   const onCopy = async () => {
     try {
       await navigator.clipboard.writeText(url);
+      trackShare('copy');
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch {
@@ -64,6 +66,7 @@ export function ShareRow({ url, title, verb = 'listen' }: ShareRowProps) {
   const onNativeShare = async () => {
     try {
       await navigator.share({ title, url });
+      trackShare('native');
     } catch {
       /* user cancelled or share failed — no-op */
     }
@@ -77,7 +80,7 @@ export function ShareRow({ url, title, verb = 'listen' }: ShareRowProps) {
 
   return (
     <div className="flex flex-wrap gap-2">
-      <a href={wa} target="_blank" rel="noopener noreferrer" aria-label="Share on WhatsApp" className={waClass}>
+      <a href={wa} target="_blank" rel="noopener noreferrer" aria-label="Share on WhatsApp" className={waClass} onClick={() => trackShare('whatsapp')}>
         <WhatsAppIcon className="h-4 w-4" /> WhatsApp
       </a>
       {canNativeShare && (
@@ -85,10 +88,10 @@ export function ShareRow({ url, title, verb = 'listen' }: ShareRowProps) {
           <Share2 className="h-4 w-4" aria-hidden /> பகிர்
         </button>
       )}
-      <a href={fb} target="_blank" rel="noopener noreferrer" aria-label="Share on Facebook" className={linkClass}>
+      <a href={fb} target="_blank" rel="noopener noreferrer" aria-label="Share on Facebook" className={linkClass} onClick={() => trackShare('facebook')}>
         <FacebookIcon className="h-4 w-4" /> Facebook
       </a>
-      <a href={tw} target="_blank" rel="noopener noreferrer" aria-label="Share on X" className={linkClass}>
+      <a href={tw} target="_blank" rel="noopener noreferrer" aria-label="Share on X" className={linkClass} onClick={() => trackShare('twitter')}>
         <XIcon className="h-4 w-4" /> X
       </a>
       <button
