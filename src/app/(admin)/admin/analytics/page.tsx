@@ -1,0 +1,213 @@
+'use client';
+
+/**
+ * /admin/analytics — website traffic & user activity.
+ *
+ * Reads GET /api/admin/analytics (GA4 Data API + first-party DynamoDB view
+ * counts). Pure-presentation: summary cards, a traffic trend, top pages,
+ * sources, geography, devices, and the tracked activities (plays / subscribe
+ * clicks / YouTube opens). Degrades gracefully — a GA4 config banner + the
+ * first-party section still render when GA4 isn't set up.
+ */
+
+import { useCallback, useEffect, useState } from 'react';
+
+type Section<T> = { data: T } | { error: string };
+interface Snapshot { totalUsers: number; sessions: number; pageViews: number; daysBack: number }
+interface DayPoint { date: string; users: number; sessions: number; pageViews: number }
+interface PageRow { path: string; title: string; pageViews: number }
+interface DimRow { key: string; value: number }
+interface EngRow { label: string; eventCount: number }
+interface Engagement { rows: EngRow[]; total: number; note?: string }
+interface ViewedContent { id: string; title: string; type: string; path: string; viewCount: number }
+interface ContentViews { totalViews: number; itemCount: number; top: ViewedContent[] }
+
+interface Payload {
+  ga4Configured: boolean;
+  days: number;
+  contentViews: ContentViews | null;
+  ga4: null | {
+    snapshot: Section<Snapshot>;
+    timeseries: Section<{ points: DayPoint[]; daysBack: number }>;
+    topPages: Section<PageRow[]>;
+    sources: Section<DimRow[]>;
+    geo: Section<DimRow[]>;
+    devices: Section<DimRow[]>;
+    audioPlays: Section<Engagement>;
+    subscribeClicks: Section<Engagement>;
+    youtubeOpens: Section<Engagement>;
+  };
+}
+
+const pick = <T,>(s: Section<T> | undefined): { data?: T; error?: string } =>
+  !s ? {} : 'data' in s ? { data: s.data } : { error: s.error };
+const nf = (n: number) => n.toLocaleString();
+
+export default function AnalyticsPage() {
+  const [days, setDays] = useState(28);
+  const [payload, setPayload] = useState<Payload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(async (d: number) => {
+    setLoading(true);
+    setErr(null);
+    try {
+      const res = await fetch(`/api/admin/analytics?days=${d}`, { credentials: 'same-origin' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setPayload(await res.json());
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to load analytics');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(days); }, [days, load]);
+
+  const ga4 = payload?.ga4;
+  const snap = pick(ga4?.snapshot).data;
+  const series = pick(ga4?.timeseries).data?.points ?? [];
+  const maxPv = Math.max(1, ...series.map((p) => p.pageViews));
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-500 dark:text-gray-400">Last {days} days · GA4 + on-site view counts</p>
+        <div className="flex gap-1">
+          {[7, 28, 90].map((d) => (
+            <button
+              key={d}
+              onClick={() => setDays(d)}
+              className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${
+                d === days ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200'
+              }`}
+            >
+              {d}d
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading && <p className="text-gray-500">Loading…</p>}
+      {err && <Banner tone="error">{err}</Banner>}
+      {payload && !payload.ga4Configured && (
+        <Banner tone="warn">GA4 isn’t configured (GA4_PROPERTY_ID / GA4_SERVICE_ACCOUNT_KEY) — showing on-site view counts only.</Banner>
+      )}
+
+      {payload && (
+        <>
+          {/* Summary cards */}
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <Stat label="Users" value={snap ? nf(snap.totalUsers) : '—'} />
+            <Stat label="Sessions" value={snap ? nf(snap.sessions) : '—'} />
+            <Stat label="Page views" value={snap ? nf(snap.pageViews) : '—'} />
+            <Stat label="On-site content views" value={payload.contentViews ? nf(payload.contentViews.totalViews) : '—'} sub="first-party (all time)" />
+          </div>
+
+          {/* Traffic trend */}
+          {series.length > 0 && (
+            <Card title="Traffic trend (page views / day)">
+              <div className="flex h-28 items-end gap-[2px]">
+                {series.map((p) => (
+                  <div
+                    key={p.date}
+                    title={`${p.date}: ${p.pageViews} views · ${p.users} users`}
+                    className="flex-1 rounded-t bg-orange-500/80 hover:bg-orange-600"
+                    style={{ height: `${Math.max(2, (p.pageViews / maxPv) * 100)}%` }}
+                  />
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {/* Pages + sources */}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card title="Top pages" error={pick(ga4?.topPages).error}>
+              <Table rows={(pick(ga4?.topPages).data ?? []).map((r) => ({ k: r.path, sub: r.title, v: r.pageViews }))} unit="views" />
+            </Card>
+            <Card title="Traffic sources" error={pick(ga4?.sources).error}>
+              <Table rows={(pick(ga4?.sources).data ?? []).map((r) => ({ k: r.key, v: r.value }))} unit="sessions" />
+            </Card>
+          </div>
+
+          {/* Geo + devices */}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card title="Top countries" error={pick(ga4?.geo).error}>
+              <Table rows={(pick(ga4?.geo).data ?? []).map((r) => ({ k: r.key, v: r.value }))} unit="users" />
+            </Card>
+            <Card title="Devices" error={pick(ga4?.devices).error}>
+              <Table rows={(pick(ga4?.devices).data ?? []).map((r) => ({ k: r.key, v: r.value }))} unit="sessions" />
+            </Card>
+          </div>
+
+          {/* User activity */}
+          <div className="grid gap-4 lg:grid-cols-3">
+            <Card title="Top played songs" error={pick(ga4?.audioPlays).error}>
+              <Table rows={(pick(ga4?.audioPlays).data?.rows ?? []).map((r) => ({ k: r.label, v: r.eventCount }))} unit="plays" />
+            </Card>
+            <Card title={`Subscribe clicks (${pick(ga4?.subscribeClicks).data?.total ?? 0})`} error={pick(ga4?.subscribeClicks).error}>
+              <Table rows={(pick(ga4?.subscribeClicks).data?.rows ?? []).map((r) => ({ k: r.label, v: r.eventCount }))} unit="clicks" empty="No per-source breakdown yet." />
+            </Card>
+            <Card title="YouTube opens" error={pick(ga4?.youtubeOpens).error}>
+              <Table rows={(pick(ga4?.youtubeOpens).data?.rows ?? []).map((r) => ({ k: r.label, v: r.eventCount }))} unit="opens" />
+            </Card>
+          </div>
+
+          {/* First-party top-viewed content */}
+          {payload.contentViews && payload.contentViews.top.length > 0 && (
+            <Card title="Most-viewed content (on-site, all time)">
+              <Table rows={payload.contentViews.top.map((c) => ({ k: c.title, sub: c.path, v: c.viewCount }))} unit="views" />
+            </Card>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+      <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</p>
+      <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">{value}</p>
+      {sub && <p className="mt-0.5 text-xs text-gray-400">{sub}</p>}
+    </div>
+  );
+}
+
+function Card({ title, error, children }: { title: string; error?: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+      <h3 className="mb-3 text-sm font-semibold text-gray-900 dark:text-white">{title}</h3>
+      {error ? <p className="text-xs text-red-500">{error}</p> : children}
+    </div>
+  );
+}
+
+function Table({ rows, unit, empty }: { rows: { k: string; sub?: string; v: number }[]; unit: string; empty?: string }) {
+  if (!rows.length) return <p className="text-xs text-gray-400">{empty ?? 'No data yet.'}</p>;
+  const max = Math.max(1, ...rows.map((r) => r.v));
+  return (
+    <ul className="space-y-2">
+      {rows.map((r, i) => (
+        <li key={`${r.k}-${i}`}>
+          <div className="flex items-baseline justify-between gap-2 text-sm">
+            <span className="truncate font-tamil text-gray-700 dark:text-gray-200" title={r.sub || r.k}>{r.k || '(not set)'}</span>
+            <span className="shrink-0 tabular-nums text-gray-500 dark:text-gray-400">{r.v.toLocaleString()} {unit}</span>
+          </div>
+          <div className="mt-1 h-1 rounded bg-gray-100 dark:bg-gray-700">
+            <div className="h-1 rounded bg-orange-500/70" style={{ width: `${(r.v / max) * 100}%` }} />
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function Banner({ tone, children }: { tone: 'warn' | 'error'; children: React.ReactNode }) {
+  const cls = tone === 'error'
+    ? 'border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300'
+    : 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300';
+  return <div className={`rounded-lg border px-4 py-3 text-sm ${cls}`}>{children}</div>;
+}

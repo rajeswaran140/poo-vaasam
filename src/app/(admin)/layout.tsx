@@ -25,6 +25,7 @@ import {
   Menu,
   Kanban,
   Sparkles,
+  BarChart3,
 } from 'lucide-react';
 import { FEATURES } from '@/config/features';
 import { Toaster } from 'react-hot-toast';
@@ -48,6 +49,7 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   '/admin/compose': { title: 'Music Director', subtitle: 'Tamil lyrics → full production brief; save briefs as the durable source of truth' },
   '/admin/workflow': { title: 'Workflow', subtitle: 'Production pipeline — draft → published' },
   '/admin/youtube': { title: 'YouTube', subtitle: 'Channel stats and publishing gaps' },
+  '/admin/analytics': { title: 'Analytics', subtitle: 'Website traffic & user activity' },
   '/admin/media': { title: 'Media Library', subtitle: 'Manage uploaded media files' },
   '/admin/settings': { title: 'Settings', subtitle: 'Configure your platform settings' },
 };
@@ -157,6 +159,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             <NavLink href="/admin/compose" icon={Sparkles} collapsed={collapsed} active={pathname === '/admin/compose'}>Music Director</NavLink>
             <NavLink href="/admin/workflow" icon={Kanban} collapsed={collapsed} active={pathname === '/admin/workflow'}>Workflow</NavLink>
             <NavLink href="/admin/youtube" icon={PlaySquare} collapsed={collapsed} active={pathname === '/admin/youtube'}>YouTube</NavLink>
+            <NavLink href="/admin/analytics" icon={BarChart3} collapsed={collapsed} active={pathname === '/admin/analytics'}>Analytics</NavLink>
 
             {FEATURES.ADMIN.MEDIA_LIBRARY && (
               <NavLink href="/admin/media" icon={Image} collapsed={collapsed} active={pathname === '/admin/media'}>Media Library</NavLink>

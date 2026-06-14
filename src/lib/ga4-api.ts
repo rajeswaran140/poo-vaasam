@@ -278,3 +278,149 @@ export async function fetchTrafficSnapshot(daysBack = 28): Promise<Result<Traffi
     return { ok: false, error };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Website-analytics reports (powers /admin/analytics). The map* helpers are
+// pure (no client) so they're unit-testable against sample GA4 payloads.
+// ---------------------------------------------------------------------------
+
+export interface TrafficDayPoint {
+  /** ISO date, YYYY-MM-DD. */
+  date: string;
+  users: number;
+  sessions: number;
+  pageViews: number;
+}
+export interface TrafficTimeseries {
+  points: TrafficDayPoint[];
+  daysBack: number;
+}
+
+/** Pure: GA4 `date`-dimension rows → typed daily points, oldest-first. */
+export function mapTimeseriesRows(rows: any[]): TrafficDayPoint[] {
+  return (rows ?? [])
+    .map((row: any) => {
+      const raw = String(row.dimensionValues?.[0]?.value ?? '');
+      const date = /^\d{8}$/.test(raw) ? `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}` : raw;
+      const m = row.metricValues ?? [];
+      return {
+        date,
+        users: Number(m[0]?.value ?? 0),
+        sessions: Number(m[1]?.value ?? 0),
+        pageViews: Number(m[2]?.value ?? 0),
+      };
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Daily users/sessions/pageViews over the window — for the traffic trend chart. */
+export async function fetchTrafficTimeseries(daysBack = 28): Promise<Result<TrafficTimeseries>> {
+  const client = getClient();
+  const property = propertyPath();
+  if (!client || !property) return { ok: false, error: 'GA4 client not initialised' };
+  try {
+    const [res] = await client.runReport({
+      property,
+      dateRanges: [{ startDate: `${daysBack}daysAgo`, endDate: 'today' }],
+      dimensions: [{ name: 'date' }],
+      metrics: [{ name: 'totalUsers' }, { name: 'sessions' }, { name: 'screenPageViews' }],
+      orderBys: [{ dimension: { dimensionName: 'date' } }],
+      limit: 400,
+    } as any);
+    return { ok: true, data: { points: mapTimeseriesRows(res.rows ?? []), daysBack } };
+  } catch (err) {
+    const error = errMessage(err);
+    console.error('[ga4-api] traffic timeseries failed:', error);
+    return { ok: false, error };
+  }
+}
+
+export interface PageRow {
+  path: string;
+  title: string;
+  pageViews: number;
+}
+
+/** Pure: GA4 pagePath/pageTitle rows → typed page rows. */
+export function mapPageRows(rows: any[]): PageRow[] {
+  return (rows ?? []).map((row: any) => ({
+    path: row.dimensionValues?.[0]?.value || '(not set)',
+    title: row.dimensionValues?.[1]?.value || '',
+    pageViews: Number(row.metricValues?.[0]?.value ?? 0),
+  }));
+}
+
+/** Most-viewed pages over the window. */
+export async function fetchTopPages(daysBack = 28, limit = 15): Promise<Result<PageRow[]>> {
+  const client = getClient();
+  const property = propertyPath();
+  if (!client || !property) return { ok: false, error: 'GA4 client not initialised' };
+  try {
+    const [res] = await client.runReport({
+      property,
+      dateRanges: [{ startDate: `${daysBack}daysAgo`, endDate: 'today' }],
+      dimensions: [{ name: 'pagePath' }, { name: 'pageTitle' }],
+      metrics: [{ name: 'screenPageViews' }],
+      orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }],
+      limit,
+    } as any);
+    return { ok: true, data: mapPageRows(res.rows ?? []) };
+  } catch (err) {
+    const error = errMessage(err);
+    console.error('[ga4-api] top pages failed:', error);
+    return { ok: false, error };
+  }
+}
+
+export interface DimRow {
+  key: string;
+  value: number;
+}
+
+/** Pure: single-dimension/single-metric GA4 rows → {key,value}[]. */
+export function mapDimRows(rows: any[]): DimRow[] {
+  return (rows ?? []).map((row: any) => ({
+    key: row.dimensionValues?.[0]?.value || '(not set)',
+    value: Number(row.metricValues?.[0]?.value ?? 0),
+  }));
+}
+
+/** Generic single-dimension breakdown, ordered by the metric desc. */
+export async function fetchByDimension(
+  dimension: string,
+  metric: string,
+  daysBack = 28,
+  limit = 20
+): Promise<Result<DimRow[]>> {
+  const client = getClient();
+  const property = propertyPath();
+  if (!client || !property) return { ok: false, error: 'GA4 client not initialised' };
+  try {
+    const [res] = await client.runReport({
+      property,
+      dateRanges: [{ startDate: `${daysBack}daysAgo`, endDate: 'today' }],
+      dimensions: [{ name: dimension }],
+      metrics: [{ name: metric }],
+      orderBys: [{ metric: { metricName: metric }, desc: true }],
+      limit,
+    } as any);
+    return { ok: true, data: mapDimRows(res.rows ?? []) };
+  } catch (err) {
+    const error = errMessage(err);
+    console.error(`[ga4-api] ${dimension} breakdown failed:`, error);
+    return { ok: false, error };
+  }
+}
+
+/** Sessions by acquisition channel (Organic Search / Direct / Referral / Social…). */
+export function fetchTrafficSources(daysBack = 28): Promise<Result<DimRow[]>> {
+  return fetchByDimension('sessionDefaultChannelGroup', 'sessions', daysBack, 20);
+}
+/** Users by country. */
+export function fetchGeo(daysBack = 28, limit = 15): Promise<Result<DimRow[]>> {
+  return fetchByDimension('country', 'totalUsers', daysBack, limit);
+}
+/** Sessions by device category (mobile / desktop / tablet). */
+export function fetchDevices(daysBack = 28): Promise<Result<DimRow[]>> {
+  return fetchByDimension('deviceCategory', 'sessions', daysBack, 6);
+}
