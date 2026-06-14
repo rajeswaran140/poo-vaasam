@@ -245,3 +245,35 @@ describe('sort toolbar', () => {
     expect(rowTitles()).toEqual(['Cherry', 'Apple', 'Mango', 'Date', 'Zebra', 'Banana']);
   });
 });
+
+describe('SongsPlaylist — Tamil search', () => {
+  const many: Track[] = [
+    { id: '1', title: 'அந்தி மேகமே', artist: 'இராஜ்', src: '1.mp3', duration: 60 },
+    { id: '2', title: 'எங்கள் தேசம்', artist: 'இராஜ்', src: '2.mp3', duration: 60 },
+    { id: '3', title: 'காதல் மழை', artist: 'இராஜ்', src: '3.mp3', duration: 60 },
+    { id: '4', title: 'Tamil Melody', artist: 'Raj', src: '4.mp3', duration: 60 },
+    { id: '5', title: 'அம்மா', artist: 'இராஜ்', src: '5.mp3', duration: 60 },
+    { id: '6', title: 'நிலா', artist: 'இராஜ்', src: '6.mp3', duration: 60 },
+  ];
+
+  it('shows the search box once the toolbar threshold is reached', () => {
+    renderList(many);
+    expect(screen.getByLabelText('பாடல்களைத் தேடு')).toBeInTheDocument();
+  });
+
+  it('filters by typed Tamil (title match)', () => {
+    renderList(many);
+    fireEvent.change(screen.getByLabelText('பாடல்களைத் தேடு'), { target: { value: 'எங்கள்' } });
+    expect(screen.getByText('எங்கள் தேசம்')).toBeInTheDocument();
+    expect(screen.queryByText('அந்தி மேகமே')).not.toBeInTheDocument();
+  });
+
+  it('matches the romanised artist and shows a no-results message when nothing matches', () => {
+    renderList(many);
+    const box = screen.getByLabelText('பாடல்களைத் தேடு');
+    fireEvent.change(box, { target: { value: 'raj' } }); // artist "Raj"
+    expect(screen.getByText('Tamil Melody')).toBeInTheDocument();
+    fireEvent.change(box, { target: { value: 'zzznomatch' } });
+    expect(screen.getByText(/தேடலுக்குப் பொருந்தும்/)).toBeInTheDocument();
+  });
+});

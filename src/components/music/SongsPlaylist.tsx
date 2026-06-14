@@ -14,6 +14,7 @@ import { useMusicPlayer } from './MusicPlayerProvider';
 import { SongList, type SongRow } from './SongList';
 import { SONG_THEMES, SONG_THEME_LABELS, type SongTheme } from '@/config/song-themes';
 import { SubscribeButton } from '@/components/SubscribeButton';
+import { matchesSearch } from '@/lib/search-match';
 
 export type { SongRow } from './SongList';
 
@@ -60,6 +61,7 @@ export function SongsPlaylist({ tracks }: { tracks: SongRow[] }) {
 
   const [sort, setSort] = useState<SortMode>('newest');
   const [themeFilter, setThemeFilter] = useState<ThemeFilter>('all');
+  const [query, setQuery] = useState('');
 
   // Count songs per theme; chips show counts so listeners know what's there.
   const themeCounts = useMemo(() => {
@@ -76,10 +78,13 @@ export function SongsPlaylist({ tracks }: { tracks: SongRow[] }) {
   // Show the chip row only when there are at least two themes worth choosing between.
   const showThemeChips = availableThemes.length >= 2;
 
-  const filtered = useMemo(
-    () => (themeFilter === 'all' ? tracks : tracks.filter((t) => t.theme === themeFilter)),
-    [tracks, themeFilter]
-  );
+  const filtered = useMemo(() => {
+    const byTheme = themeFilter === 'all' ? tracks : tracks.filter((t) => t.theme === themeFilter);
+    if (!query.trim()) return byTheme;
+    // Tamil-robust (NFC) substring match on title + artist — typed Tamil finds
+    // Tamil regardless of normalization form.
+    return byTheme.filter((t) => matchesSearch(t.title ?? '', query) || matchesSearch(t.artist ?? '', query));
+  }, [tracks, themeFilter, query]);
   const displayed = useMemo(() => sortRows(filtered, sort), [filtered, sort]);
 
   // Hero metadata reflects the whole playlist (stable identity), not the filter.
@@ -240,7 +245,15 @@ export function SongsPlaylist({ tracks }: { tracks: SongRow[] }) {
             )}
 
             {showToolbar && (
-              <div className="mx-auto mb-4 flex max-w-3xl items-center justify-end px-3 sm:px-4">
+              <div className="mx-auto mb-4 flex max-w-3xl flex-col gap-2 px-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-4">
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="பாடல்களைத் தேடு…"
+                  aria-label="பாடல்களைத் தேடு"
+                  className="w-full rounded-full border border-white/10 bg-white/5 px-4 py-2 font-tamil text-sm text-white placeholder-gray-500 focus:border-orange-400/60 focus:outline-none focus:ring-1 focus:ring-orange-400/40 sm:max-w-xs"
+                />
                 <label className="flex items-center gap-2 font-tamil text-sm text-gray-400">
                   <span>வரிசைப்படுத்து:</span>
                   <select
@@ -261,7 +274,7 @@ export function SongsPlaylist({ tracks }: { tracks: SongRow[] }) {
 
             {displayed.length === 0 ? (
               <p className="mx-auto max-w-3xl px-3 py-8 text-center font-tamil text-gray-400 sm:px-4">
-                இந்தப் பகுப்பில் பாடல்கள் இல்லை.
+                {query.trim() ? 'தேடலுக்குப் பொருந்தும் பாடல்கள் இல்லை.' : 'இந்தப் பகுப்பில் பாடல்கள் இல்லை.'}
               </p>
             ) : (
               <SongList rows={displayed} />
