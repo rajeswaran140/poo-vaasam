@@ -22,10 +22,15 @@ function excerpt(text: string, max = 140): string {
   return cleaned.slice(0, max - 1).trimEnd() + '…';
 }
 
-export function VideoGallery({ videos }: { videos: ChannelVideo[] }) {
+export function VideoGallery({ videos, initialCount = 9 }: { videos: ChannelVideo[]; initialCount?: number }) {
   const [activeId, setActiveId] = useState<string | null>(null);
+  // Only the first `initialCount` cards render initially — this is what the
+  // server prerenders, so it bounds the SSR HTML (the page's main weight). The
+  // rest reveal instantly from props (already passed) on "Load more"; no fetch.
+  const [limit, setLimit] = useState(initialCount);
   const embedRef = useRef<HTMLDivElement>(null);
   const activeTitle = videos.find((v) => v.id === activeId)?.title ?? '';
+  const visible = videos.slice(0, limit);
 
   // Swapping a card's play button for the inline embed removes the focused
   // button from the DOM. Move focus to the embed wrapper so keyboard / screen-
@@ -57,7 +62,7 @@ export function VideoGallery({ videos }: { videos: ChannelVideo[] }) {
       {/* Announce the now-playing video to assistive tech. */}
       <div aria-live="polite" className="sr-only">{activeTitle ? `Now playing: ${activeTitle}` : ''}</div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-      {videos.map((video) => (
+      {visible.map((video) => (
         <div
           key={video.id}
           className="rounded-xl overflow-hidden bg-gray-800 border border-gray-700 shadow-sm flex flex-col"
@@ -112,6 +117,17 @@ export function VideoGallery({ videos }: { videos: ChannelVideo[] }) {
         </div>
       ))}
       </div>
+      {videos.length > limit && (
+        <div className="mt-8 text-center">
+          <button
+            type="button"
+            onClick={() => setLimit(videos.length)}
+            className="inline-flex items-center gap-2 rounded-full border border-gray-700 px-6 py-3 font-tamil text-sm text-gray-200 transition-colors hover:border-orange-500/50 hover:text-orange-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/60"
+          >
+            மேலும் காண்க ({videos.length - limit})
+          </button>
+        </div>
+      )}
     </>
   );
 }

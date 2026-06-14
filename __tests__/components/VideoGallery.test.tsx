@@ -100,3 +100,31 @@ describe('VideoGallery — populated state', () => {
     expect(screen.getByLabelText(/Watch அந்தி மேகமே on YouTube/)).toHaveClass('min-h-[44px]');
   });
 });
+
+describe('VideoGallery — pagination ("Load more")', () => {
+  const three = () => [
+    videoFactory({ id: 'aaaaaaaaaaa', title: 'One' }),
+    videoFactory({ id: 'bbbbbbbbbbb', title: 'Two' }),
+    videoFactory({ id: 'ccccccccccc', title: 'Three' }),
+  ];
+
+  it('renders only initialCount cards, with a "Load more (N)" button', () => {
+    render(<VideoGallery videos={three()} initialCount={2} />);
+    expect(screen.getByText('One')).toBeInTheDocument();
+    expect(screen.getByText('Two')).toBeInTheDocument();
+    expect(screen.queryByText('Three')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /மேலும் காண்க \(1\)/ })).toBeInTheDocument();
+  });
+
+  it('reveals the remaining cards on click, then hides the button', () => {
+    render(<VideoGallery videos={three()} initialCount={2} />);
+    fireEvent.click(screen.getByRole('button', { name: /மேலும் காண்க/ }));
+    expect(screen.getByText('Three')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /மேலும் காண்க/ })).not.toBeInTheDocument();
+  });
+
+  it('shows no "Load more" button when the videos fit within initialCount', () => {
+    render(<VideoGallery videos={[videoFactory({ title: 'Only' })]} initialCount={9} />);
+    expect(screen.queryByRole('button', { name: /மேலும் காண்க/ })).not.toBeInTheDocument();
+  });
+});
