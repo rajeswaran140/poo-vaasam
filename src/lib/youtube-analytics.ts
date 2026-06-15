@@ -16,6 +16,8 @@
  * admin dashboard can render a clear "not configured yet" banner.
  */
 
+import { fetchWithRetry } from '@/lib/fetch-retry';
+
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string };
 
 export interface VideoAnalyticsRow {
@@ -60,7 +62,7 @@ async function getAccessToken(): Promise<string | null> {
   if (!id || !secret || !refresh) return null;
 
   try {
-    const res = await fetch('https://oauth2.googleapis.com/token', {
+    const res = await fetchWithRetry('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -106,7 +108,7 @@ async function runReport(params: Record<string, string>): Promise<AnalyticsRespo
   const url = new URL('https://youtubeanalytics.googleapis.com/v2/reports');
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   try {
-    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetchWithRetry(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) {
       // 401 means token's been revoked or scopes changed — bust the cache so
       // the next call tries a fresh refresh.

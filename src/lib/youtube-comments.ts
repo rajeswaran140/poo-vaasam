@@ -11,6 +11,8 @@
  * pinned/promo comment) that the owner hasn't replied to in-thread.
  */
 
+import { fetchWithRetry } from '@/lib/fetch-retry';
+
 const COMMENTS_ENDPOINT = 'https://www.googleapis.com/youtube/v3/commentThreads';
 
 export interface CommentItem {
@@ -107,7 +109,7 @@ export async function fetchChannelComments(channelId: string, max = 50): Promise
     url.searchParams.set('order', 'time');
     url.searchParams.set('key', key);
     if (pageToken) url.searchParams.set('pageToken', pageToken);
-    const res = await fetch(url.toString(), { next: { revalidate: 300 } });
+    const res = await fetchWithRetry(url.toString(), { next: { revalidate: 300 } } as RequestInit);
     if (!res.ok) break;
     const json = (await res.json()) as { items?: unknown[]; nextPageToken?: string };
     raw.push(...(json.items ?? []));

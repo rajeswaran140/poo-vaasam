@@ -15,6 +15,8 @@
  * configured" instead of breaking.
  */
 
+import { fetchWithRetry } from '@/lib/fetch-retry';
+
 const REVALIDATE_SECONDS = 3600; // 1 hour
 
 export interface ChannelStats {
@@ -69,9 +71,9 @@ async function ytFetch<T>(url: string): Promise<T | null> {
   if (!key) return null;
   const sep = url.includes('?') ? '&' : '?';
   try {
-    const res = await fetch(`${url}${sep}key=${key}`, {
+    const res = await fetchWithRetry(`${url}${sep}key=${key}`, {
       next: { revalidate: REVALIDATE_SECONDS },
-    });
+    } as RequestInit);
     if (!res.ok) {
       console.error(`[youtube-api] ${res.status} ${url}`);
       return null;
