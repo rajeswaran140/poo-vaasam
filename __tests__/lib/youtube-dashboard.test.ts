@@ -6,6 +6,7 @@ import {
   sortVideoRows,
   filterVideoRows,
   paginate,
+  videoKind,
   videoRowsToCsv,
   type VideoRow,
 } from '@/lib/youtube-dashboard';
@@ -132,6 +133,39 @@ describe('filterVideoRows', () => {
     expect(filterVideoRows(rows, { query: '   ' })).toHaveLength(3);
     expect(filterVideoRows(rows, {})).toHaveLength(3);
   });
+
+  it('filters by Short/Video kind', () => {
+    const mixed = [
+      row({ id: 'long', durationSeconds: 300 }),
+      row({ id: 'short', durationSeconds: 45 }),
+      row({ id: 'edge', durationSeconds: 180 }), // exactly the ceiling = Short
+    ];
+    expect(filterVideoRows(mixed, { kind: 'short' }).map((r) => r.id)).toEqual(['short', 'edge']);
+    expect(filterVideoRows(mixed, { kind: 'video' }).map((r) => r.id)).toEqual(['long']);
+    expect(filterVideoRows(mixed, { kind: 'all' })).toHaveLength(3);
+  });
+
+  it('combines query AND kind', () => {
+    const mixed = [
+      row({ id: 'a', title: 'Love Short', durationSeconds: 40 }),
+      row({ id: 'b', title: 'Love Song', durationSeconds: 300 }),
+      row({ id: 'c', title: 'Other Short', durationSeconds: 40 }),
+    ];
+    expect(filterVideoRows(mixed, { query: 'love', kind: 'short' }).map((r) => r.id)).toEqual(['a']);
+  });
+});
+
+describe('videoKind', () => {
+  it('classifies ≤180s as short, >180s as video', () => {
+    expect(videoKind(45)).toBe('short');
+    expect(videoKind(180)).toBe('short');
+    expect(videoKind(181)).toBe('video');
+    expect(videoKind(300)).toBe('video');
+  });
+  it('treats unknown/zero duration as a regular video (never mislabels)', () => {
+    expect(videoKind(0)).toBe('video');
+    expect(videoKind(-1)).toBe('video');
+  });
 });
 
 describe('paginate', () => {
@@ -163,10 +197,21 @@ describe('videoRowsToCsv', () => {
     const csv = videoRowsToCsv([row({ id: 'a', title: 'Hello', viewCount: 10, realViews: 8 })]);
     const lines = csv.split('\n');
     expect(lines[0]).toContain('Title');
+    expect(lines[0]).toContain('Type');
     expect(lines[0]).toContain('Real views');
     expect(lines).toHaveLength(2);
     expect(lines[1]).toContain('Hello');
     expect(lines[1]).toContain('8');
+  });
+
+  it('labels each row Short/Video in the Type column', () => {
+    const csv = videoRowsToCsv([
+      row({ id: 's', title: 'Clip', durationSeconds: 30 }),
+      row({ id: 'v', title: 'Song', durationSeconds: 300 }),
+    ]);
+    const [, shortLine, videoLine] = csv.split('\n');
+    expect(shortLine).toContain('Short');
+    expect(videoLine).toContain('Video');
   });
   it('escapes commas, quotes and newlines; nulls become empty', () => {
     const csv = videoRowsToCsv([row({ id: 'x', title: 'a, "b"\nc', realViews: null })]);

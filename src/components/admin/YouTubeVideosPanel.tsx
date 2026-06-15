@@ -22,9 +22,11 @@ import {
   filterVideoRows,
   paginate,
   sortVideoRows,
+  videoKind,
   videoRowsToCsv,
   type SortDir,
   type SortKey,
+  type VideoKind,
   type VideoRow,
 } from '@/lib/youtube-dashboard';
 
@@ -69,6 +71,7 @@ export function YouTubeVideosPanel({
   const [rangeError, setRangeError] = useState<string | null>(null);
 
   const [query, setQuery] = useState('');
+  const [kind, setKind] = useState<VideoKind | 'all'>('all');
   const [sortKey, setSortKey] = useState<SortKey>('publishedAt');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [page, setPage] = useState(1);
@@ -80,7 +83,15 @@ export function YouTubeVideosPanel({
   );
 
   // filter -> sort -> paginate (all pure, all tested)
-  const filtered = useMemo(() => filterVideoRows(rows, { query }), [rows, query]);
+  const filtered = useMemo(() => filterVideoRows(rows, { query, kind }), [rows, query, kind]);
+  // Counts for the Videos/Shorts toggle reflect the current text search but not
+  // the kind filter itself, so each chip shows how many of each would match.
+  const kindCounts = useMemo(() => {
+    const byQuery = filterVideoRows(rows, { query });
+    let short = 0;
+    for (const r of byQuery) if (videoKind(r.durationSeconds) === 'short') short++;
+    return { all: byQuery.length, short, video: byQuery.length - short };
+  }, [rows, query]);
   const sorted = useMemo(() => sortVideoRows(filtered, sortKey, sortDir), [filtered, sortKey, sortDir]);
   const pageData = useMemo(() => paginate(sorted, page, pageSize), [sorted, page, pageSize]);
 
@@ -168,6 +179,26 @@ export function YouTubeVideosPanel({
           />
         </label>
 
+        {/* Short vs regular-video filter — the analytics mixed both with no way
+            to tell them apart. */}
+        <div role="group" aria-label="Filter by type" className="inline-flex overflow-hidden rounded-lg border border-gray-300 dark:border-gray-700 text-sm">
+          {([['all', 'All'], ['video', 'Videos'], ['short', 'Shorts']] as const).map(([val, label], i) => (
+            <button
+              key={val}
+              type="button"
+              onClick={() => { setKind(val); setPage(1); }}
+              aria-pressed={kind === val}
+              className={`px-3 py-1.5 ${i > 0 ? 'border-l border-gray-300 dark:border-gray-700' : ''} ${
+                kind === val
+                  ? 'bg-orange-600 text-white'
+                  : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800'
+              }`}
+            >
+              {label} <span className="tabular-nums opacity-70">({kindCounts[val]})</span>
+            </button>
+          ))}
+        </div>
+
         {ytaConfigured && (
           <label className="ml-auto flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
             Range
@@ -241,6 +272,7 @@ export function YouTubeVideosPanel({
                     >
                       {v.title}
                     </a>
+                    <KindBadge kind={videoKind(v.durationSeconds)} />
                   </td>
                   <td className="px-4 py-3 text-right text-xs text-gray-500 dark:text-gray-400">
                     {v.publishedAt ? new Date(v.publishedAt).toLocaleDateString() : '—'}
@@ -292,6 +324,21 @@ export function YouTubeVideosPanel({
         </nav>
       </div>
     </section>
+  );
+}
+
+function KindBadge({ kind }: { kind: VideoKind }) {
+  const isShort = kind === 'short';
+  return (
+    <span
+      className={`mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+        isShort
+          ? 'bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300'
+          : 'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300'
+      }`}
+    >
+      {isShort ? 'Short' : 'Video'}
+    </span>
   );
 }
 

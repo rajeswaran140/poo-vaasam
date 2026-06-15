@@ -78,6 +78,33 @@ describe('YouTubeVideosPanel', () => {
     expect(screen.getByText('1–3 of 3')).toBeInTheDocument();
   });
 
+  it('badges Shorts vs videos and filters by type with live counts', () => {
+    const mixed = [
+      mkRow({ id: 's1', title: 'Clip One', durationSeconds: 40 }),
+      mkRow({ id: 's2', title: 'Clip Two', durationSeconds: 50 }),
+      mkRow({ id: 'v1', title: 'Full Song', durationSeconds: 300 }),
+    ];
+    render(<YouTubeVideosPanel initialRows={mixed} ytaConfigured={false} />);
+
+    // Toggle chips carry the per-kind counts.
+    expect(screen.getByRole('button', { name: /All \(3\)/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Videos \(1\)/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Shorts \(2\)/ })).toBeInTheDocument();
+
+    // Every Short row is badged.
+    expect(screen.getAllByText('Short')).toHaveLength(2);
+
+    // Filter to Shorts → only the two clips.
+    fireEvent.click(screen.getByRole('button', { name: /Shorts \(2\)/ }));
+    expect(screen.getByText('1–2 of 2')).toBeInTheDocument();
+    expect(screen.queryByText('Full Song')).not.toBeInTheDocument();
+
+    // Filter to Videos → only the long song.
+    fireEvent.click(screen.getByRole('button', { name: /Videos \(1\)/ }));
+    expect(screen.getByText('Full Song')).toBeInTheDocument();
+    expect(screen.queryByText('Clip One')).not.toBeInTheDocument();
+  });
+
   it('hides owner-analytics columns when Analytics is not configured', () => {
     render(<YouTubeVideosPanel initialRows={manyRows} ytaConfigured={false} />);
     expect(screen.queryByRole('button', { name: /Real views/ })).not.toBeInTheDocument();

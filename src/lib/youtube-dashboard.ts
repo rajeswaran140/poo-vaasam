@@ -16,6 +16,15 @@
 
 import type { VideoStats } from '@/lib/youtube-api';
 import type { VideoAnalyticsRow } from '@/lib/youtube-analytics';
+import { SHORTS_MAX_DURATION_SECONDS } from '@/lib/youtube-shorts';
+
+/** Short vs regular-video classification by duration (the same ≤180s rule the
+ *  public /videos shelf uses). Unknown/zero duration defaults to 'video' so a
+ *  long upload missing its duration is never mislabelled a Short. */
+export type VideoKind = 'short' | 'video';
+export function videoKind(durationSeconds: number): VideoKind {
+  return durationSeconds > 0 && durationSeconds <= SHORTS_MAX_DURATION_SECONDS ? 'short' : 'video';
+}
 
 export interface VideoRow {
   id: string;
@@ -135,11 +144,19 @@ export function sortVideoRows(rows: VideoRow[], key: SortKey, dir: SortDir): Vid
   });
 }
 
-/** Filter by a free-text title query. */
-export function filterVideoRows(rows: VideoRow[], opts: { query?: string }): VideoRow[] {
+/** Filter by a free-text title query and/or Short/Video kind. */
+export function filterVideoRows(
+  rows: VideoRow[],
+  opts: { query?: string; kind?: VideoKind | 'all' }
+): VideoRow[] {
   const q = (opts.query ?? '').trim().toLowerCase();
-  if (!q) return [...rows];
-  return rows.filter((r) => r.title.toLowerCase().includes(q));
+  const kind = opts.kind ?? 'all';
+  if (!q && kind === 'all') return [...rows];
+  return rows.filter((r) => {
+    if (q && !r.title.toLowerCase().includes(q)) return false;
+    if (kind !== 'all' && videoKind(r.durationSeconds) !== kind) return false;
+    return true;
+  });
 }
 
 export interface Page<T> {
@@ -162,6 +179,7 @@ export function paginate<T>(items: T[], page: number, pageSize: number): Page<T>
 
 const CSV_COLUMNS: Array<{ header: string; get: (r: VideoRow) => string | number | null }> = [
   { header: 'Title', get: (r) => r.title },
+  { header: 'Type', get: (r) => (videoKind(r.durationSeconds) === 'short' ? 'Short' : 'Video') },
   { header: 'Published', get: (r) => (r.publishedAt ? r.publishedAt.slice(0, 10) : '') },
   { header: 'Views (public)', get: (r) => r.viewCount },
   { header: 'Real views', get: (r) => r.realViews },
