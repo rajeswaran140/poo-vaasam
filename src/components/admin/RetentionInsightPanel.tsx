@@ -11,6 +11,7 @@
 
 import { useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
+import { videoKind } from '@/lib/youtube-dashboard';
 import type { RetentionSummary, RetentionVerdict, RetentionPoint } from '@/lib/youtube-retention';
 
 interface RetentionResult {
@@ -83,6 +84,7 @@ export function RetentionInsightPanel({
   }
 
   const v = VERDICT_STYLE[result?.verdict ?? 'unknown'];
+  const selectedIsShort = videoKind(videos.find((vid) => vid.id === videoId)?.durationSeconds ?? 0) === 'short';
 
   return (
     <section aria-labelledby="retention-heading" className="space-y-3">
@@ -103,7 +105,9 @@ export function RetentionInsightPanel({
             className="max-w-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1.5 text-sm text-gray-900 dark:text-gray-100"
           >
             {videos.map((vid) => (
-              <option key={vid.id} value={vid.id}>{vid.title}</option>
+              <option key={vid.id} value={vid.id}>
+                {vid.title}{videoKind(vid.durationSeconds) === 'short' ? ' · Short' : ''}
+              </option>
             ))}
           </select>
         </label>
@@ -116,6 +120,12 @@ export function RetentionInsightPanel({
           {loading ? 'Analysing…' : 'Analyse retention'}
         </button>
       </div>
+
+      {selectedIsShort && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+          This is a <strong>Short</strong> — the hook verdict is tuned for long-form (Shorts naturally hold most of their audience), so treat it as informational. The benchmark is always your best long-form video.
+        </p>
+      )}
 
       {error && (
         <p role="alert" className="rounded-lg border border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-900/20 px-3 py-2 text-xs text-red-800 dark:text-red-200">

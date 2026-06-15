@@ -70,6 +70,21 @@ it('renders the new-upload empty state when hasData is false', async () => {
   expect(screen.getByText(/needs ~1–3 days/i)).toBeInTheDocument();
 });
 
+it('labels Shorts in the picker and warns when a Short is selected', () => {
+  const withShort = [
+    { id: 'vS', title: 'Clip', durationSeconds: 45 },
+    { id: 'vL', title: 'Long Song', durationSeconds: 300 },
+  ];
+  render(<RetentionInsightPanel videos={withShort} ytaConfigured />);
+  // The Short option is labelled.
+  expect(screen.getByRole('option', { name: /Clip · Short/ })).toBeInTheDocument();
+  // Default selection is the first (the Short) → the long-form caveat shows.
+  expect(screen.getByText(/the hook verdict is tuned for long-form/i)).toBeInTheDocument();
+  // Switching to the long video hides the caveat.
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'vL' } });
+  expect(screen.queryByText(/tuned for long-form/i)).not.toBeInTheDocument();
+});
+
 it('surfaces an error when the request fails', async () => {
   adminFetchMock.mockResolvedValue({
     ok: false,

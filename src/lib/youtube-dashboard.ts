@@ -159,6 +159,25 @@ export function filterVideoRows(
   });
 }
 
+/**
+ * The retention benchmark = the best-retention REGULAR video (Shorts excluded).
+ *
+ * Shorts hold far more of their audience simply by being short, so letting one
+ * win the benchmark slot makes every long-form song's hook look "weak" against
+ * an unbeatable ~90%+ Short — and the hook / "first 15s is the lever" coaching
+ * is a long-form concept anyway. Returns null when no regular video has measured
+ * retention yet, in which case the caller falls back to absolute thresholds.
+ */
+export function pickRetentionBenchmark(rows: VideoRow[]): VideoRow | null {
+  let best: VideoRow | null = null;
+  for (const r of rows) {
+    if (r.retentionPct == null) continue;
+    if (videoKind(r.durationSeconds) !== 'video') continue;
+    if (!best || r.retentionPct > (best.retentionPct ?? 0)) best = r;
+  }
+  return best;
+}
+
 export interface Page<T> {
   items: T[];
   page: number; // 1-based, clamped to [1, totalPages]

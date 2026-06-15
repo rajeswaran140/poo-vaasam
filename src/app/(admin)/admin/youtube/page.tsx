@@ -37,7 +37,7 @@ import { YtRecsRepository } from '@/infrastructure/database/YtRecsRepository';
 import { RefreshRecsButton } from '@/components/admin/RefreshRecsButton';
 import { YouTubeVideosPanel } from '@/components/admin/YouTubeVideosPanel';
 import { RetentionInsightPanel } from '@/components/admin/RetentionInsightPanel';
-import { mergeVideoRows } from '@/lib/youtube-dashboard';
+import { mergeVideoRows, pickRetentionBenchmark } from '@/lib/youtube-dashboard';
 
 const ANALYTICS_DAYS = 28;
 
@@ -122,12 +122,11 @@ export default async function YouTubeAdminPage() {
   // counts + owner Analytics metrics, merged once on the server. The panel
   // re-queries Analytics client-side when the date range changes.
   const videoRows = mergeVideoRows(videos, ytaVideos);
-  // Benchmark for retention comparison = the video with the highest measured
-  // retention (no hardcoded ID). The Retention panel compares each video's
-  // first-10% hold against this template's.
-  const benchmarkRow = videoRows
-    .filter((r) => r.retentionPct != null)
-    .sort((a, b) => (b.retentionPct ?? 0) - (a.retentionPct ?? 0))[0];
+  // Benchmark for retention comparison = the best-retention REGULAR video
+  // (Shorts excluded — they hold ~90%+ by virtue of being short and would make
+  // every long-form hook look weak). Falls back to absolute thresholds when no
+  // regular video has retention data yet.
+  const benchmarkRow = pickRetentionBenchmark(videoRows);
   const retentionVideos = videoRows.map((r) => ({ id: r.id, title: r.title, durationSeconds: r.durationSeconds }));
   const ytaError = ytaChannelRes && !ytaChannelRes.ok ? ytaChannelRes.error : null;
   const titlesByVideoId = Object.fromEntries(videos.map((v) => [v.id, v.title]));

@@ -7,6 +7,7 @@ import {
   filterVideoRows,
   paginate,
   videoKind,
+  pickRetentionBenchmark,
   videoRowsToCsv,
   type VideoRow,
 } from '@/lib/youtube-dashboard';
@@ -152,6 +153,26 @@ describe('filterVideoRows', () => {
       row({ id: 'c', title: 'Other Short', durationSeconds: 40 }),
     ];
     expect(filterVideoRows(mixed, { query: 'love', kind: 'short' }).map((r) => r.id)).toEqual(['a']);
+  });
+});
+
+describe('pickRetentionBenchmark', () => {
+  it('picks the best-retention REGULAR video and ignores higher-retention Shorts', () => {
+    const rows = [
+      row({ id: 'shortHi', durationSeconds: 40, retentionPct: 95 }), // Short, highest of all
+      row({ id: 'vidA', durationSeconds: 300, retentionPct: 30 }),
+      row({ id: 'vidB', durationSeconds: 300, retentionPct: 55 }),   // best regular video
+      row({ id: 'noData', durationSeconds: 300, retentionPct: null }),
+    ];
+    expect(pickRetentionBenchmark(rows)?.id).toBe('vidB');
+  });
+
+  it('returns null when no regular video has retention data yet', () => {
+    const rows = [
+      row({ id: 's', durationSeconds: 30, retentionPct: 90 }),    // Short only
+      row({ id: 'v', durationSeconds: 300, retentionPct: null }), // regular, no data
+    ];
+    expect(pickRetentionBenchmark(rows)).toBeNull();
   });
 });
 
