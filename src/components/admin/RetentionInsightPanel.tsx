@@ -10,6 +10,7 @@
  */
 
 import { useState } from 'react';
+import { adminFetch } from '@/lib/client-auth';
 import type { RetentionSummary, RetentionVerdict, RetentionPoint } from '@/lib/youtube-retention';
 
 interface RetentionResult {
@@ -56,7 +57,10 @@ export function RetentionInsightPanel({
     try {
       const qs = new URLSearchParams({ videoId: video.id, duration: String(video.durationSeconds) });
       if (benchmark && benchmark.id !== video.id) qs.set('benchmarkId', benchmark.id);
-      const res = await fetch(`/api/admin/youtube/retention?${qs.toString()}`, { credentials: 'same-origin' });
+      // adminFetch attaches the Cognito ID token as a Bearer header — required:
+      // Amplify keeps the token in browser storage, so a cookie-only fetch isn't
+      // reliably authenticated and the route 401s (this panel's "not working").
+      const res = await adminFetch(`/api/admin/youtube/retention?${qs.toString()}`);
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error || `Request failed (${res.status})`);
       setResult(json as RetentionResult);

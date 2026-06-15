@@ -11,6 +11,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import { adminFetch } from '@/lib/client-auth';
 
 type Section<T> = { data: T } | { error: string };
 interface Snapshot { totalUsers: number; sessions: number; pageViews: number; daysBack: number }
@@ -66,7 +67,7 @@ export default function AnalyticsPage() {
     setLoading(true);
     setErr(null);
     try {
-      const res = await fetch(`/api/admin/analytics?days=${d}`, { credentials: 'same-origin' });
+      const res = await adminFetch(`/api/admin/analytics?days=${d}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setPayload(await res.json());
     } catch (e) {

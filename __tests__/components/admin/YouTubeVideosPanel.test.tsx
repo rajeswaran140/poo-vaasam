@@ -1,7 +1,12 @@
 /** @jest-environment jsdom */
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { YouTubeVideosPanel } from '@/components/admin/YouTubeVideosPanel';
+import { adminFetch } from '@/lib/client-auth';
 import type { VideoRow } from '@/lib/youtube-dashboard';
+
+jest.mock('@/lib/client-auth', () => ({ adminFetch: jest.fn() }));
+const adminFetchMock = adminFetch as jest.Mock;
+beforeEach(() => adminFetchMock.mockReset());
 
 const mkRow = (over: Partial<VideoRow> & { id: string }): VideoRow => ({
   id: over.id,
@@ -108,7 +113,7 @@ describe('YouTubeVideosPanel', () => {
   });
 
   it('re-queries analytics when the date range changes', async () => {
-    const fetchMock = jest.fn().mockResolvedValue({
+    adminFetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({
         success: true,
@@ -117,14 +122,12 @@ describe('YouTubeVideosPanel', () => {
         videos: { ok: true, data: [{ videoId: 'v22', views: 9999, estimatedMinutesWatched: 10, averageViewDuration: 120, subscribersGained: 7 }] },
       }),
     });
-    global.fetch = fetchMock as unknown as typeof fetch;
 
     render(<YouTubeVideosPanel initialRows={manyRows} ytaConfigured initialDays={28} />);
     fireEvent.change(screen.getByDisplayValue('Last 28 days'), { target: { value: '90' } });
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
-      '/api/admin/youtube/analytics?days=90&recs=0',
-      expect.objectContaining({ credentials: 'same-origin' })
+    await waitFor(() => expect(adminFetchMock).toHaveBeenCalledWith(
+      '/api/admin/youtube/analytics?days=90&recs=0'
     ));
     // v22's real views should now appear once state updates
     await waitFor(() => {
@@ -134,7 +137,7 @@ describe('YouTubeVideosPanel', () => {
   });
 
   it('surfaces an error if the analytics re-query fails', async () => {
-    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 503 }) as unknown as typeof fetch;
+    adminFetchMock.mockResolvedValue({ ok: false, status: 503 });
     render(<YouTubeVideosPanel initialRows={manyRows} ytaConfigured initialDays={28} />);
     fireEvent.change(screen.getByDisplayValue('Last 28 days'), { target: { value: '90' } });
     expect(await screen.findByRole('alert')).toHaveTextContent(/Couldn't update the date range/);

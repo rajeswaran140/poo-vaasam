@@ -15,6 +15,7 @@
 import { useMemo, useState } from 'react';
 import { Download, Search } from 'lucide-react';
 import { formatDuration } from '@/lib/youtube-api';
+import { adminFetch } from '@/lib/client-auth';
 import type { VideoAnalyticsRow, Result } from '@/lib/youtube-analytics';
 import {
   applyVideoAnalytics,
@@ -98,9 +99,9 @@ export function YouTubeVideosPanel({
     setRangeError(null);
     setLoading(true);
     try {
-      const res = await fetch(`/api/admin/youtube/analytics?days=${next}&recs=0`, {
-        credentials: 'same-origin',
-      });
+      // Bearer-authenticated (Amplify stores the token in browser storage, not a
+      // reliable cookie) — a plain fetch 401s.
+      const res = await adminFetch(`/api/admin/youtube/analytics?days=${next}&recs=0`);
       if (!res.ok) throw new Error(`Analytics request failed (${res.status})`);
       const json = (await res.json()) as { videos?: Result<VideoAnalyticsRow[]> };
       const v = json.videos;
