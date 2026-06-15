@@ -83,6 +83,13 @@ const nextConfig: NextConfig = {
     YOUTUBE_REFRESH_TOKEN: process.env.YOUTUBE_REFRESH_TOKEN || '',
     GA4_PROPERTY_ID: process.env.GA4_PROPERTY_ID || '',
     GA4_SERVICE_ACCOUNT_KEY: process.env.GA4_SERVICE_ACCOUNT_KEY || '',
+    // Web-push (new-song notifications). Server needs all three to sign payloads
+    // at runtime; the public key is ALSO exposed to the client via
+    // NEXT_PUBLIC_VAPID_PUBLIC_KEY (auto-inlined by Next). Private key is
+    // server-only — never in a client bundle.
+    VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY || '',
+    VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY || '',
+    VAPID_SUBJECT: process.env.VAPID_SUBJECT || 'mailto:rajeswaran.pro@gmail.com',
     // DynamoDB access for runtime SSR/API routes (e.g. saving a brief). Amplify's
     // SSR runtime doesn't get a usable role token, so the app key must be inlined
     // (server-only; not emitted to client bundles). Enables runtime DB reads/writes.
