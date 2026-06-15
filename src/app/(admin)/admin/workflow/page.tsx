@@ -3,35 +3,14 @@
  * client-side filter/sort/render via <WorkflowKanban>).
  */
 
-import { ContentRepository } from '@/infrastructure/database/ContentRepository';
-import { WorkflowKanban, type WorkflowItem } from '@/components/admin/WorkflowKanban';
+import { WorkflowKanban } from '@/components/admin/WorkflowKanban';
+import { getAllContent } from '@/lib/workflow-content';
 
-export const revalidate = 60;
-
-async function getAllContent(): Promise<WorkflowItem[]> {
-  try {
-    const repo = new ContentRepository();
-    const res = await repo.findAll({ limit: 500 });
-    return res.items.map((e) => {
-      const o = e.toObject() as Record<string, unknown>;
-      // Date → ISO string so the client component (no Date hydration) is happy.
-      const toIso = (v: unknown) =>
-        v instanceof Date ? v.toISOString() : typeof v === 'string' ? v : undefined;
-      return {
-        id: String(o.id),
-        title: String(o.title ?? ''),
-        type: String(o.type ?? ''),
-        status: String(o.status ?? 'DRAFT'),
-        workflowState: typeof o.workflowState === 'string' ? o.workflowState : undefined,
-        updatedAt: toIso(o.updatedAt),
-        createdAt: toIso(o.createdAt),
-      };
-    });
-  } catch (err) {
-    console.error('[admin/workflow] failed to load content:', err);
-    return [];
-  }
-}
+// Fetch at request time, not build. Amplify doesn't run ISR, so a `revalidate`
+// page froze at build — workflow-state changes (persisted by the kanban) and
+// newly-created drafts never showed up on reload. Runtime DynamoDB reads work
+// via the inlined APP_AWS_* creds (same as the admin API routes).
+export const dynamic = 'force-dynamic';
 
 export default async function AdminWorkflowPage() {
   const items = await getAllContent();
