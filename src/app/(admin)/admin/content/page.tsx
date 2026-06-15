@@ -49,9 +49,9 @@ export default function ContentListPage() {
         url += `${url.includes('?') ? '&' : '?'}status=${statusFilter}`;
       }
 
-      const response = await fetch(url, {
-        credentials: 'include',
-      });
+      // Bearer-authenticated (Amplify keeps the Cognito token in browser
+      // storage, not a reliable cookie); the delete call below already does this.
+      const response = await adminFetch(url);
       const data = await response.json();
 
       if (data.success) {

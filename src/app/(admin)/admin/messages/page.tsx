@@ -8,6 +8,7 @@
 
 import { useEffect, useState } from 'react';
 import { Mail, RefreshCw } from 'lucide-react';
+import { adminFetch } from '@/lib/client-auth';
 
 interface Message {
   id: string;
@@ -28,7 +29,7 @@ export default function MessagesPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/admin/contact', { credentials: 'include' });
+      const res = await adminFetch('/api/admin/contact');
       const data = await res.json();
       if (data.success) {
         setMessages(data.data);

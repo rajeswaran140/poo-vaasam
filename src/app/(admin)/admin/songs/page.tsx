@@ -12,7 +12,10 @@ import { ContentType } from '@/types/content';
 import { fetchAudioPlaysBySongId, isGA4Configured } from '@/lib/ga4-api';
 import { SongsTable, type SongRow } from '@/components/admin/SongsTable';
 
-export const revalidate = 60;
+// Fetch at request time. Amplify doesn't run ISR, so a `revalidate` page froze
+// at build — newly published/edited songs didn't appear until a redeploy.
+// Runtime DynamoDB reads work via the inlined APP_AWS_* creds.
+export const dynamic = 'force-dynamic';
 
 function formatDuration(secs?: number): string {
   if (!secs || !Number.isFinite(secs)) return '—';

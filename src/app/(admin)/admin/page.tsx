@@ -20,7 +20,11 @@ import {
 } from '@/lib/ga4-api';
 import { fetchChannelStats, isYouTubeApiConfigured } from '@/lib/youtube-api';
 
-export const revalidate = 300;
+// Fetch at request time. Amplify doesn't run ISR, so a `revalidate` page froze
+// at build — new content never showed in "Recent Content" and the KPI strip was
+// stuck at build-time GA4 numbers. Runtime DynamoDB + GA4 reads work via the
+// inlined creds (next.config.ts).
+export const dynamic = 'force-dynamic';
 
 const numberFmt = new Intl.NumberFormat('en-US');
 
