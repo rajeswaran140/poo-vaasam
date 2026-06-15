@@ -26,6 +26,7 @@ import {
   Kanban,
   Sparkles,
   BarChart3,
+  MessageSquare,
 } from 'lucide-react';
 import { FEATURES } from '@/config/features';
 import { Toaster } from 'react-hot-toast';
@@ -159,6 +160,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             <NavLink href="/admin/compose" icon={Sparkles} collapsed={collapsed} active={pathname === '/admin/compose'}>Music Director</NavLink>
             <NavLink href="/admin/workflow" icon={Kanban} collapsed={collapsed} active={pathname === '/admin/workflow'}>Workflow</NavLink>
             <NavLink href="/admin/youtube" icon={PlaySquare} collapsed={collapsed} active={pathname === '/admin/youtube'}>YouTube</NavLink>
+            <NavLink href="/admin/comments" icon={MessageSquare} collapsed={collapsed} active={pathname === '/admin/comments'}>Comments</NavLink>
             <NavLink href="/admin/analytics" icon={BarChart3} collapsed={collapsed} active={pathname === '/admin/analytics'}>Analytics</NavLink>
 
             {FEATURES.ADMIN.MEDIA_LIBRARY && (
