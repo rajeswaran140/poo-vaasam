@@ -14,6 +14,7 @@ import { useMusicPlayer } from './MusicPlayerProvider';
 import { SongList, type SongRow } from './SongList';
 import { SONG_THEMES, SONG_THEME_LABELS, type SongTheme } from '@/config/song-themes';
 import { SubscribeButton } from '@/components/SubscribeButton';
+import { NotifyBell } from '@/components/NotifyBell';
 import { matchesSearch } from '@/lib/search-match';
 
 export type { SongRow } from './SongList';
@@ -195,6 +196,7 @@ export function SongsPlaylist({ tracks }: { tracks: SongRow[] }) {
                 source="songs_hero"
                 className="ml-auto inline-flex items-center gap-2 rounded-full bg-black/30 px-5 py-2.5 font-tamil text-sm font-semibold text-white ring-1 ring-white/30 backdrop-blur-sm transition-all hover:bg-black/40"
               />
+              <NotifyBell />
             </div>
           )}
         </div>

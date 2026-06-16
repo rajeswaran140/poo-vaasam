@@ -20,7 +20,6 @@ import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { SongCatalog } from '@/application/use-cases/SongCatalog';
 import type { PublicSongDTO } from '@/domain/songs/PublicSong';
 import { SongsPlaylist, type SongRow } from '@/components/music/SongsPlaylist';
-import { NotifyBell } from '@/components/NotifyBell';
 import { JsonLd } from '@/components/JsonLd';
 import { SITE_NAME, absoluteUrl, alternatesFor, breadcrumbJsonLd } from '@/lib/seo';
 import { isoDuration } from '@/lib/iso-duration';
@@ -148,9 +147,6 @@ export default async function SongsPage() {
       <Header />
       <main id="main" className="flex-1">
         <SongsPlaylist tracks={tracks} />
-        <div className="container mx-auto flex max-w-6xl justify-center px-4 pb-8 sm:px-6">
-          <NotifyBell />
-        </div>
         {collectionThemes.length > 0 && (
           <nav
             aria-label="Browse Tamil songs by theme"
