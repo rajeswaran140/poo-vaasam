@@ -107,6 +107,20 @@ export interface EmotionAnalysis {
 }
 
 /**
+ * Performer-portal assets (gated — see project_poo_vaasam_performers). Served
+ * ONLY to authenticated performers via /api/performers/*, NEVER on the public
+ * /api/songs contract or any SSG page. `lyrics` is the full performable lyric
+ * text (deliberately withheld from the public site for anti-scraping); the
+ * backing track is stored as an S3 object KEY (not a URL) so it can be handed
+ * out as a short-lived presigned URL rather than a directly-fetchable link.
+ */
+export interface PerformerAssets {
+  lyrics?: string;
+  instrumentalKey?: string;   // S3 object key of the karaoke backing track
+  instrumentalDuration?: number; // seconds
+}
+
+/**
  * Production lifecycle — 9 sequential states. Stored on Content as a string
  * so we can extend without a migration; the union below is the source of
  * truth for valid values and ordering.
@@ -157,6 +171,7 @@ export interface Content
     AudioProperties,
     VideoProperties,
     StudioAssets,
+    PerformerAssets,
     ContentStatistics {
   body: string; // Main content in Tamil
   publishedAt?: Date;
@@ -189,6 +204,9 @@ export interface CreateContentDTO {
   stemsUrl?: string;
   midiUrl?: string;
   thumbnailUrl?: string;
+  lyrics?: string;
+  instrumentalKey?: string;
+  instrumentalDuration?: number;
   workflowState?: WorkflowState;
   categoryIds?: string[];
   tagIds?: string[];
@@ -215,6 +233,9 @@ export interface UpdateContentDTO {
   stemsUrl?: string | null;
   midiUrl?: string | null;
   thumbnailUrl?: string | null;
+  lyrics?: string | null;
+  instrumentalKey?: string | null;
+  instrumentalDuration?: number | null;
   workflowState?: WorkflowState | null;
   categoryIds?: string[];
   tagIds?: string[];
