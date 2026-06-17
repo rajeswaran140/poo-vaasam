@@ -15,7 +15,12 @@ jest.mock('@/lib/performer-write', () => ({
   setPerformerAssets: jest.fn(),
 }));
 
-import { PUT } from '@/app/api/admin/songs/[id]/performer/route';
+const mockFindById = jest.fn();
+jest.mock('@/infrastructure/database/ContentRepository', () => ({
+  ContentRepository: jest.fn().mockImplementation(() => ({ findById: mockFindById })),
+}));
+
+import { GET, PUT } from '@/app/api/admin/songs/[id]/performer/route';
 import * as auth from '@/lib/auth-helper';
 import * as write from '@/lib/performer-write';
 
@@ -60,11 +65,42 @@ it('maps a missing song (conditional check) to 404', async () => {
 
 it('writes lyrics + instrumental key on the happy path', async () => {
   setPerformerAssets.mockResolvedValueOnce(undefined);
-  const res = await PUT(req({ lyrics: 'பல்லவி', instrumentalKey: 'audio/instrumentals/cnt_1.mp3', instrumentalDuration: 230 }), ctx());
+  const res = await PUT(req({ lyrics: 'பல்லவி', instrumentalKey: 'performer-tracks/cnt_1.mp3', instrumentalDuration: 230 }), ctx());
   expect(res.status).toBe(200);
   expect(setPerformerAssets).toHaveBeenCalledWith('cnt_1', {
     lyrics: 'பல்லவி',
-    instrumentalKey: 'audio/instrumentals/cnt_1.mp3',
+    instrumentalKey: 'performer-tracks/cnt_1.mp3',
     instrumentalDuration: 230,
+  });
+});
+
+describe('GET (load current assets for the editor)', () => {
+  it('returns 403 for a non-admin', async () => {
+    const { AuthError } = jest.requireActual('@/lib/auth-helper');
+    requireAdmin.mockRejectedValueOnce(new AuthError('Forbidden', 403));
+    const res = await GET(req({}), ctx());
+    expect(res.status).toBe(403);
+    expect(mockFindById).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 when the song is missing', async () => {
+    mockFindById.mockResolvedValueOnce(null);
+    const res = await GET(req({}), ctx());
+    expect(res.status).toBe(404);
+  });
+
+  it('returns the current lyrics / key / duration', async () => {
+    mockFindById.mockResolvedValueOnce({ lyrics: 'பல்லவி', instrumentalKey: 'performer-tracks/cnt_1.mp3', instrumentalDuration: 230 });
+    const res = await GET(req({}), ctx());
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({ success: true, lyrics: 'பல்லவி', instrumentalKey: 'performer-tracks/cnt_1.mp3', instrumentalDuration: 230 });
+  });
+
+  it('defaults missing assets to empty/null', async () => {
+    mockFindById.mockResolvedValueOnce({});
+    const res = await GET(req({}), ctx());
+    const body = await res.json();
+    expect(body).toEqual({ success: true, lyrics: '', instrumentalKey: '', instrumentalDuration: null });
   });
 });

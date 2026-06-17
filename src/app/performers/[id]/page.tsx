@@ -41,7 +41,7 @@ export default function PerformerSongPage() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const d = await res.json();
       setSong(d.song);
-      setTrackUrl(typeof d.instrumentalUrl === 'string' ? d.instrumentalUrl : null);
+      setTrackUrl(typeof d.trackUrl === 'string' ? d.trackUrl : null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load song');
     } finally {
