@@ -9,6 +9,7 @@
 import { useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { adminFetch } from '@/lib/client-auth';
+import { TransliterateField } from '@/components/admin/TransliterateField';
 import { LEXICON_REGISTERS, LEXICON_USAGES, LEXICON_THEMES } from '@/types/lexicon';
 
 export interface LexiconRow {
@@ -210,9 +211,14 @@ function AddWord({ onAdded }: { onAdded: (w: LexiconRow) => void }) {
   }
   return (
     <div className="space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+      {/* Tamil headword — type English to transliterate (e.g. amma → அம்மா),
+          or paste/type Tamil directly. ↑↓ choose · Enter/Tab/Space commit. */}
+      <div>
+        <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">சொல் (word) — type: amma, nila</label>
+        <TransliterateField value={word} onChange={setWord} placeholder="சொல்" />
+      </div>
       <div className="flex flex-wrap gap-2">
-        <input value={word} onChange={(e) => setWord(e.target.value)} placeholder="சொல்" className="rounded-md border border-gray-300 px-2 py-1.5 font-tamil dark:border-gray-600 dark:bg-gray-900" />
-        <input value={gloss} onChange={(e) => setGloss(e.target.value)} placeholder="meaning" className="flex-1 rounded-md border border-gray-300 px-2 py-1.5 dark:border-gray-600 dark:bg-gray-900" />
+        <input value={gloss} onChange={(e) => setGloss(e.target.value)} placeholder="meaning (English)" className="flex-1 rounded-md border border-gray-300 px-2 py-1.5 dark:border-gray-600 dark:bg-gray-900" />
         <Select value={register} onChange={setRegister} placeholder="register" options={LEXICON_REGISTERS} />
         <Select value={usage} onChange={setUsage} placeholder="usage" options={LEXICON_USAGES} />
       </div>
