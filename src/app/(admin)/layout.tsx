@@ -28,6 +28,7 @@ import {
   BarChart3,
   MessageSquare,
   BellRing,
+  Library,
 } from 'lucide-react';
 import { FEATURES } from '@/config/features';
 import { Toaster } from 'react-hot-toast';
@@ -49,6 +50,7 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   '/admin/messages': { title: 'Messages', subtitle: 'Contact-form submissions' },
   '/admin/songs': { title: 'Songs', subtitle: 'Audio library — themes, durations, play counts' },
   '/admin/compose': { title: 'Music Director', subtitle: 'Tamil lyrics → full production brief; save briefs as the durable source of truth' },
+  '/admin/lexicon': { title: 'Lexicon', subtitle: 'Lyric word-family dictionary — register × usage, to diversify song vocabulary' },
   '/admin/workflow': { title: 'Workflow', subtitle: 'Production pipeline — draft → published' },
   '/admin/youtube': { title: 'YouTube', subtitle: 'Channel stats and publishing gaps' },
   '/admin/analytics': { title: 'Analytics', subtitle: 'Website traffic & user activity' },
@@ -159,6 +161,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             <NavLink href="/admin/messages" icon={Mail} collapsed={collapsed} active={pathname === '/admin/messages'}>Messages</NavLink>
             <NavLink href="/admin/songs" icon={Music} collapsed={collapsed} active={pathname === '/admin/songs'}>Songs</NavLink>
             <NavLink href="/admin/compose" icon={Sparkles} collapsed={collapsed} active={pathname === '/admin/compose'}>Music Director</NavLink>
+            <NavLink href="/admin/lexicon" icon={Library} collapsed={collapsed} active={pathname === '/admin/lexicon'}>Lexicon</NavLink>
             <NavLink href="/admin/workflow" icon={Kanban} collapsed={collapsed} active={pathname === '/admin/workflow'}>Workflow</NavLink>
             <NavLink href="/admin/youtube" icon={PlaySquare} collapsed={collapsed} active={pathname === '/admin/youtube'}>YouTube</NavLink>
             <NavLink href="/admin/comments" icon={MessageSquare} collapsed={collapsed} active={pathname === '/admin/comments'}>Comments</NavLink>
