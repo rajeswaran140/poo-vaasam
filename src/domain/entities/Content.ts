@@ -51,7 +51,12 @@ export class Content {
     private _workflowState: WorkflowState | undefined = undefined,
     // Per-song browse theme/category (love | mother | nature | tamil | homeland).
     // Set by /api/admin/songs/[id]/theme; read by /songs via themeForSongWithOverride.
-    private _theme: string | undefined = undefined
+    private _theme: string | undefined = undefined,
+    // Gated performer-portal assets (lyrics + karaoke backing track). Served
+    // only to authenticated performers; never on the public song contract.
+    private _lyrics: string | undefined = undefined,
+    private _instrumentalKey: string | undefined = undefined,
+    private _instrumentalDuration: number | undefined = undefined
   ) {}
 
   // Getters
@@ -112,6 +117,15 @@ export class Content {
   get midiUrl(): string | undefined { return this._midiUrl; }
   get thumbnailUrl(): string | undefined { return this._thumbnailUrl; }
   get workflowState(): WorkflowState | undefined { return this._workflowState; }
+
+  // Gated performer-portal assets.
+  get lyrics(): string | undefined { return this._lyrics; }
+  get instrumentalKey(): string | undefined { return this._instrumentalKey; }
+  get instrumentalDuration(): number | undefined { return this._instrumentalDuration; }
+  /** A song is performable when it has both gated lyrics and a backing track. */
+  isPerformable(): boolean {
+    return !!(this._lyrics && this._lyrics.trim() && this._instrumentalKey && this._instrumentalKey.trim());
+  }
 
   get categoryIds(): string[] {
     return [...this._categoryIds]; // Return copy to prevent mutation
@@ -184,7 +198,11 @@ export class Content {
       dto.stemsUrl,
       dto.midiUrl,
       dto.thumbnailUrl,
-      dto.workflowState
+      dto.workflowState,
+      undefined, // theme — set via the theme endpoint, not at creation
+      dto.lyrics,
+      dto.instrumentalKey,
+      dto.instrumentalDuration
     );
   }
 
@@ -240,6 +258,9 @@ export class Content {
     if (dto.stemsUrl !== undefined) this._stemsUrl = dto.stemsUrl || undefined;
     if (dto.midiUrl !== undefined) this._midiUrl = dto.midiUrl || undefined;
     if (dto.thumbnailUrl !== undefined) this._thumbnailUrl = dto.thumbnailUrl || undefined;
+    if (dto.lyrics !== undefined) this._lyrics = dto.lyrics || undefined;
+    if (dto.instrumentalKey !== undefined) this._instrumentalKey = dto.instrumentalKey || undefined;
+    if (dto.instrumentalDuration !== undefined) this._instrumentalDuration = dto.instrumentalDuration || undefined;
     if (dto.workflowState !== undefined) {
       this._workflowState = dto.workflowState && (WORKFLOW_STATES as readonly string[]).includes(dto.workflowState)
         ? (dto.workflowState as WorkflowState)
@@ -399,6 +420,9 @@ export class Content {
       stemsUrl: this._stemsUrl,
       midiUrl: this._midiUrl,
       thumbnailUrl: this._thumbnailUrl,
+      lyrics: this._lyrics,
+      instrumentalKey: this._instrumentalKey,
+      instrumentalDuration: this._instrumentalDuration,
       workflowState: this._workflowState,
       categoryIds: this._categoryIds,
       tagIds: this._tagIds,
@@ -446,7 +470,10 @@ export class Content {
       data.workflowState && (WORKFLOW_STATES as readonly string[]).includes(data.workflowState)
         ? (data.workflowState as WorkflowState)
         : undefined,
-      typeof data.theme === 'string' ? data.theme : undefined
+      typeof data.theme === 'string' ? data.theme : undefined,
+      typeof data.lyrics === 'string' ? data.lyrics : undefined,
+      typeof data.instrumentalKey === 'string' ? data.instrumentalKey : undefined,
+      typeof data.instrumentalDuration === 'number' ? data.instrumentalDuration : undefined
     );
   }
 
