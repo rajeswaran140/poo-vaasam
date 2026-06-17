@@ -22,6 +22,7 @@ import {
   validateAuth,
   requireAuth,
   requireAdmin,
+  requirePerformer,
   isAdmin,
   unauthorizedResponse,
   forbiddenResponse,
@@ -146,6 +147,52 @@ describe('validateAuth — JWT verification', () => {
 
     expect(result.isAuthenticated).toBe(true);
     expect(result.groups).toEqual([]);
+  });
+
+  it('surfaces email_verified as a boolean (true only when the claim is true)', async () => {
+    mockVerify.mockResolvedValueOnce({ sub: 'u1', email: 'a@b.com', email_verified: true });
+    expect((await validateAuth(makeRequest({ [ID_TOKEN_COOKIE]: 't' }))).emailVerified).toBe(true);
+
+    __resetVerifierForTests();
+    mockVerify.mockResolvedValueOnce({ sub: 'u1', email: 'a@b.com', email_verified: false });
+    expect((await validateAuth(makeRequest({ [ID_TOKEN_COOKIE]: 't' }))).emailVerified).toBe(false);
+
+    __resetVerifierForTests();
+    mockVerify.mockResolvedValueOnce({ sub: 'u1', email: 'a@b.com' }); // claim absent
+    expect((await validateAuth(makeRequest({ [ID_TOKEN_COOKIE]: 't' }))).emailVerified).toBe(false);
+  });
+});
+
+describe('requirePerformer', () => {
+  it('returns the context for an authenticated, email-verified user', async () => {
+    mockVerify.mockResolvedValue({ sub: 'u1', email: 'singer@example.com', email_verified: true, 'cognito:groups': [] });
+    const result = await requirePerformer(makeRequest({ [ID_TOKEN_COOKIE]: 't' }));
+    expect(result.isAuthenticated).toBe(true);
+    expect(result.email).toBe('singer@example.com');
+  });
+
+  it('throws AuthError(401) when unauthenticated', async () => {
+    mockVerify.mockRejectedValue(new Error('expired'));
+    await expect(requirePerformer(makeRequest({ [ID_TOKEN_COOKIE]: 't' }))).rejects.toMatchObject({
+      name: 'AuthError',
+      status: 401,
+    });
+  });
+
+  it('throws AuthError(403) when the email is not verified', async () => {
+    mockVerify.mockResolvedValue({ sub: 'u2', email: 'unverified@example.com', email_verified: false });
+    await expect(requirePerformer(makeRequest({ [ID_TOKEN_COOKIE]: 't' }))).rejects.toMatchObject({
+      status: 403,
+    });
+  });
+
+  it('does NOT require admin — a plain verified user qualifies (RBAC configured)', async () => {
+    process.env.ADMIN_EMAILS = 'boss@tamilagaval.com';
+    __resetVerifierForTests();
+    mockVerify.mockResolvedValue({ sub: 'u3', email: 'reader@example.com', email_verified: true, 'cognito:groups': [] });
+    // Would be a 403 for requireAdmin, but performer access is granted.
+    const result = await requirePerformer(makeRequest({ [ID_TOKEN_COOKIE]: 't' }));
+    expect(result.isAuthenticated).toBe(true);
   });
 });
 

@@ -18,6 +18,8 @@ export interface AuthContext {
   isAuthenticated: boolean;
   userId?: string;
   email?: string;
+  /** Cognito `email_verified` claim — gates the performer tier. */
+  emailVerified?: boolean;
   groups?: string[];
 }
 
@@ -112,6 +114,7 @@ export async function validateAuth(request: NextRequest): Promise<AuthContext> {
       isAuthenticated: true,
       userId: typeof payload.sub === 'string' ? payload.sub : undefined,
       email: typeof payload.email === 'string' ? payload.email : undefined,
+      emailVerified: payload.email_verified === true,
       groups,
     };
   } catch (error) {
@@ -131,6 +134,23 @@ export async function requireAuth(request: NextRequest): Promise<AuthContext> {
   const auth = await validateAuth(request);
   if (!auth.isAuthenticated) {
     throw new AuthError('Unauthorized', 401);
+  }
+  return auth;
+}
+
+/**
+ * Require an authenticated "performer" — any Cognito user with a verified
+ * email. This is the consumer tier behind the gated /performers portal (lyrics
+ * + backing tracks), distinct from admin: it grants no admin powers, only a
+ * confirmed account. Admins satisfy it too (their emails are verified).
+ *
+ * Throws `AuthError(401)` if unauthenticated, `AuthError(403)` if the account's
+ * email isn't verified (e.g. an admin-created, not-yet-confirmed user).
+ */
+export async function requirePerformer(request: NextRequest): Promise<AuthContext> {
+  const auth = await requireAuth(request);
+  if (auth.emailVerified !== true) {
+    throw new AuthError('Email not verified', 403);
   }
   return auth;
 }

@@ -74,15 +74,19 @@ export function clearCognitoCookies(): void {
 }
 
 /**
- * Recover from a dead admin session. A 401 means the Cognito session is
+ * Recover from a dead session. A 401 means the Cognito session is
  * expired/invalid, yet the stale Cognito cookies linger (30-day cookie life vs
  * a much shorter token life) so the app still *looks* logged in and silently
- * 401s every call. Clear the stale session and bounce to /login so the admin
- * can re-authenticate, preserving where they were.
+ * 401s every call. Clear the stale session and bounce to the given login
+ * surface so the user can re-authenticate.
+ *
+ * `loginPath` is the screen that hosts sign-in: `/login` for admin, `/performers`
+ * for the performer portal (its gate renders the sign-in form inline). We skip
+ * the bounce when we're already on that surface so we don't loop.
  */
-async function handleExpiredSession(): Promise<void> {
+async function handleExpiredSession(loginPath: string): Promise<void> {
   if (typeof window === 'undefined' || handlingExpiry) return;
-  if (window.location.pathname.startsWith('/login')) return;
+  if (window.location.pathname.startsWith(loginPath)) return;
   handlingExpiry = true;
   try {
     await Auth.signOut();
@@ -92,23 +96,47 @@ async function handleExpiredSession(): Promise<void> {
   // Belt-and-suspenders: signOut often can't purge an expired session, so force it.
   clearCognitoCookies();
   const here = `${window.location.pathname}${window.location.search}`;
-  window.location.assign(`/login?redirect=${encodeURIComponent(here)}`);
+  window.location.assign(`${loginPath}?redirect=${encodeURIComponent(here)}`);
 }
 
-/** fetch() that attaches the admin's Cognito ID token (Bearer) and cookies. */
-export async function adminFetch(
+/** fetch() that attaches the current Cognito ID token (Bearer) + cookies and,
+ *  on 401, recovers the dead session by bouncing to `loginPath`. */
+async function authedFetch(
   input: RequestInfo | URL,
-  init: RequestInit & { suppressExpiryRedirect?: boolean } = {}
+  // Merge of two evolutions: performers' `loginPath` routing + master's
+  // `suppressExpiryRedirect` (quiet 401s for background callers). `init` has no
+  // default because the required `loginPath` follows it; adminFetch/performerFetch
+  // always pass it.
+  init: RequestInit & { suppressExpiryRedirect?: boolean },
+  loginPath: string
 ): Promise<Response> {
   const { suppressExpiryRedirect, ...rest } = init;
   const token = await getIdToken();
   const headers = new Headers(rest.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);
   const res = await fetch(input, { ...rest, headers, credentials: 'include' });
-  // A 401 normally means the session died → sign out + redirect to /login. But
-  // background, non-critical callers (e.g. the per-keystroke transliteration
-  // aid) pass suppressExpiryRedirect so a transient/stale-token 401 degrades
-  // quietly instead of booting the admin to /login mid-typing.
-  if (res.status === 401 && !suppressExpiryRedirect) await handleExpiredSession();
+  // A 401 normally means the session died → sign out + bounce to `loginPath`. But
+  // background, non-critical callers (e.g. the per-keystroke transliteration aid)
+  // pass suppressExpiryRedirect so a transient/stale-token 401 degrades quietly
+  // instead of booting the user mid-action.
+  if (res.status === 401 && !suppressExpiryRedirect) await handleExpiredSession(loginPath);
   return res;
+}
+
+/** fetch() for admin API calls — Bearer token + cookies; 401 → /login.
+ *  Accepts suppressExpiryRedirect so background admin callers can degrade quietly. */
+export function adminFetch(
+  input: RequestInfo | URL,
+  init: RequestInit & { suppressExpiryRedirect?: boolean } = {}
+): Promise<Response> {
+  return authedFetch(input, init, '/login');
+}
+
+/** fetch() for performer-portal API calls — Bearer token + cookies; 401 → /performers
+ *  (whose gate shows the sign-in form). */
+export function performerFetch(
+  input: RequestInfo | URL,
+  init: RequestInit & { suppressExpiryRedirect?: boolean } = {}
+): Promise<Response> {
+  return authedFetch(input, init, '/performers');
 }
