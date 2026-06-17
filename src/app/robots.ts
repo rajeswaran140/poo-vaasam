@@ -2,7 +2,7 @@ import type { MetadataRoute } from 'next';
 import { SITE_URL } from '@/lib/seo';
 
 // Non-public areas kept out of every crawler.
-const DISALLOWED_PATHS = ['/admin', '/api/', '/login', '/debug', '/debug-auth', '/ai-search'];
+const DISALLOWED_PATHS = ['/admin', '/api/', '/login', '/performers', '/debug', '/debug-auth', '/ai-search'];
 
 // AI model-*training* / dataset crawlers — opt the original Tamil lyrics, poems
 // and songs out of training corpora. Deliberately does NOT include the AI

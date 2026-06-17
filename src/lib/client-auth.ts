@@ -74,15 +74,19 @@ export function clearCognitoCookies(): void {
 }
 
 /**
- * Recover from a dead admin session. A 401 means the Cognito session is
+ * Recover from a dead session. A 401 means the Cognito session is
  * expired/invalid, yet the stale Cognito cookies linger (30-day cookie life vs
  * a much shorter token life) so the app still *looks* logged in and silently
- * 401s every call. Clear the stale session and bounce to /login so the admin
- * can re-authenticate, preserving where they were.
+ * 401s every call. Clear the stale session and bounce to the given login
+ * surface so the user can re-authenticate.
+ *
+ * `loginPath` is the screen that hosts sign-in: `/login` for admin, `/performers`
+ * for the performer portal (its gate renders the sign-in form inline). We skip
+ * the bounce when we're already on that surface so we don't loop.
  */
-async function handleExpiredSession(): Promise<void> {
+async function handleExpiredSession(loginPath: string): Promise<void> {
   if (typeof window === 'undefined' || handlingExpiry) return;
-  if (window.location.pathname.startsWith('/login')) return;
+  if (window.location.pathname.startsWith(loginPath)) return;
   handlingExpiry = true;
   try {
     await Auth.signOut();
@@ -92,18 +96,31 @@ async function handleExpiredSession(): Promise<void> {
   // Belt-and-suspenders: signOut often can't purge an expired session, so force it.
   clearCognitoCookies();
   const here = `${window.location.pathname}${window.location.search}`;
-  window.location.assign(`/login?redirect=${encodeURIComponent(here)}`);
+  window.location.assign(`${loginPath}?redirect=${encodeURIComponent(here)}`);
 }
 
-/** fetch() that attaches the admin's Cognito ID token (Bearer) and cookies. */
-export async function adminFetch(
+/** fetch() that attaches the current Cognito ID token (Bearer) + cookies and,
+ *  on 401, recovers the dead session by bouncing to `loginPath`. */
+async function authedFetch(
   input: RequestInfo | URL,
-  init: RequestInit = {}
+  init: RequestInit,
+  loginPath: string
 ): Promise<Response> {
   const token = await getIdToken();
   const headers = new Headers(init.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);
   const res = await fetch(input, { ...init, headers, credentials: 'include' });
-  if (res.status === 401) await handleExpiredSession();
+  if (res.status === 401) await handleExpiredSession(loginPath);
   return res;
+}
+
+/** fetch() for admin API calls — Bearer token + cookies; 401 → /login. */
+export function adminFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  return authedFetch(input, init, '/login');
+}
+
+/** fetch() for performer-portal API calls — Bearer token + cookies; 401 → /performers
+ *  (whose gate shows the sign-in form). */
+export function performerFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  return authedFetch(input, init, '/performers');
 }
