@@ -1,16 +1,17 @@
 'use client';
 
 /**
- * Tamil Input Component with React Transliterate
+ * Tamil Input Component — English→Tamil transliteration with word suggestions.
  *
- * Provides accurate English-to-Tamil transliteration using Google's algorithm
- * Type in English, get accurate Tamil output with word suggestions
+ * Type in English, get Tamil candidates (Google Input Tools, served through our
+ * own same-origin proxy via TransliterateField — the previous react-transliterate
+ * called Google directly from the browser, which CORS blocks, so suggestions
+ * silently stopped working). Toggle to "Direct தமிழ்" for keyboard/IME input.
  */
 
 import { useState } from 'react';
-import { ReactTransliterate } from 'react-transliterate';
-import 'react-transliterate/dist/index.css';
 import { Languages, Keyboard } from 'lucide-react';
+import { TransliterateField } from '@/components/admin/TransliterateField';
 import { CharCount } from '@/components/admin/authoring/CharCount';
 
 interface TamilInputProps {
@@ -78,38 +79,14 @@ export function TamilInput({
 
       {/* Input Field with Transliteration */}
       {isTransliterationEnabled ? (
-        <ReactTransliterate
+        <TransliterateField
           value={value}
-          onChangeText={onChange}
-          lang="ta"
-          // Accuracy + completeness: Google's Tamil IME. Show up to 9 candidates
-          // so alternatives surface (e.g. "malai" → மலை / மாலை / மழை …); the
-          // writer picks with ↑↓ + Enter or click. Space commits the highlighted
-          // one (library default via triggerKeys).
-          maxOptions={9}
+          onChange={onChange}
+          multiline={multiline}
+          rows={rows}
           placeholder={placeholder}
-          containerClassName="relative tamil-translit"
-          activeItemStyles={{
-            backgroundColor: '#7C3AED',
-            color: 'white',
-          }}
-          renderComponent={(props: any) =>
-            multiline ? (
-              <textarea
-                {...props}
-                rows={rows}
-                className={`w-full px-4 py-3 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent font-tamil resize-y bg-purple-50 transition-all dark:border-purple-700 dark:bg-gray-800 dark:text-gray-100 ${className}`}
-                required={required}
-              />
-            ) : (
-              <input
-                {...props}
-                type="text"
-                className={`w-full px-4 py-3 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent font-tamil bg-purple-50 transition-all dark:border-purple-700 dark:bg-gray-800 dark:text-gray-100 ${className}`}
-                required={required}
-              />
-            )
-          }
+          className={className}
+          required={required}
         />
       ) : (
         // Direct Tamil Input (no transliteration)
