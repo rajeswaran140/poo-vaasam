@@ -52,6 +52,16 @@ describe('suggest', () => {
     expect((await res.json()).data).toHaveLength(1);
     expect(mockSuggest).toHaveBeenCalledWith(expect.objectContaining({ register: 'sangam', avoid: ['கடல்'] }));
   });
+
+  it('caps the avoid list so a large lexicon does not balloon the prompt', async () => {
+    mockIsConfigured.mockReturnValue(true);
+    mockFindAll.mockResolvedValueOnce(Array.from({ length: 1000 }, (_, i) => ({ word: `w${i}` })));
+    mockSuggest.mockResolvedValueOnce([]);
+    await SUGGEST(suggestReq({ register: 'sangam', count: 5 }));
+    const avoid = mockSuggest.mock.calls[0][0].avoid as string[];
+    expect(avoid.length).toBeLessThanOrEqual(300);
+    expect(avoid).toContain('w999'); // most-recent kept (tail slice)
+  });
 });
 
 describe('bulk', () => {

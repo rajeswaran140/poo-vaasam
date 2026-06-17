@@ -38,6 +38,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const updated = await new LexiconRepository().update(id, parsed.data);
     return NextResponse.json({ success: true, data: updated });
   } catch (err) {
+    if ((err as { code?: string }).code === 'DUPLICATE_WORD') {
+      return NextResponse.json({ success: false, error: 'Word already exists' }, { status: 409 });
+    }
     if (err instanceof Error && /not found/i.test(err.message)) {
       return NextResponse.json({ success: false, error: 'Word not found' }, { status: 404 });
     }

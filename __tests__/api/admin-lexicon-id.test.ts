@@ -50,6 +50,13 @@ it('PUT 404 when the word is missing', async () => {
   expect((await PUT(req({ usage: 'retire' }), ctx())).status).toBe(404);
 });
 
+it('PUT 409 when a rename collides with an existing headword', async () => {
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+  mockUpdate.mockRejectedValueOnce(Object.assign(new Error('Word already exists'), { code: 'DUPLICATE_WORD' }));
+  const res = await PUT(req({ word: 'நிலா' }), ctx());
+  expect(res.status).toBe(409);
+});
+
 it('PUT updates and returns the word', async () => {
   mockUpdate.mockResolvedValueOnce({ id: 'lex_1', usage: 'retire' });
   const res = await PUT(req({ usage: 'retire' }), ctx());

@@ -45,27 +45,42 @@ export class LexiconRepository implements ILexiconRepository {
 
   async findByWord(word: string): Promise<LexiconWord | null> {
     try {
-      const response = await DynamoDBOperations.scan({
-        filterExpression: '#type = :type AND #word = :word',
-        expressionAttributeNames: { '#type': 'Type', '#word': 'word' },
-        expressionAttributeValues: { ':type': 'LEXICON', ':word': normalizeWord(word) },
+      const w = normalizeWord(word);
+      // Exact headword lookup via GSI1 (no scan). The `#` delimiter prevents
+      // prefix collisions (e.g. "amma#" never matches "ammaa#…").
+      const res = await DynamoDBOperations.query({
+        keyConditionExpression: 'GSI1PK = :pk AND begins_with(GSI1SK, :sk)',
+        expressionAttributeValues: { ':pk': 'LEXICON', ':sk': `${w}#` },
+        indexName: 'GSI1',
         limit: 1,
       });
-      const items = response.Items || [];
+      const items = res.Items || [];
       return items.length > 0 ? this.fromDBItem(items[0]) : null;
     } catch (error) {
       handleDynamoDBError(error);
     }
   }
 
+  // Defensive bound on pagination — a personal lexicon is tiny in bytes (each
+  // 1MB page holds thousands of words), so this is a runaway guard, not a cap
+  // that would realistically truncate.
+  private static readonly MAX_PAGES = 100;
+
   async findAll(): Promise<LexiconWord[]> {
     try {
-      const response = await DynamoDBOperations.scan({
-        filterExpression: '#type = :type',
-        expressionAttributeNames: { '#type': 'Type' },
-        expressionAttributeValues: { ':type': 'LEXICON' },
-      });
-      const items = response.Items || [];
+      const items: Record<string, unknown>[] = [];
+      let startKey: Record<string, unknown> | undefined;
+      let pages = 0;
+      do {
+        const res = await DynamoDBOperations.query({
+          keyConditionExpression: 'GSI1PK = :pk',
+          expressionAttributeValues: { ':pk': 'LEXICON' },
+          indexName: 'GSI1',
+          exclusiveStartKey: startKey,
+        });
+        items.push(...((res.Items as Record<string, unknown>[]) || []));
+        startKey = res.LastEvaluatedKey as Record<string, unknown> | undefined;
+      } while (startKey && ++pages < LexiconRepository.MAX_PAGES);
       return items.map((i) => this.fromDBItem(i)).sort((a, b) => a.word.localeCompare(b.word, 'ta'));
     } catch (error) {
       handleDynamoDBError(error);
@@ -76,6 +91,20 @@ export class LexiconRepository implements ILexiconRepository {
     try {
       const existing = await this.findById(id);
       if (!existing) throw new Error(`Lexicon word ${id} not found`);
+
+      // On a rename, guard headword uniqueness (create already 409s on dupes;
+      // this closes the gap where an edit could collide with another word).
+      if (updates.word !== undefined) {
+        const newWord = normalizeWord(updates.word);
+        if (newWord !== existing.word) {
+          const clash = await this.findByWord(newWord);
+          if (clash && clash.id !== id) {
+            const err = new Error('Word already exists');
+            (err as Error & { code?: string }).code = 'DUPLICATE_WORD';
+            throw err;
+          }
+        }
+      }
 
       const merged: LexiconWord = {
         ...existing,
@@ -115,6 +144,12 @@ export class LexiconRepository implements ILexiconRepository {
       PK: `LEXICON#${w.id}`,
       SK: 'METADATA',
       Type: 'LEXICON',
+      // Reuse the existing GSI1 so the lexicon can be listed with a cheap,
+      // paginated query (GSI1PK='LEXICON') instead of a full-table scan. The
+      // `word#id` sort key keeps the list ordered and lets findByWord do an
+      // exact lookup via begins_with(`<word>#`).
+      GSI1PK: 'LEXICON',
+      GSI1SK: `${w.word}#${w.id}`,
       id: w.id,
       word: w.word,
       romanization: w.romanization,

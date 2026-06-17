@@ -15,6 +15,12 @@ import { isLexiconAiConfigured, suggestLexiconWords } from '@/services/ai/lexico
 
 export const dynamic = 'force-dynamic';
 
+// Cap how many existing words we feed the model as "avoid" — enough to steer
+// it off recent dupes without ballooning the prompt as the lexicon grows.
+// (Real dedupe still happens server-side in parseSuggestions + the bulk route,
+// so this is a quality hint, not the safety net.)
+const MAX_AVOID = 300;
+
 export async function POST(request: NextRequest) {
   try {
     await requireAdmin(request);
@@ -39,7 +45,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const avoid = (await new LexiconRepository().findAll()).map((w) => w.word);
+    // Most-recent first so the model avoids the words just added; capped.
+    const avoid = (await new LexiconRepository().findAll())
+      .map((w) => w.word)
+      .slice(-MAX_AVOID);
     const data = await suggestLexiconWords({ ...parsed.data, avoid });
     return NextResponse.json({ success: true, data, total: data.length });
   } catch (err) {
