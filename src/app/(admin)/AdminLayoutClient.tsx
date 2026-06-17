@@ -36,6 +36,7 @@ import {
   SearchCheck,
   ScrollText,
   MessageSquareHeart,
+  Mic,
 } from "lucide-react";
 import { FEATURES } from "@/config/features";
 import { Toaster } from "react-hot-toast";
@@ -99,6 +100,10 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
     title: "Lyrics",
     subtitle:
       "பாடல் வரிகள் / Lyrics — publish a song's words behind the email gate; edit the lyrics",
+  },
+  "/admin/performers": {
+    title: "Performers",
+    subtitle: "Gated lyrics + karaoke backing tracks for signed-in performers",
   },
   "/admin/comments": {
     title: "Comments",
@@ -318,6 +323,14 @@ export default function AdminLayoutClient({
                 active={pathname.startsWith("/admin/lyrics")}
               >
                 Lyrics
+              </NavLink>
+              <NavLink
+                href="/admin/performers"
+                icon={Mic}
+                collapsed={collapsed}
+                active={pathname.startsWith("/admin/performers")}
+              >
+                Performers
               </NavLink>
               <NavLink
                 href="/admin/workflow"

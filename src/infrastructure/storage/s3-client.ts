@@ -219,7 +219,7 @@ export class S3Operations {
    * Generate a unique key for file upload
    */
   static generateFileKey(params: {
-    folder: 'audio' | 'images' | 'video' | 'temp';
+    folder: 'audio' | 'images' | 'video' | 'temp' | 'performer-tracks';
     filename: string;
     userId?: string;
   }): string {
@@ -259,11 +259,16 @@ export const FILE_CONSTRAINTS = {
     image: 10 * 1024 * 1024, // 10MB
     audio: 1000 * 1024 * 1024, // 1000MB — long-form audio / large MP3
     video: 50 * 1024 * 1024, // 50MB — short preview clips only (full videos live on YouTube)
+    // Gated karaoke backing tracks — same media as audio, capped tighter (an
+    // MP3, not a master). Stored under the PRIVATE performer-tracks/ prefix and
+    // only ever served via the gated streaming route, never the public CDN.
+    instrumental: 100 * 1024 * 1024, // 100MB
   },
   allowedTypes: {
     image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
     audio: ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg'],
     video: ['video/mp4', 'video/webm', 'video/quicktime', 'video/ogg'],
+    instrumental: ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg'],
   },
 };
 

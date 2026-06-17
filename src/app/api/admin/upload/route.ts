@@ -28,12 +28,15 @@ const FOLDER_BY_KIND = {
   audio: 'audio',
   image: 'images',
   video: 'video',
+  // PRIVATE prefix — gated karaoke backing tracks, served only via the
+  // /api/performers/songs/[id]/track streaming route, never the public CDN.
+  instrumental: 'performer-tracks',
 } as const;
 
 const uploadSchema = z.object({
   filename: z.string().min(1).max(255),
   contentType: z.string().min(1).max(127),
-  kind: z.enum(['audio', 'image', 'video']),
+  kind: z.enum(['audio', 'image', 'video', 'instrumental']),
   size: z.number().int().positive().optional(),
 });
 
