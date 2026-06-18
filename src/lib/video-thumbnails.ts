@@ -13,6 +13,12 @@ import { S3Operations } from '@/infrastructure/storage/s3-client';
 
 const PREFIX = 'images/video-thumbs';
 
+// Short CDN cache so a re-mirror (admin "Refresh thumbnails", e.g. after you
+// set a Tamil thumbnail on YouTube) propagates through CloudFront within minutes
+// instead of waiting out the ~24h default TTL. Thumbnails are tiny + low-traffic
+// so the extra revalidation is negligible.
+const THUMB_CACHE_CONTROL = 'public, max-age=300, s-maxage=300';
+
 // Ids confirmed present in S3 this process. Once an id is here we never hit S3
 // for it again — so warm Lambdas do ZERO S3 work for known videos; only a
 // genuinely new upload triggers a HEAD + (maybe) an upload.
@@ -38,11 +44,44 @@ export async function ensureThumbnailsMirrored(videoIds: string[]): Promise<void
         if (!res.ok) res = await fetch(`https://i.ytimg.com/vi/${id}/hqdefault.jpg`);
         if (!res.ok) return;
         const buf = Buffer.from(await res.arrayBuffer());
-        await S3Operations.uploadFile({ key, file: buf, contentType: 'image/jpeg' });
+        await S3Operations.uploadFile({ key, file: buf, contentType: 'image/jpeg', cacheControl: THUMB_CACHE_CONTROL });
         mirrored.add(id);
       } catch {
         /* swallow — the thumbnail will mirror on a later render */
       }
     })
   );
+}
+
+/**
+ * Force-refresh thumbnails from YouTube, OVERWRITING the S3 mirror even when it
+ * already exists (unlike ensureThumbnailsMirrored, which mirrors once). Used by
+ * the admin "Refresh thumbnails" action after a thumbnail is changed on YouTube
+ * (e.g. swapped to a Tamil custom thumbnail) — the short Cache-Control means the
+ * new image shows on /videos within minutes via CloudFront. Always fetches LIVE
+ * (no-store) so we never re-mirror a cached copy.
+ */
+export async function refreshThumbnails(
+  videoIds: string[]
+): Promise<{ refreshed: string[]; failed: string[] }> {
+  const refreshed: string[] = [];
+  const failed: string[] = [];
+  await Promise.all(
+    videoIds.map(async (id) => {
+      if (!/^[\w-]{11}$/.test(id)) { failed.push(id); return; }
+      const key = `${PREFIX}/${id}.jpg`;
+      try {
+        let res = await fetch(`https://i.ytimg.com/vi/${id}/maxresdefault.jpg`, { cache: 'no-store' });
+        if (!res.ok) res = await fetch(`https://i.ytimg.com/vi/${id}/hqdefault.jpg`, { cache: 'no-store' });
+        if (!res.ok) { failed.push(id); return; }
+        const buf = Buffer.from(await res.arrayBuffer());
+        await S3Operations.uploadFile({ key, file: buf, contentType: 'image/jpeg', cacheControl: THUMB_CACHE_CONTROL });
+        mirrored.add(id);
+        refreshed.push(id);
+      } catch {
+        failed.push(id);
+      }
+    })
+  );
+  return { refreshed, failed };
 }

@@ -48,6 +48,10 @@ export class S3Operations {
     file: Buffer | Uint8Array | Blob | string;
     contentType: string;
     metadata?: Record<string, string>;
+    /** Optional Cache-Control stored on the object (and honored by CloudFront).
+     *  Used e.g. for video thumbnails so a re-mirror propagates via the CDN
+     *  within minutes instead of waiting out the default ~24h TTL. */
+    cacheControl?: string;
   }) {
     const command = new PutObjectCommand({
       Bucket: BUCKET_NAME,
@@ -55,6 +59,7 @@ export class S3Operations {
       Body: params.file,
       ContentType: params.contentType,
       Metadata: params.metadata,
+      CacheControl: params.cacheControl,
     });
 
     await s3Client.send(command);

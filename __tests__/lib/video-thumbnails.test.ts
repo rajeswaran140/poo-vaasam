@@ -14,7 +14,7 @@ jest.mock('@/infrastructure/storage/s3-client', () => ({
   },
 }));
 
-import { ensureThumbnailsMirrored, _resetMirrorCache } from '@/lib/video-thumbnails';
+import { ensureThumbnailsMirrored, refreshThumbnails, _resetMirrorCache } from '@/lib/video-thumbnails';
 
 const ID = 'abcdefghijk'; // valid 11-char id
 const KEY = `images/video-thumbs/${ID}.jpg`;
@@ -95,4 +95,35 @@ it('does not re-hit S3 for an id already confirmed present this process', async 
   await ensureThumbnailsMirrored([ID]); // second call should be a no-op
   await ensureThumbnailsMirrored([ID]);
   expect(fileExists).toHaveBeenCalledTimes(1); // only the first hit S3
+});
+
+describe('refreshThumbnails (force re-mirror)', () => {
+  it('OVERWRITES the S3 mirror even when present, live + with a short Cache-Control', async () => {
+    // Note: it never calls fileExists — a refresh always re-pulls.
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValue({ ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    uploadFile.mockResolvedValue({});
+
+    const out = await refreshThumbnails([ID]);
+    expect(out).toEqual({ refreshed: [ID], failed: [] });
+    expect(fileExists).not.toHaveBeenCalled();
+    // Fetched LIVE (no-store) so we never re-mirror a cached image.
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ cache: 'no-store' });
+    const arg = uploadFile.mock.calls[0][0];
+    expect(arg.key).toBe(KEY);
+    expect(arg.contentType).toBe('image/jpeg');
+    expect(arg.cacheControl).toMatch(/max-age=300/);
+  });
+
+  it('reports failures for invalid ids and missing thumbnails without throwing', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({ ok: false }); // both sizes 404
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const out = await refreshThumbnails(['bad', ID]);
+    expect(out.failed).toContain('bad'); // invalid id — no network
+    expect(out.failed).toContain(ID); // valid id but upstream 404
+    expect(out.refreshed).toEqual([]);
+    expect(uploadFile).not.toHaveBeenCalled();
+  });
 });

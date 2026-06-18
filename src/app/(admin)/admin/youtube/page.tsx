@@ -35,6 +35,7 @@ import {
 import { buildDigest, type Digest } from '@/lib/youtube-digest';
 import { YtRecsRepository } from '@/infrastructure/database/YtRecsRepository';
 import { RefreshRecsButton } from '@/components/admin/RefreshRecsButton';
+import { RefreshThumbnailsButton } from '@/components/admin/RefreshThumbnailsButton';
 import { YouTubeVideosPanel } from '@/components/admin/YouTubeVideosPanel';
 import { RetentionInsightPanel } from '@/components/admin/RetentionInsightPanel';
 import { mergeVideoRows, pickRetentionBenchmark } from '@/lib/youtube-dashboard';
@@ -380,6 +381,12 @@ export default async function YouTubeAdminPage() {
 
       {/* Interactive videos panel — pagination, sort, filter, CSV export,
           and a live date-range selector (re-queries owner Analytics). */}
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          Thumbnails are mirrored from YouTube. Changed one there (e.g. to Tamil)? Re-pull it →
+        </p>
+        <RefreshThumbnailsButton />
+      </div>
       <YouTubeVideosPanel initialRows={videoRows} ytaConfigured={ytaOn} initialDays={ANALYTICS_DAYS} />
 
     </div>
