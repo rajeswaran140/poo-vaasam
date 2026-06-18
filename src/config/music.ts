@@ -6,8 +6,14 @@
  * link to the YouTube channel; the WhatsApp button is simply hidden).
  */
 export const MUSIC = {
-  /** YouTube video URLs to showcase as sample compositions. */
-  sampleVideoUrls: [] as string[],
+  /** YouTube video URLs to showcase as sample compositions. Verified full-length
+   *  songs from the channel (not Shorts/teasers) — swap freely. */
+  sampleVideoUrls: [
+    'https://www.youtube.com/watch?v=KtFF0CCnCY4', // என் பொன்மணி
+    'https://www.youtube.com/watch?v=H5NcoS41fA4', // செவ்வந்தி பூவே
+    'https://www.youtube.com/watch?v=DrPPkgumCQw', // காலை காற்றே
+    'https://www.youtube.com/watch?v=BoHXKQCfOqU', // குறிஞ்சி மலரே
+  ] as string[],
   /** WhatsApp number, international format, digits only (e.g. '15551234567'). */
   whatsappNumber: '',
 };

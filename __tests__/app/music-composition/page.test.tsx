@@ -42,6 +42,10 @@ describe('Music Composition page — metadata', () => {
   it('keeps canonical aligned with openGraph.url', () => {
     expect(metadata.alternates?.canonical).toBe('/music-composition');
   });
+
+  it('has a bilingual title for English search reach', () => {
+    expect(String(metadata.title)).toMatch(/Tamil Music Composition/);
+  });
 });
 
 describe('Music Composition page — audit fixes', () => {
@@ -50,18 +54,28 @@ describe('Music Composition page — audit fixes', () => {
     expect(screen.getByText(/TechSynergy Corp\. All rights reserved\./)).toBeInTheDocument();
   });
 
-  it('YouTube channel fallback uses a tracked subscribe anchor', () => {
-    render(<MusicCompositionPage />);
-    // Both the samples fallback AND the Footer expose aria-label="YouTube";
-    // the samples link carries the music_composition_samples source on its
-    // UTM, which lets us pick it out specifically.
-    const samplesYt = screen
-      .getAllByLabelText('YouTube')
+  it('embeds verified full-song samples (configured), not the channel fallback', () => {
+    const { container } = render(<MusicCompositionPage />);
+    // Samples are configured now, so the embeds render…
+    expect(container.querySelectorAll('iframe').length).toBeGreaterThanOrEqual(3);
+    // …and the empty-state "listen on our channel" subscribe link is gone.
+    const fallback = screen
+      .queryAllByLabelText('YouTube')
       .find((a) => a.getAttribute('href')?.includes('music_composition_samples'));
-    expect(samplesYt).toBeDefined();
-    expect(samplesYt!.getAttribute('href')).toMatch(/sub_confirmation=1/);
-    expect(samplesYt!.getAttribute('target')).toBe('_blank');
-    expect(samplesYt!.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(fallback).toBeUndefined();
+  });
+
+  it('no longer claims human "artists" (கலைஞர்) — AI-assisted framing (honesty)', () => {
+    render(<MusicCompositionPage />);
+    expect(screen.queryByText(/கலைஞர்/)).toBeNull();
+  });
+
+  it('structured data carries a BreadcrumbList and no priceless Offer', () => {
+    const { container } = render(<MusicCompositionPage />);
+    const ld = container.querySelector('script[type="application/ld+json"]')?.innerHTML || '';
+    expect(ld).toContain('BreadcrumbList');
+    expect(ld).toContain('FAQPage');
+    expect(ld).not.toContain('Offer');
   });
 
   it('final CTA card uses the solid orange brand, not purple or a gradient', () => {

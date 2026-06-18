@@ -9,13 +9,14 @@ import { Footer } from '@/components/Footer';
 import { JsonLd } from '@/components/JsonLd';
 import { YouTubeEmbed } from '@/components/YouTubeEmbed';
 import { TrackedYouTubeAnchor } from '@/components/TrackedYouTubeAnchor';
-import { SITE_URL, SITE_NAME, alternatesFor } from '@/lib/seo';
+import { SITE_URL, SITE_NAME, alternatesFor, breadcrumbJsonLd } from '@/lib/seo';
 import { isYouTubeChannelConfigured, youtubeSubscribeUrl } from '@/config/site';
 import { MUSIC, hasMusicSamples, hasWhatsApp, whatsappLink } from '@/config/music';
 
-const META_TITLE = 'இசையமைப்பு சேவை';
+const META_TITLE = 'இசையமைப்பு சேவை · Tamil Music Composition';
 const META_DESCRIPTION =
-  'உங்கள் தமிழ் பாடல் வரிகளுக்கு தனிப்பட்ட இசை — மலிவான விலையில். தமிழகவல் இசையமைப்பு சேவை: இலவச மதிப்பீடு.';
+  'உங்கள் தமிழ் பாடல் வரிகளுக்கு தனிப்பட்ட இசை — மலிவான விலையில். தமிழகவல் இசையமைப்பு சேவை: இலவச மதிப்பீடு. ' +
+  'Custom Tamil music composition for your lyrics — affordable, free quote.';
 
 export const metadata: Metadata = {
   title: META_TITLE,
@@ -76,6 +77,10 @@ const CHECKLIST = [
 ];
 
 const jsonLd = [
+  breadcrumbJsonLd([
+    { name: 'Tamilagaval', path: '/' },
+    { name: 'Music Composition', path: '/music-composition' },
+  ]),
   {
     '@context': 'https://schema.org',
     '@type': 'Service',
@@ -86,7 +91,12 @@ const jsonLd = [
     provider: { '@type': 'Organization', name: SITE_NAME, url: SITE_URL },
     areaServed: 'Worldwide',
     description: 'Affordable custom Tamil music composition by the தமிழகவல் team. Free quote on request.',
-    offers: { '@type': 'Offer', availability: 'https://schema.org/InStock', url: `${SITE_URL}${ORDER_HREF}` },
+    // No fixed price (custom quote per song), so we omit a priceless Offer
+    // (which Rich Results flags) and point to the request flow instead.
+    potentialAction: {
+      '@type': 'OrderAction',
+      target: `${SITE_URL}${ORDER_HREF}`,
+    },
   },
   {
     '@context': 'https://schema.org',
@@ -152,7 +162,7 @@ export default function MusicCompositionPage() {
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <StepCard num="1" icon="✍️" title="கோரிக்கை அனுப்புங்கள்" desc="தொடர்பு படிவத்தின் மூலம் உங்கள் பாடல் வரிகள் மற்றும் தேவைகளை அனுப்புங்கள்." />
-            <StepCard num="2" icon="🎹" title="நாங்கள் இசை அமைக்கிறோம்" desc="எங்கள் சொந்த இசை தளம் மற்றும் கலைஞர்களைக் கொண்டு உங்கள் பாடலுக்கு இசை அமைக்கிறோம்." />
+            <StepCard num="2" icon="🎹" title="நாங்கள் இசை அமைக்கிறோம்" desc="எங்கள் AI இசை தளத்தில், உங்கள் பாடல் வரிகளுக்கு ஏற்ப கவனமாக இசை வடிவமைத்து மெருகேற்றுகிறோம்." />
             <StepCard num="3" icon="🎧" title="உங்கள் இசையைப் பெறுங்கள்" desc="முடிக்கப்பட்ட இசையை நீங்கள் பெற்று மகிழுங்கள்." />
           </div>
         </div>
@@ -242,7 +252,7 @@ export default function MusicCompositionPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <FeatureCard icon="💰" title="மலிவான விலை" desc="மலிவான கட்டணத்தில் தரமான இசையமைப்பு." />
             <FeatureCard icon="🎯" title="தனிப்பட்ட இசை" desc="உங்கள் பாடலுக்கு மட்டுமே அமைக்கப்படும் அசல் இசை." />
-            <FeatureCard icon="🎹" title="சொந்த இசை தளம்" desc="எங்கள் சொந்த இசை தளம் மற்றும் திறமையான கலைஞர்களைக் கொண்டு உருவாக்கப்படுகிறது." />
+            <FeatureCard icon="🎹" title="AI இசை தளம்" desc="எங்கள் AI இசை தளத்தில் உருவாக்கி, ஒவ்வொரு பாடலையும் கவனமாக மெருகேற்றி வழங்குகிறோம்." />
             <FeatureCard icon="⚡" title="விரைவான சேவை" desc="உங்கள் கோரிக்கைக்கு விரைவாக பதிலளிக்கிறோம்." />
           </div>
         </div>
