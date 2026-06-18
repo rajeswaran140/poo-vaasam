@@ -17,8 +17,6 @@
 
 import { fetchWithRetry } from '@/lib/fetch-retry';
 
-const REVALIDATE_SECONDS = 3600; // 1 hour
-
 export interface ChannelStats {
   channelId: string;
   title: string;
@@ -71,8 +69,14 @@ async function ytFetch<T>(url: string): Promise<T | null> {
   if (!key) return null;
   const sep = url.includes('?') ? '&' : '?';
   try {
+    // Always fetch LIVE. We previously used Next's fetch data cache
+    // (`next: { revalidate }`), but Amplify's SSR compute doesn't reliably
+    // revalidate/persist that cache across Lambda instances, so the admin
+    // dashboard's channel stats (subscribers / views / per-video counts)
+    // froze at the first fetch and never updated. These are admin-only,
+    // low-frequency reads, so `no-store` is cheap and keeps the numbers current.
     const res = await fetchWithRetry(`${url}${sep}key=${key}`, {
-      next: { revalidate: REVALIDATE_SECONDS },
+      cache: 'no-store',
     } as RequestInit);
     if (!res.ok) {
       console.error(`[youtube-api] ${res.status} ${url}`);

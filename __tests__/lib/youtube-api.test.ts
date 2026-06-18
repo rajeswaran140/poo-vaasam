@@ -99,6 +99,11 @@ describe('fetchChannelStats', () => {
     // Key should be appended as a query param, never logged in error.
     const calledWith = (fetchMock.mock.calls[0]?.[0] ?? '') as string;
     expect(calledWith).toContain('key=fake-key');
+    // Must fetch LIVE — no Next data cache (which freezes under Amplify, so the
+    // admin dashboard counts would never update). Regression guard.
+    const init = (fetchMock.mock.calls[0]?.[1] ?? {}) as RequestInit & { next?: unknown };
+    expect(init.cache).toBe('no-store');
+    expect(init.next).toBeUndefined();
   });
 
   it('returns null on upstream non-OK response', async () => {
