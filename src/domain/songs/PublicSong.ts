@@ -24,6 +24,9 @@ export interface PublicSongDTO {
   coverUrl?: string;
   theme: string;
   youtubeVideoId?: string;
+  /** True when the song has structured lyrics — lets clients show a "lyrics" badge
+   *  without shipping the full text in the (potentially large) list payload. */
+  hasLyrics: boolean;
   /** ISO-8601 — interop-friendly across web + native clients. */
   publishedAt: string;
 }
@@ -38,7 +41,8 @@ export class PublicSong {
     public readonly theme: string,
     public readonly publishedAt: string,
     public readonly coverUrl: string | undefined,
-    public readonly youtubeVideoId: string | undefined
+    public readonly youtubeVideoId: string | undefined,
+    public readonly hasLyrics: boolean
   ) {}
 
   /**
@@ -73,7 +77,8 @@ export class PublicSong {
       themeForSongWithOverride(String(obj.id), obj.theme),
       PublicSong.toIso(obj.publishedAt ?? obj.createdAt),
       cover,
-      youtubeVideoId
+      youtubeVideoId,
+      !content.lyrics.isEmpty()
     );
   }
 
@@ -97,6 +102,7 @@ export class PublicSong {
       coverUrl: this.coverUrl,
       theme: this.theme,
       youtubeVideoId: this.youtubeVideoId,
+      hasLyrics: this.hasLyrics,
       publishedAt: this.publishedAt,
     };
   }

@@ -14,6 +14,7 @@ import {
   type WorkflowState,
 } from '@/types/content';
 import { generateSlug } from '@/lib/utils/slug';
+import { Lyrics } from '@/domain/songs/Lyrics';
 
 /**
  * Content Domain Entity
@@ -51,12 +52,21 @@ export class Content {
     private _workflowState: WorkflowState | undefined = undefined,
     // Per-song browse theme/category (love | mother | nature | tamil | homeland).
     // Set by /api/admin/songs/[id]/theme; read by /songs via themeForSongWithOverride.
-    private _theme: string | undefined = undefined
+    private _theme: string | undefined = undefined,
+    // Structured lyrics (sections → lines, optional romanisation + timestamps).
+    // The unlock for on-site lyric pages, captions, and karaoke. Defaults to
+    // empty so legacy rows (lyrics in the `body` blob) reconstruct fine.
+    private _lyrics: Lyrics = Lyrics.empty()
   ) {}
 
   // Getters
   get theme(): string | undefined {
     return this._theme;
+  }
+
+  /** Structured lyrics value object (empty when the song has none yet). */
+  get lyrics(): Lyrics {
+    return this._lyrics;
   }
 
   get title(): string {
@@ -184,7 +194,9 @@ export class Content {
       dto.stemsUrl,
       dto.midiUrl,
       dto.thumbnailUrl,
-      dto.workflowState
+      dto.workflowState,
+      undefined, // theme — set later via /api/admin/songs/[id]/theme
+      Lyrics.fromObject(dto.lyrics)
     );
   }
 
@@ -260,6 +272,11 @@ export class Content {
 
     if (dto.seoDescription !== undefined) {
       this._seoDescription = dto.seoDescription || undefined;
+    }
+
+    if (dto.lyrics !== undefined) {
+      // null/junk → empty (clears); a structured object → sanitised lyrics.
+      this._lyrics = Lyrics.fromObject(dto.lyrics);
     }
 
     if (dto.status !== undefined) {
@@ -400,6 +417,9 @@ export class Content {
       midiUrl: this._midiUrl,
       thumbnailUrl: this._thumbnailUrl,
       workflowState: this._workflowState,
+      // Omit lyrics entirely when empty so songs without words don't carry an
+      // empty `{sections:[]}` in DynamoDB (consistent with other optional fields).
+      lyrics: this._lyrics.isEmpty() ? undefined : this._lyrics.toObject(),
       categoryIds: this._categoryIds,
       tagIds: this._tagIds,
       theme: this._theme,
@@ -446,7 +466,8 @@ export class Content {
       data.workflowState && (WORKFLOW_STATES as readonly string[]).includes(data.workflowState)
         ? (data.workflowState as WorkflowState)
         : undefined,
-      typeof data.theme === 'string' ? data.theme : undefined
+      typeof data.theme === 'string' ? data.theme : undefined,
+      Lyrics.fromObject(data.lyrics)
     );
   }
 

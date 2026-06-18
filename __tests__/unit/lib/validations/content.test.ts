@@ -10,6 +10,7 @@ import {
   deleteContentSchema,
   validateRequestBody,
   formatZodErrors,
+  lyricsSchema,
 } from '@/lib/validations/content';
 import { ContentType, ContentStatus } from '@/types/content';
 
@@ -307,6 +308,57 @@ describe('Content Validation Schemas', () => {
         expect(formatted.body).toBeDefined();
         expect(formatted.author).toBeDefined();
       }
+    });
+  });
+
+  describe('lyricsSchema', () => {
+    const valid = {
+      sections: [
+        { kind: 'pallavi', label: 'பல்லவி', lines: [{ text: 'வரி' }] },
+        { kind: 'charanam', lines: [{ text: 'வரி', romanized: 'vari', startSeconds: 10 }] },
+      ],
+    };
+
+    it('accepts a well-formed lyrics object', () => {
+      expect(lyricsSchema.safeParse(valid).success).toBe(true);
+    });
+
+    it('rejects an unknown section kind', () => {
+      const bad = { sections: [{ kind: 'bridge', lines: [{ text: 'x' }] }] };
+      expect(lyricsSchema.safeParse(bad).success).toBe(false);
+    });
+
+    it('rejects a negative startSeconds', () => {
+      const bad = { sections: [{ kind: 'other', lines: [{ text: 'x', startSeconds: -1 }] }] };
+      expect(lyricsSchema.safeParse(bad).success).toBe(false);
+    });
+
+    it('infers the literal kind union (type-safe for the entity)', () => {
+      const parsed = lyricsSchema.parse(valid);
+      // @ts-expect-error — kind is the literal union, not an arbitrary string.
+      const _bad: 'nope' = parsed.sections[0].kind;
+      expect(parsed.sections[0].kind).toBe('pallavi');
+    });
+  });
+
+  describe('lyrics on create/update schemas', () => {
+    const baseCreate = {
+      type: ContentType.SONGS,
+      title: 'பாடல்',
+      body: 'வரிகள்',
+      description: 'விளக்கம்',
+      author: 'இராஜ்',
+    };
+    const lyrics = { sections: [{ kind: 'pallavi', lines: [{ text: 'வரி' }] }] };
+
+    it('createContentSchema accepts optional lyrics', () => {
+      expect(createContentSchema.safeParse(baseCreate).success).toBe(true);
+      expect(createContentSchema.safeParse({ ...baseCreate, lyrics }).success).toBe(true);
+    });
+
+    it('updateContentSchema accepts lyrics and null (to clear)', () => {
+      expect(updateContentSchema.safeParse({ id: 'cnt_1', lyrics }).success).toBe(true);
+      expect(updateContentSchema.safeParse({ id: 'cnt_1', lyrics: null }).success).toBe(true);
     });
   });
 });

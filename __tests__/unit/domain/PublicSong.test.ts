@@ -43,8 +43,23 @@ describe('PublicSong.fromContent', () => {
       coverUrl: 'https://cdn/cover.jpg',
       theme: 'love',
       youtubeVideoId: 'dQw4w9WgXcQ',
+      hasLyrics: false,
       publishedAt: '2026-02-01T00:00:00.000Z',
     });
+  });
+
+  it('reports hasLyrics=true when the song carries structured lyrics', () => {
+    const song = PublicSong.fromContent(
+      content({ lyrics: { sections: [{ kind: 'pallavi', lines: [{ text: 'வரி' }] }] } })
+    )!;
+    expect(song.toJSON().hasLyrics).toBe(true);
+  });
+
+  it('reports hasLyrics=false when lyrics are absent or empty', () => {
+    expect(PublicSong.fromContent(content())!.toJSON().hasLyrics).toBe(false);
+    expect(
+      PublicSong.fromContent(content({ lyrics: { sections: [] } }))!.toJSON().hasLyrics
+    ).toBe(false);
   });
 
   it('returns null for content with no audio (unplayable → dropped)', () => {

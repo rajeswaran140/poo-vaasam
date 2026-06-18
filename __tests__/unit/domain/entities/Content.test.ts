@@ -306,4 +306,63 @@ describe('Content Entity', () => {
       expect(content.hasAudio()).toBe(false);
     });
   });
+
+  describe('Structured Lyrics', () => {
+    const lyricsDTO = {
+      sections: [
+        { kind: 'pallavi' as const, label: 'பல்லவி', lines: [{ text: 'நீ சிரிச்ச நேரம்' }] },
+        { kind: 'charanam' as const, lines: [{ text: 'வரி', romanized: 'vari', startSeconds: 10 }] },
+      ],
+    };
+
+    it('defaults to empty lyrics on creation', () => {
+      const content = Content.create(validContentDTO);
+      expect(content.lyrics.isEmpty()).toBe(true);
+    });
+
+    it('accepts structured lyrics at creation', () => {
+      const content = Content.create({ ...validContentDTO, lyrics: lyricsDTO });
+      expect(content.lyrics.isEmpty()).toBe(false);
+      expect(content.lyrics.lineCount).toBe(2);
+      expect(content.lyrics.toObject()).toEqual(lyricsDTO);
+    });
+
+    it('sets and clears lyrics via update()', () => {
+      const content = Content.create(validContentDTO);
+
+      content.update({ lyrics: lyricsDTO });
+      expect(content.lyrics.isEmpty()).toBe(false);
+
+      content.update({ lyrics: null });
+      expect(content.lyrics.isEmpty()).toBe(true);
+    });
+
+    it('leaves lyrics untouched when update() omits the field', () => {
+      const content = Content.create({ ...validContentDTO, lyrics: lyricsDTO });
+      content.update({ title: 'புதிய தலைப்பு' });
+      expect(content.lyrics.lineCount).toBe(2);
+    });
+
+    it('omits lyrics from toObject() when empty, includes it when present', () => {
+      const empty = Content.create(validContentDTO);
+      expect(empty.toObject().lyrics).toBeUndefined();
+
+      const withLyrics = Content.create({ ...validContentDTO, lyrics: lyricsDTO });
+      expect(withLyrics.toObject().lyrics).toEqual(lyricsDTO);
+    });
+
+    it('round-trips structured lyrics through toObject/fromObject', () => {
+      const content = Content.create({ ...validContentDTO, lyrics: lyricsDTO });
+      const reconstructed = Content.fromObject(content.toObject());
+      expect(reconstructed.lyrics.toObject()).toEqual(lyricsDTO);
+      expect(reconstructed.lyrics.isTimeSynced()).toBe(true);
+    });
+
+    it('reconstructs legacy rows (no lyrics field) as empty', () => {
+      const content = Content.create(validContentDTO);
+      const legacy = content.toObject();
+      delete legacy.lyrics;
+      expect(Content.fromObject(legacy).lyrics.isEmpty()).toBe(true);
+    });
+  });
 });

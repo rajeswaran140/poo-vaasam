@@ -28,6 +28,9 @@ export const publicSongSchema = z.object({
     .string()
     .regex(/^[A-Za-z0-9_-]{11}$/, 'Must be an 11-character YouTube video ID')
     .optional(),
+  // Whether structured lyrics exist — clients show a "lyrics available" affordance
+  // without the list endpoint shipping the full text.
+  hasLyrics: z.boolean(),
   publishedAt: z.string(),
 });
 

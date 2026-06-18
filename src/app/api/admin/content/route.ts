@@ -13,6 +13,7 @@ import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
 import { ContentType, ContentStatus, WORKFLOW_STATES } from '@/types/content';
 import { DomainError } from '@/application/errors';
 import { triggerReleaseFromEnv } from '@/lib/amplify-deploy';
+import { lyricsSchema } from '@/lib/validations/content';
 import { z } from 'zod';
 
 const contentRepo = new ContentRepository();
@@ -55,6 +56,7 @@ const createContentSchema = z.object({
   audioDuration: z.preprocess(emptyToUndefined, z.coerce.number().int().min(0).optional()),
   seoTitle: z.preprocess(emptyToUndefined, z.string().max(60).optional()),
   seoDescription: z.preprocess(emptyToUndefined, z.string().max(160).optional()),
+  lyrics: lyricsSchema.optional(),
 });
 
 /**
@@ -209,6 +211,7 @@ export async function POST(request: NextRequest) {
       audioDuration: validation.data.audioDuration,
       seoTitle: validation.data.seoTitle,
       seoDescription: validation.data.seoDescription,
+      lyrics: validation.data.lyrics,
     });
 
     // Auto go-live: the public pages are built at deploy time, so a PUBLISHED

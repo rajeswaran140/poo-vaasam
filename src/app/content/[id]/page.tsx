@@ -23,6 +23,7 @@ import { themeForSongWithOverride } from '@/config/song-themes';
 import { themeSongLabelEn } from '@/config/song-collections';
 import { ContentPageClient } from '@/components/ContentPageClient';
 import { PoemReader } from '@/components/PoemReader';
+import { LyricsView } from '@/components/LyricsView';
 import { YouTubeEmbed } from '@/components/YouTubeEmbed';
 import { DetailAudioPlayer } from '@/components/music/DetailAudioPlayer';
 import { JsonLd } from '@/components/JsonLd';
@@ -344,12 +345,19 @@ export default async function ContentPage({ params }: PageProps) {
                   </>
                 )}
                 <div className="prose prose-lg max-w-none">
-                  <pre
-                    className="mb-0 whitespace-pre-wrap font-poem text-lg leading-loose text-gray-800 sm:text-xl"
-                    style={{ lineHeight: '2.2', letterSpacing: '0.5px' }}
-                  >
-                    {content.body}
-                  </pre>
+                  {/* Structured lyrics (the first-class asset) render section-by-section
+                      with optional romanisation; legacy rows with only a `body` blob
+                      fall back to the pre-formatted text. */}
+                  {content.lyrics && Array.isArray(content.lyrics.sections) && content.lyrics.sections.length > 0 ? (
+                    <LyricsView sections={content.lyrics.sections} />
+                  ) : (
+                    <pre
+                      className="mb-0 whitespace-pre-wrap font-poem text-lg leading-loose text-gray-800 sm:text-xl"
+                      style={{ lineHeight: '2.2', letterSpacing: '0.5px' }}
+                    >
+                      {content.body}
+                    </pre>
+                  )}
                 </div>
               </div>
             )}
