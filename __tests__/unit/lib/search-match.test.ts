@@ -39,4 +39,27 @@ describe('matchesSearch (Tamil-robust)', () => {
     expect(matchesSearch('anything', '')).toBe(true);
     expect(matchesSearch('anything', '   ')).toBe(true);
   });
+
+  describe('romanised (Latin → Tamil) fallback', () => {
+    it('finds Tamil content from a roman query', () => {
+      expect(matchesSearch('நீ சிரிச்ச நேரம்', 'nee siricha neram')).toBe(true);
+      expect(matchesSearch('நீ சிரிச்ச நேரம்', 'neram')).toBe(true);
+      expect(matchesSearch('முத்தமிழின்', 'muthamizhin')).toBe(true);
+      expect(matchesSearch('அம்மா சொன்ன கதை', 'amma')).toBe(true);
+    });
+
+    it('tolerates voicing/aspiration variation (desam ≈ thesam)', () => {
+      expect(matchesSearch('எங்கள் தேசம்', 'thesam')).toBe(true);
+      expect(matchesSearch('எங்கள் தேசம்', 'desam')).toBe(true);
+    });
+
+    it('does not romanise-match an unrelated roman query', () => {
+      expect(matchesSearch('அம்மா', 'thesam')).toBe(false);
+    });
+
+    it('a pure-Tamil query keeps exact behaviour (no phonetic widening)', () => {
+      // அப்பா must NOT match அம்மா even though both fold near "ama"/"apa".
+      expect(matchesSearch('அம்மா', 'அப்பா')).toBe(false);
+    });
+  });
 });
