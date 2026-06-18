@@ -9,6 +9,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { TamilInput } from '@/components/admin/TamilInput';
+import { LyricsField } from '@/components/admin/LyricsField';
+import { lyricsTextToDTO, lyricsDTOToText } from '@/lib/lyrics-text';
 import { MediaUploadField } from '@/components/admin/MediaUploadField';
 import { adminFetch } from '@/lib/client-auth';
 import { getYouTubeId } from '@/lib/utils/youtube';
@@ -59,6 +61,8 @@ export default function EditContentPage({ params }: PageProps) {
     type: 'SONGS',
     title: '',
     body: '',
+    // Plain-text lyrics; parsed to a structured LyricsDTO on save.
+    lyricsText: '',
     description: '',
     author: '',
     status: 'DRAFT',
@@ -103,6 +107,8 @@ export default function EditContentPage({ params }: PageProps) {
             type: content.type,
             title: content.title,
             body: content.body,
+            // Flatten stored structured lyrics back to editable plain text.
+            lyricsText: lyricsDTOToText(content.lyrics),
             description: content.description || '',
             author: content.author,
             status: content.status,
@@ -154,12 +160,15 @@ export default function EditContentPage({ params }: PageProps) {
     setSaving(true);
 
     try {
+      // lyricsText is form-only; send the parsed structured DTO (null clears).
+      const { lyricsText, ...rest } = formData;
       const response = await adminFetch('/api/content', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: contentId,
-          ...formData,
+          ...rest,
+          lyrics: lyricsTextToDTO(lyricsText) ?? null,
         }),
       });
 
@@ -288,6 +297,14 @@ export default function EditContentPage({ params }: PageProps) {
               <ContentPreview title={formData.title} body={formData.body} isPoem={formData.type === 'POEMS'} />
             </div>
           </div>
+
+          {/* Structured lyrics — parsed from this textarea on save (empty clears). */}
+          {(formData.type === 'SONGS' || formData.type === 'LYRICS') && (
+            <LyricsField
+              value={formData.lyricsText}
+              onChange={(value) => setFormData((prev) => ({ ...prev, lyricsText: value }))}
+            />
+          )}
 
           <TamilInput
             value={formData.description}

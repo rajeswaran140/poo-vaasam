@@ -9,6 +9,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { TamilInput } from '@/components/admin/TamilInput';
+import { LyricsField } from '@/components/admin/LyricsField';
+import { lyricsTextToDTO } from '@/lib/lyrics-text';
 import { MediaUploadField } from '@/components/admin/MediaUploadField';
 import { adminFetch } from '@/lib/client-auth';
 import { getYouTubeId } from '@/lib/utils/youtube';
@@ -84,6 +86,9 @@ export default function NewContentPage() {
     type: 'SONGS',
     title: '',
     body: '',
+    // Plain-text lyrics (verses separated by blank lines, optional பல்லவி/சரணம்
+    // markers). Parsed to a structured LyricsDTO at submit; drafted like the rest.
+    lyricsText: '',
     description: '',
     author: '',
     // Default to DRAFT — publishing should be a deliberate choice (and on this
@@ -148,10 +153,13 @@ export default function NewContentPage() {
     setSubmitError(null);
 
     try {
+      // Parse the lyrics textarea into the structured DTO the API expects;
+      // lyricsText itself is form-only (the schema ignores it).
+      const { lyricsText, ...rest } = formData;
       const response = await adminFetch('/api/admin/content', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({ ...rest, lyrics: lyricsTextToDTO(lyricsText) }),
       });
 
       const data = await response.json();
@@ -287,6 +295,15 @@ export default function NewContentPage() {
               <ContentPreview title={formData.title} body={formData.body} isPoem={formData.type === 'POEMS'} />
             </div>
           </div>
+
+          {/* Structured lyrics — the first-class asset behind lyric pages,
+              captions and karaoke. Optional; parsed from this textarea on submit. */}
+          {(formData.type === 'SONGS' || formData.type === 'LYRICS') && (
+            <LyricsField
+              value={formData.lyricsText}
+              onChange={(value) => setFormData({ ...formData, lyricsText: value })}
+            />
+          )}
 
           <TamilInput
             label="Description (விளக்கம்)"
