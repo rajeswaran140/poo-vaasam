@@ -58,6 +58,37 @@ describe('content generateMetadata', () => {
     expect(JSON.stringify(m.openGraph?.images)).toContain('plain-cover.png');
   });
 
+  it('forces a relative featuredImage to an absolute og:image URL (WhatsApp needs it)', async () => {
+    mockFindById.mockResolvedValue(
+      asEntity({
+        id: 'cnt_rel',
+        type: 'SONGS',
+        title: 'Relative Cover Song',
+        author: 'A',
+        featuredImage: '/images/song-covers/rel.png',
+      })
+    );
+    const m = await meta('cnt_rel');
+    const og = (m.openGraph?.images as { url?: string; alt?: string }[]) ?? [];
+    expect(og[0]?.url).toBe('https://tamilagaval.com/images/song-covers/rel.png');
+    expect(og[0]?.alt).toBeTruthy(); // alt attached for the rich card
+  });
+
+  it('leaves an already-absolute CDN cover unchanged (no double-prefix)', async () => {
+    mockFindById.mockResolvedValue(
+      asEntity({
+        id: 'cnt_abs',
+        type: 'SONGS',
+        title: 'Abs Cover',
+        author: 'A',
+        featuredImage: 'https://cdn.example/abs.png',
+      })
+    );
+    const m = await meta('cnt_abs');
+    const og = (m.openGraph?.images as { url?: string }[]) ?? [];
+    expect(og[0]?.url).toBe('https://cdn.example/abs.png');
+  });
+
   it('says "listen free" for a song', async () => {
     mockFindById.mockResolvedValue(
       asEntity({ id: 'cnt_song2', type: 'SONGS', title: 'X', author: 'A' })

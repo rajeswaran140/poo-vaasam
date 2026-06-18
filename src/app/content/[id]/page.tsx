@@ -31,6 +31,7 @@ import { ShareRow } from '@/components/content/ShareRow';
 import { TrackedYouTubeOpen } from '@/components/TrackedYouTubeOpen';
 import { isYouTubeUrl, getYouTubeWatchUrl, getYouTubeId } from '@/lib/utils/youtube';
 import { SITE_URL, SITE_NAME, absoluteUrl, toDescription, alternatesFor, actionVerb, crawlerAuthor } from '@/lib/seo';
+import { ogImage } from '@/lib/og-image';
 import { isoDuration } from '@/lib/iso-duration';
 
 // Fully static, regenerated only at build/deploy. We deliberately do NOT use
@@ -149,9 +150,10 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   const url = absoluteUrl(contentPath(content.id));
   // Prefer a bespoke hero's designed artwork as the share image (it carries the
-  // title), falling back to the content's own cover.
+  // title), falling back to the content's own cover. ogImage() guarantees an
+  // ABSOLUTE url + alt so WhatsApp (the #1 share channel) renders a rich card.
   const shareImage = getSongHero(content.id)?.image || content.featuredImage;
-  const hasImage = Boolean(shareImage);
+  const images = ogImage(shareImage, `${content.title} — ${descType} by ${crawlerAuthor(content.author)}`);
 
   return {
     title,
@@ -166,14 +168,14 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       siteName: SITE_NAME,
       // When there's an image, use it; otherwise the co-located
       // opengraph-image.tsx generates a branded card automatically.
-      ...(hasImage ? { images: [shareImage as string] } : {}),
+      ...(images ? { images } : {}),
     },
     twitter: {
       // There's always a large image now (share image or the generated card).
       card: 'summary_large_image',
       title,
       description: toDescription(description),
-      ...(hasImage ? { images: [shareImage as string] } : {}),
+      ...(images ? { images } : {}),
     },
   };
 }
