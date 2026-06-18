@@ -1,0 +1,42 @@
+# CI quality gate — runs on every PR and push to main.
+#
+# This is the provider-agnostic half of the "platform velocity" component: a
+# pre-merge gate so changes can't land red (today commits hit the live prod tree
+# with no check). It runs exactly what we verify locally — typecheck + lint +
+# the full Jest suite. Build/deploy stays on Amplify (it needs build-time
+# secrets); the staging/CD strategy is the separate, decision-gated half.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+# Cancel superseded runs on the same ref to save minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: typecheck · lint · test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test -- --ci
