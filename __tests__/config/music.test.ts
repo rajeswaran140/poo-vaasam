@@ -12,13 +12,13 @@ describe('music config', () => {
     }
   });
 
-  it('hides WhatsApp until a real number is set', () => {
-    expect(hasWhatsApp()).toBe(false); // number unset by default
+  it('enables WhatsApp with a valid international number', () => {
+    expect(hasWhatsApp()).toBe(true);
+    expect(MUSIC.whatsappNumber).toMatch(/^\d{11,15}$/); // country code + number
   });
 
-  it('builds a wa.me link with url-encoded text', () => {
+  it('builds a wa.me link to the configured number with url-encoded text', () => {
     const link = whatsappLink('hi there');
-    expect(link.startsWith('https://wa.me/')).toBe(true);
-    expect(link).toContain('text=hi%20there');
+    expect(link).toBe(`https://wa.me/${MUSIC.whatsappNumber}?text=hi%20there`);
   });
 });

@@ -14,8 +14,9 @@ export const MUSIC = {
     'https://www.youtube.com/watch?v=DrPPkgumCQw', // காலை காற்றே
     'https://www.youtube.com/watch?v=BoHXKQCfOqU', // குறிஞ்சி மலரே
   ] as string[],
-  /** WhatsApp number, international format, digits only (e.g. '15551234567'). */
-  whatsappNumber: '',
+  /** WhatsApp number, international format, digits only (e.g. '15551234567').
+   *  Toronto number 416-678-2728 with the Canadian country code (1). */
+  whatsappNumber: '14166782728',
 };
 
 export function hasMusicSamples(): boolean {
