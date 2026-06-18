@@ -85,6 +85,35 @@ describe('contentJsonLd — other content kinds', () => {
   });
 });
 
+describe('contentJsonLd — lyrics', () => {
+  it('omits lyrics when none are supplied', () => {
+    const main = mainOf(contentJsonLd(song, baseOpts));
+    expect('recordingOf' in main).toBe(false);
+    expect('lyrics' in main).toBe(false);
+  });
+
+  it('attaches a song\'s lyrics under recordingOf → MusicComposition', () => {
+    const main = mainOf(contentJsonLd({ ...song, lyricsText: 'பல்லவி\nநீ சிரிச்ச நேரம்' }, baseOpts));
+    expect(main.recordingOf).toEqual({
+      '@type': 'MusicComposition',
+      name: 'எங்கள் தேசம்',
+      lyrics: { '@type': 'CreativeWork', text: 'பல்லவி\nநீ சிரிச்ச நேரம்' },
+    });
+  });
+
+  it('attaches lyrics directly on a LYRICS (MusicComposition) page', () => {
+    const lyrics: ContentJsonLdInput = { type: 'LYRICS', title: 'வரிகள்', lyricsText: 'வரி ஒன்று' };
+    const main = mainOf(contentJsonLd(lyrics, baseOpts));
+    expect(main.lyrics).toEqual({ '@type': 'CreativeWork', text: 'வரி ஒன்று' });
+    expect('recordingOf' in main).toBe(false);
+  });
+
+  it('ignores blank/whitespace lyrics', () => {
+    const main = mainOf(contentJsonLd({ ...song, lyricsText: '   ' }, baseOpts));
+    expect('recordingOf' in main).toBe(false);
+  });
+});
+
 describe('contentJsonLd — VideoObject', () => {
   it('adds a VideoObject only when a youtubeId is supplied', () => {
     const without = contentJsonLd(song, baseOpts);

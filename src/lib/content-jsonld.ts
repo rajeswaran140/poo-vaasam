@@ -33,6 +33,8 @@ export interface ContentJsonLdInput {
   updatedAt?: string | null;
   description?: string | null;
   audioUrl?: string | null;
+  /** Plain-text lyrics (flattened from structured Lyrics); adds lyrics LD when set. */
+  lyricsText?: string | null;
 }
 
 export interface ContentJsonLdOptions {
@@ -86,6 +88,19 @@ export function contentJsonLd(
     ...(opts.audioDurationIso ? { duration: opts.audioDurationIso } : {}),
     publisher: { '@type': 'Organization', name: SITE_NAME, url: SITE_URL },
   };
+
+  // Lyrics as structured data (the SEO payoff of storing lyrics). A song is a
+  // recording OF a composition that carries the lyrics; a LYRICS page IS the
+  // composition, so lyrics attach directly.
+  const lyricsText = (content.lyricsText ?? '').trim();
+  if (lyricsText) {
+    const lyricsWork = { '@type': 'CreativeWork', text: lyricsText };
+    if (isSong) {
+      main.recordingOf = { '@type': 'MusicComposition', name: content.title, lyrics: lyricsWork };
+    } else if (content.type === ContentType.LYRICS) {
+      main.lyrics = lyricsWork;
+    }
+  }
 
   const breadcrumb = {
     '@context': 'https://schema.org',

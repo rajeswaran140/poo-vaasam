@@ -24,6 +24,7 @@ import { themeSongLabelEn } from '@/config/song-collections';
 import { ContentPageClient } from '@/components/ContentPageClient';
 import { PoemReader } from '@/components/PoemReader';
 import { LyricsView } from '@/components/LyricsView';
+import { lyricsDTOToText } from '@/lib/lyrics-text';
 import { YouTubeEmbed } from '@/components/YouTubeEmbed';
 import { DetailAudioPlayer } from '@/components/music/DetailAudioPlayer';
 import { JsonLd } from '@/components/JsonLd';
@@ -207,7 +208,9 @@ export default async function ContentPage({ params }: PageProps) {
   // Tamil name (so it matches that section page's breadcrumb) — or "all content"
   // for the /all aggregate.
   const parentLabel = SECTION_LABEL_BY_HREF[browseTo.href] ?? 'அனைத்து உள்ளடக்கம்';
-  const jsonLd = contentJsonLd(content as ContentJsonLdInput, {
+  // Flatten structured lyrics to text for the MusicComposition lyrics LD.
+  const lyricsText = lyricsDTOToText(content.lyrics);
+  const jsonLd = contentJsonLd({ ...content, lyricsText } as ContentJsonLdInput, {
     canonicalUrl: pageUrl,
     image: structuredImage,
     audioDurationIso,
