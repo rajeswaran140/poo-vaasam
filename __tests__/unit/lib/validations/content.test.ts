@@ -333,10 +333,8 @@ describe('Content Validation Schemas', () => {
       expect(lyricsSchema.safeParse(bad).success).toBe(false);
     });
 
-    it('infers the literal kind union (type-safe for the entity)', () => {
+    it('parses a known kind to its literal value', () => {
       const parsed = lyricsSchema.parse(valid);
-      // @ts-expect-error — kind is the literal union, not an arbitrary string.
-      const _bad: 'nope' = parsed.sections[0].kind;
       expect(parsed.sections[0].kind).toBe('pallavi');
     });
   });

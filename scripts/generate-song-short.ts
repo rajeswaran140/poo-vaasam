@@ -22,6 +22,7 @@ import { writeFileSync, existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseEbur128Loudness, pickHookWindow } from '@/lib/hook-window';
+import { buildHookRecommendation } from '@/lib/hook-recommendation';
 
 interface Args {
   audio: string;
@@ -138,9 +139,13 @@ async function main() {
   if (!hook) throw new Error('Could not detect a hook window.');
 
   const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  const rec = buildHookRecommendation(hook);
   console.log(`🎵 ${args.title ?? args.audio}`);
   console.log(`   track ${mmss(total)} · ${samples.length} loudness samples`);
-  console.log(`   hook  ${mmss(hook.start)}–${mmss(hook.end)} (avg ${hook.avgLufs.toFixed(1)} LUFS)`);
+  console.log(`   hook  ${rec.windowLabel} (avg ${hook.avgLufs.toFixed(1)} LUFS)`);
+  // Productised retention guidance: tell the operator how to open the MAIN video
+  // on the hook (the first-15s lever), not just render the Short.
+  console.log(`✂️  ${rec.trimInstruction}`);
 
   render(args, coverPath, audioPath, hook.start);
 
