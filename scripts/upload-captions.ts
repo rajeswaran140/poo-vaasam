@@ -21,7 +21,9 @@
  * lib/captions; this script is the I/O around it.
  */
 
+import { readFileSync } from 'node:fs';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
+import { Lyrics } from '@/domain/songs/Lyrics';
 import { lyricsToCues, toSRT, toWebVTT } from '@/lib/captions';
 import { getYouTubeId } from '@/lib/utils/youtube';
 
@@ -91,31 +93,51 @@ async function insertCaption(
 
 async function main() {
   const id = arg('--id');
-  if (!id) throw new Error('Required: --id <contentId>');
   const language = arg('--language') ?? 'ta';
   const name = arg('--name') ?? 'பாடல் வரிகள்';
   const useVtt = has('--vtt');
   const isDraft = has('--draft');
 
-  const content = await new ContentRepository().findById(id);
-  if (!content) throw new Error(`Content not found: ${id}`);
-  if (content.lyrics.isEmpty()) {
-    throw new Error(`No structured lyrics stored for "${content.title}" — add them in /admin first.`);
+  // Two sources of lyrics:
+  //  - --id <contentId>: a stored site song (lyrics + video + duration from DB).
+  //  - --video + --duration + lyrics (from --lyrics-file or stdin): a YouTube-only
+  //    song with no site content item.
+  let lyrics: Lyrics;
+  let videoId: string;
+  let totalSec: number;
+  let label: string;
+
+  if (id) {
+    const content = await new ContentRepository().findById(id);
+    if (!content) throw new Error(`Content not found: ${id}`);
+    if (content.lyrics.isEmpty()) {
+      throw new Error(`No structured lyrics stored for "${content.title}" — add them in /admin first.`);
+    }
+    lyrics = content.lyrics;
+    videoId = arg('--video') ?? content.youtubeVideoId ?? getYouTubeId(content.videoUrl ?? '') ?? '';
+    totalSec = Number(arg('--duration') ?? content.audioDuration ?? 0);
+    label = content.title;
+  } else {
+    videoId = arg('--video') ?? '';
+    if (!videoId) throw new Error('Required: --id <contentId>  OR  --video <id> --duration <sec> (+ lyrics via --lyrics-file/stdin).');
+    totalSec = Number(arg('--duration') ?? 0);
+    const lyricsFile = arg('--lyrics-file');
+    const text = lyricsFile ? readFileSync(lyricsFile, 'utf8') : readFileSync(0, 'utf8');
+    lyrics = Lyrics.fromPlainText(text);
+    if (lyrics.isEmpty()) throw new Error('No lyrics provided (via --lyrics-file or stdin).');
+    label = arg('--title') ?? videoId;
   }
 
-  const videoId = arg('--video') ?? content.youtubeVideoId ?? getYouTubeId(content.videoUrl ?? '') ?? '';
-  if (!videoId) throw new Error('No YouTube video id on this content (pass --video <id>).');
-
-  const totalSec = Number(arg('--duration') ?? content.audioDuration ?? 0);
+  if (!videoId) throw new Error('No YouTube video id (pass --video <id>).');
   if (!(totalSec > 0)) throw new Error('Unknown track duration (pass --duration <seconds>).');
 
-  const cues = lyricsToCues(content.lyrics, { totalSec });
+  const cues = lyricsToCues(lyrics, { totalSec });
   if (cues.length === 0) throw new Error('Lyrics produced no caption cues.');
   const caption = useVtt ? toWebVTT(cues) : toSRT(cues);
 
-  console.log(`🎬 ${content.title} → ${videoId}`);
+  console.log(`🎬 ${label} → ${videoId}`);
   console.log(`   ${cues.length} cues · ${useVtt ? 'WebVTT' : 'SRT'} · lang=${language}${isDraft ? ' · draft' : ''}`);
-  if (content.lyrics.isTimeSynced()) console.log('   (using per-line timestamps)');
+  if (lyrics.isTimeSynced()) console.log('   (using per-line timestamps)');
   else console.log(`   (no timestamps — evenly distributed across ${totalSec}s; refine by hand-syncing lyrics)`);
 
   const token = await mintWriteToken();
