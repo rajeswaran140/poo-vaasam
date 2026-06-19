@@ -19,6 +19,13 @@ describe('parseSrt', () => {
     const srt = '1\r\n00:01:00.000 --> 00:01:02.500\r\nline\r\n\r\ngarbage';
     expect(parseSrt(srt)).toEqual([{ start: 60, end: 62.5, text: 'line' }]);
   });
+
+  it('strips [annotation] markers and drops marker-only cues', () => {
+    const srt =
+      '1\n00:00:02,000 --> 00:00:05,000\n[இசை]\n\n' + // music-only → dropped
+      '2\n00:00:29,000 --> 00:00:31,000\nஎன் பாட்டு [இசை][பாடுதல்]'; // inline markers stripped
+    expect(parseSrt(srt)).toEqual([{ start: 29, end: 31, text: 'என் பாட்டு' }]);
+  });
 });
 
 describe('alignLyricsToAsr', () => {

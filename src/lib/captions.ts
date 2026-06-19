@@ -123,6 +123,11 @@ export function parseSrt(srt: string): CaptionCue[] {
       .split('\n')
       .filter((l) => !tc.test(l) && !/^\d+$/.test(l.trim()))
       .join(' ')
+      // Strip ASR annotation markers like [இசை] (music) / [பாடுதல்] (singing) /
+      // [Music]; a cue that's only markers becomes empty and is dropped. These
+      // pollute word-level alignment (they'd count as words) and aren't lyrics.
+      .replace(/\[[^\]]*\]/g, ' ')
+      .replace(/\s+/g, ' ')
       .trim();
     if (text) out.push({ start: secs(m[1], m[2], m[3], m[4]), end: secs(m[5], m[6], m[7], m[8]), text });
   }
