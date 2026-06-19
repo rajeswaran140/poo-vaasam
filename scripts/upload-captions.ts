@@ -131,7 +131,8 @@ async function main() {
   if (!videoId) throw new Error('No YouTube video id (pass --video <id>).');
   if (!(totalSec > 0)) throw new Error('Unknown track duration (pass --duration <seconds>).');
 
-  const cues = lyricsToCues(lyrics, { totalSec });
+  const startSec = Number(arg('--start-offset') ?? 0);
+  const cues = lyricsToCues(lyrics, { totalSec, startSec });
   if (cues.length === 0) throw new Error('Lyrics produced no caption cues.');
   const caption = useVtt ? toWebVTT(cues) : toSRT(cues);
 

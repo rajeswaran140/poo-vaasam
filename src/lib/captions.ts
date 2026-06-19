@@ -30,6 +30,12 @@ export interface CaptionOptions {
   totalSec: number;
   /** Minimum cue duration in the synced path (avoids fl. defaults to 1s). */
   minCueSec?: number;
+  /**
+   * Seconds of instrumental intro before the first sung line (even path only).
+   * Lyrics are spread from here to the end, so captions don't run ahead of the
+   * vocals. Defaults to 0.
+   */
+  startSec?: number;
 }
 
 /** Format seconds as HH:MM:SS<sep>mmm (SRT uses ',', WebVTT uses '.'). */
@@ -74,11 +80,12 @@ export function lyricsToCues(lyrics: Lyrics, opts: CaptionOptions): CaptionCue[]
     });
   }
 
-  // Even distribution across the track.
-  const slice = totalSec / lines.length;
+  // Even distribution across the SUNG portion (after any instrumental intro).
+  const startSec = Math.min(Math.max(0, opts.startSec ?? 0), totalSec);
+  const slice = (totalSec - startSec) / lines.length;
   return lines.map((line, i) => ({
-    start: i * slice,
-    end: (i + 1) * slice,
+    start: startSec + i * slice,
+    end: startSec + (i + 1) * slice,
     text: line.text,
   }));
 }

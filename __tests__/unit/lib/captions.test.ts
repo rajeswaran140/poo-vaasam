@@ -35,6 +35,16 @@ describe('lyricsToCues', () => {
     ]);
   });
 
+  it('offsets even distribution past an instrumental intro (startSec)', () => {
+    const cues = lyricsToCues(Lyrics.fromPlainText('a\nb\nc'), { totalSec: 100, startSec: 10 });
+    // 3 lines across 10..100 = 30s each.
+    expect(cues).toEqual([
+      { start: 10, end: 40, text: 'a' },
+      { start: 40, end: 70, text: 'b' },
+      { start: 70, end: 100, text: 'c' },
+    ]);
+  });
+
   it('uses per-line timestamps when synced (cue runs to the next start)', () => {
     const lyrics = Lyrics.fromObject({
       sections: [
