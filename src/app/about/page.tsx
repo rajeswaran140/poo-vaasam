@@ -75,7 +75,9 @@ export default function AboutPage() {
           white badge + heading read as intended (the parent is dark gray). */}
       <section className="relative w-full overflow-hidden bg-orange-600 text-white">
 
-        <div className="relative container mx-auto px-6 py-20 sm:px-10">
+        {/* pt-32 (not py-20) clears the fixed 80px header so the "பற்றி" badge
+            isn't flush against it; pb-20 keeps the generous bottom spacing. */}
+        <div className="relative container mx-auto px-6 pt-32 pb-20 sm:px-10">
           <span className="mb-3 inline-flex items-center rounded-full bg-white/15 px-3 py-1 font-tamil text-xs font-semibold uppercase tracking-wide text-white ring-1 ring-white/25 backdrop-blur-sm">
             பற்றி
           </span>
