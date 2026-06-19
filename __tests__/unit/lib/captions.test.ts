@@ -115,6 +115,11 @@ describe('toSRT / toWebVTT', () => {
     expect(toWebVTT([])).toBe('WEBVTT\n');
   });
 
+  it('preserves a newline in cue text (grouped couplet = 2-line caption)', () => {
+    const srt = toSRT([{ start: 0, end: 5, text: 'வாசல் ஓரம்...\nநிக்கிறேன்...' }]);
+    expect(srt).toBe('1\n00:00:00,000 --> 00:00:05,000\nவாசல் ஓரம்...\nநிக்கிறேன்...');
+  });
+
   it('end-to-end: lyrics → cues → SRT', () => {
     const srt = toSRT(lyricsToCues(Lyrics.fromPlainText('one\ntwo'), { totalSec: 20 }));
     expect(srt).toContain('00:00:00,000 --> 00:00:10,000');

@@ -121,6 +121,9 @@ async function main() {
   //    song with no site content item.
   let lyrics: Lyrics;
   let lyricLines: string[];
+  // Blank-line blocks (stanzas/couplets) — used by --group to show a block's
+  // lines together as one caption instead of one line at a time.
+  let blocks: string[][];
   let videoId: string;
   let totalSec: number;
   let label: string;
@@ -132,7 +135,8 @@ async function main() {
       throw new Error(`No structured lyrics stored for "${content.title}" — add them in /admin first.`);
     }
     lyrics = content.lyrics;
-    lyricLines = lyrics.sections.flatMap((s) => s.lines.map((l) => l.text));
+    blocks = lyrics.sections.map((s) => s.lines.map((l) => l.text));
+    lyricLines = blocks.flat();
     videoId = arg('--video') ?? content.youtubeVideoId ?? getYouTubeId(content.videoUrl ?? '') ?? '';
     totalSec = Number(arg('--duration') ?? content.audioDuration ?? 0);
     label = content.title;
@@ -150,7 +154,11 @@ async function main() {
       .join('\n');
     lyrics = Lyrics.fromPlainText(text);
     if (lyrics.isEmpty()) throw new Error('No lyrics provided (via --lyrics-file or stdin).');
-    lyricLines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    blocks = text
+      .split(/\n[ \t]*\n/)
+      .map((b) => b.split(/\r?\n/).map((l) => l.trim()).filter(Boolean))
+      .filter((b) => b.length > 0);
+    lyricLines = blocks.flat();
     label = arg('--title') ?? videoId;
   }
 
@@ -173,12 +181,28 @@ async function main() {
     const rawStarts = alignLyricLineStarts(lyricLines, asr);
     const matched = rawStarts.filter((v) => typeof v === 'number').length;
     const starts = fillStarts(rawStarts, totalSec, startSec);
-    const synced = Lyrics.fromObject({
-      sections: [{ kind: 'other', lines: lyricLines.map((t, i) => ({ text: t, startSeconds: starts[i] })) }],
-    });
+
+    // --group: caption each blank-line block (couplet/stanza) as one multi-line
+    // cue, timed to its first line — avoids fast short lines flashing one by one.
+    // Otherwise one cue per line.
+    let entries: { text: string; startSeconds: number }[];
+    if (has('--group')) {
+      entries = [];
+      let fi = 0;
+      for (const b of blocks) {
+        entries.push({ text: b.join('\n'), startSeconds: starts[fi] });
+        fi += b.length;
+      }
+    } else {
+      entries = lyricLines.map((t, i) => ({ text: t, startSeconds: starts[i] }));
+    }
+
+    const synced = Lyrics.fromObject({ sections: [{ kind: 'other', lines: entries }] });
     cues = lyricsToCues(synced, { totalSec, maxCueSec });
     console.log(`🎬 ${label} → ${videoId}`);
-    console.log(`   ${cues.length} cues · aligned to ASR (${matched}/${lyricLines.length} lines matched, rest interpolated)`);
+    console.log(
+      `   ${cues.length} cues${has('--group') ? ` (grouped from ${blocks.length} blocks)` : ''} · aligned to ASR (${matched}/${lyricLines.length} lines matched)`
+    );
   } else {
     cues = lyricsToCues(lyrics, { totalSec, startSec, maxCueSec });
     console.log(`🎬 ${label} → ${videoId}`);
