@@ -31,6 +31,12 @@ export interface CaptionOptions {
   /** Minimum cue duration in the synced path (avoids fl. defaults to 1s). */
   minCueSec?: number;
   /**
+   * Maximum a single cue stays on screen. Without it, the last line of a section
+   * lingers through the following instrumental break (a big gap to the next
+   * line); capping it clears the screen during breaks. Off when unset.
+   */
+  maxCueSec?: number;
+  /**
    * Seconds of instrumental intro before the first sung line (even path only).
    * Lyrics are spread from here to the end, so captions don't run ahead of the
    * vocals. Defaults to 0.
@@ -64,18 +70,22 @@ function flatLines(lyrics: Lyrics): { text: string; startSeconds?: number }[] {
 export function lyricsToCues(lyrics: Lyrics, opts: CaptionOptions): CaptionCue[] {
   const totalSec = opts.totalSec;
   const minCue = opts.minCueSec ?? 1;
+  const maxCue = opts.maxCueSec && opts.maxCueSec > 0 ? opts.maxCueSec : Infinity;
+  const cap = (start: number, end: number) =>
+    Math.min(end, start + maxCue);
   const lines = flatLines(lyrics);
   if (lines.length === 0 || !(totalSec > 0)) return [];
 
   if (lyrics.isTimeSynced()) {
-    // Keep only timed lines, in order; each runs until the next timed start.
+    // Keep only timed lines, in order; each runs until the next timed start,
+    // capped by maxCue so a line doesn't hang through an instrumental break.
     const timed = lines
       .filter((l): l is { text: string; startSeconds: number } => typeof l.startSeconds === 'number')
       .sort((a, b) => a.startSeconds - b.startSeconds);
     return timed.map((line, i) => {
       const start = Math.min(line.startSeconds, totalSec);
       const nextStart = i + 1 < timed.length ? timed[i + 1].startSeconds : totalSec;
-      const end = Math.min(totalSec, Math.max(nextStart, start + minCue));
+      const end = Math.min(totalSec, cap(start, Math.max(nextStart, start + minCue)));
       return { start, end, text: line.text };
     });
   }
@@ -83,11 +93,10 @@ export function lyricsToCues(lyrics: Lyrics, opts: CaptionOptions): CaptionCue[]
   // Even distribution across the SUNG portion (after any instrumental intro).
   const startSec = Math.min(Math.max(0, opts.startSec ?? 0), totalSec);
   const slice = (totalSec - startSec) / lines.length;
-  return lines.map((line, i) => ({
-    start: startSec + i * slice,
-    end: startSec + (i + 1) * slice,
-    text: line.text,
-  }));
+  return lines.map((line, i) => {
+    const start = startSec + i * slice;
+    return { start, end: cap(start, startSec + (i + 1) * slice), text: line.text };
+  });
 }
 
 /** Serialise cues as SubRip (.srt). */

@@ -141,7 +141,13 @@ async function main() {
     if (!videoId) throw new Error('Required: --id <contentId>  OR  --video <id> --duration <sec> (+ lyrics via --lyrics-file/stdin).');
     totalSec = Number(arg('--duration') ?? 0);
     const lyricsFile = arg('--lyrics-file');
-    const text = lyricsFile ? readFileSync(lyricsFile, 'utf8') : readFileSync(0, 'utf8');
+    const raw = lyricsFile ? readFileSync(lyricsFile, 'utf8') : readFileSync(0, 'utf8');
+    // Drop bracketed stage directions / section headers ("[Intro …]", "[Break …]",
+    // "[Chorus — Pallavi]") so they never become caption text.
+    const text = raw
+      .split(/\r?\n/)
+      .filter((l) => !/^\s*\[.*\]\s*$/.test(l))
+      .join('\n');
     lyrics = Lyrics.fromPlainText(text);
     if (lyrics.isEmpty()) throw new Error('No lyrics provided (via --lyrics-file or stdin).');
     lyricLines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
@@ -152,6 +158,9 @@ async function main() {
   if (!(totalSec > 0)) throw new Error('Unknown track duration (pass --duration <seconds>).');
 
   const startSec = Number(arg('--start-offset') ?? 0);
+  // Clear the screen during instrumental breaks (default 12s in --from-asr; off
+  // otherwise). Overridable with --max-cue <sec>.
+  const maxCueSec = Number(arg('--max-cue') ?? (has('--from-asr') ? 12 : 0)) || undefined;
   const token = await mintWriteToken();
 
   // --from-asr: borrow the audio-aligned timestamps from the video's auto-caption
@@ -167,11 +176,11 @@ async function main() {
     const synced = Lyrics.fromObject({
       sections: [{ kind: 'other', lines: lyricLines.map((t, i) => ({ text: t, startSeconds: starts[i] })) }],
     });
-    cues = lyricsToCues(synced, { totalSec });
+    cues = lyricsToCues(synced, { totalSec, maxCueSec });
     console.log(`🎬 ${label} → ${videoId}`);
     console.log(`   ${cues.length} cues · aligned to ASR (${matched}/${lyricLines.length} lines matched, rest interpolated)`);
   } else {
-    cues = lyricsToCues(lyrics, { totalSec, startSec });
+    cues = lyricsToCues(lyrics, { totalSec, startSec, maxCueSec });
     console.log(`🎬 ${label} → ${videoId}`);
     console.log(`   ${cues.length} cues · ${useVtt ? 'WebVTT' : 'SRT'} · lang=${language}${isDraft ? ' · draft' : ''}`);
     if (!lyrics.isTimeSynced()) console.log(`   (no timestamps — evenly distributed across ${totalSec}s)`);

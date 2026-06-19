@@ -64,6 +64,23 @@ describe('lyricsToCues', () => {
     ]);
   });
 
+  it('caps a lingering cue with maxCueSec so it clears during a break', () => {
+    const lyrics = Lyrics.fromObject({
+      sections: [
+        {
+          kind: 'pallavi',
+          lines: [
+            { text: 'before break', startSeconds: 10 }, // big gap to next → instrumental break
+            { text: 'after break', startSeconds: 60 },
+          ],
+        },
+      ],
+    });
+    const cues = lyricsToCues(lyrics, { totalSec: 100, maxCueSec: 8 });
+    expect(cues[0]).toEqual({ start: 10, end: 18, text: 'before break' }); // clipped, not 60
+    expect(cues[1].start).toBe(60);
+  });
+
   it('caps cues at the track end', () => {
     const lyrics = Lyrics.fromObject({
       sections: [{ kind: 'other', lines: [{ text: 'late', startSeconds: 95 }] }],
