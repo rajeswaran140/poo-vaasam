@@ -64,6 +64,15 @@ describe('About page — audit fixes', () => {
     const { container } = render(<AboutPage />);
     expect(container.querySelector('section.bg-orange-600')).not.toBeNull();
   });
+
+  it('hero clears the fixed 80px header — top padding, not py-20 (badge not flush)', () => {
+    const { container } = render(<AboutPage />);
+    const inner = container.querySelector('section.bg-orange-600 > div');
+    // py-20 made the top padding equal the header height → "பற்றி" sat on the
+    // header. pt-32 adds clearance below the fixed header.
+    expect(inner?.className).toContain('pt-32');
+    expect(inner?.className).not.toContain('py-20');
+  });
 });
 
 describe('About page — metadata', () => {
