@@ -100,6 +100,26 @@ export function toSRT(cues: CaptionCue[]): string {
     .join('\n\n');
 }
 
+/** Parse an SRT string into cues (tolerant of `,`/`.` ms separators). */
+export function parseSrt(srt: string): CaptionCue[] {
+  const tc =
+    /(\d\d):(\d\d):(\d\d)[,.](\d+)\s*-->\s*(\d\d):(\d\d):(\d\d)[,.](\d+)/;
+  const secs = (h: string, m: string, s: string, ms: string) =>
+    Number(h) * 3600 + Number(m) * 60 + Number(s) + Number(ms) / 1000;
+  const out: CaptionCue[] = [];
+  for (const block of (srt ?? '').replace(/\r/g, '').split(/\n\s*\n/)) {
+    const m = block.match(tc);
+    if (!m) continue;
+    const text = block
+      .split('\n')
+      .filter((l) => !tc.test(l) && !/^\d+$/.test(l.trim()))
+      .join(' ')
+      .trim();
+    if (text) out.push({ start: secs(m[1], m[2], m[3], m[4]), end: secs(m[5], m[6], m[7], m[8]), text });
+  }
+  return out;
+}
+
 /** Serialise cues as WebVTT (.vtt) — leads with the required WEBVTT header. */
 export function toWebVTT(cues: CaptionCue[]): string {
   const body = cues

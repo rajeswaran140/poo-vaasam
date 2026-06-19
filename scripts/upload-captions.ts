@@ -24,7 +24,8 @@
 import { readFileSync } from 'node:fs';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { Lyrics } from '@/domain/songs/Lyrics';
-import { lyricsToCues, toSRT, toWebVTT } from '@/lib/captions';
+import { lyricsToCues, toSRT, toWebVTT, parseSrt, type CaptionCue } from '@/lib/captions';
+import { alignLyricsToAsr, fillStarts } from '@/lib/align-lyrics';
 import { getYouTubeId } from '@/lib/utils/youtube';
 
 function arg(flag: string): string | undefined {
@@ -91,6 +92,22 @@ async function insertCaption(
   return res.ok ? { id: data.id } : { error: data };
 }
 
+/** Download the video's ASR (auto) caption track as timed cues, for alignment. */
+async function fetchAsrCues(accessToken: string, videoId: string): Promise<CaptionCue[]> {
+  const list = await fetch(
+    `https://www.googleapis.com/youtube/v3/captions?part=snippet&videoId=${videoId}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  const listData = (await list.json()) as { items?: { id: string; snippet: { trackKind?: string } }[] };
+  const asr = (listData.items ?? []).find((c) => c.snippet.trackKind === 'asr');
+  if (!asr) return [];
+  const dl = await fetch(`https://www.googleapis.com/youtube/v3/captions/${asr.id}?tfmt=srt`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!dl.ok) throw new Error(`ASR download failed: HTTP ${dl.status}`);
+  return parseSrt(await dl.text());
+}
+
 async function main() {
   const id = arg('--id');
   const language = arg('--language') ?? 'ta';
@@ -103,6 +120,7 @@ async function main() {
   //  - --video + --duration + lyrics (from --lyrics-file or stdin): a YouTube-only
   //    song with no site content item.
   let lyrics: Lyrics;
+  let lyricLines: string[];
   let videoId: string;
   let totalSec: number;
   let label: string;
@@ -114,6 +132,7 @@ async function main() {
       throw new Error(`No structured lyrics stored for "${content.title}" — add them in /admin first.`);
     }
     lyrics = content.lyrics;
+    lyricLines = lyrics.sections.flatMap((s) => s.lines.map((l) => l.text));
     videoId = arg('--video') ?? content.youtubeVideoId ?? getYouTubeId(content.videoUrl ?? '') ?? '';
     totalSec = Number(arg('--duration') ?? content.audioDuration ?? 0);
     label = content.title;
@@ -125,6 +144,7 @@ async function main() {
     const text = lyricsFile ? readFileSync(lyricsFile, 'utf8') : readFileSync(0, 'utf8');
     lyrics = Lyrics.fromPlainText(text);
     if (lyrics.isEmpty()) throw new Error('No lyrics provided (via --lyrics-file or stdin).');
+    lyricLines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     label = arg('--title') ?? videoId;
   }
 
@@ -132,16 +152,33 @@ async function main() {
   if (!(totalSec > 0)) throw new Error('Unknown track duration (pass --duration <seconds>).');
 
   const startSec = Number(arg('--start-offset') ?? 0);
-  const cues = lyricsToCues(lyrics, { totalSec, startSec });
+  const token = await mintWriteToken();
+
+  // --from-asr: borrow the audio-aligned timestamps from the video's auto-caption
+  // track and snap the authored lyrics onto them (accurate timing, incl. the
+  // instrumental gaps). Otherwise distribute evenly (optionally past an intro).
+  let cues: CaptionCue[];
+  if (has('--from-asr')) {
+    const asr = await fetchAsrCues(token, videoId);
+    if (asr.length === 0) throw new Error('No ASR track to align to (the video has no auto-captions yet).');
+    const rawStarts = alignLyricsToAsr(lyricLines, asr);
+    const matched = rawStarts.filter((v) => typeof v === 'number').length;
+    const starts = fillStarts(rawStarts, totalSec, startSec);
+    const synced = Lyrics.fromObject({
+      sections: [{ kind: 'other', lines: lyricLines.map((t, i) => ({ text: t, startSeconds: starts[i] })) }],
+    });
+    cues = lyricsToCues(synced, { totalSec });
+    console.log(`🎬 ${label} → ${videoId}`);
+    console.log(`   ${cues.length} cues · aligned to ASR (${matched}/${lyricLines.length} lines matched, rest interpolated)`);
+  } else {
+    cues = lyricsToCues(lyrics, { totalSec, startSec });
+    console.log(`🎬 ${label} → ${videoId}`);
+    console.log(`   ${cues.length} cues · ${useVtt ? 'WebVTT' : 'SRT'} · lang=${language}${isDraft ? ' · draft' : ''}`);
+    if (!lyrics.isTimeSynced()) console.log(`   (no timestamps — evenly distributed across ${totalSec}s)`);
+  }
   if (cues.length === 0) throw new Error('Lyrics produced no caption cues.');
   const caption = useVtt ? toWebVTT(cues) : toSRT(cues);
 
-  console.log(`🎬 ${label} → ${videoId}`);
-  console.log(`   ${cues.length} cues · ${useVtt ? 'WebVTT' : 'SRT'} · lang=${language}${isDraft ? ' · draft' : ''}`);
-  if (lyrics.isTimeSynced()) console.log('   (using per-line timestamps)');
-  else console.log(`   (no timestamps — evenly distributed across ${totalSec}s; refine by hand-syncing lyrics)`);
-
-  const token = await mintWriteToken();
   const result = await insertCaption(token, { videoId, language, name, isDraft }, caption);
   if (result.id) {
     console.log(`✅ caption track inserted: ${result.id}`);
