@@ -47,3 +47,22 @@ export function getYouTubeWatchUrl(url: string | null | undefined): string | nul
   const id = getYouTubeId(url);
   return id ? `https://www.youtube.com/watch?v=${id}` : null;
 }
+
+/**
+ * Resolve a playable YouTube watch URL for a content record. Prefers an explicit
+ * `videoUrl`; otherwise synthesises one from a stored `youtubeVideoId`. Returns
+ * undefined when neither yields a valid YouTube link. Auto-published songs often
+ * carry only the ID (no URL), and the on-page embed needs a URL to render — so
+ * without this the video silently disappears for those songs.
+ */
+export function resolveWatchUrl(
+  videoUrl: string | null | undefined,
+  youtubeVideoId: string | null | undefined
+): string | undefined {
+  if (videoUrl && isYouTubeUrl(videoUrl)) return videoUrl;
+  if (youtubeVideoId) {
+    const candidate = `https://www.youtube.com/watch?v=${youtubeVideoId}`;
+    if (isYouTubeUrl(candidate)) return candidate;
+  }
+  return undefined;
+}

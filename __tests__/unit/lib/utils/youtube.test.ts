@@ -3,6 +3,7 @@ import {
   getYouTubeEmbedUrl,
   isYouTubeUrl,
   getYouTubeWatchUrl,
+  resolveWatchUrl,
 } from '@/lib/utils/youtube';
 
 const ID = 'dQw4w9WgXcQ';
@@ -61,5 +62,32 @@ describe('getYouTubeWatchUrl', () => {
 
   it('returns null for a non-YouTube URL', () => {
     expect(getYouTubeWatchUrl('https://example.com')).toBeNull();
+  });
+});
+
+describe('resolveWatchUrl', () => {
+  it('prefers an explicit YouTube videoUrl', () => {
+    expect(resolveWatchUrl(`https://youtu.be/${ID}`, 'someOtherId1')).toBe(
+      `https://youtu.be/${ID}`
+    );
+  });
+
+  it('falls back to youtubeVideoId when videoUrl is absent (the bug fix)', () => {
+    // Auto-published songs carry only the ID — the embed must still resolve.
+    expect(resolveWatchUrl(undefined, ID)).toBe(`https://www.youtube.com/watch?v=${ID}`);
+    expect(resolveWatchUrl('', ID)).toBe(`https://www.youtube.com/watch?v=${ID}`);
+  });
+
+  it('falls back to the ID when videoUrl is not a YouTube link', () => {
+    expect(resolveWatchUrl('https://example.com/clip.mp4', ID)).toBe(
+      `https://www.youtube.com/watch?v=${ID}`
+    );
+  });
+
+  it('returns undefined when neither yields a valid YouTube link', () => {
+    expect(resolveWatchUrl(undefined, undefined)).toBeUndefined();
+    expect(resolveWatchUrl('https://example.com', '')).toBeUndefined();
+    // A malformed id (not 11 chars) does not produce a playable embed.
+    expect(resolveWatchUrl(undefined, 'too-short')).toBeUndefined();
   });
 });

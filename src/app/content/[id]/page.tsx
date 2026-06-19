@@ -30,7 +30,7 @@ import { DetailAudioPlayer } from '@/components/music/DetailAudioPlayer';
 import { JsonLd } from '@/components/JsonLd';
 import { ShareRow } from '@/components/content/ShareRow';
 import { TrackedYouTubeOpen } from '@/components/TrackedYouTubeOpen';
-import { isYouTubeUrl, getYouTubeWatchUrl, getYouTubeId } from '@/lib/utils/youtube';
+import { isYouTubeUrl, getYouTubeWatchUrl, getYouTubeId, resolveWatchUrl } from '@/lib/utils/youtube';
 import { SITE_URL, SITE_NAME, absoluteUrl, toDescription, alternatesFor, actionVerb, crawlerAuthor } from '@/lib/seo';
 import { ogImage } from '@/lib/og-image';
 import { isoDuration } from '@/lib/iso-duration';
@@ -190,7 +190,12 @@ export default async function ContentPage({ params }: PageProps) {
   }
 
   const pageUrl = absoluteUrl(contentPath(content.id));
-  const ytId = getYouTubeId(content.videoUrl);
+  // The embed + "watch on YouTube" CTAs resolve to ONE url: prefer the stored
+  // videoUrl, else build one from youtubeVideoId. Auto-published songs set the
+  // ID but not the URL, so without this fallback their video embed silently
+  // disappears — independent of whether the song has lyrics.
+  const effectiveVideoUrl = resolveWatchUrl(content.videoUrl, content.youtubeVideoId);
+  const ytId = getYouTubeId(effectiveVideoUrl);
   const enType = TYPE_LABEL_EN[content.type] || 'Tamil Poetry';
   const browseTo = BROWSE_HREF[content.type] || { href: '/all', label: 'அனைத்து உள்ளடக்கம்' };
   // Bespoke full-bleed hero for select songs (e.g. தாயகம்). When present it
@@ -278,9 +283,9 @@ export default async function ContentPage({ params }: PageProps) {
                 >
                   உங்கள் உலாவி காணொளி இயக்கத்தை ஆதரிக்கவில்லை.
                 </video>
-                {content.videoUrl && isYouTubeUrl(content.videoUrl) && (
+                {effectiveVideoUrl && isYouTubeUrl(effectiveVideoUrl) && (
                   <TrackedYouTubeOpen
-                    href={getYouTubeWatchUrl(content.videoUrl) || content.videoUrl}
+                    href={getYouTubeWatchUrl(effectiveVideoUrl) || effectiveVideoUrl}
                     destination={ytId ? `video:${ytId}` : 'video'}
                     source="content_preview_cta"
                     className="mt-4 inline-flex items-center gap-2 rounded-full bg-orange-600 px-5 py-2.5 font-tamil text-sm font-medium text-white shadow-sm transition-colors hover:bg-orange-700"
@@ -293,15 +298,15 @@ export default async function ContentPage({ params }: PageProps) {
             )}
 
             {/* YouTube Video */}
-            {content.videoUrl && isYouTubeUrl(content.videoUrl) && (
+            {effectiveVideoUrl && isYouTubeUrl(effectiveVideoUrl) && (
               <div className="border-b border-gray-200 bg-gradient-to-r from-orange-50 to-orange-100 p-6 sm:p-8">
                 <div className="mb-4 flex items-center gap-3">
                   <span className="text-2xl">▶️</span>
                   <span className="font-tamil font-semibold text-gray-700">காணொளி</span>
                 </div>
-                <YouTubeEmbed url={content.videoUrl} title={content.title} />
+                <YouTubeEmbed url={effectiveVideoUrl} title={content.title} />
                 <TrackedYouTubeOpen
-                  href={getYouTubeWatchUrl(content.videoUrl) || content.videoUrl}
+                  href={getYouTubeWatchUrl(effectiveVideoUrl) || effectiveVideoUrl}
                   destination={ytId ? `video:${ytId}` : 'video'}
                   source="content_video_cta"
                   className="mt-4 inline-flex items-center gap-2 rounded-full bg-orange-600 px-5 py-2.5 font-tamil text-sm font-medium text-white shadow-sm transition-colors hover:bg-orange-700"
