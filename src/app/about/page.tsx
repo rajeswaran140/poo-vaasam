@@ -8,10 +8,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import Header from '@/components/Header';
+import { Footer } from '@/components/Footer';
 import { JsonLd } from '@/components/JsonLd';
 import { isYouTubeChannelConfigured, youtubeSubscribeUrl, isYouTubeVideosConfigured, socialProfileUrls } from '@/config/site';
 import { TrackedYouTubeAnchor } from '@/components/TrackedYouTubeAnchor';
-import { SITE_URL, alternatesFor } from '@/lib/seo';
+import { SITE_URL, alternatesFor, breadcrumbJsonLd } from '@/lib/seo';
 
 // Crawler-facing metadata is romanised English; the visible UI on /about
 // stays Tamil. Real queries here are "rajeswaran thangarajah" /
@@ -48,6 +49,16 @@ const personJsonLd = {
   ...(personSameAs.length > 0 ? { sameAs: personSameAs } : {}),
 };
 
+// Home › About breadcrumb so search engines show the page's place in the
+// hierarchy; emitted alongside the Person node in one structured-data block.
+const aboutJsonLd = [
+  breadcrumbJsonLd([
+    { name: 'Tamilagaval', path: '/' },
+    { name: 'About', path: '/about' },
+  ]),
+  personJsonLd,
+];
+
 const PILLARS = [
   { icon: '📝', label: 'கவிதைகள்', desc: 'சொந்தக் கவிதைகள் — காதல், இயற்கை, வாழ்க்கை', href: '/poems' },
   { icon: '🎵', label: 'பாடல்கள்', desc: 'பாடல் வரிகளும் இசையும் — கேட்கவும், பகிரவும்', href: '/songs' },
@@ -57,11 +68,12 @@ const PILLARS = [
 export default function AboutPage() {
   return (
     <div className="min-h-screen bg-gray-900 text-white">
-      <JsonLd data={personJsonLd} />
+      <JsonLd data={aboutJsonLd} />
       <Header />
 
-      {/* Brand hero — matches the orange-on-dark treatment used elsewhere. */}
-      <section className="relative w-full overflow-hidden text-white">
+      {/* Brand hero — solid orange brand band, matching the home hero so the
+          white badge + heading read as intended (the parent is dark gray). */}
+      <section className="relative w-full overflow-hidden bg-orange-600 text-white">
 
         <div className="relative container mx-auto px-6 py-20 sm:px-10">
           <span className="mb-3 inline-flex items-center rounded-full bg-white/15 px-3 py-1 font-tamil text-xs font-semibold uppercase tracking-wide text-white ring-1 ring-white/25 backdrop-blur-sm">
@@ -157,6 +169,8 @@ export default function AboutPage() {
           </div>
         </section>
       </main>
+
+      <Footer />
     </div>
   );
 }
