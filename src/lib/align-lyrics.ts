@@ -43,15 +43,23 @@ export function alignLyricsToAsr(
     if (head.length === 0) continue;
 
     let found = -1;
+    let frac = 0;
     for (let k = ptr; k < Math.min(asrCues.length, ptr + window); k++) {
       const ct = tokens(asrCues[k].text);
-      if (ct.some((t) => head.includes(t))) {
+      const pos = ct.findIndex((t) => head.includes(t));
+      if (pos >= 0) {
         found = k;
+        // ASR cues often straddle line boundaries (a cue holds the END of one
+        // line + the START of the next). If this line's first word sits mid-cue,
+        // interpolate its time to that word's position so the line doesn't fire
+        // at the cue's start (which caused later lines to run "a little fast").
+        frac = ct.length > 0 ? pos / ct.length : 0;
         break;
       }
     }
     if (found >= 0) {
-      starts[i] = asrCues[found].start;
+      const c = asrCues[found];
+      starts[i] = c.start + frac * Math.max(0, c.end - c.start);
       ptr = found + 1;
     }
   }

@@ -46,6 +46,17 @@ describe('alignLyricsToAsr', () => {
   it('leaves a line undefined when no match is in the window', () => {
     expect(alignLyricsToAsr(['totally different words'], asr)).toEqual([undefined]);
   });
+
+  it('interpolates within a cue that straddles a line boundary', () => {
+    // One ASR cue holds the end of line A + the start of line B ("gamma").
+    const straddle = [
+      { start: 0, end: 6, text: 'alpha beta' },
+      { start: 6, end: 12, text: 'delta gamma epsilon' }, // gamma at index 1 of 3
+    ];
+    const [a, b] = alignLyricsToAsr(['alpha beta', 'gamma stuff'], straddle);
+    expect(a).toBe(0);
+    expect(b).toBeCloseTo(8, 5); // 6 + (1/3)*6
+  });
 });
 
 describe('fillStarts', () => {
