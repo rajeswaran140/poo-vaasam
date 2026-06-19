@@ -66,6 +66,60 @@ export function alignLyricsToAsr(
   return starts;
 }
 
+/** Explode ASR cues into a per-word timeline (words spread evenly within a cue). */
+function asrWordTimeline(asrCues: CaptionCue[]): { w: string; t: number }[] {
+  const out: { w: string; t: number }[] = [];
+  for (const c of asrCues) {
+    const ws = tokens(c.text);
+    const span = Math.max(0, c.end - c.start);
+    ws.forEach((w, i) => out.push({ w, t: c.start + (ws.length > 1 ? (i / ws.length) * span : 0) }));
+  }
+  return out;
+}
+
+/** Two words match on exact (normalised) equality or a shared 4+ char prefix
+ *  (tolerates ASR inflection/segmentation noise). */
+function wordMatch(a: string, b: string): boolean {
+  if (a === b) return true;
+  return a.length >= 4 && b.length >= 4 && (a.startsWith(b) || b.startsWith(a));
+}
+
+/**
+ * Phrase/word-level alignment: thread the lyric WORD stream through the ASR's
+ * per-word timeline (monotonic, windowed) and start each line at its first
+ * matched word's real time. Finer + steadier than {@link alignLyricsToAsr},
+ * which only anchors on a line's leading token and so drifts where ASR cues
+ * merge across line boundaries. Returns a start per line (undefined if no word
+ * matched) — pair with {@link fillStarts}.
+ */
+export function alignLyricLineStarts(
+  lyricLines: string[],
+  asrCues: CaptionCue[],
+  opts: AlignOptions = {}
+): (number | undefined)[] {
+  const window = opts.window ?? 14;
+  const asr = asrWordTimeline(asrCues);
+  const starts: (number | undefined)[] = new Array(lyricLines.length).fill(undefined);
+  let ai = 0;
+
+  lyricLines.forEach((line, li) => {
+    for (const word of tokens(line)) {
+      let found = -1;
+      for (let k = ai; k < Math.min(asr.length, ai + window); k++) {
+        if (wordMatch(asr[k].w, word)) {
+          found = k;
+          break;
+        }
+      }
+      if (found >= 0) {
+        if (starts[li] === undefined) starts[li] = asr[found].t; // first matched word of the line
+        ai = found + 1;
+      }
+    }
+  });
+  return starts;
+}
+
 /**
  * Fill undefined starts by linear interpolation between matched anchors, bounded
  * by [startSec, totalSec], and force the result monotonic non-decreasing. With no

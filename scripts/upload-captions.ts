@@ -25,7 +25,7 @@ import { readFileSync } from 'node:fs';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { Lyrics } from '@/domain/songs/Lyrics';
 import { lyricsToCues, toSRT, toWebVTT, parseSrt, type CaptionCue } from '@/lib/captions';
-import { alignLyricsToAsr, fillStarts } from '@/lib/align-lyrics';
+import { alignLyricLineStarts, fillStarts } from '@/lib/align-lyrics';
 import { getYouTubeId } from '@/lib/utils/youtube';
 
 function arg(flag: string): string | undefined {
@@ -170,7 +170,7 @@ async function main() {
   if (has('--from-asr')) {
     const asr = await fetchAsrCues(token, videoId);
     if (asr.length === 0) throw new Error('No ASR track to align to (the video has no auto-captions yet).');
-    const rawStarts = alignLyricsToAsr(lyricLines, asr);
+    const rawStarts = alignLyricLineStarts(lyricLines, asr);
     const matched = rawStarts.filter((v) => typeof v === 'number').length;
     const starts = fillStarts(rawStarts, totalSec, startSec);
     const synced = Lyrics.fromObject({

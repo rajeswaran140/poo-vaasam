@@ -3,7 +3,7 @@
  * lyric caption accurate timing (incl. inter-stanza gaps) with no hand-syncing.
  */
 
-import { alignLyricsToAsr, fillStarts } from '@/lib/align-lyrics';
+import { alignLyricsToAsr, alignLyricLineStarts, fillStarts } from '@/lib/align-lyrics';
 import { parseSrt } from '@/lib/captions';
 
 describe('parseSrt', () => {
@@ -56,6 +56,32 @@ describe('alignLyricsToAsr', () => {
     const [a, b] = alignLyricsToAsr(['alpha beta', 'gamma stuff'], straddle);
     expect(a).toBe(0);
     expect(b).toBeCloseTo(8, 5); // 6 + (1/3)*6
+  });
+});
+
+describe('alignLyricLineStarts (phrase/word-level)', () => {
+  it('starts each line at its first word time, threading the word stream', () => {
+    const asr = [
+      { start: 0, end: 5, text: 'alpha beta' },
+      { start: 5, end: 10, text: 'gamma delta' },
+      { start: 12, end: 17, text: 'epsilon zeta' },
+    ];
+    expect(alignLyricLineStarts(['alpha beta gamma delta', 'epsilon zeta'], asr)).toEqual([0, 12]);
+  });
+
+  it('times a line whose words sit mid-cue (boundary straddle)', () => {
+    // ASR words: alpha@0, beta@3, gamma@6, delta@9
+    const asr = [
+      { start: 0, end: 6, text: 'alpha beta' },
+      { start: 6, end: 12, text: 'gamma delta' },
+    ];
+    // line 2 ("beta gamma") should start at beta's real time (3), not cue start.
+    expect(alignLyricLineStarts(['alpha', 'beta gamma', 'delta'], asr)).toEqual([0, 3, 9]);
+  });
+
+  it('leaves a line undefined when none of its words match', () => {
+    const asr = [{ start: 0, end: 5, text: 'alpha beta' }];
+    expect(alignLyricLineStarts(['zzzz yyyy'], asr)).toEqual([undefined]);
   });
 });
 
