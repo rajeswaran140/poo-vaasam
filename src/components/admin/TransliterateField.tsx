@@ -68,8 +68,15 @@ export function TransliterateField({
       if (debounce.current) clearTimeout(debounce.current);
       debounce.current = setTimeout(async () => {
         try {
-          const res = await adminFetch(`/api/admin/transliterate?text=${encodeURIComponent(token)}&lang=${lang}&n=9`);
+          // suppressExpiryRedirect: suggestions are a non-critical aid fired on
+          // every keystroke — a 401 (e.g. a momentarily stale token) must NOT
+          // sign the admin out mid-typing; it just means "no suggestions".
+          const res = await adminFetch(
+            `/api/admin/transliterate?text=${encodeURIComponent(token)}&lang=${lang}&n=9`,
+            { suppressExpiryRedirect: true }
+          );
           if (mySeq !== seq.current) return; // a newer keystroke superseded this
+          if (!res.ok) { close(); return; } // 401/error → no suggestions, keep typing literally
           const d = await res.json();
           const list: string[] = Array.isArray(d.candidates) ? d.candidates : [];
           if (list.length > 0) {
