@@ -77,4 +77,33 @@ describe('adminFetch', () => {
     expect(mockSignOut).toHaveBeenCalled();
     errSpy.mockRestore();
   });
+
+  it('does NOT sign out on a 401 when suppressExpiryRedirect is set (background callers)', async () => {
+    // The per-keystroke transliteration aid must degrade quietly, not boot the
+    // admin to /login mid-typing.
+    mockCurrentSession.mockResolvedValue({
+      getIdToken: () => ({ getJwtToken: () => 'jwt-tok' }),
+    });
+    mockSignOut.mockResolvedValue(undefined);
+    global.fetch = jest.fn().mockResolvedValue({ status: 401, ok: false }) as unknown as typeof fetch;
+
+    const res = await adminFetch('/api/admin/transliterate?text=amma', { suppressExpiryRedirect: true });
+
+    expect(res.status).toBe(401);
+    expect(mockSignOut).not.toHaveBeenCalled();
+  });
+
+  it('does not forward suppressExpiryRedirect into the fetch init', async () => {
+    mockCurrentSession.mockResolvedValue({
+      getIdToken: () => ({ getJwtToken: () => 'jwt-tok' }),
+    });
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true, status: 200 });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await adminFetch('/api/x', { method: 'GET', suppressExpiryRedirect: true });
+
+    const init = fetchMock.mock.calls[0][1];
+    expect(init.method).toBe('GET');
+    expect('suppressExpiryRedirect' in init).toBe(false);
+  });
 });

@@ -98,12 +98,17 @@ async function handleExpiredSession(): Promise<void> {
 /** fetch() that attaches the admin's Cognito ID token (Bearer) and cookies. */
 export async function adminFetch(
   input: RequestInfo | URL,
-  init: RequestInit = {}
+  init: RequestInit & { suppressExpiryRedirect?: boolean } = {}
 ): Promise<Response> {
+  const { suppressExpiryRedirect, ...rest } = init;
   const token = await getIdToken();
-  const headers = new Headers(init.headers);
+  const headers = new Headers(rest.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);
-  const res = await fetch(input, { ...init, headers, credentials: 'include' });
-  if (res.status === 401) await handleExpiredSession();
+  const res = await fetch(input, { ...rest, headers, credentials: 'include' });
+  // A 401 normally means the session died → sign out + redirect to /login. But
+  // background, non-critical callers (e.g. the per-keystroke transliteration
+  // aid) pass suppressExpiryRedirect so a transient/stale-token 401 degrades
+  // quietly instead of booting the admin to /login mid-typing.
+  if (res.status === 401 && !suppressExpiryRedirect) await handleExpiredSession();
   return res;
 }
