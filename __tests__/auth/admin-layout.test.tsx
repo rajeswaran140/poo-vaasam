@@ -35,6 +35,7 @@ jest.mock('lucide-react', () => ({
   LogOut: () => <div data-testid="icon-logout" />,
   Plus: () => <div data-testid="icon-plus" />,
   Mail: () => <div data-testid="icon-messages" />,
+  Users: () => <div data-testid="icon-subscribers" />,
   PlaySquare: () => <div data-testid="icon-youtube" />,
   Music: () => <div data-testid="icon-songs" />,
   Library: () => <div data-testid="icon-lexicon" />,
