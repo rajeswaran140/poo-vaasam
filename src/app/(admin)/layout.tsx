@@ -29,6 +29,7 @@ import {
   MessageSquare,
   BellRing,
   Library,
+  Users,
 } from 'lucide-react';
 import { FEATURES } from '@/config/features';
 import { Toaster } from 'react-hot-toast';
@@ -48,6 +49,7 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   '/admin/categories': { title: 'Categories', subtitle: 'Organize content into categories' },
   '/admin/tags': { title: 'Tags', subtitle: 'Manage content tags' },
   '/admin/messages': { title: 'Messages', subtitle: 'Contact-form submissions' },
+  '/admin/subscribers': { title: 'Subscribers', subtitle: 'Email newsletter list — filter by date range, process unsubscribes' },
   '/admin/songs': { title: 'Songs', subtitle: 'Audio library — themes, durations, play counts' },
   '/admin/compose': { title: 'Music Director', subtitle: 'Tamil lyrics → full production brief; save briefs as the durable source of truth' },
   '/admin/lexicon': { title: 'Lexicon', subtitle: 'Lyric word-family dictionary — register × usage, to diversify song vocabulary' },
@@ -159,6 +161,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             <NavLink href="/admin/categories" icon={Folder} collapsed={collapsed} active={pathname === '/admin/categories'}>Categories</NavLink>
             <NavLink href="/admin/tags" icon={Tag} collapsed={collapsed} active={pathname === '/admin/tags'}>Tags</NavLink>
             <NavLink href="/admin/messages" icon={Mail} collapsed={collapsed} active={pathname === '/admin/messages'}>Messages</NavLink>
+            <NavLink href="/admin/subscribers" icon={Users} collapsed={collapsed} active={pathname === '/admin/subscribers'}>Subscribers</NavLink>
             <NavLink href="/admin/songs" icon={Music} collapsed={collapsed} active={pathname === '/admin/songs'}>Songs</NavLink>
             <NavLink href="/admin/compose" icon={Sparkles} collapsed={collapsed} active={pathname === '/admin/compose'}>Music Director</NavLink>
             <NavLink href="/admin/lexicon" icon={Library} collapsed={collapsed} active={pathname === '/admin/lexicon'}>Lexicon</NavLink>
