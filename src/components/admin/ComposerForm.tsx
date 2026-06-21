@@ -19,6 +19,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Copy, Check, Sparkles, RotateCw } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
+import { SunoReadiness } from '@/components/admin/SunoReadiness';
 // type-only import — erased at build, so the server-only composer module
 // (which pulls the Anthropic SDK) is never bundled into this client component.
 import type { ComposerAnalysis } from '@/services/ai/composer';
@@ -237,7 +238,7 @@ export function ComposerForm() {
               <RotateCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} /> Regenerate
             </button>
           </div>
-          <Results result={result} />
+          <Results result={result} lyrics={lyrics} />
           <SaveBrief key={runId} lyrics={lyrics} result={result} />
         </section>
       )}
@@ -329,7 +330,7 @@ function Chips({ items, tamil }: { items: string[]; tamil?: boolean }) {
   );
 }
 
-function Results({ result }: { result: Analysis }) {
+function Results({ result, lyrics }: { result: Analysis; lyrics: string }) {
   const reelCopy = [result.reel.hook, result.reel.caption, result.reel.hashtags.join(' ')]
     .filter(Boolean)
     .join('\n\n');
@@ -415,6 +416,7 @@ function Results({ result }: { result: Analysis }) {
           {result.suno_prompts.map((v, i) => (
             <Card key={`${i}-${v.style}`} label={`🎵 ${v.style}`} copyText={v.prompt}>
               <p className="text-sm text-gray-700 dark:text-gray-300">{v.prompt}</p>
+              <SunoReadiness style={v.prompt} lyrics={lyrics} />
             </Card>
           ))}
         </div>
