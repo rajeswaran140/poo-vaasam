@@ -16,6 +16,11 @@ jest.mock('lucide-react', () => ({
   Sparkles: () => <svg data-testid="icon-sparkles" />,
   RotateCw: () => <svg data-testid="icon-rotate" />,
 }));
+// SunoReadiness has its own lib + API coverage; mock it here so this test
+// doesn't pull in its (unmocked) lucide icons or fire the critic fetch.
+jest.mock('@/components/admin/SunoReadiness', () => ({
+  SunoReadiness: () => <div data-testid="suno-readiness" />,
+}));
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ComposerForm } from '@/components/admin/ComposerForm';
