@@ -30,6 +30,7 @@ import {
   BellRing,
   Library,
   Users,
+  BookOpen,
 } from 'lucide-react';
 import { FEATURES } from '@/config/features';
 import { Toaster } from 'react-hot-toast';
@@ -50,6 +51,7 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   '/admin/tags': { title: 'Tags', subtitle: 'Manage content tags' },
   '/admin/messages': { title: 'Messages', subtitle: 'Contact-form submissions' },
   '/admin/subscribers': { title: 'Subscribers', subtitle: 'Email newsletter list — filter by date range, process unsubscribes' },
+  '/admin/docs': { title: 'Docs', subtitle: 'In-portal guides and how-tos' },
   '/admin/songs': { title: 'Songs', subtitle: 'Audio library — themes, durations, play counts' },
   '/admin/compose': { title: 'Music Director', subtitle: 'Tamil lyrics → full production brief; save briefs as the durable source of truth' },
   '/admin/lexicon': { title: 'Lexicon', subtitle: 'Lyric word-family dictionary — register × usage, to diversify song vocabulary' },
@@ -170,6 +172,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             <NavLink href="/admin/comments" icon={MessageSquare} collapsed={collapsed} active={pathname === '/admin/comments'}>Comments</NavLink>
             <NavLink href="/admin/notify" icon={BellRing} collapsed={collapsed} active={pathname === '/admin/notify'}>Notify</NavLink>
             <NavLink href="/admin/analytics" icon={BarChart3} collapsed={collapsed} active={pathname === '/admin/analytics'}>Analytics</NavLink>
+            <NavLink href="/admin/docs" icon={BookOpen} collapsed={collapsed} active={pathname === '/admin/docs'}>Docs</NavLink>
 
             {FEATURES.ADMIN.MEDIA_LIBRARY && (
               <NavLink href="/admin/media" icon={Image} collapsed={collapsed} active={pathname === '/admin/media'}>Media Library</NavLink>
