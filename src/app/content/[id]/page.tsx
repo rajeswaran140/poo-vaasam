@@ -147,10 +147,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     `${descType} "${content.title}" by ${crawlerAuthor(content.author)} on Tamilagaval — ${actionVerb(content.type)} for free.`;
 
   const url = absoluteUrl(contentPath(content.id));
-  // Prefer a bespoke hero's designed artwork as the share image (it carries the
-  // title), falling back to the content's own cover.
-  const shareImage = getSongHero(content.id)?.image || content.featuredImage;
-  const hasImage = Boolean(shareImage);
+  // Share image: we deliberately DON'T point og:image at the raw cover — the
+  // covers are ~3MB squares that WhatsApp's scraper skips or shrinks to a tiny
+  // thumbnail. Instead we let the co-located opengraph-image.tsx render a
+  // 1200×630 card (correct ratio + small PNG + auto og:image:width/height) that
+  // *embeds* the cover. Next auto-injects it for both OG and Twitter.
 
   return {
     title,
@@ -163,16 +164,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       // A song is `music.song` (richer music cards); everything else is an article.
       type: content.type === ContentType.SONGS ? 'music.song' : 'article',
       siteName: SITE_NAME,
-      // When there's an image, use it; otherwise the co-located
-      // opengraph-image.tsx generates a branded card automatically.
-      ...(hasImage ? { images: [shareImage as string] } : {}),
     },
     twitter: {
-      // There's always a large image now (share image or the generated card).
       card: 'summary_large_image',
       title,
       description: toDescription(description),
-      ...(hasImage ? { images: [shareImage as string] } : {}),
     },
   };
 }

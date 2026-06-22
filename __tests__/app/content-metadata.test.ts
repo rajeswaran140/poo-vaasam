@@ -1,7 +1,9 @@
 /** @jest-environment node */
 /**
- * generateMetadata for the content page — the audit fixes:
- *  - a bespoke hero's designed artwork is the share image (og/twitter)
+ * generateMetadata for the content page:
+ *  - og:image is NOT the raw cover — the co-located opengraph-image.tsx card
+ *    re-frames it to 1200×630 (a ~3MB square scrapes poorly in WhatsApp). The
+ *    cover-selection itself is unit-tested in og-image.test.ts (shareCardCover).
  *  - songs say "listen free", text says "read for free"
  */
 
@@ -25,8 +27,10 @@ function meta(id: string) {
 beforeEach(() => mockFindById.mockReset());
 
 describe('content generateMetadata', () => {
-  it('uses the bespoke hero artwork as the share image (og + twitter)', async () => {
-    // The vanity song id has a SONG_HEROES entry → hero image wins.
+  it('does NOT point og:image at the raw cover — the generated 1200×630 card wins', async () => {
+    // Even with a hero entry + a featuredImage, generateMetadata leaves images
+    // unset so Next uses the co-located opengraph-image.tsx card (which embeds
+    // the cover re-framed to the right ratio + size for WhatsApp's scraper).
     mockFindById.mockResolvedValue(
       asEntity({
         id: 'cnt_1781049094952_wstyqacm4',
@@ -37,25 +41,17 @@ describe('content generateMetadata', () => {
       })
     );
     const m = await meta('cnt_1781049094952_wstyqacm4');
-    const og = (m.openGraph?.images as { url?: string }[] | string[] | undefined) ?? [];
-    const ogStr = JSON.stringify(og);
-    expect(ogStr).toContain('thayagam-hero.png');
-    expect(ogStr).not.toContain('old-cover.png');
-    expect(JSON.stringify(m.twitter?.images)).toContain('thayagam-hero.png');
+    expect(m.openGraph?.images).toBeUndefined();
+    expect(m.twitter?.images).toBeUndefined();
   });
 
-  it('falls back to featuredImage when the song has no bespoke hero', async () => {
+  it('keeps the large-image twitter card (the generated card fills it)', async () => {
     mockFindById.mockResolvedValue(
-      asEntity({
-        id: 'cnt_plain_song',
-        type: 'SONGS',
-        title: 'Plain Song',
-        author: 'இராஜ்',
-        featuredImage: 'https://cdn.example/plain-cover.png',
-      })
+      asEntity({ id: 'cnt_plain_song', type: 'SONGS', title: 'Plain Song', author: 'A', featuredImage: 'https://cdn.example/c.png' })
     );
     const m = await meta('cnt_plain_song');
-    expect(JSON.stringify(m.openGraph?.images)).toContain('plain-cover.png');
+    expect(m.twitter?.card).toBe('summary_large_image');
+    expect(m.openGraph?.images).toBeUndefined();
   });
 
   it('says "listen free" for a song', async () => {
