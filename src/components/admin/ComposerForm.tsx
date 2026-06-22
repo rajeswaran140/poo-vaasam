@@ -49,6 +49,9 @@ export function ComposerForm() {
   // the readiness/export/save reflect the brief, not later textarea edits.
   const [composedLyrics, setComposedLyrics] = useState('');
   const [result, setResult] = useState<Analysis | null>(null);
+  // The single "going with this variant" choice, shared by the variant cards,
+  // the SUNO export and Save brief. Reset to the first variant per compose.
+  const [selectedIdx, setSelectedIdx] = useState(0);
   const [error, setError] = useState<string | null>(null);
   // Whether the last error is worth retrying. Auth / not-configured failures are
   // not — retrying just fails again, so we hide the Retry control for them.
@@ -133,6 +136,7 @@ export function ComposerForm() {
       if (!mountedRef.current) return;
       setResult(data);
       setComposedLyrics(sent); // tie the brief to the exact lyrics it used
+      setSelectedIdx(0); // default to the first variant for the new brief
       setRunId((n) => n + 1); // fresh <SaveBrief> for the new brief
     } catch (err) {
       // A superseded/unmounted request isn't a user-facing error.
@@ -246,8 +250,13 @@ export function ComposerForm() {
               <RotateCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} /> Regenerate
             </button>
           </div>
-          <Results result={result} lyrics={composedLyrics} />
-          <SaveBrief key={runId} lyrics={composedLyrics} result={result} />
+          <Results result={result} lyrics={composedLyrics} selectedIdx={selectedIdx} onSelectIdx={setSelectedIdx} />
+          <SaveBrief
+            key={`${runId}-${selectedIdx}`}
+            lyrics={composedLyrics}
+            result={result}
+            chosenStyle={result.suno_prompts[selectedIdx]?.style ?? result.suno_prompts[0]?.style ?? ''}
+          />
         </section>
       )}
     </div>
@@ -259,9 +268,7 @@ export function ComposerForm() {
  * admin's decision — which SUNO style they're going with — as a signal for the
  * catalogue/taste knowledge base. Idempotent-ish: each click saves a new brief.
  */
-function SaveBrief({ lyrics, result }: { lyrics: string; result: Analysis }) {
-  const styles = result.suno_prompts.map((s) => s.style);
-  const [chosenStyle, setChosenStyle] = useState<string>(styles[0] ?? '');
+function SaveBrief({ lyrics, result, chosenStyle }: { lyrics: string; result: Analysis; chosenStyle: string }) {
   const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
 
@@ -290,23 +297,10 @@ function SaveBrief({ lyrics, result }: { lyrics: string; result: Analysis }) {
   return (
     <div className="mt-5 flex flex-wrap items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/60">
       <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Save this brief</span>
-      {styles.length > 0 && (
-        <label className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-          chosen style:
-          <select
-            value={chosenStyle}
-            onChange={(e) => {
-              setChosenStyle(e.target.value);
-              if (state === 'saved') setState('idle');
-            }}
-            aria-label="Chosen SUNO style"
-            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
-          >
-            {styles.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
-        </label>
+      {chosenStyle && (
+        <span className="text-xs text-gray-500 dark:text-gray-400">
+          going with: <strong className="font-medium text-gray-700 dark:text-gray-200">{chosenStyle}</strong>
+        </span>
       )}
       <button
         type="button"
@@ -338,7 +332,7 @@ function Chips({ items, tamil }: { items: string[]; tamil?: boolean }) {
   );
 }
 
-function Results({ result, lyrics }: { result: Analysis; lyrics: string }) {
+function Results({ result, lyrics, selectedIdx, onSelectIdx }: { result: Analysis; lyrics: string; selectedIdx: number; onSelectIdx: (i: number) => void }) {
   const reelCopy = [result.reel.hook, result.reel.caption, result.reel.hashtags.join(' ')]
     .filter(Boolean)
     .join('\n\n');
@@ -421,13 +415,28 @@ function Results({ result, lyrics }: { result: Analysis; lyrics: string }) {
           <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
             SUNO prompts — {result.suno_prompts.length} styles
           </h3>
-          {result.suno_prompts.map((v, i) => (
-            <Card key={`${i}-${v.style}`} label={`🎵 ${v.style}`} copyText={v.prompt}>
-              <p className="text-sm text-gray-700 dark:text-gray-300">{v.prompt}</p>
-              <SunoReadiness style={v.prompt} lyrics={lyrics} />
-            </Card>
-          ))}
-          <SunoExport result={result} lyrics={lyrics} />
+          {result.suno_prompts.map((v, i) => {
+            const selected = i === selectedIdx;
+            return (
+              <div key={`${i}-${v.style}`} className={`rounded-xl ${selected ? 'ring-2 ring-orange-500' : ''}`}>
+                <Card label={`🎵 ${v.style}`} copyText={v.prompt}>
+                  <label className="mb-2 flex w-fit cursor-pointer items-center gap-2 text-xs font-medium text-gray-600 dark:text-gray-300">
+                    <input
+                      type="radio"
+                      name="suno-variant"
+                      checked={selected}
+                      onChange={() => onSelectIdx(i)}
+                      className="accent-orange-600"
+                    />
+                    {selected ? 'Going with this ✓' : 'Use this variant'}
+                  </label>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">{v.prompt}</p>
+                  <SunoReadiness style={v.prompt} lyrics={lyrics} />
+                </Card>
+              </div>
+            );
+          })}
+          <SunoExport result={result} lyrics={lyrics} selectedIdx={selectedIdx} onSelectIdx={onSelectIdx} />
         </div>
       )}
 
