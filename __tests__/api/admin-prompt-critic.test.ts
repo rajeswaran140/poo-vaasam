@@ -1,7 +1,7 @@
 /** @jest-environment node */
 /**
- * Tests for POST /api/admin/suno-critic — admin gate, validation, and the
- * mapping of critiqueSuno() results to HTTP responses. The LLM service is mocked.
+ * Tests for POST /api/admin/prompt-critic — admin gate, validation, and the
+ * mapping of critiquePrompt() results to HTTP responses. The LLM service is mocked.
  */
 
 import { NextRequest } from 'next/server';
@@ -12,24 +12,24 @@ jest.mock('@/lib/auth-helper', () => ({
 }));
 
 const mockCritique = jest.fn();
-jest.mock('@/services/ai/sunoCritic', () => ({
-  critiqueSuno: (...a: unknown[]) => mockCritique(...a),
+jest.mock('@/services/ai/promptCritic', () => ({
+  critiquePrompt: (...a: unknown[]) => mockCritique(...a),
 }));
 
-import { POST } from '@/app/api/admin/suno-critic/route';
+import { POST } from '@/app/api/admin/prompt-critic/route';
 import * as auth from '@/lib/auth-helper';
 
 const requireAdmin = auth.requireAdmin as jest.Mock;
 
 const req = (body: unknown) =>
-  new NextRequest('http://localhost/api/admin/suno-critic', { method: 'POST', body: JSON.stringify(body) });
+  new NextRequest('http://localhost/api/admin/prompt-critic', { method: 'POST', body: JSON.stringify(body) });
 
 beforeEach(() => {
   requireAdmin.mockReset().mockResolvedValue({ userId: 'admin', isAdmin: true });
   mockCritique.mockReset();
 });
 
-describe('POST /api/admin/suno-critic', () => {
+describe('POST /api/admin/prompt-critic', () => {
   it('401s when not an admin', async () => {
     requireAdmin.mockRejectedValue(new auth.AuthError('Unauthorized', 401));
     const res = await POST(req({ style: 's', lyrics: 'l' }));

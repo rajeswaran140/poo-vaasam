@@ -15,7 +15,7 @@ export interface AdminDoc {
 
 export const ADMIN_DOCS: AdminDoc[] = [
   {
-    slug: 'suno-preflight-testing',
+    slug: 'prompt-preflight-testing',
     title: 'Tamilagaval Pre-flight — How to test',
     category: 'Composer',
     updatedAt: '2026-06-22',
@@ -59,7 +59,7 @@ Each finding shows a concrete fix after the "—".
 `,
   },
   {
-    slug: 'suno-preflight-how-it-works',
+    slug: 'prompt-preflight-how-it-works',
     title: 'Tamilagaval Pre-flight — How it works',
     category: 'Composer',
     updatedAt: '2026-06-22',

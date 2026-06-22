@@ -3,9 +3,9 @@
 /**
  * Lyrics → production brief. Pastes lyrics, calls the admin compose API,
  * renders structured cards (emotion / mood / theme / key / BPM /
- * instruments / titles / SUNO prompt / YouTube description). Each long
+ * instruments / titles / style prompt / YouTube description). Each long
  * text block has a copy button so the brief can be pasted straight into
- * SUNO or YouTube Studio.
+ * the generator or YouTube Studio.
  *
  * UX notes:
  *  - Real <form> so Cmd/Ctrl+Enter submits (browsers don't submit on plain
@@ -19,8 +19,8 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Copy, Check, Sparkles, RotateCw } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
-import { SunoReadiness } from '@/components/admin/SunoReadiness';
-import { SunoExport } from '@/components/admin/SunoExport';
+import { PromptReadiness } from '@/components/admin/PromptReadiness';
+import { PromptExport } from '@/components/admin/PromptExport';
 // type-only import — erased at build, so the server-only composer module
 // (which pulls the Anthropic SDK) is never bundled into this client component.
 import type { ComposerAnalysis } from '@/services/ai/composer';
@@ -50,7 +50,7 @@ export function ComposerForm() {
   const [composedLyrics, setComposedLyrics] = useState('');
   const [result, setResult] = useState<Analysis | null>(null);
   // The single "going with this variant" choice, shared by the variant cards,
-  // the SUNO export and Save brief. Reset to the first variant per compose.
+  // the the generator export and Save brief. Reset to the first variant per compose.
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [error, setError] = useState<string | null>(null);
   // Whether the last error is worth retrying. Auth / not-configured failures are
@@ -265,7 +265,7 @@ export function ComposerForm() {
 
 /**
  * Persist the brief as the durable source of truth (Phase 2). Captures the
- * admin's decision — which SUNO style they're going with — as a signal for the
+ * admin's decision — which style they're going with — as a signal for the
  * catalogue/taste knowledge base. Idempotent-ish: each click saves a new brief.
  */
 function SaveBrief({ lyrics, result, chosenStyle }: { lyrics: string; result: Analysis; chosenStyle: string }) {
@@ -409,7 +409,7 @@ function Results({ result, lyrics, selectedIdx, onSelectIdx }: { result: Analysi
         </Card>
       )}
 
-      {/* Style-variant prompts (SUNO-format under the hood) — one card each */}
+      {/* Style-variant prompts (generator-format under the hood) — one card each */}
       {result.suno_prompts.length > 0 && (
         <div className="space-y-3">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -431,12 +431,12 @@ function Results({ result, lyrics, selectedIdx, onSelectIdx }: { result: Analysi
                     {selected ? 'Going with this ✓' : 'Use this variant'}
                   </label>
                   <p className="text-sm text-gray-700 dark:text-gray-300">{v.prompt}</p>
-                  <SunoReadiness style={v.prompt} lyrics={lyrics} />
+                  <PromptReadiness style={v.prompt} lyrics={lyrics} />
                 </Card>
               </div>
             );
           })}
-          <SunoExport result={result} lyrics={lyrics} selectedIdx={selectedIdx} onSelectIdx={onSelectIdx} />
+          <PromptExport result={result} lyrics={lyrics} selectedIdx={selectedIdx} onSelectIdx={onSelectIdx} />
         </div>
       )}
 

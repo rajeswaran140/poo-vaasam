@@ -16,13 +16,13 @@ jest.mock('lucide-react', () => ({
   Sparkles: () => <svg data-testid="icon-sparkles" />,
   RotateCw: () => <svg data-testid="icon-rotate" />,
 }));
-// SunoReadiness has its own lib + API coverage; mock it here so this test
+// PromptReadiness has its own lib + API coverage; mock it here so this test
 // doesn't pull in its (unmocked) lucide icons or fire the critic fetch.
-jest.mock('@/components/admin/SunoReadiness', () => ({
-  SunoReadiness: () => <div data-testid="suno-readiness" />,
+jest.mock('@/components/admin/PromptReadiness', () => ({
+  PromptReadiness: () => <div data-testid="suno-readiness" />,
 }));
-jest.mock('@/components/admin/SunoExport', () => ({
-  SunoExport: () => <div data-testid="suno-export" />,
+jest.mock('@/components/admin/PromptExport', () => ({
+  PromptExport: () => <div data-testid="prompt-export" />,
 }));
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';

@@ -11,7 +11,7 @@ import type { ComposerAnalysis } from '@/services/ai/composer';
 
 /** What the admin chose/edited when saving — the human decision signal. */
 export interface BriefDecision {
-  /** Style label of the SUNO variant the admin picked, if any. */
+  /** Style label of the the generator variant the admin picked, if any. */
   chosenSunoStyle?: string;
   /** Free-text note (e.g. a manual tweak the admin made). */
   notes?: string;

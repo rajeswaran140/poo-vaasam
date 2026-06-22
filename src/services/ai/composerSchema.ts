@@ -16,13 +16,13 @@
 
 import { z } from 'zod';
 
-/** One style-tagged SUNO prompt variant (e.g. style "Devotional"). */
+/** One style-tagged style prompt variant (e.g. style "Devotional"). */
 export const sunoVariantSchema = z.object({
   style: z.string().min(1).describe('Short style name, e.g. "Devotional", "Tamil film ballad".'),
   prompt: z
     .string()
     .min(1)
-    .describe('One self-contained English paragraph for SUNO (style/instrumentation/tempo/mood). MUST NOT contain the lyrics.'),
+    .describe('One self-contained English paragraph for an AI music generator (style/instrumentation/tempo/mood). MUST NOT contain the lyrics.'),
 });
 
 /** A short-form (Reel/Short) idea drawn from the lyrics. */

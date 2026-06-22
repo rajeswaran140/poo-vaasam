@@ -1,13 +1,13 @@
 /**
- * Build a SUNO-ready "pack" from a composed brief variant and export it as
- * Markdown. The pack is organised by SUNO's custom-mode fields so each block
+ * Build a generator-ready "pack" from a composed brief variant and export it as
+ * Markdown. The pack is organised by the generator's custom-mode fields so each block
  * copy-pastes straight into the matching box: Lyrics, Style of Music, Exclude
  * Styles, Weirdness %, Style Influence %. Exclusions/weirdness/influence are
  * RECOMMENDATIONS derived from the brief (clearly labelled — adjust to taste).
  * Pure + dependency-free → unit-testable; PDF is print-rendered by the client.
  */
 
-export interface SunoPackInput {
+export interface ExportPackInput {
   title: string;
   lyrics: string;
   /** The chosen variant's short style name + full style prompt. */
@@ -18,7 +18,7 @@ export interface SunoPackInput {
   theme?: string;
 }
 
-export interface SunoPack {
+export interface ExportPack {
   title: string;
   lyrics: string;
   styleName: string;
@@ -58,7 +58,7 @@ export function deriveWeirdness(stylePrompt: string, mood = ''): number {
   return 20;
 }
 
-export function buildSunoPack(input: SunoPackInput): SunoPack {
+export function buildExportPack(input: ExportPackInput): ExportPack {
   const stylePrompt = (input.stylePrompt ?? '').trim();
   return {
     title: (input.title ?? '').trim() || 'Untitled',
@@ -72,8 +72,8 @@ export function buildSunoPack(input: SunoPackInput): SunoPack {
   };
 }
 
-/** Render a SUNO pack as copy-paste Markdown, one section per SUNO field. */
-export function sunoPackToMarkdown(pack: SunoPack): string {
+/** Render a export pack as copy-paste Markdown, one section per generator field. */
+export function exportPackToMarkdown(pack: ExportPack): string {
   return [
     `# ${pack.title}`,
     '',

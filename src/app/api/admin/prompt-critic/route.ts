@@ -1,14 +1,14 @@
 /**
- * POST /api/admin/suno-critic { style, lyrics } — admin-gated LLM critique of a
- * SUNO prompt + lyrics BEFORE a paid generation. Pairs with the free
- * deterministic linter (src/lib/suno-preflight.ts): the linter catches
+ * POST /api/admin/prompt-critic { style, lyrics } — admin-gated LLM critique of a
+ * style prompt + lyrics BEFORE a paid generation. Pairs with the free
+ * deterministic linter (src/lib/prompt-preflight.ts): the linter catches
  * structural credit-wasters instantly; this catches semantic ones.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
-import { critiqueSuno } from '@/services/ai/sunoCritic';
+import { critiquePrompt } from '@/services/ai/promptCritic';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const result = await critiqueSuno(parsed.data, { signal: request.signal });
+  const result = await critiquePrompt(parsed.data, { signal: request.signal });
   if (!result.ok) {
     return NextResponse.json({ success: false, error: result.error, code: result.code }, { status: STATUS[result.code] ?? 502 });
   }

@@ -1,22 +1,22 @@
 'use client';
 
 /**
- * SunoExport — export a chosen brief variant as a SUNO-ready pack (organised by
- * SUNO's custom-mode fields) in Markdown or PDF. Markdown is a direct download;
+ * PromptExport — export a chosen brief variant as a generator-ready pack (organised by
+ * the generator's custom-mode fields) in Markdown or PDF. Markdown is a direct download;
  * PDF is print-rendered in a hidden iframe so Tamil renders correctly via the
  * browser's fonts (no heavy font-embed, no extra dependency).
  */
 
 import { useMemo, useState } from 'react';
 import { Copy, Check, FileDown, Printer } from 'lucide-react';
-import { buildSunoPack, sunoPackToMarkdown, exportFilename, type SunoPack } from '@/lib/suno-export';
+import { buildExportPack, exportPackToMarkdown, exportFilename, type ExportPack } from '@/lib/prompt-export';
 import type { ComposerAnalysis } from '@/services/ai/composer';
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
 }
 
-function printPack(pack: SunoPack): void {
+function printPack(pack: ExportPack): void {
   const section = (title: string, body: string) =>
     `<h2>${escapeHtml(title)}</h2><pre>${escapeHtml(body || '—')}</pre>`;
   const html = `<!doctype html><html lang="ta"><head><meta charset="utf-8"><title>${escapeHtml(pack.title)}</title>
@@ -49,7 +49,7 @@ ${section('🌟 Style Influence', `${pack.styleInfluencePct}%  (recommended — 
   document.body.appendChild(iframe);
 }
 
-export function SunoExport({
+export function PromptExport({
   result,
   lyrics,
   selectedIdx,
@@ -66,7 +66,7 @@ export function SunoExport({
   const pack = useMemo(() => {
     const v = variants[selectedIdx];
     if (!v) return null;
-    return buildSunoPack({
+    return buildExportPack({
       title: result.song_titles?.[0] ?? 'Untitled',
       lyrics,
       styleName: v.style,
@@ -78,7 +78,7 @@ export function SunoExport({
 
   if (!pack) return null;
 
-  const markdown = sunoPackToMarkdown(pack);
+  const markdown = exportPackToMarkdown(pack);
 
   const copy = async () => {
     try {
