@@ -28,7 +28,7 @@ function printPack(pack: SunoPack): void {
   .meta{color:#666;font-size:12px;margin-bottom:12px}
 </style></head><body>
 <h1>${escapeHtml(pack.title)}</h1>
-<div class="meta">SUNO pack — style: ${escapeHtml(pack.styleName || '—')}</div>
+<div class="meta">Tamilagaval pack — style: ${escapeHtml(pack.styleName || '—')}</div>
 ${section('🎤 Lyrics', pack.lyrics)}
 ${section('🎚️ Style of Music', pack.style)}
 ${section('🚫 Exclude Styles', pack.excludeStyles)}
@@ -103,7 +103,7 @@ export function SunoExport({
   return (
     <div className="mt-3 rounded-xl border border-purple-200 bg-purple-50 p-3 dark:border-purple-800 dark:bg-purple-950/30">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-semibold uppercase tracking-wide text-purple-700 dark:text-purple-300">Export for SUNO</span>
+        <span className="text-xs font-semibold uppercase tracking-wide text-purple-700 dark:text-purple-300">Export for Tamilagaval</span>
         <select
           value={selectedIdx}
           onChange={(e) => onSelectIdx(Number(e.target.value))}

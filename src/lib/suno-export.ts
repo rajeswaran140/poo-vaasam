@@ -77,7 +77,7 @@ export function sunoPackToMarkdown(pack: SunoPack): string {
   return [
     `# ${pack.title}`,
     '',
-    `_SUNO pack — style: ${pack.styleName || '—'}. Copy each block into the matching SUNO field._`,
+    `_Tamilagaval pack — style: ${pack.styleName || '—'}. Copy each block into the matching field._`,
     '',
     '## 🎤 Lyrics',
     '',

@@ -409,11 +409,11 @@ function Results({ result, lyrics, selectedIdx, onSelectIdx }: { result: Analysi
         </Card>
       )}
 
-      {/* SUNO prompts — one card per style variant */}
+      {/* Style-variant prompts (SUNO-format under the hood) — one card each */}
       {result.suno_prompts.length > 0 && (
         <div className="space-y-3">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-            SUNO prompts — {result.suno_prompts.length} styles
+            Tamilagaval prompts — {result.suno_prompts.length} styles
           </h3>
           {result.suno_prompts.map((v, i) => {
             const selected = i === selectedIdx;

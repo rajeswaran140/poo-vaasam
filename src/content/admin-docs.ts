@@ -16,12 +16,12 @@ export interface AdminDoc {
 export const ADMIN_DOCS: AdminDoc[] = [
   {
     slug: 'suno-preflight-testing',
-    title: 'SUNO Pre-flight — How to test',
+    title: 'Tamilagaval Pre-flight — How to test',
     category: 'Composer',
-    updatedAt: '2026-06-21',
-    body: `# Testing the SUNO pre-flight
+    updatedAt: '2026-06-22',
+    body: `# Testing the Tamilagaval pre-flight
 
-The SUNO pre-flight vets a style prompt + lyrics **before** you spend a credit. It lives inside the composer, so you test it by composing.
+The Tamilagaval pre-flight vets a style prompt + lyrics **before** you spend a generation credit. It lives inside the composer, so you test it by composing.
 
 ## Setup
 1. Open **Music Director** in the sidebar (\`/admin/compose\`).
@@ -31,7 +31,7 @@ The SUNO pre-flight vets a style prompt + lyrics **before** you spend a credit. 
 ## Test 1 — Happy path
 1. Paste clean **Tamil lyrics with section tags** (e.g. \`[பல்லவி]\` / \`[சரணம்]\` or \`[Verse]\` / \`[Chorus]\`).
 2. **Compose** (button, or Cmd/Ctrl+Enter) and wait for the brief.
-3. Under each card in **"SUNO prompts"** you should see a readiness panel: a **Ready** badge + a **score /100** + any findings with fixes.
+3. Under each card in **"Tamilagaval prompts"** you should see a readiness panel: a **Ready** badge + a **score /100** + any findings with fixes.
 
 ## Test 2 — Make the linter fire
 The linter checks your pasted lyrics + the generated style prompt. Paste these and re-compose:
@@ -60,22 +60,22 @@ Each finding shows a concrete fix after the "—".
   },
   {
     slug: 'suno-preflight-how-it-works',
-    title: 'SUNO Pre-flight — How it works',
+    title: 'Tamilagaval Pre-flight — How it works',
     category: 'Composer',
-    updatedAt: '2026-06-21',
-    body: `# How the SUNO pre-flight works
+    updatedAt: '2026-06-22',
+    body: `# How the Tamilagaval pre-flight works
 
-SUNO has no API and every generation costs a credit, so this raises your first-try odds **before** you generate. Two layers:
+The music generator has no API and every generation costs a credit, so this raises your first-try odds **before** you generate. Two layers:
 
 ## 1. Deterministic linter (free, instant)
 Runs on every composer result with zero cost. It flags structural credit-wasters:
 
-- **STYLE_TOO_LONG / STYLE_HAS_LYRICS** — style box over the cap, or lyrics leaking into it (SUNO sings the style box too).
+- **STYLE_TOO_LONG / STYLE_HAS_LYRICS** — style box over the cap, or lyrics leaking into it (the generator sings the style box too).
 - **STYLE_GENRE_CONFLICT** — e.g. EDM + carnatic → mush.
 - **STYLE_VAGUE** — missing tempo / instrument / vocal / mood cues.
 - **LYRICS_NO_STRUCTURE** — no \`[Verse]\` / \`[Chorus]\` tags.
 - **LYRICS_TOO_LONG / LYRICS_MANY_LINES** — won't fit one render.
-- **LYRICS_MIXED_LANG / LYRICS_EMOJI** — mispronunciation / SUNO vocalising emoji.
+- **LYRICS_MIXED_LANG / LYRICS_EMOJI** — mispronunciation / the generator vocalising emoji.
 
 Each finding carries a **fix**. The badge is **Ready** only when there are no errors.
 
@@ -83,9 +83,9 @@ Each finding carries a **fix**. The badge is **Ready** only when there are no er
 The ✨ button runs a Claude pass for **semantic** risks the linter can't see — style↔lyric mood mismatch, unsingable phrasing, ambiguous direction — and returns a verdict + concrete fixes.
 
 ## The workflow it enables
-Compose → read the readiness panel → fix the flagged issues (or pick the best-scoring variant) → only then paste into SUNO. You spend credits on a **vetted** prompt instead of trial-and-error.
+Compose → read the readiness panel → fix the flagged issues (or pick the best-scoring variant) → only then paste into the generator. You spend credits on a **vetted** prompt instead of trial-and-error.
 
-> Next planned: a SUNO **attempt log** so each trial's outcome is recorded and you learn what works over time.
+> Next planned: an **attempt log** so each trial's outcome is recorded and you learn what works over time.
 `,
   },
 ];
