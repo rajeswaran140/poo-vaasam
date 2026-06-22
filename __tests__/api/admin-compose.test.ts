@@ -60,6 +60,11 @@ it('returns 400 when lyrics are too long', async () => {
   expect(res.status).toBe(400);
 });
 
+it('surfaces the SPECIFIC validation message, not a generic one', async () => {
+  expect((await (await POST(req({ lyrics: 'x'.repeat(8001) }))).json()).error).toBe('Lyrics too long');
+  expect((await (await POST(req({ lyrics: '' }))).json()).error).toBe('Lyrics required');
+});
+
 it('enqueues a job and async-invokes the worker, returning 202 + jobId', async () => {
   const res = await POST(req({ lyrics: 'காதல் வரிகள்' }));
   expect(res.status).toBe(202);

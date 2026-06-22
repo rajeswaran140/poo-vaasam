@@ -115,6 +115,24 @@ it('enqueues a compose and shows the polled result', async () => {
   expect(screen.getByText('Keeravani')).toBeInTheDocument();
 });
 
+it('Save uses the COMPOSED lyrics, not later textarea edits (snapshot)', async () => {
+  queueCompose(SAMPLE);
+  mockedFetch.mockResolvedValueOnce(okJson({ success: true })); // the /api/admin/briefs POST
+  render(<ComposerForm />);
+
+  fireEvent.change(screen.getByLabelText('Tamil lyrics'), { target: { value: 'ORIGINAL lyrics' } });
+  fireEvent.click(screen.getByRole('button', { name: /compose brief/i }));
+  await waitFor(() => expect(screen.getByTestId('composer-results')).toBeInTheDocument());
+
+  // Edit the lyrics AFTER composing — the saved brief must keep the originals.
+  fireEvent.change(screen.getByLabelText('Tamil lyrics'), { target: { value: 'EDITED afterwards' } });
+  fireEvent.click(screen.getByRole('button', { name: /save brief/i }));
+
+  await waitFor(() => expect(mockedFetch.mock.calls.some((c) => c[0] === '/api/admin/briefs')).toBe(true));
+  const briefCall = mockedFetch.mock.calls.find((c) => c[0] === '/api/admin/briefs')!;
+  expect(JSON.parse(briefCall[1].body).lyrics).toBe('ORIGINAL lyrics');
+});
+
 it('Cmd+Enter on the textarea submits the form', async () => {
   queueCompose(SAMPLE);
   render(<ComposerForm />);

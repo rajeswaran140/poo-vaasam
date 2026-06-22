@@ -45,6 +45,9 @@ function delay(ms: number, signal: AbortSignal): Promise<void> {
 
 export function ComposerForm() {
   const [lyrics, setLyrics] = useState('');
+  // The lyrics the CURRENT result was composed from — snapshotted on success so
+  // the readiness/export/save reflect the brief, not later textarea edits.
+  const [composedLyrics, setComposedLyrics] = useState('');
   const [result, setResult] = useState<Analysis | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Whether the last error is worth retrying. Auth / not-configured failures are
@@ -78,13 +81,16 @@ export function ComposerForm() {
     abortRef.current?.abort(); // supersede any prior in-flight call
     const controller = new AbortController();
     abortRef.current = controller;
+    // Snapshot the lyrics being composed so the result is tied to these exact
+    // lyrics even if the textarea is edited afterwards.
+    const sent = lyrics;
     try {
       // 1. Enqueue the job. Auth/validation failures come back as a normal
       //    non-ok JSON response; success returns a job id to poll.
       const res = await adminFetch('/api/admin/compose', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lyrics }),
+        body: JSON.stringify({ lyrics: sent }),
         signal: controller.signal,
       });
       if (!res.ok) {
@@ -126,6 +132,7 @@ export function ComposerForm() {
 
       if (!mountedRef.current) return;
       setResult(data);
+      setComposedLyrics(sent); // tie the brief to the exact lyrics it used
       setRunId((n) => n + 1); // fresh <SaveBrief> for the new brief
     } catch (err) {
       // A superseded/unmounted request isn't a user-facing error.
@@ -239,8 +246,8 @@ export function ComposerForm() {
               <RotateCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} /> Regenerate
             </button>
           </div>
-          <Results result={result} lyrics={lyrics} />
-          <SaveBrief key={runId} lyrics={lyrics} result={result} />
+          <Results result={result} lyrics={composedLyrics} />
+          <SaveBrief key={runId} lyrics={composedLyrics} result={result} />
         </section>
       )}
     </div>

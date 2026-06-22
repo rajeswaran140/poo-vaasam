@@ -40,7 +40,10 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ success: false, error: 'Invalid request body' }, { status: 400 });
+    return NextResponse.json(
+      { success: false, error: parsed.error.issues[0]?.message || 'Invalid request body' },
+      { status: 400 }
+    );
   }
 
   const jobId = `compose_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
