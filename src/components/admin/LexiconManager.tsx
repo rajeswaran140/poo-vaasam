@@ -2,8 +2,9 @@
 
 /**
  * LexiconManager — admin UI for the lyric word-family dictionary.
- * Filter/search, inline usage edits, add a word, and AI-assisted seeding
- * (suggest → review → bulk-accept). Talks to /api/admin/lexicon* via adminFetch.
+ * Filter/search, inline usage edits, full row editing, add a word, paste-import
+ * a batch, export (CSV/JSON), and AI-assisted seeding (suggest → review →
+ * bulk-accept). Talks to /api/admin/lexicon* via adminFetch.
  */
 
 import { useMemo, useState } from 'react';
@@ -11,6 +12,7 @@ import toast from 'react-hot-toast';
 import { adminFetch } from '@/lib/client-auth';
 import { TransliterateField } from '@/components/admin/TransliterateField';
 import { LEXICON_REGISTERS, LEXICON_USAGES, LEXICON_THEMES } from '@/types/lexicon';
+import { parsePastedWords, lexiconToCsv } from '@/lib/lexicon-io';
 
 export interface LexiconRow {
   id: string;
@@ -20,6 +22,7 @@ export interface LexiconRow {
   register: string;
   usage: string;
   themes: string[];
+  notes?: string;
   usageCount: number;
   archived: boolean;
 }
@@ -39,6 +42,36 @@ const USAGE_STYLE: Record<string, string> = {
   retire: 'text-red-700 bg-red-50',
 };
 
+/** Map an API word object (create/update/list) to a table row. */
+function toRow(d: Partial<LexiconRow> & { id: string; word: string; gloss: string }): LexiconRow {
+  return {
+    id: d.id,
+    word: d.word,
+    gloss: d.gloss,
+    register: d.register ?? LEXICON_REGISTERS[0],
+    usage: d.usage ?? 'fresh',
+    themes: d.themes ?? [],
+    romanization: d.romanization,
+    notes: d.notes,
+    usageCount: d.usageCount ?? 0,
+    archived: d.archived ?? false,
+  };
+}
+
+/** Trigger a client-side file download (no-op outside the browser). */
+function download(filename: string, text: string, mime: string) {
+  if (typeof window === 'undefined') return;
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
   const [words, setWords] = useState<LexiconRow[]>(initial);
   const [fRegister, setFRegister] = useState('');
@@ -46,6 +79,7 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
   const [fTheme, setFTheme] = useState('');
   const [q, setQ] = useState('');
   const [showArchived, setShowArchived] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const visible = useMemo(() => {
     const needle = q.normalize('NFC').trim().toLowerCase();
@@ -63,7 +97,7 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
     const res = await adminFetch('/api/admin/lexicon?archived=true');
     if (res.ok) {
       const d = await res.json();
-      if (Array.isArray(d.data)) setWords(d.data);
+      if (Array.isArray(d.data)) setWords(d.data.map(toRow));
     }
   };
 
@@ -93,9 +127,26 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
     else toast.error('Delete failed');
   };
 
+  const onEdited = (row: LexiconRow) => {
+    setWords((prev) => prev.map((w) => (w.id === row.id ? row : w)));
+    setEditingId(null);
+  };
+
+  const exportCsv = () => {
+    if (visible.length === 0) { toast.error('Nothing to export'); return; }
+    download('tamilagaval-lexicon.csv', lexiconToCsv(visible), 'text/csv;charset=utf-8');
+  };
+  const exportJson = () => {
+    if (visible.length === 0) { toast.error('Nothing to export'); return; }
+    download('tamilagaval-lexicon.json', JSON.stringify(visible, null, 2), 'application/json');
+  };
+
   return (
     <div className="space-y-6">
-      <AddWord onAdded={(w) => setWords((prev) => [w, ...prev])} />
+      <div className="flex flex-wrap gap-2">
+        <AddWord onAdded={(w) => setWords((prev) => [w, ...prev])} />
+        <PasteImport onImported={reload} />
+      </div>
       <SuggestPanel onAccepted={reload} />
 
       {/* Filters */}
@@ -112,7 +163,11 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
         <label className="flex items-center gap-1 text-gray-500">
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> archived
         </label>
-        <span className="ml-auto text-gray-400">{visible.length} words</span>
+        <div className="ml-auto flex items-center gap-2 text-gray-400">
+          <span>{visible.length} words</span>
+          <button onClick={exportCsv} className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 dark:border-gray-600">Export CSV</button>
+          <button onClick={exportJson} className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 dark:border-gray-600">JSON</button>
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
@@ -128,34 +183,44 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-            {visible.map((w) => (
-              <tr key={w.id} className={w.archived ? 'opacity-50' : ''}>
-                <td className="px-3 py-2">
-                  <div className="font-tamil font-medium text-gray-900 dark:text-gray-100">{w.word}</div>
-                  {w.romanization && <div className="text-xs text-gray-400">{w.romanization}</div>}
-                </td>
-                <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{w.gloss}</td>
-                <td className="px-3 py-2 text-gray-500">{w.register}</td>
-                <td className="px-3 py-2">
-                  <select
-                    value={w.usage}
-                    onChange={(e) => setUsage(w.id, e.target.value)}
-                    className={`rounded px-2 py-1 text-xs font-medium ${USAGE_STYLE[w.usage] ?? ''}`}
-                  >
-                    {LEXICON_USAGES.map((u) => <option key={u} value={u}>{u}</option>)}
-                  </select>
-                </td>
-                <td className="px-3 py-2">
-                  <div className="flex flex-wrap gap-1">
-                    {w.themes.map((t) => <span key={t} className="rounded-full bg-orange-50 px-2 py-0.5 text-xs text-orange-700">{t}</span>)}
-                  </div>
-                </td>
-                <td className="px-3 py-2 text-right text-xs">
-                  <button onClick={() => toggleArchive(w)} className="mr-2 text-gray-500 hover:text-gray-800">{w.archived ? 'Restore' : 'Archive'}</button>
-                  <button onClick={() => remove(w.id)} className="text-red-500 hover:text-red-700">Delete</button>
-                </td>
-              </tr>
-            ))}
+            {visible.map((w) =>
+              editingId === w.id ? (
+                <tr key={w.id}>
+                  <td colSpan={6} className="px-3 py-2">
+                    <EditRow word={w} onSaved={onEdited} onCancel={() => setEditingId(null)} />
+                  </td>
+                </tr>
+              ) : (
+                <tr key={w.id} className={w.archived ? 'opacity-50' : ''}>
+                  <td className="px-3 py-2">
+                    <div className="font-tamil font-medium text-gray-900 dark:text-gray-100">{w.word}</div>
+                    {w.romanization && <div className="text-xs text-gray-400">{w.romanization}</div>}
+                  </td>
+                  <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{w.gloss}</td>
+                  <td className="px-3 py-2 text-gray-500">{w.register}</td>
+                  <td className="px-3 py-2">
+                    <select
+                      value={w.usage}
+                      onChange={(e) => setUsage(w.id, e.target.value)}
+                      aria-label={`usage for ${w.word}`}
+                      className={`rounded px-2 py-1 text-xs font-medium ${USAGE_STYLE[w.usage] ?? ''}`}
+                    >
+                      {LEXICON_USAGES.map((u) => <option key={u} value={u}>{u}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex flex-wrap gap-1">
+                      {w.themes.map((t) => <span key={t} className="rounded-full bg-orange-50 px-2 py-0.5 text-xs text-orange-700">{t}</span>)}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-right text-xs">
+                    <button onClick={() => setEditingId(w.id)} className="mr-2 text-blue-600 hover:text-blue-800">Edit</button>
+                    <button onClick={() => toggleArchive(w)} className="mr-2 text-gray-500 hover:text-gray-800">{w.archived ? 'Restore' : 'Archive'}</button>
+                    <button onClick={() => remove(w.id)} className="text-red-500 hover:text-red-700">Delete</button>
+                  </td>
+                </tr>
+              )
+            )}
             {visible.length === 0 && (
               <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-400">No words. Add one or use AI suggest.</td></tr>
             )}
@@ -175,13 +240,27 @@ function Select({ value, onChange, placeholder, options }: { value: string; onCh
   );
 }
 
+/** Tappable theme chips shared by Add/Edit. */
+function ThemePicker({ themes, onToggle }: { themes: string[]; onToggle: (t: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1">
+      {LEXICON_THEMES.map((t) => (
+        <button key={t} type="button" onClick={() => onToggle(t)}
+          className={`rounded-full px-2 py-0.5 text-xs ${themes.includes(t) ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-600'}`}>{t}</button>
+      ))}
+    </div>
+  );
+}
+
 function AddWord({ onAdded }: { onAdded: (w: LexiconRow) => void }) {
   const [open, setOpen] = useState(false);
   const [word, setWord] = useState('');
+  const [romanization, setRomanization] = useState('');
   const [gloss, setGloss] = useState('');
   const [register, setRegister] = useState<string>(LEXICON_REGISTERS[0]);
   const [usage, setUsage] = useState<string>('fresh');
   const [themes, setThemes] = useState<string[]>([]);
+  const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
@@ -191,13 +270,13 @@ function AddWord({ onAdded }: { onAdded: (w: LexiconRow) => void }) {
       const res = await adminFetch('/api/admin/lexicon', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ word, gloss, register, usage, themes }),
+        body: JSON.stringify({ word, romanization: romanization.trim() || undefined, gloss, register, usage, themes, notes: notes.trim() || undefined }),
       });
       const d = await res.json();
       if (res.status === 409) { toast.error('Word already exists'); return; }
       if (!res.ok) throw new Error(d?.error || 'Failed');
-      onAdded({ id: d.data.id, word: d.data.word, gloss: d.data.gloss, register: d.data.register, usage: d.data.usage, themes: d.data.themes, romanization: d.data.romanization, usageCount: 0, archived: false });
-      setWord(''); setGloss(''); setThemes([]);
+      onAdded(toRow(d.data));
+      setWord(''); setRomanization(''); setGloss(''); setThemes([]); setNotes('');
       toast.success('Added');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed');
@@ -210,7 +289,7 @@ function AddWord({ onAdded }: { onAdded: (w: LexiconRow) => void }) {
     return <button onClick={() => setOpen(true)} className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700">+ Add word</button>;
   }
   return (
-    <div className="space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+    <div className="w-full space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
       {/* Tamil headword — type English to transliterate (e.g. amma → அம்மா),
           or paste/type Tamil directly. ↑↓ choose · Enter/Tab/Space commit. */}
       <div>
@@ -219,17 +298,139 @@ function AddWord({ onAdded }: { onAdded: (w: LexiconRow) => void }) {
       </div>
       <div className="flex flex-wrap gap-2">
         <input value={gloss} onChange={(e) => setGloss(e.target.value)} placeholder="meaning (English)" className="flex-1 rounded-md border border-gray-300 px-2 py-1.5 dark:border-gray-600 dark:bg-gray-900" />
+        <input value={romanization} onChange={(e) => setRomanization(e.target.value)} placeholder="romanization (opt)" className="w-40 rounded-md border border-gray-300 px-2 py-1.5 dark:border-gray-600 dark:bg-gray-900" />
         <Select value={register} onChange={setRegister} placeholder="register" options={LEXICON_REGISTERS} />
         <Select value={usage} onChange={setUsage} placeholder="usage" options={LEXICON_USAGES} />
       </div>
-      <div className="flex flex-wrap gap-1">
-        {LEXICON_THEMES.map((t) => (
-          <button key={t} type="button" onClick={() => setThemes((p) => p.includes(t) ? p.filter((x) => x !== t) : [...p, t])}
-            className={`rounded-full px-2 py-0.5 text-xs ${themes.includes(t) ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-600'}`}>{t}</button>
-        ))}
-      </div>
+      <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="notes (opt) — usage hint, source…" className="w-full rounded-md border border-gray-300 px-2 py-1.5 dark:border-gray-600 dark:bg-gray-900" />
+      <ThemePicker themes={themes} onToggle={(t) => setThemes((p) => p.includes(t) ? p.filter((x) => x !== t) : [...p, t])} />
       <div className="flex gap-2">
         <button onClick={submit} disabled={busy} className="rounded-md bg-green-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60">{busy ? 'Saving…' : 'Save'}</button>
+        <button onClick={() => setOpen(false)} className="rounded-md border border-gray-300 px-4 py-1.5 text-sm">Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function EditRow({ word: w, onSaved, onCancel }: { word: LexiconRow; onSaved: (w: LexiconRow) => void; onCancel: () => void }) {
+  const [word, setWord] = useState(w.word);
+  const [romanization, setRomanization] = useState(w.romanization ?? '');
+  const [gloss, setGloss] = useState(w.gloss);
+  const [register, setRegister] = useState(w.register);
+  const [usage, setUsage] = useState(w.usage);
+  const [themes, setThemes] = useState<string[]>(w.themes);
+  const [notes, setNotes] = useState(w.notes ?? '');
+  const [busy, setBusy] = useState(false);
+
+  const save = async () => {
+    if (!word.trim() || !gloss.trim()) { toast.error('Word + gloss required'); return; }
+    setBusy(true);
+    try {
+      const res = await adminFetch(`/api/admin/lexicon/${w.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          word,
+          romanization: romanization.trim() || null,
+          gloss,
+          register,
+          usage,
+          themes,
+          notes: notes.trim() || null,
+        }),
+      });
+      const d = await res.json();
+      if (res.status === 409) { toast.error('Word already exists'); return; }
+      if (!res.ok) throw new Error(d?.error || 'Failed');
+      onSaved(toRow({ ...d.data, archived: w.archived }));
+      toast.success('Saved');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2 rounded-md border border-blue-200 bg-blue-50/40 p-3 dark:border-gray-600 dark:bg-gray-800/40">
+      <div>
+        <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">சொல் (word)</label>
+        <TransliterateField value={word} onChange={setWord} placeholder="சொல்" />
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <input value={gloss} onChange={(e) => setGloss(e.target.value)} aria-label="meaning" placeholder="meaning (English)" className="flex-1 rounded-md border border-gray-300 px-2 py-1.5 dark:border-gray-600 dark:bg-gray-900" />
+        <input value={romanization} onChange={(e) => setRomanization(e.target.value)} aria-label="romanization" placeholder="romanization" className="w-40 rounded-md border border-gray-300 px-2 py-1.5 dark:border-gray-600 dark:bg-gray-900" />
+        <Select value={register} onChange={setRegister} placeholder="register" options={LEXICON_REGISTERS} />
+        <Select value={usage} onChange={setUsage} placeholder="usage" options={LEXICON_USAGES} />
+      </div>
+      <input value={notes} onChange={(e) => setNotes(e.target.value)} aria-label="notes" placeholder="notes (opt)" className="w-full rounded-md border border-gray-300 px-2 py-1.5 dark:border-gray-600 dark:bg-gray-900" />
+      <ThemePicker themes={themes} onToggle={(t) => setThemes((p) => p.includes(t) ? p.filter((x) => x !== t) : [...p, t])} />
+      <div className="flex gap-2">
+        <button onClick={save} disabled={busy} className="rounded-md bg-green-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60">{busy ? 'Saving…' : 'Save'}</button>
+        <button onClick={onCancel} className="rounded-md border border-gray-300 px-4 py-1.5 text-sm">Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function PasteImport({ onImported }: { onImported: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [register, setRegister] = useState<string>(LEXICON_REGISTERS[0]);
+  const [usage, setUsage] = useState<string>('fresh');
+  const [themes, setThemes] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  const parsed = useMemo(
+    () => parsePastedWords(text, { register: register as never, usage: usage as never, themes }),
+    [text, register, usage, themes]
+  );
+
+  const submit = async () => {
+    if (parsed.words.length === 0) { toast.error('No words to import'); return; }
+    setBusy(true);
+    try {
+      const res = await adminFetch('/api/admin/lexicon/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ words: parsed.words }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d?.error || 'Failed');
+      toast.success(`Added ${d.added}${d.skipped ? `, skipped ${d.skipped}` : ''}`);
+      setText(''); setOpen(false);
+      onImported();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Import failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) {
+    return <button onClick={() => setOpen(true)} className="rounded-md border border-orange-600 px-4 py-2 text-sm font-medium text-orange-700 hover:bg-orange-50 dark:text-orange-400">📋 Paste list</button>;
+  }
+  return (
+    <div className="w-full space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+      <div className="text-xs text-gray-500">
+        One word per line. Optional meaning after a dash/pipe: <code>நிலா — moon</code>. Register/usage/themes below apply to all; fill meanings later by editing.
+      </div>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={6}
+        placeholder={'நிலா — moon\nகடல்\nவானம் | sky'}
+        aria-label="paste words"
+        className="w-full rounded-md border border-gray-300 px-2 py-1.5 font-tamil dark:border-gray-600 dark:bg-gray-900"
+      />
+      <div className="flex flex-wrap items-center gap-2">
+        <Select value={register} onChange={setRegister} placeholder="register" options={LEXICON_REGISTERS} />
+        <Select value={usage} onChange={setUsage} placeholder="usage" options={LEXICON_USAGES} />
+        <span className="text-xs text-gray-400">{parsed.words.length} ready{parsed.skipped ? `, ${parsed.skipped} skipped` : ''}</span>
+      </div>
+      <ThemePicker themes={themes} onToggle={(t) => setThemes((p) => p.includes(t) ? p.filter((x) => x !== t) : [...p, t])} />
+      <div className="flex gap-2">
+        <button onClick={submit} disabled={busy || parsed.words.length === 0} className="rounded-md bg-green-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60">{busy ? 'Importing…' : `Import ${parsed.words.length}`}</button>
         <button onClick={() => setOpen(false)} className="rounded-md border border-gray-300 px-4 py-1.5 text-sm">Cancel</button>
       </div>
     </div>

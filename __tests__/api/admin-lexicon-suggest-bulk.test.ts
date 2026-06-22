@@ -53,14 +53,16 @@ describe('suggest', () => {
     expect(mockSuggest).toHaveBeenCalledWith(expect.objectContaining({ register: 'sangam', avoid: ['கடல்'] }));
   });
 
-  it('caps the avoid list so a large lexicon does not balloon the prompt', async () => {
+  it('caps the avoid list and keeps the most-recently-added words', async () => {
     mockIsConfigured.mockReturnValue(true);
-    mockFindAll.mockResolvedValueOnce(Array.from({ length: 1000 }, (_, i) => ({ word: `w${i}` })));
+    // Higher index = newer (findAll() returns alpha-sorted; the route re-sorts by createdAt).
+    mockFindAll.mockResolvedValueOnce(Array.from({ length: 1000 }, (_, i) => ({ word: `w${i}`, createdAt: new Date(i + 1) })));
     mockSuggest.mockResolvedValueOnce([]);
     await SUGGEST(suggestReq({ register: 'sangam', count: 5 }));
     const avoid = mockSuggest.mock.calls[0][0].avoid as string[];
-    expect(avoid.length).toBeLessThanOrEqual(300);
-    expect(avoid).toContain('w999'); // most-recent kept (tail slice)
+    expect(avoid.length).toBe(300);
+    expect(avoid).toContain('w999'); // newest kept
+    expect(avoid).not.toContain('w0'); // oldest dropped
   });
 });
 

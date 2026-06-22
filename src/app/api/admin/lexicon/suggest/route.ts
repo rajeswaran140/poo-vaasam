@@ -45,10 +45,14 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // Most-recent first so the model avoids the words just added; capped.
+    // Prefer the most-recently-added words so the model avoids re-suggesting
+    // what was just curated; capped to keep the prompt small. (findAll() is
+    // alphabetical, so sort by createdAt here — defensive on missing dates.)
     const avoid = (await new LexiconRepository().findAll())
-      .map((w) => w.word)
-      .slice(-MAX_AVOID);
+      .slice()
+      .sort((a, b) => (b.createdAt?.getTime?.() ?? 0) - (a.createdAt?.getTime?.() ?? 0))
+      .slice(0, MAX_AVOID)
+      .map((w) => w.word);
     const data = await suggestLexiconWords({ ...parsed.data, avoid });
     return NextResponse.json({ success: true, data, total: data.length });
   } catch (err) {

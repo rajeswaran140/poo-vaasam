@@ -21,6 +21,7 @@ async function getWords(): Promise<LexiconRow[]> {
       register: w.register,
       usage: w.usage,
       themes: w.themes,
+      notes: w.notes,
       usageCount: w.usageCount,
       archived: w.archived,
     }));
