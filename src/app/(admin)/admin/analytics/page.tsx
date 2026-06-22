@@ -52,9 +52,11 @@ const nf = (n: number) => n.toLocaleString();
 
 const EVENT_LABEL: Record<string, string> = {
   play: 'Plays', share: 'Shares', youtube: 'YouTube opens', subscribe: 'Subscribe clicks', install: 'PWA installs',
+  inbound: 'Inbound visits (by source)',
 };
 const EVENT_UNIT: Record<string, string> = {
   play: 'plays', share: 'shares', youtube: 'opens', subscribe: 'clicks', install: 'installs',
+  inbound: 'visits',
 };
 
 export default function AnalyticsPage() {

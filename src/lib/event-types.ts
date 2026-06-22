@@ -7,13 +7,14 @@
  * `target` is a single free-form key whose meaning depends on `type`:
  *   play → song id · share → channel (whatsapp/facebook/copy/native) ·
  *   youtube → destination (channel / video:<id>) · subscribe → source CTA ·
- *   install → "pwa". This keeps per-type top-N breakdowns cheap without a
- *   second dimension.
+ *   install → "pwa" · inbound → referral source (whatsapp/…), captured on
+ *   landing from a utm_source-tagged link. This keeps per-type top-N breakdowns
+ *   cheap without a second dimension.
  */
 
 import { z } from 'zod';
 
-export const EVENT_TYPES = ['play', 'share', 'youtube', 'subscribe', 'install'] as const;
+export const EVENT_TYPES = ['play', 'share', 'youtube', 'subscribe', 'install', 'inbound'] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
 /** Payload the browser beacon sends to POST /api/events. */

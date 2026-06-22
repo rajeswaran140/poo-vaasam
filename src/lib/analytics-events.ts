@@ -99,3 +99,14 @@ export function trackInstall(): void {
   gtag()?.('event', 'pwa_install');
   beacon('install', 'pwa');
 }
+
+/**
+ * Fire once on landing when the visitor arrived via a utm_source-tagged link
+ * (e.g. a WhatsApp share). Makes inbound dark-social traffic measurable
+ * first-party — WhatsApp otherwise arrives as direct/no-referrer. `source` is
+ * the utm_source (whatsapp / facebook / …).
+ */
+export function trackInbound(source: string): void {
+  gtag()?.('event', 'inbound_visit', { source });
+  beacon('inbound', source);
+}

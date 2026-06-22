@@ -21,7 +21,7 @@ describe('eventBeaconSchema', () => {
   });
 
   it('covers exactly the documented event types', () => {
-    expect([...EVENT_TYPES]).toEqual(['play', 'share', 'youtube', 'subscribe', 'install']);
+    expect([...EVENT_TYPES]).toEqual(['play', 'share', 'youtube', 'subscribe', 'install', 'inbound']);
   });
 });
 

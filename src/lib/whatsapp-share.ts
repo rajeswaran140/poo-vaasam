@@ -3,7 +3,14 @@
  * the pre-filled message matters: a warm call-to-action (emoji + Tamil verb +
  * title + link) gets forwarded far more than a bare URL. `wa.me/?text=` with no
  * phone number opens WhatsApp and lets the user pick any chat / group / Status.
+ *
+ * The shared link is tagged `utm_source=whatsapp&utm_medium=share` so the inbound
+ * visit it generates is attributable (otherwise WhatsApp arrives as direct/
+ * no-referrer dark social) — GA4 reads UTMs natively + InboundTracker catches it
+ * first-party.
  */
+
+import { appendUtm } from '@/lib/utm';
 
 export interface WhatsAppShareOptions {
   title: string;
@@ -16,7 +23,8 @@ export interface WhatsAppShareOptions {
 export function whatsappShareText({ title, url, verb = 'listen' }: WhatsAppShareOptions): string {
   const cta = verb === 'read' ? 'படியுங்கள்' : 'கேளுங்கள்';
   const emoji = verb === 'read' ? '📜' : '🎵';
-  return `${emoji} ${title} — ${cta}: ${url}`;
+  const tagged = appendUtm(url, { utm_source: 'whatsapp', utm_medium: 'share' });
+  return `${emoji} ${title} — ${cta}: ${tagged}`;
 }
 
 /** `wa.me` share link with the pre-filled, URL-encoded message. */

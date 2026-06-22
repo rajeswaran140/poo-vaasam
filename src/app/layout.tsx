@@ -7,6 +7,7 @@ import BackToTop from "@/components/BackToTop";
 import { FloatingSubscribe } from "@/components/FloatingSubscribe";
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 import { GoogleAnalytics } from "@/components/analytics/GoogleAnalytics";
+import { InboundTracker } from "@/components/analytics/InboundTracker";
 import { GA_ID, GOOGLE_SITE_VERIFICATION } from "@/lib/analytics";
 
 const notoSansTamil = Noto_Sans_Tamil({
@@ -120,6 +121,7 @@ export default function RootLayout({
           </MusicPlayerProvider>
         </AuthProvider>
         <GoogleAnalytics gaId={GA_ID} />
+        <InboundTracker />
       </body>
     </html>
   );

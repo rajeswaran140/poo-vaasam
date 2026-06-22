@@ -1,16 +1,22 @@
 import { whatsappShareText, whatsappShareUrl } from '@/lib/whatsapp-share';
 
 describe('whatsappShareText', () => {
-  it('builds a song message: 🎵 + title + Tamil "listen" CTA + url', () => {
+  it('builds a song message: 🎵 + title + Tamil "listen" CTA + utm-tagged url', () => {
     expect(whatsappShareText({ title: 'எங்கள் தேசம்', url: 'https://tamilagaval.com/thayagam' })).toBe(
-      '🎵 எங்கள் தேசம் — கேளுங்கள்: https://tamilagaval.com/thayagam'
+      '🎵 எங்கள் தேசம் — கேளுங்கள்: https://tamilagaval.com/thayagam?utm_source=whatsapp&utm_medium=share'
     );
   });
 
-  it('uses the "read" CTA + 📜 for text content', () => {
+  it('uses the "read" CTA + 📜 for text content (also utm-tagged)', () => {
     expect(whatsappShareText({ title: 'அம்மா', url: 'https://tamilagaval.com/content/cnt_x', verb: 'read' })).toBe(
-      '📜 அம்மா — படியுங்கள்: https://tamilagaval.com/content/cnt_x'
+      '📜 அம்மா — படியுங்கள்: https://tamilagaval.com/content/cnt_x?utm_source=whatsapp&utm_medium=share'
     );
+  });
+
+  it('tags the shared link with utm_source=whatsapp so inbound is attributable', () => {
+    const text = whatsappShareText({ title: 'T', url: 'https://tamilagaval.com/x' });
+    expect(text).toContain('utm_source=whatsapp');
+    expect(text).toContain('utm_medium=share');
   });
 
   it('defaults to "listen" when no verb is given', () => {
