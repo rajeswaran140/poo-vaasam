@@ -49,13 +49,22 @@ ${section('🌟 Style Influence', `${pack.styleInfluencePct}%  (recommended — 
   document.body.appendChild(iframe);
 }
 
-export function SunoExport({ result, lyrics }: { result: ComposerAnalysis; lyrics: string }) {
+export function SunoExport({
+  result,
+  lyrics,
+  selectedIdx,
+  onSelectIdx,
+}: {
+  result: ComposerAnalysis;
+  lyrics: string;
+  selectedIdx: number;
+  onSelectIdx: (i: number) => void;
+}) {
   const variants = useMemo(() => result.suno_prompts ?? [], [result.suno_prompts]);
-  const [idx, setIdx] = useState(0);
   const [copied, setCopied] = useState(false);
 
   const pack = useMemo(() => {
-    const v = variants[idx];
+    const v = variants[selectedIdx];
     if (!v) return null;
     return buildSunoPack({
       title: result.song_titles?.[0] ?? 'Untitled',
@@ -65,7 +74,7 @@ export function SunoExport({ result, lyrics }: { result: ComposerAnalysis; lyric
       mood: result.mood,
       theme: result.theme,
     });
-  }, [variants, idx, lyrics, result.song_titles, result.mood, result.theme]);
+  }, [variants, selectedIdx, lyrics, result.song_titles, result.mood, result.theme]);
 
   if (!pack) return null;
 
@@ -96,8 +105,8 @@ export function SunoExport({ result, lyrics }: { result: ComposerAnalysis; lyric
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-purple-700 dark:text-purple-300">Export for SUNO</span>
         <select
-          value={idx}
-          onChange={(e) => setIdx(Number(e.target.value))}
+          value={selectedIdx}
+          onChange={(e) => onSelectIdx(Number(e.target.value))}
           className="rounded-lg border border-purple-300 bg-white px-2 py-1 text-xs dark:border-purple-700 dark:bg-gray-800 dark:text-gray-100"
           aria-label="Style variant to export"
         >

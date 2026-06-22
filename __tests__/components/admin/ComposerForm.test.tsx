@@ -241,7 +241,21 @@ it('re-enables Save and refreshes the chosen style after Regenerate (no stuck "S
 
   expect(await screen.findByRole('button', { name: /save brief/i })).toBeEnabled();
   expect(screen.queryByRole('button', { name: /saved/i })).not.toBeInTheDocument();
-  expect((screen.getByLabelText('Chosen SUNO style') as HTMLSelectElement).value).toBe('Village folk');
+  // The chosen style now reflects the selected variant (defaults to the first
+  // of the new brief) — shown as "going with: …", no separate select.
+  expect(screen.getByText(/going with:/i)).toHaveTextContent('Village folk');
+});
+
+it('selecting a variant updates the shared "going with" choice', async () => {
+  queueCompose({ ...SAMPLE, suno_prompts: [{ style: 'Style A', prompt: 'A prompt' }, { style: 'Style B', prompt: 'B prompt' }] });
+  render(<ComposerForm />);
+  fireEvent.change(screen.getByLabelText('Tamil lyrics'), { target: { value: 'x' } });
+  fireEvent.click(screen.getByRole('button', { name: /compose brief/i }));
+  await waitFor(() => expect(screen.getByTestId('composer-results')).toBeInTheDocument());
+
+  expect(screen.getByText(/going with:/i)).toHaveTextContent('Style A'); // first by default
+  fireEvent.click(screen.getAllByRole('radio')[1]); // pick the 2nd variant
+  expect(screen.getByText(/going with:/i)).toHaveTextContent('Style B');
 });
 
 it('passes an AbortSignal to the compose request (cancellable on unmount)', async () => {
