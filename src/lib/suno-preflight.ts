@@ -38,16 +38,19 @@ export interface PreflightResult {
 
 /** SUNO field limits (tunable; based on the custom-mode "Style of Music" box). */
 export const SUNO_LIMITS = {
-  STYLE_MAX: 1000, // hard cap on the (v4) style box — beyond this is truncated
-  STYLE_SOFT: 200, // classic limit — warn beyond this for portability
+  STYLE_MAX: 1000, // hard cap — SUNO's style box truncates beyond ~1000 chars
+  STYLE_SOFT: 850, // warn only as it APPROACHES the cap (composer prompts run rich by design, and SUNO V5 accepts them)
   LYRICS_MAX_CHARS: 5000, // SUNO truncates very long lyrics in a single render
   LYRICS_SOFT_LINES: 60, // beyond this, likely too long for one ~3–4 min song
   /** Rough sung pace for the duration check: ~6s per lyric line. */
   SECONDS_PER_LINE: 6,
 } as const;
 
+// Match any bracketed marker CONTAINING a known section word, so descriptive
+// tags like "[Chorus — Pallavi]" / "[Verse 1 — Anupallavi]" and Carnatic names
+// (pallavi/anupallavi/charanam/…) all count as structure.
 const SECTION_TAG =
-  /\[(intro|verse|pre-?chorus|chorus|bridge|hook|outro|drop|break|instrumental|interlude)(\s*\d+)?\]/i;
+  /\[[^\]]*\b(intro|verse|pre-?chorus|chorus|bridge|hook|outro|drop|break|instrumental|interlude|pallavi|anupallavi|charanam|idaicharanam|refrain|coda)\b[^\]]*\]/i;
 const TAMIL = /[஀-௿]/;
 // Common emoji / pictographic ranges (SUNO may try to "sing" them).
 const EMOJI =
@@ -95,7 +98,7 @@ export function preflightSuno(input: PreflightInput): PreflightResult {
     if (style.length > SUNO_LIMITS.STYLE_MAX) {
       add('style', 'error', 'STYLE_TOO_LONG', `Style is ${style.length} chars — over SUNO's ${SUNO_LIMITS.STYLE_MAX} cap; the tail is dropped.`, 'Trim to the essentials (genre, mood, tempo, key instruments, vocal).');
     } else if (style.length > SUNO_LIMITS.STYLE_SOFT) {
-      add('style', 'warning', 'STYLE_LONG', `Style is ${style.length} chars — beyond the classic ${SUNO_LIMITS.STYLE_SOFT}-char box; may be clipped on some SUNO versions.`, 'Tighten to one focused sentence if possible.');
+      add('style', 'warning', 'STYLE_LONG', `Style is ${style.length} chars — approaching SUNO's ~${SUNO_LIMITS.STYLE_MAX}-char limit; could clip.`, 'Trim if easy, but rich prompts are fine on SUNO V5.');
     }
     if (SECTION_TAG.test(style) || /["“][^"”]{15,}/.test(style)) {
       add('style', 'error', 'STYLE_HAS_LYRICS', 'The style box appears to contain lyrics / section tags — SUNO sings the style box too.', 'Move all lyrics to the lyrics field; keep the style box describing the music only.');
@@ -116,14 +119,15 @@ export function preflightSuno(input: PreflightInput): PreflightResult {
   if (!lyrics) {
     add('lyrics', 'error', 'LYRICS_EMPTY', 'No lyrics provided.', 'Paste the structured lyrics with [Verse]/[Chorus] tags.');
   } else {
-    const lines = nonEmptyLines(lyrics);
+    // Count SUNG lines only — drop pure-bracket markers ([Verse], [Break — …]).
+    const sungLines = nonEmptyLines(lyrics).filter((l) => !/^\[[^\]]*\]$/.test(l));
     if (!SECTION_TAG.test(lyrics)) {
       add('lyrics', 'warning', 'LYRICS_NO_STRUCTURE', 'No [Verse]/[Chorus]/… section tags — SUNO structures the song better with them.', 'Add section tags (e.g. [Verse], [Chorus], [Bridge]).');
     }
     if (lyrics.length > SUNO_LIMITS.LYRICS_MAX_CHARS) {
       add('lyrics', 'error', 'LYRICS_TOO_LONG', `Lyrics are ${lyrics.length} chars — SUNO truncates very long lyrics in one render.`, 'Split into multiple generations or trim repeats.');
-    } else if (lines.length > SUNO_LIMITS.LYRICS_SOFT_LINES) {
-      add('lyrics', 'warning', 'LYRICS_MANY_LINES', `${lines.length} lyric lines may exceed a single ~3–4 min render.`, 'Consider trimming or a two-part generation.');
+    } else if (sungLines.length > SUNO_LIMITS.LYRICS_SOFT_LINES) {
+      add('lyrics', 'warning', 'LYRICS_MANY_LINES', `${sungLines.length} lyric lines may exceed a single ~3–4 min render.`, 'Consider trimming or a two-part generation.');
     }
     if (TAMIL.test(lyrics) && latinOutsideTags(lyrics) > 40) {
       add('lyrics', 'warning', 'LYRICS_MIXED_LANG', 'Lyrics mix Tamil with substantial English (outside tags) — SUNO often mispronounces mixed-language lines.', 'Keep one primary language, or transliterate the English into Tamil.');
@@ -132,9 +136,9 @@ export function preflightSuno(input: PreflightInput): PreflightResult {
       add('lyrics', 'warning', 'LYRICS_EMOJI', 'Lyrics contain emoji — SUNO may try to vocalise them.', 'Remove emoji from the lyrics field.');
     }
     if (input.targetSeconds && input.targetSeconds > 0) {
-      const estSeconds = lines.length * SUNO_LIMITS.SECONDS_PER_LINE;
+      const estSeconds = sungLines.length * SUNO_LIMITS.SECONDS_PER_LINE;
       if (estSeconds > input.targetSeconds * 1.5) {
-        add('lyrics', 'info', 'LYRICS_OVER_DURATION', `~${lines.length} lines (~${estSeconds}s sung) likely overshoots the ${input.targetSeconds}s target.`, 'Trim lines or raise the target length.');
+        add('lyrics', 'info', 'LYRICS_OVER_DURATION', `~${sungLines.length} lines (~${estSeconds}s sung) likely overshoots the ${input.targetSeconds}s target.`, 'Trim lines or raise the target length.');
       }
     }
   }
