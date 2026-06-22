@@ -20,10 +20,10 @@ export default function AdminComposePage() {
         <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Music Director</h1>
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
           Paste Tamil lyrics → get a full production brief: ranked emotions, mood, theme, key, BPM, instruments and
-          ragas (from a curated India &amp; Sri Lanka catalog), a recommended voice, title candidates, several style-tagged SUNO prompts
-          — each with a <strong>readiness check + AI critic</strong> so you vet a prompt <em>before</em> spending a SUNO credit —
+          ragas (from a curated India &amp; Sri Lanka catalog), a recommended voice, title candidates, several style-tagged Tamilagaval prompts
+          — each with a <strong>readiness check + AI critic</strong> so you vet a prompt <em>before</em> spending a generation credit —
           a thumbnail image prompt, bilingual (Tamil + English) YouTube descriptions, and a Reel/Short idea.
-          <strong> Export</strong> any variant as a SUNO pack (Markdown / PDF) for copy-paste, and
+          <strong> Export</strong> any variant as a Tamilagaval pack (Markdown / PDF) for copy-paste, and
           <strong> Save brief</strong> to keep it as the durable, model-agnostic source of truth for the song.
         </p>
       </header>
