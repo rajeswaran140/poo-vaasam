@@ -69,6 +69,18 @@ describe('lyrics findings', () => {
     expect(codes({ ...GOOD, lyrics: 'எல்லார்க்கும் அவ ஒரு பேரு\nஎனக்கு மட்டும் ஒரு உலகம்' })).toContain('LYRICS_NO_STRUCTURE');
   });
 
+  it('recognises DESCRIPTIVE + Carnatic section tags (no false NO_STRUCTURE)', () => {
+    // Regression: "[Chorus — Pallavi]" / "[Verse 1 — Anupallavi]" are structure.
+    const lyrics = '[Chorus — Pallavi]\nஅம்மா உந்தன் நினைவுகள்\n[Verse 1 — Anupallavi]\nகண்ணயரும் வேளையில';
+    expect(codes({ ...GOOD, lyrics })).not.toContain('LYRICS_NO_STRUCTURE');
+  });
+
+  it('does not count [Break — …] production-note lines toward the line limit', () => {
+    const sung = Array.from({ length: 40 }, (_, i) => `வரி ${i}`); // 40 sung lines < 60
+    const withNotes = ['[Intro — flute]', '[Chorus]', ...sung, '[Break — 2 bars]', '[Outro — fade]'];
+    expect(codes({ ...GOOD, lyrics: withNotes.join('\n') })).not.toContain('LYRICS_MANY_LINES');
+  });
+
   it('errors when lyrics exceed the char cap', () => {
     const huge = '[Verse]\n' + 'வரி '.repeat(SUNO_LIMITS.LYRICS_MAX_CHARS);
     const r = preflightSuno({ ...GOOD, lyrics: huge });
