@@ -1,4 +1,4 @@
-import { preflightSuno, SUNO_LIMITS, type PreflightInput } from '@/lib/suno-preflight';
+import { preflightPrompt, PROMPT_LIMITS, type PreflightInput } from '@/lib/prompt-preflight';
 
 // A clean, SUNO-ready Tamil love song that should pass with no errors.
 const GOOD: PreflightInput = {
@@ -14,11 +14,11 @@ const GOOD: PreflightInput = {
   targetSeconds: 240,
 };
 
-const codes = (input: PreflightInput) => preflightSuno(input).findings.map((f) => f.code);
+const codes = (input: PreflightInput) => preflightPrompt(input).findings.map((f) => f.code);
 
-describe('preflightSuno — happy path', () => {
+describe('preflightPrompt — happy path', () => {
   it('a clean prompt + lyrics is ready with a high score and no errors', () => {
-    const r = preflightSuno(GOOD);
+    const r = preflightPrompt(GOOD);
     expect(r.ready).toBe(true);
     expect(r.findings.some((f) => f.severity === 'error')).toBe(false);
     expect(r.score).toBeGreaterThanOrEqual(90);
@@ -27,20 +27,20 @@ describe('preflightSuno — happy path', () => {
 
 describe('style findings', () => {
   it('flags an empty style as an error (not ready)', () => {
-    const r = preflightSuno({ ...GOOD, style: '   ' });
+    const r = preflightPrompt({ ...GOOD, style: '   ' });
     expect(r.ready).toBe(false);
     expect(codes({ ...GOOD, style: '' })).toContain('STYLE_EMPTY');
   });
 
   it('errors when the style exceeds the hard cap', () => {
-    const long = 'a'.repeat(SUNO_LIMITS.STYLE_MAX + 1);
+    const long = 'a'.repeat(PROMPT_LIMITS.STYLE_MAX + 1);
     expect(codes({ ...GOOD, style: long })).toContain('STYLE_TOO_LONG');
-    expect(preflightSuno({ ...GOOD, style: long }).ready).toBe(false);
+    expect(preflightPrompt({ ...GOOD, style: long }).ready).toBe(false);
   });
 
   it('warns (not error) when the style is between the soft and hard limits', () => {
-    const mid = 'soft female vocals flute veena slow ' + 'x'.repeat(SUNO_LIMITS.STYLE_SOFT + 10);
-    const r = preflightSuno({ ...GOOD, style: mid });
+    const mid = 'soft female vocals flute veena slow ' + 'x'.repeat(PROMPT_LIMITS.STYLE_SOFT + 10);
+    const r = preflightPrompt({ ...GOOD, style: mid });
     expect(r.findings.map((f) => f.code)).toContain('STYLE_LONG');
     expect(r.ready).toBe(true); // a warning doesn't block
   });
@@ -60,7 +60,7 @@ describe('style findings', () => {
 
 describe('lyrics findings', () => {
   it('errors on empty lyrics', () => {
-    const r = preflightSuno({ ...GOOD, lyrics: '' });
+    const r = preflightPrompt({ ...GOOD, lyrics: '' });
     expect(r.ready).toBe(false);
     expect(codes({ ...GOOD, lyrics: '' })).toContain('LYRICS_EMPTY');
   });
@@ -82,14 +82,14 @@ describe('lyrics findings', () => {
   });
 
   it('errors when lyrics exceed the char cap', () => {
-    const huge = '[Verse]\n' + 'வரி '.repeat(SUNO_LIMITS.LYRICS_MAX_CHARS);
-    const r = preflightSuno({ ...GOOD, lyrics: huge });
+    const huge = '[Verse]\n' + 'வரி '.repeat(PROMPT_LIMITS.LYRICS_MAX_CHARS);
+    const r = preflightPrompt({ ...GOOD, lyrics: huge });
     expect(r.ready).toBe(false);
     expect(r.findings.map((f) => f.code)).toContain('LYRICS_TOO_LONG');
   });
 
   it('warns when there are too many lines for one render', () => {
-    const many = '[Verse]\n' + Array.from({ length: SUNO_LIMITS.LYRICS_SOFT_LINES + 5 }, (_, i) => `வரி ${i}`).join('\n');
+    const many = '[Verse]\n' + Array.from({ length: PROMPT_LIMITS.LYRICS_SOFT_LINES + 5 }, (_, i) => `வரி ${i}`).join('\n');
     expect(codes({ ...GOOD, lyrics: many })).toContain('LYRICS_MANY_LINES');
   });
 
@@ -111,15 +111,15 @@ describe('lyrics findings', () => {
 
 describe('scoring', () => {
   it('an error caps readiness false and lowers the score below a clean run', () => {
-    const clean = preflightSuno(GOOD).score;
-    const broken = preflightSuno({ style: '', lyrics: '' });
+    const clean = preflightPrompt(GOOD).score;
+    const broken = preflightPrompt({ style: '', lyrics: '' });
     expect(broken.ready).toBe(false);
     expect(broken.score).toBeLessThan(clean);
     expect(broken.score).toBeGreaterThanOrEqual(0);
   });
 
   it('score never leaves the 0–100 range under many findings', () => {
-    const r = preflightSuno({ style: 'EDM metal rap', lyrics: 'x'.repeat(SUNO_LIMITS.LYRICS_MAX_CHARS + 1) + ' ❤️' });
+    const r = preflightPrompt({ style: 'EDM metal rap', lyrics: 'x'.repeat(PROMPT_LIMITS.LYRICS_MAX_CHARS + 1) + ' ❤️' });
     expect(r.score).toBeGreaterThanOrEqual(0);
     expect(r.score).toBeLessThanOrEqual(100);
   });

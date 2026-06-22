@@ -1,6 +1,6 @@
 /**
  * AI Composer — turn Tamil lyrics into a production-ready brief:
- * emotion / mood / theme / key / BPM / instrumentation + SUNO prompts +
+ * emotion / mood / theme / key / BPM / instrumentation + style prompts +
  * bilingual YouTube descriptions + thumbnail + reel. Powers /admin/compose.
  *
  * Reliability model (was: "ask for JSON, hope, then defensively scrape"):
@@ -38,7 +38,7 @@ export type { ComposerAnalysis, SunoVariant, ReelIdea } from './composerSchema';
 // The worker bundles this exact module, so grounding/threading stay identical.
 export const DEFAULT_MODEL = 'claude-sonnet-4-5';
 const MAX_LYRICS_CHARS = 8000;
-// Headroom for the full Brief v2 (ranked emotions, 3-5 SUNO paragraphs,
+// Headroom for the full Brief v2 (ranked emotions, 3-5 style paragraphs,
 // BILINGUAL YouTube descriptions, thumbnail prompt, reel). Tamil is token-dense,
 // so we keep comfortable margin; if output_tokens ever lands at this ceiling the
 // JSON truncates → bad_response, which we now detect explicitly (stop_reason).
@@ -66,7 +66,7 @@ ${instrumentPalette()}
 - suggested_ragas: 2-4 ragas, ranked best-fit first. Choose ONLY from this raga palette, using the EXACT names. Match each raga's rasa (in parentheses) to the song's dominant emotion:
 ${ragaPalette()}
 - recommended_voice: 2-4 ranked, best fit first. Choose from: Male Baritone, Male Tenor, Female Adult, Young Female, Elder Male, Child, Duet.
-- suggested_key: the Western key that best approximates the chosen lead raga (so it can be set in SUNO/DAWs).
+- suggested_key: the Western key that best approximates the chosen lead raga (so it can be set in music-generator/DAWs).
 - BPM: ballad 60-80, mid 90-120, upbeat 130-160.
 - Titles: evocative Tamil phrases drawn from or inspired by the lyrics — not generic.
 - suno_prompts: provide 3-5 DISTINCT style variants. Draw styles from: Traditional Tamil (Carnatic), Tamil film ballad, Devotional, Village folk, Modern acoustic, Bharathiyar-inspired. Each prompt is one self-contained English paragraph and must NOT contain the lyrics. In EACH prompt, explicitly name (a) the raga it is built on (use an exact name from the raga palette) and (b) the specific instruments it features (use exact names from the instrument palette), choosing instruments that suit that particular style variant.
@@ -103,10 +103,10 @@ export interface ComposeOptions {
 }
 
 /**
- * Guarantee a SUNO prompt explicitly names its raga + instruments. The prompt
+ * Guarantee a style prompt explicitly names its raga + instruments. The prompt
  * rule asks the model to do this naturally per-variant; this is the safety net
  * that appends a concise production tag only when a paragraph omits them, so
- * the SUNO text never drifts vague or off-catalog.
+ * the the generator text never drifts vague or off-catalog.
  */
 function threadPaletteIntoSuno(prompt: string, instruments: string[], ragas: string[], keyScale: string): string {
   const text = prompt.trim();
@@ -244,8 +244,8 @@ export async function composeFromLyrics(
 
   const finalInstruments = groundedInstruments.length ? groundedInstruments : parsed.data.suggested_instruments;
   const finalRagas = groundedRagas.length ? groundedRagas : parsed.data.suggested_ragas;
-  // Enrich the key into a SUNO/DAW-friendly key+scale derived from the lead raga
-  // (e.g. "D harmonic minor"), then thread that into each SUNO paragraph.
+  // Enrich the key into a music-generator/DAW-friendly key+scale derived from the lead raga
+  // (e.g. "D harmonic minor"), then thread that into each style paragraph.
   const keyScale = ragaScaleKey(parsed.data.suggested_key, finalRagas[0]);
 
   const data: ComposerAnalysis = {
@@ -253,7 +253,7 @@ export async function composeFromLyrics(
     suggested_instruments: finalInstruments,
     suggested_ragas: finalRagas,
     suggested_key: keyScale,
-    // Ensure each SUNO style paragraph explicitly names its raga + instruments + key/scale.
+    // Ensure each style paragraph explicitly names its raga + instruments + key/scale.
     suno_prompts: parsed.data.suno_prompts.map((v) => ({
       ...v,
       prompt: threadPaletteIntoSuno(v.prompt, finalInstruments, finalRagas, keyScale),

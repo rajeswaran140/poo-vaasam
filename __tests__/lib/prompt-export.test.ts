@@ -1,10 +1,10 @@
 import {
-  buildSunoPack,
-  sunoPackToMarkdown,
+  buildExportPack,
+  exportPackToMarkdown,
   deriveExclusions,
   deriveWeirdness,
   exportFilename,
-} from '@/lib/suno-export';
+} from '@/lib/prompt-export';
 
 describe('deriveExclusions', () => {
   it('returns the default exclusions for a melodic style', () => {
@@ -33,8 +33,8 @@ describe('deriveWeirdness', () => {
   });
 });
 
-describe('buildSunoPack', () => {
-  const pack = buildSunoPack({
+describe('buildExportPack', () => {
+  const pack = buildExportPack({
     title: 'அம்மா உந்தன் நினைவுகள்',
     lyrics: '[Chorus]\nஅம்மா உந்தன் நினைவுகள்',
     styleName: 'Carnatic Devotional Ballad',
@@ -56,14 +56,14 @@ describe('buildSunoPack', () => {
   });
 
   it('falls back to "Untitled" on a blank title', () => {
-    expect(buildSunoPack({ title: '  ', lyrics: 'x', styleName: 's', stylePrompt: 'p' }).title).toBe('Untitled');
+    expect(buildExportPack({ title: '  ', lyrics: 'x', styleName: 's', stylePrompt: 'p' }).title).toBe('Untitled');
   });
 });
 
-describe('sunoPackToMarkdown', () => {
+describe('exportPackToMarkdown', () => {
   it('emits one section per SUNO field', () => {
-    const md = sunoPackToMarkdown(
-      buildSunoPack({ title: 'T', lyrics: 'L', styleName: 'S', stylePrompt: 'flute ballad' })
+    const md = exportPackToMarkdown(
+      buildExportPack({ title: 'T', lyrics: 'L', styleName: 'S', stylePrompt: 'flute ballad' })
     );
     expect(md).toContain('# T');
     expect(md).toContain('## 🎤 Lyrics');

@@ -24,7 +24,7 @@ export interface Raga {
   /** Rasa / emotional feel — used to match a raga to a song's emotion. */
   moods: string[];
   /**
-   * Practical Western scale/mode the raga maps onto — the SUNO/DAW-friendly
+   * Practical Western scale/mode the raga maps onto — the music-generator/DAW-friendly
    * "key hint" (combined with a tonic, e.g. "D Harmonic minor"). An
    * approximation, not strict theory: ragas with gamakas/extra svaras are
    * mapped to the nearest usable scale.
@@ -151,7 +151,7 @@ function tonicOf(key: string): string | null {
 }
 
 /**
- * SUNO/DAW-friendly key+scale hint: combine the tonic from the model's
+ * music-generator/DAW-friendly key+scale hint: combine the tonic from the model's
  * `suggested_key` with the lead raga's Western scale, e.g. "D harmonic minor".
  * Falls back to the original key when the raga or tonic can't be resolved.
  */
