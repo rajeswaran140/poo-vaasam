@@ -21,6 +21,9 @@ jest.mock('lucide-react', () => ({
 jest.mock('@/components/admin/SunoReadiness', () => ({
   SunoReadiness: () => <div data-testid="suno-readiness" />,
 }));
+jest.mock('@/components/admin/SunoExport', () => ({
+  SunoExport: () => <div data-testid="suno-export" />,
+}));
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ComposerForm } from '@/components/admin/ComposerForm';

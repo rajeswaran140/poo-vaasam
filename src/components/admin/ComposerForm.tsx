@@ -20,6 +20,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Copy, Check, Sparkles, RotateCw } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 import { SunoReadiness } from '@/components/admin/SunoReadiness';
+import { SunoExport } from '@/components/admin/SunoExport';
 // type-only import — erased at build, so the server-only composer module
 // (which pulls the Anthropic SDK) is never bundled into this client component.
 import type { ComposerAnalysis } from '@/services/ai/composer';
@@ -419,6 +420,7 @@ function Results({ result, lyrics }: { result: Analysis; lyrics: string }) {
               <SunoReadiness style={v.prompt} lyrics={lyrics} />
             </Card>
           ))}
+          <SunoExport result={result} lyrics={lyrics} />
         </div>
       )}
 
