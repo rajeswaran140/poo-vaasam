@@ -12,7 +12,9 @@ import Link from 'next/link';
 import { Play, Pause, Music, ChevronRight } from 'lucide-react';
 import { useMusicPlayer, formatTime, type Track } from './MusicPlayerProvider';
 import { TrackedYouTubeOpen } from '@/components/TrackedYouTubeOpen';
+import { WhatsAppShareButton } from '@/components/content/WhatsAppShareButton';
 import { contentPath } from '@/config/vanity-paths';
+import { absoluteUrl } from '@/lib/seo';
 
 /** A track plus the metadata the listing needs for sorting and filtering. */
 export interface SongRow extends Track {
@@ -115,6 +117,9 @@ export function SongList({ rows }: { rows: SongRow[] }) {
                   YouTube ↗
                 </TrackedYouTubeOpen>
               )}
+              {/* WhatsApp share — the #1 diaspora channel, on every row so a song
+                  can be forwarded to a chat/group/Status straight from browsing. */}
+              <WhatsAppShareButton url={absoluteUrl(contentPath(t.id))} title={t.title} verb="listen" compact />
               <Link
                 href={contentPath(t.id)}
                 aria-label={`${t.title} — பாடல் வரிகள்`}
