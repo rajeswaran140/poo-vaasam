@@ -21,6 +21,7 @@ import { Copy, Check, Sparkles, RotateCw } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 import { PromptReadiness } from '@/components/admin/PromptReadiness';
 import { PromptExport } from '@/components/admin/PromptExport';
+import { WordPalette } from '@/components/admin/WordPalette';
 // type-only import — erased at build, so the server-only composer module
 // (which pulls the Anthropic SDK) is never bundled into this client component.
 import type { ComposerAnalysis } from '@/services/ai/composer';
@@ -67,6 +68,8 @@ export function ComposerForm() {
   // setState-after-unmount in the finally/catch.
   const abortRef = useRef<AbortController | null>(null);
   const mountedRef = useRef(true);
+  // The lyrics textarea, so the word palette can insert at the caret.
+  const lyricsRef = useRef<HTMLTextAreaElement | null>(null);
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -164,6 +167,28 @@ export function ComposerForm() {
     }
   };
 
+  // Insert a palette word at the caret (or append), keeping focus + caret sane.
+  const insertWord = (word: string) => {
+    const el = lyricsRef.current;
+    if (!el) {
+      setLyrics((p) => (p ? `${p} ${word}` : word).slice(0, MAX_LYRICS));
+      return;
+    }
+    const start = el.selectionStart ?? lyrics.length;
+    const end = el.selectionEnd ?? lyrics.length;
+    // Pad with a space when butting up against an existing word.
+    const before = lyrics.slice(0, start);
+    const needsLead = before.length > 0 && !/\s$/.test(before);
+    const insert = (needsLead ? ' ' : '') + word;
+    const next = (before + insert + lyrics.slice(end)).slice(0, MAX_LYRICS);
+    setLyrics(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = Math.min(start + insert.length, next.length);
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
   const charsClass =
     lyrics.length >= MAX_LYRICS
       ? 'text-red-600 dark:text-red-400'
@@ -183,6 +208,7 @@ export function ComposerForm() {
         </label>
         <textarea
           id={lyricsId}
+          ref={lyricsRef}
           value={lyrics}
           maxLength={MAX_LYRICS}
           onChange={(e) => setLyrics(e.target.value)}
@@ -213,6 +239,7 @@ export function ComposerForm() {
             </button>
           </div>
         </div>
+        <WordPalette lyrics={lyrics} onInsertWord={insertWord} />
       </form>
 
       {error && (

@@ -24,6 +24,11 @@ jest.mock('@/components/admin/PromptReadiness', () => ({
 jest.mock('@/components/admin/PromptExport', () => ({
   PromptExport: () => <div data-testid="prompt-export" />,
 }));
+// WordPalette lazy-loads the lexicon on open; mock it so this test doesn't
+// fire that fetch. It has its own dedicated test + pure-lib coverage.
+jest.mock('@/components/admin/WordPalette', () => ({
+  WordPalette: () => <div data-testid="word-palette" />,
+}));
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ComposerForm } from '@/components/admin/ComposerForm';
