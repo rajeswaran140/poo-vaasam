@@ -22,6 +22,7 @@ import { adminFetch } from '@/lib/client-auth';
 import { PromptReadiness } from '@/components/admin/PromptReadiness';
 import { PromptExport } from '@/components/admin/PromptExport';
 import { WordPalette } from '@/components/admin/WordPalette';
+import { DuetTagger } from '@/components/admin/DuetTagger';
 // type-only import — erased at build, so the server-only composer module
 // (which pulls the Anthropic SDK) is never bundled into this client component.
 import type { ComposerAnalysis } from '@/services/ai/composer';
@@ -240,6 +241,7 @@ export function ComposerForm() {
           </div>
         </div>
         <WordPalette lyrics={lyrics} onInsertWord={insertWord} />
+        <DuetTagger lyrics={lyrics} />
       </form>
 
       {error && (

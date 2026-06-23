@@ -29,6 +29,9 @@ jest.mock('@/components/admin/PromptExport', () => ({
 jest.mock('@/components/admin/WordPalette', () => ({
   WordPalette: () => <div data-testid="word-palette" />,
 }));
+jest.mock('@/components/admin/DuetTagger', () => ({
+  DuetTagger: () => <div data-testid="duet-tagger" />,
+}));
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ComposerForm } from '@/components/admin/ComposerForm';
