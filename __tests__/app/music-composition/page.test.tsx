@@ -13,13 +13,18 @@ describe('Music Composition page', () => {
     ).toBeInTheDocument();
   });
 
-  it('has order CTAs that link to the contact form with a prefilled subject', () => {
+  it('order CTAs scroll to the on-page commission form (a real funnel, not a blank /contact)', () => {
     render(<MusicCompositionPage />);
     const links = screen.getAllByRole('link');
-    const orderLink = links.find(
-      (a) => a.getAttribute('href') === '/contact?subject=Music%20Composition%20Request'
-    );
-    expect(orderLink).toBeDefined();
+    expect(links.some((a) => a.getAttribute('href') === '#request')).toBe(true);
+    // CTAs no longer hand off to the blank /contact?subject= flow
+    expect(links.some((a) => a.getAttribute('href')?.includes('subject=Music'))).toBe(false);
+  });
+
+  it('renders the structured commission request form', () => {
+    render(<MusicCompositionPage />);
+    expect(screen.getByLabelText(/Lyrics \/ details/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /send request/i })).toBeInTheDocument();
   });
 
   it('renders FAQ questions', () => {

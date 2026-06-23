@@ -9,6 +9,7 @@ import { Footer } from '@/components/Footer';
 import { JsonLd } from '@/components/JsonLd';
 import { YouTubeEmbed } from '@/components/YouTubeEmbed';
 import { TrackedYouTubeAnchor } from '@/components/TrackedYouTubeAnchor';
+import { CommissionForm } from '@/components/CommissionForm';
 import { SITE_URL, SITE_NAME, alternatesFor, breadcrumbJsonLd } from '@/lib/seo';
 import { isYouTubeChannelConfigured, youtubeSubscribeUrl } from '@/config/site';
 import { MUSIC, hasMusicSamples, hasWhatsApp, whatsappLink } from '@/config/music';
@@ -37,7 +38,9 @@ export const metadata: Metadata = {
   },
 };
 
-const ORDER_HREF = '/contact?subject=Music%20Composition%20Request';
+// CTAs scroll to the on-page structured commission form (a real funnel) rather
+// than dumping the visitor on a blank /contact page with no brief.
+const ORDER_HREF = '#request';
 
 // FAQ content — drives both the visible list and the FAQPage structured data.
 const FAQ: { q: string; a: string }[] = [
@@ -95,7 +98,7 @@ const jsonLd = [
     // (which Rich Results flags) and point to the request flow instead.
     potentialAction: {
       '@type': 'OrderAction',
-      target: `${SITE_URL}${ORDER_HREF}`,
+      target: `${SITE_URL}/music-composition#request`,
     },
   },
   {
@@ -205,6 +208,19 @@ export default function MusicCompositionPage() {
               </li>
             ))}
           </ul>
+        </div>
+      </section>
+
+      {/* Commission request form — the funnel */}
+      <section id="request" className="bg-gray-800 py-20 scroll-mt-20">
+        <div className="container mx-auto px-4">
+          <h2 className="text-3xl sm:text-4xl font-bold text-center text-white mb-4 font-tamil">
+            இசையமைப்பு கோரிக்கை
+          </h2>
+          <p className="text-center text-gray-300 font-tamil mb-10 max-w-2xl mx-auto">
+            கீழே விவரங்களை நிரப்புங்கள் — இலவச மதிப்பீடு பெறுங்கள். <span className="text-gray-400">Fill in your brief for a free quote.</span>
+          </p>
+          <CommissionForm />
         </div>
       </section>
 
