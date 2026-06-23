@@ -6,6 +6,8 @@ import { MagnifyingGlassIcon, FunnelIcon, SparklesIcon, HeartIcon } from '@heroi
 import { HeartIcon as HeartSolidIcon } from '@heroicons/react/24/solid';
 import { matchesSearch } from '@/lib/search-match';
 import { PoemCover } from '@/components/PoemCover';
+import { WhatsAppShareButton } from '@/components/content/WhatsAppShareButton';
+import { absoluteUrl } from '@/lib/seo';
 
 interface PoemsGridProps {
   poems: any[]; // Accept any array of content objects from the database
@@ -285,11 +287,14 @@ export function PoemsGrid({ poems }: PoemsGridProps) {
                 )}
 
                 {/* Author & Meta */}
-                <div className="mt-auto pt-4 border-t border-gray-100 flex items-center justify-between">
+                <div className="mt-auto pt-4 border-t border-gray-100 flex items-center justify-between gap-2">
                   <span className="text-xs sm:text-sm text-gray-500 font-tamil">- {poem.author}</span>
-                  {poem.viewCount > 0 && (
-                    <span className="text-xs text-gray-400">👁️ {poem.viewCount}</span>
-                  )}
+                  <div className="flex items-center gap-1">
+                    {poem.viewCount > 0 && (
+                      <span className="text-xs text-gray-400">👁️ {poem.viewCount}</span>
+                    )}
+                    <WhatsAppShareButton url={absoluteUrl(`/content/${poem.id}`)} title={poem.title} verb="read" asButton />
+                  </div>
                 </div>
               </div>
             </Link>

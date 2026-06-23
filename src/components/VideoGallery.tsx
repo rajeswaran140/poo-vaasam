@@ -12,6 +12,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Play } from 'lucide-react';
 import { YouTubeEmbed } from '@/components/YouTubeEmbed';
 import { TrackedYouTubeOpen } from '@/components/TrackedYouTubeOpen';
+import { WhatsAppShareButton } from '@/components/content/WhatsAppShareButton';
 import type { ChannelVideo } from '@/lib/youtube-feed';
 import { SITE } from '@/config/site';
 import { trackYouTubeOpen } from '@/lib/analytics-events';
@@ -124,15 +125,18 @@ export function VideoGallery({
                 {excerpt(video.description)}
               </p>
             )}
-            <TrackedYouTubeOpen
-              href={video.watchUrl}
-              destination={`video:${video.id}`}
-              source="videos_card_link"
-              className="mt-auto inline-flex min-h-[44px] items-center self-start py-2 text-xs text-orange-400 hover:text-orange-300"
-              ariaLabel={`Watch ${video.title} on YouTube`}
-            >
-              YouTube ↗
-            </TrackedYouTubeOpen>
+            <div className="mt-auto flex items-center justify-between">
+              <TrackedYouTubeOpen
+                href={video.watchUrl}
+                destination={`video:${video.id}`}
+                source="videos_card_link"
+                className="inline-flex min-h-[44px] items-center self-start py-2 text-xs text-orange-400 hover:text-orange-300"
+                ariaLabel={`Watch ${video.title} on YouTube`}
+              >
+                YouTube ↗
+              </TrackedYouTubeOpen>
+              <WhatsAppShareButton url={video.watchUrl} title={video.title} verb="listen" compact />
+            </div>
           </div>
         </div>
         );

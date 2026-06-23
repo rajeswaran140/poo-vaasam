@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { WhatsAppShareButton } from '@/components/content/WhatsAppShareButton';
 import { whatsappShareUrl } from '@/lib/whatsapp-share';
 
@@ -31,5 +31,26 @@ describe('WhatsAppShareButton', () => {
     // No visible "WhatsApp" text, but the accessible name carries the title.
     expect(screen.queryByText('WhatsApp')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: /எங்கள் தேசம்.*பகிர்/ })).toBeInTheDocument();
+  });
+
+  it('in asButton mode renders a <button> (not an <a>) so it can live inside a card Link', () => {
+    render(<WhatsAppShareButton url={url} title={title} asButton />);
+    // No nested anchor (would be invalid inside the card's wrapping <Link>).
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /எங்கள் தேசம்.*பகிர்/ })).toBeInTheDocument();
+  });
+
+  it('asButton opens WhatsApp and stops the click from following the card link', () => {
+    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
+    render(<WhatsAppShareButton url={url} title={title} asButton />);
+    const click = fireEvent.click(screen.getByRole('button', { name: /பகிர்/ }));
+    // preventDefault() called → the card's wrapping <Link> won't navigate.
+    expect(click).toBe(false);
+    expect(openSpy).toHaveBeenCalledWith(
+      whatsappShareUrl({ title, url, verb: 'listen' }),
+      '_blank',
+      expect.stringContaining('noopener'),
+    );
+    openSpy.mockRestore();
   });
 });

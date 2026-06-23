@@ -9,6 +9,11 @@
  *
  * `compact` renders an icon-only pill (for dense rows/tiles); otherwise a
  * labelled brand-green button. Pass an ABSOLUTE url (WhatsApp needs it).
+ *
+ * `asButton` renders a <button> (opens WhatsApp via window.open) instead of an
+ * <a>. Use it on browse tiles whose whole card is already a <Link> — an <a>
+ * can't nest inside an <a> (invalid HTML → hydration mismatch). The button
+ * swallows the click so sharing doesn't also navigate into the content page.
  */
 
 import { whatsappShareUrl } from '@/lib/whatsapp-share';
@@ -28,12 +33,37 @@ interface Props {
   verb?: 'listen' | 'read';
   /** Icon-only pill for dense rows/tiles. */
   compact?: boolean;
+  /** Render a <button> (window.open) instead of <a> — for tiles wrapped in a Link. */
+  asButton?: boolean;
   className?: string;
 }
 
-export function WhatsAppShareButton({ url, title, verb = 'listen', compact = false, className = '' }: Props) {
+export function WhatsAppShareButton({ url, title, verb = 'listen', compact = false, asButton = false, className = '' }: Props) {
   const href = whatsappShareUrl({ title, url, verb });
   const label = `${title} — WhatsApp-இல் பகிர்`;
+
+  if (asButton) {
+    // The whole card is a <Link>, so we can't emit a nested <a>. A <button>
+    // that opens WhatsApp and stops propagation shares without also following
+    // the card link (mirrors the like-button pattern already used on tiles).
+    const onClick = (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      trackShare('whatsapp');
+      window.open(href, '_blank', 'noopener,noreferrer');
+    };
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={label}
+        title="WhatsApp-இல் பகிர்"
+        className={`flex shrink-0 items-center rounded-full p-2 text-[#25D366] transition-colors hover:bg-[#25D366]/10 hover:text-[#1ebe57] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#25D366]/60 ${className}`}
+      >
+        <WhatsAppGlyph className="h-[18px] w-[18px]" />
+      </button>
+    );
+  }
 
   if (compact) {
     return (

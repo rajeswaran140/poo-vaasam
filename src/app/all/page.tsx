@@ -38,6 +38,7 @@ import { ContentStatus } from '@/types/content';
 import { JsonLd } from '@/components/JsonLd';
 import { collectionPageJsonLd, type CollectionItem } from '@/lib/collection-jsonld';
 import { contentPath } from '@/config/vanity-paths';
+import { WhatsAppShareButton } from '@/components/content/WhatsAppShareButton';
 
 async function getAllContent() {
   try {
@@ -134,13 +135,21 @@ function ContentCard({ content }: { content: any }) {
         <p className="text-gray-600 font-tamil text-sm line-clamp-3 mb-4 leading-relaxed">
           {content.body}
         </p>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <span className="text-sm text-gray-500 font-tamil">
             {content.author}
           </span>
-          <span className="text-purple-600 group-hover:text-purple-700 font-medium text-sm font-tamil">
-            மேலும் படிக்க →
-          </span>
+          <div className="flex items-center gap-1">
+            <WhatsAppShareButton
+              url={absoluteUrl(contentPath(content.id))}
+              title={content.title}
+              verb={content.type === 'SONGS' ? 'listen' : 'read'}
+              asButton
+            />
+            <span className="text-purple-600 group-hover:text-purple-700 font-medium text-sm font-tamil">
+              மேலும் படிக்க →
+            </span>
+          </div>
         </div>
       </div>
     </Link>
