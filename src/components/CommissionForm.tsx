@@ -114,7 +114,10 @@ export function CommissionForm() {
           </a>
         )}
       </div>
-      <p className="text-center font-tamil text-xs text-gray-500">இலவச மதிப்பீடு · Free quote — no obligation.</p>
+      <p className="text-center font-tamil text-xs text-gray-500">
+        இலவச மதிப்பீடு · Free quote — no obligation.{' '}
+        <span className="text-gray-600">Starting from CAD $75 · 5–7 working days.</span>
+      </p>
     </form>
   );
 }

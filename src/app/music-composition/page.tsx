@@ -179,7 +179,23 @@ export default function MusicCompositionPage() {
             <p className="text-lg text-gray-300 font-tamil leading-relaxed mb-2">
               ஒவ்வொரு பாடலும் தனித்துவமானது — அதனால் விலையும் உங்கள் தேவைக்கேற்ப தனிப்பயனாக்கப்படுகிறது.
             </p>
-            <p className="text-2xl font-bold text-orange-400 font-tamil mb-8">மலிவான விலை · இலவச மதிப்பீடு</p>
+            <p className="text-2xl font-bold text-orange-400 font-tamil mb-6">மலிவான விலை · இலவச மதிப்பீடு</p>
+            <div className="flex flex-col sm:flex-row justify-center gap-4 mb-8">
+              <div className="flex items-center gap-2 bg-gray-800 border border-gray-700 rounded-xl px-5 py-3">
+                <span className="text-2xl" aria-hidden>💸</span>
+                <div className="text-left">
+                  <div className="text-xs text-gray-400 font-tamil">Starting from</div>
+                  <div className="text-lg font-bold text-white">CAD $75</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 bg-gray-800 border border-gray-700 rounded-xl px-5 py-3">
+                <span className="text-2xl" aria-hidden>📅</span>
+                <div className="text-left">
+                  <div className="text-xs text-gray-400 font-tamil">Typical turnaround</div>
+                  <div className="text-lg font-bold text-white">5–7 working days</div>
+                </div>
+              </div>
+            </div>
             <Link
               href={ORDER_HREF}
               className="inline-flex items-center gap-2 px-8 py-4 bg-orange-600 text-white rounded-full font-bold hover:bg-orange-700 transition-colors shadow-lg font-tamil text-lg"
