@@ -39,9 +39,15 @@ describe('createGenerationSchema', () => {
     expect(createGenerationSchema.safeParse({ ...base, audioUrl: 'not a url' }).success).toBe(false);
   });
 
-  it('accepts a valid audioUrl', () => {
-    const r = createGenerationSchema.safeParse({ ...base, audioUrl: 'https://cdn.example.com/a.mp3' });
-    expect(r.success).toBe(true);
+  it('accepts an http(s) audioUrl', () => {
+    expect(createGenerationSchema.safeParse({ ...base, audioUrl: 'https://cdn.example.com/a.mp3' }).success).toBe(true);
+    expect(createGenerationSchema.safeParse({ ...base, audioUrl: 'http://cdn.example.com/a.mp3' }).success).toBe(true);
+  });
+
+  it('rejects a non-http(s) audioUrl scheme', () => {
+    expect(createGenerationSchema.safeParse({ ...base, audioUrl: 'javascript:alert(1)' }).success).toBe(false);
+    expect(createGenerationSchema.safeParse({ ...base, audioUrl: 'ftp://h/a.mp3' }).success).toBe(false);
+    expect(createGenerationSchema.safeParse({ ...base, audioUrl: 'data:audio/mp3;base64,AAAA' }).success).toBe(false);
   });
 
   it('enforces 0–10 integer score bounds', () => {

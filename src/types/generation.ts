@@ -71,7 +71,8 @@ export const createGenerationSchema = z
     chosenStyle: z.string().max(120).optional(),
     audioUrl: z.preprocess(
       (v) => (v === '' || v === null ? undefined : v),
-      z.url('audioUrl must be a valid URL').max(2048).optional()
+      // An audio URL must be http(s) — rejects junk schemes (javascript:, data:, …).
+      z.url({ protocol: /^https?$/, error: 'audioUrl must be an http(s) URL' }).max(2048).optional()
     ),
     settings: generationSettingsSchema,
     scores: generationScoresSchema,
