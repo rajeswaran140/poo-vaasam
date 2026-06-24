@@ -62,7 +62,7 @@ Each finding shows a concrete fix after the "—".
     slug: 'prompt-preflight-how-it-works',
     title: 'Tamilagaval Pre-flight — How it works',
     category: 'Composer',
-    updatedAt: '2026-06-22',
+    updatedAt: '2026-06-24',
     body: `# How the Tamilagaval pre-flight works
 
 The music generator has no API and every generation costs a credit, so this raises your first-try odds **before** you generate. Two layers:
@@ -85,7 +85,45 @@ The ✨ button runs a Claude pass for **semantic** risks the linter can't see �
 ## The workflow it enables
 Compose → read the readiness panel → fix the flagged issues (or pick the best-scoring variant) → only then paste into the generator. You spend credits on a **vetted** prompt instead of trial-and-error.
 
-> Next planned: an **attempt log** so each trial's outcome is recorded and you learn what works over time.
+> The **attempt log** is now live — see the **Music Lab** guide. After you generate, log each attempt's outcome there so you learn what works over time.
+`,
+  },
+  {
+    slug: 'music-lab-logging-generations',
+    title: 'Music Lab — Logging generations',
+    category: 'Music Lab',
+    updatedAt: '2026-06-24',
+    body: `# Music Lab — turn every generation into data
+
+Most people delete the SUNO takes that didn't work. **Music Lab** keeps them. Every attempt — keeper *or* failure — gets logged against its brief with the audio, the settings you used, scores, a verdict, and what went wrong. Over time that becomes a private dataset: which **emotion × raga × voice** combinations actually land, and why the rest don't.
+
+Open **Music Lab** in the sidebar (\`/admin/music-lab\`).
+
+## When to log
+Right after a SUNO (or other engine) run comes back. SUNO has no API, so there's no automatic capture — logging is a quick manual step you do per take.
+
+## How to log an attempt
+1. **Pick the brief** the take came from (the dropdown lists your saved briefs from Music Director). Don't have one? Compose + **Save brief** first.
+2. Fill the **Log a generation** form:
+   - **Engine** — suno (or lyria / udio / other).
+   - **Style variant** — which of the brief's Tamilagaval prompts you used (pre-filled from the brief).
+   - **Audio** — upload the MP3 (or paste an http(s) URL). Optional — you can rate before the file is back.
+   - **Settings** — the knobs you used: *weirdness* (0–100), *style influence* (0–100), and a free-text *engine/model* tag (e.g. \`suno v4.5\`).
+   - **Scores** — rate **melody / vocals / lyrics / mix** 0–10. Score only what you can judge; blanks are fine.
+   - **Verdict** — \`success\`, \`partial\`, or \`failed\`.
+   - **Primary issue** — when it's not a success, what mainly broke (vocal delivery, mixing, pronunciation, arrangement…).
+   - **Notes** — the most valuable field. Be specific: *"excellent flute intro, weak chorus transition, robotic vocals."*
+3. **Log generation.** It appears immediately in the **Attempts** list (newest first) under that brief, with its verdict badge and audio player.
+
+## Two things to know
+- **You score the audio, not the AI.** An LLM can't *listen* to an MP3, so melody/vocals/mix are your call. The machine's job (later) is to find patterns across what you logged.
+- **Capture first, insights later.** The "this raga + voice succeeds 70% of the time" rollups need volume to be meaningful. Log consistently now so the dataset is there when it's worth analysing.
+
+## What's coming (Phase 2/3)
+- **Find similar** + an AI report on *why your failures cluster* (e.g. "vocal_delivery fails when tempo > 130").
+- Tagging great moments by timestamp → a reusable **intro / chorus / bridge** library, and reference exports for LYRIA.
+
+> The point isn't any single song — it's that 500 logged attempts become a Tamil-music asset no one else has.
 `,
   },
 ];
