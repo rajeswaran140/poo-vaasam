@@ -1,4 +1,15 @@
 version: 1
+# Custom response headers applied by Amplify Hosting's CDN. Needed for the
+# /clips/** static assets (Status-share clips + posters): they're served straight
+# from the CDN/S3 origin, so next.config headers() never reaches them — the
+# platform default (max-age=5) re-downloaded the ~1.3 MB clip on every repeat
+# visit and every Web Share file fetch. They're content-stable (filename pins
+# content), so cache them for a year, immutable.
+customHeaders:
+  - pattern: '/clips/**'
+    headers:
+      - key: 'Cache-Control'
+        value: 'public, max-age=31536000, immutable'
 frontend:
   phases:
     preBuild:
