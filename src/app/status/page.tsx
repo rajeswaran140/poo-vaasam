@@ -4,8 +4,10 @@
  * Surfaces the curated vertical clips (src/config/status-clips.ts) so the
  * audience can post them to WhatsApp Status in one tap — the biggest dark-social
  * surface for the diaspora-Tamil audience (project_tamilagaval_whatsapp). The
- * clip→song join is done here against the live Songs catalogue so titles/covers
- * never go stale; a clip whose song is unpublished is silently dropped.
+ * clip→song join is done here against the live Songs catalogue so titles never
+ * go stale; a clip whose song is unpublished is silently dropped. The card poster
+ * is the short's OWN thumbnail (posterForClip), not the song cover — see
+ * src/config/status-clips.ts.
  */
 
 export const revalidate = 300;
@@ -15,7 +17,7 @@ import Link from 'next/link';
 import { alternatesFor, SITE_NAME, absoluteUrl, breadcrumbJsonLd } from '@/lib/seo';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { SongCatalog } from '@/application/use-cases/SongCatalog';
-import { STATUS_CLIPS } from '@/config/status-clips';
+import { STATUS_CLIPS, posterForClip } from '@/config/status-clips';
 import { contentPath } from '@/config/vanity-paths';
 import { JsonLd } from '@/components/JsonLd';
 import { StatusShareGallery, type StatusClipView } from '@/components/status/StatusShareGallery';
@@ -50,7 +52,7 @@ async function getClips(): Promise<StatusClipView[]> {
         title: song.title,
         path: contentPath(song.id),
         clip,
-        cover: song.coverUrl,
+        cover: posterForClip(clip),
       };
     }).filter((c): c is StatusClipView => c !== null);
   } catch (error) {

@@ -11,6 +11,14 @@
  * (and a download fallback), and fetching the file from the cross-origin media
  * CDN would be blocked by CORS. Same-origin keeps the Web Share file path and
  * the download robust with zero CORS/infra work. The files are small (~1.3 MB).
+ *
+ * **Posters are the short's OWN thumbnail** (a 1080×1920 frame extracted from the
+ * clip, sitting next to it as `<slug>-short.jpg`), NOT the song's square cover or
+ * the 16:9 YouTube thumbnail. The short already bakes in the matching cover, the
+ * Tamil title and the "Lyrics: Raj | Music: TamilAgaval.com" branding in the
+ * correct vertical frame, so it's both the truest preview of what gets shared and
+ * the right shape for these 9:16 cards — and it needs no YouTube video id (so
+ * songs without one, e.g. எங்கள் தேசம், can still appear). See `posterForClip`.
  */
 
 export interface StatusClip {
@@ -30,9 +38,7 @@ export const STATUS_CLIPS: StatusClip[] = [
   { songId: 'cnt_1780067292560_ixhyejnr3', clip: '/clips/anbenum-short.mp4' },      // அன்பெனும் தேரில்
   { songId: 'cnt_1779939400084_vgk04g3q9', clip: '/clips/andhi-megame-short.mp4' }, // அந்தி மேகமே
   { songId: 'cnt_1780419293978_31gt0nq13', clip: '/clips/aridhana-short.mp4' },      // அரிதான பெரும் பாசம்
-  // எங்கள் தேசம் (engaldesam) removed 2026-06-24 — no youtubeVideoId → no matching
-  // YT thumbnail. Re-add once the song has a video id + mirrored thumb.
-  // { songId: 'cnt_1781049094952_wstyqacm4', clip: '/clips/engaldesam-short.mp4' },
+  { songId: 'cnt_1781049094952_wstyqacm4', clip: '/clips/engaldesam-short.mp4' },    // எங்கள் தேசம் (poster = short's own frame; no YT id needed)
   { songId: 'cnt_1780067292588_frlxbwfzh', clip: '/clips/irai-short.mp4' },          // இரை தேட சென்றதாய்
   { songId: 'cnt_1780855949386_2y4i1y64d', clip: '/clips/kannodu-short.mp4' },       // கண்ணோடு நீர் அள்ளி
   { songId: 'cnt_1780066149948_61fwvj451', clip: '/clips/mudivilla-short.mp4' },     // முடிவில்லா முகத்தினில்
@@ -44,4 +50,14 @@ export const STATUS_CLIPS: StatusClip[] = [
 /** The Status clip for a song, or undefined if the song has none. */
 export function clipForSong(songId: string): string | undefined {
   return STATUS_CLIPS.find((c) => c.songId === songId)?.clip;
+}
+
+/**
+ * The same-origin poster for a clip — the short's OWN thumbnail, a frame
+ * extracted next to it as `<slug>-short.jpg`. Used as the `<video poster>` so the
+ * card preview matches exactly what gets shared (and is correctly vertical),
+ * independent of the song's cover / YouTube thumbnail.
+ */
+export function posterForClip(clip: string): string {
+  return clip.replace(/\.mp4$/, '.jpg');
 }

@@ -28,7 +28,7 @@ export interface StatusClipView {
   path: string;
   /** Same-origin clip file under /public (CORS-free for share/download). */
   clip: string;
-  /** Optional poster image. */
+  /** Poster image — the short's OWN thumbnail (same-origin <slug>-short.jpg). */
   cover?: string;
 }
 
