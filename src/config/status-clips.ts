@@ -30,7 +30,9 @@ export const STATUS_CLIPS: StatusClip[] = [
   { songId: 'cnt_1780067292560_ixhyejnr3', clip: '/clips/anbenum-short.mp4' },      // அன்பெனும் தேரில்
   { songId: 'cnt_1779939400084_vgk04g3q9', clip: '/clips/andhi-megame-short.mp4' }, // அந்தி மேகமே
   { songId: 'cnt_1780419293978_31gt0nq13', clip: '/clips/aridhana-short.mp4' },      // அரிதான பெரும் பாசம்
-  { songId: 'cnt_1781049094952_wstyqacm4', clip: '/clips/engaldesam-short.mp4' },    // எங்கள் தேசம்
+  // எங்கள் தேசம் (engaldesam) removed 2026-06-24 — no youtubeVideoId → no matching
+  // YT thumbnail. Re-add once the song has a video id + mirrored thumb.
+  // { songId: 'cnt_1781049094952_wstyqacm4', clip: '/clips/engaldesam-short.mp4' },
   { songId: 'cnt_1780067292588_frlxbwfzh', clip: '/clips/irai-short.mp4' },          // இரை தேட சென்றதாய்
   { songId: 'cnt_1780855949386_2y4i1y64d', clip: '/clips/kannodu-short.mp4' },       // கண்ணோடு நீர் அள்ளி
   { songId: 'cnt_1780066149948_61fwvj451', clip: '/clips/mudivilla-short.mp4' },     // முடிவில்லா முகத்தினில்
