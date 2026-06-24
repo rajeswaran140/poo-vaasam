@@ -86,7 +86,9 @@ export function StatusShareCard({ title, path, clip, cover }: StatusClipView) {
             onClick={handleShare}
             disabled={busy}
             aria-label={`${title} — WhatsApp Status-இல் பகிர்`}
-            className="inline-flex flex-1 items-center justify-center gap-2 rounded-full bg-[#25D366] px-3 py-2 font-tamil text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#1ebe57] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#25D366]/60 disabled:opacity-60"
+            // #0b7a5b (not the lighter brand #25D366): white-on-green here is
+            // 5.3:1 → passes WCAG AA for this small text, while staying WhatsApp green.
+            className="inline-flex flex-1 items-center justify-center gap-2 rounded-full bg-[#0b7a5b] px-3 py-2 font-tamil text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#0a6e52] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b7a5b]/60 disabled:opacity-60"
           >
             <WhatsAppGlyph className="h-4 w-4" />
             {busy ? 'தயாராகிறது…' : 'Status-இல் பகிர்'}

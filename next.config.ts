@@ -139,6 +139,14 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        // Status-share clips + their posters are content-stable static files
+        // (the filename pins the content), so cache them hard. Without this they
+        // were served with the platform default (max-age=5), re-downloading the
+        // ~1.3 MB clip on every repeat visit and every Web Share file fetch.
+        source: '/clips/:path*',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+      },
+      {
         source: '/:path*',
         headers: [
           {

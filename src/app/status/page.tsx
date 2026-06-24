@@ -17,8 +17,8 @@ import Link from 'next/link';
 import { alternatesFor, SITE_NAME, absoluteUrl, breadcrumbJsonLd } from '@/lib/seo';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { SongCatalog } from '@/application/use-cases/SongCatalog';
-import { STATUS_CLIPS, posterForClip } from '@/config/status-clips';
-import { contentPath } from '@/config/vanity-paths';
+import { posterForClip } from '@/config/status-clips';
+import { joinStatusClips, statusCollectionJsonLd, type StatusVideoItem } from '@/lib/status-jsonld';
 import { JsonLd } from '@/components/JsonLd';
 import { StatusShareGallery, type StatusClipView } from '@/components/status/StatusShareGallery';
 
@@ -40,21 +40,10 @@ export const metadata: Metadata = {
   twitter: { card: 'summary_large_image', title: `${TITLE} | ${SITE_NAME}`, description: DESCRIPTION },
 };
 
-async function getClips(): Promise<StatusClipView[]> {
+async function getStatusItems(): Promise<StatusVideoItem[]> {
   try {
     const songs = await new SongCatalog(new ContentRepository()).listPublished(100);
-    const byId = new Map(songs.map((s) => [s.id, s]));
-    return STATUS_CLIPS.map(({ songId, clip }): StatusClipView | null => {
-      const song = byId.get(songId);
-      if (!song) return null;
-      return {
-        songId,
-        title: song.title,
-        path: contentPath(song.id),
-        clip,
-        cover: posterForClip(clip),
-      };
-    }).filter((c): c is StatusClipView => c !== null);
+    return joinStatusClips(songs);
   } catch (error) {
     console.error('Failed to load status clips:', error);
     return [];
@@ -62,16 +51,29 @@ async function getClips(): Promise<StatusClipView[]> {
 }
 
 export default async function StatusPage() {
-  const clips = await getClips();
+  const items = await getStatusItems();
+  // The gallery view adds the same-origin poster (the short's own thumbnail).
+  const clips: StatusClipView[] = items.map((i) => ({
+    songId: i.songId,
+    title: i.title,
+    path: i.path,
+    clip: i.clip,
+    cover: posterForClip(i.clip),
+  }));
 
   const breadcrumb = breadcrumbJsonLd([
     { name: 'முகப்பு', path: '/' },
     { name: 'WhatsApp Status', path: '/status' },
   ]);
+  const collection = statusCollectionJsonLd(items, {
+    name: TITLE,
+    description: DESCRIPTION,
+    url: absoluteUrl('/status'),
+  });
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <JsonLd data={[breadcrumb]} />
+      <JsonLd data={[breadcrumb, collection]} />
 
       <header className="bg-gradient-to-r from-[#075E54] to-[#128C7E] py-14 text-white">
         <div className="container mx-auto px-4">
@@ -87,6 +89,8 @@ export default async function StatusPage() {
       </header>
 
       <div className="container mx-auto px-4 py-10">
+        {/* Keeps the heading hierarchy h1 → h2 → h3 (cards are h3) for a11y. */}
+        <h2 className="sr-only">தமிழகவல் குறும்படங்கள் — WhatsApp Status clips</h2>
         <p className="mb-6 font-tamil text-sm text-gray-600">
           📱 கைபேசியில்: <strong>“Status-இல் பகிர்”</strong> → WhatsApp → <em>My status</em>. கணினியில்:{' '}
           <strong>⬇️</strong> பதிவிறக்கி, கைபேசியில் Status-ஆகப் பதிவிடுங்கள்.

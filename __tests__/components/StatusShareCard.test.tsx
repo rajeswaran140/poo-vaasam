@@ -30,6 +30,18 @@ afterEach(() => {
   setShareApi({}); // reset to "unsupported"
 });
 
+// Relative luminance + WCAG contrast ratio (sRGB) — for the a11y assertion below.
+function contrastRatio(hexA: string, hexB: string): number {
+  const lum = (hex: string) => {
+    const h = hex.replace('#', '');
+    const ch = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
+    const lin = ch.map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+  };
+  const [l1, l2] = [lum(hexA), lum(hexB)].sort((a, b) => b - a);
+  return (l1 + 0.05) / (l2 + 0.05);
+}
+
 describe('StatusShareCard', () => {
   it('renders the clip, a download control, and a full-song link', () => {
     render(<StatusShareCard {...view} />);
@@ -42,6 +54,15 @@ describe('StatusShareCard', () => {
     expect(dl).toHaveAttribute('download', 'engaldesam-short.mp4');
 
     expect(screen.getByRole('link', { name: /முழுப் பாடல்/ })).toHaveAttribute('href', view.path);
+  });
+
+  it('uses a share-button colour that passes WCAG AA contrast with white text', () => {
+    render(<StatusShareCard {...view} />);
+    const btn = screen.getByRole('button', { name: /Status-இல் பகிர்/ });
+    const bg = btn.className.match(/bg-\[#([0-9a-fA-F]{6})\]/);
+    expect(bg).not.toBeNull(); // button fill is an explicit hex
+    // White-on-fill must clear AA for normal text (4.5:1).
+    expect(contrastRatio('#ffffff', `#${bg![1]}`)).toBeGreaterThanOrEqual(4.5);
   });
 
   it('shares the actual video FILE when the browser supports file sharing', async () => {

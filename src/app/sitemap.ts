@@ -8,6 +8,7 @@ import { fetchChannelVideos } from '@/lib/youtube-feed';
 import { isoDurationToSeconds } from '@/lib/iso-duration';
 import { SongCatalog } from '@/application/use-cases/SongCatalog';
 import { eligibleCollectionThemes } from '@/config/song-collections';
+import { joinStatusClips, statusSitemapVideos } from '@/lib/status-jsonld';
 
 // Regenerate hourly rather than per-request.
 export const revalidate = 3600;
@@ -32,7 +33,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Section/landing pages: home, the live content sections (empty ones are
   // excluded via the shared registry), the aggregate, and the service page.
-  const sectionPaths = ['', ...liveContentSections().map((s) => s.href), '/all', '/music-composition'];
+  const sectionPaths = ['', ...liveContentSections().map((s) => s.href), '/all', '/music-composition', '/status'];
   if (videosEnabled) {
     sectionPaths.push('/videos');
   }
@@ -98,6 +99,23 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   const lastModified = siteLastMod.getTime() > 0 ? siteLastMod : new Date();
 
+  // Published songs, loaded once and reused for the /status video entries and the
+  // /songs/[theme] collection routes. [] on any error so the sitemap never breaks.
+  let publishedSongs: Awaited<ReturnType<SongCatalog['listPublished']>> = [];
+  try {
+    publishedSongs = await new SongCatalog(new ContentRepository()).listPublished(100);
+  } catch (error) {
+    console.error('[sitemap] failed to load songs:', error);
+  }
+
+  // Self-hosted Status clips as video-sitemap entries (content_loc = the mp4),
+  // so the shorts are eligible for video search. Title/description XML-escaped.
+  const statusVideoEntries: VideoEntry[] = statusSitemapVideos(joinStatusClips(publishedSongs)).map((v) => ({
+    ...v,
+    title: xmlEscape(v.title),
+    description: xmlEscape(v.description),
+  }));
+
   // Primary content destinations (songs/poems/videos) outrank /all and
   // /music-composition so crawl budget skews toward the pages we want indexed.
   const PRIORITY_BY_PATH: Record<string, number> = {
@@ -112,6 +130,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: 'weekly',
     priority: PRIORITY_BY_PATH[p] ?? 0.7,
     ...(p === '/videos' && videoEntries.length > 0 ? { videos: videoEntries } : {}),
+    ...(p === '/status' && statusVideoEntries.length > 0 ? { videos: statusVideoEntries } : {}),
   }));
 
   const infoRoutes: MetadataRoute.Sitemap = infoPaths.map((p) => ({
@@ -124,18 +143,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Theme collection pages (/songs/[theme]) — only themes with enough songs to
   // have a generated page, kept in sync with the page's generateStaticParams by
   // using the same SongCatalog source.
-  let collectionRoutes: MetadataRoute.Sitemap = [];
-  try {
-    const songs = await new SongCatalog(new ContentRepository()).listPublished(100);
-    collectionRoutes = eligibleCollectionThemes(songs.map((s) => s.theme)).map((theme) => ({
-      url: `${SITE_URL}/songs/${theme}`,
-      lastModified,
-      changeFrequency: 'weekly',
-      priority: 0.8,
-    }));
-  } catch (error) {
-    console.error('[sitemap] failed to load song collections:', error);
-  }
+  const collectionRoutes: MetadataRoute.Sitemap = eligibleCollectionThemes(
+    publishedSongs.map((s) => s.theme)
+  ).map((theme) => ({
+    url: `${SITE_URL}/songs/${theme}`,
+    lastModified,
+    changeFrequency: 'weekly',
+    priority: 0.8,
+  }));
 
   return [...sectionRoutes, ...collectionRoutes, ...infoRoutes, ...contentRoutes];
 }
