@@ -24,6 +24,7 @@ jest.mock('@aws-sdk/client-lambda', () => ({
 }));
 
 import { POST } from '@/app/api/admin/compose/route';
+import { __resetComposeRateLimitForTests } from '@/lib/compose-rate-limit';
 import { InvokeCommand } from '@aws-sdk/client-lambda';
 import * as auth from '@/lib/auth-helper';
 
@@ -35,7 +36,8 @@ const req = (body: unknown) =>
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockedRequireAdmin.mockResolvedValue({ isAuthenticated: true });
+  __resetComposeRateLimitForTests(); // isolate the per-user limiter between cases
+  mockedRequireAdmin.mockResolvedValue({ isAuthenticated: true, userId: 'admin-1' });
   mockCreate.mockResolvedValue({ id: 'compose_x', status: 'processing' });
   mockSend.mockResolvedValue({ StatusCode: 202 });
 });
@@ -92,4 +94,49 @@ it('returns 502 when the worker invoke fails', async () => {
   const body = await res.json();
   expect(body.success).toBe(false);
   expect(body.error).not.toMatch(/lambda unavailable/); // raw detail not leaked
+});
+
+describe('rate limiting (per admin)', () => {
+  it('throttles after the per-minute cap, returning 429 without invoking the worker', async () => {
+    // The limit is 10/min; exhaust it, then the 11th call must be rejected.
+    for (let i = 0; i < 10; i++) {
+      const ok = await POST(req({ lyrics: `காதல் ${i}` }));
+      expect(ok.status).toBe(202);
+    }
+    mockCreate.mockClear();
+    mockSend.mockClear();
+
+    const limited = await POST(req({ lyrics: 'one too many' }));
+    expect(limited.status).toBe(429);
+    const body = await limited.json();
+    expect(body.success).toBe(false);
+    expect(limited.headers.get('Retry-After')).toBeTruthy();
+    // A throttled request must not create a job or spend a Lambda/Sonnet call.
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  it('meters each admin independently (one admin maxed out does not block another)', async () => {
+    mockedRequireAdmin.mockResolvedValue({ isAuthenticated: true, userId: 'admin-A' });
+    for (let i = 0; i < 10; i++) {
+      expect((await POST(req({ lyrics: `a${i}` }))).status).toBe(202);
+    }
+    expect((await POST(req({ lyrics: 'over' }))).status).toBe(429);
+
+    // A different admin still has a full budget.
+    mockedRequireAdmin.mockResolvedValue({ isAuthenticated: true, userId: 'admin-B' });
+    expect((await POST(req({ lyrics: 'fresh' }))).status).toBe(202);
+  });
+
+  it('does NOT consume rate-limit budget when the caller is not an admin', async () => {
+    const { AuthError } = jest.requireActual('@/lib/auth-helper');
+    mockedRequireAdmin.mockRejectedValue(new AuthError('Forbidden', 403));
+    // Many forbidden attempts...
+    for (let i = 0; i < 20; i++) {
+      expect((await POST(req({ lyrics: 'x' }))).status).toBe(403);
+    }
+    // ...then a real admin still composes (budget was never touched).
+    mockedRequireAdmin.mockResolvedValue({ isAuthenticated: true, userId: 'admin-1' });
+    expect((await POST(req({ lyrics: 'real' }))).status).toBe(202);
+  });
 });

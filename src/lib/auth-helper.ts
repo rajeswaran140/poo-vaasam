@@ -153,10 +153,14 @@ export async function requireAdmin(request: NextRequest): Promise<AuthContext> {
  * admin group OR their email is in the `ADMIN_EMAILS` allow-list.
  *
  * If no RBAC is configured (token has no admin group AND `ADMIN_EMAILS` is
- * unset) we fall back to "any authenticated user is admin". Reaching this point
- * already required a valid, verified Cognito session, so this is a reasonable
- * dev-stage posture; we log a warning in production so it's visible. Tighten by
- * setting `ADMIN_EMAILS` or a Cognito admin group before launch — see HARDENING.md.
+ * unset) the behaviour is environment-dependent:
+ *   - PRODUCTION: fail CLOSED (deny). Cognito self-signup is open, so an
+ *     allow-everyone fallback means any member of the public who registers an
+ *     account would inherit full admin — a privilege-escalation hazard. We deny
+ *     and log loudly; grant access by setting `ADMIN_EMAILS` or a Cognito admin
+ *     group (see HARDENING.md).
+ *   - NON-PRODUCTION: allow any authenticated user, so local dev without full
+ *     Cognito RBAC wiring stays frictionless.
  */
 export function isAdmin(authContext: AuthContext): boolean {
   if (!authContext.isAuthenticated) return false;
@@ -173,12 +177,17 @@ export function isAdmin(authContext: AuthContext): boolean {
     );
   }
 
-  // No RBAC configured: allow any authenticated user, but make it visible in prod.
+  // No RBAC configured. Fail CLOSED in production (open self-signup would
+  // otherwise hand admin to anyone who registers); stay permissive in dev.
   if (process.env.NODE_ENV === 'production') {
-    logger.warn(
-      'isAdmin: no RBAC configured (set ADMIN_EMAILS or a Cognito admin group); allowing any authenticated user'
+    logger.error(
+      'isAdmin: no RBAC configured (set ADMIN_EMAILS or a Cognito admin group); DENYING admin access'
     );
+    return false;
   }
+  logger.warn(
+    'isAdmin: no RBAC configured; allowing any authenticated user (non-production fallback)'
+  );
   return true;
 }
 

@@ -17,6 +17,8 @@ import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
 import { ComposeJobRepository } from '@/infrastructure/database/ComposeJobRepository';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { awsConfig } from '@/lib/aws-config';
+import { rateLimitedResponse, clientIp } from '@/lib/rate-limit';
+import { composeLimiter } from '@/lib/compose-rate-limit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -31,11 +33,18 @@ const schema = z.object({
 const WORKER_FUNCTION = process.env.COMPOSE_WORKER_FUNCTION || 'tamilagaval-compose-worker';
 
 export async function POST(request: NextRequest) {
+  let auth;
   try {
-    await requireAdmin(request);
+    auth = await requireAdmin(request);
   } catch (err) {
     return authErrorResponse(err);
   }
+
+  // Per-admin rate limit (stable user id first, then email, then IP) — checked
+  // before we create a job or invoke the worker, so a throttled caller costs
+  // nothing downstream.
+  const rl = composeLimiter.check(auth.userId || auth.email || clientIp(request));
+  if (!rl.allowed) return rateLimitedResponse(rl);
 
   const body = await request.json().catch(() => null);
   const parsed = schema.safeParse(body);

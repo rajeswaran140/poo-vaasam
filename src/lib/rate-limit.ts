@@ -73,6 +73,11 @@ export class RateLimiter {
     };
   }
 
+  /** Clear all tracked hits. Primarily for test isolation. */
+  reset(): void {
+    this.hits.clear();
+  }
+
   private prune(windowStart: number): void {
     for (const [key, times] of this.hits) {
       const recent = times.filter((t) => t > windowStart);

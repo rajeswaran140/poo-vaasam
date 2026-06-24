@@ -209,11 +209,37 @@ describe('isAdmin — RBAC', () => {
     expect(isAdmin({ isAuthenticated: true, email: 'anyone@x.com', groups: [] })).toBe(true);
   });
 
-  it('allows any authenticated user in production when no RBAC is configured (dev-stage posture)', () => {
+  it('DENIES (fails closed) in production when no RBAC is configured', () => {
     const prev = process.env.NODE_ENV;
     try {
       process.env.NODE_ENV = 'production';
-      expect(isAdmin({ isAuthenticated: true, email: 'anyone@x.com', groups: [] })).toBe(true);
+      delete process.env.ADMIN_EMAILS;
+      // Open Cognito self-signup means an allow-everyone fallback would hand
+      // admin to any registered user — so production must deny.
+      expect(isAdmin({ isAuthenticated: true, email: 'anyone@x.com', groups: [] })).toBe(false);
+    } finally {
+      process.env.NODE_ENV = prev;
+    }
+  });
+
+  it('still grants admin in production via the ADMIN_EMAILS allow-list (fail-closed does not lock out configured admins)', () => {
+    const prev = process.env.NODE_ENV;
+    try {
+      process.env.NODE_ENV = 'production';
+      process.env.ADMIN_EMAILS = 'boss@tamilagaval.com';
+      expect(isAdmin({ isAuthenticated: true, email: 'boss@tamilagaval.com', groups: [] })).toBe(true);
+      expect(isAdmin({ isAuthenticated: true, email: 'intruder@x.com', groups: [] })).toBe(false);
+    } finally {
+      process.env.NODE_ENV = prev;
+    }
+  });
+
+  it('still grants admin in production via a Cognito admin group', () => {
+    const prev = process.env.NODE_ENV;
+    try {
+      process.env.NODE_ENV = 'production';
+      delete process.env.ADMIN_EMAILS;
+      expect(isAdmin({ isAuthenticated: true, email: 'x@y.com', groups: ['admin'] })).toBe(true);
     } finally {
       process.env.NODE_ENV = prev;
     }
