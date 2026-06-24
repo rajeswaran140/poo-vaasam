@@ -1,0 +1,102 @@
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { StatusShareCard } from '@/components/status/StatusShareGallery';
+import { trackShare } from '@/lib/analytics-events';
+import { whatsappShareUrl } from '@/lib/whatsapp-share';
+import { absoluteUrl } from '@/lib/seo';
+
+jest.mock('@/lib/analytics-events', () => ({ trackShare: jest.fn() }));
+
+const view = {
+  songId: 'cnt_test_1',
+  title: 'எங்கள் தேசம்',
+  path: '/thayagam',
+  clip: '/clips/engaldesam-short.mp4',
+  cover: 'https://cdn.example/cover.jpg',
+};
+
+function setShareApi(value: { share?: unknown; canShare?: unknown }) {
+  for (const k of ['share', 'canShare'] as const) {
+    if (k in value) {
+      Object.defineProperty(navigator, k, { configurable: true, value: value[k] });
+    } else {
+      // remove so feature-detection sees it as unsupported
+      Object.defineProperty(navigator, k, { configurable: true, value: undefined });
+    }
+  }
+}
+
+afterEach(() => {
+  jest.clearAllMocks();
+  setShareApi({}); // reset to "unsupported"
+});
+
+describe('StatusShareCard', () => {
+  it('renders the clip, a download control, and a full-song link', () => {
+    render(<StatusShareCard {...view} />);
+    const video = document.querySelector('video');
+    expect(video).toHaveAttribute('src', view.clip);
+    expect(video).toHaveAttribute('poster', view.cover);
+
+    const dl = screen.getByLabelText(/சேமி/);
+    expect(dl).toHaveAttribute('href', view.clip);
+    expect(dl).toHaveAttribute('download', 'engaldesam-short.mp4');
+
+    expect(screen.getByRole('link', { name: /முழுப் பாடல்/ })).toHaveAttribute('href', view.path);
+  });
+
+  it('shares the actual video FILE when the browser supports file sharing', async () => {
+    const share = jest.fn().mockResolvedValue(undefined);
+    const canShare = jest.fn().mockReturnValue(true);
+    setShareApi({ share, canShare });
+    global.fetch = jest.fn().mockResolvedValue({
+      blob: () => Promise.resolve(new Blob(['x'], { type: 'video/mp4' })),
+    }) as unknown as typeof fetch;
+
+    render(<StatusShareCard {...view} />);
+    fireEvent.click(screen.getByRole('button', { name: /Status-இல் பகிர்/ }));
+
+    await waitFor(() => expect(share).toHaveBeenCalledTimes(1));
+    expect(global.fetch).toHaveBeenCalledWith(view.clip);
+    const arg = share.mock.calls[0][0];
+    expect(arg.files).toHaveLength(1);
+    expect(arg.files[0]).toBeInstanceOf(File);
+    expect(arg.files[0].name).toBe('engaldesam-short.mp4');
+    expect(trackShare).toHaveBeenCalledWith('whatsapp_status');
+  });
+
+  it('falls back to a wa.me link share on desktop / unsupported browsers', async () => {
+    setShareApi({}); // no navigator.share
+    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
+
+    render(<StatusShareCard {...view} />);
+    fireEvent.click(screen.getByRole('button', { name: /Status-இல் பகிர்/ }));
+
+    await waitFor(() =>
+      expect(openSpy).toHaveBeenCalledWith(
+        whatsappShareUrl({ title: view.title, url: absoluteUrl(view.path), verb: 'listen' }),
+        '_blank',
+        'noopener,noreferrer',
+      ),
+    );
+    expect(trackShare).toHaveBeenCalledWith('whatsapp_status');
+    openSpy.mockRestore();
+  });
+
+  it('does NOT fall back to the link when the user dismisses the share sheet', async () => {
+    const abort = Object.assign(new Error('cancelled'), { name: 'AbortError' });
+    const share = jest.fn().mockRejectedValue(abort);
+    const canShare = jest.fn().mockReturnValue(true);
+    setShareApi({ share, canShare });
+    global.fetch = jest.fn().mockResolvedValue({
+      blob: () => Promise.resolve(new Blob(['x'], { type: 'video/mp4' })),
+    }) as unknown as typeof fetch;
+    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
+
+    render(<StatusShareCard {...view} />);
+    fireEvent.click(screen.getByRole('button', { name: /Status-இல் பகிர்/ }));
+
+    await waitFor(() => expect(share).toHaveBeenCalled());
+    expect(openSpy).not.toHaveBeenCalled(); // dismissal is not an error
+    openSpy.mockRestore();
+  });
+});

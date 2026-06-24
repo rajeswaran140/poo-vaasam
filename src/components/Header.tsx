@@ -35,6 +35,7 @@ export default function Header() {
   const topLinks = [
     { href: '/music-composition', label: 'இசையமைப்பு' },
     ...(showVideos ? [{ href: '/videos', label: 'காணொளிகள்' }] : []),
+    { href: '/status', label: 'Status பகிர்' },
   ];
 
   const isActive = (href: string) => !!pathname && (pathname === href || pathname.startsWith(`${href}/`));
