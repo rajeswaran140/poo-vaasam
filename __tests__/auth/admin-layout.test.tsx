@@ -40,6 +40,7 @@ jest.mock('lucide-react', () => ({
   PlaySquare: () => <div data-testid="icon-youtube" />,
   Music: () => <div data-testid="icon-songs" />,
   Library: () => <div data-testid="icon-lexicon" />,
+  FlaskConical: () => <div data-testid="icon-music-lab" />,
   ChevronLeft: () => <div data-testid="icon-collapse" />,
   ChevronRight: () => <div data-testid="icon-expand" />,
   Menu: () => <div data-testid="icon-menu" />,

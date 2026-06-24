@@ -31,6 +31,7 @@ import {
   Library,
   Users,
   BookOpen,
+  FlaskConical,
 } from 'lucide-react';
 import { FEATURES } from '@/config/features';
 import { Toaster } from 'react-hot-toast';
@@ -55,6 +56,7 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   '/admin/songs': { title: 'Songs', subtitle: 'Audio library — themes, durations, play counts' },
   '/admin/compose': { title: 'Music Director', subtitle: 'Tamil lyrics → full production brief; save briefs as the durable source of truth' },
   '/admin/lexicon': { title: 'Lexicon', subtitle: 'Lyric word-family dictionary — register × usage, to diversify song vocabulary' },
+  '/admin/music-lab': { title: 'Music Lab', subtitle: 'Log & evaluate every generation against its brief — turn failed attempts into a research dataset' },
   '/admin/workflow': { title: 'Workflow', subtitle: 'Production pipeline — draft → published' },
   '/admin/youtube': { title: 'YouTube', subtitle: 'Channel stats and publishing gaps' },
   '/admin/analytics': { title: 'Analytics', subtitle: 'Website traffic & user activity' },
@@ -166,6 +168,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             <NavLink href="/admin/subscribers" icon={Users} collapsed={collapsed} active={pathname === '/admin/subscribers'}>Subscribers</NavLink>
             <NavLink href="/admin/songs" icon={Music} collapsed={collapsed} active={pathname === '/admin/songs'}>Songs</NavLink>
             <NavLink href="/admin/compose" icon={Sparkles} collapsed={collapsed} active={pathname === '/admin/compose'}>Music Director</NavLink>
+            <NavLink href="/admin/music-lab" icon={FlaskConical} collapsed={collapsed} active={pathname === '/admin/music-lab'}>Music Lab</NavLink>
             <NavLink href="/admin/lexicon" icon={Library} collapsed={collapsed} active={pathname === '/admin/lexicon'}>Lexicon</NavLink>
             <NavLink href="/admin/workflow" icon={Kanban} collapsed={collapsed} active={pathname === '/admin/workflow'}>Workflow</NavLink>
             <NavLink href="/admin/youtube" icon={PlaySquare} collapsed={collapsed} active={pathname === '/admin/youtube'}>YouTube</NavLink>

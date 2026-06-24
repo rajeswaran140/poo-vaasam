@@ -1,0 +1,116 @@
+/** @jest-environment jsdom */
+/**
+ * MusicLab — loads briefs, lets you pick one, log a generation against it, and
+ * shows the logged attempt. Verifies the POST payload shape and the
+ * success⇒hide-failure-reason interplay. adminFetch + MediaUploadField mocked.
+ */
+
+jest.mock('@/lib/client-auth', () => ({ adminFetch: jest.fn() }));
+jest.mock('lucide-react', () => ({
+  FlaskConical: () => <svg data-testid="i-flask" />,
+  Loader2: () => <svg data-testid="i-loader" />,
+  Plus: () => <svg data-testid="i-plus" />,
+}));
+jest.mock('@/components/admin/MediaUploadField', () => ({
+  MediaUploadField: () => <div data-testid="media-upload" />,
+}));
+
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { MusicLab } from '@/components/admin/MusicLab';
+import { adminFetch } from '@/lib/client-auth';
+
+const mockedFetch = adminFetch as jest.Mock;
+
+const BRIEF = {
+  id: 'brief_1',
+  createdAt: '2026-06-24T10:00:00.000Z',
+  updatedAt: '2026-06-24T10:00:00.000Z',
+  lyrics: 'காதல் வரிகள்',
+  analysis: {
+    song_titles: ['டெஸ்ட் பாடல்'],
+    suno_prompts: [{ style: 'Devotional', prompt: 'x' }, { style: 'Folk', prompt: 'y' }],
+  },
+};
+
+const ok = (data: unknown, extra: Record<string, unknown> = {}) => ({
+  ok: true,
+  status: 200,
+  json: async () => ({ success: true, data, ...extra }),
+});
+
+function routeFetch(impl?: (url: string, opts?: RequestInit) => unknown) {
+  mockedFetch.mockImplementation((url: string, opts?: RequestInit) => {
+    if (impl) {
+      const r = impl(url, opts);
+      if (r) return Promise.resolve(r);
+    }
+    if (url.startsWith('/api/admin/briefs')) return Promise.resolve(ok([BRIEF]));
+    if (url.startsWith('/api/admin/generations') && (!opts || opts.method !== 'POST')) return Promise.resolve(ok([]));
+    return Promise.resolve(ok(null));
+  });
+}
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  routeFetch();
+});
+
+async function selectBrief() {
+  render(<MusicLab />);
+  const select = await screen.findByLabelText('Brief');
+  fireEvent.change(select, { target: { value: 'brief_1' } });
+  // The capture form appears once a brief is selected.
+  await screen.findByText('Log a generation');
+}
+
+it('loads briefs and reveals the capture form on selection', async () => {
+  await selectBrief();
+  expect(mockedFetch).toHaveBeenCalledWith('/api/admin/briefs?limit=200');
+  // Generations are fetched for the chosen brief.
+  await waitFor(() =>
+    expect(mockedFetch).toHaveBeenCalledWith(expect.stringContaining('/api/admin/generations?briefId=brief_1'))
+  );
+  // Style variants from the brief populate the dropdown.
+  expect(screen.getByRole('option', { name: 'Devotional' })).toBeInTheDocument();
+});
+
+it('hides the failure-reason picker on a success verdict', async () => {
+  await selectBrief();
+  expect(screen.getByText('Primary issue')).toBeInTheDocument(); // default verdict = failed
+  fireEvent.click(screen.getByRole('radio', { name: /success/i }));
+  expect(screen.queryByText('Primary issue')).not.toBeInTheDocument();
+});
+
+it('POSTs the generation and renders the new attempt card', async () => {
+  const posted: RequestInit[] = [];
+  routeFetch((url, opts) => {
+    if (url === '/api/admin/generations' && opts?.method === 'POST') {
+      posted.push(opts);
+      const body = JSON.parse(opts.body as string);
+      return { ok: true, status: 201, json: async () => ({ success: true, data: { ...body, id: 'gen_1', createdAt: '2026-06-24T11:00:00.000Z' } }) };
+    }
+    return undefined;
+  });
+
+  await selectBrief();
+  fireEvent.change(screen.getByLabelText('Melody'), { target: { value: '8' } });
+  fireEvent.change(screen.getByLabelText('Notes'), { target: { value: 'great flute intro' } });
+  // verdict defaults to 'failed'; pick a failure reason
+  fireEvent.change(screen.getByLabelText('Primary issue'), { target: { value: 'vocal_delivery' } });
+  fireEvent.click(screen.getByRole('button', { name: /log generation/i }));
+
+  await waitFor(() => expect(posted).toHaveLength(1));
+  const body = JSON.parse(posted[0].body as string);
+  expect(body).toMatchObject({
+    briefId: 'brief_1',
+    engine: 'suno',
+    chosenStyle: 'Devotional',
+    verdict: 'failed',
+    failureReason: 'vocal_delivery',
+    notes: 'great flute intro',
+    scores: { melody: 8 },
+  });
+
+  // The logged attempt shows up in the list.
+  expect(await screen.findByText('great flute intro')).toBeInTheDocument();
+});
