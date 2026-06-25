@@ -69,6 +69,19 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   const router = useRouter();
   const pathname = usePathname();
 
+  // In this Cognito pool the username is a sub UUID, so prefer the email
+  // (from user attributes, else the ID-token claims) for the sidebar identity.
+  const u = user as unknown as {
+    username?: string;
+    attributes?: { email?: string };
+    signInUserSession?: { idToken?: { payload?: { email?: string } } };
+  };
+  const userLabel =
+    u?.attributes?.email ||
+    u?.signInUserSession?.idToken?.payload?.email ||
+    user?.username ||
+    'Admin';
+
   // Mobile drawer state (md-: visible-on-open, md+: irrelevant).
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // Desktop collapse state (md+ only) — persisted to localStorage so the
@@ -193,7 +206,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           <div className={`absolute bottom-0 left-0 right-0 border-t border-purple-600/60 ${collapsed ? 'p-2' : 'p-4'}`}>
             {!collapsed ? (
               <div className="text-sm text-purple-200">
-                <p className="truncate font-semibold" title={user?.username || 'Admin'}>{user?.username || 'Admin'}</p>
+                <p className="truncate font-semibold" title={userLabel}>{userLabel}</p>
                 <button
                   onClick={handleLogout}
                   className="mt-1 flex items-center gap-1 text-xs text-purple-300 transition-colors hover:text-white"
@@ -205,7 +218,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               <button
                 onClick={handleLogout}
                 aria-label="Logout"
-                title={`Logout (${user?.username || 'Admin'})`}
+                title={`Logout (${userLabel})`}
                 className="flex h-10 w-full items-center justify-center rounded-md text-purple-200 transition-colors hover:bg-purple-700/50 hover:text-white"
               >
                 <LogOut className="h-4 w-4" />

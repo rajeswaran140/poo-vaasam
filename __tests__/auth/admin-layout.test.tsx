@@ -275,6 +275,45 @@ describe('Admin Layout Authentication', () => {
       expect(screen.getByText('fallback@example.com')).toBeInTheDocument();
     });
 
+    it('shows the EMAIL (from attributes), not the Cognito sub-UUID username', () => {
+      // Real pool: username is a sub UUID; email lives in attributes.
+      (useAuthenticator as jest.Mock).mockReturnValue({
+        user: {
+          username: '3ccd3518-d0d1-709b-c087-1258567396dd',
+          attributes: { email: 'rajeswaran.pro@gmail.com' },
+        },
+        signOut: mockSignOut,
+      });
+
+      render(
+        <AdminLayout>
+          <div>Page Body</div>
+        </AdminLayout>
+      );
+
+      expect(screen.getByText('rajeswaran.pro@gmail.com')).toBeInTheDocument();
+      expect(screen.queryByText('3ccd3518-d0d1-709b-c087-1258567396dd')).not.toBeInTheDocument();
+    });
+
+    it('falls back to the ID-token email claim when attributes are absent', () => {
+      (useAuthenticator as jest.Mock).mockReturnValue({
+        user: {
+          username: '3ccd3518-d0d1-709b-c087-1258567396dd',
+          signInUserSession: { idToken: { payload: { email: 'raj@tamilagaval.com' } } },
+        },
+        signOut: mockSignOut,
+      });
+
+      render(
+        <AdminLayout>
+          <div>Page Body</div>
+        </AdminLayout>
+      );
+
+      expect(screen.getByText('raj@tamilagaval.com')).toBeInTheDocument();
+      expect(screen.queryByText(/3ccd3518/)).not.toBeInTheDocument();
+    });
+
     it('should truncate long email addresses', () => {
       (useAuthenticator as jest.Mock).mockReturnValue({
         user: {
