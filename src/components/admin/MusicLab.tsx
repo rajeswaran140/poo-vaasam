@@ -10,8 +10,8 @@
  * variants) and the rest is the human's call. Attempts list newest-first.
  */
 
-import { useCallback, useEffect, useId, useState } from 'react';
-import { FlaskConical, Loader2, Plus } from 'lucide-react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { FlaskConical, Loader2, Plus, Trash2, Lightbulb } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 import { MediaUploadField } from '@/components/admin/MediaUploadField';
 import {
@@ -21,6 +21,7 @@ import {
   type Generation,
   type GenerationVerdict,
 } from '@/types/generation';
+import { computeInsights, type InsightsReport } from '@/lib/generation-insights';
 import type { SavedBrief } from '@/types/brief';
 
 function briefLabel(b: SavedBrief): string {
@@ -42,16 +43,26 @@ export function MusicLab() {
   const [selectedId, setSelectedId] = useState('');
   const [generations, setGenerations] = useState<Generation[]>([]);
   const [loadingGens, setLoadingGens] = useState(false);
+  // The cross-brief feed of ALL logged generations — powers the insights panel,
+  // independent of which brief is selected.
+  const [allGenerations, setAllGenerations] = useState<Generation[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const res = await adminFetch('/api/admin/briefs?limit=200');
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok || !body.success) throw new Error(body.error || `HTTP ${res.status}`);
-        if (alive) setBriefs(body.data ?? []);
+        const [briefsRes, gensRes] = await Promise.all([
+          adminFetch('/api/admin/briefs?limit=200'),
+          adminFetch('/api/admin/generations?limit=200'),
+        ]);
+        const briefsBody = await briefsRes.json().catch(() => ({}));
+        if (!briefsRes.ok || !briefsBody.success) throw new Error(briefsBody.error || `HTTP ${briefsRes.status}`);
+        const gensBody = await gensRes.json().catch(() => ({}));
+        if (alive) {
+          setBriefs(briefsBody.data ?? []);
+          if (gensRes.ok && gensBody.success) setAllGenerations(gensBody.data ?? []);
+        }
       } catch (err) {
         if (alive) setError(err instanceof Error ? err.message : String(err));
       } finally {
@@ -61,6 +72,32 @@ export function MusicLab() {
     return () => {
       alive = false;
     };
+  }, []);
+
+  const briefsById = useMemo(
+    () => Object.fromEntries(briefs.map((b) => [b.id, b])),
+    [briefs]
+  );
+  const insights = useMemo(() => computeInsights(allGenerations, briefsById), [allGenerations, briefsById]);
+
+  const handleSaved = useCallback((gen: Generation) => {
+    setAllGenerations((prev) => [gen, ...prev]);
+    setGenerations((prev) => (gen.briefId === selectedId ? [gen, ...prev] : prev));
+  }, [selectedId]);
+
+  const handleDelete = useCallback(async (gen: Generation) => {
+    // Optimistic: drop from both lists, restore on failure.
+    setGenerations((prev) => prev.filter((g) => g.id !== gen.id));
+    setAllGenerations((prev) => prev.filter((g) => g.id !== gen.id));
+    try {
+      const res = await adminFetch(`/api/admin/generations/${gen.id}?briefId=${encodeURIComponent(gen.briefId)}`, { method: 'DELETE' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.success) throw new Error(body.error || `HTTP ${res.status}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setGenerations((prev) => [gen, ...prev]);
+      setAllGenerations((prev) => [gen, ...prev]);
+    }
   }, []);
 
   const loadGenerations = useCallback(async (briefId: string) => {
@@ -101,6 +138,9 @@ export function MusicLab() {
         </p>
       </header>
 
+      {/* Insights — derived from ALL logged generations */}
+      <InsightsPanel report={insights} />
+
       {/* Brief picker */}
       <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <label htmlFor="ml-brief" className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200">
@@ -137,10 +177,7 @@ export function MusicLab() {
 
       {selectedBrief && (
         <>
-          <LogGenerationForm
-            brief={selectedBrief}
-            onSaved={(gen) => setGenerations((prev) => [gen, ...prev])}
-          />
+          <LogGenerationForm brief={selectedBrief} onSaved={handleSaved} />
 
           <section aria-label="Logged generations">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -153,7 +190,7 @@ export function MusicLab() {
             ) : (
               <ul className="space-y-3">
                 {generations.map((g) => (
-                  <GenerationCard key={g.id} g={g} />
+                  <GenerationCard key={g.id} g={g} onDelete={handleDelete} />
                 ))}
               </ul>
             )}
@@ -164,7 +201,63 @@ export function MusicLab() {
   );
 }
 
-function GenerationCard({ g }: { g: Generation }) {
+const AXES = ['melody', 'vocals', 'lyrics', 'mix'] as const;
+
+/** "What's working" panel derived from all logged generations. */
+function InsightsPanel({ report: r }: { report: InsightsReport }) {
+  const pct = (x: number | null) => (x == null ? '—' : `${Math.round(x * 100)}%`);
+  const reliableStyles = r.byStyle.filter((s) => s.reliable).slice(0, 3);
+  const scoredAxes = AXES.filter((a) => r.scoreContrast[a].gap != null);
+
+  return (
+    <section
+      aria-label="Insights"
+      className="rounded-xl border border-amber-200 bg-amber-50/60 p-5 dark:border-amber-900/40 dark:bg-amber-900/10"
+    >
+      <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
+        <Lightbulb className="h-4 w-4" aria-hidden /> Insights — {r.total} logged
+      </h2>
+
+      <ul className="space-y-1.5">
+        {r.recommendations.map((rec, i) => (
+          <li key={i} className="flex gap-2 text-sm text-gray-800 dark:text-gray-200">
+            <span aria-hidden className="text-amber-500">▸</span>
+            <span>{rec}</span>
+          </li>
+        ))}
+      </ul>
+
+      {r.total > 0 && (
+        <div className="mt-4 grid gap-4 text-xs text-gray-600 sm:grid-cols-2 dark:text-gray-300">
+          <div>
+            <p className="mb-1 font-semibold uppercase tracking-wide text-gray-400">Outcomes</p>
+            <p>✅ {r.byVerdict.success} · 🟡 {r.byVerdict.partial} · ❌ {r.byVerdict.failed} — <strong>{pct(r.successRate)}</strong> hit rate</p>
+          </div>
+          {r.failureReasons.length > 0 && (
+            <div>
+              <p className="mb-1 font-semibold uppercase tracking-wide text-gray-400">Top failure reasons</p>
+              <p>{r.failureReasons.slice(0, 3).map((f) => `${f.reason.replace(/_/g, ' ')} (${f.count})`).join(' · ')}</p>
+            </div>
+          )}
+          {reliableStyles.length > 0 && (
+            <div>
+              <p className="mb-1 font-semibold uppercase tracking-wide text-gray-400">Style hit-rate</p>
+              <p>{reliableStyles.map((s) => `${s.key} ${pct(s.rate)} (${s.total})`).join(' · ')}</p>
+            </div>
+          )}
+          {scoredAxes.length > 0 && (
+            <div>
+              <p className="mb-1 font-semibold uppercase tracking-wide text-gray-400">Avg score — keepers / rejects</p>
+              <p>{scoredAxes.map((a) => `${a} ${r.scoreContrast[a].success?.toFixed(1) ?? '—'}/${r.scoreContrast[a].failed?.toFixed(1) ?? '—'}`).join(' · ')}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function GenerationCard({ g, onDelete }: { g: Generation; onDelete: (g: Generation) => void }) {
   const scoreEntries = Object.entries(g.scores ?? {}).filter(([, v]) => typeof v === 'number');
   return (
     <li className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
@@ -178,6 +271,14 @@ function GenerationCard({ g }: { g: Generation }) {
           </span>
         )}
         <span className="ml-auto text-xs text-gray-400">{g.createdAt?.slice(0, 16).replace('T', ' ')}</span>
+        <button
+          type="button"
+          onClick={() => { if (window.confirm('Delete this logged generation?')) onDelete(g); }}
+          aria-label="Delete generation"
+          className="rounded p-1 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30"
+        >
+          <Trash2 className="h-3.5 w-3.5" aria-hidden />
+        </button>
       </div>
 
       {scoreEntries.length > 0 && (

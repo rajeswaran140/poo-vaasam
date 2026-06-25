@@ -10,6 +10,8 @@ jest.mock('lucide-react', () => ({
   FlaskConical: () => <svg data-testid="i-flask" />,
   Loader2: () => <svg data-testid="i-loader" />,
   Plus: () => <svg data-testid="i-plus" />,
+  Trash2: () => <svg data-testid="i-trash" />,
+  Lightbulb: () => <svg data-testid="i-bulb" />,
 }));
 jest.mock('@/components/admin/MediaUploadField', () => ({
   MediaUploadField: () => <div data-testid="media-upload" />,
@@ -113,4 +115,45 @@ it('POSTs the generation and renders the new attempt card', async () => {
 
   // The logged attempt shows up in the list.
   expect(await screen.findByText('great flute intro')).toBeInTheDocument();
+});
+
+it('shows insights computed from the global generations feed', async () => {
+  const feed = [
+    ...Array.from({ length: 8 }, (_, i) => ({ id: `s${i}`, briefId: 'brief_1', verdict: 'success', engine: 'suno', scores: {}, settings: {} })),
+    ...Array.from({ length: 2 }, (_, i) => ({ id: `f${i}`, briefId: 'brief_1', verdict: 'failed', failureReason: 'mixing', engine: 'suno', scores: {}, settings: {} })),
+  ];
+  routeFetch((url, opts) => {
+    // the cross-brief feed (mount) carries no briefId; per-brief fetch does
+    if (url.startsWith('/api/admin/generations') && (!opts || opts.method !== 'POST') && !url.includes('briefId')) {
+      return ok(feed);
+    }
+    return undefined;
+  });
+  render(<MusicLab />);
+  expect(await screen.findByText(/Insights — 10 logged/)).toBeInTheDocument();
+  // a real recommendation (hit rate) renders, not the "log more" placeholder
+  expect(await screen.findByText(/8\/10 succeeded/)).toBeInTheDocument();
+  expect(screen.queryByText(/Log at least/)).not.toBeInTheDocument();
+});
+
+it('deletes a logged generation (optimistic remove + DELETE call)', async () => {
+  const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
+  const deletes: string[] = [];
+  routeFetch((url, opts) => {
+    if (opts?.method === 'DELETE') { deletes.push(url); return { ok: true, status: 200, json: async () => ({ success: true }) }; }
+    if (url.includes('briefId=brief_1') && opts?.method !== 'POST') {
+      return ok([{ id: 'gen_del', briefId: 'brief_1', verdict: 'failed', engine: 'suno', scores: {}, settings: {}, notes: 'remove me', createdAt: '2026-06-25T00:00:00Z' }]);
+    }
+    return undefined;
+  });
+
+  render(<MusicLab />);
+  fireEvent.change(await screen.findByLabelText('Brief'), { target: { value: 'brief_1' } });
+  expect(await screen.findByText('remove me')).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: /delete generation/i }));
+  await waitFor(() => expect(deletes).toHaveLength(1));
+  expect(deletes[0]).toContain('/api/admin/generations/gen_del?briefId=brief_1');
+  await waitFor(() => expect(screen.queryByText('remove me')).not.toBeInTheDocument());
+  confirmSpy.mockRestore();
 });

@@ -9,13 +9,13 @@ import { DynamoDBOperations } from '@/infrastructure/database/dynamodb-client';
 import type { CreateGenerationInput } from '@/types/generation';
 
 jest.mock('@/infrastructure/database/dynamodb-client', () => ({
-  DynamoDBOperations: { put: jest.fn(), query: jest.fn() },
+  DynamoDBOperations: { put: jest.fn(), query: jest.fn(), delete: jest.fn() },
   handleDynamoDBError: jest.fn((e) => {
     throw e;
   }),
 }));
 
-const ops = DynamoDBOperations as unknown as { put: jest.Mock; query: jest.Mock };
+const ops = DynamoDBOperations as unknown as { put: jest.Mock; query: jest.Mock; delete: jest.Mock };
 
 const input: CreateGenerationInput = {
   briefId: 'brief_42',
@@ -76,6 +76,12 @@ it('list() defaults the limit to 100', async () => {
   const rows = await new GenerationRepository().list();
   expect(ops.query.mock.calls[0][0].limit).toBe(100);
   expect(rows).toEqual([]); // tolerates a missing Items array
+});
+
+it('delete() removes the item by its brief-child key', async () => {
+  ops.delete.mockResolvedValueOnce({});
+  await new GenerationRepository().delete('brief_42', 'gen_1');
+  expect(ops.delete).toHaveBeenCalledWith({ PK: 'BRIEF#brief_42', SK: 'GEN#gen_1' });
 });
 
 it('propagates DynamoDB errors via handleDynamoDBError', async () => {

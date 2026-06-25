@@ -63,6 +63,15 @@ export class GenerationRepository {
     }
   }
 
+  /** Remove a generation (needs the briefId to address its single-table key). */
+  async delete(briefId: string, id: string): Promise<void> {
+    try {
+      await DynamoDBOperations.delete({ PK: `BRIEF#${briefId}`, SK: `GEN#${id}` });
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
   private toDBItem(g: Generation): Record<string, unknown> {
     return {
       PK: `BRIEF#${g.briefId}`,
