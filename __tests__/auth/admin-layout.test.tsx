@@ -211,6 +211,18 @@ describe('Admin Layout Authentication', () => {
       render(<AdminLayout><div>Body</div></AdminLayout>);
       expect(screen.getByRole('link', { name: 'Songs' })).toHaveAttribute('aria-current', 'page');
     });
+
+    it('lays the sidebar out as a flex column so the email block never overlaps the nav', () => {
+      (usePathname as jest.Mock).mockReturnValue('/admin/docs');
+      const { container } = render(<AdminLayout><div>Body</div></AdminLayout>);
+      // sidebar is a flex column; the nav scrolls instead of flowing under the footer
+      expect(container.querySelector('aside')).toHaveClass('flex', 'flex-col');
+      expect(container.querySelector('nav')).toHaveClass('overflow-y-auto');
+      // the user/email block is a normal flex child, NOT absolutely positioned
+      const emailBlock = screen.getByText('test@example.com').closest('div.border-t');
+      expect(emailBlock).not.toHaveClass('absolute');
+      expect(emailBlock).toHaveClass('flex-shrink-0');
+    });
   });
 
   describe('Unauthenticated User', () => {

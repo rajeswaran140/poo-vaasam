@@ -148,7 +148,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
         {/* Sidebar */}
         <aside
-          className={`fixed left-0 top-0 z-50 h-full ${sidebarWidth} transform bg-gradient-to-b from-purple-700 to-purple-900 text-white shadow-xl transition-all duration-300 md:translate-x-0 dark:from-purple-900 dark:to-gray-950 ${
+          className={`fixed left-0 top-0 z-50 flex h-full flex-col overflow-hidden ${sidebarWidth} transform bg-gradient-to-b from-purple-700 to-purple-900 text-white shadow-xl transition-all duration-300 md:translate-x-0 dark:from-purple-900 dark:to-gray-950 ${
             sidebarOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
@@ -174,7 +174,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             </button>
           </div>
 
-          <nav className="mt-2">
+          <nav className="mt-2 flex-1 overflow-y-auto">
             <NavLink href="/admin" icon={LayoutDashboard} collapsed={collapsed} active={pathname === '/admin'}>Dashboard</NavLink>
             <NavLink href="/admin/content" icon={FileText} collapsed={collapsed} active={pathname.startsWith('/admin/content')}>Content</NavLink>
             <NavLink href="/admin/categories" icon={Folder} collapsed={collapsed} active={pathname === '/admin/categories'}>Categories</NavLink>
@@ -205,7 +205,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             )}
           </nav>
 
-          <div className={`absolute bottom-0 left-0 right-0 border-t border-purple-600/60 ${collapsed ? 'p-2' : 'p-4'}`}>
+          <div className={`flex-shrink-0 border-t border-purple-600/60 ${collapsed ? 'p-2' : 'p-4'}`}>
             {!collapsed ? (
               <div className="text-sm text-purple-200">
                 <p className="truncate font-semibold" title={userLabel}>{userLabel}</p>
