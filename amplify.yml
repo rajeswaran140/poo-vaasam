@@ -21,8 +21,12 @@ frontend:
         # DEPLOY GATE: run the Jest suite before building. A failing test aborts
         # preBuild, so the build never runs and nothing is deployed to prod.
         # (tsc + eslint are already enforced inside `next build` below.)
+        # NOTE: invoke jest's entry directly, NOT `npm test` / the `jest` bin —
+        # Amplify's node_modules cache restore drops the node_modules/.bin
+        # symlinks, so the bare `jest` command is "not found" even though the
+        # package is installed. `node node_modules/jest/bin/jest.js` is immune.
         - echo "Running test suite (deploy gate) at $(date)"
-        - npm test -- --ci
+        - node node_modules/jest/bin/jest.js --ci
         - echo "Tests passed at $(date)"
     build:
       commands:
