@@ -135,6 +135,25 @@ export default function AboutPage() {
           </div>
         </section>
 
+        {/* The platform — how the music is made (AI transparency) */}
+        <section className="mb-10">
+          <h2 className="mb-4 font-kavivanar text-3xl font-bold text-white sm:text-4xl">இசை எப்படி உருவாகிறது?</h2>
+          <div className="space-y-4 font-tamil leading-relaxed text-gray-300">
+            <p>
+              பாடல் வரிகள் முழுக்க முழுக்க <strong className="text-white">இராஜேஸ்வரனின்</strong> சொந்தப் படைப்பு. இசையும் குரலும் நவீன AI கருவிகள் மூலம் <strong className="text-white">தமிழகவல் இசைத் தளத்தில்</strong> உருவாக்கப்படுகின்றன.
+            </p>
+            <p>
+              ஒவ்வொரு பாடலும் முதல் முயற்சியிலேயே முடிந்துவிடுவதில்லை — பல முயற்சிகளுக்குப் பிறகு, கவனமாகத் தேர்ந்தெடுக்கப்பட்டு, தரம் பார்க்கப்பட்டு, பிறகே வெளியிடப்படுகிறது. தேர்வும் ரசனையும்தான் இங்கே படைப்பு.
+            </p>
+            <p>
+              ஏன் இந்த அணுகுமுறை? நேரடியாக இசைக்கலைஞர்களுடன் பதிவு செய்வது பெரும் செலவும் மாதக் கணக்கான நேரமும் கோரும். AI ஒரு தனிப்பட்ட படைப்பாளிக்கு சொந்த தமிழ்ப் பாடல்களை உருவாக்கவே வழிசெய்கிறது.
+            </p>
+            <p>
+              AI ஒரு கருவி மட்டுமே — அது ஒரு உண்மையான இசைக்கலைஞரை மாற்றாது. தமிழ் இசை மரபின் மீதான மரியாதையோடு, வெளிப்படையாக, இந்தப் படைப்புகள் உருவாக்கப்படுகின்றன.
+            </p>
+          </div>
+        </section>
+
         {/* Connect */}
         <section className="rounded-2xl border border-orange-500/20 bg-gradient-to-br from-orange-500/10 to-orange-700/5 p-6 text-center sm:p-8">
           <h2 className="mb-2 font-kavivanar text-2xl font-bold text-white sm:text-3xl">தொடர்பில் இருங்கள்</h2>

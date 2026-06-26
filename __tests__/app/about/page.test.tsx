@@ -41,6 +41,13 @@ describe('About page', () => {
     const contact = screen.getAllByRole('link').find((a) => a.getAttribute('href') === '/contact');
     expect(contact).toBeDefined();
   });
+
+  it('transparently explains the AI music platform (how the music is made)', () => {
+    render(<AboutPage />);
+    expect(screen.getByRole('heading', { name: /இசை எப்படி உருவாகிறது/ })).toBeInTheDocument();
+    // AI-as-a-tool transparency line, present verbatim.
+    expect(screen.getByText(/AI ஒரு கருவி மட்டுமே/)).toBeInTheDocument();
+  });
 });
 
 describe('About page — audit fixes', () => {
