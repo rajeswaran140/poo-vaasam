@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { BookOpen } from 'lucide-react';
 import { ADMIN_DOCS, docsByCategory } from '@/content/admin-docs';
 import { MarkdownView } from '@/components/admin/MarkdownView';
+import { DocExport } from '@/components/admin/DocExport';
 
 export default function DocsPage() {
   const [slug, setSlug] = useState(ADMIN_DOCS[0]?.slug ?? '');
@@ -54,7 +55,10 @@ export default function DocsPage() {
         <article className="min-w-0 rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
           {active ? (
             <>
-              <p className="mb-3 text-xs text-gray-400">Updated {active.updatedAt}</p>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <p className="text-xs text-gray-400">Updated {active.updatedAt}</p>
+                <DocExport doc={active} />
+              </div>
               <MarkdownView md={active.body} />
             </>
           ) : (
