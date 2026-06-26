@@ -15,6 +15,10 @@ frontend:
     preBuild:
       commands:
         - echo "Starting preBuild at $(date)"
+        # Pin Node 20 (matches local/CI) — Amplify's default Node 22 fails to
+        # resolve `next/jest` when jest parses the TS config (jest.config.ts).
+        - nvm install 20 && nvm use 20
+        - node -v
         - npm config set legacy-peer-deps true
         # --include=dev: Amplify installs in production mode (devDeps omitted).
         # next build auto-installs typescript when missing, which masked this —
