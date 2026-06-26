@@ -126,6 +126,70 @@ Right after a SUNO (or other engine) run comes back. SUNO has no API, so there's
 > The point isn't any single song — it's that 500 logged attempts become a Tamil-music asset no one else has.
 `,
   },
+  {
+    slug: 'suno-instrument-palette',
+    title: 'Instrument palette for SUNO prompts',
+    category: 'Composer',
+    updatedAt: '2026-06-26',
+    body: `# Instrument palette for SUNO prompts (Tamil composition)
+
+A working catalogue of instruments to draw on when writing the **style prompt** for a Tamilagaval song. SUNO responds best to plain **English instrument names + a mood adjective** ("soulful bamboo flute", "driving folk drum"). Pick a small, coherent ensemble per song — usually **one lead + one or two support + a rhythm core + a drone/pad** — and name each with its role.
+
+## How SUNO reads instruments
+- **Recognised by name** — use as-is: flute, bamboo flute, violin, cello, sitar, tabla, harmonium, acoustic / nylon / electric guitar, mandolin, piano, strings, saxophone, harp, synth, drums.
+- **Describe instead of naming** — SUNO is unreliable on the Carnatic / Tamil term, so give the family + texture:
+
+| You want | Prompt it as |
+|---|---|
+| Mridangam | "South Indian classical hand drum" / "double-headed tabla-like drum" |
+| Nadaswaram | "South Indian double-reed wind, shehnai-like, bright and reedy" |
+| Veena | "Indian classical plucked strings, sitar-like with gamaka glides" |
+| Thavil | "loud festive folk barrel drum" |
+| Ghatam | "clay-pot hand percussion" |
+| Kanjira | "small frame drum / tambourine" |
+| Parai / Thappu | "driving folk frame drum" |
+| Udukai | "hourglass talking drum" |
+| Morsing | "jaw-harp twang" |
+| Konnakol | "rhythmic vocal percussion (spoken syllables)" |
+
+- Keep it to **2–4 named instruments** — piling on ten muddies the mix. Add a **tempo/BPM** and a one-word **production feel** (organic, cinematic, lo-fi, retro-film).
+
+## By family
+
+**Plucked & bowed strings (melody, warmth)** — Veena (lead/countermelody), Sitar, Carnatic violin (gamaka-heavy, soulful), Cello (sorrow), Acoustic/Nylon guitar (intimate), Carnatic mandolin (bright lead), Santoor (shimmer), Sarangi (vocal-like ache), Tanpura (drone), Harp + lush string section (cinematic).
+
+**Winds (the Tamil melody soul)** — Bamboo/Carnatic flute (love, longing, pastoral — the most-reached-for lead), Nadaswaram (temple, wedding, grandeur), Shehnai, Carnatic saxophone (smooth film), Clarinet, Ney / pan flute (lonely, breathy).
+
+**Percussion (rhythm core)**
+- **Classical:** Mridangam, Kanjira, Ghatam, Morsing.
+- **Folk / festive:** Thavil (with nadaswaram), Dholak / Dhol, Parai, Thappu / Thappattam, Udukai.
+- **Modern:** full drum kit, cajon, congas / bongos, claps, shakers, finger cymbals (jalra), 808 / trap kit for fusion.
+- **Vocal:** Konnakol.
+
+**Keys & harmony** — Harmonium (devotional / film), Piano (ballad, cinematic), Rhodes / electric piano (warm modern), Organ, Synth pads & strings (contemporary bed).
+
+**Bass & low end** — Acoustic / electric bass, Synth bass, Sub / 808 (modern fusion).
+
+**Texture & atmosphere** — Tanpura / shruti-box drone, ambient pads, swells, temple bells / chimes, vinyl-crackle lo-fi, reverb-washed plucks.
+
+## Mood → ensemble starting points
+
+| Emotion / style | Suggested palette |
+|---|---|
+| Romantic melody (காதல்) | bamboo flute lead, veena/violin countermelody, nylon guitar, soft hand-drum + clay-pot, tanpura, string pad |
+| Sad / longing | solo Carnatic violin or cello, sparse piano, ney, tanpura, light frame drum |
+| Folk / village (கிராமம்) | nadaswaram + thavil, dhol, parai, udukai, shakers, hand claps — earthy, fast |
+| Devotional / serene | harmonium, nadaswaram, temple bells, tanpura, gentle mridangam, choir pad |
+| Mother / tender (தாய் பாசம்) | piano, nylon guitar, soft strings, bamboo flute, brushed percussion |
+| Motivational / uplifting | string section, drum kit, dhol accents, electric guitar, piano, anthemic build |
+| Modern indie / film fusion | acoustic guitar + synth pads, 808 bass, lo-fi drums, flute or violin hook over it |
+
+## Writing it into a prompt — example
+> South Indian romantic melody, ~80 BPM, female voice. Soulful bamboo flute lead, Indian classical plucked strings (veena-like) countermelody, gentle nylon guitar, soft South-Indian hand-drum and clay-pot percussion, tanpura drone, warm string pad. Organic, cinematic, intimate.
+
+Tie the palette to the brief's **emotion + raga + voice** — the instruments are the colour on top of that structure. Log which palettes land in **Music Lab** so your go-to ensembles become data.
+`,
+  },
 ];
 
 /** Docs grouped by category, in registry order, for the sidebar. */
