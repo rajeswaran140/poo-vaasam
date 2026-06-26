@@ -31,13 +31,13 @@ const SAMPLE_FEED = `<?xml version="1.0" encoding="UTF-8"?>
 
 const originalFetch = global.fetch;
 beforeEach(() => {
-  // Start every test key-less — the ambient env (e.g. the Amplify/CI build) may
-  // have YOUTUBE_API_KEY set, which would leak into the no-key cases.
+  // Start every test key-less — the ambient Amplify/CI build sets YOUTUBE_API_KEY,
+  // which would otherwise leak into the no-key cases.
   delete process.env.YOUTUBE_API_KEY;
 });
 afterEach(() => {
   global.fetch = originalFetch;
-  delete process.env.YOUTUBE_API_KEY; // never leak a key into the no-key cases
+  delete process.env.YOUTUBE_API_KEY;
 });
 
 /** Build a minimal channel RSS feed with `n` entries (11-char ids). */
@@ -374,9 +374,12 @@ describe('withTruncatedDescriptions', () => {
 });
 
 describe('s3ThumbnailUrl', () => {
-  it('points at the self-hosted S3 bucket, not YouTube', () => {
+  // Env-independent: the media base is S3 by default but CloudFront when
+  // MEDIA_BASE_URL is configured (captured at import) — both are self-hosted.
+  it('points at self-hosted media with the right key, not YouTube', () => {
     const url = s3ThumbnailUrl('abcdefghijk');
-    expect(url).toBe('https://tamil-web-media.s3.us-east-1.amazonaws.com/images/video-thumbs/abcdefghijk.jpg');
+    expect(url).toMatch(/^https:\/\//);
+    expect(url).toContain('/images/video-thumbs/abcdefghijk.jpg');
     expect(url).not.toMatch(/ytimg|youtube/);
   });
 });
