@@ -16,7 +16,10 @@ frontend:
       commands:
         - echo "Starting preBuild at $(date)"
         - npm config set legacy-peer-deps true
-        - npm install --legacy-peer-deps
+        # --include=dev: Amplify installs in production mode (devDeps omitted).
+        # next build auto-installs typescript when missing, which masked this —
+        # but jest has no such bootstrap, so the test gate needs devDeps present.
+        - npm install --legacy-peer-deps --include=dev
         - echo "Dependencies installed at $(date)"
         # DEPLOY GATE: run the Jest suite before building. A failing test aborts
         # preBuild, so the build never runs and nothing is deployed to prod.
