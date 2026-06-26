@@ -11,8 +11,11 @@ export const FEATURES = {
     SEO_FIELDS: true,         // SEO title and description in content forms
     SETTINGS_PAGE: false,     // Settings page in admin sidebar
     MEDIA_LIBRARY: false,     // Media library page in admin sidebar
-    COMMENTS: false,          // Comment moderation features
-    ANALYTICS: false,         // Analytics dashboard
+    // NOTE: Comments (/admin/comments) and Analytics (/admin/analytics) are LIVE
+    // and always linked in the sidebar — they were never gated by a flag. The old
+    // COMMENTS/ANALYTICS flags here were dead (zero consumers) and falsely read
+    // `false`, so they were removed to stop the config from lying. Re-add a flag
+    // here only if you actually wire it into the sidebar/page.
   },
 
   // Content Features

@@ -54,6 +54,8 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   '/admin/subscribers': { title: 'Subscribers', subtitle: 'Email newsletter list — filter by date range, process unsubscribes' },
   '/admin/docs': { title: 'Docs', subtitle: 'In-portal guides and how-tos' },
   '/admin/songs': { title: 'Songs', subtitle: 'Audio library — themes, durations, play counts' },
+  '/admin/comments': { title: 'Comments', subtitle: 'Moderate viewer comments on your content' },
+  '/admin/notify': { title: 'Notify', subtitle: 'Send web-push notifications to subscribers' },
   '/admin/compose': { title: 'Music Director', subtitle: 'Tamil lyrics → full production brief; save briefs as the durable source of truth' },
   '/admin/lexicon': { title: 'Lexicon', subtitle: 'Lyric word-family dictionary — register × usage, to diversify song vocabulary' },
   '/admin/music-lab': { title: 'Music Lab', subtitle: 'Log & evaluate every generation against its brief — turn failed attempts into a research dataset' },
@@ -179,7 +181,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             <NavLink href="/admin/tags" icon={Tag} collapsed={collapsed} active={pathname === '/admin/tags'}>Tags</NavLink>
             <NavLink href="/admin/messages" icon={Mail} collapsed={collapsed} active={pathname === '/admin/messages'}>Messages</NavLink>
             <NavLink href="/admin/subscribers" icon={Users} collapsed={collapsed} active={pathname === '/admin/subscribers'}>Subscribers</NavLink>
-            <NavLink href="/admin/songs" icon={Music} collapsed={collapsed} active={pathname === '/admin/songs'}>Songs</NavLink>
+            <NavLink href="/admin/songs" icon={Music} collapsed={collapsed} active={pathname.startsWith('/admin/songs')}>Songs</NavLink>
             <NavLink href="/admin/compose" icon={Sparkles} collapsed={collapsed} active={pathname === '/admin/compose'}>Music Director</NavLink>
             <NavLink href="/admin/music-lab" icon={FlaskConical} collapsed={collapsed} active={pathname === '/admin/music-lab'}>Music Lab</NavLink>
             <NavLink href="/admin/lexicon" icon={Library} collapsed={collapsed} active={pathname === '/admin/lexicon'}>Lexicon</NavLink>

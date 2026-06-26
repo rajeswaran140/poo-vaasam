@@ -185,6 +185,34 @@ describe('Admin Layout Authentication', () => {
     });
   });
 
+  describe('Sidebar — page titles & active state (2026-06-26 audit)', () => {
+    beforeEach(() => {
+      (useAuthenticator as jest.Mock).mockReturnValue({
+        user: { username: 'test@example.com', signInDetails: { loginId: 'test@example.com' } },
+        signOut: mockSignOut,
+      });
+    });
+
+    it('shows a real header title for /admin/comments (not the generic "Admin" fallback)', () => {
+      (usePathname as jest.Mock).mockReturnValue('/admin/comments');
+      render(<AdminLayout><div>Body</div></AdminLayout>);
+      expect(screen.getByRole('heading', { level: 2, name: 'Comments' })).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { level: 2, name: 'Admin' })).not.toBeInTheDocument();
+    });
+
+    it('shows a real header title for /admin/notify', () => {
+      (usePathname as jest.Mock).mockReturnValue('/admin/notify');
+      render(<AdminLayout><div>Body</div></AdminLayout>);
+      expect(screen.getByRole('heading', { level: 2, name: 'Notify' })).toBeInTheDocument();
+    });
+
+    it('marks the Songs nav item active on the /admin/songs/publish sub-route', () => {
+      (usePathname as jest.Mock).mockReturnValue('/admin/songs/publish');
+      render(<AdminLayout><div>Body</div></AdminLayout>);
+      expect(screen.getByRole('link', { name: 'Songs' })).toHaveAttribute('aria-current', 'page');
+    });
+  });
+
   describe('Unauthenticated User', () => {
     beforeEach(() => {
       (useAuthenticator as jest.Mock).mockReturnValue({
