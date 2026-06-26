@@ -18,6 +18,12 @@ frontend:
         - npm config set legacy-peer-deps true
         - npm install --legacy-peer-deps
         - echo "Dependencies installed at $(date)"
+        # DEPLOY GATE: run the Jest suite before building. A failing test aborts
+        # preBuild, so the build never runs and nothing is deployed to prod.
+        # (tsc + eslint are already enforced inside `next build` below.)
+        - echo "Running test suite (deploy gate) at $(date)"
+        - npm test -- --ci
+        - echo "Tests passed at $(date)"
     build:
       commands:
         - echo "Starting build at $(date)"
