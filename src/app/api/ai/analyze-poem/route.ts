@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { RateLimiter, checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
+import { logger } from '@/lib/logger';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -88,11 +89,12 @@ Provide emotional analysis in JSON format.`
     let analysis;
     try {
       analysis = JSON.parse(analysisText);
-    } catch (parseError) {
-      console.error('Failed to parse OpenAI response:', analysisText);
-      // Return default analysis if parsing fails
+    } catch {
+      logger.error('Failed to parse OpenAI poem-analysis response');
+      // Return default analysis if parsing fails (flagged degraded, see below).
       return NextResponse.json({
         success: true,
+        degraded: true,
         analysis: {
           emotion: 'reflective',
           mood: 'somber',
@@ -110,17 +112,16 @@ Provide emotional analysis in JSON format.`
       analysis,
     });
 
-  } catch (error: any) {
-    console.error('Error analyzing poem:', error);
-    console.error('Error details:', {
-      message: error.message,
-      code: error.code,
-      type: error.type,
-    });
+  } catch (error) {
+    // Log the real failure server-side so outages are observable.
+    logger.error('Poem analysis failed; serving default analysis', error);
 
-    // Return default analysis instead of error for better UX
+    // Graceful UX fallback: still return a usable analysis, but flag it as
+    // `degraded` so callers (and the admin) can tell the AI path actually failed
+    // rather than genuinely classifying the poem as "sad".
     return NextResponse.json({
       success: true,
+      degraded: true,
       analysis: {
         emotion: 'sad',
         mood: 'somber',

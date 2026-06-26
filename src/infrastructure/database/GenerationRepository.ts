@@ -63,6 +63,36 @@ export class GenerationRepository {
     }
   }
 
+  /**
+   * Every generation across all briefs, newest-first — pages through GSI1 so the
+   * insights/genome layer sees the WHOLE log, not a single-page slice (the
+   * dataset is the point). `max` is a runaway safety cap, not a feature limit.
+   */
+  async listAll(options?: { max?: number }): Promise<Generation[]> {
+    const max = options?.max ?? 5000;
+    const items: Generation[] = [];
+    let exclusiveStartKey: Record<string, unknown> | undefined;
+    try {
+      do {
+        const response = await DynamoDBOperations.query({
+          indexName: 'GSI1',
+          keyConditionExpression: 'GSI1PK = :pk',
+          expressionAttributeValues: { ':pk': GSI1_PARTITION },
+          scanIndexForward: false,
+          exclusiveStartKey,
+        });
+        for (const item of response.Items ?? []) {
+          items.push(this.fromDBItem(item));
+          if (items.length >= max) return items;
+        }
+        exclusiveStartKey = response.LastEvaluatedKey as Record<string, unknown> | undefined;
+      } while (exclusiveStartKey);
+      return items;
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
   /** Remove a generation (needs the briefId to address its single-table key). */
   async delete(briefId: string, id: string): Promise<void> {
     try {

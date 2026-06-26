@@ -5,9 +5,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
-import { ContentStatus } from '@/types/content';
+import { ContentStatus, ContentType } from '@/types/content';
 import { generateEmbedding, cosineSimilarity } from '@/services/ai/openai';
 import { RateLimiter, checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
+import { logger } from '@/lib/logger';
 
 // Unauthenticated + generates an OpenAI embedding for the query (and up to 100
 // items) per request — an amplification vector, so cap per IP.
@@ -21,11 +22,22 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { query, type, limit = 10 } = body;
+    const { query, type } = body;
+    // Clamp the client-supplied limit to a sane range (cost/abuse guard).
+    const limitRaw = Number(body.limit);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 50) : 10;
 
     if (!query || typeof query !== 'string') {
       return NextResponse.json(
         { error: 'Query is required and must be a string' },
+        { status: 400 }
+      );
+    }
+
+    // Validate the optional content-type filter against the known enum.
+    if (type !== undefined && !Object.values(ContentType).includes(type)) {
+      return NextResponse.json(
+        { error: 'Invalid content type' },
         { status: 400 }
       );
     }
@@ -37,8 +49,6 @@ export async function POST(request: NextRequest) {
         { status: 503 }
       );
     }
-
-    console.log(`[Search] Query: "${query}", Type: ${type || 'all'}`);
 
     // Generate query embedding (with caching)
     const queryEmbeddingStart = Date.now();
@@ -75,7 +85,7 @@ export async function POST(request: NextRequest) {
             excerpt: item.body.substring(0, 200) + '...',
           };
         } catch (error) {
-          console.error(`Error processing item ${item.id}:`, error);
+          logger.warn('Search: failed to embed an item; skipping it', { itemId: item.id, error: String(error) });
           return null;
         }
       })
@@ -90,12 +100,15 @@ export async function POST(request: NextRequest) {
 
     const totalTime = Date.now() - startTime;
 
-    console.log(`[Search Performance]`);
-    console.log(`  - Query embedding: ${queryEmbeddingTime}ms`);
-    console.log(`  - Database fetch: ${dbTime}ms`);
-    console.log(`  - Content embeddings: ${embeddingTime}ms`);
-    console.log(`  - Total time: ${totalTime}ms`);
-    console.log(`  - Results: ${validResults.length}/${contentItems.length}`);
+    logger.debug('Semantic search timings', {
+      type: type || 'all',
+      queryEmbeddingMs: queryEmbeddingTime,
+      databaseMs: dbTime,
+      contentEmbeddingsMs: embeddingTime,
+      totalMs: totalTime,
+      results: validResults.length,
+      itemsProcessed: contentItems.length,
+    });
 
     return NextResponse.json({
       query,
@@ -110,7 +123,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Search error:', error);
+    logger.error('Semantic search failed', error);
     return NextResponse.json(
       { error: 'Failed to perform semantic search' },
       { status: 500 }

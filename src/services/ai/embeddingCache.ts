@@ -11,6 +11,7 @@
  */
 
 import crypto from 'crypto';
+import { logger } from '@/lib/logger';
 
 interface CacheEntry {
   embedding: number[];
@@ -196,7 +197,7 @@ const embeddingCache = new EmbeddingCache(1000, 24);
 setInterval(() => {
   const cleared = embeddingCache.clearExpired();
   if (cleared > 0) {
-    console.log(`[EmbeddingCache] Cleared ${cleared} expired entries`);
+    logger.debug('EmbeddingCache cleared expired entries', { cleared });
   }
 }, 60 * 60 * 1000);
 

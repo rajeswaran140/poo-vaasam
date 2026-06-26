@@ -45,12 +45,13 @@ export async function GET(request: NextRequest) {
     const status: StatusFilter =
       statusParam === 'subscribed' || statusParam === 'unsubscribed' ? statusParam : 'all';
 
-    const res = await DynamoDBOperations.scan({
+    // Paginated scan so the list never silently truncates at DynamoDB's ~1 MB page limit.
+    const res = await DynamoDBOperations.scanAll({
       filterExpression: 'begins_with(PK, :p) AND SK = :sk',
       expressionAttributeValues: { ':p': 'SUBSCRIBER#', ':sk': 'METADATA' },
     });
 
-    const all = (res.Items || []).map(toSubscriber);
+    const all = res.Items.map(toSubscriber);
     const filtered = sortByJoinedDesc(
       filterByStatus(filterByDateRange(all, from, to), status)
     );
@@ -62,6 +63,7 @@ export async function GET(request: NextRequest) {
       summary: summarize(all), // overall totals (unaffected by filters)
       daily: dailyCounts(filtered), // per-day signups/unsubscribes within the view
       range: { from: from ?? null, to: to ?? null, status },
+      truncated: res.truncated,
     });
   } catch (error) {
     console.error('[API:ADMIN_SUBSCRIBERS] GET error:', error);

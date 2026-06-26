@@ -53,8 +53,10 @@ export function MusicLab() {
     (async () => {
       try {
         const [briefsRes, gensRes] = await Promise.all([
-          adminFetch('/api/admin/briefs?limit=200'),
-          adminFetch('/api/admin/generations?limit=200'),
+          adminFetch('/api/admin/briefs?limit=500'),
+          // The WHOLE log (paged server-side), so insights reflect every attempt
+          // — not a silent 200-row slice.
+          adminFetch('/api/admin/generations?all=true'),
         ]);
         const briefsBody = await briefsRes.json().catch(() => ({}));
         if (!briefsRes.ok || !briefsBody.success) throw new Error(briefsBody.error || `HTTP ${briefsRes.status}`);

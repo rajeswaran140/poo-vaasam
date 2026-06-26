@@ -78,6 +78,32 @@ it('list() defaults the limit to 100', async () => {
   expect(rows).toEqual([]); // tolerates a missing Items array
 });
 
+it('listAll() pages through LastEvaluatedKey until the feed is exhausted', async () => {
+  ops.query
+    .mockResolvedValueOnce({ Items: [{ id: 'gen_1', briefId: 'b1', verdict: 'failed' }], LastEvaluatedKey: { GSI1PK: 'GENERATION#ALL', GSI1SK: 'k1' } })
+    .mockResolvedValueOnce({ Items: [{ id: 'gen_2', briefId: 'b2', verdict: 'success' }] }); // no cursor → stop
+
+  const rows = await new GenerationRepository().listAll();
+
+  expect(ops.query).toHaveBeenCalledTimes(2);
+  // Page 1 starts with no cursor; page 2 resumes from page 1's LastEvaluatedKey.
+  expect(ops.query.mock.calls[0][0].exclusiveStartKey).toBeUndefined();
+  expect(ops.query.mock.calls[1][0].exclusiveStartKey).toEqual({ GSI1PK: 'GENERATION#ALL', GSI1SK: 'k1' });
+  expect(ops.query.mock.calls[0][0].indexName).toBe('GSI1');
+  expect(ops.query.mock.calls[0][0].scanIndexForward).toBe(false);
+  expect(rows.map((r) => r.id)).toEqual(['gen_1', 'gen_2']);
+});
+
+it('listAll() stops at the safety cap even if more pages remain', async () => {
+  // Every page returns one item AND a cursor — would loop forever without the cap.
+  ops.query.mockResolvedValue({ Items: [{ id: 'gen_x', briefId: 'b', verdict: 'failed' }], LastEvaluatedKey: { k: 'more' } });
+
+  const rows = await new GenerationRepository().listAll({ max: 3 });
+
+  expect(rows).toHaveLength(3);
+  expect(ops.query.mock.calls.length).toBeLessThanOrEqual(3);
+});
+
 it('delete() removes the item by its brief-child key', async () => {
   ops.delete.mockResolvedValueOnce({});
   await new GenerationRepository().delete('brief_42', 'gen_1');

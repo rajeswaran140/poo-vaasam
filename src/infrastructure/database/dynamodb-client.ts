@@ -133,6 +133,37 @@ export class DynamoDBOperations {
   }
 
   /**
+   * Scan that pages through ALL matching items (loops `LastEvaluatedKey`) so admin
+   * list reads don't silently truncate at DynamoDB's ~1 MB single-page limit.
+   * `maxItems` is a runaway safety cap (not a feature limit); `truncated` tells the
+   * caller whether the cap was hit so it can surface "showing first N" honestly.
+   */
+  static async scanAll(params?: {
+    filterExpression?: string;
+    expressionAttributeValues?: Record<string, any>;
+    expressionAttributeNames?: Record<string, string>;
+    maxItems?: number;
+  }): Promise<{ Items: Record<string, any>[]; truncated: boolean }> {
+    const max = params?.maxItems ?? 10000;
+    const items: Record<string, any>[] = [];
+    let exclusiveStartKey: Record<string, any> | undefined;
+    do {
+      const res = await this.scan({
+        filterExpression: params?.filterExpression,
+        expressionAttributeValues: params?.expressionAttributeValues,
+        expressionAttributeNames: params?.expressionAttributeNames,
+        exclusiveStartKey,
+      });
+      for (const item of res.Items ?? []) {
+        items.push(item);
+        if (items.length >= max) return { Items: items, truncated: true };
+      }
+      exclusiveStartKey = res.LastEvaluatedKey as Record<string, any> | undefined;
+    } while (exclusiveStartKey);
+    return { Items: items, truncated: false };
+  }
+
+  /**
    * Update an item
    */
   static async update(params: {

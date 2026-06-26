@@ -7,7 +7,7 @@
  */
 
 import Link from 'next/link';
-import { Image, Music, Upload, Folder } from 'lucide-react';
+import { Image as ImageIcon, Music, Upload, Folder } from 'lucide-react';
 
 export default function MediaLibraryPage() {
   return (
@@ -36,7 +36,7 @@ export default function MediaLibraryPage() {
           <div className="flex items-center justify-between">
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <Image className="w-6 h-6" />
+                <ImageIcon className="w-6 h-6" aria-hidden="true" />
                 <p className="text-blue-100">Images</p>
               </div>
               <p className="text-4xl font-bold">0</p>

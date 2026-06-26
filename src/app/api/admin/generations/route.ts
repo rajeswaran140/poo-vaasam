@@ -5,7 +5,8 @@
  *   POST { briefId, engine?, chosenStyle?, audioUrl?, settings?, scores?,
  *          verdict, failureReason?, notes? }       → 201 saved generation
  *   GET  ?briefId=…                                → that brief's attempts
- *   GET  ?limit=…                                  → newest-first feed (all)
+ *   GET  ?all=true                                 → the WHOLE feed (paged), for insights
+ *   GET  ?limit=…                                  → newest-first feed (capped)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -54,12 +55,19 @@ export async function GET(request: NextRequest) {
   }
 
   const briefId = request.nextUrl.searchParams.get('briefId');
+  const all = request.nextUrl.searchParams.get('all') === 'true';
   const limitParam = Number(request.nextUrl.searchParams.get('limit'));
   const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 200) : 100;
 
   try {
     const repo = new GenerationRepository();
-    const items = briefId ? await repo.listByBrief(briefId) : await repo.list({ limit });
+    // ?briefId → one brief's attempts; ?all → the full paged feed (insights need
+    // the whole dataset, not a 200-row slice); otherwise the capped feed.
+    const items = briefId
+      ? await repo.listByBrief(briefId)
+      : all
+        ? await repo.listAll()
+        : await repo.list({ limit });
     return NextResponse.json({ success: true, data: items });
   } catch (err) {
     console.error('[api/admin/generations] list failed:', err instanceof Error ? err.message : String(err));

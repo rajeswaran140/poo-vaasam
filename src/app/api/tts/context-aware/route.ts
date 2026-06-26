@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { synthesizeTamilSpeech, TAMIL_VOICES } from '@/services/ai/google-tts';
 import { RateLimiter, checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
+import { logger } from '@/lib/logger';
 
 // Unauthenticated + drives billable Google Cloud TTS — cap per IP.
 const limiter = new RateLimiter({ windowMs: 60_000, max: 20 });
@@ -59,13 +60,10 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Context-aware TTS error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Failed to generate audio';
+    // Log the internal detail server-side; never leak it to the client.
+    logger.error('Context-aware TTS failed', error);
     return NextResponse.json(
-      {
-        error: 'Failed to generate context-aware audio',
-        details: errorMessage
-      },
+      { error: 'Failed to generate context-aware audio' },
       { status: 500 }
     );
   }

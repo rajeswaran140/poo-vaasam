@@ -11,11 +11,11 @@ jest.mock('@/lib/auth-helper', () => ({
   requireAdmin: jest.fn(),
 }));
 
-const mockScan = jest.fn();
+const mockScanAll = jest.fn();
 const mockUpdate = jest.fn();
 jest.mock('@/infrastructure/database/dynamodb-client', () => ({
   DynamoDBOperations: {
-    scan: (...a: unknown[]) => mockScan(...a),
+    scanAll: (...a: unknown[]) => mockScanAll(...a),
     update: (...a: unknown[]) => mockUpdate(...a),
   },
 }));
@@ -33,7 +33,7 @@ const ITEMS = [
 
 beforeEach(() => {
   requireAdmin.mockReset().mockResolvedValue({ userId: 'admin', isAdmin: true });
-  mockScan.mockReset().mockResolvedValue({ Items: ITEMS });
+  mockScanAll.mockReset().mockResolvedValue({ Items: ITEMS, truncated: false });
   mockUpdate.mockReset();
 });
 
@@ -75,6 +75,17 @@ describe('GET /api/admin/subscribers', () => {
     const res = await GET(getReq('?from=not-a-date'));
     const json = await res.json();
     expect(json.total).toBe(3);
+  });
+
+  it('reads the FULL list via scanAll (no silent 1MB truncation) and surfaces truncated', async () => {
+    const res = await GET(getReq());
+    const json = await res.json();
+    expect(mockScanAll).toHaveBeenCalledTimes(1); // paginated helper, not a single scan
+    expect(json.truncated).toBe(false);
+
+    mockScanAll.mockResolvedValueOnce({ Items: ITEMS, truncated: true });
+    const res2 = await GET(getReq());
+    expect((await res2.json()).truncated).toBe(true);
   });
 });
 

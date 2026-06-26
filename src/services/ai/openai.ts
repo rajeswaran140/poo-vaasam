@@ -5,6 +5,7 @@
 
 import OpenAI from 'openai';
 import embeddingCache from './embeddingCache';
+import { logger } from '@/lib/logger';
 
 // Lazy initialize OpenAI client
 function getOpenAIClient() {
@@ -44,7 +45,7 @@ export async function generateEmbedding(text: string, useCache: boolean = true):
 
     return embedding;
   } catch (error) {
-    console.error('Error generating embedding:', error);
+    logger.error('Failed to generate embedding', error);
     throw new Error('Failed to generate embedding');
   }
 }
@@ -96,12 +97,16 @@ export async function generateEmbeddingsBatch(texts: string[], useCache: boolean
         }
       });
     } catch (error) {
-      console.error('Error generating batch embeddings:', error);
+      logger.error('Failed to generate batch embeddings', error);
       throw new Error('Failed to generate batch embeddings');
     }
   }
 
-  console.log(`[Batch Embeddings] Total: ${texts.length}, Cached: ${texts.length - uncachedTexts.length}, Generated: ${uncachedTexts.length}`);
+  logger.debug('Batch embeddings', {
+    total: texts.length,
+    cached: texts.length - uncachedTexts.length,
+    generated: uncachedTexts.length,
+  });
 
   return results;
 }

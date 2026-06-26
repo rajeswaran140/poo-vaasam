@@ -12,7 +12,7 @@
  * this component is the thin stateful shell around them.
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Download, Search } from 'lucide-react';
 import { formatDuration } from '@/lib/youtube-api';
 import { adminFetch } from '@/lib/client-auth';
@@ -69,6 +69,9 @@ export function YouTubeVideosPanel({
   const [days, setDays] = useState(initialDays);
   const [loading, setLoading] = useState(false);
   const [rangeError, setRangeError] = useState<string | null>(null);
+  // Monotonic token so a slow analytics response from an OLD range can't clobber
+  // the result of a newer one (rapid date-range switches).
+  const reqId = useRef(0);
 
   const [query, setQuery] = useState('');
   const [kind, setKind] = useState<VideoKind | 'all'>('all');
@@ -106,6 +109,7 @@ export function YouTubeVideosPanel({
   }
 
   async function changeDays(next: number) {
+    const myReq = ++reqId.current;
     setDays(next);
     setRangeError(null);
     setLoading(true);
@@ -117,12 +121,13 @@ export function YouTubeVideosPanel({
       const json = (await res.json()) as { videos?: Result<VideoAnalyticsRow[]> };
       const v = json.videos;
       if (!v || !v.ok) throw new Error(v && !v.ok ? v.error : 'No analytics returned');
+      if (myReq !== reqId.current) return; // superseded by a newer range selection
       setRows(applyVideoAnalytics(initialRows, v.data));
       setPage(1);
     } catch (err) {
-      setRangeError(err instanceof Error ? err.message : String(err));
+      if (myReq === reqId.current) setRangeError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoading(false);
+      if (myReq === reqId.current) setLoading(false);
     }
   }
 

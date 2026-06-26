@@ -13,7 +13,9 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type') as ContentType;
     const excludeId = searchParams.get('exclude');
-    const limit = parseInt(searchParams.get('limit') || '20');
+    // Clamp the client-supplied limit to a sane range (cost/abuse guard).
+    const limitRaw = parseInt(searchParams.get('limit') || '20', 10);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 50) : 20;
 
     if (!type || !Object.values(ContentType).includes(type)) {
       return NextResponse.json(

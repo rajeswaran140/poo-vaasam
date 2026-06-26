@@ -19,11 +19,13 @@ jest.mock('@/infrastructure/database/BriefRepository', () => ({
 const mockCreate = jest.fn();
 const mockListByBrief = jest.fn();
 const mockList = jest.fn();
+const mockListAll = jest.fn();
 jest.mock('@/infrastructure/database/GenerationRepository', () => ({
   GenerationRepository: jest.fn().mockImplementation(() => ({
     create: mockCreate,
     listByBrief: mockListByBrief,
     list: mockList,
+    listAll: mockListAll,
   })),
 }));
 
@@ -109,5 +111,15 @@ describe('GET', () => {
     await GET(getReq('?limit=9999'));
     expect(mockList).toHaveBeenCalledWith({ limit: 200 }); // capped at 200
     expect(mockListByBrief).not.toHaveBeenCalled();
+    expect(mockListAll).not.toHaveBeenCalled();
+  });
+
+  it('returns the WHOLE paged feed (not the capped slice) when ?all=true', async () => {
+    mockListAll.mockResolvedValueOnce([{ id: 'gen_1' }, { id: 'gen_2' }]);
+    const res = await GET(getReq('?all=true'));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ success: true, data: [{ id: 'gen_1' }, { id: 'gen_2' }] });
+    expect(mockListAll).toHaveBeenCalledTimes(1);
+    expect(mockList).not.toHaveBeenCalled();
   });
 });

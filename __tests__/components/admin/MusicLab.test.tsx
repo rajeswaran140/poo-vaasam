@@ -67,7 +67,9 @@ async function selectBrief() {
 
 it('loads briefs and reveals the capture form on selection', async () => {
   await selectBrief();
-  expect(mockedFetch).toHaveBeenCalledWith('/api/admin/briefs?limit=200');
+  expect(mockedFetch).toHaveBeenCalledWith('/api/admin/briefs?limit=500');
+  // Insights feed pulls the whole log, not a capped slice.
+  expect(mockedFetch).toHaveBeenCalledWith('/api/admin/generations?all=true');
   // Generations are fetched for the chosen brief.
   await waitFor(() =>
     expect(mockedFetch).toHaveBeenCalledWith(expect.stringContaining('/api/admin/generations?briefId=brief_1'))

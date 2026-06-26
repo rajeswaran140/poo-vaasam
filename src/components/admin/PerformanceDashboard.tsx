@@ -12,6 +12,7 @@
 
 import { useEffect, useState } from 'react';
 import { Activity, Zap, DollarSign, Clock, Database, TrendingUp } from 'lucide-react';
+import { adminFetch } from '@/lib/client-auth';
 
 interface CacheStats {
   hits: number;
@@ -43,7 +44,7 @@ export function PerformanceDashboard() {
 
   const fetchStats = async () => {
     try {
-      const response = await fetch('/api/ai/cache-stats');
+      const response = await adminFetch('/api/ai/cache-stats');
       if (!response.ok) throw new Error('Failed to fetch stats');
 
       const result = await response.json();
@@ -71,7 +72,7 @@ export function PerformanceDashboard() {
     }
 
     try {
-      const response = await fetch('/api/ai/cache-stats', {
+      const response = await adminFetch('/api/ai/cache-stats', {
         method: 'DELETE',
       });
 

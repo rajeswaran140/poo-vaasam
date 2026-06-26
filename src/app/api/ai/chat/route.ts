@@ -4,6 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { generateChatResponse } from '@/services/ai/claude';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { RateLimiter, checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
@@ -11,20 +12,36 @@ import { RateLimiter, checkRateLimit, rateLimitedResponse } from '@/lib/rate-lim
 // Unauthenticated + spends an Anthropic call per request — cap per IP.
 const limiter = new RateLimiter({ windowMs: 60_000, max: 20 });
 
+// This route is PUBLIC and unauthenticated, so the request body is bounded
+// before it reaches the LLM: a capped number of messages, each capped in size.
+// Without this an attacker could send a multi-MB history to amplify token cost.
+const chatRequestSchema = z.object({
+  messages: z
+    .array(
+      z.object({
+        role: z.enum(['user', 'assistant']),
+        content: z.string().min(1).max(4000),
+      })
+    )
+    .min(1)
+    .max(20),
+  poemId: z.string().max(200).optional(),
+});
+
 export async function POST(request: NextRequest) {
   const rl = checkRateLimit(limiter, request);
   if (!rl.allowed) return rateLimitedResponse(rl);
 
   try {
-    const body = await request.json();
-    const { messages, poemId } = body;
-
-    if (!messages || !Array.isArray(messages)) {
+    const body = await request.json().catch(() => null);
+    const parsed = chatRequestSchema.safeParse(body);
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: 'Messages array is required' },
+        { error: parsed.error.issues[0]?.message || 'Invalid chat request' },
         { status: 400 }
       );
     }
+    const { messages, poemId } = parsed.data;
 
     // Check if Anthropic API key is configured
     if (!process.env.ANTHROPIC_API_KEY) {
