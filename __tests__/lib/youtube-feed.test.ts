@@ -30,6 +30,11 @@ const SAMPLE_FEED = `<?xml version="1.0" encoding="UTF-8"?>
 </feed>`;
 
 const originalFetch = global.fetch;
+beforeEach(() => {
+  // Start every test key-less — the ambient env (e.g. the Amplify/CI build) may
+  // have YOUTUBE_API_KEY set, which would leak into the no-key cases.
+  delete process.env.YOUTUBE_API_KEY;
+});
 afterEach(() => {
   global.fetch = originalFetch;
   delete process.env.YOUTUBE_API_KEY; // never leak a key into the no-key cases

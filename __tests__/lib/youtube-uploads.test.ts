@@ -9,6 +9,11 @@ import { fetchChannelUploadsWithDurations } from '@/lib/youtube-uploads';
 
 const CH = 'UCabcdefghijklmnopqrstuv';
 const originalFetch = global.fetch;
+beforeEach(() => {
+  // Start every test key-less — the ambient env (e.g. the Amplify/CI build) may
+  // have YOUTUBE_API_KEY set, which would leak into the no-key case.
+  delete process.env.YOUTUBE_API_KEY;
+});
 afterEach(() => {
   global.fetch = originalFetch;
   delete process.env.YOUTUBE_API_KEY;
