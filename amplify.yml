@@ -32,8 +32,11 @@ frontend:
         # Amplify's node_modules cache restore drops the node_modules/.bin
         # symlinks, so the bare `jest` command is "not found" even though the
         # package is installed. `node node_modules/jest/bin/jest.js` is immune.
+        # NODE_ENV=test is required: Amplify's build sets NODE_ENV=production, which
+        # makes React/testing-library load production bundles (React.act is stubbed →
+        # every component test fails). Jest only auto-sets NODE_ENV=test when unset.
         - echo "Running test suite (deploy gate) at $(date)"
-        - node node_modules/jest/bin/jest.js --ci
+        - NODE_ENV=test node node_modules/jest/bin/jest.js --ci
         - echo "Tests passed at $(date)"
     build:
       commands:
