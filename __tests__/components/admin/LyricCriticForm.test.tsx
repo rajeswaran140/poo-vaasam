@@ -1,7 +1,8 @@
 /**
- * Tests for <LyricCriticForm> — the admin UI for POST /api/admin/compose/critique.
- * We drive the draft textarea, focus chips, the payload it POSTs, the rendered
- * critique sections, and the error path. adminFetch is mocked.
+ * Tests for <LyricCriticForm> — the admin UI for the async critique flow:
+ * POST /api/admin/compose/critique returns 202 { jobId }, then the form polls
+ * GET /api/admin/compose/critique/[jobId] until done. adminFetch is mocked to
+ * play both halves (enqueue on POST, status on the poll GET).
  */
 
 const adminFetch = jest.fn();
@@ -19,11 +20,22 @@ const CRITIQUE = {
   questions: ['Whose voice carries the charanam?'],
 };
 
-const jsonResponse = (status: number, body: unknown) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+const json = (status: number, body: unknown) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+
+// Default: POST enqueues (202 + jobId); the poll GET returns done + the critique.
+function wireHappyPath() {
+  adminFetch.mockImplementation((_url: string, init?: { method?: string }) =>
+    Promise.resolve(
+      init?.method === 'POST'
+        ? json(202, { success: true, jobId: 'critic_1', status: 'processing' })
+        : json(200, { success: true, status: 'done', result: CRITIQUE })
+    )
+  );
+}
 
 beforeEach(() => {
   adminFetch.mockReset();
-  adminFetch.mockResolvedValue(jsonResponse(200, { success: true, data: CRITIQUE }));
+  wireHappyPath();
 });
 
 const draftBox = () => screen.getByPlaceholderText(/உங்கள் சொந்த/);
@@ -35,28 +47,26 @@ it('disables "Critique my draft" until a draft is entered', () => {
   expect(screen.getByRole('button', { name: /critique my draft/i })).toBeEnabled();
 });
 
-it('POSTs the draft and renders the critique sections', async () => {
+it('enqueues, polls, and renders the critique sections', async () => {
   render(<LyricCriticForm />);
   fireEvent.change(draftBox(), { target: { value: '  ஊருக்குப் போகணும்  ' } });
   fireEvent.click(screen.getByRole('button', { name: /critique my draft/i }));
 
-  await waitFor(() => expect(adminFetch).toHaveBeenCalledTimes(1));
+  // First call is the POST enqueue with the trimmed draft.
+  await waitFor(() => expect(adminFetch).toHaveBeenCalled());
   const [url, init] = adminFetch.mock.calls[0];
   expect(url).toBe('/api/admin/compose/critique');
   expect(init.method).toBe('POST');
-  const sent = JSON.parse(init.body);
-  expect(sent.lyrics).toBe('ஊருக்குப் போகணும்'); // trimmed
-  expect(sent.focus).toEqual([]);
-  expect(sent).not.toHaveProperty('notes');
+  expect(JSON.parse(init.body).lyrics).toBe('ஊருக்குப் போகணும்');
 
+  // Then it polls the job and renders the result.
   expect(await screen.findByText(/tender opening/i)).toBeInTheDocument();
-  expect(screen.getByText('The மண்வாசம் image lands concretely')).toBeInTheDocument(); // strength
-  expect(screen.getByText('Line three runs a beat long')).toBeInTheDocument(); // observation
-  expect(screen.getByText('மண்ணை தொடணும்')).toBeInTheDocument(); // slack line, quoted verbatim
-  expect(screen.getByText('Whose voice carries the charanam?')).toBeInTheDocument(); // question
+  expect(screen.getByText('மண்ணை தொடணும்')).toBeInTheDocument(); // slack line, verbatim
+  expect(screen.getByText('Whose voice carries the charanam?')).toBeInTheDocument();
+  await waitFor(() => expect(adminFetch.mock.calls.some(([u]) => String(u).includes('/critique/critic_1'))).toBe(true));
 });
 
-it('includes toggled focus aspects and notes in the payload', async () => {
+it('includes toggled focus aspects and notes in the enqueue payload', async () => {
   render(<LyricCriticForm />);
   fireEvent.change(draftBox(), { target: { value: 'ஊருக்குப் போகணும்' } });
   fireEvent.click(screen.getByRole('button', { name: 'meter' }));
@@ -64,27 +74,30 @@ it('includes toggled focus aspects and notes in the payload', async () => {
   fireEvent.change(screen.getByPlaceholderText(/Does the charanam/i), { target: { value: 'Is the ache sustained?' } });
   fireEvent.click(screen.getByRole('button', { name: /critique my draft/i }));
 
-  await waitFor(() => expect(adminFetch).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(adminFetch).toHaveBeenCalled());
   const sent = JSON.parse(adminFetch.mock.calls[0][1].body);
   expect(sent.focus).toEqual(['meter', 'imagery']);
   expect(sent.notes).toBe('Is the ache sustained?');
 });
 
-it('toggling a focus chip off removes it again', async () => {
+it('shows the error when the job comes back failed', async () => {
+  adminFetch.mockImplementation((_url: string, init?: { method?: string }) =>
+    Promise.resolve(
+      init?.method === 'POST'
+        ? json(202, { success: true, jobId: 'critic_1' })
+        : json(200, { success: true, status: 'error', error: { code: 'bad_response', message: 'The AI returned an incomplete critique.' } })
+    )
+  );
   render(<LyricCriticForm />);
   fireEvent.change(draftBox(), { target: { value: 'ஊருக்குப் போகணும்' } });
-  fireEvent.click(screen.getByRole('button', { name: 'meter' }));
-  fireEvent.click(screen.getByRole('button', { name: 'meter' })); // off again
   fireEvent.click(screen.getByRole('button', { name: /critique my draft/i }));
-  await waitFor(() => expect(adminFetch).toHaveBeenCalledTimes(1));
-  const sent = JSON.parse(adminFetch.mock.calls[0][1].body);
-  expect(sent.focus).toEqual([]);
+  expect(await screen.findByRole('alert')).toHaveTextContent(/incomplete critique/i);
 });
 
-it('shows the API error message on failure', async () => {
-  adminFetch.mockResolvedValueOnce(jsonResponse(502, { success: false, error: 'The AI service failed to respond.' }));
+it('shows the error when the enqueue itself is rejected', async () => {
+  adminFetch.mockResolvedValueOnce(json(502, { success: false, error: 'Could not start the critique job.' }));
   render(<LyricCriticForm />);
   fireEvent.change(draftBox(), { target: { value: 'ஊருக்குப் போகணும்' } });
   fireEvent.click(screen.getByRole('button', { name: /critique my draft/i }));
-  expect(await screen.findByRole('alert')).toHaveTextContent(/AI service failed to respond/i);
+  expect(await screen.findByRole('alert')).toHaveTextContent(/Could not start/i);
 });

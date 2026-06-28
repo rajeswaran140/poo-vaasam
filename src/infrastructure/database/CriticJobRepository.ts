@@ -1,0 +1,59 @@
+/**
+ * Persistence for async critic jobs (single-table: PK=`CRITICJOB#<id>`,
+ * SK=`METADATA`). The critique route creates a `processing` job; the shared
+ * worker Lambda updates it to `done`/`error`; the status route reads it for the
+ * polling form. Mirrors ComposeJobRepository.
+ *
+ * Items carry a `ttl` (24h) so finished jobs auto-expire — enable TTL on the
+ * table's `ttl` attribute to activate (harmless if not enabled; items persist).
+ */
+
+import { DynamoDBOperations, handleDynamoDBError } from './dynamodb-client';
+import type { CriticJob } from '@/types/criticJob';
+
+const TTL_SECONDS = 24 * 60 * 60;
+
+export class CriticJobRepository {
+  /** Create a fresh job in the `processing` state. */
+  async create(id: string): Promise<CriticJob> {
+    try {
+      const now = new Date().toISOString();
+      const job: CriticJob = {
+        id,
+        status: 'processing',
+        createdAt: now,
+        updatedAt: now,
+        result: null,
+        error: null,
+      };
+      await DynamoDBOperations.put({
+        PK: `CRITICJOB#${id}`,
+        SK: 'METADATA',
+        Type: 'CRITICJOB',
+        ttl: Math.floor(Date.now() / 1000) + TTL_SECONDS,
+        ...job,
+      });
+      return job;
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  /** Read a job by id, or null if unknown/expired. */
+  async get(id: string): Promise<CriticJob | null> {
+    try {
+      const item = await DynamoDBOperations.get({ PK: `CRITICJOB#${id}`, SK: 'METADATA' });
+      if (!item) return null;
+      return {
+        id: item.id,
+        status: item.status,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+        result: item.result ?? null,
+        error: item.error ?? null,
+      };
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+}

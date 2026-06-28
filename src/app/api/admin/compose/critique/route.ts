@@ -1,15 +1,15 @@
 /**
- * POST /api/admin/compose/critique — give structured FEEDBACK on the poet's own
- * draft lyric (draft → critique). Admin-gated. The augment-the-craft counterpart
- * to POST /api/admin/compose/lyrics (which generates): this one never writes or
- * rewrites — it helps the poet see their own work more clearly.
+ * POST /api/admin/compose/critique — enqueue a lyric critique. Admin-gated.
  *
- * Runs the Sonnet call INLINE (not via a worker): a single short call, returned
- * directly. (Shares the Lyricist's inline-timeout caveat vs Amplify's ~30s
- * ceiling — tracked as a follow-up.)
+ * A full-ballad critique is ~50-70s on Sonnet, well over Amplify's managed-compute
+ * ~30s ceiling (the inline version 504'd). So this route does NOT critique inline:
+ * it creates a `processing` job in DynamoDB, asynchronously invokes the shared
+ * worker Lambda (kind:'critique' → runs critiqueLyric off-Amplify and writes the
+ * result back), and returns the job id immediately. The client polls
+ * GET /api/admin/compose/critique/[jobId].
  *
  * Body: a LyricCritiqueInput (lyrics, optional focus[], optional notes)
- *   →  200 { success: true, data: LyricCritique }
+ *   →  202 { success: true, jobId, status: 'processing' }
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -17,21 +17,16 @@ import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
 import { rateLimitedResponse, clientIp } from '@/lib/rate-limit';
 import { lyricCriticLimiter } from '@/lib/lyric-critic-rate-limit';
 import { lyricCritiqueInputSchema } from '@/services/ai/lyricCriticSchema';
-import { critiqueLyric, type LyricCritiqueErrorCode } from '@/services/ai/lyricCritic';
+import { CriticJobRepository } from '@/infrastructure/database/CriticJobRepository';
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
+import { awsConfig } from '@/lib/aws-config';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// Map the service's error taxonomy to HTTP. Messages are already user-safe
-// (the service never leaks raw upstream detail), so we pass them through.
-const STATUS_BY_CODE: Record<LyricCritiqueErrorCode, number> = {
-  invalid_input: 400,
-  not_configured: 503,
-  auth: 500, // a server-side key problem — not the caller's fault, don't 401
-  rate_limit: 429,
-  upstream: 502,
-  bad_response: 502,
-};
+// Shared AI-job worker (see worker/compose-worker.ts) — handles both compose and
+// critique. Overridable via env; hardcoded fallback is the deployed function name.
+const WORKER_FUNCTION = process.env.COMPOSE_WORKER_FUNCTION || 'tamilagaval-compose-worker';
 
 export async function POST(request: NextRequest) {
   let auth;
@@ -41,7 +36,7 @@ export async function POST(request: NextRequest) {
     return authErrorResponse(err);
   }
 
-  // Per-admin rate limit before any upstream cost.
+  // Per-admin rate limit before any cost.
   const rl = lyricCriticLimiter.check(auth.userId || auth.email || clientIp(request));
   if (!rl.allowed) return rateLimitedResponse(rl);
 
@@ -54,15 +49,39 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Cancel the upstream call if the client disconnects.
-  const result = await critiqueLyric(parsed.data, { signal: request.signal });
+  const jobId = `critic_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 
-  if (!result.ok) {
+  try {
+    // 1. Record the job so the client has something to poll immediately.
+    await new CriticJobRepository().create(jobId);
+
+    // 2. Fire-and-forget the worker (InvocationType 'Event' returns at once).
+    const lambda = new LambdaClient({
+      region: awsConfig.region,
+      ...(awsConfig.credentials ? { credentials: awsConfig.credentials } : {}),
+    });
+    await lambda.send(
+      new InvokeCommand({
+        FunctionName: WORKER_FUNCTION,
+        InvocationType: 'Event',
+        Payload: Buffer.from(
+          JSON.stringify({
+            kind: 'critique',
+            jobId,
+            lyrics: parsed.data.lyrics,
+            focus: parsed.data.focus,
+            ...(parsed.data.notes ? { notes: parsed.data.notes } : {}),
+          })
+        ),
+      })
+    );
+
+    return NextResponse.json({ success: true, jobId, status: 'processing' }, { status: 202 });
+  } catch (err) {
+    console.error('[api/admin/compose/critique] enqueue failed:', err instanceof Error ? err.message : String(err));
     return NextResponse.json(
-      { success: false, error: result.error },
-      { status: STATUS_BY_CODE[result.code] ?? 502 }
+      { success: false, error: 'Could not start the critique job. Please try again.' },
+      { status: 502 }
     );
   }
-
-  return NextResponse.json({ success: true, data: result.data }, { status: 200 });
 }

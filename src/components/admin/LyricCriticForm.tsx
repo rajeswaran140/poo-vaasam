@@ -7,12 +7,27 @@
  * Paste a draft, optionally steer the focus, get honest feedback to act on.
  */
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { SearchCheck, MessageCircleQuestion } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 import type { LyricCritique, CritiqueAspect } from '@/services/ai/lyricCriticSchema';
 
 const ASPECTS: CritiqueAspect[] = ['meter', 'imagery', 'vocabulary', 'emotion', 'originality', 'structure'];
+
+// The critique runs off-Amplify in the worker (~60-90s); the route returns a job
+// id and we poll until it's done. Ceiling generously above the worst worker run
+// (which is itself bounded by the service's 110s client timeout + the Lambda).
+const POLL_INTERVAL_MS = 2500;
+const POLL_TIMEOUT_MS = 170_000;
+
+/** Sleep that resolves early if the request is aborted (unmount / supersede). */
+function delay(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) return resolve();
+    const t = setTimeout(resolve, ms);
+    signal.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });
+  });
+}
 
 export function LyricCriticForm() {
   const [lyrics, setLyrics] = useState('');
@@ -22,6 +37,18 @@ export function LyricCriticForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<LyricCritique | null>(null);
+
+  // Abort an in-flight critique on unmount / supersede (the job is ~50-70s) and
+  // guard against setState-after-unmount.
+  const abortRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      abortRef.current?.abort();
+    };
+  }, []);
 
   const canSubmit = lyrics.trim().length > 0 && !loading;
 
@@ -33,26 +60,56 @@ export function LyricCriticForm() {
     setError(null);
     setResult(null);
     setLoading(true);
+    abortRef.current?.abort(); // supersede any prior in-flight critique
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
       const payload = {
         lyrics: lyrics.trim(),
         focus,
         ...(notes.trim() ? { notes: notes.trim() } : {}),
       };
+      // 1. Enqueue the job — returns 202 { jobId } (or a non-ok JSON error).
       const res = await adminFetch('/api/admin/compose/critique', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        signal: controller.signal,
       });
-      const body = (await res.json().catch(() => ({}))) as { success?: boolean; data?: LyricCritique; error?: string };
-      if (!res.ok || !body.success || !body.data) {
-        throw new Error(body.error || `Critique failed (${res.status})`);
+      const enq = (await res.json().catch(() => ({}))) as { success?: boolean; jobId?: string; error?: string };
+      if (!res.ok || !enq.success || !enq.jobId) {
+        throw new Error(enq.error || `Critique failed (${res.status})`);
       }
-      setResult(body.data);
+
+      // 2. Poll until the worker finishes (off-Amplify, ~50-70s).
+      const deadline = Date.now() + POLL_TIMEOUT_MS;
+      for (;;) {
+        if (controller.signal.aborted || !mountedRef.current) return;
+        const sres = await adminFetch(`/api/admin/compose/critique/${enq.jobId}`, { signal: controller.signal });
+        const body = (await sres.json().catch(() => ({}))) as {
+          status?: string;
+          result?: LyricCritique;
+          error?: { code?: string; message?: string };
+        };
+        if (!sres.ok) throw new Error((body as { error?: string }).error || `HTTP ${sres.status}`);
+        if (body.status === 'done' && body.result) {
+          if (!mountedRef.current) return;
+          setResult(body.result);
+          break;
+        }
+        if (body.status === 'error') {
+          throw new Error(body.error?.message || 'Critique failed');
+        }
+        if (Date.now() > deadline) {
+          throw new Error('The critique is taking longer than expected. Please try again.');
+        }
+        await delay(POLL_INTERVAL_MS, controller.signal);
+      }
     } catch (err) {
+      if (controller.signal.aborted || !mountedRef.current) return;
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   }
 

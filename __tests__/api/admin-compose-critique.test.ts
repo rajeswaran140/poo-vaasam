@@ -1,5 +1,10 @@
 /** @jest-environment node */
-/** POST /api/admin/compose/critique — admin gate, input validation, rate limit, error mapping. */
+/**
+ * Tests for POST /api/admin/compose/critique — the async enqueue route. Admin-gated.
+ * It creates a `processing` critic job and fire-and-forget invokes the shared
+ * worker Lambda with kind:'critique', returning the job id (202). Auth (403) and
+ * body-validation (400) short out; per-admin rate limit applies.
+ */
 
 import { NextRequest } from 'next/server';
 
@@ -8,77 +13,92 @@ jest.mock('@/lib/auth-helper', () => ({
   requireAdmin: jest.fn(),
 }));
 
-const mockCritique = jest.fn();
-jest.mock('@/services/ai/lyricCritic', () => ({
-  critiqueLyric: (...args: unknown[]) => mockCritique(...args),
+const mockCreate = jest.fn();
+jest.mock('@/infrastructure/database/CriticJobRepository', () => ({
+  CriticJobRepository: jest.fn().mockImplementation(() => ({ create: mockCreate })),
+}));
+
+const mockSend = jest.fn();
+jest.mock('@aws-sdk/client-lambda', () => ({
+  LambdaClient: jest.fn().mockImplementation(() => ({ send: mockSend })),
+  InvokeCommand: jest.fn().mockImplementation((input) => ({ input })),
 }));
 
 import { POST } from '@/app/api/admin/compose/critique/route';
-import * as auth from '@/lib/auth-helper';
 import { __resetLyricCriticRateLimitForTests } from '@/lib/lyric-critic-rate-limit';
+import { InvokeCommand } from '@aws-sdk/client-lambda';
+import * as auth from '@/lib/auth-helper';
 
+const MockInvoke = InvokeCommand as unknown as jest.Mock;
 const requireAdmin = auth.requireAdmin as jest.Mock;
-const post = (b: unknown) =>
-  POST(new NextRequest('https://tamilagaval.com/api/admin/compose/critique', { method: 'POST', body: JSON.stringify(b) }));
-
-const VALID_INPUT = { lyrics: 'பல்லவி\nஊருக்குப் போகணும்' };
-const CRITIQUE = {
-  overall: 'A tender pallavi.',
-  strengths: [],
-  observations: [],
-  slackLines: [],
-  wordIdeas: [],
-  questions: [],
-};
+const req = (body: unknown) =>
+  new NextRequest('https://tamilagaval.com/api/admin/compose/critique', { method: 'POST', body: JSON.stringify(body) });
 
 beforeEach(() => {
   jest.clearAllMocks();
   __resetLyricCriticRateLimitForTests();
-  requireAdmin.mockResolvedValue({ userId: 'admin-1', email: 'a@tamilagaval.com' });
-  mockCritique.mockResolvedValue({ ok: true, data: CRITIQUE });
+  requireAdmin.mockResolvedValue({ isAuthenticated: true, userId: 'admin-1' });
+  mockCreate.mockResolvedValue({ id: 'critic_x', status: 'processing' });
+  mockSend.mockResolvedValue({ StatusCode: 202 });
 });
 
-it('returns 403 for a non-admin', async () => {
+it('returns 403 for a non-admin (no job created, no worker invoked)', async () => {
   const { AuthError } = jest.requireActual('@/lib/auth-helper');
   requireAdmin.mockRejectedValueOnce(new AuthError('Forbidden', 403));
-  expect((await post(VALID_INPUT)).status).toBe(403);
-  expect(mockCritique).not.toHaveBeenCalled();
+  expect((await POST(req({ lyrics: 'வரிகள்' }))).status).toBe(403);
+  expect(mockCreate).not.toHaveBeenCalled();
+  expect(mockSend).not.toHaveBeenCalled();
 });
 
-it('rejects empty lyrics with 400 — no upstream call', async () => {
-  const res = await post({ lyrics: '   ' });
+it('rejects empty lyrics with 400 — no job created', async () => {
+  const res = await POST(req({ lyrics: '   ' }));
   expect(res.status).toBe(400);
-  expect(mockCritique).not.toHaveBeenCalled();
+  expect(mockCreate).not.toHaveBeenCalled();
 });
 
-it('critiques a valid draft (200)', async () => {
-  const res = await post(VALID_INPUT);
-  expect(res.status).toBe(200);
+it('rejects an oversized draft with 400', async () => {
+  expect((await POST(req({ lyrics: 'அ'.repeat(8001) }))).status).toBe(400);
+});
+
+it('enqueues a critic job and async-invokes the worker with kind:critique (202 + jobId)', async () => {
+  const res = await POST(req({ lyrics: 'பல்லவி\nஊருக்குப் போகணும்', focus: ['meter'], notes: 'carry?' }));
+  expect(res.status).toBe(202);
   const body = await res.json();
   expect(body.success).toBe(true);
-  expect(body.data.overall).toBe('A tender pallavi.');
-  expect(mockCritique).toHaveBeenCalledTimes(1);
+  expect(body.jobId).toMatch(/^critic_/);
+  expect(body.status).toBe('processing');
+
+  expect(mockCreate).toHaveBeenCalledWith(body.jobId);
+  expect(mockSend).toHaveBeenCalledTimes(1);
+  const cmd = MockInvoke.mock.calls[0][0] as { InvocationType: string; FunctionName: string; Payload: Uint8Array };
+  expect(cmd.InvocationType).toBe('Event');
+  expect(cmd.FunctionName).toBe('tamilagaval-compose-worker');
+  const payload = JSON.parse(Buffer.from(cmd.Payload).toString());
+  expect(payload).toEqual({ kind: 'critique', jobId: body.jobId, lyrics: 'பல்லவி\nஊருக்குப் போகணும்', focus: ['meter'], notes: 'carry?' });
 });
 
-it('maps not_configured to 503', async () => {
-  mockCritique.mockResolvedValueOnce({ ok: false, code: 'not_configured', error: 'AI is not configured.' });
-  expect((await post(VALID_INPUT)).status).toBe(503);
+it('defaults focus to [] and omits notes when not given', async () => {
+  const res = await POST(req({ lyrics: 'ஊருக்குப் போகணும்' }));
+  expect(res.status).toBe(202);
+  const payload = JSON.parse(Buffer.from((MockInvoke.mock.calls[0][0] as { Payload: Uint8Array }).Payload).toString());
+  expect(payload.focus).toEqual([]);
+  expect(payload).not.toHaveProperty('notes');
 });
 
-it('maps bad_response to 502', async () => {
-  mockCritique.mockResolvedValueOnce({ ok: false, code: 'bad_response', error: 'incomplete' });
-  expect((await post(VALID_INPUT)).status).toBe(502);
+it('returns 502 when the worker invoke fails (raw detail not leaked)', async () => {
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+  mockSend.mockRejectedValueOnce(new Error('lambda boom'));
+  const res = await POST(req({ lyrics: 'வரிகள்' }));
+  expect(res.status).toBe(502);
+  expect((await res.json()).error).not.toMatch(/lambda boom/);
 });
 
-it('maps a service rate_limit to 429', async () => {
-  mockCritique.mockResolvedValueOnce({ ok: false, code: 'rate_limit', error: 'slow down' });
-  expect((await post(VALID_INPUT)).status).toBe(429);
-});
-
-it('enforces the per-admin rate limit (16th call in a window is 429)', async () => {
-  let last = 0;
-  for (let i = 0; i < 16; i++) last = (await post(VALID_INPUT)).status;
-  expect(last).toBe(429);
-  // 15 critiques got through; the throttled one never reached the service.
-  expect(mockCritique).toHaveBeenCalledTimes(15);
+it('enforces the per-admin rate limit (16th call in a window is 429, no worker spend)', async () => {
+  for (let i = 0; i < 15; i++) expect((await POST(req({ lyrics: `வரி ${i}` }))).status).toBe(202);
+  mockCreate.mockClear();
+  mockSend.mockClear();
+  const limited = await POST(req({ lyrics: 'one too many' }));
+  expect(limited.status).toBe(429);
+  expect(mockCreate).not.toHaveBeenCalled();
+  expect(mockSend).not.toHaveBeenCalled();
 });
