@@ -33,6 +33,7 @@ import {
   BookOpen,
   FlaskConical,
   PenLine,
+  SearchCheck,
 } from "lucide-react";
 import { FEATURES } from "@/config/features";
 import { Toaster } from "react-hot-toast";
@@ -94,6 +95,11 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
     title: "Lyricist",
     subtitle:
       "Brief → original Tamil lyrics; review then send to the Music Director",
+  },
+  "/admin/compose/critique": {
+    title: "Lyric Critic",
+    subtitle:
+      "Your own draft → honest feedback; coaches your craft, never rewrites",
   },
   "/admin/lexicon": {
     title: "Lexicon",
@@ -327,6 +333,14 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               active={pathname === "/admin/compose/lyrics"}
             >
               Lyricist
+            </NavLink>
+            <NavLink
+              href="/admin/compose/critique"
+              icon={SearchCheck}
+              collapsed={collapsed}
+              active={pathname === "/admin/compose/critique"}
+            >
+              Lyric Critic
             </NavLink>
             <NavLink
               href="/admin/music-lab"
