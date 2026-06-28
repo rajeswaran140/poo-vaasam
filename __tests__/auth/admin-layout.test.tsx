@@ -48,6 +48,7 @@ jest.mock('lucide-react', () => ({
   Moon: () => <div data-testid="icon-moon" />,
   Kanban: () => <div data-testid="icon-workflow" />,
   Sparkles: () => <div data-testid="icon-compose" />,
+  PenLine: () => <div data-testid="icon-lyricist" />,
   BarChart3: () => <div data-testid="icon-analytics" />,
   MessageSquare: () => <div data-testid="icon-comments" />,
   BellRing: () => <div data-testid="icon-notify" />,
