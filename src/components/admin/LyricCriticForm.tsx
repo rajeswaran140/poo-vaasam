@@ -109,7 +109,9 @@ export function LyricCriticForm() {
       if (controller.signal.aborted || !mountedRef.current) return;
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      if (mountedRef.current) setLoading(false);
+      // Only clear loading if THIS run is still the current one — a superseded
+      // run must not flip the spinner off under a newer in-flight critique.
+      if (mountedRef.current && abortRef.current === controller) setLoading(false);
     }
   }
 
