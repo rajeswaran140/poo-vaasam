@@ -7,12 +7,17 @@
  * Paste a draft, optionally steer the focus, get honest feedback to act on.
  */
 
-import { useState, useRef, useEffect } from 'react';
-import { SearchCheck, MessageCircleQuestion, Copy, Check, Download } from 'lucide-react';
+import { useState, useRef, useEffect, useMemo } from 'react';
+import {
+  SearchCheck, MessageCircleQuestion, Copy, Check, Download,
+  Save, FolderOpen, History, Plus, ChevronDown, CheckCircle2,
+} from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 import { critiqueToMarkdown } from '@/lib/critique-markdown';
+import { feedbackProgress } from '@/lib/lyric-draft-feedback';
 import { exportFilename } from '@/lib/prompt-export';
 import type { LyricCritique, CritiqueAspect } from '@/services/ai/lyricCriticSchema';
+import type { LyricDraftSummary, LyricDraftVersion, LyricDraft } from '@/types/lyricDraft';
 
 const ASPECTS: CritiqueAspect[] = ['meter', 'imagery', 'vocabulary', 'emotion', 'originality', 'structure'];
 
@@ -40,6 +45,24 @@ export function LyricCriticForm() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<LyricCritique | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // ---- Draft management (lazy: nothing fetches until the panel is opened) ----
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const [title, setTitle] = useState('');
+  const [versions, setVersions] = useState<LyricDraftVersion[]>([]);
+  const [drafts, setDrafts] = useState<LyricDraftSummary[]>([]);
+  const [draftsOpen, setDraftsOpen] = useState(false);
+  const [draftsLoaded, setDraftsLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  // The exact text that produced `result` — only then do we file the critique
+  // with the saved version (so an edited-after-critique save doesn't mislabel).
+  const [critiquedText, setCritiquedText] = useState<string | null>(null);
+
+  // Feedback loop: the latest saved version's critique vs. the current text.
+  const priorCritique = versions.length ? versions[versions.length - 1].critique : null;
+  const progress = useMemo(() => feedbackProgress(priorCritique, lyrics), [priorCritique, lyrics]);
 
   // Abort an in-flight critique on unmount / supersede (the job is ~50-70s) and
   // guard against setState-after-unmount.
@@ -120,6 +143,7 @@ export function LyricCriticForm() {
         if (body.status === 'done' && body.result) {
           if (!mountedRef.current) return;
           setResult(body.result);
+          setCritiquedText(payload.lyrics); // the text this critique belongs to
           break;
         }
         if (body.status === 'error') {
@@ -140,10 +164,232 @@ export function LyricCriticForm() {
     }
   }
 
+  // ---- Draft actions ----
+  async function loadDraftsList() {
+    try {
+      const res = await adminFetch('/api/admin/lyric-drafts');
+      const json = (await res.json().catch(() => ({}))) as { success?: boolean; drafts?: LyricDraftSummary[] };
+      if (res.ok && json.success) setDrafts(json.drafts ?? []);
+      setDraftsLoaded(true);
+    } catch {
+      setDraftsLoaded(true);
+    }
+  }
+
+  function toggleDrafts() {
+    setDraftsOpen((open) => {
+      if (!open && !draftsLoaded) void loadDraftsList();
+      return !open;
+    });
+  }
+
+  /** Load a version's snapshot into the editor (text + steering + its critique). */
+  function applyVersion(v: LyricDraftVersion) {
+    setLyrics(v.lyrics);
+    setFocus(v.focus ?? []);
+    setNotes(v.notes ?? '');
+    setResult(v.critique);
+    setCritiquedText(v.critique ? v.lyrics : null);
+    setError(null);
+  }
+
+  async function openDraft(id: string) {
+    setDraftError(null);
+    try {
+      const res = await adminFetch(`/api/admin/lyric-drafts/${id}`);
+      const json = (await res.json().catch(() => ({}))) as { success?: boolean; draft?: LyricDraft; error?: string };
+      if (!res.ok || !json.success || !json.draft) throw new Error(json.error || 'Could not open draft');
+      const d = json.draft;
+      setDraftId(d.id);
+      setTitle(d.title);
+      setVersions(d.versions);
+      setSaveMsg(null);
+      const latest = d.versions[d.versions.length - 1];
+      if (latest) applyVersion(latest);
+    } catch (e) {
+      setDraftError(e instanceof Error ? e.message : 'Could not open draft');
+    }
+  }
+
+  function newDraft() {
+    setDraftId(null);
+    setTitle('');
+    setVersions([]);
+    setLyrics('');
+    setFocus([]);
+    setNotes('');
+    setResult(null);
+    setCritiquedText(null);
+    setSaveMsg(null);
+    setDraftError(null);
+    setError(null);
+  }
+
+  async function saveDraft() {
+    if (!lyrics.trim() || saving) return;
+    if (!draftId && !title.trim()) {
+      setDraftError('Give the draft a title before saving.');
+      return;
+    }
+    setSaving(true);
+    setDraftError(null);
+    setSaveMsg(null);
+    // Only file the critique with this version if it matches the current text.
+    const critique = result && critiquedText === lyrics.trim() ? result : undefined;
+    const payload = { lyrics: lyrics.trim(), focus, ...(notes.trim() ? { notes: notes.trim() } : {}), ...(critique ? { critique } : {}) };
+    try {
+      const url = draftId ? `/api/admin/lyric-drafts/${draftId}/versions` : '/api/admin/lyric-drafts';
+      const res = await adminFetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(draftId ? payload : { ...payload, title: title.trim() }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { success?: boolean; draft?: LyricDraft; error?: string };
+      if (!res.ok || !json.success || !json.draft) throw new Error(json.error || 'Could not save draft');
+      const d = json.draft;
+      setDraftId(d.id);
+      setVersions(d.versions);
+      setSaveMsg(`Saved v${d.latestVersion}`);
+      // Keep the drafts list fresh (newest first) if it's been loaded.
+      setDrafts((prev) => {
+        const summary: LyricDraftSummary = {
+          id: d.id, title: d.title, theme: d.theme, status: d.status,
+          latestVersion: d.latestVersion, snippet: lyrics.trim().split('\n')[0] ?? '', updatedAt: d.updatedAt,
+        };
+        return [summary, ...prev.filter((x) => x.id !== d.id)];
+      });
+    } catch (e) {
+      setDraftError(e instanceof Error ? e.message : 'Could not save draft');
+    } finally {
+      if (mountedRef.current) setSaving(false);
+    }
+  }
+
   const inputCls =
     'w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-purple-500 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100';
 
+  const nextVersion = (versions.length ? versions[versions.length - 1].version : 0) + 1;
+
   return (
+    <div className="space-y-5">
+      {/* ---- Draft workspace toolbar ---- */}
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900/40">
+        <input
+          aria-label="Draft title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          maxLength={120}
+          placeholder={draftId ? 'Draft title' : 'Title this draft to save it…'}
+          className={`min-w-[12rem] flex-1 ${inputCls}`}
+        />
+        <button
+          type="button"
+          onClick={saveDraft}
+          disabled={!lyrics.trim() || saving}
+          className="flex items-center gap-1.5 rounded-lg bg-gray-800 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-900 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-200 dark:text-gray-900 dark:hover:bg-white"
+        >
+          <Save className="h-4 w-4" /> {saving ? 'Saving…' : draftId ? `Save v${nextVersion}` : 'Save draft'}
+        </button>
+        {draftId && (
+          <button
+            type="button"
+            onClick={newDraft}
+            className="flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+          >
+            <Plus className="h-4 w-4" /> New
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={toggleDrafts}
+          aria-expanded={draftsOpen}
+          className="flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+        >
+          <FolderOpen className="h-4 w-4" /> Saved drafts
+          <ChevronDown className={`h-4 w-4 transition-transform ${draftsOpen ? 'rotate-180' : ''}`} />
+        </button>
+        {saveMsg && (
+          <span className="flex items-center gap-1 text-xs font-medium text-green-600 dark:text-green-400">
+            <CheckCircle2 className="h-3.5 w-3.5" /> {saveMsg}
+          </span>
+        )}
+        {draftError && <span role="alert" className="text-xs font-medium text-red-600 dark:text-red-400">{draftError}</span>}
+      </div>
+
+      {/* ---- Drafts + version history (lazy-loaded) ---- */}
+      {draftsOpen && (
+        <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900/40">
+          {!draftsLoaded ? (
+            <p className="text-sm text-gray-400">Loading drafts…</p>
+          ) : drafts.length === 0 ? (
+            <p className="text-sm text-gray-400">No saved drafts yet — title a draft above and hit Save.</p>
+          ) : (
+            <ul className="flex flex-wrap gap-2">
+              {drafts.map((d) => (
+                <li key={d.id}>
+                  <button
+                    type="button"
+                    onClick={() => openDraft(d.id)}
+                    className={`rounded-lg border px-3 py-1.5 text-left text-sm transition-colors ${
+                      draftId === d.id
+                        ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
+                        : 'border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800'
+                    }`}
+                    title={d.snippet}
+                  >
+                    <span className="font-medium text-gray-900 dark:text-gray-100">{d.title}</span>
+                    <span className="ml-1.5 text-xs text-gray-400">v{d.latestVersion} · {d.status}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {draftId && versions.length > 0 && (
+            <div className="border-t border-gray-100 pt-2.5 dark:border-gray-800">
+              <p className="mb-1.5 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                <History className="h-3.5 w-3.5" /> Versions of “{title}”
+              </p>
+              <ul className="flex flex-wrap gap-1.5">
+                {versions.map((v) => (
+                  <li key={v.version}>
+                    <button
+                      type="button"
+                      onClick={() => applyVersion(v)}
+                      className="rounded-md border border-gray-300 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                      title={v.critique ? 'Has a saved critique' : 'No critique saved'}
+                    >
+                      v{v.version}
+                      {v.critique && <span className="ml-1 text-green-600 dark:text-green-400">✓</span>}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ---- Feedback loop: did the rework address the last critique? ---- */}
+      {progress && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-800/60 dark:bg-amber-900/15">
+          <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+            Feedback loop · you’ve reworked {progress.addressed} of {progress.total} flagged line
+            {progress.total === 1 ? '' : 's'} from the last saved critique
+            {progress.remaining.length === 0 && ' — all addressed 🎉'}
+          </p>
+          {progress.remaining.length > 0 && (
+            <ul className="mt-1.5 space-y-1">
+              {progress.remaining.map((r, i) => (
+                <li key={i} className="text-xs text-amber-800 dark:text-amber-300">
+                  <span className="font-tamil">{r.line}</span> — {r.issue}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
     <div className="grid gap-6 lg:grid-cols-2">
       {/* ---- Draft input ---- */}
       <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900/40">
@@ -313,6 +559,7 @@ export function LyricCriticForm() {
           </div>
         )}
       </div>
+    </div>
     </div>
   );
 }

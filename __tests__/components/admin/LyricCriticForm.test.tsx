@@ -120,3 +120,54 @@ it('shows the error when the enqueue itself is rejected', async () => {
   fireEvent.click(screen.getByRole('button', { name: /critique my draft/i }));
   expect(await screen.findByRole('alert')).toHaveTextContent(/Could not start/i);
 });
+
+// ---- Draft management (save / load / feedback loop) ----
+
+it('saves a new draft (POST create) and confirms the version', async () => {
+  adminFetch.mockImplementation((url: string, init?: { method?: string }) => {
+    if (init?.method === 'POST' && url === '/api/admin/lyric-drafts') {
+      return Promise.resolve(json(201, {
+        success: true,
+        draft: { id: 'draft_1', title: 'மண்வாசம்', status: 'draft', latestVersion: 1, updatedAt: 't',
+          versions: [{ version: 1, lyrics: 'பல்லவி', focus: [], critique: null, createdAt: 't' }] },
+      }));
+    }
+    return Promise.resolve(json(200, {}));
+  });
+  render(<LyricCriticForm />);
+  fireEvent.change(screen.getByLabelText('Draft title'), { target: { value: 'மண்வாசம்' } });
+  fireEvent.change(draftBox(), { target: { value: 'பல்லவி' } });
+  fireEvent.click(screen.getByRole('button', { name: /save draft/i }));
+
+  expect(await screen.findByText('Saved v1')).toBeInTheDocument();
+  const createCall = adminFetch.mock.calls.find(([u, i]: [string, { method?: string }]) => u === '/api/admin/lyric-drafts' && i?.method === 'POST');
+  expect(JSON.parse(createCall[1].body)).toMatchObject({ title: 'மண்வாசம்', lyrics: 'பல்லவி' });
+});
+
+it('opens a saved draft and runs the "did I address the feedback?" loop', async () => {
+  const CRIT = { overall: 'x', strengths: [], observations: [], wordIdeas: [], questions: [],
+    slackLines: [{ line: 'மண்ணை தொடணும்', issue: 'too abstract' }] };
+  const DRAFT = {
+    id: 'draft_1', title: 'மண்', status: 'draft', latestVersion: 1, createdAt: 't', updatedAt: 't',
+    versions: [{ version: 1, lyrics: 'மண்ணை தொடணும்\nகாற்று', focus: [], critique: CRIT, createdAt: 't' }],
+  };
+  adminFetch.mockImplementation((url: string) => {
+    if (url === '/api/admin/lyric-drafts')
+      return Promise.resolve(json(200, { success: true, drafts: [{ id: 'draft_1', title: 'மண்', status: 'draft', latestVersion: 1, snippet: 'மண்ணை தொடணும்', updatedAt: 't' }] }));
+    if (url === '/api/admin/lyric-drafts/draft_1')
+      return Promise.resolve(json(200, { success: true, draft: DRAFT }));
+    return Promise.resolve(json(200, {}));
+  });
+
+  render(<LyricCriticForm />);
+  fireEvent.click(screen.getByRole('button', { name: /saved drafts/i }));      // lazy-load list
+  fireEvent.click(await screen.findByRole('button', { name: /மண்/ }));          // open the draft
+
+  // Slack line is still present verbatim → 0 of 1 addressed.
+  expect(await screen.findByText(/reworked 0 of 1 flagged line/i)).toBeInTheDocument();
+
+  // Rework the flagged line away → loop updates to all-addressed.
+  fireEvent.change(draftBox(), { target: { value: 'மண்ணின் வாசம்\nகாற்று' } });
+  expect(await screen.findByText(/reworked 1 of 1 flagged line/i)).toBeInTheDocument();
+  expect(screen.getByText(/all addressed/i)).toBeInTheDocument();
+});
