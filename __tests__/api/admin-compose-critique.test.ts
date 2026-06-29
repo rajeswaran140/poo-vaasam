@@ -18,6 +18,11 @@ jest.mock('@/infrastructure/database/CriticJobRepository', () => ({
   CriticJobRepository: jest.fn().mockImplementation(() => ({ create: mockCreate })),
 }));
 
+const mockFindAll = jest.fn();
+jest.mock('@/infrastructure/database/LexiconRepository', () => ({
+  LexiconRepository: jest.fn().mockImplementation(() => ({ findAll: mockFindAll })),
+}));
+
 const mockSend = jest.fn();
 jest.mock('@aws-sdk/client-lambda', () => ({
   LambdaClient: jest.fn().mockImplementation(() => ({ send: mockSend })),
@@ -40,6 +45,7 @@ beforeEach(() => {
   requireAdmin.mockResolvedValue({ isAuthenticated: true, userId: 'admin-1' });
   mockCreate.mockResolvedValue({ id: 'critic_x', status: 'processing' });
   mockSend.mockResolvedValue({ StatusCode: 202 });
+  mockFindAll.mockResolvedValue([]); // no lexicon by default → payload unchanged
 });
 
 it('returns 403 for a non-admin (no job created, no worker invoked)', async () => {
@@ -75,6 +81,25 @@ it('enqueues a critic job and async-invokes the worker with kind:critique (202 +
   expect(cmd.FunctionName).toBe('tamilagaval-compose-worker');
   const payload = JSON.parse(Buffer.from(cmd.Payload).toString());
   expect(payload).toEqual({ kind: 'critique', jobId: body.jobId, lyrics: 'பல்லவி\nஊருக்குப் போகணும்', focus: ['meter'], notes: 'carry?' });
+});
+
+it('forwards the poet’s lexicon hints to the worker (prefer their own words)', async () => {
+  mockFindAll.mockResolvedValueOnce([
+    { word: 'எழில்', gloss: 'beauty', register: 'sangam', usage: 'fresh', themes: [], archived: false },
+  ]);
+  const res = await POST(req({ lyrics: 'வரிகள்' }));
+  expect(res.status).toBe(202);
+  const payload = JSON.parse(Buffer.from((MockInvoke.mock.calls[0][0] as { Payload: Uint8Array }).Payload).toString());
+  expect(payload.lexicon).toContain('எழில் — beauty [sangam]');
+});
+
+it('still enqueues when the lexicon read fails (best-effort, never blocks)', async () => {
+  jest.spyOn(console, 'warn').mockImplementation(() => {});
+  mockFindAll.mockRejectedValueOnce(new Error('dynamo down'));
+  const res = await POST(req({ lyrics: 'வரிகள்' }));
+  expect(res.status).toBe(202);
+  const payload = JSON.parse(Buffer.from((MockInvoke.mock.calls[0][0] as { Payload: Uint8Array }).Payload).toString());
+  expect(payload).not.toHaveProperty('lexicon');
 });
 
 it('defaults focus to [] and omits notes when not given', async () => {

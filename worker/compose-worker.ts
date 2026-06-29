@@ -32,6 +32,7 @@ interface JobEvent {
   lyrics?: string;
   focus?: string[]; // critique only
   notes?: string; // critique only
+  lexicon?: string[]; // critique only — poet's personal vocabulary hints
   model?: string;
 }
 
@@ -55,7 +56,10 @@ export const handler = async (event: JobEvent) => {
       kind === 'critique'
         ? await critiqueLyric(
             { lyrics, focus: event.focus ?? [], ...(event.notes ? { notes: event.notes } : {}) },
-            event.model ? { model: event.model } : {}
+            {
+              ...(event.model ? { model: event.model } : {}),
+              ...(event.lexicon?.length ? { lexicon: event.lexicon } : {}),
+            }
           )
         : await composeFromLyrics(lyrics, event.model ? { model: event.model } : {});
     patch = result.ok

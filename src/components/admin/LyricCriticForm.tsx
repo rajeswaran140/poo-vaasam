@@ -60,6 +60,10 @@ export function LyricCriticForm() {
   // with the saved version (so an edited-after-critique save doesn't mislabel).
   const [critiquedText, setCritiquedText] = useState<string | null>(null);
 
+  // One-click "add to lexicon" on word ideas — grow the personal atlas from drafting.
+  const [addedWords, setAddedWords] = useState<Set<string>>(new Set());
+  const [addingWord, setAddingWord] = useState<string | null>(null);
+
   // Feedback loop: the latest saved version's critique vs. the current text.
   const priorCritique = versions.length ? versions[versions.length - 1].critique : null;
   const progress = useMemo(() => feedbackProgress(priorCritique, lyrics), [priorCritique, lyrics]);
@@ -262,6 +266,26 @@ export function LyricCriticForm() {
       setDraftError(e instanceof Error ? e.message : 'Could not save draft');
     } finally {
       if (mountedRef.current) setSaving(false);
+    }
+  }
+
+  /** Capture a suggested word into the personal lexicon (gloss/register refined
+   *  later in /admin/lexicon). 409 (already there) counts as success. */
+  async function addToLexicon(word: string) {
+    const w = word.trim();
+    if (!w || addedWords.has(w) || addingWord) return;
+    setAddingWord(w);
+    try {
+      const res = await adminFetch('/api/admin/lexicon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ word: w, gloss: '—', register: 'literary', usage: 'fresh', themes: [] }),
+      });
+      if (res.ok || res.status === 409) setAddedWords((prev) => new Set(prev).add(w));
+    } catch {
+      /* best-effort — leave the + so the poet can retry */
+    } finally {
+      if (mountedRef.current) setAddingWord(null);
     }
   }
 
@@ -537,7 +561,26 @@ export function LyricCriticForm() {
                     <li key={i} className="text-sm text-gray-700 dark:text-gray-300">
                       <span className="font-tamil text-gray-900 dark:text-gray-100">{w.instead_of}</span>
                       <span className="mx-1 text-gray-400">→</span>
-                      <span className="font-tamil text-purple-700 dark:text-purple-300">{w.consider.join('、 ')}</span>
+                      <span className="inline-flex flex-wrap items-center gap-1.5 align-middle">
+                        {w.consider.map((c, j) => {
+                          const added = addedWords.has(c.trim());
+                          return (
+                            <span key={j} className="inline-flex items-center gap-1 rounded-md bg-purple-50 py-0.5 pl-2 pr-1 dark:bg-purple-900/30">
+                              <span className="font-tamil text-purple-700 dark:text-purple-300">{c}</span>
+                              <button
+                                type="button"
+                                onClick={() => addToLexicon(c)}
+                                disabled={added || addingWord === c.trim()}
+                                aria-label={added ? `${c} is in your lexicon` : `Add ${c} to your lexicon`}
+                                title={added ? 'In your lexicon' : 'Add to your lexicon'}
+                                className="rounded p-0.5 text-purple-500 hover:bg-purple-100 disabled:cursor-default dark:hover:bg-purple-800/40"
+                              >
+                                {added ? <Check className="h-3 w-3 text-green-600 dark:text-green-400" /> : <Plus className="h-3 w-3" />}
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </span>
                       <span className="block text-xs text-gray-500 dark:text-gray-400">{w.why}</span>
                     </li>
                   ))}

@@ -121,6 +121,21 @@ it('threads the draft, focus, and notes into the user message', async () => {
   expect(content).toContain('Does the pallavi carry?'); // notes
 });
 
+it('injects the personal lexicon and tells the model to prefer it for word ideas', async () => {
+  create.mockResolvedValueOnce(toolResponse(CRITIQUE));
+  await critiqueLyric(INPUT, { lexicon: ['எழில் — beauty [sangam]', 'நிலா [literary]'] });
+  const content = (create.mock.calls[0][0] as { messages: Array<{ content: string }> }).messages[0].content;
+  expect(content).toContain('எழில் — beauty [sangam]'); // the poet's own words are in the prompt
+  expect(content).toMatch(/prefer words from this lexicon/i);
+});
+
+it('omits the lexicon section entirely when none is provided', async () => {
+  create.mockResolvedValueOnce(toolResponse(CRITIQUE));
+  await critiqueLyric(INPUT);
+  const content = (create.mock.calls[0][0] as { messages: Array<{ content: string }> }).messages[0].content;
+  expect(content).not.toMatch(/personal lexicon/i);
+});
+
 it('instructs feedback-not-rewrite and stays apolitical in the system rule', async () => {
   create.mockResolvedValueOnce(toolResponse(CRITIQUE));
   await critiqueLyric(INPUT);

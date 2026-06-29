@@ -18,6 +18,8 @@ import { rateLimitedResponse, clientIp } from '@/lib/rate-limit';
 import { lyricCriticLimiter } from '@/lib/lyric-critic-rate-limit';
 import { lyricCritiqueInputSchema } from '@/services/ai/lyricCriticSchema';
 import { CriticJobRepository } from '@/infrastructure/database/CriticJobRepository';
+import { LexiconRepository } from '@/infrastructure/database/LexiconRepository';
+import { lexiconHints } from '@/lib/lexicon-hints';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { awsConfig } from '@/lib/aws-config';
 
@@ -51,6 +53,15 @@ export async function POST(request: NextRequest) {
 
   const jobId = `critic_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 
+  // Pull the poet's lexicon so the critique prefers their own vocabulary for
+  // wordIdeas. Best-effort: a lexicon read must NEVER block a critique.
+  let lexicon: string[] = [];
+  try {
+    lexicon = lexiconHints(await new LexiconRepository().findAll());
+  } catch (err) {
+    console.warn('[api/admin/compose/critique] lexicon fetch skipped:', err instanceof Error ? err.message : String(err));
+  }
+
   try {
     // 1. Record the job so the client has something to poll immediately.
     await new CriticJobRepository().create(jobId);
@@ -71,6 +82,7 @@ export async function POST(request: NextRequest) {
             lyrics: parsed.data.lyrics,
             focus: parsed.data.focus,
             ...(parsed.data.notes ? { notes: parsed.data.notes } : {}),
+            ...(lexicon.length ? { lexicon } : {}),
           })
         ),
       })

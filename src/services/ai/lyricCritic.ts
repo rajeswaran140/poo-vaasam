@@ -79,10 +79,17 @@ export interface LyricCritiqueOptions {
   model?: string;
   /** Abort signal — cancels the upstream call on client disconnect / supersede. */
   signal?: AbortSignal;
+  /**
+   * The poet's personal lexicon as compact hint lines (see lexicon-hints.ts).
+   * When present, the model is told to PREFER these words for wordIdeas — so the
+   * suggested alternatives come from the poet's own vocabulary, not generic AI
+   * synonyms. Server-provided (the route fetches it); never from the client.
+   */
+  lexicon?: string[];
 }
 
 /** Render the submitted draft into a compact instruction message for the model. */
-function buildCritiquePrompt(input: LyricCritiqueInput): string {
+export function buildCritiquePrompt(input: LyricCritiqueInput, lexicon?: string[]): string {
   const lines = [
     "Here is the poet's own draft lyric to critique:",
     "",
@@ -94,6 +101,13 @@ function buildCritiquePrompt(input: LyricCritiqueInput): string {
       `Weight your feedback toward these aspects: ${input.focus.join(", ")}.`,
     );
   if (input.notes) lines.push(`The poet's note: ${input.notes}`);
+  if (lexicon && lexicon.length) {
+    lines.push(
+      "",
+      "The poet keeps a personal lexicon of their own preferred Tamil words. When you offer wordIdeas alternatives, PREFER words from this lexicon wherever they genuinely fit (you may still suggest others, but favour the poet's own palette):",
+      lexicon.join("\n"),
+    );
+  }
   return lines.join("\n");
 }
 
@@ -109,7 +123,7 @@ export async function critiqueLyric(
   input: unknown,
   options: LyricCritiqueOptions = {},
 ): Promise<LyricCritiqueResult> {
-  const { model = DEFAULT_MODEL, signal } = options;
+  const { model = DEFAULT_MODEL, signal, lexicon } = options;
 
   // Validate here too (defence in depth — the route also validates), so the
   // service is safe to call standalone and never sends junk upstream.
@@ -152,7 +166,7 @@ export async function critiqueLyric(
         ],
         // Force the model to answer via the tool — guarantees structured args.
         tool_choice: { type: "tool", name: TOOL_NAME },
-        messages: [{ role: "user", content: buildCritiquePrompt(draft) }],
+        messages: [{ role: "user", content: buildCritiquePrompt(draft, lexicon) }],
       },
       { signal, timeout: REQUEST_TIMEOUT_MS },
     );

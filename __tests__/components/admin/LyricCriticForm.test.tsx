@@ -171,3 +171,29 @@ it('opens a saved draft and runs the "did I address the feedback?" loop', async 
   expect(await screen.findByText(/reworked 1 of 1 flagged line/i)).toBeInTheDocument();
   expect(screen.getByText(/all addressed/i)).toBeInTheDocument();
 });
+
+it('adds a suggested word idea to the lexicon in one click', async () => {
+  adminFetch.mockImplementation((url: string, init?: { method?: string }) => {
+    if (init?.method === 'POST' && url === '/api/admin/compose/critique')
+      return Promise.resolve(json(202, { success: true, jobId: 'critic_1' }));
+    if (url.startsWith('/api/admin/compose/critique/'))
+      return Promise.resolve(json(200, { success: true, status: 'done', result: CRITIQUE }));
+    if (init?.method === 'POST' && url === '/api/admin/lexicon')
+      return Promise.resolve(json(201, { success: true }));
+    return Promise.resolve(json(200, {}));
+  });
+  render(<LyricCriticForm />);
+  fireEvent.change(draftBox(), { target: { value: 'ஊருக்குப் போகணும்' } });
+  fireEvent.click(screen.getByRole('button', { name: /critique my draft/i }));
+
+  const addBtn = await screen.findByRole('button', { name: /add எழில் to your lexicon/i });
+  fireEvent.click(addBtn);
+
+  await waitFor(() =>
+    expect(adminFetch.mock.calls.some(([u, i]: [string, { method?: string }]) => u === '/api/admin/lexicon' && i?.method === 'POST')).toBe(true)
+  );
+  const lexCall = adminFetch.mock.calls.find(([u, i]: [string, { method?: string }]) => u === '/api/admin/lexicon' && i?.method === 'POST');
+  expect(JSON.parse(lexCall[1].body)).toMatchObject({ word: 'எழில்', register: 'literary' });
+  // The control flips to the "already in lexicon" state.
+  expect(await screen.findByRole('button', { name: /எழில் is in your lexicon/i })).toBeInTheDocument();
+});
