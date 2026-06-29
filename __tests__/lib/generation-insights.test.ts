@@ -125,4 +125,24 @@ describe('computeInsights', () => {
     expect(r.genome).toEqual([]);
     expect(r.hasEnoughData).toBe(true);
   });
+
+  it('contrasts measured audio (keepers vs rejects) and recommends on it', () => {
+    const metrics = (lufs: number, crest: number) => ({ durationSec: 60, peakDbfs: -1, rmsDbfs: -1 - crest, crestDb: crest, clipPct: 0, lufsIntegrated: lufs });
+    const r = computeInsights([
+      ...many(6, { verdict: 'success', audioMetrics: metrics(-11, 10) }), // keepers: dynamic
+      ...many(4, { verdict: 'failed', audioMetrics: metrics(-7, 4) }),    // rejects: hot + squashed
+    ]);
+    expect(r.audioContrast.crest.success).toBe(10);
+    expect(r.audioContrast.crest.failed).toBe(4);
+    expect(r.audioContrast.crest.gap).toBe(6);
+    expect(r.audioContrast.lufs.success).toBe(-11);
+    expect(r.recommendations.join(' ')).toMatch(/breathe more|crest/i);
+    expect(r.recommendations.join(' ')).toMatch(/LUFS/);
+  });
+
+  it('leaves audioContrast null when no take has measurements', () => {
+    const r = computeInsights(many(MIN_TOTAL, { verdict: 'success' }));
+    expect(r.audioContrast.lufs.success).toBeNull();
+    expect(r.audioContrast.crest.gap).toBeNull();
+  });
 });

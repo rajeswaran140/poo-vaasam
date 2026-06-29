@@ -47,6 +47,19 @@ it('create() stores the generation as a child of its brief + a GSI1 feed entry',
   expect(item.scores).toEqual({ melody: 8, vocals: 3 });
 });
 
+it('round-trips audioMetrics through store and read', async () => {
+  const m = { durationSec: 60, peakDbfs: -1, rmsDbfs: -12, crestDb: 11, clipPct: 0, lufsIntegrated: -10.5 };
+  ops.put.mockResolvedValueOnce({});
+  await new GenerationRepository().create({ ...input, audioMetrics: m });
+  expect(ops.put.mock.calls[0][0].audioMetrics).toEqual(m);
+
+  ops.query.mockResolvedValueOnce({
+    Items: [{ id: 'gen_9', briefId: 'brief_42', verdict: 'failed', audioMetrics: m, scores: {}, settings: {} }],
+  });
+  const [read] = await new GenerationRepository().listByBrief('brief_42');
+  expect(read.audioMetrics).toEqual(m);
+});
+
 it('listByBrief() queries the brief partition for GEN# items, newest-first', async () => {
   ops.query.mockResolvedValueOnce({ Items: [{ id: 'gen_1', briefId: 'brief_42', verdict: 'failed', notes: 'x' }] });
   const rows = await new GenerationRepository().listByBrief('brief_42');
@@ -83,7 +96,7 @@ it('listAll() pages through LastEvaluatedKey until the feed is exhausted', async
     .mockResolvedValueOnce({ Items: [{ id: 'gen_1', briefId: 'b1', verdict: 'failed' }], LastEvaluatedKey: { GSI1PK: 'GENERATION#ALL', GSI1SK: 'k1' } })
     .mockResolvedValueOnce({ Items: [{ id: 'gen_2', briefId: 'b2', verdict: 'success' }] }); // no cursor → stop
 
-  const rows = await new GenerationRepository().listAll();
+  const { items, truncated } = await new GenerationRepository().listAll();
 
   expect(ops.query).toHaveBeenCalledTimes(2);
   // Page 1 starts with no cursor; page 2 resumes from page 1's LastEvaluatedKey.
@@ -91,16 +104,18 @@ it('listAll() pages through LastEvaluatedKey until the feed is exhausted', async
   expect(ops.query.mock.calls[1][0].exclusiveStartKey).toEqual({ GSI1PK: 'GENERATION#ALL', GSI1SK: 'k1' });
   expect(ops.query.mock.calls[0][0].indexName).toBe('GSI1');
   expect(ops.query.mock.calls[0][0].scanIndexForward).toBe(false);
-  expect(rows.map((r) => r.id)).toEqual(['gen_1', 'gen_2']);
+  expect(items.map((r) => r.id)).toEqual(['gen_1', 'gen_2']);
+  expect(truncated).toBe(false); // feed exhausted, nothing dropped
 });
 
-it('listAll() stops at the safety cap even if more pages remain', async () => {
+it('listAll() stops at the safety cap and flags truncation', async () => {
   // Every page returns one item AND a cursor — would loop forever without the cap.
   ops.query.mockResolvedValue({ Items: [{ id: 'gen_x', briefId: 'b', verdict: 'failed' }], LastEvaluatedKey: { k: 'more' } });
 
-  const rows = await new GenerationRepository().listAll({ max: 3 });
+  const { items, truncated } = await new GenerationRepository().listAll({ max: 3 });
 
-  expect(rows).toHaveLength(3);
+  expect(items).toHaveLength(3);
+  expect(truncated).toBe(true); // capped → caller must say "showing first N"
   expect(ops.query.mock.calls.length).toBeLessThanOrEqual(3);
 });
 

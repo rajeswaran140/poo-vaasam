@@ -115,11 +115,17 @@ describe('GET', () => {
   });
 
   it('returns the WHOLE paged feed (not the capped slice) when ?all=true', async () => {
-    mockListAll.mockResolvedValueOnce([{ id: 'gen_1' }, { id: 'gen_2' }]);
+    mockListAll.mockResolvedValueOnce({ items: [{ id: 'gen_1' }, { id: 'gen_2' }], truncated: false });
     const res = await GET(getReq('?all=true'));
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ success: true, data: [{ id: 'gen_1' }, { id: 'gen_2' }] });
+    expect(await res.json()).toMatchObject({ success: true, data: [{ id: 'gen_1' }, { id: 'gen_2' }], truncated: false });
     expect(mockListAll).toHaveBeenCalledTimes(1);
     expect(mockList).not.toHaveBeenCalled();
+  });
+
+  it('surfaces truncated:true when the all-feed hit the cap', async () => {
+    mockListAll.mockResolvedValueOnce({ items: [{ id: 'gen_1' }], truncated: true });
+    const res = await GET(getReq('?all=true'));
+    expect(await res.json()).toMatchObject({ success: true, truncated: true });
   });
 });

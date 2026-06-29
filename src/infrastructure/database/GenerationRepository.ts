@@ -67,8 +67,10 @@ export class GenerationRepository {
    * Every generation across all briefs, newest-first — pages through GSI1 so the
    * insights/genome layer sees the WHOLE log, not a single-page slice (the
    * dataset is the point). `max` is a runaway safety cap, not a feature limit.
+   * Returns `truncated: true` when the cap was hit, so the UI can say so honestly
+   * rather than letting the insights silently understate the dataset.
    */
-  async listAll(options?: { max?: number }): Promise<Generation[]> {
+  async listAll(options?: { max?: number }): Promise<{ items: Generation[]; truncated: boolean }> {
     const max = options?.max ?? 5000;
     const items: Generation[] = [];
     let exclusiveStartKey: Record<string, unknown> | undefined;
@@ -83,11 +85,11 @@ export class GenerationRepository {
         });
         for (const item of response.Items ?? []) {
           items.push(this.fromDBItem(item));
-          if (items.length >= max) return items;
+          if (items.length >= max) return { items, truncated: true };
         }
         exclusiveStartKey = response.LastEvaluatedKey as Record<string, unknown> | undefined;
       } while (exclusiveStartKey);
-      return items;
+      return { items, truncated: false };
     } catch (error) {
       handleDynamoDBError(error);
     }
@@ -128,6 +130,7 @@ export class GenerationRepository {
       verdict: item.verdict,
       failureReason: item.failureReason,
       notes: item.notes ?? '',
+      audioMetrics: item.audioMetrics ?? null,
       embedding: item.embedding ?? null,
     }) as Generation;
 }

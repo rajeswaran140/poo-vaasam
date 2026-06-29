@@ -43,6 +43,12 @@ it('returns 400 when briefId is missing (cannot address the key)', async () => {
   expect(mockDelete).not.toHaveBeenCalled();
 });
 
+it('rejects a malformed generation id (no silent no-op delete)', async () => {
+  const res = await DELETE(req('?briefId=b1'), ctx('not-a-gen-id'));
+  expect(res.status).toBe(400);
+  expect(mockDelete).not.toHaveBeenCalled();
+});
+
 it('deletes with the brief + generation id and returns 200', async () => {
   const res = await DELETE(req('?briefId=b1'), ctx('gen_1'));
   expect(res.status).toBe(200);

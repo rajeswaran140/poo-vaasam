@@ -20,8 +20,11 @@ import {
   FAILURE_REASONS,
   type Generation,
   type GenerationVerdict,
+  type AudioMetricsRecord,
 } from '@/types/generation';
 import { computeInsights, type InsightsReport } from '@/lib/generation-insights';
+import { measureAudioFromUrl } from '@/lib/measure-audio-url';
+import { streamingNormVerdict, type LoudnessStatus } from '@/lib/loudness-targets';
 import type { SavedBrief } from '@/types/brief';
 
 function briefLabel(b: SavedBrief): string {
@@ -46,6 +49,9 @@ export function MusicLab() {
   // The cross-brief feed of ALL logged generations — powers the insights panel,
   // independent of which brief is selected.
   const [allGenerations, setAllGenerations] = useState<Generation[]>([]);
+  // True when the insights feed hit the server cap — insights then cover only
+  // the most-recent slice, so we say so instead of understating silently.
+  const [truncated, setTruncated] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -63,7 +69,10 @@ export function MusicLab() {
         const gensBody = await gensRes.json().catch(() => ({}));
         if (alive) {
           setBriefs(briefsBody.data ?? []);
-          if (gensRes.ok && gensBody.success) setAllGenerations(gensBody.data ?? []);
+          if (gensRes.ok && gensBody.success) {
+            setAllGenerations(gensBody.data ?? []);
+            setTruncated(Boolean(gensBody.truncated));
+          }
         }
       } catch (err) {
         if (alive) setError(err instanceof Error ? err.message : String(err));
@@ -88,17 +97,28 @@ export function MusicLab() {
   }, [selectedId]);
 
   const handleDelete = useCallback(async (gen: Generation) => {
-    // Optimistic: drop from both lists, restore on failure.
-    setGenerations((prev) => prev.filter((g) => g.id !== gen.id));
-    setAllGenerations((prev) => prev.filter((g) => g.id !== gen.id));
+    // Optimistic: drop from both lists, remembering each original index so a
+    // failed delete restores the card to its place (not jammed at the top).
+    const restore = (idx: number, prev: Generation[]) =>
+      idx < 0 ? [gen, ...prev] : [...prev.slice(0, idx), gen, ...prev.slice(idx)];
+    let genIdx = -1;
+    let allIdx = -1;
+    setGenerations((prev) => {
+      genIdx = prev.findIndex((g) => g.id === gen.id);
+      return prev.filter((g) => g.id !== gen.id);
+    });
+    setAllGenerations((prev) => {
+      allIdx = prev.findIndex((g) => g.id === gen.id);
+      return prev.filter((g) => g.id !== gen.id);
+    });
     try {
       const res = await adminFetch(`/api/admin/generations/${gen.id}?briefId=${encodeURIComponent(gen.briefId)}`, { method: 'DELETE' });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.success) throw new Error(body.error || `HTTP ${res.status}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
-      setGenerations((prev) => [gen, ...prev]);
-      setAllGenerations((prev) => [gen, ...prev]);
+      setGenerations((prev) => restore(genIdx, prev));
+      setAllGenerations((prev) => restore(allIdx, prev));
     }
   }, []);
 
@@ -139,6 +159,12 @@ export function MusicLab() {
           voice combinations actually work, and why the rest don&apos;t.
         </p>
       </header>
+
+      {truncated && (
+        <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 dark:border-amber-700/60 dark:bg-amber-900/20 dark:text-amber-200">
+          Showing the most recent {allGenerations.length.toLocaleString()} generations — older ones aren&apos;t included in these stats.
+        </div>
+      )}
 
       {/* Insights — derived from ALL logged generations */}
       <InsightsPanel report={insights} />
@@ -253,6 +279,15 @@ function InsightsPanel({ report: r }: { report: InsightsReport }) {
               <p>{scoredAxes.map((a) => `${a} ${r.scoreContrast[a].success?.toFixed(1) ?? '—'}/${r.scoreContrast[a].failed?.toFixed(1) ?? '—'}`).join(' · ')}</p>
             </div>
           )}
+          {(r.audioContrast.lufs.success != null || r.audioContrast.crest.success != null) && (
+            <div>
+              <p className="mb-1 font-semibold uppercase tracking-wide text-gray-400">Measured audio — keepers / rejects</p>
+              <p>
+                {r.audioContrast.lufs.success != null && `LUFS ${r.audioContrast.lufs.success.toFixed(1)}/${r.audioContrast.lufs.failed?.toFixed(1) ?? '—'}`}
+                {r.audioContrast.crest.success != null && ` · crest ${r.audioContrast.crest.success.toFixed(1)}/${r.audioContrast.crest.failed?.toFixed(1) ?? '—'} dB`}
+              </p>
+            </div>
+          )}
         </div>
       )}
     </section>
@@ -301,6 +336,8 @@ function GenerationCard({ g, onDelete }: { g: Generation; onDelete: (g: Generati
         </div>
       )}
 
+      {g.audioMetrics && <AudioMetricsRow m={g.audioMetrics} />}
+
       {g.notes && <p className="mt-2 whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">{g.notes}</p>}
       {g.audioUrl && (
         <audio controls preload="none" src={g.audioUrl} className="mt-3 w-full">
@@ -308,6 +345,31 @@ function GenerationCard({ g, onDelete }: { g: Generation; onDelete: (g: Generati
         </audio>
       )}
     </li>
+  );
+}
+
+const STATUS_BADGE: Record<LoudnessStatus, string> = {
+  ok: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300',
+  hot: 'bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300',
+  quiet: 'bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-300',
+};
+
+/** Measured sound-engineering metrics + streaming-loudness compliance. */
+function AudioMetricsRow({ m }: { m: AudioMetricsRecord }) {
+  const v = m.lufsIntegrated != null ? streamingNormVerdict(m.lufsIntegrated) : null;
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-300">
+      <span className="font-semibold uppercase tracking-wide text-gray-400">Measured</span>
+      {m.lufsIntegrated != null && <span><strong className="tabular-nums">{m.lufsIntegrated}</strong> LUFS</span>}
+      <span>peak <strong className="tabular-nums">{m.peakDbfs}</strong> dBFS</span>
+      <span>crest <strong className="tabular-nums">{m.crestDb}</strong> dB</span>
+      {m.clipPct > 0 && <span className="text-red-600 dark:text-red-400">clip {m.clipPct}%</span>}
+      {v && (
+        <span className={`rounded-full px-2 py-0.5 font-medium ${STATUS_BADGE[v.status]}`} title={v.label}>
+          {v.status === 'ok' ? 'on target (−14)' : v.status === 'hot' ? `+${v.deltaLu} LU hot` : `${v.deltaLu} LU quiet`}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -336,6 +398,7 @@ function LogGenerationForm({ brief, onSaved }: { brief: SavedBrief; onSaved: (g:
   const [failureReason, setFailureReason] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [measuring, setMeasuring] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   // Reset the form when the brief changes (don't leak one brief's draft into another).
@@ -363,6 +426,16 @@ function LogGenerationForm({ brief, onSaved }: { brief: SavedBrief; onSaved: (g:
       styleInfluence: numOrUndef(styleInfluence),
       engineModel: engineModel.trim() || undefined,
     };
+
+    // Measure the audio's loudness/dynamics/clipping (best-effort: CORS or a
+    // decode failure just logs the take without metrics).
+    let audioMetrics: AudioMetricsRecord | null = null;
+    if (audioUrl) {
+      setMeasuring(true);
+      audioMetrics = await measureAudioFromUrl(audioUrl);
+      setMeasuring(false);
+    }
+
     const payload = {
       briefId: brief.id,
       engine,
@@ -374,6 +447,7 @@ function LogGenerationForm({ brief, onSaved }: { brief: SavedBrief; onSaved: (g:
       // A success carries no failure reason (server enforces this too).
       failureReason: verdict === 'success' ? undefined : failureReason || undefined,
       notes: notes.trim(),
+      ...(audioMetrics ? { audioMetrics } : {}),
     };
 
     try {
@@ -497,7 +571,7 @@ function LogGenerationForm({ brief, onSaved }: { brief: SavedBrief; onSaved: (g:
       <div className="mt-4">
         <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-60">
           {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Plus className="h-4 w-4" aria-hidden />}
-          {saving ? 'Saving…' : 'Log generation'}
+          {measuring ? 'Analyzing audio…' : saving ? 'Saving…' : 'Log generation'}
         </button>
       </div>
     </form>

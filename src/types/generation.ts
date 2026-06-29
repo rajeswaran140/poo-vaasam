@@ -47,6 +47,22 @@ export const generationScoresSchema = z
   })
   .default({});
 
+/**
+ * Objective audio measurements for the take (mirrors AudioMetrics in
+ * src/lib/audio-metrics.ts — kept here as the wire/storage contract). Measured
+ * client-side from the decoded audio and submitted with the log; all finite
+ * dBFS/LU values, with lufsIntegrated null when the audio was below gate.
+ */
+export const audioMetricsSchema = z.object({
+  durationSec: z.number().nonnegative(),
+  peakDbfs: z.number(),
+  rmsDbfs: z.number(),
+  crestDb: z.number(),
+  clipPct: z.number().min(0).max(100),
+  lufsIntegrated: z.number().nullable(),
+});
+export type AudioMetricsRecord = z.infer<typeof audioMetricsSchema>;
+
 export const generationSettingsSchema = z
   .object({
     /** SUNO "weirdness" knob (0–100). */
@@ -79,6 +95,8 @@ export const createGenerationSchema = z
     verdict: z.enum(GENERATION_VERDICTS),
     failureReason: z.enum(FAILURE_REASONS).optional(),
     notes: z.string().max(4000).default(''),
+    /** Objective audio measurements, when the take's audio could be analysed. */
+    audioMetrics: audioMetricsSchema.nullish().transform((m) => m ?? null),
   })
   // A success has no failure reason — keeps the dataset coherent.
   .refine((d) => !(d.verdict === 'success' && d.failureReason), {

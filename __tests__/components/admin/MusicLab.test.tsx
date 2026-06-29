@@ -159,3 +159,53 @@ it('deletes a logged generation (optimistic remove + DELETE call)', async () => 
   await waitFor(() => expect(screen.queryByText('remove me')).not.toBeInTheDocument());
   confirmSpy.mockRestore();
 });
+
+it('shows measured audio metrics + a streaming-loudness badge on a take', async () => {
+  routeFetch((url, opts) => {
+    if (url.includes('briefId=brief_1') && opts?.method !== 'POST') {
+      return ok([{
+        id: 'gen_m', briefId: 'brief_1', verdict: 'success', engine: 'suno', scores: {}, settings: {},
+        createdAt: '2026-06-29T00:00:00Z',
+        audioMetrics: { durationSec: 180, peakDbfs: -0.8, rmsDbfs: -12, crestDb: 11.2, clipPct: 0, lufsIntegrated: -11 },
+      }]);
+    }
+    return undefined;
+  });
+  render(<MusicLab />);
+  fireEvent.change(await screen.findByLabelText('Brief'), { target: { value: 'brief_1' } });
+  expect(await screen.findByText(/LUFS/)).toBeInTheDocument();
+  expect(screen.getByText(/11\.2/)).toBeInTheDocument();          // crest
+  expect(screen.getByText(/\+3 LU hot/)).toBeInTheDocument();     // −11 vs −14 norm
+});
+
+it('flags a truncated insights feed so the stats aren’t silently understated', async () => {
+  routeFetch((url, opts) => {
+    if (url.startsWith('/api/admin/generations') && (!opts || opts.method !== 'POST') && !url.includes('briefId')) {
+      return ok([{ id: 's0', briefId: 'brief_1', verdict: 'success', engine: 'suno', scores: {}, settings: {} }], { truncated: true });
+    }
+    return undefined;
+  });
+  render(<MusicLab />);
+  expect(await screen.findByText(/Showing the most recent/i)).toBeInTheDocument();
+});
+
+it('restores the card (and shows an error) when the delete fails', async () => {
+  const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
+  routeFetch((url, opts) => {
+    if (opts?.method === 'DELETE') return { ok: false, status: 502, json: async () => ({ success: false, error: 'delete failed' }) };
+    if (url.includes('briefId=brief_1') && opts?.method !== 'POST') {
+      return ok([{ id: 'gen_keep', briefId: 'brief_1', verdict: 'failed', engine: 'suno', scores: {}, settings: {}, notes: 'keep me', createdAt: '2026-06-25T00:00:00Z' }]);
+    }
+    return undefined;
+  });
+
+  render(<MusicLab />);
+  fireEvent.change(await screen.findByLabelText('Brief'), { target: { value: 'brief_1' } });
+  expect(await screen.findByText('keep me')).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: /delete generation/i }));
+  // Failed delete → the error surfaces and the card is restored, not lost.
+  expect(await screen.findByRole('alert')).toHaveTextContent(/delete failed/i);
+  expect(screen.getByText('keep me')).toBeInTheDocument();
+  confirmSpy.mockRestore();
+});

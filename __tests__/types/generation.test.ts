@@ -17,7 +17,26 @@ describe('createGenerationSchema', () => {
       expect(r.data.scores).toEqual({}); // default scores
       expect(r.data.notes).toBe(''); // default notes
       expect(r.data.audioUrl).toBeUndefined();
+      expect(r.data.audioMetrics).toBeNull(); // absent → null
     }
+  });
+
+  it('accepts measured audioMetrics', () => {
+    const r = createGenerationSchema.safeParse({
+      ...base,
+      audioMetrics: { durationSec: 60, peakDbfs: -1.2, rmsDbfs: -12.3, crestDb: 11.1, clipPct: 0, lufsIntegrated: -10.4 },
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.audioMetrics?.lufsIntegrated).toBe(-10.4);
+  });
+
+  it('allows a null lufsIntegrated (below-gate audio) but rejects a bad clipPct', () => {
+    expect(createGenerationSchema.safeParse({
+      ...base, audioMetrics: { durationSec: 1, peakDbfs: -3, rmsDbfs: -9, crestDb: 6, clipPct: 0, lufsIntegrated: null },
+    }).success).toBe(true);
+    expect(createGenerationSchema.safeParse({
+      ...base, audioMetrics: { durationSec: 1, peakDbfs: -3, rmsDbfs: -9, crestDb: 6, clipPct: 150, lufsIntegrated: null },
+    }).success).toBe(false);
   });
 
   it('requires a briefId', () => {

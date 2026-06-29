@@ -13,8 +13,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
 import { GenerationRepository } from '@/infrastructure/database/GenerationRepository';
 import { BriefRepository } from '@/infrastructure/database/BriefRepository';
-import { createGenerationSchema } from '@/types/generation';
+import { createGenerationSchema, type Generation } from '@/types/generation';
 
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
@@ -63,12 +64,18 @@ export async function GET(request: NextRequest) {
     const repo = new GenerationRepository();
     // ?briefId → one brief's attempts; ?all → the full paged feed (insights need
     // the whole dataset, not a 200-row slice); otherwise the capped feed.
-    const items = briefId
-      ? await repo.listByBrief(briefId)
-      : all
-        ? await repo.listAll()
-        : await repo.list({ limit });
-    return NextResponse.json({ success: true, data: items });
+    let data: Generation[];
+    let truncated = false;
+    if (briefId) {
+      data = await repo.listByBrief(briefId);
+    } else if (all) {
+      const res = await repo.listAll();
+      data = res.items;
+      truncated = res.truncated; // surfaced so the insights panel can flag a capped dataset
+    } else {
+      data = await repo.list({ limit });
+    }
+    return NextResponse.json({ success: true, data, truncated });
   } catch (err) {
     console.error('[api/admin/generations] list failed:', err instanceof Error ? err.message : String(err));
     return NextResponse.json({ success: false, error: 'Failed to list generations.' }, { status: 502 });

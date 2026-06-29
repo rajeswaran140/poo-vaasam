@@ -11,6 +11,7 @@
 
 import type { Generation, GenerationVerdict } from '@/types/generation';
 import type { ComposerAnalysis } from '@/services/ai/composerSchema';
+import { streamingNormVerdict } from '@/lib/loudness-targets';
 
 /** Minimum logged generations before we surface recommendations at all. */
 export const MIN_TOTAL = 8;
@@ -50,6 +51,8 @@ export interface InsightsReport {
   byEngine: GroupRate[];
   byStyle: GroupRate[];
   settingsContrast: { weirdness: AvgContrast; styleInfluence: AvgContrast };
+  /** Measured audio (keepers vs rejects): loudness (LUFS), dynamics (crest), clipping. */
+  audioContrast: { lufs: AvgContrast; crest: AvgContrast; clip: AvgContrast };
   /** Success rate grouped by the brief's dominant emotion / lead raga / top voice. */
   genome: { dimension: 'emotion' | 'raga' | 'voice'; value: string; total: number; success: number; rate: number; reliable: boolean }[];
   /** Plain-language, sample-gated takeaways. Always at least one entry. */
@@ -120,6 +123,12 @@ export function computeInsights(
     styleInfluence: contrast(gens, (g) => g.settings?.styleInfluence),
   };
 
+  const audioContrast = {
+    lufs: contrast(gens, (g) => g.audioMetrics?.lufsIntegrated ?? undefined),
+    crest: contrast(gens, (g) => g.audioMetrics?.crestDb),
+    clip: contrast(gens, (g) => g.audioMetrics?.clipPct),
+  };
+
   // Genome: roll the brief's dominant emotion / lead raga / top voice onto each
   // generation, then rate-by-value (keeps only buckets that actually appear).
   const genomeMap = new Map<string, { dimension: 'emotion' | 'raga' | 'voice'; value: string; total: number; success: number }>();
@@ -146,11 +155,11 @@ export function computeInsights(
 
   const hasEnoughData = total >= MIN_TOTAL;
   const recommendations = buildRecommendations({
-    total, byVerdict, successRate, scoreContrast, failureReasons, byStyle, byEngine, settingsContrast, genome, hasEnoughData,
+    total, byVerdict, successRate, scoreContrast, failureReasons, byStyle, byEngine, settingsContrast, audioContrast, genome, hasEnoughData,
   });
 
   return {
-    total, byVerdict, successRate, scoreContrast, failureReasons,
+    total, byVerdict, successRate, scoreContrast, failureReasons, audioContrast,
     byEngine, byStyle, settingsContrast, genome, recommendations, hasEnoughData,
   };
 }
@@ -194,6 +203,18 @@ function buildRecommendations(r: Omit<InsightsReport, 'recommendations'>): strin
 
   const bestGenome = r.genome.find((x) => x.reliable);
   if (bestGenome) out.push(`${bestGenome.dimension} "${bestGenome.value}" lands ${pct(bestGenome.rate)} of the time (${bestGenome.success}/${bestGenome.total}).`);
+
+  // Measured audio: dynamics (crest) and loudness (LUFS vs the streaming norm).
+  const crest = r.audioContrast.crest;
+  if (crest.gap != null && Math.abs(crest.gap) >= 1.5) {
+    out.push(crest.gap > 0
+      ? `Keepers breathe more — +${crest.gap.toFixed(1)} dB crest (dynamics) over rejects; the squashed takes are losing.`
+      : `Rejects are the more dynamic ones (${Math.abs(crest.gap).toFixed(1)} dB) — compression isn't what separates your wins.`);
+  }
+  if (r.audioContrast.lufs.success != null) {
+    const v = streamingNormVerdict(r.audioContrast.lufs.success);
+    out.push(`Keepers average ${r.audioContrast.lufs.success.toFixed(1)} LUFS — ${v.label}.`);
+  }
 
   return out;
 }

@@ -8,7 +8,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
 import { GenerationRepository } from '@/infrastructure/database/GenerationRepository';
 
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+// Generation ids are minted as `gen_<ts>_<rand>` — reject anything else rather
+// than issuing a silent no-op delete against a malformed/foreign key.
+const validId = (id: string) => /^gen_[a-z0-9_]+$/i.test(id);
 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -18,6 +23,9 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   }
 
   const { id } = await params;
+  if (!validId(id)) {
+    return NextResponse.json({ success: false, error: 'Bad generation id' }, { status: 400 });
+  }
   const briefId = request.nextUrl.searchParams.get('briefId');
   if (!briefId) {
     return NextResponse.json({ success: false, error: 'briefId query param is required' }, { status: 400 });
