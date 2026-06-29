@@ -8,6 +8,9 @@
 const adminFetch = jest.fn();
 jest.mock('@/lib/client-auth', () => ({ adminFetch: (...a: unknown[]) => adminFetch(...a) }));
 
+const writeText = jest.fn().mockResolvedValue(undefined);
+Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { LyricCriticForm } from '@/components/admin/LyricCriticForm';
 
@@ -35,10 +38,26 @@ function wireHappyPath() {
 
 beforeEach(() => {
   adminFetch.mockReset();
+  writeText.mockClear();
   wireHappyPath();
 });
 
 const draftBox = () => screen.getByPlaceholderText(/உங்கள் சொந்த/);
+
+it('copies the critique as Markdown', async () => {
+  render(<LyricCriticForm />);
+  fireEvent.change(draftBox(), { target: { value: 'ஊருக்குப் போகணும்' } });
+  fireEvent.click(screen.getByRole('button', { name: /critique my draft/i }));
+  await screen.findByText(/tender opening/i); // critique rendered
+
+  fireEvent.click(screen.getByRole('button', { name: /copy markdown/i }));
+  await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+  const md = writeText.mock.calls[0][0] as string;
+  expect(md).toContain('# Lyric Critic — feedback');
+  expect(md).toContain('tender opening'); // overall
+  expect(md).toContain('மண்ணை தொடணும்'); // slack line, verbatim
+  expect(await screen.findByText('Copied')).toBeInTheDocument(); // button confirms (after async write)
+});
 
 it('disables "Critique my draft" until a draft is entered', () => {
   render(<LyricCriticForm />);

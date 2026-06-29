@@ -8,8 +8,10 @@
  */
 
 import { useState, useRef, useEffect } from 'react';
-import { SearchCheck, MessageCircleQuestion } from 'lucide-react';
+import { SearchCheck, MessageCircleQuestion, Copy, Check, Download } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
+import { critiqueToMarkdown } from '@/lib/critique-markdown';
+import { exportFilename } from '@/lib/prompt-export';
 import type { LyricCritique, CritiqueAspect } from '@/services/ai/lyricCriticSchema';
 
 const ASPECTS: CritiqueAspect[] = ['meter', 'imagery', 'vocabulary', 'emotion', 'originality', 'structure'];
@@ -37,6 +39,7 @@ export function LyricCriticForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<LyricCritique | null>(null);
+  const [copied, setCopied] = useState(false);
 
   // Abort an in-flight critique on unmount / supersede (the job is ~50-70s) and
   // guard against setState-after-unmount.
@@ -54,6 +57,28 @@ export function LyricCriticForm() {
 
   function toggleFocus(a: CritiqueAspect) {
     setFocus((prev) => (prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]));
+  }
+
+  async function copyMarkdown() {
+    if (!result) return;
+    try {
+      await navigator.clipboard.writeText(critiqueToMarkdown(result));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard unavailable — ignore */
+    }
+  }
+
+  function downloadMarkdown() {
+    if (!result) return;
+    const blob = new Blob([critiqueToMarkdown(result)], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = exportFilename('lyric-critique', 'md');
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   async function handleSubmit() {
@@ -202,6 +227,23 @@ export function LyricCriticForm() {
           </p>
         ) : (
           <div className="space-y-5">
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={copyMarkdown}
+                className="flex items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
+                {copied ? 'Copied' : 'Copy Markdown'}
+              </button>
+              <button
+                type="button"
+                onClick={downloadMarkdown}
+                className="flex items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                <Download className="h-3.5 w-3.5" /> .md
+              </button>
+            </div>
             <p className="text-sm text-gray-800 dark:text-gray-200">{result.overall}</p>
 
             {result.strengths.length > 0 && (
