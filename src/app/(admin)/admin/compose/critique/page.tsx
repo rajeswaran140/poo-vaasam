@@ -22,6 +22,11 @@ export default function AdminLyricCriticPage() {
           slack (with the reason, <strong>never a rewrite</strong>), richer-word ideas to weigh, and questions to push
           your thinking. A sparring partner for your craft: the words stay yours.
         </p>
+        <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
+          A deep read runs in the background — give it <strong>a minute or two</strong> and the feedback appears when
+          it&rsquo;s ready (it&rsquo;s safe to keep this tab open). It&rsquo;s a fluent but fallible reader: weigh its
+          calls against your own ear — you&rsquo;re the poet.
+        </p>
       </header>
 
       {!aiReady ? (

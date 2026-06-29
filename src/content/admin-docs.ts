@@ -190,6 +190,44 @@ A working catalogue of instruments to draw on when writing the **style prompt** 
 Tie the palette to the brief's **emotion + raga + voice** — the instruments are the colour on top of that structure. Log which palettes land in **Music Lab** so your go-to ensembles become data.
 `,
   },
+  {
+    slug: 'lyric-critic-coach-draft',
+    title: 'Lyric Critic — coach your own draft',
+    category: 'Composer',
+    updatedAt: '2026-06-29',
+    body: `# Lyric Critic — coach your own draft
+
+The **Lyric Critic** (\`/admin/compose/critique\`) reads a lyric **you wrote** and gives honest, specific feedback to sharpen it. It is the *augment-your-craft* tool: it **never writes or rewrites** your lyric — it coaches. The words stay yours.
+
+> Not the same as the **✨ AI critic** inside Music Director. That one vets a *SUNO style prompt* before you spend a credit. This one critiques *your Tamil lyric* as a piece of writing.
+
+## When to use it
+On a draft you're still shaping — before you take it into Music Director / SUNO. Run a song you know cold first, to calibrate whether its eye is useful to you.
+
+## How to use it
+1. Open **Lyric Critic** in the sidebar.
+2. Paste **your own draft** into the box (Tamil; section tags like \`பல்லவி\` / \`சரணம்\` help it reason about structure but aren't required).
+3. *(Optional)* Tap **focus** chips — meter, imagery, vocabulary, emotion, originality, structure — to weight the read, and add a **note** for anything specific you want looked at.
+4. Click **Critique my draft**.
+5. **Give it a minute or two.** A full-ballad critique is a deep read that runs in the background (~1–2 min) — the feedback appears when it's ready. Keep the tab open; it polls for you. (It runs off-platform precisely so a long read can't time out.)
+
+## What you get back
+- **Overall** — an honest few-sentence read of the draft as a whole.
+- **Strengths** — what's already working, and the lines that earn it.
+- **Lines that go slack** — specific lines **quoted verbatim** + *why* each weakens the song. Never a replacement line; the fix is yours to make.
+- **Word ideas** — alternative Tamil words to *consider* (a thesaurus, not an edit).
+- **Questions** — sharp prompts to push your own thinking.
+
+## How to read it (important)
+It's a **sparring partner, not a judge** — fluent but fallible:
+- Treat confident claims — especially **etymology** or "this is a cliché" — as *"check this,"* not verdicts. You know the language and your own voice better than it does.
+- A flagged "emotional plateau" may be an intentional, steady mood — your call.
+- The highest-value notes are usually the **meter / repeated-ending** patterns (hard to spot in your own work) and the question *"is there one image that could only belong to this song?"*
+
+## If it errors
+On a failure it shows a message and never breaks the page — just try again. A persistent failure usually means the AI key is unset (the page shows an "AI not configured" banner when so).
+`,
+  },
 ];
 
 /** Docs grouped by category, in registry order, for the sidebar. */
