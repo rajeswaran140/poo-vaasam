@@ -67,7 +67,7 @@ it('returns triaged comments (unanswered first) + summary', async () => {
   expect(res.status).toBe(200);
   const body = await res.json();
   expect(body.comments.map((c: comments.CommentItem) => c.id)).toEqual(['new', 'old', 'answered']);
-  expect(body.summary).toEqual({ total: 3, needsReply: 2, fromViewers: 3 });
+  expect(body.summary).toEqual({ total: 3, needsReply: 2, fromViewers: 3, flagged: 0 });
 });
 
 it('502s on an upstream failure (never throws)', async () => {

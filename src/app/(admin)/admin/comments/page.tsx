@@ -20,6 +20,14 @@ interface Payload {
   error?: string;
 }
 
+type Filter = 'all' | 'needsReply' | 'flagged';
+
+const REASON_LABEL: Record<string, string> = {
+  link: 'link',
+  contact: 'contact info',
+  promo: 'self-promo',
+};
+
 function relTime(iso: string): string {
   const t = Date.parse(iso);
   if (!Number.isFinite(t)) return '';
@@ -34,6 +42,7 @@ export default function CommentsPage() {
   const [payload, setPayload] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [filter, setFilter] = useState<Filter>('all');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -52,13 +61,25 @@ export default function CommentsPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  const all = payload?.comments ?? [];
+  const visible =
+    filter === 'needsReply' ? all.filter((c) => c.needsReply)
+    : filter === 'flagged' ? all.filter((c) => c.flagged)
+    : all;
+
+  const TABS: { key: Filter; label: string; count: number }[] = [
+    { key: 'all', label: 'All', count: payload?.summary.total ?? 0 },
+    { key: 'needsReply', label: 'Needs reply', count: payload?.summary.needsReply ?? 0 },
+    { key: 'flagged', label: 'Flagged', count: payload?.summary.flagged ?? 0 },
+  ];
+
   return (
     <div className="space-y-5">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Comments</h1>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Viewer comments across the channel — unanswered first. Replying is a real growth lever for a small channel.
+            Viewer comments across the channel — unanswered first. The <span className="font-semibold text-red-600 dark:text-red-400">Flagged</span> tab surfaces likely spam / self-promo / contact-info for a quick daily scan; open any one to hide it on YouTube.
           </p>
         </div>
         <button
@@ -72,16 +93,29 @@ export default function CommentsPage() {
       </header>
 
       {payload?.summary && (
-        <div className="flex flex-wrap gap-2 text-sm">
-          <span className="rounded-full bg-amber-100 px-3 py-1 font-semibold text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">
-            {payload.summary.needsReply} need a reply
-          </span>
-          <span className="rounded-full bg-gray-100 px-3 py-1 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-            {payload.summary.fromViewers} from viewers
-          </span>
-          <span className="rounded-full bg-gray-100 px-3 py-1 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-            {payload.summary.total} loaded
-          </span>
+        <div className="flex flex-wrap gap-2 text-sm" role="tablist" aria-label="Filter comments">
+          {TABS.map((t) => {
+            const active = filter === t.key;
+            const isFlag = t.key === 'flagged' && t.count > 0;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setFilter(t.key)}
+                className={`rounded-full px-3 py-1 font-semibold transition ${
+                  active
+                    ? 'bg-orange-600 text-white'
+                    : isFlag
+                    ? 'bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-500/20 dark:text-red-300'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300'
+                }`}
+              >
+                {t.label} · {t.count}
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -92,23 +126,36 @@ export default function CommentsPage() {
       )}
       {loading && !payload && <p className="text-gray-500">Loading…</p>}
 
-      {payload && payload.comments.length === 0 && !loading && (
+      {payload && visible.length === 0 && !loading && (
         <p className="rounded-xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-          No comments yet.
+          {filter === 'flagged'
+            ? 'No flagged comments — nothing looks like spam or self-promo right now. 🎉'
+            : filter === 'needsReply'
+            ? 'No comments waiting on a reply.'
+            : 'No comments yet.'}
         </p>
       )}
 
       <ul className="space-y-2">
-        {payload?.comments.map((c) => (
+        {visible.map((c) => (
           <li
             key={c.id}
             className={`rounded-xl border bg-white p-4 shadow-sm dark:bg-gray-900 ${
-              c.needsReply ? 'border-amber-300 dark:border-amber-700/60' : 'border-gray-200 dark:border-gray-800'
+              c.flagged
+                ? 'border-red-300 dark:border-red-700/60'
+                : c.needsReply
+                ? 'border-amber-300 dark:border-amber-700/60'
+                : 'border-gray-200 dark:border-gray-800'
             }`}
           >
             <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
               <span className="font-semibold text-gray-700 dark:text-gray-200">{c.author}</span>
               {c.isByOwner && <span className="rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-semibold text-gray-700 dark:bg-gray-700 dark:text-gray-200">you</span>}
+              {c.flagged && (
+                <span className="rounded bg-red-200 px-1.5 py-0.5 text-[10px] font-semibold text-red-900 dark:bg-red-500/30 dark:text-red-200">
+                  ⚑ {c.flagReasons.map((r) => REASON_LABEL[r] ?? r).join(' · ')}
+                </span>
+              )}
               {c.needsReply && <span className="rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900 dark:bg-amber-500/30 dark:text-amber-200">needs reply</span>}
               {c.ownerHasReplied && <span className="rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-800 dark:bg-green-500/20 dark:text-green-300">replied</span>}
               <span>· {relTime(c.publishedAt)}</span>
@@ -120,9 +167,13 @@ export default function CommentsPage() {
               href={commentDeepLink(c)}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-2 inline-flex text-xs font-medium text-orange-600 hover:text-orange-700 dark:text-orange-400"
+              className={`mt-2 inline-flex text-xs font-medium ${
+                c.flagged
+                  ? 'text-red-600 hover:text-red-700 dark:text-red-400'
+                  : 'text-orange-600 hover:text-orange-700 dark:text-orange-400'
+              }`}
             >
-              {c.needsReply ? 'Reply on YouTube ↗' : 'View on YouTube ↗'}
+              {c.flagged ? 'Review & hide on YouTube ↗' : c.needsReply ? 'Reply on YouTube ↗' : 'View on YouTube ↗'}
             </a>
           </li>
         ))}

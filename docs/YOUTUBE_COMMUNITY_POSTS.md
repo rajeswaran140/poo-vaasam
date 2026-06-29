@@ -103,3 +103,25 @@ More original Tamil songs on the way — subscribe & hit the bell.
 - [ ] Right asset attached (cover / Short clip / none for polls)
 - [ ] Apolitical, warm tone
 - [ ] 1–3 hashtags incl. `#Tamilagaval`
+
+---
+
+## Comments policy (moderation)
+
+Content-neutral house rule: welcome song-related comments, hide off-topic / personal-conversation / inappropriate ones. Apply the same standard to everyone (positive, negative, or off-topic) — consistency is the whole point. There is **no API** for pinning comments or for the Studio comment filters — these are manual.
+
+**1. Pin-ready comment** (paste on key videos, then ⋮ → Pin — API can't pin):
+```
+🎵 தமிழகவல் — பாடல்கள், பாடல் வரிகள், இசை, அவை தரும் உணர்வுகள் பற்றிய மரியாதையான கருத்துகளை வரவேற்கிறோம். தொடர்பற்ற அல்லது தனிப்பட்ட உரையாடல்கள் சமூகத்தை நேர்த்தியாக வைத்திருக்க மறைக்கப்படலாம். 🙏
+We welcome respectful comments about our songs, lyrics, and the emotions they inspire. Unrelated or personal-conversation comments may be hidden to keep this space welcoming and focused.
+```
+
+**2. Description-footer one-liner** (add to every NEW upload's description):
+```
+💬 பாடல் தொடர்பான மரியாதையான கருத்துகளை வரவேற்கிறோம் / We welcome respectful, song-related comments.
+```
+
+**3. Studio filters that ENFORCE it** (Settings → Community → Automated filters — do once):
+- [ ] Turn ON **"Hold potentially inappropriate comments for review"**
+- [ ] Add a small **Blocked words** list for any recurring off-topic / spam phrase
+- [ ] Use per-comment **"Hide user from channel"** for repeat off-topic posters (soft, silent)
