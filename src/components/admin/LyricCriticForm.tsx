@@ -15,6 +15,7 @@ import {
 import { adminFetch } from '@/lib/client-auth';
 import { critiqueToMarkdown } from '@/lib/critique-markdown';
 import { feedbackProgress } from '@/lib/lyric-draft-feedback';
+import { TamilProsodyPanel } from '@/components/admin/TamilProsodyPanel';
 import { exportFilename } from '@/lib/prompt-export';
 import type { LyricCritique, CritiqueAspect } from '@/services/ai/lyricCriticSchema';
 import type { LyricDraftSummary, LyricDraftVersion, LyricDraft } from '@/types/lyricDraft';
@@ -474,6 +475,9 @@ export function LyricCriticForm() {
             className={`mt-1 ${inputCls}`}
           />
         </div>
+
+        {/* Deterministic meter & rhyme — live, no AI call needed. */}
+        <TamilProsodyPanel lyrics={lyrics} />
 
         <button
           type="button"
