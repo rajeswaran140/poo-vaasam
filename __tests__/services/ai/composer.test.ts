@@ -13,18 +13,36 @@ jest.mock('@anthropic-ai/sdk', () => ({
   })),
 }));
 
+// Composer now selects a pluggable engine; mock the Gemini SDK too so the
+// 'gemini' engine can be exercised without a network call.
+const generateContent = jest.fn();
+jest.mock('@google/genai', () => ({
+  __esModule: true,
+  GoogleGenAI: jest.fn().mockImplementation(() => ({ models: { generateContent } })),
+  FinishReason: { STOP: 'STOP', MAX_TOKENS: 'MAX_TOKENS' },
+}));
+
 import { composeFromLyrics } from '@/services/ai/composer';
 
 const FAKE_KEY = 'sk-ant-test-key';
 const originalEnv = process.env.ANTHROPIC_API_KEY;
+const originalGemini = process.env.GEMINI_API_KEY;
+const originalEngine = process.env.COMPOSER_ENGINE;
 
 beforeEach(() => {
   create.mockReset();
+  generateContent.mockReset();
   process.env.ANTHROPIC_API_KEY = FAKE_KEY;
+  process.env.GEMINI_API_KEY = 'gemini-test-key';
+  delete process.env.COMPOSER_ENGINE;
 });
 
 afterAll(() => {
   process.env.ANTHROPIC_API_KEY = originalEnv;
+  if (originalGemini === undefined) delete process.env.GEMINI_API_KEY;
+  else process.env.GEMINI_API_KEY = originalGemini;
+  if (originalEngine === undefined) delete process.env.COMPOSER_ENGINE;
+  else process.env.COMPOSER_ENGINE = originalEngine;
 });
 
 // A complete, schema-valid brief.
@@ -272,4 +290,43 @@ it('classifies a 429 as a rate-limit error', async () => {
   const r = await composeFromLyrics('lyrics');
   expect(r.ok).toBe(false);
   if (!r.ok) expect(r.code).toBe('rate_limit');
+});
+
+it('routes to the Gemini engine when engine: "gemini" is selected', async () => {
+  generateContent.mockResolvedValueOnce({
+    text: JSON.stringify(SAMPLE),
+    candidates: [{ finishReason: 'STOP' }],
+    usageMetadata: { promptTokenCount: 80, candidatesTokenCount: 1000 },
+  });
+  const r = await composeFromLyrics('lyrics', { engine: 'gemini' });
+  expect(r.ok).toBe(true);
+  if (r.ok) {
+    // Same downstream pipeline: palette grounding still drops off-catalog "Strings".
+    expect(r.data.suggested_instruments).toEqual(['Veena', 'Flute', 'Tabla']);
+    expect(r.data.emotion).toBe('காதல்');
+  }
+  expect(generateContent).toHaveBeenCalledTimes(1);
+  expect(create).not.toHaveBeenCalled(); // Anthropic path untouched
+});
+
+it('respects COMPOSER_ENGINE=gemini as the default engine', async () => {
+  process.env.COMPOSER_ENGINE = 'gemini';
+  generateContent.mockResolvedValueOnce({
+    text: JSON.stringify(SAMPLE),
+    candidates: [{ finishReason: 'STOP' }],
+    usageMetadata: { promptTokenCount: 80, candidatesTokenCount: 1000 },
+  });
+  const r = await composeFromLyrics('lyrics');
+  expect(r.ok).toBe(true);
+  expect(generateContent).toHaveBeenCalledTimes(1);
+  expect(create).not.toHaveBeenCalled();
+});
+
+it('maps an unknown engine id to a clean upstream error (no throw)', async () => {
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+  const r = await composeFromLyrics('lyrics', { engine: 'no-such-engine' });
+  expect(r.ok).toBe(false);
+  if (!r.ok) expect(r.code).toBe('upstream');
+  expect(create).not.toHaveBeenCalled();
+  expect(generateContent).not.toHaveBeenCalled();
 });

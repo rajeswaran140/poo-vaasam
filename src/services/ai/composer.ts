@@ -16,12 +16,12 @@
  *    request stops billing instead of running to completion server-side.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
 import {
   composerAnalysisSchema,
   composerAnalysisJsonSchema,
   type ComposerAnalysis,
 } from './composerSchema';
+import { getEngine, DEFAULT_ANTHROPIC_MODEL, type BriefRequest } from './engines';
 import { instrumentPalette, canonicalInstrumentNames } from '@/data/instruments';
 import { ragaPalette, canonicalRagaNames, ragaScaleKey } from '@/data/ragas';
 
@@ -29,14 +29,20 @@ import { ragaPalette, canonicalRagaNames, ragaScaleKey } from '@/data/ragas';
 // (`@/services/ai/composer`) keep working unchanged.
 export type { ComposerAnalysis, SunoVariant, ReelIdea } from './composerSchema';
 
-// Sonnet 4.5 for best Tamil/musical nuance. Its ~33s generation exceeds
-// Amplify's managed-compute ~30s execution ceiling (a probe confirmed even
-// `after()` background work is dropped there — see HARDENING), so compose runs
-// OFF the Amplify SSR Lambda: the /api/admin/compose route enqueues a job and a
-// dedicated worker Lambda (tamilagaval-compose-worker, 120s timeout) runs THIS
-// `composeFromLyrics` and writes the brief to DynamoDB for the client to poll.
-// The worker bundles this exact module, so grounding/threading stay identical.
-export const DEFAULT_MODEL = 'claude-sonnet-4-5';
+// The brief takes ~33s, exceeding Amplify's managed-compute ~30s execution
+// ceiling (a probe confirmed even `after()` background work is dropped there —
+// see HARDENING), so compose runs OFF the Amplify SSR Lambda: the
+// /api/admin/compose route enqueues a job and a dedicated worker Lambda
+// (tamilagaval-compose-worker, 120s timeout) runs THIS `composeFromLyrics` and
+// writes the brief to DynamoDB for the client to poll. The worker bundles this
+// exact module, so grounding/threading stay identical.
+//
+// The model call itself is delegated to a pluggable engine (see ./engines):
+// Anthropic (current-gen Sonnet 4.6, the default) or Gemini Flash. This module
+// owns the engine-independent pipeline — system prompt, schema validation,
+// palette grounding, SUNO threading — so every engine produces the same brief.
+// Re-exported as the brief's "model produced by" stamp (BriefRepository).
+export const DEFAULT_MODEL = DEFAULT_ANTHROPIC_MODEL;
 const MAX_LYRICS_CHARS = 8000;
 // Headroom for the full Brief v2 (ranked emotions, 3-5 style paragraphs,
 // BILINGUAL YouTube descriptions, thumbnail prompt, reel). Tamil is token-dense,
@@ -96,8 +102,10 @@ export type ComposeResult =
   | { ok: false; code: ComposeErrorCode; error: string };
 
 export interface ComposeOptions {
-  /** Override the model (e.g. Haiku as a faster fallback). */
+  /** Override the engine's model (e.g. Haiku as a faster Anthropic fallback). */
   model?: string;
+  /** Engine to use ('anthropic' | 'gemini'). Defaults to COMPOSER_ENGINE / 'anthropic'. */
+  engine?: string;
   /** Abort signal — cancels the upstream call on client disconnect / supersede. */
   signal?: AbortSignal;
 }
@@ -130,17 +138,29 @@ function threadPaletteIntoSuno(prompt: string, instruments: string[], ragas: str
   return `${text}${sep}${tail.charAt(0).toUpperCase()}${tail.slice(1)}.`;
 }
 
-function getClient(): Anthropic | null {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key || key === 'dummy-key-for-build') return null;
-  return new Anthropic({ apiKey: key });
+/**
+ * Assemble the engine-agnostic BriefRequest (system prompt + JSON Schema +
+ * tuning) for a set of lyrics. Shared by the production path and the offline
+ * engine benchmark so both feed engines an identical request.
+ */
+export function buildBriefRequest(lyrics: string, signal?: AbortSignal): BriefRequest {
+  return {
+    system: SYSTEM_PROMPT,
+    lyrics,
+    jsonSchema: composerAnalysisJsonSchema,
+    toolName: TOOL_NAME,
+    maxOutputTokens: MAX_OUTPUT_TOKENS,
+    temperature: TEMPERATURE,
+    timeoutMs: REQUEST_TIMEOUT_MS,
+    signal,
+  };
 }
 
 export async function composeFromLyrics(
   lyricsInput: string,
   options: ComposeOptions = {}
 ): Promise<ComposeResult> {
-  const { model = DEFAULT_MODEL, signal } = options;
+  const { model, engine: engineId, signal } = options;
 
   const lyrics = String(lyricsInput ?? '').trim();
   if (!lyrics) return { ok: false, code: 'upstream', error: 'Lyrics are required' };
@@ -148,77 +168,38 @@ export async function composeFromLyrics(
     return { ok: false, code: 'upstream', error: `Lyrics exceed ${MAX_LYRICS_CHARS} characters` };
   }
 
-  const client = getClient();
-  if (!client) {
-    return { ok: false, code: 'not_configured', error: 'AI is not configured (ANTHROPIC_API_KEY missing).' };
+  // Select the engine (Anthropic default). An unknown id is a caller error, not
+  // an outage — map it to a clean upstream failure rather than throwing.
+  let engine;
+  try {
+    engine = getEngine(engineId, model);
+  } catch (err) {
+    console.error('[ai/composer] engine selection failed:', err instanceof Error ? err.message : String(err));
+    return { ok: false, code: 'upstream', error: 'The AI service is misconfigured. Please try again.' };
   }
 
   const startedAt = Date.now();
-  let res: Anthropic.Messages.Message;
-  try {
-    res = await client.messages.create(
-      {
-        model,
-        max_tokens: MAX_OUTPUT_TOKENS,
-        temperature: TEMPERATURE,
-        system: SYSTEM_PROMPT,
-        tools: [
-          {
-            name: TOOL_NAME,
-            description: 'Submit the complete production brief for the given Tamil lyrics.',
-            input_schema: composerAnalysisJsonSchema as Anthropic.Messages.Tool.InputSchema,
-          },
-        ],
-        // Force the model to answer via the tool — guarantees structured args.
-        tool_choice: { type: 'tool', name: TOOL_NAME },
-        messages: [{ role: 'user', content: lyrics }],
-      },
-      { signal, timeout: REQUEST_TIMEOUT_MS }
-    );
-  } catch (err) {
-    // Log the FULL upstream detail server-side; return a clean, user-safe
-    // message to the caller (no request_ids / raw JSON leakage).
-    const status = (err as { status?: number })?.status;
-    const detail = err instanceof Error ? err.message : String(err);
-    console.error(`[ai/composer] Anthropic call failed (status=${status ?? 'n/a'}, ms=${Date.now() - startedAt}):`, detail);
+  const result = await engine.generateBrief(buildBriefRequest(lyrics, signal));
 
-    if (status === 401 || status === 403) {
-      return { ok: false, code: 'auth', error: 'The Claude API key is invalid, expired, or lacks access. Update ANTHROPIC_API_KEY.' };
-    }
-    if (status === 429) {
-      return { ok: false, code: 'rate_limit', error: 'The AI service is rate-limited right now. Please retry in a moment.' };
-    }
-    return { ok: false, code: 'upstream', error: 'The AI service failed to respond. Please try again.' };
+  // Transport / shape failures already carry the right code (the engine error
+  // taxonomy matches ComposeErrorCode 1:1) — pass them straight through.
+  if (!result.ok) {
+    return { ok: false, code: result.code, error: result.error };
   }
 
   const elapsedMs = Date.now() - startedAt;
-  const outputTokens = res.usage?.output_tokens ?? 0;
   // Observability: one structured line per compose so CloudWatch metric filters
-  // can track p95 latency + token spend, and surface truncation.
+  // can track p95 latency + token spend per engine, and surface truncation.
   console.info('[ai/composer] complete', JSON.stringify({
-    model,
+    engine: engine.id,
+    model: engine.model,
     ms: elapsedMs,
-    inputTokens: res.usage?.input_tokens ?? 0,
-    outputTokens,
-    stopReason: res.stop_reason,
+    inputTokens: result.usage.inputTokens,
+    outputTokens: result.usage.outputTokens,
+    stopReason: result.stopReason,
   }));
 
-  // A max_tokens stop means the tool arguments were cut off mid-JSON — surface
-  // it as a distinct, actionable failure rather than a vague schema error.
-  if (res.stop_reason === 'max_tokens') {
-    console.error(`[ai/composer] response truncated at max_tokens (${outputTokens}/${MAX_OUTPUT_TOKENS})`);
-    return { ok: false, code: 'bad_response', error: 'The AI response was too long and got cut off. Please try again.' };
-  }
-
-  const toolUse = res.content.find(
-    (block): block is Anthropic.Messages.ToolUseBlock => block.type === 'tool_use' && block.name === TOOL_NAME
-  );
-  if (!toolUse) {
-    console.error('[ai/composer] no tool_use block in response; stop_reason:', res.stop_reason);
-    return { ok: false, code: 'bad_response', error: 'The AI returned an unexpected format. Please try again.' };
-  }
-
-  const parsed = composerAnalysisSchema.safeParse(toolUse.input);
+  const parsed = composerAnalysisSchema.safeParse(result.raw);
   if (!parsed.success) {
     // Validation failure = a genuinely incomplete/degraded brief. We do NOT
     // fabricate defaults for semantic fields and pass it off as a real brief.
