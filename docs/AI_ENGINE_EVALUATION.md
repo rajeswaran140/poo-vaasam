@@ -137,3 +137,41 @@ To get hard quality/cost/latency numbers on the *real* code path:
 - [ ] Merge `feat/composer-engine-adapter-gemini` so the engine is selectable per task.
 - [ ] Decide Critic/Composer default after the benchmark (Tier B).
 - [ ] (Stretch) Prototype "Gemini listens to a Music Lab take".
+
+---
+
+## 9. Activation runbook — turning Gemini on
+
+> **Status (2026-06-30):** the code is all merged and live. Activation is **env-only** — no code change. Default stays Anthropic until you set these.
+
+### What flipping affects — and what it does NOT
+- ✅ **Composer** (`/api/admin/compose`) — engine-selectable via `COMPOSER_ENGINE`. **Runs on the worker Lambda** `tamilagaval-compose-worker` (not the Amplify SSR runtime).
+- ✅ **lexicon-suggest** + **youtube-recommendations** — engine-selectable via `AUX_AI_ENGINE`. **Run on the Amplify SSR runtime** (admin API routes).
+- ❌ **Lyric Critic** — **NOT yet engine-selectable** (still calls Claude directly). These env flips do not touch it. Putting it on the adapter is a separate follow-on.
+
+**Prerequisite:** a working **AI Studio** `GEMINI_API_KEY` with the Generative Language API enabled/unrestricted (see §6.4 — a Cloud-console-restricted key returns 403).
+
+### 9.1 Aux tasks (lexicon-suggest + YouTube recs) — **Amplify Console env**
+1. Amplify Console → app `tamilagaval` (`d3rkmepk4popv0`) → **Hosting → Environment variables**.
+2. Add: `AUX_AI_ENGINE = gemini` · `GEMINI_API_KEY = <key>` · *(optional)* `GEMINI_MODEL = gemini-2.5-flash`.
+3. **Redeploy** (Amplify inlines env at build) — push or trigger a build.
+4. Rollback: delete `AUX_AI_ENGINE` → back to Anthropic, then redeploy.
+
+> These tasks run with **thinking disabled** (`thinkingBudget: 0`) → cheapest/fastest path.
+
+### 9.2 Composer — **worker Lambda env** (`tamilagaval-compose-worker`)
+The Composer runs in the worker, so its env goes on the **Lambda**, not Amplify.
+- **Safest (Console):** Lambda Console → `tamilagaval-compose-worker` → Configuration → Environment variables → **Add** `COMPOSER_ENGINE=gemini` + `GEMINI_API_KEY=<key>` (+ optional `GEMINI_MODEL`). Additive — no clobber.
+- **CLI caveat:** `aws lambda update-function-configuration --environment` **REPLACES the entire env block** — you must fetch the existing vars and merge programmatically (never hand-retype secrets — see `feedback_cloud_env_var_rewrites`). Prefer the Console for this.
+- `npm run deploy:worker` updates **code only**, not env — it will not set these.
+- Rollback: remove `COMPOSER_ENGINE` from the Lambda env (Lambda env changes are live immediately, no redeploy).
+
+> The Composer's Gemini path uses **default thinking** (not disabled) — still ~half Sonnet's output tokens and ~3× faster per §2. Set a `thinkingConfig` later if you want to trim further.
+
+### 9.3 Verify
+- Compose a brief in `/admin/compose`; check `tamilagaval-compose-worker` CloudWatch logs — the engine/model line should read `gemini`.
+- Trigger an AI lexicon suggestion and the YouTube recommendations; confirm they still return.
+- If anything errors with `not_configured`, the key isn't visible to that scope (Amplify vs Lambda) — re-check which scope you set.
+
+### 9.4 Rollback (instant)
+Remove `COMPOSER_ENGINE` (Lambda) and/or `AUX_AI_ENGINE` (Amplify) → both snap back to Anthropic. Lambda env change is live immediately; the Amplify aux change needs a redeploy.
