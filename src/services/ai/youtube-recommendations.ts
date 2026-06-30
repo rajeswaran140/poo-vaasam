@@ -7,10 +7,8 @@
  * render them as bullets without extra formatting.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
 import type { VideoAnalyticsRow, ChannelAnalyticsSnapshot } from '@/lib/youtube-analytics';
-
-const MODEL = 'claude-sonnet-4-6';
+import { generateText, isTextEngineConfigured } from '@/services/ai/text-engine';
 
 export type RecResult = { ok: true; data: string[] } | { ok: false; error: string };
 
@@ -19,12 +17,6 @@ interface Input {
   videos: VideoAnalyticsRow[];
   /** Optional title lookup (videoId → title) so recs can name songs. */
   titles?: Record<string, string>;
-}
-
-function getClient(): Anthropic | null {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key || key === 'dummy-key-for-build') return null;
-  return new Anthropic({ apiKey: key });
 }
 
 const SYSTEM_PROMPT = `You are a YouTube channel-growth advisor for a Tamil songwriter / lyricist (channel: Rajeswaran Thangarajah, ~15 subscribers, focused on original Tamil songs and poems with single-creator publishing).
@@ -46,8 +38,8 @@ export async function generateYouTubeRecommendations(input: Input): Promise<RecR
   if (!input.videos.length) {
     return { ok: false, error: 'No video analytics to reason from' };
   }
-  const client = getClient();
-  if (!client) return { ok: false, error: 'ANTHROPIC_API_KEY not configured' };
+  // Engine-selectable (Anthropic default, Gemini opt-in via AUX_AI_ENGINE).
+  if (!isTextEngineConfigured()) return { ok: false, error: 'AI engine not configured' };
 
   // Compact, model-friendly payload — drop the long Tamil titles into a
   // separate map so the row data stays terse.
@@ -70,19 +62,14 @@ export async function generateYouTubeRecommendations(input: Input): Promise<RecR
     })),
   };
 
+  const res = await generateText({ system: SYSTEM_PROMPT, prompt: JSON.stringify(payload), maxTokens: 800 });
+  if (!res.ok) return { ok: false, error: res.error };
   try {
-    const res = await client.messages.create({
-      model: MODEL,
-      max_tokens: 800,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: JSON.stringify(payload) }],
-    });
-    const text = res.content.map((b) => (b.type === 'text' ? b.text : '')).join('').trim();
-    return { ok: true, data: parseRecs(text) };
+    return { ok: true, data: parseRecs(res.text) };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error('[ai/youtube-recs] failed:', msg);
-    return { ok: false, error: msg };
+    console.error('[ai/youtube-recs] parse failed:', msg);
+    return { ok: false, error: 'The AI returned an unexpected format. Please try again.' };
   }
 }
 

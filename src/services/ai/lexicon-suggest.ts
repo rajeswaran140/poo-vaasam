@@ -6,16 +6,17 @@
  * just a pre-filled create.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
 import {
   lexiconWordInputSchema,
   normalizeWord,
   type LexiconWordInput,
   type LexiconRegister,
 } from '@/types/lexicon';
+import { generateText, isTextEngineConfigured } from '@/services/ai/text-engine';
 
 export function isLexiconAiConfigured(): boolean {
-  return !!process.env.ANTHROPIC_API_KEY;
+  // Engine-selectable: Anthropic default, Gemini opt-in via AUX_AI_ENGINE.
+  return isTextEngineConfigured();
 }
 
 interface SuggestParams {
@@ -37,7 +38,6 @@ export async function suggestLexiconWords({
   count,
   avoid = [],
 }: SuggestParams): Promise<LexiconWordInput[]> {
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || 'dummy-key-for-build' });
   const prompt =
     `Propose ${count} Tamil "${register}"-register words` +
     (theme ? ` that evoke the theme "${theme}"` : '') +
@@ -46,16 +46,9 @@ export async function suggestLexiconWords({
     `"gloss": "<short English meaning>", "register": "${register}", "themes": ${theme ? `["${theme}"]` : '[]'}, "usage": "fresh"}.\n` +
     `Do NOT include any of these already-known words: ${avoid.length ? avoid.join(', ') : '(none)'}.`;
 
-  const res = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 2000,
-    system: SYSTEM,
-    messages: [{ role: 'user', content: prompt }],
-    temperature: 0.8,
-  });
-  const block = res.content.find((b) => b.type === 'text');
-  const raw = block ? (block as { text: string }).text : '';
-  return parseSuggestions(raw, register, avoid);
+  const res = await generateText({ system: SYSTEM, prompt, maxTokens: 2000, temperature: 0.8 });
+  if (!res.ok) return []; // suggestion is best-effort — a failed call yields no words, never throws
+  return parseSuggestions(res.text, register, avoid);
 }
 
 /**

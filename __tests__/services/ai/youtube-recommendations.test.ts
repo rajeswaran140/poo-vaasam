@@ -81,7 +81,7 @@ describe('generateYouTubeRecommendations', () => {
     create.mockRejectedValueOnce(new Error('rate limited'));
     const r = await generateYouTubeRecommendations(INPUT);
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toMatch(/rate/);
+    if (!r.ok) expect(r.error).toMatch(/failed|try again/i); // classified by the text engine
   });
 
   it('sends a compact payload (top 10 videos, title from lookup)', async () => {
