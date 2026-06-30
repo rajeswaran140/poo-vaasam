@@ -23,7 +23,9 @@ const FFMPEG = process.env.FFMPEG_PATH || '/opt/bin/ffmpeg';
 const REGION = process.env.AWS_REGION || 'ca-central-1';
 const TAKES_BUCKET = process.env.TAKES_BUCKET;
 const TABLE = process.env.DYNAMODB_TABLE_NAME || 'TamilWebContent';
-const s3 = new S3Client({ region: REGION });
+// S3 (takes bucket) may be in a different region than the Lambda + DynamoDB.
+const S3_REGION = process.env.TAKES_BUCKET_REGION || REGION;
+const s3 = new S3Client({ region: S3_REGION });
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({ region: REGION }), {
   marshallOptions: { removeUndefinedValues: true },
 });

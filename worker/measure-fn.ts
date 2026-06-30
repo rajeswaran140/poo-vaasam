@@ -18,9 +18,11 @@ import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { parseMeasurement, measureArgs } from '@/lib/loudness-measure';
 
 const FFMPEG = process.env.FFMPEG_PATH || '/opt/bin/ffmpeg';
-const REGION = process.env.AWS_REGION || 'ca-central-1';
 const TAKES_BUCKET = process.env.TAKES_BUCKET;
-const s3 = new S3Client({ region: REGION });
+// The takes bucket may live in a different region than the Lambda (e.g. the
+// media bucket is us-east-1 while the function runs in ca-central-1).
+const S3_REGION = process.env.TAKES_BUCKET_REGION || process.env.AWS_REGION || 'ca-central-1';
+const s3 = new S3Client({ region: S3_REGION });
 
 interface MeasureEvent {
   s3Key?: string;

@@ -54,9 +54,11 @@ Thereafter, redeploy code with `npm run deploy:measure-fn` / `npm run deploy:mas
 
 ## Environment variables
 
+> **PROVISIONED + VERIFIED LIVE 2026-06-30.** Layer `tamilagaval-ffmpeg:1` (ffmpeg 7.0.2 static); both functions created (role `tamilagaval-compose-worker-role` reused + an inline `s3:GetObject/PutObject` policy on `tamil-web-media`); env set; both invoked successfully on a real song (measure → master → re-measure lands at −14 LUFS / ≤ −1 dBTP). **Note: `tamil-web-media` is in `us-east-1` (the Lambdas run in `ca-central-1`), so the S3 client uses `TAKES_BUCKET_REGION`.**
+
 **On the Lambdas** (`aws lambda update-function-configuration --environment`):
-- `measure-fn`: `TAKES_BUCKET` (= `tamil-web-media`), `AWS_REGION`, optional `FFMPEG_PATH`.
-- `master-worker`: `TAKES_BUCKET`, `DYNAMODB_TABLE_NAME` (= `TamilWebContent`), `AWS_REGION`, optional `FFMPEG_PATH`.
+- `measure-fn`: `TAKES_BUCKET` (= `tamil-web-media`), **`TAKES_BUCKET_REGION` (= `us-east-1`)**, optional `FFMPEG_PATH`. (`AWS_REGION` is Lambda-provided — do not set it.)
+- `master-worker`: `TAKES_BUCKET`, `TAKES_BUCKET_REGION`, `DYNAMODB_TABLE_NAME` (= `TamilWebContent`, in `ca-central-1`), optional `FFMPEG_PATH`.
 
 **On the SSR app** (Amplify Console env — only if you rename the functions):
 - `MEASURE_FUNCTION` (default `tamilagaval-measure-fn`), `MASTER_WORKER_FUNCTION` (default `tamilagaval-master-worker`).
