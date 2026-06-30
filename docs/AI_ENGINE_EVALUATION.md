@@ -12,6 +12,7 @@ Tamilagaval's AI features (Lyric Critic, Composer, Lyricist, prompt-critic, lexi
 
 - **Gemini 2.5 is a credible engine for Tamilagaval's augmentation tasks.** In live tests (Google AI Studio key, in-memory) Gemini 2.5 Flash passed every gate: Tamil fluency/idiom, the **feedback-not-rewrite discipline**, and — critically — **valid structured JSON matching the Critic's exact contract** (the very thing that broke Claude Sonnet 4.5).
 - **Most cost-effective recommendation:** route the **cheap, high-volume, low-nuance tasks** (`lexicon-suggest`, `youtube-recommendations`) to **Gemini 2.5 Flash** now (~6× cheaper than Sonnet, quality sufficient). Keep the **nuanced Critic/Composer on Claude Sonnet 4.6** until the full adapter benchmark proves a switch — Gemini Flash is a strong candidate there too.
+- **Live adapter benchmark confirms it (2026-06-30):** through the *real* code path on 4 Tamil lyrics, Gemini 2.5 Flash was **100% schema-valid, ~3× faster (12.3 s vs 38.3 s p50), and ~half the output tokens** of Claude Sonnet 4.6, with comparable musical sense. See §2 benchmark table.
 - **One real caveat:** Gemini 2.5 models are **thinking models** — they bill large internal-reasoning ("thought") token budgets, so the per-call cost is higher than the headline sticker suggests (still cheaper than Sonnet, but not 1/10th). The thinking budget is configurable.
 
 ---
@@ -38,6 +39,17 @@ Tests were run **live against the Generative Language API** via REST (`generateC
 | gemini-2.5-flash | **structured** critique | 66 | — | 1,919 | STOP |
 
 > `gemini-2.0-flash` is **deprecated** (404 — "no longer available"); use the 2.5 family.
+
+### Live adapter benchmark (2026-06-30) — `scripts/benchmark-composer.ts`, 4 Tamil lyrics × 1 run
+
+Run through the **real engine adapter** (`@google/genai` SDK + `toGeminiSchema` + the production `buildBriefRequest`), validated against the Composer's Zod schema — i.e. the actual code path, not raw REST. This closes caveat §6.2.
+
+| Engine | Model | Schema-valid | p50 latency | p95 latency | avg out-tokens |
+|--------|-------|:-----------:|------------:|------------:|---------------:|
+| Claude | `claude-sonnet-4-6` | **100%** | 38.3 s | 41.5 s | 1,898 |
+| **Gemini** | `gemini-2.5-flash` | **100%** | **12.3 s** | **12.7 s** | **913** |
+
+**Findings:** Gemini Flash is **~3× faster** and uses **~half the output tokens** at **identical 100% schema validity**. Musical sense was comparable — emotions agreed (காதல் / ஏக்கம் / துயரம்), and both chose appropriate ragas (Todi, Bhairavi, Sindhu Bhairavi recurred for grief/homeland); the one divergence was benign (devotional: Claude `அன்னை` / Gemini `பக்தி`, both valid for an *அம்மா* prayer). The dramatic latency win (12 s vs 38 s) is itself notable — fast enough that Gemini-backed tasks could run **inline under Amplify's ~30 s ceiling**, avoiding the worker.
 
 ---
 
