@@ -48,10 +48,9 @@ export const generationScoresSchema = z
   .default({});
 
 /**
- * Objective audio measurements for the take (mirrors AudioMetrics in
- * src/lib/audio-metrics.ts — kept here as the wire/storage contract). Measured
- * client-side from the decoded audio and submitted with the log; all finite
- * dBFS/LU values, with lufsIntegrated null when the audio was below gate.
+ * LEGACY objective audio measurements — kept only so OLD takes still render.
+ * New takes use server-measured `loudness` (see loudnessSchema); the client-side
+ * Web-Audio decode that produced this was removed. All finite dBFS/LU values.
  */
 export const audioMetricsSchema = z.object({
   durationSec: z.number().nonnegative(),
@@ -62,6 +61,22 @@ export const audioMetricsSchema = z.object({
   lufsIntegrated: z.number().nullable(),
 });
 export type AudioMetricsRecord = z.infer<typeof audioMetricsSchema>;
+
+/**
+ * Server-measured loudness (from the measure-fn Lambda: ffmpeg ebur128+astats).
+ * Replaces the legacy client-side audioMetrics for new takes — the browser no
+ * longer decodes audio. badge + verdict are computed server-side.
+ */
+export const loudnessSchema = z.object({
+  lufs: z.number(),
+  lra: z.number(),
+  truePeak: z.number(),
+  crest: z.number(),
+  flatFactor: z.number(),
+  badge: z.string().max(64),
+  verdict: z.enum(['ok', 'hot', 'quiet', 'clip-risk', 'squashed']),
+});
+export type LoudnessRecord = z.infer<typeof loudnessSchema>;
 
 export const generationSettingsSchema = z
   .object({
@@ -95,8 +110,10 @@ export const createGenerationSchema = z
     verdict: z.enum(GENERATION_VERDICTS),
     failureReason: z.enum(FAILURE_REASONS).optional(),
     notes: z.string().max(4000).default(''),
-    /** Objective audio measurements, when the take's audio could be analysed. */
+    /** Legacy client-measured audio (kept for old takes; new takes use `loudness`). */
     audioMetrics: audioMetricsSchema.nullish().transform((m) => m ?? null),
+    /** Server-measured loudness (measure-fn). */
+    loudness: loudnessSchema.nullish().transform((m) => m ?? null),
   })
   // A success has no failure reason — keeps the dataset coherent.
   .refine((d) => !(d.verdict === 'success' && d.failureReason), {

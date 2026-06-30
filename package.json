@@ -19,7 +19,11 @@
     "aws:dynamodb": "tsx scripts/create-dynamodb-table.ts",
     "aws:s3": "tsx scripts/create-s3-bucket.ts",
     "build:worker": "esbuild worker/compose-worker.ts --bundle --platform=node --target=node20 --format=cjs --outfile=worker-dist/index.js --external:@aws-sdk/* --tsconfig=tsconfig.json",
-    "deploy:worker": "npm run build:worker && cd worker-dist && zip -q -r ../worker.zip index.js && cd .. && aws lambda update-function-code --function-name tamilagaval-compose-worker --zip-file fileb://worker.zip --region ca-central-1"
+    "deploy:worker": "npm run build:worker && cd worker-dist && zip -q -r ../worker.zip index.js && cd .. && aws lambda update-function-code --function-name tamilagaval-compose-worker --zip-file fileb://worker.zip --region ca-central-1",
+    "build:measure-fn": "esbuild worker/measure-fn.ts --bundle --platform=node --target=node20 --format=cjs --outfile=measure-fn-dist/index.js --external:@aws-sdk/* --tsconfig=tsconfig.json",
+    "deploy:measure-fn": "npm run build:measure-fn && cd measure-fn-dist && zip -q -r ../measure-fn.zip index.js && cd .. && aws lambda update-function-code --function-name tamilagaval-measure-fn --zip-file fileb://measure-fn.zip --region ca-central-1",
+    "build:master-worker": "esbuild worker/master-worker.ts --bundle --platform=node --target=node20 --format=cjs --outfile=master-worker-dist/index.js --external:@aws-sdk/* --tsconfig=tsconfig.json",
+    "deploy:master-worker": "npm run build:master-worker && cd master-worker-dist && zip -q -r ../master-worker.zip index.js && cd .. && aws lambda update-function-code --function-name tamilagaval-master-worker --zip-file fileb://master-worker.zip --region ca-central-1"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",

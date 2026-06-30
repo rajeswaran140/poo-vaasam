@@ -131,6 +131,7 @@ export class GenerationRepository {
       failureReason: item.failureReason,
       notes: item.notes ?? '',
       audioMetrics: item.audioMetrics ?? null,
+      loudness: item.loudness ?? null,
       embedding: item.embedding ?? null,
     }) as Generation;
 }

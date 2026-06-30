@@ -178,6 +178,24 @@ it('shows measured audio metrics + a streaming-loudness badge on a take', async 
   expect(screen.getByText(/\+3 LU hot/)).toBeInTheDocument();     // −11 vs −14 norm
 });
 
+it('renders server-measured loudness (badge + verdict) on a take', async () => {
+  routeFetch((url, opts) => {
+    if (url.includes('briefId=brief_1') && opts?.method !== 'POST') {
+      return ok([{
+        id: 'gen_l', briefId: 'brief_1', verdict: 'success', engine: 'suno', scores: {}, settings: {},
+        createdAt: '2026-06-30T00:00:00Z',
+        loudness: { lufs: -11, lra: 5, truePeak: -0.4, crest: 8, flatFactor: 0, badge: '+3 LU hot', verdict: 'clip-risk' },
+      }]);
+    }
+    return undefined;
+  });
+  render(<MusicLab />);
+  fireEvent.change(await screen.findByLabelText('Brief'), { target: { value: 'brief_1' } });
+  expect(await screen.findByText(/LUFS/)).toBeInTheDocument();
+  expect(screen.getByText('+3 LU hot')).toBeInTheDocument();   // server badge
+  expect(screen.getByText(/clip-risk/)).toBeInTheDocument();   // server verdict
+});
+
 it('flags a truncated insights feed so the stats aren’t silently understated', async () => {
   routeFetch((url, opts) => {
     if (url.startsWith('/api/admin/generations') && (!opts || opts.method !== 'POST') && !url.includes('briefId')) {

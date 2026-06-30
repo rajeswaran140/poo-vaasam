@@ -123,9 +123,10 @@ export function computeInsights(
     styleInfluence: contrast(gens, (g) => g.settings?.styleInfluence),
   };
 
+  // Prefer server-measured `loudness`; fall back to legacy client `audioMetrics`.
   const audioContrast = {
-    lufs: contrast(gens, (g) => g.audioMetrics?.lufsIntegrated ?? undefined),
-    crest: contrast(gens, (g) => g.audioMetrics?.crestDb),
+    lufs: contrast(gens, (g) => g.loudness?.lufs ?? g.audioMetrics?.lufsIntegrated ?? undefined),
+    crest: contrast(gens, (g) => g.loudness?.crest ?? g.audioMetrics?.crestDb),
     clip: contrast(gens, (g) => g.audioMetrics?.clipPct),
   };
 

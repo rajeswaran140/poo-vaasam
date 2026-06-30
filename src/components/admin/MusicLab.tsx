@@ -21,9 +21,9 @@ import {
   type Generation,
   type GenerationVerdict,
   type AudioMetricsRecord,
+  type LoudnessRecord,
 } from '@/types/generation';
 import { computeInsights, type InsightsReport } from '@/lib/generation-insights';
-import { measureAudioFromUrl } from '@/lib/measure-audio-url';
 import { streamingNormVerdict, type LoudnessStatus } from '@/lib/loudness-targets';
 import type { SavedBrief } from '@/types/brief';
 
@@ -336,7 +336,7 @@ function GenerationCard({ g, onDelete }: { g: Generation; onDelete: (g: Generati
         </div>
       )}
 
-      {g.audioMetrics && <AudioMetricsRow m={g.audioMetrics} />}
+      {g.loudness ? <LoudnessRow l={g.loudness} /> : g.audioMetrics ? <AudioMetricsRow m={g.audioMetrics} /> : null}
 
       {g.notes && <p className="mt-2 whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">{g.notes}</p>}
       {g.audioUrl && (
@@ -368,6 +368,32 @@ function AudioMetricsRow({ m }: { m: AudioMetricsRecord }) {
         <span className={`rounded-full px-2 py-0.5 font-medium ${STATUS_BADGE[v.status]}`} title={v.label}>
           {v.status === 'ok' ? 'on target (−14)' : v.status === 'hot' ? `+${v.deltaLu} LU hot` : `${v.deltaLu} LU quiet`}
         </span>
+      )}
+    </div>
+  );
+}
+
+const LOUDNESS_VERDICT_BADGE: Record<LoudnessRecord['verdict'], string> = {
+  ok: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300',
+  hot: 'bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300',
+  quiet: 'bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-300',
+  'clip-risk': 'bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300',
+  squashed: 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300',
+};
+
+/** Server-measured loudness (measure-fn) — badge + verdict + key metrics. */
+function LoudnessRow({ l }: { l: LoudnessRecord }) {
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-300">
+      <span className="font-semibold uppercase tracking-wide text-gray-400">Measured</span>
+      <span><strong className="tabular-nums">{l.lufs}</strong> LUFS</span>
+      <span>true-peak <strong className="tabular-nums">{l.truePeak}</strong> dBTP</span>
+      <span>crest <strong className="tabular-nums">{l.crest}</strong> dB</span>
+      <span className={`rounded-full px-2 py-0.5 font-medium ${LOUDNESS_VERDICT_BADGE[l.verdict]}`} title={`verdict: ${l.verdict}`}>
+        {l.badge}
+      </span>
+      {(l.verdict === 'clip-risk' || l.verdict === 'squashed') && (
+        <span className="text-amber-600 dark:text-amber-400">⚠ {l.verdict}</span>
       )}
     </div>
   );
@@ -427,12 +453,26 @@ function LogGenerationForm({ brief, onSaved }: { brief: SavedBrief; onSaved: (g:
       engineModel: engineModel.trim() || undefined,
     };
 
-    // Measure the audio's loudness/dynamics/clipping (best-effort: CORS or a
-    // decode failure just logs the take without metrics).
-    let audioMetrics: AudioMetricsRecord | null = null;
+    // Measure loudness SERVER-side (measure-fn via /api/admin/music-lab/measure)
+    // — the browser never fetches the audio, so there's no CORS dependency.
+    // Best-effort: a failure just logs the take without loudness.
+    let loudness: LoudnessRecord | null = null;
     if (audioUrl) {
       setMeasuring(true);
-      audioMetrics = await measureAudioFromUrl(audioUrl);
+      try {
+        const s3Key = new URL(audioUrl, window.location.origin).pathname.replace(/^\/+/, '');
+        const mr = await adminFetch('/api/admin/music-lab/measure', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ s3Key }),
+        });
+        const mj = (await mr.json().catch(() => ({}))) as { success?: boolean; metrics?: Omit<LoudnessRecord, 'badge' | 'verdict'>; badge?: string; verdict?: LoudnessRecord['verdict'] };
+        if (mr.ok && mj.success && mj.metrics && mj.badge && mj.verdict) {
+          loudness = { ...mj.metrics, badge: mj.badge, verdict: mj.verdict };
+        }
+      } catch {
+        /* best-effort — log the take without loudness */
+      }
       setMeasuring(false);
     }
 
@@ -447,7 +487,7 @@ function LogGenerationForm({ brief, onSaved }: { brief: SavedBrief; onSaved: (g:
       // A success carries no failure reason (server enforces this too).
       failureReason: verdict === 'success' ? undefined : failureReason || undefined,
       notes: notes.trim(),
-      ...(audioMetrics ? { audioMetrics } : {}),
+      ...(loudness ? { loudness } : {}),
     };
 
     try {
