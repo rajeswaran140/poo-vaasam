@@ -110,6 +110,7 @@ export function YouTubeVideosPanel({
 
   async function changeDays(next: number) {
     const myReq = ++reqId.current;
+    const prev = days;
     setDays(next);
     setRangeError(null);
     setLoading(true);
@@ -125,7 +126,12 @@ export function YouTubeVideosPanel({
       setRows(applyVideoAnalytics(initialRows, v.data));
       setPage(1);
     } catch (err) {
-      if (myReq === reqId.current) setRangeError(err instanceof Error ? err.message : String(err));
+      if (myReq === reqId.current) {
+        // Revert the range label so the header + CSV filename keep matching the
+        // data that's actually still loaded (the previous range).
+        setDays(prev);
+        setRangeError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
       if (myReq === reqId.current) setLoading(false);
     }

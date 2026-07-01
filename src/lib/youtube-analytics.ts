@@ -17,6 +17,7 @@
  */
 
 import { fetchWithRetry } from '@/lib/fetch-retry';
+import { parseGeographyRows, type GeographyRawRow } from '@/lib/youtube-geography';
 
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -89,12 +90,20 @@ async function getAccessToken(): Promise<string | null> {
   }
 }
 
-function dateRange(daysBack: number): { startDate: string; endDate: string } {
-  const today = new Date();
-  const start = new Date(today);
-  start.setUTCDate(today.getUTCDate() - daysBack);
+/**
+ * Exactly `daysBack` finalized days, ending YESTERDAY. Today is excluded
+ * because YouTube Analytics hasn't finalized the current day (a partial/empty
+ * tail that skewed "last N days" windows and made them one day too wide).
+ * Exported for unit testing.
+ */
+export function dateRange(daysBack: number): { startDate: string; endDate: string } {
   const fmt = (d: Date) => d.toISOString().slice(0, 10);
-  return { startDate: fmt(start), endDate: fmt(today) };
+  const n = Math.max(1, daysBack);
+  const end = new Date();
+  end.setUTCDate(end.getUTCDate() - 1); // yesterday
+  const start = new Date(end);
+  start.setUTCDate(end.getUTCDate() - (n - 1));
+  return { startDate: fmt(start), endDate: fmt(end) };
 }
 
 interface AnalyticsResponse {
@@ -124,30 +133,45 @@ async function runReport(params: Record<string, string>): Promise<AnalyticsRespo
   }
 }
 
-/** Per-video performance over the last N days, sorted by subscribers gained. */
+/**
+ * Per-video performance over the last N days, sorted by subscribers gained.
+ * Pages through the report (startIndex/maxResults) so channels with >50 videos
+ * aren't silently truncated to the top 50.
+ */
 export async function fetchVideoAnalytics(daysBack = 28): Promise<Result<VideoAnalyticsRow[]>> {
   if (!isYouTubeAnalyticsConfigured()) {
     return { ok: false, error: 'YouTube Analytics OAuth not configured' };
   }
   const { startDate, endDate } = dateRange(daysBack);
+  const PAGE = 50; // Analytics maxResults per request
+  const MAX = 500; // hard cap — quota/runaway safety
   try {
-    const res = await runReport({
-      ids: 'channel==MINE',
-      startDate,
-      endDate,
-      metrics: 'views,estimatedMinutesWatched,averageViewDuration,subscribersGained',
-      dimensions: 'video',
-      sort: '-subscribersGained',
-      maxResults: '50',
-    });
-    if (!res) return { ok: false, error: 'No response from YouTube Analytics' };
-    const rows = (res.rows ?? []).map((row): VideoAnalyticsRow => ({
-      videoId: String(row[0]),
-      views: Number(row[1] ?? 0),
-      estimatedMinutesWatched: Number(row[2] ?? 0),
-      averageViewDuration: Number(row[3] ?? 0),
-      subscribersGained: Number(row[4] ?? 0),
-    }));
+    const rows: VideoAnalyticsRow[] = [];
+    for (let startIndex = 1; startIndex <= MAX; startIndex += PAGE) {
+      const res = await runReport({
+        ids: 'channel==MINE',
+        startDate,
+        endDate,
+        metrics: 'views,estimatedMinutesWatched,averageViewDuration,subscribersGained',
+        dimensions: 'video',
+        sort: '-subscribersGained',
+        maxResults: String(PAGE),
+        startIndex: String(startIndex),
+      });
+      if (!res) {
+        if (rows.length > 0) break; // keep what we have if a later page fails
+        return { ok: false, error: 'No response from YouTube Analytics' };
+      }
+      const pageRows = (res.rows ?? []).map((row): VideoAnalyticsRow => ({
+        videoId: String(row[0]),
+        views: Number(row[1] ?? 0),
+        estimatedMinutesWatched: Number(row[2] ?? 0),
+        averageViewDuration: Number(row[3] ?? 0),
+        subscribersGained: Number(row[4] ?? 0),
+      }));
+      rows.push(...pageRows);
+      if (pageRows.length < PAGE) break; // last page
+    }
     return { ok: true, data: rows };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -181,6 +205,41 @@ export async function fetchRetentionCurve(
     if (!res) return { ok: false, error: 'No response from YouTube Analytics' };
     const rows = (res.rows ?? []).map((r): [number, number] => [Number(r[0]), Number(r[1])]);
     return { ok: true, data: rows };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Per-video audience geography: views / watch-time / retention by country,
+ * for a single video. Owner-scoped. Returns raw rows (parsed into objects);
+ * the pure `summarizeGeography` decorates them with names/flags/shares.
+ *
+ * YouTube only reports countries above its privacy threshold and only for
+ * finalized views, so a brand-new or very-low-view video can return [].
+ */
+export async function fetchVideoGeography(
+  videoId: string,
+  daysBack = 90
+): Promise<Result<GeographyRawRow[]>> {
+  if (!isYouTubeAnalyticsConfigured()) {
+    return { ok: false, error: 'YouTube Analytics OAuth not configured' };
+  }
+  if (!videoId) return { ok: false, error: 'videoId is required' };
+  const { startDate, endDate } = dateRange(daysBack);
+  try {
+    const res = await runReport({
+      ids: 'channel==MINE',
+      startDate,
+      endDate,
+      metrics: 'views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage',
+      dimensions: 'country',
+      filters: `video==${videoId}`,
+      sort: '-views',
+      maxResults: '200',
+    });
+    if (!res) return { ok: false, error: 'No response from YouTube Analytics' };
+    return { ok: true, data: parseGeographyRows(res.rows) };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }

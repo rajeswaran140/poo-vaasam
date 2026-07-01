@@ -43,7 +43,7 @@ export function RefreshRecsButton({ hasExisting }: { hasExisting: boolean }) {
         <RotateCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} aria-hidden />
         {loading ? 'Generating…' : hasExisting ? 'Refresh' : 'Generate recommendations'}
       </button>
-      {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {error && <p role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
     </div>
   );
 }

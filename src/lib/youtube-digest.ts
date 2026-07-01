@@ -61,23 +61,56 @@ const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 const mean = (xs: number[]) => (xs.length ? sum(xs) / xs.length : 0);
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
-function metric(current: number, prior: number): Metric {
-  return { current, prior, deltaPct: prior > 0 ? round1(((current - prior) / prior) * 100) : null };
+function metric(current: number, prior: number, hasBaseline = true): Metric {
+  return {
+    current,
+    prior,
+    deltaPct: hasBaseline && prior > 0 ? round1(((current - prior) / prior) * 100) : null,
+  };
 }
 
-/** Last 7 days vs the 7 days before, from an ascending-by-date daily series. */
+/**
+ * Fill gaps in an ascending daily series with zero-value days. YouTube's `day`
+ * dimension omits zero-activity days, which would otherwise let a 7-element
+ * `slice` span more than 7 calendar days and skew the week boundaries.
+ */
+export function densifyDaily(series: DailyPoint[]): DailyPoint[] {
+  if (series.length < 2) return [...series];
+  const sorted = [...series].sort((a, b) => a.date.localeCompare(b.date));
+  const byDate = new Map(sorted.map((d) => [d.date, d]));
+  const out: DailyPoint[] = [];
+  const cur = new Date(`${sorted[0].date}T00:00:00Z`);
+  const end = new Date(`${sorted[sorted.length - 1].date}T00:00:00Z`);
+  while (cur <= end) {
+    const key = cur.toISOString().slice(0, 10);
+    out.push(
+      byDate.get(key) ?? { date: key, views: 0, subscribersGained: 0, estimatedMinutesWatched: 0 }
+    );
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return out;
+}
+
+/**
+ * Last 7 days vs the 7 days before, from an ascending-by-date daily series.
+ * When there aren't a full 7 prior days, deltaPct is null (no baseline) rather
+ * than comparing against a short window — which would report a false swing.
+ */
 export function summarizeWeekOverWeek(series: DailyPoint[]): WeekOverWeek {
   const last7 = series.slice(-7);
   const prev7 = series.slice(-14, -7);
+  const hasBaseline = prev7.length === 7;
   return {
-    views: metric(sum(last7.map((d) => d.views)), sum(prev7.map((d) => d.views))),
+    views: metric(sum(last7.map((d) => d.views)), sum(prev7.map((d) => d.views)), hasBaseline),
     subscribersGained: metric(
       sum(last7.map((d) => d.subscribersGained)),
-      sum(prev7.map((d) => d.subscribersGained))
+      sum(prev7.map((d) => d.subscribersGained)),
+      hasBaseline
     ),
     watchTimeMinutes: metric(
       Math.round(sum(last7.map((d) => d.estimatedMinutesWatched))),
-      Math.round(sum(prev7.map((d) => d.estimatedMinutesWatched)))
+      Math.round(sum(prev7.map((d) => d.estimatedMinutesWatched))),
+      hasBaseline
     ),
   };
 }
@@ -134,8 +167,10 @@ function headlineFor(wow: WeekOverWeek, anomaly: Anomaly): string {
 
 /** Assemble the full weekly digest. */
 export function buildDigest(series: DailyPoint[], weekVideos: VideoAnalyticsRow[]): Digest {
-  const weekOverWeek = summarizeWeekOverWeek(series);
-  const anomaly = detectViewAnomaly(series.map((d) => d.views));
+  // Densify first so week/anomaly windows count calendar days, not row count.
+  const dense = densifyDaily(series);
+  const weekOverWeek = summarizeWeekOverWeek(dense);
+  const anomaly = detectViewAnomaly(dense.map((d) => d.views));
   return {
     weekOverWeek,
     anomaly,

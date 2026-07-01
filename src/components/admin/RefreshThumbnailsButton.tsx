@@ -44,8 +44,8 @@ export function RefreshThumbnailsButton() {
         <ImageDown className={`h-3 w-3 ${loading ? 'animate-pulse' : ''}`} aria-hidden />
         {loading ? 'Refreshing…' : 'Refresh thumbnails'}
       </button>
-      {msg && <p className="mt-1 text-xs text-green-700 dark:text-green-400">{msg}</p>}
-      {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {msg && <p role="status" aria-live="polite" className="mt-1 text-xs text-green-700 dark:text-green-400">{msg}</p>}
+      {error && <p role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
     </div>
   );
 }

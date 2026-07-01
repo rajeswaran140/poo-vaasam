@@ -6,6 +6,7 @@ import {
   summarizeWeekOverWeek,
   detectViewAnomaly,
   buildDigest,
+  densifyDaily,
   type DailyPoint,
 } from '@/lib/youtube-digest';
 import type { VideoAnalyticsRow } from '@/lib/youtube-analytics';
@@ -44,6 +45,34 @@ describe('summarizeWeekOverWeek', () => {
     const wow = summarizeWeekOverWeek(series14.slice(-7)); // only current week
     expect(wow.views.prior).toBe(0);
     expect(wow.views.deltaPct).toBeNull();
+  });
+  it('returns null delta when the prior window is partial (<14 points)', () => {
+    // 10 days → prev7 = slice(-14,-7) = only 3 days: NOT a full baseline week.
+    const ten = Array.from({ length: 10 }, (_, i) =>
+      day(`2026-06-${String(i + 1).padStart(2, '0')}`, 10)
+    );
+    const wow = summarizeWeekOverWeek(ten);
+    // Without the guard this would report a false swing (70 vs 30 = +133%).
+    expect(wow.views.deltaPct).toBeNull();
+    expect(wow.subscribersGained.deltaPct).toBeNull();
+  });
+});
+
+describe('densifyDaily', () => {
+  it('fills missing calendar days with zero-value entries', () => {
+    const sparse = [day('2026-06-01', 5), day('2026-06-04', 8)]; // 06-02 & 06-03 omitted
+    const dense = densifyDaily(sparse);
+    expect(dense.map((d) => d.date)).toEqual([
+      '2026-06-01',
+      '2026-06-02',
+      '2026-06-03',
+      '2026-06-04',
+    ]);
+    expect(dense[1]).toMatchObject({ date: '2026-06-02', views: 0, subscribersGained: 0 });
+    expect(dense[3].views).toBe(8);
+  });
+  it('leaves a already-dense series unchanged in length', () => {
+    expect(densifyDaily(series14)).toHaveLength(14);
   });
 });
 

@@ -43,12 +43,12 @@ beforeEach(() => {
 it('returns 403 when not admin', async () => {
   const { AuthError } = jest.requireActual('@/lib/auth-helper');
   mockRequireAdmin.mockRejectedValueOnce(new AuthError('Forbidden', 403));
-  expect((await GET(req('?videoId=v1'))).status).toBe(403);
+  expect((await GET(req('?videoId=aaaaaaaaaaa'))).status).toBe(403);
 });
 
 it('returns 503 when Analytics OAuth is not configured', async () => {
   mockConfigured.mockReturnValueOnce(false);
-  const res = await GET(req('?videoId=v1'));
+  const res = await GET(req('?videoId=aaaaaaaaaaa'));
   expect(res.status).toBe(503);
   expect(mockCurve).not.toHaveBeenCalled();
 });
@@ -59,11 +59,18 @@ it('returns 400 when videoId is missing', async () => {
   expect((await res.json()).error).toMatch(/videoId/);
 });
 
+it('returns 400 for a malformed videoId (not 11 url-safe chars)', async () => {
+  const res = await GET(req('?videoId=not-valid'));
+  expect(res.status).toBe(400);
+  expect((await res.json()).error).toMatch(/invalid videoId/);
+  expect(mockCurve).not.toHaveBeenCalled();
+});
+
 it('classifies a weak video against a strong benchmark', async () => {
   mockCurve
     .mockResolvedValueOnce({ ok: true, data: WEAK }) // the video
     .mockResolvedValueOnce({ ok: true, data: STRONG }); // the benchmark
-  const res = await GET(req('?videoId=vWeak&benchmarkId=vBench&duration=300'));
+  const res = await GET(req('?videoId=Weak1234567&benchmarkId=Bench123456&duration=300'));
   const body = await res.json();
   expect(res.status).toBe(200);
   expect(body.success).toBe(true);
@@ -78,7 +85,7 @@ it('classifies a weak video against a strong benchmark', async () => {
 
 it('does not fetch a benchmark when benchmarkId equals videoId', async () => {
   mockCurve.mockResolvedValueOnce({ ok: true, data: STRONG });
-  const res = await GET(req('?videoId=vSame&benchmarkId=vSame'));
+  const res = await GET(req('?videoId=Same1234567&benchmarkId=Same1234567'));
   const body = await res.json();
   expect(res.status).toBe(200);
   expect(body.benchmarkId).toBeNull();
@@ -88,7 +95,7 @@ it('does not fetch a benchmark when benchmarkId equals videoId', async () => {
 
 it('treats a brand-new upload (empty curve) as hasData:false + unknown', async () => {
   mockCurve.mockResolvedValueOnce({ ok: true, data: [] });
-  const res = await GET(req('?videoId=vNew'));
+  const res = await GET(req('?videoId=NewNewNew12'));
   const body = await res.json();
   expect(res.status).toBe(200);
   expect(body.hasData).toBe(false);
@@ -97,7 +104,7 @@ it('treats a brand-new upload (empty curve) as hasData:false + unknown', async (
 
 it('returns 502 when the analytics fetch fails', async () => {
   mockCurve.mockResolvedValueOnce({ ok: false, error: 'Analytics API 500: boom' });
-  const res = await GET(req('?videoId=vErr'));
+  const res = await GET(req('?videoId=ErrErrErr12'));
   expect(res.status).toBe(502);
   expect((await res.json()).error).toMatch(/boom/);
 });

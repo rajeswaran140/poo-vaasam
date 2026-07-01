@@ -41,8 +41,11 @@ const mockVideoAnalytics = yta.fetchVideoAnalytics as jest.Mock;
 const mockGen = generateYouTubeRecommendations as jest.Mock;
 const mockConfigured = yta.isYouTubeAnalyticsConfigured as jest.Mock;
 
-const req = (method = 'GET') =>
-  new NextRequest('https://tamilagaval.com/api/admin/youtube/recommendations', { method });
+const req = (method = 'GET', withBearer = true) =>
+  new NextRequest('https://tamilagaval.com/api/admin/youtube/recommendations', {
+    method,
+    headers: withBearer ? { Authorization: 'Bearer test-token' } : undefined,
+  });
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -76,6 +79,13 @@ it('POST regenerates, caches, and returns the recs', async () => {
   expect(body.recommendations).toEqual(['rec one', 'rec two']);
   expect(mockGen).toHaveBeenCalledTimes(1);
   expect(mockSave).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ recommendations: ['rec one', 'rec two'], days: 28 }));
+});
+
+it('POST returns 401 without a Bearer token (CSRF defense on the mutation)', async () => {
+  const res = await POST(req('POST', false));
+  expect(res.status).toBe(401);
+  expect(mockGen).not.toHaveBeenCalled();
+  expect(mockSave).not.toHaveBeenCalled();
 });
 
 it('POST returns 503 when Analytics OAuth is not configured', async () => {

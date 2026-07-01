@@ -9,7 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
+import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { fetchChannelVideos } from '@/lib/youtube-feed';
 import { refreshThumbnails } from '@/lib/video-thumbnails';
 import { SITE } from '@/config/site';
@@ -19,6 +19,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   try {
     await requireAdmin(request);
+    requireBearer(request); // mutation (overwrites S3 thumbnails) — reject cookie-only auth
   } catch (err) {
     return authErrorResponse(err);
   }

@@ -18,7 +18,13 @@ import { POST } from '@/app/api/admin/youtube/refresh-thumbnails/route';
 import * as auth from '@/lib/auth-helper';
 
 const requireAdmin = auth.requireAdmin as jest.Mock;
-const req = () => POST(new NextRequest('https://tamilagaval.com/api/admin/youtube/refresh-thumbnails', { method: 'POST' }));
+const req = (withBearer = true) =>
+  POST(
+    new NextRequest('https://tamilagaval.com/api/admin/youtube/refresh-thumbnails', {
+      method: 'POST',
+      headers: withBearer ? { Authorization: 'Bearer test-token' } : undefined,
+    })
+  );
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -29,6 +35,11 @@ it('returns 403 for a non-admin (no re-mirror)', async () => {
   const { AuthError } = jest.requireActual('@/lib/auth-helper');
   requireAdmin.mockRejectedValueOnce(new AuthError('Forbidden', 403));
   expect((await req()).status).toBe(403);
+  expect(mockRefresh).not.toHaveBeenCalled();
+});
+
+it('returns 401 without a Bearer token (CSRF defense on the mutation)', async () => {
+  expect((await req(false)).status).toBe(401);
   expect(mockRefresh).not.toHaveBeenCalled();
 });
 

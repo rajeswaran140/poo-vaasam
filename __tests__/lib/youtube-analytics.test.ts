@@ -7,9 +7,9 @@
  */
 
 import {
-  isYouTubeAnalyticsConfigured,
   fetchVideoAnalytics,
   fetchChannelAnalyticsSnapshot,
+  dateRange,
 } from '@/lib/youtube-analytics';
 
 const originalEnv = { ...process.env };
@@ -129,5 +129,49 @@ describe('fetchChannelAnalyticsSnapshot', () => {
       expect(out.data.views).toBe(0);
       expect(out.data.daysBack).toBe(7);
     }
+  });
+});
+
+// Defined last so the token-call-count assertions above run before this test
+// mints (and caches) a token on the shared module instance.
+describe('dateRange', () => {
+  it('returns exactly daysBack finalized days ending yesterday (today excluded)', () => {
+    const { startDate, endDate } = dateRange(7);
+    const today = new Date().toISOString().slice(0, 10);
+    const yesterday = (() => {
+      const d = new Date();
+      d.setUTCDate(d.getUTCDate() - 1);
+      return d.toISOString().slice(0, 10);
+    })();
+    expect(endDate).toBe(yesterday);
+    expect(endDate).not.toBe(today); // partial/non-finalized current day excluded
+    const days =
+      Math.round(
+        (new Date(`${endDate}T00:00:00Z`).getTime() - new Date(`${startDate}T00:00:00Z`).getTime()) /
+          86_400_000
+      ) + 1; // inclusive
+    expect(days).toBe(7);
+  });
+});
+
+describe('fetchVideoAnalytics pagination', () => {
+  it('pages the report via startIndex until a short page, aggregating rows', async () => {
+    const page1 = Array.from({ length: 50 }, (_, i) => [`v${i + 1}`, 10, 5, 30, 1]);
+    const page2 = Array.from({ length: 3 }, (_, i) => [`v${i + 51}`, 10, 5, 30, 1]);
+    let reportCalls = 0;
+    jest.spyOn(global, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.startsWith('https://oauth2.googleapis.com/token')) return tokenOk();
+      if (url.startsWith('https://youtubeanalytics.googleapis.com/v2/reports')) {
+        reportCalls++;
+        return reportOk({ rows: url.includes('startIndex=51') ? page2 : page1 });
+      }
+      throw new Error(`unexpected URL: ${url}`);
+    });
+
+    const out = await fetchVideoAnalytics(28);
+    expect(out.ok).toBe(true);
+    if (out.ok) expect(out.data).toHaveLength(53); // 50 + 3, nothing truncated
+    expect(reportCalls).toBe(2); // second page was short → stopped
   });
 });

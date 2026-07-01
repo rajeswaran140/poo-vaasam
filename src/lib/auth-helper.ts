@@ -149,6 +149,20 @@ export async function requireAdmin(request: NextRequest): Promise<AuthContext> {
 }
 
 /**
+ * Reject cookie-only auth on state-changing routes (defense-in-depth CSRF).
+ * CSRF rides ambient cookies; a cross-site page can't set a custom
+ * `Authorization` header without a CORS preflight the app never grants — so
+ * requiring an explicit Bearer token closes the vector on mutations. The admin
+ * UI always sends Bearer (adminFetch), so this is transparent to it. Call
+ * alongside requireAdmin on POST/mutation handlers.
+ */
+export function requireBearer(request: NextRequest): void {
+  if (!bearerToken(request)) {
+    throw new AuthError('Bearer token required for this operation', 401);
+  }
+}
+
+/**
  * Role check. An authenticated user is an admin when they belong to a Cognito
  * admin group OR their email is in the `ADMIN_EMAILS` allow-list.
  *

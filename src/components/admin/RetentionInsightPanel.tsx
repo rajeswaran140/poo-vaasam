@@ -9,9 +9,8 @@
  * The analysis math lives in the pure (unit-tested) lib/youtube-retention.
  */
 
-import { useState } from 'react';
-import { adminFetch } from '@/lib/client-auth';
 import { videoKind } from '@/lib/youtube-dashboard';
+import { useVideoAnalysis } from '@/components/admin/useVideoAnalysis';
 import type { RetentionSummary, RetentionVerdict, RetentionPoint } from '@/lib/youtube-retention';
 
 interface RetentionResult {
@@ -44,33 +43,16 @@ export function RetentionInsightPanel({
   benchmark?: { id: string; title: string };
   ytaConfigured: boolean;
 }) {
-  const [videoId, setVideoId] = useState(videos[0]?.id ?? '');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<RetentionResult | null>(null);
-
-  async function analyze() {
-    const video = videos.find((v) => v.id === videoId);
-    if (!video) return;
-    setLoading(true);
-    setError(null);
-    setResult(null);
-    try {
-      const qs = new URLSearchParams({ videoId: video.id, duration: String(video.durationSeconds) });
-      if (benchmark && benchmark.id !== video.id) qs.set('benchmarkId', benchmark.id);
-      // adminFetch attaches the Cognito ID token as a Bearer header — required:
-      // Amplify keeps the token in browser storage, so a cookie-only fetch isn't
-      // reliably authenticated and the route 401s (this panel's "not working").
-      const res = await adminFetch(`/api/admin/youtube/retention?${qs.toString()}`);
-      const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.error || `Request failed (${res.status})`);
-      setResult(json as RetentionResult);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
+  // Shared hook: adminFetch (Bearer), out-of-order guard, and clear-on-change.
+  const { videoId, setVideoId, loading, error, result, analyze } = useVideoAnalysis<RetentionResult>(
+    videos,
+    (id) => {
+      const v = videos.find((x) => x.id === id);
+      const qs = new URLSearchParams({ videoId: id, duration: String(v?.durationSeconds ?? 0) });
+      if (benchmark && benchmark.id !== id) qs.set('benchmarkId', benchmark.id);
+      return `/api/admin/youtube/retention?${qs.toString()}`;
     }
-  }
+  );
 
   if (!ytaConfigured) {
     return (

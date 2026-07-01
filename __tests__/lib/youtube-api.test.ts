@@ -8,9 +8,25 @@ import {
   parseIsoDurationSeconds,
   formatDuration,
   isYouTubeApiConfigured,
+  isValidYouTubeId,
   fetchChannelStats,
   fetchChannelVideoStats,
 } from '@/lib/youtube-api';
+
+describe('isValidYouTubeId', () => {
+  it('accepts exactly 11 url-safe base64 chars', () => {
+    expect(isValidYouTubeId('dQw4w9WgXcQ')).toBe(true);
+    expect(isValidYouTubeId('LAc32P8ln34')).toBe(true);
+    expect(isValidYouTubeId('_-Ab09xy-Z_')).toBe(true);
+  });
+  it('rejects wrong length or illegal chars (incl. filter-injection attempts)', () => {
+    expect(isValidYouTubeId('short')).toBe(false);
+    expect(isValidYouTubeId('waytoolongid123')).toBe(false);
+    expect(isValidYouTubeId('bad;continent==002')).toBe(false);
+    expect(isValidYouTubeId('has space12')).toBe(false);
+    expect(isValidYouTubeId('')).toBe(false);
+  });
+});
 
 describe('parseIsoDurationSeconds', () => {
   it('parses H + M + S forms', () => {
@@ -209,7 +225,7 @@ describe('fetchChannelVideoStats', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
-  it('caps limit to YouTube playlistItems max (50)', async () => {
+  it('requests playlistItems in pages of at most 50', async () => {
     const fetchMock = jest.spyOn(global, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
       if (url.includes('/channels?')) {
@@ -223,5 +239,60 @@ describe('fetchChannelVideoStats', () => {
     await fetchChannelVideoStats('UCabc', 200);
     const playlistCall = fetchMock.mock.calls.find((c) => String(c[0]).includes('/playlistItems?'));
     expect(String(playlistCall?.[0])).toContain('maxResults=50');
+  });
+
+  it('pages through playlistItems and batches videos.list past 50 videos', async () => {
+    const page1 = Array.from({ length: 50 }, (_, i) => ({ contentDetails: { videoId: `v${i + 1}` } }));
+    const page2 = Array.from({ length: 10 }, (_, i) => ({ contentDetails: { videoId: `v${i + 51}` } }));
+    const fetchMock = jest.spyOn(global, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/channels?')) {
+        return new Response(JSON.stringify({
+          items: [{ id: 'UCabc', snippet: {}, statistics: {}, contentDetails: { relatedPlaylists: { uploads: 'UUabc' } } }],
+        }), { status: 200 });
+      }
+      if (url.includes('/playlistItems?')) {
+        const hasToken = url.includes('pageToken=');
+        return new Response(
+          JSON.stringify(hasToken ? { items: page2 } : { items: page1, nextPageToken: 'p2' }),
+          { status: 200 }
+        );
+      }
+      if (url.includes('/videos?')) {
+        const idsParam = decodeURIComponent(url.split('id=')[1].split('&')[0]);
+        const ids = idsParam.split(',');
+        return new Response(
+          JSON.stringify({ items: ids.map((id) => ({ id, snippet: {}, statistics: {}, contentDetails: { duration: 'PT1M' } })) }),
+          { status: 200 }
+        );
+      }
+      throw new Error(`unexpected URL: ${url}`);
+    });
+
+    const out = await fetchChannelVideoStats('UCabc', 200);
+    expect(out).toHaveLength(60); // nothing silently dropped past 50
+    const playlistCalls = fetchMock.mock.calls.filter((c) => String(c[0]).includes('/playlistItems?'));
+    const videoCalls = fetchMock.mock.calls.filter((c) => String(c[0]).includes('/videos?'));
+    expect(playlistCalls).toHaveLength(2); // followed nextPageToken
+    expect(videoCalls).toHaveLength(2); // hydrated in 50 + 10 chunks
+  });
+
+  it('reuses a passed-in channel (skips the duplicate channels.list)', async () => {
+    const fetchMock = jest.spyOn(global, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/channels?')) throw new Error('should not call channels.list when channel is provided');
+      if (url.includes('/playlistItems?')) {
+        return new Response(JSON.stringify({ items: [{ contentDetails: { videoId: 'v1' } }] }), { status: 200 });
+      }
+      if (url.includes('/videos?')) {
+        return new Response(JSON.stringify({ items: [{ id: 'v1', snippet: {}, statistics: {}, contentDetails: { duration: 'PT1M' } }] }), { status: 200 });
+      }
+      throw new Error(`unexpected URL: ${url}`);
+    });
+
+    const channel = { channelId: 'UCabc', title: 'Ch', subscriberCount: 1, viewCount: 2, videoCount: 3, uploadsPlaylistId: 'UUabc' };
+    const out = await fetchChannelVideoStats('UCabc', 50, { channel });
+    expect(out).toHaveLength(1);
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/channels?'))).toBe(false);
   });
 });

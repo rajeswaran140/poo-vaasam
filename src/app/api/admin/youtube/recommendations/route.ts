@@ -10,7 +10,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
+import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import {
   fetchChannelAnalyticsSnapshot,
   fetchVideoAnalytics,
@@ -40,6 +40,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     await requireAdmin(request);
+    requireBearer(request); // mutation (paid LLM call) — reject cookie-only auth
   } catch (err) {
     return authErrorResponse(err);
   }

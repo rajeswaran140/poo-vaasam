@@ -38,6 +38,7 @@ import { RefreshRecsButton } from '@/components/admin/RefreshRecsButton';
 import { RefreshThumbnailsButton } from '@/components/admin/RefreshThumbnailsButton';
 import { YouTubeVideosPanel } from '@/components/admin/YouTubeVideosPanel';
 import { RetentionInsightPanel } from '@/components/admin/RetentionInsightPanel';
+import { GeographyInsightPanel } from '@/components/admin/GeographyInsightPanel';
 import { mergeVideoRows, pickRetentionBenchmark } from '@/lib/youtube-dashboard';
 
 const ANALYTICS_DAYS = 28;
@@ -79,18 +80,10 @@ export default async function YouTubeAdminPage() {
 
   const ga4On = isGA4Configured();
   const ytaOn = isYouTubeAnalyticsConfigured();
-  const [channel, videos, ga4ClicksRes, ga4TrafficRes, ga4AudioRes, ga4YouTubeRes, ytaChannelRes, ytaVideosRes, dailyRes] = await Promise.all([
-    fetchChannelStats(SITE.youtube.channelId),
-    fetchChannelVideoStats(SITE.youtube.channelId, 50),
-    ga4On ? fetchSubscribeClicksBySource(ANALYTICS_DAYS) : Promise.resolve(null),
-    ga4On ? fetchTrafficSnapshot(ANALYTICS_DAYS) : Promise.resolve(null),
-    ga4On ? fetchAudioPlays(ANALYTICS_DAYS) : Promise.resolve(null),
-    ga4On ? fetchYouTubeOpens(ANALYTICS_DAYS) : Promise.resolve(null),
-    ytaOn ? fetchChannelAnalyticsSnapshot(ANALYTICS_DAYS) : Promise.resolve(null),
-    ytaOn ? fetchVideoAnalytics(ANALYTICS_DAYS) : Promise.resolve(null),
-    ytaOn ? fetchDailySeries(ANALYTICS_DAYS) : Promise.resolve(null),
-  ]);
 
+  // Fetch the channel once — its uploadsPlaylistId is reused by the video-stats
+  // call below (avoids a duplicate channels.list). Without it the page can't render.
+  const channel = await fetchChannelStats(SITE.youtube.channelId);
   if (!channel) {
     return (
       <div className="rounded-xl border border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-900/20 p-6 text-red-900 dark:text-red-200">
@@ -98,6 +91,21 @@ export default async function YouTubeAdminPage() {
       </div>
     );
   }
+
+  // Everything else fans out in parallel (each helper is failure-isolated —
+  // Result objects or null — so one failure can't blank the page). cachedRecs
+  // is in the fan-out too, not a serial await afterwards.
+  const [videos, ga4ClicksRes, ga4TrafficRes, ga4AudioRes, ga4YouTubeRes, ytaChannelRes, ytaVideosRes, dailyRes, cachedRecs] = await Promise.all([
+    fetchChannelVideoStats(SITE.youtube.channelId, 200, { channel }),
+    ga4On ? fetchSubscribeClicksBySource(ANALYTICS_DAYS) : Promise.resolve(null),
+    ga4On ? fetchTrafficSnapshot(ANALYTICS_DAYS) : Promise.resolve(null),
+    ga4On ? fetchAudioPlays(ANALYTICS_DAYS) : Promise.resolve(null),
+    ga4On ? fetchYouTubeOpens(ANALYTICS_DAYS) : Promise.resolve(null),
+    ytaOn ? fetchChannelAnalyticsSnapshot(ANALYTICS_DAYS) : Promise.resolve(null),
+    ytaOn ? fetchVideoAnalytics(ANALYTICS_DAYS) : Promise.resolve(null),
+    ytaOn ? fetchDailySeries(ANALYTICS_DAYS) : Promise.resolve(null),
+    new YtRecsRepository().get(SITE.youtube.channelId).catch(() => null),
+  ]);
 
   // Unwrap GA4 Results — if either failed, render its .error verbatim on the
   // dashboard so we can see "PERMISSION_DENIED" / "invalid dimension" etc.
@@ -131,10 +139,9 @@ export default async function YouTubeAdminPage() {
   const retentionVideos = videoRows.map((r) => ({ id: r.id, title: r.title, durationSeconds: r.durationSeconds }));
   const ytaError = ytaChannelRes && !ytaChannelRes.ok ? ytaChannelRes.error : null;
   const titlesByVideoId = Object.fromEntries(videos.map((v) => [v.id, v.title]));
-  // Recommendations are generated on demand (admin "Refresh") and cached — NEVER
-  // an LLM call in this render path (an Anthropic call can't reliably fit the
-  // Amplify ~30s request ceiling; same constraint that moved compose async).
-  const cachedRecs = await new YtRecsRepository().get(SITE.youtube.channelId).catch(() => null);
+  // cachedRecs came from the fan-out above. Recommendations are generated on
+  // demand (admin "Refresh") and cached — NEVER an LLM call in this render path
+  // (an Anthropic call can't reliably fit the Amplify ~30s request ceiling).
 
   return (
     <div className="space-y-8">
@@ -149,7 +156,7 @@ export default async function YouTubeAdminPage() {
               rel="noopener noreferrer"
               className="text-orange-600 hover:underline"
             >
-              Open channel ↗
+              Open channel <span aria-hidden>↗</span>
             </a>
           </p>
         </div>
@@ -378,6 +385,10 @@ export default async function YouTubeAdminPage() {
         benchmark={benchmarkRow ? { id: benchmarkRow.id, title: benchmarkRow.title } : undefined}
         ytaConfigured={ytaOn}
       />
+
+      {/* Audience geography — which countries a given video's viewers come from
+          (the diaspora vs home-region split). Same video list as retention. */}
+      <GeographyInsightPanel videos={retentionVideos} ytaConfigured={ytaOn} />
 
       {/* Interactive videos panel — pagination, sort, filter, CSV export,
           and a live date-range selector (re-queries owner Analytics). */}

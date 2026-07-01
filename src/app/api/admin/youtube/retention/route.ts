@@ -15,6 +15,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
 import { fetchRetentionCurve, isYouTubeAnalyticsConfigured } from '@/lib/youtube-analytics';
 import { analyzeRetention, parseRetentionRows } from '@/lib/youtube-retention';
+import { isValidYouTubeId } from '@/lib/youtube-api';
 
 export async function GET(request: NextRequest) {
   try {
@@ -35,7 +36,12 @@ export async function GET(request: NextRequest) {
   if (!videoId) {
     return NextResponse.json({ success: false, error: 'videoId is required' }, { status: 400 });
   }
-  const benchmarkId = params.get('benchmarkId')?.trim() || null;
+  if (!isValidYouTubeId(videoId)) {
+    return NextResponse.json({ success: false, error: 'invalid videoId' }, { status: 400 });
+  }
+  const benchmarkRaw = params.get('benchmarkId')?.trim() || null;
+  // Ignore a malformed benchmark rather than 400 — it's an optional comparison.
+  const benchmarkId = benchmarkRaw && isValidYouTubeId(benchmarkRaw) ? benchmarkRaw : null;
   const durationRaw = Number(params.get('duration'));
   const durationSeconds = Number.isFinite(durationRaw) && durationRaw > 0 ? durationRaw : undefined;
   const daysRaw = Number(params.get('days') ?? '90');

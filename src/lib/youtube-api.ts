@@ -64,6 +64,16 @@ export function isYouTubeApiConfigured(): boolean {
   return Boolean(process.env.YOUTUBE_API_KEY);
 }
 
+/**
+ * A YouTube video ID is exactly 11 URL-safe base64 chars. Validate before
+ * interpolating a caller-supplied id into an Analytics `filters=video==<id>`
+ * clause (that grammar is `;`-delimited, so an unvalidated id could smuggle an
+ * extra filter). Also a cheap guard against malformed lookups.
+ */
+export function isValidYouTubeId(id: string): boolean {
+  return /^[A-Za-z0-9_-]{11}$/.test(id);
+}
+
 async function ytFetch<T>(url: string): Promise<T | null> {
   const key = process.env.YOUTUBE_API_KEY;
   if (!key) return null;
@@ -131,40 +141,65 @@ interface VideosResponse {
 }
 
 /**
- * Fetch the latest N videos in the channel's uploads playlist, with full
- * statistics. Two API calls: one to list video IDs (≤50/page), one to hydrate
- * statistics for those IDs.
+ * Fetch up to `limit` of the channel's most-recent uploads, with full
+ * statistics. Pages through the uploads playlist (50 IDs/page) until it has
+ * `limit` IDs or the playlist is exhausted, then hydrates statistics in
+ * batches of 50 (the videos.list id cap) — so the dashboard doesn't silently
+ * drop videos once the channel passes 50 uploads.
+ *
+ * Pass `opts.channel` to reuse an already-fetched ChannelStats and avoid a
+ * duplicate channels.list call (the page fetches the channel once).
  */
 export async function fetchChannelVideoStats(
   channelId: string,
-  limit = 50
+  limit = 50,
+  opts: { channel?: ChannelStats } = {}
 ): Promise<VideoStats[]> {
-  const channel = await fetchChannelStats(channelId);
+  const channel = opts.channel ?? (await fetchChannelStats(channelId));
   if (!channel?.uploadsPlaylistId) return [];
 
-  const cappedLimit = Math.min(Math.max(limit, 1), 50);
-  const playlistUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&maxResults=${cappedLimit}&playlistId=${encodeURIComponent(channel.uploadsPlaylistId)}`;
-  const playlist = await ytFetch<PlaylistItemsResponse>(playlistUrl);
-  const ids = (playlist?.items ?? [])
-    .map((i) => i.contentDetails?.videoId)
-    .filter((v): v is string => Boolean(v));
+  const wanted = Math.max(1, Math.min(limit, 500)); // hard cap: quota safety
+  const uploads = encodeURIComponent(channel.uploadsPlaylistId);
+
+  // 1) Page playlistItems for video IDs until we have `wanted` or run out.
+  const ids: string[] = [];
+  let pageToken: string | undefined;
+  do {
+    const pageSize = Math.min(50, wanted - ids.length);
+    const tokenParam = pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '';
+    const playlistUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&maxResults=${pageSize}&playlistId=${uploads}${tokenParam}`;
+    const playlist = await ytFetch<PlaylistItemsResponse>(playlistUrl);
+    if (!playlist) break; // a failed page shouldn't drop the IDs already gathered
+    for (const i of playlist.items ?? []) {
+      const vid = i.contentDetails?.videoId;
+      if (vid) ids.push(vid);
+    }
+    pageToken = playlist.nextPageToken;
+  } while (pageToken && ids.length < wanted);
+
   if (ids.length === 0) return [];
 
-  const videosUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id=${encodeURIComponent(ids.join(','))}`;
-  const videos = await ytFetch<VideosResponse>(videosUrl);
-  return (videos?.items ?? []).map((v) => {
-    const duration = v.contentDetails?.duration ?? '';
-    return {
-      id: v.id,
-      title: v.snippet?.title ?? '',
-      publishedAt: v.snippet?.publishedAt ?? '',
-      thumbnail:
-        v.snippet?.thumbnails?.medium?.url ?? v.snippet?.thumbnails?.default?.url ?? '',
-      viewCount: Number(v.statistics?.viewCount ?? 0),
-      likeCount: Number(v.statistics?.likeCount ?? 0),
-      commentCount: Number(v.statistics?.commentCount ?? 0),
-      duration,
-      durationSeconds: parseIsoDurationSeconds(duration),
-    };
-  });
+  // 2) Hydrate statistics in chunks of 50 (videos.list id cap), preserving order.
+  const out: VideoStats[] = [];
+  for (let i = 0; i < ids.length; i += 50) {
+    const chunk = ids.slice(i, i + 50);
+    const videosUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id=${encodeURIComponent(chunk.join(','))}`;
+    const videos = await ytFetch<VideosResponse>(videosUrl);
+    for (const v of videos?.items ?? []) {
+      const duration = v.contentDetails?.duration ?? '';
+      out.push({
+        id: v.id,
+        title: v.snippet?.title ?? '',
+        publishedAt: v.snippet?.publishedAt ?? '',
+        thumbnail:
+          v.snippet?.thumbnails?.medium?.url ?? v.snippet?.thumbnails?.default?.url ?? '',
+        viewCount: Number(v.statistics?.viewCount ?? 0),
+        likeCount: Number(v.statistics?.likeCount ?? 0),
+        commentCount: Number(v.statistics?.commentCount ?? 0),
+        duration,
+        durationSeconds: parseIsoDurationSeconds(duration),
+      });
+    }
+  }
+  return out;
 }
