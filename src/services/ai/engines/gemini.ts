@@ -67,8 +67,11 @@ export class GeminiComposerEngine implements ComposerEngine {
       const detail = err instanceof Error ? err.message : String(err);
       console.error(`[ai/engine:gemini] call failed (status=${status ?? 'n/a'}, ms=${Date.now() - startedAt}):`, detail);
 
-      // Invalid AI Studio keys come back as 400 API_KEY_INVALID, not 401.
-      const keyRejected = status === 401 || status === 403 || /api[\s_-]?key/i.test(detail);
+      // Invalid AI Studio keys come back as 400 API_KEY_INVALID, not 401. Tie
+      // the message heuristic to a 400 so a transient 5xx that merely mentions
+      // "API key" isn't misclassified as a permanent (non-retryable) auth error.
+      const keyRejected =
+        status === 401 || status === 403 || (status === 400 && /api[\s_-]?key/i.test(detail));
       if (keyRejected) {
         return { ok: false, code: 'auth', error: 'The Gemini API key is invalid, expired, or lacks access. Update GEMINI_API_KEY.' };
       }

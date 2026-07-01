@@ -35,8 +35,11 @@ import {
 
 export type { LyricBrief, Lyrics } from './lyricistSchema';
 
-// Sonnet 4.5 for the best Tamil/poetic nuance (matches the Composer).
-export const DEFAULT_MODEL = 'claude-sonnet-4-5';
+// Sonnet 4.6 — REQUIRED: the lyric schema has a doubly-nested array
+// (charanams: string[][]), and 4.5 mis-serialises nested-array tool args as
+// <parameter>-wrapped strings that fail schema validation (same reason the
+// Composer and Lyric Critic run on 4.6). Do not downgrade.
+export const DEFAULT_MODEL = 'claude-sonnet-4-6';
 // A full song (title + pallavi + anupallavi + up to 5 charanams) is pure Tamil
 // script, which is token-dense — so we match the Composer's 6000 ceiling rather
 // than risk truncating the largest legitimate briefs. Typical output is far

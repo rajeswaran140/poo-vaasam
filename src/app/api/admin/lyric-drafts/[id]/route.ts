@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
+import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { LyricDraftRepository } from '@/infrastructure/database/LyricDraftRepository';
 import { updateLyricDraftMetaSchema } from '@/types/lyricDraft';
 
@@ -37,6 +37,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     await requireAdmin(request);
+    requireBearer(request); // mutation — reject cookie-only auth (CSRF)
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -67,6 +68,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     await requireAdmin(request);
+    requireBearer(request); // destructive mutation — reject cookie-only auth (CSRF)
   } catch (err) {
     return authErrorResponse(err);
   }

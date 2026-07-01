@@ -31,31 +31,49 @@ beforeEach(() => {
 it('returns 403 when not admin', async () => {
   const { AuthError } = jest.requireActual('@/lib/auth-helper');
   requireAdmin.mockRejectedValueOnce(new AuthError('Forbidden', 403));
-  expect((await get('critic_1')).status).toBe(403);
+  expect((await get('critic_1_a1')).status).toBe(403);
+  expect(mockGet).not.toHaveBeenCalled();
+});
+
+it('returns 400 for a malformed job id (no DB read)', async () => {
+  expect((await get('nope')).status).toBe(400);
   expect(mockGet).not.toHaveBeenCalled();
 });
 
 it('returns 404 for an unknown job', async () => {
   mockGet.mockResolvedValueOnce(null);
-  expect((await get('nope')).status).toBe(404);
+  expect((await get('critic_9_zzz')).status).toBe(404);
+});
+
+it('reports a stalled processing job as a timeout error', async () => {
+  mockGet.mockResolvedValueOnce({
+    id: 'critic_1_a1',
+    status: 'processing',
+    createdAt: '2020-01-01T00:00:00.000Z',
+    result: null,
+    error: null,
+  });
+  const body = await (await get('critic_1_a1')).json();
+  expect(body.status).toBe('error');
+  expect(body.error.code).toBe('upstream');
 });
 
 it('reports a processing job', async () => {
-  mockGet.mockResolvedValueOnce({ id: 'critic_1', status: 'processing', result: null, error: null });
-  const body = await (await get('critic_1')).json();
+  mockGet.mockResolvedValueOnce({ id: 'critic_1_a1', status: 'processing', result: null, error: null });
+  const body = await (await get('critic_1_a1')).json();
   expect(body).toMatchObject({ success: true, status: 'processing', result: null });
 });
 
 it('returns the critique when done', async () => {
-  mockGet.mockResolvedValueOnce({ id: 'critic_1', status: 'done', result: { overall: 'tender read', strengths: [], observations: [], slackLines: [], wordIdeas: [], questions: [] }, error: null });
-  const body = await (await get('critic_1')).json();
+  mockGet.mockResolvedValueOnce({ id: 'critic_1_a1', status: 'done', result: { overall: 'tender read', strengths: [], observations: [], slackLines: [], wordIdeas: [], questions: [] }, error: null });
+  const body = await (await get('critic_1_a1')).json();
   expect(body.status).toBe('done');
   expect(body.result.overall).toBe('tender read');
 });
 
 it('surfaces a structured error', async () => {
-  mockGet.mockResolvedValueOnce({ id: 'critic_1', status: 'error', result: null, error: { code: 'bad_response', message: 'Try again' } });
-  const body = await (await get('critic_1')).json();
+  mockGet.mockResolvedValueOnce({ id: 'critic_1_a1', status: 'error', result: null, error: { code: 'bad_response', message: 'Try again' } });
+  const body = await (await get('critic_1_a1')).json();
   expect(body.status).toBe('error');
   expect(body.error.code).toBe('bad_response');
 });

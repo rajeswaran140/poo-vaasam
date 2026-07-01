@@ -14,7 +14,14 @@ jest.mock('@anthropic-ai/sdk', () => ({
   })),
 }));
 
-import { generateLyrics } from '@/services/ai/lyricist';
+import { generateLyrics, DEFAULT_MODEL } from '@/services/ai/lyricist';
+
+it('defaults to Sonnet 4.6 — 4.5 mis-serialises the doubly-nested charanams schema', () => {
+  // Regression guard: charanams is string[][]; 4.5 wraps nested-array tool args
+  // as <parameter> strings that fail Zod validation (same reason critic/composer
+  // run on 4.6). Do not downgrade.
+  expect(DEFAULT_MODEL).toBe('claude-sonnet-4-6');
+});
 
 const FAKE_KEY = 'sk-ant-test-key';
 const originalEnv = process.env.ANTHROPIC_API_KEY;

@@ -48,8 +48,12 @@ const analysis = {
   reel: { hook: 'அன்னையே', caption: 'For every mother', hashtags: ['#tamil', '#amma'] },
 };
 
-const post = (body: unknown) =>
-  new NextRequest('https://tamilagaval.com/api/admin/briefs', { method: 'POST', body: JSON.stringify(body) });
+const post = (body: unknown, withBearer = true) =>
+  new NextRequest('https://tamilagaval.com/api/admin/briefs', {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: withBearer ? { Authorization: 'Bearer test-token' } : undefined,
+  });
 const getReq = (url = 'https://tamilagaval.com/api/admin/briefs') =>
   new NextRequest(url, { method: 'GET' });
 
@@ -63,6 +67,12 @@ it('POST returns 403 when caller is not admin (and does not save)', async () => 
   mockedRequireAdmin.mockRejectedValueOnce(new AuthError('Forbidden', 403));
   const res = await POST(post({ lyrics: 'l', analysis }));
   expect(res.status).toBe(403);
+  expect(mockSave).not.toHaveBeenCalled();
+});
+
+it('POST returns 401 without a Bearer token (CSRF defense on the mutation)', async () => {
+  const res = await POST(post({ lyrics: 'l', analysis }, false));
+  expect(res.status).toBe(401);
   expect(mockSave).not.toHaveBeenCalled();
 });
 

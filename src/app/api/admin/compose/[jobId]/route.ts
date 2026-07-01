@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
 import { ComposeJobRepository } from '@/infrastructure/database/ComposeJobRepository';
+import { isStalledJob, JOB_TIMEOUT_ERROR } from '@/lib/job-timeout';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -21,10 +22,19 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   }
 
   const { jobId } = await params;
+  if (!/^compose_\d+_[a-z0-9]+$/.test(jobId)) {
+    return NextResponse.json({ success: false, error: 'Invalid job id' }, { status: 400 });
+  }
   try {
     const job = await new ComposeJobRepository().get(jobId);
     if (!job) {
       return NextResponse.json({ success: false, error: 'Job not found' }, { status: 404 });
+    }
+    // A `processing` row past the worker budget means the worker died without
+    // writing a result — report an authoritative timeout instead of forever
+    // echoing `processing`.
+    if (isStalledJob(job)) {
+      return NextResponse.json({ success: true, status: 'error', result: null, error: JOB_TIMEOUT_ERROR });
     }
     return NextResponse.json({
       success: true,

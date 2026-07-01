@@ -19,6 +19,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Copy, Check, Sparkles, RotateCw } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
+import { pollJob } from '@/lib/poll-job';
 import { PromptReadiness } from '@/components/admin/PromptReadiness';
 import { PromptExport } from '@/components/admin/PromptExport';
 import { WordPalette } from '@/components/admin/WordPalette';
@@ -35,15 +36,6 @@ const WARN_AT = 7500;
 // off-Amplify). Poll the job until it's done; the worker caps at 120s.
 const POLL_INTERVAL_MS = 2500;
 const POLL_TIMEOUT_MS = 130_000;
-
-/** Sleep that resolves early if the request is aborted (unmount / supersede). */
-function delay(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    if (signal.aborted) return resolve();
-    const t = setTimeout(resolve, ms);
-    signal.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });
-  });
-}
 
 export function ComposerForm() {
   const [lyrics, setLyrics] = useState('');
@@ -108,36 +100,16 @@ export function ComposerForm() {
       if (!jobId) throw new Error('The server did not start the job.');
 
       // 2. Poll until the worker finishes (Sonnet generates ~30-40s off-platform).
-      //    Poll immediately, then wait between polls — so an already-finished job
-      //    resolves at once.
-      const deadline = Date.now() + POLL_TIMEOUT_MS;
-      let data: Analysis | undefined;
-      for (;;) {
-        if (controller.signal.aborted || !mountedRef.current) return;
-        const sres = await adminFetch(`/api/admin/compose/${jobId}`, { signal: controller.signal });
-        if (!sres.ok) {
-          const body = await sres.json().catch(() => ({}));
-          throw new Error(body.error || `HTTP ${sres.status}`);
-        }
-        const body = (await sres.json()) as {
-          status?: string;
-          result?: Analysis;
-          error?: { code?: string; message?: string };
-        };
-        if (body.status === 'done' && body.result) {
-          data = body.result;
-          break;
-        }
-        if (body.status === 'error') {
-          throw Object.assign(new Error(body.error?.message || 'Compose failed'), { code: body.error?.code });
-        }
-        if (Date.now() > deadline) {
-          throw new Error('Composing is taking longer than expected. Please try again.');
-        }
-        await delay(POLL_INTERVAL_MS, controller.signal);
-      }
+      const data = await pollJob<Analysis>({
+        fetchStatus: (signal) => adminFetch(`/api/admin/compose/${jobId}`, { signal }),
+        signal: controller.signal,
+        isMounted: () => mountedRef.current,
+        intervalMs: POLL_INTERVAL_MS,
+        timeoutMs: POLL_TIMEOUT_MS,
+        timeoutMessage: 'Composing is taking longer than expected. Please try again.',
+      });
+      if (data === undefined || !mountedRef.current) return; // superseded / unmounted
 
-      if (!mountedRef.current) return;
       setResult(data);
       setComposedLyrics(sent); // tie the brief to the exact lyrics it used
       setSelectedIdx(0); // default to the first variant for the new brief

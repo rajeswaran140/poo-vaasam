@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
+import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { LyricDraftRepository } from '@/infrastructure/database/LyricDraftRepository';
 import { addVersionSchema } from '@/types/lyricDraft';
 
@@ -17,6 +17,7 @@ const validId = (id: string) => /^draft_[a-z0-9_]+$/i.test(id);
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     await requireAdmin(request);
+    requireBearer(request); // mutation — reject cookie-only auth (CSRF)
   } catch (err) {
     return authErrorResponse(err);
   }

@@ -13,7 +13,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
+import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { rateLimitedResponse, clientIp } from '@/lib/rate-limit';
 import { lyricCriticLimiter } from '@/lib/lyric-critic-rate-limit';
 import { lyricCritiqueInputSchema } from '@/services/ai/lyricCriticSchema';
@@ -34,6 +34,7 @@ export async function POST(request: NextRequest) {
   let auth;
   try {
     auth = await requireAdmin(request);
+    requireBearer(request); // mutation (paid LLM job) — reject cookie-only auth (CSRF)
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -91,6 +92,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, jobId, status: 'processing' }, { status: 202 });
   } catch (err) {
     console.error('[api/admin/compose/critique] enqueue failed:', err instanceof Error ? err.message : String(err));
+    // Best-effort: drop the orphaned `processing` row if the worker invoke
+    // failed after the job was created.
+    await new CriticJobRepository().delete(jobId).catch(() => {});
     return NextResponse.json(
       { success: false, error: 'Could not start the critique job. Please try again.' },
       { status: 502 }

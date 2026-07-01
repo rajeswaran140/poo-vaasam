@@ -11,7 +11,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
+import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { rateLimitedResponse, clientIp } from '@/lib/rate-limit';
 import { lyricLimiter } from '@/lib/lyric-rate-limit';
 import { lyricBriefSchema } from '@/services/ai/lyricistSchema';
@@ -35,6 +35,7 @@ export async function POST(request: NextRequest) {
   let auth;
   try {
     auth = await requireAdmin(request);
+    requireBearer(request); // mutation (paid LLM call) — reject cookie-only auth (CSRF)
   } catch (err) {
     return authErrorResponse(err);
   }

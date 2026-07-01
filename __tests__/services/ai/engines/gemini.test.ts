@@ -129,6 +129,15 @@ it('classifies an invalid API key (400 API_KEY_INVALID) as auth', async () => {
   expect(r).toMatchObject({ ok: false, code: 'auth' });
 });
 
+it('does NOT misclassify a transient 5xx that merely mentions "API key" as auth', async () => {
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+  // A 500 whose message happens to contain "API key" must stay retryable (upstream),
+  // not be treated as a permanent auth failure.
+  generateContent.mockRejectedValueOnce(Object.assign(new Error('Internal error while validating the API key'), { status: 500 }));
+  const r = await new GeminiComposerEngine().generateBrief(REQ);
+  expect(r).toMatchObject({ ok: false, code: 'upstream' });
+});
+
 it('classifies a 429 as rate_limit', async () => {
   jest.spyOn(console, 'error').mockImplementation(() => {});
   generateContent.mockRejectedValueOnce(Object.assign(new Error('RESOURCE_EXHAUSTED'), { status: 429 }));

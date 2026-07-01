@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
+import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { LyricDraftRepository } from '@/infrastructure/database/LyricDraftRepository';
 import { createLyricDraftSchema } from '@/types/lyricDraft';
 
@@ -31,6 +31,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     await requireAdmin(request);
+    requireBearer(request); // mutation — reject cookie-only auth (CSRF)
   } catch (err) {
     return authErrorResponse(err);
   }

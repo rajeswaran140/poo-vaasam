@@ -18,8 +18,14 @@ import * as auth from '@/lib/auth-helper';
 import { __resetLyricRateLimitForTests } from '@/lib/lyric-rate-limit';
 
 const requireAdmin = auth.requireAdmin as jest.Mock;
-const post = (b: unknown) =>
-  POST(new NextRequest('https://tamilagaval.com/api/admin/compose/lyrics', { method: 'POST', body: JSON.stringify(b) }));
+const post = (b: unknown, withBearer = true) =>
+  POST(
+    new NextRequest('https://tamilagaval.com/api/admin/compose/lyrics', {
+      method: 'POST',
+      body: JSON.stringify(b),
+      headers: withBearer ? { Authorization: 'Bearer test-token' } : undefined,
+    })
+  );
 
 const VALID_BRIEF = { theme: 'Homeland nostalgia', emotions: ['ஏக்கம்'] };
 const LYRICS = {
@@ -41,6 +47,12 @@ it('returns 403 for a non-admin', async () => {
   const { AuthError } = jest.requireActual('@/lib/auth-helper');
   requireAdmin.mockRejectedValueOnce(new AuthError('Forbidden', 403));
   expect((await post(VALID_BRIEF)).status).toBe(403);
+  expect(mockGenerate).not.toHaveBeenCalled();
+});
+
+it('returns 401 without a Bearer token (CSRF defense on the mutation)', async () => {
+  const res = await post(VALID_BRIEF, false);
+  expect(res.status).toBe(401);
   expect(mockGenerate).not.toHaveBeenCalled();
 });
 

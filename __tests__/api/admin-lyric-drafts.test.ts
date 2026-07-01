@@ -28,8 +28,11 @@ import * as auth from '@/lib/auth-helper';
 const requireAdmin = auth.requireAdmin as jest.Mock;
 const url = 'https://tamilagaval.com/api/admin/lyric-drafts';
 const get = () => new NextRequest(url);
-const post = (body: unknown, u = url) => new NextRequest(u, { method: 'POST', body: JSON.stringify(body) });
-const patch = (body: unknown) => new NextRequest(url, { method: 'PATCH', body: JSON.stringify(body) });
+const BEARER = { Authorization: 'Bearer test-token' };
+const post = (body: unknown, u = url, withBearer = true) =>
+  new NextRequest(u, { method: 'POST', body: JSON.stringify(body), headers: withBearer ? BEARER : undefined });
+const patch = (body: unknown) => new NextRequest(url, { method: 'PATCH', body: JSON.stringify(body), headers: BEARER });
+const del = () => new NextRequest(url, { method: 'DELETE', headers: BEARER });
 const P = (id: string) => ({ params: Promise.resolve({ id }) });
 
 beforeEach(() => {
@@ -54,6 +57,12 @@ it('GET list 403s for a non-admin', async () => {
 it('POST create validates the body (title required)', async () => {
   const res = await createPOST(post({ lyrics: 'வரிகள்' })); // no title
   expect(res.status).toBe(400);
+  expect(repo.create).not.toHaveBeenCalled();
+});
+
+it('POST create returns 401 without a Bearer token (CSRF defense)', async () => {
+  const res = await createPOST(post({ title: 'மண்வாசம்', lyrics: 'பல்லவி' }, url, false));
+  expect(res.status).toBe(401);
   expect(repo.create).not.toHaveBeenCalled();
 });
 
@@ -102,7 +111,7 @@ it('PATCH rejects an empty update', async () => {
 
 it('DELETE removes the draft', async () => {
   repo.delete.mockResolvedValue(undefined);
-  const res = await DELETE(get(), P('draft_x'));
+  const res = await DELETE(del(), P('draft_x'));
   expect(res.status).toBe(200);
   expect(repo.delete).toHaveBeenCalledWith('draft_x');
 });

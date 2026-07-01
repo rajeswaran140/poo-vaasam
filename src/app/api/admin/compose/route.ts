@@ -13,7 +13,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
+import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { ComposeJobRepository } from '@/infrastructure/database/ComposeJobRepository';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { awsConfig } from '@/lib/aws-config';
@@ -36,6 +36,7 @@ export async function POST(request: NextRequest) {
   let auth;
   try {
     auth = await requireAdmin(request);
+    requireBearer(request); // mutation (paid LLM job) — reject cookie-only auth (CSRF)
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -77,6 +78,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, jobId, status: 'processing' }, { status: 202 });
   } catch (err) {
     console.error('[api/admin/compose] enqueue failed:', err instanceof Error ? err.message : String(err));
+    // Best-effort: drop the orphaned `processing` row if the worker invoke
+    // failed after the job was created, so it doesn't dangle until TTL.
+    await new ComposeJobRepository().delete(jobId).catch(() => {});
     return NextResponse.json(
       { success: false, error: 'Could not start the compose job. Please try again.' },
       { status: 502 }

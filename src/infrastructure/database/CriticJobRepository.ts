@@ -39,6 +39,16 @@ export class CriticJobRepository {
     }
   }
 
+  /** Remove a job row (used to clean up an orphaned `processing` row when the
+   * worker invoke fails right after create). Safe to call for a missing id. */
+  async delete(id: string): Promise<void> {
+    try {
+      await DynamoDBOperations.delete({ PK: `CRITICJOB#${id}`, SK: 'METADATA' });
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
   /** Read a job by id, or null if unknown/expired. */
   async get(id: string): Promise<CriticJob | null> {
     try {

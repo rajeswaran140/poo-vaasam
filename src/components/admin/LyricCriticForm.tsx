@@ -13,6 +13,7 @@ import {
   Save, FolderOpen, History, Plus, ChevronDown, CheckCircle2,
 } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
+import { pollJob } from '@/lib/poll-job';
 import { critiqueToMarkdown } from '@/lib/critique-markdown';
 import { feedbackProgress } from '@/lib/lyric-draft-feedback';
 import { TamilProsodyPanel } from '@/components/admin/TamilProsodyPanel';
@@ -27,15 +28,6 @@ const ASPECTS: CritiqueAspect[] = ['meter', 'imagery', 'vocabulary', 'emotion', 
 // (which is itself bounded by the service's 110s client timeout + the Lambda).
 const POLL_INTERVAL_MS = 2500;
 const POLL_TIMEOUT_MS = 170_000;
-
-/** Sleep that resolves early if the request is aborted (unmount / supersede). */
-function delay(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    if (signal.aborted) return resolve();
-    const t = setTimeout(resolve, ms);
-    signal.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });
-  });
-}
 
 export function LyricCriticForm() {
   const [lyrics, setLyrics] = useState('');
@@ -92,7 +84,7 @@ export function LyricCriticForm() {
     try {
       await navigator.clipboard.writeText(critiqueToMarkdown(result));
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      setTimeout(() => { if (mountedRef.current) setCopied(false); }, 1500);
     } catch {
       /* clipboard unavailable — ignore */
     }
@@ -135,30 +127,17 @@ export function LyricCriticForm() {
       }
 
       // 2. Poll until the worker finishes (off-Amplify, ~50-70s).
-      const deadline = Date.now() + POLL_TIMEOUT_MS;
-      for (;;) {
-        if (controller.signal.aborted || !mountedRef.current) return;
-        const sres = await adminFetch(`/api/admin/compose/critique/${enq.jobId}`, { signal: controller.signal });
-        const body = (await sres.json().catch(() => ({}))) as {
-          status?: string;
-          result?: LyricCritique;
-          error?: { code?: string; message?: string };
-        };
-        if (!sres.ok) throw new Error((body as { error?: string }).error || `HTTP ${sres.status}`);
-        if (body.status === 'done' && body.result) {
-          if (!mountedRef.current) return;
-          setResult(body.result);
-          setCritiquedText(payload.lyrics); // the text this critique belongs to
-          break;
-        }
-        if (body.status === 'error') {
-          throw new Error(body.error?.message || 'Critique failed');
-        }
-        if (Date.now() > deadline) {
-          throw new Error('The critique is taking longer than expected. Please try again.');
-        }
-        await delay(POLL_INTERVAL_MS, controller.signal);
-      }
+      const critique = await pollJob<LyricCritique>({
+        fetchStatus: (signal) => adminFetch(`/api/admin/compose/critique/${enq.jobId}`, { signal }),
+        signal: controller.signal,
+        isMounted: () => mountedRef.current,
+        intervalMs: POLL_INTERVAL_MS,
+        timeoutMs: POLL_TIMEOUT_MS,
+        timeoutMessage: 'The critique is taking longer than expected. Please try again.',
+      });
+      if (critique === undefined || !mountedRef.current) return; // superseded / unmounted
+      setResult(critique);
+      setCritiquedText(payload.lyrics); // the text this critique belongs to
     } catch (err) {
       if (controller.signal.aborted || !mountedRef.current) return;
       setError(err instanceof Error ? err.message : String(err));
@@ -493,7 +472,7 @@ export function LyricCriticForm() {
       </div>
 
       {/* ---- Critique ---- */}
-      <div className="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900/40">
+      <div aria-live="polite" className="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900/40">
         {!result ? (
           <p className="text-sm text-gray-400">
             The feedback will appear here — an honest read, strengths, slack lines (with the reason, not a rewrite), word

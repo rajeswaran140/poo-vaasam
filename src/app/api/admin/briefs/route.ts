@@ -8,7 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
+import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { BriefRepository } from '@/infrastructure/database/BriefRepository';
 import { composerAnalysisSchema } from '@/services/ai/composerSchema';
 
@@ -29,6 +29,7 @@ const createSchema = z.object({
 export async function POST(request: NextRequest) {
   try {
     await requireAdmin(request);
+    requireBearer(request); // mutation — reject cookie-only auth (CSRF)
   } catch (err) {
     return authErrorResponse(err);
   }

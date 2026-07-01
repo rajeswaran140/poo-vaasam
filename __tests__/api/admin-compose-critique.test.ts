@@ -15,7 +15,9 @@ jest.mock('@/lib/auth-helper', () => ({
 
 const mockCreate = jest.fn();
 jest.mock('@/infrastructure/database/CriticJobRepository', () => ({
-  CriticJobRepository: jest.fn().mockImplementation(() => ({ create: mockCreate })),
+  CriticJobRepository: jest
+    .fn()
+    .mockImplementation(() => ({ create: mockCreate, delete: jest.fn().mockResolvedValue(undefined) })),
 }));
 
 const mockFindAll = jest.fn();
@@ -36,8 +38,12 @@ import * as auth from '@/lib/auth-helper';
 
 const MockInvoke = InvokeCommand as unknown as jest.Mock;
 const requireAdmin = auth.requireAdmin as jest.Mock;
-const req = (body: unknown) =>
-  new NextRequest('https://tamilagaval.com/api/admin/compose/critique', { method: 'POST', body: JSON.stringify(body) });
+const req = (body: unknown, withBearer = true) =>
+  new NextRequest('https://tamilagaval.com/api/admin/compose/critique', {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: withBearer ? { Authorization: 'Bearer test-token' } : undefined,
+  });
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -53,6 +59,13 @@ it('returns 403 for a non-admin (no job created, no worker invoked)', async () =
   requireAdmin.mockRejectedValueOnce(new AuthError('Forbidden', 403));
   expect((await POST(req({ lyrics: 'வரிகள்' }))).status).toBe(403);
   expect(mockCreate).not.toHaveBeenCalled();
+});
+
+it('returns 401 without a Bearer token (CSRF defense on the mutation)', async () => {
+  const res = await POST(req({ lyrics: 'வரிகள்' }, false));
+  expect(res.status).toBe(401);
+  expect(mockCreate).not.toHaveBeenCalled();
+  expect(mockSend).not.toHaveBeenCalled();
   expect(mockSend).not.toHaveBeenCalled();
 });
 
