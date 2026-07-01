@@ -7,7 +7,10 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuthenticator } from '@aws-amplify/ui-react';
-import AdminLayout from '@/app/(admin)/layout';
+// The default export of (admin)/layout is now a thin async server component
+// that only reads the collapse cookie and delegates to AdminLayoutClient.
+// These tests exercise the interactive client behaviour, so target it directly.
+import AdminLayout from '@/app/(admin)/AdminLayoutClient';
 
 // Mock Next.js router and pathname
 jest.mock('next/navigation', () => ({
@@ -41,8 +44,8 @@ jest.mock('lucide-react', () => ({
   Music: () => <div data-testid="icon-songs" />,
   Library: () => <div data-testid="icon-lexicon" />,
   FlaskConical: () => <div data-testid="icon-music-lab" />,
-  ChevronLeft: () => <div data-testid="icon-collapse" />,
-  ChevronRight: () => <div data-testid="icon-expand" />,
+  PanelLeftClose: () => <div data-testid="icon-collapse" />,
+  PanelLeftOpen: () => <div data-testid="icon-expand" />,
   Menu: () => <div data-testid="icon-menu" />,
   Sun: () => <div data-testid="icon-sun" />,
   Moon: () => <div data-testid="icon-moon" />,
