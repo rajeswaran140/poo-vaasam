@@ -15,6 +15,7 @@ jest.mock('lucide-react', () => ({
   Check: () => <svg data-testid="icon-check" />,
   Sparkles: () => <svg data-testid="icon-sparkles" />,
   RotateCw: () => <svg data-testid="icon-rotate" />,
+  FileDown: () => <svg data-testid="icon-filedown" />,
 }));
 // PromptReadiness has its own lib + API coverage; mock it here so this test
 // doesn't pull in its (unmocked) lucide icons or fire the critic fetch.
@@ -23,6 +24,11 @@ jest.mock('@/components/admin/PromptReadiness', () => ({
 }));
 jest.mock('@/components/admin/PromptExport', () => ({
   PromptExport: () => <div data-testid="prompt-export" />,
+}));
+// BriefReusePanel has its own dedicated test; mock it here so this test doesn't
+// pull in its lucide icons or the briefs-list fetch.
+jest.mock('@/components/admin/BriefReusePanel', () => ({
+  BriefReusePanel: () => <div data-testid="brief-reuse" />,
 }));
 // WordPalette lazy-loads the lexicon on open; mock it so this test doesn't
 // fire that fetch. It has its own dedicated test + pure-lib coverage.

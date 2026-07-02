@@ -17,13 +17,15 @@
  */
 
 import { useEffect, useId, useRef, useState } from 'react';
-import { Copy, Check, Sparkles, RotateCw } from 'lucide-react';
+import { Copy, Check, Sparkles, RotateCw, FileDown } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 import { pollJob } from '@/lib/poll-job';
 import { PromptReadiness } from '@/components/admin/PromptReadiness';
 import { PromptExport } from '@/components/admin/PromptExport';
+import { BriefReusePanel } from '@/components/admin/BriefReusePanel';
 import { WordPalette } from '@/components/admin/WordPalette';
 import { DuetTagger } from '@/components/admin/DuetTagger';
+import { analysisToFullMarkdown, serializeBriefFile, exportFilename } from '@/lib/prompt-export';
 // type-only import — erased at build, so the server-only composer module
 // (which pulls the Anthropic SDK) is never bundled into this client component.
 import type { ComposerAnalysis } from '@/services/ai/composer';
@@ -125,6 +127,20 @@ export function ComposerForm() {
     }
   };
 
+  // Load a previously-composed brief (from a .json file or the saved library)
+  // into the form so it can be tweaked and re-composed — the "same prompt with
+  // minor modifications" workflow.
+  const loadBrief = (loadedLyrics: string, analysis: Analysis) => {
+    abortRef.current?.abort(); // cancel any in-flight compose
+    setError(null);
+    setRetryable(true);
+    setLyrics(loadedLyrics);
+    setComposedLyrics(loadedLyrics);
+    setResult(analysis);
+    setSelectedIdx(0);
+    setRunId((n) => n + 1);
+  };
+
   const canRun = lyrics.trim().length > 0 && !loading;
 
   const onSubmit = (e: React.FormEvent) => {
@@ -216,6 +232,9 @@ export function ComposerForm() {
         <DuetTagger lyrics={lyrics} />
       </form>
 
+      {/* Reuse a saved brief (from a file or the library) → tweak → re-compose. */}
+      <BriefReusePanel onLoad={loadBrief} />
+
       {error && (
         <div role="alert" className="flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-200">
           <span className="flex-1">{error}</span>
@@ -258,8 +277,54 @@ export function ComposerForm() {
             result={result}
             chosenStyle={result.suno_prompts[selectedIdx]?.style ?? result.suno_prompts[0]?.style ?? ''}
           />
+          <BriefDownloadButtons result={result} lyrics={composedLyrics} />
         </section>
       )}
+    </div>
+  );
+}
+
+/**
+ * Save the FULL composed brief to a file for reuse: a human-readable Markdown
+ * export of every section, and a re-loadable .json that round-trips back into
+ * the composer via <BriefReusePanel>.
+ */
+function BriefDownloadButtons({ result, lyrics }: { result: Analysis; lyrics: string }) {
+  const title = result.song_titles?.[0] ?? 'brief';
+  const download = (content: string, mime: string, ext: string) => {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = exportFilename(`${title} brief`, ext);
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  const btn =
+    'inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700';
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900/40">
+      <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        Save full brief to a file
+      </span>
+      <div className="ml-auto flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => download(analysisToFullMarkdown(result, lyrics), 'text/markdown;charset=utf-8', 'md')}
+          className={btn}
+          title="Human-readable Markdown of every section"
+        >
+          <FileDown className="h-3.5 w-3.5" aria-hidden /> .md
+        </button>
+        <button
+          type="button"
+          onClick={() => download(serializeBriefFile(lyrics, result), 'application/json', 'json')}
+          className={btn}
+          title="Re-loadable file — open it later via “Load from file” to tweak and re-compose"
+        >
+          <FileDown className="h-3.5 w-3.5" aria-hidden /> .json (reloadable)
+        </button>
+      </div>
     </div>
   );
 }
