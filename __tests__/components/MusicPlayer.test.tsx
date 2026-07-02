@@ -2,6 +2,13 @@ import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MusicPlayerProvider, formatTime, type Track } from '@/components/music/MusicPlayerProvider';
 import { SongsPlaylist, type SongRow } from '@/components/music/SongsPlaylist';
 
+// This suite exercises the on-site player (Play-all / shuffle / repeat), which
+// only renders when on-site playback is ON — force the flag on for these tests.
+jest.mock('@/config/features', () => ({
+  ...jest.requireActual('@/config/features'),
+  isAudioPlaybackEnabled: jest.fn(() => true),
+}));
+
 /** The hero's primary CTA carries a Tamil accessible name. */
 const PLAY_ALL = 'அனைத்தையும் இயக்கு';
 

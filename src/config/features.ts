@@ -32,8 +32,19 @@ export const FEATURES = {
     SEARCH: false,            // Search functionality
     COMMENTS: false,          // Public commenting
     SOCIAL_SHARE: false,      // Social media sharing buttons
+    // On-site audio playback. TEMPORARILY OFF (2026-07-02): the site funnels
+    // listeners to YouTube (where watch-hours count toward YPP) instead of
+    // competing with it. When off, songs WITH a YouTube video route to "Watch
+    // on YouTube"; songs WITHOUT one keep the on-site player as a fallback so
+    // nothing is orphaned. Flip back to true to restore full on-site playback.
+    AUDIO_PLAYBACK: false,
   },
 } as const;
+
+/** True when on-site audio playback is enabled (see PUBLIC.AUDIO_PLAYBACK). */
+export function isAudioPlaybackEnabled(): boolean {
+  return Boolean(FEATURES.PUBLIC.AUDIO_PLAYBACK);
+}
 
 /**
  * Helper function to check if a feature is enabled

@@ -7,6 +7,7 @@
 import { render, screen } from '@testing-library/react';
 import { SongList, type SongRow } from '@/components/music/SongList';
 import { MusicPlayerProvider } from '@/components/music/MusicPlayerProvider';
+import { isAudioPlaybackEnabled } from '@/config/features';
 
 jest.mock('next/image', () => ({
   __esModule: true,
@@ -16,8 +17,16 @@ jest.mock('next/image', () => ({
   },
 }));
 
+// Control the on-site-playback flag per test.
+jest.mock('@/config/features', () => ({
+  ...jest.requireActual('@/config/features'),
+  isAudioPlaybackEnabled: jest.fn(() => false),
+}));
+const mockPlayback = isAudioPlaybackEnabled as jest.Mock;
+
 beforeEach(() => {
   (window as unknown as { gtag?: () => void }).gtag = jest.fn();
+  mockPlayback.mockReturnValue(false); // default: on-site playback OFF (funnel to YouTube)
 });
 
 const trackFactory = (overrides: Partial<SongRow> = {}): SongRow => ({
@@ -61,6 +70,32 @@ describe('SongList — YouTube cross-promotion link', () => {
     expect(lyrics).toHaveLength(2);
     expect(lyrics[0].getAttribute('href')).toBe('/content/cnt_a');
     expect(lyrics[1].getAttribute('href')).toBe('/content/cnt_b');
+  });
+});
+
+describe('SongList — playback funnel (AUDIO_PLAYBACK off)', () => {
+  it('routes a YouTube-linked song entirely to YouTube (no redundant secondary chip)', () => {
+    renderList([trackFactory({ youtubeVideoId: 'gfywsN483lI' })]);
+    // The whole row is a Watch-on-YouTube link…
+    const yt = screen.getByLabelText('Watch அந்தி மேகமே on YouTube');
+    expect(yt.getAttribute('href')).toBe('https://www.youtube.com/watch?v=gfywsN483lI');
+    // …and the separate "YouTube ↗" chip is dropped (would be a duplicate link).
+    expect(screen.queryByText('YouTube ↗')).not.toBeInTheDocument();
+  });
+
+  it('keeps a song WITHOUT a YouTube link on-site playable (fallback → no dead-end)', () => {
+    renderList([trackFactory({ youtubeVideoId: undefined })]);
+    // No YouTube routing; the row stays a play control (a button).
+    expect(screen.queryByLabelText(/Watch.*on YouTube/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /இராஜ்/ })).toBeInTheDocument();
+  });
+
+  it('when playback is ON, a YouTube song plays on-site and the YouTube chip is secondary', () => {
+    mockPlayback.mockReturnValue(true);
+    renderList([trackFactory({ youtubeVideoId: 'gfywsN483lI' })]);
+    // Secondary cross-promo chip returns; the row itself is a play button.
+    expect(screen.getByText('YouTube ↗')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /இராஜ்/ })).toBeInTheDocument();
   });
 });
 

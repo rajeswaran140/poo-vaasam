@@ -15,6 +15,7 @@ import { TrackedYouTubeOpen } from '@/components/TrackedYouTubeOpen';
 import { WhatsAppShareButton } from '@/components/content/WhatsAppShareButton';
 import { contentPath } from '@/config/vanity-paths';
 import { absoluteUrl } from '@/lib/seo';
+import { isAudioPlaybackEnabled } from '@/config/features';
 
 /** A track plus the metadata the listing needs for sorting and filtering. */
 export interface SongRow extends Track {
@@ -29,11 +30,22 @@ export interface SongRow extends Track {
 export function SongList({ rows }: { rows: SongRow[] }) {
   const player = useMusicPlayer();
   const currentId = player.current?.id;
+  const onSitePlayback = isAudioPlaybackEnabled();
 
-  const onRow = (i: number) => {
-    if (!rows[i].src) return;
-    if (rows[i].id === currentId) player.toggle();
-    else player.playQueue(rows, i);
+  // When on-site playback is off, a song WITH a YouTube video routes to YouTube;
+  // a song WITHOUT one keeps on-site playback (fallback), so nothing is orphaned.
+  const routesToYouTube = (t: SongRow) => !onSitePlayback && !!t.youtubeVideoId;
+  const canPlayOnSite = (t: SongRow) => !!t.src && !routesToYouTube(t);
+  // The bottom-player queue contains only the on-site-playable rows.
+  const playableRows = rows.filter(canPlayOnSite);
+
+  const onPlay = (t: SongRow) => {
+    if (!canPlayOnSite(t)) return;
+    if (t.id === currentId) player.toggle();
+    else {
+      const idx = playableRows.findIndex((r) => r.id === t.id);
+      if (idx >= 0) player.playQueue(playableRows, idx);
+    }
   };
 
   // Keep the playing row visible as next/prev advances through the queue.
@@ -46,7 +58,9 @@ export function SongList({ rows }: { rows: SongRow[] }) {
     <ol className="max-w-3xl mx-auto divide-y divide-white/5">
       {rows.map((t, i) => {
         const active = t.id === currentId;
-        const isPlayable = !!t.src;
+        const isPlayable = canPlayOnSite(t);
+        const toYouTube = routesToYouTube(t);
+        const watchUrl = `https://www.youtube.com/watch?v=${t.youtubeVideoId}`;
 
         const lead = (
           <>
@@ -67,6 +81,12 @@ export function SongList({ rows }: { rows: SongRow[] }) {
                     <Play className="mx-auto hidden h-4 w-4 text-white group-hover:block" aria-hidden />
                   </>
                 )
+              ) : toYouTube ? (
+                // Routed to YouTube — a play glyph that opens the video.
+                <>
+                  <span className="group-hover:hidden">{i + 1}</span>
+                  <Play className="mx-auto hidden h-4 w-4 text-red-400 group-hover:block" aria-hidden />
+                </>
               ) : (
                 <Music className="mx-auto h-4 w-4 text-gray-600" aria-hidden />
               )}
@@ -89,7 +109,7 @@ export function SongList({ rows }: { rows: SongRow[] }) {
           <li key={t.id} ref={active ? activeRef : undefined}>
             <div
               className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all duration-200 sm:gap-4 sm:px-4 ${
-                isPlayable
+                isPlayable || toYouTube
                   ? 'hover:bg-gradient-to-r hover:from-white/10 hover:to-transparent'
                   : 'opacity-60'
               } ${active ? 'bg-white/10 shadow-sm shadow-black/20 ring-1 ring-white/10' : ''}`}
@@ -97,16 +117,26 @@ export function SongList({ rows }: { rows: SongRow[] }) {
               {isPlayable ? (
                 <button
                   type="button"
-                  onClick={() => onRow(i)}
+                  onClick={() => onPlay(t)}
                   className="flex min-w-0 flex-1 items-center gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-400/60 sm:gap-4"
                 >
                   {lead}
                 </button>
+              ) : toYouTube ? (
+                <TrackedYouTubeOpen
+                  href={watchUrl}
+                  destination={`video:${t.youtubeVideoId}`}
+                  source="songs_list_row"
+                  ariaLabel={`Watch ${t.title} on YouTube`}
+                  className="flex min-w-0 flex-1 items-center gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-400/60 sm:gap-4"
+                >
+                  {lead}
+                </TrackedYouTubeOpen>
               ) : (
                 <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">{lead}</div>
               )}
 
-              {t.youtubeVideoId && (
+              {t.youtubeVideoId && !toYouTube && (
                 <TrackedYouTubeOpen
                   href={`https://www.youtube.com/watch?v=${t.youtubeVideoId}`}
                   destination={`video:${t.youtubeVideoId}`}
@@ -129,7 +159,7 @@ export function SongList({ rows }: { rows: SongRow[] }) {
                 <ChevronRight className="h-4 w-4 sm:hidden" aria-hidden />
               </Link>
               <span className="w-10 shrink-0 text-right text-xs tabular-nums text-gray-500">
-                {isPlayable && t.duration ? formatTime(t.duration) : ''}
+                {t.duration && (isPlayable || toYouTube) ? formatTime(t.duration) : ''}
               </span>
             </div>
           </li>

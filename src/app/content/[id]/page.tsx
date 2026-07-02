@@ -25,6 +25,7 @@ import { ContentPageClient } from '@/components/ContentPageClient';
 import { PoemReader } from '@/components/PoemReader';
 import { YouTubeEmbed } from '@/components/YouTubeEmbed';
 import { DetailAudioPlayer } from '@/components/music/DetailAudioPlayer';
+import { isAudioPlaybackEnabled } from '@/config/features';
 import { JsonLd } from '@/components/JsonLd';
 import { ShareRow } from '@/components/content/ShareRow';
 import { TrackedYouTubeOpen } from '@/components/TrackedYouTubeOpen';
@@ -302,8 +303,12 @@ export default async function ContentPage({ params }: PageProps) {
               </div>
             )}
 
-            {/* Audio — driven through the global player (single audio element) */}
-            {content.audioUrl && (
+            {/* Audio — driven through the global player (single audio element).
+                When on-site playback is off, hide it for songs that already have
+                a YouTube video above (listen there); songs without one keep the
+                player as a fallback so they're never orphaned. */}
+            {content.audioUrl &&
+              (isAudioPlaybackEnabled() || !(content.videoUrl && isYouTubeUrl(content.videoUrl))) && (
               <div className="border-b border-gray-200 bg-gradient-to-r from-amber-50 to-orange-50 p-6 sm:p-8">
                 <div className="mb-3 flex items-center gap-3">
                   <span className="text-2xl">🎵</span>

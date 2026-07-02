@@ -12,6 +12,7 @@ import { useMemo, useState } from 'react';
 import { Play, Pause, Shuffle, Repeat, Music } from 'lucide-react';
 import { useMusicPlayer } from './MusicPlayerProvider';
 import { SongList, type SongRow } from './SongList';
+import { isAudioPlaybackEnabled } from '@/config/features';
 import { SONG_THEMES, SONG_THEME_LABELS, type SongTheme } from '@/config/song-themes';
 import { SubscribeButton } from '@/components/SubscribeButton';
 import { NotifyBell } from '@/components/NotifyBell';
@@ -97,6 +98,9 @@ export function SongsPlaylist({ tracks }: { tracks: SongRow[] }) {
   const anyPlaying = queueIsCurrent && player.isPlaying;
   const showToolbar = tracks.length >= TOOLBAR_MIN;
   const hasSongs = tracks.length > 0;
+  // With on-site playback off, songs route to YouTube per-row (SongList) — a
+  // global "Play all" doesn't fit, so hide the primary play/shuffle controls.
+  const onSitePlayback = isAudioPlaybackEnabled();
 
   const playAll = () => {
     if (queueIsCurrent) player.toggle();
@@ -163,8 +167,8 @@ export function SongsPlaylist({ tracks }: { tracks: SongRow[] }) {
             </div>
           </div>
 
-          {/* Primary controls */}
-          {playableCount > 0 && (
+          {/* Primary controls — hidden when on-site playback is off (songs go to YouTube). */}
+          {onSitePlayback && playableCount > 0 && (
             <div className="mt-8 flex flex-wrap items-center gap-3 sm:gap-4">
               <button
                 onClick={playAll}
