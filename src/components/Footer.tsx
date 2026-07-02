@@ -26,7 +26,8 @@ export function Footer() {
       <div className="container mx-auto px-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div>
-            <h3 className="text-2xl font-bold mb-3 font-kavivanar">தமிழகவல்</h3>
+            <h3 className="text-2xl font-bold mb-1 font-kavivanar">தமிழகவல்</h3>
+            <p className="text-orange-200/90 text-sm italic mb-3">Where Tamil Poetry Becomes Song</p>
             <p className="text-gray-400 font-tamil text-sm mb-5">
               தமிழ் கவிதைகள் · பாடல்கள் · காணொளிகள் · என்றும் இலவசம்
             </p>

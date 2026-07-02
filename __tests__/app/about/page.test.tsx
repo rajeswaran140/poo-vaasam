@@ -53,6 +53,12 @@ describe('About page', () => {
     render(<AboutPage />);
     expect(screen.getByText(/AI-Assisted Musical Platform/i)).toBeInTheDocument();
   });
+
+  it('shows the "Where Tamil Poetry Becomes Song" brand tagline', () => {
+    render(<AboutPage />);
+    // Appears in both the hero and the shared Footer.
+    expect(screen.getAllByText(/Where Tamil Poetry Becomes Song/i).length).toBeGreaterThanOrEqual(1);
+  });
 });
 
 describe('About page — audit fixes', () => {

@@ -87,7 +87,10 @@ export default function AboutPage() {
           <p className="mt-4 max-w-2xl font-tamil text-lg text-white/90 sm:text-xl">
             இராஜேஸ்வரன் தங்கராஜாவின் சொந்தக் கவிதைகளும் பாடல்களும் — ஒரே இடத்தில், என்றும் இலவசம்.
           </p>
-          <p className="mt-3 text-sm font-semibold uppercase tracking-wider text-white/80">
+          <p className="mt-3 max-w-2xl text-base italic text-white/90 sm:text-lg">
+            Where Tamil Poetry Becomes Song
+          </p>
+          <p className="mt-2 text-sm font-semibold uppercase tracking-wider text-white/80">
             An AI-Assisted Musical Platform
           </p>
         </div>

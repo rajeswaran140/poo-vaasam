@@ -17,6 +17,7 @@ describe('Footer', () => {
   it('renders the brand block (heading + tagline)', () => {
     render(<Footer />);
     expect(screen.getByRole('heading', { level: 3, name: 'தமிழகவல்' })).toBeInTheDocument();
+    expect(screen.getByText(/Where Tamil Poetry Becomes Song/i)).toBeInTheDocument();
     expect(screen.getByText(/கவிதைகள்.*பாடல்கள்.*காணொளிகள்/)).toBeInTheDocument();
   });
 
