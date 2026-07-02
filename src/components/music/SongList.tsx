@@ -17,6 +17,15 @@ import { contentPath } from '@/config/vanity-paths';
 import { absoluteUrl } from '@/lib/seo';
 import { isAudioPlaybackEnabled } from '@/config/features';
 
+/** Inline YouTube glyph (lucide has no youtube icon in this version). */
+function YouTubeGlyph({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden className={className}>
+      <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+    </svg>
+  );
+}
+
 /** A track plus the metadata the listing needs for sorting and filtering. */
 export interface SongRow extends Track {
   /** createdAt as epoch ms, for "newest" sort. */
@@ -82,11 +91,9 @@ export function SongList({ rows }: { rows: SongRow[] }) {
                   </>
                 )
               ) : toYouTube ? (
-                // Routed to YouTube — a play glyph that opens the video.
-                <>
-                  <span className="group-hover:hidden">{i + 1}</span>
-                  <Play className="mx-auto hidden h-4 w-4 text-red-400 group-hover:block" aria-hidden />
-                </>
+                // Routed to YouTube — a red YouTube glyph makes it obvious the
+                // row opens the video rather than playing on-site.
+                <YouTubeGlyph className="mx-auto h-4 w-4 text-red-500" />
               ) : (
                 <Music className="mx-auto h-4 w-4 text-gray-600" aria-hidden />
               )}
@@ -146,6 +153,16 @@ export function SongList({ rows }: { rows: SongRow[] }) {
                 >
                   YouTube ↗
                 </TrackedYouTubeOpen>
+              )}
+              {/* Routed to YouTube — a visible red badge (decorative; the whole
+                  row is already the accessible YouTube link). */}
+              {toYouTube && (
+                <span
+                  aria-hidden
+                  className="hidden shrink-0 items-center gap-1 rounded-full bg-red-600/15 px-2.5 py-1 text-[11px] font-semibold text-red-400 sm:inline-flex"
+                >
+                  <YouTubeGlyph className="h-3.5 w-3.5" /> Watch
+                </span>
               )}
               {/* WhatsApp share — the #1 diaspora channel, on every row so a song
                   can be forwarded to a chat/group/Status straight from browsing. */}
