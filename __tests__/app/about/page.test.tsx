@@ -48,6 +48,11 @@ describe('About page', () => {
     // AI-as-a-tool transparency line, present verbatim.
     expect(screen.getByText(/AI ஒரு கருவி மட்டுமே/)).toBeInTheDocument();
   });
+
+  it('shows the "AI-Assisted Musical Platform" brand descriptor in the hero', () => {
+    render(<AboutPage />);
+    expect(screen.getByText(/AI-Assisted Musical Platform/i)).toBeInTheDocument();
+  });
 });
 
 describe('About page — audit fixes', () => {
