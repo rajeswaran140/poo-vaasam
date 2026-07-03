@@ -42,15 +42,24 @@ export const metadata: Metadata = {
 // than dumping the visitor on a blank /contact page with no brief.
 const ORDER_HREF = '#request';
 
+// Pricing — single source of truth so the visible pricing card, the Service
+// schema Offer, and the FAQ answers can never drift apart (that drift was the
+// audit finding: the card showed "CAD $75 / 5–7 days" but schema + FAQ didn't).
+const PRICE_CURRENCY = 'CAD';
+const STARTING_PRICE = 75;
+const STARTING_PRICE_LABEL = `${PRICE_CURRENCY} $${STARTING_PRICE}`; // "CAD $75"
+const TURNAROUND_DAYS = '5–7';
+const TURNAROUND_LABEL = `${TURNAROUND_DAYS} working days`;
+
 // FAQ content — drives both the visible list and the FAQPage structured data.
 const FAQ: { q: string; a: string }[] = [
   {
     q: 'விலை எவ்வளவு?',
-    a: 'ஒவ்வொரு பாடலுக்கும் தேவைக்கேற்ப மலிவான, தனிப்பயன் விலை. உங்கள் கோரிக்கையை அனுப்பினால் இலவச மதிப்பீடு (quote) வழங்குகிறோம்.',
+    a: `ஒவ்வொரு பாடலுக்கும் தேவைக்கேற்ப மலிவான, தனிப்பயன் விலை — ${STARTING_PRICE_LABEL} முதல். உங்கள் கோரிக்கையை அனுப்பினால் இலவச மதிப்பீடு (quote) வழங்குகிறோம்.`,
   },
   {
     q: 'எவ்வளவு நேரம் ஆகும்?',
-    a: 'உங்கள் பாடலின் தேவையைப் பொறுத்து மாறும்; கோரிக்கையை உறுதிசெய்யும்போது காலக்கெடுவைத் தெரிவிக்கிறோம்.',
+    a: `பொதுவாக ${TURNAROUND_DAYS} வேலை நாட்கள்; உங்கள் பாடலின் தேவையைப் பொறுத்து மாறும். கோரிக்கையை உறுதிசெய்யும்போது காலக்கெடுவைத் தெரிவிக்கிறோம்.`,
   },
   {
     q: 'எந்த மொழிகளில் இசை அமைக்கிறீர்கள்?',
@@ -94,8 +103,16 @@ const jsonLd = [
     provider: { '@type': 'Organization', name: SITE_NAME, url: SITE_URL },
     areaServed: 'Worldwide',
     description: 'Affordable custom Tamil music composition by the தமிழகவல் team. Free quote on request.',
-    // No fixed price (custom quote per song), so we omit a priceless Offer
-    // (which Rich Results flags) and point to the request flow instead.
+    // Price is custom per song but has a published floor ("starting from"), so
+    // we model it as an AggregateOffer with lowPrice — a valid, non-empty Offer
+    // that matches the visible pricing card (no priceless-Offer Rich Results flag).
+    offers: {
+      '@type': 'AggregateOffer',
+      priceCurrency: PRICE_CURRENCY,
+      lowPrice: STARTING_PRICE,
+      availability: 'https://schema.org/InStock',
+      url: `${SITE_URL}/music-composition#request`,
+    },
     potentialAction: {
       '@type': 'OrderAction',
       target: `${SITE_URL}/music-composition#request`,
@@ -185,14 +202,14 @@ export default function MusicCompositionPage() {
                 <span className="text-2xl" aria-hidden>💸</span>
                 <div className="text-left">
                   <div className="text-xs text-gray-400 font-tamil">Starting from</div>
-                  <div className="text-lg font-bold text-white">CAD $75</div>
+                  <div className="text-lg font-bold text-white">{STARTING_PRICE_LABEL}</div>
                 </div>
               </div>
               <div className="flex items-center gap-2 bg-gray-800 border border-gray-700 rounded-xl px-5 py-3">
                 <span className="text-2xl" aria-hidden>📅</span>
                 <div className="text-left">
                   <div className="text-xs text-gray-400 font-tamil">Typical turnaround</div>
-                  <div className="text-lg font-bold text-white">5–7 working days</div>
+                  <div className="text-lg font-bold text-white">{TURNAROUND_LABEL}</div>
                 </div>
               </div>
             </div>

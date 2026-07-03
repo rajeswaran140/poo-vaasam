@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { DynamoDBOperations, handleDynamoDBError } from '@/infrastructure/database/dynamodb-client';
 import { RateLimiter, checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
+import { sendContactNotification } from '@/lib/contact-notify';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,6 +54,8 @@ export async function POST(request: NextRequest) {
     const id = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
     const now = new Date().toISOString();
 
+    const subject = parsed.data.subject || '(No subject)';
+
     await DynamoDBOperations.put({
       PK: `CONTACT#${id}`,
       SK: 'METADATA',
@@ -60,11 +63,25 @@ export async function POST(request: NextRequest) {
       id,
       name: parsed.data.name,
       email: parsed.data.email,
-      subject: parsed.data.subject || '(No subject)',
+      subject,
       message: parsed.data.message,
       status: 'NEW',
       createdAt: now,
     });
+
+    // Best-effort email alert. The message is already persisted, so a mail
+    // failure (SES down, not configured, sandbox limits) must NOT fail the
+    // request — swallow and log so the visitor still sees success.
+    try {
+      await sendContactNotification({
+        name: parsed.data.name,
+        email: parsed.data.email,
+        subject,
+        message: parsed.data.message,
+      });
+    } catch (mailError) {
+      console.error('[API:CONTACT] notification email failed (message still saved):', mailError);
+    }
 
     return NextResponse.json(
       { success: true, message: 'Your message has been sent. Thank you!' },

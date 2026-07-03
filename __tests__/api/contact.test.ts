@@ -12,6 +12,11 @@ jest.mock('@/infrastructure/database/dynamodb-client', () => ({
   handleDynamoDBError: jest.fn(),
 }));
 
+const mockNotify = jest.fn();
+jest.mock('@/lib/contact-notify', () => ({
+  sendContactNotification: (...args: unknown[]) => mockNotify(...args),
+}));
+
 import { POST } from '@/app/api/contact/route';
 
 const post = (body: unknown, ip = '9.9.9.9') =>
@@ -28,6 +33,7 @@ const valid = { name: 'Raj', email: 'a@b.com', message: 'Hello there' };
 beforeEach(() => {
   jest.clearAllMocks();
   mockPut.mockResolvedValue({});
+  mockNotify.mockResolvedValue(true);
 });
 
 it('stores a valid submission (201) with the CONTACT# key + NEW status', async () => {
@@ -40,6 +46,32 @@ it('stores a valid submission (201) with the CONTACT# key + NEW status', async (
   expect(item.PK).toMatch(/^CONTACT#/);
   expect(item.status).toBe('NEW');
   expect(item.email).toBe('a@b.com');
+});
+
+it('emails a notification after storing a valid submission', async () => {
+  await post(valid, '10.1.0.1');
+  expect(mockNotify).toHaveBeenCalledTimes(1);
+  const arg = mockNotify.mock.calls[0][0];
+  expect(arg).toMatchObject({ name: 'Raj', email: 'a@b.com', message: 'Hello there' });
+  // Missing subject is normalized to the same placeholder that gets stored.
+  expect(arg.subject).toBe('(No subject)');
+});
+
+it('still returns 201 when the notification email fails (message already saved)', async () => {
+  mockNotify.mockRejectedValueOnce(new Error('SES unavailable'));
+  const res = await post(valid, '10.1.0.2');
+  expect(res.status).toBe(201);
+  expect(mockPut).toHaveBeenCalledTimes(1); // the message was persisted
+});
+
+it('does NOT email on a validation failure', async () => {
+  await post({ name: 'Raj', email: 'a@b.com' }, '10.1.0.3'); // no message
+  expect(mockNotify).not.toHaveBeenCalled();
+});
+
+it('does NOT email on a honeypot hit', async () => {
+  await post({ ...valid, company: 'bot' }, '10.1.0.4');
+  expect(mockNotify).not.toHaveBeenCalled();
 });
 
 it('rejects missing required fields (400) and stores nothing', async () => {
