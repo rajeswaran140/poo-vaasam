@@ -40,7 +40,7 @@ interface Props {
 
 export function WhatsAppShareButton({ url, title, verb = 'listen', compact = false, asButton = false, className = '' }: Props) {
   const href = whatsappShareUrl({ title, url, verb });
-  const label = `${title} — WhatsApp-இல் பகிர்`;
+  const label = `${title} — WhatsApp-இல் பகிருங்கள்`;
 
   if (asButton) {
     // The whole card is a <Link>, so we can't emit a nested <a>. A <button>
@@ -57,7 +57,7 @@ export function WhatsAppShareButton({ url, title, verb = 'listen', compact = fal
         type="button"
         onClick={onClick}
         aria-label={label}
-        title="WhatsApp-இல் பகிர்"
+        title="WhatsApp-இல் பகிருங்கள்"
         className={`flex shrink-0 items-center rounded-full p-2 text-[#25D366] transition-colors hover:bg-[#25D366]/10 hover:text-[#1ebe57] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#25D366]/60 ${className}`}
       >
         <WhatsAppGlyph className="h-[18px] w-[18px]" />
@@ -72,7 +72,7 @@ export function WhatsAppShareButton({ url, title, verb = 'listen', compact = fal
         target="_blank"
         rel="noopener noreferrer"
         aria-label={label}
-        title="WhatsApp-இல் பகிர்"
+        title="WhatsApp-இல் பகிருங்கள்"
         onClick={() => trackShare('whatsapp')}
         className={`flex shrink-0 items-center px-2 py-2.5 text-[#25D366] transition-colors hover:text-[#1ebe57] focus-visible:text-[#1ebe57] focus-visible:outline-none ${className}`}
       >

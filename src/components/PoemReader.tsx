@@ -691,8 +691,8 @@ export function PoemReader({ content }: PoemReaderProps) {
                     ? 'hover:bg-amber-100'
                     : 'hover:bg-gray-100'
                 }`}
-                title="தேர்ந்தெடுத்த பகுதியை பகிர்"
-                aria-label="தேர்ந்தெடுத்த பகுதியை பகிர்"
+                title="தேர்ந்தெடுத்த பகுதியை பகிருங்கள்"
+                aria-label="தேர்ந்தெடுத்த பகுதியை பகிருங்கள்"
               >
                 <ShareIcon className="w-5 h-5" />
               </button>

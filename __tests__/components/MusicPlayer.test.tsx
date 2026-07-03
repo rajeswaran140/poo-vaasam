@@ -265,19 +265,19 @@ describe('SongsPlaylist — Tamil search', () => {
 
   it('shows the search box once the toolbar threshold is reached', () => {
     renderList(many);
-    expect(screen.getByLabelText('பாடல்களைத் தேடு')).toBeInTheDocument();
+    expect(screen.getByLabelText('பாடல்களைத் தேடுங்கள்')).toBeInTheDocument();
   });
 
   it('filters by typed Tamil (title match)', () => {
     renderList(many);
-    fireEvent.change(screen.getByLabelText('பாடல்களைத் தேடு'), { target: { value: 'எங்கள்' } });
+    fireEvent.change(screen.getByLabelText('பாடல்களைத் தேடுங்கள்'), { target: { value: 'எங்கள்' } });
     expect(screen.getByText('எங்கள் தேசம்')).toBeInTheDocument();
     expect(screen.queryByText('அந்தி மேகமே')).not.toBeInTheDocument();
   });
 
   it('matches the romanised artist and shows a no-results message when nothing matches', () => {
     renderList(many);
-    const box = screen.getByLabelText('பாடல்களைத் தேடு');
+    const box = screen.getByLabelText('பாடல்களைத் தேடுங்கள்');
     fireEvent.change(box, { target: { value: 'raj' } }); // artist "Raj"
     expect(screen.getByText('Tamil Melody')).toBeInTheDocument();
     fireEvent.change(box, { target: { value: 'zzznomatch' } });

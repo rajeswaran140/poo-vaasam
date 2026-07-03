@@ -128,7 +128,7 @@ export default function HomePage() {
                   </Link>
                   {isYouTubeChannelConfigured() && (
                     <SubscribeButton
-                      label="YouTube-ல் Subscribe செய்க"
+                      label="YouTube-ல் Subscribe செய்யுங்கள்"
                       source="home_hero"
                       className="px-10 py-5 bg-orange-700 text-white rounded-full font-bold hover:bg-orange-800 transition-all shadow-2xl transform hover:scale-105 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/50 font-tamil inline-flex items-center justify-center gap-3 text-lg"
                     />

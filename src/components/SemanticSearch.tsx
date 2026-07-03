@@ -91,7 +91,7 @@ export function SemanticSearch() {
             ) : (
               <>
                 <MagnifyingGlassIcon className="w-5 h-5" />
-                தேடு
+                தேடுங்கள்
               </>
             )}
           </button>

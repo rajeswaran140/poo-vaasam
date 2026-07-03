@@ -85,7 +85,7 @@ export function ShareRow({ url, title, verb = 'listen' }: ShareRowProps) {
       </a>
       {canNativeShare && (
         <button type="button" onClick={onNativeShare} aria-label="Share" className={linkClass}>
-          <Share2 className="h-4 w-4" aria-hidden /> பகிர்
+          <Share2 className="h-4 w-4" aria-hidden /> பகிருங்கள்
         </button>
       )}
       <a href={fb} target="_blank" rel="noopener noreferrer" aria-label="Share on Facebook" className={linkClass} onClick={() => trackShare('facebook')}>

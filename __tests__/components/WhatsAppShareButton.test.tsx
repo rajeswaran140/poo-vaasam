@@ -30,20 +30,20 @@ describe('WhatsAppShareButton', () => {
     render(<WhatsAppShareButton url={url} title={title} compact />);
     // No visible "WhatsApp" text, but the accessible name carries the title.
     expect(screen.queryByText('WhatsApp')).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /எங்கள் தேசம்.*பகிர்/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /எங்கள் தேசம்.*பகிருங்கள்/ })).toBeInTheDocument();
   });
 
   it('in asButton mode renders a <button> (not an <a>) so it can live inside a card Link', () => {
     render(<WhatsAppShareButton url={url} title={title} asButton />);
     // No nested anchor (would be invalid inside the card's wrapping <Link>).
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /எங்கள் தேசம்.*பகிர்/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /எங்கள் தேசம்.*பகிருங்கள்/ })).toBeInTheDocument();
   });
 
   it('asButton opens WhatsApp and stops the click from following the card link', () => {
     const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
     render(<WhatsAppShareButton url={url} title={title} asButton />);
-    const click = fireEvent.click(screen.getByRole('button', { name: /பகிர்/ }));
+    const click = fireEvent.click(screen.getByRole('button', { name: /பகிருங்கள்/ }));
     // preventDefault() called → the card's wrapping <Link> won't navigate.
     expect(click).toBe(false);
     expect(openSpy).toHaveBeenCalledWith(

@@ -92,7 +92,7 @@ export default async function StatusPage() {
         {/* Keeps the heading hierarchy h1 → h2 → h3 (cards are h3) for a11y. */}
         <h2 className="sr-only">தமிழகவல் குறும்படங்கள் — WhatsApp Status clips</h2>
         <p className="mb-6 font-tamil text-sm text-gray-600">
-          📱 கைபேசியில்: <strong>“Status-இல் பகிர்”</strong> → WhatsApp → <em>My status</em>. கணினியில்:{' '}
+          📱 கைபேசியில்: <strong>“Status-இல் பகிருங்கள்”</strong> → WhatsApp → <em>My status</em>. கணினியில்:{' '}
           <strong>⬇️</strong> பதிவிறக்கி, கைபேசியில் Status-ஆகப் பதிவிடுங்கள்.
         </p>
         <StatusShareGallery clips={clips} />

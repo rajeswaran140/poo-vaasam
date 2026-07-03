@@ -58,7 +58,7 @@ describe('StatusShareCard', () => {
 
   it('uses a share-button colour that passes WCAG AA contrast with white text', () => {
     render(<StatusShareCard {...view} />);
-    const btn = screen.getByRole('button', { name: /Status-இல் பகிர்/ });
+    const btn = screen.getByRole('button', { name: /Status-இல் பகிருங்கள்/ });
     const bg = btn.className.match(/bg-\[#([0-9a-fA-F]{6})\]/);
     expect(bg).not.toBeNull(); // button fill is an explicit hex
     // White-on-fill must clear AA for normal text (4.5:1).
@@ -74,7 +74,7 @@ describe('StatusShareCard', () => {
     }) as unknown as typeof fetch;
 
     render(<StatusShareCard {...view} />);
-    fireEvent.click(screen.getByRole('button', { name: /Status-இல் பகிர்/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Status-இல் பகிருங்கள்/ }));
 
     await waitFor(() => expect(share).toHaveBeenCalledTimes(1));
     expect(global.fetch).toHaveBeenCalledWith(view.clip);
@@ -90,7 +90,7 @@ describe('StatusShareCard', () => {
     const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
 
     render(<StatusShareCard {...view} />);
-    fireEvent.click(screen.getByRole('button', { name: /Status-இல் பகிர்/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Status-இல் பகிருங்கள்/ }));
 
     await waitFor(() =>
       expect(openSpy).toHaveBeenCalledWith(
@@ -114,7 +114,7 @@ describe('StatusShareCard', () => {
     const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
 
     render(<StatusShareCard {...view} />);
-    fireEvent.click(screen.getByRole('button', { name: /Status-இல் பகிர்/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Status-இல் பகிருங்கள்/ }));
 
     await waitFor(() => expect(share).toHaveBeenCalled());
     expect(openSpy).not.toHaveBeenCalled(); // dismissal is not an error

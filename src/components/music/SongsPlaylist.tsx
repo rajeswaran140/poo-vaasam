@@ -256,8 +256,8 @@ export function SongsPlaylist({ tracks }: { tracks: SongRow[] }) {
                   type="search"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="பாடல்களைத் தேடு…"
-                  aria-label="பாடல்களைத் தேடு"
+                  placeholder="பாடல்களைத் தேடுங்கள்…"
+                  aria-label="பாடல்களைத் தேடுங்கள்"
                   className="w-full rounded-full border border-white/10 bg-white/5 px-4 py-2 font-tamil text-sm text-white placeholder-gray-500 focus:border-orange-400/60 focus:outline-none focus:ring-1 focus:ring-orange-400/40 sm:max-w-xs"
                 />
                 <label className="flex items-center gap-2 font-tamil text-sm text-gray-400">
