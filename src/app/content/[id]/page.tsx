@@ -298,7 +298,7 @@ export default async function ContentPage({ params }: PageProps) {
                   className="mt-4 inline-flex items-center gap-2 rounded-full bg-orange-600 px-5 py-2.5 font-tamil text-sm font-medium text-white shadow-sm transition-colors hover:bg-orange-700"
                 >
                   <span>▶️</span>
-                  <span>YouTube-ல் பார்</span>
+                  <span>YouTube-ல் பாருங்கள்</span>
                 </TrackedYouTubeOpen>
               </div>
             )}
