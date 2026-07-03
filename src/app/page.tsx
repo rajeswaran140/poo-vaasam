@@ -9,11 +9,9 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import Header from '@/components/Header';
 import { Footer } from '@/components/Footer';
-import { SITE, isYouTubeChannelConfigured, isYouTubeVideosConfigured, socialProfileUrls } from '@/config/site';
-import { fetchChannelVideos } from '@/lib/youtube-feed';
-import { partitionShorts } from '@/lib/youtube-shorts';
+import { isYouTubeChannelConfigured, socialProfileUrls } from '@/config/site';
+import { LatestVideos } from '@/components/LatestVideos';
 import { SubscribeButton } from '@/components/SubscribeButton';
-import { TrackedYouTubeOpen } from '@/components/TrackedYouTubeOpen';
 import { JsonLd } from '@/components/JsonLd';
 import { SITE_URL, SITE_NAME, alternatesFor } from '@/lib/seo';
 
@@ -53,15 +51,7 @@ const personJsonLd = {
   ...(personSameAs.length > 0 ? { sameAs: personSameAs } : {}),
 };
 
-export default async function HomePage() {
-  // Fetch a few extra so partitioning out Shorts still leaves ~4 long-form
-  // videos for the 16:9 grid — a vertical Short doesn't belong in this row
-  // (Shorts get their own row on /videos).
-  const feed = isYouTubeVideosConfigured()
-    ? await fetchChannelVideos(SITE.youtube.channelId, 10)
-    : [];
-  const latestVideos = partitionShorts(feed).videos.slice(0, 4);
-
+export default function HomePage() {
   return (
     <div className="min-h-screen bg-gray-900">
       <JsonLd data={websiteJsonLd} />
@@ -104,6 +94,7 @@ export default async function HomePage() {
                     <span className="block">தமிழ் கவிதைகளும் பாடல்களும்.</span>
                     <span className="block mt-2">என்றும் இலவசம்.</span>
                   </p>
+                  <p className="text-base sm:text-lg italic text-white/85">Where Tamil Poetry Becomes Song</p>
                 </div>
 
                 {/* Feature Pills - Consistent Sizing */}
@@ -149,54 +140,9 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* Latest YouTube videos — funnel to the channel */}
-      {latestVideos.length > 0 && (
-        <section className="bg-gray-900 pt-16 pb-4">
-          <div className="container mx-auto px-4 max-w-6xl">
-            <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
-              <h2 className="text-3xl font-bold text-white font-kavivanar">சமீபத்திய காணொளிகள்</h2>
-              <div className="flex items-center gap-4">
-                <SubscribeButton label="YouTube" source="home_latest_videos" />
-                <Link href="/videos" className="rounded text-orange-400 hover:text-orange-300 font-tamil font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900">
-                  அனைத்தும் →
-                </Link>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              {latestVideos.map((video) => (
-                <TrackedYouTubeOpen
-                  key={video.id}
-                  href={video.watchUrl}
-                  destination={`video:${video.id}`}
-                  source="home_latest_videos"
-                  className="group block rounded-xl overflow-hidden bg-gray-800 border border-gray-700 hover:border-orange-500/50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/70 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900"
-                >
-                  <div className="relative aspect-video bg-black">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={video.thumbnail}
-                      alt={video.title}
-                      loading="lazy"
-                      decoding="async"
-                      className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition"
-                    />
-                    <span className="absolute inset-0 flex items-center justify-center">
-                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-orange-600/90 shadow-lg">
-                        <svg className="w-6 h-6 text-white ml-0.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                          <path d="M8 5v14l11-7z" />
-                        </svg>
-                      </span>
-                    </span>
-                  </div>
-                  <div className="p-3">
-                    <h3 className="line-clamp-2 text-sm text-gray-200 font-tamil">{video.title}</h3>
-                  </div>
-                </TrackedYouTubeOpen>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
+      {/* Latest YouTube videos — funnel to the channel. Client island so the
+          landing page stays static while the feed stays fresh (see LatestVideos). */}
+      <LatestVideos />
 
       {/* Why Choose Section - Free Features */}
       <section className="bg-gray-900 py-20">
@@ -231,10 +177,10 @@ export default async function HomePage() {
                 <span className="text-4xl" aria-hidden="true">🎧</span>
               </div>
               <h3 className="text-xl font-bold text-white mb-4 font-tamil leading-snug">
-                இலவச ஆடியோ
+                கேளுங்கள் & பாருங்கள்
               </h3>
               <p className="text-base text-gray-300 font-tamil leading-loose">
-                உங்கள் பிடித்த கவிதைகளையும் பாடல்களையும் கேளுங்கள். எங்கு வேண்டுமானாலும், எப்போது வேண்டுமானாலும்.
+                பாடல்களை YouTube-ல் முழுமையாக அனுபவியுங்கள்; கவிதைகளை ஒலி வடிவில் கேளுங்கள். இலவசம்.
               </p>
             </div>
 
