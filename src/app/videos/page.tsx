@@ -193,8 +193,8 @@ export default async function VideosPage() {
           )}
 
           {all.length > 0 && (
-            <section className="mt-12 text-center">
-              <p className="mb-4 font-tamil text-gray-300">
+            <section className="mt-12 flex flex-col items-center gap-4 sm:flex-row sm:items-center sm:justify-end">
+              <p className="font-tamil text-gray-300 sm:text-right">
                 புதிய காணொளிகளை தவறவிடாமல் பெற, எங்களை சந்தாதாரராக சேருங்கள்.
               </p>
               <SubscribeButton
