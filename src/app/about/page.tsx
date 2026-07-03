@@ -184,7 +184,7 @@ export default function AboutPage() {
                 href="/videos"
                 className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-6 py-3 font-tamil text-sm font-bold text-white transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/60"
               >
-                காணொளிகள் பார்
+                காணொளிகள் பாருங்கள்
               </Link>
             )}
             <Link
