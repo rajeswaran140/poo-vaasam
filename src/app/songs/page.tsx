@@ -18,6 +18,7 @@ import Header from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { SongCatalog } from '@/application/use-cases/SongCatalog';
+import { listableSongs } from '@/lib/songs-visibility';
 import type { PublicSongDTO } from '@/domain/songs/PublicSong';
 import { SongsPlaylist, type SongRow } from '@/components/music/SongsPlaylist';
 import { JsonLd } from '@/components/JsonLd';
@@ -50,7 +51,9 @@ const FALLBACK_OG_IMAGE =
  */
 async function getSongs(): Promise<PublicSongDTO[]> {
   try {
-    return await new SongCatalog(new ContentRepository()).listPublished(100);
+    // Funnel-to-YouTube: while on-site playback is off, hide songs with no
+    // YouTube video (nothing to listen to). Same rule as GET /api/songs.
+    return listableSongs(await new SongCatalog(new ContentRepository()).listPublished(100));
   } catch (error) {
     console.error('Failed to fetch songs:', error);
     return [];

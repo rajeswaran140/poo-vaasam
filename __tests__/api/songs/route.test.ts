@@ -16,11 +16,21 @@ jest.mock('@/infrastructure/database/ContentRepository', () => ({
   ContentRepository: jest.fn().mockImplementation(() => ({ findByType: mockFindByType })),
 }));
 
+// The funnel-to-YouTube filter hides non-YouTube songs when playback is off.
+// Default these contract tests to playback ON (full feed); one test flips it.
+jest.mock('@/config/features', () => ({
+  ...jest.requireActual('@/config/features'),
+  isAudioPlaybackEnabled: jest.fn(() => true),
+}));
+
 import * as route from '@/app/api/songs/route';
 import { GET } from '@/app/api/songs/route';
 import { Content } from '@/domain/entities/Content';
 import { ContentType, ContentStatus } from '@/types/content';
 import { publicSongsResponseSchema } from '@/lib/validations/songs';
+import { isAudioPlaybackEnabled } from '@/config/features';
+
+const mockPlayback = isAudioPlaybackEnabled as jest.Mock;
 
 function page(items: Content[]) {
   return { items, total: items.length, limit: 100, hasMore: false };
@@ -44,7 +54,20 @@ function song(id: string, overrides: Record<string, unknown> = {}) {
   });
 }
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockPlayback.mockReturnValue(true); // default: full feed
+});
+
+it('hides songs with no YouTube video when on-site playback is off (funnel)', async () => {
+  mockPlayback.mockReturnValue(false);
+  mockFindByType.mockResolvedValueOnce(
+    page([song('a', { youtubeVideoId: 'aaaaaaaaaaa' }), song('b')]) // b has no YouTube link
+  );
+  const body = await (await GET()).json();
+  expect(body.total).toBe(1);
+  expect(body.data.map((s: { id: string }) => s.id)).toEqual(['a']);
+});
 
 it('returns 200 with {success,data,total} for an anonymous request (no auth)', async () => {
   mockFindByType.mockResolvedValueOnce(page([song('a'), song('b')]));

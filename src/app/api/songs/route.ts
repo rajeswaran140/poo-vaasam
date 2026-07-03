@@ -19,6 +19,7 @@ import { NextResponse } from 'next/server';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { SongCatalog } from '@/application/use-cases/SongCatalog';
 import { publicSongsResponseSchema } from '@/lib/validations/songs';
+import { listableSongs } from '@/lib/songs-visibility';
 
 export const dynamic = 'force-static';
 export const revalidate = 300;
@@ -26,7 +27,9 @@ export const revalidate = 300;
 export async function GET() {
   try {
     const catalog = new SongCatalog(new ContentRepository());
-    const data = await catalog.listPublished();
+    // Funnel-to-YouTube: while on-site playback is off, hide songs with no
+    // YouTube video (they can't be watched from the site).
+    const data = listableSongs(await catalog.listPublished());
 
     const body = { success: true as const, data, total: data.length };
     // Fail loud in dev/build if we ever emit something off-contract.
