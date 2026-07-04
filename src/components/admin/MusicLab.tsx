@@ -18,6 +18,7 @@ import {
   GENERATION_ENGINES,
   GENERATION_VERDICTS,
   FAILURE_REASONS,
+  loudnessSchema,
   type Generation,
   type GenerationVerdict,
   type AudioMetricsRecord,
@@ -468,7 +469,12 @@ function LogGenerationForm({ brief, onSaved }: { brief: SavedBrief; onSaved: (g:
         });
         const mj = (await mr.json().catch(() => ({}))) as { success?: boolean; metrics?: Omit<LoudnessRecord, 'badge' | 'verdict'>; badge?: string; verdict?: LoudnessRecord['verdict'] };
         if (mr.ok && mj.success && mj.metrics && mj.badge && mj.verdict) {
-          loudness = { ...mj.metrics, badge: mj.badge, verdict: mj.verdict };
+          // Validate against the SAME schema the API enforces before attaching.
+          // A drifted/partial measure-fn payload must not ride along, or the
+          // whole POST would 400 — defeating the best-effort intent. On any
+          // mismatch we simply log the take without loudness.
+          const measured = loudnessSchema.safeParse({ ...mj.metrics, badge: mj.badge, verdict: mj.verdict });
+          if (measured.success) loudness = measured.data;
         }
       } catch {
         /* best-effort — log the take without loudness */

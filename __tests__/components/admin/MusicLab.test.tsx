@@ -14,7 +14,10 @@ jest.mock('lucide-react', () => ({
   Lightbulb: () => <svg data-testid="i-bulb" />,
 }));
 jest.mock('@/components/admin/MediaUploadField', () => ({
-  MediaUploadField: () => <div data-testid="media-upload" />,
+  // Controlled input so tests can set an audio URL and exercise the measure path.
+  MediaUploadField: ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
+    <input data-testid="media-upload" value={value ?? ''} onChange={(e) => onChange(e.target.value)} />
+  ),
 }));
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -226,4 +229,53 @@ it('restores the card (and shows an error) when the delete fails', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent(/delete failed/i);
   expect(screen.getByText('keep me')).toBeInTheDocument();
   confirmSpy.mockRestore();
+});
+
+it('logs the take WITHOUT loudness when the measure-fn payload is malformed (best-effort)', async () => {
+  const posted: RequestInit[] = [];
+  routeFetch((url, opts) => {
+    if (url === '/api/admin/music-lab/measure' && opts?.method === 'POST') {
+      // metrics missing required fields (lra, flatFactor) — must be dropped, not
+      // ridden along into the save (which the server would 400 on).
+      return { ok: true, status: 200, json: async () => ({ success: true, metrics: { lufs: -11, truePeak: -0.5, crest: 8 }, badge: 'x', verdict: 'ok' }) };
+    }
+    if (url === '/api/admin/generations' && opts?.method === 'POST') {
+      posted.push(opts);
+      const body = JSON.parse(opts.body as string);
+      return { ok: true, status: 201, json: async () => ({ success: true, data: { ...body, id: 'gen_b', createdAt: '2026-07-01T00:00:00.000Z' } }) };
+    }
+    return undefined;
+  });
+
+  await selectBrief();
+  fireEvent.change(screen.getByTestId('media-upload'), { target: { value: 'https://cdn.example.com/audio/take.mp3' } });
+  fireEvent.click(screen.getByRole('button', { name: /log generation/i }));
+
+  await waitFor(() => expect(posted).toHaveLength(1));
+  const body = JSON.parse(posted[0].body as string);
+  expect(body.loudness).toBeUndefined();                                   // malformed measurement dropped
+  expect(body.audioUrl).toBe('https://cdn.example.com/audio/take.mp3');    // take still logged
+});
+
+it('attaches server-measured loudness to the POST when the measure-fn payload is valid', async () => {
+  const posted: RequestInit[] = [];
+  routeFetch((url, opts) => {
+    if (url === '/api/admin/music-lab/measure' && opts?.method === 'POST') {
+      return { ok: true, status: 200, json: async () => ({ success: true, metrics: { lufs: -11, lra: 5, truePeak: -0.4, crest: 8, flatFactor: 0 }, badge: '+3 LU hot', verdict: 'clip-risk' }) };
+    }
+    if (url === '/api/admin/generations' && opts?.method === 'POST') {
+      posted.push(opts);
+      const body = JSON.parse(opts.body as string);
+      return { ok: true, status: 201, json: async () => ({ success: true, data: { ...body, id: 'gen_v', createdAt: '2026-07-01T00:00:00.000Z' } }) };
+    }
+    return undefined;
+  });
+
+  await selectBrief();
+  fireEvent.change(screen.getByTestId('media-upload'), { target: { value: 'https://cdn.example.com/audio/take.mp3' } });
+  fireEvent.click(screen.getByRole('button', { name: /log generation/i }));
+
+  await waitFor(() => expect(posted).toHaveLength(1));
+  const body = JSON.parse(posted[0].body as string);
+  expect(body.loudness).toMatchObject({ lufs: -11, badge: '+3 LU hot', verdict: 'clip-risk' });
 });
