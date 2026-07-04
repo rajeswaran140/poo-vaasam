@@ -144,6 +144,28 @@ export function FunnelInsightPanel({ ytaConfigured }: { ytaConfigured: boolean }
             </div>
           )}
 
+          {/* Discovery engines — songs that feed suggested traffic to the rest */}
+          {report.discoveryEngines.length > 0 && (
+            <div>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                Discovery engines (feed suggested traffic)
+              </p>
+              <ul className="space-y-1 text-sm">
+                {report.discoveryEngines.map((v) => (
+                  <li key={v.videoId} className="flex items-center justify-between gap-2 text-gray-700 dark:text-gray-300">
+                    <span className="truncate font-mono text-xs">{v.videoId}</span>
+                    <span className="tabular-nums text-gray-500">
+                      {numberFmt.format(v.views)} feeds · <strong className="text-gray-800 dark:text-gray-200">{v.sharePct}%</strong>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1 text-[11px] text-gray-400">
+                End-screen these → your best converters above to turn their reach into subscribers.
+              </p>
+            </div>
+          )}
+
           {/* Recommendations */}
           <ul className="space-y-1 border-t border-gray-100 pt-3 dark:border-gray-800">
             {report.recommendations.map((rec, i) => (

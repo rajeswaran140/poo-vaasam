@@ -149,11 +149,63 @@ describe('subscribe', () => {
 });
 
 describe('top converters', () => {
-  it('gates out low-view songs and ranks by subs-per-1000-views', () => {
+  it('gates out low-view songs and displays the raw subs-per-1000-views', () => {
     const r = computeFunnel(input());
-    expect(r.topConverters.map((v) => v.videoId)).toEqual(['good', 'meh']); // 'tiny' gated (10 < 50)
+    expect(r.topConverters.map((v) => v.videoId)).toEqual(['good', 'meh']); // 'tiny' (10 views) gated out
     expect(r.topConverters[0]).toMatchObject({ videoId: 'good', subsPer1000Views: 20 });
     expect(r.topConverters.every((v) => v.views >= MIN_VIEWS_PER_SONG)).toBe(true);
+  });
+
+  it('shrinkage-ranks a proven song above a noisy small-sample one (despite its lower raw rate)', () => {
+    const r = computeFunnel(input({
+      videos: [
+        { videoId: 'proven', views: 2000, averageViewPercentage: 36, subscribersGained: 15 }, // 7.5/1k, big sample
+        { videoId: 'noisy', views: 300, averageViewPercentage: 20, subscribersGained: 3 }, // 10/1k RAW but tiny
+        { videoId: 'bulk', views: 8000, averageViewPercentage: 30, subscribersGained: 20 }, // low-rate, sets cohort mean
+      ],
+    }));
+    // raw would rank 'noisy' (10) first; shrinkage toward the cohort mean keeps 'proven' on top
+    expect(r.topConverters[0].videoId).toBe('proven');
+    expect(r.topConverters[0].subsPer1000Views).toBe(7.5); // still shows the raw rate
+  });
+
+  it('excludes songs below the raised MIN_VIEWS_PER_SONG gate', () => {
+    const r = computeFunnel(input({
+      videos: [{ videoId: 'under', views: MIN_VIEWS_PER_SONG - 1, averageViewPercentage: 50, subscribersGained: 9 }],
+    }));
+    expect(r.topConverters).toEqual([]);
+  });
+});
+
+describe('phase 2 — real returning measure (subscribedStatus)', () => {
+  it('upgrades RETURNED from a proxy to a real measure when subscribedStatus is present', () => {
+    const r = computeFunnel(input({
+      subscribedStatus: { subscribed: { views: 300, watchMinutes: 900 }, unsubscribed: { views: 9700, watchMinutes: 20000 } },
+    }));
+    expect(r.returned.subscribedViewSharePct).toBe(3); // 300 / 10000
+    const returnedStage = r.stages.find((s) => s.key === 'RETURNED')!;
+    expect(returnedStage.value).toBe(3);
+    expect(returnedStage.proxy).toBe(false);
+  });
+
+  it('falls back to the traffic proxy when subscribedStatus is absent', () => {
+    const r = computeFunnel(input({ subscribedStatus: null }));
+    expect(r.returned.subscribedViewSharePct).toBeNull();
+    expect(r.stages.find((s) => s.key === 'RETURNED')!.proxy).toBe(true);
+  });
+});
+
+describe('phase 2 — discovery engines', () => {
+  it('ranks the videos feeding the most suggested traffic, with shares', () => {
+    const r = computeFunnel(input({
+      discoverySources: [{ videoId: 'engineA', views: 1000 }, { videoId: 'engineB', views: 500 }, { videoId: 'zero', views: 0 }],
+    }));
+    expect(r.discoveryEngines.map((e) => e.videoId)).toEqual(['engineA', 'engineB']); // zero filtered
+    expect(r.discoveryEngines[0]).toMatchObject({ videoId: 'engineA', sharePct: 66.7 }); // 1000/1500
+  });
+
+  it('is empty when there is no discovery-source data', () => {
+    expect(computeFunnel(input()).discoveryEngines).toEqual([]);
   });
 });
 

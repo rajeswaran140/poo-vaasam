@@ -19,8 +19,14 @@
 
 /** Minimum window views before we surface a leak diagnosis / recommendations. */
 export const MIN_TOTAL_VIEWS = 100;
-/** Minimum per-video views before a song's subs-per-view rate is trustworthy. */
-export const MIN_VIEWS_PER_SONG = 50;
+/** Minimum per-video views before a song's subs-per-view rate is worth showing. */
+export const MIN_VIEWS_PER_SONG = 300;
+/**
+ * Pseudo-view prior for Bayesian shrinkage of the per-song conversion rate:
+ * a song's rate is pulled toward the cohort mean by this many "prior" views, so
+ * a 6-subs-from-500-views song can't out-rank a 16-from-2,000 song on noise.
+ */
+const SHRINK_PRIOR_VIEWS = 1000;
 
 // Benchmarks used only for the leak diagnosis (rough, channel-stage-appropriate).
 const RETENTION_FLOOR_PCT = 25; // avg view % below this = a WATCHED (hook) leak
@@ -64,12 +70,27 @@ export interface FunnelVideoRow {
   subscribersGained: number;
 }
 
+/** Views/watch split by whether the viewer was subscribed at watch time. */
+export interface FunnelSubscribedStatus {
+  subscribed: { views: number; watchMinutes: number };
+  unsubscribed: { views: number; watchMinutes: number };
+}
+
+/** A video that sends suggested-video (RELATED_VIDEO) traffic to the channel. */
+export interface FunnelDiscoverySource {
+  videoId: string;
+  views: number;
+}
+
 export interface FunnelInput {
   days: number;
   channel: FunnelChannelTotals;
   trafficSources: FunnelTrafficRow[];
   playlist: FunnelPlaylistTotals | null;
   videos: FunnelVideoRow[];
+  // Phase 2 (best-effort; null/[] when unavailable):
+  subscribedStatus?: FunnelSubscribedStatus | null; // real returning-viewer measure
+  discoverySources?: FunnelDiscoverySource[]; // song→song suggested-traffic feeders
 }
 
 // ---- Output ----------------------------------------------------------------
@@ -118,7 +139,15 @@ export interface FunnelReport {
     playlistShareOfViewsPct: number;
     measured: boolean; // false when there's no playlist-session data this window
   };
-  returned: { subscriberSourceSharePct: number; viewsPerViewer: number | null };
+  returned: {
+    subscriberSourceSharePct: number;
+    viewsPerViewer: number | null;
+    /** Real returning measure: share of views from already-subscribed viewers
+     *  (from the subscribedStatus dimension). null when unavailable. */
+    subscribedViewSharePct: number | null;
+  };
+  /** Songs whose suggested-video traffic feeds the rest of the catalogue. */
+  discoveryEngines: { videoId: string; views: number; sharePct: number }[];
   subscribe: {
     subscribersGained: number;
     subscribersLost: number;
@@ -211,9 +240,16 @@ export function computeFunnel(input: FunnelInput): FunnelReport {
   const netSubscribers = channel.subscribersGained - channel.subscribersLost;
   const subsPer1000Views = totalViews > 0 ? round1((channel.subscribersGained / totalViews) * 1000) : 0;
 
-  // --- per-song conversion leaderboard (min-views gated) ---
-  const topConverters: SongConversion[] = videos
-    .filter((v) => v.views >= MIN_VIEWS_PER_SONG)
+  // --- per-song conversion leaderboard (min-views gated, shrinkage-ranked) ---
+  const gatedVideos = videos.filter((v) => v.views >= MIN_VIEWS_PER_SONG);
+  const cohortViews = gatedVideos.reduce((s, v) => s + v.views, 0);
+  const cohortSubs = gatedVideos.reduce((s, v) => s + v.subscribersGained, 0);
+  const cohortRatePerView = cohortViews > 0 ? cohortSubs / cohortViews : 0;
+  // Shrunk subs-per-view — pulls a small sample toward the cohort mean so the
+  // ranking reflects a trustworthy rate, not a lucky 2-subs-from-200-views spike.
+  const shrunkRate = (subs: number, views: number) =>
+    (subs + cohortRatePerView * SHRINK_PRIOR_VIEWS) / (views + SHRINK_PRIOR_VIEWS);
+  const topConverters: SongConversion[] = gatedVideos
     .map((v) => ({
       videoId: v.videoId,
       views: v.views,
@@ -221,7 +257,25 @@ export function computeFunnel(input: FunnelInput): FunnelReport {
       subscribersGained: v.subscribersGained,
       subsPer1000Views: v.views > 0 ? round1((v.subscribersGained / v.views) * 1000) : 0,
     }))
-    .sort((a, b) => b.subsPer1000Views - a.subsPer1000Views || b.views - a.views)
+    // Rank by the shrinkage-adjusted rate (stable vs noise); DISPLAY the raw rate.
+    .sort(
+      (a, b) =>
+        shrunkRate(b.subscribersGained, b.views) - shrunkRate(a.subscribersGained, a.views) ||
+        b.views - a.views
+    )
+    .slice(0, 5);
+
+  // --- Phase 2: real returning measure + song→song discovery engines ---
+  const ss = input.subscribedStatus ?? null;
+  const subscribedViewSharePct = ss
+    ? round1(pct(ss.subscribed.views, ss.subscribed.views + ss.unsubscribed.views) ?? 0)
+    : null;
+  const discSources = input.discoverySources ?? [];
+  const discTotal = discSources.reduce((s, r) => s + r.views, 0);
+  const discoveryEngines = discSources
+    .filter((r) => r.views > 0)
+    .map((r) => ({ videoId: r.videoId, views: r.views, sharePct: round1(pct(r.views, discTotal) ?? 0) }))
+    .sort((a, b) => b.views - a.views)
     .slice(0, 5);
 
   // --- stages (headline KPI per stage, honestly labelled) ---
@@ -255,10 +309,14 @@ export function computeFunnel(input: FunnelInput): FunnelReport {
     {
       key: 'RETURNED',
       label: 'Returned',
-      value: subscriberSourceSharePct,
+      value: subscribedViewSharePct ?? subscriberSourceSharePct,
       unit: '% of views',
-      proxy: true,
-      note: 'Subscriber/notification traffic share — proxy for loyal/returning viewers (true new-vs-returning is Studio-only).',
+      // A real measure when subscribedStatus is available, else the traffic proxy.
+      proxy: subscribedViewSharePct == null,
+      note:
+        subscribedViewSharePct != null
+          ? 'Share of views from already-subscribed viewers (subscribedStatus) — a real returning measure.'
+          : 'Subscriber/notification traffic share — proxy for loyal/returning viewers (true new-vs-returning is Studio-only).',
     },
     {
       key: 'SUBSCRIBED',
@@ -328,8 +386,10 @@ export function computeFunnel(input: FunnelInput): FunnelReport {
     viewsPerPlaylistStart,
     subsPer1000Views,
     subscriberSourceSharePct,
+    subscribedViewSharePct,
     leakiestStage,
     topConverters,
+    discoveryEngines,
   });
 
   return {
@@ -339,7 +399,8 @@ export function computeFunnel(input: FunnelInput): FunnelReport {
     conversions,
     trafficMix,
     secondSong: { viewsPerPlaylistStart, averageTimeInPlaylistSeconds, playlistShareOfViewsPct, measured: playlistMeasured },
-    returned: { subscriberSourceSharePct, viewsPerViewer },
+    returned: { subscriberSourceSharePct, viewsPerViewer, subscribedViewSharePct },
+    discoveryEngines,
     subscribe: {
       subscribersGained: channel.subscribersGained,
       subscribersLost: channel.subscribersLost,
@@ -360,8 +421,10 @@ function buildRecommendations(r: {
   viewsPerPlaylistStart: number;
   subsPer1000Views: number;
   subscriberSourceSharePct: number;
+  subscribedViewSharePct: number | null;
   leakiestStage: FunnelReport['leakiestStage'];
   topConverters: SongConversion[];
+  discoveryEngines: { videoId: string; views: number; sharePct: number }[];
 }): string[] {
   if (r.totalViews === 0) return ['No views in this window yet — nothing to model.'];
   if (!r.hasEnoughData) {
@@ -376,6 +439,18 @@ function buildRecommendations(r: {
   if (best) {
     out.push(
       `Your best converter is ${best.videoId} at ${best.subsPer1000Views} subs/1,000 views — cross-link it from end screens and lead playlists with it.`
+    );
+  }
+  // Cross-promotion play: point your biggest discovery engine at your best converter.
+  const engine = r.discoveryEngines[0];
+  if (engine && best && engine.videoId !== best.videoId) {
+    out.push(
+      `Cross-promo: your top discovery engine ${engine.videoId} feeds ${engine.sharePct}% of suggested traffic — end-screen it to your best converter ${best.videoId}.`
+    );
+  }
+  if (r.subscribedViewSharePct != null && r.subscribedViewSharePct < 10) {
+    out.push(
+      `Only ${r.subscribedViewSharePct}% of views are from already-subscribed viewers — you're discovery-driven, so converting new viewers to subs is the whole game.`
     );
   }
   if (r.viewsPerPlaylistStart >= SONGS_PER_SESSION_FLOOR) {

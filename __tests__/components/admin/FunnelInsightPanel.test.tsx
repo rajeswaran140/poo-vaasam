@@ -24,6 +24,8 @@ const INPUT: FunnelInput = {
   ],
   playlist: { playlistStarts: 1000, viewsPerPlaylistStart: 2.4, averageTimeInPlaylistSeconds: 480 },
   videos: [{ videoId: 'bestSong99', views: 3000, averageViewPercentage: 40, subscribersGained: 60 }],
+  subscribedStatus: { subscribed: { views: 300, watchMinutes: 900 }, unsubscribed: { views: 9700, watchMinutes: 20000 } },
+  discoverySources: [{ videoId: 'engineVid42', views: 1200 }, { videoId: 'engineVid7', views: 400 }],
 };
 
 // The route returns { success, ...computeFunnel(input) }; mirror that here.
@@ -55,6 +57,12 @@ it('surfaces the leak diagnosis and the best-converting song', async () => {
   // avg view % 18 < 25 floor → WATCHED (retention) is the flagged leak
   expect(await screen.findByText(/Biggest leak — WATCHED/)).toBeInTheDocument();
   expect(screen.getByText('bestSong99')).toBeInTheDocument();
+});
+
+it('renders the Phase 2 discovery engines (song→song suggested feeders)', async () => {
+  render(<FunnelInsightPanel ytaConfigured />);
+  expect(await screen.findByText(/Discovery engines/i)).toBeInTheDocument();
+  expect(screen.getByText('engineVid42')).toBeInTheDocument();
 });
 
 it('re-fetches with the selected window when a day button is clicked', async () => {

@@ -23,6 +23,8 @@ import type {
   FunnelTrafficRow,
   FunnelPlaylistTotals,
   FunnelVideoRow,
+  FunnelSubscribedStatus,
+  FunnelDiscoverySource,
 } from '@/lib/youtube-funnel';
 
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -382,6 +384,40 @@ export async function fetchFunnelData(daysBack = 28): Promise<Result<FunnelInput
       videos = [];
     }
 
+    // E — subscribedStatus split (REAL returning measure, best-effort)
+    let subscribedStatus: FunnelSubscribedStatus | null = null;
+    try {
+      const sRes = await runReport({ ...base, metrics: 'views,estimatedMinutesWatched', dimensions: 'subscribedStatus' });
+      const rows = sRes?.rows ?? [];
+      if (rows.length) {
+        const find = (k: string) => rows.find((r) => String(r[0]) === k);
+        const sub = find('SUBSCRIBED');
+        const unsub = find('UNSUBSCRIBED');
+        subscribedStatus = {
+          subscribed: { views: Number(sub?.[1] ?? 0), watchMinutes: Number(sub?.[2] ?? 0) },
+          unsubscribed: { views: Number(unsub?.[1] ?? 0), watchMinutes: Number(unsub?.[2] ?? 0) },
+        };
+      }
+    } catch {
+      subscribedStatus = null;
+    }
+
+    // F — discovery sources: which of my videos feed suggested traffic (best-effort)
+    let discoverySources: FunnelDiscoverySource[] = [];
+    try {
+      const fRes = await runReport({
+        ...base,
+        metrics: 'views',
+        dimensions: 'insightTrafficSourceDetail',
+        filters: 'insightTrafficSourceType==RELATED_VIDEO',
+        sort: '-views',
+        maxResults: '10',
+      });
+      discoverySources = (fRes?.rows ?? []).map((r) => ({ videoId: String(r[0]), views: Number(r[1] ?? 0) }));
+    } catch {
+      discoverySources = [];
+    }
+
     return {
       ok: true,
       data: {
@@ -397,6 +433,8 @@ export async function fetchFunnelData(daysBack = 28): Promise<Result<FunnelInput
         trafficSources,
         playlist,
         videos,
+        subscribedStatus,
+        discoverySources,
       },
     };
   } catch (err) {
