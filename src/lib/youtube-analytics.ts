@@ -18,6 +18,12 @@
 
 import { fetchWithRetry } from '@/lib/fetch-retry';
 import { parseGeographyRows, type GeographyRawRow } from '@/lib/youtube-geography';
+import type {
+  FunnelInput,
+  FunnelTrafficRow,
+  FunnelPlaylistTotals,
+  FunnelVideoRow,
+} from '@/lib/youtube-funnel';
 
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -275,6 +281,124 @@ export async function fetchDailySeries(daysBack = 28): Promise<Result<DailyAnaly
       estimatedMinutesWatched: Number(r[3] ?? 0),
     }));
     return { ok: true, data: rows };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Assemble the Viewer Conversion Funnel input from four Analytics reports:
+ *   A. channel totals (views/watch/avgViewPct/subs) — REQUIRED
+ *   A2. unique viewers (`viewers`) — best-effort (400s in some combos → null)
+ *   B. traffic sources (insightTrafficSourceType) — best-effort → []
+ *   C. playlist totals (isCurated==1: viewsPerPlaylistStart etc.) — best-effort → null
+ *   D. per-video (views/avgViewPct/subsGained) — best-effort → []
+ * Only report A is required; the optional sub-reports degrade to empty so a
+ * single failing dimension (e.g. no playlist data yet) never sinks the funnel.
+ * The pure computeFunnel() (lib/youtube-funnel) turns this into the model.
+ */
+export async function fetchFunnelData(daysBack = 28): Promise<Result<FunnelInput>> {
+  if (!isYouTubeAnalyticsConfigured()) {
+    return { ok: false, error: 'YouTube Analytics OAuth not configured' };
+  }
+  const { startDate, endDate } = dateRange(daysBack);
+  const base = { ids: 'channel==MINE', startDate, endDate };
+  try {
+    // A — channel totals (required)
+    const chRes = await runReport({
+      ...base,
+      metrics: 'views,estimatedMinutesWatched,averageViewPercentage,subscribersGained,subscribersLost',
+    });
+    if (!chRes) return { ok: false, error: 'No response from YouTube Analytics' };
+    const c = chRes.rows?.[0] ?? [];
+
+    // A2 — unique viewers (best-effort)
+    let uniqueViewers: number | null = null;
+    try {
+      const vRes = await runReport({ ...base, metrics: 'viewers' });
+      const vv = vRes?.rows?.[0]?.[0];
+      if (vv != null) uniqueViewers = Number(vv);
+    } catch {
+      uniqueViewers = null;
+    }
+
+    // B — traffic sources (best-effort)
+    let trafficSources: FunnelTrafficRow[] = [];
+    try {
+      const tRes = await runReport({
+        ...base,
+        metrics: 'views,estimatedMinutesWatched',
+        dimensions: 'insightTrafficSourceType',
+        sort: '-views',
+        maxResults: '25',
+      });
+      trafficSources = (tRes?.rows ?? []).map((r) => ({
+        source: String(r[0]),
+        views: Number(r[1] ?? 0),
+        watchMinutes: Number(r[2] ?? 0),
+      }));
+    } catch {
+      trafficSources = [];
+    }
+
+    // C — playlist totals (best-effort; requires the isCurated filter)
+    let playlist: FunnelPlaylistTotals | null = null;
+    try {
+      const pRes = await runReport({
+        ...base,
+        metrics: 'views,playlistStarts,viewsPerPlaylistStart,averageTimeInPlaylist',
+        filters: 'isCurated==1',
+      });
+      const p = pRes?.rows?.[0];
+      if (p) {
+        playlist = {
+          views: Number(p[0] ?? 0),
+          playlistStarts: Number(p[1] ?? 0),
+          viewsPerPlaylistStart: Number(p[2] ?? 0),
+          averageTimeInPlaylistSeconds: Number(p[3] ?? 0),
+        };
+      }
+    } catch {
+      playlist = null;
+    }
+
+    // D — per-video (best-effort)
+    let videos: FunnelVideoRow[] = [];
+    try {
+      const dRes = await runReport({
+        ...base,
+        metrics: 'views,averageViewPercentage,subscribersGained',
+        dimensions: 'video',
+        sort: '-views',
+        maxResults: '200',
+      });
+      videos = (dRes?.rows ?? []).map((r) => ({
+        videoId: String(r[0]),
+        views: Number(r[1] ?? 0),
+        averageViewPercentage: Number(r[2] ?? 0),
+        subscribersGained: Number(r[3] ?? 0),
+      }));
+    } catch {
+      videos = [];
+    }
+
+    return {
+      ok: true,
+      data: {
+        days: daysBack,
+        channel: {
+          views: Number(c[0] ?? 0),
+          watchMinutes: Number(c[1] ?? 0),
+          averageViewPercentage: Number(c[2] ?? 0),
+          subscribersGained: Number(c[3] ?? 0),
+          subscribersLost: Number(c[4] ?? 0),
+          uniqueViewers,
+        },
+        trafficSources,
+        playlist,
+        videos,
+      },
+    };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }

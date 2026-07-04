@@ -39,6 +39,7 @@ import { RefreshThumbnailsButton } from '@/components/admin/RefreshThumbnailsBut
 import { YouTubeVideosPanel } from '@/components/admin/YouTubeVideosPanel';
 import { RetentionInsightPanel } from '@/components/admin/RetentionInsightPanel';
 import { GeographyInsightPanel } from '@/components/admin/GeographyInsightPanel';
+import { FunnelInsightPanel } from '@/components/admin/FunnelInsightPanel';
 import { mergeVideoRows, pickRetentionBenchmark } from '@/lib/youtube-dashboard';
 
 const ANALYTICS_DAYS = 28;
@@ -389,6 +390,10 @@ export default async function YouTubeAdminPage() {
       {/* Audience geography — which countries a given video's viewers come from
           (the diaspora vs home-region split). Same video list as retention. */}
       <GeographyInsightPanel videos={retentionVideos} ytaConfigured={ytaOn} />
+
+      {/* Viewer conversion funnel — DISCOVERED → WATCHED → 2ND SONG → RETURNED
+          → SUBSCRIBED, modelled at cohort level (which stage is leaking). */}
+      <FunnelInsightPanel ytaConfigured={ytaOn} />
 
       {/* Interactive videos panel — pagination, sort, filter, CSV export,
           and a live date-range selector (re-queries owner Analytics). */}
