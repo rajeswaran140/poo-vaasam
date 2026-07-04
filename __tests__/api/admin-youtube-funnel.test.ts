@@ -36,7 +36,7 @@ const INPUT: FunnelInput = {
     { source: 'PLAYLIST', views: 2500, watchMinutes: 9000 },
     { source: 'YT_SEARCH', views: 1500, watchMinutes: 1000 },
   ],
-  playlist: { views: 2500, playlistStarts: 1000, viewsPerPlaylistStart: 2.4, averageTimeInPlaylistSeconds: 480 },
+  playlist: { playlistStarts: 1000, viewsPerPlaylistStart: 2.4, averageTimeInPlaylistSeconds: 480 },
   videos: [{ videoId: 'good', views: 3000, averageViewPercentage: 40, subscribersGained: 60 }],
 };
 

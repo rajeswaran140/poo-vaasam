@@ -341,21 +341,21 @@ export async function fetchFunnelData(daysBack = 28): Promise<Result<FunnelInput
       trafficSources = [];
     }
 
-    // C — playlist totals (best-effort; requires the isCurated filter)
+    // C — playlist totals (best-effort). NOTE: the old `isCurated==1` filter was
+    // deprecated by YouTube (2024) and now 400s — the current playlist metrics
+    // are queried WITHOUT it.
     let playlist: FunnelPlaylistTotals | null = null;
     try {
       const pRes = await runReport({
         ...base,
-        metrics: 'views,playlistStarts,viewsPerPlaylistStart,averageTimeInPlaylist',
-        filters: 'isCurated==1',
+        metrics: 'playlistStarts,viewsPerPlaylistStart,averageTimeInPlaylist',
       });
       const p = pRes?.rows?.[0];
       if (p) {
         playlist = {
-          views: Number(p[0] ?? 0),
-          playlistStarts: Number(p[1] ?? 0),
-          viewsPerPlaylistStart: Number(p[2] ?? 0),
-          averageTimeInPlaylistSeconds: Number(p[3] ?? 0),
+          playlistStarts: Number(p[0] ?? 0),
+          viewsPerPlaylistStart: Number(p[1] ?? 0),
+          averageTimeInPlaylistSeconds: Number(p[2] ?? 0),
         };
       }
     } catch {

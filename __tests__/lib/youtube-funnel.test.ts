@@ -31,7 +31,6 @@ function input(overrides: Partial<FunnelInput> = {}): FunnelInput {
       { source: 'YT_SEARCH', views: 1000, watchMinutes: 1000 },
     ],
     playlist: {
-      views: 2500,
       playlistStarts: 1000,
       viewsPerPlaylistStart: 2.4,
       averageTimeInPlaylistSeconds: 480,
@@ -83,20 +82,43 @@ describe('traffic mix', () => {
 });
 
 describe('2nd-song (playlist)', () => {
-  it('surfaces views-per-playlist-start, time-in-playlist, and playlist view share', () => {
+  it('surfaces views-per-playlist-start, time-in-playlist, and playlist entry share', () => {
     const r = computeFunnel(input());
     expect(r.secondSong.viewsPerPlaylistStart).toBe(2.4);
     expect(r.secondSong.averageTimeInPlaylistSeconds).toBe(480);
-    expect(r.secondSong.playlistShareOfViewsPct).toBe(25); // 2500/10000
+    expect(r.secondSong.measured).toBe(true);
+    // entry share = PLAYLIST traffic source (2500/10000), NOT the metrics report
+    expect(r.secondSong.playlistShareOfViewsPct).toBe(25);
   });
 
-  it('handles a null playlist (no playlist data) as zeros', () => {
+  it('marks the 2nd-song stage UNMEASURED when the playlist report is absent', () => {
     const r = computeFunnel(input({ playlist: null }));
-    expect(r.secondSong).toEqual({
-      viewsPerPlaylistStart: 0,
-      averageTimeInPlaylistSeconds: 0,
-      playlistShareOfViewsPct: 0,
-    });
+    expect(r.secondSong.measured).toBe(false);
+    expect(r.secondSong.viewsPerPlaylistStart).toBe(0);
+    // entry share still comes from traffic (independent of the metrics report)
+    expect(r.secondSong.playlistShareOfViewsPct).toBe(25);
+    expect(r.conversions.find((c) => c.key === 'watch_to_2nd_song')?.ratePct).toBeNull();
+  });
+
+  // Regression for the live-data bug: the deprecated isCurated playlist query
+  // 400'd → playlist=null → the funnel falsely flagged "0 songs/session" as the
+  // biggest leak while PLAYLIST traffic was clearly 17.9%. An unmeasured stage
+  // must NEVER be diagnosed as a leak.
+  it('does NOT flag a 2nd-song leak when playlist data is missing', () => {
+    const r = computeFunnel(input({
+      channel: { ...input().channel, averageViewPercentage: 45, subscribersGained: 200 },
+      playlist: null,
+    }));
+    expect(r.leakiestStage).toBeNull();
+  });
+
+  it('treats zero playlist starts as unmeasured, not a leak', () => {
+    const r = computeFunnel(input({
+      channel: { ...input().channel, averageViewPercentage: 45, subscribersGained: 200 },
+      playlist: { playlistStarts: 0, viewsPerPlaylistStart: 0, averageTimeInPlaylistSeconds: 0 },
+    }));
+    expect(r.secondSong.measured).toBe(false);
+    expect(r.leakiestStage).toBeNull();
   });
 });
 
@@ -144,7 +166,7 @@ describe('leak diagnosis', () => {
   it('flags a 2nd-song leak when playlist songs/session is weak', () => {
     const r = computeFunnel(input({
       channel: { ...input().channel, averageViewPercentage: 45, subscribersGained: 200 },
-      playlist: { views: 2500, playlistStarts: 2500, viewsPerPlaylistStart: 1.1, averageTimeInPlaylistSeconds: 120 },
+      playlist: { playlistStarts: 2500, viewsPerPlaylistStart: 1.1, averageTimeInPlaylistSeconds: 120 },
     }));
     expect(r.leakiestStage?.stageKey).toBe('WATCHED_2ND_SONG');
   });
@@ -159,7 +181,7 @@ describe('leak diagnosis', () => {
   it('returns null (no leak) when every stage clears its benchmark', () => {
     const r = computeFunnel(input({
       channel: { ...input().channel, averageViewPercentage: 45, subscribersGained: 200 },
-      playlist: { views: 2500, playlistStarts: 800, viewsPerPlaylistStart: 3.1, averageTimeInPlaylistSeconds: 600 },
+      playlist: { playlistStarts: 800, viewsPerPlaylistStart: 3.1, averageTimeInPlaylistSeconds: 600 },
     }));
     expect(r.leakiestStage).toBeNull();
   });

@@ -52,7 +52,6 @@ export interface FunnelTrafficRow {
 }
 
 export interface FunnelPlaylistTotals {
-  views: number;
   playlistStarts: number;
   viewsPerPlaylistStart: number; // songs watched per playlist session
   averageTimeInPlaylistSeconds: number;
@@ -117,6 +116,7 @@ export interface FunnelReport {
     viewsPerPlaylistStart: number;
     averageTimeInPlaylistSeconds: number;
     playlistShareOfViewsPct: number;
+    measured: boolean; // false when there's no playlist-session data this window
   };
   returned: { subscriberSourceSharePct: number; viewsPerViewer: number | null };
   subscribe: {
@@ -187,9 +187,15 @@ export function computeFunnel(input: FunnelInput): FunnelReport {
   );
 
   // --- WATCHED_2ND_SONG (playlist multi-song consumption) ---
-  const viewsPerPlaylistStart = playlist ? round1(playlist.viewsPerPlaylistStart) : 0;
-  const averageTimeInPlaylistSeconds = playlist ? Math.round(playlist.averageTimeInPlaylistSeconds) : 0;
-  const playlistShareOfViewsPct = round1(pct(playlist?.views ?? 0, totalViews) ?? 0);
+  // "Measured" only when the window actually had playlist sessions — otherwise
+  // viewsPerPlaylistStart is 0 by absence, NOT a real leak (guards the diagnosis).
+  const playlistMeasured = !!playlist && playlist.playlistStarts > 0;
+  const viewsPerPlaylistStart = playlistMeasured ? round1(playlist!.viewsPerPlaylistStart) : 0;
+  const averageTimeInPlaylistSeconds = playlistMeasured ? Math.round(playlist!.averageTimeInPlaylistSeconds) : 0;
+  // Entry-via-playlist share = the PLAYLIST traffic source (how many viewers
+  // arrived through a playlist), not the narrower in-session playlistViews metric.
+  const playlistSourceViews = trafficSources.find((r) => r.source === 'PLAYLIST')?.views ?? 0;
+  const playlistShareOfViewsPct = round1(pct(playlistSourceViews, trafficTotal) ?? 0);
 
   // --- RETURNED (subscriber-source share + repeat-view ratio proxies) ---
   const subscriberViews = trafficSources
@@ -242,7 +248,9 @@ export function computeFunnel(input: FunnelInput): FunnelReport {
       value: viewsPerPlaylistStart,
       unit: 'songs/session',
       proxy: false,
-      note: 'Views per playlist start — songs watched per playlist session.',
+      note: playlistMeasured
+        ? 'Views per playlist start — songs watched per playlist session.'
+        : 'No playlist-session data in this window yet.',
     },
     {
       key: 'RETURNED',
@@ -272,7 +280,7 @@ export function computeFunnel(input: FunnelInput): FunnelReport {
     {
       key: 'watch_to_2nd_song',
       label: 'Songs per playlist session',
-      ratePct: viewsPerPlaylistStart,
+      ratePct: playlistMeasured ? viewsPerPlaylistStart : null,
       note: 'Not a %, a count — >1 means the playlist carries them to another song.',
     },
     {
@@ -294,16 +302,20 @@ export function computeFunnel(input: FunnelInput): FunnelReport {
         reason: `Average view % is ${round1(channel.averageViewPercentage)} — viewers leave early (fix the first ~15s hook).`,
       },
       {
-        stageKey: 'WATCHED_2ND_SONG',
-        health: viewsPerPlaylistStart / SONGS_PER_SESSION_FLOOR,
-        reason: `Only ${viewsPerPlaylistStart} songs per playlist session — they don't roll into a 2nd song (playlist ordering / end screens).`,
-      },
-      {
         stageKey: 'SUBSCRIBED',
         health: subsPer1000Views / SUBS_PER_1000_FLOOR,
         reason: `Just ${subsPer1000Views} subs per 1,000 views — watchers aren't converting (subscribe CTA / watermark / end screen).`,
       },
     ];
+    // Only judge the 2nd-song stage when we actually measured playlist sessions —
+    // never flag it as a leak from an absent/failed playlist report.
+    if (playlistMeasured) {
+      candidates.push({
+        stageKey: 'WATCHED_2ND_SONG',
+        health: viewsPerPlaylistStart / SONGS_PER_SESSION_FLOOR,
+        reason: `Only ${viewsPerPlaylistStart} songs per playlist session — they don't roll into a 2nd song (playlist ordering / end screens).`,
+      });
+    }
     const worst = candidates.filter((c) => c.health < 1).sort((a, b) => a.health - b.health)[0];
     if (worst) leakiestStage = { stageKey: worst.stageKey, reason: worst.reason };
   }
@@ -326,7 +338,7 @@ export function computeFunnel(input: FunnelInput): FunnelReport {
     stages,
     conversions,
     trafficMix,
-    secondSong: { viewsPerPlaylistStart, averageTimeInPlaylistSeconds, playlistShareOfViewsPct },
+    secondSong: { viewsPerPlaylistStart, averageTimeInPlaylistSeconds, playlistShareOfViewsPct, measured: playlistMeasured },
     returned: { subscriberSourceSharePct, viewsPerViewer },
     subscribe: {
       subscribersGained: channel.subscribersGained,
