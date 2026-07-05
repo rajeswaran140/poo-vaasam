@@ -19,7 +19,7 @@ export const metadata: Metadata = {
   robots: { index: true, follow: true },
 };
 
-const LAST_UPDATED = '30 May 2026';
+const LAST_UPDATED = '5 July 2026';
 
 export default function TermsPage() {
   return (
@@ -80,6 +80,26 @@ export default function TermsPage() {
             </p>
             <p>
               You may read, listen and watch for personal enjoyment. You may share on social media, provided you credit Rajeswaran Thangarajah and link back to tamilagaval.com.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="mb-3 font-kavivanar text-2xl font-bold text-white">
+              பாடல் வரிகள் · Using the lyrics
+            </h2>
+            <p className="mb-3 font-tamil">
+              காணொளிகளிலும், தளத்திலும், விளக்கங்களிலும் பகிரப்படும் பாடல் வரிகள் பாடுவதற்காக மட்டுமே — தனிப்பட்ட முறையில் பாடி மகிழவும், நிகழ்ச்சிகளில் பாடவும் பயன்படுத்துங்கள். ஆசிரியரின் பெயரைக் குறிப்பிடுங்கள்.
+            </p>
+            <p className="mb-3 font-tamil">
+              எழுத்துப்பூர்வ அனுமதியின்றி, பாடல் வரிகளை மறுவெளியீடு செய்தல், மறு உருவாக்கம் செய்தல், உங்கள் சொந்தப் படைப்பாகக் காட்டுதல், அல்லது வணிக ரீதியில் பதிவு செய்து பயன்படுத்துதல் அனுமதிக்கப்படாது.
+            </p>
+            <p className="mb-3 font-tamil">
+              கரோக்கே அல்லது நிகழ்ச்சிகளுக்கான இசைத் தடங்கள் தேவைப்பட்டால், தமிழகவல் மூலம் ஏற்பாடு செய்து தர முடியும் —{' '}
+              <Link href="/contact" className="text-orange-400 underline-offset-2 hover:underline">தொடர்பு கொள்ளுங்கள்</Link>.
+            </p>
+            <p>
+              The lyrics shared in the videos, on this site and in the descriptions are meant for singing — please feel free to sing them for personal enjoyment and to perform them, with credit to Rajeswaran Thangarajah. Reproducing, republishing, presenting them as your own, or recording them for commercial use is not permitted without written permission. If you would like karaoke or backing tracks for a performance, Tamilagaval can arrange them for you —{' '}
+              <Link href="/contact" className="text-orange-400 underline-offset-2 hover:underline">get in touch</Link>.
             </p>
           </section>
 
