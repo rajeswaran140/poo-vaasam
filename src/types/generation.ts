@@ -84,8 +84,12 @@ export const generationSettingsSchema = z
     weirdness: z.number().min(0).max(100).optional(),
     /** SUNO "style influence" knob (0–100). */
     styleInfluence: z.number().min(0).max(100).optional(),
-    /** Free-text engine/model tag, e.g. "suno v4.5". */
+    /** Free-text engine VERSION tag, e.g. "suno v5.5" — the version of the engine used. */
     engineModel: z.string().max(120).optional(),
+    /** Which verified SUNO Voice / vocal identity was used (blank = generic). */
+    voiceLabel: z.string().max(120).trim().optional(),
+    /** Custom Model / idiom label, e.g. "devotional-pathos". */
+    customModel: z.string().max(120).trim().optional(),
   })
   .default({});
 
@@ -107,6 +111,11 @@ export const createGenerationSchema = z
     ),
     settings: generationSettingsSchema,
     scores: generationScoresSchema,
+    /**
+     * Qualitative log of post-production stem re-performances / Stem-Cover notes
+     * (one per line in the UI). Free-form + flexible — NOT a fixed stem count.
+     */
+    stemRevisions: z.array(z.string().min(1).max(200)).max(24).default([]),
     verdict: z.enum(GENERATION_VERDICTS),
     failureReason: z.enum(FAILURE_REASONS).optional(),
     notes: z.string().max(4000).default(''),

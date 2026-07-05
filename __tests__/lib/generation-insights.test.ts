@@ -96,6 +96,30 @@ describe('computeInsights', () => {
     expect(r.recommendations.some((s) => /"Folk"/.test(s))).toBe(false);
   });
 
+  it('rates voice + model, flagging only sufficiently-sampled buckets, and cites the reliable ones', () => {
+    const r = computeInsights([
+      ...many(MIN_GROUP + 1, { verdict: 'success', settings: { voiceLabel: 'Anitha', customModel: 'devotional-pathos' } }), // 5, reliable
+      ...many(2, { verdict: 'failed', settings: { voiceLabel: 'Guest' } }), // 2, under MIN_GROUP
+      ...many(1, { verdict: 'failed' }),
+    ]); // 8 total → clears MIN_TOTAL
+    const anitha = r.byVoice.find((s) => s.key === 'Anitha')!;
+    const guest = r.byVoice.find((s) => s.key === 'Guest')!;
+    expect(anitha).toMatchObject({ total: MIN_GROUP + 1, success: MIN_GROUP + 1, rate: 1, reliable: true });
+    expect(guest.reliable).toBe(false);
+    const model = r.byModel.find((s) => s.key === 'devotional-pathos')!;
+    expect(model).toMatchObject({ total: MIN_GROUP + 1, reliable: true });
+    // recommendations cite the reliable voice + model, not the under-sampled Guest
+    expect(r.recommendations.some((s) => /Voice "Anitha" lands 100%/.test(s))).toBe(true);
+    expect(r.recommendations.some((s) => /Model "devotional-pathos" lands 100%/.test(s))).toBe(true);
+    expect(r.recommendations.some((s) => /"Guest"/.test(s))).toBe(false);
+  });
+
+  it('skips takes with no voiceLabel/customModel from the voice/model breakdowns', () => {
+    const r = computeInsights(many(MIN_TOTAL, { verdict: 'success' }));
+    expect(r.byVoice).toEqual([]);
+    expect(r.byModel).toEqual([]);
+  });
+
   it('contrasts settings and warns when weirdness tracks failure', () => {
     const r = computeInsights([
       ...many(5, { verdict: 'success', settings: { weirdness: 10 } }),

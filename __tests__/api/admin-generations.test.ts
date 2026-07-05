@@ -9,6 +9,7 @@ import { NextRequest } from 'next/server';
 jest.mock('@/lib/auth-helper', () => ({
   ...jest.requireActual('@/lib/auth-helper'),
   requireAdmin: jest.fn(),
+  requireBearer: jest.fn(),
 }));
 
 const mockFindById = jest.fn();
@@ -33,6 +34,7 @@ import { POST, GET } from '@/app/api/admin/generations/route';
 import * as auth from '@/lib/auth-helper';
 
 const mockedRequireAdmin = auth.requireAdmin as jest.Mock;
+const mockedRequireBearer = auth.requireBearer as jest.Mock;
 const postReq = (body: unknown) =>
   new NextRequest('https://tamilagaval.com/api/admin/generations', { method: 'POST', body: JSON.stringify(body) });
 const getReq = (qs = '') =>
@@ -43,6 +45,7 @@ const validBody = { briefId: 'brief_1', verdict: 'failed', scores: { melody: 8 }
 beforeEach(() => {
   jest.clearAllMocks();
   mockedRequireAdmin.mockResolvedValue({ isAuthenticated: true, userId: 'admin-1' });
+  mockedRequireBearer.mockReturnValue(undefined); // bearer present by default
   mockFindById.mockResolvedValue({ id: 'brief_1' });
   mockCreate.mockResolvedValue({ id: 'gen_1', briefId: 'brief_1', verdict: 'failed' });
 });
@@ -53,6 +56,15 @@ describe('POST', () => {
     mockedRequireAdmin.mockRejectedValueOnce(new AuthError('Forbidden', 403));
     const res = await POST(postReq(validBody));
     expect(res.status).toBe(403);
+    expect(mockFindById).not.toHaveBeenCalled();
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('returns 401 (CSRF guard) when no Bearer token is presented, never touching the DB', async () => {
+    const { AuthError } = jest.requireActual('@/lib/auth-helper');
+    mockedRequireBearer.mockImplementationOnce(() => { throw new AuthError('Bearer token required for this operation', 401); });
+    const res = await POST(postReq(validBody));
+    expect(res.status).toBe(401);
     expect(mockFindById).not.toHaveBeenCalled();
     expect(mockCreate).not.toHaveBeenCalled();
   });

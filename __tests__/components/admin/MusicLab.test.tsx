@@ -122,6 +122,31 @@ it('POSTs the generation and renders the new attempt card', async () => {
   expect(await screen.findByText('great flute intro')).toBeInTheDocument();
 });
 
+it('sends voice + custom model + stem revisions from the Advanced section', async () => {
+  const posted: RequestInit[] = [];
+  routeFetch((url, opts) => {
+    if (url === '/api/admin/generations' && opts?.method === 'POST') {
+      posted.push(opts);
+      const body = JSON.parse(opts.body as string);
+      return { ok: true, status: 201, json: async () => ({ success: true, data: { ...body, id: 'gen_a', createdAt: '2026-07-05T00:00:00.000Z' } }) };
+    }
+    return undefined;
+  });
+
+  await selectBrief();
+  // Advanced fields live in the DOM even while collapsed.
+  fireEvent.change(screen.getByLabelText('Voice'), { target: { value: 'Anitha' } });
+  fireEvent.change(screen.getByLabelText('Custom Model'), { target: { value: 'devotional-pathos' } });
+  // Blank lines / whitespace are dropped; the rest becomes an array.
+  fireEvent.change(screen.getByLabelText(/Stem revisions/), { target: { value: 're-sang lead\n\n  swapped flute for veena  \n' } });
+  fireEvent.click(screen.getByRole('button', { name: /log generation/i }));
+
+  await waitFor(() => expect(posted).toHaveLength(1));
+  const body = JSON.parse(posted[0].body as string);
+  expect(body.settings).toMatchObject({ voiceLabel: 'Anitha', customModel: 'devotional-pathos' });
+  expect(body.stemRevisions).toEqual(['re-sang lead', 'swapped flute for veena']);
+});
+
 it('shows insights computed from the global generations feed', async () => {
   const feed = [
     ...Array.from({ length: 8 }, (_, i) => ({ id: `s${i}`, briefId: 'brief_1', verdict: 'success', engine: 'suno', scores: {}, settings: {} })),

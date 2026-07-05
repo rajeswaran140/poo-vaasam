@@ -127,6 +127,7 @@ export class GenerationRepository {
       audioUrl: item.audioUrl,
       settings: item.settings ?? {},
       scores: item.scores ?? {},
+      stemRevisions: item.stemRevisions ?? [],
       verdict: item.verdict,
       failureReason: item.failureReason,
       notes: item.notes ?? '',

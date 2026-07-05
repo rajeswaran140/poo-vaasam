@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
+import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { GenerationRepository } from '@/infrastructure/database/GenerationRepository';
 
 export const runtime = 'nodejs';
@@ -18,6 +18,7 @@ const validId = (id: string) => /^gen_[a-z0-9_]+$/i.test(id);
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     await requireAdmin(request);
+    requireBearer(request);
   } catch (err) {
     return authErrorResponse(err);
   }

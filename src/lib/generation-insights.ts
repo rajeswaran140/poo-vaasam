@@ -50,6 +50,10 @@ export interface InsightsReport {
   failureReasons: { reason: string; count: number }[];
   byEngine: GroupRate[];
   byStyle: GroupRate[];
+  /** Success rate grouped by the verified SUNO Voice / vocal identity used. */
+  byVoice: GroupRate[];
+  /** Success rate grouped by the Custom Model / idiom label used. */
+  byModel: GroupRate[];
   settingsContrast: { weirdness: AvgContrast; styleInfluence: AvgContrast };
   /** Measured audio (keepers vs rejects): loudness (LUFS), dynamics (crest), clipping. */
   audioContrast: { lufs: AvgContrast; crest: AvgContrast; clip: AvgContrast };
@@ -117,6 +121,8 @@ export function computeInsights(
 
   const byEngine = groupRates(gens, (g) => g.engine);
   const byStyle = groupRates(gens, (g) => g.chosenStyle);
+  const byVoice = groupRates(gens, (g) => g.settings?.voiceLabel);
+  const byModel = groupRates(gens, (g) => g.settings?.customModel);
 
   const settingsContrast = {
     weirdness: contrast(gens, (g) => g.settings?.weirdness),
@@ -156,12 +162,12 @@ export function computeInsights(
 
   const hasEnoughData = total >= MIN_TOTAL;
   const recommendations = buildRecommendations({
-    total, byVerdict, successRate, scoreContrast, failureReasons, byStyle, byEngine, settingsContrast, audioContrast, genome, hasEnoughData,
+    total, byVerdict, successRate, scoreContrast, failureReasons, byStyle, byEngine, byVoice, byModel, settingsContrast, audioContrast, genome, hasEnoughData,
   });
 
   return {
     total, byVerdict, successRate, scoreContrast, failureReasons, audioContrast,
-    byEngine, byStyle, settingsContrast, genome, recommendations, hasEnoughData,
+    byEngine, byStyle, byVoice, byModel, settingsContrast, genome, recommendations, hasEnoughData,
   };
 }
 
@@ -194,6 +200,12 @@ function buildRecommendations(r: Omit<InsightsReport, 'recommendations'>): strin
 
   const bestStyle = r.byStyle.find((s) => s.reliable);
   if (bestStyle) out.push(`Best style so far: "${bestStyle.key}" at ${pct(bestStyle.rate)} (${bestStyle.success}/${bestStyle.total}).`);
+
+  const bestVoice = r.byVoice.find((s) => s.reliable);
+  if (bestVoice) out.push(`Voice "${bestVoice.key}" lands ${pct(bestVoice.rate)} (${bestVoice.success}/${bestVoice.total}).`);
+
+  const bestModel = r.byModel.find((s) => s.reliable);
+  if (bestModel) out.push(`Model "${bestModel.key}" lands ${pct(bestModel.rate)} (${bestModel.success}/${bestModel.total}).`);
 
   const w = r.settingsContrast.weirdness;
   if (w.gap != null && Math.abs(w.gap) >= 8) {

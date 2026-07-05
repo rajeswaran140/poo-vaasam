@@ -60,6 +60,30 @@ it('round-trips audioMetrics through store and read', async () => {
   expect(read.audioMetrics).toEqual(m);
 });
 
+it('round-trips stemRevisions + settings.voiceLabel/customModel (not dropped on read)', async () => {
+  const settings = { weirdness: 20, voiceLabel: 'Anitha', customModel: 'devotional-pathos' };
+  const stemRevisions = ['re-sang lead vocal', 'swapped flute for veena'];
+  ops.put.mockResolvedValueOnce({});
+  await new GenerationRepository().create({ ...input, settings, stemRevisions });
+  // toDBItem spreads the record → both persist.
+  expect(ops.put.mock.calls[0][0].settings).toEqual(settings);
+  expect(ops.put.mock.calls[0][0].stemRevisions).toEqual(stemRevisions);
+
+  ops.query.mockResolvedValueOnce({
+    Items: [{ id: 'gen_7', briefId: 'brief_42', verdict: 'failed', settings, stemRevisions, scores: {} }],
+  });
+  const [read] = await new GenerationRepository().listByBrief('brief_42');
+  // fromDBItem whitelists top-level fields — stemRevisions must survive.
+  expect(read.stemRevisions).toEqual(stemRevisions);
+  expect(read.settings).toEqual(settings);
+});
+
+it('defaults stemRevisions to [] when absent from the stored item', async () => {
+  ops.query.mockResolvedValueOnce({ Items: [{ id: 'gen_8', briefId: 'brief_42', verdict: 'failed' }] });
+  const [read] = await new GenerationRepository().listByBrief('brief_42');
+  expect(read.stemRevisions).toEqual([]);
+});
+
 it('listByBrief() queries the brief partition for GEN# items, newest-first', async () => {
   ops.query.mockResolvedValueOnce({ Items: [{ id: 'gen_1', briefId: 'brief_42', verdict: 'failed', notes: 'x' }] });
   const rows = await new GenerationRepository().listByBrief('brief_42');

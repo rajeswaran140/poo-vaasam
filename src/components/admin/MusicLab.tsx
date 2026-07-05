@@ -236,6 +236,8 @@ const AXES = ['melody', 'vocals', 'lyrics', 'mix'] as const;
 function InsightsPanel({ report: r }: { report: InsightsReport }) {
   const pct = (x: number | null) => (x == null ? '—' : `${Math.round(x * 100)}%`);
   const reliableStyles = r.byStyle.filter((s) => s.reliable).slice(0, 3);
+  const reliableVoices = r.byVoice.filter((s) => s.reliable).slice(0, 3);
+  const reliableModels = r.byModel.filter((s) => s.reliable).slice(0, 3);
   const scoredAxes = AXES.filter((a) => r.scoreContrast[a].gap != null);
 
   return (
@@ -272,6 +274,18 @@ function InsightsPanel({ report: r }: { report: InsightsReport }) {
             <div>
               <p className="mb-1 font-semibold uppercase tracking-wide text-gray-400">Style hit-rate</p>
               <p>{reliableStyles.map((s) => `${s.key} ${pct(s.rate)} (${s.total})`).join(' · ')}</p>
+            </div>
+          )}
+          {reliableVoices.length > 0 && (
+            <div>
+              <p className="mb-1 font-semibold uppercase tracking-wide text-gray-400">Voice hit-rate</p>
+              <p>{reliableVoices.map((s) => `${s.key} ${pct(s.rate)} (${s.total})`).join(' · ')}</p>
+            </div>
+          )}
+          {reliableModels.length > 0 && (
+            <div>
+              <p className="mb-1 font-semibold uppercase tracking-wide text-gray-400">Model hit-rate</p>
+              <p>{reliableModels.map((s) => `${s.key} ${pct(s.rate)} (${s.total})`).join(' · ')}</p>
             </div>
           )}
           {scoredAxes.length > 0 && (
@@ -329,11 +343,14 @@ function GenerationCard({ g, onDelete }: { g: Generation; onDelete: (g: Generati
         </div>
       )}
 
-      {(g.settings?.weirdness != null || g.settings?.styleInfluence != null || g.settings?.engineModel) && (
+      {(g.settings?.weirdness != null || g.settings?.styleInfluence != null || g.settings?.engineModel || g.settings?.voiceLabel || g.settings?.customModel || (g.stemRevisions?.length ?? 0) > 0) && (
         <div className="mt-2 flex flex-wrap gap-3 text-xs text-gray-500 dark:text-gray-400">
           {g.settings?.engineModel && <span>{g.settings.engineModel}</span>}
           {g.settings?.weirdness != null && <span>weirdness {g.settings.weirdness}</span>}
           {g.settings?.styleInfluence != null && <span>style {g.settings.styleInfluence}</span>}
+          {g.settings?.voiceLabel && <span>voice {g.settings.voiceLabel}</span>}
+          {g.settings?.customModel && <span>model {g.settings.customModel}</span>}
+          {(g.stemRevisions?.length ?? 0) > 0 && <span>{g.stemRevisions.length} stem revision{g.stemRevisions.length === 1 ? '' : 's'}</span>}
         </div>
       )}
 
@@ -417,6 +434,9 @@ function LogGenerationForm({ brief, onSaved }: { brief: SavedBrief; onSaved: (g:
   const [weirdness, setWeirdness] = useState('');
   const [styleInfluence, setStyleInfluence] = useState('');
   const [engineModel, setEngineModel] = useState('');
+  const [voiceLabel, setVoiceLabel] = useState('');
+  const [customModel, setCustomModel] = useState('');
+  const [stemRevisionsText, setStemRevisionsText] = useState('');
   const [melody, setMelody] = useState('');
   const [vocals, setVocals] = useState('');
   const [lyrics, setLyrics] = useState('');
@@ -433,6 +453,7 @@ function LogGenerationForm({ brief, onSaved }: { brief: SavedBrief; onSaved: (g:
     setChosenStyle((brief.analysis?.suno_prompts?.[0]?.style) ?? '');
     setEngine('suno');
     setAudioUrl(''); setWeirdness(''); setStyleInfluence(''); setEngineModel('');
+    setVoiceLabel(''); setCustomModel(''); setStemRevisionsText('');
     setMelody(''); setVocals(''); setLyrics(''); setMix('');
     setVerdict('failed'); setFailureReason(''); setNotes(''); setFormError(null);
   }, [brief.id, brief.analysis?.suno_prompts]);
@@ -452,7 +473,15 @@ function LogGenerationForm({ brief, onSaved }: { brief: SavedBrief; onSaved: (g:
       weirdness: numOrUndef(weirdness),
       styleInfluence: numOrUndef(styleInfluence),
       engineModel: engineModel.trim() || undefined,
+      voiceLabel: voiceLabel.trim() || undefined,
+      customModel: customModel.trim() || undefined,
     };
+    // One stem revision per line: trim, drop empties, cap at 24 (schema limit).
+    const stemRevisions = stemRevisionsText
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .slice(0, 24);
 
     // Measure loudness SERVER-side (measure-fn via /api/admin/music-lab/measure)
     // — the browser never fetches the audio, so there's no CORS dependency.
@@ -489,6 +518,7 @@ function LogGenerationForm({ brief, onSaved }: { brief: SavedBrief; onSaved: (g:
       audioUrl: audioUrl || undefined,
       settings,
       scores,
+      stemRevisions,
       verdict,
       // A success carries no failure reason (server enforces this too).
       failureReason: verdict === 'success' ? undefined : failureReason || undefined,
@@ -507,6 +537,7 @@ function LogGenerationForm({ brief, onSaved }: { brief: SavedBrief; onSaved: (g:
       onSaved(body.data as Generation);
       // Keep engine/style; clear the per-attempt fields for the next log.
       setAudioUrl(''); setWeirdness(''); setStyleInfluence('');
+      setVoiceLabel(''); setCustomModel(''); setStemRevisionsText('');
       setMelody(''); setVocals(''); setLyrics(''); setMix('');
       setFailureReason(''); setNotes('');
     } catch (err) {
@@ -558,34 +589,6 @@ function LogGenerationForm({ brief, onSaved }: { brief: SavedBrief; onSaved: (g:
       </div>
 
       <fieldset className="mt-4">
-        <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Settings</legend>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-300">
-            Weirdness (0–100)
-            <input type="number" min={0} max={100} value={weirdness} onChange={(e) => setWeirdness(e.target.value)} className="rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" />
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-300">
-            Style influence (0–100)
-            <input type="number" min={0} max={100} value={styleInfluence} onChange={(e) => setStyleInfluence(e.target.value)} className="rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" />
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-300">
-            Engine/model
-            <input value={engineModel} onChange={(e) => setEngineModel(e.target.value)} placeholder="e.g. suno v4.5" className="rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" />
-          </label>
-        </div>
-      </fieldset>
-
-      <fieldset className="mt-4">
-        <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Scores (0–10)</legend>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {scoreInput('Melody', melody, setMelody)}
-          {scoreInput('Vocals', vocals, setVocals)}
-          {scoreInput('Lyrics', lyrics, setLyrics)}
-          {scoreInput('Mix', mix, setMix)}
-        </div>
-      </fieldset>
-
-      <fieldset className="mt-4">
         <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Verdict</legend>
         <div className="flex flex-wrap gap-4">
           {GENERATION_VERDICTS.map((v) => (
@@ -611,6 +614,57 @@ function LogGenerationForm({ brief, onSaved }: { brief: SavedBrief; onSaved: (g:
         Notes
         <textarea id={`${idp}-notes`} value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="What worked, what failed (e.g. excellent flute intro, weak chorus transition)…" className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" />
       </label>
+
+      {/* Advanced — kept collapsed to keep the default log fast, but rendered in
+          the DOM so its fields stay accessible (and test-queryable). */}
+      <details className="group mt-4 rounded-lg border border-gray-200 dark:border-gray-800">
+        <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          Advanced (settings · voice · model · stems · scores)
+        </summary>
+        <div className="border-t border-gray-200 px-3 py-3 dark:border-gray-800">
+          <fieldset>
+            <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Settings</legend>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-300">
+                Weirdness (0–100)
+                <input type="number" min={0} max={100} value={weirdness} onChange={(e) => setWeirdness(e.target.value)} className="rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-300">
+                Style influence (0–100)
+                <input type="number" min={0} max={100} value={styleInfluence} onChange={(e) => setStyleInfluence(e.target.value)} className="rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-300">
+                Engine version
+                <input value={engineModel} onChange={(e) => setEngineModel(e.target.value)} placeholder="engine version, e.g. suno v5.5" className="rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-300">
+                Voice
+                <input value={voiceLabel} onChange={(e) => setVoiceLabel(e.target.value)} placeholder="verified voice (blank = generic)" className="rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-300">
+                Custom Model
+                <input value={customModel} onChange={(e) => setCustomModel(e.target.value)} placeholder="idiom label, e.g. devotional-pathos" className="rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" />
+              </label>
+            </div>
+          </fieldset>
+
+          <label htmlFor={`${idp}-stems`} className="mt-4 flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-300">
+            Stem revisions
+            <span className="font-normal text-gray-400">One stem re-performance / Stem-Cover note per line (up to 24).</span>
+            <textarea id={`${idp}-stems`} value={stemRevisionsText} onChange={(e) => setStemRevisionsText(e.target.value)} rows={3} placeholder={'re-sang lead vocal\nreplaced flute with veena\ntightened kick'} className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" />
+          </label>
+
+          <fieldset className="mt-4">
+            <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Scores (0–10)</legend>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {scoreInput('Melody', melody, setMelody)}
+              {scoreInput('Vocals', vocals, setVocals)}
+              {scoreInput('Lyrics', lyrics, setLyrics)}
+              {scoreInput('Mix', mix, setMix)}
+            </div>
+          </fieldset>
+        </div>
+      </details>
 
       {formError && <p role="alert" className="mt-3 text-sm text-red-600 dark:text-red-400">{formError}</p>}
 

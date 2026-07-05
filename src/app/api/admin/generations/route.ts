@@ -10,7 +10,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
+import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { GenerationRepository } from '@/infrastructure/database/GenerationRepository';
 import { BriefRepository } from '@/infrastructure/database/BriefRepository';
 import { createGenerationSchema, type Generation } from '@/types/generation';
@@ -21,6 +21,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   try {
     await requireAdmin(request);
+    requireBearer(request);
   } catch (err) {
     return authErrorResponse(err);
   }

@@ -81,6 +81,42 @@ describe('createGenerationSchema', () => {
     expect(createGenerationSchema.safeParse({ ...base, settings: { weirdness: 101 } }).success).toBe(false);
   });
 
+  it('accepts a voiceLabel and customModel in settings (trimmed)', () => {
+    const r = createGenerationSchema.safeParse({
+      ...base,
+      settings: { voiceLabel: '  Anitha  ', customModel: '  devotional-pathos  ' },
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.settings.voiceLabel).toBe('Anitha');
+      expect(r.data.settings.customModel).toBe('devotional-pathos');
+    }
+  });
+
+  it('rejects an over-long voiceLabel / customModel', () => {
+    expect(createGenerationSchema.safeParse({ ...base, settings: { voiceLabel: 'x'.repeat(121) } }).success).toBe(false);
+    expect(createGenerationSchema.safeParse({ ...base, settings: { customModel: 'x'.repeat(121) } }).success).toBe(false);
+  });
+
+  it('defaults stemRevisions to an empty array', () => {
+    const r = createGenerationSchema.safeParse(base);
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.stemRevisions).toEqual([]);
+  });
+
+  it('accepts a list of stem revisions', () => {
+    const r = createGenerationSchema.safeParse({ ...base, stemRevisions: ['re-sang lead', 'swapped flute for veena'] });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.stemRevisions).toEqual(['re-sang lead', 'swapped flute for veena']);
+  });
+
+  it('rejects empty-string or over-long stem revisions and caps the list at 24', () => {
+    expect(createGenerationSchema.safeParse({ ...base, stemRevisions: [''] }).success).toBe(false);
+    expect(createGenerationSchema.safeParse({ ...base, stemRevisions: ['x'.repeat(201)] }).success).toBe(false);
+    expect(createGenerationSchema.safeParse({ ...base, stemRevisions: Array.from({ length: 25 }, (_, i) => `r${i}`) }).success).toBe(false);
+    expect(createGenerationSchema.safeParse({ ...base, stemRevisions: Array.from({ length: 24 }, (_, i) => `r${i}`) }).success).toBe(true);
+  });
+
   it('allows a failureReason on a failed/partial verdict', () => {
     expect(createGenerationSchema.safeParse({ ...base, failureReason: 'vocal_delivery' }).success).toBe(true);
     expect(createGenerationSchema.safeParse({ briefId: 'b', verdict: 'partial', failureReason: 'mixing' }).success).toBe(true);
