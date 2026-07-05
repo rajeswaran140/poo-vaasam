@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { formatLyricsForClipboard, buildPrintableLyricsHtml } from '@/lib/lyrics-export';
 
 interface Lyrics {
   id: string;
@@ -26,6 +27,7 @@ type Status = 'loading' | 'locked' | 'unlocked' | 'error';
 export function LyricsGate({ songId, songTitle }: { songId: string; songTitle: string }) {
   const [status, setStatus] = useState<Status>('loading');
   const [lyrics, setLyrics] = useState<Lyrics | null>(null);
+  const [copied, setCopied] = useState(false);
 
   // Unlock-form state.
   const [name, setName] = useState('');
@@ -81,6 +83,25 @@ export function LyricsGate({ songId, songTitle }: { songId: string; songTitle: s
     }
   };
 
+  const handleCopy = async () => {
+    if (!lyrics) return;
+    try {
+      await navigator.clipboard.writeText(formatLyricsForClipboard(lyrics.title, lyrics.body));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  const handlePdf = () => {
+    if (!lyrics) return;
+    const w = window.open('', '_blank');
+    if (!w) return; // popup blocked
+    w.document.write(buildPrintableLyricsHtml(lyrics.title, lyrics.body));
+    w.document.close();
+  };
+
   if (status === 'loading') {
     return (
       <p role="status" className="font-tamil text-gray-400">
@@ -102,6 +123,25 @@ export function LyricsGate({ songId, songTitle }: { songId: string; songTitle: s
   if (status === 'unlocked' && lyrics) {
     return (
       <div>
+        {/* Copy / PDF — only for unlocked (signed-up) fans; each export is
+            stamped with the © + "for singing only" terms. */}
+        <div className="mb-4 flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={handleCopy}
+            aria-live="polite"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 font-tamil text-sm text-gray-200 transition-colors hover:border-orange-500 hover:text-white"
+          >
+            {copied ? '✓ நகலெடுக்கப்பட்டது' : '📋 நகலெடு / Copy'}
+          </button>
+          <button
+            type="button"
+            onClick={handlePdf}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 font-tamil text-sm text-gray-200 transition-colors hover:border-orange-500 hover:text-white"
+          >
+            📄 PDF
+          </button>
+        </div>
         <pre
           className="mb-0 whitespace-pre-wrap font-poem text-lg leading-loose text-gray-100 sm:text-xl"
           style={{ lineHeight: '2.2', letterSpacing: '0.5px' }}
