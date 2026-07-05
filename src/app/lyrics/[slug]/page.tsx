@@ -61,6 +61,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     title,
     description: `"${song!.title}" — Tamil song lyrics by ${crawlerAuthor()}. Free to read on Tamilagaval.`,
     alternates: alternatesFor(`/lyrics/${slug}`),
+    // The detail page is a content-less email gate (lyrics are never in the HTML),
+    // and the same song is reachable via both its Tamil titleSlug and an ASCII
+    // vanity alias. Keep these thin/duplicate gate URLs out of the index (follow
+    // through to the reachable pages), consistent with the /lyrics hub.
+    robots: { index: false, follow: true },
   };
 }
 
