@@ -33,6 +33,7 @@ export default function Header() {
 
   // Distinct, non-content-type destinations stay at the top level.
   const topLinks = [
+    { href: '/lyrics', label: 'பாடல் வரிகள்' },
     { href: '/music-composition', label: 'இசையமைப்பு' },
     ...(showVideos ? [{ href: '/videos', label: 'காணொளிகள்' }] : []),
     { href: '/status', label: 'Status பகிருங்கள்' },

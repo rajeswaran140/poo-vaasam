@@ -55,6 +55,7 @@ frontend:
           GEMINI_API_KEY=$GEMINI_API_KEY
           GEMINI_MODEL=$GEMINI_MODEL
           COMPOSER_ENGINE=$COMPOSER_ENGINE
+          LYRICS_GATE_SECRET=$LYRICS_GATE_SECRET
           EOF
         - echo "Environment file created with credentials"
         - npm run build

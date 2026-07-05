@@ -64,12 +64,21 @@ describe('Header — navigation', () => {
     expect(screen.getByRole('button', { name: /படைப்புகள்/ })).toBeInTheDocument();
   });
 
-  it('surfaces the live sections (songs, poems) and hides empty ones (stories, essays, lyrics)', () => {
+  it('surfaces the live sections (songs, poems) and hides empty ones (stories, essays)', () => {
     render(<Header />);
     expect(screen.getAllByRole('link', { name: 'பாடல்கள்' }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole('link', { name: 'கவிதைகள்' }).length).toBeGreaterThan(0);
     expect(screen.queryByRole('link', { name: 'கதைகள்' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'கட்டுரைகள்' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'பாடல் வரிகள்' })).toBeNull();
+  });
+
+  it('surfaces the gated lyrics section as a top-level link', () => {
+    render(<Header />);
+    // The gated /lyrics hub is a distinct top-level destination (email-unlock),
+    // not a CONTENT_SECTIONS browse item — so it appears even though the LYRICS
+    // content section is still flagged not-live in site config.
+    const links = screen.getAllByRole('link', { name: 'பாடல் வரிகள்' });
+    expect(links.length).toBeGreaterThan(0);
+    expect(links[0]).toHaveAttribute('href', '/lyrics');
   });
 });

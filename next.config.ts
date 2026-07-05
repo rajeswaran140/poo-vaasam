@@ -109,6 +109,11 @@ const nextConfig: NextConfig = {
     // URLs live in DynamoDB — keep working). Defaults to the distribution domain
     // so a missing env var can't reintroduce the broken S3-direct fallback.
     MEDIA_BASE_URL: process.env.MEDIA_BASE_URL || 'https://d2cdoh43143xxa.cloudfront.net',
+    // HMAC secret for the lyrics email-gate signed cookie. Read at runtime by
+    // the unlock/read API routes (force-dynamic), so it MUST be inlined like the
+    // other server-only secrets. Falls back to an insecure dev default in
+    // src/lib/lyrics-gate.ts when unset — set a real value in Amplify for prod.
+    LYRICS_GATE_SECRET: process.env.LYRICS_GATE_SECRET || '',
   },
 
   // Image optimization

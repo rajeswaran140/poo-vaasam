@@ -34,6 +34,7 @@ import {
   FlaskConical,
   PenLine,
   SearchCheck,
+  ScrollText,
 } from "lucide-react";
 import { FEATURES } from "@/config/features";
 import { Toaster } from "react-hot-toast";
@@ -87,6 +88,11 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   "/admin/songs": {
     title: "Songs",
     subtitle: "Audio library — themes, durations, play counts",
+  },
+  "/admin/lyrics": {
+    title: "Lyrics",
+    subtitle:
+      "பாடல் வரிகள் / Lyrics — publish a song's words behind the email gate; edit the lyrics",
   },
   "/admin/comments": {
     title: "Comments",
@@ -298,6 +304,14 @@ export default function AdminLayoutClient({
                 active={pathname.startsWith("/admin/songs")}
               >
                 Songs
+              </NavLink>
+              <NavLink
+                href="/admin/lyrics"
+                icon={ScrollText}
+                collapsed={collapsed}
+                active={pathname.startsWith("/admin/lyrics")}
+              >
+                Lyrics
               </NavLink>
               <NavLink
                 href="/admin/workflow"

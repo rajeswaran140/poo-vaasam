@@ -32,6 +32,7 @@ import { TrackedYouTubeOpen } from '@/components/TrackedYouTubeOpen';
 import { isYouTubeUrl, getYouTubeWatchUrl, getYouTubeId } from '@/lib/utils/youtube';
 import { SITE_URL, SITE_NAME, absoluteUrl, toDescription, alternatesFor, actionVerb, crawlerAuthor } from '@/lib/seo';
 import { isoDuration } from '@/lib/iso-duration';
+import { getRawSongById, lyricsVisible } from '@/lib/lyrics-content';
 
 // Fully static, regenerated only at build/deploy. We deliberately do NOT use
 // time-based ISR (`revalidate`): the runtime has no DynamoDB creds, so a
@@ -190,6 +191,16 @@ export default async function ContentPage({ params }: PageProps) {
   // provides the page's <h1>, so the in-card title/eyebrow are suppressed below.
   const hero = getSongHero(content.id);
 
+  // Gated lyrics: for songs, read the raw item to see whether an admin has
+  // cleared the lyrics to show (the Content entity drops the `showLyrics`
+  // attribute). When shown, we surface a link to the gated /lyrics page. The
+  // lyrics body itself is NEVER rendered here — only behind the email gate.
+  const rawLyrics =
+    content.type === ContentType.SONGS
+      ? await getRawSongById(content.id).catch(() => null)
+      : null;
+  const showLyricsLink = lyricsVisible(rawLyrics) && !!rawLyrics?.titleSlug;
+
   // Designed hero art (if any) is the canonical share/structured-data image.
   const structuredImage = hero?.image || content.featuredImage;
   const audioDurationIso =
@@ -207,7 +218,7 @@ export default async function ContentPage({ params }: PageProps) {
     audioDurationIso,
     parent: { name: parentLabel, url: `${SITE_URL}${browseTo.href}` },
     youtubeId: ytId,
-    videoDescription: toDescription(content.description || content.body),
+    videoDescription: toDescription(content.description || (showLyricsLink ? '' : content.body)),
   });
 
   return (
@@ -345,16 +356,40 @@ export default async function ContentPage({ params }: PageProps) {
                   </>
                 )}
                 <div className="prose prose-lg max-w-none">
-                  <pre
-                    className="mb-0 whitespace-pre-wrap font-poem text-lg leading-loose text-gray-800 sm:text-xl"
-                    style={{ lineHeight: '2.2', letterSpacing: '0.5px' }}
-                  >
-                    {content.body}
-                  </pre>
+                  {showLyricsLink ? (
+                    // Gated song: the body IS the lyrics, so never render it here —
+                    // show a short blurb (or nothing) and let the CTA below serve
+                    // the words behind the email gate.
+                    <p className="mb-0 font-tamil text-lg leading-loose text-gray-700">
+                      {content.description ||
+                        'இந்தப் பாடலின் வரிகள் கீழே உள்ள இணைப்பில் கிடைக்கும் — ஒரு சிறு பதிவுடன் படியுங்கள்.'}
+                    </p>
+                  ) : (
+                    <pre
+                      className="mb-0 whitespace-pre-wrap font-poem text-lg leading-loose text-gray-800 sm:text-xl"
+                      style={{ lineHeight: '2.2', letterSpacing: '0.5px' }}
+                    >
+                      {content.body}
+                    </pre>
+                  )}
                 </div>
               </div>
             )}
           </div>
+
+          {/* Gated lyrics CTA — links to /lyrics/<slug> where the email gate
+              serves the words. Only shown when an admin has cleared this song. */}
+          {showLyricsLink && (
+            <div className="mt-6 rounded-xl border border-orange-200 bg-orange-50 p-5 text-center shadow-sm sm:p-6">
+              <Link
+                href={`/lyrics/${rawLyrics!.titleSlug}`}
+                className="inline-flex items-center gap-2 rounded-full bg-orange-600 px-6 py-3 font-tamil font-medium text-white shadow-lg transition-colors hover:bg-orange-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
+              >
+                <span aria-hidden>📜</span>
+                <span>பாடல் வரிகள் · View lyrics</span>
+              </Link>
+            </div>
+          )}
 
           {/* Share row — sits below the article card on the light page chrome. */}
           <div className="mt-6 rounded-xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
