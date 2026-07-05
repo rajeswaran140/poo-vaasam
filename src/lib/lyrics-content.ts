@@ -54,8 +54,20 @@ export async function getRawSongById(id: string): Promise<RawSongItem | null> {
   return item ? toRawSong(item) : null;
 }
 
-/** Resolve one content item RAW by its titleSlug via GSI5. */
+/**
+ * Clean ASCII aliases for share-friendly lyrics URLs. Tamil titleSlugs are
+ * fragile in links (copy/paste + some clients mangle the Unicode), so we map a
+ * tidy `/lyrics/<alias>` to the song id. Keep keys lowercase ASCII.
+ */
+export const LYRICS_VANITY: Record<string, string> = {
+  thayagam: 'cnt_1781049094952_wstyqacm4', // எங்கள் தேசம்
+};
+
+/** Resolve one content item RAW by its titleSlug via GSI5 (or a vanity alias). */
 export async function getRawSongBySlug(slug: string): Promise<RawSongItem | null> {
+  const vanityId = LYRICS_VANITY[slug.trim().toLowerCase()];
+  if (vanityId) return getRawSongById(vanityId);
+
   const res = await DynamoDBOperations.query({
     indexName: 'GSI5',
     keyConditionExpression: 'GSI5PK = :p AND GSI5SK = :slug',

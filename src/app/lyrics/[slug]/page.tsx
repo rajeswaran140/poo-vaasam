@@ -15,7 +15,7 @@ import Header from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import { LyricsGate } from '@/components/LyricsGate';
 import { alternatesFor, crawlerAuthor } from '@/lib/seo';
-import { getRawSongBySlug, listLyricsSongs, lyricsVisible } from '@/lib/lyrics-content';
+import { getRawSongBySlug, listLyricsSongs, lyricsVisible, LYRICS_VANITY } from '@/lib/lyrics-content';
 
 // Build-time prerender (SSR runtime has no DynamoDB creds); allow on-demand
 // resolution of newly flagged songs via dynamicParams.
@@ -25,9 +25,11 @@ export const dynamicParams = true;
 export async function generateStaticParams(): Promise<{ slug: string }[]> {
   try {
     const songs = await listLyricsSongs();
-    return songs
-      .filter((s) => !!s.titleSlug)
-      .map((s) => ({ slug: s.titleSlug as string }));
+    return [
+      ...songs.filter((s) => !!s.titleSlug).map((s) => ({ slug: s.titleSlug as string })),
+      // Share-friendly ASCII aliases (e.g. /lyrics/thayagam).
+      ...Object.keys(LYRICS_VANITY).map((slug) => ({ slug })),
+    ];
   } catch (error) {
     console.error('generateStaticParams (lyrics) failed:', error);
     return [];
