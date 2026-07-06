@@ -442,6 +442,41 @@ export async function fetchFunnelData(daysBack = 28): Promise<Result<FunnelInput
   }
 }
 
+/**
+ * Estimated ad revenue (USD) for the last N days.
+ *
+ * REQUIRES THE MONETARY SCOPE: the `estimatedRevenue` metric is only
+ * accessible when the OAuth grant includes
+ * `https://www.googleapis.com/auth/yt-analytics-monetary.readonly`. The
+ * current refresh token was minted WITHOUT it, so this call 403s upstream —
+ * which `runReport` surfaces as a thrown Error. We catch it and return
+ * `{ ok: false, error }` so callers degrade gracefully (show a "re-auth to
+ * unlock earnings" note) instead of crashing. Once Raj re-consents adding the
+ * monetary scope, the same call starts returning real numbers with no code
+ * change.
+ */
+export async function fetchEstimatedRevenue(
+  daysBack = 28
+): Promise<Result<{ estimatedRevenue: number; days: number }>> {
+  if (!isYouTubeAnalyticsConfigured()) {
+    return { ok: false, error: 'YouTube Analytics OAuth not configured' };
+  }
+  const { startDate, endDate } = dateRange(daysBack);
+  try {
+    const res = await runReport({
+      ids: 'channel==MINE',
+      startDate,
+      endDate,
+      metrics: 'estimatedRevenue',
+    });
+    if (!res) return { ok: false, error: 'No response from YouTube Analytics' };
+    const row = res.rows?.[0] ?? [];
+    return { ok: true, data: { estimatedRevenue: Number(row[0] ?? 0), days: daysBack } };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 /** Channel-wide aggregates for the last N days. */
 export async function fetchChannelAnalyticsSnapshot(daysBack = 28): Promise<Result<ChannelAnalyticsSnapshot>> {
   if (!isYouTubeAnalyticsConfigured()) {

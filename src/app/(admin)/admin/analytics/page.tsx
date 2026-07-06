@@ -12,6 +12,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
+import { MonetizationPanel } from '@/components/admin/MonetizationPanel';
 
 type Section<T> = { data: T } | { error: string };
 interface Snapshot { totalUsers: number; sessions: number; pageViews: number; daysBack: number }
@@ -104,6 +105,10 @@ export default function AnalyticsPage() {
           ))}
         </div>
       </div>
+
+      {/* Monetization & YPP gates — self-contained (own adminFetch); sits above
+          the GA4 sections so the partner-program tracker leads the dashboard. */}
+      <MonetizationPanel />
 
       {loading && <p className="text-gray-500">Loading…</p>}
       {err && <Banner tone="error">{err}</Banner>}
