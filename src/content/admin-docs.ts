@@ -228,6 +228,49 @@ It's a **sparring partner, not a judge** — fluent but fallible:
 On a failure it shows a message and never breaks the page — just try again. A persistent failure usually means the AI key is unset (the page shows an "AI not configured" banner when so).
 `,
   },
+  {
+    slug: 'upload-cadence-timing',
+    title: 'Upload cadence & timing — when to publish',
+    category: 'Publishing',
+    updatedAt: '2026-07-06',
+    body: `# When to upload — cadence, best days & times
+
+Data-backed publishing guide for the Tamilagaval channel. Figures are from the trailing 12 weeks (pulled 2026-07-06) — re-check periodically as the audience grows.
+
+## Cadence — 1 song every 3–4 days (~2 per week)
+- Growth here is **suggested / related-video driven**, so each new song needs a few days of clean runway for the algorithm to test it and find its audience.
+- Two songs within a day or two **compete for the same recommendation slots and split each other's early push** (the 2026-06-22 double-upload lesson).
+- **Never 2 in one day**, and avoid back-to-back days for full songs.
+- Have a batch ready? Spread them — e.g. 5 songs over ~2.5–3 weeks, not one week.
+
+## Best days
+Average daily views by weekday (trailing 12 weeks):
+
+| Wed | Tue | Mon | Sun | Sat | Fri | Thu |
+|--:|--:|--:|--:|--:|--:|--:|
+| 1,954 | 1,761 | 1,580 | 1,547 | 1,308 | 1,289 | 939 |
+
+- **Publish on Wednesday / Tuesday** (strongest); Sunday and Monday are also good.
+- **Avoid Thursday** — clearly the weakest day (~half the views, and worst for new subscribers too).
+
+## Best time
+- Audience is **~93% India + Sri Lanka** (both UTC+5:30), so target **IST**, not your local time.
+- Publish **~5–7 PM IST** (≈ 11:30–13:30 UTC) — so it is live and gathering early signal just before the 8–10 PM India music-watching peak (YouTube favours publishing ~1–2 hrs ahead of peak).
+- Use Studio → **Schedule** to pin the exact IST time even while you are on Canada time.
+- The exact hourly heatmap is **Studio-only** (Studio → Audience → "When your viewers are on YouTube") — the API cannot return it; the day + timezone guidance above aligns with it.
+
+## Sequencing a batch
+- **Lead with your strongest song** — early algorithmic impressions compound while the channel is in its breakout window.
+- **Alternate emotion / style** between consecutive drops (do not put two slow melodies back-to-back) so they pull different audience slices instead of competing.
+
+## During YPP review
+- **New, distinct songs are encouraged** — an active channel releasing originals is a positive signal. Keep uploading these on the cadence above.
+- **Hold duplicate / alternate-version uploads** (e.g. a folk "Version 2" of an existing song) until after approval, to avoid any near-duplicate concern during the review.
+
+## Related — instrumentals
+Per-song instrumental versions currently **underperform** (about 1/6 the views of the vocal, ~24% retention, near-zero search discovery) and do not reach the search-driven relaxing/study audience. Not a per-song priority — if pursued, they need a dedicated playlist + long-compilation lane, not scattered uploads.
+`,
+  },
 ];
 
 /** Docs grouped by category, in registry order, for the sidebar. */
