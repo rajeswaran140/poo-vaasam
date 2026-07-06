@@ -271,6 +271,45 @@ Average daily views by weekday (trailing 12 weeks):
 Per-song instrumental versions currently **underperform** (about 1/6 the views of the vocal, ~24% retention, near-zero search discovery) and do not reach the search-driven relaxing/study audience. Not a per-song priority — if pursued, they need a dedicated playlist + long-compilation lane, not scattered uploads.
 `,
   },
+  {
+    slug: 'reach-eelam-tamil-community',
+    title: 'Reach the Eelam Tamil community — distribution kit',
+    category: 'Growth',
+    updatedAt: '2026-07-06',
+    body: `# Reach the Eelam Tamil community
+
+**The opportunity:** ~200,000 Sri Lankan Tamil refugees in Tamil Nadu + ~2 million diaspora worldwide — an audience with a deep emotional need (homeland, மண், memory, belonging) that Tamilagaval's original, quality, *organized* homeland catalogue meets like no other channel. The fit is proven; the gap is **awareness**, i.e. distribution.
+
+**Your biggest advantage:** you live in **Toronto (GTA)** — one of the largest Eelam Tamil communities on earth. You're embedded in a core node of your target audience: a high-trust, in-person + WhatsApp channel. Start there.
+
+**Golden rule:** keep it **cultural, emotional, apolitical** — homeland longing + nature, never politics or liberation framing. That keeps the channel a safe, shareable home for *every* Tamil (and avoids risk in a sensitive space).
+
+## WhatsApp share pack (ready to forward — one warm line + a link)
+WhatsApp is the #1 way Eelam Tamil families share music (and it's invisible in view sources, but travels far). Share **one song per week**, never a flood.
+
+- **எங்கள் தேசம்** (names Yaazhpaanam, Kilinochchi, Mullaitivu, Vanni, Batticaloa… — the strongest Eelam song):
+  \`🌾 நம் ஈழத்து ஊர்களை நினைவுகூரும் ஒரு அசல் தமிழ்ப் பாடல் — மனதைத் தொடும். கேட்டுப் பாருங்கள்: https://youtu.be/NxgKyBINwmc\`
+- **ஈழத்து மண்ணே, காலத்து பொன்னே:**
+  \`❤️ "ஈழத்து மண்ணே, காலத்து பொன்னே..." — நம் மண்ணின் மணம் கமழும் அசல் தமிழ்ப் பாடல்: https://youtu.be/tw49AjsZs1E\`
+- **என் தேசமே, என் சுவாசமே** (newest homeland song):
+  \`🌿 "என் தேசமே, என் சுவாசமே..." — பிறந்த மண்ணின் மீதான நேசத்தை உணர்த்தும் புதிய பாடல்: https://youtu.be/akxtNVXgGf4\`
+- **தாயகம் / Heritage collection** (whole homeland catalogue in one place — your organization advantage doing the work):
+  \`🌾 தாயகம் பற்றிய தமிழ்ப் பாடல்களின் தொகுப்பு: https://www.youtube.com/playlist?list=PLEXvbEQYvb5A\`
+- **Share Your Story** (turn listeners into community):
+  \`உங்கள் ஊர், உங்கள் நினைவு — பகிருங்கள். சில கதைகள் அடுத்த பாடலாகலாம்: https://tamilagaval.com/share\`
+
+## Community outreach playbook (over weeks, not days)
+1. **Your own circle first** — forward one song (with the warm line) into family/friend WhatsApp groups; ask 3–5 trusted people to pass it on. Highest-trust distribution.
+2. **GTA community nodes** — Eelam Tamil associations, temples, cultural orgs, community-event groups. Share the Heritage playlist + one song.
+3. **Diaspora Facebook groups** (Eelam / SL-Tamil community groups, worldwide) — post a homeland song with the warm line; homeland/nature content is welcome and shareable.
+4. **Tamil Nadu segment** — the ~200k refugees are concentrated in TN settlements; reachable through TN SL-Tamil community organizations + local WhatsApp/FB groups, where word-of-mouth compounds fast once it catches.
+5. **Invite the story** — point people to /share for homeland/birthplace memories; feature the best (they become community, and possibly future songs).
+6. **Cadence & tone** — one warm share per week per group (don't spam); always cultural/emotional, never political.
+7. **Watch it work** — track the Sri Lanka % in YouTube Analytics over the coming weeks (currently ~8% vs ~85% India). A few dozen genuine shares this month → a few hundred next.
+
+**Realistic note:** community word-of-mouth is a marathon, but in a tight, emotionally-connected community it *compounds*.
+`,
+  },
 ];
 
 /** Docs grouped by category, in registry order, for the sidebar. */
