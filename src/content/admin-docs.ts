@@ -308,6 +308,32 @@ WhatsApp is the #1 way Eelam Tamil families share music (and it's invisible in v
 7. **Watch it work** — track the Sri Lanka % in YouTube Analytics over the coming weeks (currently ~8% vs ~85% India). A few dozen genuine shares this month → a few hundred next.
 
 **Realistic note:** community word-of-mouth is a marathon, but in a tight, emotionally-connected community it *compounds*.
+
+## Ready-to-use messages
+
+### Community / association group intro (when you're new to a group)
+Use once, warmly, to introduce yourself + the channel to a group that doesn't know you yet (temple / association / community WhatsApp or FB group):
+
+\`\`\`
+வணக்கம் அன்பர்களே 🙏
+நான் இராஜ் — 35 ஆண்டுகளுக்கும் மேலாக தமிழில் கவிதைகளும் பாடல்களும் எழுதிவருகிறேன். நம் தாயகம், நம் மண், நம் நினைவுகள் சார்ந்த அசல் தமிழ்ப் பாடல்களை "தமிழகவல்" YouTube சேனலில் பகிர்ந்து வருகிறேன்.
+
+நம் ஈழத்து உள்ளங்களைத் தொடும் சில பாடல்கள்:
+🌾 எங்கள் தேசம்: https://youtu.be/NxgKyBINwmc
+🎵 தாயகம் பாடல்கள்: https://www.youtube.com/playlist?list=PLEXvbEQYvb5A
+
+நேரம் கிடைக்கும்போது கேட்டுப் பாருங்கள். பிடித்தால் பகிர்ந்து, சேனலை Subscribe செய்து ஆதரியுங்கள். நன்றி. ❤️
+\`\`\`
+
+### Homeland "Share Your Story" prompt (YouTube Community post / pin)
+Seed the /share campaign with the exact memory this audience feels most — pin on a homeland song:
+
+\`\`\`
+🌾 உங்கள் ஊர், உங்கள் நினைவு...
+நீங்கள் பிறந்த ஊர், விளையாடிய வீதி, உங்கள் மண்ணின் வாசம் — இன்று எங்கு வாழ்ந்தாலும் மனதில் நிற்கும் அந்த நினைவை என்னுடன் பகிருங்கள். 👉 tamilagaval.com/share
+சில நினைவுகள் என் அடுத்த தாயகப் பாடலாக மலரலாம். ❤️
+— இராஜ் | தமிழகவல்
+\`\`\`
 `,
   },
 ];
