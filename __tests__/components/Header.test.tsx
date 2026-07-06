@@ -72,13 +72,40 @@ describe('Header — navigation', () => {
     expect(screen.queryByRole('link', { name: 'கட்டுரைகள்' })).toBeNull();
   });
 
-  it('surfaces the gated lyrics section as a top-level link', () => {
+  it('surfaces the gated lyrics section (grouped under படைப்புகள்)', () => {
     render(<Header />);
-    // The gated /lyrics hub is a distinct top-level destination (email-unlock),
-    // not a CONTENT_SECTIONS browse item — so it appears even though the LYRICS
-    // content section is still flagged not-live in site config.
+    // The gated /lyrics hub is a distinct destination (email-unlock), not a
+    // CONTENT_SECTIONS browse item — it appears (under the படைப்புகள் dropdown)
+    // even though the LYRICS content section is still flagged not-live.
     const links = screen.getAllByRole('link', { name: 'பாடல் வரிகள்' });
     expect(links.length).toBeGreaterThan(0);
     expect(links[0]).toHaveAttribute('href', '/lyrics');
+  });
+});
+
+describe('Header — 4-item grouped structure', () => {
+  const href = (name: string) =>
+    screen.getAllByRole('link', { name })[0]?.getAttribute('href');
+
+  it('has exactly two dropdown groups (படைப்புகள் + சமூகம்) and two plain links', () => {
+    render(<Header />);
+    // Two group triggers.
+    expect(screen.getByRole('button', { name: /படைப்புகள்/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /சமூகம்/ })).toBeInTheDocument();
+    // The only nav <button>s are the two dropdown triggers + the mobile toggle.
+    const navButtons = screen.getAllByRole('button').filter((b) => /படைப்புகள்|சமூகம்/.test(b.textContent || ''));
+    expect(navButtons).toHaveLength(2);
+  });
+
+  it('groups community destinations (share / support / status) under சமூகம்', () => {
+    render(<Header />);
+    expect(href('உங்கள் கதை')).toBe('/share');
+    expect(href('ஆதரவு')).toBe('/support');
+  });
+
+  it('surfaces the composition service and the About page as top-level links', () => {
+    render(<Header />);
+    expect(href('இசையமைப்பு')).toBe('/music-composition');
+    expect(href('பற்றி')).toBe('/about');
   });
 });

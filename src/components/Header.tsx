@@ -17,13 +17,11 @@ const Chevron = ({ className = '' }: { className?: string }) => (
   </svg>
 );
 
-// Content-type pages, grouped under a single "படைப்புகள்" menu. Driven by the
-// shared section registry (songs/poems lead; empty sections stay hidden), with
-// the "all" aggregate appended.
-const BROWSE_LINKS = [
-  ...CONTENT_SECTIONS.filter((s) => s.live).map((s) => ({ href: s.href, label: s.label })),
-  { href: '/all', label: 'அனைத்தும்' },
-];
+type NavLink = { href: string; label: string };
+type NavItem = NavLink | { label: string; children: NavLink[] };
+
+const hasChildren = (item: NavItem): item is { label: string; children: NavLink[] } =>
+  'children' in item;
 
 export default function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -31,18 +29,33 @@ export default function Header() {
   const showYouTube = isYouTubeChannelConfigured();
   const showVideos = isYouTubeVideosConfigured();
 
-  // Distinct, non-content-type destinations stay at the top level.
-  const topLinks = [
-    { href: '/lyrics', label: 'பாடல் வரிகள்' },
+  // Exactly FOUR primary nav items; related destinations are grouped into the
+  // two dropdowns so the top bar stays uncluttered. Driven by the shared section
+  // registry (songs/poems lead; empty sections stay hidden) + the video toggle.
+  const navItems: NavItem[] = [
+    {
+      label: 'படைப்புகள்',
+      children: [
+        ...CONTENT_SECTIONS.filter((s) => s.live).map((s) => ({ href: s.href, label: s.label })),
+        { href: '/lyrics', label: 'பாடல் வரிகள்' },
+        ...(showVideos ? [{ href: '/videos', label: 'காணொளிகள்' }] : []),
+        { href: '/all', label: 'அனைத்தும்' },
+      ],
+    },
+    {
+      label: 'சமூகம்',
+      children: [
+        { href: '/share', label: 'உங்கள் கதை' },
+        { href: '/support', label: 'ஆதரவு' },
+        { href: '/status', label: 'Status பகிருங்கள்' },
+      ],
+    },
     { href: '/music-composition', label: 'இசையமைப்பு' },
-    ...(showVideos ? [{ href: '/videos', label: 'காணொளிகள்' }] : []),
-    { href: '/status', label: 'Status பகிருங்கள்' },
-    { href: '/share', label: 'உங்கள் கதை' },
-    { href: '/support', label: 'ஆதரவு' },
+    { href: '/about', label: 'பற்றி' },
   ];
 
   const isActive = (href: string) => !!pathname && (pathname === href || pathname.startsWith(`${href}/`));
-  const browseActive = BROWSE_LINKS.some((l) => isActive(l.href));
+  const groupActive = (children: NavLink[]) => children.some((c) => isActive(c.href));
   const close = () => setMobileMenuOpen(false);
 
   // Lock background scroll + close on Escape while the mobile menu is open.
@@ -87,43 +100,46 @@ export default function Header() {
             </span>
           </Link>
 
-          {/* Desktop Navigation */}
+          {/* Desktop Navigation — four primary items (two dropdowns, two links) */}
           <div className="hidden items-center gap-1 md:flex lg:gap-2">
-            {/* Browse dropdown */}
-            <div className="group relative">
-              <button
-                type="button"
-                aria-haspopup="true"
-                aria-current={browseActive ? 'page' : undefined}
-                className={`inline-flex items-center gap-1 rounded-lg px-4 py-2 font-tamil font-medium transition-all ${
-                  browseActive ? 'bg-gray-800/70 text-orange-400' : 'text-gray-300 hover:bg-gray-800/50 hover:text-white'
-                }`}
-              >
-                படைப்புகள்
-                <Chevron className="transition-transform group-hover:rotate-180" />
-              </button>
-              <div className="absolute left-0 top-full hidden pt-2 group-hover:block group-focus-within:block">
-                <div className="min-w-[12rem] rounded-xl border border-gray-800 bg-gray-900/95 p-1.5 shadow-2xl backdrop-blur-md">
-                  {BROWSE_LINKS.map((item) => {
-                    const active = isActive(item.href);
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        aria-current={active ? 'page' : undefined}
-                        className={`block rounded-lg px-3 py-2 font-tamil transition-colors ${
-                          active ? 'bg-gray-800 text-orange-400' : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-                        }`}
-                      >
-                        {item.label}
-                      </Link>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {topLinks.map((item) => {
+            {navItems.map((item) => {
+              if (hasChildren(item)) {
+                const active = groupActive(item.children);
+                return (
+                  <div key={item.label} className="group relative">
+                    <button
+                      type="button"
+                      aria-haspopup="true"
+                      aria-current={active ? 'page' : undefined}
+                      className={`inline-flex items-center gap-1 rounded-lg px-4 py-2 font-tamil font-medium transition-all ${
+                        active ? 'bg-gray-800/70 text-orange-400' : 'text-gray-300 hover:bg-gray-800/50 hover:text-white'
+                      }`}
+                    >
+                      {item.label}
+                      <Chevron className="transition-transform group-hover:rotate-180" />
+                    </button>
+                    <div className="absolute left-0 top-full hidden pt-2 group-hover:block group-focus-within:block">
+                      <div className="min-w-[12rem] rounded-xl border border-gray-800 bg-gray-900/95 p-1.5 shadow-2xl backdrop-blur-md">
+                        {item.children.map((child) => {
+                          const childActive = isActive(child.href);
+                          return (
+                            <Link
+                              key={child.href}
+                              href={child.href}
+                              aria-current={childActive ? 'page' : undefined}
+                              className={`block rounded-lg px-3 py-2 font-tamil transition-colors ${
+                                childActive ? 'bg-gray-800 text-orange-400' : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                              }`}
+                            >
+                              {child.label}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
               const active = isActive(item.href);
               return (
                 <Link
@@ -172,7 +188,8 @@ export default function Header() {
           </button>
         </div>
 
-        {/* Mobile Menu — dimmed backdrop + scrollable panel */}
+        {/* Mobile Menu — dimmed backdrop + scrollable panel. Dropdowns become
+            labelled sections; plain links sit at the top level. */}
         {mobileMenuOpen && (
           <>
             <div
@@ -185,32 +202,37 @@ export default function Header() {
               className="relative z-50 max-h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain border-t border-gray-800 bg-gray-900 py-4 md:hidden"
             >
               <div className="flex flex-col gap-1">
-                <p className="px-3 pt-1 font-tamil text-xs font-semibold uppercase tracking-wide text-gray-500">படைப்புகள்</p>
-                {BROWSE_LINKS.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    aria-current={isActive(item.href) ? 'page' : undefined}
-                    onClick={close}
-                    className={`py-2.5 pl-5 pr-3 ${mobileLinkClass(isActive(item.href))}`}
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-
-                <div className="my-1 border-t border-gray-800/60" />
-
-                {topLinks.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    aria-current={isActive(item.href) ? 'page' : undefined}
-                    onClick={close}
-                    className={`px-3 py-2.5 ${mobileLinkClass(isActive(item.href))}`}
-                  >
-                    {item.label}
-                  </Link>
-                ))}
+                {navItems.map((item, i) =>
+                  hasChildren(item) ? (
+                    <div key={item.label}>
+                      {i > 0 && <div className="my-1 border-t border-gray-800/60" />}
+                      <p className="px-3 pt-1 font-tamil text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        {item.label}
+                      </p>
+                      {item.children.map((child) => (
+                        <Link
+                          key={child.href}
+                          href={child.href}
+                          aria-current={isActive(child.href) ? 'page' : undefined}
+                          onClick={close}
+                          className={`block py-2.5 pl-5 pr-3 ${mobileLinkClass(isActive(child.href))}`}
+                        >
+                          {child.label}
+                        </Link>
+                      ))}
+                    </div>
+                  ) : (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      aria-current={isActive(item.href) ? 'page' : undefined}
+                      onClick={close}
+                      className={`px-3 py-2.5 ${mobileLinkClass(isActive(item.href))}`}
+                    >
+                      {item.label}
+                    </Link>
+                  )
+                )}
 
                 {showYouTube && (
                   <a
