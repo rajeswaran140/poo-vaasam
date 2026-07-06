@@ -22,7 +22,7 @@ export default function SharePage() {
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
-      <main id="main" className="flex-1">
+      <main id="main" className="flex-1 pt-20">
         {/* Hero — matches the site's dark/orange brand */}
         <section className="relative bg-gray-900 text-white py-16">
           <div aria-hidden className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-orange-500/70 to-transparent" />
@@ -39,7 +39,7 @@ export default function SharePage() {
           <div className="container mx-auto px-4">
             <div className="max-w-3xl mx-auto">
               {/* Intro */}
-              <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 mb-8">
+              <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sm:p-8 mb-8">
                 <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-4 font-tamil">
                   உங்கள் நினைவே அடுத்த பாடல்
                 </h2>
@@ -58,7 +58,7 @@ export default function SharePage() {
               </section>
 
               {/* Form */}
-              <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
+              <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sm:p-8">
                 <h2 className="text-2xl font-bold text-gray-900 mb-6 font-tamil">
                   உங்கள் கதையைப் பகிருங்கள்
                 </h2>
