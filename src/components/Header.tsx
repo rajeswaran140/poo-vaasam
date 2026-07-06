@@ -37,6 +37,7 @@ export default function Header() {
     { href: '/music-composition', label: 'இசையமைப்பு' },
     ...(showVideos ? [{ href: '/videos', label: 'காணொளிகள்' }] : []),
     { href: '/status', label: 'Status பகிருங்கள்' },
+    { href: '/share', label: 'உங்கள் கதை' },
     { href: '/support', label: 'ஆதரவு' },
   ];
 

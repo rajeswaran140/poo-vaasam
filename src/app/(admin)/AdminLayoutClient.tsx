@@ -35,6 +35,7 @@ import {
   PenLine,
   SearchCheck,
   ScrollText,
+  MessageSquareHeart,
 } from "lucide-react";
 import { FEATURES } from "@/config/features";
 import { Toaster } from "react-hot-toast";
@@ -83,6 +84,11 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
     title: "Subscribers",
     subtitle:
       "Email newsletter list — filter by date range, process unsubscribes",
+  },
+  "/admin/stories": {
+    title: "Shared Stories",
+    subtitle:
+      "Fan memories from the Share page — review, feature, or archive; a songwriting well",
   },
   "/admin/docs": { title: "Docs", subtitle: "In-portal guides and how-tos" },
   "/admin/songs": {
@@ -392,6 +398,14 @@ export default function AdminLayoutClient({
                 active={pathname === "/admin/subscribers"}
               >
                 Subscribers
+              </NavLink>
+              <NavLink
+                href="/admin/stories"
+                icon={MessageSquareHeart}
+                collapsed={collapsed}
+                active={pathname === "/admin/stories"}
+              >
+                Shared Stories
               </NavLink>
               <NavLink
                 href="/admin/comments"
