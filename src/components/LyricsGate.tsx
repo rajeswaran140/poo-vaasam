@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { formatLyricsForClipboard, buildPrintableLyricsHtml } from '@/lib/lyrics-export';
+import { SupportCTA } from '@/components/SupportCTA';
 
 interface Lyrics {
   id: string;
@@ -154,6 +155,10 @@ export function LyricsGate({ songId, songTitle }: { songId: string; songTitle: s
             விதிமுறைகள்
           </Link>
         </p>
+
+        {/* A fan engaged enough to unlock the lyrics is prime to subscribe /
+            support — the site's highest-intent conversion moment (YPP era). */}
+        <SupportCTA source="lyrics-unlock" className="mt-8" />
       </div>
     );
   }

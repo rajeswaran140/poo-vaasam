@@ -37,6 +37,7 @@ export default function Header() {
     { href: '/music-composition', label: 'இசையமைப்பு' },
     ...(showVideos ? [{ href: '/videos', label: 'காணொளிகள்' }] : []),
     { href: '/status', label: 'Status பகிருங்கள்' },
+    { href: '/support', label: 'ஆதரவு' },
   ];
 
   const isActive = (href: string) => !!pathname && (pathname === href || pathname.startsWith(`${href}/`));

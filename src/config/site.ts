@@ -10,7 +10,7 @@ export const SITE = {
      * channel (e.g. https://www.youtube.com/@YourHandle). Until it's set to a
      * real channel, the YouTube/Subscribe links are hidden site-wide.
      */
-    channelUrl: 'https://youtube.com/@RajeswaranThangarajah',
+    channelUrl: 'https://www.youtube.com/@Tamilagaval',
     /**
      * Channel ID (UC…, 24 chars) — required for the RSS-backed videos feed.
      * Empty = the /videos page, homepage strip and Subscribe CTAs stay hidden.
