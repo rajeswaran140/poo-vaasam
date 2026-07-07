@@ -18,6 +18,7 @@
 
 import { useEffect, useId, useRef, useState } from 'react';
 import { Copy, Check, Sparkles, RotateCw, FileDown } from 'lucide-react';
+import { assembleYoutubeDescription } from '@/lib/youtube-description';
 import { adminFetch } from '@/lib/client-auth';
 import { pollJob } from '@/lib/poll-job';
 import { PromptReadiness } from '@/components/admin/PromptReadiness';
@@ -517,6 +518,13 @@ function Results({ result, lyrics, selectedIdx, onSelectIdx }: { result: Analysi
       {result.youtube_description_tamil && (
         <Card label="YouTube description — தமிழ்" copyText={result.youtube_description_tamil}>
           <p className="whitespace-pre-wrap font-tamil text-sm text-gray-700 dark:text-gray-300">{result.youtube_description_tamil}</p>
+          <div className="mt-3">
+            <CopyButton
+              text={assembleYoutubeDescription(result.youtube_description_tamil, { emotion: result.emotion, theme: result.theme })}
+              ariaLabel="Copy ready-to-paste Tamil YouTube description with footer"
+              label="📋 Copy ready-to-paste (+ links footer)"
+            />
+          </div>
         </Card>
       )}
 
@@ -524,6 +532,13 @@ function Results({ result, lyrics, selectedIdx, onSelectIdx }: { result: Analysi
       {result.youtube_description_english && (
         <Card label="YouTube description — English" copyText={result.youtube_description_english}>
           <p className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">{result.youtube_description_english}</p>
+          <div className="mt-3">
+            <CopyButton
+              text={assembleYoutubeDescription(result.youtube_description_english, { emotion: result.emotion, theme: result.theme })}
+              ariaLabel="Copy ready-to-paste English YouTube description with footer"
+              label="📋 Copy ready-to-paste (+ links footer)"
+            />
+          </div>
         </Card>
       )}
 
@@ -568,7 +583,7 @@ function Card({ label, children, copyText }: { label: string; children: React.Re
   );
 }
 
-function CopyButton({ text, ariaLabel }: { text: string; ariaLabel: string }) {
+function CopyButton({ text, ariaLabel, label }: { text: string; ariaLabel: string; label?: string }) {
   const [copied, setCopied] = useState(false);
   // Track the timeout so we can cancel on unmount — avoids a setState
   // after-unmount warning in dev + the tiny memory leak in prod.
@@ -592,9 +607,14 @@ function CopyButton({ text, ariaLabel }: { text: string; ariaLabel: string }) {
       type="button"
       onClick={copy}
       aria-label={ariaLabel}
-      className="inline-flex h-7 w-7 items-center justify-center rounded text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+      className={
+        label
+          ? 'inline-flex items-center gap-1.5 rounded-lg border border-orange-300 px-2.5 py-1 text-xs font-medium text-orange-700 transition-colors hover:bg-orange-50 dark:border-orange-500/40 dark:text-orange-300 dark:hover:bg-orange-500/10'
+          : 'inline-flex h-7 w-7 items-center justify-center rounded text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200'
+      }
     >
       {copied ? <Check className="h-3.5 w-3.5 text-orange-500" /> : <Copy className="h-3.5 w-3.5" />}
+      {label && <span>{copied ? 'Copied!' : label}</span>}
     </button>
   );
 }
