@@ -336,6 +336,50 @@ Seed the /share campaign with the exact memory this audience feels most — pin 
 \`\`\`
 `,
   },
+  {
+    slug: 'end-screen-routing',
+    title: 'End-screen routing — subscriber conversion',
+    category: 'Growth',
+    updatedAt: '2026-07-07',
+    body: `# End-screen routing for subscriber conversion
+
+**The finding:** the channel converts ~4.1 subs / 1,000 views overall, but **song-level subscriber affinity varies 3–6×** — that is a bigger lever than the subscribe watermark. So route each discovery engine's end screen to a **proven converter within its genre cluster**, not just a thematically-similar song.
+
+**Method:** full songs only (Shorts excluded — their subs attribute differently), 2026-04-01 → today, **min 800 views** for a reliable rate, cluster-aware (route within genre to the best subs/1k).
+
+**Studio note:** the cleanest end screen = **ONE video element + a Subscribe element**. So below, **Target 1 = the primary end-screen video**; **Target 2 = a fallback / manual alternative** (or a playlist card). Every source also gets a **Subscribe** element.
+
+## Routing table — do in priority order
+| P | Source (discovery engine) | views | own /1k | Target 1 (primary) | Target 2 (alt) |
+|---|---|--:|--:|---|---|
+| **1** | எழுதாத வரியிலே · VUIpOkk62fc | 3,640 | **1.37** | காலை காற்றே · DrPPkgumCQw (8.14) | பொன்வானம் சாயுதே · d3puwsvsZdI (5.99) |
+| 2 | நீ சிரிச்ச நேரம் · GXLu3Y7FghU | 24,429 | 5.40 | காலை காற்றே (8.14) | பொன்வானம் (5.99) |
+| 2 | செவ்வந்தி பூவே · H5NcoS41fA4 | 13,852 | 4.26 | காலை காற்றே (8.14) | மெல்ல மெல்ல · ldgMDPRnHp0 (5.75) |
+| 3 | என் மன்னவனே · eo3Mo--sgPY | 8,291 | 4.46 | காலை காற்றே (8.14) | உன்னை பார்த்தால் · lWt5kvapFKs (5.56) |
+| 3 | என் பொன்மணி · KtFF0CCnCY4 | 6,622 | 4.68 | காலை காற்றே (8.14) | பொன்வானம் (5.99) |
+| 3 | குறிஞ்சி மலரே · BoHXKQCfOqU | 4,320 | 3.47 | காலை காற்றே (8.14) | மெல்ல மெல்ல (5.75) |
+| 4 | உன்னை பார்த்தால் · lWt5kvapFKs | 3,057 | 5.56 | காலை காற்றே (8.14) | மெல்ல மெல்ல (5.75) |
+
+**Priority logic:** P1 = எழுதாத வரியிலே — the biggest leak (high reach × worst conversion 1.37/1k), fix FIRST. P2 = highest-reach engines (a small lift on 14–24k views = many subs). P3/P4 = mid / smaller reach.
+
+## Reference — best reliable converters (subs/1k, ≥800 views)
+- **love / melody:** காலை காற்றே **8.14** · பொன்வானம் சாயுதே 5.99 · மெல்ல மெல்ல 5.75 · உன்னை பார்த்தால் 5.56 · நீ சிரிச்ச 5.40
+- **homeland:** ஈழத்து மண்ணே ♀ (tw49AjsZs1E) 7.27 · ♂ (KpWeuW_l9xc) 6.13 — (எங்கள் தேசம் NxgKyBINwmc 8.42 but only 706 views → a destination to *boost*, not a discovery engine)
+- **mother:** அம்மா உந்தன் (CYVbd5a3uQ4) 6.91
+- **motivational:** தம்பி நீயும் கலங்காதே (AD5xJe6CTnk) 7.29
+- **folk:** கடலோடு பேசுதடி 6.49 · ஆலமர நிழல் கீழே 6.17
+
+## Worst converters — never end-screen TO these
+எழுதாத வரியிலே 1.37 · சித்திர செவ்வானம் (TqM4sChi7eQ) 0.00 · விண்ணிலே தேடிய நிலவை 1.43 (small sample) · ஒரு நாள் திருநாள் 2.29 · முடிவில்லா முகத்தினில் 2.97 · அந்தி மேகமே 3.31.
+
+## Already done (API side, 2026-07-07)
+- **Love Songs playlist now leads with காலை காற்றே** (best converter, 8.14/1k).
+- All 5 discovery engines have Subscribe + playlist links in description + a pinned Subscribe CTA.
+- Subscribe watermark set (entire video, all videos).
+
+**Re-pull quarterly** as views accumulate — rates on <800-view songs firm up over time and the routing may shift.
+`,
+  },
 ];
 
 /** Docs grouped by category, in registry order, for the sidebar. */
