@@ -378,6 +378,16 @@ Seed the /share campaign with the exact memory this audience feels most — pin 
 - Subscribe watermark set (entire video, all videos).
 
 **Re-pull quarterly** as views accumulate — rates on <800-view songs firm up over time and the routing may shift.
+
+## Conclusion (authoritative framing)
+> We have now removed the obvious conversion leaks. The next 14 days test whether better subscription surfaces and cluster-aware routing can raise full-song conversion above the historical **~4.1 subs/1K** baseline. If conversion remains near 4 despite comparable traffic, the bottleneck is no longer subscribe visibility; the next strategic problem is **viewer affinity, channel identity, and returning-audience formation.**
+
+Historical baseline: **731 subscribers from 179,684 views ≈ 4.07 subs/1K.**
+
+## Precision notes (don't overstate the mechanism)
+- **Watermark = an *additional* persistent subscribe surface, not the only one.** The watch-page Subscribe button already existed; the watermark adds another. And YouTube video watermarks are **NOT clickable on mobile** — so it is incremental, not a universal "one-tap subscribe."
+- **End-screen routing does NOT transfer the destination's rate.** காலை காற்றே's 8.14/1K describes *its own* historical audience mix; viewers referred from நீ சிரிச்ச may convert differently. The experiment specifically tests whether **referred discovery-engine viewers retain higher subscriber affinity** on the converter — it is a hypothesis, not a guaranteed 8.14.
+- **Realistic magnitude:** at ~6,857 views/day, lifting 4.07→5.5–6.0 subs/1K ≈ **27.9/day → 37.7–41.1/day (+10–13/day)**; the 276-sub gap (724→1,000) closes in **~9.9 days vs ~6.7–7.3 days ≈ ~3 days saved** (traffic and net-subs fluctuate). Meaningful, not transformative — the conversion stack *harvests existing reach more efficiently*; **content selection + channel identity are the larger long-term levers.**
 `,
   },
 ];
