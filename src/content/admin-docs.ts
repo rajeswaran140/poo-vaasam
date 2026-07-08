@@ -390,6 +390,48 @@ Historical baseline: **731 subscribers from 179,684 views ≈ 4.07 subs/1K.**
 - **Realistic magnitude:** at ~6,857 views/day, lifting 4.07→5.5–6.0 subs/1K ≈ **27.9/day → 37.7–41.1/day (+10–13/day)**; the 276-sub gap (724→1,000) closes in **~9.9 days vs ~6.7–7.3 days ≈ ~3 days saved** (traffic and net-subs fluctuate). Meaningful, not transformative — the conversion stack *harvests existing reach more efficiently*; **content selection + channel identity are the larger long-term levers.**
 `,
   },
+  {
+    slug: 'youtube-credit-block-policy',
+    title: 'YouTube credit block — the canonical policy',
+    category: 'Publishing',
+    updatedAt: '2026-07-08',
+    body: `# YouTube credit block — the canonical policy
+
+Every song description uses ONE standard credit block. This keeps the catalogue consistent and keeps our public positioning right: **lead with authorship, be transparent about production, never let the tooling read as the principal creator.**
+
+## The block (use this exactly, every upload)
+
+\`\`\`
+✍️ Lyrics: Raj
+🎵 Music Production & Creative Direction: TamilAgaval
+🤖 AI-Assisted Music Production
+\`\`\`
+
+## Never use these phrases in a description
+| ❌ Banned | Why | ✅ Instead |
+|---|---|---|
+| \`Music composition: AI-assisted\` | Makes the tool sound like the principal creative identity | \`AI-Assisted Music Production\` (Raj's lyrics + musical direction + prompt/version/vocal/style decisions = TamilAgaval's creative direction) |
+| \`100% original\` | AI-assisted-work copyright is jurisdiction-specific and fact-dependent (Canada policy still evolving) — don't make a legal-sounding claim in marketing copy | Just \`✍️ Lyrics: Raj\` |
+| Full legal name in the body | Keep the public credit short and brand-owned | \`Raj\` |
+
+Never name a specific AI tool (SUNO, Lyria, etc.) — anywhere, public or in records. The music belongs to Tamilagaval.
+
+## How it's enforced (you don't hand-type it)
+The composer's **"📋 Copy ready-to-paste"** button (\`/admin/compose\`) now bakes the block in automatically:
+1. The AI model is instructed **not** to write any credit / subscribe / link lines.
+2. The assembler (\`src/lib/youtube-description.ts\`) **strips any legacy-credit line** the model might still emit, then appends the canonical \`CREDIT_BLOCK\`.
+3. Output order is always: **song body → credit block → Subscribe/site/playlist links → hashtags**.
+4. A test (\`__tests__/lib/youtube-description.test.ts\`) fails the deploy if the banned phrases ever reappear — so the policy can't silently drift back.
+
+## How to verify
+- **Live:** open \`/admin/compose\`, compose any song, click **Copy ready-to-paste** on the Tamil or English description card → the pasted text contains the block above and none of the banned phrases.
+- **Automated:** run \`npx jest youtube-description\` → the "permanent credit block" tests confirm the block is emitted and the banned phrases are stripped even when present in the AI body.
+- **Catalogue:** open any song on YouTube and expand the description; the 3-line block should be there.
+
+## History
+- **2026-07-08:** swept the whole back-catalogue — **56 videos** migrated from the old \`Lyrics & poetry: 100% original… / Music composition: AI-assisted.\` wording to the block above, and locked the composer so new uploads stay consistent.
+`,
+  },
 ];
 
 /** Docs grouped by category, in registry order, for the sidebar. */
