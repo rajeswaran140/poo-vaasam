@@ -54,6 +54,10 @@ export function ComposerForm() {
   // not — retrying just fails again, so we hide the Retry control for them.
   const [retryable, setRetryable] = useState(true);
   const [loading, setLoading] = useState(false);
+  // Announced by a PERSISTENT (always-mounted) live region so screen readers
+  // reliably read it — an aria-live node that mounts together with its content
+  // often isn't announced. Cleared at run start so each brief re-announces.
+  const [statusMessage, setStatusMessage] = useState('');
   // Bumped on every successful compose; used to key <SaveBrief> so it remounts
   // fresh per brief (otherwise its "Saved ✓" / chosen-style state leaks across
   // a Regenerate and the new brief can't be saved).
@@ -77,6 +81,7 @@ export function ComposerForm() {
   const run = async () => {
     setError(null);
     setRetryable(true);
+    setStatusMessage(''); // reset so the next success is a fresh announcement
     // NOTE: we intentionally do NOT clear `result` here — keeps the last
     // successful brief on-screen if this call fails.
     setLoading(true);
@@ -117,6 +122,7 @@ export function ComposerForm() {
       setComposedLyrics(sent); // tie the brief to the exact lyrics it used
       setSelectedIdx(0); // default to the first variant for the new brief
       setRunId((n) => n + 1); // fresh <SaveBrief> for the new brief
+      setStatusMessage(`Production brief ready${data.emotion ? ` — ${data.emotion}` : ''}.`);
     } catch (err) {
       // A superseded/unmounted request isn't a user-facing error.
       if (controller.signal.aborted || !mountedRef.current) return;
@@ -188,6 +194,11 @@ export function ComposerForm() {
 
   return (
     <div className="space-y-6">
+      {/* Persistent live region — always in the DOM so a landing brief is
+          reliably announced to screen readers. */}
+      <p role="status" aria-live="polite" className="sr-only">
+        {statusMessage}
+      </p>
       {/* Input */}
       <form
         onSubmit={onSubmit}
@@ -255,7 +266,6 @@ export function ComposerForm() {
       {result && (
         <section
           aria-label="Composer results"
-          aria-live="polite"
           data-testid="composer-results"
         >
           <div className="mb-3 flex items-center justify-between">
@@ -514,9 +524,11 @@ function Results({ result, lyrics, selectedIdx, onSelectIdx }: { result: Analysi
         </Card>
       )}
 
-      {/* YouTube description — Tamil */}
+      {/* YouTube description — Tamil. No raw copy button: the ONLY copy path is
+          the ready-to-paste one below, so the canonical credit block + footer are
+          always applied (a raw copy would bypass the credit-block policy). */}
       {result.youtube_description_tamil && (
-        <Card label="YouTube description — தமிழ்" copyText={result.youtube_description_tamil}>
+        <Card label="YouTube description — தமிழ்">
           <p className="whitespace-pre-wrap font-tamil text-sm text-gray-700 dark:text-gray-300">{result.youtube_description_tamil}</p>
           <div className="mt-3">
             <CopyButton
@@ -528,9 +540,9 @@ function Results({ result, lyrics, selectedIdx, onSelectIdx }: { result: Analysi
         </Card>
       )}
 
-      {/* YouTube description — English */}
+      {/* YouTube description — English. Ready-to-paste only (see Tamil card). */}
       {result.youtube_description_english && (
-        <Card label="YouTube description — English" copyText={result.youtube_description_english}>
+        <Card label="YouTube description — English">
           <p className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">{result.youtube_description_english}</p>
           <div className="mt-3">
             <CopyButton

@@ -122,7 +122,11 @@ it('enqueues a compose and shows the polled result', async () => {
   await waitFor(() => expect(String(mockedFetch.mock.calls[1]?.[0])).toMatch(/^\/api\/admin\/compose\/job_/));
 
   await waitFor(() => expect(screen.getByTestId('composer-results')).toBeInTheDocument());
-  expect(screen.getByTestId('composer-results').getAttribute('aria-live')).toBe('polite');
+  // The landing brief is announced via a persistent role="status" live region
+  // (reliable) rather than an aria-live node that mounts with its content.
+  const status = screen.getByRole('status');
+  expect(status).toHaveAttribute('aria-live', 'polite');
+  await waitFor(() => expect(status).toHaveTextContent(/Production brief ready/i));
   expect(screen.getByText('காதல்')).toBeInTheDocument();
   expect(screen.getByText('72')).toBeInTheDocument();
   expect(screen.getByText('Suggested ragas (ranked)')).toBeInTheDocument();
