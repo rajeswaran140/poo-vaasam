@@ -78,6 +78,7 @@ ${ragaPalette()}
 - suno_prompts: provide 3-5 DISTINCT style variants. Draw styles from: Traditional Tamil (Carnatic), Tamil film ballad, Devotional, Village folk, Modern acoustic, Bharathiyar-inspired. Each prompt is one self-contained English paragraph and must NOT contain the lyrics. In EACH prompt, explicitly name (a) the raga it is built on (use an exact name from the raga palette) and (b) the specific instruments it features (use exact names from the instrument palette), choosing instruments that suit that particular style variant.
 - thumbnail_prompt: vivid, cinematic, culturally Tamil imagery matching the song's emotion. Describe scene/lighting/composition for a 16:9 YouTube thumbnail. Do not request embedded text.
 - youtube_description_tamil and youtube_description_english convey the SAME meaning in each language; end each with 5-8 relevant hashtags including #tamilagaval.
+- Do NOT add any credit, attribution, copyright, subscribe, or link lines to the descriptions (e.g. "Lyrics:", "Music composition", "100% original", writer's name, "Subscribe", playlist/URLs). Those are appended from a fixed template downstream. Write only the song's evocative description + hashtags.
 - Keep ALL copy and imagery strictly apolitical — no flags, political movements, parties, or partisan references.`;
 
 /**

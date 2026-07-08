@@ -4,6 +4,8 @@ import {
   pickThemePlaylist,
   stripScaffoldingLabels,
   splitTrailingHashtags,
+  stripForbiddenCreditLines,
+  CREDIT_BLOCK,
 } from '@/lib/youtube-description';
 
 describe('stripScaffoldingLabels', () => {
@@ -92,5 +94,49 @@ describe('assembleYoutubeDescription', () => {
     const out = assembleYoutubeDescription('ஒரு பாடல்.');
     expect(out).toContain('ஒரு பாடல்.');
     expect(out).toContain('All Songs');
+  });
+});
+
+describe('permanent credit block (catalogue-drift guard)', () => {
+  const FORBIDDEN = ['Music composition: AI-assisted', '100% original', 'Rajeswaran Thangarajah'];
+
+  it('CREDIT_BLOCK is the standardised wording', () => {
+    expect(CREDIT_BLOCK).toBe(
+      ['✍️ Lyrics: Raj', '🎵 Music Production & Creative Direction: TamilAgaval', '🤖 AI-Assisted Music Production'].join('\n')
+    );
+  });
+
+  it('every assembled description emits the permanent credit block', () => {
+    const out = assembleYoutubeDescription('ஒரு காதல் பாடல்.\n\n#tamilagaval', { emotion: 'love' });
+    expect(out).toContain('✍️ Lyrics: Raj');
+    expect(out).toContain('🎵 Music Production & Creative Direction: TamilAgaval');
+    expect(out).toContain('🤖 AI-Assisted Music Production');
+  });
+
+  it('does NOT emit the forbidden legacy phrases — even when the body contains them', () => {
+    const drifted = [
+      '🎵 About Tamilagaval',
+      'Lyrics & poetry: 100% original, written by Rajeswaran (Raj).',
+      'Music composition: AI-assisted.',
+      'Written by Rajeswaran Thangarajah.',
+      '',
+      '#tamilagaval',
+    ].join('\n');
+    const out = assembleYoutubeDescription(drifted, { emotion: 'love' });
+    for (const phrase of FORBIDDEN) {
+      expect(out).not.toContain(phrase);
+    }
+    // …but the canonical block is still present, so the song is still credited.
+    expect(out).toContain(CREDIT_BLOCK);
+    // hashtags survive at the very end.
+    expect(out.trimEnd().endsWith('#tamilagaval')).toBe(true);
+  });
+
+  it('stripForbiddenCreditLines drops only the offending lines, keeps real copy', () => {
+    const body = 'ஒரு அழகான வரி.\nMusic composition: AI-assisted.\nமற்றொரு வரி.';
+    const out = stripForbiddenCreditLines(body);
+    expect(out).toContain('ஒரு அழகான வரி.');
+    expect(out).toContain('மற்றொரு வரி.');
+    expect(out).not.toContain('AI-assisted');
   });
 });

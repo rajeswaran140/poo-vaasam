@@ -27,6 +27,37 @@ const PLAYLIST = {
 
 const playlistUrl = (id: string) => `https://www.youtube.com/playlist?list=${id}`;
 
+/**
+ * The PERMANENT Tamilagaval credit block — single source of truth for song
+ * credits (Raj, 2026-07-08). Baked into every assembled description so the
+ * catalogue never drifts back to legacy wording. Leads with authorship; frames
+ * the workflow as "AI-Assisted Music Production" (his lyrics + musical direction
+ * + prompt/version/vocal/style decisions), NOT AI as the principal creator.
+ * Do NOT reintroduce "100% original" (jurisdiction-specific AI-authorship claim)
+ * or the full legal name in public copy.
+ */
+export const CREDIT_BLOCK = [
+  '✍️ Lyrics: Raj',
+  '🎵 Music Production & Creative Direction: TamilAgaval',
+  '🤖 AI-Assisted Music Production',
+].join('\n');
+
+/**
+ * Phrases banned from any published description (legacy credit drift). If the AI
+ * body ever emits one, the whole line is dropped before the canonical
+ * CREDIT_BLOCK is appended — so the output can never carry the old wording.
+ */
+const FORBIDDEN_LINE_RE =
+  /music\s+composition:\s*ai-assisted|100%\s*original|rajeswaran\s+thangarajah/i;
+
+/** Drop any body line carrying a forbidden legacy-credit phrase. */
+export function stripForbiddenCreditLines(text: string): string {
+  return text
+    .split('\n')
+    .filter((line) => !FORBIDDEN_LINE_RE.test(line))
+    .join('\n');
+}
+
 /** Optional theme-specific playlist, picked from the composer's emotion + theme. */
 export function pickThemePlaylist(
   emotion = '',
@@ -97,15 +128,17 @@ export function splitTrailingHashtags(text: string): [string, string] {
 }
 
 /**
- * Assemble the ready-to-paste YouTube description: cleaned AI body + standard
- * footer, with the body's own hashtags kept at the very end.
+ * Assemble the ready-to-paste YouTube description: cleaned AI body + permanent
+ * credit block + standard footer, with the body's own hashtags kept at the very
+ * end. Any legacy-credit line in the body is stripped first so the canonical
+ * CREDIT_BLOCK is the only attribution the output can carry.
  */
 export function assembleYoutubeDescription(
   body: string,
   opts: { emotion?: string; theme?: string } = {}
 ): string {
-  const clean = stripScaffoldingLabels(body).trim();
+  const clean = stripForbiddenCreditLines(stripScaffoldingLabels(body)).trim();
   const [main, hashtags] = splitTrailingHashtags(clean);
   const footer = buildDescriptionFooter(opts);
-  return [main.trim(), footer, hashtags].filter(Boolean).join('\n\n');
+  return [main.trim(), CREDIT_BLOCK, footer, hashtags].filter(Boolean).join('\n\n');
 }
