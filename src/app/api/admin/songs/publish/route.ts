@@ -12,7 +12,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
+import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { CategoryRepository } from '@/infrastructure/database/CategoryRepository';
 import { TagRepository } from '@/infrastructure/database/TagRepository';
@@ -53,6 +53,9 @@ const publishSchema = z.object({
 export async function POST(request: NextRequest) {
   try {
     await requireAdmin(request);
+    // Defense-in-depth CSRF: this route mutates (creates a song, triggers a
+    // deploy), so reject cookie-only auth — require an explicit Bearer token.
+    requireBearer(request);
   } catch (err) {
     return authErrorResponse(err);
   }

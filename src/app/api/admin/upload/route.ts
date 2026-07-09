@@ -16,7 +16,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
+import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { S3Operations, FILE_CONSTRAINTS, normalizeContentType } from '@/infrastructure/storage/s3-client';
 
 export const dynamic = 'force-dynamic';
@@ -42,6 +42,9 @@ export async function POST(request: NextRequest) {
   let auth;
   try {
     auth = await requireAdmin(request);
+    // Defense-in-depth CSRF: reject cookie-only auth on this mutation (matches
+    // the pattern on the other admin mutation routes).
+    requireBearer(request);
   } catch (authError) {
     return authErrorResponse(authError);
   }

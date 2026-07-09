@@ -5,7 +5,7 @@
  * ISO duration, else undefined. The S3 reader is injected so this stays pure.
  */
 
-import { deriveDurationSeconds } from '@/lib/derive-song-duration';
+import { deriveDurationSeconds, s3KeyFromUrl } from '@/lib/derive-song-duration';
 
 /** A minimal valid 44.1k/16/stereo WAV header for `dataSize` audio bytes. */
 function wavHeader(dataSize: number): Uint8Array {
@@ -57,4 +57,22 @@ it('falls back to YouTube when the range read throws', async () => {
 it('returns undefined when nothing yields a duration', async () => {
   const readRange = jest.fn().mockResolvedValue(new Uint8Array([1, 2, 3]));
   expect(await deriveDurationSeconds({ audioUrl: `${S3}/a.mp3`, readRange })).toBeUndefined();
+});
+
+describe('s3KeyFromUrl — host pinning', () => {
+  it('extracts the key from a URL on our S3/media host', () => {
+    expect(s3KeyFromUrl(`${S3}/audio/poem-music/x.wav`)).toBe('audio/poem-music/x.wav');
+  });
+
+  it('decodes percent-encoded (Tamil) keys', () => {
+    expect(s3KeyFromUrl(`${S3}/audio/poem-music/%E0%AE%85.wav`)).toBe('audio/poem-music/அ.wav');
+  });
+
+  it('returns null for a URL on a foreign host (no cross-host key theft)', () => {
+    expect(s3KeyFromUrl('https://evil.example.com/audio/poem-music/x.wav')).toBeNull();
+  });
+
+  it('returns null for a non-URL string', () => {
+    expect(s3KeyFromUrl('not a url')).toBeNull();
+  });
 });
