@@ -84,7 +84,7 @@ export function VideoGallery({
         >
           {activeId === video.id ? (
             <div ref={embedRef} tabIndex={-1} aria-label={`Now playing: ${video.title}`} className="outline-none">
-              <YouTubeEmbed url={video.watchUrl} title={video.title} />
+              <YouTubeEmbed url={video.watchUrl} title={video.title} playlist={SITE.youtube.allSongsPlaylistId} />
             </div>
           ) : (
             <button

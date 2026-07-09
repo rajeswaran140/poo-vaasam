@@ -13,10 +13,16 @@ interface YouTubeEmbedProps {
   title?: string;
   /** Render a 9:16 portrait frame (for YouTube Shorts). */
   vertical?: boolean;
+  /**
+   * Play the video within this playlist so it auto-continues to the next song
+   * in our own catalogue at the end, instead of YouTube's third-party
+   * suggestions.
+   */
+  playlist?: string;
 }
 
-export function YouTubeEmbed({ url, title, vertical = false }: YouTubeEmbedProps) {
-  const embedUrl = getYouTubeEmbedUrl(url);
+export function YouTubeEmbed({ url, title, vertical = false, playlist }: YouTubeEmbedProps) {
+  const embedUrl = getYouTubeEmbedUrl(url, { playlist });
 
   if (!embedUrl) return null;
 
