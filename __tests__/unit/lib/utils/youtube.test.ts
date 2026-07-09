@@ -35,8 +35,22 @@ describe('getYouTubeId', () => {
 describe('getYouTubeEmbedUrl', () => {
   it('converts a watch URL into an embed URL', () => {
     expect(getYouTubeEmbedUrl(`https://www.youtube.com/watch?v=${ID}`)).toBe(
-      `https://www.youtube.com/embed/${ID}`
+      `https://www.youtube.com/embed/${ID}?rel=0&playsinline=1`
     );
+  });
+
+  it('sets rel=0 so end-screen suggestions stay on our channel (never third-party)', () => {
+    expect(getYouTubeEmbedUrl(`https://youtu.be/${ID}`)).toContain('rel=0');
+  });
+
+  it('plays within a playlist so the song continues to the next one', () => {
+    expect(getYouTubeEmbedUrl(`https://youtu.be/${ID}`, { playlist: 'PLabc123' })).toBe(
+      `https://www.youtube.com/embed/${ID}?rel=0&playsinline=1&list=PLabc123`
+    );
+  });
+
+  it('omits the list param when no playlist is given', () => {
+    expect(getYouTubeEmbedUrl(`https://youtu.be/${ID}`)).not.toContain('list=');
   });
 
   it('returns null for a non-YouTube URL', () => {

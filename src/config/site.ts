@@ -16,6 +16,12 @@ export const SITE = {
      * Empty = the /videos page, homepage strip and Subscribe CTAs stay hidden.
      */
     channelId: 'UCZCuphXleq-mXVYgvqh-OlQ',
+    /**
+     * Curated "All Songs" playlist, ordered for session listening. Song embeds
+     * play *within* this playlist so a finished song auto-continues to the next
+     * one in our own catalogue — never a third-party suggested channel.
+     */
+    allSongsPlaylistId: 'PLLsCQ9NH4rLSZU0Ycy6I-Xr8DMAbe4vjs',
     label: 'YouTube',
     channelLabel: 'YouTube', // icon + brand word only, no Tamil
   },

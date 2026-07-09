@@ -25,12 +25,37 @@ export function getYouTubeId(url: string | null | undefined): string | null {
   return null;
 }
 
+export interface YouTubeEmbedOptions {
+  /**
+   * Play the video inside this playlist so it auto-advances to the next song
+   * in our own catalogue when it ends, instead of stopping on YouTube's
+   * suggested-video grid.
+   */
+  playlist?: string | null;
+}
+
 /**
  * Convert any YouTube URL into its /embed/ form, or null if not YouTube.
+ *
+ * Always sets `rel=0` so the end-screen "related" videos are restricted to our
+ * own channel (YouTube no longer allows disabling them entirely) — a finished
+ * song never links out to a third-party channel. Pass `playlist` to have the
+ * video continue straight into the next song in that playlist.
  */
-export function getYouTubeEmbedUrl(url: string | null | undefined): string | null {
+export function getYouTubeEmbedUrl(
+  url: string | null | undefined,
+  options: YouTubeEmbedOptions = {}
+): string | null {
   const id = getYouTubeId(url);
-  return id ? `https://www.youtube.com/embed/${id}` : null;
+  if (!id) return null;
+
+  const params = new URLSearchParams({
+    rel: '0', // keep end-screen suggestions on our channel only
+    playsinline: '1', // play inline on mobile rather than forcing fullscreen
+  });
+  if (options.playlist) params.set('list', options.playlist);
+
+  return `https://www.youtube.com/embed/${id}?${params.toString()}`;
 }
 
 /**

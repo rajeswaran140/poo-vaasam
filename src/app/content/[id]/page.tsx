@@ -17,7 +17,7 @@ import { getSongHero } from '@/config/song-heroes';
 import { contentPath } from '@/config/vanity-paths';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentStatus, ContentType } from '@/types/content';
-import { CONTENT_SECTIONS } from '@/config/site';
+import { CONTENT_SECTIONS, SITE } from '@/config/site';
 import { contentJsonLd, type ContentJsonLdInput } from '@/lib/content-jsonld';
 import { themeForSongWithOverride } from '@/config/song-themes';
 import { themeSongLabelEn } from '@/config/song-collections';
@@ -301,7 +301,11 @@ export default async function ContentPage({ params }: PageProps) {
                   <span className="text-2xl">▶️</span>
                   <span className="font-tamil font-semibold text-gray-700">காணொளி</span>
                 </div>
-                <YouTubeEmbed url={content.videoUrl} title={content.title} />
+                <YouTubeEmbed
+                  url={content.videoUrl}
+                  title={content.title}
+                  playlist={SITE.youtube.allSongsPlaylistId}
+                />
                 <TrackedYouTubeOpen
                   href={getYouTubeWatchUrl(content.videoUrl) || content.videoUrl}
                   destination={ytId ? `video:${ytId}` : 'video'}
