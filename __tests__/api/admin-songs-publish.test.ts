@@ -51,11 +51,16 @@ jest.mock('@/lib/amplify-deploy', () => ({ triggerRelease: (...a: unknown[]) => 
 import { POST } from '@/app/api/admin/songs/publish/route';
 import * as auth from '@/lib/auth-helper';
 
-const req = (body: unknown) =>
+const req = (body: unknown, opts: { bearer?: boolean } = {}) =>
   new NextRequest('https://tamilagaval.com/api/admin/songs/publish', {
     method: 'POST',
     body: JSON.stringify(body),
-    headers: { 'content-type': 'application/json' },
+    // The real requireBearer runs (only requireAdmin is mocked), so send a
+    // Bearer token unless a test deliberately omits it.
+    headers: {
+      'content-type': 'application/json',
+      ...(opts.bearer === false ? {} : { authorization: 'Bearer test-id-token' }),
+    },
   });
 
 const S3 = 'https://tamil-web-media.s3.us-east-1.amazonaws.com';
@@ -89,6 +94,21 @@ it('403s for a non-admin (no create)', async () => {
   (auth.requireAdmin as jest.Mock).mockRejectedValueOnce(new AuthError('Forbidden', 403));
   const res = await POST(req({ title: 'X', audioUrl: `${S3}/a.wav` }));
   expect(res.status).toBe(403);
+  expect(mockExecute).not.toHaveBeenCalled();
+});
+
+it('401s for cookie-only auth with no Bearer token (CSRF guard)', async () => {
+  const res = await POST(req({ title: 'X', audioUrl: `${S3}/a.wav` }, { bearer: false }));
+  expect(res.status).toBe(401);
+  expect(mockExecute).not.toHaveBeenCalled();
+});
+
+it('422s when audioUrl is on a foreign host (never treated as our audio)', async () => {
+  const res = await POST(
+    req({ title: 'Foreign Host Song', audioUrl: 'https://evil.example.com/audio/poem-music/x.wav' })
+  );
+  expect(res.status).toBe(422);
+  expect(mockFileExists).not.toHaveBeenCalled(); // key resolves to null → no existence check
   expect(mockExecute).not.toHaveBeenCalled();
 });
 

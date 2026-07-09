@@ -38,10 +38,15 @@ import { POST } from '@/app/api/admin/upload/route';
 import * as authHelper from '@/lib/auth-helper';
 import { S3Operations } from '@/infrastructure/storage/s3-client';
 
-function makeRequest(body: unknown): NextRequest {
+function makeRequest(body: unknown, opts: { bearer?: boolean } = {}): NextRequest {
+  const headers: Record<string, string> = {};
+  // The real requireBearer runs (only requireAdmin is mocked), so a Bearer
+  // token is needed unless a test deliberately omits it.
+  if (opts.bearer !== false) headers.authorization = 'Bearer test-id-token';
   return new NextRequest(
     new Request('http://localhost:3000/api/admin/upload', {
       method: 'POST',
+      headers,
       body: JSON.stringify(body),
     })
   );
@@ -69,6 +74,14 @@ describe('POST /api/admin/upload — auth', () => {
     (authHelper.requireAdmin as jest.Mock).mockRejectedValue(new AuthError('Unauthorized', 401));
     const res = await POST(makeRequest({ filename: 'a.mp3', contentType: 'audio/mpeg', kind: 'audio' }));
     expect(res.status).toBe(401);
+  });
+
+  it('returns 401 for cookie-only auth with no Bearer token (CSRF guard)', async () => {
+    const res = await POST(
+      makeRequest({ filename: 'a.mp3', contentType: 'audio/mpeg', kind: 'audio' }, { bearer: false })
+    );
+    expect(res.status).toBe(401);
+    expect(S3Operations.getSignedUploadPost).not.toHaveBeenCalled();
   });
 });
 

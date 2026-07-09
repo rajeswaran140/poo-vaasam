@@ -13,6 +13,24 @@
 
 import { parseWavDurationSeconds } from './wav-duration';
 import { iso8601DurationToSeconds } from './youtube-shorts';
+import { mediaConfig, s3Config } from './aws-config';
+
+/**
+ * Hosts an audio object may legitimately be served from: our CDN (media base)
+ * and the direct S3 bucket. A URL on any other host is rejected so an admin (or
+ * a forged request) can't publish a song whose audio is served from an
+ * attacker-controlled host just because its path happens to match a real key.
+ */
+function allowedMediaHosts(): Set<string> {
+  const hosts = new Set<string>();
+  try {
+    hosts.add(new URL(mediaConfig.baseUrl).host);
+  } catch {
+    /* baseUrl misconfigured — fall through to the S3 host only */
+  }
+  hosts.add(`${s3Config.bucket}.s3.${s3Config.region}.amazonaws.com`);
+  return hosts;
+}
 
 /** Enough bytes to cover RIFF + fmt + (filler chunks) + data header. */
 const WAV_HEADER_BYTES = 512;
@@ -25,10 +43,16 @@ export interface DeriveDurationInput {
   readRange: (key: string, end: number) => Promise<Uint8Array>;
 }
 
-/** Extract the object key from a public S3 / CDN URL (decoding percent-escapes). */
+/**
+ * Extract the object key from OUR public S3 / CDN URL (decoding percent-escapes).
+ * Returns null for any URL not on an allowed media host — so a foreign-host URL
+ * can never be treated as one of our audio objects.
+ */
 export function s3KeyFromUrl(url: string): string | null {
   try {
-    return decodeURIComponent(new URL(url).pathname.replace(/^\/+/, '')) || null;
+    const parsed = new URL(url);
+    if (!allowedMediaHosts().has(parsed.host)) return null;
+    return decodeURIComponent(parsed.pathname.replace(/^\/+/, '')) || null;
   } catch {
     return null;
   }
