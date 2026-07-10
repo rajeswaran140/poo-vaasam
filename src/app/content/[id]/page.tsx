@@ -16,6 +16,9 @@ import Header from '@/components/Header';
 import { getSongHero } from '@/config/song-heroes';
 import { contentPath } from '@/config/vanity-paths';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
+import { SongCatalog } from '@/application/use-cases/SongCatalog';
+import { pickRelatedSongs, type RelatedSongItem } from '@/lib/related-songs';
+import { RelatedSongs } from '@/components/RelatedSongs';
 import { ContentStatus, ContentType } from '@/types/content';
 import { CONTENT_SECTIONS, SITE } from '@/config/site';
 import { contentJsonLd, type ContentJsonLdInput } from '@/lib/content-jsonld';
@@ -79,6 +82,18 @@ const getContent = cache(async (id: string) => {
   } catch (error) {
     console.error('Failed to fetch content:', error);
     return null;
+  }
+});
+
+// Published-song catalogue for the "related songs" section. Build-time only
+// (this page is prerendered with creds); [] on any failure so a catalogue read
+// error never breaks the page. cache() dedupes within a single page render.
+const getPublishedSongs = cache(async () => {
+  try {
+    return await new SongCatalog(new ContentRepository()).listPublished(200);
+  } catch (error) {
+    console.error('Failed to load song catalogue for related songs:', error);
+    return [];
   }
 });
 
@@ -220,6 +235,28 @@ export default async function ContentPage({ params }: PageProps) {
     youtubeId: ytId,
     videoDescription: toDescription(content.description || (showLyricsLink ? '' : content.body)),
   });
+
+  // Related songs — same theme first, then recent; only for songs. Server-
+  // rendered internal links that keep the visitor exploring on-site.
+  let relatedSongs: RelatedSongItem[] = [];
+  if (content.type === ContentType.SONGS) {
+    const catalog = await getPublishedSongs();
+    const currentTheme = themeForSongWithOverride(content.id, content.theme);
+    relatedSongs = pickRelatedSongs(
+      content.id,
+      currentTheme,
+      catalog.map((s) => ({
+        id: s.id,
+        title: s.title,
+        artist: s.artist,
+        theme: themeForSongWithOverride(s.id, s.theme),
+        coverUrl: s.coverUrl,
+        publishedAt: s.publishedAt,
+      })),
+      contentPath,
+      6,
+    );
+  }
 
   return (
     <ContentPageClient
@@ -402,6 +439,10 @@ export default async function ContentPage({ params }: PageProps) {
             </h3>
             <ShareRow url={pageUrl} title={content.title} verb={actionVerb(content.type)} />
           </div>
+
+          {/* Related songs — keep the visitor exploring the catalogue on-site;
+              also cross-links song pages for SEO. Renders nothing for non-songs. */}
+          <RelatedSongs songs={relatedSongs} />
 
           {/* Forward-looking CTA: send the reader to more of the same kind, not "back". */}
           <div className="mt-8 text-center">
