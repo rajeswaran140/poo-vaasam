@@ -29,6 +29,8 @@ interface PublishResult {
   coverError?: string;
   deploy?: { jobId: string | null };
   deployError?: string;
+  /** Set when the title was already published — a retry-safe no-op, not a new create. */
+  alreadyPublished?: boolean;
 }
 
 function fmtDuration(secs: number | null): string {
@@ -71,8 +73,13 @@ export default function PublishSongPage() {
         showToast.error(data.error || 'Publish failed');
         return;
       }
-      setResult(data.data as PublishResult);
-      showToast.success('பாடல் வெளியிடப்பட்டது 🎵');
+      const payload = data.data as PublishResult;
+      setResult(payload);
+      showToast.success(
+        payload.alreadyPublished
+          ? 'இந்தப் பாடல் ஏற்கனவே வெளியிடப்பட்டுள்ளது ✅'
+          : 'பாடல் வெளியிடப்பட்டது 🎵'
+      );
     } catch {
       showToast.error('Publish failed');
     } finally {
@@ -170,7 +177,8 @@ export default function PublishSongPage() {
       {result && (
         <div className="mt-6 rounded-xl border border-green-200 bg-green-50 p-5 text-sm">
           <p className="mb-3 flex items-center gap-2 font-semibold text-green-800">
-            <Check className="h-5 w-5" /> Published — {fmtDuration(result.audioDuration)}
+            <Check className="h-5 w-5" />{' '}
+            {result.alreadyPublished ? 'Already published' : 'Published'} — {fmtDuration(result.audioDuration)}
           </p>
           <ul className="space-y-1 text-gray-700">
             <li>YouTube: {result.youtubeVideoId ? `${result.youtubeVideoId}${result.matched ? ' (auto-matched)' : ''}` : 'no link'}</li>

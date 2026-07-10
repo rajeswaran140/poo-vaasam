@@ -118,27 +118,56 @@ it('400s when audioUrl is missing', async () => {
   expect(mockExecute).not.toHaveBeenCalled();
 });
 
-it('409s when the title is already a published song', async () => {
-  mockFindByType.mockResolvedValueOnce({ items: [{ title: 'Existing Song' }] });
+it('is idempotent — returns 200 with the existing song when the title is already published (no re-create, no deploy)', async () => {
+  // The common cause of a retry is the first request timing out at the gateway
+  // AFTER it already created the song; a second click must be a harmless no-op.
+  mockFindByType.mockResolvedValueOnce({
+    items: [
+      {
+        id: 'cnt_existing',
+        title: 'Existing Song',
+        audioDuration: 254,
+        youtubeVideoId: 'zzzzzzzzzzz',
+        featuredImage: 'https://cdn.example.com/images/song-covers/x.png',
+        theme: 'mother',
+      },
+    ],
+  });
   const res = await POST(req({ title: 'Existing Song', audioUrl: `${S3}/a.wav` }));
-  expect(res.status).toBe(409);
-  expect(mockExecute).not.toHaveBeenCalled();
+  const body = await res.json();
+  expect(res.status).toBe(200);
+  expect(body.success).toBe(true);
+  expect(body.data).toMatchObject({
+    id: 'cnt_existing',
+    alreadyPublished: true,
+    audioDuration: 254,
+    youtubeVideoId: 'zzzzzzzzzzz',
+    theme: 'mother',
+    matched: false,
+  });
+  expect(mockExecute).not.toHaveBeenCalled(); // no second copy
+  expect(mockTrigger).not.toHaveBeenCalled(); // no deploy on a no-op
 });
 
-it('detects a duplicate on a later page (paginates the whole published set)', async () => {
+it('finds an already-published duplicate on a later page (paginates the whole set), 200 no re-create', async () => {
   mockFindByType
-    .mockResolvedValueOnce({ items: [{ title: 'Some Other Song' }], lastEvaluatedKey: { k: 1 } })
-    .mockResolvedValueOnce({ items: [{ title: 'Hidden Duplicate' }] });
+    .mockResolvedValueOnce({ items: [{ id: 'a', title: 'Some Other Song' }], lastEvaluatedKey: { k: 1 } })
+    .mockResolvedValueOnce({ items: [{ id: 'cnt_dupe', title: 'Hidden Duplicate' }] });
   const res = await POST(req({ title: 'Hidden Duplicate', audioUrl: `${S3}/a.wav` }));
-  expect(res.status).toBe(409);
+  const body = await res.json();
+  expect(res.status).toBe(200);
+  expect(body.data.id).toBe('cnt_dupe');
+  expect(body.data.alreadyPublished).toBe(true);
   expect(mockFindByType).toHaveBeenCalledTimes(2);
   expect(mockExecute).not.toHaveBeenCalled();
 });
 
-it('treats the duplicate-title check as case-insensitive', async () => {
-  mockFindByType.mockResolvedValueOnce({ items: [{ title: 'Existing Song' }] });
+it('matches the already-published title case-insensitively (idempotent, no re-create)', async () => {
+  mockFindByType.mockResolvedValueOnce({ items: [{ id: 'cnt_ci', title: 'Existing Song' }] });
   const res = await POST(req({ title: '  existing song  ', audioUrl: `${S3}/a.wav` }));
-  expect(res.status).toBe(409);
+  const body = await res.json();
+  expect(res.status).toBe(200);
+  expect(body.data.alreadyPublished).toBe(true);
   expect(mockExecute).not.toHaveBeenCalled();
 });
 
