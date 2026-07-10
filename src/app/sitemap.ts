@@ -10,8 +10,17 @@ import { SongCatalog } from '@/application/use-cases/SongCatalog';
 import { eligibleCollectionThemes } from '@/config/song-collections';
 import { joinStatusClips, statusSitemapVideos } from '@/lib/status-jsonld';
 
-// Regenerate hourly rather than per-request.
-export const revalidate = 3600;
+// Build-time only — NOT time-based ISR. The /content and /songs pages this
+// sitemap lists are prerendered at build with `dynamicParams = false`, and the
+// Amplify SSR runtime has no DynamoDB creds (see content/[id]/page.tsx). Unlike
+// those pages — whose DB read THROWS on no-creds so Next keeps serving the last
+// good copy — this route CATCHES a failed content load and returns a
+// content-less result, which a runtime revalidation would treat as success and
+// use to REPLACE the good sitemap, silently dropping every /content + /songs
+// URL. Generating only at build (where creds exist) keeps the sitemap in
+// lockstep with the pages that actually exist; it changes on redeploy, like the
+// content it lists.
+export const revalidate = false;
 
 // Google's video sitemap caps <video:duration> at 8 hours, expressed in seconds.
 const MAX_VIDEO_DURATION_SECONDS = 28800;
