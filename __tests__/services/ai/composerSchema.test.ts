@@ -40,6 +40,13 @@ it('derives a JSON Schema object suitable for a Claude tool input_schema', () =>
   );
 });
 
+it('keeps the computed musical_consistency field OUT of the model tool schema', () => {
+  const schema = composerAnalysisJsonSchema as { properties: Record<string, unknown>; required?: string[] };
+  // Computed post-hoc by the raga/scale guard — the model must never produce it.
+  expect(schema.properties).not.toHaveProperty('musical_consistency');
+  expect(schema.required ?? []).not.toContain('musical_consistency');
+});
+
 it('clamps an out-of-range bpm to the 90 fallback', () => {
   const r = composerAnalysisSchema.safeParse({ ...VALID, suggested_bpm: 5000 });
   expect(r.success).toBe(true);

@@ -151,13 +151,68 @@ function tonicOf(key: string): string | null {
 }
 
 /**
- * music-generator/DAW-friendly key+scale hint: combine the tonic from the model's
- * `suggested_key` with the lead raga's Western scale, e.g. "D harmonic minor".
+ * Classify a scale/mode name into its tonal family by its THIRD degree — the
+ * note that fixes major vs minor colour. Modes with a major 3rd (Ionian, Lydian,
+ * Mixolydian, "major …") are `major`; modes with a minor 3rd (Aeolian/natural
+ * minor, Dorian, Phrygian, harmonic minor, minor pentatonic) are `minor`.
+ * Unrecognised → `unknown` (never treated as a conflict). Order matters: the
+ * minor-3rd check runs first because some minor scales also contain the word
+ * "major" as a qualifier is NOT the case here, but Dorian/Phrygian/Aeolian are
+ * unambiguous minor-3rd modes regardless of other words.
+ */
+export type ScaleFamily = 'major' | 'minor' | 'unknown';
+export function scaleFamily(scale: string): ScaleFamily {
+  const s = (scale || '').toLowerCase();
+  if (/\b(minor|dorian|phrygian|aeolian|locrian)\b/.test(s)) return 'minor';
+  if (/\b(major|ionian|lydian|mixolydian)\b/.test(s)) return 'major';
+  return 'unknown';
+}
+
+export interface KeyRagaConsistency {
+  /** true when the key's tonal family matches the raga (or can't be judged). */
+  consistent: boolean;
+  /** The key to use: tonic + the raga's exact scale (music-generator/DAW-friendly). */
+  reconciledKey: string;
+  /** The raga's Western scale, for reference. */
+  ragaScale: string | null;
+  /** Present ONLY when a genuine major↔minor conflict was corrected. */
+  note: string | null;
+}
+
+/**
+ * Validate the model's `suggested_key` against the lead raga's scale and return
+ * a DAW-friendly reconciled key. A GENUINE conflict is a tonal-FAMILY mismatch
+ * (major-3rd vs minor-3rd) — e.g. a Dorian key under the major-pentatonic
+ * Mohanam — which we correct to the raga's scale and REPORT via `note`.
+ * Same-family differences (e.g. "D Minor" under harmonic-minor Keeravani) are
+ * benign refinements, corrected silently. Unresolvable raga/tonic → key kept.
+ */
+export function checkKeyRagaConsistency(
+  suggestedKey: string,
+  leadRagaName: string | undefined
+): KeyRagaConsistency {
+  const raga = leadRagaName ? findRaga(leadRagaName) : undefined;
+  const tonic = tonicOf(suggestedKey);
+  if (!raga || !tonic) {
+    return { consistent: true, reconciledKey: suggestedKey, ragaScale: raga?.scale ?? null, note: null };
+  }
+  const reconciledKey = `${tonic} ${raga.scale.charAt(0).toLowerCase()}${raga.scale.slice(1)}`;
+  const keyMode = suggestedKey.slice(tonic.length).trim(); // e.g. "Dorian", "Minor"
+  const keyFamily = scaleFamily(keyMode);
+  const ragaFamily = scaleFamily(raga.scale);
+  const conflict =
+    keyFamily !== 'unknown' && ragaFamily !== 'unknown' && keyFamily !== ragaFamily;
+  const note = conflict
+    ? `Tonal conflict: key "${suggestedKey}" is ${keyFamily}, but raga ${raga.name} is ${raga.scale} (${ragaFamily}). Corrected to "${reconciledKey}".`
+    : null;
+  return { consistent: !conflict, reconciledKey, ragaScale: raga.scale, note };
+}
+
+/**
+ * music-generator/DAW-friendly key+scale hint: the reconciled key from
+ * checkKeyRagaConsistency (tonic + lead raga scale, e.g. "D harmonic minor").
  * Falls back to the original key when the raga or tonic can't be resolved.
  */
 export function ragaScaleKey(suggestedKey: string, leadRagaName: string | undefined): string {
-  const raga = leadRagaName ? findRaga(leadRagaName) : undefined;
-  const tonic = tonicOf(suggestedKey);
-  if (!raga || !tonic) return suggestedKey;
-  return `${tonic} ${raga.scale.charAt(0).toLowerCase()}${raga.scale.slice(1)}`;
+  return checkKeyRagaConsistency(suggestedKey, leadRagaName).reconciledKey;
 }
