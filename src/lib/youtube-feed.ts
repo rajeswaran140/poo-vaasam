@@ -207,14 +207,20 @@ async function attachDurations(videos: ChannelVideo[]): Promise<void> {
   const key = process.env.YOUTUBE_API_KEY;
   if (!key || videos.length === 0) return;
   try {
-    const ids = videos.map((v) => v.id).slice(0, 50).join(',');
-    const url = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${encodeURIComponent(ids)}&key=${encodeURIComponent(key)}`;
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) return;
-    const json = (await res.json()) as { items?: { id?: string; contentDetails?: { duration?: string } }[] };
     const byId = new Map<string, string>();
-    for (const it of json.items ?? []) {
-      if (it?.id && typeof it.contentDetails?.duration === 'string') byId.set(it.id, it.contentDetails.duration);
+    // videos.list accepts ≤50 ids per call — chunk so we enrich the WHOLE feed,
+    // not just the first 50. partitionShorts keys off duration, and an item with
+    // unknown duration defaults to long-form, so an un-enriched Short past the
+    // 50th item would be mis-placed into the video grid at higher fetch limits.
+    for (let i = 0; i < videos.length; i += 50) {
+      const ids = videos.slice(i, i + 50).map((v) => v.id).join(',');
+      const url = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${encodeURIComponent(ids)}&key=${encodeURIComponent(key)}`;
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) return;
+      const json = (await res.json()) as { items?: { id?: string; contentDetails?: { duration?: string } }[] };
+      for (const it of json.items ?? []) {
+        if (it?.id && typeof it.contentDetails?.duration === 'string') byId.set(it.id, it.contentDetails.duration);
+      }
     }
     for (const v of videos) {
       const d = byId.get(v.id);
@@ -224,6 +230,10 @@ async function attachDurations(videos: ChannelVideo[]): Promise<void> {
     /* best-effort — JSON-LD simply omits duration */
   }
 }
+
+// Test-only export (mirrors _resetFeedCache) so the chunking of duration
+// enrichment can be unit-tested without driving the whole RSS/API pipeline.
+export { attachDurations as _attachDurations };
 
 /**
  * Fetch the channel's latest videos, resilient to YouTube's flaky RSS feed:

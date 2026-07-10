@@ -6,7 +6,8 @@
 // fetchChannelVideos mirrors thumbnails to S3; stub it so tests stay hermetic.
 jest.mock('@/lib/video-thumbnails', () => ({ ensureThumbnailsMirrored: jest.fn().mockResolvedValue(undefined) }));
 
-import { parseChannelFeed, parseDataApiItems, fetchChannelVideos, videosItemListJsonLd, thumbnailVariants, s3ThumbnailUrl, withTruncatedDescriptions, _resetFeedCache } from '@/lib/youtube-feed';
+import { parseChannelFeed, parseDataApiItems, fetchChannelVideos, videosItemListJsonLd, thumbnailVariants, s3ThumbnailUrl, withTruncatedDescriptions, _resetFeedCache, _attachDurations } from '@/lib/youtube-feed';
+import type { ChannelVideo } from '@/lib/youtube-feed';
 
 const SAMPLE_FEED = `<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
@@ -56,6 +57,39 @@ function apiItems(ids: string[]) {
 }
 /** A unique, valid 11-char video id for index i. */
 const vid = (i: number): string => `v${i}`.padEnd(11, '0');
+
+describe('_attachDurations — chunks id lists (>50) so the whole feed is enriched', () => {
+  it('calls videos.list in batches of ≤50 ids and enriches every video (incl. past the 50th)', async () => {
+    process.env.YOUTUBE_API_KEY = 'test-key';
+    const videos: ChannelVideo[] = Array.from({ length: 60 }, (_, i) => ({
+      id: vid(i),
+      title: 't',
+      publishedAt: '2026-01-01T00:00:00Z',
+      thumbnail: '',
+      watchUrl: `https://www.youtube.com/watch?v=${vid(i)}`,
+    }));
+
+    const fetchMock = jest.fn(async (url: string) => {
+      const ids = new URLSearchParams(url.split('?')[1]).get('id')!.split(',');
+      return {
+        ok: true,
+        json: async () => ({ items: ids.map((id) => ({ id, contentDetails: { duration: 'PT4M20S' } })) }),
+      };
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await _attachDurations(videos);
+
+    // 60 videos → two calls (50 + 10), each with ≤50 ids.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const call of fetchMock.mock.calls) {
+      const ids = new URLSearchParams((call[0] as string).split('?')[1]).get('id')!.split(',');
+      expect(ids.length).toBeLessThanOrEqual(50);
+    }
+    // Every video enriched — the 51st–60th were dropped before the chunking fix.
+    expect(videos.every((v) => v.duration === 'PT4M20S')).toBe(true);
+  });
+});
 
 describe('parseChannelFeed', () => {
   it('parses entries into video objects (ignoring the channel header title)', () => {
