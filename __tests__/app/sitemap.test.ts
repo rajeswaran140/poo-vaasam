@@ -33,7 +33,14 @@ jest.mock('@/lib/youtube-feed', () => ({
   ]),
 }));
 
-import sitemap from '@/app/sitemap';
+import sitemap, { revalidate } from '@/app/sitemap';
+
+it('is generated build-time only (revalidate=false) so a credential-less runtime revalidation cannot drop content URLs', () => {
+  // Regression: the DB read is caught (not thrown), so runtime ISR without
+  // DynamoDB creds would emit a content-less sitemap and replace the good one.
+  // Build-time-only generation prevents that. See the note in src/app/sitemap.ts.
+  expect(revalidate).toBe(false);
+});
 
 it('includes /videos and the core static routes', async () => {
   const urls = (await sitemap()).map((route) => route.url);
