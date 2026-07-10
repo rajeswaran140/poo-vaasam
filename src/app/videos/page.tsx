@@ -12,6 +12,7 @@ import { fetchChannelVideos, videosItemListJsonLd, s3ThumbnailUrl, withTruncated
 import { SITE, isYouTubeVideosConfigured } from '@/config/site';
 import { VideoGallery } from '@/components/VideoGallery';
 import { ShortsRow } from '@/components/ShortsRow';
+import { AllSongsLinks } from '@/components/AllSongsLinks';
 import { partitionShorts } from '@/lib/youtube-shorts';
 import { SubscribeButton } from '@/components/SubscribeButton';
 import { JsonLd } from '@/components/JsonLd';
@@ -78,25 +79,29 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-// Map a channel video → its on-site song page (when one exists), so the gallery
-// can link viewers to our indexable /content page (which carries the embed + a
-// YouTube CTA) instead of straight to YouTube — the internal link the
-// "Search → site → YouTube" funnel needs. Sourced from the STATIC /api/songs
-// feed (build-time data, CDN-cached) rather than a DynamoDB read, so this
-// force-dynamic route never depends on runtime DB creds. Returns {} on any
-// error → cards fall back to the YouTube link (no regression).
-async function fetchSongPathByVideoId(): Promise<Record<string, string>> {
+interface PublishedSong {
+  id: string;
+  title: string;
+  youtubeVideoId?: string;
+}
+
+// The published-song catalogue, from the STATIC /api/songs feed (build-time
+// data, CDN-cached) rather than a DynamoDB read — so this force-dynamic route
+// never depends on runtime DB creds. Feeds two things: (1) the video→song-page
+// map so gallery cards link to our indexable /content page, and (2) the
+// always-SSR "All songs" link list below. Returns [] on any error (graceful).
+async function fetchPublishedSongs(): Promise<PublishedSong[]> {
   try {
     const res = await fetch(`${SITE_URL}/api/songs`, { next: { revalidate: 300 } });
-    if (!res.ok) return {};
-    const body = (await res.json()) as { data?: Array<{ id?: string; youtubeVideoId?: string }> };
-    const map: Record<string, string> = {};
-    for (const s of body.data ?? []) {
-      if (s.youtubeVideoId && s.id) map[s.youtubeVideoId] = contentPath(s.id);
-    }
-    return map;
+    if (!res.ok) return [];
+    const body = (await res.json()) as {
+      data?: Array<{ id?: string; title?: string; youtubeVideoId?: string }>;
+    };
+    return (body.data ?? [])
+      .filter((s): s is { id: string; title: string; youtubeVideoId?: string } => Boolean(s.id && s.title))
+      .map((s) => ({ id: s.id, title: s.title, youtubeVideoId: s.youtubeVideoId }));
   } catch {
-    return {};
+    return [];
   }
 }
 
@@ -105,10 +110,18 @@ export default async function VideosPage() {
     notFound();
   }
 
-  const [all, songPathById] = await Promise.all([
+  const [all, songs] = await Promise.all([
     fetchChannelVideos(SITE.youtube.channelId, VIDEO_FEED_LIMIT),
-    fetchSongPathByVideoId(),
+    fetchPublishedSongs(),
   ]);
+  // video.id → on-site song-page path, for cards that have a published page.
+  const songPathById: Record<string, string> = {};
+  for (const s of songs) {
+    if (s.youtubeVideoId) songPathById[s.youtubeVideoId] = contentPath(s.id);
+  }
+  // Always-SSR internal links to EVERY published song page (crawlable without
+  // JS, unlike the gallery cards past the 9th which reveal client-side).
+  const allSongLinks = songs.map((s) => ({ title: s.title, href: contentPath(s.id) }));
   // Shorts (≤3 min, portrait) are presented in their own row so they don't
   // render letterboxed inside the 16:9 grid alongside the full songs.
   const { shorts, videos } = partitionShorts(all);
@@ -227,6 +240,10 @@ export default async function VideosPage() {
               <ShortsRow shorts={withTruncatedDescriptions(shorts)} now={now} />
             </section>
           )}
+
+          {/* Always-SSR internal links to every published song page — crawlable
+              without JS, unlike the gallery cards past the 9th. */}
+          <AllSongsLinks songs={allSongLinks} />
 
           {all.length > 0 && (
             <section className="mt-12 flex flex-col items-center gap-4 sm:flex-row sm:items-center sm:justify-end">
