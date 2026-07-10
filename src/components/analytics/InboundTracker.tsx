@@ -18,8 +18,12 @@ const KNOWN_SOURCES = new Set(['whatsapp', 'facebook', 'telegram', 'instagram'])
 export function InboundTracker() {
   useEffect(() => {
     try {
-      const source = new URLSearchParams(window.location.search).get('utm_source')?.toLowerCase();
-      if (source && KNOWN_SOURCES.has(source)) trackInbound(source);
+      const params = new URLSearchParams(window.location.search);
+      const source = params.get('utm_source')?.toLowerCase();
+      // utm_content carries the source song id on Status/share links, so an
+      // inbound landing is attributable to the exact song that was shared.
+      const songId = params.get('utm_content') || undefined;
+      if (source && KNOWN_SOURCES.has(source)) trackInbound(source, songId);
     } catch {
       // analytics must never break the page
     }

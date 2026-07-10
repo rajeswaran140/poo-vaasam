@@ -17,13 +17,20 @@ export interface WhatsAppShareOptions {
   url: string;
   /** How the content is consumed — picks the Tamil call-to-action + emoji. */
   verb?: 'listen' | 'read';
+  /**
+   * Extra/override UTM tags merged over the defaults (`utm_source=whatsapp`,
+   * `utm_medium=share`). Lets a specific surface attribute more precisely — e.g.
+   * a WhatsApp *Status* share passes `utm_medium=whatsapp_status` +
+   * `utm_content=<songId>` so inbound visits trace back to the exact song.
+   */
+  utm?: Record<string, string>;
 }
 
 /** The human-readable message WhatsApp pre-fills (before URL-encoding). */
-export function whatsappShareText({ title, url, verb = 'listen' }: WhatsAppShareOptions): string {
+export function whatsappShareText({ title, url, verb = 'listen', utm }: WhatsAppShareOptions): string {
   const cta = verb === 'read' ? 'படியுங்கள்' : 'கேளுங்கள்';
   const emoji = verb === 'read' ? '📜' : '🎵';
-  const tagged = appendUtm(url, { utm_source: 'whatsapp', utm_medium: 'share' });
+  const tagged = appendUtm(url, { utm_source: 'whatsapp', utm_medium: 'share', ...utm });
   return `${emoji} ${title} — ${cta}: ${tagged}`;
 }
 

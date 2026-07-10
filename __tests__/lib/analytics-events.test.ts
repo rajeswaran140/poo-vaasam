@@ -4,7 +4,7 @@
  * call window.gtag with the right shape and no-op when gtag is missing.
  */
 
-import { trackSubscribeClick, trackAudioPlay, trackYouTubeOpen } from '@/lib/analytics-events';
+import { trackSubscribeClick, trackAudioPlay, trackYouTubeOpen, trackShare, trackInbound } from '@/lib/analytics-events';
 
 describe('trackSubscribeClick', () => {
   const original = (window as unknown as { gtag?: unknown }).gtag;
@@ -83,5 +83,53 @@ describe('trackYouTubeOpen', () => {
   it('no-ops when gtag is missing', () => {
     delete (window as unknown as { gtag?: unknown }).gtag;
     expect(() => trackYouTubeOpen('channel')).not.toThrow();
+  });
+});
+
+describe('trackShare', () => {
+  const original = (window as unknown as { gtag?: unknown }).gtag;
+  afterEach(() => { (window as unknown as { gtag?: unknown }).gtag = original; });
+
+  it('fires share with method + share_channel (channel only)', () => {
+    const spy = jest.fn();
+    (window as unknown as { gtag: unknown }).gtag = spy;
+    trackShare('whatsapp');
+    expect(spy).toHaveBeenCalledWith('event', 'share', { method: 'whatsapp', share_channel: 'whatsapp' });
+  });
+
+  it('adds source_song_id + status_asset_id for an attributed Status share', () => {
+    const spy = jest.fn();
+    (window as unknown as { gtag: unknown }).gtag = spy;
+    trackShare('whatsapp_status', { songId: 'cnt_9', assetId: 'kaathoda-lolakku-short' });
+    expect(spy).toHaveBeenCalledWith('event', 'share', {
+      method: 'whatsapp_status',
+      share_channel: 'whatsapp_status',
+      source_song_id: 'cnt_9',
+      status_asset_id: 'kaathoda-lolakku-short',
+    });
+  });
+
+  it('no-ops when gtag is missing', () => {
+    delete (window as unknown as { gtag?: unknown }).gtag;
+    expect(() => trackShare('whatsapp_status', { songId: 'cnt_9' })).not.toThrow();
+  });
+});
+
+describe('trackInbound', () => {
+  const original = (window as unknown as { gtag?: unknown }).gtag;
+  afterEach(() => { (window as unknown as { gtag?: unknown }).gtag = original; });
+
+  it('fires inbound_visit with source only', () => {
+    const spy = jest.fn();
+    (window as unknown as { gtag: unknown }).gtag = spy;
+    trackInbound('whatsapp');
+    expect(spy).toHaveBeenCalledWith('event', 'inbound_visit', { source: 'whatsapp' });
+  });
+
+  it('includes source_song_id when the landing carries the shared song', () => {
+    const spy = jest.fn();
+    (window as unknown as { gtag: unknown }).gtag = spy;
+    trackInbound('whatsapp', 'cnt_9');
+    expect(spy).toHaveBeenCalledWith('event', 'inbound_visit', { source: 'whatsapp', source_song_id: 'cnt_9' });
   });
 });

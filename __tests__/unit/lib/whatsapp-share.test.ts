@@ -22,6 +22,19 @@ describe('whatsappShareText', () => {
   it('defaults to "listen" when no verb is given', () => {
     expect(whatsappShareText({ title: 'T', url: 'u' })).toContain('கேளுங்கள்');
   });
+
+  it('merges override UTM tags (Status share: medium + campaign + source-song content)', () => {
+    const text = whatsappShareText({
+      title: 'T',
+      url: 'https://tamilagaval.com/content/cnt_9',
+      utm: { utm_medium: 'whatsapp_status', utm_campaign: 'status_share', utm_content: 'cnt_9' },
+    });
+    expect(text).toContain('utm_source=whatsapp'); // default kept
+    expect(text).toContain('utm_medium=whatsapp_status'); // overridden (not "share")
+    expect(text).not.toContain('utm_medium=share');
+    expect(text).toContain('utm_campaign=status_share');
+    expect(text).toContain('utm_content=cnt_9'); // source song id → inbound attribution
+  });
 });
 
 describe('whatsappShareUrl', () => {

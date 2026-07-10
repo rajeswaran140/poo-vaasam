@@ -82,7 +82,13 @@ describe('StatusShareCard', () => {
     expect(arg.files).toHaveLength(1);
     expect(arg.files[0]).toBeInstanceOf(File);
     expect(arg.files[0].name).toBe('engaldesam-short.mp4');
-    expect(trackShare).toHaveBeenCalledWith('whatsapp_status');
+    expect(trackShare).toHaveBeenCalledWith('whatsapp_status', {
+      songId: 'cnt_test_1',
+      assetId: 'engaldesam-short',
+    });
+    // The shared caption carries source-song attribution (utm_content = songId).
+    expect(arg.text).toContain('utm_medium=whatsapp_status');
+    expect(arg.text).toContain('utm_content=cnt_test_1');
   });
 
   it('falls back to a wa.me link share on desktop / unsupported browsers', async () => {
@@ -94,12 +100,20 @@ describe('StatusShareCard', () => {
 
     await waitFor(() =>
       expect(openSpy).toHaveBeenCalledWith(
-        whatsappShareUrl({ title: view.title, url: absoluteUrl(view.path), verb: 'listen' }),
+        whatsappShareUrl({
+          title: view.title,
+          url: absoluteUrl(view.path),
+          verb: 'listen',
+          utm: { utm_medium: 'whatsapp_status', utm_campaign: 'status_share', utm_content: view.songId },
+        }),
         '_blank',
         'noopener,noreferrer',
       ),
     );
-    expect(trackShare).toHaveBeenCalledWith('whatsapp_status');
+    expect(trackShare).toHaveBeenCalledWith('whatsapp_status', {
+      songId: 'cnt_test_1',
+      assetId: 'engaldesam-short',
+    });
     openSpy.mockRestore();
   });
 

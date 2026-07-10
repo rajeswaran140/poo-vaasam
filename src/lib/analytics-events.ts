@@ -86,11 +86,21 @@ export function trackYouTubeOpen(destination: string, source?: string): void {
 
 /**
  * Fire when a visitor shares content. `channel` is the share surface
- * (whatsapp / facebook / copy / native) — WhatsApp is the #1 diaspora channel,
- * so proving shares happen there is the whole point of owning this first-party.
+ * (whatsapp / whatsapp_status / facebook / copy / native) — WhatsApp is the #1
+ * diaspora channel, so proving shares happen there is the whole point of owning
+ * this first-party. `opts.songId` / `opts.assetId` add source-song + asset
+ * attribution to the GA4 `share` event (map to the `source_song_id` /
+ * `status_asset_id` custom dimensions) so we can answer *which song / asset*
+ * drives the most shares. The first-party beacon stays keyed by channel
+ * (unchanged) so the existing dashboard breakdown is preserved.
  */
-export function trackShare(channel: string): void {
-  gtag()?.('event', 'share', { method: channel });
+export function trackShare(channel: string, opts?: { songId?: string; assetId?: string }): void {
+  gtag()?.('event', 'share', {
+    method: channel,
+    share_channel: channel,
+    ...(opts?.songId ? { source_song_id: opts.songId } : {}),
+    ...(opts?.assetId ? { status_asset_id: opts.assetId } : {}),
+  });
   beacon('share', channel);
 }
 
@@ -106,7 +116,7 @@ export function trackInstall(): void {
  * first-party — WhatsApp otherwise arrives as direct/no-referrer. `source` is
  * the utm_source (whatsapp / facebook / …).
  */
-export function trackInbound(source: string): void {
-  gtag()?.('event', 'inbound_visit', { source });
+export function trackInbound(source: string, songId?: string): void {
+  gtag()?.('event', 'inbound_visit', { source, ...(songId ? { source_song_id: songId } : {}) });
   beacon('inbound', source);
 }
