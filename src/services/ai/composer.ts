@@ -23,7 +23,7 @@ import {
 } from './composerSchema';
 import { getEngine, DEFAULT_ANTHROPIC_MODEL, type BriefRequest } from './engines';
 import { instrumentPalette, canonicalInstrumentNames } from '@/data/instruments';
-import { ragaPalette, canonicalRagaNames, ragaScaleKey } from '@/data/ragas';
+import { ragaPalette, canonicalRagaNames, checkKeyRagaConsistency } from '@/data/ragas';
 
 // Re-export the schema-derived types so existing importers
 // (`@/services/ai/composer`) keep working unchanged.
@@ -226,9 +226,15 @@ export async function composeFromLyrics(
 
   const finalInstruments = groundedInstruments.length ? groundedInstruments : parsed.data.suggested_instruments;
   const finalRagas = groundedRagas.length ? groundedRagas : parsed.data.suggested_ragas;
-  // Enrich the key into a music-generator/DAW-friendly key+scale derived from the lead raga
-  // (e.g. "D harmonic minor"), then thread that into each style paragraph.
-  const keyScale = ragaScaleKey(parsed.data.suggested_key, finalRagas[0]);
+  // Raga/scale compatibility guard: reconcile the model's suggested_key against
+  // the lead raga's scale (e.g. a Dorian key under the major-pentatonic Mohanam
+  // is a genuine tonal conflict). Produces the DAW-friendly key threaded below,
+  // plus a note we surface so a corrected contradiction is never silent.
+  const keyConsistency = checkKeyRagaConsistency(parsed.data.suggested_key, finalRagas[0]);
+  const keyScale = keyConsistency.reconciledKey;
+  if (keyConsistency.note) {
+    console.info('[ai/composer] tonal-consistency', JSON.stringify({ note: keyConsistency.note }));
+  }
 
   const data: ComposerAnalysis = {
     ...parsed.data,
@@ -240,6 +246,7 @@ export async function composeFromLyrics(
       ...v,
       prompt: threadPaletteIntoSuno(v.prompt, finalInstruments, finalRagas, keyScale),
     })),
+    musical_consistency: keyConsistency.note ? [keyConsistency.note] : [],
   };
 
   return { ok: true, data };

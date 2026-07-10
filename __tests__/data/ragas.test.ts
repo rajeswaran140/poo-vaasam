@@ -11,6 +11,8 @@ import {
   canonicalRagaNames,
   ragaPalette,
   ragaScaleKey,
+  scaleFamily,
+  checkKeyRagaConsistency,
 } from '@/data/ragas';
 
 it('has a non-trivial catalog with unique ids, moods, and a scale', () => {
@@ -34,6 +36,56 @@ describe('ragaScaleKey', () => {
   it('falls back to the original key when raga/tonic is unresolved', () => {
     expect(ragaScaleKey('D Minor', 'Not A Raga')).toBe('D Minor');
     expect(ragaScaleKey('', 'Keeravani')).toBe('');
+  });
+});
+
+describe('scaleFamily', () => {
+  it('classifies by the third degree (major vs minor)', () => {
+    expect(scaleFamily('Major pentatonic')).toBe('major');
+    expect(scaleFamily('Major (Ionian)')).toBe('major');
+    expect(scaleFamily('Lydian')).toBe('major');
+    expect(scaleFamily('Mixolydian')).toBe('major');
+    expect(scaleFamily('Natural minor')).toBe('minor');
+    expect(scaleFamily('Harmonic minor')).toBe('minor');
+    expect(scaleFamily('Dorian')).toBe('minor'); // minor 3rd
+    expect(scaleFamily('Phrygian')).toBe('minor');
+    expect(scaleFamily('Minor pentatonic')).toBe('minor');
+    expect(scaleFamily('something weird')).toBe('unknown');
+  });
+});
+
+describe('checkKeyRagaConsistency (Priority-1 raga/scale guard)', () => {
+  it('flags a genuine major↔minor conflict and corrects the key', () => {
+    // The இளங்கிளியே case: Mohanam is Major pentatonic; "D Dorian" is minor.
+    const r = checkKeyRagaConsistency('D Dorian', 'Mohanam');
+    expect(r.consistent).toBe(false);
+    expect(r.reconciledKey).toBe('D major pentatonic');
+    expect(r.note).toMatch(/Tonal conflict/);
+    expect(r.note).toMatch(/Mohanam/);
+  });
+
+  it('treats a same-family difference as a benign refinement (no note)', () => {
+    // "D Minor" under harmonic-minor Keeravani: same minor family → silent.
+    const r = checkKeyRagaConsistency('D Minor', 'Keeravani');
+    expect(r.consistent).toBe(true);
+    expect(r.reconciledKey).toBe('D harmonic minor');
+    expect(r.note).toBeNull();
+  });
+
+  it('does not flag a major key under a major-pentatonic raga', () => {
+    const r = checkKeyRagaConsistency('A Major', 'Mohanam');
+    expect(r.consistent).toBe(true);
+    expect(r.note).toBeNull();
+    expect(r.reconciledKey).toBe('A major pentatonic');
+  });
+
+  it('leaves the key untouched when the raga or tonic is unresolved', () => {
+    expect(checkKeyRagaConsistency('D Minor', 'Not A Raga')).toMatchObject({
+      consistent: true,
+      reconciledKey: 'D Minor',
+      note: null,
+    });
+    expect(checkKeyRagaConsistency('', 'Keeravani').reconciledKey).toBe('');
   });
 });
 

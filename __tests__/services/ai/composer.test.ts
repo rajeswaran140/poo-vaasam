@@ -156,6 +156,29 @@ it('enriches suggested_key into a key+scale derived from the lead raga', async (
   if (r.ok) expect(r.data.suggested_key).toBe('D harmonic minor');
 });
 
+it('detects a raga/key tonal conflict, corrects it, and surfaces a note', async () => {
+  // The இளங்கிளியே case: lead raga Mohanam (major pentatonic) with a Dorian
+  // (minor) key = a genuine major↔minor conflict.
+  create.mockResolvedValueOnce(
+    toolResponse({ ...SAMPLE, suggested_key: 'D Dorian', suggested_ragas: ['Mohanam', 'Sahana'] })
+  );
+  const r = await composeFromLyrics('lyrics');
+  expect(r.ok).toBe(true);
+  if (r.ok) {
+    expect(r.data.suggested_key).toBe('D major pentatonic'); // corrected to the raga's scale
+    expect(r.data.musical_consistency).toHaveLength(1);
+    expect(r.data.musical_consistency![0]).toMatch(/Tonal conflict/);
+    expect(r.data.musical_consistency![0]).toMatch(/Mohanam/);
+  }
+});
+
+it('leaves musical_consistency empty when key and raga agree', async () => {
+  create.mockResolvedValueOnce(toolResponse(SAMPLE)); // D Minor under harmonic-minor Keeravani
+  const r = await composeFromLyrics('lyrics');
+  expect(r.ok).toBe(true);
+  if (r.ok) expect(r.data.musical_consistency).toEqual([]);
+});
+
 it('appends both instruments and raga when a SUNO prompt names neither', async () => {
   create.mockResolvedValueOnce(
     toolResponse({ ...SAMPLE, suno_prompts: [{ style: 'Modern', prompt: 'Upbeat modern pop track.' }] })

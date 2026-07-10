@@ -465,6 +465,19 @@ function Results({ result, lyrics, selectedIdx, onSelectIdx }: { result: Analysi
         </Card>
       )}
 
+      {/* Raga/scale guard — a corrected tonal conflict (e.g. Dorian key under a
+          major-pentatonic raga) is surfaced, never silently changed. */}
+      {result.musical_consistency && result.musical_consistency.length > 0 && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+          <p className="mb-1 font-medium">⚠️ Musical consistency adjusted</p>
+          <ul className="list-disc space-y-1 pl-5">
+            {result.musical_consistency.map((note, i) => (
+              <li key={i}>{note}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Recommended voice — ranked best fit first */}
       {result.recommended_voice.length > 0 && (
         <Card label="Recommended voice (ranked)">
