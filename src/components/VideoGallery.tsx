@@ -8,6 +8,7 @@
  */
 
 import Image from 'next/image';
+import Link from 'next/link';
 import { useState, useRef, useEffect } from 'react';
 import { Play } from 'lucide-react';
 import { YouTubeEmbed } from '@/components/YouTubeEmbed';
@@ -28,12 +29,19 @@ export function VideoGallery({
   videos,
   initialCount = 9,
   now = Date.now(),
+  songPathById,
 }: {
   videos: ChannelVideo[];
   initialCount?: number;
   /** Reference instant for relative dates; the server passes one so SSR and
    *  hydration format identically. */
   now?: number;
+  /** video.id → on-site /content path, for videos that have a published song
+   *  page. When present, the card title + footer link route to our indexable
+   *  song page (which carries the embed + YouTube CTA) instead of straight to
+   *  YouTube — the internal link the "Search → site → YouTube" funnel needs.
+   *  Videos without a page fall back to the YouTube link. */
+  songPathById?: Record<string, string>;
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   // Only the first `initialCount` cards render initially — this is what the
@@ -77,6 +85,7 @@ export function VideoGallery({
       {visible.map((video) => {
         const duration = formatVideoDuration(video.duration);
         const uploaded = relativeTimeTamil(video.publishedAt, now);
+        const songPath = songPathById?.[video.id];
         return (
         <div
           key={video.id}
@@ -118,7 +127,18 @@ export function VideoGallery({
             </button>
           )}
           <div className="p-4 flex-1 flex flex-col gap-1.5">
-            <h3 className="line-clamp-2 font-tamil text-sm text-gray-100">{video.title}</h3>
+            <h3 className="line-clamp-2 font-tamil text-sm text-gray-100">
+              {songPath ? (
+                <Link
+                  href={songPath}
+                  className="transition-colors hover:text-orange-300 focus-visible:text-orange-300 focus-visible:outline-none"
+                >
+                  {video.title}
+                </Link>
+              ) : (
+                video.title
+              )}
+            </h3>
             {uploaded && <p className="font-tamil text-xs text-gray-500">{uploaded}</p>}
             {video.description && (
               <p className="mt-0.5 line-clamp-2 font-tamil text-xs text-gray-400">
@@ -126,15 +146,28 @@ export function VideoGallery({
               </p>
             )}
             <div className="mt-auto flex items-center justify-between">
-              <TrackedYouTubeOpen
-                href={video.watchUrl}
-                destination={`video:${video.id}`}
-                source="videos_card_link"
-                className="inline-flex min-h-[44px] items-center self-start py-2 text-xs text-orange-400 hover:text-orange-300"
-                ariaLabel={`Watch ${video.title} on YouTube`}
-              >
-                YouTube ↗
-              </TrackedYouTubeOpen>
+              {songPath ? (
+                // Route to our indexable song page (it carries the embed + a
+                // YouTube CTA) so the visitor stays on-site and the page earns
+                // an internal link. The play button above still plays inline.
+                <Link
+                  href={songPath}
+                  className="inline-flex min-h-[44px] items-center self-start py-2 text-xs font-medium text-orange-300 hover:text-orange-200"
+                  aria-label={`${video.title} — பாடல் பக்கத்திற்குச் செல்லவும்`}
+                >
+                  இந்தப் பாடல் →
+                </Link>
+              ) : (
+                <TrackedYouTubeOpen
+                  href={video.watchUrl}
+                  destination={`video:${video.id}`}
+                  source="videos_card_link"
+                  className="inline-flex min-h-[44px] items-center self-start py-2 text-xs text-orange-400 hover:text-orange-300"
+                  ariaLabel={`Watch ${video.title} on YouTube`}
+                >
+                  YouTube ↗
+                </TrackedYouTubeOpen>
+              )}
               <WhatsAppShareButton url={video.watchUrl} title={video.title} verb="listen" compact />
             </div>
           </div>

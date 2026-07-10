@@ -101,6 +101,35 @@ describe('VideoGallery — populated state', () => {
   });
 });
 
+describe('VideoGallery — on-site song links (Search → site → YouTube funnel)', () => {
+  const SONG_PATH = '/content/cnt_abc123';
+
+  it('links the card title + footer to the on-site song page when a mapping exists', () => {
+    render(<VideoGallery videos={[videoFactory()]} songPathById={{ gfywsN483lI: SONG_PATH }} />);
+
+    // Title becomes an internal link to the song page (strong anchor text).
+    const titleLink = screen.getByRole('link', { name: 'அந்தி மேகமே' });
+    expect(titleLink).toHaveAttribute('href', SONG_PATH);
+
+    // Footer routes to the song page instead of straight to YouTube...
+    const songLink = screen.getByLabelText(/பாடல் பக்கத்திற்குச் செல்லவும்/);
+    expect(songLink).toHaveAttribute('href', SONG_PATH);
+    // ...and the YouTube outbound text link is replaced (the page has the CTA).
+    expect(screen.queryByLabelText(/on YouTube/)).not.toBeInTheDocument();
+  });
+
+  it('falls back to the YouTube link for a video without an on-site page', () => {
+    render(<VideoGallery videos={[videoFactory()]} songPathById={{ someOtherId: SONG_PATH }} />);
+
+    expect(screen.getByLabelText(/Watch அந்தி மேகமே on YouTube/)).toHaveAttribute(
+      'href',
+      'https://www.youtube.com/watch?v=gfywsN483lI'
+    );
+    // Title stays plain text (not a link) when there is no on-site page.
+    expect(screen.queryByRole('link', { name: 'அந்தி மேகமே' })).not.toBeInTheDocument();
+  });
+});
+
 describe('VideoGallery — duration & upload-date metadata', () => {
   it('renders a YouTube-style duration badge when a duration is known', () => {
     render(<VideoGallery videos={[videoFactory({ duration: 'PT4M21S' })]} />);

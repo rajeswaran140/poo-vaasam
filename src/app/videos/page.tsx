@@ -15,8 +15,9 @@ import { ShortsRow } from '@/components/ShortsRow';
 import { partitionShorts } from '@/lib/youtube-shorts';
 import { SubscribeButton } from '@/components/SubscribeButton';
 import { JsonLd } from '@/components/JsonLd';
-import { alternatesFor, breadcrumbJsonLd } from '@/lib/seo';
+import { alternatesFor, breadcrumbJsonLd, SITE_URL } from '@/lib/seo';
 import { formatVideoDuration, relativeTimeTamil } from '@/lib/video-format';
+import { contentPath } from '@/config/vanity-paths';
 import Image from 'next/image';
 
 // Render per-request rather than as a build-time prerender. Amplify's SSR
@@ -69,18 +70,44 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
+// Map a channel video → its on-site song page (when one exists), so the gallery
+// can link viewers to our indexable /content page (which carries the embed + a
+// YouTube CTA) instead of straight to YouTube — the internal link the
+// "Search → site → YouTube" funnel needs. Sourced from the STATIC /api/songs
+// feed (build-time data, CDN-cached) rather than a DynamoDB read, so this
+// force-dynamic route never depends on runtime DB creds. Returns {} on any
+// error → cards fall back to the YouTube link (no regression).
+async function fetchSongPathByVideoId(): Promise<Record<string, string>> {
+  try {
+    const res = await fetch(`${SITE_URL}/api/songs`, { next: { revalidate: 300 } });
+    if (!res.ok) return {};
+    const body = (await res.json()) as { data?: Array<{ id?: string; youtubeVideoId?: string }> };
+    const map: Record<string, string> = {};
+    for (const s of body.data ?? []) {
+      if (s.youtubeVideoId && s.id) map[s.youtubeVideoId] = contentPath(s.id);
+    }
+    return map;
+  } catch {
+    return {};
+  }
+}
+
 export default async function VideosPage() {
   if (!isYouTubeVideosConfigured()) {
     notFound();
   }
 
-  const all = await fetchChannelVideos(SITE.youtube.channelId, 24);
+  const [all, songPathById] = await Promise.all([
+    fetchChannelVideos(SITE.youtube.channelId, 24),
+    fetchSongPathByVideoId(),
+  ]);
   // Shorts (≤3 min, portrait) are presented in their own row so they don't
   // render letterboxed inside the 16:9 grid alongside the full songs.
   const { shorts, videos } = partitionShorts(all);
   // Feature the latest long-form video in the hero once there are enough for a
   // grid below (a Short doesn't suit the 16:9 hero).
   const featured = videos.length >= 3 ? videos[0] : null;
+  const featuredSongPath = featured ? songPathById[featured.id] : undefined;
   const galleryVideos = featured ? videos.slice(1) : videos;
   // One reference instant for every relative date, shared with the client
   // components so SSR and hydration render identical text.
@@ -142,9 +169,10 @@ export default async function VideosPage() {
               {/* Column 2 — latest video (links to YouTube) */}
               {featured && (
                 <a
-                  href={featured.watchUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  href={featuredSongPath ?? featured.watchUrl}
+                  // Internal on-site page opens in the same tab; the YouTube
+                  // fallback opens in a new tab (external).
+                  {...(featuredSongPath ? {} : { target: '_blank', rel: 'noopener noreferrer' })}
                   aria-label={`சமீபத்திய காணொளி: ${featured.title}`}
                   className="group relative block w-full overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/25 animate-fade-in"
                 >
@@ -183,7 +211,7 @@ export default async function VideosPage() {
         <div className="container mx-auto max-w-6xl px-4 py-10 sm:px-6">
           {/* Bound descriptions before they cross into the client gallery — the
               full YouTube descriptions otherwise bloat the RSC hydration payload. */}
-          <VideoGallery videos={withTruncatedDescriptions(galleryVideos)} now={now} />
+          <VideoGallery videos={withTruncatedDescriptions(galleryVideos)} now={now} songPathById={songPathById} />
 
           {shorts.length > 0 && (
             <section className="mt-12">
