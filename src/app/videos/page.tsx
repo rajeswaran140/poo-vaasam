@@ -35,6 +35,14 @@ const META_TITLE = 'Tamil Videos by Rajeswaran Thangarajah — Songs & Poems';
 const META_DESCRIPTION =
   'Watch original Tamil songs, poems and lyric videos from the Tamilagaval YouTube channel by Rajeswaran Thangarajah. New uploads regularly — always free.';
 
+// /videos is the public discovery hub, so surface the WHOLE catalogue, not just
+// the latest page. The channel has ~64 uploads (≈48 long-form) and growing; a
+// generous ceiling covers it with headroom. fetchChannelVideos paginates the
+// Data API (50/page) + chunks duration enrichment, and the gallery paginates
+// client-side ("Load more"), so a large list neither drops items nor bloats the
+// SSR HTML. (Was 24 → only the 17 most-recent long-form videos ever appeared.)
+const VIDEO_FEED_LIMIT = 100;
+
 export async function generateMetadata(): Promise<Metadata> {
   // Share image = the latest LONG-FORM video's mirrored thumbnail — the same
   // image the on-page hero uses. This is high-res, region-safe, and 404-safe
@@ -45,7 +53,7 @@ export async function generateMetadata(): Promise<Metadata> {
   // empty/unconfigured. Shares the in-process feed cache with the page render.
   let ogImage = s3ThumbnailUrl('gfywsN483lI');
   if (isYouTubeVideosConfigured()) {
-    const all = await fetchChannelVideos(SITE.youtube.channelId, 24);
+    const all = await fetchChannelVideos(SITE.youtube.channelId, VIDEO_FEED_LIMIT);
     const { videos } = partitionShorts(all);
     const lead = videos[0] ?? all[0];
     if (lead) ogImage = lead.thumbnail;
@@ -98,7 +106,7 @@ export default async function VideosPage() {
   }
 
   const [all, songPathById] = await Promise.all([
-    fetchChannelVideos(SITE.youtube.channelId, 24),
+    fetchChannelVideos(SITE.youtube.channelId, VIDEO_FEED_LIMIT),
     fetchSongPathByVideoId(),
   ]);
   // Shorts (≤3 min, portrait) are presented in their own row so they don't
