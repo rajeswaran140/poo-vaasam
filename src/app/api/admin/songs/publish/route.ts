@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
+import type { Content } from '@/domain/entities/Content';
 import { CategoryRepository } from '@/infrastructure/database/CategoryRepository';
 import { TagRepository } from '@/infrastructure/database/TagRepository';
 import { CreateContentUseCase } from '@/application/use-cases/CreateContentUseCase';
@@ -73,30 +74,43 @@ export async function POST(request: NextRequest) {
   try {
     const contentRepo = new ContentRepository();
 
-    // Don't publish a title that's already a published song. Page through the
-    // whole published set (case-insensitive) rather than trusting a single
-    // bounded page — a fixed cap would silently miss duplicates as the
-    // catalogue grows.
+    // Publishing is IDEMPOTENT on the (case-insensitive) title. If a song with
+    // this title is already published, return IT as success rather than a 409:
+    // the usual reason for a retry is that the first request exceeded the
+    // gateway timeout AFTER it had already created the song, so a second click
+    // must be a harmless no-op — not a scary "failed" that tempts more retries.
+    // Page the whole published set (not one bounded page) so a duplicate can't
+    // hide past the first page as the catalogue grows.
     const target = input.title.trim().toLowerCase();
     let cursor: Record<string, unknown> | undefined;
-    let isDuplicate = false;
+    let existing: Content | undefined;
     do {
       const page = await contentRepo.findByType(ContentType.SONGS, {
         status: ContentStatus.PUBLISHED,
         limit: 100,
         lastEvaluatedKey: cursor,
       });
-      if (page.items.some((c) => (c.title ?? '').trim().toLowerCase() === target)) {
-        isDuplicate = true;
-        break;
-      }
+      existing = page.items.find((c) => (c.title ?? '').trim().toLowerCase() === target);
+      if (existing) break;
       cursor = page.lastEvaluatedKey as Record<string, unknown> | undefined;
     } while (cursor);
 
-    if (isDuplicate) {
+    if (existing) {
       return NextResponse.json(
-        { success: false, error: 'A song with this title is already published' },
-        { status: 409 }
+        {
+          success: true,
+          data: {
+            id: existing.id,
+            title: existing.title,
+            audioDuration: existing.audioDuration ?? null,
+            youtubeVideoId: existing.youtubeVideoId ?? null,
+            matched: false,
+            theme: existing.theme ?? null,
+            featuredImage: existing.featuredImage ?? null,
+            alreadyPublished: true,
+          },
+        },
+        { status: 200 }
       );
     }
 
