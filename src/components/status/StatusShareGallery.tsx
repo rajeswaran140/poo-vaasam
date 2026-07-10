@@ -32,14 +32,23 @@ export interface StatusClipView {
   cover?: string;
 }
 
-export function StatusShareCard({ title, path, clip, cover }: StatusClipView) {
+export function StatusShareCard({ songId, title, path, clip, cover }: StatusClipView) {
   const [busy, setBusy] = useState(false);
   const contentUrl = absoluteUrl(path);
   const fileName = clip.split('/').pop() || 'tamilagaval.mp4';
+  // Stable per-asset id (the clip's file stem) — ready for A/B variants later.
+  const assetId = fileName.replace(/\.mp4$/, '') || undefined;
+  // Status-specific attribution: distinct medium + campaign, and utm_content =
+  // the source song so an inbound landing traces back to the exact song shared.
+  const statusUtm = {
+    utm_medium: 'whatsapp_status',
+    utm_campaign: 'status_share',
+    utm_content: songId,
+  };
 
   async function handleShare() {
-    trackShare('whatsapp_status');
-    const caption = whatsappShareText({ title, url: contentUrl, verb: 'listen' });
+    trackShare('whatsapp_status', { songId, assetId });
+    const caption = whatsappShareText({ title, url: contentUrl, verb: 'listen', utm: statusUtm });
 
     // Preferred path (mobile): share the real video file so the user can post it
     // straight to WhatsApp Status. canShare({files}) gates it — false on desktop.
@@ -64,7 +73,11 @@ export function StatusShareCard({ title, path, clip, cover }: StatusClipView) {
     }
 
     // Fallback: share the song link (text) via wa.me.
-    window.open(whatsappShareUrl({ title, url: contentUrl, verb: 'listen' }), '_blank', 'noopener,noreferrer');
+    window.open(
+      whatsappShareUrl({ title, url: contentUrl, verb: 'listen', utm: statusUtm }),
+      '_blank',
+      'noopener,noreferrer'
+    );
   }
 
   return (
