@@ -169,6 +169,20 @@ it('keeps the system rule strictly apolitical', async () => {
   expect(sys.toLowerCase()).toContain('apolitical');
 });
 
+it('instructs the model to write a SONG (a returning hook, not a narrative) with meter and Tamil sound-play', async () => {
+  // Craft guard: the output was reading like a linear story. The prompt must
+  // steer song-craft — a recurring hook/refrain, non-sequential charanams,
+  // even meter, and எதுகை/மோனை binding — not plot progression.
+  create.mockResolvedValueOnce(toolResponse(LYRICS));
+  await generateLyrics(BRIEF);
+  const sys = (create.mock.calls[0][0] as { system: string }).system.toLowerCase();
+  expect(sys).toContain('hook');
+  expect(sys).toContain('refrain');
+  expect(sys).toContain('not a story');
+  expect(sys).toMatch(/எதுகை|மோனை/); // Tamil sound devices (case-fold is a no-op on Tamil)
+  expect(sys).toMatch(/meter|சந்தம்/);
+});
+
 it('forwards the abort signal to the Anthropic call', async () => {
   create.mockResolvedValueOnce(toolResponse(LYRICS));
   const ac = new AbortController();
