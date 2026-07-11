@@ -38,9 +38,7 @@ import { RefreshRecsButton } from '@/components/admin/RefreshRecsButton';
 import { RefreshThumbnailsButton } from '@/components/admin/RefreshThumbnailsButton';
 import { YouTubeVideosPanel } from '@/components/admin/YouTubeVideosPanel';
 import { RetentionInsightPanel } from '@/components/admin/RetentionInsightPanel';
-import { GeographyInsightPanel } from '@/components/admin/GeographyInsightPanel';
-import { SearchTermsPanel } from '@/components/admin/SearchTermsPanel';
-import { SongTrendPanel } from '@/components/admin/SongTrendPanel';
+import { PerSongDeepDive } from '@/components/admin/PerSongDeepDive';
 import { SongCockpit } from '@/components/admin/SongCockpit';
 import { SearchScorecardPanel } from '@/components/admin/SearchScorecardPanel';
 import { TopSongMonitorPanel } from '@/components/admin/TopSongMonitorPanel';
@@ -384,39 +382,28 @@ export default async function YouTubeAdminPage() {
         </section>
       )}
 
+      {/* LEAD with the at-a-glance diagnosis: the four-metric decision tree across
+          the top songs (reduced reach vs CTR vs watch-time). */}
+      <TopSongMonitorPanel ytaConfigured={ytaOn} />
+
+      {/* Song cockpit — pick a song ONCE → trend + audience + discovery together. */}
+      <SongCockpit videos={retentionVideos} ytaConfigured={ytaOn} />
+
       {/* Retention intelligence — per-video hook verdict vs the best-retention
-          template (the first-15s lever). */}
+          template (the first-15s lever). Unique — not summarized by the cockpit. */}
       <RetentionInsightPanel
         videos={retentionVideos}
         benchmark={benchmarkRow ? { id: benchmarkRow.id, title: benchmarkRow.title } : undefined}
         ytaConfigured={ytaOn}
       />
 
-      {/* Top-10 monitor — the four-metric decision tree across the top songs
-          (reduced reach vs CTR vs watch-time), so a reach cooldown is told apart
-          from a real content shift at a glance. */}
-      <TopSongMonitorPanel ytaConfigured={ytaOn} />
-
-      {/* Song cockpit — pick a song ONCE and see its trend + audience + discovery
-          together (the at-a-glance surface). The detailed per-song panels below
-          stay for deep-dives. */}
-      <SongCockpit videos={retentionVideos} ytaConfigured={ytaOn} />
-
-      {/* Per-song daily trend — one song's day-by-day views + subscribers (the
-          intersection the aggregate table and channel-daily series can't show). */}
-      <SongTrendPanel videos={retentionVideos} ytaConfigured={ytaOn} />
-
-      {/* Audience geography — which countries a given video's viewers come from
-          (the diaspora vs home-region split). Same video list as retention. */}
-      <GeographyInsightPanel videos={retentionVideos} ytaConfigured={ytaOn} />
-
-      {/* Search discovery — the real queries that brought a video its viewers
-          (viewer truth from Analytics, not a search.list rank guess). */}
-      <SearchTermsPanel videos={retentionVideos} ytaConfigured={ytaOn} />
-
       {/* Search scorecard — manual, human-observed positions for a song's tracked
           query set, scored by opportunity (biggest wins first). */}
       <SearchScorecardPanel />
+
+      {/* Per-song deep dive — the FULL trend / geography / search-terms panels the
+          cockpit summarizes, collapsed by default to remove the duplication. */}
+      <PerSongDeepDive videos={retentionVideos} ytaConfigured={ytaOn} />
 
       {/* Viewer conversion funnel — DISCOVERED → WATCHED → 2ND SONG → RETURNED
           → SUBSCRIBED, modelled at cohort level (which stage is leaking). */}
