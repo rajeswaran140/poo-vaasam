@@ -186,6 +186,47 @@ export async function fetchVideoAnalytics(daysBack = 28): Promise<Result<VideoAn
   }
 }
 
+export interface TopVideoRow {
+  videoId: string;
+  views: number;
+  averageViewDuration: number; // seconds
+}
+
+/**
+ * Per-video views + average view duration for an EXPLICIT date window, sorted by
+ * views. Used by the top-song monitor to compare a recent window vs the prior
+ * one (fetchVideoAnalytics only does "last N days"; the monitor needs both).
+ */
+export async function fetchTopVideosWindow(
+  startDate: string,
+  endDate: string,
+  maxResults = 50
+): Promise<Result<TopVideoRow[]>> {
+  if (!isYouTubeAnalyticsConfigured()) {
+    return { ok: false, error: 'YouTube Analytics OAuth not configured' };
+  }
+  try {
+    const res = await runReport({
+      ids: 'channel==MINE',
+      startDate,
+      endDate,
+      metrics: 'views,averageViewDuration',
+      dimensions: 'video',
+      sort: '-views',
+      maxResults: String(maxResults),
+    });
+    if (!res) return { ok: false, error: 'No response from YouTube Analytics' };
+    const rows = (res.rows ?? []).map((r): TopVideoRow => ({
+      videoId: String(r[0]),
+      views: Number(r[1] ?? 0),
+      averageViewDuration: Number(r[2] ?? 0),
+    }));
+    return { ok: true, data: rows };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 /**
  * Per-second audience-retention curve for a single video: rows of
  * [elapsedVideoTimeRatio, audienceWatchRatio]. Owner-scoped; only available

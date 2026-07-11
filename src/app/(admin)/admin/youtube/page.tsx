@@ -43,6 +43,7 @@ import { SearchTermsPanel } from '@/components/admin/SearchTermsPanel';
 import { SongTrendPanel } from '@/components/admin/SongTrendPanel';
 import { SongCockpit } from '@/components/admin/SongCockpit';
 import { SearchScorecardPanel } from '@/components/admin/SearchScorecardPanel';
+import { TopSongMonitorPanel } from '@/components/admin/TopSongMonitorPanel';
 import { FunnelInsightPanel } from '@/components/admin/FunnelInsightPanel';
 import { mergeVideoRows, pickRetentionBenchmark } from '@/lib/youtube-dashboard';
 
@@ -390,6 +391,11 @@ export default async function YouTubeAdminPage() {
         benchmark={benchmarkRow ? { id: benchmarkRow.id, title: benchmarkRow.title } : undefined}
         ytaConfigured={ytaOn}
       />
+
+      {/* Top-10 monitor — the four-metric decision tree across the top songs
+          (reduced reach vs CTR vs watch-time), so a reach cooldown is told apart
+          from a real content shift at a glance. */}
+      <TopSongMonitorPanel ytaConfigured={ytaOn} />
 
       {/* Song cockpit — pick a song ONCE and see its trend + audience + discovery
           together (the at-a-glance surface). The detailed per-song panels below
