@@ -39,6 +39,7 @@ import { RefreshThumbnailsButton } from '@/components/admin/RefreshThumbnailsBut
 import { YouTubeVideosPanel } from '@/components/admin/YouTubeVideosPanel';
 import { RetentionInsightPanel } from '@/components/admin/RetentionInsightPanel';
 import { GeographyInsightPanel } from '@/components/admin/GeographyInsightPanel';
+import { SearchTermsPanel } from '@/components/admin/SearchTermsPanel';
 import { FunnelInsightPanel } from '@/components/admin/FunnelInsightPanel';
 import { mergeVideoRows, pickRetentionBenchmark } from '@/lib/youtube-dashboard';
 
@@ -390,6 +391,10 @@ export default async function YouTubeAdminPage() {
       {/* Audience geography — which countries a given video's viewers come from
           (the diaspora vs home-region split). Same video list as retention. */}
       <GeographyInsightPanel videos={retentionVideos} ytaConfigured={ytaOn} />
+
+      {/* Search discovery — the real queries that brought a video its viewers
+          (viewer truth from Analytics, not a search.list rank guess). */}
+      <SearchTermsPanel videos={retentionVideos} ytaConfigured={ytaOn} />
 
       {/* Viewer conversion funnel — DISCOVERED → WATCHED → 2ND SONG → RETURNED
           → SUBSCRIBED, modelled at cohort level (which stage is leaking). */}
