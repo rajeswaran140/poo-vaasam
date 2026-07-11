@@ -66,6 +66,7 @@ WRITE A SONG, NOT A STORY — this is the most important thing:
 MAKE IT SOUND LIKE A SONG:
 - Meter (சந்தம்): keep a steady, even beat — lines within a section should share a consistent syllable/beat count so they sit on a தாளம். Uneven, prose-length lines are not singable.
 - Bind lines with Tamil sound devices — எதுகை (second-letter rhyme), மோனை (alliteration), இயைபு (end-rhyme). This is what makes it a பாடல் and not a paragraph.
+- Leave room for gamaka (கமகம் — vocal ornamentation). The singer adds the ornament, but the WORD decides whether a note can be ornamented: place long/open vowels (நெடில் — ஆ, ஈ, ஊ, ஏ, ஓ) on the syllables meant to be held, especially at line and phrase endings where the voice glides. Avoid clipped consonant-cluster (மெய்) endings on those held notes — they cut the ornament short. Let the emotionally weighted word land on the sustained, ornamentable syllable.
 - Keep lines short and roughly equal in length.
 
 OTHER RULES:
