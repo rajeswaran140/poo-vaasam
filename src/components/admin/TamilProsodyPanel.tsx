@@ -11,6 +11,12 @@ import { useMemo, useState } from 'react';
 import { Music2, ChevronDown } from 'lucide-react';
 import { analyzeProsody, type RhymeGroup } from '@/lib/tamil-prosody';
 
+/** 0-100 gamaka score → a ★/☆ rating (0-5) for at-a-glance sustainability. */
+function gamakaStars(score: number): string {
+  const filled = Math.round(score / 20);
+  return '★'.repeat(filled) + '☆'.repeat(5 - filled);
+}
+
 function RhymeRow({ label, groups }: { label: string; groups: RhymeGroup[] }) {
   return (
     <div className="text-xs">
@@ -49,6 +55,7 @@ export function TamilProsodyPanel({ lyrics }: { lyrics: string }) {
         <span className="ml-auto text-xs font-normal text-gray-400">
           {report.dominantSyllables ? `~${report.dominantSyllables.count} syllables · ${report.lyricLineCount} lines` : `${report.lyricLineCount} lines`}
           {outliers.size > 0 && ` · ${outliers.size} off-meter`}
+          {` · gamaka ${report.gamaka.averageScore} · ${report.gamaka.openEndings}/${report.lyricLineCount} sustain`}
         </span>
         <ChevronDown className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
@@ -66,8 +73,14 @@ export function TamilProsodyPanel({ lyrics }: { lyrics: string }) {
                   >
                     {l.syllables}
                   </span>
-                  <span className="truncate font-tamil text-gray-800 dark:text-gray-200">{l.text}</span>
+                  <span className="flex-1 truncate font-tamil text-gray-800 dark:text-gray-200">{l.text}</span>
                   {off && <span className="shrink-0 text-xs text-amber-600 dark:text-amber-400">⚠ off-meter</span>}
+                  <span
+                    className={`shrink-0 text-xs tabular-nums ${l.endsOpen ? 'text-emerald-500' : 'text-gray-300 dark:text-gray-600'}`}
+                    title={`Gamaka ${l.gamakaScore}/100 · ${l.endsOpen ? 'open ending (sustainable)' : 'clipped ending'}`}
+                  >
+                    {gamakaStars(l.gamakaScore)}
+                  </span>
                 </li>
               );
             })}
@@ -79,7 +92,8 @@ export function TamilProsodyPanel({ lyrics }: { lyrics: string }) {
             <RhymeRow label="இயைபு (end-rhyme)" groups={report.iyaipu} />
           </div>
           <p className="text-[11px] text-gray-400">
-            Counts are a guide — Tamil meter (யாப்பு) has nuance these don&apos;t capture. The words stay yours.
+            Counts are a guide — Tamil meter (யாப்பு) has nuance these don&apos;t capture. Gamaka ★ rates how
+            singable/sustainable a line ending is (open நெடில் ending = more room to ornament). The words stay yours.
           </p>
         </div>
       )}

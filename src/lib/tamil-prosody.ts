@@ -43,6 +43,13 @@ const VOWEL_FAMILY: Record<number, number> = {
   0x0b93: 0x0b92, // ஓ→ஒ
 };
 
+// நெடில் (long) vowels — the ones a voice can sustain/ornament. Independent
+// letters and their matra (vowel-sign) equivalents.
+const LONG_VOWELS = new Set([0x0b86, 0x0b88, 0x0b8a, 0x0b8f, 0x0b90, 0x0b93, 0x0b94]); // ஆ ஈ ஊ ஏ ஐ ஓ ஔ
+const LONG_MATRAS = new Set([0x0bbe, 0x0bc0, 0x0bc2, 0x0bc7, 0x0bc8, 0x0bcb, 0x0bcc]); // ா ீ ூ ே ை ோ ௌ
+
+export type VowelLength = 'long' | 'short' | 'none';
+
 /** Split text into எழுத்து units — combining marks (matra/புள்ளி) attach to their base. */
 export function toGraphemes(text: string): string[] {
   const out: string[] = [];
@@ -80,6 +87,66 @@ export function countLetters(text: string): number {
   return n;
 }
 
+/**
+ * Classify one எழுத்து (from toGraphemes) as a syllable nucleus or a coda மெய்,
+ * with the nucleus vowel's length. Pure மெய் (base + புள்ளி) is a coda; a
+ * consonant with a matra or the inherent 'அ' is a nucleus.
+ */
+function graphemeUnit(g: string): { role: 'nucleus' | 'coda' | 'skip'; vowel: VowelLength } {
+  const cps = Array.from(g, cp);
+  const first = cps[0];
+  if (isVowel(first)) return { role: 'nucleus', vowel: LONG_VOWELS.has(first) ? 'long' : 'short' };
+  if (isConsonant(first)) {
+    const matra = cps.find(isMatra);
+    if (matra != null) return { role: 'nucleus', vowel: LONG_MATRAS.has(matra) ? 'long' : 'short' };
+    if (cps.some(isPulli)) return { role: 'coda', vowel: 'none' }; // bare மெய்
+    return { role: 'nucleus', vowel: 'short' }; // inherent அ
+  }
+  return { role: 'skip', vowel: 'none' };
+}
+
+export interface GamakaProsody {
+  /** Final syllable is OPEN (ends in a vowel) — sustainable, no clipping மெய். */
+  endsOpen: boolean;
+  finalVowel: VowelLength;
+  openRatio: number; // share of open syllables
+  longVowelRatio: number; // share of syllables carrying a நெடில்
+  gamakaScore: number; // 0-100, weighted toward an open long-vowel line ending
+}
+
+// The glide/ornament lives at the line ending, so an open long final vowel
+// dominates; overall open/long ratios are supporting texture. Weights tunable.
+const W_FINAL_OPEN = 40;
+const W_FINAL_LONG = 25;
+const W_OPEN_RATIO = 20;
+const W_LONG_RATIO = 15;
+
+/**
+ * How gamaka-friendly a line is: can the voice sustain/ornament its notes,
+ * especially the ending? Deterministic — the singer adds the ornament, but the
+ * WORD decides whether a note can carry one (open நெடில் vs clipped மெய்).
+ */
+export function analyzeGamaka(text: string): GamakaProsody {
+  const units: Array<{ vowel: VowelLength; open: boolean }> = [];
+  for (const g of toGraphemes(text)) {
+    const u = graphemeUnit(g);
+    if (u.role === 'nucleus') units.push({ vowel: u.vowel, open: true });
+    else if (u.role === 'coda' && units.length) units[units.length - 1].open = false;
+  }
+  const n = units.length;
+  if (n === 0) return { endsOpen: false, finalVowel: 'none', openRatio: 0, longVowelRatio: 0, gamakaScore: 0 };
+  const last = units[n - 1];
+  const openRatio = units.filter((u) => u.open).length / n;
+  const longVowelRatio = units.filter((u) => u.vowel === 'long').length / n;
+  const gamakaScore = Math.round(
+    (last.open ? W_FINAL_OPEN : 0) +
+      (last.vowel === 'long' ? W_FINAL_LONG : 0) +
+      openRatio * W_OPEN_RATIO +
+      longVowelRatio * W_LONG_RATIO
+  );
+  return { endsOpen: last.open, finalVowel: last.vowel, openRatio, longVowelRatio, gamakaScore };
+}
+
 /** Base sound of a grapheme for மோனை (consonant, or short-vowel family). null if non-Tamil. */
 function baseSound(grapheme: string | undefined): string | null {
   if (!grapheme) return null;
@@ -101,6 +168,10 @@ export interface LineProsody {
   etukai: string | null;
   /** The last எழுத்து (இயைபு / end-rhyme key), or null. */
   iyaipu: string | null;
+  /** Gamaka-friendliness (0-100) — 0 for headings/blank lines. */
+  gamakaScore: number;
+  /** Final syllable open (sustainable ending). */
+  endsOpen: boolean;
 }
 
 // பல்லவி / அனுபல்லவி / சரணம் … markers are structure, not lyric lines.
@@ -112,6 +183,7 @@ export function analyzeLine(text: string, index: number): LineProsody {
   const words = text.trim().split(/\s+/).filter(Boolean);
   const firstG = words.length ? toGraphemes(words[0]) : [];
   const lastG = words.length ? toGraphemes(words[words.length - 1]) : [];
+  const gamaka = isHeading ? null : analyzeGamaka(text);
   return {
     index,
     text,
@@ -121,6 +193,8 @@ export function analyzeLine(text: string, index: number): LineProsody {
     monai: isHeading ? null : baseSound(firstG[0]),
     etukai: isHeading ? null : (firstG[1] ?? null),
     iyaipu: isHeading ? null : (lastG[lastG.length - 1] ?? null),
+    gamakaScore: gamaka ? gamaka.gamakaScore : 0,
+    endsOpen: gamaka ? gamaka.endsOpen : false,
   };
 }
 
@@ -140,6 +214,8 @@ export interface ProsodyReport {
   monai: RhymeGroup[];
   etukai: RhymeGroup[];
   iyaipu: RhymeGroup[];
+  /** Gamaka summary over lyric lines: mean score + how many endings sustain. */
+  gamaka: { averageScore: number; openEndings: number; closedEndings: number };
 }
 
 function groupBy(lines: LineProsody[], pick: (l: LineProsody) => string | null): RhymeGroup[] {
@@ -174,6 +250,11 @@ export function analyzeProsody(lyrics: string): ProsodyReport {
     ? lyricLines.filter((l) => l.syllables !== dominantSyllables!.count).map((l) => l.index)
     : [];
 
+  const openEndings = lyricLines.filter((l) => l.endsOpen).length;
+  const averageScore = lyricLines.length
+    ? Math.round(lyricLines.reduce((s, l) => s + l.gamakaScore, 0) / lyricLines.length)
+    : 0;
+
   return {
     lines,
     lyricLineCount: lyricLines.length,
@@ -182,5 +263,6 @@ export function analyzeProsody(lyrics: string): ProsodyReport {
     monai: groupBy(lyricLines, (l) => l.monai),
     etukai: groupBy(lyricLines, (l) => l.etukai),
     iyaipu: groupBy(lyricLines, (l) => l.iyaipu),
+    gamaka: { averageScore, openEndings, closedEndings: lyricLines.length - openEndings },
   };
 }

@@ -5,7 +5,7 @@
  */
 
 import {
-  toGraphemes, countSyllables, countLetters, analyzeLine, analyzeProsody,
+  toGraphemes, countSyllables, countLetters, analyzeLine, analyzeProsody, analyzeGamaka,
 } from '@/lib/tamil-prosody';
 
 describe('countSyllables (pronounced vowels)', () => {
@@ -87,5 +87,45 @@ describe('analyzeProsody', () => {
     expect(r.lyricLineCount).toBe(0);
     expect(r.dominantSyllables).toBeNull();
     expect(r.monai).toEqual([]);
+    expect(r.gamaka).toEqual({ averageScore: 0, openEndings: 0, closedEndings: 0 });
+  });
+});
+
+describe('analyzeGamaka (sustainability of a line)', () => {
+  it('scores an open long-vowel ending as maximally sustainable', () => {
+    const g = analyzeGamaka('வா'); // open, நெடில் (ஆ)
+    expect(g.endsOpen).toBe(true);
+    expect(g.finalVowel).toBe('long');
+    expect(g.gamakaScore).toBe(100);
+  });
+
+  it('scores a clipped மெய் / short ending low', () => {
+    const g = analyzeGamaka('வேண்டும்'); // ends on டும் — closed, short
+    expect(g.endsOpen).toBe(false);
+    expect(g.finalVowel).toBe('short');
+    expect(g.gamakaScore).toBeLessThan(20);
+  });
+
+  it('treats a bare புள்ளி ending (coda) as closed', () => {
+    expect(analyzeGamaka('தமிழ்').endsOpen).toBe(false); // …ழ் coda
+  });
+
+  it('returns zeros for an empty / non-Tamil line', () => {
+    expect(analyzeGamaka('   ')).toMatchObject({ gamakaScore: 0, finalVowel: 'none', endsOpen: false });
+  });
+});
+
+describe('gamaka integration', () => {
+  it('adds gamaka fields per line (0 for headings)', () => {
+    expect(analyzeLine('பல்லவி', 0).gamakaScore).toBe(0); // heading
+    expect(analyzeLine('வா', 1).gamakaScore).toBeGreaterThan(80);
+    expect(analyzeLine('வா', 1).endsOpen).toBe(true);
+  });
+
+  it('summarises open vs closed endings across lyric lines', () => {
+    const r = analyzeProsody('வா\nவேண்டும்'); // one open ending, one closed
+    expect(r.gamaka.openEndings).toBe(1);
+    expect(r.gamaka.closedEndings).toBe(1);
+    expect(r.gamaka.averageScore).toBeGreaterThan(0);
   });
 });
