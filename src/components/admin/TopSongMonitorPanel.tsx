@@ -12,6 +12,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { adminFetch } from '@/lib/client-auth';
 import type { MonitorRow, SongDiagnosis } from '@/lib/top-song-monitor';
+import { DataToolbar } from '@/components/admin/DataToolbar';
+import { usePagination, PAGER_BTN } from '@/components/admin/Pager';
+import type { ExportColumn } from '@/lib/data-export';
 
 const DIAGNOSIS: Record<SongDiagnosis, { label: string; cls: string }> = {
   distribution: { label: 'Reduced reach', cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' },
@@ -23,6 +26,18 @@ const DIAGNOSIS: Record<SongDiagnosis, { label: string; cls: string }> = {
 
 const numberFmt = new Intl.NumberFormat('en-US');
 const delta = (d: number | null) => (d == null ? '' : `${d >= 0 ? '+' : ''}${d}%`);
+
+const MONITOR_COLUMNS: ExportColumn<MonitorRow>[] = [
+  { header: 'Song', get: (r) => r.title },
+  { header: 'Views (7d)', get: (r) => r.views },
+  { header: 'Δ views %', get: (r) => r.viewsDeltaPct ?? '' },
+  { header: 'Avg watch (s)', get: (r) => r.avgViewDuration },
+  { header: 'Δ watch %', get: (r) => r.watchDeltaPct ?? '' },
+  { header: 'Impressions', get: (r) => r.impressions ?? '' },
+  { header: 'CTR %', get: (r) => r.ctr ?? '' },
+  { header: 'Diagnosis', get: (r) => DIAGNOSIS[r.diagnosis].label },
+];
+
 const deltaCls = (d: number | null) =>
   d == null ? 'text-gray-400' : d >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
 
@@ -35,6 +50,8 @@ export function TopSongMonitorPanel({ ytaConfigured }: { ytaConfigured: boolean 
   const [impressions, setImpressions] = useState('');
   const [ctr, setCtr] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const { page, setPage, totalPages, pageRows, total } = usePagination(rows ?? [], 25);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -93,10 +110,13 @@ export function TopSongMonitorPanel({ ytaConfigured }: { ytaConfigured: boolean 
 
   return (
     <section aria-labelledby="monitor-heading" className="space-y-3">
-      <div>
+      <div className="flex items-start justify-between gap-3">
         <h2 id="monitor-heading" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
           Top-10 song monitor
         </h2>
+        {rows && <DataToolbar title="Top-10 song monitor" filename="tamilagaval-top-song-monitor-7d" columns={MONITOR_COLUMNS} rows={rows} />}
+      </div>
+      <div>
         <p className="text-xs text-gray-500 dark:text-gray-400">
           Views + watch-time per top song, last 7d vs the prior 7d, with a per-song diagnosis:
           reduced <strong>reach</strong> vs <strong>CTR</strong> vs <strong>watch-time</strong>. Impressions + CTR
@@ -147,7 +167,7 @@ export function TopSongMonitorPanel({ ytaConfigured }: { ytaConfigured: boolean 
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-              {rows.map((r) => (
+              {pageRows.map((r) => (
                 <tr key={r.videoId}>
                   <td className="px-3 py-2 font-tamil text-gray-900 dark:text-gray-100"><span className="line-clamp-1 max-w-[16rem]">{r.title}</span></td>
                   <td className="px-3 py-2 text-right tabular-nums">{numberFmt.format(r.views)}</td>
@@ -164,6 +184,13 @@ export function TopSongMonitorPanel({ ytaConfigured }: { ytaConfigured: boolean 
               ))}
             </tbody>
           </table>
+          {totalPages > 1 && (
+            <nav className="flex items-center justify-end gap-2 border-t border-gray-100 dark:border-gray-800 px-3 py-2 text-xs text-gray-500 dark:text-gray-400" aria-label="Pagination">
+              <span>Page {page + 1} of {totalPages} · {total} songs</span>
+              <button type="button" className={PAGER_BTN} onClick={() => setPage(page - 1)} disabled={page === 0}>← Prev</button>
+              <button type="button" className={PAGER_BTN} onClick={() => setPage(page + 1)} disabled={page >= totalPages - 1}>Next →</button>
+            </nav>
+          )}
         </div>
       )}
     </section>
