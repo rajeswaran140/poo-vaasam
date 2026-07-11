@@ -114,6 +114,12 @@ const nextConfig: NextConfig = {
     // other server-only secrets. Falls back to an insecure dev default in
     // src/lib/lyrics-gate.ts when unset — set a real value in Amplify for prod.
     LYRICS_GATE_SECRET: process.env.LYRICS_GATE_SECRET || '',
+    // Shared secret for the scheduled snapshot jobs (metrics + search-terms).
+    // The daily cron sends it as `x-cron-secret`; the routes compare it to
+    // process.env.CRON_SECRET. Like the other server-only secrets, Amplify's SSR
+    // runtime doesn't expose app env vars, so it MUST be inlined here or the cron
+    // path 401s and the diagnostics never accumulate history. Server-only.
+    CRON_SECRET: process.env.CRON_SECRET || '',
   },
 
   // Image optimization
