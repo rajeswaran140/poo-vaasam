@@ -288,6 +288,45 @@ export async function fetchDailySeries(daysBack = 28): Promise<Result<DailyAnaly
   }
 }
 
+/**
+ * Daily views / subscribers-gained / watch-minutes for ONE video — the per-song
+ * daily series (day dimension + video filter). This is the intersection the
+ * dashboard was missing: it already had per-song *aggregate* (fetchVideoAnalytics)
+ * and channel-wide *daily* (fetchDailySeries), but not a single song's day-by-day
+ * curve. Owner-scoped; a brand-new upload returns a short/empty series.
+ */
+export async function fetchVideoDailySeries(
+  videoId: string,
+  daysBack = 28
+): Promise<Result<DailyAnalyticsRow[]>> {
+  if (!isYouTubeAnalyticsConfigured()) {
+    return { ok: false, error: 'YouTube Analytics OAuth not configured' };
+  }
+  if (!videoId) return { ok: false, error: 'videoId is required' };
+  const { startDate, endDate } = dateRange(daysBack);
+  try {
+    const res = await runReport({
+      ids: 'channel==MINE',
+      startDate,
+      endDate,
+      metrics: 'views,subscribersGained,estimatedMinutesWatched',
+      dimensions: 'day',
+      filters: `video==${videoId}`,
+      sort: 'day',
+    });
+    if (!res) return { ok: false, error: 'No response from YouTube Analytics' };
+    const rows = (res.rows ?? []).map((r): DailyAnalyticsRow => ({
+      date: String(r[0]),
+      views: Number(r[1] ?? 0),
+      subscribersGained: Number(r[2] ?? 0),
+      estimatedMinutesWatched: Number(r[3] ?? 0),
+    }));
+    return { ok: true, data: rows };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 export interface SearchTermRow {
   /** The query a viewer typed in YouTube search to reach the video/channel. */
   term: string;

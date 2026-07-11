@@ -10,6 +10,7 @@ import {
   fetchVideoAnalytics,
   fetchChannelAnalyticsSnapshot,
   fetchSearchTerms,
+  fetchVideoDailySeries,
   dateRange,
 } from '@/lib/youtube-analytics';
 
@@ -148,6 +149,42 @@ describe('fetchSearchTerms (real YT-search queries — viewer truth)', () => {
     const decoded = decodeURIComponent(reportUrl);
     expect(decoded).toContain('insightTrafficSourceType==YT_SEARCH');
     expect(decoded).not.toContain('video==');
+  });
+});
+
+describe('fetchVideoDailySeries (per-song daily views/subs)', () => {
+  it('requires a videoId', async () => {
+    expect((await fetchVideoDailySeries('')).ok).toBe(false);
+  });
+
+  it('scopes to the video with a day dimension and maps daily rows', async () => {
+    let reportUrl = '';
+    jest.spyOn(global, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.startsWith('https://oauth2.googleapis.com/token')) return tokenOk();
+      reportUrl = url;
+      return reportOk({
+        rows: [
+          ['2026-07-08', 120, 3, 400],
+          ['2026-07-09', 90, 1, 300],
+        ],
+      });
+    });
+
+    const out = await fetchVideoDailySeries('kOpNZHlE9FE', 28);
+    expect(out.ok).toBe(true);
+    if (out.ok) {
+      expect(out.data).toHaveLength(2);
+      expect(out.data[0]).toEqual({
+        date: '2026-07-08',
+        views: 120,
+        subscribersGained: 3,
+        estimatedMinutesWatched: 400,
+      });
+    }
+    const decoded = decodeURIComponent(reportUrl);
+    expect(decoded).toContain('dimensions=day');
+    expect(decoded).toContain('filters=video==kOpNZHlE9FE');
   });
 });
 
