@@ -9,6 +9,7 @@
 import {
   fetchVideoAnalytics,
   fetchChannelAnalyticsSnapshot,
+  fetchSearchTerms,
   dateRange,
 } from '@/lib/youtube-analytics';
 
@@ -93,6 +94,60 @@ describe('fetchVideoAnalytics', () => {
     const out = await fetchVideoAnalytics();
     expect(out.ok).toBe(false);
     if (!out.ok) expect(out.error).toMatch(/401/);
+  });
+});
+
+describe('fetchSearchTerms (real YT-search queries — viewer truth)', () => {
+  it('returns ok=false when env is incomplete', async () => {
+    delete process.env.YOUTUBE_REFRESH_TOKEN;
+    jest.resetModules();
+    const { fetchSearchTerms: fresh } = await import('@/lib/youtube-analytics');
+    expect((await fresh('kOpNZHlE9FE')).ok).toBe(false);
+  });
+
+  it('scopes the report to YT_SEARCH + the video and maps term rows', async () => {
+    let reportUrl = '';
+    jest.spyOn(global, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.startsWith('https://oauth2.googleapis.com/token')) return tokenOk();
+      reportUrl = url;
+      return reportOk({
+        rows: [
+          ['tamil father grief song', 42, 300],
+          ['appa ninaivu paadal', 7, 55],
+        ],
+      });
+    });
+
+    const out = await fetchSearchTerms('kOpNZHlE9FE', 90);
+    expect(out.ok).toBe(true);
+    if (out.ok) {
+      expect(out.data).toHaveLength(2);
+      expect(out.data[0]).toEqual({
+        term: 'tamil father grief song',
+        views: 42,
+        estimatedMinutesWatched: 300,
+      });
+    }
+    const decoded = decodeURIComponent(reportUrl);
+    expect(decoded).toContain('dimensions=insightTrafficSourceDetail');
+    expect(decoded).toContain('insightTrafficSourceType==YT_SEARCH');
+    expect(decoded).toContain('video==kOpNZHlE9FE');
+  });
+
+  it('omits the video filter for a channel-wide query', async () => {
+    let reportUrl = '';
+    jest.spyOn(global, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.startsWith('https://oauth2.googleapis.com/token')) return tokenOk();
+      reportUrl = url;
+      return reportOk({ rows: [] });
+    });
+    const out = await fetchSearchTerms(undefined, 28);
+    expect(out.ok).toBe(true);
+    const decoded = decodeURIComponent(reportUrl);
+    expect(decoded).toContain('insightTrafficSourceType==YT_SEARCH');
+    expect(decoded).not.toContain('video==');
   });
 });
 

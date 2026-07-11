@@ -288,6 +288,63 @@ export async function fetchDailySeries(daysBack = 28): Promise<Result<DailyAnaly
   }
 }
 
+export interface SearchTermRow {
+  /** The query a viewer typed in YouTube search to reach the video/channel. */
+  term: string;
+  views: number;
+  estimatedMinutesWatched: number;
+}
+
+/**
+ * The real YouTube-search terms that drove views — the queries viewers actually
+ * typed to find this video (or the whole channel when `videoId` is omitted).
+ *
+ * This is VIEWER TRUTH from the Analytics API, and it's deliberately used
+ * INSTEAD of the public Data-API `search.list` ordering: `search.list` is
+ * unpersonalized and can report a video as absent from the top results while
+ * the personalized YouTube app ranks it #1 for the same query (confirmed
+ * 2026-07-10). So we measure "did search actually bring viewers, and for what
+ * terms" rather than guessing an unpersonalized rank.
+ *
+ * Owner-scoped. A brand-new / low-search video returns [] (YouTube's reporting
+ * threshold), which is expected — not an error.
+ */
+export async function fetchSearchTerms(
+  videoId?: string,
+  daysBack = 90
+): Promise<Result<SearchTermRow[]>> {
+  if (!isYouTubeAnalyticsConfigured()) {
+    return { ok: false, error: 'YouTube Analytics OAuth not configured' };
+  }
+  const { startDate, endDate } = dateRange(daysBack);
+  // insightTrafficSourceDetail scoped to YT_SEARCH returns the search queries;
+  // an optional video== filter narrows it to one video.
+  const filters = videoId
+    ? `video==${videoId};insightTrafficSourceType==YT_SEARCH`
+    : 'insightTrafficSourceType==YT_SEARCH';
+  try {
+    const res = await runReport({
+      ids: 'channel==MINE',
+      startDate,
+      endDate,
+      metrics: 'views,estimatedMinutesWatched',
+      dimensions: 'insightTrafficSourceDetail',
+      filters,
+      sort: '-views',
+      maxResults: '50',
+    });
+    if (!res) return { ok: false, error: 'No response from YouTube Analytics' };
+    const rows = (res.rows ?? []).map((r): SearchTermRow => ({
+      term: String(r[0]),
+      views: Number(r[1] ?? 0),
+      estimatedMinutesWatched: Number(r[2] ?? 0),
+    }));
+    return { ok: true, data: rows };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 /**
  * Assemble the Viewer Conversion Funnel input from four Analytics reports:
  *   A. channel totals (views/watch/avgViewPct/subs) — REQUIRED
