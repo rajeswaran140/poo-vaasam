@@ -40,6 +40,7 @@ import { YouTubeVideosPanel } from '@/components/admin/YouTubeVideosPanel';
 import { RetentionInsightPanel } from '@/components/admin/RetentionInsightPanel';
 import { GeographyInsightPanel } from '@/components/admin/GeographyInsightPanel';
 import { SearchTermsPanel } from '@/components/admin/SearchTermsPanel';
+import { SongTrendPanel } from '@/components/admin/SongTrendPanel';
 import { FunnelInsightPanel } from '@/components/admin/FunnelInsightPanel';
 import { mergeVideoRows, pickRetentionBenchmark } from '@/lib/youtube-dashboard';
 
@@ -387,6 +388,10 @@ export default async function YouTubeAdminPage() {
         benchmark={benchmarkRow ? { id: benchmarkRow.id, title: benchmarkRow.title } : undefined}
         ytaConfigured={ytaOn}
       />
+
+      {/* Per-song daily trend — one song's day-by-day views + subscribers (the
+          intersection the aggregate table and channel-daily series can't show). */}
+      <SongTrendPanel videos={retentionVideos} ytaConfigured={ytaOn} />
 
       {/* Audience geography — which countries a given video's viewers come from
           (the diaspora vs home-region split). Same video list as retention. */}

@@ -15,7 +15,7 @@
  */
 
 import type { VideoStats } from '@/lib/youtube-api';
-import type { VideoAnalyticsRow } from '@/lib/youtube-analytics';
+import type { VideoAnalyticsRow, DailyAnalyticsRow } from '@/lib/youtube-analytics';
 import { SHORTS_MAX_DURATION_SECONDS } from '@/lib/youtube-shorts';
 
 /** Short vs regular-video classification by duration (the same ≤180s rule the
@@ -224,4 +224,42 @@ export function videoRowsToCsv(rows: VideoRow[]): string {
   const header = CSV_COLUMNS.map((c) => csvField(c.header)).join(',');
   const lines = rows.map((r) => CSV_COLUMNS.map((c) => csvField(c.get(r))).join(','));
   return [header, ...lines].join('\n');
+}
+
+export interface VideoDailySummary {
+  totalViews: number;
+  totalSubscribers: number;
+  totalWatchMinutes: number;
+  /** The single highest-views day (null when the series is empty). */
+  bestDay: { date: string; views: number } | null;
+  /** Views over the most recent 7 days vs the 7 before — an at-a-glance trend. */
+  last7Views: number;
+  prev7Views: number;
+}
+
+/**
+ * Pure: roll a per-song daily series into at-a-glance totals + best day + a
+ * 7-days-vs-prior-7 read. Rows are assumed day-sorted ascending (as the
+ * Analytics `sort: 'day'` report returns them).
+ */
+export function summariseVideoDaily(rows: DailyAnalyticsRow[]): VideoDailySummary {
+  let totalViews = 0;
+  let totalSubscribers = 0;
+  let totalWatchMinutes = 0;
+  let bestDay: { date: string; views: number } | null = null;
+  for (const r of rows) {
+    totalViews += r.views;
+    totalSubscribers += r.subscribersGained;
+    totalWatchMinutes += r.estimatedMinutesWatched;
+    if (!bestDay || r.views > bestDay.views) bestDay = { date: r.date, views: r.views };
+  }
+  const sumViews = (a: DailyAnalyticsRow[]) => a.reduce((s, r) => s + r.views, 0);
+  return {
+    totalViews,
+    totalSubscribers,
+    totalWatchMinutes,
+    bestDay,
+    last7Views: sumViews(rows.slice(-7)),
+    prev7Views: sumViews(rows.slice(-14, -7)),
+  };
 }
