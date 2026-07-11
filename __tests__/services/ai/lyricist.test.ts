@@ -183,6 +183,18 @@ it('instructs the model to write a SONG (a returning hook, not a narrative) with
   expect(sys).toMatch(/meter|சந்தம்/);
 });
 
+it('teaches gamaka-friendly writing — sustained open vowels where ornamentation lands', async () => {
+  // A lyric can't contain gamaka (that's the voice), but it decides whether a
+  // note can be ornamented at all — long/open vowels (நெடில்) at held/cadence
+  // syllables, not clipped consonant endings.
+  create.mockResolvedValueOnce(toolResponse(LYRICS));
+  await generateLyrics(BRIEF);
+  const sys = (create.mock.calls[0][0] as { system: string }).system.toLowerCase();
+  expect(sys).toContain('gamaka');
+  expect(sys).toMatch(/ornament/);
+  expect(sys).toMatch(/நெடில்|open vowel|long vowel/);
+});
+
 it('forwards the abort signal to the Anthropic call', async () => {
   create.mockResolvedValueOnce(toolResponse(LYRICS));
   const ac = new AbortController();
