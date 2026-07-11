@@ -41,6 +41,7 @@ import { RetentionInsightPanel } from '@/components/admin/RetentionInsightPanel'
 import { GeographyInsightPanel } from '@/components/admin/GeographyInsightPanel';
 import { SearchTermsPanel } from '@/components/admin/SearchTermsPanel';
 import { SongTrendPanel } from '@/components/admin/SongTrendPanel';
+import { SongCockpit } from '@/components/admin/SongCockpit';
 import { FunnelInsightPanel } from '@/components/admin/FunnelInsightPanel';
 import { mergeVideoRows, pickRetentionBenchmark } from '@/lib/youtube-dashboard';
 
@@ -388,6 +389,11 @@ export default async function YouTubeAdminPage() {
         benchmark={benchmarkRow ? { id: benchmarkRow.id, title: benchmarkRow.title } : undefined}
         ytaConfigured={ytaOn}
       />
+
+      {/* Song cockpit — pick a song ONCE and see its trend + audience + discovery
+          together (the at-a-glance surface). The detailed per-song panels below
+          stay for deep-dives. */}
+      <SongCockpit videos={retentionVideos} ytaConfigured={ytaOn} />
 
       {/* Per-song daily trend — one song's day-by-day views + subscribers (the
           intersection the aggregate table and channel-daily series can't show). */}
