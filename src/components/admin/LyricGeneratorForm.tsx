@@ -47,6 +47,10 @@ export function LyricGeneratorForm() {
   // Abort an in-flight generation on unmount (~5-15s) and guard setState-after-unmount.
   const abortRef = useRef<AbortController | null>(null);
   const mountedRef = useRef(true);
+  // Monotonic generation id: a brief edit bumps it, invalidating any response
+  // that is still in flight so a lyric for the *old* brief can't render against
+  // the *edited* one.
+  const genIdRef = useRef(0);
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -56,8 +60,10 @@ export function LyricGeneratorForm() {
   }, []);
 
   // Clear a previously-generated lyric once the brief is edited, so a stale
-  // result isn't read as current. (No-op on the initial mount — result is null.)
+  // result isn't read as current, and invalidate any in-flight generation.
+  // (No-op on the initial mount — result is null.)
   useEffect(() => {
+    genIdRef.current += 1;
     setResult(null);
     setError(null);
   }, [theme, emotions, register, voice, anupallavi, charanams, seedWords, titleHint, notes]);
@@ -82,6 +88,7 @@ export function LyricGeneratorForm() {
     abortRef.current?.abort(); // supersede any prior in-flight generation
     const controller = new AbortController();
     abortRef.current = controller;
+    const myGen = genIdRef.current; // a later brief edit bumps this → drop the response
     try {
       const brief = {
         theme: theme.trim(),
@@ -100,13 +107,13 @@ export function LyricGeneratorForm() {
         signal: controller.signal,
       });
       const body = (await res.json().catch(() => ({}))) as { success?: boolean; data?: Lyrics; error?: string };
-      if (controller.signal.aborted || !mountedRef.current) return; // superseded / unmounted
+      if (controller.signal.aborted || !mountedRef.current || genIdRef.current !== myGen) return; // superseded / unmounted / brief edited
       if (!res.ok || !body.success || !body.data) {
         throw new Error(body.error || `Generation failed (${res.status})`);
       }
       setResult(body.data);
     } catch (err) {
-      if (controller.signal.aborted || !mountedRef.current) return;
+      if (controller.signal.aborted || !mountedRef.current || genIdRef.current !== myGen) return;
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       if (mountedRef.current && abortRef.current === controller) setLoading(false);
@@ -222,6 +229,11 @@ export function LyricGeneratorForm() {
                 {copied ? <Check className="h-3.5 w-3.5 text-green-600" aria-hidden /> : <Copy className="h-3.5 w-3.5" aria-hidden />} {copied ? 'Copied' : 'Copy'}
               </button>
             </div>
+            {result.charanams.length < charanams && (
+              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
+                The model returned {result.charanams.length} of {charanams} charanams requested — regenerate for more, or accept as-is.
+              </p>
+            )}
             <LyricSection heading="பல்லவி" lines={result.pallavi} />
             {result.anupallavi.length > 0 && <LyricSection heading="அனுபல்லவி" lines={result.anupallavi} />}
             {result.charanams.map((c, i) => (
