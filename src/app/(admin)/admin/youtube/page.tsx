@@ -43,6 +43,7 @@ import { SongCockpit } from '@/components/admin/SongCockpit';
 import { SearchScorecardPanel } from '@/components/admin/SearchScorecardPanel';
 import { TopSongMonitorPanel } from '@/components/admin/TopSongMonitorPanel';
 import { FunnelInsightPanel } from '@/components/admin/FunnelInsightPanel';
+import { LazyMount } from '@/components/admin/LazyMount';
 import { mergeVideoRows, pickRetentionBenchmark } from '@/lib/youtube-dashboard';
 
 const ANALYTICS_DAYS = 28;
@@ -407,7 +408,11 @@ export default async function YouTubeAdminPage() {
 
       {/* Viewer conversion funnel — DISCOVERED → WATCHED → 2ND SONG → RETURNED
           → SUBSCRIBED, modelled at cohort level (which stage is leaking). */}
-      <FunnelInsightPanel ytaConfigured={ytaOn} />
+      {/* Heavy (~6 Analytics reports on mount) — defer until scrolled into view
+          so it doesn't fire on every dashboard open. */}
+      <LazyMount>
+        <FunnelInsightPanel ytaConfigured={ytaOn} />
+      </LazyMount>
 
       {/* Interactive videos panel — pagination, sort, filter, CSV export,
           and a live date-range selector (re-queries owner Analytics). */}
