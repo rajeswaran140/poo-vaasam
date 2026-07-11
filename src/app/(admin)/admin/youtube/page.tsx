@@ -42,6 +42,7 @@ import { GeographyInsightPanel } from '@/components/admin/GeographyInsightPanel'
 import { SearchTermsPanel } from '@/components/admin/SearchTermsPanel';
 import { SongTrendPanel } from '@/components/admin/SongTrendPanel';
 import { SongCockpit } from '@/components/admin/SongCockpit';
+import { SearchScorecardPanel } from '@/components/admin/SearchScorecardPanel';
 import { FunnelInsightPanel } from '@/components/admin/FunnelInsightPanel';
 import { mergeVideoRows, pickRetentionBenchmark } from '@/lib/youtube-dashboard';
 
@@ -406,6 +407,10 @@ export default async function YouTubeAdminPage() {
       {/* Search discovery — the real queries that brought a video its viewers
           (viewer truth from Analytics, not a search.list rank guess). */}
       <SearchTermsPanel videos={retentionVideos} ytaConfigured={ytaOn} />
+
+      {/* Search scorecard — manual, human-observed positions for a song's tracked
+          query set, scored by opportunity (biggest wins first). */}
+      <SearchScorecardPanel />
 
       {/* Viewer conversion funnel — DISCOVERED → WATCHED → 2ND SONG → RETURNED
           → SUBSCRIBED, modelled at cohort level (which stage is leaking). */}
