@@ -299,6 +299,8 @@ export interface DailyAnalyticsRow {
   views: number;
   subscribersGained: number;
   estimatedMinutesWatched: number;
+  /** Channel series only (fetchDailySeries); net subs = gained − lost. */
+  subscribersLost?: number;
 }
 
 /** Daily channel series (views/subs/watch-time per day) for the last N days. */
@@ -312,7 +314,8 @@ export async function fetchDailySeries(daysBack = 28): Promise<Result<DailyAnaly
       ids: 'channel==MINE',
       startDate,
       endDate,
-      metrics: 'views,subscribersGained,estimatedMinutesWatched',
+      // subscribersLost appended LAST so existing column indices don't shift.
+      metrics: 'views,subscribersGained,estimatedMinutesWatched,subscribersLost',
       dimensions: 'day',
       sort: 'day',
     });
@@ -322,6 +325,7 @@ export async function fetchDailySeries(daysBack = 28): Promise<Result<DailyAnaly
       views: Number(r[1] ?? 0),
       subscribersGained: Number(r[2] ?? 0),
       estimatedMinutesWatched: Number(r[3] ?? 0),
+      subscribersLost: Number(r[4] ?? 0),
     }));
     return { ok: true, data: rows };
   } catch (err) {
