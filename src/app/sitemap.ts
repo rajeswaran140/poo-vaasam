@@ -42,7 +42,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Section/landing pages: home, the live content sections (empty ones are
   // excluded via the shared registry), the aggregate, and the service page.
-  const sectionPaths = ['', ...liveContentSections().map((s) => s.href), '/all', '/music-composition', '/status'];
+  const sectionPaths = ['', ...liveContentSections().map((s) => s.href), '/all', '/popular', '/music-composition', '/status'];
   if (videosEnabled) {
     sectionPaths.push('/videos');
   }
