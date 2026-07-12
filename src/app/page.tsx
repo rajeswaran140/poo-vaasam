@@ -11,6 +11,7 @@ import Header from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import { isYouTubeChannelConfigured, socialProfileUrls } from '@/config/site';
 import { LatestVideos } from '@/components/LatestVideos';
+import { FeaturedSongs } from '@/components/FeaturedSongs';
 import { SubscribeButton } from '@/components/SubscribeButton';
 import { JsonLd } from '@/components/JsonLd';
 import { SITE_URL, SITE_NAME, alternatesFor } from '@/lib/seo';
@@ -139,6 +140,10 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* Most-loved songs — the proven top-5 up front, driving watch→subscribe
+          and WhatsApp shares. Curated (see config/featured-songs), links to /popular. */}
+      <FeaturedSongs showAllLink />
 
       {/* Latest YouTube videos — funnel to the channel. Client island so the
           landing page stays static while the feed stays fresh (see LatestVideos). */}
