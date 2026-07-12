@@ -29,6 +29,9 @@ export interface DailyMetricPoint {
   views: number;
   estimatedMinutesWatched: number;
   subscribersGained: number;
+  subscribersLost: number;
+  /** Net subscriber change for the day (gained − lost). */
+  netSubscribers: number;
   capturedAt: string; // provenance: when this row was last written
 }
 
@@ -52,8 +55,9 @@ export async function captureChannelMetrics(opts?: { daysBack?: number }): Promi
   const capturedAt = nowIso();
   const rows = series.data;
   await Promise.all(
-    rows.map((r) =>
-      DynamoDBOperations.put({
+    rows.map((r) => {
+      const subscribersLost = r.subscribersLost ?? 0;
+      return DynamoDBOperations.put({
         PK: pkFor(CHANNEL_SCOPE),
         SK: r.date,
         scope: CHANNEL_SCOPE,
@@ -61,9 +65,11 @@ export async function captureChannelMetrics(opts?: { daysBack?: number }): Promi
         views: r.views,
         estimatedMinutesWatched: r.estimatedMinutesWatched,
         subscribersGained: r.subscribersGained,
+        subscribersLost,
+        netSubscribers: r.subscribersGained - subscribersLost,
         capturedAt,
-      })
-    )
+      });
+    })
   );
 
   const dates = rows.map((r) => r.date).sort();
@@ -86,14 +92,21 @@ export async function readChannelMetricSeries(count = 180): Promise<DailyMetricP
     scanIndexForward: false, // newest first from Dynamo…
     limit: count,
   });
-  const items: DailyMetricPoint[] = (res.Items ?? []).map((it) => ({
-    scope: String(it.scope ?? CHANNEL_SCOPE),
-    date: String(it.date ?? it.SK),
-    views: Number(it.views ?? 0),
-    estimatedMinutesWatched: Number(it.estimatedMinutesWatched ?? 0),
-    subscribersGained: Number(it.subscribersGained ?? 0),
-    capturedAt: String(it.capturedAt ?? ''),
-  }));
+  const items: DailyMetricPoint[] = (res.Items ?? []).map((it) => {
+    const subscribersGained = Number(it.subscribersGained ?? 0);
+    const subscribersLost = Number(it.subscribersLost ?? 0);
+    return {
+      scope: String(it.scope ?? CHANNEL_SCOPE),
+      date: String(it.date ?? it.SK),
+      views: Number(it.views ?? 0),
+      estimatedMinutesWatched: Number(it.estimatedMinutesWatched ?? 0),
+      subscribersGained,
+      subscribersLost,
+      // netSubscribers may predate the field for older rows → derive it.
+      netSubscribers: it.netSubscribers != null ? Number(it.netSubscribers) : subscribersGained - subscribersLost,
+      capturedAt: String(it.capturedAt ?? ''),
+    };
+  });
   // …return oldest→newest for time-series consumers.
   return items.sort((a, b) => a.date.localeCompare(b.date));
 }

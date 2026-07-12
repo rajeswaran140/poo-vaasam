@@ -26,8 +26,8 @@ beforeEach(() => {
 });
 
 const SERIES = [
-  { date: '2026-07-08', views: 10, subscribersGained: 2, estimatedMinutesWatched: 30 },
-  { date: '2026-07-09', views: 12, subscribersGained: 3, estimatedMinutesWatched: 41 },
+  { date: '2026-07-08', views: 10, subscribersGained: 2, estimatedMinutesWatched: 30, subscribersLost: 1 }, // net +1
+  { date: '2026-07-09', views: 12, subscribersGained: 3, estimatedMinutesWatched: 41, subscribersLost: 5 }, // net -2
 ];
 
 describe('captureChannelMetrics', () => {
@@ -38,7 +38,8 @@ describe('captureChannelMetrics', () => {
     expect(res).toEqual({ ok: true, data: { scope: 'CHANNEL', daysCaptured: 2, from: '2026-07-08', to: '2026-07-09' } });
     expect(mockPut).toHaveBeenCalledTimes(2);
     expect(mockPut).toHaveBeenCalledWith(
-      expect.objectContaining({ PK: 'METRICSNAP#CHANNEL', SK: '2026-07-09', date: '2026-07-09', views: 12, subscribersGained: 3, estimatedMinutesWatched: 41 })
+      // net-negative day: gained 3 − lost 5 = -2 (the real-dip signal we want captured)
+      expect.objectContaining({ PK: 'METRICSNAP#CHANNEL', SK: '2026-07-09', date: '2026-07-09', views: 12, subscribersGained: 3, subscribersLost: 5, netSubscribers: -2, estimatedMinutesWatched: 41 })
     );
     // provenance stamp is present
     expect(mockPut.mock.calls[0][0]).toHaveProperty('capturedAt');
@@ -64,14 +65,16 @@ describe('readChannelMetricSeries', () => {
   it('returns points oldest→newest even though Dynamo yields newest-first', async () => {
     mockQuery.mockResolvedValueOnce({
       Items: [
-        { SK: '2026-07-09', date: '2026-07-09', views: 12, subscribersGained: 3, estimatedMinutesWatched: 41, capturedAt: 'x' },
+        { SK: '2026-07-09', date: '2026-07-09', views: 12, subscribersGained: 3, subscribersLost: 5, netSubscribers: -2, estimatedMinutesWatched: 41, capturedAt: 'x' },
+        // older row written before subscribersLost/netSubscribers existed → derive net.
         { SK: '2026-07-08', date: '2026-07-08', views: 10, subscribersGained: 2, estimatedMinutesWatched: 30, capturedAt: 'x' },
       ],
     });
     const series = await readChannelMetricSeries(180);
 
     expect(series.map((p) => p.date)).toEqual(['2026-07-08', '2026-07-09']);
-    expect(series[1]).toMatchObject({ views: 12, subscribersGained: 3 });
+    expect(series[1]).toMatchObject({ views: 12, subscribersGained: 3, subscribersLost: 5, netSubscribers: -2 });
+    expect(series[0]).toMatchObject({ subscribersLost: 0, netSubscribers: 2 }); // legacy row: net = 2 − 0
     const q = mockQuery.mock.calls[0][0];
     expect(q).toMatchObject({ scanIndexForward: false, limit: 180 });
     expect(q.expressionAttributeValues).toEqual({ ':pk': 'METRICSNAP#CHANNEL' });
