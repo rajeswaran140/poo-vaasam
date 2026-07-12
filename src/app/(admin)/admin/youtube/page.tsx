@@ -42,6 +42,7 @@ import { PerSongDeepDive } from '@/components/admin/PerSongDeepDive';
 import { SongCockpit } from '@/components/admin/SongCockpit';
 import { SearchScorecardPanel } from '@/components/admin/SearchScorecardPanel';
 import { TopSongMonitorPanel } from '@/components/admin/TopSongMonitorPanel';
+import { SharesPanel } from '@/components/admin/SharesPanel';
 import { FunnelInsightPanel } from '@/components/admin/FunnelInsightPanel';
 import { LazyMount } from '@/components/admin/LazyMount';
 import { mergeVideoRows, pickRetentionBenchmark } from '@/lib/youtube-dashboard';
@@ -386,6 +387,9 @@ export default async function YouTubeAdminPage() {
       {/* LEAD with the at-a-glance diagnosis: the four-metric decision tree across
           the top songs (reduced reach vs CTR vs watch-time). */}
       <TopSongMonitorPanel ytaConfigured={ytaOn} />
+
+      {/* Song shares — per-song native shares + share-rate (WhatsApp lever). */}
+      <SharesPanel ytaConfigured={ytaOn} />
 
       {/* Song cockpit — pick a song ONCE → trend + audience + discovery together. */}
       <SongCockpit videos={retentionVideos} ytaConfigured={ytaOn} />

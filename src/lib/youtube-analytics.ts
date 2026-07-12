@@ -334,6 +334,33 @@ export async function fetchDailySeries(daysBack = 28): Promise<Result<DailyAnaly
 }
 
 /**
+ * Total `shares` (native YouTube Share button) for ONE video over the window.
+ * A top-videos-BY-shares report isn't supported by the API, so shares are read
+ * per-video via a `video==` filter. NOTE: counts only shares through YouTube's
+ * own Share dialog — copy-paste-the-link sharing isn't captured, so this is a
+ * FLOOR, complementary to the app's first-party WhatsApp/Status tracking.
+ */
+export async function fetchVideoShares(videoId: string, daysBack = 90): Promise<Result<number>> {
+  if (!isYouTubeAnalyticsConfigured()) {
+    return { ok: false, error: 'YouTube Analytics OAuth not configured' };
+  }
+  const { startDate, endDate } = dateRange(daysBack);
+  try {
+    const res = await runReport({
+      ids: 'channel==MINE',
+      startDate,
+      endDate,
+      metrics: 'shares',
+      filters: `video==${videoId}`,
+    });
+    if (!res) return { ok: false, error: 'No response from YouTube Analytics' };
+    return { ok: true, data: Number(res.rows?.[0]?.[0] ?? 0) };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
  * Daily views / subscribers-gained / watch-minutes for ONE video — the per-song
  * daily series (day dimension + video filter). This is the intersection the
  * dashboard was missing: it already had per-song *aggregate* (fetchVideoAnalytics)
