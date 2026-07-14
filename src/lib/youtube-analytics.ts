@@ -420,6 +420,14 @@ export interface SearchTermRow {
  * Owner-scoped. A brand-new / low-search video returns [] (YouTube's reporting
  * threshold), which is expected — not an error.
  */
+/**
+ * HARD API CAP — `insightTrafficSourceDetail` rejects any `maxResults` above 25
+ * with a 500 `FIELD_UNKNOWN_VALUE` (not a 400), so an over-cap value looks like
+ * a YouTube outage rather than a bad request. Verified against the live API
+ * 2026-07-14: 25 → 200 OK, 26 → 500. Do NOT raise this.
+ */
+export const SEARCH_TERMS_MAX_RESULTS = 25;
+
 export async function fetchSearchTerms(
   videoId?: string,
   daysBack = 90
@@ -442,7 +450,7 @@ export async function fetchSearchTerms(
       dimensions: 'insightTrafficSourceDetail',
       filters,
       sort: '-views',
-      maxResults: '50',
+      maxResults: String(SEARCH_TERMS_MAX_RESULTS),
     });
     if (!res) return { ok: false, error: 'No response from YouTube Analytics' };
     const rows = (res.rows ?? []).map((r): SearchTermRow => ({
