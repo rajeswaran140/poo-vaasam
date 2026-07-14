@@ -14,7 +14,7 @@
  */
 
 import { DynamoDBOperations } from '@/infrastructure/database/dynamodb-client';
-import { sanitizeTarget, type EventType } from '@/lib/event-types';
+import { sanitizeTarget, type StoreEventType } from '@/lib/event-types';
 
 const PK = 'EVENT';
 
@@ -23,8 +23,12 @@ function todayUtc(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** Record one occurrence of an event (atomic +1 on the day/type/target counter). */
-export async function recordEvent(type: EventType, target?: string, date = todayUtc()): Promise<void> {
+/**
+ * Record one occurrence of an event (atomic +1 on the day/type/target counter).
+ * Accepts derived server-written types (share_song / inbound_song) as well as
+ * the client-sendable ones — see lib/event-types.
+ */
+export async function recordEvent(type: StoreEventType, target?: string, date = todayUtc()): Promise<void> {
   const tgt = sanitizeTarget(target);
   await DynamoDBOperations.update({
     key: { PK, SK: `${date}#${type}#${tgt}` },

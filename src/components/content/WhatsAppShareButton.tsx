@@ -35,12 +35,19 @@ interface Props {
   compact?: boolean;
   /** Render a <button> (window.open) instead of <a> — for tiles wrapped in a Link. */
   asButton?: boolean;
+  /**
+   * The song being shared. Powers the per-song share counter (share_song) so we
+   * can answer "which song do people actually forward?" — pass it wherever the
+   * id is to hand.
+   */
+  songId?: string;
   className?: string;
 }
 
-export function WhatsAppShareButton({ url, title, verb = 'listen', compact = false, asButton = false, className = '' }: Props) {
+export function WhatsAppShareButton({ url, title, verb = 'listen', compact = false, asButton = false, songId, className = '' }: Props) {
   const href = whatsappShareUrl({ title, url, verb });
   const label = `${title} — WhatsApp-இல் பகிருங்கள்`;
+  const record = () => trackShare('whatsapp', songId ? { songId } : undefined);
 
   if (asButton) {
     // The whole card is a <Link>, so we can't emit a nested <a>. A <button>
@@ -49,7 +56,7 @@ export function WhatsAppShareButton({ url, title, verb = 'listen', compact = fal
     const onClick = (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      trackShare('whatsapp');
+      record();
       window.open(href, '_blank', 'noopener,noreferrer');
     };
     return (
@@ -73,7 +80,7 @@ export function WhatsAppShareButton({ url, title, verb = 'listen', compact = fal
         rel="noopener noreferrer"
         aria-label={label}
         title="WhatsApp-இல் பகிருங்கள்"
-        onClick={() => trackShare('whatsapp')}
+        onClick={record}
         className={`flex shrink-0 items-center px-2 py-2.5 text-[#25D366] transition-colors hover:text-[#1ebe57] focus-visible:text-[#1ebe57] focus-visible:outline-none ${className}`}
       >
         <WhatsAppGlyph className="h-[18px] w-[18px]" />
@@ -87,7 +94,7 @@ export function WhatsAppShareButton({ url, title, verb = 'listen', compact = fal
       target="_blank"
       rel="noopener noreferrer"
       aria-label={label}
-      onClick={() => trackShare('whatsapp')}
+      onClick={record}
       className={`inline-flex items-center justify-center gap-2 rounded-full bg-[#25D366] px-4 py-2 font-tamil text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#1ebe57] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#25D366]/60 ${className}`}
     >
       <WhatsAppGlyph className="h-4 w-4" /> WhatsApp

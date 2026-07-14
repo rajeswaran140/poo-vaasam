@@ -110,10 +110,30 @@ describe('StatusShareCard', () => {
         'noopener,noreferrer',
       ),
     );
-    expect(trackShare).toHaveBeenCalledWith('whatsapp_status', {
+    // Reported as a DISTINCT channel: a link share is a materially weaker action
+    // than posting the actual clip, and lumping them together overstated the
+    // Status numbers.
+    expect(trackShare).toHaveBeenCalledWith('whatsapp_status_link', {
       songId: 'cnt_test_1',
       assetId: 'engaldesam-short',
     });
+    openSpy.mockRestore();
+  });
+
+  it('does NOT download the clip before discovering it cannot file-share', async () => {
+    // The old flow fetched the ~1.3MB clip, THEN found canShare({files}) false,
+    // and only then called window.open — by which point we were past an `await`,
+    // outside the user gesture, so the popup was blocked and the user saw
+    // nothing happen (while the share had already been counted).
+    setShareApi({ share: jest.fn(), canShare: jest.fn().mockReturnValue(false) });
+    global.fetch = jest.fn() as unknown as typeof fetch;
+    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
+
+    render(<StatusShareCard {...view} />);
+    fireEvent.click(screen.getByRole('button', { name: /Status-இல் பகிருங்கள்/ }));
+
+    await waitFor(() => expect(openSpy).toHaveBeenCalled());
+    expect(global.fetch).not.toHaveBeenCalled(); // no wasted 1.3MB download
     openSpy.mockRestore();
   });
 
@@ -133,5 +153,34 @@ describe('StatusShareCard', () => {
     await waitFor(() => expect(share).toHaveBeenCalled());
     expect(openSpy).not.toHaveBeenCalled(); // dismissal is not an error
     openSpy.mockRestore();
+  });
+
+  it('does NOT count a share the user dismissed', async () => {
+    // trackShare used to fire at the TOP of handleShare — before the attempt —
+    // so every cancelled share sheet inflated the count.
+    const abort = Object.assign(new Error('cancelled'), { name: 'AbortError' });
+    const share = jest.fn().mockRejectedValue(abort);
+    setShareApi({ share, canShare: jest.fn().mockReturnValue(true) });
+    global.fetch = jest.fn().mockResolvedValue({
+      blob: () => Promise.resolve(new Blob(['x'], { type: 'video/mp4' })),
+    }) as unknown as typeof fetch;
+
+    render(<StatusShareCard {...view} />);
+    fireEvent.click(screen.getByRole('button', { name: /Status-இல் பகிருங்கள்/ }));
+
+    await waitFor(() => expect(share).toHaveBeenCalled());
+    expect(trackShare).not.toHaveBeenCalled();
+  });
+
+  it('counts the Download route — the documented desktop path to Status', async () => {
+    // Leaving the download untracked made the ENTIRE desktop Status workflow
+    // invisible in the numbers.
+    render(<StatusShareCard {...view} />);
+    fireEvent.click(screen.getByLabelText(/சேமி/));
+
+    expect(trackShare).toHaveBeenCalledWith('whatsapp_status_download', {
+      songId: 'cnt_test_1',
+      assetId: 'engaldesam-short',
+    });
   });
 });

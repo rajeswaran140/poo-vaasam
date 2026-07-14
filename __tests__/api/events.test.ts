@@ -51,6 +51,61 @@ it('rejects an unknown event type with 400 and never records', async () => {
   expect(recordEvent).not.toHaveBeenCalled();
 });
 
+/**
+ * Per-song attribution (2026-07-14 WhatsApp audit). The channel-keyed counter is
+ * preserved exactly as it was — the existing dashboard breakdown depends on it —
+ * and the per-song counter is DERIVED server-side, so the client can't write
+ * arbitrary event types into the store.
+ */
+describe('per-song share attribution', () => {
+  it('writes BOTH the channel counter and a derived per-song counter', async () => {
+    recordEvent.mockResolvedValue(undefined);
+    const res = await post({ type: 'share', target: 'whatsapp', songId: 'cnt_9' });
+    expect(res.status).toBe(202);
+    expect(recordEvent).toHaveBeenCalledWith('share', 'whatsapp'); // unchanged
+    expect(recordEvent).toHaveBeenCalledWith('share_song', 'cnt_9'); // new
+    expect(recordEvent).toHaveBeenCalledTimes(2);
+  });
+
+  it('derives a per-song counter for an inbound landing too', async () => {
+    recordEvent.mockResolvedValue(undefined);
+    await post({ type: 'inbound', target: 'whatsapp', songId: 'cnt_9' });
+    expect(recordEvent).toHaveBeenCalledWith('inbound', 'whatsapp');
+    expect(recordEvent).toHaveBeenCalledWith('inbound_song', 'cnt_9');
+  });
+
+  it('writes only the channel counter when no songId is supplied', async () => {
+    recordEvent.mockResolvedValue(undefined);
+    await post({ type: 'share', target: 'whatsapp' });
+    expect(recordEvent).toHaveBeenCalledTimes(1);
+    expect(recordEvent).toHaveBeenCalledWith('share', 'whatsapp');
+  });
+
+  it('ignores a songId on an event type with no per-song meaning', async () => {
+    recordEvent.mockResolvedValue(undefined);
+    await post({ type: 'install', songId: 'cnt_9' });
+    expect(recordEvent).toHaveBeenCalledTimes(1);
+    expect(recordEvent).toHaveBeenCalledWith('install', undefined);
+  });
+
+  it('refuses a client trying to write a derived counter directly', async () => {
+    const res = await post({ type: 'share_song', target: 'cnt_9' });
+    expect(res.status).toBe(400);
+    expect(recordEvent).not.toHaveBeenCalled();
+  });
+
+  it('still 202s when the per-song write fails but the channel write succeeded', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    recordEvent
+      .mockResolvedValueOnce(undefined) // channel counter OK
+      .mockRejectedValueOnce(new Error('throttled')); // per-song counter fails
+    const res = await post({ type: 'share', target: 'whatsapp', songId: 'cnt_9' });
+    // Losing the secondary counter must not cost us the primary one, and must
+    // never surface to the visitor.
+    expect(res.status).toBe(202);
+  });
+});
+
 it('rejects malformed JSON with 400', async () => {
   const res = await post(undefined, undefined, '{not json');
   expect(res.status).toBe(400);

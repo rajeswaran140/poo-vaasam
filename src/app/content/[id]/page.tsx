@@ -31,6 +31,8 @@ import { DetailAudioPlayer } from '@/components/music/DetailAudioPlayer';
 import { isAudioPlaybackEnabled } from '@/config/features';
 import { JsonLd } from '@/components/JsonLd';
 import { ShareRow } from '@/components/content/ShareRow';
+import { WhatsAppGlyph } from '@/components/content/WhatsAppShareButton';
+import { clipForSong } from '@/config/status-clips';
 import { TrackedYouTubeOpen } from '@/components/TrackedYouTubeOpen';
 import { isYouTubeUrl, getYouTubeWatchUrl, getYouTubeId } from '@/lib/utils/youtube';
 import { SITE_URL, SITE_NAME, absoluteUrl, toDescription, alternatesFor, actionVerb, crawlerAuthor } from '@/lib/seo';
@@ -437,7 +439,21 @@ export default async function ContentPage({ params }: PageProps) {
             <h3 className="mb-3 font-tamil text-sm font-semibold uppercase tracking-wide text-gray-700">
               பகிர்தல்
             </h3>
-            <ShareRow url={pageUrl} title={content.title} verb={actionVerb(content.type)} />
+            <ShareRow url={pageUrl} title={content.title} verb={actionVerb(content.type)} songId={content.id} />
+            {clipForSong(content.id) && (
+              // This song has a vertical Status clip. `clipForSong` existed but
+              // was DEAD CODE — the song-page "Share to Status" entry point it
+              // was written for never got wired, so /status was reachable only
+              // from the nav, never at the moment a visitor is actually engaged
+              // with a song.
+              <Link
+                href="/status"
+                className="mt-4 inline-flex items-center gap-1 font-tamil text-sm font-medium text-[#0b7a5b] hover:underline"
+              >
+                <WhatsAppGlyph className="h-4 w-4" />
+                Status-இல் பகிருங்கள் →
+              </Link>
+            )}
           </div>
 
           {/* Related songs — keep the visitor exploring the catalogue on-site;

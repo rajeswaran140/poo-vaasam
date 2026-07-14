@@ -46,38 +46,50 @@ export function StatusShareCard({ songId, title, path, clip, cover }: StatusClip
     utm_content: songId,
   };
 
-  async function handleShare() {
-    trackShare('whatsapp_status', { songId, assetId });
-    const caption = whatsappShareText({ title, url: contentUrl, verb: 'listen', utm: statusUtm });
-
-    // Preferred path (mobile): share the real video file so the user can post it
-    // straight to WhatsApp Status. canShare({files}) gates it — false on desktop.
-    try {
-      const nav = navigator as Navigator & { canShare?: (d?: ShareData) => boolean };
-      if (typeof nav.canShare === 'function' && typeof nav.share === 'function') {
-        setBusy(true);
-        const res = await fetch(clip);
-        const blob = await res.blob();
-        const file = new File([blob], fileName, { type: blob.type || 'video/mp4' });
-        if (nav.canShare({ files: [file] })) {
-          await nav.share({ files: [file], text: caption, title });
-          return;
-        }
-      }
-    } catch (err) {
-      // User dismissed the share sheet → done (not an error).
-      if ((err as { name?: string })?.name === 'AbortError') return;
-      // No file support / fetch failure → fall through to the link share.
-    } finally {
-      setBusy(false);
-    }
-
-    // Fallback: share the song link (text) via wa.me.
+  const openLinkFallback = () => {
     window.open(
       whatsappShareUrl({ title, url: contentUrl, verb: 'listen', utm: statusUtm }),
       '_blank',
       'noopener,noreferrer'
     );
+    trackShare('whatsapp_status_link', { songId, assetId });
+  };
+
+  async function handleShare() {
+    const caption = whatsappShareText({ title, url: contentUrl, verb: 'listen', utm: statusUtm });
+    const nav = navigator as Navigator & { canShare?: (d?: ShareData) => boolean };
+
+    // Probe file-share support with an EMPTY placeholder file BEFORE downloading
+    // anything. The old code fetched the ~1.3 MB clip first and only then found
+    // out canShare({files}) was false — by which point we were past an `await`,
+    // outside the user-gesture window, so the wa.me popup got blocked and the
+    // user saw nothing happen (while the share was already counted).
+    const canShareFiles =
+      typeof nav.canShare === 'function' &&
+      typeof nav.share === 'function' &&
+      nav.canShare({ files: [new File([], fileName, { type: 'video/mp4' })] });
+
+    if (!canShareFiles) {
+      openLinkFallback(); // still inside the click gesture → not popup-blocked
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const res = await fetch(clip);
+      const blob = await res.blob();
+      const file = new File([blob], fileName, { type: blob.type || 'video/mp4' });
+      await nav.share({ files: [file], text: caption, title });
+      // Counted only once the share RESOLVES. Firing before the attempt (as this
+      // did) counted every dismissed sheet as a share.
+      trackShare('whatsapp_status', { songId, assetId });
+    } catch (err) {
+      // User dismissed the share sheet → not a share, and not an error.
+      if ((err as { name?: string })?.name === 'AbortError') return;
+      openLinkFallback(); // fetch/share failed → still give them a way to share
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -109,6 +121,10 @@ export function StatusShareCard({ songId, title, path, clip, cover }: StatusClip
           <a
             href={clip}
             download={fileName}
+            // Download is the DOCUMENTED desktop route to Status (grab the clip,
+            // post it by hand) — leaving it untracked made the entire desktop
+            // path invisible in the numbers.
+            onClick={() => trackShare('whatsapp_status_download', { songId, assetId })}
             aria-label={`${title} — குறும்படத்தைச் சேமி`}
             title="சேமி"
             className="inline-flex shrink-0 items-center justify-center rounded-full border border-gray-300 px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300"
