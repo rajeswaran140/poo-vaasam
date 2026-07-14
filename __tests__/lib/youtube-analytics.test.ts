@@ -12,6 +12,7 @@ import {
   fetchSearchTerms,
   fetchVideoDailySeries,
   dateRange,
+  SEARCH_TERMS_MAX_RESULTS,
 } from '@/lib/youtube-analytics';
 
 const originalEnv = { ...process.env };
@@ -134,6 +135,25 @@ describe('fetchSearchTerms (real YT-search queries — viewer truth)', () => {
     expect(decoded).toContain('dimensions=insightTrafficSourceDetail');
     expect(decoded).toContain('insightTrafficSourceType==YT_SEARCH');
     expect(decoded).toContain('video==kOpNZHlE9FE');
+  });
+
+  // Regression: the query shipped maxResults=50, which insightTrafficSourceDetail
+  // rejects with a 500 (its hard cap is 25) — so EVERY search-terms call failed and
+  // SEARCHSNAP never persisted a single row. Verified live 2026-07-14: 25 OK, 26 500.
+  it('never asks for more than the 25-result cap insightTrafficSourceDetail enforces', async () => {
+    let reportUrl = '';
+    jest.spyOn(global, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.startsWith('https://oauth2.googleapis.com/token')) return tokenOk();
+      reportUrl = url;
+      return reportOk({ rows: [] });
+    });
+
+    await fetchSearchTerms(undefined, 28);
+
+    const maxResults = Number(new URL(reportUrl).searchParams.get('maxResults'));
+    expect(maxResults).toBe(SEARCH_TERMS_MAX_RESULTS);
+    expect(maxResults).toBeLessThanOrEqual(25);
   });
 
   it('omits the video filter for a channel-wide query', async () => {
