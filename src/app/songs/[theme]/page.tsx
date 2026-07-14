@@ -19,6 +19,7 @@ import { SongCatalog } from '@/application/use-cases/SongCatalog';
 import type { PublicSongDTO } from '@/domain/songs/PublicSong';
 import { JsonLd } from '@/components/JsonLd';
 import { SubscribeButton } from '@/components/SubscribeButton';
+import { WhatsAppShareButton } from '@/components/content/WhatsAppShareButton';
 import { SITE_NAME, SITE_URL, absoluteUrl, alternatesFor, breadcrumbJsonLd, toDescription } from '@/lib/seo';
 import { contentPath } from '@/config/vanity-paths';
 import { SONG_THEME_LABELS } from '@/config/song-themes';
@@ -126,11 +127,15 @@ export default async function SongCollectionPage({ params }: PageProps) {
         <section className="container mx-auto max-w-6xl px-4 pb-12 sm:px-6">
           <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {songs.map((s) => (
-              <li key={s.id}>
-                <Link
-                  href={contentPath(s.id)}
-                  className="group flex items-center gap-4 rounded-xl border border-gray-800 bg-gray-800/50 p-3 transition-colors hover:border-orange-500/50"
-                >
+              // The theme pages are the SEO landing surface for a theme, and they
+              // were the one browse surface with no share control at all. The
+              // button is a SIBLING of the card link (not nested inside it) —
+              // interactive content inside an <a> is invalid HTML.
+              <li
+                key={s.id}
+                className="group flex items-center gap-2 rounded-xl border border-gray-800 bg-gray-800/50 p-3 transition-colors hover:border-orange-500/50"
+              >
+                <Link href={contentPath(s.id)} className="flex min-w-0 flex-1 items-center gap-4">
                   {s.coverUrl ? (
                     <Image
                       src={s.coverUrl}
@@ -148,6 +153,13 @@ export default async function SongCollectionPage({ params }: PageProps) {
                     <span className="truncate text-xs text-gray-400">{s.artist}</span>
                   </span>
                 </Link>
+                <WhatsAppShareButton
+                  url={absoluteUrl(contentPath(s.id))}
+                  title={s.title}
+                  verb="listen"
+                  songId={s.id}
+                  compact
+                />
               </li>
             ))}
           </ul>

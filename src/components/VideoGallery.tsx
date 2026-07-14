@@ -18,6 +18,7 @@ import type { ChannelVideo } from '@/lib/youtube-feed';
 import { SITE } from '@/config/site';
 import { trackYouTubeOpen } from '@/lib/analytics-events';
 import { formatVideoDuration, relativeTimeTamil } from '@/lib/video-format';
+import { absoluteUrl } from '@/lib/seo';
 
 function excerpt(text: string, max = 140): string {
   const cleaned = text.replace(/\s+/g, ' ').trim();
@@ -168,7 +169,15 @@ export function VideoGallery({
                   YouTube ↗
                 </TrackedYouTubeOpen>
               )}
-              <WhatsAppShareButton url={video.watchUrl} title={video.title} verb="listen" compact />
+              {/* Share the on-site song page when we have one: a wa.me link to
+                  youtube.com strands the recipient where our UTMs are ignored and
+                  InboundTracker can't run, so the return visit is unattributable. */}
+              <WhatsAppShareButton
+                url={songPath ? absoluteUrl(songPath) : video.watchUrl}
+                title={video.title}
+                verb="listen"
+                compact
+              />
             </div>
           </div>
         </div>

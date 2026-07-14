@@ -43,6 +43,7 @@ import { SongCockpit } from '@/components/admin/SongCockpit';
 import { SearchScorecardPanel } from '@/components/admin/SearchScorecardPanel';
 import { TopSongMonitorPanel } from '@/components/admin/TopSongMonitorPanel';
 import { SharesPanel } from '@/components/admin/SharesPanel';
+import { ReferralCoefficientPanel } from '@/components/admin/ReferralCoefficientPanel';
 import { FunnelInsightPanel } from '@/components/admin/FunnelInsightPanel';
 import { LazyMount } from '@/components/admin/LazyMount';
 import { mergeVideoRows, pickRetentionBenchmark } from '@/lib/youtube-dashboard';
@@ -389,6 +390,11 @@ export default async function YouTubeAdminPage() {
       <TopSongMonitorPanel ytaConfigured={ytaOn} />
 
       {/* Song shares — per-song native shares + share-rate (WhatsApp lever). */}
+      {/* Return leg (did a share bring anyone back?) sits ABOVE outbound intent
+          (did anyone click share?) — the coefficient is the one that decides
+          whether the WhatsApp strategy is working. */}
+      <ReferralCoefficientPanel ytaConfigured={ytaOn} />
+
       <SharesPanel ytaConfigured={ytaOn} />
 
       {/* Song cockpit — pick a song ONCE → trend + audience + discovery together. */}

@@ -27,9 +27,13 @@ function gtag(): GtagFn | null {
  * that drop gtag, so the admin dashboard keeps a floor of truth. Fire-and-forget
  * — never throws, never blocks navigation (sendBeacon is built for unload).
  */
-function beacon(type: string, target?: string): void {
+function beacon(type: string, target?: string, songId?: string): void {
   if (typeof navigator === 'undefined') return;
-  const body = JSON.stringify(target ? { type, target } : { type });
+  const body = JSON.stringify({
+    type,
+    ...(target ? { target } : {}),
+    ...(songId ? { songId } : {}),
+  });
   try {
     if (typeof navigator.sendBeacon === 'function') {
       navigator.sendBeacon('/api/events', new Blob([body], { type: 'application/json' }));
@@ -89,10 +93,15 @@ export function trackYouTubeOpen(destination: string, source?: string): void {
  * (whatsapp / whatsapp_status / facebook / copy / native) — WhatsApp is the #1
  * diaspora channel, so proving shares happen there is the whole point of owning
  * this first-party. `opts.songId` / `opts.assetId` add source-song + asset
- * attribution to the GA4 `share` event (map to the `source_song_id` /
- * `status_asset_id` custom dimensions) so we can answer *which song / asset*
- * drives the most shares. The first-party beacon stays keyed by channel
- * (unchanged) so the existing dashboard breakdown is preserved.
+ * attribution to the GA4 `share` event (they map to the `source_song_id` /
+ * `status_asset_id` custom dimensions).
+ *
+ * `songId` also rides the first-party beacon, so the answer to "WHICH song do
+ * people forward?" lands in DynamoDB where we can actually read it back. Until
+ * the 2026-07-14 audit it was handed to GA4 and then dropped here — and nothing
+ * ever read the GA4 copy, so the question was unanswerable. The beacon's
+ * channel-keyed counter is unchanged; the per-song counter is derived from
+ * `songId` server-side (see lib/event-types → derivedSongEvent).
  */
 export function trackShare(channel: string, opts?: { songId?: string; assetId?: string }): void {
   gtag()?.('event', 'share', {
@@ -101,7 +110,7 @@ export function trackShare(channel: string, opts?: { songId?: string; assetId?: 
     ...(opts?.songId ? { source_song_id: opts.songId } : {}),
     ...(opts?.assetId ? { status_asset_id: opts.assetId } : {}),
   });
-  beacon('share', channel);
+  beacon('share', channel, opts?.songId);
 }
 
 /** Fire when the visitor installs the PWA (accepted the install prompt). */
@@ -118,5 +127,5 @@ export function trackInstall(): void {
  */
 export function trackInbound(source: string, songId?: string): void {
   gtag()?.('event', 'inbound_visit', { source, ...(songId ? { source_song_id: songId } : {}) });
-  beacon('inbound', source);
+  beacon('inbound', source, songId);
 }

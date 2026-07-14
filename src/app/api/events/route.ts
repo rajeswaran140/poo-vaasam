@@ -16,7 +16,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { RateLimiter, checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
-import { eventBeaconSchema } from '@/lib/event-types';
+import { eventBeaconSchema, derivedSongEvent } from '@/lib/event-types';
 import { recordEvent } from '@/lib/analytics-store';
 
 export const runtime = 'nodejs';
@@ -43,10 +43,27 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    // Primary, channel-keyed counter — unchanged shape, the dashboard reads it.
     await recordEvent(parsed.data.type, parsed.data.target);
-    return NextResponse.json({ success: true }, { status: 202 });
   } catch (err) {
     console.error('[api/events] record failed:', err instanceof Error ? err.message : String(err));
     return NextResponse.json({ success: false }, { status: 500 });
   }
+
+  // Secondary, per-song counter derived server-side from `songId` (the client
+  // can't write these types directly). Best-effort: losing the breakdown must
+  // never cost us the primary counter we just wrote, nor surface to the visitor.
+  const derived = derivedSongEvent(parsed.data);
+  if (derived) {
+    try {
+      await recordEvent(derived.type, derived.target);
+    } catch (err) {
+      console.error(
+        '[api/events] per-song counter failed:',
+        err instanceof Error ? err.message : String(err)
+      );
+    }
+  }
+
+  return NextResponse.json({ success: true }, { status: 202 });
 }

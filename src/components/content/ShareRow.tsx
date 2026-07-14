@@ -7,9 +7,10 @@
  * sheet for richer targets (Telegram, Signal, etc.).
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link2, Check, Share2 } from 'lucide-react';
 import { whatsappShareUrl } from '@/lib/whatsapp-share';
+import { appendUtm } from '@/lib/utm';
 import { trackShare } from '@/lib/analytics-events';
 
 // Inline brand glyphs — lucide-react no longer ships Facebook/Twitter logos,
@@ -37,25 +38,41 @@ interface ShareRowProps {
   title: string;
   /** Tunes the WhatsApp call-to-action: songs "listen", text "read". */
   verb?: 'listen' | 'read';
+  /** The song being shared — powers the per-song share counter. */
+  songId?: string;
 }
 
-export function ShareRow({ url, title, verb = 'listen' }: ShareRowProps) {
+export function ShareRow({ url, title, verb = 'listen', songId }: ShareRowProps) {
   const [copied, setCopied] = useState(false);
-  const canNativeShare =
-    typeof navigator !== 'undefined' && typeof navigator.share === 'function';
 
-  const encodedUrl = encodeURIComponent(url);
-  const encodedTitle = encodeURIComponent(title);
+  // `navigator.share` doesn't exist on the server, so reading it during render
+  // made the SSR HTML (button absent) disagree with the first client render
+  // (button present) on every mobile visit — a hydration mismatch. Resolve it
+  // after mount instead, so both renders start from the same `false`.
+  const [canNativeShare, setCanNativeShare] = useState(false);
+  useEffect(() => {
+    setCanNativeShare(typeof navigator !== 'undefined' && typeof navigator.share === 'function');
+  }, []);
 
-  const fb = `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`;
-  const tw = `https://twitter.com/intent/tweet?text=${encodedTitle}&url=${encodedUrl}`;
+  const record = (channel: string) => trackShare(channel, songId ? { songId } : undefined);
+
+  // Every outbound URL is UTM-tagged, not just the WhatsApp one. The native
+  // sheet and copy-link are the two most common ways a phone user actually gets
+  // a link INTO WhatsApp, and both used to hand over a bare URL — so the return
+  // visit arrived as "direct" and InboundTracker never fired. We can't know
+  // which app the OS sheet handed off to, so we attribute honestly by surface.
+  const tagged = (source: string) => appendUtm(url, { utm_source: source, utm_medium: 'share' });
+
+  const fb = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(tagged('facebook'))}`;
+  const tw = `https://twitter.com/intent/tweet?text=${encodeURIComponent(title)}&url=${encodeURIComponent(tagged('twitter'))}`;
   // WhatsApp = the primary channel for this audience → a warm pre-filled message.
+  // (whatsappShareUrl applies its own utm_source=whatsapp.)
   const wa = whatsappShareUrl({ title, url, verb });
 
   const onCopy = async () => {
     try {
-      await navigator.clipboard.writeText(url);
-      trackShare('copy');
+      await navigator.clipboard.writeText(tagged('copy'));
+      record('copy');
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch {
@@ -65,8 +82,10 @@ export function ShareRow({ url, title, verb = 'listen' }: ShareRowProps) {
 
   const onNativeShare = async () => {
     try {
-      await navigator.share({ title, url });
-      trackShare('native');
+      await navigator.share({ title, url: tagged('native') });
+      // Only counted once the share actually resolves — a dismissed sheet
+      // rejects with AbortError and must not inflate the numbers.
+      record('native');
     } catch {
       /* user cancelled or share failed — no-op */
     }
@@ -80,7 +99,7 @@ export function ShareRow({ url, title, verb = 'listen' }: ShareRowProps) {
 
   return (
     <div className="flex flex-wrap gap-2">
-      <a href={wa} target="_blank" rel="noopener noreferrer" aria-label="Share on WhatsApp" className={waClass} onClick={() => trackShare('whatsapp')}>
+      <a href={wa} target="_blank" rel="noopener noreferrer" aria-label="Share on WhatsApp" className={waClass} onClick={() => record('whatsapp')}>
         <WhatsAppIcon className="h-4 w-4" /> WhatsApp
       </a>
       {canNativeShare && (
@@ -88,10 +107,10 @@ export function ShareRow({ url, title, verb = 'listen' }: ShareRowProps) {
           <Share2 className="h-4 w-4" aria-hidden /> பகிருங்கள்
         </button>
       )}
-      <a href={fb} target="_blank" rel="noopener noreferrer" aria-label="Share on Facebook" className={linkClass} onClick={() => trackShare('facebook')}>
+      <a href={fb} target="_blank" rel="noopener noreferrer" aria-label="Share on Facebook" className={linkClass} onClick={() => record('facebook')}>
         <FacebookIcon className="h-4 w-4" /> Facebook
       </a>
-      <a href={tw} target="_blank" rel="noopener noreferrer" aria-label="Share on X" className={linkClass} onClick={() => trackShare('twitter')}>
+      <a href={tw} target="_blank" rel="noopener noreferrer" aria-label="Share on X" className={linkClass} onClick={() => record('twitter')}>
         <XIcon className="h-4 w-4" /> X
       </a>
       <button

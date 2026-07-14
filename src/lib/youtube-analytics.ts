@@ -456,6 +456,55 @@ export async function fetchSearchTerms(
   }
 }
 
+export interface ReferrerRow {
+  /** The external site/app YouTube attributes the view to ("WhatsApp", "facebook.com", …). */
+  source: string;
+  views: number;
+  estimatedMinutesWatched: number;
+}
+
+/**
+ * External sites/apps that sent views to the channel — `insightTrafficSourceDetail`
+ * scoped to EXT_URL.
+ *
+ * This is the RETURN LEG of the share loop, and until 2026-07 nothing in the app
+ * queried it: every other share metric counts outbound clicks (our buttons, or
+ * YouTube's native Share dialog) and none could answer "did a share actually
+ * bring anyone back". EXT_URL is where a WhatsApp forward shows up when the
+ * recipient taps the link, so it's the only place the loop can be closed.
+ *
+ * Note WhatsApp arrives under several distinct labels ("WhatsApp",
+ * "whatsapp.com", "WhatsApp Business") — merging them is the caller's job; see
+ * `lib/whatsapp-referrals`.
+ */
+export async function fetchExternalReferrers(daysBack = 28): Promise<Result<ReferrerRow[]>> {
+  if (!isYouTubeAnalyticsConfigured()) {
+    return { ok: false, error: 'YouTube Analytics OAuth not configured' };
+  }
+  const { startDate, endDate } = dateRange(daysBack);
+  try {
+    const res = await runReport({
+      ids: 'channel==MINE',
+      startDate,
+      endDate,
+      metrics: 'views,estimatedMinutesWatched',
+      dimensions: 'insightTrafficSourceDetail',
+      filters: 'insightTrafficSourceType==EXT_URL',
+      sort: '-views',
+      maxResults: '50',
+    });
+    if (!res) return { ok: false, error: 'No response from YouTube Analytics' };
+    const rows = (res.rows ?? []).map((r): ReferrerRow => ({
+      source: String(r[0]),
+      views: Number(r[1] ?? 0),
+      estimatedMinutesWatched: Number(r[2] ?? 0),
+    }));
+    return { ok: true, data: rows };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 /**
  * Assemble the Viewer Conversion Funnel input from four Analytics reports:
  *   A. channel totals (views/watch/avgViewPct/subs) — REQUIRED

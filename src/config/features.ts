@@ -31,7 +31,11 @@ export const FEATURES = {
   PUBLIC: {
     SEARCH: false,            // Search functionality
     COMMENTS: false,          // Public commenting
-    SOCIAL_SHARE: false,      // Social media sharing buttons
+    // NOTE: the old SOCIAL_SHARE flag was REMOVED (2026-07-14). It read `false`
+    // while share buttons shipped on every browse surface, and it had zero
+    // consumers — the config was lying, exactly as the ADMIN note above warns
+    // against. Re-add a flag only if you actually wire it into ShareRow /
+    // WhatsAppShareButton.
     // On-site audio playback. TEMPORARILY OFF (2026-07-02): the site funnels
     // listeners to YouTube (where watch-hours count toward YPP) instead of
     // competing with it. When off, songs WITH a YouTube video route to "Watch

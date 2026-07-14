@@ -10,6 +10,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { FEATURED_SONGS, featuredWatchUrl, featuredThumbUrl, type FeaturedSong } from '@/config/featured-songs';
 import { WhatsAppShareButton } from '@/components/content/WhatsAppShareButton';
+import { absoluteUrl } from '@/lib/seo';
 
 function PlayGlyph() {
   return (
@@ -25,6 +26,12 @@ function PlayGlyph() {
 
 function FeaturedSongCard({ song }: { song: FeaturedSong }) {
   const watch = featuredWatchUrl(song.videoId);
+  // SHARE the on-site song page, not the YouTube watch URL. A wa.me link to
+  // youtube.com lands the recipient on YouTube, where our UTMs are ignored and
+  // InboundTracker never runs — so the return leg was structurally
+  // unmeasurable, even though the link looked instrumented. The song page
+  // carries the embed + a YouTube CTA, so the funnel still ends at YouTube.
+  const shareUrl = song.contentId ? absoluteUrl(`/content/${song.contentId}`) : watch;
   return (
     <div className="group flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/5 transition-all hover:border-white/20 hover:bg-white/[0.07]">
       <a
@@ -49,7 +56,7 @@ function FeaturedSongCard({ song }: { song: FeaturedSong }) {
           <p className="text-sm text-gray-400">{song.romanized}</p>
         </a>
         <div className="mt-auto flex items-center gap-3 pt-3">
-          <WhatsAppShareButton url={watch} title={song.title} verb="listen" compact />
+          <WhatsAppShareButton url={shareUrl} title={song.title} verb="listen" songId={song.contentId} compact />
           {song.contentId && (
             <Link href={`/content/${song.contentId}`} className="font-tamil text-xs font-medium text-orange-400 hover:text-orange-300">
               விவரங்கள் →

@@ -13,7 +13,20 @@
 import { useEffect } from 'react';
 import { trackInbound } from '@/lib/analytics-events';
 
-const KNOWN_SOURCES = new Set(['whatsapp', 'facebook', 'telegram', 'instagram']);
+// Includes our OWN share surfaces (the native OS sheet and copy-link), because
+// on a phone those are the two commonest ways a link actually reaches WhatsApp —
+// and while they went out untagged, the return visit arrived as "direct" and
+// this never fired. We can't know which app the OS sheet handed off to, so we
+// record the surface honestly instead of assuming "whatsapp".
+const KNOWN_SOURCES = new Set([
+  'whatsapp',
+  'facebook',
+  'telegram',
+  'instagram',
+  'twitter',
+  'native',
+  'copy',
+]);
 
 export function InboundTracker() {
   useEffect(() => {
