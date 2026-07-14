@@ -1,0 +1,54 @@
+name: YouTube daily snapshot
+
+# Freezes the channel's daily metrics + search-terms into DynamoDB. This is the
+# longitudinal store the stats layer (changepoint / anomaly / forecast) reads, so
+# it must run whether or not anyone is at a keyboard — previously the ONLY thing
+# calling these routes was a best-effort agent cron, and the series silently fell
+# 2+ days behind the API.
+#
+# Setup: add a repo secret CRON_SECRET whose value matches the Amplify app env
+# var of the same name (also mirrored at SSM /tamilagaval/prod/cron-secret).
+
+on:
+  schedule:
+    # 09:15 UTC daily. YouTube Analytics finalizes a day late, so this always
+    # captures a trailing window rather than "today".
+    - cron: '15 9 * * *'
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Days of history to (re)capture — raise to backfill a gap'
+        required: false
+        default: '7'
+
+concurrency:
+  group: youtube-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_URL: https://tamilagaval.com
+      # Re-capture a 7-day trailing window, not 3. The capture is an idempotent
+      # upsert, so overlapping runs simply re-finalize YouTube's still-settling
+      # recent days — and a 7-day window means the series self-heals from up to
+      # a week of missed runs instead of leaving a permanent hole.
+      DAYS: ${{ github.event.inputs.days || '7' }}
+    steps:
+      - name: Capture channel metrics
+        run: |
+          code=$(curl -sS -o /tmp/metrics.json -w '%{http_code}' -X POST \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            "$BASE_URL/api/admin/youtube/metrics/snapshot?days=$DAYS")
+          cat /tmp/metrics.json
+          test "$code" = "200"
+
+      - name: Capture search terms
+        run: |
+          code=$(curl -sS -o /tmp/search.json -w '%{http_code}' -X POST \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            "$BASE_URL/api/admin/youtube/search-terms/snapshot")
+          cat /tmp/search.json
+          test "$code" = "200"
