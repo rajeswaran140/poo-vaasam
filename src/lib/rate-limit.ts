@@ -88,17 +88,50 @@ export class RateLimiter {
 }
 
 /**
- * Best-effort client IP from proxy headers (Amplify/CloudFront sets
- * x-forwarded-for). Falls back to a constant so a missing header degrades to a
- * single shared bucket rather than throwing.
+ * Number of trusted proxies that append to `x-forwarded-for` between the viewer
+ * and this code. Amplify is fronted by CloudFront, which appends exactly one
+ * entry (the viewer IP) — so the default is 1. Override via env only if another
+ * appending hop is introduced.
+ */
+const TRUSTED_PROXY_HOPS = Math.max(1, Number(process.env.TRUSTED_PROXY_HOPS) || 1);
+
+/**
+ * Client IP from proxy headers, used as the rate-limit bucket key.
+ *
+ * SECURITY: CloudFront does not *replace* a client-supplied `X-Forwarded-For` —
+ * it APPENDS the real viewer IP to whatever the client sent. At our origin the
+ * header therefore reads:
+ *
+ *     X-Forwarded-For: <anything the client made up>, <real viewer IP>
+ *
+ * So the leftmost entry is attacker-controlled and the RIGHTMOST entry (written
+ * by the trusted proxy nearest us) is the only trustworthy one. Reading the
+ * leftmost entry — as this did until 2026-07 — let an attacker rotate a fake
+ * first hop and land in a fresh bucket on every request, defeating the limiter
+ * entirely. That matters well beyond the analytics beacon: the same helper keys
+ * the AI/TTS endpoints, which spend real money per request.
+ *
+ * `x-real-ip` is deliberately NOT consulted: nothing in our infrastructure sets
+ * it, so honouring it would just reintroduce a spoofable bypass.
+ *
+ * Falls back to a constant so a missing header degrades to one shared bucket
+ * (fail-safe: over-limits rather than under-limits) instead of throwing.
  */
 export function clientIp(request: NextRequest): string {
   const xff = request.headers.get('x-forwarded-for');
-  if (xff) {
-    const first = xff.split(',')[0]?.trim();
-    if (first) return first;
-  }
-  return request.headers.get('x-real-ip')?.trim() || 'unknown';
+  if (!xff) return 'unknown';
+
+  const hops = xff
+    .split(',')
+    .map((h) => h.trim())
+    .filter(Boolean);
+  if (hops.length === 0) return 'unknown';
+
+  // Count back from the right by the number of proxies we trust to append.
+  // Clamp at 0 so a shorter-than-expected chain still yields the leftmost hop
+  // we have rather than undefined.
+  const idx = Math.max(0, hops.length - TRUSTED_PROXY_HOPS);
+  return hops[idx] ?? 'unknown';
 }
 
 /** Standard 429 response with Retry-After + rate-limit headers. */

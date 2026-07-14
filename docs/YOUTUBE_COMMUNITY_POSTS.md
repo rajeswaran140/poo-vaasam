@@ -80,6 +80,62 @@ Put this on your WhatsApp Status to share.
 
 ---
 
+## WhatsApp share templates (per song)
+
+WhatsApp is the #1 organic channel for the diaspora audience, and a warm
+pre-filled message gets forwarded far more than a bare URL. Share the **YouTube
+link** directly (not a site page) — it feeds the `EXT_URL` external-traffic
+signal that seeds YouTube's related/suggested engine. Register stays respectful
+(-உங்கள்: கேளுங்கள் / ரசியுங்கள் / பகிருங்கள்). Never name any AI music tool.
+
+**Card asset:** a 1200×630 preview (WhatsApp/OG ratio) can be cut from the song's
+maxres YouTube thumbnail with ffmpeg (blurred fill + centred thumbnail + a
+`TamilAgaval.com` strip); see the `காதோட ஆடும் லோலாக்கு` card in `~/share-cards/`.
+
+**Direct share / forward:**
+```
+🎵 [SONG TITLE] — புதிய [genre, e.g. கிராமத்து காதல்] பாடல்.
+இதயம் தொட்ட மெல்லிசை; கேட்டு ரசியுங்கள், நண்பர்களுடன் பகிருங்கள் 🌾❤️
+👉 [youtu.be LINK]
+```
+
+**Short, for WhatsApp Status:**
+```
+🎵 [SONG TITLE] 🌾 புதிய காதல் பாடல் — கேளுங்கள் 👇
+[youtu.be LINK]
+```
+
+### Filled per-song kits
+
+**காதோட ஆடும் லோலாக்கு — Kaathoda Aadum Lolakku (`ye9DsyXBEII`)** · கிராமத்து காதல்
+_Card:_ `~/share-cards/kaathoda-lolakku-wa-1200x630.png`
+```
+🎵 காதோட ஆடும் லோலாக்கு — புதிய கிராமத்து காதல் பாடல்.
+இதயம் தொட்ட மெல்லிசை; கேட்டு ரசியுங்கள், நண்பர்களுடன் பகிருங்கள் 🌾❤️
+👉 https://youtu.be/ye9DsyXBEII
+```
+
+**வா... வா... அன்பே... — Vaa Vaa Anbe (`wMDQvdpap30`)** · காதல் மெல்லிசை (duet)
+_Card:_ `~/share-cards/vaa-vaa-anbe-wa-1200x630.png`
+```
+🎵 வா... வா... அன்பே... — புதிய காதல் மெல்லிசை.
+ஒரு மாலைப் பொழுதில், சொல்லாத வார்த்தைகளில் மலரும் காதல்.
+கேட்டு ரசியுங்கள், நண்பர்களுடன் பகிருங்கள் 🌾❤️
+👉 https://youtu.be/wMDQvdpap30
+```
+_Status (short):_
+```
+🎵 வா... வா... அன்பே... 🌾 புதிய காதல் மெல்லிசை — கேளுங்கள் 👇
+https://youtu.be/wMDQvdpap30
+```
+_Pin-ready comment (paste, then ⋮ → Pin — API can't pin):_
+```
+🎵 "வா... வா... அன்பே..." — ஒரு மாலைப் பொழுதில், சொல்லாத வார்த்தைகளில் மலரும் காதல். கேட்டு ரசியுங்கள், உங்கள் கருத்தை பகிருங்கள் 🙏
+A melody of unspoken love. If it moved you, share it with someone 🌾
+```
+
+---
+
 ## Post 4 — Milestone / behind-the-scenes (community building)
 
 **Attach:** optional — a cover, channel art, or none.
