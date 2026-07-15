@@ -36,6 +36,8 @@ import {
   rankOutliers,
   summarizeByTheme,
   indexThemesByVideo,
+  longTailRatio,
+  ageInDays,
   DEFAULT_OUTLIER_THRESHOLD,
   type SongSignals,
 } from '@/lib/youtube-outliers';
@@ -51,6 +53,8 @@ const MAX_WINDOW = 400;
 const DEFAULT_LIMIT = 200; // videos to rank
 const MAX_LIMIT = 500;
 const MAX_SONGS = 500; // catalogue size cap for the theme lookup
+const RECENT_WINDOW_DAYS = 30; // trailing window for the growth30d (long-tail) signal
+const GROWTH_MIN_AGE_DAYS = 60; // a song needs a post-first-month tail before growth30d means anything
 
 function clampInt(raw: string | null, def: number, min: number, max: number): number {
   const n = Number(raw);
@@ -111,14 +115,22 @@ export async function GET(request: NextRequest) {
     loadVideoThemeMap(),
   ]);
 
-  // Best-effort per-video analytics (subscriber conversion + retention proxy).
+  // Best-effort per-video analytics: the window drives subscriber conversion +
+  // retention; a second trailing-30d pull drives the growth30d long-tail ratio.
   const analytics = new Map<string, VideoAnalyticsRow>();
+  const recent = new Map<string, VideoAnalyticsRow>();
   let analyticsOk = false;
   if (isYouTubeAnalyticsConfigured()) {
-    const res = await fetchVideoAnalytics(window);
-    if (res.ok) {
+    const [mainRes, recentRes] = await Promise.all([
+      fetchVideoAnalytics(window),
+      fetchVideoAnalytics(RECENT_WINDOW_DAYS),
+    ]);
+    if (mainRes.ok) {
       analyticsOk = true;
-      for (const row of res.data) analytics.set(row.videoId, row);
+      for (const row of mainRes.data) analytics.set(row.videoId, row);
+    }
+    if (recentRes.ok) {
+      for (const row of recentRes.data) recent.set(row.videoId, row);
     }
   }
 
@@ -146,6 +158,16 @@ export async function GET(request: NextRequest) {
       // averageViewPercentage proxy = avg seconds watched ÷ video length.
       signals.retention = (a.averageViewDuration / v.durationSeconds) * 100;
     }
+    const r = recent.get(v.id);
+    if (r) {
+      signals.growth30d = longTailRatio({
+        recentViews: r.views,
+        recentWindowDays: RECENT_WINDOW_DAYS,
+        lifetimeViews: v.viewCount,
+        ageDays: ageInDays(v.publishedAt, asOf),
+        minAgeDays: GROWTH_MIN_AGE_DAYS,
+      });
+    }
     signals.theme = themeMap.get(v.id) ?? null;
     return signals;
   });
@@ -153,15 +175,19 @@ export async function GET(request: NextRequest) {
   const outliers = rankOutliers(songs, { outlierThreshold });
   const themeSummary = summarizeByTheme(outliers, songs);
 
+  const growthComputed = songs.some((s) => s.growth30d != null);
   const signalsAvailable = [
     'viewsPerDay',
     'engagement',
     ...(analyticsOk ? ['subsPer1k', 'retention'] : []),
+    ...(growthComputed ? ['growth30d'] : []),
   ];
   const themesJoined = themeMap.size > 0;
   const caveats = [
     'CTR and shares are Studio-only (absent from the API) — those signals are omitted; the score renormalizes over the signals present.',
-    'Long-tail growth (growth30d) is not yet wired — pending per-video METRICSNAP history.',
+    growthComputed
+      ? `Long-tail growth (growth30d) = trailing-${RECENT_WINDOW_DAYS}d views/day ÷ lifetime views/day; songs younger than ${GROWTH_MIN_AGE_DAYS}d are excluded. Recent views are owner-Analytics, lifetime is public Data-API, so the ratio is approximate.`
+      : 'Long-tail growth (growth30d) needs YouTube Analytics — omitted.',
     themesJoined
       ? 'Song themes are joined from the catalogue; a song with no explicit theme defaults to "love" (site convention).'
       : 'Theme rollup groups under "(untagged)" — no catalogue themes could be loaded.',

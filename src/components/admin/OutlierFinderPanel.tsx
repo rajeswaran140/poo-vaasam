@@ -59,6 +59,7 @@ const sig = (o: Outlier, key: string): number | null =>
   o.breakdown.find((b) => b.key === key)?.value ?? null;
 const fmtInt = (n: number | null) => (n == null ? '—' : numberFmt.format(Math.round(n)));
 const fmt1 = (n: number | null) => (n == null ? '—' : n.toFixed(1));
+const fmtRatio = (n: number | null) => (n == null ? '—' : `${n.toFixed(2)}×`);
 const fmtScore = (n: number) => (n >= 0 ? '+' : '') + n.toFixed(2);
 
 function themeLabel(theme: string | null): string {
@@ -76,6 +77,7 @@ const COLUMNS: ExportColumn<Outlier>[] = [
   { header: 'Subs/1k', get: (r) => sig(r, 'subsPer1k') ?? '' },
   { header: 'Retention%', get: (r) => sig(r, 'retention') ?? '' },
   { header: 'Comments/1k', get: (r) => sig(r, 'engagement') ?? '' },
+  { header: 'LongTail', get: (r) => sig(r, 'growth30d') ?? '' },
 ];
 
 export function OutlierFinderPanel({ ytaConfigured }: { ytaConfigured: boolean }) {
@@ -152,6 +154,7 @@ export function OutlierFinderPanel({ ytaConfigured }: { ytaConfigured: boolean }
                   <th className="px-3 py-2 text-right">Subs/1k</th>
                   <th className="px-3 py-2 text-right">Retention</th>
                   <th className="px-3 py-2 text-right">Cmnts/1k</th>
+                  <th className="px-3 py-2 text-right" title="Recent 30d views/day ÷ lifetime views/day. >1× = durable long tail; <1× = spiked then cooled.">Long-tail</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -180,11 +183,12 @@ export function OutlierFinderPanel({ ytaConfigured }: { ytaConfigured: boolean }
                     <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400">{fmt1(sig(o, 'subsPer1k'))}</td>
                     <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400">{sig(o, 'retention') == null ? '—' : `${fmt1(sig(o, 'retention'))}%`}</td>
                     <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400">{fmt1(sig(o, 'engagement'))}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400">{fmtRatio(sig(o, 'growth30d'))}</td>
                   </tr>
                 ))}
                 {data.outliers.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-3 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                    <td colSpan={9} className="px-3 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
                       No songs to rank yet.
                     </td>
                   </tr>

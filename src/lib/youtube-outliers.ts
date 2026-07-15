@@ -323,6 +323,29 @@ export function ageInDays(publishedAtIso: string, asOf: string): number {
 }
 
 /**
+ * Long-tail / durability ratio for the growth30d signal = a song's RECENT
+ * views/day ÷ its LIFETIME views/day. >1 means it's still pulling views faster
+ * than its own lifetime average (a durable slow-burn); <1 means it spiked early
+ * and cooled (the exact thing this signal is meant to penalize). Returns null
+ * for songs younger than `minAgeDays` — a song still in its first month has no
+ * "tail" to measure yet, so it must not be scored as if it did.
+ */
+export function longTailRatio(opts: {
+  recentViews: number;
+  recentWindowDays: number;
+  lifetimeViews: number;
+  ageDays: number;
+  minAgeDays?: number;
+}): number | null {
+  const minAge = opts.minAgeDays ?? 60;
+  if (opts.ageDays < minAge || opts.ageDays <= 0 || opts.lifetimeViews <= 0) return null;
+  const lifetimePerDay = opts.lifetimeViews / opts.ageDays;
+  if (lifetimePerDay <= 0) return null;
+  const recentPerDay = opts.recentViews / Math.min(opts.recentWindowDays, opts.ageDays);
+  return recentPerDay / lifetimePerDay;
+}
+
+/**
  * Turn raw per-video counts into the rate signals the score needs (views/day,
  * subs-per-1k, comments-per-1k), passing retention/ctr/growth30d through. `asOf`
  * is the date the counts are current as of — passed in, never clocked — so
