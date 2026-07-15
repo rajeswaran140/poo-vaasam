@@ -15,6 +15,7 @@ jest.mock('@/lib/youtube-analytics', () => ({
   ...jest.requireActual('@/lib/youtube-analytics'),
   isYouTubeAnalyticsConfigured: jest.fn(() => true),
   fetchDailySeries: jest.fn(),
+  fetchVideoAnalytics: jest.fn(),
 }));
 
 jest.mock('@/lib/youtube-api', () => ({
@@ -32,6 +33,7 @@ import * as ytApi from '@/lib/youtube-api';
 const mockAdmin = auth.requireAdmin as jest.Mock;
 const mockYtaOn = yta.isYouTubeAnalyticsConfigured as jest.Mock;
 const mockDaily = yta.fetchDailySeries as jest.Mock;
+const mockVideoAnalytics = yta.fetchVideoAnalytics as jest.Mock;
 const mockApiOn = ytApi.isYouTubeApiConfigured as jest.Mock;
 const mockChannel = ytApi.fetchChannelStats as jest.Mock;
 const mockVideos = ytApi.fetchChannelVideoStats as jest.Mock;
@@ -67,7 +69,14 @@ beforeEach(() => {
   mockApiOn.mockReturnValue(true);
   mockChannel.mockResolvedValue({ channelId: 'UC', title: 'T', subscriberCount: 928, viewCount: 1, videoCount: 71, uploadsPlaylistId: 'UU' });
   mockVideos.mockResolvedValue([{ id: 'v', title: 'v', publishedAt: '2020-01-01T00:00:00Z', thumbnail: '', viewCount: 1, likeCount: 0, commentCount: 0, duration: 'PT4M', durationSeconds: 240 }]);
+  // Long-form retention source: v is 4-min, avgViewDuration 120s → 50%.
+  mockVideoAnalytics.mockResolvedValue({ ok: true, data: [{ videoId: 'v', views: 1000, averageViewDuration: 120, subscribersGained: 0, estimatedMinutesWatched: 0 }] });
   mockDaily.mockResolvedValue({ ok: true, data: series({ recentViews: 12000, priorViews: 12000 }) });
+});
+
+const vid = (id: string, publishedAt: string, durationSeconds: number) => ({
+  id, title: id, publishedAt, thumbnail: '', viewCount: 1, likeCount: 0, commentCount: 0,
+  duration: `PT${durationSeconds}S`, durationSeconds,
 });
 
 it('401s when not an admin', async () => {
@@ -114,6 +123,31 @@ it('let-it-ride: published within 2 days → hold even if draining', async () =>
   const body = await (await GET(req())).json();
   expect(body.advice.verdict).toBe('let-it-ride');
   expect(body.inputs.daysSinceLastUpload).toBeLessThanOrEqual(2);
+});
+
+it('#2 last-upload recency ignores a recent Short — the long-form date wins', async () => {
+  mockDaily.mockResolvedValue({ ok: true, data: series({ recentViews: 6000, priorViews: 12000 }) }); // draining
+  const todayIso = new Date().toISOString();
+  mockVideos.mockResolvedValue([vid('sh', todayIso, 45), vid('lf', '2020-01-01T00:00:00Z', 240)]);
+  mockVideoAnalytics.mockResolvedValue({ ok: true, data: [{ videoId: 'lf', views: 5000, averageViewDuration: 120, subscribersGained: 0, estimatedMinutesWatched: 0 }] });
+  const body = await (await GET(req())).json();
+  expect(body.advice.verdict).toBe('ship-now'); // NOT let-it-ride despite a Short posted today
+  expect(body.inputs.daysSinceLastUpload).toBeGreaterThan(2);
+});
+
+it('#3 retention is long-form-only — a high-retention Short cannot mask a weak song', async () => {
+  mockDaily.mockResolvedValue({ ok: true, data: series({ recentViews: 6000, priorViews: 12000 }) }); // draining
+  mockVideos.mockResolvedValue([vid('lf', '2020-01-01T00:00:00Z', 240), vid('sh', '2020-01-01T00:00:00Z', 30)]);
+  mockVideoAnalytics.mockResolvedValue({
+    ok: true,
+    data: [
+      { videoId: 'lf', views: 5000, averageViewDuration: 72, subscribersGained: 0, estimatedMinutesWatched: 0 }, // 72/240 = 30% (weak)
+      { videoId: 'sh', views: 1000, averageViewDuration: 28, subscribersGained: 0, estimatedMinutesWatched: 0 }, // 93% but EXCLUDED
+    ],
+  });
+  const body = await (await GET(req())).json();
+  expect(body.inputs.longFormRetention).toBeCloseTo(30, 5); // the Short's 93% is not blended in
+  expect(body.advice.verdict).toBe('hold-fix-content'); // draining + weak long-form retention → fix content
 });
 
 it('degrades without the Data API: still advises, omits subs/recency', async () => {

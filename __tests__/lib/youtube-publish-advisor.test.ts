@@ -8,6 +8,7 @@
 import {
   advisePublish,
   nextFriday,
+  weightedRetention,
   DEFAULT_BASELINE_VPD,
   type AdvisorInput,
 } from '@/lib/youtube-publish-advisor';
@@ -40,6 +41,24 @@ describe('nextFriday', () => {
   });
   it('guards an unparseable date', () => {
     expect(nextFriday('nope')).toBe('nope');
+  });
+});
+
+describe('weightedRetention', () => {
+  it('weights by views so the most-watched songs dominate', () => {
+    // (50*1000 + 30*3000) / 4000 = 35
+    expect(weightedRetention([{ retentionPct: 50, views: 1000 }, { retentionPct: 30, views: 3000 }])).toBeCloseTo(35, 6);
+  });
+  it('null when there is nothing positive to weight', () => {
+    expect(weightedRetention([])).toBeNull();
+    expect(weightedRetention([{ retentionPct: 40, views: 0 }])).toBeNull();
+  });
+  it('skips non-finite / zero-view rows', () => {
+    expect(weightedRetention([
+      { retentionPct: 40, views: 100 },
+      { retentionPct: NaN, views: 100 },
+      { retentionPct: 90, views: 0 },
+    ])).toBeCloseTo(40, 6);
   });
 });
 

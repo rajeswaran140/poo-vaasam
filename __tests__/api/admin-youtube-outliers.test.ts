@@ -58,12 +58,14 @@ function videos() {
     duration: 'PT4M',
     durationSeconds: 240,
   });
+  const short = { ...mk('shortclip', 500000, 500), duration: 'PT45S', durationSeconds: 45 }; // a Short
   return [
     mk('normal1', 10000, 10),
     mk('normal2', 10000, 10),
     mk('normal3', 10000, 10),
     mk('normal4', 10000, 10),
     mk('breakout', 100000, 100),
+    short,
   ];
 }
 
@@ -178,6 +180,15 @@ it('omits growth30d when Analytics is off', async () => {
   const body = await (await GET(req())).json();
   expect(body.signalsAvailable).not.toContain('growth30d');
   expect(body.caveats.some((c: string) => /growth30d\) needs YouTube Analytics/.test(c))).toBe(true);
+});
+
+it('excludes Shorts from the ranking, theme rollup, and count', async () => {
+  const body = await (await GET(req('?threshold=2'))).json();
+  expect(body.outliers.some((o: { videoId: string }) => o.videoId === 'shortclip')).toBe(false);
+  expect(body.channel.ranked).toBe(5); // 6 uploads, 1 Short filtered out
+  expect(body.caveats.some((c: string) => /Shorts are excluded/.test(c))).toBe(true);
+  // and the Short (500k views) did NOT steal rank #1 from the real breakout
+  expect(body.outliers[0].videoId).toBe('breakout');
 });
 
 it('degrades without Analytics: ranks on the available signals, no 500', async () => {

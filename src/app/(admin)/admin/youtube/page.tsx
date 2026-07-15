@@ -399,16 +399,25 @@ export default async function YouTubeAdminPage() {
 
       {/* Catalogue outliers — rank OWN songs by multi-signal Outlier Score (which
           to amplify + whose packaging to clone) + a by-theme rollup for choosing
-          the next release. Loads client-side from /api/admin/youtube/outliers. */}
-      <OutlierFinderPanel ytaConfigured={ytaOn} />
+          the next release. Loads client-side from /api/admin/youtube/outliers.
+          Lazy-mounted so its (Analytics-heavy) fetch fires on scroll, not on the
+          dashboard's first paint. */}
+      <LazyMount>
+        <OutlierFinderPanel ytaConfigured={ytaOn} />
+      </LazyMount>
 
       {/* Song shares — per-song native shares + share-rate (WhatsApp lever). */}
       {/* Return leg (did a share bring anyone back?) sits ABOVE outbound intent
           (did anyone click share?) — the coefficient is the one that decides
           whether the WhatsApp strategy is working. */}
-      <ReferralCoefficientPanel ytaConfigured={ytaOn} />
+      {/* Both self-fetch Analytics on mount → lazy-mount so they load on scroll. */}
+      <LazyMount>
+        <ReferralCoefficientPanel ytaConfigured={ytaOn} />
+      </LazyMount>
 
-      <SharesPanel ytaConfigured={ytaOn} />
+      <LazyMount>
+        <SharesPanel ytaConfigured={ytaOn} />
+      </LazyMount>
 
       {/* Song cockpit — pick a song ONCE → trend + audience + discovery together. */}
       <SongCockpit videos={retentionVideos} ytaConfigured={ytaOn} />

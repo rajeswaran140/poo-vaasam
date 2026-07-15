@@ -17,19 +17,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
 import { SITE } from '@/config/site';
 import { fetchChannelStats, fetchChannelVideoStats, isYouTubeApiConfigured } from '@/lib/youtube-api';
-import { isYouTubeAnalyticsConfigured, fetchDailySeries } from '@/lib/youtube-analytics';
+import { isYouTubeAnalyticsConfigured, fetchDailySeries, fetchVideoAnalytics } from '@/lib/youtube-analytics';
+import { isShort } from '@/lib/youtube-shorts';
 import { assessChange, type SeriesPoint } from '@/lib/youtube-forecast';
 import { ageInDays } from '@/lib/youtube-outliers';
-import { advisePublish } from '@/lib/youtube-publish-advisor';
+import { advisePublish, weightedRetention } from '@/lib/youtube-publish-advisor';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 const SERIES_DAYS = 28;
 const TIER2_SUBS = 1000;
+const RETENTION_VIDEOS = 100; // catalogue span for the long-form retention read
 
 const mean = (xs: number[]): number => (xs.length ? xs.reduce((s, v) => s + v, 0) / xs.length : 0);
-const meanOrNull = (xs: number[]): number | null => (xs.length ? mean(xs) : null);
 
 export async function GET(request: NextRequest) {
   try {
@@ -60,16 +61,9 @@ export async function GET(request: NextRequest) {
 
   const recentN = Math.min(7, Math.max(1, Math.floor(finalized.length / 2)));
   const recent = finalized.slice(-recentN);
-  const prior = finalized.slice(-2 * recentN, -recentN);
 
   const recentViewsPerDay = mean(recent.map((d) => d.views));
   const netSubsPerDay = mean(recent.map((d) => d.subscribersGained - (d.subscribersLost ?? 0)));
-  const topRetention = meanOrNull(
-    recent.map((d) => d.averageViewPercentage).filter((v): v is number => v != null)
-  );
-  const priorTopRetention = meanOrNull(
-    prior.map((d) => d.averageViewPercentage).filter((v): v is number => v != null)
-  );
 
   const points: SeriesPoint[] = finalized.map((d) => ({
     date: d.date,
@@ -79,25 +73,44 @@ export async function GET(request: NextRequest) {
   const viewsChange = assessChange(points, { metric: 'views', recentDays: recentN, priorDays: recentN });
   const viewsDeclining = viewsChange?.significant === true && viewsChange.direction === 'down';
 
-  // Best-effort enrichment: subs-to-Tier-2 + last-upload recency (needs Data API).
+  // Best-effort enrichment (needs Data API): subs-to-Tier-2, last-upload recency
+  // (LONG-FORM only — a Short posted yesterday must not read as "just published"),
+  // and a LONG-FORM, views-weighted retention (Shorts sit near 100% and would
+  // otherwise mask a real long-form watch-time problem).
   const asOf = new Date().toISOString().slice(0, 10);
   let subsToTier2: number | null = null;
   let daysSinceLastUpload: number | null = null;
+  let topRetention: number | null = null;
   if (isYouTubeApiConfigured()) {
     const channelId = SITE.youtube.channelId;
-    const [channel, videos] = await Promise.all([
+    const [channel, videos, vaRes] = await Promise.all([
       fetchChannelStats(channelId).catch(() => null),
-      fetchChannelVideoStats(channelId, 3).catch(() => []),
+      fetchChannelVideoStats(channelId, RETENTION_VIDEOS).catch(() => []),
+      fetchVideoAnalytics(SERIES_DAYS).catch(() => ({ ok: false as const, error: 'unavailable' })),
     ]);
     if (channel && channel.subscriberCount < TIER2_SUBS) {
       subsToTier2 = TIER2_SUBS - channel.subscriberCount;
     }
-    const latest = videos.find((v) => v.publishedAt);
-    if (latest) daysSinceLastUpload = ageInDays(latest.publishedAt, asOf);
+    const latestLongForm = videos.find((v) => v.publishedAt && !isShort(v));
+    if (latestLongForm) daysSinceLastUpload = ageInDays(latestLongForm.publishedAt, asOf);
+
+    if (vaRes.ok) {
+      const durationById = new Map(videos.map((v) => [v.id, v.durationSeconds]));
+      const shortIds = new Set(videos.filter((v) => isShort(v)).map((v) => v.id));
+      const rows = vaRes.data
+        .filter((r) => !shortIds.has(r.videoId))
+        .map((r) => ({ dur: durationById.get(r.videoId), avd: r.averageViewDuration, views: r.views }))
+        .filter((x): x is { dur: number; avd: number; views: number } => x.dur != null && x.dur > 0)
+        .map((x) => ({ retentionPct: (x.avd / x.dur) * 100, views: x.views }));
+      topRetention = weightedRetention(rows);
+    }
   }
   if (subsToTier2 === null && daysSinceLastUpload === null) {
     caveats.push('YouTube Data API unavailable — subs-to-Tier-2 and last-upload recency were omitted.');
   }
+  caveats.push(
+    'Retention is the views-weighted average of LONG-FORM songs only (Shorts excluded); a falling-retention trend isn’t wired in yet.'
+  );
   caveats.push(
     'Suggested-vs-prior reach breakdown is not wired in yet — the reach signal comes from the finalized daily-views trend.'
   );
@@ -107,7 +120,7 @@ export async function GET(request: NextRequest) {
     recentViewsPerDay,
     viewsDeclining,
     topRetention,
-    priorTopRetention,
+    priorTopRetention: null, // long-form prior-window retention not wired → no falling-trend read
     netSubsPerDay,
     subsToTier2,
     daysSinceLastUpload,
@@ -120,8 +133,7 @@ export async function GET(request: NextRequest) {
     inputs: {
       recentViewsPerDay: Math.round(recentViewsPerDay),
       viewsDeclining,
-      recentRetention: topRetention,
-      priorRetention: priorTopRetention,
+      longFormRetention: topRetention,
       netSubsPerDay: Math.round(netSubsPerDay),
       subsToTier2,
       daysSinceLastUpload,

@@ -26,6 +26,7 @@ import {
   fetchChannelVideoStats,
   isYouTubeApiConfigured,
 } from '@/lib/youtube-api';
+import { isShort } from '@/lib/youtube-shorts';
 import {
   isYouTubeAnalyticsConfigured,
   fetchVideoAnalytics,
@@ -135,7 +136,12 @@ export async function GET(request: NextRequest) {
   }
 
   const asOf = new Date().toISOString().slice(0, 10);
-  const songs: SongSignals[] = videos.map((v) => {
+  // Rank SONGS only — Shorts have sub-minute durations that pin the retention
+  // proxy near 100% and skew views/day, so they'd surface as false outliers and
+  // pollute the theme rollup. (Matches the retention-benchmark Shorts exclusion.)
+  const songVideos = videos.filter((v) => !isShort(v));
+  const shortsExcluded = videos.length - songVideos.length;
+  const songs: SongSignals[] = songVideos.map((v) => {
     // Lifetime-based signals (views/day, comments-per-1k) via the tested helper.
     const signals = deriveSignals(
       {
@@ -184,6 +190,7 @@ export async function GET(request: NextRequest) {
   ];
   const themesJoined = themeMap.size > 0;
   const caveats = [
+    `Shorts are excluded — only long-form songs are ranked${shortsExcluded > 0 ? ` (${shortsExcluded} Short${shortsExcluded === 1 ? '' : 's'} filtered out)` : ''}.`,
     'CTR and shares are Studio-only (absent from the API) — those signals are omitted; the score renormalizes over the signals present.',
     growthComputed
       ? `Long-tail growth (growth30d) = trailing-${RECENT_WINDOW_DAYS}d views/day ÷ lifetime views/day; songs younger than ${GROWTH_MIN_AGE_DAYS}d are excluded. Recent views are owner-Analytics, lifetime is public Data-API, so the ratio is approximate.`
