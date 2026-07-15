@@ -274,6 +274,28 @@ export function summarizeByTheme(ranked: RankedSong[], songs: SongSignals[]): Th
   return summaries.sort((a, b) => b.meanScore - a.meanScore || a.theme.localeCompare(b.theme));
 }
 
+// ── theme join ────────────────────────────────────────────────────────────────
+
+/**
+ * Index resolved (videoId → theme) pairs into a lookup the route uses to stamp
+ * each YouTube video with its catalogue theme (so summarizeByTheme groups by a
+ * real theme instead of '(untagged)'). Theme resolution — the DB override vs the
+ * curated map — happens upstream (config/song-themes); this only indexes the
+ * results. Skips entries with no videoId or no theme; first entry wins on a
+ * duplicate id (deterministic).
+ */
+export function indexThemesByVideo(
+  entries: Array<{ youtubeVideoId?: string | null; theme?: string | null }>
+): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const e of entries) {
+    const id = e.youtubeVideoId?.trim();
+    if (!id || map.has(id)) continue;
+    if (e.theme != null && e.theme !== '') map.set(id, e.theme);
+  }
+  return map;
+}
+
 // ── deriving rate signals from raw counts ─────────────────────────────────────────
 
 /** Raw per-video counts the route pulls from the YouTube Data API. */

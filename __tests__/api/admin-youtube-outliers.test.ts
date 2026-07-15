@@ -24,6 +24,12 @@ jest.mock('@/lib/youtube-analytics', () => ({
   fetchVideoAnalytics: jest.fn(),
 }));
 
+// The catalogue theme lookup (uses the REAL themeForSongWithOverride resolver).
+const mockFindByType = jest.fn();
+jest.mock('@/infrastructure/database/ContentRepository', () => ({
+  ContentRepository: jest.fn(() => ({ findByType: mockFindByType })),
+}));
+
 import { GET } from '@/app/api/admin/youtube/outliers/route';
 import * as auth from '@/lib/auth-helper';
 import * as ytApi from '@/lib/youtube-api';
@@ -75,6 +81,16 @@ beforeEach(() => {
     uploadsPlaylistId: 'UU...',
   });
   mockVideos.mockResolvedValue(videos());
+  // Catalogue songs: breakout is a 'mother' song (DB override), normals default to 'love'.
+  mockFindByType.mockResolvedValue({
+    items: [
+      { id: 'c_b', youtubeVideoId: 'breakout', theme: 'mother' },
+      { id: 'c_1', youtubeVideoId: 'normal1', theme: undefined },
+      { id: 'c_2', youtubeVideoId: 'normal2', theme: undefined },
+      { id: 'c_3', youtubeVideoId: 'normal3', theme: undefined },
+      { id: 'c_4', youtubeVideoId: 'normal4', theme: undefined },
+    ],
+  });
   mockVideoAnalytics.mockResolvedValue({
     ok: true,
     data: [
@@ -156,6 +172,29 @@ it('returns success with empty rankings for an empty catalogue', async () => {
   expect(body.outliers).toEqual([]);
   expect(body.themeSummary).toEqual([]);
   expect(body.channel.ranked).toBe(0);
+});
+
+it('joins catalogue themes and groups the rollup by real theme', async () => {
+  const body = await (await GET(req())).json();
+  expect(body.themesJoined).toBe(true);
+  const breakout = body.outliers.find((o: { videoId: string }) => o.videoId === 'breakout');
+  expect(breakout.theme).toBe('mother'); // DB override
+  const normal = body.outliers.find((o: { videoId: string }) => o.videoId === 'normal1');
+  expect(normal.theme).toBe('love'); // default (site convention)
+  const themes = body.themeSummary.map((t: { theme: string }) => t.theme).sort();
+  expect(themes).toEqual(['love', 'mother']);
+  expect(body.themeSummary.every((t: { theme: string }) => t.theme !== '(untagged)')).toBe(true);
+});
+
+it('degrades to untagged themes when the catalogue lookup fails (no 500)', async () => {
+  mockFindByType.mockRejectedValue(new Error('dynamo down'));
+  const res = await GET(req());
+  expect(res.status).toBe(200);
+  const body = await res.json();
+  expect(body.themesJoined).toBe(false);
+  expect(body.outliers[0].theme).toBeNull();
+  expect(body.themeSummary[0].theme).toBe('(untagged)');
+  expect(body.caveats.some((c: string) => /untagged/i.test(c))).toBe(true);
 });
 
 it('always surfaces the Studio-only CTR caveat', async () => {
