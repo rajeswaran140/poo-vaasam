@@ -43,6 +43,7 @@ import { SongCockpit } from '@/components/admin/SongCockpit';
 import { SongLifecycleReportPanel } from '@/components/admin/SongLifecycleReportPanel';
 import { SearchScorecardPanel } from '@/components/admin/SearchScorecardPanel';
 import { TopSongMonitorPanel } from '@/components/admin/TopSongMonitorPanel';
+import { OutlierFinderPanel } from '@/components/admin/OutlierFinderPanel';
 import { SharesPanel } from '@/components/admin/SharesPanel';
 import { ReferralCoefficientPanel } from '@/components/admin/ReferralCoefficientPanel';
 import { FunnelInsightPanel } from '@/components/admin/FunnelInsightPanel';
@@ -389,6 +390,11 @@ export default async function YouTubeAdminPage() {
       {/* LEAD with the at-a-glance diagnosis: the four-metric decision tree across
           the top songs (reduced reach vs CTR vs watch-time). */}
       <TopSongMonitorPanel ytaConfigured={ytaOn} />
+
+      {/* Catalogue outliers — rank OWN songs by multi-signal Outlier Score (which
+          to amplify + whose packaging to clone) + a by-theme rollup for choosing
+          the next release. Loads client-side from /api/admin/youtube/outliers. */}
+      <OutlierFinderPanel ytaConfigured={ytaOn} />
 
       {/* Song shares — per-song native shares + share-rate (WhatsApp lever). */}
       {/* Return leg (did a share bring anyone back?) sits ABOVE outbound intent
