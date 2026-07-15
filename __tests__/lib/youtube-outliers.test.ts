@@ -13,6 +13,7 @@ import {
   modifiedZScores,
   rankOutliers,
   summarizeByTheme,
+  indexThemesByVideo,
   deriveSignals,
   ageInDays,
   DEFAULT_WEIGHTS,
@@ -212,6 +213,44 @@ describe('summarizeByTheme', () => {
     const summary = summarizeByTheme(ranked, songs);
     expect(summary.find((t) => t.theme === 'breakout')!.outlierCount).toBe(1);
     expect(summary.find((t) => t.theme === 'normal')!.outlierCount).toBe(0);
+  });
+});
+
+describe('indexThemesByVideo', () => {
+  it('maps videoId → theme', () => {
+    const m = indexThemesByVideo([
+      { youtubeVideoId: 'aaa', theme: 'mother' },
+      { youtubeVideoId: 'bbb', theme: 'love' },
+    ]);
+    expect(m.get('aaa')).toBe('mother');
+    expect(m.get('bbb')).toBe('love');
+    expect(m.size).toBe(2);
+  });
+
+  it('skips entries with no/blank videoId and trims the id', () => {
+    const m = indexThemesByVideo([
+      { youtubeVideoId: null, theme: 'mother' },
+      { youtubeVideoId: '   ', theme: 'love' },
+      { youtubeVideoId: ' ccc ', theme: 'nature' },
+    ]);
+    expect(m.has('ccc')).toBe(true);
+    expect(m.size).toBe(1);
+  });
+
+  it('first entry wins on a duplicate id (deterministic)', () => {
+    const m = indexThemesByVideo([
+      { youtubeVideoId: 'dup', theme: 'mother' },
+      { youtubeVideoId: 'dup', theme: 'love' },
+    ]);
+    expect(m.get('dup')).toBe('mother');
+  });
+
+  it('skips entries with no theme', () => {
+    const m = indexThemesByVideo([
+      { youtubeVideoId: 'x', theme: null },
+      { youtubeVideoId: 'y', theme: '' },
+    ]);
+    expect(m.size).toBe(0);
   });
 });
 

@@ -35,9 +35,13 @@ import {
   deriveSignals,
   rankOutliers,
   summarizeByTheme,
+  indexThemesByVideo,
   DEFAULT_OUTLIER_THRESHOLD,
   type SongSignals,
 } from '@/lib/youtube-outliers';
+import { ContentRepository } from '@/infrastructure/database/ContentRepository';
+import { ContentType } from '@/types/content';
+import { themeForSongWithOverride } from '@/config/song-themes';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -46,11 +50,32 @@ const DEFAULT_WINDOW = 365; // analytics window for subs/retention
 const MAX_WINDOW = 400;
 const DEFAULT_LIMIT = 200; // videos to rank
 const MAX_LIMIT = 500;
+const MAX_SONGS = 500; // catalogue size cap for the theme lookup
 
 function clampInt(raw: string | null, def: number, min: number, max: number): number {
   const n = Number(raw);
   if (!Number.isFinite(n)) return def;
   return Math.max(min, Math.min(max, Math.trunc(n)));
+}
+
+/**
+ * Best-effort videoId → theme map from the catalogue (Content), so the theme
+ * rollup groups by a real theme. Never throws — a DB hiccup just yields an
+ * empty map and the rollup falls back to '(untagged)'.
+ */
+async function loadVideoThemeMap(): Promise<Map<string, string>> {
+  try {
+    const repo = new ContentRepository();
+    const { items } = await repo.findByType(ContentType.SONGS, { limit: MAX_SONGS });
+    return indexThemesByVideo(
+      items.map((c) => ({
+        youtubeVideoId: c.youtubeVideoId,
+        theme: themeForSongWithOverride(c.id, c.theme),
+      }))
+    );
+  } catch {
+    return new Map();
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -81,7 +106,10 @@ export async function GET(request: NextRequest) {
       { status: 502 }
     );
   }
-  const videos = await fetchChannelVideoStats(channelId, limit, { channel });
+  const [videos, themeMap] = await Promise.all([
+    fetchChannelVideoStats(channelId, limit, { channel }),
+    loadVideoThemeMap(),
+  ]);
 
   // Best-effort per-video analytics (subscriber conversion + retention proxy).
   const analytics = new Map<string, VideoAnalyticsRow>();
@@ -118,6 +146,7 @@ export async function GET(request: NextRequest) {
       // averageViewPercentage proxy = avg seconds watched ÷ video length.
       signals.retention = (a.averageViewDuration / v.durationSeconds) * 100;
     }
+    signals.theme = themeMap.get(v.id) ?? null;
     return signals;
   });
 
@@ -129,10 +158,13 @@ export async function GET(request: NextRequest) {
     'engagement',
     ...(analyticsOk ? ['subsPer1k', 'retention'] : []),
   ];
+  const themesJoined = themeMap.size > 0;
   const caveats = [
     'CTR and shares are Studio-only (absent from the API) — those signals are omitted; the score renormalizes over the signals present.',
     'Long-tail growth (growth30d) is not yet wired — pending per-video METRICSNAP history.',
-    'Theme rollup groups under "(untagged)" until song themes are joined from the catalogue.',
+    themesJoined
+      ? 'Song themes are joined from the catalogue; a song with no explicit theme defaults to "love" (site convention).'
+      : 'Theme rollup groups under "(untagged)" — no catalogue themes could be loaded.',
   ];
   if (!analyticsOk) {
     caveats.unshift(
@@ -146,6 +178,7 @@ export async function GET(request: NextRequest) {
     window,
     threshold: outlierThreshold,
     analyticsConfigured: analyticsOk,
+    themesJoined,
     signalsAvailable,
     channel: {
       subscriberCount: channel.subscriberCount,
