@@ -62,8 +62,15 @@ function prettyDate(iso: string): string {
     : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
-export function PublishAdvisorCard({ ytaConfigured }: { ytaConfigured: boolean }) {
-  const [data, setData] = useState<AdvisorResponse | null>(null);
+export function PublishAdvisorCard({
+  ytaConfigured,
+  initial = null,
+}: {
+  ytaConfigured: boolean;
+  /** Server-computed advice from the dashboard page — avoids a duplicate fetch on load. */
+  initial?: AdvisorResponse | null;
+}) {
+  const [data, setData] = useState<AdvisorResponse | null>(initial);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -83,8 +90,9 @@ export function PublishAdvisorCard({ ytaConfigured }: { ytaConfigured: boolean }
   }, []);
 
   useEffect(() => {
-    if (ytaConfigured) load();
-  }, [ytaConfigured, load]);
+    // Server already provided the advice → no duplicate fetch on first load.
+    if (ytaConfigured && !initial) load();
+  }, [ytaConfigured, initial, load]);
 
   if (!ytaConfigured) {
     return (

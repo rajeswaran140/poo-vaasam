@@ -21,6 +21,10 @@
  * because more reach can't cure a watch-time problem.
  */
 
+import { assessChange, type SeriesPoint } from '@/lib/youtube-forecast';
+import { isShort } from '@/lib/youtube-shorts';
+import { ageInDays } from '@/lib/youtube-outliers';
+
 export type Verdict = 'ship-now' | 'on-schedule' | 'let-it-ride' | 'hold-fix-content';
 
 export interface AdvisorInput {
@@ -245,4 +249,119 @@ export function advisePublish(input: AdvisorInput): Advice {
   }
 
   return { verdict, headline, recommendedDate, slotLabel, confidence, reasons, signals };
+}
+
+// ── input derivation (shared by the route AND the server page) ──────────────────
+
+const TIER2_SUBS = 1000;
+
+export interface AdviceInputs {
+  recentViewsPerDay: number;
+  viewsDeclining: boolean;
+  longFormRetention: number | null;
+  netSubsPerDay: number;
+  subsToTier2: number | null;
+  daysSinceLastUpload: number | null;
+  finalizedDays: number;
+}
+
+export interface AdviceBundle {
+  advice: Advice;
+  inputs: AdviceInputs;
+  caveats: string[];
+}
+
+/**
+ * Derive the advice from already-fetched Analytics data — the SINGLE source of
+ * the reach/retention/momentum/recency signals, so the route and the dashboard
+ * page produce identical advice without fetching the same series/videos twice.
+ * Pure (asOf passed in). Minimal structural inputs so it doesn't couple to the
+ * fetchers' full row types.
+ *  - series: daily channel rows (the lagging final day is dropped here).
+ *  - videos: catalogue with durations (for Shorts exclusion + recency).
+ *  - videoAnalytics: per-video window rows (avgViewDuration) for LONG-FORM
+ *    retention; null when unavailable → retention omitted (score renormalizes).
+ */
+export function buildPublishAdvice(data: {
+  asOf: string;
+  series: Array<{ date: string; views: number; subscribersGained: number; subscribersLost?: number }>;
+  channel: { subscriberCount: number } | null;
+  videos: Array<{ id: string; publishedAt: string; duration?: string; durationSeconds: number }>;
+  videoAnalytics: Array<{ videoId: string; views: number; averageViewDuration: number }> | null;
+}): AdviceBundle {
+  const caveats: string[] = [];
+  // Drop the lagging final day; recent days settle and would read as a false dip.
+  const finalized = data.series.length > 1 ? data.series.slice(0, -1) : data.series;
+  if (finalized.length < 8) {
+    caveats.push('Fewer than 8 finalized days of history — treat the read as tentative.');
+  }
+  const recentN = Math.min(7, Math.max(1, Math.floor(finalized.length / 2)));
+  const recent = finalized.slice(-recentN);
+  const meanOf = (xs: number[]): number => (xs.length ? xs.reduce((s, v) => s + v, 0) / xs.length : 0);
+
+  const recentViewsPerDay = meanOf(recent.map((d) => d.views));
+  const netSubsPerDay = meanOf(recent.map((d) => d.subscribersGained - (d.subscribersLost ?? 0)));
+
+  const points: SeriesPoint[] = finalized.map((d) => ({
+    date: d.date,
+    views: d.views,
+    netSubscribers: d.subscribersGained,
+  }));
+  const viewsChange = assessChange(points, { metric: 'views', recentDays: recentN, priorDays: recentN });
+  const viewsDeclining = viewsChange?.significant === true && viewsChange.direction === 'down';
+
+  const subsToTier2 =
+    data.channel && data.channel.subscriberCount < TIER2_SUBS
+      ? TIER2_SUBS - data.channel.subscriberCount
+      : null;
+
+  const latestLongForm = data.videos.find((v) => v.publishedAt && !isShort(v));
+  const daysSinceLastUpload = latestLongForm ? ageInDays(latestLongForm.publishedAt, data.asOf) : null;
+
+  let longFormRetention: number | null = null;
+  if (data.videoAnalytics) {
+    const durationById = new Map(data.videos.map((v) => [v.id, v.durationSeconds]));
+    const shortIds = new Set(data.videos.filter((v) => isShort(v)).map((v) => v.id));
+    const rows = data.videoAnalytics
+      .filter((r) => !shortIds.has(r.videoId))
+      .map((r) => ({ dur: durationById.get(r.videoId), avd: r.averageViewDuration, views: r.views }))
+      .filter((x): x is { dur: number; avd: number; views: number } => x.dur != null && x.dur > 0)
+      .map((x) => ({ retentionPct: (x.avd / x.dur) * 100, views: x.views }));
+    longFormRetention = weightedRetention(rows);
+  }
+
+  if (!data.channel && data.videos.length === 0) {
+    caveats.push('YouTube Data API unavailable — subs-to-Tier-2 and last-upload recency were omitted.');
+  }
+  caveats.push(
+    'Retention is the views-weighted average of LONG-FORM songs only (Shorts excluded); a falling-retention trend isn’t wired in yet.'
+  );
+  caveats.push(
+    'Suggested-vs-prior reach breakdown is not wired in yet — the reach signal comes from the finalized daily-views trend.'
+  );
+
+  const advice = advisePublish({
+    asOf: data.asOf,
+    recentViewsPerDay,
+    viewsDeclining,
+    topRetention: longFormRetention,
+    priorTopRetention: null,
+    netSubsPerDay,
+    subsToTier2,
+    daysSinceLastUpload,
+  });
+
+  return {
+    advice,
+    inputs: {
+      recentViewsPerDay: Math.round(recentViewsPerDay),
+      viewsDeclining,
+      longFormRetention,
+      netSubsPerDay: Math.round(netSubsPerDay),
+      subsToTier2,
+      daysSinceLastUpload,
+      finalizedDays: finalized.length,
+    },
+    caveats,
+  };
 }
