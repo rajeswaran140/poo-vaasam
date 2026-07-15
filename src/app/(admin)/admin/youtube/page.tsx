@@ -44,6 +44,7 @@ import { SongLifecycleReportPanel } from '@/components/admin/SongLifecycleReport
 import { SearchScorecardPanel } from '@/components/admin/SearchScorecardPanel';
 import { TopSongMonitorPanel } from '@/components/admin/TopSongMonitorPanel';
 import { OutlierFinderPanel } from '@/components/admin/OutlierFinderPanel';
+import { PublishAdvisorCard } from '@/components/admin/PublishAdvisorCard';
 import { SharesPanel } from '@/components/admin/SharesPanel';
 import { ReferralCoefficientPanel } from '@/components/admin/ReferralCoefficientPanel';
 import { FunnelInsightPanel } from '@/components/admin/FunnelInsightPanel';
@@ -181,6 +182,11 @@ export default async function YouTubeAdminPage() {
 
       {/* Weekly digest + anomaly signal */}
       {digest && <DigestCard digest={digest} />}
+
+      {/* Publish Advisor — "should I upload now?" as one recommendation
+          (verdict + target slot + confidence + reasons). Client-fetches
+          /api/admin/youtube/publish-advisor. */}
+      <PublishAdvisorCard ytaConfigured={ytaOn} />
 
       {/* GA4 — site signals */}
       {ga4On ? (
