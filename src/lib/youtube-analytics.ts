@@ -301,6 +301,8 @@ export interface DailyAnalyticsRow {
   estimatedMinutesWatched: number;
   /** Channel series only (fetchDailySeries); net subs = gained − lost. */
   subscribersLost?: number;
+  /** Per-video series only (fetchVideoDailySeries); daily view-weighted %. */
+  averageViewPercentage?: number;
 }
 
 /** Daily channel series (views/subs/watch-time per day) for the last N days. */
@@ -360,6 +362,158 @@ export async function fetchVideoShares(videoId: string, daysBack = 90): Promise<
   }
 }
 
+export interface VideoTotals {
+  views: number;
+  estimatedMinutesWatched: number;
+  averageViewDuration: number;
+  averageViewPercentage: number;
+  subscribersGained: number;
+  subscribersLost: number;
+  likes: number;
+  comments: number;
+  shares: number;
+}
+
+/** Lifetime (or windowed) totals row for ONE video — the per-song report header. */
+export async function fetchVideoTotals(
+  videoId: string,
+  startDate: string,
+  endDate: string
+): Promise<Result<VideoTotals>> {
+  if (!isYouTubeAnalyticsConfigured()) return { ok: false, error: 'YouTube Analytics OAuth not configured' };
+  if (!videoId) return { ok: false, error: 'videoId is required' };
+  try {
+    const res = await runReport({
+      ids: 'channel==MINE',
+      startDate,
+      endDate,
+      metrics:
+        'views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,subscribersGained,subscribersLost,likes,comments,shares',
+      filters: `video==${videoId}`,
+    });
+    if (!res) return { ok: false, error: 'No response from YouTube Analytics' };
+    const r = res.rows?.[0] ?? [];
+    return {
+      ok: true,
+      data: {
+        views: Number(r[0] ?? 0),
+        estimatedMinutesWatched: Number(r[1] ?? 0),
+        averageViewDuration: Number(r[2] ?? 0),
+        averageViewPercentage: Number(r[3] ?? 0),
+        subscribersGained: Number(r[4] ?? 0),
+        subscribersLost: Number(r[5] ?? 0),
+        likes: Number(r[6] ?? 0),
+        comments: Number(r[7] ?? 0),
+        shares: Number(r[8] ?? 0),
+      },
+    };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export interface SourceViewsRow {
+  source: string;
+  views: number;
+}
+
+/**
+ * Per-video views by traffic source (insightTrafficSourceType) over an explicit
+ * window. The report calls it three times — lifetime, recent 7d, prior 7d — to
+ * build the impression-proxy trend without a per-source impressions metric (which
+ * the API doesn't provide).
+ */
+export async function fetchVideoTrafficSources(
+  videoId: string,
+  startDate: string,
+  endDate: string
+): Promise<Result<SourceViewsRow[]>> {
+  if (!isYouTubeAnalyticsConfigured()) return { ok: false, error: 'YouTube Analytics OAuth not configured' };
+  if (!videoId) return { ok: false, error: 'videoId is required' };
+  try {
+    const res = await runReport({
+      ids: 'channel==MINE',
+      startDate,
+      endDate,
+      metrics: 'views',
+      dimensions: 'insightTrafficSourceType',
+      filters: `video==${videoId}`,
+      sort: '-views',
+    });
+    if (!res) return { ok: false, error: 'No response from YouTube Analytics' };
+    const rows = (res.rows ?? []).map((r): SourceViewsRow => ({ source: String(r[0]), views: Number(r[1] ?? 0) }));
+    return { ok: true, data: rows };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export interface SubscribedStatusRow {
+  status: string;
+  views: number;
+  averageViewPercentage: number;
+}
+
+/** Per-video subscribed-vs-unsubscribed views + retention (the loyalty split). */
+export async function fetchVideoSubscribedSplit(
+  videoId: string,
+  startDate: string,
+  endDate: string
+): Promise<Result<SubscribedStatusRow[]>> {
+  if (!isYouTubeAnalyticsConfigured()) return { ok: false, error: 'YouTube Analytics OAuth not configured' };
+  if (!videoId) return { ok: false, error: 'videoId is required' };
+  try {
+    const res = await runReport({
+      ids: 'channel==MINE',
+      startDate,
+      endDate,
+      metrics: 'views,averageViewPercentage',
+      dimensions: 'subscribedStatus',
+      filters: `video==${videoId}`,
+    });
+    if (!res) return { ok: false, error: 'No response from YouTube Analytics' };
+    const rows = (res.rows ?? []).map((r): SubscribedStatusRow => ({
+      status: String(r[0]),
+      views: Number(r[1] ?? 0),
+      averageViewPercentage: Number(r[2] ?? 0),
+    }));
+    return { ok: true, data: rows };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export interface DeviceViewsRow {
+  device: string;
+  views: number;
+}
+
+/** Per-video views by device type (mobile / desktop / TV / tablet). */
+export async function fetchVideoDeviceMix(
+  videoId: string,
+  startDate: string,
+  endDate: string
+): Promise<Result<DeviceViewsRow[]>> {
+  if (!isYouTubeAnalyticsConfigured()) return { ok: false, error: 'YouTube Analytics OAuth not configured' };
+  if (!videoId) return { ok: false, error: 'videoId is required' };
+  try {
+    const res = await runReport({
+      ids: 'channel==MINE',
+      startDate,
+      endDate,
+      metrics: 'views',
+      dimensions: 'deviceType',
+      filters: `video==${videoId}`,
+      sort: '-views',
+    });
+    if (!res) return { ok: false, error: 'No response from YouTube Analytics' };
+    const rows = (res.rows ?? []).map((r): DeviceViewsRow => ({ device: String(r[0]), views: Number(r[1] ?? 0) }));
+    return { ok: true, data: rows };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 /**
  * Daily views / subscribers-gained / watch-minutes for ONE video — the per-song
  * daily series (day dimension + video filter). This is the intersection the
@@ -381,7 +535,8 @@ export async function fetchVideoDailySeries(
       ids: 'channel==MINE',
       startDate,
       endDate,
-      metrics: 'views,subscribersGained,estimatedMinutesWatched',
+      // averageViewPercentage appended LAST so existing column indices don't shift.
+      metrics: 'views,subscribersGained,estimatedMinutesWatched,averageViewPercentage',
       dimensions: 'day',
       filters: `video==${videoId}`,
       sort: 'day',
@@ -392,6 +547,7 @@ export async function fetchVideoDailySeries(
       views: Number(r[1] ?? 0),
       subscribersGained: Number(r[2] ?? 0),
       estimatedMinutesWatched: Number(r[3] ?? 0),
+      averageViewPercentage: Number(r[4] ?? 0),
     }));
     return { ok: true, data: rows };
   } catch (err) {

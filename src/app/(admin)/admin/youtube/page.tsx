@@ -40,6 +40,7 @@ import { YouTubeVideosPanel } from '@/components/admin/YouTubeVideosPanel';
 import { RetentionInsightPanel } from '@/components/admin/RetentionInsightPanel';
 import { PerSongDeepDive } from '@/components/admin/PerSongDeepDive';
 import { SongCockpit } from '@/components/admin/SongCockpit';
+import { SongLifecycleReportPanel } from '@/components/admin/SongLifecycleReportPanel';
 import { SearchScorecardPanel } from '@/components/admin/SearchScorecardPanel';
 import { TopSongMonitorPanel } from '@/components/admin/TopSongMonitorPanel';
 import { SharesPanel } from '@/components/admin/SharesPanel';
@@ -399,6 +400,11 @@ export default async function YouTubeAdminPage() {
 
       {/* Song cockpit — pick a song ONCE → trend + audience + discovery together. */}
       <SongCockpit videos={retentionVideos} ytaConfigured={ytaOn} />
+
+      {/* Song lifecycle report — the consolidated per-song write-up: weekly
+          lifecycle, traffic-source (impression proxy) trend, loyalty split, and a
+          plain-language decline diagnosis (reach cool-down vs engagement problem). */}
+      <SongLifecycleReportPanel videos={retentionVideos} ytaConfigured={ytaOn} />
 
       {/* Retention intelligence — per-video hook verdict vs the best-retention
           template (the first-15s lever). Unique — not summarized by the cockpit. */}
