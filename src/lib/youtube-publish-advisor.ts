@@ -65,6 +65,24 @@ const RETENTION_FALL_PCT = 0.15; // ≥15% relative drop in top retention = fall
 const SUGGESTED_DROP_PCT = 0.4; // ≥40% drop in suggested reach = draining
 const RECENT_UPLOAD_DAYS = 2; // published within this many days = "let it ride"
 
+/**
+ * Views-weighted mean retention over a set of videos. Weighting by views (not a
+ * flat mean) means the songs people actually watch dominate the read, and — fed
+ * only long-form rows by the caller — it keeps sub-minute Shorts (which sit near
+ * 100%) from inflating the channel's apparent retention. Null when there is no
+ * positive-view row to weight.
+ */
+export function weightedRetention(rows: Array<{ retentionPct: number; views: number }>): number | null {
+  let weight = 0;
+  let acc = 0;
+  for (const r of rows) {
+    if (!Number.isFinite(r.retentionPct) || !Number.isFinite(r.views) || r.views <= 0) continue;
+    weight += r.views;
+    acc += r.retentionPct * r.views;
+  }
+  return weight > 0 ? acc / weight : null;
+}
+
 /** Date (YYYY-MM-DD) of the coming Friday on/after asOf (asOf itself if it's a Friday). */
 export function nextFriday(asOf: string): string {
   const d = new Date(`${asOf}T00:00:00.000Z`);
