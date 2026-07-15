@@ -50,6 +50,7 @@ import { ReferralCoefficientPanel } from '@/components/admin/ReferralCoefficient
 import { FunnelInsightPanel } from '@/components/admin/FunnelInsightPanel';
 import { LazyMount } from '@/components/admin/LazyMount';
 import { mergeVideoRows, pickRetentionBenchmark } from '@/lib/youtube-dashboard';
+import { buildPublishAdvice } from '@/lib/youtube-publish-advisor';
 
 const ANALYTICS_DAYS = 28;
 
@@ -137,6 +138,14 @@ export default async function YouTubeAdminPage() {
   // classification) from the daily series. Built server-side; pure math.
   const dailySeries = dailyRes?.ok ? dailyRes.data : null;
   const digest = dailySeries && dailySeries.length > 0 ? buildDigest(dailySeries, ytaVideos) : null;
+  // Publish Advisor — computed here from data already fetched (dailySeries +
+  // channel + videos + ytaVideos), then passed to the (eager, above-fold) card
+  // as initial state so it doesn't re-fetch the same series/videos on load.
+  const advisorAsOf = new Date().toISOString().slice(0, 10);
+  const advisorInitial =
+    ytaOn && dailySeries && dailySeries.length > 0
+      ? { success: true as const, asOf: advisorAsOf, ...buildPublishAdvice({ asOf: advisorAsOf, series: dailySeries, channel, videos, videoAnalytics: ytaVideos }) }
+      : null;
   // Comprehensive per-video rows for the interactive panel: public Data-API
   // counts + owner Analytics metrics, merged once on the server. The panel
   // re-queries Analytics client-side when the date range changes.
@@ -186,7 +195,7 @@ export default async function YouTubeAdminPage() {
       {/* Publish Advisor — "should I upload now?" as one recommendation
           (verdict + target slot + confidence + reasons). Client-fetches
           /api/admin/youtube/publish-advisor. */}
-      <PublishAdvisorCard ytaConfigured={ytaOn} />
+      <PublishAdvisorCard ytaConfigured={ytaOn} initial={advisorInitial} />
 
       {/* GA4 — site signals */}
       {ga4On ? (

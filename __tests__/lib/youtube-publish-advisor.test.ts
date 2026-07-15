@@ -7,6 +7,7 @@
 
 import {
   advisePublish,
+  buildPublishAdvice,
   nextFriday,
   weightedRetention,
   DEFAULT_BASELINE_VPD,
@@ -143,5 +144,77 @@ describe('advisePublish — verdicts', () => {
 
   it('exposes the default baseline constant', () => {
     expect(DEFAULT_BASELINE_VPD).toBe(5000);
+  });
+});
+
+describe('buildPublishAdvice (shared route + page derivation)', () => {
+  // 20-day series; finalized = first 19, recent window = last 7 finalized.
+  function dailySeries({ recentViews, priorViews, subs = 20 }: { recentViews: number; priorViews: number; subs?: number }) {
+    const days = 20;
+    return Array.from({ length: days }, (_, i) => {
+      const d = new Date('2026-06-01T00:00:00Z');
+      d.setUTCDate(d.getUTCDate() + i);
+      const views = i === days - 1 ? 0 : i >= days - 1 - 7 ? recentViews : priorViews;
+      return { date: d.toISOString().slice(0, 10), views, subscribersGained: subs };
+    });
+  }
+  const vid = (id: string, publishedAt: string, durationSeconds: number) => ({
+    id, publishedAt, duration: `PT${durationSeconds}S`, durationSeconds,
+  });
+
+  it('ship-now: draining series + healthy long-form retention', () => {
+    const b = buildPublishAdvice({
+      asOf: '2026-07-15',
+      series: dailySeries({ recentViews: 6000, priorViews: 12000 }),
+      channel: { subscriberCount: 928 },
+      videos: [vid('lf', '2020-01-01T00:00:00Z', 240)],
+      videoAnalytics: [{ videoId: 'lf', views: 1000, averageViewDuration: 120 }], // 50%
+    });
+    expect(b.advice.verdict).toBe('ship-now');
+    expect(b.inputs.viewsDeclining).toBe(true);
+    expect(b.inputs.recentViewsPerDay).toBe(6000);
+    expect(b.inputs.longFormRetention).toBeCloseTo(50, 5);
+    expect(b.inputs.subsToTier2).toBe(72);
+    expect(b.advice.recommendedDate).toBe('2026-07-17');
+  });
+
+  it('excludes Shorts from BOTH retention and recency', () => {
+    const b = buildPublishAdvice({
+      asOf: '2026-07-15',
+      series: dailySeries({ recentViews: 6000, priorViews: 12000 }),
+      channel: { subscriberCount: 928 },
+      videos: [vid('lf', '2020-01-01T00:00:00Z', 240), vid('sh', '2026-07-14T00:00:00Z', 30)],
+      videoAnalytics: [
+        { videoId: 'lf', views: 5000, averageViewDuration: 72 }, // 30% (weak)
+        { videoId: 'sh', views: 1000, averageViewDuration: 28 }, // 93% but EXCLUDED
+      ],
+    });
+    expect(b.inputs.longFormRetention).toBeCloseTo(30, 5); // Short's 93% not blended
+    expect(b.inputs.daysSinceLastUpload).toBeGreaterThan(2); // recent Short ignored for recency
+    expect(b.advice.verdict).toBe('hold-fix-content'); // draining + weak long-form retention
+  });
+
+  it('retention omitted when per-video analytics is null', () => {
+    const b = buildPublishAdvice({
+      asOf: '2026-07-15',
+      series: dailySeries({ recentViews: 12000, priorViews: 12000 }),
+      channel: { subscriberCount: 928 },
+      videos: [vid('lf', '2020-01-01T00:00:00Z', 240)],
+      videoAnalytics: null,
+    });
+    expect(b.inputs.longFormRetention).toBeNull();
+  });
+
+  it('flags the Data-API-unavailable caveat when channel + catalogue are absent', () => {
+    const b = buildPublishAdvice({
+      asOf: '2026-07-15',
+      series: dailySeries({ recentViews: 12000, priorViews: 12000 }),
+      channel: null,
+      videos: [],
+      videoAnalytics: null,
+    });
+    expect(b.inputs.subsToTier2).toBeNull();
+    expect(b.inputs.daysSinceLastUpload).toBeNull();
+    expect(b.caveats.some((c) => /Data API unavailable/.test(c))).toBe(true);
   });
 });
