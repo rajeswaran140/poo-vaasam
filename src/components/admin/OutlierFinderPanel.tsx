@@ -12,7 +12,7 @@
  * Data API); when Analytics is off it ranks on the signals it has and says so.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { adminFetch } from '@/lib/client-auth';
 import { DataToolbar } from '@/components/admin/DataToolbar';
 import type { ExportColumn } from '@/lib/data-export';
@@ -67,6 +67,16 @@ function themeLabel(theme: string | null): string {
   return SONG_THEME_LABELS[theme as SongTheme] ?? theme;
 }
 
+/** Human labels for the "Why?" breakdown. */
+const SIGNAL_LABELS: Record<string, string> = {
+  viewsPerDay: 'Reach velocity (views/day)',
+  subsPer1k: 'Subscriber conversion',
+  retention: 'Retention',
+  ctr: 'Click-through',
+  engagement: 'Engagement (comments)',
+  growth30d: 'Long-tail growth',
+};
+
 const COLUMNS: ExportColumn<Outlier>[] = [
   { header: 'Rank', get: (r) => r.rank },
   { header: 'Song', get: (r) => r.title },
@@ -84,6 +94,7 @@ export function OutlierFinderPanel({ ytaConfigured }: { ytaConfigured: boolean }
   const [data, setData] = useState<OutliersResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -124,7 +135,8 @@ export function OutlierFinderPanel({ ytaConfigured }: { ytaConfigured: boolean }
         multi-signal blend (views/day, subscriber conversion, retention, engagement) measured relative to the rest
         of the catalogue — so a genuine breakout stands out and one viral hit can&apos;t distort the yardstick.
         Use it to decide which songs to <strong>amplify</strong> (Shorts, WhatsApp, site) and whose title/thumbnail
-        <strong> packaging to clone</strong> for the next upload.
+        <strong> packaging to clone</strong> for the next upload. <span className="text-gray-400">Click any row to see
+        <em> why</em> it scored.</span>
       </p>
 
       {!ytaConfigured && (
@@ -159,32 +171,47 @@ export function OutlierFinderPanel({ ytaConfigured }: { ytaConfigured: boolean }
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                 {data.outliers.map((o) => (
-                  <tr key={o.videoId} className={o.isOutlier ? 'bg-orange-50/60 dark:bg-orange-900/10' : undefined}>
-                    <td className="px-3 py-2 tabular-nums text-gray-400">{o.rank}</td>
-                    <td className="px-3 py-2 font-tamil text-gray-900 dark:text-gray-100">
-                      <span className="line-clamp-1 max-w-[16rem]">{o.title}</span>
-                    </td>
-                    <td className="px-3 py-2">
-                      <span className="inline-block rounded-full bg-gray-100 dark:bg-gray-800 px-2 py-0.5 font-tamil text-xs text-gray-600 dark:text-gray-300">
-                        {themeLabel(o.theme)}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums font-medium">
-                      <span className={o.score >= 0 ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400'}>
-                        {fmtScore(o.score)}
-                      </span>
-                      {o.isOutlier && (
-                        <span className="ml-1.5 rounded-full bg-orange-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-orange-600 dark:text-orange-300">
-                          ★ outlier
+                  <Fragment key={o.videoId}>
+                    <tr
+                      onClick={() => setExpanded((cur) => (cur === o.videoId ? null : o.videoId))}
+                      className={`cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/40 ${o.isOutlier ? 'bg-orange-50/60 dark:bg-orange-900/10' : ''}`}
+                    >
+                      <td className="px-3 py-2 tabular-nums text-gray-400">
+                        <span className="mr-1 text-gray-300 dark:text-gray-600" aria-hidden>{expanded === o.videoId ? '▾' : '▸'}</span>
+                        {o.rank}
+                      </td>
+                      <td className="px-3 py-2 font-tamil text-gray-900 dark:text-gray-100">
+                        <span className="line-clamp-1 max-w-[16rem]">{o.title}</span>
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className="inline-block rounded-full bg-gray-100 dark:bg-gray-800 px-2 py-0.5 font-tamil text-xs text-gray-600 dark:text-gray-300">
+                          {themeLabel(o.theme)}
                         </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400">{fmtInt(sig(o, 'viewsPerDay'))}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400">{fmt1(sig(o, 'subsPer1k'))}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400">{sig(o, 'retention') == null ? '—' : `${fmt1(sig(o, 'retention'))}%`}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400">{fmt1(sig(o, 'engagement'))}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400">{fmtRatio(sig(o, 'growth30d'))}</td>
-                  </tr>
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums font-medium">
+                        <span className={o.score >= 0 ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400'}>
+                          {fmtScore(o.score)}
+                        </span>
+                        {o.isOutlier && (
+                          <span className="ml-1.5 rounded-full bg-orange-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-orange-600 dark:text-orange-300">
+                            ★ outlier
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400">{fmtInt(sig(o, 'viewsPerDay'))}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400">{fmt1(sig(o, 'subsPer1k'))}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400">{sig(o, 'retention') == null ? '—' : `${fmt1(sig(o, 'retention'))}%`}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400">{fmt1(sig(o, 'engagement'))}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-gray-400">{fmtRatio(sig(o, 'growth30d'))}</td>
+                    </tr>
+                    {expanded === o.videoId && (
+                      <tr className="bg-gray-50/60 dark:bg-gray-900/30">
+                        <td colSpan={9} className="px-4 py-3">
+                          <WhyBreakdown o={o} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
                 {data.outliers.length === 0 && (
                   <tr>
@@ -232,5 +259,57 @@ export function OutlierFinderPanel({ ytaConfigured }: { ytaConfigured: boolean }
         </>
       )}
     </section>
+  );
+}
+
+/**
+ * The "Why?" breakdown for one song: each signal's CONTRIBUTION to the score =
+ * its effective weight × its robust z (distance from the catalogue norm). By
+ * construction these sum to the song's score, so the bars literally add up to
+ * the number in the table — a diverging bar per signal, biggest driver first.
+ */
+function WhyBreakdown({ o }: { o: Outlier }) {
+  if (o.breakdown.length === 0) {
+    return (
+      <p className="text-xs text-gray-500 dark:text-gray-400">
+        This song sits at your catalogue norm on every measured signal — nothing pushes its score up or down.
+      </p>
+    );
+  }
+  const rows = o.breakdown
+    .map((b) => ({ key: b.key, label: SIGNAL_LABELS[b.key] ?? b.key, z: b.z, contribution: b.weight * b.z }))
+    .sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));
+  const maxAbs = Math.max(...rows.map((r) => Math.abs(r.contribution)), 1e-9);
+
+  return (
+    <div className="space-y-2">
+      <p className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        Why {fmtScore(o.score)}? — each signal&apos;s push (weight × distance from your norm); the bars sum to the score
+      </p>
+      <ul className="space-y-1.5">
+        {rows.map((r) => {
+          const pos = r.contribution >= 0;
+          const w = (Math.abs(r.contribution) / maxAbs) * 50; // % of each half-track
+          return (
+            <li key={r.key} className="flex items-center gap-2 text-xs">
+              <span className="w-44 shrink-0 text-gray-700 dark:text-gray-300">{r.label}</span>
+              <span className="w-14 shrink-0 text-right tabular-nums text-gray-400" title="how far above/below your catalogue norm">
+                {r.z >= 0 ? '+' : ''}{r.z.toFixed(1)}σ
+              </span>
+              <div className="relative h-2 flex-1 rounded bg-gray-100 dark:bg-gray-800">
+                <div className="absolute inset-y-0 left-1/2 w-px bg-gray-300 dark:bg-gray-600" />
+                <div
+                  className={`absolute inset-y-0 rounded ${pos ? 'bg-green-500' : 'bg-red-400'}`}
+                  style={pos ? { left: '50%', width: `${w}%` } : { right: '50%', width: `${w}%` }}
+                />
+              </div>
+              <span className={`w-14 shrink-0 text-right tabular-nums font-medium ${pos ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>
+                {pos ? '+' : ''}{r.contribution.toFixed(2)}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
