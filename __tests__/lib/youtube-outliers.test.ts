@@ -14,6 +14,7 @@ import {
   rankOutliers,
   summarizeByTheme,
   indexThemesByVideo,
+  longTailRatio,
   deriveSignals,
   ageInDays,
   DEFAULT_WEIGHTS,
@@ -251,6 +252,45 @@ describe('indexThemesByVideo', () => {
       { youtubeVideoId: 'y', theme: '' },
     ]);
     expect(m.size).toBe(0);
+  });
+});
+
+describe('longTailRatio (growth30d)', () => {
+  it('durable slow-burn (recent velocity > lifetime avg) → ratio > 1', () => {
+    // lifetime 10000/100d = 100/day; recent 6000/30d = 200/day → 2.0
+    expect(
+      longTailRatio({ recentViews: 6000, recentWindowDays: 30, lifetimeViews: 10000, ageDays: 100 })
+    ).toBeCloseTo(2, 6);
+  });
+
+  it('spike-then-stall (recent velocity << lifetime avg) → ratio < 1', () => {
+    // lifetime 10000/100d = 100/day; recent 300/30d = 10/day → 0.1
+    expect(
+      longTailRatio({ recentViews: 300, recentWindowDays: 30, lifetimeViews: 10000, ageDays: 100 })
+    ).toBeCloseTo(0.1, 6);
+  });
+
+  it('null for songs younger than minAgeDays (no tail yet)', () => {
+    expect(
+      longTailRatio({ recentViews: 5000, recentWindowDays: 30, lifetimeViews: 5000, ageDays: 40 })
+    ).toBeNull();
+    // custom minAge
+    expect(
+      longTailRatio({ recentViews: 5000, recentWindowDays: 30, lifetimeViews: 5000, ageDays: 40, minAgeDays: 35 })
+    ).not.toBeNull();
+  });
+
+  it('null when there are no lifetime views', () => {
+    expect(
+      longTailRatio({ recentViews: 0, recentWindowDays: 30, lifetimeViews: 0, ageDays: 200 })
+    ).toBeNull();
+  });
+
+  it('caps the recent window to the video age', () => {
+    // age 40 (>minAge 35), window 30 → uses 30; recent 400/30 vs 800/40=20 → (13.33/20)=0.667
+    expect(
+      longTailRatio({ recentViews: 400, recentWindowDays: 30, lifetimeViews: 800, ageDays: 40, minAgeDays: 35 })
+    ).toBeCloseTo(0.6667, 3);
   });
 });
 

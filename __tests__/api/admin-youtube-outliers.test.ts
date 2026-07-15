@@ -50,7 +50,7 @@ function videos() {
   const mk = (id: string, views: number, comments: number) => ({
     id,
     title: id,
-    publishedAt: '2026-01-01T00:00:00Z', // same age → viewsPerDay tracks views
+    publishedAt: '2020-01-01T00:00:00Z', // safely > 60d old (any clock) + same age → viewsPerDay tracks views
     thumbnail: '',
     viewCount: views,
     likeCount: 0,
@@ -91,15 +91,34 @@ beforeEach(() => {
       { id: 'c_4', youtubeVideoId: 'normal4', theme: undefined },
     ],
   });
-  mockVideoAnalytics.mockResolvedValue({
-    ok: true,
-    data: [
-      { videoId: 'breakout', views: 90000, estimatedMinutesWatched: 0, averageViewDuration: 160, subscribersGained: 900 },
-      { videoId: 'normal1', views: 9000, estimatedMinutesWatched: 0, averageViewDuration: 100, subscribersGained: 20 },
-      { videoId: 'normal2', views: 9000, estimatedMinutesWatched: 0, averageViewDuration: 100, subscribersGained: 20 },
-      { videoId: 'normal3', views: 9000, estimatedMinutesWatched: 0, averageViewDuration: 100, subscribersGained: 20 },
-      { videoId: 'normal4', views: 9000, estimatedMinutesWatched: 0, averageViewDuration: 100, subscribersGained: 20 },
-    ],
+  // Window-aware: the 365d pull drives subs/retention; the 30d pull drives growth30d.
+  const mainRow = (id: string, views: number, avd: number, subs: number) => ({
+    videoId: id, views, estimatedMinutesWatched: 0, averageViewDuration: avd, subscribersGained: subs,
+  });
+  mockVideoAnalytics.mockImplementation((days: number) => {
+    if (days === 30) {
+      // Recent velocity: breakout still pulling views, normals cooled.
+      return Promise.resolve({
+        ok: true,
+        data: [
+          mainRow('breakout', 9000, 160, 0),
+          mainRow('normal1', 100, 100, 0),
+          mainRow('normal2', 100, 100, 0),
+          mainRow('normal3', 100, 100, 0),
+          mainRow('normal4', 100, 100, 0),
+        ],
+      });
+    }
+    return Promise.resolve({
+      ok: true,
+      data: [
+        mainRow('breakout', 90000, 160, 900),
+        mainRow('normal1', 9000, 100, 20),
+        mainRow('normal2', 9000, 100, 20),
+        mainRow('normal3', 9000, 100, 20),
+        mainRow('normal4', 9000, 100, 20),
+      ],
+    });
   });
 });
 
@@ -138,6 +157,27 @@ it('ranks the breakout song top and flags it an outlier', async () => {
   const subs = body.outliers[0].breakdown.find((b: { key: string }) => b.key === 'subsPer1k');
   expect(subs.value).toBeCloseTo(10, 3);
   expect(body.channel.ranked).toBe(5);
+});
+
+it('computes the growth30d long-tail signal from the trailing-30d window', async () => {
+  const body = await (await GET(req())).json();
+  expect(body.signalsAvailable).toContain('growth30d');
+  const breakout = body.outliers.find((o: { videoId: string }) => o.videoId === 'breakout');
+  const g = breakout.breakdown.find((b: { key: string }) => b.key === 'growth30d');
+  expect(g).toBeTruthy();
+  expect(typeof g.value).toBe('number');
+  // breakout's recent velocity dwarfs the normals' → highest growth30d too
+  const normal = body.outliers.find((o: { videoId: string }) => o.videoId === 'normal1');
+  const gn = normal.breakdown.find((b: { key: string }) => b.key === 'growth30d');
+  expect(g.value).toBeGreaterThan(gn.value);
+  expect(body.caveats.some((c: string) => /trailing-30d views\/day/.test(c))).toBe(true);
+});
+
+it('omits growth30d when Analytics is off', async () => {
+  mockAnalyticsConfigured.mockReturnValue(false);
+  const body = await (await GET(req())).json();
+  expect(body.signalsAvailable).not.toContain('growth30d');
+  expect(body.caveats.some((c: string) => /growth30d\) needs YouTube Analytics/.test(c))).toBe(true);
 });
 
 it('degrades without Analytics: ranks on the available signals, no 500', async () => {
