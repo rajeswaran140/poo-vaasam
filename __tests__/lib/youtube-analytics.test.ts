@@ -185,8 +185,8 @@ describe('fetchVideoDailySeries (per-song daily views/subs)', () => {
       reportUrl = url;
       return reportOk({
         rows: [
-          ['2026-07-08', 120, 3, 400],
-          ['2026-07-09', 90, 1, 300],
+          ['2026-07-08', 120, 3, 400, 62.5],
+          ['2026-07-09', 90, 1, 300, 58],
         ],
       });
     });
@@ -200,6 +200,7 @@ describe('fetchVideoDailySeries (per-song daily views/subs)', () => {
         views: 120,
         subscribersGained: 3,
         estimatedMinutesWatched: 400,
+        averageViewPercentage: 62.5,
       });
     }
     const decoded = decodeURIComponent(reportUrl);

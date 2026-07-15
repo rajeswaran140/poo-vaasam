@@ -203,3 +203,24 @@ export async function fetchChannelVideoStats(
   }
   return out;
 }
+
+/** Public snippet/stats for ONE video (title, upload date, duration). */
+export async function fetchVideoStatsById(videoId: string): Promise<VideoStats | null> {
+  if (!isValidYouTubeId(videoId)) return null;
+  const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id=${encodeURIComponent(videoId)}`;
+  const data = await ytFetch<VideosResponse>(url);
+  const v = data?.items?.[0];
+  if (!v) return null;
+  const duration = v.contentDetails?.duration ?? '';
+  return {
+    id: v.id,
+    title: v.snippet?.title ?? '',
+    publishedAt: v.snippet?.publishedAt ?? '',
+    thumbnail: v.snippet?.thumbnails?.medium?.url ?? v.snippet?.thumbnails?.default?.url ?? '',
+    viewCount: Number(v.statistics?.viewCount ?? 0),
+    likeCount: Number(v.statistics?.likeCount ?? 0),
+    commentCount: Number(v.statistics?.commentCount ?? 0),
+    duration,
+    durationSeconds: parseIsoDurationSeconds(duration),
+  };
+}
