@@ -186,6 +186,61 @@ export async function fetchVideoAnalytics(daysBack = 28): Promise<Result<VideoAn
   }
 }
 
+export interface VideoEngagementRow {
+  videoId: string;
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  subscribersGained: number;
+}
+
+/**
+ * Per-video engagement counts (views/likes/comments/shares/subs) over a window,
+ * in ONE bulk report — the input to the RESONANCE ranking (advocacy per 1k
+ * views). Paginated + capped like fetchVideoAnalytics.
+ */
+export async function fetchVideoEngagement(daysBack = 90): Promise<Result<VideoEngagementRow[]>> {
+  if (!isYouTubeAnalyticsConfigured()) {
+    return { ok: false, error: 'YouTube Analytics OAuth not configured' };
+  }
+  const { startDate, endDate } = dateRange(daysBack);
+  const PAGE = 50;
+  const MAX = 500;
+  try {
+    const rows: VideoEngagementRow[] = [];
+    for (let startIndex = 1; startIndex <= MAX; startIndex += PAGE) {
+      const res = await runReport({
+        ids: 'channel==MINE',
+        startDate,
+        endDate,
+        metrics: 'views,likes,comments,shares,subscribersGained',
+        dimensions: 'video',
+        sort: '-views',
+        maxResults: String(PAGE),
+        startIndex: String(startIndex),
+      });
+      if (!res) {
+        if (rows.length > 0) break;
+        return { ok: false, error: 'No response from YouTube Analytics' };
+      }
+      const pageRows = (res.rows ?? []).map((row): VideoEngagementRow => ({
+        videoId: String(row[0]),
+        views: Number(row[1] ?? 0),
+        likes: Number(row[2] ?? 0),
+        comments: Number(row[3] ?? 0),
+        shares: Number(row[4] ?? 0),
+        subscribersGained: Number(row[5] ?? 0),
+      }));
+      rows.push(...pageRows);
+      if (pageRows.length < PAGE) break;
+    }
+    return { ok: true, data: rows };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 export interface TopVideoRow {
   videoId: string;
   views: number;

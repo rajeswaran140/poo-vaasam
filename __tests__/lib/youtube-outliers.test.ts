@@ -18,6 +18,7 @@ import {
   deriveSignals,
   ageInDays,
   DEFAULT_WEIGHTS,
+  RESONANCE_WEIGHTS,
   DEFAULT_OUTLIER_THRESHOLD,
   SIGNAL_KEYS,
   type SongSignals,
@@ -171,6 +172,28 @@ describe('rankOutliers', () => {
     const w = { ...DEFAULT_WEIGHTS, viewsPerDay: 0, retention: 1 };
     const ranked = rankOutliers(songs, { weights: w });
     expect(ranked[0].videoId).toBe('a');
+  });
+});
+
+describe('RESONANCE_WEIGHTS lens', () => {
+  // Low-reach-but-high-advocacy vs high-reach-but-low-advocacy songs.
+  const songs = [
+    song('motiv1', { viewsPerDay: 10, sharesPer1k: 44, likesPer1k: 20, subsPer1k: 5 }),
+    song('motiv2', { viewsPerDay: 20, sharesPer1k: 33, likesPer1k: 16, subsPer1k: 5 }),
+    song('lovehit', { viewsPerDay: 5000, sharesPer1k: 32, likesPer1k: 10, subsPer1k: 4 }),
+  ];
+
+  it('ranks by per-viewer advocacy, ignoring reach', () => {
+    const ranked = rankOutliers(songs, { weights: RESONANCE_WEIGHTS });
+    expect(ranked[0].videoId).toBe('motiv1'); // highest shares/likes despite lowest views
+    expect(ranked[ranked.length - 1].videoId).toBe('lovehit'); // huge reach, weakest advocacy → last
+    // viewsPerDay must not appear in the resonance breakdown (weight 0)
+    expect(ranked[0].breakdown.some((b) => b.key === 'viewsPerDay')).toBe(false);
+  });
+
+  it('is a genuinely different lens from the reach-weighted default', () => {
+    const reach = rankOutliers(songs, { weights: DEFAULT_WEIGHTS });
+    expect(reach[0].videoId).toBe('lovehit'); // reach lens crowns the high-view song
   });
 });
 
@@ -359,6 +382,8 @@ describe('module constants', () => {
       ctr: 0.2,
       engagement: 0.1,
       growth30d: 0.05,
+      likesPer1k: 0,
+      sharesPer1k: 0,
     });
     // every signal key is weighted
     expect(SIGNAL_KEYS.every((k) => k in DEFAULT_WEIGHTS)).toBe(true);
