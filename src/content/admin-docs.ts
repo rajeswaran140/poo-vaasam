@@ -432,6 +432,58 @@ The composer's **"📋 Copy ready-to-paste"** button (\`/admin/compose\`) now ba
 - **2026-07-08:** swept the whole back-catalogue — **56 videos** migrated from the old \`Lyrics & poetry: 100% original… / Music composition: AI-assisted.\` wording to the block above, and locked the composer so new uploads stay consistent.
 `,
   },
+  {
+    slug: 'promote-card-free-playbook',
+    title: 'YouTube "Promote" card — the free playbook',
+    category: 'Growth',
+    updatedAt: '2026-07-15',
+    body: `# When YouTube offers to "Promote" a song
+
+Studio's **"Ideas for you → Get up to N more impressions… Promoting <song> can help"** card is not a free reach feature — it's an upsell for a **paid Google Ads video campaign**. The "2,000–6,900 impressions" is what a small ad spend would buy. This guide is the standing decision + the free alternative that does more.
+
+## The decision: hold on paid promotion
+Default answer is **no** for now. Reasons, in order:
+
+- **Paid ads are deferred** (no budget allocated this cycle). Nothing about a Promote card changes that — it appears on every video, all the time.
+- **Rented reach, not owned demand.** An impression spike lasts exactly as long as the spend. Our reach is already ~84% algorithm-fed; paying widens the *rented* slice, not the owned floor we're trying to build (Status / WhatsApp shares, returning listeners).
+- **It doesn't advance YPP.** Watch time from Google Ads promotion **does not count** toward the 4,000 public watch-hours for monetization (confirm in Studio, but that's the standard policy). Paying for views that don't move the watch-hour goal is poor value while that's the target.
+- **Weak ROI at this stage.** At a typical 4–8% CTR, ~2–7k impressions ≈ ~100–500 views. A handful of organic WhatsApp forwards can match that for free — and those viewers are warmer.
+
+**When paid ads *would* be worth revisiting:** a specific song with proven strong retention + subscriber conversion, a real budget, and a goal other than watch-hours (e.g. a launch push once monetization is live). Revisit then, deliberately — not off a Studio nudge.
+
+## The free playbook (do this instead)
+1. **WhatsApp share** — our single best owned source, zero cost. One warm line + the link into family/community groups. One song per group per week; never a flood.
+2. **YouTube Community post** to subscribers — a free push to people who already opted in.
+3. **Right playlist + cross-links** — make sure the song sits in its themed playlist and is cross-linked from related songs' end screens.
+
+## Ready-to-use — "அன்பை சுமந்து சுமந்து" (father song · kOpNZHlE9FE)
+Universal, emotional framing — a father's love every heart recognizes. Respectful \`-உங்கள்\` register; no politics; the story stays the listener's own.
+
+### YouTube Community post
+\`\`\`
+❤️ "அன்பை சுமந்து சுமந்து..."
+
+தந்தையின் அன்பு — சொல்லில் அடங்காதது, காலத்தில் மறையாதது.
+அந்த அன்பை நினைவுகூரும் ஒரு அசல் தமிழ்ப் பாடல்.
+
+உங்கள் நெஞ்சைத் தொடும் என நம்புகிறேன். கேட்டுப் பாருங்கள் 🎧
+👉 https://youtu.be/kOpNZHlE9FE
+
+பிடித்தால், உங்கள் அன்புக்குரியவர்களோடு சேர்ந்து கேளுங்கள். ❤️
+— இராஜ் | தமிழகவல்
+\`\`\`
+
+### WhatsApp forward (one line + link)
+\`\`\`
+❤️ "அன்பை சுமந்து சுமந்து..." — தந்தையின் அன்பை நினைவுகூரும் ஒரு அசல் தமிழ்ப் பாடல். மனதைத் தொடும். கேட்டுப் பாருங்கள்: https://youtu.be/kOpNZHlE9FE
+\`\`\`
+
+> Also add it to the **Father Songs** playlist and pin the Community post. Keep the tone 100% emotional/universal.
+
+## A "Share to Status" clip for this song is blocked
+The auto clip generator (\`scripts/generate-song-short.ts\`) pulls the MP3 + cover from the public catalogue (\`/api/songs\`). This song **isn't in that catalogue** (no \`/content\` page / CDN audio yet), so the clip can't be auto-cut. To unblock: give the script an accessible MP3 (an S3/CDN URL or a local path) with \`--audio\` — YouTube itself can't be used as the source (yt-dlp is bot-walled).
+`,
+  },
 ];
 
 /** Docs grouped by category, in registry order, for the sidebar. */
