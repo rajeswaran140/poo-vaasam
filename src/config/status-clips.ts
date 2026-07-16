@@ -29,7 +29,7 @@ export interface StatusClip {
 }
 
 /**
- * 11 clips staged for WhatsApp Status. Each `songId` is a PUBLISHED song; the
+ * 12 clips staged for WhatsApp Status. Each `songId` is a PUBLISHED song; the
  * page joins on it to pull the live title/cover, and silently drops any whose
  * song is missing/unpublished (so this list can never surface a dead tile).
  */
@@ -45,6 +45,7 @@ export const STATUS_CLIPS: StatusClip[] = [
   { songId: 'cnt_1780066149991_18z5eyynd', clip: '/clips/muthamizhin-short.mp4' },   // முத்தமிழின் மூன்றெழுத்தில்
   { songId: 'cnt_1780067292613_jdgzm3ojb', clip: '/clips/orunal-short.mp4' },        // ஒரு நாள் திருநாள்
   { songId: 'cnt_1780856529972_6vrbl2icr', clip: '/clips/sevvizhi-short.mp4' },      // செவ்விழி ஓவியமே
+  { songId: 'cnt_1780856975880_4cxek8s3f', clip: '/clips/chithira-short.mp4' },      // சித்திர செவ்வானம் (44.5 shares/1k — high-advocacy)
 ];
 
 /** The Status clip for a song, or undefined if the song has none. */
