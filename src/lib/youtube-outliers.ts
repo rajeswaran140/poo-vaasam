@@ -42,7 +42,9 @@ export type SignalKey =
   | 'retention' // averageViewPercentage (0–100)
   | 'ctr' // impressions click-through rate (0–100); Studio-only, may be absent
   | 'engagement' // comments per 1,000 views
-  | 'growth30d'; // long-tail: how much a song keeps growing after its first 30 days
+  | 'growth30d' // long-tail: how much a song keeps growing after its first 30 days
+  | 'likesPer1k' // likes per 1,000 views — advocacy (resonance lens)
+  | 'sharesPer1k'; // shares per 1,000 views — the strongest advocacy signal (resonance lens)
 
 export const SIGNAL_KEYS: readonly SignalKey[] = [
   'viewsPerDay',
@@ -51,6 +53,8 @@ export const SIGNAL_KEYS: readonly SignalKey[] = [
   'ctr',
   'engagement',
   'growth30d',
+  'likesPer1k',
+  'sharesPer1k',
 ] as const;
 
 /** Per-song signal values. A null/undefined signal is treated as "not measured". */
@@ -64,6 +68,8 @@ export interface SongSignals {
   ctr?: number | null;
   engagement?: number | null;
   growth30d?: number | null;
+  likesPer1k?: number | null;
+  sharesPer1k?: number | null;
 }
 
 export type SignalWeights = Record<SignalKey, number>;
@@ -76,6 +82,25 @@ export const DEFAULT_WEIGHTS: SignalWeights = {
   ctr: 0.2,
   engagement: 0.1,
   growth30d: 0.05,
+  likesPer1k: 0, // reach lens ignores per-viewer advocacy
+  sharesPer1k: 0,
+};
+
+/**
+ * The RESONANCE lens — ranks by per-viewer advocacy (shares/likes/subs/comments
+ * per 1k views), NOT reach. Surfaces the low-view-but-deeply-resonant songs
+ * (e.g. the motivation lane) that a views-weighted score buries. Shares are
+ * weighted highest — a share is the strongest "this moved me" signal.
+ */
+export const RESONANCE_WEIGHTS: SignalWeights = {
+  viewsPerDay: 0,
+  subsPer1k: 0.25,
+  retention: 0,
+  ctr: 0,
+  engagement: 0.1, // comments per 1k
+  growth30d: 0,
+  likesPer1k: 0.3,
+  sharesPer1k: 0.35,
 };
 
 /** Composite z at/above which a song is called an outlier (robust SDs above norm). */

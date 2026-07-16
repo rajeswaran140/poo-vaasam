@@ -45,6 +45,7 @@ import { SongLifecycleReportPanel } from '@/components/admin/SongLifecycleReport
 import { SearchScorecardPanel } from '@/components/admin/SearchScorecardPanel';
 import { TopSongMonitorPanel } from '@/components/admin/TopSongMonitorPanel';
 import { OutlierFinderPanel } from '@/components/admin/OutlierFinderPanel';
+import { ResonancePanel } from '@/components/admin/ResonancePanel';
 import { PublishAdvisorCard } from '@/components/admin/PublishAdvisorCard';
 import { SharesPanel } from '@/components/admin/SharesPanel';
 import { ReferralCoefficientPanel } from '@/components/admin/ReferralCoefficientPanel';
@@ -457,6 +458,13 @@ export default async function YouTubeAdminPage() {
           dashboard's first paint. */}
       <LazyMount>
         <OutlierFinderPanel ytaConfigured={ytaOn} />
+      </LazyMount>
+
+      {/* Resonance — the per-viewer advocacy lens (shares/likes/subs per 1k),
+          the complement to Outliers' reach lens. Surfaces the low-view-but-
+          deeply-resonant songs (motivation lane). */}
+      <LazyMount>
+        <ResonancePanel ytaConfigured={ytaOn} />
       </LazyMount>
 
       {/* Song shares — per-song native shares + share-rate (WhatsApp lever). */}

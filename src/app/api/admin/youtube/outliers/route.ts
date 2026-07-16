@@ -36,15 +36,12 @@ import {
   deriveSignals,
   rankOutliers,
   summarizeByTheme,
-  indexThemesByVideo,
   longTailRatio,
   ageInDays,
   DEFAULT_OUTLIER_THRESHOLD,
   type SongSignals,
 } from '@/lib/youtube-outliers';
-import { ContentRepository } from '@/infrastructure/database/ContentRepository';
-import { ContentType } from '@/types/content';
-import { themeForSongWithOverride } from '@/config/song-themes';
+import { loadVideoThemeMap } from '@/lib/video-theme-map';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -53,7 +50,6 @@ const DEFAULT_WINDOW = 365; // analytics window for subs/retention
 const MAX_WINDOW = 400;
 const DEFAULT_LIMIT = 200; // videos to rank
 const MAX_LIMIT = 500;
-const MAX_SONGS = 500; // catalogue size cap for the theme lookup
 const RECENT_WINDOW_DAYS = 30; // trailing window for the growth30d (long-tail) signal
 const GROWTH_MIN_AGE_DAYS = 60; // a song needs a post-first-month tail before growth30d means anything
 
@@ -61,26 +57,6 @@ function clampInt(raw: string | null, def: number, min: number, max: number): nu
   const n = Number(raw);
   if (!Number.isFinite(n)) return def;
   return Math.max(min, Math.min(max, Math.trunc(n)));
-}
-
-/**
- * Best-effort videoId → theme map from the catalogue (Content), so the theme
- * rollup groups by a real theme. Never throws — a DB hiccup just yields an
- * empty map and the rollup falls back to '(untagged)'.
- */
-async function loadVideoThemeMap(): Promise<Map<string, string>> {
-  try {
-    const repo = new ContentRepository();
-    const { items } = await repo.findByType(ContentType.SONGS, { limit: MAX_SONGS });
-    return indexThemesByVideo(
-      items.map((c) => ({
-        youtubeVideoId: c.youtubeVideoId,
-        theme: themeForSongWithOverride(c.id, c.theme),
-      }))
-    );
-  } catch {
-    return new Map();
-  }
 }
 
 export async function GET(request: NextRequest) {

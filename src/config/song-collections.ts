@@ -79,6 +79,15 @@ export const SONG_COLLECTIONS: Record<SongTheme, SongCollection> = {
     intro:
       "Original Tamil songs honouring அப்பா — a father's strength, sacrifice and quiet love. Written and composed by Rajeswaran Thangarajah. Listen free, and watch on YouTube.",
   },
+  motivation: {
+    theme: 'motivation',
+    englishTitle: 'Tamil Motivation Songs',
+    tamilTitle: 'ஊக்கப் பாடல்கள்',
+    metaDescription:
+      'Original Tamil motivation songs — ஊக்கப் paadalgal — songs of courage, hope and inner strength by Rajeswaran Thangarajah. Listen free on Tamilagaval.',
+    intro:
+      'Original Tamil songs of ஊக்கம் — courage, perseverance and the quiet resolve to rise again. Written and composed by Rajeswaran Thangarajah. Listen free, and watch on YouTube.',
+  },
 };
 
 export function isCollectionTheme(value: string): value is SongTheme {
