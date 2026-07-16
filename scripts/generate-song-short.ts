@@ -23,6 +23,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseEbur128Loudness, pickHookWindow } from '@/lib/hook-window';
 
+/**
+ * WhatsApp Status splits any clip longer than 30s into two segments (a clean 30s
+ * piece + a broken remainder). Cap output UNDER 30s with a safety margin so every
+ * clip posts as one clean Status. This is a hard ceiling, not just a default.
+ */
+const STATUS_MAX_SECONDS = 29;
+
 interface Args {
   audio: string;
   cover: string;
@@ -47,7 +54,7 @@ function parseArgs(argv: string[]): Args {
     audio,
     cover,
     out,
-    seconds: Number(get('--seconds') ?? 30),
+    seconds: Math.min(Number(get('--seconds') ?? STATUS_MAX_SECONDS), STATUS_MAX_SECONDS),
     minStart: Number(get('--min-start') ?? 8),
     title: get('--title'),
   };
@@ -112,6 +119,9 @@ function render(args: Args, coverPath: string, audioPath: string, start: number)
     '-af', `afade=t=in:st=0:d=0.4,afade=t=out:st=${fadeOutStart}:d=1`,
     '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'stillimage', '-pix_fmt', 'yuv420p', '-r', '30',
     '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-shortest',
+    // Hard-cap the muxed OUTPUT: -shortest alone lets x264 flush frames past the
+    // audio (~0.7s), pushing clips over WhatsApp's 30s limit. Output -t is exact.
+    '-t', String(secs),
     args.out,
   ]);
 }
