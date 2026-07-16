@@ -11,6 +11,7 @@
  * the (admin) layout, so no client-side auth check is needed.
  */
 
+import type { ReactNode } from 'react';
 import { SITE, isYouTubeVideosConfigured } from '@/config/site';
 import {
   fetchChannelStats,
@@ -51,6 +52,12 @@ import { FunnelInsightPanel } from '@/components/admin/FunnelInsightPanel';
 import { LazyMount } from '@/components/admin/LazyMount';
 import { mergeVideoRows, pickRetentionBenchmark } from '@/lib/youtube-dashboard';
 import { buildPublishAdvice } from '@/lib/youtube-publish-advisor';
+import { computeChannelHealth } from '@/lib/youtube-health-score';
+import { buildOpportunities } from '@/lib/youtube-opportunities';
+import { isShort } from '@/lib/youtube-shorts';
+import { ageInDays } from '@/lib/youtube-outliers';
+import { ChannelHealthCard } from '@/components/admin/ChannelHealthCard';
+import { OpportunitiesCard } from '@/components/admin/OpportunitiesCard';
 
 const ANALYTICS_DAYS = 28;
 
@@ -146,6 +153,32 @@ export default async function YouTubeAdminPage() {
     ytaOn && dailySeries && dailySeries.length > 0
       ? { success: true as const, asOf: advisorAsOf, ...buildPublishAdvice({ asOf: advisorAsOf, series: dailySeries, channel, videos, videoAnalytics: ytaVideos }) }
       : null;
+
+  // Channel Health + Today's Opportunities — both computed here from the data
+  // already fetched (the advisor's derived inputs + the video/analytics join),
+  // then rendered inline. No extra fetch.
+  const health = advisorInitial ? computeChannelHealth(advisorInitial.inputs) : null;
+  let opportunities: ReturnType<typeof buildOpportunities> = [];
+  if (advisorInitial) {
+    const longForm = videos.filter((v) => !isShort(v));
+    const topByVpd = longForm
+      .map((v) => ({ v, vpd: v.viewCount / ageInDays(v.publishedAt, advisorAsOf) }))
+      .sort((a, b) => b.vpd - a.vpd)[0];
+    const topWinner = topByVpd ? { videoId: topByVpd.v.id, title: topByVpd.v.title } : null;
+
+    const durById = new Map(videos.map((v) => [v.id, { dur: v.durationSeconds, title: v.title, short: isShort(v) }]));
+    const laggard = ytaVideos
+      .map((r) => {
+        const m = durById.get(r.videoId);
+        return m && !m.short && m.dur > 0 && r.views >= 500
+          ? { videoId: r.videoId, title: m.title, retention: (r.averageViewDuration / m.dur) * 100 }
+          : null;
+      })
+      .filter((x): x is { videoId: string; title: string; retention: number } => x != null)
+      .sort((a, b) => a.retention - b.retention)[0];
+
+    opportunities = buildOpportunities({ advice: advisorInitial.advice, topWinner, retentionLaggard: laggard ?? null });
+  }
   // Comprehensive per-video rows for the interactive panel: public Data-API
   // counts + owner Analytics metrics, merged once on the server. The panel
   // re-queries Analytics client-side when the date range changes.
@@ -196,6 +229,15 @@ export default async function YouTubeAdminPage() {
           (verdict + target slot + confidence + reasons). Client-fetches
           /api/admin/youtube/publish-advisor. */}
       <PublishAdvisorCard ytaConfigured={ytaOn} initial={advisorInitial} />
+
+      {/* Channel Health + Today's Opportunities — the "what's my state / what do
+          I do next" glance, computed server-side from the data already fetched. */}
+      {(health || opportunities.length > 0) && (
+        <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {health && <ChannelHealthCard health={health} />}
+          <OpportunitiesCard opportunities={opportunities} />
+        </section>
+      )}
 
       {/* GA4 — site signals */}
       {ga4On ? (
@@ -404,6 +446,8 @@ export default async function YouTubeAdminPage() {
 
       {/* LEAD with the at-a-glance diagnosis: the four-metric decision tree across
           the top songs (reduced reach vs CTR vs watch-time). */}
+      <SectionHeading>Songs &amp; catalogue</SectionHeading>
+
       <TopSongMonitorPanel ytaConfigured={ytaOn} />
 
       {/* Catalogue outliers — rank OWN songs by multi-signal Outlier Score (which
@@ -419,6 +463,8 @@ export default async function YouTubeAdminPage() {
       {/* Return leg (did a share bring anyone back?) sits ABOVE outbound intent
           (did anyone click share?) — the coefficient is the one that decides
           whether the WhatsApp strategy is working. */}
+      <SectionHeading>Sharing &amp; referrals</SectionHeading>
+
       {/* Both self-fetch Analytics on mount → lazy-mount so they load on scroll. */}
       <LazyMount>
         <ReferralCoefficientPanel ytaConfigured={ytaOn} />
@@ -427,6 +473,8 @@ export default async function YouTubeAdminPage() {
       <LazyMount>
         <SharesPanel ytaConfigured={ytaOn} />
       </LazyMount>
+
+      <SectionHeading>Per-song deep dives</SectionHeading>
 
       {/* Song cockpit — pick a song ONCE → trend + audience + discovery together. */}
       <SongCockpit videos={retentionVideos} ytaConfigured={ytaOn} />
@@ -451,6 +499,8 @@ export default async function YouTubeAdminPage() {
       {/* Per-song deep dive — the FULL trend / geography / search-terms panels the
           cockpit summarizes, collapsed by default to remove the duplication. */}
       <PerSongDeepDive videos={retentionVideos} ytaConfigured={ytaOn} />
+
+      <SectionHeading>Conversion &amp; all videos</SectionHeading>
 
       {/* Viewer conversion funnel — DISCOVERED → WATCHED → 2ND SONG → RETURNED
           → SUBSCRIBED, modelled at cohort level (which stage is leaking). */}
@@ -520,6 +570,14 @@ function DigestCard({ digest }: { digest: Digest }) {
         <p className="mt-3 text-xs text-gray-600 dark:text-gray-400">{digest.anomaly.message}</p>
       )}
     </section>
+  );
+}
+
+function SectionHeading({ children }: { children: ReactNode }) {
+  return (
+    <h2 className="mt-4 border-t border-gray-100 pt-5 text-xs font-semibold uppercase tracking-widest text-gray-400 dark:border-gray-800">
+      {children}
+    </h2>
   );
 }
 
