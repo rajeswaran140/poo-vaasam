@@ -13,11 +13,13 @@
  *     --audio https://d2cdoh43143xxa.cloudfront.net/audio/poem-music/song.mp3 \
  *     --cover https://d2cdoh43143xxa.cloudfront.net/images/song.png \
  *     --out /tmp/song-short.mp4 [--seconds 30] [--min-start 8] [--title "…"] \
- *     [--lead-in 4] [--lyrics path/to/full-song.srt]
+ *     [--lead-in 4] [--lyrics path/to/full-song.srt] [--no-cta] [--cta-text "…"]
  *
  * With --lyrics, the cues overlapping the chosen hook window are burned onto the
  * clip as synchronised Tamil lyrics in a rounded lozenge (Pillow shapes Tamil;
  * ffmpeg's drawtext/libass do not on this box — see scripts/lib/render-lyric-cards.py).
+ * A "full song — link below" CTA card is burned into the final seconds by default
+ * (Short→full-song funnel); pass --no-cta for WhatsApp Status (no description link).
  *
  * Outputs the MP4 locally for review/upload; it does not publish anything.
  */
@@ -28,7 +30,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseEbur128Loudness, pickHookWindow } from '@/lib/hook-window';
-import { parseSrt, selectWindowCues, type WindowedCue } from '@/lib/lyric-cues';
+import { parseSrt, selectWindowCues } from '@/lib/lyric-cues';
 
 /**
  * WhatsApp Status splits any clip longer than 30s into two segments (a clean 30s
@@ -45,6 +47,16 @@ const STATUS_MAX_SECONDS = 29;
  */
 const DEFAULT_LEAD_IN_SECONDS = 4;
 
+/**
+ * End-of-clip call-to-action. Short views barely convert (~1.2 subs/1k on the
+ * channel) — an explicit "full song, link below" card in the final seconds asks
+ * the viewer to click through at the moment they decide whether to swipe on.
+ * Default ON (Shorts are the primary use); pass --no-cta for WhatsApp Status,
+ * where there's no description link.
+ */
+const DEFAULT_CTA_SECONDS = 4;
+const DEFAULT_CTA_TEXT = 'முழுப் பாடலைக் கேளுங்கள்\nFull song — link below';
+
 interface Args {
   audio: string;
   cover: string;
@@ -52,6 +64,9 @@ interface Args {
   seconds: number;
   minStart: number;
   leadIn: number;
+  cta: boolean;
+  ctaSeconds: number;
+  ctaText: string;
   title?: string;
   lyrics?: string;
 }
@@ -76,6 +91,9 @@ function parseArgs(argv: string[]): Args {
     seconds: Math.min(Number(get('--seconds') ?? STATUS_MAX_SECONDS), STATUS_MAX_SECONDS),
     minStart: Number(get('--min-start') ?? 8),
     leadIn: Number(get('--lead-in') ?? DEFAULT_LEAD_IN_SECONDS),
+    cta: !argv.includes('--no-cta'),
+    ctaSeconds: Number(get('--cta-seconds') ?? DEFAULT_CTA_SECONDS),
+    ctaText: get('--cta-text') ?? DEFAULT_CTA_TEXT,
     title: get('--title'),
     lyrics,
   };
@@ -88,30 +106,36 @@ const LYRIC_RENDERER = join(HERE, 'lib/render-lyric-cards.py');
  *  the on-YouTube caption position Raj signed off on for the full song. */
 const CAPTION_CENTER_FRAC = 0.75;
 
-interface CaptionCard extends WindowedCue {
+interface Card {
+  start: number;
+  end: number;
+  text: string;
+  style: 'lyric' | 'cta';
+}
+interface RenderedCard extends Card {
   png: string;
 }
 
-/** Render one rounded lyric PNG per windowed cue via the Pillow helper. */
-function renderCaptionCards(cues: WindowedCue[], dir: string): CaptionCard[] {
-  if (cues.length === 0) return [];
+/** Render one rounded PNG per timed card (lyric or CTA) via the Pillow helper. */
+function renderCards(cards: Card[], dir: string): RenderedCard[] {
+  if (cards.length === 0) return [];
   const spec = {
     font: LYRIC_FONT,
     width: 1080,
     height: 1920,
     centerY: Math.round(1920 * CAPTION_CENTER_FRAC),
     outDir: dir,
-    cues: cues.map((c, i) => ({ i, text: c.text })),
+    cues: cards.map((c, i) => ({ i, text: c.text, style: c.style })),
   };
   const specPath = join(dir, 'cues.json');
   writeFileSync(specPath, JSON.stringify(spec));
   const r = spawnSync('python3', [LYRIC_RENDERER, specPath], { encoding: 'utf8' });
   if (r.status !== 0) {
     throw new Error(
-      `Lyric card render failed (python3 + Pillow-with-raqm required).\n${r.stderr ?? r.error}`,
+      `Card render failed (python3 + Pillow-with-raqm required).\n${r.stderr ?? r.error}`,
     );
   }
-  return cues.map((c, i) => ({ ...c, png: join(dir, `cap_${i}.png`) }));
+  return cards.map((c, i) => ({ ...c, png: join(dir, `cap_${i}.png`) }));
 }
 
 /** Fetch a URL to a local temp file; pass through an existing local path. */
@@ -158,7 +182,7 @@ function render(
   coverPath: string,
   audioPath: string,
   start: number,
-  captions: CaptionCard[] = [],
+  captions: RenderedCard[] = [],
 ) {
   const secs = args.seconds;
   const fadeOutStart = Math.max(0, secs - 1);
@@ -233,20 +257,35 @@ async function main() {
   console.log(`   track ${mmss(total)} · ${samples.length} loudness samples`);
   console.log(`   hook  ${mmss(hook.start)}–${mmss(hook.end)} (avg ${hook.avgLufs.toFixed(1)} LUFS)`);
 
-  let captions: CaptionCard[] = [];
+  const cards: Card[] = [];
+  // Reserve the final ctaLen seconds for the CTA so lyrics never sit under it.
+  const ctaLen = args.cta ? Math.min(args.ctaSeconds, args.seconds) : 0;
+  const lyricEnd = args.seconds - ctaLen;
+
   if (args.lyrics) {
     const cues = selectWindowCues(parseSrt(readFileSync(args.lyrics, 'utf8')), hook.start, args.seconds);
-    captions = renderCaptionCards(cues, dir);
-    console.log(`   lyrics ${captions.length} cue(s) burned in from ${args.lyrics}`);
-    if (captions.length === 0) {
-      console.warn('   ⚠️ no lyric cues fall in the hook window — rendering without captions');
+    let kept = 0;
+    for (const c of cues) {
+      const end = Math.min(c.end, lyricEnd);
+      if (end - c.start >= 0.3) {
+        cards.push({ start: c.start, end, text: c.text, style: 'lyric' });
+        kept += 1;
+      }
     }
+    console.log(`   lyrics ${kept} cue(s) burned in from ${args.lyrics}`);
+    if (kept === 0) console.warn('   ⚠️ no lyric cues fall in the hook window — rendering without lyrics');
+  }
+  if (args.cta) {
+    cards.push({ start: lyricEnd, end: args.seconds, text: args.ctaText, style: 'cta' });
+    console.log(`   cta   full-song card in the last ${ctaLen}s`);
   }
 
-  render(args, coverPath, audioPath, hook.start, captions);
+  const rendered = renderCards(cards, dir);
+  render(args, coverPath, audioPath, hook.start, rendered);
 
   const outDur = probeDuration(args.out);
-  console.log(`✅ ${args.out} · ${outDur.toFixed(1)}s · 1080×1920${captions.length ? ` · ${captions.length} lyric cards` : ''}`);
+  const lyricN = rendered.filter((c) => c.style === 'lyric').length;
+  console.log(`✅ ${args.out} · ${outDur.toFixed(1)}s · 1080×1920${lyricN ? ` · ${lyricN} lyric cards` : ''}${args.cta ? ' · +CTA' : ''}`);
 }
 
 main().catch((e) => {

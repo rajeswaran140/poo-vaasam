@@ -28,6 +28,10 @@ MAX_LINES = 2             # wrap long lyric lines to at most 2 lines
 PLATE_RGBA = (0, 0, 0, 150)
 TEXT_RGBA = (255, 255, 255, 255)
 SHADOW_RGBA = (0, 0, 0, 140)
+# CTA card ("full song — link below") shown in the last seconds of a clip: a
+# slightly more opaque plate with a drawn red play-triangle (no emoji font needed).
+CTA_PLATE_RGBA = (0, 0, 0, 190)
+CTA_TRIANGLE_RGBA = (255, 40, 40, 255)
 
 
 def main() -> int:
@@ -59,23 +63,45 @@ def main() -> int:
             lines.append(cur)
         return lines[:MAX_LINES]
 
+    def draw_play_triangle(draw, cx, cy, size):
+        h = size
+        w = int(size * 0.86)
+        draw.polygon(
+            [(cx - w // 2, cy - h // 2), (cx - w // 2, cy + h // 2), (cx + w // 2, cy)],
+            fill=CTA_TRIANGLE_RGBA,
+        )
+
     count = 0
     for cue in spec["cues"]:
-        lines = wrap(cue["text"])
+        is_cta = cue.get("style") == "cta"
+        raw = cue["text"]
+        lines = raw.split("\n")[:MAX_LINES] if "\n" in raw else wrap(raw)
         dims = [measure(ln) for ln in lines]
         text_w = max(w for w, _ in dims)
         line_h = max(h for _, h in dims)
         text_h = line_h * len(lines) + LINE_GAP * (len(lines) - 1)
-        box_w, box_h = text_w + 2 * PAD_X, text_h + 2 * PAD_Y
+
+        # CTA cards reserve a left gutter for the play-triangle.
+        tri = int(line_h * 0.9) if is_cta else 0
+        gutter = (tri + 22) if is_cta else 0
+        box_w = text_w + gutter + 2 * PAD_X
+        box_h = text_h + 2 * PAD_Y
 
         img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
         x0, y0 = (W - box_w) // 2, CY - box_h // 2
-        draw.rounded_rectangle([x0, y0, x0 + box_w, y0 + box_h], radius=RADIUS, fill=PLATE_RGBA)
+        draw.rounded_rectangle(
+            [x0, y0, x0 + box_w, y0 + box_h], radius=RADIUS,
+            fill=CTA_PLATE_RGBA if is_cta else PLATE_RGBA,
+        )
 
+        if is_cta:
+            draw_play_triangle(draw, x0 + PAD_X + tri // 2, CY, tri)
+
+        text_x0 = x0 + PAD_X + gutter
         y = y0 + PAD_Y
-        for ln, (w, _h) in zip(lines, dims):
-            x = (W - w) // 2
+        for ln, (w, _) in zip(lines, dims):
+            x = text_x0 + (text_w - w) // 2 if is_cta else (W - w) // 2
             draw.text((x + 2, y + 2), ln, font=font, fill=SHADOW_RGBA, language="ta")
             draw.text((x, y), ln, font=font, fill=TEXT_RGBA, language="ta")
             y += line_h + LINE_GAP
