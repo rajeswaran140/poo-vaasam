@@ -70,4 +70,31 @@ describe('pickHookWindow', () => {
     expect(pickHookWindow([], { windowSec: 10 })).toBeNull();
     expect(pickHookWindow(build(), { windowSec: 0 })).toBeNull();
   });
+
+  describe('leadInSec (build into the peak)', () => {
+    it('defaults to opening exactly on the peak (leadIn 0, back-compat)', () => {
+      const hook = pickHookWindow(build(), { windowSec: 10, minStartSec: 8, totalSec: 60 });
+      expect(hook!.start).toBe(20);
+    });
+
+    it('shifts the start earlier so the clip rises into the hook', () => {
+      // Hook onset is 20; a 4s lead-in should open at 16 with the peak ~4s in.
+      const hook = pickHookWindow(build(), { windowSec: 10, minStartSec: 8, totalSec: 60, leadInSec: 4 });
+      expect(hook!.start).toBe(16);
+      expect(hook!.end).toBe(26);
+    });
+
+    it('clamps the lead-in so it never reaches back into the skipped intro', () => {
+      // Chorus at 10–20; minStart 8; a 6s lead-in would want start=4 but must clamp to 8.
+      const s: LoudnessSample[] = [];
+      for (let t = 0; t <= 60; t += 1) {
+        let lufs = -20;
+        if (t < 8) lufs = -40;
+        else if (t >= 10 && t < 20) lufs = -10;
+        s.push({ t, lufs });
+      }
+      const hook = pickHookWindow(s, { windowSec: 10, minStartSec: 8, totalSec: 60, leadInSec: 6 });
+      expect(hook!.start).toBe(8);
+    });
+  });
 });

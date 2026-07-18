@@ -48,12 +48,22 @@ export interface PickHookOptions {
   minStartSec?: number;
   /** Total track length; defaults to the last sample's timestamp. */
   totalSec?: number;
+  /**
+   * Start the clip this many seconds BEFORE the detected hook onset, so it rises
+   * INTO the peak instead of opening on it. Retention curves on the channel's
+   * Shorts show viewers hold the first ~5s then fall off a cliff when a clip
+   * front-loads the loudest moment and then deflates; a short lead-in keeps the
+   * energy building through the first seconds. Clamped so it never reaches back
+   * into the skipped intro. Default 0 (open exactly on the peak — legacy).
+   */
+  leadInSec?: number;
 }
 
 /**
- * Pick the most energetic `windowSec` window — the chorus/hook heuristic.
- * Returns null only for empty input / non-positive window. Always returns a
- * valid window for a real track (falls back to the earliest legal start).
+ * Pick the most energetic `windowSec` window — the chorus/hook heuristic — then
+ * optionally shift the start earlier by `leadInSec` so the clip builds into the
+ * hook. Returns null only for empty input / non-positive window. Always returns
+ * a valid window for a real track (falls back to the earliest legal start).
  */
 export function pickHookWindow(
   samples: LoudnessSample[],
@@ -70,17 +80,29 @@ export function pickHookWindow(
     ? Math.max(minStart, total - windowSec)
     : total - windowSec);
 
-  let best: HookWindow | null = null;
+  const avgOver = (start: number) => {
+    const win = sorted.filter((x) => x.t >= start && x.t < start + windowSec);
+    return win.length ? win.reduce((sum, x) => sum + x.lufs, 0) / win.length : null;
+  };
+
+  let bestStart: number | null = null;
+  let bestAvg = -Infinity;
   for (const s of sorted) {
     const start = s.t;
     if (start < minStart || start > latestStart) continue;
-    const win = sorted.filter((x) => x.t >= start && x.t < start + windowSec);
-    if (!win.length) continue;
-    const avg = win.reduce((sum, x) => sum + x.lufs, 0) / win.length;
-    if (!best || avg > best.avgLufs) best = { start, end: start + windowSec, avgLufs: avg };
+    const avg = avgOver(start);
+    if (avg === null) continue;
+    if (avg > bestAvg) { bestAvg = avg; bestStart = start; }
   }
 
-  if (best) return best;
+  if (bestStart !== null) {
+    // Shift the start earlier so the clip approaches the peak; clamp to minStart.
+    const leadIn = Math.max(0, opts.leadInSec ?? 0);
+    const start = Math.max(minStart, bestStart - leadIn);
+    const avg = avgOver(start) ?? bestAvg;
+    return { start, end: start + windowSec, avgLufs: avg };
+  }
+
   // Track shorter than minStart+window (or all samples filtered out): clip from
   // the earliest legal point.
   const start = Math.max(0, Math.min(minStart, total - windowSec));
