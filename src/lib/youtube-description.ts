@@ -29,23 +29,31 @@ const playlistUrl = (id: string) => `https://www.youtube.com/playlist?list=${id}
 
 /**
  * The PERMANENT Tamilagaval credit block — single source of truth for song
- * credits (Raj, 2026-07-08). Baked into every assembled description so the
- * catalogue never drifts back to legacy wording. Leads with authorship; frames
- * the workflow as "AI-Assisted Music Production" (his lyrics + musical direction
- * + prompt/version/vocal/style decisions), NOT AI as the principal creator.
- * Do NOT reintroduce "100% original" (jurisdiction-specific AI-authorship claim)
- * or the full legal name in public copy.
+ * credits (Raj; updated 2026-07-18 to add the rights line + copyright). Baked
+ * into every assembled description so the catalogue never drifts back to legacy
+ * wording. Leads with authorship; frames the workflow as "AI-Assisted Music
+ * Production" (his lyrics + musical direction + prompt/version/vocal/style
+ * decisions), NOT AI as the principal creator.
+ *
+ * Wording note: "(original, all rights reserved)" is Raj's approved credit — a
+ * plain rights assertion, distinct from the still-BANNED bare marketing claim
+ * "100% original" (a jurisdiction-specific AI-authorship claim). The copyright
+ * line uses the brand name "Raj Thangarajah", never the full "Rajeswaran".
  */
 export const CREDIT_BLOCK = [
-  '✍️ Lyrics: Raj',
-  '🎵 Music Production & Creative Direction: TamilAgaval',
+  '✍️ Lyrics: Raj (original, all rights reserved)',
+  '🎵 Music Production & Creative Direction: TamilAgaval.com',
   '🤖 AI-Assisted Music Production',
+  '© 2026 TamilAgaval / Raj Thangarajah',
 ].join('\n');
 
 /**
  * Phrases banned from any published description (legacy credit drift). If the AI
  * body ever emits one, the whole line is dropped before the canonical
  * CREDIT_BLOCK is appended — so the output can never carry the old wording.
+ * NOTE: bans the bare "100% original" claim, NOT the approved credit wording
+ * "(original, all rights reserved)"; bans the full "Rajeswaran Thangarajah",
+ * NOT the brand "Raj Thangarajah" used in the copyright line.
  */
 const FORBIDDEN_LINE_RE =
   /music\s+composition:\s*ai-assisted|100%\s*original|rajeswaran\s+thangarajah/i;
