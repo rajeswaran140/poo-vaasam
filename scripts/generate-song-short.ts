@@ -13,7 +13,7 @@
  *     --audio https://d2cdoh43143xxa.cloudfront.net/audio/poem-music/song.mp3 \
  *     --cover https://d2cdoh43143xxa.cloudfront.net/images/song.png \
  *     --out /tmp/song-short.mp4 [--seconds 30] [--min-start 8] [--title "…"] \
- *     [--lyrics path/to/full-song.srt]
+ *     [--lead-in 4] [--lyrics path/to/full-song.srt]
  *
  * With --lyrics, the cues overlapping the chosen hook window are burned onto the
  * clip as synchronised Tamil lyrics in a rounded lozenge (Pillow shapes Tamil;
@@ -37,12 +37,21 @@ import { parseSrt, selectWindowCues, type WindowedCue } from '@/lib/lyric-cues';
  */
 const STATUS_MAX_SECONDS = 29;
 
+/**
+ * Open the clip this many seconds BEFORE the loudest moment so it rises into the
+ * hook rather than peaking at second ~3 and deflating. Retention curves on the
+ * channel's Shorts show a cliff at ~5–15s when clips front-load the peak; a
+ * short build-in keeps energy climbing through the seconds viewers were leaving.
+ */
+const DEFAULT_LEAD_IN_SECONDS = 4;
+
 interface Args {
   audio: string;
   cover: string;
   out: string;
   seconds: number;
   minStart: number;
+  leadIn: number;
   title?: string;
   lyrics?: string;
 }
@@ -66,6 +75,7 @@ function parseArgs(argv: string[]): Args {
     out,
     seconds: Math.min(Number(get('--seconds') ?? STATUS_MAX_SECONDS), STATUS_MAX_SECONDS),
     minStart: Number(get('--min-start') ?? 8),
+    leadIn: Number(get('--lead-in') ?? DEFAULT_LEAD_IN_SECONDS),
     title: get('--title'),
     lyrics,
   };
@@ -214,6 +224,7 @@ async function main() {
     windowSec: args.seconds,
     minStartSec: args.minStart,
     totalSec: total,
+    leadInSec: args.leadIn,
   });
   if (!hook) throw new Error('Could not detect a hook window.');
 
