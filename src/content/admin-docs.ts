@@ -232,16 +232,16 @@ On a failure it shows a message and never breaks the page — just try again. A 
     slug: 'upload-cadence-timing',
     title: 'Upload cadence & timing — when to publish',
     category: 'Publishing',
-    updatedAt: '2026-07-06',
+    updatedAt: '2026-07-18',
     body: `# When to upload — cadence, best days & times
 
-Data-backed publishing guide for the Tamilagaval channel. Figures are from the trailing 12 weeks (pulled 2026-07-06) — re-check periodically as the audience grows.
+Data-backed publishing guide for the Tamilagaval channel. The **day/time** figures are from the trailing 12 weeks (pulled 2026-07-06) — re-check periodically. For the release *system* (queue, lane sequencing, playlist routing) see **Release calendar & queue**.
 
-## Cadence — 1 song every 3–4 days (~2 per week)
-- Growth here is **suggested / related-video driven**, so each new song needs a few days of clean runway for the algorithm to test it and find its audience.
-- Two songs within a day or two **compete for the same recommendation slots and split each other's early push** (the 2026-06-22 double-upload lesson).
-- **Never 2 in one day**, and avoid back-to-back days for full songs.
-- Have a batch ready? Spread them — e.g. 5 songs over ~2.5–3 weeks, not one week.
+## Cadence — ~1 strong hero song per week
+- Growth here is **suggested / related-video driven**, so each new song needs a clean runway for the algorithm to test it and find its audience — one strong release a week gives it that.
+- Two songs close together **compete for the same recommendation slots + notification budget and split each other's early push** (the 2026-06-22 double-upload lesson; the 14-in-9-days stretch confirmed it). Category diversity does **not** buy a faster cadence — the budget is channel-level.
+- **Never 2 in one day**, and avoid back-to-back days for full songs. Skip a week rather than double up.
+- Have a batch ready? **Drip-release one per week** — decouple *creating* from *releasing* (see Release calendar & queue).
 
 ## Best days
 Average daily views by weekday (trailing 12 weeks):
@@ -275,7 +275,7 @@ Per-song instrumental versions currently **underperform** (about 1/6 the views o
     slug: 'reach-eelam-tamil-community',
     title: 'Reach the Eelam Tamil community — distribution kit',
     category: 'Growth',
-    updatedAt: '2026-07-06',
+    updatedAt: '2026-07-18',
     body: `# Reach the Eelam Tamil community
 
 **The opportunity:** ~200,000 Sri Lankan Tamil refugees in Tamil Nadu + ~2 million diaspora worldwide — an audience with a deep emotional need (homeland, மண், memory, belonging) that Tamilagaval's original, quality, *organized* homeland catalogue meets like no other channel. The fit is proven; the gap is **awareness**, i.e. distribution.
@@ -309,6 +309,8 @@ WhatsApp is the #1 way Eelam Tamil families share music (and it's invisible in v
 
 **Realistic note:** community word-of-mouth is a marathon, but in a tight, emotionally-connected community it *compounds*.
 
+> **Geography confirmed 2026-07-18:** India 83% · Sri Lanka 8% · Canada 3% — unchanged from the July snapshot, so the diaspora Raj writes for is still barely reached. The whole thesis holds; this remains the biggest untapped audience.
+
 ## Ready-to-use messages
 
 ### Community / association group intro (when you're new to a group)
@@ -340,7 +342,7 @@ Seed the /share campaign with the exact memory this audience feels most — pin 
     slug: 'end-screen-routing',
     title: 'End-screen routing — subscriber conversion',
     category: 'Growth',
-    updatedAt: '2026-07-07',
+    updatedAt: '2026-07-18',
     body: `# End-screen routing for subscriber conversion
 
 **The finding:** the channel converts ~4.1 subs / 1,000 views overall, but **song-level subscriber affinity varies 3–6×** — that is a bigger lever than the subscribe watermark. So route each discovery engine's end screen to a **proven converter within its genre cluster**, not just a thematically-similar song.
@@ -384,6 +386,8 @@ Seed the /share campaign with the exact memory this audience feels most — pin 
 
 Historical baseline: **731 subscribers from 179,684 views ≈ 4.07 subs/1K.**
 
+> **Update 2026-07-18:** live **972 subscribers / 247k views** — the Tier-2 gap is now **~28** (was 276). The per-song routing rates above are a 2026-07-07 snapshot; **re-pull them** as views have accumulated before re-optimising the end screens.
+
 ## Precision notes (don't overstate the mechanism)
 - **Watermark = an *additional* persistent subscribe surface, not the only one.** The watch-page Subscribe button already existed; the watermark adds another. And YouTube video watermarks are **NOT clickable on mobile** — so it is incremental, not a universal "one-tap subscribe."
 - **End-screen routing does NOT transfer the destination's rate.** காலை காற்றே's 8.14/1K describes *its own* historical audience mix; viewers referred from நீ சிரிச்ச may convert differently. The experiment specifically tests whether **referred discovery-engine viewers retain higher subscriber affinity** on the converter — it is a hypothesis, not a guaranteed 8.14.
@@ -394,7 +398,7 @@ Historical baseline: **731 subscribers from 179,684 views ≈ 4.07 subs/1K.**
     slug: 'youtube-credit-block-policy',
     title: 'YouTube credit block — the canonical policy',
     category: 'Publishing',
-    updatedAt: '2026-07-08',
+    updatedAt: '2026-07-18',
     body: `# YouTube credit block — the canonical policy
 
 Every song description uses ONE standard credit block. This keeps the catalogue consistent and keeps our public positioning right: **lead with authorship, be transparent about production, never let the tooling read as the principal creator.**
@@ -402,17 +406,18 @@ Every song description uses ONE standard credit block. This keeps the catalogue 
 ## The block (use this exactly, every upload)
 
 \`\`\`
-✍️ Lyrics: Raj
-🎵 Music Production & Creative Direction: TamilAgaval
+✍️ Lyrics: Raj (original, all rights reserved)
+🎵 Music Production & Creative Direction: TamilAgaval.com
 🤖 AI-Assisted Music Production
+© 2026 TamilAgaval / Raj Thangarajah
 \`\`\`
 
 ## Never use these phrases in a description
 | ❌ Banned | Why | ✅ Instead |
 |---|---|---|
 | \`Music composition: AI-assisted\` | Makes the tool sound like the principal creative identity | \`AI-Assisted Music Production\` (Raj's lyrics + musical direction + prompt/version/vocal/style decisions = TamilAgaval's creative direction) |
-| \`100% original\` | AI-assisted-work copyright is jurisdiction-specific and fact-dependent (Canada policy still evolving) — don't make a legal-sounding claim in marketing copy | Just \`✍️ Lyrics: Raj\` |
-| Full legal name in the body | Keep the public credit short and brand-owned | \`Raj\` |
+| \`100% original\` (bare marketing claim) | A sweeping AI-authorship claim is jurisdiction-specific and fact-dependent (Canada policy still evolving) | \`Lyrics: Raj (original, all rights reserved)\` — a plain rights assertion on the lyrics, **not** a "100%" claim |
+| \`Rajeswaran Thangarajah\` (full name) | Keep the public credit brand-owned | \`Raj\` in the credit; \`Raj Thangarajah\` only in the © line |
 
 Never name a specific AI tool (SUNO, Lyria, etc.) — anywhere, public or in records. The music belongs to Tamilagaval.
 
@@ -426,10 +431,11 @@ The composer's **"📋 Copy ready-to-paste"** button (\`/admin/compose\`) now ba
 ## How to verify
 - **Live:** open \`/admin/compose\`, compose any song, click **Copy ready-to-paste** on the Tamil or English description card → the pasted text contains the block above and none of the banned phrases.
 - **Automated:** run \`npx jest youtube-description\` → the "permanent credit block" tests confirm the block is emitted and the banned phrases are stripped even when present in the AI body.
-- **Catalogue:** open any song on YouTube and expand the description; the 3-line block should be there.
+- **Catalogue:** open any song on YouTube and expand the description; the 4-line block should be there.
 
 ## History
-- **2026-07-08:** swept the whole back-catalogue — **56 videos** migrated from the old \`Lyrics & poetry: 100% original… / Music composition: AI-assisted.\` wording to the block above, and locked the composer so new uploads stay consistent.
+- **2026-07-08:** swept the whole back-catalogue — **56 videos** migrated from the old \`Lyrics & poetry: 100% original… / Music composition: AI-assisted.\` wording to the (then 3-line) block, and locked the composer so new uploads stay consistent.
+- **2026-07-18:** block extended to **4 lines** — added the rights wording \`(original, all rights reserved)\`, \`.com\` on the production line, and a copyright line \`© 2026 TamilAgaval / Raj Thangarajah\`. \`CREDIT_BLOCK\` + its deploy-gating test updated in the same change; back-catalogue re-swept to match (74 eligible AI-original songs). **Excluded:** \`0ftkBzL3qJI\` (human-produced — composer Kapileshwer, real singers) and \`dCFlupQYR2M\` (Bharathiyar's lyrics, not Raj's) — false attribution would result.
 `,
   },
   {
@@ -482,6 +488,61 @@ Universal, emotional framing — a father's love every heart recognizes. Respect
 
 ## A "Share to Status" clip for this song is blocked
 The auto clip generator (\`scripts/generate-song-short.ts\`) pulls the MP3 + cover from the public catalogue (\`/api/songs\`). This song **isn't in that catalogue** (no \`/content\` page / CDN audio yet), so the clip can't be auto-cut. To unblock: give the script an accessible MP3 (an S3/CDN URL or a local path) with \`--audio\` — YouTube itself can't be used as the source (yt-dlp is bot-walled).
+`,
+  },
+  {
+    slug: 'release-calendar-queue',
+    title: 'Release calendar & queue — cadence + playlist routing',
+    category: 'Publishing',
+    updatedAt: '2026-07-18',
+    body: `# Release calendar & queue
+
+**The one rule that matters: decouple *creating* from *releasing*.** Compose as freely as inspiration allows — then hold finished songs in the queue below and publish **one strong hero song per week**. The catalogue is already deep enough to run on; you never need to publish as fast as you create.
+
+Why: the subscriber-notification + "suggested" test budget is **channel-level, not per-category**. Two uploads a few days apart compete for the same attention even if they're different genres — so bursts starve every new song of the early breakout velocity it needs. Diversity is an asset for *catalogue depth and search*, not a licence for a faster cadence.
+
+> Companion guide: **Upload cadence & timing** has the data-backed best days/times (target IST; lead with your strongest). This guide is the *system* — the queue, lane sequencing, and playlist routing.
+
+## Weekly rhythm
+- **1 hero release / week** — the single strongest finished song. Never two close together; space a batch out.
+- **Publish ahead of the India/diaspora evening peak** (see the timing guide) and **seed your WhatsApp Status at publish**.
+- **Skip a week rather than double up.** A gap is fine; a burst is not.
+- **Lead with reach, follow with resonance:**
+  - *Reach lane* (broad love / melody / folk) chases breadth and fuels suggested.
+  - *Resonance lane* (grief / heritage / niche) is low reach, high advocacy; release these to ride the audience a reach song just built — not cold, and not two niche songs back-to-back.
+
+## Release queue *(fill in — newest at the bottom)*
+| Target date | Song (Tamil / romanized) | Lane | Playlists | Notes |
+|---|---|---|---|---|
+| YYYY-MM-DD | … | reach | Love, All, Latest | hero |
+| YYYY-MM-DD | … | resonance | Heritage, All, Latest | |
+| backlog | … | | | finished, unscheduled |
+
+Keep a running **backlog** row; each week promote the strongest one to the next dated slot.
+
+## Alternate versions — publish quietly
+Male/female cuts, flute instrumentals, and Shorts should **not** burn the weekly hero slot (they diluted the 14-in-9-days stretch). Publish them spaced out, add straight to their playlist, cross-link to the main version, and skip the notification-heavy push.
+
+## Playlist routing (every release → All Songs + its theme + Latest)
+| Song type | Theme playlist |
+|---|---|
+| Love | ❤️ காதல் / Love |
+| Sad / breakup love | 💔 சோகக் காதல் |
+| Mother / family | 👩 தாய் |
+| Father | 👨 அப்பா |
+| Homeland / heritage / village | 🌾 தாயகம் |
+| Bharathiyar (classical poem) | 🪶 மகாகவி பாரதியார் |
+| Flute / instrumental | 🎋 இசை மட்டும் |
+| Short | 📱 குறும்படங்கள் |
+| **Every song** | 🎵 அனைத்து / All Songs (\`PLLsCQ9NH4rLSZU0Ycy6I-Xr8DMAbe4vjs\`) |
+| **Every song (curated)** | ⭐ புதிய / Latest (\`PLLsCQ9NH4rLQAr8WLqKSZu6JNd-9ns-wU\`) — keep to **newest 12**: add the new one, remove the oldest |
+| Best-of (hand-picked) | 🌟 Start Here |
+
+## Per-release checklist
+Bilingual title (Tamil hook + romanized + English) · tags incl. the **romanized song name** · description (Lyrics credit, tamilagaval.com, one-tap subscribe, playlists, hashtags) · add to the playlists above · pinned channel comment · standard Tamil caption track · Community-tab teaser · Studio **AI-use = No**.
+
+## Between uploads — let the catalogue work
+No new song this week? The channel still grows via playlists (session time), the Short→full-song funnels, pinned comments, WhatsApp Status shares, and search (romanized + Tamil titles). Reach is **re-fuelled by the next strong hero**, not by uploading more, faster.
 `,
   },
 ];

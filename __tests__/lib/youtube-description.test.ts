@@ -100,17 +100,35 @@ describe('assembleYoutubeDescription', () => {
 describe('permanent credit block (catalogue-drift guard)', () => {
   const FORBIDDEN = ['Music composition: AI-assisted', '100% original', 'Rajeswaran Thangarajah'];
 
-  it('CREDIT_BLOCK is the standardised wording', () => {
+  it('CREDIT_BLOCK is the standardised 4-line wording (rights + copyright)', () => {
     expect(CREDIT_BLOCK).toBe(
-      ['✍️ Lyrics: Raj', '🎵 Music Production & Creative Direction: TamilAgaval', '🤖 AI-Assisted Music Production'].join('\n')
+      [
+        '✍️ Lyrics: Raj (original, all rights reserved)',
+        '🎵 Music Production & Creative Direction: TamilAgaval.com',
+        '🤖 AI-Assisted Music Production',
+        '© 2026 TamilAgaval / Raj Thangarajah',
+      ].join('\n')
     );
   });
 
-  it('every assembled description emits the permanent credit block', () => {
+  it('every assembled description emits the full block incl. rights + copyright lines', () => {
     const out = assembleYoutubeDescription('ஒரு காதல் பாடல்.\n\n#tamilagaval', { emotion: 'love' });
-    expect(out).toContain('✍️ Lyrics: Raj');
-    expect(out).toContain('🎵 Music Production & Creative Direction: TamilAgaval');
+    expect(out).toContain('✍️ Lyrics: Raj (original, all rights reserved)');
+    expect(out).toContain('🎵 Music Production & Creative Direction: TamilAgaval.com');
     expect(out).toContain('🤖 AI-Assisted Music Production');
+    expect(out).toContain('© 2026 TamilAgaval / Raj Thangarajah');
+  });
+
+  it('keeps the approved "(original, all rights reserved)" wording — it is NOT the banned "100% original"', () => {
+    const out = assembleYoutubeDescription('வரி.\n\n#t', { emotion: 'love' });
+    expect(out).toContain('(original, all rights reserved)');
+    expect(out).not.toContain('100% original');
+  });
+
+  it('uses the brand name "Raj Thangarajah" in ©, never the full "Rajeswaran Thangarajah"', () => {
+    const out = assembleYoutubeDescription('வரி.', { emotion: 'love' });
+    expect(out).toContain('Raj Thangarajah');
+    expect(out).not.toContain('Rajeswaran Thangarajah');
   });
 
   it('does NOT emit the forbidden legacy phrases — even when the body contains them', () => {
@@ -138,5 +156,13 @@ describe('permanent credit block (catalogue-drift guard)', () => {
     expect(out).toContain('ஒரு அழகான வரி.');
     expect(out).toContain('மற்றொரு வரி.');
     expect(out).not.toContain('AI-assisted');
+  });
+
+  it('strips the banned "100% original" line but KEEPS the approved rights wording', () => {
+    const body = '✍️ Lyrics: Raj (original, all rights reserved)\nLyrics: 100% original\nreal line';
+    const out = stripForbiddenCreditLines(body);
+    expect(out).toContain('✍️ Lyrics: Raj (original, all rights reserved)');
+    expect(out).not.toMatch(/100%\s*original/i);
+    expect(out).toContain('real line');
   });
 });
