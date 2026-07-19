@@ -32,7 +32,7 @@ import { eligibleCollectionThemes, SONG_COLLECTIONS } from '@/config/song-collec
 // stays "பாடல்கள்".
 const META_TITLE = 'Tamil Songs & Paadal Varigal';
 const META_DESCRIPTION =
-  'Free Tamil songs and paadal varigal by Rajeswaran Thangarajah — listen, read the lyrics, share. Always free.';
+  'Free Tamil songs and paadal varigal by Raj — listen, read the lyrics, share. Always free.';
 const JSONLD_NAME = 'Tamil Songs & Paadal Varigal — Tamilagaval';
 
 /**

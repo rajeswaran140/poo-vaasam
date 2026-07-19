@@ -12,7 +12,7 @@ import { alternatesFor, SITE_NAME, absoluteUrl, breadcrumbJsonLd } from '@/lib/s
 // with /songs and /poems. The visible UI below stays Tamil for readers.
 const TITLE = 'All Tamil Poems, Songs, Stories & Essays';
 const DESCRIPTION =
-  'Browse every Tamil poem, song, story and essay on Tamilagaval by Rajeswaran Thangarajah — read and listen for free.';
+  'Browse every Tamil poem, song, story and essay on Tamilagaval by Raj — read and listen for free.';
 
 export const metadata: Metadata = {
   title: TITLE,

@@ -27,8 +27,8 @@ describe('contentJsonLd — song', () => {
     const main = mainOf(contentJsonLd(song, baseOpts));
     expect(main['@type']).toBe('MusicRecording');
     // Crawler-facing author is romanised even though the stored value is Tamil.
-    expect(main.byArtist).toEqual({ '@type': 'Person', name: 'Rajeswaran Thangarajah' });
-    expect(main.author).toEqual({ '@type': 'Person', name: 'Rajeswaran Thangarajah' });
+    expect(main.byArtist).toEqual({ '@type': 'Person', name: 'Raj' });
+    expect(main.author).toEqual({ '@type': 'Person', name: 'Raj' });
     expect(main.audio).toEqual({
       '@type': 'AudioObject',
       contentUrl: 'https://cdn.example/engal-thesam.mp3',
@@ -73,7 +73,7 @@ describe('contentJsonLd — other content kinds', () => {
 
   it('falls back to the romanised default author when none is stored', () => {
     const main = mainOf(contentJsonLd({ type: 'POEMS', title: 'P' }, baseOpts));
-    expect(main.author).toEqual({ '@type': 'Person', name: 'Rajeswaran Thangarajah' });
+    expect(main.author).toEqual({ '@type': 'Person', name: 'Raj' });
   });
 
   it('omits audio + image when absent (no empty keys)', () => {

@@ -150,7 +150,7 @@ export function LyricsGate({ songId, songTitle }: { songId: string; songTitle: s
           {lyrics.body}
         </pre>
         <p className="mt-8 border-t border-gray-800 pt-4 font-tamil text-xs text-gray-500">
-          © Rajeswaran Thangarajah · பாடுவதற்கு மட்டுமே / for singing only ·{' '}
+          © Raj Thangarajah · பாடுவதற்கு மட்டுமே / for singing only ·{' '}
           <Link href="/terms" className="text-orange-400 hover:underline">
             விதிமுறைகள்
           </Link>

@@ -9,7 +9,7 @@
  * document opened in a new window that auto-invokes print().
  */
 
-const AUTHOR = 'Rajeswaran Thangarajah';
+const AUTHOR = 'Raj Thangarajah';
 const SITE = 'tamilagaval.com';
 const TERMS_URL = 'https://tamilagaval.com/terms';
 

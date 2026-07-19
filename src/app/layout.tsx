@@ -37,10 +37,10 @@ export const metadata: Metadata = {
   // (tamil kavithai / paadal varigal / rajeswaran thangarajah / tamilagaval)
   // even though the visible UI stays Tamil for actual readers.
   title: {
-    default: "Tamilagaval — Tamil Poems, Songs & Lyrics by Rajeswaran Thangarajah",
+    default: "Tamilagaval — Tamil Poems, Songs & Lyrics by Raj",
     template: "%s | Tamilagaval",
   },
-  description: "Free Tamil poems, songs and YouTube videos by lyricist Rajeswaran Thangarajah. Read tamil kavithai, listen to paadal varigal — always free.",
+  description: "Free Tamil poems, songs and YouTube videos by lyricist Raj. Read tamil kavithai, listen to paadal varigal — always free.",
   keywords: [
     "tamil kavithai",
     "tamil paadal",
@@ -55,8 +55,8 @@ export const metadata: Metadata = {
     "tamil songs free",
     "tamil song lyrics",
   ],
-  authors: [{ name: "Rajeswaran Thangarajah" }],
-  creator: "Rajeswaran Thangarajah",
+  authors: [{ name: "Raj" }],
+  creator: "Raj",
   publisher: "Tamilagaval",
   robots: {
     index: true,
@@ -69,16 +69,16 @@ export const metadata: Metadata = {
     },
   },
   openGraph: {
-    title: "Tamilagaval — Tamil Poems, Songs & Lyrics by Rajeswaran Thangarajah",
-    description: "Free Tamil poems, songs and YouTube videos by lyricist Rajeswaran Thangarajah. Tamil kavithai, paadal varigal — always free.",
+    title: "Tamilagaval — Tamil Poems, Songs & Lyrics by Raj",
+    description: "Free Tamil poems, songs and YouTube videos by lyricist Raj. Tamil kavithai, paadal varigal — always free.",
     type: "website",
     locale: "ta_IN",
     siteName: "Tamilagaval",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Tamilagaval — Tamil Poems, Songs & Lyrics by Rajeswaran Thangarajah",
-    description: "Free Tamil poems, songs and YouTube videos by lyricist Rajeswaran Thangarajah. Tamil kavithai, paadal varigal — always free.",
+    title: "Tamilagaval — Tamil Poems, Songs & Lyrics by Raj",
+    description: "Free Tamil poems, songs and YouTube videos by lyricist Raj. Tamil kavithai, paadal varigal — always free.",
   },
   // Installed-PWA presentation on iOS (standalone launch, dark status bar).
   appleWebApp: {

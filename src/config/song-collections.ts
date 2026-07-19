@@ -30,63 +30,63 @@ export const SONG_COLLECTIONS: Record<SongTheme, SongCollection> = {
     englishTitle: 'Tamil Mother Songs',
     tamilTitle: 'அன்னை பாடல்கள்',
     metaDescription:
-      "Original Tamil mother songs — annai paadalgal — heartfelt tributes to a mother's love, written and composed by Rajeswaran Thangarajah. Listen free on Tamilagaval.",
+      "Original Tamil mother songs — annai paadalgal — heartfelt tributes to a mother's love, written and composed by Raj. Listen free on Tamilagaval.",
     intro:
-      'Original Tamil songs devoted to அன்னை — the love, sacrifice and tenderness of a mother. Each is written and composed by Rajeswaran Thangarajah, drawn from memory, gratitude, and the unbreakable bond between mother and child. Listen free, and watch on YouTube.',
+      'Original Tamil songs devoted to அன்னை — the love, sacrifice and tenderness of a mother. Each is written and composed by Raj, drawn from memory, gratitude, and the unbreakable bond between mother and child. Listen free, and watch on YouTube.',
   },
   love: {
     theme: 'love',
     englishTitle: 'Tamil Love Songs',
     tamilTitle: 'காதல் பாடல்கள்',
     metaDescription:
-      'Original Tamil love songs — kaadhal paadalgal — tender, melodic love songs written and composed by Rajeswaran Thangarajah. Listen free on Tamilagaval.',
+      'Original Tamil love songs — kaadhal paadalgal — tender, melodic love songs written and composed by Raj. Listen free on Tamilagaval.',
     intro:
-      'A collection of original Tamil love songs — காதல் பாடல்கள் — capturing first glances, longing, and the quiet beauty of two hearts. Written and composed by Rajeswaran Thangarajah. Listen free, and watch on YouTube.',
+      'A collection of original Tamil love songs — காதல் பாடல்கள் — capturing first glances, longing, and the quiet beauty of two hearts. Written and composed by Raj. Listen free, and watch on YouTube.',
   },
   homeland: {
     theme: 'homeland',
     englishTitle: 'Tamil Homeland Songs',
     tamilTitle: 'தாயக பாடல்கள்',
     metaDescription:
-      'Original Tamil homeland songs — thaayaga paadalgal — songs of soil, language and belonging by Rajeswaran Thangarajah. Listen free on Tamilagaval.',
+      'Original Tamil homeland songs — thaayaga paadalgal — songs of soil, language and belonging by Raj. Listen free on Tamilagaval.',
     intro:
-      'Original Tamil songs of தாயகம் — homeland, memory and belonging; the scent of the soil and the sweetness of the mother tongue. Written and composed by Rajeswaran Thangarajah. Listen free, and watch on YouTube.',
+      'Original Tamil songs of தாயகம் — homeland, memory and belonging; the scent of the soil and the sweetness of the mother tongue. Written and composed by Raj. Listen free, and watch on YouTube.',
   },
   nature: {
     theme: 'nature',
     englishTitle: 'Tamil Nature Songs',
     tamilTitle: 'இயற்கை பாடல்கள்',
     metaDescription:
-      'Original Tamil nature songs — iyarkai paadalgal — songs inspired by the natural world by Rajeswaran Thangarajah. Listen free on Tamilagaval.',
+      'Original Tamil nature songs — iyarkai paadalgal — songs inspired by the natural world by Raj. Listen free on Tamilagaval.',
     intro:
-      'Original Tamil songs inspired by இயற்கை — birds, seasons, rivers and the quiet poetry of the natural world. Written and composed by Rajeswaran Thangarajah. Listen free, and watch on YouTube.',
+      'Original Tamil songs inspired by இயற்கை — birds, seasons, rivers and the quiet poetry of the natural world. Written and composed by Raj. Listen free, and watch on YouTube.',
   },
   tamil: {
     theme: 'tamil',
     englishTitle: 'Tamil Language Songs',
     tamilTitle: 'தமிழ் பாடல்கள்',
     metaDescription:
-      'Original songs celebrating the Tamil language — thamizh paadalgal — by Rajeswaran Thangarajah. Listen free on Tamilagaval.',
+      'Original songs celebrating the Tamil language — thamizh paadalgal — by Raj. Listen free on Tamilagaval.',
     intro:
-      'Original songs in praise of தமிழ் — the beauty, antiquity and music of the Tamil language itself. Written and composed by Rajeswaran Thangarajah. Listen free, and watch on YouTube.',
+      'Original songs in praise of தமிழ் — the beauty, antiquity and music of the Tamil language itself. Written and composed by Raj. Listen free, and watch on YouTube.',
   },
   father: {
     theme: 'father',
     englishTitle: 'Tamil Father Songs',
     tamilTitle: 'அப்பா பாடல்கள்',
     metaDescription:
-      "Original Tamil father songs — appa paadalgal — tributes to a father's strength and love by Rajeswaran Thangarajah. Listen free on Tamilagaval.",
+      "Original Tamil father songs — appa paadalgal — tributes to a father's strength and love by Raj. Listen free on Tamilagaval.",
     intro:
-      "Original Tamil songs honouring அப்பா — a father's strength, sacrifice and quiet love. Written and composed by Rajeswaran Thangarajah. Listen free, and watch on YouTube.",
+      "Original Tamil songs honouring அப்பா — a father's strength, sacrifice and quiet love. Written and composed by Raj. Listen free, and watch on YouTube.",
   },
   motivation: {
     theme: 'motivation',
     englishTitle: 'Tamil Motivation Songs',
     tamilTitle: 'ஊக்கப் பாடல்கள்',
     metaDescription:
-      'Original Tamil motivation songs — ஊக்கப் paadalgal — songs of courage, hope and inner strength by Rajeswaran Thangarajah. Listen free on Tamilagaval.',
+      'Original Tamil motivation songs — ஊக்கப் paadalgal — songs of courage, hope and inner strength by Raj. Listen free on Tamilagaval.',
     intro:
-      'Original Tamil songs of ஊக்கம் — courage, perseverance and the quiet resolve to rise again. Written and composed by Rajeswaran Thangarajah. Listen free, and watch on YouTube.',
+      'Original Tamil songs of ஊக்கம் — courage, perseverance and the quiet resolve to rise again. Written and composed by Raj. Listen free, and watch on YouTube.',
   },
 };
 

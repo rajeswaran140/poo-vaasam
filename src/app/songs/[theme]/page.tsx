@@ -55,7 +55,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { theme } = await params;
   if (!isCollectionTheme(theme)) return { title: 'பாடல்கள் கிடைக்கவில்லை' };
   const c = SONG_COLLECTIONS[theme];
-  const title = `${c.englishTitle} — ${c.tamilTitle} by Rajeswaran Thangarajah`;
+  const title = `${c.englishTitle} — ${c.tamilTitle} by Raj`;
   const description = toDescription(c.metaDescription);
   return {
     title,

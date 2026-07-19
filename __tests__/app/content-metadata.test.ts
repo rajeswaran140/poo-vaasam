@@ -85,9 +85,9 @@ describe('content generateMetadata', () => {
       asEntity({ id: 'cnt_ta', type: 'SONGS', title: 'எங்கள் தேசம்', author: 'இராஜ்' })
     );
     const m = await meta('cnt_ta');
-    expect(m.title).toContain('Rajeswaran Thangarajah');
+    expect(m.title).toContain('Raj');
     expect(m.title).not.toContain('இராஜ்');
-    expect(m.description).toContain('Rajeswaran Thangarajah');
+    expect(m.description).toContain('Raj');
   });
 
   it('sets og:type to music.song for a song, article for a poem', async () => {

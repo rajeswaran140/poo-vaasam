@@ -1,6 +1,6 @@
 /**
  * /about — who is behind தமிழகவல். Personal positioning: this is one creator's
- * (Rajeswaran's) showcase of his poems, songs and channel — not a generic
+ * (Raj's) showcase of his poems, songs and channel — not a generic
  * Tamil-literature archive. The Person JSON-LD here mirrors the home page so
  * search engines see the site as authored work, not a directory.
  */
@@ -17,9 +17,9 @@ import { SITE_URL, alternatesFor, breadcrumbJsonLd } from '@/lib/seo';
 // Crawler-facing metadata is romanised English; the visible UI on /about
 // stays Tamil. Real queries here are "rajeswaran thangarajah" /
 // "tamilagaval about".
-const META_TITLE = 'About Rajeswaran Thangarajah';
+const META_TITLE = 'About Raj';
 const META_DESCRIPTION =
-  'Tamilagaval is the personal home of Tamil writer and lyricist Rajeswaran Thangarajah — Tamil poems, songs and YouTube videos, always free.';
+  'Tamilagaval is the personal home of Tamil writer and lyricist Raj — Tamil poems, songs and YouTube videos, always free.';
 
 export const metadata: Metadata = {
   title: META_TITLE,
@@ -41,8 +41,8 @@ const personSameAs = socialProfileUrls();
 const personJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'Person',
-  name: 'Rajeswaran Thangarajah',
-  alternateName: 'இராஜேஸ்வரன் தங்கராஜா',
+  name: 'Raj',
+  alternateName: 'ராஜ்',
   url: `${SITE_URL}/about`,
   jobTitle: 'Tamil poet and lyricist',
   description: 'Tamil writer and lyricist publishing original poems, songs and videos at tamilagaval.com. Tamil kavithai and paadal varigal — always free.',
@@ -85,7 +85,7 @@ export default function AboutPage() {
             தமிழகவல்
           </h1>
           <p className="mt-4 max-w-2xl font-tamil text-lg text-white/90 sm:text-xl">
-            இராஜேஸ்வரன் தங்கராஜாவின் சொந்தக் கவிதைகளும் பாடல்களும் — ஒரே இடத்தில், என்றும் இலவசம்.
+            ராஜின் சொந்தக் கவிதைகளும் பாடல்களும் — ஒரே இடத்தில், என்றும் இலவசம்.
           </p>
           <p className="mt-3 max-w-2xl text-base italic text-white/90 sm:text-lg">
             Where Tamil Poetry Becomes Song
@@ -102,7 +102,7 @@ export default function AboutPage() {
           <h2 className="mb-4 font-kavivanar text-3xl font-bold text-white sm:text-4xl">இந்த தளம் என்ன?</h2>
           <div className="space-y-4 font-tamil leading-relaxed text-gray-300">
             <p>
-              தமிழகவல் என்பது இராஜேஸ்வரன் தங்கராஜாவின் சொந்தக் கவிதைகளையும் பாடல்களையும் ஒரே இடத்தில் கொண்டுவரும் தனிப்பட்ட தளம். இது ஒரு பொது தமிழ் இலக்கிய தொகுப்பு அல்ல — இது ஒரு எழுத்தாளரின் படைப்புகளை வாசகருக்கு நேரடியாக கொண்டுசேர்க்கும் முயற்சி.
+              தமிழகவல் என்பது ராஜின் சொந்தக் கவிதைகளையும் பாடல்களையும் ஒரே இடத்தில் கொண்டுவரும் தனிப்பட்ட தளம். இது ஒரு பொது தமிழ் இலக்கிய தொகுப்பு அல்ல — இது ஒரு எழுத்தாளரின் படைப்புகளை வாசகருக்கு நேரடியாக கொண்டுசேர்க்கும் முயற்சி.
             </p>
             <p>
               கவிதைகளைப் படிக்கலாம், பாடல்களைக் கேட்கலாம், YouTube சேனலின் காணொளிகளைப் பார்க்கலாம் — அனைத்தும் இங்கேயே. பதிவு செய்யத் தேவையில்லை. கட்டணம் இல்லை.
@@ -133,7 +133,7 @@ export default function AboutPage() {
           <h2 className="mb-4 font-kavivanar text-3xl font-bold text-white sm:text-4xl">யார் இதைத் தொகுக்கிறார்?</h2>
           <div className="space-y-4 font-tamil leading-relaxed text-gray-300">
             <p>
-              <strong className="text-white">இராஜேஸ்வரன் தங்கராஜா</strong> — தமிழ் எழுத்தாளரும் பாடலாசிரியரும். அன்றாட வாழ்க்கையின் சிறு தருணங்களையும் உணர்வுகளையும் கவிதையாகவும் பாடலாகவும் வடிக்கிறார்.
+              <strong className="text-white">ராஜ்</strong> — தமிழ் எழுத்தாளரும் பாடலாசிரியரும். அன்றாட வாழ்க்கையின் சிறு தருணங்களையும் உணர்வுகளையும் கவிதையாகவும் பாடலாகவும் வடிக்கிறார்.
             </p>
             <p>
               புதிய படைப்புகள் தளத்திலும் YouTube சேனலிலும் தொடர்ந்து வெளியாகின்றன. சந்தா செலுத்துங்கள் — புதியவை வரும்போதே உங்களுக்குத் தெரியும்.
@@ -146,7 +146,7 @@ export default function AboutPage() {
           <h2 className="mb-4 font-kavivanar text-3xl font-bold text-white sm:text-4xl">இசை எப்படி உருவாகிறது?</h2>
           <div className="space-y-4 font-tamil leading-relaxed text-gray-300">
             <p>
-              பாடல் வரிகள் முழுக்க முழுக்க <strong className="text-white">இராஜேஸ்வரனின்</strong> சொந்தப் படைப்பு. இசையும் குரலும் நவீன AI கருவிகள் மூலம் <strong className="text-white">தமிழகவல் இசைத் தளத்தில்</strong> உருவாக்கப்படுகின்றன.
+              பாடல் வரிகள் முழுக்க முழுக்க <strong className="text-white">ராஜின்</strong> சொந்தப் படைப்பு. இசையும் குரலும் நவீன AI கருவிகள் மூலம் <strong className="text-white">தமிழகவல் இசைத் தளத்தில்</strong> உருவாக்கப்படுகின்றன.
             </p>
             <p>
               ஒவ்வொரு பாடலும் முதல் முயற்சியிலேயே முடிந்துவிடுவதில்லை — பல முயற்சிகளுக்குப் பிறகு, கவனமாகத் தேர்ந்தெடுக்கப்பட்டு, தரம் பார்க்கப்பட்டு, பிறகே வெளியிடப்படுகிறது. தேர்வும் ரசனையும்தான் இங்கே படைப்பு.

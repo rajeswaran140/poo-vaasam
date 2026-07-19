@@ -10,7 +10,7 @@ import Header from '@/components/Header';
 
 const META_TITLE = 'Terms';
 const META_DESCRIPTION =
-  'Terms of use for Tamilagaval — copyright on original poems, songs and videos by Rajeswaran Thangarajah, plus what visitors may share.';
+  'Terms of use for Tamilagaval — copyright on original poems, songs and videos by Raj Thangarajah, plus what visitors may share.';
 
 export const metadata: Metadata = {
   title: META_TITLE,
@@ -52,10 +52,10 @@ export default function TermsPage() {
               வரவேற்கிறோம் · Welcome
             </h2>
             <p className="mb-3 font-tamil">
-              தமிழகவல் (tamilagaval.com) என்பது இராஜேஸ்வரன் தங்கராஜாவின் சொந்தக் கவிதைகள், பாடல்கள் மற்றும் காணொளிகளைப் பகிர்வதற்கான இலவச தனிப்பட்ட தளம். இத்தளத்தைப் பயன்படுத்துவதன் மூலம், கீழே உள்ள விதிமுறைகளை ஏற்றுக்கொள்கிறீர்கள்.
+              தமிழகவல் (tamilagaval.com) என்பது ராஜ் தங்கராஜாவின் சொந்தக் கவிதைகள், பாடல்கள் மற்றும் காணொளிகளைப் பகிர்வதற்கான இலவச தனிப்பட்ட தளம். இத்தளத்தைப் பயன்படுத்துவதன் மூலம், கீழே உள்ள விதிமுறைகளை ஏற்றுக்கொள்கிறீர்கள்.
             </p>
             <p>
-              Tamilagaval (tamilagaval.com) is a free, personal website for sharing original poems, songs and videos by Rajeswaran Thangarajah. By using the site, you agree to the terms below.
+              Tamilagaval (tamilagaval.com) is a free, personal website for sharing original poems, songs and videos by Raj Thangarajah. By using the site, you agree to the terms below.
             </p>
           </section>
 
@@ -64,10 +64,10 @@ export default function TermsPage() {
               பதிப்புரிமை · Copyright
             </h2>
             <p className="mb-3 font-tamil">
-              இத்தளத்தில் உள்ள அனைத்து கவிதைகள், பாடல் வரிகள், இசை மற்றும் காணொளிகள் — © இராஜேஸ்வரன் தங்கராஜா. அனைத்து உரிமைகளும் பாதுகாக்கப்பட்டவை.
+              இத்தளத்தில் உள்ள அனைத்து கவிதைகள், பாடல் வரிகள், இசை மற்றும் காணொளிகள் — © ராஜ் தங்கராஜா. அனைத்து உரிமைகளும் பாதுகாக்கப்பட்டவை.
             </p>
             <p>
-              All poems, lyrics, music and videos on this site are © Rajeswaran Thangarajah. All rights reserved.
+              All poems, lyrics, music and videos on this site are © Raj Thangarajah. All rights reserved.
             </p>
           </section>
 
@@ -79,7 +79,7 @@ export default function TermsPage() {
               தனிப்பட்ட பயன்பாட்டிற்கு வாசிக்கலாம், கேட்கலாம், பார்க்கலாம். ஆசிரியரின் பெயரையும், tamilagaval.com இணைப்பையும் சேர்த்து சமூக ஊடகங்களில் பகிரலாம்.
             </p>
             <p>
-              You may read, listen and watch for personal enjoyment. You may share on social media, provided you credit Rajeswaran Thangarajah and link back to tamilagaval.com.
+              You may read, listen and watch for personal enjoyment. You may share on social media, provided you credit Raj Thangarajah and link back to tamilagaval.com.
             </p>
           </section>
 
@@ -98,7 +98,7 @@ export default function TermsPage() {
               <Link href="/contact" className="text-orange-400 underline-offset-2 hover:underline">தொடர்பு கொள்ளுங்கள்</Link>.
             </p>
             <p>
-              The lyrics shared in the videos, on this site and in the descriptions are meant for singing — please feel free to sing them for personal enjoyment and to perform them, with credit to Rajeswaran Thangarajah. Reproducing, republishing, presenting them as your own, or recording them for commercial use is not permitted without written permission. If you would like karaoke or backing tracks for a performance, Tamilagaval can arrange them for you —{' '}
+              The lyrics shared in the videos, on this site and in the descriptions are meant for singing — please feel free to sing them for personal enjoyment and to perform them, with credit to Raj Thangarajah. Reproducing, republishing, presenting them as your own, or recording them for commercial use is not permitted without written permission. If you would like karaoke or backing tracks for a performance, Tamilagaval can arrange them for you —{' '}
               <Link href="/contact" className="text-orange-400 underline-offset-2 hover:underline">get in touch</Link>.
             </p>
           </section>

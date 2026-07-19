@@ -19,7 +19,7 @@ interface Input {
   titles?: Record<string, string>;
 }
 
-const SYSTEM_PROMPT = `You are a YouTube channel-growth advisor for a Tamil songwriter / lyricist (channel: Rajeswaran Thangarajah, ~15 subscribers, focused on original Tamil songs and poems with single-creator publishing).
+const SYSTEM_PROMPT = `You are a YouTube channel-growth advisor for a Tamil songwriter / lyricist (channel: Raj, ~15 subscribers, focused on original Tamil songs and poems with single-creator publishing).
 
 You are given a JSON object: channel-wide stats for the last N days plus the top videos by subscribers gained. Each video has views, watch-time, average view duration, and subscribers gained.
 

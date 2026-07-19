@@ -145,7 +145,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   }
 
   const enType = TYPE_LABEL_EN[content.type] || 'Tamil Poetry';
-  // Compose: "{Tamil title} — Tamil Poem by Rajeswaran Thangarajah".
+  // Compose: "{Tamil title} — Tamil Poem by Raj".
   // seoTitle (if set in admin) wins outright — bypasses both the Tamil title
   // and the romanised suffix.
   const title =
@@ -297,7 +297,7 @@ export default async function ContentPage({ params }: PageProps) {
               Suppressed when the hero already shows it. */}
           {!hero && (
             <p className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-orange-600 sm:text-sm">
-              {enType} · by {content.author || 'Rajeswaran Thangarajah'}
+              {enType} · by {content.author || 'Raj'}
             </p>
           )}
 
