@@ -18,7 +18,7 @@ import { FEATURED_SONGS, featuredWatchUrl } from '@/config/featured-songs';
 export const metadata: Metadata = {
   title: 'மிகவும் விரும்பப்பட்ட தமிழ் பாடல்கள் | Most-Loved Tamil Songs',
   description:
-    'Tamilagaval-இன் மிகவும் விரும்பப்பட்ட தமிழ் பாடல்கள் — original Tamil songs written by Rajeswaran Thangarajah. Watch, listen and share — always free.',
+    'Tamilagaval-இன் மிகவும் விரும்பப்பட்ட தமிழ் பாடல்கள் — original Tamil songs written by Raj. Watch, listen and share — always free.',
   alternates: alternatesFor('/popular'),
 };
 

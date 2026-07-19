@@ -15,7 +15,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: 'தமிழகவல் — Tamilagaval',
     short_name: 'தமிழகவல்',
     description:
-      'Free Tamil poems, songs and lyrics by Rajeswaran Thangarajah — listen, read, share.',
+      'Free Tamil poems, songs and lyrics by Raj — listen, read, share.',
     lang: 'ta',
     dir: 'ltr',
     start_url: '/',

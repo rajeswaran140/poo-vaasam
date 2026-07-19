@@ -18,7 +18,7 @@ import { SITE_URL, SITE_NAME, alternatesFor } from '@/lib/seo';
 
 export const metadata: Metadata = {
   alternates: alternatesFor('/'),
-  description: 'Free Tamil poems, songs and YouTube videos by lyricist Rajeswaran Thangarajah. Read tamil kavithai, listen to paadal varigal — always free.',
+  description: 'Free Tamil poems, songs and YouTube videos by lyricist Raj. Read tamil kavithai, listen to paadal varigal — always free.',
 };
 
 const websiteJsonLd = {
@@ -27,7 +27,7 @@ const websiteJsonLd = {
   name: SITE_NAME,
   url: SITE_URL,
   inLanguage: 'ta',
-  description: 'Free Tamil poems, songs and YouTube videos by lyricist Rajeswaran Thangarajah — tamil kavithai, paadal varigal, always free.',
+  description: 'Free Tamil poems, songs and YouTube videos by lyricist Raj — tamil kavithai, paadal varigal, always free.',
   potentialAction: {
     '@type': 'SearchAction',
     target: { '@type': 'EntryPoint', urlTemplate: `${SITE_URL}/ai-search?q={search_term_string}` },
@@ -44,8 +44,8 @@ const personSameAs = socialProfileUrls();
 const personJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'Person',
-  name: 'Rajeswaran Thangarajah',
-  alternateName: 'இராஜேஸ்வரன் தங்கராஜா',
+  name: 'Raj',
+  alternateName: 'ராஜ்',
   url: SITE_URL,
   jobTitle: 'Tamil poet and lyricist',
   description: 'Tamil writer and lyricist publishing original poems, songs and videos at tamilagaval.com',

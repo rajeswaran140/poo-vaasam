@@ -87,7 +87,7 @@ export const ROMANISED_TYPE_LABEL: Record<string, string> = {
   ESSAYS: 'Tamil Essay',
 };
 
-export const DEFAULT_AUTHOR = 'Rajeswaran Thangarajah';
+export const DEFAULT_AUTHOR = 'Raj';
 
 /**
  * Author name for crawler-facing strings (title / meta / JSON-LD). The visible

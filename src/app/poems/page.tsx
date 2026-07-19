@@ -11,7 +11,7 @@ import { alternatesFor, absoluteUrl, SITE_NAME } from '@/lib/seo';
 // tamil poems); the visible <h1> on the page stays "கவிதைகள்".
 const META_TITLE = 'Tamil Poems & Kavithai';
 const META_DESCRIPTION =
-  'Free Tamil poems and kavithai by Rajeswaran Thangarajah — read, share. Always free.';
+  'Free Tamil poems and kavithai by Raj — read, share. Always free.';
 
 export const metadata: Metadata = {
   title: META_TITLE,

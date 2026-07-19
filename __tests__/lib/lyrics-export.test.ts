@@ -10,7 +10,7 @@ describe('formatLyricsForClipboard', () => {
     const out = formatLyricsForClipboard('எங்கள் தேசம்', '  வரி ஒன்று\nவரி இரண்டு  ');
     expect(out).toContain('எங்கள் தேசம்');
     expect(out).toContain('வரி ஒன்று');
-    expect(out).toContain('© Rajeswaran Thangarajah');
+    expect(out).toContain('© Raj Thangarajah');
     expect(out).toContain('For singing only');
     expect(out).toContain('https://tamilagaval.com/terms');
     // body is trimmed: it starts right after the title's blank line (no leading
@@ -36,7 +36,7 @@ describe('buildPrintableLyricsHtml', () => {
     expect(html).toContain('T&lt;i&gt;'); // title escaped
     expect(html).toContain('lyric &lt;b&gt; line'); // body escaped
     expect(html).not.toContain('<b> line'); // no raw injection
-    expect(html).toContain('© Rajeswaran Thangarajah');
+    expect(html).toContain('© Raj Thangarajah');
     expect(html).toContain('window.print()');
     expect(html).toContain('Noto Sans Tamil');
   });

@@ -27,7 +27,7 @@ describe('About page', () => {
 
   it('names the author in the bio section', () => {
     render(<AboutPage />);
-    expect(screen.getAllByText(/இராஜேஸ்வரன் தங்கராஜா/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/ராஜ்/).length).toBeGreaterThan(0);
   });
 
   it('renders the three content pillars linking to /poems, /songs, /videos', () => {
@@ -75,7 +75,7 @@ describe('About page — audit fixes', () => {
     const ld = allJsonLd(container);
     expect(ld).toContain('BreadcrumbList');
     expect(ld).toContain('"Person"');
-    expect(ld).toContain('Rajeswaran Thangarajah');
+    expect(ld).toContain('Raj');
   });
 
   it('hero band uses the solid orange brand background (not flat dark)', () => {
@@ -95,7 +95,7 @@ describe('About page — audit fixes', () => {
 
 describe('About page — metadata', () => {
   it('has a person-focused title for "rajeswaran thangarajah" queries', () => {
-    expect(String(metadata.title)).toMatch(/Rajeswaran Thangarajah/);
+    expect(String(metadata.title)).toMatch(/Raj/);
   });
 
   it('keeps canonical + openGraph.url aligned on /about', () => {

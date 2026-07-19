@@ -32,9 +32,9 @@ export const dynamic = 'force-dynamic';
 // Crawler-facing metadata is romanised English (real queries:
 // "rajeswaran thangarajah youtube", "tamil videos"); the visible page heading
 // on /videos stays "காணொளிகள்".
-const META_TITLE = 'Tamil Videos by Rajeswaran Thangarajah — Songs & Poems';
+const META_TITLE = 'Tamil Videos by Raj — Songs & Poems';
 const META_DESCRIPTION =
-  'Watch original Tamil songs, poems and lyric videos from the Tamilagaval YouTube channel by Rajeswaran Thangarajah. New uploads regularly — always free.';
+  'Watch original Tamil songs, poems and lyric videos from the Tamilagaval YouTube channel by Raj. New uploads regularly — always free.';
 
 // /videos is the public discovery hub, so surface the WHOLE catalogue, not just
 // the latest page. The channel has ~64 uploads (≈48 long-form) and growing; a
