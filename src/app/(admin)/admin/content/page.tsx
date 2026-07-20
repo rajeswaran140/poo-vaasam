@@ -12,6 +12,7 @@ import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import showToast from '@/lib/toast';
 import { adminFetch } from '@/lib/client-auth';
 import { AnalyzePoemsButton } from '@/components/admin/AnalyzePoemsButton';
+import { SyncYoutubeSongsButton } from '@/components/admin/SyncYoutubeSongsButton';
 
 type FilterType = 'ALL' | 'SONGS' | 'POEMS' | 'LYRICS' | 'STORIES' | 'ESSAYS';
 type FilterStatus = 'ALL' | 'PUBLISHED' | 'DRAFT';
@@ -144,6 +145,7 @@ export default function ContentListPage() {
           </p>
         </div>
         <div className="flex items-start gap-3">
+          <SyncYoutubeSongsButton />
           <AnalyzePoemsButton />
           <Link
             href="/admin/content/new"
