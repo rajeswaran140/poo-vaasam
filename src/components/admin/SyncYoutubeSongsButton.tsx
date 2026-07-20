@@ -86,14 +86,14 @@ export function SyncYoutubeSongsButton() {
         onClick={scan}
         disabled={scanning || creating}
         title="Read the YouTube channel and list songs that have no on-site page yet (read-only; no S3; no lyrics)."
-        className="px-4 py-3 bg-white border border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+        className="px-4 py-3 bg-white dark:bg-gray-800 border border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {scanning ? 'Scanning…' : '🔄 Sync songs from YouTube'}
       </button>
 
       {missing && missing.length > 0 && (
-        <div className="w-80 max-w-[80vw] rounded-lg border border-gray-200 bg-white p-4 shadow-sm text-left">
-          <p className="mb-2 text-sm font-medium text-gray-900">
+        <div className="w-80 max-w-[80vw] rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 shadow-sm text-left">
+          <p className="mb-2 text-sm font-medium text-gray-900 dark:text-gray-100">
             {missing.length} channel song{missing.length === 1 ? '' : 's'} without a page
           </p>
           <ul className="max-h-72 space-y-1.5 overflow-y-auto">
@@ -114,7 +114,7 @@ export function SyncYoutubeSongsButton() {
                     height={27}
                     className="shrink-0 rounded"
                   />
-                  <span className="font-tamil text-sm text-gray-800 line-clamp-2">{m.title}</span>
+                  <span className="font-tamil text-sm text-gray-800 dark:text-gray-200 line-clamp-2">{m.title}</span>
                 </label>
               </li>
             ))}
@@ -126,7 +126,7 @@ export function SyncYoutubeSongsButton() {
           >
             {creating ? 'Creating…' : `Create ${selected.size} page${selected.size === 1 ? '' : 's'}`}
           </button>
-          <p className="mt-2 text-xs text-gray-500">Read-only on YouTube · no S3 · redeploy to publish</p>
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Read-only on YouTube · no S3 · redeploy to publish</p>
         </div>
       )}
     </div>

@@ -128,7 +128,7 @@ export default function ContentListPage() {
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="text-6xl mb-4">⏳</div>
-          <p className="text-xl text-gray-600">Loading content...</p>
+          <p className="text-xl text-gray-600 dark:text-gray-400">Loading content...</p>
         </div>
       </div>
     );
@@ -139,8 +139,8 @@ export default function ContentListPage() {
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">All Content</h1>
-          <p className="text-gray-500 mt-1">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">All Content</h1>
+          <p className="text-gray-500 dark:text-gray-400 mt-1">
             Manage your Tamil content library
           </p>
         </div>
@@ -157,7 +157,7 @@ export default function ContentListPage() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+      <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4">
         <div className="flex flex-wrap gap-4">
           <FilterButton
             label="All"
@@ -191,7 +191,7 @@ export default function ContentListPage() {
           />
           <div className="ml-auto">
             <select
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+              className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as FilterStatus)}
             >
@@ -204,14 +204,14 @@ export default function ContentListPage() {
       </div>
 
       {/* Content Table */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+      <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden">
         {content.length === 0 ? (
           <div className="p-12 text-center">
             <div className="text-6xl mb-4">📝</div>
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
               No content yet
             </h3>
-            <p className="text-gray-500 mb-6">
+            <p className="text-gray-500 dark:text-gray-400 mb-6">
               Start building your Tamil content library by creating your first item
             </p>
             <Link
@@ -224,44 +224,44 @@ export default function ContentListPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-800">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Title
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Type
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Author
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Status
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Views
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Date
                   </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-800">
                 {paginatedContent.map((item: any) => (
                   <tr
                     key={item.id}
-                    className="hover:bg-gray-50 transition-colors"
+                    className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
                   >
                     <td className="px-6 py-4">
                       <div>
-                        <div className="font-medium text-gray-900 font-tamil text-base">
+                        <div className="font-medium text-gray-900 dark:text-gray-100 font-tamil text-base">
                           {item.title}
                         </div>
                         {item.description && (
-                          <div className="text-sm text-gray-500 font-tamil mt-1 line-clamp-1">
+                          <div className="text-sm text-gray-500 dark:text-gray-400 font-tamil mt-1 line-clamp-1">
                             {item.description}
                           </div>
                         )}
@@ -270,16 +270,16 @@ export default function ContentListPage() {
                     <td className="px-6 py-4 whitespace-nowrap">
                       <TypeBadge type={item.type} />
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-tamil">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 font-tamil">
                       {item.author}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <StatusBadge status={item.status} />
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                       {item.viewCount || 0}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                       {new Date(item.createdAt).toLocaleDateString('en-GB', {
                         day: '2-digit',
                         month: 'short',
@@ -290,20 +290,20 @@ export default function ContentListPage() {
                       <div className="flex items-center justify-end gap-2">
                         <Link
                           href={`/admin/content/${item.id}/edit`}
-                          className="px-3 py-1 text-purple-600 hover:bg-purple-50 rounded transition-colors"
+                          className="px-3 py-1 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded transition-colors"
                         >
                           Edit
                         </Link>
                         <Link
                           href={`/content/${item.id}`}
                           target="_blank"
-                          className="px-3 py-1 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                          className="px-3 py-1 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
                         >
                           View
                         </Link>
                         <button
                           onClick={() => setDeleteModal({ isOpen: true, id: item.id, title: item.title })}
-                          className="px-3 py-1 text-red-600 hover:bg-red-50 rounded transition-colors"
+                          className="px-3 py-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
                         >
                           Delete
                         </button>
@@ -320,7 +320,7 @@ export default function ContentListPage() {
       {/* Pagination */}
       {content.length > 0 && (
         <div className="flex items-center justify-between">
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
             Showing <span className="font-medium">{startIndex + 1}</span> to{' '}
             <span className="font-medium">{Math.min(endIndex, content.length)}</span> of{' '}
             <span className="font-medium">{content.length}</span> results
@@ -329,7 +329,7 @@ export default function ContentListPage() {
             <button
               onClick={handlePreviousPage}
               disabled={currentPage === 1}
-              className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               Previous
             </button>
@@ -342,7 +342,7 @@ export default function ContentListPage() {
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   currentPage === page
                     ? 'bg-purple-600 text-white'
-                    : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+                    : 'border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50'
                 }`}
               >
                 {page}
@@ -352,7 +352,7 @@ export default function ContentListPage() {
             <button
               onClick={handleNextPage}
               disabled={currentPage === totalPages}
-              className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               Next
             </button>
@@ -383,7 +383,7 @@ function FilterButton({ label, active = false, onClick }: { label: string; activ
       className={`px-4 py-2 rounded-lg font-medium transition-colors ${
         active
           ? 'bg-purple-600 text-white'
-          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
       }`}
     >
       {label}
@@ -393,15 +393,15 @@ function FilterButton({ label, active = false, onClick }: { label: string; activ
 
 function TypeBadge({ type }: { type: string }) {
   const colors: Record<string, string> = {
-    SONGS: 'bg-blue-100 text-blue-800',
-    POEMS: 'bg-green-100 text-green-800',
-    LYRICS: 'bg-yellow-100 text-yellow-800',
-    STORIES: 'bg-pink-100 text-pink-800',
-    ESSAYS: 'bg-purple-100 text-purple-800',
+    SONGS: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300',
+    POEMS: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300',
+    LYRICS: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300',
+    STORIES: 'bg-pink-100 text-pink-800 dark:bg-pink-900/40 dark:text-pink-300',
+    ESSAYS: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300',
   };
 
   return (
-    <span className={`px-2 py-1 text-xs font-semibold rounded-full ${colors[type] || 'bg-gray-100 text-gray-800'}`}>
+    <span className={`px-2 py-1 text-xs font-semibold rounded-full ${colors[type] || 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'}`}>
       {type}
     </span>
   );
@@ -412,8 +412,8 @@ function StatusBadge({ status }: { status: string }) {
     <span
       className={`px-2 py-1 text-xs font-semibold rounded-full ${
         status === 'PUBLISHED'
-          ? 'bg-green-100 text-green-800'
-          : 'bg-gray-100 text-gray-800'
+          ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
+          : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
       }`}
     >
       {status}

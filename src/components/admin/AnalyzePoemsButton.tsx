@@ -60,12 +60,12 @@ export function AnalyzePoemsButton() {
         onClick={run}
         disabled={running}
         title="Precompute emotion analysis for published poems (used by background music / TTS). Redeploy afterwards to bake it into the pages."
-        className="px-4 py-3 bg-white border border-purple-300 text-purple-700 rounded-lg hover:bg-purple-50 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+        className="px-4 py-3 bg-white dark:bg-gray-800 border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {running ? 'Analyzing…' : '🎭 Analyze poems'}
       </button>
       {result && (
-        <p className="text-xs text-gray-500" role="status">
+        <p className="text-xs text-gray-500 dark:text-gray-400" role="status">
           {result.analyzed.length} analyzed
           {result.failed.length > 0 && `, ${result.failed.length} failed`}
           {`, ${result.remaining} still missing`} · redeploy to publish
