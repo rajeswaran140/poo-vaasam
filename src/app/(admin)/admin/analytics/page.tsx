@@ -96,6 +96,8 @@ export default function AnalyticsPage() {
             <button
               key={d}
               onClick={() => setDays(d)}
+              aria-pressed={d === days}
+              aria-label={`Show last ${d} days`}
               className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${
                 d === days ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200'
               }`}
@@ -129,11 +131,20 @@ export default function AnalyticsPage() {
           {/* Traffic trend */}
           {series.length > 0 && (
             <Card title="Traffic trend (page views / day)">
-              <div className="flex h-28 items-end gap-[2px]">
+              <div
+                className="flex h-28 items-end gap-[2px]"
+                role="img"
+                aria-label={
+                  `Page views per day over the last ${days} days: ` +
+                  `ranging from ${Math.min(...series.map((p) => p.pageViews)).toLocaleString()} to ${maxPv.toLocaleString()}, ` +
+                  `latest day ${(series[series.length - 1]?.pageViews ?? 0).toLocaleString()}.`
+                }
+              >
                 {series.map((p) => (
                   <div
                     key={p.date}
                     title={`${p.date}: ${p.pageViews} views · ${p.users} users`}
+                    aria-hidden="true"
                     className="flex-1 rounded-t bg-orange-500/80 hover:bg-orange-600"
                     style={{ height: `${Math.max(2, (p.pageViews / maxPv) * 100)}%` }}
                   />
