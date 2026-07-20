@@ -55,3 +55,16 @@ it('flags degraded:true when the model returns unparseable content', async () =>
   expect(json.success).toBe(true);
   expect(json.degraded).toBe(true);
 });
+
+it('uses the cheap gpt-4o-mini model with JSON mode (guards against a gpt-4 regression)', async () => {
+  mockCreate.mockResolvedValueOnce({
+    choices: [{ message: { content: JSON.stringify({ emotion: 'reflective', mood: 'gentle' }) } }],
+  });
+  await post(poem);
+  expect(mockCreate).toHaveBeenCalledWith(
+    expect.objectContaining({
+      model: 'gpt-4o-mini',
+      response_format: { type: 'json_object' },
+    })
+  );
+});

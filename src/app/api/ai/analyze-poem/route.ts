@@ -45,7 +45,10 @@ export async function POST(request: NextRequest) {
 
     // Analyze poem emotion and context using OpenAI
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4',
+      // Small structured-JSON classification (emotion → music/TTS params).
+      // gpt-4o-mini is ~99% cheaper than the legacy gpt-4 with equal/better
+      // quality on a task this constrained.
+      model: 'gpt-4o-mini',
       messages: [
         {
           role: 'system',
@@ -77,6 +80,9 @@ Provide emotional analysis in JSON format.`
       ],
       temperature: 0.3,
       max_tokens: 500,
+      // Guarantee valid JSON back (the prompt asks for JSON) so the parse below
+      // rarely has to fall through to the degraded default.
+      response_format: { type: 'json_object' },
     });
 
     const analysisText = completion.choices[0].message.content;
