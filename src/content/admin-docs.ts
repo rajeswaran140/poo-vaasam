@@ -561,11 +561,12 @@ Channel monetized 2026-07-20 (Tier-2 approved — Watch Page ads + YouTube Premi
 - **Grief / tribute songs = fully ad-free.** No ad belongs on a song about a lost parent.
 - **Lean on fan-funding over ad density.** Super Thanks (unlocked at Tier-2) converts an emotionally-connected audience far better than more ads, and never touches the listening experience.
 
+> **Long-form exception (2026-07-20):** *அன்பை சுமந்து சுமந்து* (\`kOpNZHlE9FE\`, the Father song) is 12+ min, so ads were deliberately enabled on it — pre/post-roll **off**, one **manual mid-roll break at 5:16** (nothing before). It is intentionally NOT on the ad-free list below.
+
 ## Keep ad-free — Tier 1 (grief / loss / parent tribute)
 | Video | Song |
 |---|---|
 | \`2AlTwv45AiQ\` | அன்னையும் இல்ல... தந்தையும் இல்ல (lost both parents) |
-| \`kOpNZHlE9FE\` | அன்பை சுமந்து சுமந்து (Father) |
 | \`CYVbd5a3uQ4\` | அம்மா உந்தன் நினைவுகள் |
 | \`DozdKmt0cLY\` | கண்ணோடு நீர் அள்ளி |
 | \`xT2lbQwF7Zk\` | தந்தையே எங்கள் தெய்வம் |
