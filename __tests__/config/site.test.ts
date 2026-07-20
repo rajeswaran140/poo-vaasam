@@ -10,6 +10,7 @@ import {
   liveContentSections,
   isFacebookConfigured,
   isInstagramConfigured,
+  isWhatsAppConfigured,
   socialProfileUrls,
   SITE,
 } from '@/config/site';
@@ -45,6 +46,14 @@ describe('social profiles', () => {
     expect(isFacebookConfigured()).toBe(/facebook\.com\//.test(SITE.facebook.url));
     // Instagram is intentionally empty until the Business account exists.
     expect(isInstagramConfigured()).toBe(/instagram\.com\//.test(SITE.instagram.url));
+  });
+
+  it('gates WhatsApp on a real channel link (hidden until Raj creates it)', () => {
+    // Empty by default → hidden site-wide.
+    expect(isWhatsAppConfigured()).toBe(/whatsapp\.com\/channel\//.test(SITE.whatsapp.url));
+    // Only a proper channel link counts — a bare number / wa.me does not.
+    expect(/whatsapp\.com\/channel\//.test('https://whatsapp.com/channel/ABC123')).toBe(true);
+    expect(/whatsapp\.com\/channel\//.test('https://wa.me/15551234567')).toBe(false);
   });
 
   it('socialProfileUrls() lists only configured profiles (for JSON-LD sameAs)', () => {

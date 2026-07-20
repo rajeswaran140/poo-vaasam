@@ -36,6 +36,13 @@ export const SITE = {
     url: '',
     label: 'Instagram',
   },
+  whatsapp: {
+    // Public WhatsApp *channel* (one-way broadcast, number stays hidden). Set to
+    // the channel link once created (https://whatsapp.com/channel/<id>). Empty =
+    // hidden site-wide, so the follow row lights up the moment it's filled in.
+    url: '',
+    label: 'WhatsApp',
+  },
 } as const;
 
 /**
@@ -76,6 +83,11 @@ export function isFacebookConfigured(): boolean {
 /** True when a real Instagram URL is configured. */
 export function isInstagramConfigured(): boolean {
   return /instagram\.com\//.test(SITE.instagram.url);
+}
+
+/** True when a real public WhatsApp channel link is configured. */
+export function isWhatsAppConfigured(): boolean {
+  return /whatsapp\.com\/channel\//.test(SITE.whatsapp.url);
 }
 
 /**
