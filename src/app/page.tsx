@@ -95,7 +95,7 @@ export default function HomePage() {
                     <span className="block">தமிழ் கவிதைகளும் பாடல்களும்.</span>
                     <span className="block mt-2">என்றும் இலவசம்.</span>
                   </p>
-                  <p className="text-base sm:text-lg italic text-white/85">Where Tamil Poetry Becomes Song</p>
+                  <p lang="en" className="text-base sm:text-lg italic text-white/85">Where Tamil Poetry Becomes Song</p>
                 </div>
 
                 {/* Feature Pills - Consistent Sizing */}
@@ -110,7 +110,7 @@ export default function HomePage() {
                   </div>
                   <div className="flex items-center gap-3 bg-white/15 backdrop-blur-sm rounded-xl px-5 sm:px-6 py-3 sm:py-3.5 border border-white/20 shadow-lg">
                     <span className="text-2xl" aria-hidden="true">🚫</span>
-                    <span className="font-semibold font-tamil text-base">விளம்பரங்கள் இல்லை</span>
+                    <span className="font-semibold font-tamil text-base">இத்தளத்தில் விளம்பரம் இல்லை</span>
                   </div>
                 </div>
 
@@ -195,10 +195,10 @@ export default function HomePage() {
                 <span className="text-4xl" aria-hidden="true">✨</span>
               </div>
               <h3 className="text-xl font-bold text-white mb-4 font-tamil leading-snug">
-                விளம்பரங்கள் இல்லை
+                இத்தளத்தில் விளம்பரம் இல்லை
               </h3>
               <p className="text-base text-gray-300 font-tamil leading-loose">
-                தடையற்ற அனுபவம். விளம்பரங்கள் இல்லாமல், உங்கள் வாசிப்பில் கவனம் செலுத்துங்கள்.
+                இந்தத் தளத்தில் தடையற்ற வாசிப்பு அனுபவம். விளம்பரங்கள் இல்லாமல், உங்கள் வாசிப்பில் கவனம் செலுத்துங்கள்.
               </p>
             </div>
           </div>
@@ -236,7 +236,7 @@ export default function HomePage() {
                 </div>
                 <div>
                   <h4 className="font-bold text-white mb-2 font-tamil text-base leading-normal">சொந்தப் படைப்புகள்</h4>
-                  <p className="text-gray-300 font-tamil leading-relaxed">ரஜேஸ்வரனின் சொந்தக் கவிதைகளும் பாடல்களும்</p>
+                  <p className="text-gray-300 font-tamil leading-relaxed">ராஜின் சொந்தக் கவிதைகளும் பாடல்களும்</p>
                 </div>
               </div>
               <div className="flex items-start gap-4">
@@ -247,7 +247,7 @@ export default function HomePage() {
                 </div>
                 <div>
                   <h4 className="font-bold text-white mb-2 font-tamil text-base leading-normal">தொடர்ச்சியான புதுப்பிப்புகள்</h4>
-                  <p className="text-gray-300 font-tamil leading-relaxed">வாரம் தோறும் புதிய உள்ளடக்கம்</p>
+                  <p className="text-gray-300 font-tamil leading-relaxed">வாரம்தோறும் புதிய உள்ளடக்கம்</p>
                 </div>
               </div>
             </div>
