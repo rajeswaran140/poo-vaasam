@@ -11,6 +11,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import showToast from '@/lib/toast';
 import { adminFetch } from '@/lib/client-auth';
+import { AnalyzePoemsButton } from '@/components/admin/AnalyzePoemsButton';
 
 type FilterType = 'ALL' | 'SONGS' | 'POEMS' | 'LYRICS' | 'STORIES' | 'ESSAYS';
 type FilterStatus = 'ALL' | 'PUBLISHED' | 'DRAFT';
@@ -142,12 +143,15 @@ export default function ContentListPage() {
             Manage your Tamil content library
           </p>
         </div>
-        <Link
-          href="/admin/content/new"
-          className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
-        >
-          + Create New Content
-        </Link>
+        <div className="flex items-start gap-3">
+          <AnalyzePoemsButton />
+          <Link
+            href="/admin/content/new"
+            className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
+          >
+            + Create New Content
+          </Link>
+        </div>
       </div>
 
       {/* Filters */}
