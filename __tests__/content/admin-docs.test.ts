@@ -56,14 +56,20 @@ describe('credit-block doc stays in sync with the code (drift guard)', () => {
   });
 });
 
-describe('publishing cadence guidance is coherent (no 1/week vs 2/week clash)', () => {
-  it('the cadence doc states ~1 hero song per week', () => {
-    expect(getDoc('upload-cadence-timing')!.body).toMatch(/1 strong hero song per week/i);
+describe('publishing cadence guidance is coherent (both docs point at the same experiment)', () => {
+  it('the cadence + release-calendar docs both frame cadence as the themed-day experiment', () => {
+    for (const slug of ['upload-cadence-timing', 'release-calendar-queue']) {
+      const body = getDoc(slug)!.body;
+      expect(body).toMatch(/experiment/i);
+      expect(body).toMatch(/themed[- ]day/i);
+    }
   });
 
-  it('no Publishing doc still advises ~2 per week', () => {
-    for (const d of docsByCategory()['Publishing']) {
-      expect(d.body).not.toMatch(/2 per week|2 songs per week|2\/week/i);
+  it('does not resurrect the retired flat "1/week" rule as current guidance', () => {
+    // The experiment supersedes it; the docs may mention it historically, but not
+    // as a live "~1 hero song per week" directive.
+    for (const slug of ['upload-cadence-timing', 'release-calendar-queue']) {
+      expect(getDoc(slug)!.body).not.toMatch(/Cadence — ~?1 strong hero song per week/i);
     }
   });
 });

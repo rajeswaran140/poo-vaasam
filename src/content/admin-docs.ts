@@ -237,11 +237,12 @@ On a failure it shows a message and never breaks the page — just try again. A 
 
 Data-backed publishing guide for the Tamilagaval channel. The **day/time** figures are from the trailing 12 weeks (pulled 2026-07-06) — re-check periodically. For the release *system* (queue, lane sequencing, playlist routing) see **Release calendar & queue**.
 
-## Cadence — ~1 strong hero song per week
-- Growth here is **suggested / related-video driven**, so each new song needs a clean runway for the algorithm to test it and find its audience — one strong release a week gives it that.
-- Two songs close together **compete for the same recommendation slots + notification budget and split each other's early push** (the 2026-06-22 double-upload lesson; the 14-in-9-days stretch confirmed it). Category diversity does **not** buy a faster cadence — the budget is channel-level.
-- **Never 2 in one day**, and avoid back-to-back days for full songs. Skip a week rather than double up.
-- Have a batch ready? **Drip-release one per week** — decouple *creating* from *releasing* (see Release calendar & queue).
+## Cadence — TESTING themed-day 3–4/week (experiment, from 2026-07-20)
+- **This is under test, not settled.** The earlier "~1/week" call was too strong — it over-read a **surge-confounded** correlation (the 14-in-9-days stretch coincided with the surge unwinding, which was happening anyway; cadence was never proven to be the cause). Running a **6–8-week experiment** instead.
+- **The schedule under test:** 3–4 well-spaced releases per week on themed days — **Mon Love · Wed Parent · Fri Nature/Philosophy/Heritage · Weekend strong** — **never two on the same day** (same-day/back-to-back bursts are still out; well-spaced daily is a different thing).
+- **The hypothesis:** different categories pull **different audience slices**, which may offset the channel-level notification/suggested budget a higher cadence spends. Whether it does is exactly what we're measuring.
+- **Measure WEEKLY aggregates, not single uploads** — per-song views/subs/watch-time + weekly channel totals vs the **settled baseline** (recent settled week ≈ 30.7k views · 1,442 watch-hrs · +84 net-subs, W ending 2026-07-18; NOT the surge-inflated 4-wk avg of ~52k/2,119/+194). Control confounds (season, algo experiments, competition, song variance).
+- **Revert trigger:** net-subs/week AND watch-time both down for **2+ consecutive weeks** vs the settled baseline → step back toward 2/week. Monthly gut-check: *"more subs + watch-time overall than last month?"* Objective = catalogue-building, not single-upload max. Results land in the weekly Cadence-experiment readout.
 
 ## Best days
 Average daily views by weekday (trailing 12 weeks):
@@ -503,13 +504,14 @@ Why: the subscriber-notification + "suggested" test budget is **channel-level, n
 
 > Companion guide: **Upload cadence & timing** has the data-backed best days/times (target IST; lead with your strongest). This guide is the *system* — the queue, lane sequencing, and playlist routing.
 
-## Weekly rhythm
-- **1 hero release / week** — the single strongest finished song. Never two close together; space a batch out.
+## Weekly rhythm — TESTING themed-day 3–4/week (experiment from 2026-07-20)
+- **3–4 well-spaced releases per week, one category per day:** Mon Love · Wed Parent · Fri Nature/Philosophy/Heritage · Weekend strong. **Never two on the same day.** (This supersedes the earlier "1/week", which was too strong — it's under a 6–8-week test; see the **Cadence & timing** doc for the rationale + revert rule, and the weekly Cadence-experiment readout for results.)
+- **One category per day** keeps a predictable rhythm for the algorithm *and* subscribers, and different categories (love / parent / philosophical) pull different audience slices — which may offset the channel-level notification budget a higher cadence spends. That's the hypothesis being tested.
 - **Publish ahead of the India/diaspora evening peak** (see the timing guide) and **seed your WhatsApp Status at publish**.
-- **Skip a week rather than double up.** A gap is fine; a burst is not.
-- **Lead with reach, follow with resonance:**
+- **Judge weekly aggregates, not single uploads.** Objective = building the catalogue (decades of lyrics), not maxing one video.
+- **Lead with reach, follow with resonance within the week:**
   - *Reach lane* (broad love / melody / folk) chases breadth and fuels suggested.
-  - *Resonance lane* (grief / heritage / niche) is low reach, high advocacy; release these to ride the audience a reach song just built — not cold, and not two niche songs back-to-back.
+  - *Resonance lane* (grief / heritage / niche) is low reach, high advocacy; release these to ride the audience a reach song just built — not two niche songs back-to-back.
 
 ## Release queue *(fill in — newest at the bottom)*
 | Target date | Song (Tamil / romanized) | Lane | Playlists | Notes |
