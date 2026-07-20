@@ -12,6 +12,7 @@ import {
   type CreateContentDTO,
   type UpdateContentDTO,
   type WorkflowState,
+  type EmotionAnalysis,
 } from '@/types/content';
 import { generateSlug } from '@/lib/utils/slug';
 
@@ -51,12 +52,26 @@ export class Content {
     private _workflowState: WorkflowState | undefined = undefined,
     // Per-song browse theme/category (love | mother | nature | tamil | homeland).
     // Set by /api/admin/songs/[id]/theme; read by /songs via themeForSongWithOverride.
-    private _theme: string | undefined = undefined
+    private _theme: string | undefined = undefined,
+    // Precomputed poem emotion analysis (music/TTS params). Set at publish time
+    // via the admin analyze endpoint; read by PoemReader so the LLM never runs
+    // in the visitor path. Undefined on legacy/un-backfilled rows.
+    private _emotionAnalysis: EmotionAnalysis | undefined = undefined
   ) {}
 
   // Getters
   get theme(): string | undefined {
     return this._theme;
+  }
+
+  get emotionAnalysis(): EmotionAnalysis | undefined {
+    return this._emotionAnalysis;
+  }
+
+  /** Attach a precomputed emotion analysis (idempotent overwrite). */
+  setEmotionAnalysis(analysis: EmotionAnalysis): void {
+    this._emotionAnalysis = analysis;
+    this._updatedAt = new Date();
   }
 
   get title(): string {
@@ -403,6 +418,7 @@ export class Content {
       categoryIds: this._categoryIds,
       tagIds: this._tagIds,
       theme: this._theme,
+      emotionAnalysis: this._emotionAnalysis,
       viewCount: this._viewCount,
       seoTitle: this._seoTitle,
       seoDescription: this._seoDescription,
@@ -446,7 +462,10 @@ export class Content {
       data.workflowState && (WORKFLOW_STATES as readonly string[]).includes(data.workflowState)
         ? (data.workflowState as WorkflowState)
         : undefined,
-      typeof data.theme === 'string' ? data.theme : undefined
+      typeof data.theme === 'string' ? data.theme : undefined,
+      data.emotionAnalysis && typeof data.emotionAnalysis === 'object'
+        ? (data.emotionAnalysis as EmotionAnalysis)
+        : undefined
     );
   }
 

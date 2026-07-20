@@ -91,6 +91,22 @@ export interface StudioAssets {
 }
 
 /**
+ * Precomputed emotion analysis for a poem — drives background-music selection
+ * and TTS parameters. Computed ONCE at publish time (admin) and stored here so
+ * the reader never spends an LLM call at runtime. Optional: legacy/un-backfilled
+ * poems fall back to a runtime analysis (see /api/ai/analyze-poem) or a default.
+ */
+export interface EmotionAnalysis {
+  emotion: string;
+  mood: string;
+  themes: string[];
+  musicRecommendation: string;
+  ttsSpeed: number;
+  ttsPitch: number;
+  summary: string;
+}
+
+/**
  * Production lifecycle — 9 sequential states. Stored on Content as a string
  * so we can extend without a migration; the union below is the source of
  * truth for valid values and ordering.
@@ -148,6 +164,8 @@ export interface Content
   tagIds: string[];
   /** Studio production-pipeline state; undefined on legacy rows. */
   workflowState?: WorkflowState;
+  /** Precomputed emotion analysis (poems); undefined until analyzed. */
+  emotionAnalysis?: EmotionAnalysis;
 }
 
 /**

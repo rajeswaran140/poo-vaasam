@@ -82,6 +82,38 @@ describe('PoemReader Integration Tests', () => {
     });
   });
 
+  it('uses a precomputed emotionAnalysis and skips the AI call on music start', async () => {
+    global.Audio = jest.fn().mockImplementation(() => ({
+      play: jest.fn().mockResolvedValue(undefined),
+      pause: jest.fn(),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      loop: false,
+      volume: 0.3,
+    })) as any;
+
+    const precomputed = {
+      ...mockContent,
+      emotionAnalysis: {
+        emotion: 'joyful',
+        mood: 'uplifting',
+        themes: ['மகிழ்ச்சி'],
+        musicRecommendation: 'uplifting_strings',
+        ttsSpeed: 1.1,
+        ttsPitch: 1.1,
+        summary: 'மகிழ்ச்சி',
+      },
+    };
+
+    render(<PoemReader content={precomputed} />);
+    fireEvent.click(screen.getAllByLabelText(/பின்னணி இசை/)[0]);
+
+    // Music still starts from the stored analysis...
+    await waitFor(() => expect(global.Audio).toHaveBeenCalled());
+    // ...but the runtime LLM endpoint is never hit.
+    expect(global.fetch).not.toHaveBeenCalledWith('/api/ai/analyze-poem', expect.anything());
+  });
+
   it('should display music control button', () => {
     render(<PoemReader content={mockContent} />);
 

@@ -59,6 +59,14 @@ export function PoemReader({ content }: PoemReaderProps) {
   // deduped so it runs at most once per mounted poem.
   const ensureAnalysis = useCallback((): Promise<PoemAnalysis> => {
     if (analysisPromiseRef.current) return analysisPromiseRef.current;
+
+    // Precomputed at publish time → use it directly, no runtime LLM call.
+    if (content.emotionAnalysis) {
+      const precomputed = Promise.resolve(content.emotionAnalysis as PoemAnalysis);
+      analysisPromiseRef.current = precomputed;
+      return precomputed;
+    }
+
     const promise = (async (): Promise<PoemAnalysis> => {
       try {
         const response = await fetch('/api/ai/analyze-poem', {
@@ -81,7 +89,7 @@ export function PoemReader({ content }: PoemReaderProps) {
     })();
     analysisPromiseRef.current = promise;
     return promise;
-  }, [content.title, content.body, content.author]);
+  }, [content.emotionAnalysis, content.title, content.body, content.author]);
 
   // Check if already bookmarked
   useEffect(() => {
