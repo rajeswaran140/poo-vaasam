@@ -878,22 +878,34 @@ export async function fetchFunnelData(daysBack = 28): Promise<Result<FunnelInput
   }
 }
 
+export interface RevenueBreakdown {
+  /** Total estimated NET revenue (all sources, after YouTube's share), USD. */
+  estimatedRevenue: number;
+  /** Watch Page ad revenue (AdSense + Google-sold), USD. */
+  estimatedAdRevenue: number;
+  /** YouTube Premium ("Red") revenue share, USD. */
+  estimatedRedPartnerRevenue: number;
+  /** Gross revenue per 1,000 playbacks (a CPM efficiency proxy), USD. */
+  playbackBasedCpm: number;
+  /** Playbacks that carried at least one ad impression. */
+  monetizedPlaybacks: number;
+  days: number;
+}
+
 /**
- * Estimated ad revenue (USD) for the last N days.
+ * Estimated revenue breakdown (USD) for the last N days — total, Watch-Page ad
+ * revenue, and YouTube Premium revenue split out (mirrors what Studio shows).
  *
- * REQUIRES THE MONETARY SCOPE: the `estimatedRevenue` metric is only
- * accessible when the OAuth grant includes
- * `https://www.googleapis.com/auth/yt-analytics-monetary.readonly`. The
- * current refresh token was minted WITHOUT it, so this call 403s upstream —
- * which `runReport` surfaces as a thrown Error. We catch it and return
+ * REQUIRES THE MONETARY SCOPE: these metrics are only accessible when the OAuth
+ * grant includes `https://www.googleapis.com/auth/yt-analytics-monetary.readonly`.
+ * If the refresh token was minted WITHOUT it, this call 403s upstream — which
+ * `runReport` surfaces as a thrown Error. We catch it and return
  * `{ ok: false, error }` so callers degrade gracefully (show a "re-auth to
  * unlock earnings" note) instead of crashing. Once Raj re-consents adding the
  * monetary scope, the same call starts returning real numbers with no code
- * change.
+ * change. Revenue also lags ~2–3 days and is $0 before monetization was enabled.
  */
-export async function fetchEstimatedRevenue(
-  daysBack = 28
-): Promise<Result<{ estimatedRevenue: number; days: number }>> {
+export async function fetchEstimatedRevenue(daysBack = 28): Promise<Result<RevenueBreakdown>> {
   if (!isYouTubeAnalyticsConfigured()) {
     return { ok: false, error: 'YouTube Analytics OAuth not configured' };
   }
@@ -903,11 +915,22 @@ export async function fetchEstimatedRevenue(
       ids: 'channel==MINE',
       startDate,
       endDate,
-      metrics: 'estimatedRevenue',
+      metrics:
+        'estimatedRevenue,estimatedAdRevenue,estimatedRedPartnerRevenue,playbackBasedCpm,monetizedPlaybacks',
     });
     if (!res) return { ok: false, error: 'No response from YouTube Analytics' };
     const row = res.rows?.[0] ?? [];
-    return { ok: true, data: { estimatedRevenue: Number(row[0] ?? 0), days: daysBack } };
+    return {
+      ok: true,
+      data: {
+        estimatedRevenue: Number(row[0] ?? 0),
+        estimatedAdRevenue: Number(row[1] ?? 0),
+        estimatedRedPartnerRevenue: Number(row[2] ?? 0),
+        playbackBasedCpm: Number(row[3] ?? 0),
+        monetizedPlaybacks: Number(row[4] ?? 0),
+        days: daysBack,
+      },
+    };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }

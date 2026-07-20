@@ -52,15 +52,32 @@ it('shows the re-auth note when revenue lacks the monetary scope (no crash)', as
   expect(screen.getByText(/yt-analytics-monetary\.readonly/)).toBeInTheDocument();
 });
 
-it('shows an estimated revenue figure when the monetary scope is present', async () => {
+it('shows the estimated revenue breakdown (total + ads + Premium) with the monetary scope', async () => {
   mockedFetch.mockResolvedValue({
     ok: true,
     status: 200,
-    json: async () => body({ revenue: { ok: true, data: { estimatedRevenue: 12.34, days: 28 } } }),
+    json: async () =>
+      body({
+        revenue: {
+          ok: true,
+          data: {
+            estimatedRevenue: 12.34,
+            estimatedAdRevenue: 9.1,
+            estimatedRedPartnerRevenue: 3.24,
+            playbackBasedCpm: 0.85,
+            monetizedPlaybacks: 4200,
+            days: 28,
+          },
+        },
+      }),
   });
   render(<MonetizationPanel />);
   expect(await screen.findByText(/Estimated revenue/i)).toBeInTheDocument();
-  expect(screen.getByText(/\$12\.34/)).toBeInTheDocument();
+  expect(screen.getByText(/\$12\.34/)).toBeInTheDocument(); // total
+  expect(screen.getByText('Watch Page ads')).toBeInTheDocument();
+  expect(screen.getByText(/\$9\.10/)).toBeInTheDocument(); // ad revenue
+  expect(screen.getByText('YouTube Premium')).toBeInTheDocument();
+  expect(screen.getByText(/\$3\.24/)).toBeInTheDocument(); // premium revenue
 });
 
 it('renders an ETA toward the binding subscriber target', async () => {

@@ -17,9 +17,15 @@ import { useEffect, useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
 import type { YppGates, TierProgress, GateAxis } from '@/lib/ypp-gates';
 
-type RevenueResult =
-  | { ok: true; data: { estimatedRevenue: number; days: number } }
-  | { ok: false; error: string };
+interface RevenueBreakdown {
+  estimatedRevenue: number;
+  estimatedAdRevenue: number;
+  estimatedRedPartnerRevenue: number;
+  playbackBasedCpm: number;
+  monetizedPlaybacks: number;
+  days: number;
+}
+type RevenueResult = { ok: true; data: RevenueBreakdown } | { ok: false; error: string };
 
 interface Payload {
   success: boolean;
@@ -176,12 +182,28 @@ function ProgressBar({ label, axis, unit }: { label: string; axis: GateAxis; uni
 
 function RevenueLine({ revenue }: { revenue: RevenueResult }) {
   if (revenue.ok) {
+    const d = revenue.data;
     return (
-      <p className="text-sm text-gray-700 dark:text-gray-200">
-        Estimated revenue (last {revenue.data.days}d):{' '}
-        <strong className="tabular-nums">{usd.format(revenue.data.estimatedRevenue)}</strong>{' '}
-        <span className="text-xs text-gray-400">· estimate, not final earnings</span>
-      </p>
+      <div className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="text-sm font-semibold text-gray-900 dark:text-white">
+            Estimated revenue{' '}
+            <span className="text-[11px] font-normal text-gray-400">· last {d.days}d</span>
+          </p>
+          <strong className="tabular-nums text-base text-green-700 dark:text-green-400">
+            {usd.format(d.estimatedRevenue)}
+          </strong>
+        </div>
+        <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-600 dark:text-gray-300">
+          <RevenueStat label="Watch Page ads" value={usd.format(d.estimatedAdRevenue)} />
+          <RevenueStat label="YouTube Premium" value={usd.format(d.estimatedRedPartnerRevenue)} />
+          <RevenueStat label="CPM (per 1k plays)" value={usd.format(d.playbackBasedCpm)} />
+          <RevenueStat label="Monetized plays" value={nf.format(d.monetizedPlaybacks)} />
+        </dl>
+        <p className="mt-2 text-[11px] text-gray-400">
+          Estimate, not final earnings · lags ~2–3 days · India-heavy audience = low CPM
+        </p>
+      </div>
     );
   }
   return (
@@ -190,5 +212,14 @@ function RevenueLine({ revenue }: { revenue: RevenueResult }) {
       <code className="rounded bg-gray-100 px-1 text-[11px] dark:bg-gray-700">yt-analytics-monetary.readonly</code>{' '}
       to show earnings.
     </p>
+  );
+}
+
+function RevenueStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-2">
+      <dt className="text-gray-500 dark:text-gray-400">{label}</dt>
+      <dd className="tabular-nums font-medium text-gray-800 dark:text-gray-200">{value}</dd>
+    </div>
   );
 }
