@@ -547,6 +547,47 @@ Bilingual title (Tamil hook + romanized + English) · tags incl. the **romanized
 No new song this week? The channel still grows via playlists (session time), the Short→full-song funnels, pinned comments, WhatsApp Status shares, and search (romanized + Tamil titles). Reach is **re-fuelled by the next strong hero**, not by uploading more, faster.
 `,
   },
+  {
+    slug: 'monetization-ad-settings',
+    title: 'Monetization — ad settings & ad-free songs',
+    category: 'Publishing',
+    updatedAt: '2026-07-20',
+    body: `# Monetization — ad settings & which songs stay ad-free
+
+Channel monetized 2026-07-20 (Tier-2 approved — Watch Page ads + YouTube Premium). Money on your terms: **light ads, tributes ad-free, music first.**
+
+## The rules
+- **Mid-roll ads OFF on every song.** They break a 4–6 min song mid-emotion — killing the retention that's the channel's biggest strength, and dragging watch-time down (which also confounds the cadence experiment). Keep skippable **pre/post-roll only**.
+- **Grief / tribute songs = fully ad-free.** No ad belongs on a song about a lost parent.
+- **Lean on fan-funding over ad density.** Super Thanks (unlocked at Tier-2) converts an emotionally-connected audience far better than more ads, and never touches the listening experience.
+
+## Keep ad-free — Tier 1 (grief / loss / parent tribute)
+| Video | Song |
+|---|---|
+| \`2AlTwv45AiQ\` | அன்னையும் இல்ல... தந்தையும் இல்ல (lost both parents) |
+| \`kOpNZHlE9FE\` | அன்பை சுமந்து சுமந்து (Father) |
+| \`CYVbd5a3uQ4\` | அம்மா உந்தன் நினைவுகள் |
+| \`DozdKmt0cLY\` | கண்ணோடு நீர் அள்ளி |
+| \`xT2lbQwF7Zk\` | தந்தையே எங்கள் தெய்வம் |
+| \`pkDhDVtXSnk\` | இரை தேட சென்ற தாய் பறவை |
+| \`NCysfKUKXwQ\` | ஒரு கண்ணால் மறு கண்ணை |
+| \`c61mxpSgAAA\` | அரிதான பெரும் பாசம் |
+| \`h1WgaJW9khI\` | செவ்விழி ஓவியமே |
+
+## Consider — Tier 2 (heavy, but not grief — your call)
+- Reflective: \`vR5gYh3MvDI\` மண்ணிலே தோன்றி · \`twsUzpzILTE\` இதுவும் கடந்து போகும்
+- Homeland: \`tw49AjsZs1E\` / \`KpWeuW_l9xc\` ஈழத்து மண்ணே · \`akxtNVXgGf4\` என் தேசமே · \`NxgKyBINwmc\` எங்கள் தேசம்
+
+Everything else (love / melody / folk) is fine to monetize with light ads.
+
+## How to apply (Studio)
+1. **Global default (future uploads):** Settings → Upload defaults → Monetization → Ad types → **uncheck mid-roll**.
+2. **Existing catalogue in bulk:** Content → select all → Edit → Monetization → Ad types → **uncheck mid-roll**.
+3. **Tier-1 fully ad-free:** Content → select those 9 → Edit → Monetization → **Off**.
+
+Revenue lives in the Monetization panel at \`/admin/analytics\` (and Studio → Revenue). India-heavy audience = low CPM, so it stays modest — the milestone + fan-funding matter more than ad dollars.
+`,
+  },
 ];
 
 /** Docs grouped by category, in registry order, for the sidebar. */
