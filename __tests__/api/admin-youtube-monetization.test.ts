@@ -96,11 +96,19 @@ it('computes gates, passes revenue error through, returns subs (happy path)', as
   expect(body.revenue).toEqual({ ok: false, error: expect.stringContaining('403') });
 });
 
-it('passes through real revenue when the monetary scope is present', async () => {
-  mockRevenue.mockResolvedValueOnce({ ok: true, data: { estimatedRevenue: 12.34, days: 28 } });
+it('passes through the real revenue breakdown when the monetary scope is present', async () => {
+  const breakdown = {
+    estimatedRevenue: 12.34,
+    estimatedAdRevenue: 9.1,
+    estimatedRedPartnerRevenue: 3.24,
+    playbackBasedCpm: 0.85,
+    monetizedPlaybacks: 4200,
+    days: 28,
+  };
+  mockRevenue.mockResolvedValueOnce({ ok: true, data: breakdown });
   const res = await GET(req());
   const body = await res.json();
-  expect(body.revenue).toEqual({ ok: true, data: { estimatedRevenue: 12.34, days: 28 } });
+  expect(body.revenue).toEqual({ ok: true, data: breakdown });
 });
 
 it('degrades to subs-only + flag when Analytics is not configured (never 500)', async () => {
