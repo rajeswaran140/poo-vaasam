@@ -10,6 +10,24 @@ import type { ChannelVideo } from '@/lib/youtube-feed';
 import { partitionShorts } from '@/lib/youtube-shorts';
 
 /**
+ * Clean, on-site title from a YouTube video title. Raj's uploads follow
+ * "Tamil hook | Romanized | English descriptor" (bilingual packaging for the
+ * algorithm) — the on-site page wants just the Tamil hook, minus emoji, so
+ * synced pages read like the hand-made ones (e.g. "செவ்விழி ஓவியமே"). Falls
+ * back to the raw title if cleaning would empty it.
+ */
+export function cleanSongTitle(rawTitle: string): string {
+  const firstSegment = rawTitle.split(/[|｜]/)[0] ?? rawTitle;
+  const cleaned = firstSegment
+    // Strip emoji / pictographs / symbols / variation selectors (Tamil is
+    // U+0B80–U+0BFF, well outside these ranges, so it's never touched).
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2190}-\u{21FF}\u{FE00}-\u{FE0F}\u{200D}]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned || rawTitle.trim();
+}
+
+/**
  * Neutral, lyrics-free page body — identical to the Publish Song flow's stub, so
  * synced pages read the same as hand-published ones and never expose lyrics.
  */
@@ -50,5 +68,5 @@ export function missingSongVideos(
   const { videos } = partitionShorts(channelVideos); // long-form only
   return videos
     .filter((v) => v.id && !have.has(v.id))
-    .map((v) => ({ id: v.id, title: v.title, watchUrl: v.watchUrl }));
+    .map((v) => ({ id: v.id, title: cleanSongTitle(v.title), watchUrl: v.watchUrl }));
 }

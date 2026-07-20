@@ -1,4 +1,4 @@
-import { missingSongVideos, songStubBody, ytThumbnailCandidates } from '@/lib/youtube-song-sync';
+import { cleanSongTitle, missingSongVideos, songStubBody, ytThumbnailCandidates } from '@/lib/youtube-song-sync';
 
 const v = (id: string, title: string, duration?: string) => ({
   id,
@@ -29,6 +29,29 @@ describe('missingSongVideos', () => {
 
   it('drops items with no id', () => {
     expect(missingSongVideos([v('', 'X', 'PT4M')], [])).toEqual([]);
+  });
+
+  it('cleans the YouTube packaging title down to the Tamil hook', () => {
+    const out = missingSongVideos([v('eeeeeeeeeee', 'மேப்பிள் காற்றே 🍁 | Maple Kaatre | Tamil Love Song', 'PT4M')], []);
+    expect(out[0].title).toBe('மேப்பிள் காற்றே');
+  });
+});
+
+describe('cleanSongTitle', () => {
+  it('keeps the Tamil hook before the first pipe and strips emoji', () => {
+    expect(cleanSongTitle('மேப்பிள் காற்றே 🍁 | Maple Kaatre | Tamil Love Song')).toBe('மேப்பிள் காற்றே');
+  });
+
+  it('leaves a clean single-title unchanged', () => {
+    expect(cleanSongTitle('செவ்விழி ஓவியமே')).toBe('செவ்விழி ஓவியமே');
+  });
+
+  it('handles the fullwidth pipe and collapses whitespace', () => {
+    expect(cleanSongTitle('கண்ணோடு நீர் அள்ளி　｜　Kannodu')).toBe('கண்ணோடு நீர் அள்ளி');
+  });
+
+  it('falls back to the raw title when cleaning would empty it', () => {
+    expect(cleanSongTitle('🍁')).toBe('🍁');
   });
 });
 
