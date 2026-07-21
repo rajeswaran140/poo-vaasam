@@ -16,7 +16,7 @@ verified evidence — not a checklist.
 | 2 | Rate-limiting / abuse | 🔴 NO-GO | Wire the existing limiter to unauth endpoints |
 | 3 | PIPEDA / personal data | 🔴 NO-GO | 3a consent (code) **and** 3b deletion runbook (ops) — both |
 | 4 | Blast radius of the merge | 🟢 GO | — (final read of ~6 shared files) |
-| 5 | Entitlement vs authentication | 🟢 GO* | *pending explicit "free tier is intended" confirmation |
+| 5 | Entitlement vs authentication | 🟢 GO | Confirmed (owner, 2026-07-21): free for any verified account |
 
 **Net: two hard blockers (rate-limiting, PIPEDA consent+deletion), one condition
 (Advanced Security), and one decision awaiting the owner's confirmation
@@ -122,10 +122,10 @@ the code matches "free tier." But the 🟢 is correct only if the owner confirms
 "free for any verified account" is the intended boundary, with monetization (if
 any) elsewhere.
 
-**AWAITING EXPLICIT CONFIRMATION — not ratified by silence.** If a paid gate is
-ever intended for instrumentals, name the boundary now: `requirePerformer` is the
-single chokepoint where it goes, even if unenforced today. Until confirmed, treat
-this as 🟡, not 🟢.
+**CONFIRMED 2026-07-21 (owner): free for any verified account is intended** —
+monetization (if any) lives elsewhere. Crux #5 is 🟢 GO on the evidence *and* the
+decision. `requirePerformer` is the named single chokepoint if a paid gate is ever
+introduced for instrumentals; unenforced today, by design.
 
 ---
 
