@@ -67,11 +67,15 @@ export class S3KaraokeInstrumentalStorage implements KaraokeInstrumentalStorage 
   private readonly bucket: string;
   private readonly now: () => Date;
 
-  constructor(opts: { bucket?: string; now?: () => Date } = {}) {
+  constructor(opts: { bucket?: string; region?: string; now?: () => Date } = {}) {
     // Fail closed: never default to the CDN-public media bucket.
     this.bucket = resolvePerformerAssetsBucket(opts.bucket);
     this.now = opts.now ?? (() => new Date());
-    this.client = new S3Client({ region: s3Config.region, credentials: s3Config.credentials });
+    // The gated bucket is us-east-1 (same as the media bucket + the Lambda@Edge
+    // runtime). Offline runs from another region MUST set PERFORMER_ASSETS_REGION
+    // or the PutObject region-mismatches. Runtime (us-east-1) resolves correctly.
+    const region = opts.region ?? process.env.PERFORMER_ASSETS_REGION ?? s3Config.region;
+    this.client = new S3Client({ region, credentials: s3Config.credentials });
   }
 
   async store(input: { songId: string; localPath: string }): Promise<{ objectKey: string; durationSeconds?: number }> {

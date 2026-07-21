@@ -2,31 +2,24 @@
  * DynamoKaraokeAssetRepository — infrastructure adapter for {@link
  * ../../application/ports/karaoke.KaraokeAssetRepository}.
  *
- * Records the karaoke asset on the song's existing content item
- * (PK=CONTENT#<id>, SK=METADATA) as additive attributes — no schema migration.
- * `karaokeAccess` mirrors the domain visibility so a read path can gate without
- * rehydrating the value object. Guarded by attribute_exists(PK): a karaoke
- * asset can only attach to a song that actually exists.
+ * Persists the generated instrumental into the SAME field the Performers
+ * feature already serves from — `instrumentalKey` (+ `instrumentalDuration`) on
+ * the song's Content item — by delegating to {@link ../../lib/performer-write.setPerformerAssets}.
+ * This is the deliberate reconciliation: the generation pipeline feeds the
+ * branch's existing gated stream route (`GET /api/performers/songs/[id]/track`
+ * behind `requirePerformer`) rather than introducing a parallel schema or a
+ * second serving path. The private object key is never exposed as a URL.
  */
 
-import { DynamoDBOperations } from '@/infrastructure/database/dynamodb-client';
+import { setPerformerAssets } from '@/lib/performer-write';
 import type { KaraokeAssetRepository } from '@/application/ports/karaoke';
 import type { KaraokeAsset } from '@/domain/songs/KaraokeAsset';
 
 export class DynamoKaraokeAssetRepository implements KaraokeAssetRepository {
   async save(asset: KaraokeAsset): Promise<void> {
-    await DynamoDBOperations.update({
-      key: { PK: `CONTENT#${asset.songId}`, SK: 'METADATA' },
-      updateExpression:
-        'SET karaokeInstrumentalKey = :k, karaokeAsset = :a, karaokeAccess = :v, updatedAt = :t',
-      expressionAttributeValues: {
-        // The private object key — never a public URL (serving is gated).
-        ':k': asset.instrumentalKey,
-        ':a': asset.toJSON(),
-        ':v': asset.visibility,
-        ':t': asset.createdAt,
-      },
-      conditionExpression: 'attribute_exists(PK)',
+    await setPerformerAssets(asset.songId, {
+      instrumentalKey: asset.instrumentalKey,
+      instrumentalDuration: asset.durationSeconds ?? null,
     });
   }
 }
