@@ -14,8 +14,6 @@ jest.mock('@/lib/auth-helper', () => ({
 
 jest.mock('@/lib/performer-songs', () => ({
   getPerformableSong: jest.fn(),
-  presignInstrumental: jest.fn(),
-  INSTRUMENTAL_URL_TTL_SECONDS: 300,
 }));
 
 import { GET } from '@/app/api/performers/songs/[id]/route';
@@ -24,7 +22,6 @@ import * as lib from '@/lib/performer-songs';
 
 const requirePerformer = auth.requirePerformer as jest.Mock;
 const getPerformableSong = lib.getPerformableSong as jest.Mock;
-const presignInstrumental = lib.presignInstrumental as jest.Mock;
 
 const req = (id = 'cnt_1') => new NextRequest(`https://tamilagaval.com/api/performers/songs/${id}`);
 const ctx = (id = 'cnt_1') => ({ params: Promise.resolve({ id }) });
@@ -52,15 +49,14 @@ it('returns 404 when the song is missing / unpublished / not performable', async
   getPerformableSong.mockResolvedValueOnce(null);
   const res = await GET(req(), ctx());
   expect(res.status).toBe(404);
-  expect(presignInstrumental).not.toHaveBeenCalled();
 });
 
-it('returns lyrics + a presigned track URL (and never the raw key)', async () => {
+it('returns lyrics + the same-origin gated track URL (never the raw key or a public URL)', async () => {
   getPerformableSong.mockResolvedValueOnce({
-    instrumentalKey: 'audio/instrumentals/cnt_1.mp3',
+    id: 'cnt_1',
+    instrumentalKey: 'performer-tracks/cnt_1.mp3',
     toDetailJSON: () => ({ id: 'cnt_1', slug: 'amma', title: 'அம்மா', artist: 'இராஜ்', theme: 'mother', lyrics: 'பல்லவி' }),
   });
-  presignInstrumental.mockResolvedValueOnce('https://signed.example/track?sig=abc');
 
   const res = await GET(req(), ctx());
   expect(res.status).toBe(200);
@@ -68,8 +64,7 @@ it('returns lyrics + a presigned track URL (and never the raw key)', async () =>
   expect(body.success).toBe(true);
   expect(body.song.lyrics).toBe('பல்லவி');
   expect(body.song).not.toHaveProperty('instrumentalKey');
-  expect(body.instrumentalUrl).toBe('https://signed.example/track?sig=abc');
-  expect(body.expiresIn).toBe(300);
-  // Presigned with the server-only key.
-  expect(presignInstrumental).toHaveBeenCalledWith('audio/instrumentals/cnt_1.mp3');
+  // The track is served via the gated streaming route, not a public/presigned URL.
+  expect(body.trackUrl).toBe('/api/performers/songs/cnt_1/track');
+  expect(JSON.stringify(body)).not.toContain('performer-tracks/cnt_1.mp3');
 });
