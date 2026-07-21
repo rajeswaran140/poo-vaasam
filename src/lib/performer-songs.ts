@@ -9,7 +9,7 @@
 
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
-import { s3Client, BUCKET_NAME } from '@/infrastructure/storage/s3-client';
+import { performerAssetsS3 } from '@/infrastructure/storage/performer-assets-s3';
 import { ContentType, ContentStatus } from '@/types/content';
 import { PerformerSong, type PerformerListItemDTO } from '@/domain/songs/PerformerSong';
 
@@ -54,15 +54,16 @@ export interface InstrumentalStream {
 
 /**
  * Stream a backing-track object straight from S3 to the caller. We deliberately
- * DO NOT hand out a presigned/CDN URL: the media bucket is fronted by a public
- * CloudFront distribution, so any URL into it is effectively public once the key
- * leaks. Streaming through this server route — only reachable behind
- * `requirePerformer` — is the actual gate: the bytes never have a publicly
- * fetchable address. Range is passed through so the browser can seek (206).
+ * DO NOT hand out a presigned/CDN URL. The bytes live in the GATED bucket, which
+ * is not an origin on the public media CloudFront distribution (Option A), so it
+ * has no public address at all; streaming through this server route — only
+ * reachable behind `requirePerformer` — is the gate. Range is passed through so
+ * the browser can seek (206).
  */
 export async function streamInstrumental(key: string, range?: string): Promise<InstrumentalStream> {
-  const res = await s3Client.send(
-    new GetObjectCommand({ Bucket: BUCKET_NAME, Key: key, ...(range ? { Range: range } : {}) })
+  const { client, bucket } = performerAssetsS3();
+  const res = await client.send(
+    new GetObjectCommand({ Bucket: bucket, Key: key, ...(range ? { Range: range } : {}) })
   );
   const body = (res.Body as { transformToWebStream(): ReadableStream }).transformToWebStream();
   return {
