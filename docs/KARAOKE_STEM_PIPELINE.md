@@ -83,6 +83,10 @@ a CDN URL.
 **Provisioned:** `PERFORMER_ASSETS_BUCKET=tamil-web-media-gated` (us-east-1;
 public-access-block all `true`; SSE-S3; NOT added to `EV5MK0A02KLHV`).
 
+**Locked decision:** the gated bucket is intentionally `us-east-1` — instrumental
+audio is creative output, not personal data (PIPEDA doesn't bite), so this lone
+exception to the `ca-central-1` stack is accepted rather than an accident.
+
 **Region decision — us-east-1 is deliberate.** The entire S3 media layer already
 lives in us-east-1 (`s3Config.region` is hardcoded us-east-1; masters, MP3s, and
 covers all sit there), so the gated bucket matches the existing S3 stack rather
