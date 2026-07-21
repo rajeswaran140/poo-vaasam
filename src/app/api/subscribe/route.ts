@@ -10,8 +10,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { DynamoDBOperations, handleDynamoDBError } from '@/infrastructure/database/dynamodb-client';
+import { RateLimiter, checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
+
+// Public unauthenticated write endpoint — cap per-IP to blunt list-flooding and
+// mass lead injection. Matches the limiter pattern used across the API.
+const limiter = new RateLimiter({ windowMs: 60_000, max: 5 });
 
 const schema = z.object({
   email: z.string().email('A valid email is required').max(200).trim().toLowerCase(),
@@ -21,6 +26,9 @@ const schema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  const rl = checkRateLimit(limiter, request);
+  if (!rl.allowed) return rateLimitedResponse(rl);
+
   try {
     const body = await request.json().catch(() => null);
     if (!body) {

@@ -43,3 +43,17 @@ it('silently accepts but does not store when the honeypot is filled', async () =
   expect(res.status).toBe(200);
   expect(mockPut).not.toHaveBeenCalled();
 });
+
+it('rate-limits repeated requests from one IP with 429', async () => {
+  mockPut.mockResolvedValue({});
+  const reqFrom = (email: string) =>
+    new NextRequest('https://tamilagaval.com/api/subscribe', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+      headers: { 'x-forwarded-for': '203.0.113.7' }, // distinct IP → own bucket
+    });
+  const statuses: number[] = [];
+  for (let i = 0; i < 6; i++) statuses.push((await POST(reqFrom(`u${i}@example.com`))).status);
+  expect(statuses.slice(0, 5).every((s) => s !== 429)).toBe(true); // first 5 allowed
+  expect(statuses[5]).toBe(429); // 6th blocked (5/min per IP)
+});
