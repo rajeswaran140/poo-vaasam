@@ -15,13 +15,17 @@ verified evidence — not a checklist.
 | 1 | Consumer-auth attack surface | 🟡 CONDITIONAL GO | Enable Cognito Advanced Security (has a per-MAU cost) |
 | 2 | Rate-limiting / abuse | 🔴 NO-GO | Wire the existing limiter to unauth endpoints |
 | 3 | PIPEDA / personal data | 🔴 NO-GO | 3a consent (code) **and** 3b deletion runbook (ops) — both |
-| 4 | Blast radius of the merge | 🟢 GO | — (final read of ~6 shared files) |
+| 4 | Blast radius (additive diff) | 🟢 GO | — (final read of ~6 shared files) |
 | 5 | Entitlement vs authentication | 🟢 GO | Confirmed (owner, 2026-07-21): free for any verified account |
+| 6 | Merge mechanics / branch staleness | 🔴 NO-GO | Re-integrate the 14 branch commits onto fresh master — do NOT merge the stale branch |
 
-**Net: two hard blockers (rate-limiting, PIPEDA consent+deletion), one condition
-(Advanced Security), and one decision awaiting the owner's confirmation
-(entitlement). The surface is otherwise well-managed** — much of the risk a
-generic "adding consumer auth" implies is absorbed by Cognito.
+**Net: three hard blockers (rate-limiting, PIPEDA consent+deletion, branch
+re-integration), one condition (Advanced Security). The auth surface itself is
+well-managed** — Cognito absorbs most of it — **but the branch is badly stale, and
+that, not the auth code, is the biggest merge risk.**
+
+> **Blocker 2 (rate-limiting) is done** — PR `feat/rate-limit-consumer-endpoints`
+> to master (the endpoints live on master; see crux #6). Full suite green.
 
 ---
 
@@ -105,7 +109,9 @@ prefix), `(admin)/layout.tsx` (nav link), `robots.ts` (disallow `/performers`).
 All additive; nothing unrelated rides along.
 
 **Clear it:** a final read of those ~6 shared files' diffs before merge — cheap,
-and it's the only place a regression could hide. No blocker.
+and it's the only place a regression could hide. No blocker **for the additive
+diff** — but see crux #6: this diff is measured against the *merge base*, and the
+branch has drifted 245 commits behind master since, which is a separate risk.
 
 ## Crux 5 — Entitlement vs authentication 🟢 GO
 
@@ -129,15 +135,43 @@ introduced for instrumentals; unenforced today, by design.
 
 ---
 
+## Crux 6 — Merge mechanics / branch staleness 🔴 NO-GO
+
+**Evidence (verified `git rev-list`).** `feat/performers-auth` is **245 commits
+behind master** and 14 ahead. The 50-file crux-#4 diff is three-dot (branch vs
+merge base) — it shows what the branch *adds*, not the 245 commits of master
+drift it would have to absorb. Concretely: `/api/lyrics/unlock` and the July
+email-lyrics gate don't exist on the branch (they shipped to master *after* the
+branch point) — which is exactly why blocker 2 targets master, not the branch.
+
+**Why it's a blocker.** Merging a 245-commit-stale branch directly is a large,
+conflict-prone reconciliation across shared files (`Content.ts`, `s3-client.ts`,
+`auth-helper.ts`, `types/content.ts`, admin routes) that master has since evolved.
+The auth code is fine; the *merge* is the risk.
+
+**Clear it (re-integration, not merge):** cut a fresh branch off **current
+master** and re-apply the 14 performers commits onto it (cherry-pick or rebase),
+resolving against today's master. That fresh branch — not the stale one — is what
+faces this review and carries blocker 3a (consent). The stale branch and
+`feat/phase3-rescue` are kept only as the source of the 14 commits until the
+re-integration lands on master.
+
 ## Recommended path to GO
 
-1. **Blockers first:** (a) wire `rate-limit.ts` to the two unauth endpoints;
-   (b) server-persist signup consent; (c) document the deletion/access runbook.
-2. **Condition:** flip Cognito Advanced Security to `AUDIT`, watch, then `ENFORCED`.
-3. **Pre-merge:** read the ~6 shared-file diffs; confirm the free-tier boundary.
+0. **Re-integrate first (crux #6):** cut a fresh branch off current master, re-apply
+   the 14 performers commits onto it. Everything below happens on *that* branch.
+1. **Blockers:** (a) rate-limit the two unauth endpoints — ✅ **DONE** (PR to
+   master, `feat/rate-limit-consumer-endpoints`); (b) server-persist signup
+   consent — code PR **on the re-integrated branch**, reviewed as a privacy
+   artifact; (c) document the deletion/access runbook — ops.
+2. **Condition:** flip Cognito Advanced Security to `AUDIT`, watch, then `ENFORCED`
+   (per-MAU cost — negligible now).
+3. **Pre-merge:** read the ~6 shared-file diffs against today's master; free-tier
+   boundary already confirmed (crux #5).
 4. Then merge → deploy → the karaoke go-live sequence (publish → IAM → authed
    `/track` playback via `verify-track-playback.ts` → 403 probe) runs against a
    real endpoint, as staged in `docs/KARAOKE_STEM_PIPELINE.md`.
 
-Items 1a and 1b are code changes (their own PRs); 1c/2/3 are ops/config. None are
-large — the review is narrow because Cognito absorbs most of the auth surface.
+Blocker 1a is done; 1b is a code change (its own PR, on the re-integrated branch);
+1c/2/3 are ops/config. The *auth* review is narrow — Cognito absorbs most of the
+surface — but the **branch re-integration (crux #6) is now the largest single item.**
