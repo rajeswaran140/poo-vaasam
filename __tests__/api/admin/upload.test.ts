@@ -25,11 +25,12 @@ jest.mock('@/infrastructure/storage/s3-client', () => ({
   normalizeContentType: (ct: string) =>
     ({ 'audio/mp3': 'audio/mpeg', 'audio/x-wav': 'audio/wav' }[ct] ?? ct),
   FILE_CONSTRAINTS: {
-    maxSize: { image: 10 * 1024 * 1024, audio: 50 * 1024 * 1024, video: 50 * 1024 * 1024 },
+    maxSize: { image: 10 * 1024 * 1024, audio: 50 * 1024 * 1024, video: 50 * 1024 * 1024, instrumental: 100 * 1024 * 1024 },
     allowedTypes: {
       image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
       audio: ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg'],
       video: ['video/mp4', 'video/webm', 'video/quicktime', 'video/ogg'],
+      instrumental: ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg'],
     },
   },
 }));
@@ -112,6 +113,17 @@ describe('POST /api/admin/upload — presigning', () => {
       'audio/mpeg',
       expect.any(Number),
       expect.any(Number)
+    );
+  });
+
+  it('puts a gated instrumental under the PRIVATE performer-tracks/ prefix', async () => {
+    const res = await POST(
+      makeRequest({ filename: 'backing.mp3', contentType: 'audio/mpeg', kind: 'instrumental', size: 1024 })
+    );
+    expect(res.status).toBe(200);
+    // Must NOT land under the public audio/ prefix — gating depends on it.
+    expect(S3Operations.generateFileKey).toHaveBeenCalledWith(
+      expect.objectContaining({ folder: 'performer-tracks' })
     );
   });
 

@@ -83,6 +83,18 @@ a CDN URL.
 **Provisioned:** `PERFORMER_ASSETS_BUCKET=tamil-web-media-gated` (us-east-1;
 public-access-block all `true`; SSE-S3; NOT added to `EV5MK0A02KLHV`).
 
+**Region decision — us-east-1 is deliberate.** The entire S3 media layer already
+lives in us-east-1 (`s3Config.region` is hardcoded us-east-1; masters, MP3s, and
+covers all sit there), so the gated bucket matches the existing S3 stack rather
+than becoming a lone `ca-central-1` exception. The app compute is `ca-central-1`
+(WEB_COMPUTE), but it already reaches us-east-1 for every S3 access — the gated
+read is the same hop, not a new one. Instrumentals are the same creative-audio
+data class as the masters (no PIPEDA/personal-data concern), so moving one bucket
+to Canada would not advance residency while the rest stays. Because
+`s3Config.region` is already us-east-1, `PERFORMER_ASSETS_REGION` is an *optional
+override*, not a requirement — the default resolves correctly at runtime and for
+the offline publisher.
+
 **Verified GREEN 2026-07-21** (anonymous, a real key):
 - via CloudFront → **403** (bucket is not an origin on the distribution)
 - direct S3 → **403** (public access blocked)
@@ -127,8 +139,9 @@ npx tsx scripts/generate-karaoke-stem.ts \
   --out ~/karaoke/sevvizhi-instrumental.mp3
 
 # PUBLISH — upload to the private gated bucket + record via setPerformerAssets.
-# The gated bucket is us-east-1, so an offline run must pin the region too.
-PERFORMER_ASSETS_BUCKET=tamil-web-media-gated PERFORMER_ASSETS_REGION=us-east-1 \
+# s3Config.region is already us-east-1 (the gated bucket's region), so no region
+# env is needed; set PERFORMER_ASSETS_REGION only to override.
+PERFORMER_ASSETS_BUCKET=tamil-web-media-gated \
   npx tsx scripts/generate-karaoke-stem.ts --song sevvizhi-oviyame --audio <url> --publish
 ```
 

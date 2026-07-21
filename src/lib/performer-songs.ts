@@ -7,14 +7,11 @@
  * `requirePerformer` — these functions do NO auth of their own.
  */
 
+import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
-import { S3Operations } from '@/infrastructure/storage/s3-client';
+import { performerAssetsS3 } from '@/infrastructure/storage/performer-assets-s3';
 import { ContentType, ContentStatus } from '@/types/content';
 import { PerformerSong, type PerformerListItemDTO } from '@/domain/songs/PerformerSong';
-
-/** Backing-track presigned-URL lifetime. Short by design — the URL is re-minted
- *  on each song open, so a leaked link expires quickly. */
-export const INSTRUMENTAL_URL_TTL_SECONDS = 300;
 
 // Generous bound — the catalogue is ~30 songs; performable ones are a subset.
 const LIST_SCAN_LIMIT = 200;
@@ -46,7 +43,34 @@ export async function getPerformableSong(id: string): Promise<PerformerSong | nu
   return PerformerSong.fromContent(content);
 }
 
-/** Mint a short-lived presigned GET URL for a backing-track S3 object. */
-export function presignInstrumental(key: string): Promise<string> {
-  return S3Operations.getSignedUrl(key, INSTRUMENTAL_URL_TTL_SECONDS);
+export interface InstrumentalStream {
+  body: ReadableStream;
+  contentType: string;
+  contentLength?: number;
+  contentRange?: string;
+  /** 206 when an HTTP Range was satisfied (audio seeking), else 200. */
+  statusCode: 200 | 206;
+}
+
+/**
+ * Stream a backing-track object straight from S3 to the caller. We deliberately
+ * DO NOT hand out a presigned/CDN URL. The bytes live in the GATED bucket, which
+ * is not an origin on the public media CloudFront distribution (Option A), so it
+ * has no public address at all; streaming through this server route — only
+ * reachable behind `requirePerformer` — is the gate. Range is passed through so
+ * the browser can seek (206).
+ */
+export async function streamInstrumental(key: string, range?: string): Promise<InstrumentalStream> {
+  const { client, bucket } = performerAssetsS3();
+  const res = await client.send(
+    new GetObjectCommand({ Bucket: bucket, Key: key, ...(range ? { Range: range } : {}) })
+  );
+  const body = (res.Body as { transformToWebStream(): ReadableStream }).transformToWebStream();
+  return {
+    body,
+    contentType: res.ContentType || 'audio/mpeg',
+    contentLength: typeof res.ContentLength === 'number' ? res.ContentLength : undefined,
+    contentRange: res.ContentRange,
+    statusCode: res.ContentRange ? 206 : 200,
+  };
 }
