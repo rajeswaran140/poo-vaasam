@@ -59,3 +59,17 @@ it('silently accepts but does NOT store or set a cookie when the honeypot is fil
   expect(mockPut).not.toHaveBeenCalled();
   expect(res.cookies.get(LYRICS_GATE_COOKIE)).toBeUndefined();
 });
+
+it('rate-limits repeated requests from one IP with 429', async () => {
+  mockPut.mockResolvedValue({});
+  const reqFrom = (email: string) =>
+    new NextRequest('https://tamilagaval.com/api/lyrics/unlock', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+      headers: { 'x-forwarded-for': '203.0.113.9' }, // distinct IP → own bucket
+    });
+  const statuses: number[] = [];
+  for (let i = 0; i < 6; i++) statuses.push((await POST(reqFrom(`u${i}@example.com`))).status);
+  expect(statuses.slice(0, 5).every((s) => s !== 429)).toBe(true); // first 5 allowed
+  expect(statuses[5]).toBe(429); // 6th blocked (5/min per IP)
+});
