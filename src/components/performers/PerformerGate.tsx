@@ -27,8 +27,8 @@ import {
 } from '@aws-amplify/ui-react';
 import '@aws-amplify/ui-react/styles.css';
 import '@/lib/amplify-config';
-import { ReactNode } from 'react';
-import { clearCognitoCookies } from '@/lib/client-auth';
+import { ReactNode, useEffect } from 'react';
+import { clearCognitoCookies, performerFetch } from '@/lib/client-auth';
 
 const performerTheme: Theme = {
   name: 'tamilagaval-performers',
@@ -84,6 +84,17 @@ const authServices = {
 
 export function PerformerGate({ children }: { children: ReactNode }) {
   const { authStatus, user, signOut } = useAuthenticator((c) => [c.authStatus, c.user]);
+
+  // Persist a durable, server-side consent record once the performer is
+  // authenticated (the signup checkbox is only a client gate). Idempotent on the
+  // server, so posting on every authenticated mount is safe; fire-and-forget so a
+  // transient failure never blocks the portal (it retries on the next visit).
+  useEffect(() => {
+    if (authStatus !== 'authenticated') return;
+    performerFetch('/api/performers/consent', { method: 'POST' }).catch(() => {
+      /* non-blocking — consent re-records on the next authenticated visit */
+    });
+  }, [authStatus]);
 
   const handleSignOut = async () => {
     try {
