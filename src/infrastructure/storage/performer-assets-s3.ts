@@ -24,8 +24,10 @@ let cachedClient: S3Client | undefined;
 export function performerAssetsS3(): { client: S3Client; bucket: string } {
   const bucket = resolvePerformerAssetsBucket();
   if (!cachedClient) {
-    // The gated bucket is us-east-1 (matches the Lambda@Edge runtime); an
-    // offline caller in another region must set PERFORMER_ASSETS_REGION.
+    // The gated bucket is us-east-1 — same region as the rest of the S3 media
+    // layer (s3Config.region), so this default already matches. Compute runs in
+    // ca-central-1 (WEB_COMPUTE); the cross-region read is the same hop every S3
+    // access already makes. PERFORMER_ASSETS_REGION is an optional override.
     const region = process.env.PERFORMER_ASSETS_REGION ?? s3Config.region;
     cachedClient = new S3Client({ region, credentials: s3Config.credentials });
   }

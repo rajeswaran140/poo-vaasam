@@ -71,9 +71,10 @@ export class S3KaraokeInstrumentalStorage implements KaraokeInstrumentalStorage 
     // Fail closed: never default to the CDN-public media bucket.
     this.bucket = resolvePerformerAssetsBucket(opts.bucket);
     this.now = opts.now ?? (() => new Date());
-    // The gated bucket is us-east-1 (same as the media bucket + the Lambda@Edge
-    // runtime). Offline runs from another region MUST set PERFORMER_ASSETS_REGION
-    // or the PutObject region-mismatches. Runtime (us-east-1) resolves correctly.
+    // The gated bucket is us-east-1 — the same region as the rest of the S3
+    // media layer (s3Config.region is hardcoded us-east-1; all masters/MP3s/covers
+    // live there), so this default already matches the bucket with no extra env.
+    // PERFORMER_ASSETS_REGION is an optional override, not a requirement.
     const region = opts.region ?? process.env.PERFORMER_ASSETS_REGION ?? s3Config.region;
     this.client = new S3Client({ region, credentials: s3Config.credentials });
   }
