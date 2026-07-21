@@ -39,6 +39,28 @@ describe('Content round-trip — performer fields', () => {
     expect(obj.instrumentalKey).toBe('audio/instrumentals/cnt_1.mp3');
     expect(obj.instrumentalDuration).toBe(230);
   });
+
+  // Re-integration guard: emotionAnalysis (master) and the performer fields
+  // (lyrics/instrumentalKey/instrumentalDuration) are adjacent tail-of-constructor
+  // slots added from different sides. lyrics + instrumentalKey are both
+  // `string | undefined`, so a positional swap would compile cleanly — only a
+  // round-trip with DISTINCT values catches it. Co-exercise them together.
+  it('preserves emotionAnalysis ALONGSIDE the performer fields (adjacency, distinct values)', () => {
+    const emotionAnalysis = {
+      emotion: 'longing',
+      mood: 'wistful',
+      themes: ['mother'],
+      musicRecommendation: 'soft strings',
+      ttsSpeed: 0.95,
+      ttsPitch: -1,
+      summary: 'a gentle ache',
+    };
+    const obj = Content.fromObject(baseRow({ emotionAnalysis })).toObject();
+    expect(obj.emotionAnalysis).toEqual(emotionAnalysis); // master's slot, unswapped
+    expect(obj.lyrics).toBe('பல்லவி\nஅம்மா...'); // NOT the key, NOT the analysis
+    expect(obj.instrumentalKey).toBe('audio/instrumentals/cnt_1.mp3'); // NOT the lyrics
+    expect(obj.instrumentalDuration).toBe(230);
+  });
 });
 
 describe('PerformerSong.fromContent', () => {
