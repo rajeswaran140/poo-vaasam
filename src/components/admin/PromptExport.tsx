@@ -73,6 +73,14 @@ export function PromptExport({
       stylePrompt: v.prompt,
       mood: result.mood,
       theme: result.theme,
+      // Structured direction the brief already computed — without these the
+      // style box got only the model's prose paragraph, and the recommended
+      // VOICE never reached the generator at all.
+      bpm: result.suggested_bpm,
+      key: result.suggested_key,
+      instruments: result.suggested_instruments,
+      ragas: result.suggested_ragas,
+      voice: result.recommended_voice,
     });
   }, [variants, selectedIdx, lyrics, result.song_titles, result.mood, result.theme]);
 

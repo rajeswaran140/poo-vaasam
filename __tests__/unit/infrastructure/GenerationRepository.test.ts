@@ -153,3 +153,19 @@ it('propagates DynamoDB errors via handleDynamoDBError', async () => {
   ops.put.mockRejectedValueOnce(new Error('ddb down'));
   await expect(new GenerationRepository().create(input)).rejects.toThrow('ddb down');
 });
+
+// fromDBItem is a WHITELIST projection: a field added to the Zod schema alone
+// would persist on write and then vanish on read. promptText is the field that
+// makes an attempt reproducible, so silently losing it would be the worst case.
+it('round-trips promptText (whitelist projection must include it)', async () => {
+  const promptText = 'Carnatic devotional ballad, 78 BPM, veena lead, Male Baritone.';
+  ops.put.mockResolvedValueOnce({});
+  await new GenerationRepository().create({ ...input, promptText });
+  expect(ops.put.mock.calls[0][0].promptText).toBe(promptText);
+
+  ops.query.mockResolvedValueOnce({
+    Items: [{ id: 'gen_11', briefId: 'brief_42', verdict: 'success', promptText, scores: {}, settings: {} }],
+  });
+  const [read] = await new GenerationRepository().listByBrief('brief_42');
+  expect(read.promptText).toBe(promptText);
+});

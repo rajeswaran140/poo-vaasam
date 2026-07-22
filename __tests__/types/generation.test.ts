@@ -132,3 +132,26 @@ describe('createGenerationSchema', () => {
     expect(createGenerationSchema.safeParse({ ...base, failureReason: 'autotune' }).success).toBe(false);
   });
 });
+
+// promptText added 2026-07-22: chosenStyle records only WHICH variant was
+// picked, so a hand-edited prompt — exactly what you do when hunting for
+// wording that still lands post-regression — left the attempt unreproducible.
+describe('promptText', () => {
+  const base = { briefId: 'b1', verdict: 'success' as const };
+
+  it('accepts and trims the prompt actually submitted', () => {
+    const r = createGenerationSchema.safeParse({ ...base, promptText: '  Carnatic ballad, 78 BPM.  ' });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.promptText).toBe('Carnatic ballad, 78 BPM.');
+  });
+
+  it('stays optional so pre-existing rows remain valid', () => {
+    const r = createGenerationSchema.safeParse(base);
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.promptText).toBeUndefined();
+  });
+
+  it('rejects an absurdly long prompt', () => {
+    expect(createGenerationSchema.safeParse({ ...base, promptText: 'x'.repeat(4001) }).success).toBe(false);
+  });
+});

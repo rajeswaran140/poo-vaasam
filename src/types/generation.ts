@@ -104,6 +104,17 @@ export const createGenerationSchema = z
     engine: z.enum(GENERATION_ENGINES).default('suno'),
     /** Which brief style variant this attempt used (label from suno_prompts). */
     chosenStyle: z.string().max(120).optional(),
+    /**
+     * The style prompt text ACTUALLY submitted to the engine.
+     *
+     * `chosenStyle` only records which variant label was picked, so it points at
+     * the brief's stored prompt — which is wrong the moment the prompt is edited
+     * by hand before pasting, and hand-editing is precisely what you do when
+     * hunting for a wording that still lands. Without the literal text there is
+     * no way to ask "does phrasing A beat phrasing B", so an attempt was
+     * unreproducible. Optional: old rows predate it.
+     */
+    promptText: z.string().max(4000).trim().optional(),
     audioUrl: z.preprocess(
       (v) => (v === '' || v === null ? undefined : v),
       // An audio URL must be http(s) — rejects junk schemes (javascript:, data:, …).

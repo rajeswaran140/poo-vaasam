@@ -23,6 +23,18 @@ export interface ExportPackInput {
   /** Optional brief context that tunes the recommendations. */
   mood?: string;
   theme?: string;
+  /**
+   * Structured musical direction from the brief. The variant paragraph is ASKED
+   * to mention tempo/instrumentation, but it's prose from a model — it drifts,
+   * and `recommended_voice` was never in its remit at all. Passing these lets us
+   * append a deterministic anchor line so the exact values always reach the
+   * generator's style box. See buildStyleAnchor.
+   */
+  bpm?: number;
+  key?: string;
+  instruments?: string[];
+  ragas?: string[];
+  voice?: string[];
 }
 
 export interface ExportPack {
@@ -65,13 +77,50 @@ export function deriveWeirdness(stylePrompt: string, mood = ''): number {
   return 20;
 }
 
+/**
+ * A compact, explicit restatement of the brief's structured direction, appended
+ * to the style prompt.
+ *
+ * Why this exists: generators anchor far better on named genre, BPM,
+ * instrumentation and VOCAL CHARACTER than on a prose paragraph — which is also
+ * what Suno support advised when prompt adherence regressed (2026-07). The
+ * variant paragraph is model prose and drifts; worse, the brief's
+ * `recommended_voice` never reached the style box at all, so the one field
+ * describing the singer was being computed and then dropped.
+ *
+ * Deliberately deterministic string-building — no model in this path — so the
+ * exported pack is reproducible and unit-testable. Empty sections are omitted
+ * rather than emitted blank, and a brief with no structured fields yields '',
+ * leaving the prompt exactly as it was.
+ */
+export function buildStyleAnchor(input: ExportPackInput): string {
+  const parts: string[] = [];
+  const list = (xs?: string[]) => (xs ?? []).map((x) => (x ?? '').trim()).filter(Boolean);
+
+  if (Number.isFinite(input.bpm as number)) parts.push(`${input.bpm} BPM`);
+  const key = (input.key ?? '').trim();
+  if (key) parts.push(`key ${key}`);
+
+  const ragas = list(input.ragas);
+  if (ragas.length) parts.push(`raga ${ragas[0]}`);
+
+  const instruments = list(input.instruments);
+  if (instruments.length) parts.push(`lead instruments ${instruments.join(', ')}`);
+
+  const voice = list(input.voice);
+  if (voice.length) parts.push(`vocal ${voice[0]}`);
+
+  return parts.length ? `${parts.join('. ')}.` : '';
+}
+
 export function buildExportPack(input: ExportPackInput): ExportPack {
   const stylePrompt = (input.stylePrompt ?? '').trim();
+  const anchor = buildStyleAnchor(input);
   return {
     title: (input.title ?? '').trim() || 'Untitled',
     lyrics: (input.lyrics ?? '').trim(),
     styleName: (input.styleName ?? '').trim(),
-    style: stylePrompt,
+    style: [stylePrompt, anchor].filter(Boolean).join(' '),
     excludeStyles: deriveExclusions(stylePrompt),
     weirdnessPct: deriveWeirdness(stylePrompt, input.mood),
     // Moderate-high: follow the described instrumentation/raga fairly closely.

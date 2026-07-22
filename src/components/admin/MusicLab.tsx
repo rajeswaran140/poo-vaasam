@@ -238,6 +238,8 @@ function InsightsPanel({ report: r }: { report: InsightsReport }) {
   const reliableStyles = r.byStyle.filter((s) => s.reliable).slice(0, 3);
   const reliableVoices = r.byVoice.filter((s) => s.reliable).slice(0, 3);
   const reliableModels = r.byModel.filter((s) => s.reliable).slice(0, 3);
+  // Engine VERSION hit-rate — shows a vendor model change moving quality.
+  const reliableVersions = r.byEngineVersion.filter((s) => s.reliable).slice(0, 4);
   const scoredAxes = AXES.filter((a) => r.scoreContrast[a].gap != null);
 
   return (
@@ -286,6 +288,12 @@ function InsightsPanel({ report: r }: { report: InsightsReport }) {
             <div>
               <p className="mb-1 font-semibold uppercase tracking-wide text-gray-400">Model hit-rate</p>
               <p>{reliableModels.map((s) => `${s.key} ${pct(s.rate)} (${s.total})`).join(' · ')}</p>
+            </div>
+          )}
+          {reliableVersions.length > 0 && (
+            <div>
+              <p className="mb-1 font-semibold uppercase tracking-wide text-gray-400">Engine version hit-rate</p>
+              <p>{reliableVersions.map((s) => `${s.key} ${pct(s.rate)} (${s.total})`).join(' · ')}</p>
             </div>
           )}
           {scoredAxes.length > 0 && (
@@ -430,6 +438,11 @@ function LogGenerationForm({ brief, onSaved }: { brief: SavedBrief; onSaved: (g:
 
   const [engine, setEngine] = useState<string>('suno');
   const [chosenStyle, setChosenStyle] = useState<string>(styles[0] ?? '');
+  // The prompt text actually submitted. Prefilled from the chosen variant, but
+  // EDITABLE — hunting for wording that still lands means hand-tweaking before
+  // pasting, and an unrecorded tweak makes the attempt unreproducible.
+  const [promptText, setPromptText] = useState('');
+  const [promptDirty, setPromptDirty] = useState(false);
   const [audioUrl, setAudioUrl] = useState('');
   const [weirdness, setWeirdness] = useState('');
   const [styleInfluence, setStyleInfluence] = useState('');
@@ -451,6 +464,8 @@ function LogGenerationForm({ brief, onSaved }: { brief: SavedBrief; onSaved: (g:
   // Reset the form when the brief changes (don't leak one brief's draft into another).
   useEffect(() => {
     setChosenStyle((brief.analysis?.suno_prompts?.[0]?.style) ?? '');
+    setPromptText((brief.analysis?.suno_prompts?.[0]?.prompt) ?? '');
+    setPromptDirty(false);
     setEngine('suno');
     setAudioUrl(''); setWeirdness(''); setStyleInfluence(''); setEngineModel('');
     setVoiceLabel(''); setCustomModel(''); setStemRevisionsText('');
@@ -515,6 +530,7 @@ function LogGenerationForm({ brief, onSaved }: { brief: SavedBrief; onSaved: (g:
       briefId: brief.id,
       engine,
       chosenStyle: chosenStyle || undefined,
+      promptText: promptText.trim() || undefined,
       audioUrl: audioUrl || undefined,
       settings,
       scores,
@@ -575,7 +591,19 @@ function LogGenerationForm({ brief, onSaved }: { brief: SavedBrief; onSaved: (g:
         <label className="flex flex-col gap-1 text-sm font-medium text-gray-700 dark:text-gray-200">
           Style variant {styles.length === 0 && <span className="text-xs font-normal text-gray-400">(brief has none)</span>}
           {styles.length > 0 ? (
-            <select value={chosenStyle} onChange={(e) => setChosenStyle(e.target.value)} className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
+            <select
+              value={chosenStyle}
+              onChange={(e) => {
+                setChosenStyle(e.target.value);
+                // Follow the variant's prompt unless the user has hand-edited —
+                // never silently discard their wording.
+                if (!promptDirty) {
+                  const v = brief.analysis?.suno_prompts?.find((p) => p.style === e.target.value);
+                  setPromptText(v?.prompt ?? '');
+                }
+              }}
+              className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+            >
               {styles.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           ) : (
@@ -583,6 +611,21 @@ function LogGenerationForm({ brief, onSaved }: { brief: SavedBrief; onSaved: (g:
           )}
         </label>
       </div>
+
+      <label className="mt-4 flex flex-col gap-1 text-sm font-medium text-gray-700 dark:text-gray-200">
+        Style prompt actually used
+        <span className="text-xs font-normal text-gray-400">
+          Prefilled from the variant — edit it to match exactly what you pasted, so this
+          attempt is reproducible and comparable{promptDirty && ' · edited'}
+        </span>
+        <textarea
+          value={promptText}
+          onChange={(e) => { setPromptText(e.target.value); setPromptDirty(true); }}
+          rows={3}
+          placeholder="The style/instrumentation/tempo text submitted to the engine"
+          className="rounded-md border border-gray-300 px-3 py-2 font-mono text-xs dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+        />
+      </label>
 
       <div className="mt-4">
         <MediaUploadField kind="audio" label="Audio" value={audioUrl} onChange={setAudioUrl} helpText="Upload the generated MP3, or paste a URL. Optional — you can rate before the audio is back." />

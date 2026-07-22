@@ -124,6 +124,7 @@ export class GenerationRepository {
       updatedAt: item.updatedAt,
       engine: item.engine,
       chosenStyle: item.chosenStyle,
+      promptText: item.promptText,
       audioUrl: item.audioUrl,
       settings: item.settings ?? {},
       scores: item.scores ?? {},
