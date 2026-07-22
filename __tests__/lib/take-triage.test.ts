@@ -15,6 +15,8 @@ import {
   nextUndecided,
   exportQueue,
   exportRecipes,
+  isDerivedOutput,
+  isScannable,
   type TriageManifest,
 } from '@/lib/take-triage';
 
@@ -168,6 +170,36 @@ describe('mergeScan — rename survival via content hash', () => {
     expect(m.takes).toHaveLength(3);
     expect(m.takes.find((t) => t.hash === 'H1')?.decision).toBe('instrumental');
     expect(m.takes.find((t) => t.hash === 'H3')?.decision).toBe('undecided');
+  });
+});
+
+// Found by running Demucs for real: its `-instrumental` output, written into
+// the triage root, came back on the next scan as a NEW undecided take. You'd
+// re-triage your own derived files, and could feed an instrumental back into
+// Demucs.
+describe('isDerivedOutput / isScannable', () => {
+  it('flags this toolchain’s own outputs', () => {
+    expect(isDerivedOutput('sorted/amma-instrumental.mp3')).toBe(true);
+    expect(isDerivedOutput('x-master.wav')).toBe(true);
+    expect(isDerivedOutput('hooks/opening-short.mp4')).toBe(true);
+    expect(isDerivedOutput('htdemucs/song-no_vocals.wav')).toBe(true);
+  });
+
+  it('does NOT flag an ordinary take, even one that mentions instruments', () => {
+    expect(isDerivedOutput('take-042.mp3')).toBe(false);
+    expect(isDerivedOutput('flute-and-veena-ballad.mp3')).toBe(false); // not a SUFFIX
+    expect(isDerivedOutput('instrumental-intro-take.mp3')).toBe(false); // suffix is at the END
+  });
+
+  it('is case-insensitive on the suffix', () => {
+    expect(isDerivedOutput('AMMA-INSTRUMENTAL.MP3')).toBe(true);
+  });
+
+  it('honours user --exclude substrings without touching derived rules', () => {
+    expect(isScannable('rejects/take-1.mp3', ['rejects'])).toBe(false);
+    expect(isScannable('keepers/take-1.mp3', ['rejects'])).toBe(true);
+    expect(isScannable('take-1.mp3')).toBe(true);
+    expect(isScannable('take-1-instrumental.mp3')).toBe(false); // derived, even with no --exclude
   });
 });
 

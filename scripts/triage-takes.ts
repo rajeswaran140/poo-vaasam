@@ -48,6 +48,8 @@ import {
   nextUndecided,
   exportQueue,
   exportRecipes,
+  isScannable,
+  DERIVED_SUFFIXES,
   type TakeDecision,
   type TriageManifest,
 } from '../src/lib/take-triage';
@@ -140,7 +142,15 @@ function cmdScan(): void {
   const mp = manifestPath(dir);
   const before = load(mp, root);
 
-  const files = walk(root);
+  // Repeatable: --exclude stems --exclude rejects
+  const exclude: string[] = [];
+  process.argv.forEach((a, i) => { if (a === '--exclude' && process.argv[i + 1]) exclude.push(process.argv[i + 1]); });
+
+  const all = walk(root);
+  const files = all.filter((abs) => isScannable(relative(root, abs), exclude));
+  const skipped = all.length - files.length;
+  if (skipped) console.log(`skipping ${skipped} derived/excluded file(s) — suffixes: ${DERIVED_SUFFIXES.join(', ')}`);
+
   const probe = has('--probe');
   if (probe) console.log(`probing ${files.length} files (ffprobe + ffmpeg) — this is the slow path…`);
 
@@ -246,7 +256,7 @@ const CMDS: Record<string, () => void> = {
 const cmd = process.argv[2];
 if (!cmd || !CMDS[cmd]) {
   console.error(`Usage: npx tsx scripts/triage-takes.ts <${Object.keys(CMDS).join('|')}> [flags]\n`);
-  console.error('  scan    --dir <path> [--probe] [--no-hash]  add files (decisions preserved, survive renames)');
+  console.error('  scan    --dir <path> [--probe] [--no-hash] [--exclude <substr>]  add files (verdicts survive renames)');
   console.error('  stats                                  progress + queue sizes');
   console.error('  next    [--n 5]                        next undecided take(s) to listen to');
   console.error(`  set     --file <p> --decision <${TAKE_DECISIONS.join('|')}> [--note "..."]`);

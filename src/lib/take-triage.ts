@@ -67,6 +67,37 @@ export interface TriageManifest {
   takes: TakeRecord[];
 }
 
+/**
+ * Filename suffixes this toolchain itself produces. A scan skips them.
+ *
+ * Found by running the pipeline for real: writing a Demucs instrumental into the
+ * triage root made the next scan pick it up as a NEW undecided take. That is
+ * quietly bad — you re-triage your own derived files, the counts drift, and
+ * nothing stops a derived instrumental being fed back through Demucs a second
+ * time.
+ *
+ * Deliberately narrow: only OUR OWN output conventions are auto-skipped, never a
+ * guess at what a folder means. Anything else is opt-in via --exclude, because
+ * silently ignoring a take the user actually wanted is the worse failure.
+ */
+export const DERIVED_SUFFIXES = ['-instrumental', '-master', '-short', '-no_vocals'] as const;
+
+/** Does this path look like something the pipeline generated rather than a take? */
+export function isDerivedOutput(file: string): boolean {
+  const stem = file.replace(/\.[^./]+$/, '').toLowerCase();
+  return DERIVED_SUFFIXES.some((s) => stem.endsWith(s));
+}
+
+/**
+ * Should a scanned path be triaged? Applies the derived-output rule plus any
+ * user-supplied substrings. Pure, so the skip rules are testable without a disk.
+ */
+export function isScannable(file: string, exclude: string[] = []): boolean {
+  if (isDerivedOutput(file)) return false;
+  const lower = file.toLowerCase();
+  return !exclude.some((x) => x && lower.includes(x.toLowerCase()));
+}
+
 export function emptyManifest(root: string): TriageManifest {
   return { version: 1, root, takes: [] };
 }
