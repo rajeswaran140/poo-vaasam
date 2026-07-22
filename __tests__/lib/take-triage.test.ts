@@ -79,6 +79,98 @@ describe('mergeScan', () => {
   });
 });
 
+// Identity is the content hash, so a verdict follows the audio when takes get
+// reorganised between sittings. Re-listening to a take because it moved is the
+// exact waste this tool exists to prevent.
+describe('mergeScan — rename survival via content hash', () => {
+  const hashed = (file: string, hash: string) => ({ file, hash });
+
+  function withHashes(): TriageManifest {
+    let m = mergeScan(emptyManifest('/takes'), [hashed('a.mp3', 'H1'), hashed('b.mp3', 'H2')]);
+    m = (setDecision(m, 'a.mp3', 'instrumental', { note: 'keeper arrangement', now: NOW }) as { manifest: TriageManifest }).manifest;
+    return m;
+  }
+
+  it('carries the verdict to the new path when a file is renamed', () => {
+    const m = mergeScan(withHashes(), [hashed('renamed.mp3', 'H1'), hashed('b.mp3', 'H2')]);
+    const moved = m.takes.find((t) => t.hash === 'H1');
+    expect(moved?.file).toBe('renamed.mp3');
+    expect(moved?.decision).toBe('instrumental');
+    expect(moved?.note).toBe('keeper arrangement');
+    expect(moved?.missing).toBeUndefined();
+    expect(m.takes).toHaveLength(2); // not orphaned + re-added
+  });
+
+  it('follows a file moved into a different folder', () => {
+    const m = mergeScan(withHashes(), [hashed('sorted/keepers/a.mp3', 'H1'), hashed('b.mp3', 'H2')]);
+    expect(m.takes.find((t) => t.hash === 'H1')?.file).toBe('sorted/keepers/a.mp3');
+    expect(m.takes.find((t) => t.hash === 'H1')?.decision).toBe('instrumental');
+  });
+
+  it('still flags missing when the content is genuinely gone', () => {
+    const m = mergeScan(withHashes(), [hashed('b.mp3', 'H2')]);
+    expect(m.takes.find((t) => t.hash === 'H1')?.missing).toBe(true);
+  });
+
+  // A wrong transfer is worse than re-triaging: it would put a verdict on the
+  // wrong audio, silently.
+  it('does not let two rows claim the same duplicate file', () => {
+    let m = mergeScan(emptyManifest('/takes'), [hashed('one.mp3', 'DUP'), hashed('two.mp3', 'DUP')]);
+    m = (setDecision(m, 'one.mp3', 'keep', { now: NOW }) as { manifest: TriageManifest }).manifest;
+    m = (setDecision(m, 'two.mp3', 'discard', { now: NOW }) as { manifest: TriageManifest }).manifest;
+    const after = mergeScan(m, [hashed('one.mp3', 'DUP'), hashed('two.mp3', 'DUP')]);
+    expect(after.takes).toHaveLength(2);
+    expect(after.takes.find((t) => t.file === 'one.mp3')?.decision).toBe('keep');
+    expect(after.takes.find((t) => t.file === 'two.mp3')?.decision).toBe('discard');
+  });
+
+  // The guard only bites when BOTH rows fall through to hash matching — i.e. one
+  // copy of a duplicated take was deleted and the survivor renamed. Without it,
+  // two rows point at the same file and neither is flagged missing, so the
+  // manifest quietly claims a verdict for audio that no longer exists.
+  // (Found by mutation testing — the earlier duplicate test matched by path and
+  // never reached this code.)
+  it('lets only ONE row claim a renamed duplicate; the other is flagged missing', () => {
+    let m = mergeScan(emptyManifest('/takes'), [hashed('one.mp3', 'DUP'), hashed('two.mp3', 'DUP')]);
+    m = (setDecision(m, 'one.mp3', 'keep', { now: NOW }) as { manifest: TriageManifest }).manifest;
+    m = (setDecision(m, 'two.mp3', 'discard', { now: NOW }) as { manifest: TriageManifest }).manifest;
+
+    // one copy deleted, the survivor renamed → both rows must go to hash matching
+    const after = mergeScan(m, [hashed('survivor.mp3', 'DUP')]);
+
+    const claimedRows = after.takes.filter((t) => t.file === 'survivor.mp3');
+    expect(claimedRows).toHaveLength(1);
+    const missingRows = after.takes.filter((t) => t.missing);
+    expect(missingRows).toHaveLength(1);
+    expect(after.takes).toHaveLength(2);
+  });
+
+  it('prefers a path match over a hash match, so identical copies stay put', () => {
+    let m = mergeScan(emptyManifest('/takes'), [hashed('x.mp3', 'SAME'), hashed('y.mp3', 'SAME')]);
+    m = (setDecision(m, 'y.mp3', 'hook', { now: NOW }) as { manifest: TriageManifest }).manifest;
+    const after = mergeScan(m, [hashed('y.mp3', 'SAME'), hashed('x.mp3', 'SAME')]);
+    expect(after.takes.find((t) => t.file === 'y.mp3')?.decision).toBe('hook');
+    expect(after.takes.find((t) => t.file === 'x.mp3')?.decision).toBe('undecided');
+  });
+
+  it('degrades to path matching for rows written before hashing existed', () => {
+    let legacy = mergeScan(emptyManifest('/takes'), scan('old.mp3')); // no hash
+    legacy = (setDecision(legacy, 'old.mp3', 'keep', { now: NOW }) as { manifest: TriageManifest }).manifest;
+    const same = mergeScan(legacy, [hashed('old.mp3', 'H9')]);
+    expect(same.takes[0].decision).toBe('keep');
+    expect(same.takes[0].hash).toBe('H9'); // backfilled going forward
+    const renamed = mergeScan(legacy, [hashed('new.mp3', 'H9')]);
+    expect(renamed.takes.find((t) => t.file === 'old.mp3')?.missing).toBe(true); // can't match without a stored hash
+  });
+
+  it('handles a rename and a genuinely new file in the same scan', () => {
+    const m = mergeScan(withHashes(), [hashed('moved.mp3', 'H1'), hashed('b.mp3', 'H2'), hashed('fresh.mp3', 'H3')]);
+    expect(m.takes).toHaveLength(3);
+    expect(m.takes.find((t) => t.hash === 'H1')?.decision).toBe('instrumental');
+    expect(m.takes.find((t) => t.hash === 'H3')?.decision).toBe('undecided');
+  });
+});
+
 describe('setDecision', () => {
   it('records the decision, note and timestamp', () => {
     const r = setDecision(seeded(), 'c.mp3', 'hook', { note: 'strong 20s opening', now: NOW });

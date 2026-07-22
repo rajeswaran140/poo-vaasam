@@ -35,8 +35,15 @@ export const QUEUE_TARGETS: Record<'instrumental' | 'hook', string> = {
 };
 
 export interface TakeRecord {
-  /** Path relative to the scanned root — the stable identity of a take. */
+  /** Path relative to the scanned root. Display identity, and the fallback match. */
   file: string;
+  /**
+   * Content hash. The REAL identity — paths change when takes are pulled down in
+   * batches and reorganised, and re-listening to a take because it moved is the
+   * exact waste this tool exists to prevent. Optional: rows written before
+   * hashing existed simply fall back to path matching.
+   */
+  hash?: string;
   decision: TakeDecision;
   /** Free-text note: what worked, what broke, which word was mispronounced. */
   note?: string;
@@ -64,40 +71,73 @@ export function emptyManifest(root: string): TriageManifest {
   return { version: 1, root, takes: [] };
 }
 
+export interface ScannedTake {
+  file: string;
+  hash?: string;
+  durationSec?: number;
+  lufs?: number;
+  recipe?: string;
+}
+
 /**
  * Merge a fresh directory scan into an existing manifest.
  *
  * Rules, in priority order:
  *  1. An existing decision is NEVER overwritten by a scan — hours of listening
  *     outrank a file walk.
- *  2. Newly-seen files are appended as `undecided`.
- *  3. A manifest row with no matching file is flagged `missing`, not removed —
- *     a moved/renamed file must not silently discard its verdict.
- *  4. A previously-missing file that reappears is un-flagged, decision intact.
- * Probe fields from the scan fill only the gaps (a scan without probing must not
- * wipe measurements taken earlier).
+ *  2. A row is matched by PATH first, then by CONTENT HASH. The hash pass is what
+ *     makes a rename or a move survive: the verdict follows the audio to its new
+ *     path instead of orphaning and coming back as undecided.
+ *  3. Newly-seen files are appended as `undecided`.
+ *  4. A row that matches neither path nor hash is flagged `missing`, not removed —
+ *     losing a verdict silently is unrecoverable, because there is no way to tell
+ *     which ones went.
+ *  5. A previously-missing file that reappears is un-flagged, decision intact.
+ *
+ * Each scanned file is claimed at most once, so duplicate copies of the same take
+ * can't have one row steal another's identity. Probe fields fill only the gaps —
+ * a cheap rescan without --probe must not wipe earlier measurements.
  */
-export function mergeScan(
-  manifest: TriageManifest,
-  scanned: Array<{ file: string; durationSec?: number; lufs?: number; recipe?: string }>
-): TriageManifest {
-  const seen = new Map(scanned.map((s) => [s.file, s]));
+export function mergeScan(manifest: TriageManifest, scanned: ScannedTake[]): TriageManifest {
+  const byPath = new Map(scanned.map((s) => [s.file, s]));
+  // Hash → queue of files carrying it (a queue, so N duplicates match N rows).
+  const byHash = new Map<string, ScannedTake[]>();
+  for (const s of scanned) {
+    if (!s.hash) continue;
+    const q = byHash.get(s.hash);
+    if (q) q.push(s);
+    else byHash.set(s.hash, [s]);
+  }
+  const claimed = new Set<ScannedTake>();
+
+  const claim = (s: ScannedTake | undefined): ScannedTake | undefined => {
+    if (!s || claimed.has(s)) return undefined;
+    claimed.add(s);
+    return s;
+  };
+
   const takes: TakeRecord[] = manifest.takes.map((t) => {
-    const hit = seen.get(t.file);
+    // Path match first — the common case, and free.
+    let hit = claim(byPath.get(t.file));
+    // Then content match, which is how a rename keeps its verdict.
+    if (!hit && t.hash) hit = claim((byHash.get(t.hash) ?? []).find((s) => !claimed.has(s)));
     if (!hit) return { ...t, missing: true };
-    seen.delete(t.file);
-    const merged: TakeRecord = { ...t };
+
+    const merged: TakeRecord = { ...t, file: hit.file };
     delete merged.missing;
+    if (hit.hash) merged.hash = hit.hash;
     if (merged.durationSec === undefined && hit.durationSec !== undefined) merged.durationSec = hit.durationSec;
     if (merged.lufs === undefined && hit.lufs !== undefined) merged.lufs = hit.lufs;
     if (!merged.recipe && hit.recipe) merged.recipe = hit.recipe;
     return merged;
   });
 
-  for (const s of seen.values()) {
+  for (const s of scanned) {
+    if (claimed.has(s)) continue;
     takes.push({
       file: s.file,
       decision: 'undecided',
+      ...(s.hash ? { hash: s.hash } : {}),
       ...(s.durationSec !== undefined ? { durationSec: s.durationSec } : {}),
       ...(s.lufs !== undefined ? { lufs: s.lufs } : {}),
       ...(s.recipe ? { recipe: s.recipe } : {}),

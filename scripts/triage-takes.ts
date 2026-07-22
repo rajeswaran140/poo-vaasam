@@ -20,6 +20,11 @@
  * existing decision is never overwritten, and a file that disappears is flagged
  * `missing` rather than dropped.
  *
+ * Identity is the CONTENT HASH, not the path, so renaming or reorganising takes
+ * between sittings does NOT orphan their verdicts — the decision follows the
+ * audio. Hashing reads every file once per scan (~2 min for 12 GB); pass
+ * --no-hash to fall back to path-only matching if you never move files.
+ *
  * --probe runs ffprobe/ffmpeg per file for duration + integrated LUFS. It is
  * OPT-IN because it costs seconds per take (hours across 2,450) and triage works
  * fine without it. Reuses the existing pure parser in lib/loudness-measure.
@@ -29,6 +34,7 @@
  * discards — the prompt→outcome record is the compounding asset, not the files.
  */
 
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, extname, join, relative, resolve } from 'node:path';
@@ -81,6 +87,15 @@ function readSidecar(audioPath: string): string | undefined {
   return undefined;
 }
 
+/** Content hash — the identity that survives a rename. */
+function hashFile(file: string): string | undefined {
+  try {
+    return createHash('sha1').update(readFileSync(file)).digest('hex');
+  } catch {
+    return undefined; // unreadable file shouldn't abort a 2,450-file scan
+  }
+}
+
 /** Duration via ffprobe. Returns undefined rather than throwing — a probe is a nicety. */
 function probeDuration(file: string): number | undefined {
   const r = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file], {
@@ -129,11 +144,15 @@ function cmdScan(): void {
   const probe = has('--probe');
   if (probe) console.log(`probing ${files.length} files (ffprobe + ffmpeg) — this is the slow path…`);
 
+  const hashing = !has('--no-hash');
+  if (hashing) console.log(`hashing ${files.length} files (content identity — survives renames)…`);
+
   const scanned = files.map((abs, i) => {
-    if (probe && i % 25 === 0 && i) console.log(`  …${i}/${files.length}`);
+    if (i % 100 === 0 && i) console.log(`  …${i}/${files.length}`);
     return {
       file: relative(root, abs),
       recipe: readSidecar(abs),
+      ...(hashing ? { hash: hashFile(abs) } : {}),
       ...(probe ? { durationSec: probeDuration(abs), lufs: probeLufs(abs) } : {}),
     };
   });
@@ -142,9 +161,14 @@ function cmdScan(): void {
   save(mp, merged);
   const s = stats(merged);
   const added = s.total - before.takes.length;
+  // A verdict that moved with its file — worth surfacing, it's the payoff for hashing.
+  const moved = merged.takes.filter((t) => {
+    const prev = before.takes.find((b) => b.hash && b.hash === t.hash);
+    return prev && prev.file !== t.file;
+  }).length;
   console.log(`✓ scanned ${files.length} audio files under ${root}`);
   console.log(`  manifest: ${mp}`);
-  console.log(`  +${added} new · ${s.decided} already decided · ${s.missing} missing`);
+  console.log(`  +${added} new · ${s.decided} already decided · ${s.missing} missing` + (moved ? ` · ${moved} moved (verdict followed)` : ''));
 }
 
 function cmdStats(): void {
@@ -222,7 +246,7 @@ const CMDS: Record<string, () => void> = {
 const cmd = process.argv[2];
 if (!cmd || !CMDS[cmd]) {
   console.error(`Usage: npx tsx scripts/triage-takes.ts <${Object.keys(CMDS).join('|')}> [flags]\n`);
-  console.error('  scan    --dir <path> [--probe]        add files to the manifest (decisions preserved)');
+  console.error('  scan    --dir <path> [--probe] [--no-hash]  add files (decisions preserved, survive renames)');
   console.error('  stats                                  progress + queue sizes');
   console.error('  next    [--n 5]                        next undecided take(s) to listen to');
   console.error(`  set     --file <p> --decision <${TAKE_DECISIONS.join('|')}> [--note "..."]`);
