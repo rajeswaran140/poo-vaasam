@@ -9,25 +9,29 @@
  *
  * Public + unauthenticated (visitors fire it), so:
  *  - validated by a tight Zod enum — only known event types are accepted,
- *  - rate-limited per IP (reuses src/lib/rate-limit, like the view beacon),
+ *  - shape-validated per event type, so a caller can't mint unbounded distinct
+ *    counter rows,
+ *  - rate-limited per IP ACROSS instances (SharedRateLimiter, like the view
+ *    beacon),
  *  - a write failure NEVER surfaces to the visitor (the client ignores the
  *    response). No PII is accepted or stored — just type + a coarse target key.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { RateLimiter, checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
+import { SharedRateLimiter, checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 import { eventBeaconSchema, derivedSongEvent } from '@/lib/event-types';
 import { recordEvent } from '@/lib/analytics-store';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// Generous — a single session legitimately fires several events; this only caps
-// a scripted client hammering one warm instance.
-const limiter = new RateLimiter({ windowMs: 60_000, max: 120 });
+// Generous — a single session legitimately fires several events. Shared across
+// instances, so spreading the load over cold Lambdas no longer evades the cap;
+// that mattered here because these counters ARE the admin dashboard's numbers.
+const limiter = new SharedRateLimiter({ bucket: 'events', windowMs: 60_000, max: 120 });
 
 export async function POST(request: NextRequest) {
-  const rl = checkRateLimit(limiter, request);
+  const rl = await checkRateLimit(limiter, request);
   if (!rl.allowed) return rateLimitedResponse(rl);
 
   let body: unknown;

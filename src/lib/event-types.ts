@@ -51,9 +51,16 @@ export type StoreEventType = (typeof STORE_EVENT_TYPES)[number];
 const SLUG = /^[a-z][a-z0-9_-]{0,39}$/;
 const CONTENT_ID = /^cnt_[A-Za-z0-9_]{1,60}$/;
 const YT_DESTINATION = /^(?:video:[A-Za-z0-9_-]{6,24}|[a-z][a-z0-9_-]{0,39})$/;
+/**
+ * Plays are keyed by content id in production, but the shape stays deliberately
+ * wider — a slug or one `namespace:value` segment — so a future player surface
+ * can key plays its own way without a silent drop here. Still bounded, which is
+ * the property that matters: no free-form string, no unbounded cardinality.
+ */
+const PLAY_TARGET = /^(?:cnt_[A-Za-z0-9_]{1,60}|[a-z][a-z0-9_-]{0,39}(?::[A-Za-z0-9_-]{1,40})?)$/;
 
 const TARGET_PATTERN: Record<EventType, RegExp> = {
-  play: CONTENT_ID,
+  play: PLAY_TARGET,
   share: SLUG,
   youtube: YT_DESTINATION,
   subscribe: SLUG,

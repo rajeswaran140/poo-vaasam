@@ -7,6 +7,27 @@
 
 import { NextRequest } from 'next/server';
 
+/**
+ * Rate limiting now goes through DynamoDB (SharedRateLimiter), so the store is
+ * mocked with a counting fake. Without this the limiter would fall back to its
+ * per-instance tier via an error path — and `.env.local` names the PRODUCTION
+ * table, so an unmocked test must never be one SDK change away from writing to it.
+ */
+jest.mock('@/infrastructure/database/dynamodb-client', () => {
+  const rows = new Map<string, number>();
+  return {
+    DynamoDBOperations: {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      update: jest.fn(async ({ key, expressionAttributeValues }: any) => {
+        const id = `${key.PK}|${key.SK}`;
+        const count = (rows.get(id) ?? 0) + expressionAttributeValues[':one'];
+        rows.set(id, count);
+        return { count };
+      }),
+    },
+  };
+});
+
 jest.mock('@/lib/analytics-store', () => {
   const recordEvent = jest.fn();
   return { recordEvent, __recordEvent: recordEvent };
@@ -115,7 +136,7 @@ it('rejects malformed JSON with 400', async () => {
 it('never breaks the page on a store error (500, no throw)', async () => {
   jest.spyOn(console, 'error').mockImplementation(() => {});
   recordEvent.mockRejectedValueOnce(new Error('ProvisionedThroughputExceeded'));
-  const res = await post({ type: 'play', target: 'cnt_1780067292613_jdgzm3ojb' });
+  const res = await post({ type: 'play', target: 'song:a' });
   expect(res.status).toBe(500);
   expect(await res.json()).toEqual({ success: false });
 });
@@ -126,7 +147,7 @@ it('rate-limits a single IP hammering the beacon (429 after the cap)', async () 
   let last = 202;
   // Limit is 120/min; the 121st from the same IP must be throttled.
   for (let i = 0; i < 121; i++) {
-    last = (await post({ type: 'play', target: 'cnt_1780067292641_e6wn4o2os' }, ip)).status;
+    last = (await post({ type: 'play', target: 'song:x' }, ip)).status;
   }
   expect(last).toBe(429);
 });

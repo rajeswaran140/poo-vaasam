@@ -153,10 +153,18 @@ export default function AnalyticsPage() {
         <>
           {/* Summary cards */}
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <Stat label="Users" value={snap ? nf(snap.totalUsers) : '—'} />
-            <Stat label="Sessions" value={snap ? nf(snap.sessions) : '—'} />
-            <Stat label="Page views" value={snap ? nf(snap.pageViews) : '—'} />
-            <Stat label="On-site content views" value={payload.contentViews ? nf(payload.contentViews.totalViews) : '—'} sub="first-party (all time)" />
+            <Stat label={`Users · ${days}d`} value={snap ? nf(snap.totalUsers) : '—'} />
+            <Stat label={`Sessions · ${days}d`} value={snap ? nf(snap.sessions) : '—'} />
+            <Stat label={`Page views · ${days}d`} value={snap ? nf(snap.pageViews) : '—'} />
+            {/* The odd one out: this counter is cumulative, not windowed. Under a
+                "Last N days" header that reads as a window unless the card says
+                otherwise loudly — a small grey sublabel wasn't enough. */}
+            <Stat
+              label="On-site content views · ALL TIME"
+              value={payload.contentViews ? nf(payload.contentViews.totalViews) : '—'}
+              sub={`cumulative — not the last ${days} days`}
+              emphasis
+            />
           </div>
 
           {/* Traffic trend */}
@@ -281,12 +289,26 @@ export default function AnalyticsPage() {
   );
 }
 
-function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function Stat({ label, value, sub, emphasis }: { label: string; value: string; sub?: string; emphasis?: boolean }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-      <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</p>
+    <div
+      className={`rounded-lg border bg-white p-4 dark:bg-gray-800 ${
+        emphasis
+          ? 'border-amber-300 dark:border-amber-700'
+          : 'border-gray-200 dark:border-gray-700'
+      }`}
+    >
+      <p
+        className={`text-xs font-medium uppercase tracking-wide ${
+          emphasis ? 'text-amber-700 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'
+        }`}
+      >
+        {label}
+      </p>
       <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">{value}</p>
-      {sub && <p className="mt-0.5 text-xs text-gray-400">{sub}</p>}
+      {sub && (
+        <p className={`mt-0.5 text-xs ${emphasis ? 'text-amber-600 dark:text-amber-500' : 'text-gray-400'}`}>{sub}</p>
+      )}
     </div>
   );
 }

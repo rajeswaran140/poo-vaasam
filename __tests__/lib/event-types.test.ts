@@ -71,13 +71,17 @@ describe('eventBeaconSchema', () => {
       ['youtube', 'videos-grid'],
       ['youtube', 'video:kOpNZHlE9FE'],
       ['play', 'cnt_1780067292613_jdgzm3ojb'],
+      // plays stay wider than a content id so a future player surface can key
+      // them its own way rather than being silently dropped
+      ['play', 'song:a'],
+      ['play', 'preview'],
     ])('accepts the real %s target %s emitted by a live call site', (type, target) => {
       expect(eventBeaconSchema.safeParse({ type, target }).success).toBe(true);
     });
 
     it.each([
-      ['play', 'not-a-content-id'],
-      ['play', 'song:a'],
+      ['play', 'a b c'],
+      ['play', 'song:a:b:c'],
       ['share', 'HTTPS://evil.example/x'],
       ['share', 'a b c'],
       ['share', '<script>'],

@@ -5,14 +5,14 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { synthesizeTamilSpeech, TAMIL_VOICES } from '@/services/ai/google-tts';
-import { RateLimiter, checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
+import { SharedRateLimiter, checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 import { logger } from '@/lib/logger';
 
 // Unauthenticated + drives billable Google Cloud TTS — cap per IP.
-const limiter = new RateLimiter({ windowMs: 60_000, max: 20 });
+const limiter = new SharedRateLimiter({ bucket: 'tts-context', windowMs: 60_000, max: 20 });
 
 export async function POST(request: NextRequest) {
-  const rl = checkRateLimit(limiter, request);
+  const rl = await checkRateLimit(limiter, request);
   if (!rl.allowed) return rateLimitedResponse(rl);
 
   try {

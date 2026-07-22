@@ -9,18 +9,18 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { DynamoDBOperations, handleDynamoDBError } from '@/infrastructure/database/dynamodb-client';
-import { RateLimiter, checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
+import { SharedRateLimiter, checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 import { createStorySchema, DEFAULT_STORY_STATUS } from '@/types/story';
 
 export const dynamic = 'force-dynamic';
 
 // Story submissions are low-frequency for a real person; cap a single IP so a
 // bot that gets past the honeypot can't flood DynamoDB.
-const limiter = new RateLimiter({ windowMs: 60_000, max: 5 });
+const limiter = new SharedRateLimiter({ bucket: 'stories', windowMs: 60_000, max: 5 });
 
 export async function POST(request: NextRequest) {
   try {
-    const rl = checkRateLimit(limiter, request);
+    const rl = await checkRateLimit(limiter, request);
     if (!rl.allowed) return rateLimitedResponse(rl);
 
     const body = await request.json().catch(() => null);
