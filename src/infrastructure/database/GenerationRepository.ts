@@ -134,6 +134,8 @@ export class GenerationRepository {
       notes: item.notes ?? '',
       audioMetrics: item.audioMetrics ?? null,
       loudness: item.loudness ?? null,
+      tamilVocal: item.tamilVocal,
+      lyricScript: item.lyricScript,
       embedding: item.embedding ?? null,
     }) as Generation;
 }

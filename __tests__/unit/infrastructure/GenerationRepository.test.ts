@@ -169,3 +169,20 @@ it('round-trips promptText (whitelist projection must include it)', async () => 
   const [read] = await new GenerationRepository().listByBrief('brief_42');
   expect(read.promptText).toBe(promptText);
 });
+
+// Same whitelist trap as promptText: without the projection entry these would
+// write fine and vanish on read, silently emptying the A/B dataset.
+it('round-trips tamilVocal + lyricScript through the whitelist projection', async () => {
+  const tamilVocal = { retroflex: 4, vowelLength: 3, gemination: 2 };
+  ops.put.mockResolvedValueOnce({});
+  await new GenerationRepository().create({ ...input, tamilVocal, lyricScript: 'tamil' });
+  expect(ops.put.mock.calls[0][0].tamilVocal).toEqual(tamilVocal);
+  expect(ops.put.mock.calls[0][0].lyricScript).toBe('tamil');
+
+  ops.query.mockResolvedValueOnce({
+    Items: [{ id: 'gen_12', briefId: 'brief_42', verdict: 'success', tamilVocal, lyricScript: 'tamil', scores: {}, settings: {} }],
+  });
+  const [read] = await new GenerationRepository().listByBrief('brief_42');
+  expect(read.tamilVocal).toEqual(tamilVocal);
+  expect(read.lyricScript).toBe('tamil');
+});

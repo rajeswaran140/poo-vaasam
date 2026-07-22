@@ -82,7 +82,13 @@ export function PromptExport({
       ragas: result.suggested_ragas,
       voice: result.recommended_voice,
     });
-  }, [variants, selectedIdx, lyrics, result.song_titles, result.mood, result.theme]);
+  }, [
+    variants, selectedIdx, lyrics, result.song_titles, result.mood, result.theme,
+    // The structured direction feeds the style anchor — omitting these would
+    // serve a stale pack (old BPM/voice) after switching to another brief.
+    result.suggested_bpm, result.suggested_key, result.suggested_instruments,
+    result.suggested_ragas, result.recommended_voice,
+  ]);
 
   if (!pack) return null;
 

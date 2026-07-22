@@ -13,8 +13,13 @@
 
 import { z } from 'zod';
 
-/** Generation engines we may log against. SUNO is the current human-in-loop one. */
-export const GENERATION_ENGINES = ['suno', 'lyria', 'udio', 'other'] as const;
+/**
+ * Generation engines we may log against. SUNO is the current human-in-loop one;
+ * elevenlabs / mureka were added 2026-07-22 as the only credible lyrics-singing
+ * alternatives found when SUNO regressed. `udio` is retained for old rows only —
+ * it disabled audio export in Nov 2025 and is no longer a usable option.
+ */
+export const GENERATION_ENGINES = ['suno', 'lyria', 'udio', 'elevenlabs', 'mureka', 'other'] as const;
 
 /** Overall human verdict for the attempt. */
 export const GENERATION_VERDICTS = ['success', 'partial', 'failed'] as const;
@@ -46,6 +51,26 @@ export const generationScoresSchema = z
     mix: scoreField.optional(),
   })
   .default({});
+
+/**
+ * Tamil pronunciation scoring, 0-4 per axis (see lib/tamil-vocal-rubric).
+ *
+ * Deliberately NOT folded into `scores.vocals`: a generic 0-10 "vocals" rating
+ * cannot separate "beautiful but says the wrong word" from "plain but correct",
+ * and in Tamil that distinction is the whole question — ழ/ள/ல and vowel length
+ * are meaning-bearing. Kept optional so ordinary logging is unaffected; only the
+ * engine A/B fills these in.
+ */
+const rubricField = z.number().int().min(0).max(4);
+export const tamilVocalScoresSchema = z
+  .object({
+    retroflex: rubricField.optional(),
+    vowelLength: rubricField.optional(),
+    wordBoundary: rubricField.optional(),
+    gemination: rubricField.optional(),
+    prosody: rubricField.optional(),
+  })
+  .optional();
 
 /**
  * LEGACY objective audio measurements — kept only so OLD takes still render.
@@ -134,6 +159,14 @@ export const createGenerationSchema = z
     audioMetrics: audioMetricsSchema.nullish().transform((m) => m ?? null),
     /** Server-measured loudness (measure-fn). */
     loudness: loudnessSchema.nullish().transform((m) => m ?? null),
+    /** Tamil pronunciation axes — only filled during an engine comparison. */
+    tamilVocal: tamilVocalScoresSchema,
+    /**
+     * Which script the lyrics were submitted in. The one prior Tamil report
+     * claims Unicode beats transliteration; nobody has tested it since, and it
+     * is a free variable that would otherwise confound an engine comparison.
+     */
+    lyricScript: z.enum(['tamil', 'romanized']).optional(),
   })
   // A success has no failure reason — keeps the dataset coherent.
   .refine((d) => !(d.verdict === 'success' && d.failureReason), {
