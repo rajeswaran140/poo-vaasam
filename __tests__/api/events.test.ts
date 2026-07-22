@@ -115,7 +115,7 @@ it('rejects malformed JSON with 400', async () => {
 it('never breaks the page on a store error (500, no throw)', async () => {
   jest.spyOn(console, 'error').mockImplementation(() => {});
   recordEvent.mockRejectedValueOnce(new Error('ProvisionedThroughputExceeded'));
-  const res = await post({ type: 'play', target: 'song:a' });
+  const res = await post({ type: 'play', target: 'cnt_1780067292613_jdgzm3ojb' });
   expect(res.status).toBe(500);
   expect(await res.json()).toEqual({ success: false });
 });
@@ -126,7 +126,7 @@ it('rate-limits a single IP hammering the beacon (429 after the cap)', async () 
   let last = 202;
   // Limit is 120/min; the 121st from the same IP must be throttled.
   for (let i = 0; i < 121; i++) {
-    last = (await post({ type: 'play', target: 'song:x' }, ip)).status;
+    last = (await post({ type: 'play', target: 'cnt_1780067292641_e6wn4o2os' }, ip)).status;
   }
   expect(last).toBe(429);
 });

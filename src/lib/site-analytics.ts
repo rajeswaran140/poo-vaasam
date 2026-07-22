@@ -25,6 +25,13 @@ export interface ContentViewSummary {
   itemCount: number;
   /** Top-viewed items, descending. */
   top: ViewedContent[];
+  /**
+   * id → title for every published item. The first-party event counters key
+   * per-song rows by content id (`cnt_…`), so the dashboard needs this to render
+   * "which song gets forwarded" as titles rather than opaque ids. Free — we've
+   * already paged the whole catalogue to sum views.
+   */
+  titleById: Record<string, string>;
 }
 
 /**
@@ -44,7 +51,9 @@ export function summariseContentViews(
   }));
   const totalViews = viewed.reduce((sum, v) => sum + v.viewCount, 0);
   const top = [...viewed].sort((a, b) => b.viewCount - a.viewCount).slice(0, topN);
-  return { totalViews, itemCount: viewed.length, top };
+  const titleById: Record<string, string> = {};
+  for (const v of viewed) if (v.id) titleById[v.id] = v.title;
+  return { totalViews, itemCount: viewed.length, top, titleById };
 }
 
 /** Read published content from DynamoDB (paged) and summarise its view counts. */

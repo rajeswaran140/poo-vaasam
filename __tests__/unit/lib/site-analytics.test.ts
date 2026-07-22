@@ -23,6 +23,6 @@ describe('summariseContentViews', () => {
 
   it('respects topN and handles an empty catalogue', () => {
     expect(summariseContentViews(items, 1).top).toHaveLength(1);
-    expect(summariseContentViews([])).toEqual({ totalViews: 0, itemCount: 0, top: [] });
+    expect(summariseContentViews([])).toEqual({ totalViews: 0, itemCount: 0, top: [], titleById: {} });
   });
 });

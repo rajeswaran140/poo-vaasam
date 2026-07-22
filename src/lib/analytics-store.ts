@@ -14,7 +14,7 @@
  */
 
 import { DynamoDBOperations } from '@/infrastructure/database/dynamodb-client';
-import { sanitizeTarget, type StoreEventType } from '@/lib/event-types';
+import { sanitizeTarget, DERIVED_EVENT_TYPES, type StoreEventType } from '@/lib/event-types';
 
 const PK = 'EVENT';
 
@@ -51,13 +51,24 @@ export interface EventRow {
 }
 
 export interface EventSummary {
-  /** Grand total of all events in range. */
+  /**
+   * Grand total of VISITOR ACTIONS in range. Server-derived types are excluded:
+   * a share carrying a songId writes both `share` and `share_song` for the one
+   * click, so counting both would inflate the headline — worst on shares, the
+   * metric we actually steer by.
+   */
   total: number;
-  /** Per-type totals, descending. */
+  /** Per-type totals of client-sendable types only, descending. */
   totals: Array<{ type: string; count: number }>;
-  /** Per-type top targets, descending (capped at topN). */
+  /**
+   * Per-type top targets, descending (capped at topN). Includes the derived
+   * types — they're a genuine breakdown ("which song gets forwarded?"), just
+   * not a separate action to be summed.
+   */
   byType: Record<string, Array<{ target: string; count: number }>>;
 }
+
+const DERIVED = new Set<string>(DERIVED_EVENT_TYPES);
 
 /**
  * Pure: roll up raw daily counter rows into totals + per-type top targets.
@@ -71,8 +82,12 @@ export function summariseEvents(rows: EventRow[], topN = 8): EventSummary {
   for (const r of rows) {
     const c = Number(r.count) || 0;
     if (!r.type) continue;
-    total += c;
-    totalsMap.set(r.type, (totalsMap.get(r.type) ?? 0) + c);
+    // Derived rows still feed byType (the per-song breakdown) but never the
+    // action total — they are a second view of an action already counted.
+    if (!DERIVED.has(r.type)) {
+      total += c;
+      totalsMap.set(r.type, (totalsMap.get(r.type) ?? 0) + c);
+    }
     if (!targetMaps.has(r.type)) targetMaps.set(r.type, new Map());
     const tm = targetMaps.get(r.type)!;
     tm.set(r.target, (tm.get(r.target) ?? 0) + c);

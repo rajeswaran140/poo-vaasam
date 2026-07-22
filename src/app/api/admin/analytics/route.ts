@@ -29,8 +29,22 @@ import {
 } from '@/lib/ga4-api';
 import { fetchContentViewSummary, type ContentViewSummary } from '@/lib/site-analytics';
 import { fetchEventSummary, type EventSummary } from '@/lib/analytics-store';
+import { cached } from '@/lib/ttl-cache';
 
 export const dynamic = 'force-dynamic';
+
+/**
+ * A dashboard load fans out to ~10 paged DynamoDB reads of the catalogue, a
+ * paged EVENT query and 9 GA4 runReport calls — repeated on every range toggle.
+ * GA4 allows only 10 CONCURRENT requests per property, so two overlapping loads
+ * would exhaust the quota and blank the cards. A short server-side memo makes
+ * repeat loads and toggles free, and `cached()` shares in-flight work so
+ * concurrent callers issue one fan-out, not two.
+ *
+ * 60s: these are trend panels, not a live console. Nothing here needs to be
+ * fresher than a minute.
+ */
+const TTL_MS = 60_000;
 
 /** Flatten a Result into a UI-friendly `{ data }` or `{ error }`. */
 function unwrap<T>(r: Result<T>): { data: T } | { error: string } {
@@ -52,33 +66,41 @@ export async function GET(request: NextRequest) {
   // (ad-block-resilient plays/shares/outbound clicks).
   let contentViews: ContentViewSummary | null = null;
   try {
-    contentViews = await fetchContentViewSummary(10);
+    contentViews = await cached('contentViews', TTL_MS, () => fetchContentViewSummary(10));
   } catch (err) {
     console.error('[analytics] first-party content views failed:', err);
   }
   let events: EventSummary | null = null;
   try {
-    events = await fetchEventSummary(days, 8);
+    events = await cached(`events:${days}`, TTL_MS, () => fetchEventSummary(days, 8));
   } catch (err) {
     console.error('[analytics] first-party events failed:', err);
   }
 
+  // Per-song event counters key on content id; the catalogue read above already
+  // carries every title, so the dashboard can label them without a second fetch.
+  const songTitles = contentViews?.titleById ?? {};
+
   if (!isGA4Configured()) {
-    return NextResponse.json({ success: true, ga4Configured: false, days, contentViews, events, ga4: null });
+    return NextResponse.json({
+      success: true, ga4Configured: false, days, contentViews, events, songTitles, ga4: null,
+    });
   }
 
   const [snapshot, timeseries, topPages, sources, geo, devices, audioPlays, subscribeClicks, youtubeOpens] =
-    await Promise.all([
-      fetchTrafficSnapshot(days),
-      fetchTrafficTimeseries(days),
-      fetchTopPages(days),
-      fetchTrafficSources(days),
-      fetchGeo(days),
-      fetchDevices(days),
-      fetchAudioPlays(days),
-      fetchSubscribeClicksBySource(days),
-      fetchYouTubeOpens(days),
-    ]);
+    await cached(`ga4:${days}`, TTL_MS, () =>
+      Promise.all([
+        fetchTrafficSnapshot(days),
+        fetchTrafficTimeseries(days),
+        fetchTopPages(days),
+        fetchTrafficSources(days),
+        fetchGeo(days),
+        fetchDevices(days),
+        fetchAudioPlays(days),
+        fetchSubscribeClicksBySource(days),
+        fetchYouTubeOpens(days),
+      ])
+    );
 
   return NextResponse.json({
     success: true,
@@ -86,6 +108,7 @@ export async function GET(request: NextRequest) {
     days,
     contentViews,
     events,
+    songTitles,
     ga4: {
       snapshot: unwrap(snapshot),
       timeseries: unwrap(timeseries),

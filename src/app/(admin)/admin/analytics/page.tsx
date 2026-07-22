@@ -10,7 +10,7 @@
  * first-party section still render when GA4 isn't set up.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
 import { MonetizationPanel } from '@/components/admin/MonetizationPanel';
 
@@ -34,6 +34,8 @@ interface Payload {
   days: number;
   contentViews: ContentViews | null;
   events: EventSummaryUI | null;
+  /** Content id → title, for labelling the per-song event breakdowns. */
+  songTitles?: Record<string, string>;
   ga4: null | {
     snapshot: Section<Snapshot>;
     timeseries: Section<{ points: DayPoint[]; daysBack: number }>;
@@ -51,6 +53,14 @@ const pick = <T,>(s: Section<T> | undefined): { data?: T; error?: string } =>
   !s ? {} : 'data' in s ? { data: s.data } : { error: s.error };
 const nf = (n: number) => n.toLocaleString();
 
+/** Turn a bare status into something an admin can act on, not "HTTP 403". */
+function httpErrorMessage(status: number): string {
+  if (status === 401) return 'Your session expired — sign in again.';
+  if (status === 403) return 'Your account isn’t an admin on this environment.';
+  if (status >= 500) return 'The analytics service failed. Try again shortly.';
+  return `Couldn’t load analytics (HTTP ${status}).`;
+}
+
 const EVENT_LABEL: Record<string, string> = {
   play: 'Plays', share: 'Shares', youtube: 'YouTube opens', subscribe: 'Subscribe clicks', install: 'PWA installs',
   inbound: 'Inbound visits (by source)',
@@ -60,27 +70,48 @@ const EVENT_UNIT: Record<string, string> = {
   inbound: 'visits',
 };
 
+/**
+ * Server-derived per-song breakdowns. These are a second view of an action
+ * already counted (a share writes both `share` and `share_song`), so they're
+ * rendered as their own attribution section rather than mixed into the action
+ * cards — and deliberately excluded from the headline total by the API.
+ */
+const SONG_BREAKDOWNS: { type: string; title: string; unit: string; empty: string }[] = [
+  { type: 'share_song', title: 'Most-forwarded songs', unit: 'shares', empty: 'No song-attributed shares yet.' },
+  { type: 'inbound_song', title: 'Songs driving inbound visits', unit: 'visits', empty: 'No song-attributed arrivals yet.' },
+];
+
 export default function AnalyticsPage() {
   const [days, setDays] = useState(28);
   const [payload, setPayload] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
-  const load = useCallback(async (d: number) => {
+  // Toggling the range mid-flight used to be a race: both requests resolved and
+  // whichever landed LAST won, so a slow 7d response could overwrite 90d data
+  // and render it under the 7d label. Aborting the previous request also keeps
+  // overlapping loads from doubling up on GA4's 10-concurrent-request quota.
+  useEffect(() => {
+    const controller = new AbortController();
     setLoading(true);
     setErr(null);
-    try {
-      const res = await adminFetch(`/api/admin/analytics?days=${d}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setPayload(await res.json());
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to load analytics');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
-  useEffect(() => { load(days); }, [days, load]);
+    (async () => {
+      try {
+        const res = await adminFetch(`/api/admin/analytics?days=${days}`, { signal: controller.signal });
+        if (!res.ok) throw new Error(httpErrorMessage(res.status));
+        const json = await res.json();
+        if (!controller.signal.aborted) setPayload(json);
+      } catch (e) {
+        if (controller.signal.aborted || (e instanceof DOMException && e.name === 'AbortError')) return;
+        setErr(e instanceof Error ? e.message : 'Failed to load analytics');
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    })();
+
+    return () => controller.abort();
+  }, [days]);
 
   const ga4 = payload?.ga4;
   const snap = pick(ga4?.snapshot).data;
@@ -201,6 +232,36 @@ export default function AnalyticsPage() {
                       rows={(payload.events?.byType[type] ?? []).map((t) => ({ k: t.target, v: t.count }))}
                       unit={EVENT_UNIT[type] ?? ''}
                       empty="No breakdown yet."
+                    />
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Per-song attribution — derived server-side from the songId on share
+              and inbound beacons. Kept out of the action total above (a share
+              writes both counters) but shown here, because "which song do people
+              actually forward?" is the question the beacon exists to answer. */}
+          {payload.events && SONG_BREAKDOWNS.some((b) => (payload.events?.byType[b.type] ?? []).length > 0) && (
+            <div className="space-y-3">
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
+                Per-song attribution
+                <span className="ml-2 font-normal text-xs text-gray-400">
+                  not counted again in the total above · last {days}d
+                </span>
+              </h2>
+              <div className="grid gap-4 lg:grid-cols-2">
+                {SONG_BREAKDOWNS.map((b) => (
+                  <Card key={b.type} title={b.title}>
+                    <Table
+                      rows={(payload.events?.byType[b.type] ?? []).map((t) => ({
+                        k: payload.songTitles?.[t.target] || t.target,
+                        sub: t.target,
+                        v: t.count,
+                      }))}
+                      unit={b.unit}
+                      empty={b.empty}
                     />
                   </Card>
                 ))}
