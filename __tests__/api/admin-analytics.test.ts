@@ -29,24 +29,47 @@ jest.mock('@/lib/site-analytics', () => ({
   fetchContentViewSummary: jest.fn(),
 }));
 
+jest.mock('@/lib/analytics-store', () => ({
+  fetchEventSummary: jest.fn(),
+}));
+
 import { GET } from '@/app/api/admin/analytics/route';
 import * as auth from '@/lib/auth-helper';
 import * as ga4 from '@/lib/ga4-api';
 import * as site from '@/lib/site-analytics';
+import * as store from '@/lib/analytics-store';
+import { clearCache } from '@/lib/ttl-cache';
 
 const requireAdmin = auth.requireAdmin as jest.Mock;
 const isConfigured = ga4.isGA4Configured as jest.Mock;
 const contentSummary = site.fetchContentViewSummary as jest.Mock;
+const eventSummary = store.fetchEventSummary as jest.Mock;
 
 const req = (days?: number) =>
   new NextRequest(`https://tamilagaval.com/api/admin/analytics${days ? `?days=${days}` : ''}`);
 
-const SUMMARY = { totalViews: 52, itemCount: 3, top: [{ id: 'cnt_a', title: 'A', type: 'POEMS', path: '/content/cnt_a', viewCount: 40 }] };
+const SUMMARY = {
+  totalViews: 52,
+  itemCount: 3,
+  top: [{ id: 'cnt_a', title: 'A', type: 'POEMS', path: '/content/cnt_a', viewCount: 40 }],
+  titleById: { cnt_a: 'A', cnt_b: 'நிலா' },
+};
+
+const EVENTS = {
+  total: 14,
+  totals: [{ type: 'share', count: 10 }, { type: 'inbound', count: 4 }],
+  byType: {
+    share: [{ target: 'whatsapp', count: 10 }],
+    share_song: [{ target: 'cnt_b', count: 7 }],
+  },
+};
 
 beforeEach(() => {
   jest.clearAllMocks();
+  clearCache(); // module-level memo would otherwise leak between tests
   requireAdmin.mockResolvedValue({ sub: 'admin' });
   contentSummary.mockResolvedValue(SUMMARY);
+  eventSummary.mockResolvedValue(EVENTS);
 });
 
 it('rejects non-admins (does not call GA4)', async () => {
@@ -95,4 +118,68 @@ it('clamps the days param to 1..90', async () => {
   isConfigured.mockReturnValue(false);
   const body = await (await GET(req(999))).json();
   expect(body.days).toBe(90);
+});
+
+// The first-party event block was previously unasserted here and rendered with
+// a null fixture in the page test — which is how the derived-type double-count
+// shipped unnoticed.
+describe('first-party events', () => {
+  it('returns the event summary alongside the GA4 sections', async () => {
+    isConfigured.mockReturnValue(false);
+    const body = await (await GET(req(28))).json();
+    expect(body.events).toEqual(EVENTS);
+    expect(eventSummary).toHaveBeenCalledWith(28, 8);
+  });
+
+  it('passes the requested range through to the event query', async () => {
+    isConfigured.mockReturnValue(false);
+    await GET(req(7));
+    expect(eventSummary).toHaveBeenCalledWith(7, 8);
+  });
+
+  it('exposes songTitles so per-song counters render as titles, not cnt_ ids', async () => {
+    isConfigured.mockReturnValue(false);
+    const body = await (await GET(req())).json();
+    expect(body.songTitles).toEqual({ cnt_a: 'A', cnt_b: 'நிலா' });
+  });
+
+  it('still serves the rest when the event store fails', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    isConfigured.mockReturnValue(false);
+    eventSummary.mockRejectedValue(new Error('ProvisionedThroughputExceeded'));
+    const res = await GET(req());
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.events).toBeNull();
+    expect(body.contentViews).toEqual(SUMMARY);
+  });
+});
+
+// GA4 allows only 10 concurrent requests per property and one load fans out to
+// 9, so an uncached toggle/refresh could exhaust the quota and blank the cards.
+describe('caching', () => {
+  it('serves a repeat load from cache instead of re-running the fan-out', async () => {
+    isConfigured.mockReturnValue(true);
+    for (const fn of [
+      ga4.fetchTrafficSnapshot, ga4.fetchTrafficTimeseries, ga4.fetchTopPages,
+      ga4.fetchTrafficSources, ga4.fetchGeo, ga4.fetchDevices,
+      ga4.fetchAudioPlays, ga4.fetchSubscribeClicksBySource, ga4.fetchYouTubeOpens,
+    ]) (fn as jest.Mock).mockResolvedValue({ ok: true, data: {} });
+
+    await GET(req(28));
+    await GET(req(28));
+
+    expect(ga4.fetchTrafficSnapshot).toHaveBeenCalledTimes(1);
+    expect(contentSummary).toHaveBeenCalledTimes(1);
+    expect(eventSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it('caches per range, so switching to 7d still fetches', async () => {
+    isConfigured.mockReturnValue(false);
+    await GET(req(28));
+    await GET(req(7));
+    expect(eventSummary).toHaveBeenCalledTimes(2);
+    expect(eventSummary).toHaveBeenNthCalledWith(1, 28, 8);
+    expect(eventSummary).toHaveBeenNthCalledWith(2, 7, 8);
+  });
 });

@@ -57,6 +57,44 @@ describe('summariseEvents', () => {
     expect(s.total).toBe(0);
     expect(s.totals).toEqual([]);
   });
+
+  // A share carrying a songId writes BOTH `share` and `share_song` for the one
+  // visitor action (see api/events route). Summing both inflated the headline —
+  // worst on shares, the metric the WhatsApp strategy is steered by.
+  describe('server-derived types', () => {
+    const withDerived: EventRow[] = [
+      { type: 'share', target: 'whatsapp', count: 10, date: '2026-07-20' },
+      { type: 'share_song', target: 'cnt_a', count: 7, date: '2026-07-20' },
+      { type: 'inbound', target: 'whatsapp', count: 4, date: '2026-07-20' },
+      { type: 'inbound_song', target: 'cnt_a', count: 3, date: '2026-07-20' },
+    ];
+
+    it('excludes derived types from the action total (no double-count)', () => {
+      const s = summariseEvents(withDerived);
+      // 10 shares + 4 inbound = 14 real actions, NOT 24.
+      expect(s.total).toBe(14);
+    });
+
+    it('excludes derived types from the per-type card list', () => {
+      const s = summariseEvents(withDerived);
+      expect(s.totals.map((t) => t.type)).toEqual(['share', 'inbound']);
+      expect(s.totals.map((t) => t.type)).not.toContain('share_song');
+      expect(s.totals.map((t) => t.type)).not.toContain('inbound_song');
+    });
+
+    it('still exposes derived types under byType for the per-song breakdown', () => {
+      const s = summariseEvents(withDerived);
+      expect(s.byType.share_song).toEqual([{ target: 'cnt_a', count: 7 }]);
+      expect(s.byType.inbound_song).toEqual([{ target: 'cnt_a', count: 3 }]);
+    });
+
+    it('leaves a derived-only range with a zero action total but a live breakdown', () => {
+      const s = summariseEvents([{ type: 'share_song', target: 'cnt_b', count: 5, date: '2026-07-20' }]);
+      expect(s.total).toBe(0);
+      expect(s.totals).toEqual([]);
+      expect(s.byType.share_song).toEqual([{ target: 'cnt_b', count: 5 }]);
+    });
+  });
 });
 
 describe('recordEvent', () => {

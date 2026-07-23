@@ -124,6 +124,7 @@ export class GenerationRepository {
       updatedAt: item.updatedAt,
       engine: item.engine,
       chosenStyle: item.chosenStyle,
+      promptText: item.promptText,
       audioUrl: item.audioUrl,
       settings: item.settings ?? {},
       scores: item.scores ?? {},
@@ -133,6 +134,8 @@ export class GenerationRepository {
       notes: item.notes ?? '',
       audioMetrics: item.audioMetrics ?? null,
       loudness: item.loudness ?? null,
+      tamilVocal: item.tamilVocal,
+      lyricScript: item.lyricScript,
       embedding: item.embedding ?? null,
     }) as Generation;
 }

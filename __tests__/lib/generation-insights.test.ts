@@ -5,7 +5,7 @@
  * the recommendation thresholds.
  */
 
-import { computeInsights, MIN_TOTAL, MIN_GROUP } from '@/lib/generation-insights';
+import { computeInsights, MIN_TOTAL, MIN_GROUP, normalizeEngineModel } from '@/lib/generation-insights';
 import type { Generation } from '@/types/generation';
 
 let seq = 0;
@@ -168,5 +168,63 @@ describe('computeInsights', () => {
     const r = computeInsights(many(MIN_TOTAL, { verdict: 'success' }));
     expect(r.audioContrast.lufs.success).toBeNull();
     expect(r.audioContrast.crest.gap).toBeNull();
+  });
+});
+
+// Added 2026-07-22 after Suno confirmed a model-side regression. The version tag
+// is typed by hand, so unless it's folded into one bucket the sample splits and
+// "did quality drop after the update?" becomes unanswerable.
+describe('normalizeEngineModel', () => {
+  it('folds hand-typed spellings of the same release into one bucket', () => {
+    const variants = ['suno v5.5', 'Suno 5.5', 'SUNO  v5.5 ', 'suno-5.5'];
+    const normalized = new Set(variants.map((v) => normalizeEngineModel(v)));
+    expect(normalized.size).toBe(1);
+    expect([...normalized][0]).toBe('suno v5.5');
+  });
+
+  it('keeps genuinely different versions apart', () => {
+    expect(normalizeEngineModel('suno v5')).not.toBe(normalizeEngineModel('suno v5.5'));
+  });
+
+  it('returns undefined for a blank tag rather than inventing a version', () => {
+    expect(normalizeEngineModel(undefined)).toBeUndefined();
+    expect(normalizeEngineModel('')).toBeUndefined();
+    expect(normalizeEngineModel('   ')).toBeUndefined();
+  });
+
+  it('falls back to the plain tag when there is no version number', () => {
+    expect(normalizeEngineModel('  Udio  Beta ')).toBe('udio beta');
+  });
+});
+
+describe('byEngineVersion', () => {
+  const gen = (engineModel: string, verdict: 'success' | 'failed') =>
+    ({
+      id: `g${Math.random()}`, briefId: 'b1', engine: 'suno', verdict,
+      settings: { engineModel }, scores: {}, stemRevisions: [], notes: '',
+      audioMetrics: null, loudness: null, embedding: null,
+      createdAt: '2026-07-01', updatedAt: '2026-07-01',
+    }) as unknown as Parameters<typeof computeInsights>[0][number];
+
+  it('separates a good release from a regressed one across spelling variants', () => {
+    const gens = [
+      ...Array.from({ length: 4 }, () => gen('suno v5', 'success')),
+      // same release, three different hand-typed spellings — must still pool
+      gen('suno v5.5', 'failed'), gen('Suno 5.5', 'failed'),
+      gen('SUNO v5.5', 'failed'), gen('suno-5.5', 'success'),
+    ];
+    const r = computeInsights(gens);
+    const v5 = r.byEngineVersion.find((b) => b.key === 'suno v5');
+    const v55 = r.byEngineVersion.find((b) => b.key === 'suno v5.5');
+
+    expect(v5).toMatchObject({ total: 4, success: 4, reliable: true });
+    expect(v55).toMatchObject({ total: 4, success: 1, reliable: true });
+    expect(v55!.rate).toBeLessThan(v5!.rate); // the regression is visible
+  });
+
+  it('ignores attempts with no version tag', () => {
+    const r = computeInsights([gen('', 'success'), gen('suno v5', 'success')]);
+    expect(r.byEngineVersion).toHaveLength(1);
+    expect(r.byEngineVersion[0].key).toBe('suno v5');
   });
 });

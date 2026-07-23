@@ -54,6 +54,11 @@ export interface InsightsReport {
   byVoice: GroupRate[];
   /** Success rate grouped by the Custom Model / idiom label used. */
   byModel: GroupRate[];
+  /**
+   * Success rate grouped by NORMALISED engine version (see normalizeEngineModel).
+   * This is the dimension that shows a vendor model change moving quality.
+   */
+  byEngineVersion: GroupRate[];
   settingsContrast: { weirdness: AvgContrast; styleInfluence: AvgContrast };
   /** Measured audio (keepers vs rejects): loudness (LUFS), dynamics (crest), clipping. */
   audioContrast: { lufs: AvgContrast; crest: AvgContrast; clip: AvgContrast };
@@ -80,6 +85,27 @@ function contrast(gens: Generation[], pick: (g: Generation) => number | undefine
   const success = mean(s);
   const failed = mean(f);
   return { success, failed, gap: success != null && failed != null ? success - failed : null };
+}
+
+/**
+ * Fold a free-text engine-version tag into one comparable bucket.
+ *
+ * `settings.engineModel` is typed by hand, so "suno v5.5", "Suno 5.5" and "v5.5"
+ * are the same release but three separate buckets — which silently splits the
+ * sample and makes a version comparison meaningless right when you need it (a
+ * vendor model change is exactly when you want to ask "did quality drop?").
+ *
+ * Deliberately conservative: pull out a version NUMBER when one is present and
+ * key on that; otherwise fall back to the lowercased, whitespace-collapsed tag.
+ * Never invents a version for a blank field.
+ */
+export function normalizeEngineModel(raw?: string): string | undefined {
+  const s = (raw ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!s) return undefined;
+  const m = s.match(/v?(\d+(?:\.\d+)*)/);
+  if (!m) return s;
+  const engine = s.startsWith('suno') ? 'suno' : s.split(/[\s\-_]/)[0].replace(/^v?\d.*/, '');
+  return engine ? `${engine} v${m[1]}` : `v${m[1]}`;
 }
 
 function groupRates(gens: Generation[], key: (g: Generation) => string | undefined): GroupRate[] {
@@ -123,6 +149,10 @@ export function computeInsights(
   const byStyle = groupRates(gens, (g) => g.chosenStyle);
   const byVoice = groupRates(gens, (g) => g.settings?.voiceLabel);
   const byModel = groupRates(gens, (g) => g.settings?.customModel);
+  // Engine VERSION (normalised) — the dimension that answers "did this get worse
+  // after the vendor shipped a new model?". Previously computed nowhere, so the
+  // one field recording the version was never actually compared against outcomes.
+  const byEngineVersion = groupRates(gens, (g) => normalizeEngineModel(g.settings?.engineModel));
 
   const settingsContrast = {
     weirdness: contrast(gens, (g) => g.settings?.weirdness),
@@ -162,12 +192,12 @@ export function computeInsights(
 
   const hasEnoughData = total >= MIN_TOTAL;
   const recommendations = buildRecommendations({
-    total, byVerdict, successRate, scoreContrast, failureReasons, byStyle, byEngine, byVoice, byModel, settingsContrast, audioContrast, genome, hasEnoughData,
+    total, byVerdict, successRate, scoreContrast, failureReasons, byStyle, byEngine, byVoice, byModel, byEngineVersion, settingsContrast, audioContrast, genome, hasEnoughData,
   });
 
   return {
     total, byVerdict, successRate, scoreContrast, failureReasons, audioContrast,
-    byEngine, byStyle, byVoice, byModel, settingsContrast, genome, recommendations, hasEnoughData,
+    byEngine, byStyle, byVoice, byModel, byEngineVersion, settingsContrast, genome, recommendations, hasEnoughData,
   };
 }
 

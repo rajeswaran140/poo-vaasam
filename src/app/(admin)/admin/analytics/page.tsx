@@ -10,7 +10,7 @@
  * first-party section still render when GA4 isn't set up.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
 import { MonetizationPanel } from '@/components/admin/MonetizationPanel';
 
@@ -34,6 +34,8 @@ interface Payload {
   days: number;
   contentViews: ContentViews | null;
   events: EventSummaryUI | null;
+  /** Content id → title, for labelling the per-song event breakdowns. */
+  songTitles?: Record<string, string>;
   ga4: null | {
     snapshot: Section<Snapshot>;
     timeseries: Section<{ points: DayPoint[]; daysBack: number }>;
@@ -51,6 +53,14 @@ const pick = <T,>(s: Section<T> | undefined): { data?: T; error?: string } =>
   !s ? {} : 'data' in s ? { data: s.data } : { error: s.error };
 const nf = (n: number) => n.toLocaleString();
 
+/** Turn a bare status into something an admin can act on, not "HTTP 403". */
+function httpErrorMessage(status: number): string {
+  if (status === 401) return 'Your session expired — sign in again.';
+  if (status === 403) return 'Your account isn’t an admin on this environment.';
+  if (status >= 500) return 'The analytics service failed. Try again shortly.';
+  return `Couldn’t load analytics (HTTP ${status}).`;
+}
+
 const EVENT_LABEL: Record<string, string> = {
   play: 'Plays', share: 'Shares', youtube: 'YouTube opens', subscribe: 'Subscribe clicks', install: 'PWA installs',
   inbound: 'Inbound visits (by source)',
@@ -60,27 +70,48 @@ const EVENT_UNIT: Record<string, string> = {
   inbound: 'visits',
 };
 
+/**
+ * Server-derived per-song breakdowns. These are a second view of an action
+ * already counted (a share writes both `share` and `share_song`), so they're
+ * rendered as their own attribution section rather than mixed into the action
+ * cards — and deliberately excluded from the headline total by the API.
+ */
+const SONG_BREAKDOWNS: { type: string; title: string; unit: string; empty: string }[] = [
+  { type: 'share_song', title: 'Most-forwarded songs', unit: 'shares', empty: 'No song-attributed shares yet.' },
+  { type: 'inbound_song', title: 'Songs driving inbound visits', unit: 'visits', empty: 'No song-attributed arrivals yet.' },
+];
+
 export default function AnalyticsPage() {
   const [days, setDays] = useState(28);
   const [payload, setPayload] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
-  const load = useCallback(async (d: number) => {
+  // Toggling the range mid-flight used to be a race: both requests resolved and
+  // whichever landed LAST won, so a slow 7d response could overwrite 90d data
+  // and render it under the 7d label. Aborting the previous request also keeps
+  // overlapping loads from doubling up on GA4's 10-concurrent-request quota.
+  useEffect(() => {
+    const controller = new AbortController();
     setLoading(true);
     setErr(null);
-    try {
-      const res = await adminFetch(`/api/admin/analytics?days=${d}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setPayload(await res.json());
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to load analytics');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
-  useEffect(() => { load(days); }, [days, load]);
+    (async () => {
+      try {
+        const res = await adminFetch(`/api/admin/analytics?days=${days}`, { signal: controller.signal });
+        if (!res.ok) throw new Error(httpErrorMessage(res.status));
+        const json = await res.json();
+        if (!controller.signal.aborted) setPayload(json);
+      } catch (e) {
+        if (controller.signal.aborted || (e instanceof DOMException && e.name === 'AbortError')) return;
+        setErr(e instanceof Error ? e.message : 'Failed to load analytics');
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    })();
+
+    return () => controller.abort();
+  }, [days]);
 
   const ga4 = payload?.ga4;
   const snap = pick(ga4?.snapshot).data;
@@ -122,10 +153,18 @@ export default function AnalyticsPage() {
         <>
           {/* Summary cards */}
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <Stat label="Users" value={snap ? nf(snap.totalUsers) : '—'} />
-            <Stat label="Sessions" value={snap ? nf(snap.sessions) : '—'} />
-            <Stat label="Page views" value={snap ? nf(snap.pageViews) : '—'} />
-            <Stat label="On-site content views" value={payload.contentViews ? nf(payload.contentViews.totalViews) : '—'} sub="first-party (all time)" />
+            <Stat label={`Users · ${days}d`} value={snap ? nf(snap.totalUsers) : '—'} />
+            <Stat label={`Sessions · ${days}d`} value={snap ? nf(snap.sessions) : '—'} />
+            <Stat label={`Page views · ${days}d`} value={snap ? nf(snap.pageViews) : '—'} />
+            {/* The odd one out: this counter is cumulative, not windowed. Under a
+                "Last N days" header that reads as a window unless the card says
+                otherwise loudly — a small grey sublabel wasn't enough. */}
+            <Stat
+              label="On-site content views · ALL TIME"
+              value={payload.contentViews ? nf(payload.contentViews.totalViews) : '—'}
+              sub={`cumulative — not the last ${days} days`}
+              emphasis
+            />
           </div>
 
           {/* Traffic trend */}
@@ -208,6 +247,36 @@ export default function AnalyticsPage() {
             </div>
           )}
 
+          {/* Per-song attribution — derived server-side from the songId on share
+              and inbound beacons. Kept out of the action total above (a share
+              writes both counters) but shown here, because "which song do people
+              actually forward?" is the question the beacon exists to answer. */}
+          {payload.events && SONG_BREAKDOWNS.some((b) => (payload.events?.byType[b.type] ?? []).length > 0) && (
+            <div className="space-y-3">
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
+                Per-song attribution
+                <span className="ml-2 font-normal text-xs text-gray-400">
+                  not counted again in the total above · last {days}d
+                </span>
+              </h2>
+              <div className="grid gap-4 lg:grid-cols-2">
+                {SONG_BREAKDOWNS.map((b) => (
+                  <Card key={b.type} title={b.title}>
+                    <Table
+                      rows={(payload.events?.byType[b.type] ?? []).map((t) => ({
+                        k: payload.songTitles?.[t.target] || t.target,
+                        sub: t.target,
+                        v: t.count,
+                      }))}
+                      unit={b.unit}
+                      empty={b.empty}
+                    />
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* First-party top-viewed content */}
           {payload.contentViews && payload.contentViews.top.length > 0 && (
             <Card title="Most-viewed content (on-site, all time)">
@@ -220,12 +289,26 @@ export default function AnalyticsPage() {
   );
 }
 
-function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function Stat({ label, value, sub, emphasis }: { label: string; value: string; sub?: string; emphasis?: boolean }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-      <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</p>
+    <div
+      className={`rounded-lg border bg-white p-4 dark:bg-gray-800 ${
+        emphasis
+          ? 'border-amber-300 dark:border-amber-700'
+          : 'border-gray-200 dark:border-gray-700'
+      }`}
+    >
+      <p
+        className={`text-xs font-medium uppercase tracking-wide ${
+          emphasis ? 'text-amber-700 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'
+        }`}
+      >
+        {label}
+      </p>
       <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">{value}</p>
-      {sub && <p className="mt-0.5 text-xs text-gray-400">{sub}</p>}
+      {sub && (
+        <p className={`mt-0.5 text-xs ${emphasis ? 'text-amber-600 dark:text-amber-500' : 'text-gray-400'}`}>{sub}</p>
+      )}
     </div>
   );
 }

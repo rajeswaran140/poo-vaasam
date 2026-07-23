@@ -37,13 +37,55 @@ export type DerivedEventType = (typeof DERIVED_EVENT_TYPES)[number];
 export const STORE_EVENT_TYPES = [...EVENT_TYPES, ...DERIVED_EVENT_TYPES] as const;
 export type StoreEventType = (typeof STORE_EVENT_TYPES)[number];
 
+/**
+ * Shapes a `target` may take, per type. The beacon is public and every distinct
+ * target mints its own DynamoDB counter row, so an unconstrained string lets a
+ * scripted client both inflate the dashboard and grow the table without bound.
+ * Constraining the *shape* caps cardinality while staying permissive enough that
+ * adding a new share channel or CTA needs no change here.
+ *
+ * A lowercase slug covers every current call site (share channels, subscribe CTA
+ * sources, inbound utm_sources); plays and per-song attribution must be content
+ * ids; YouTube opens are a slug or `video:<id>`.
+ */
+const SLUG = /^[a-z][a-z0-9_-]{0,39}$/;
+const CONTENT_ID = /^cnt_[A-Za-z0-9_]{1,60}$/;
+const YT_DESTINATION = /^(?:video:[A-Za-z0-9_-]{6,24}|[a-z][a-z0-9_-]{0,39})$/;
+/**
+ * Plays are keyed by content id in production, but the shape stays deliberately
+ * wider — a slug or one `namespace:value` segment — so a future player surface
+ * can key plays its own way without a silent drop here. Still bounded, which is
+ * the property that matters: no free-form string, no unbounded cardinality.
+ */
+const PLAY_TARGET = /^(?:cnt_[A-Za-z0-9_]{1,60}|[a-z][a-z0-9_-]{0,39}(?::[A-Za-z0-9_-]{1,40})?)$/;
+
+const TARGET_PATTERN: Record<EventType, RegExp> = {
+  play: PLAY_TARGET,
+  share: SLUG,
+  youtube: YT_DESTINATION,
+  subscribe: SLUG,
+  install: SLUG,
+  inbound: SLUG,
+};
+
+/** Does this target match the shape its event type expects? */
+export function isValidTarget(type: EventType, target?: string): boolean {
+  if (target === undefined) return true; // optional — collapses to "-"
+  return TARGET_PATTERN[type].test(target);
+}
+
 /** Payload the browser beacon sends to POST /api/events. */
-export const eventBeaconSchema = z.object({
-  type: z.enum(EVENT_TYPES),
-  target: z.string().trim().min(1).max(120).optional(),
-  /** Which song this share/landing was about — powers the per-song counter. */
-  songId: z.string().trim().min(1).max(120).optional(),
-});
+export const eventBeaconSchema = z
+  .object({
+    type: z.enum(EVENT_TYPES),
+    target: z.string().trim().min(1).max(120).optional(),
+    /** Which song this share/landing was about — powers the per-song counter. */
+    songId: z.string().trim().min(1).max(120).regex(CONTENT_ID).optional(),
+  })
+  .refine((b) => isValidTarget(b.type, b.target), {
+    message: 'target does not match the shape expected for this event type',
+    path: ['target'],
+  });
 export type EventBeacon = z.infer<typeof eventBeaconSchema>;
 
 /** Which client events carry per-song meaning, and what they derive into. */

@@ -132,3 +132,64 @@ describe('createGenerationSchema', () => {
     expect(createGenerationSchema.safeParse({ ...base, failureReason: 'autotune' }).success).toBe(false);
   });
 });
+
+// promptText added 2026-07-22: chosenStyle records only WHICH variant was
+// picked, so a hand-edited prompt — exactly what you do when hunting for
+// wording that still lands post-regression — left the attempt unreproducible.
+describe('promptText', () => {
+  const base = { briefId: 'b1', verdict: 'success' as const };
+
+  it('accepts and trims the prompt actually submitted', () => {
+    const r = createGenerationSchema.safeParse({ ...base, promptText: '  Carnatic ballad, 78 BPM.  ' });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.promptText).toBe('Carnatic ballad, 78 BPM.');
+  });
+
+  it('stays optional so pre-existing rows remain valid', () => {
+    const r = createGenerationSchema.safeParse(base);
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.promptText).toBeUndefined();
+  });
+
+  it('rejects an absurdly long prompt', () => {
+    expect(createGenerationSchema.safeParse({ ...base, promptText: 'x'.repeat(4001) }).success).toBe(false);
+  });
+});
+
+// Tamil A/B fields (2026-07-22) — see docs/TAMIL_VOCAL_AB.md.
+describe('tamilVocal + lyricScript', () => {
+  const base = { briefId: 'b1', verdict: 'success' as const };
+
+  it('accepts the five 0-4 pronunciation axes', () => {
+    const tamilVocal = { retroflex: 4, vowelLength: 3, wordBoundary: 2, gemination: 1, prosody: 0 };
+    const r = createGenerationSchema.safeParse({ ...base, tamilVocal });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.tamilVocal).toEqual(tamilVocal);
+  });
+
+  it('rejects a score outside the 0-4 rubric range', () => {
+    expect(createGenerationSchema.safeParse({ ...base, tamilVocal: { retroflex: 5 } }).success).toBe(false);
+    expect(createGenerationSchema.safeParse({ ...base, tamilVocal: { retroflex: -1 } }).success).toBe(false);
+  });
+
+  it('records which script the lyrics were submitted in', () => {
+    expect(createGenerationSchema.safeParse({ ...base, lyricScript: 'tamil' }).success).toBe(true);
+    expect(createGenerationSchema.safeParse({ ...base, lyricScript: 'romanized' }).success).toBe(true);
+    expect(createGenerationSchema.safeParse({ ...base, lyricScript: 'devanagari' }).success).toBe(false);
+  });
+
+  it('leaves ordinary logging unaffected — both are optional', () => {
+    const r = createGenerationSchema.safeParse(base);
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.tamilVocal).toBeUndefined();
+      expect(r.data.lyricScript).toBeUndefined();
+    }
+  });
+
+  it('accepts the alternative engines the A/B compares', () => {
+    for (const engine of ['suno', 'elevenlabs', 'mureka', 'lyria']) {
+      expect(createGenerationSchema.safeParse({ ...base, engine }).success).toBe(true);
+    }
+  });
+});

@@ -73,8 +73,22 @@ export function PromptExport({
       stylePrompt: v.prompt,
       mood: result.mood,
       theme: result.theme,
+      // Structured direction the brief already computed — without these the
+      // style box got only the model's prose paragraph, and the recommended
+      // VOICE never reached the generator at all.
+      bpm: result.suggested_bpm,
+      key: result.suggested_key,
+      instruments: result.suggested_instruments,
+      ragas: result.suggested_ragas,
+      voice: result.recommended_voice,
     });
-  }, [variants, selectedIdx, lyrics, result.song_titles, result.mood, result.theme]);
+  }, [
+    variants, selectedIdx, lyrics, result.song_titles, result.mood, result.theme,
+    // The structured direction feeds the style anchor — omitting these would
+    // serve a stale pack (old BPM/voice) after switching to another brief.
+    result.suggested_bpm, result.suggested_key, result.suggested_instruments,
+    result.suggested_ragas, result.recommended_voice,
+  ]);
 
   if (!pack) return null;
 

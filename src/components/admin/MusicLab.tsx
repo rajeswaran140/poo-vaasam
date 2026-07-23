@@ -25,6 +25,7 @@ import {
   type LoudnessRecord,
 } from '@/types/generation';
 import { computeInsights, type InsightsReport } from '@/lib/generation-insights';
+import { TAMIL_VOCAL_AXES, MAX_AXIS_SCORE, scoreTamilVocal, type TamilVocalScores } from '@/lib/tamil-vocal-rubric';
 import { streamingNormVerdict, type LoudnessStatus } from '@/lib/loudness-targets';
 import type { SavedBrief } from '@/types/brief';
 
@@ -238,6 +239,8 @@ function InsightsPanel({ report: r }: { report: InsightsReport }) {
   const reliableStyles = r.byStyle.filter((s) => s.reliable).slice(0, 3);
   const reliableVoices = r.byVoice.filter((s) => s.reliable).slice(0, 3);
   const reliableModels = r.byModel.filter((s) => s.reliable).slice(0, 3);
+  // Engine VERSION hit-rate — shows a vendor model change moving quality.
+  const reliableVersions = r.byEngineVersion.filter((s) => s.reliable).slice(0, 4);
   const scoredAxes = AXES.filter((a) => r.scoreContrast[a].gap != null);
 
   return (
@@ -286,6 +289,12 @@ function InsightsPanel({ report: r }: { report: InsightsReport }) {
             <div>
               <p className="mb-1 font-semibold uppercase tracking-wide text-gray-400">Model hit-rate</p>
               <p>{reliableModels.map((s) => `${s.key} ${pct(s.rate)} (${s.total})`).join(' · ')}</p>
+            </div>
+          )}
+          {reliableVersions.length > 0 && (
+            <div>
+              <p className="mb-1 font-semibold uppercase tracking-wide text-gray-400">Engine version hit-rate</p>
+              <p>{reliableVersions.map((s) => `${s.key} ${pct(s.rate)} (${s.total})`).join(' · ')}</p>
             </div>
           )}
           {scoredAxes.length > 0 && (
@@ -430,6 +439,14 @@ function LogGenerationForm({ brief, onSaved }: { brief: SavedBrief; onSaved: (g:
 
   const [engine, setEngine] = useState<string>('suno');
   const [chosenStyle, setChosenStyle] = useState<string>(styles[0] ?? '');
+  // The prompt text actually submitted. Prefilled from the chosen variant, but
+  // EDITABLE — hunting for wording that still lands means hand-tweaking before
+  // pasting, and an unrecorded tweak makes the attempt unreproducible.
+  const [promptText, setPromptText] = useState('');
+  const [promptDirty, setPromptDirty] = useState(false);
+  // Tamil A/B fields — collapsed by default so ordinary logging is unchanged.
+  const [tamilVocal, setTamilVocal] = useState<TamilVocalScores>({});
+  const [lyricScript, setLyricScript] = useState('');
   const [audioUrl, setAudioUrl] = useState('');
   const [weirdness, setWeirdness] = useState('');
   const [styleInfluence, setStyleInfluence] = useState('');
@@ -451,6 +468,9 @@ function LogGenerationForm({ brief, onSaved }: { brief: SavedBrief; onSaved: (g:
   // Reset the form when the brief changes (don't leak one brief's draft into another).
   useEffect(() => {
     setChosenStyle((brief.analysis?.suno_prompts?.[0]?.style) ?? '');
+    setPromptText((brief.analysis?.suno_prompts?.[0]?.prompt) ?? '');
+    setPromptDirty(false);
+    setTamilVocal({}); setLyricScript('');
     setEngine('suno');
     setAudioUrl(''); setWeirdness(''); setStyleInfluence(''); setEngineModel('');
     setVoiceLabel(''); setCustomModel(''); setStemRevisionsText('');
@@ -515,6 +535,9 @@ function LogGenerationForm({ brief, onSaved }: { brief: SavedBrief; onSaved: (g:
       briefId: brief.id,
       engine,
       chosenStyle: chosenStyle || undefined,
+      promptText: promptText.trim() || undefined,
+      tamilVocal: Object.keys(tamilVocal).length ? tamilVocal : undefined,
+      lyricScript: lyricScript || undefined,
       audioUrl: audioUrl || undefined,
       settings,
       scores,
@@ -575,7 +598,19 @@ function LogGenerationForm({ brief, onSaved }: { brief: SavedBrief; onSaved: (g:
         <label className="flex flex-col gap-1 text-sm font-medium text-gray-700 dark:text-gray-200">
           Style variant {styles.length === 0 && <span className="text-xs font-normal text-gray-400">(brief has none)</span>}
           {styles.length > 0 ? (
-            <select value={chosenStyle} onChange={(e) => setChosenStyle(e.target.value)} className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
+            <select
+              value={chosenStyle}
+              onChange={(e) => {
+                setChosenStyle(e.target.value);
+                // Follow the variant's prompt unless the user has hand-edited —
+                // never silently discard their wording.
+                if (!promptDirty) {
+                  const v = brief.analysis?.suno_prompts?.find((p) => p.style === e.target.value);
+                  setPromptText(v?.prompt ?? '');
+                }
+              }}
+              className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+            >
               {styles.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           ) : (
@@ -583,6 +618,103 @@ function LogGenerationForm({ brief, onSaved }: { brief: SavedBrief; onSaved: (g:
           )}
         </label>
       </div>
+
+      <label className="mt-4 flex flex-col gap-1 text-sm font-medium text-gray-700 dark:text-gray-200">
+        Style prompt actually used
+        <span className="text-xs font-normal text-gray-400">
+          Prefilled from the variant — edit it to match exactly what you pasted, so this
+          attempt is reproducible and comparable{promptDirty && ' · edited'}
+        </span>
+        <textarea
+          value={promptText}
+          onChange={(e) => { setPromptText(e.target.value); setPromptDirty(true); }}
+          rows={3}
+          placeholder="The style/instrumentation/tempo text submitted to the engine"
+          className="rounded-md border border-gray-300 px-3 py-2 font-mono text-xs dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+        />
+      </label>
+
+      <details className="mt-4 rounded-md border border-gray-200 p-3 dark:border-gray-700">
+        <summary className="cursor-pointer text-sm font-medium text-gray-700 dark:text-gray-200">
+          Tamil pronunciation scoring
+          <span className="ml-2 text-xs font-normal text-gray-400">
+            for engine / prompt comparisons — leave closed for ordinary logging
+          </span>
+        </summary>
+
+        <label className="mt-3 flex flex-col gap-1 text-sm font-medium text-gray-700 dark:text-gray-200">
+          Lyrics submitted as
+          <select
+            value={lyricScript}
+            onChange={(e) => setLyricScript(e.target.value)}
+            className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+          >
+            <option value="">— not recorded —</option>
+            <option value="tamil">Tamil script (தமிழ்)</option>
+            <option value="romanized">Romanized</option>
+          </select>
+        </label>
+
+        <div className="mt-3 space-y-3">
+          {TAMIL_VOCAL_AXES.map((axis) => (
+            <div key={axis.key}>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{axis.label}</span>
+                <span className="text-xs text-gray-400">{axis.probes.join(' · ')}</span>
+              </div>
+              <p className="text-xs text-gray-400">{axis.why}</p>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {Array.from({ length: MAX_AXIS_SCORE + 1 }, (_, n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() =>
+                      setTamilVocal((prev) => {
+                        const next = { ...prev };
+                        if (next[axis.key] === n) delete next[axis.key];
+                        else next[axis.key] = n;
+                        return next;
+                      })
+                    }
+                    aria-pressed={tamilVocal[axis.key] === n}
+                    title={axis.anchors[n]}
+                    className={`rounded px-2 py-1 text-xs ${
+                      tamilVocal[axis.key] === n
+                        ? 'bg-orange-600 text-white'
+                        : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+                {typeof tamilVocal[axis.key] === 'number' && (
+                  <span className="self-center pl-2 text-xs text-gray-500 dark:text-gray-400">
+                    {axis.anchors[tamilVocal[axis.key] as number]}
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {(() => {
+          const r = scoreTamilVocal(tamilVocal);
+          if (r.verdict === null) {
+            return (
+              <p className="mt-3 text-xs text-gray-400">
+                Scored {r.scored}/{r.total} axes — score retroflex, vowel length and gemination for a verdict.
+              </p>
+            );
+          }
+          return (
+            <p className="mt-3 text-xs text-gray-600 dark:text-gray-300">
+              Composite <strong>{r.composite}</strong> · intelligibility <strong>{r.intelligibility}</strong> ·{' '}
+              <strong>{r.verdict}</strong>
+              <span className="ml-1 text-gray-400">(verdict is gated on intelligibility, not the composite)</span>
+            </p>
+          );
+        })()}
+      </details>
 
       <div className="mt-4">
         <MediaUploadField kind="audio" label="Audio" value={audioUrl} onChange={setAudioUrl} helpText="Upload the generated MP3, or paste a URL. Optional — you can rate before the audio is back." />

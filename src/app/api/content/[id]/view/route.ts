@@ -19,14 +19,14 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
-import { RateLimiter, checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
+import { SharedRateLimiter, checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// One view per visitor/session is the norm; this caps a single scripted client
-// hammering the counter on one warm instance.
-const limiter = new RateLimiter({ windowMs: 60_000, max: 60 });
+// One view per visitor/session is the norm; this caps a scripted client
+// inflating the counter, now across instances rather than per warm Lambda.
+const limiter = new SharedRateLimiter({ bucket: 'content-view', windowMs: 60_000, max: 60 });
 
 // Content ids are minted as `cnt_<digits>_<alnum>` (see ContentRepository).
 const CONTENT_ID = /^cnt_[A-Za-z0-9_]+$/;
@@ -35,7 +35,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const rl = checkRateLimit(limiter, request);
+  const rl = await checkRateLimit(limiter, request);
   if (!rl.allowed) return rateLimitedResponse(rl);
 
   const { id } = await params;

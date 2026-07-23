@@ -1,5 +1,6 @@
 import {
   buildExportPack,
+  buildStyleAnchor,
   exportPackToMarkdown,
   deriveExclusions,
   deriveWeirdness,
@@ -132,6 +133,82 @@ describe('buildExportPack', () => {
 
   it('falls back to "Untitled" on a blank title', () => {
     expect(buildExportPack({ title: '  ', lyrics: 'x', styleName: 's', stylePrompt: 'p' }).title).toBe('Untitled');
+  });
+});
+
+// Suno support (2026-07) confirmed a model-side regression in prompt adherence
+// and advised naming exact genre, BPM, instrumentation and VOCAL CHARACTER. The
+// brief already computed all four; only the model's prose paragraph was reaching
+// the style box, and recommended_voice was being dropped entirely.
+describe('buildStyleAnchor', () => {
+  const full = {
+    title: 'T',
+    lyrics: 'L',
+    styleName: 'S',
+    stylePrompt: 'A Carnatic devotional ballad with flute and veena.',
+    bpm: 78,
+    key: 'D Minor',
+    ragas: ['Abheri', 'Todi'],
+    instruments: ['bansuri', 'veena', 'tabla'],
+    voice: ['Male Baritone', 'Male Tenor'],
+  };
+
+  it('states BPM, key, raga, instruments and vocal character explicitly', () => {
+    const anchor = buildStyleAnchor(full);
+    expect(anchor).toContain('78 BPM');
+    expect(anchor).toContain('key D Minor');
+    expect(anchor).toContain('raga Abheri');
+    expect(anchor).toContain('bansuri, veena, tabla');
+    expect(anchor).toContain('vocal Male Baritone');
+  });
+
+  it('uses only the top-ranked raga and voice, not the whole ranked list', () => {
+    const anchor = buildStyleAnchor(full);
+    expect(anchor).not.toContain('Todi');
+    expect(anchor).not.toContain('Male Tenor');
+  });
+
+  it('omits sections the brief did not supply', () => {
+    const anchor = buildStyleAnchor({ title: 'T', lyrics: 'L', styleName: 'S', stylePrompt: 'p', bpm: 90 });
+    expect(anchor).toBe('90 BPM.');
+  });
+
+  it('returns empty for a brief with no structured direction', () => {
+    expect(buildStyleAnchor({ title: 'T', lyrics: 'L', styleName: 'S', stylePrompt: 'p' })).toBe('');
+  });
+
+  it('ignores blank entries rather than emitting empty fragments', () => {
+    const anchor = buildStyleAnchor({
+      title: 'T', lyrics: 'L', styleName: 'S', stylePrompt: 'p',
+      key: '   ', ragas: ['', '  '], instruments: ['veena', ''], voice: [],
+    });
+    expect(anchor).toBe('lead instruments veena.');
+  });
+});
+
+describe('buildExportPack — style anchor', () => {
+  it('appends the anchor to the style the user pastes into the generator', () => {
+    const pack = buildExportPack({
+      title: 'T', lyrics: 'L', styleName: 'S',
+      stylePrompt: 'A Carnatic devotional ballad.',
+      bpm: 78, voice: ['Male Baritone'], instruments: ['veena'],
+    });
+    expect(pack.style).toBe('A Carnatic devotional ballad. 78 BPM. lead instruments veena. vocal Male Baritone.');
+  });
+
+  it('leaves the style untouched when the brief carries no structured direction', () => {
+    const pack = buildExportPack({ title: 'T', lyrics: 'L', styleName: 'S', stylePrompt: 'A ballad.' });
+    expect(pack.style).toBe('A ballad.');
+  });
+
+  it('still derives exclusions from the original prompt, not the anchor', () => {
+    // The anchor names instruments; it must not accidentally cancel an exclusion.
+    const pack = buildExportPack({
+      title: 'T', lyrics: 'L', styleName: 'S',
+      stylePrompt: 'A gentle acoustic ballad.',
+      instruments: ['electric guitar'],
+    });
+    expect(pack.excludeStyles).toContain('distorted electric guitar');
   });
 });
 

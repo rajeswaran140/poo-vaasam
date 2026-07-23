@@ -120,7 +120,7 @@ describe('clientIp', () => {
 });
 
 describe('clientIp — bypass regression (the actual vulnerability)', () => {
-  it('gives a spoofing attacker the SAME bucket every request, so the limit holds', () => {
+  it('gives a spoofing attacker the SAME bucket every request, so the limit holds', async () => {
     const rl = new RateLimiter({ windowMs: 60_000, max: 2 });
     // Same real viewer (203.0.113.7), rotating the spoofed left-hand entry each
     // request — the classic bypass. All three must land in one bucket.
@@ -129,22 +129,22 @@ describe('clientIp — bypass regression (the actual vulnerability)', () => {
         headers: { 'x-forwarded-for': `${fake}, 203.0.113.7` },
       });
 
-    expect(checkRateLimit(rl, spoof('1.1.1.1')).allowed).toBe(true);
-    expect(checkRateLimit(rl, spoof('2.2.2.2')).allowed).toBe(true);
-    expect(checkRateLimit(rl, spoof('3.3.3.3')).allowed).toBe(false);
-    expect(checkRateLimit(rl, spoof('4.4.4.4')).allowed).toBe(false);
+    expect((await checkRateLimit(rl, spoof('1.1.1.1'))).allowed).toBe(true);
+    expect((await checkRateLimit(rl, spoof('2.2.2.2'))).allowed).toBe(true);
+    expect((await checkRateLimit(rl, spoof('3.3.3.3'))).allowed).toBe(false);
+    expect((await checkRateLimit(rl, spoof('4.4.4.4'))).allowed).toBe(false);
   });
 
-  it('still separates two genuinely different viewers', () => {
+  it('still separates two genuinely different viewers', async () => {
     const rl = new RateLimiter({ windowMs: 60_000, max: 1 });
     const viewer = (ip: string) =>
       new NextRequest('http://localhost/api/events', {
         headers: { 'x-forwarded-for': `cf-edge, ${ip}` },
       });
 
-    expect(checkRateLimit(rl, viewer('203.0.113.7')).allowed).toBe(true);
-    expect(checkRateLimit(rl, viewer('203.0.113.7')).allowed).toBe(false);
-    expect(checkRateLimit(rl, viewer('198.51.100.4')).allowed).toBe(true);
+    expect((await checkRateLimit(rl, viewer('203.0.113.7'))).allowed).toBe(true);
+    expect((await checkRateLimit(rl, viewer('203.0.113.7'))).allowed).toBe(false);
+    expect((await checkRateLimit(rl, viewer('198.51.100.4'))).allowed).toBe(true);
   });
 });
 
@@ -165,19 +165,19 @@ describe('rateLimitedResponse', () => {
 });
 
 describe('checkRateLimit', () => {
-  it('keys the limiter on the request IP', () => {
+  it('keys the limiter on the request IP', async () => {
     const rl = new RateLimiter({ windowMs: 60_000, max: 1 });
     const req = new NextRequest('http://localhost/api/x', {
       headers: { 'x-forwarded-for': '1.2.3.4' },
     });
-    expect(checkRateLimit(rl, req).allowed).toBe(true);
-    expect(checkRateLimit(rl, req).allowed).toBe(false);
+    expect((await checkRateLimit(rl, req)).allowed).toBe(true);
+    expect((await checkRateLimit(rl, req)).allowed).toBe(false);
   });
 
-  it('buckets all header-less callers together rather than throwing', () => {
+  it('buckets all header-less callers together rather than throwing', async () => {
     const rl = new RateLimiter({ windowMs: 60_000, max: 1 });
     const bare = () => new NextRequest('http://localhost/api/x');
-    expect(checkRateLimit(rl, bare()).allowed).toBe(true);
-    expect(checkRateLimit(rl, bare()).allowed).toBe(false);
+    expect((await checkRateLimit(rl, bare())).allowed).toBe(true);
+    expect((await checkRateLimit(rl, bare())).allowed).toBe(false);
   });
 });

@@ -7,6 +7,27 @@
 
 import { NextRequest } from 'next/server';
 
+/**
+ * Rate limiting now goes through DynamoDB (SharedRateLimiter), so the store is
+ * mocked with a counting fake. Without this the limiter would fall back to its
+ * per-instance tier via an error path — and `.env.local` names the PRODUCTION
+ * table, so an unmocked test must never be one SDK change away from writing to it.
+ */
+jest.mock('@/infrastructure/database/dynamodb-client', () => {
+  const rows = new Map<string, number>();
+  return {
+    DynamoDBOperations: {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      update: jest.fn(async ({ key, expressionAttributeValues }: any) => {
+        const id = `${key.PK}|${key.SK}`;
+        const count = (rows.get(id) ?? 0) + expressionAttributeValues[':one'];
+        rows.set(id, count);
+        return { count };
+      }),
+    },
+  };
+});
+
 jest.mock('@/lib/analytics-store', () => {
   const recordEvent = jest.fn();
   return { recordEvent, __recordEvent: recordEvent };

@@ -7,10 +7,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { generateChatResponse } from '@/services/ai/claude';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
-import { RateLimiter, checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
+import { SharedRateLimiter, checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 
 // Unauthenticated + spends an Anthropic call per request — cap per IP.
-const limiter = new RateLimiter({ windowMs: 60_000, max: 20 });
+const limiter = new SharedRateLimiter({ bucket: 'ai-chat', windowMs: 60_000, max: 20 });
 
 // This route is PUBLIC and unauthenticated, so the request body is bounded
 // before it reaches the LLM: a capped number of messages, each capped in size.
@@ -29,7 +29,7 @@ const chatRequestSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const rl = checkRateLimit(limiter, request);
+  const rl = await checkRateLimit(limiter, request);
   if (!rl.allowed) return rateLimitedResponse(rl);
 
   try {

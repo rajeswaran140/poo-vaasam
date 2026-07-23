@@ -8,16 +8,16 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { RateLimiter, checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
+import { SharedRateLimiter, checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 import { pushSubscriptionSchema, savePushSubscription } from '@/lib/push-store';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const limiter = new RateLimiter({ windowMs: 60_000, max: 20 });
+const limiter = new SharedRateLimiter({ bucket: 'push-subscribe', windowMs: 60_000, max: 20 });
 
 export async function POST(request: NextRequest) {
-  const rl = checkRateLimit(limiter, request);
+  const rl = await checkRateLimit(limiter, request);
   if (!rl.allowed) return rateLimitedResponse(rl);
 
   let body: unknown;
