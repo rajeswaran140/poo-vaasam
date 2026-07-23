@@ -15,6 +15,7 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createPresignedPost, type PresignedPost } from '@aws-sdk/s3-presigned-post';
 import { s3Config, mediaUrl } from '@/lib/aws-config';
+import { attachmentDisposition } from '@/lib/content-disposition';
 
 /**
  * Create S3 Client
@@ -159,14 +160,13 @@ export class S3Operations {
    * it the browser honours the object's own Content-Type — a top-level
    * navigation to an `audio/wav` object opens the built-in media player instead
    * of saving the file, which for a mastering output is never what was wanted.
+   * The disposition carries a UTF-8 `filename*` so a Tamil master title survives.
    */
   static async getSignedUrl(key: string, expiresIn: number = 3600, downloadAs?: string) {
     const command = new GetObjectCommand({
       Bucket: BUCKET_NAME,
       Key: key,
-      ...(downloadAs
-        ? { ResponseContentDisposition: `attachment; filename="${downloadAs.replace(/"/g, '')}"` }
-        : {}),
+      ...(downloadAs ? { ResponseContentDisposition: attachmentDisposition(downloadAs) } : {}),
     });
 
     return await getSignedUrl(s3Client, command, { expiresIn });

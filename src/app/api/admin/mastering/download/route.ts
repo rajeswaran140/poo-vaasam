@@ -10,6 +10,10 @@
  *    range requests minutes after the URL was minted, and a SigV4 URL that has
  *    expired would 403 the seek mid-listen.
  *
+ * An optional `name` presents a human-facing download filename (e.g. the admin's
+ * "Amma En Agame (Master -14 LUFS)") while the S3 key stays UUID-based. It is
+ * sanitised server-side — the client is not trusted to produce a safe header.
+ *
  * The bucket is private (no direct S3 GET), so a presigned S3 GET is the way
  * out. NB: CloudFront fronts the whole bucket by default, so `audio/mastering/*`
  * is kept off the public CDN by an explicit bucket-policy Deny on the CloudFront
@@ -25,7 +29,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
 import { S3Operations } from '@/infrastructure/storage/s3-client';
-import { isMasteringKey, downloadFilename } from '@/lib/mastering-storage';
+import { isMasteringKey, downloadFilename, sanitizeMasterFilename } from '@/lib/mastering-storage';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -50,9 +54,12 @@ export async function GET(request: NextRequest) {
     );
   }
   const play = request.nextUrl.searchParams.get('mode') === 'play';
+  const requestedName = request.nextUrl.searchParams.get('name');
 
   try {
-    const filename = downloadFilename(key);
+    // A caller-supplied title wins (sanitised); otherwise fall back to the
+    // de-noised key name. Play mode never attaches a filename at all.
+    const filename = requestedName ? sanitizeMasterFilename(requestedName) : downloadFilename(key);
     const ttl = play ? PLAY_URL_TTL_SECONDS : DOWNLOAD_URL_TTL_SECONDS;
     // Attachment only for download; play mode leaves the audio/wav type intact
     // so <audio> streams it. See getSignedUrl's `downloadAs`.

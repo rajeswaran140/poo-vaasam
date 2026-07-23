@@ -9,6 +9,7 @@ import {
   isMasteringKey,
   masteringUploadKey,
   downloadFilename,
+  sanitizeMasterFilename,
 } from '@/lib/mastering-storage';
 import { isMasterKey } from '@/lib/loudness-measure';
 
@@ -75,8 +76,45 @@ describe('masteringUploadKey', () => {
 });
 
 describe('downloadFilename', () => {
-  it('is the last path segment', () => {
-    expect(downloadFilename(`${MASTERING_PREFIX}1_a_song-master-14LUFS.wav`)).toBe('1_a_song-master-14LUFS.wav');
+  it('strips the timestamp_nonce storage prefix we add on upload', () => {
+    expect(downloadFilename(`${MASTERING_PREFIX}1_a_song-master-14LUFS.wav`)).toBe('song-master-14LUFS.wav');
+    expect(
+      downloadFilename(`${MASTERING_PREFIX}1784838435834_c969e1c3_-_01_8-master-14LUFS.wav`)
+    ).toBe('01_8-master-14LUFS.wav'); // leading "-_" punctuation from SUNO dropped too
+  });
+
+  it('never yields an empty or extension-only name', () => {
+    expect(downloadFilename(`${MASTERING_PREFIX}1_a_.wav`)).toBe('master.wav');
+    expect(downloadFilename(`${MASTERING_PREFIX}x.wav`)).toBe('x.wav');
+  });
+});
+
+describe('sanitizeMasterFilename', () => {
+  it('keeps a friendly title and appends a single .wav', () => {
+    expect(sanitizeMasterFilename('Amma En Agame (Master -14 LUFS)')).toBe('Amma En Agame (Master -14 LUFS).wav');
+    expect(sanitizeMasterFilename('song.wav')).toBe('song.wav'); // no doubled extension
+  });
+
+  it('preserves Tamil (Unicode letters survive)', () => {
+    expect(sanitizeMasterFilename('அம்மம்மா என் அகமே')).toBe('அம்மம்மா என் அகமே.wav');
+  });
+
+  it('strips separators, quotes and control chars so it cannot inject header directives', () => {
+    // This is a download filename, not an S3 key, so ".." is harmless — the
+    // properties that matter are: no path separators, no quotes, no controls.
+    expect(sanitizeMasterFilename('a/b\\c')).toBe('a b c.wav');
+    expect(sanitizeMasterFilename('he said "hi"')).toBe('he said hi.wav');
+    expect(sanitizeMasterFilename('line\nbreak\tinjection')).toBe('linebreakinjection.wav');
+    expect(sanitizeMasterFilename('../../etc/passwd')).not.toMatch(/[\\/]/);
+  });
+
+  it('falls back rather than producing a bare .wav', () => {
+    expect(sanitizeMasterFilename('   ')).toBe('master.wav');
+    expect(sanitizeMasterFilename('///')).toBe('master.wav');
+  });
+
+  it('caps runaway length', () => {
+    expect(sanitizeMasterFilename('x'.repeat(500)).length).toBeLessThanOrEqual(124); // 120 + ".wav"
   });
 });
 

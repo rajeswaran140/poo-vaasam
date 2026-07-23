@@ -200,6 +200,61 @@ describe('download', () => {
     await waitFor(() => expect(window.open).toHaveBeenCalledWith('https://s3/signed', '_blank', 'noopener'));
     expect(screen.getByText(/3 · Result/)).toBeInTheDocument();
   });
+
+  it('carries the master title (with its target) into the download request', async () => {
+    primeHappyPath();
+    render(<MasteringStudio />);
+    await uploadA();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Master to/ })).toBeEnabled());
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to/ })); });
+    await screen.findByText(/3 · Result/);
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/name this master/i), { target: { value: 'Amma En Agame' } });
+    });
+    mockedFetch.mockResolvedValueOnce(json({ success: true, url: 'https://s3/signed', filename: 'x.wav' }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Download for Adobe/ })); });
+
+    const url = mockedFetch.mock.calls.at(-1)![0] as string;
+    expect(url).toContain('name=' + encodeURIComponent('Amma En Agame (Master -14 LUFS)'));
+  });
+
+  it('with no title, the download request omits the name (server de-noises the key)', async () => {
+    primeHappyPath();
+    render(<MasteringStudio />);
+    await uploadA();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Master to/ })).toBeEnabled());
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to/ })); });
+    await screen.findByText(/3 · Result/);
+
+    mockedFetch.mockResolvedValueOnce(json({ success: true, url: 'https://s3/signed', filename: 'x.wav' }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Download for Adobe/ })); });
+    expect(mockedFetch.mock.calls.at(-1)![0] as string).not.toContain('name=');
+  });
+
+  it('saves a loudness report as a downloadable text file', async () => {
+    primeHappyPath();
+    render(<MasteringStudio />);
+    await uploadA();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Master to/ })).toBeEnabled());
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to/ })); });
+    await screen.findByText(/3 · Result/);
+
+    const createObjectURL = jest.fn(() => 'blob:report');
+    const revokeObjectURL = jest.fn();
+    (URL as unknown as { createObjectURL: unknown }).createObjectURL = createObjectURL;
+    (URL as unknown as { revokeObjectURL: unknown }).revokeObjectURL = revokeObjectURL;
+    const clickSpy = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Download report/ })); });
+
+    // A Blob was turned into an object URL and a click fired to save it; the
+    // report's content/name are pinned in master-report.test.ts.
+    expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
+    expect(clickSpy).toHaveBeenCalled();
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:report');
+    clickSpy.mockRestore();
+  });
 });
 
 describe('job recovery', () => {
