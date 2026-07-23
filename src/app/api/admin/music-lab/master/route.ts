@@ -1,12 +1,18 @@
 /**
  * POST /api/admin/music-lab/master — enqueue an async mastering job for a "hot"
- * take. Body: { s3Key, bucket?, target=-14 }. Admin-gated, Node runtime.
+ * take. Body: { s3Key, target=-14 }. Admin-gated, Node runtime.
  *
  * Creates a `processing` MasterJob in DynamoDB, fire-and-forget invokes the
  * `master-worker` Lambda (Event invocation — returns instantly), and returns the
  * jobId. The worker (ffmpeg layer, up to 15 min) does the two-pass loudnorm off
  * the request path; the client polls GET /api/admin/music-lab/master/[jobId].
  * (Repo idiom: Event-invoke + DynamoDB job, NOT SQS.)
+ *
+ * The source key is constrained to the mastering workspace prefix, matching the
+ * download route: without it an admin session could run the ffmpeg worker
+ * against ANY object in the bucket. The bucket is likewise NOT caller-supplied —
+ * the worker reads its own TAKES_BUCKET — so a request can't point the worker at
+ * an arbitrary bucket.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -16,14 +22,12 @@ import { MasterJobRepository } from '@/infrastructure/database/MasterJobReposito
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { awsConfig } from '@/lib/aws-config';
 import { isValidTarget, isMasterKey, MIN_TARGET_LUFS, MAX_TARGET_LUFS } from '@/lib/loudness-measure';
+import { isMasteringKey } from '@/lib/mastering-storage';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const MASTER_WORKER_FUNCTION = process.env.MASTER_WORKER_FUNCTION || 'tamilagaval-master-worker';
-
-const validKey = (k: unknown): k is string =>
-  typeof k === 'string' && k.length > 0 && k.length <= 1024 && !k.includes('..') && !/^https?:\/\//i.test(k);
 
 export async function POST(request: NextRequest) {
   try {
@@ -34,8 +38,13 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json().catch(() => null);
   const s3Key = (body?.s3Key as string)?.replace(/^\/+/, '');
-  if (!validKey(s3Key)) {
-    return NextResponse.json({ success: false, error: 'A valid s3Key is required' }, { status: 400 });
+  // Only keys inside the mastering workspace may be enqueued — an admin session
+  // must not be able to run the worker against arbitrary bucket objects.
+  if (!isMasteringKey(s3Key)) {
+    return NextResponse.json(
+      { success: false, error: 'That key is not in the mastering workspace.' },
+      { status: 400 }
+    );
   }
   if (isMasterKey(s3Key)) {
     return NextResponse.json(
@@ -52,7 +61,6 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-  const bucket = typeof body?.bucket === 'string' ? body.bucket : undefined;
   const jobId = randomUUID();
 
   try {
@@ -65,7 +73,7 @@ export async function POST(request: NextRequest) {
       new InvokeCommand({
         FunctionName: MASTER_WORKER_FUNCTION,
         InvocationType: 'Event', // async — returns at once
-        Payload: Buffer.from(JSON.stringify({ jobId, s3Key, ...(bucket ? { bucket } : {}), target })),
+        Payload: Buffer.from(JSON.stringify({ jobId, s3Key, target })),
       })
     );
     return NextResponse.json({ success: true, jobId, status: 'queued' }, { status: 202 });

@@ -91,3 +91,51 @@ it('surfaces a play-URL failure instead of silently dying', async () => {
   render(<MasteringComparePlayer {...props} />);
   expect(await screen.findByRole('alert')).toHaveTextContent(/nope/i);
 });
+
+it('preloads only metadata, never the full multi-hundred-MB WAVs up front', () => {
+  mockedFetch.mockResolvedValue(json({ success: true, url: 'https://s3/x' }));
+  const { container } = render(<MasteringComparePlayer {...props} />);
+  const audios = Array.from(container.querySelectorAll('audio'));
+  expect(audios).toHaveLength(2);
+  // "auto" would buffer both files (~140 MB) the instant a finished job renders.
+  audios.forEach((a) => expect(a.getAttribute('preload')).toBe('metadata'));
+});
+
+it('enables playback at readyState 1 (metadata) — no waiting for buffered data', async () => {
+  mockedFetch.mockResolvedValue(json({ success: true, url: 'https://s3/x' }));
+  // preload="metadata" reaches HAVE_METADATA (1) and stops; it never hits 2
+  // until play(). Gating on 2 would leave the button spinning forever.
+  Object.defineProperty(HTMLMediaElement.prototype, 'readyState', { configurable: true, get: () => 1 });
+  const { container } = render(<MasteringComparePlayer {...props} />);
+  await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(2));
+
+  const play = screen.getByRole('button', { name: /^play$/i });
+  expect(play).toBeDisabled(); // nothing loaded yet
+  const audios = Array.from(container.querySelectorAll('audio'));
+  await act(async () => {
+    audios.forEach((a) => fireEvent.loadedMetadata(a));
+  });
+  expect(play).toBeEnabled();
+});
+
+it('becomes ready even if the master metadata arrives before the source metadata', async () => {
+  // Regression: the source element must carry onLoadedMetadata too. If only the
+  // master fires it, onLoaded runs once, sees the source not-yet-ready and — with
+  // no source metadata handler — never re-fires, deadlocking the button.
+  mockedFetch.mockResolvedValue(json({ success: true, url: 'https://s3/x' }));
+  const states = new WeakMap<HTMLMediaElement, number>();
+  Object.defineProperty(HTMLMediaElement.prototype, 'readyState', {
+    configurable: true,
+    get() { return states.get(this) ?? 0; },
+  });
+  const { container } = render(<MasteringComparePlayer {...props} />);
+  await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(2));
+  const [srcAudio, masAudio] = Array.from(container.querySelectorAll('audio'));
+
+  // Master metadata lands FIRST while the source is still at 0.
+  await act(async () => { states.set(masAudio, 1); fireEvent.loadedMetadata(masAudio); });
+  expect(screen.getByRole('button', { name: /^play$/i })).toBeDisabled();
+  // Then the source metadata lands — its own handler must flip the button on.
+  await act(async () => { states.set(srcAudio, 1); fireEvent.loadedMetadata(srcAudio); });
+  expect(screen.getByRole('button', { name: /^play$/i })).toBeEnabled();
+});
