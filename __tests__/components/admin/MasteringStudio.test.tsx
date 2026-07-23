@@ -21,6 +21,14 @@ jest.mock('lucide-react', () => ({
   X: () => <svg data-testid="i-x" />,
   Info: () => <svg data-testid="i-info" />,
 }));
+// The before/after player is its own unit (see MasteringComparePlayer.test);
+// stub it here so the Studio suite tests wiring, not the player's Web Audio /
+// icon internals. Exposes a marker asserting it renders once a job is done.
+jest.mock('@/components/admin/MasteringComparePlayer', () => ({
+  MasteringComparePlayer: (p: { sourceKey: string; masterKey: string }) => (
+    <div data-testid="compare-player" data-source={p.sourceKey} data-master={p.masterKey} />
+  ),
+}));
 
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MasteringStudio } from '@/components/admin/MasteringStudio';
