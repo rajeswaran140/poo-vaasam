@@ -196,6 +196,49 @@ Mastering is step one of getting a song onto YouTube at consistent quality:
 > Rule of thumb: a song already near -14 LUFS barely changes — that's correct, not a failure. The win is on the quiet and hot outliers.`,
   },
   {
+    slug: 'streaming-distribution-spotify',
+    title: 'Spotify & streaming — get the catalogue discoverable',
+    category: 'Distribution',
+    updatedAt: '2026-07-23',
+    body: `# Spotify & streaming — get the catalogue discoverable
+
+Streaming is the best-fit channel for a niche, loyal audience: people discover you through **playlists** and *return* through **follows, library saves, and radio** — the returning-listener loyalty the YouTube feed structurally won't give. It also rewards careful mastering (YouTube just re-normalizes over it). Right now it's your biggest untapped reach.
+
+## Where you stand (audit, 2026-07-23)
+- Artist: **TamilAgaval** — one consistent profile (good — no fragmentation across duplicates).
+- **1 follower**; monthly listeners too low to display.
+- **Not claimed / unverified** — no badge, bio, or photo.
+- **One song** live (நீ சிரிச்ச நேரம் தான்), showing as both a Single and an Album — verify with the distributor it isn't uploaded twice.
+
+The profile exists but is **invisible** — even your YouTube fans can't find or follow it. That's a funnel leak, not a dead end.
+
+## Priority actions (all free, in order)
+1. **Claim Spotify for Artists** — the single biggest lever. Gets the verified badge, bio, photo, Artist Pick, and access to **editorial playlist pitching** (submit **7+ days BEFORE** a release goes live). Without it you're invisible to Spotify's discovery engine. Do this first.
+2. **Verify the single-vs-album duplicate** with your distributor and consolidate to one canonical release if it's really two.
+3. **Publish the catalogue** — one song is the whole gap. The distributor is set up; ~20+ mastered songs sit only on YouTube. Getting them onto streaming is the reach play.
+4. **Cross-link YouTube -> Spotify** on every video and on the site (block below) — converts existing fans into followers, which is how "1 follower" starts climbing.
+
+## Loudness targets for the streaming master
+- Spotify / Amazon / YouTube: **-14 LUFS** integrated.
+- Apple Music: **-16 LUFS**.
+- True-peak ceiling **-1 dBTP** on all — matters for lossy-codec (AAC / Ogg) inter-sample overshoot.
+Master to the platform target (or -14 as a safe default), and hold -1 dBTP everywhere.
+
+## Cross-link block — paste into every YouTube description
+\`\`\`
+🎧 Also on streaming:
+Spotify: https://open.spotify.com/artist/4g3qEBWfbh8SXdk8QjhUg0
+Apple Music: [your Apple Music artist link]
+\`\`\`
+Also add a "Listen on Spotify" link on tamilagaval.com so the site converts too.
+
+## Reference links
+- Artist profile: https://open.spotify.com/artist/4g3qEBWfbh8SXdk8QjhUg0
+- First single: https://open.spotify.com/track/6rcEtnhENEpRxDVigeVgZY
+
+> The goal isn't streaming *revenue* (negligible, ~$0.003-0.005/stream) — it's REACH and returning-listener formation. One claimed profile carrying the full catalogue does more for loyal-audience growth than anything the YouTube Shorts feed offers.`,
+  },
+  {
     slug: 'suno-instrument-palette',
     title: 'Instrument palette for SUNO prompts',
     category: 'Composer',
