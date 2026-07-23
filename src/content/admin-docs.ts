@@ -140,6 +140,12 @@ Streaming platforms (YouTube, Spotify, Apple) normalise every track to about **-
 - **Does NOT:** EQ, compression, saturation, stereo widening, de-essing. This is **loudness mastering, not tonal/creative mastering** — it changes a song's *level*, never its *tone*. For a flagship song that needs tonal work, send that one to a mastering service or engineer.
 - Works on a **finished stereo file** — it is not mixing (no stems/multitrack).
 
+## Start from a WAV, not the MP3
+Master the **lossless source**, not the 192 kbps MP3 the site serves. Mastering a lossy MP3 only fixes its level while baking the compression artefacts in — mastering cannot recover what MP3 encoding already discarded. So:
+- **New song:** export the **WAV from SUNO** (Premier allows WAV), upload *that* to S3, and point \`s3Key\` at the WAV.
+- **Older song:** its WAV master is in the \`tamilagaval-audio-masters\` bucket (Glacier Instant Retrieval — usable immediately); point at the WAV there, not the served MP3.
+- The master **output is itself a WAV** (24-bit / 48 kHz) — ideal to bring straight into a video editor with no generation loss.
+
 ## Before you start
 - The song's audio must already be an **object in S3**. You need its **key** — the path after the bucket, e.g. \`audio/poem-music/en-mannavane.mp3\`. If a song plays on the site, its \`audioUrl\` is the CDN domain + this key.
 - You must be **logged into the admin portal** — the mastering endpoints are admin-gated.
@@ -169,6 +175,17 @@ console.log(job.status, job.masterKey, job.beforeLufs);
 - When \`done\`: \`masterKey\` is the new file, written beside the original as **\`<key>-master.wav\`**; \`beforeLufs\` is what it measured going in.
 
 **3. Verify.** Download the \`-master.wav\` and confirm it reads **-14.0 LUFS / -1.0 dBTP**. Your original is never overwritten.
+
+## Full pipeline — master -> Premiere -> YouTube
+Mastering is step one of getting a song onto YouTube at consistent quality:
+1. **SUNO WAV -> master** here -> \`<key>-master.wav\` (-14 LUFS / -1 dBTP).
+2. **Download** the \`-master.wav\` from S3 (\`aws s3 cp\` or the S3 console).
+3. **Premiere Pro:** import the WAV as the audio track, edit the picture, then **export with PCM or high-bitrate AAC audio and NO loudness normalisation / added gain.**
+4. **Upload** to YouTube.
+
+**The one rule that makes it worth doing: master ONCE, then never re-touch the loudness.** If Premiere's Essential Sound "Auto-Match to -14" is on, or the export adds gain, it re-processes and cancels the master. Pass the audio through untouched, 48 kHz.
+
+**Why bother, since YouTube normalises anyway?** YouTube turns every upload to about -14 LUFS on playback regardless. Mastering to -14 first means YouTube leaves your track **alone** instead of turning it down and flattening it — and it gives you one clean, peak-safe (-1 dBTP) master that is *also* ready for Spotify (-14) and Apple (-16), where you upload audio, not video. Master for a controlled multi-platform source, not to chase YouTube.
 
 ## Testing checklist (do ONE song first)
 1. Pick one song; copy its S3 key.
