@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   parseMeasurement, badgeAndVerdict, parseLoudnormStats, buildPass2Loudnorm,
+  isValidTarget, masterKeyFor, isMasterKey,
 } from '@/lib/loudness-measure';
 
 const hasFfmpeg = (() => {
@@ -125,5 +126,38 @@ describe('loudnorm pass-1 parsing', () => {
     const s = parseLoudnormStats(run('loudnorm=I=-14:TP=-1:LRA=11:print_format=json'));
     expect(s).not.toBeNull();
     expect(Number.isFinite(s!.input_i)).toBe(true);
+  });
+});
+
+describe('master output naming + guards', () => {
+  it('replaces the source extension instead of appending to it', () => {
+    expect(masterKeyFor('audio/poem-music/song.wav', -14)).toBe('audio/poem-music/song-master-14LUFS.wav');
+    expect(masterKeyFor('audio/poem-music/song.mp3', -14)).toBe('audio/poem-music/song-master-14LUFS.wav');
+    expect(masterKeyFor('audio/no-extension', -14)).toBe('audio/no-extension-master-14LUFS.wav');
+  });
+
+  it('keeps -14 and -16 masters of one source distinct', () => {
+    // Without the target in the name the Apple master silently overwrote the
+    // Spotify one — same source, same key.
+    expect(masterKeyFor('a/song.wav', -14)).not.toBe(masterKeyFor('a/song.wav', -16));
+    expect(masterKeyFor('a/song.wav', -16)).toBe('a/song-master-16LUFS.wav');
+    expect(masterKeyFor('a/song.wav', -14.5)).toBe('a/song-master-14_5LUFS.wav');
+  });
+
+  it('recognises its own outputs, including the legacy shape', () => {
+    expect(isMasterKey(masterKeyFor('a/song.wav', -14))).toBe(true);
+    expect(isMasterKey('a/song.wav-master.wav')).toBe(true); // pre-target naming
+    expect(isMasterKey('a/song.wav')).toBe(false);
+    expect(isMasterKey('a/master-song.wav')).toBe(false);
+  });
+
+  it('accepts only numeric targets inside loudnorm range', () => {
+    expect(isValidTarget(-14)).toBe(true);
+    expect(isValidTarget(-16)).toBe(true);
+    expect(isValidTarget(-70)).toBe(true);
+    expect(isValidTarget(-5)).toBe(true);
+    for (const bad of ['-16', -70.1, -4.9, 0, NaN, Infinity, null, undefined, {}]) {
+      expect(isValidTarget(bad)).toBe(false);
+    }
   });
 });
