@@ -119,4 +119,21 @@ describe('download presign', () => {
     }
     expect(mockSignedGet).not.toHaveBeenCalled();
   });
+
+  it('play mode signs WITHOUT an attachment name so <audio> can stream it', async () => {
+    const key = `${MASTERING_PREFIX}1_a_song.wav`;
+    const res = await downloadGET(get(`?mode=play&key=${encodeURIComponent(key)}`));
+    expect(res.status).toBe(200);
+    // No third arg → no Content-Disposition → the browser plays it inline. The
+    // TTL is also longer so a mid-song seek doesn't 403.
+    const [signedKey, ttl, disposition] = mockSignedGet.mock.calls[0];
+    expect(signedKey).toBe(key);
+    expect(disposition).toBeUndefined();
+    expect(ttl).toBeGreaterThan(5 * 60);
+    // Prefix boundary still applies in play mode.
+    mockSignedGet.mockClear();
+    const bad = await downloadGET(get('?mode=play&key=audio/poem-music/leak.mp3'));
+    expect(bad.status).toBe(400);
+    expect(mockSignedGet).not.toHaveBeenCalled();
+  });
 });
