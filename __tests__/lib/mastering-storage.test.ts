@@ -10,6 +10,7 @@ import {
   masteringUploadKey,
   downloadFilename,
 } from '@/lib/mastering-storage';
+import { isMasterKey } from '@/lib/loudness-measure';
 
 describe('isMasteringKey', () => {
   it('accepts keys inside the workspace', () => {
@@ -76,5 +77,21 @@ describe('masteringUploadKey', () => {
 describe('downloadFilename', () => {
   it('is the last path segment', () => {
     expect(downloadFilename(`${MASTERING_PREFIX}1_a_song-master-14LUFS.wav`)).toBe('1_a_song-master-14LUFS.wav');
+  });
+});
+
+describe('generated source keys are never mistaken for mastering outputs', () => {
+  // A source literally named "song-master.wav" used to upload in full and then
+  // be rejected by the re-master guard — a dead end after a 500MB transfer.
+  it('breaks the -master.wav pattern the re-master guard matches', () => {
+    for (const name of ['song-master.wav', 'Song-Master.wav', 'x-master-14LUFS.wav']) {
+      const key = masteringUploadKey(name, 1, 'n');
+      expect(isMasterKey(key)).toBe(false);
+      expect(isMasteringKey(key)).toBe(true);
+    }
+  });
+
+  it('leaves ordinary names alone', () => {
+    expect(masteringUploadKey('my-song.wav', 1, 'n')).toBe(`${MASTERING_PREFIX}1_n_my-song.wav`);
   });
 });

@@ -2,11 +2,15 @@
  * Storage rules for the Sound Engineering / Mastering module. Pure — no AWS.
  *
  * Mastering works on *working files*, not published media: a SUNO WAV comes in,
- * a mastered WAV goes out, both get pulled into Adobe and neither is ever served
- * to a visitor. So they live under their own prefix, away from the published
+ * a mastered WAV goes out, both get pulled into Adobe and neither is meant for a
+ * visitor. So they live under their own prefix, away from the published
  * `audio/poem-music/` catalogue, and the download route will only presign keys
  * that sit inside it (an admin session must not be able to presign arbitrary
  * bucket objects).
+ *
+ * NB: CloudFront serves the whole bucket by default, so this prefix is NOT
+ * private by virtue of living here — it is kept off the public CDN by an
+ * explicit bucket-policy Deny (Sid DenyCloudFrontOnMasteringWorkspace).
  */
 
 /** Everything this module reads or writes lives here. */
@@ -52,7 +56,13 @@ export function masteringUploadKey(filename: string, now: number, nonce: string)
       .replace(/_{2,}/g, '_')
       .replace(/^_|_$/g, '')
       .slice(0, 80) || 'source';
-  return `${MASTERING_PREFIX}${now}_${nonce}_${safe}.wav`;
+  // A source called "song-master.wav" (or "song-master-14LUFS.wav") would
+  // otherwise generate a key matching the re-master guard (isMasterKey in
+  // loudness-measure), so the file would upload in full and then be permanently
+  // un-masterable. That guard keys off the literal "-master", so swapping every
+  // occurrence for "_master" makes a false match impossible rather than merely
+  // unlikely. The name still reads the same.
+  return `${MASTERING_PREFIX}${now}_${nonce}_${safe.replace(/-master/gi, '_master')}.wav`;
 }
 
 /** Filename to offer the browser when downloading a key. */

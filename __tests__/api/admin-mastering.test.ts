@@ -65,6 +65,9 @@ describe('upload presign', () => {
     const [, contentType, maxSize] = mockUploadPost.mock.calls[0];
     expect(contentType).toBe('audio/wav');
     expect(maxSize).toBe(MAX_UPLOAD_BYTES);
+    // The CSRF defence is load-bearing; without this assertion deleting the
+    // requireBearer call would leave the suite green.
+    expect(requireBearer).toHaveBeenCalled();
   });
 
   it('refuses a lossy source', async () => {
@@ -100,7 +103,11 @@ describe('download presign', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toMatchObject({ success: true, url: 'https://s3.example/signed-get' });
-    expect(mockSignedGet).toHaveBeenCalledWith(key, expect.any(Number));
+    // Third arg forces Content-Disposition: attachment. Without it the browser
+    // honours the object's audio/wav type and plays the master instead of
+    // saving it.
+    expect(mockSignedGet).toHaveBeenCalledWith(key, expect.any(Number), '1_a_song-master-14LUFS.wav');
+    expect(body.filename).toBe('1_a_song-master-14LUFS.wav');
   });
 
   it('refuses to sign anything outside the workspace', async () => {
