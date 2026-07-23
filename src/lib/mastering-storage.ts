@@ -52,7 +52,13 @@ export function masteringUploadKey(filename: string, now: number, nonce: string)
       .replace(/_{2,}/g, '_')
       .replace(/^_|_$/g, '')
       .slice(0, 80) || 'source';
-  return `${MASTERING_PREFIX}${now}_${nonce}_${safe}.wav`;
+  // A source called "song-master.wav" (or "song-master-14LUFS.wav") would
+  // otherwise generate a key matching the re-master guard (isMasterKey in
+  // loudness-measure), so the file would upload in full and then be permanently
+  // un-masterable. That guard keys off the literal "-master", so swapping every
+  // occurrence for "_master" makes a false match impossible rather than merely
+  // unlikely. The name still reads the same.
+  return `${MASTERING_PREFIX}${now}_${nonce}_${safe.replace(/-master/gi, '_master')}.wav`;
 }
 
 /** Filename to offer the browser when downloading a key. */

@@ -153,12 +153,20 @@ export class S3Operations {
   }
 
   /**
-   * Get a signed URL for temporary access
+   * Get a signed URL for temporary access.
+   *
+   * `downloadAs` sets Content-Disposition: attachment on the response. Without
+   * it the browser honours the object's own Content-Type — a top-level
+   * navigation to an `audio/wav` object opens the built-in media player instead
+   * of saving the file, which for a mastering output is never what was wanted.
    */
-  static async getSignedUrl(key: string, expiresIn: number = 3600) {
+  static async getSignedUrl(key: string, expiresIn: number = 3600, downloadAs?: string) {
     const command = new GetObjectCommand({
       Bucket: BUCKET_NAME,
       Key: key,
+      ...(downloadAs
+        ? { ResponseContentDisposition: `attachment; filename="${downloadAs.replace(/"/g, '')}"` }
+        : {}),
     });
 
     return await getSignedUrl(s3Client, command, { expiresIn });

@@ -39,11 +39,13 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const url = await S3Operations.getSignedUrl(key, DOWNLOAD_URL_TTL_SECONDS);
+    const filename = downloadFilename(key);
+    // Force a save, not inline playback — see getSignedUrl's `downloadAs`.
+    const url = await S3Operations.getSignedUrl(key, DOWNLOAD_URL_TTL_SECONDS, filename);
     return NextResponse.json({
       success: true,
       url,
-      filename: downloadFilename(key),
+      filename,
       expiresInSeconds: DOWNLOAD_URL_TTL_SECONDS,
     });
   } catch (err) {

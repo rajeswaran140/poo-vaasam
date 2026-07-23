@@ -162,8 +162,10 @@ Master the **lossless source**, not the 192 kbps MP3 the site serves. Mastering 
 - The song's audio must already be an **object in \`tamil-web-media\`**. You need its **key** — the path after the bucket, e.g. \`audio/poem-music/en-mannavane.wav\`. If a song plays on the site, its \`audioUrl\` is the CDN domain + this key.
 - You must be **logged into the admin portal** — the mastering endpoints are admin-gated.
 
-## How to run it (one song)
-> **There is no button for this yet.** The loudness *badge* on every logged take is measured automatically; *mastering* is a separate on-demand step, triggered by an admin API call. (A one-click "Master" button in the Attempts list is a planned follow-up — ask if you want it built.)
+## How to run it — use the Sound Engineering page
+> **There is a UI for this now: [/admin/mastering](/admin/mastering).** Drop in the WAV, pick -14 (Spotify/YouTube) or -16 (Apple), press Master, and download the result. It shows the before/after loudness on screen, so nothing below is needed for normal use. The job keeps running if you navigate away and re-attaches when you come back.
+>
+> The rest of this section is the manual API path, kept for scripting and debugging.
 
 **1. Start the job.** Logged into \`/admin\`, open the browser dev-console and run:
 \`\`\`js
