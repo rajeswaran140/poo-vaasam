@@ -36,6 +36,7 @@ import {
   SearchCheck,
   ScrollText,
   MessageSquareHeart,
+  SlidersHorizontal,
 } from "lucide-react";
 import { FEATURES } from "@/config/features";
 import { Toaster } from "react-hot-toast";
@@ -132,6 +133,11 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
     title: "Music Lab",
     subtitle:
       "Log & evaluate every generation against its brief — turn failed attempts into a research dataset",
+  },
+  "/admin/mastering": {
+    title: "Sound Engineering",
+    subtitle:
+      "Master a SUNO WAV to a streaming target, then hand it to Adobe — loudness only, never tone",
   },
   "/admin/workflow": {
     title: "Workflow",
@@ -371,6 +377,14 @@ export default function AdminLayoutClient({
                 active={pathname === "/admin/music-lab"}
               >
                 Music Lab
+              </NavLink>
+              <NavLink
+                href="/admin/mastering"
+                icon={SlidersHorizontal}
+                collapsed={collapsed}
+                active={pathname === "/admin/mastering"}
+              >
+                Sound Engineering
               </NavLink>
               <NavLink
                 href="/admin/lexicon"
