@@ -127,6 +127,58 @@ Right after a SUNO (or other engine) run comes back. SUNO has no API, so there's
 `,
   },
   {
+    slug: 'music-lab-mastering',
+    title: 'Music Lab — mastering a song for loudness',
+    category: 'Music Lab',
+    updatedAt: '2026-07-23',
+    body: `# Master a song for loudness
+
+Streaming platforms (YouTube, Spotify, Apple) normalise every track to about **-14 LUFS** — a song that's too quiet gets pushed up (hiss with it), one that's too loud gets squashed. **Mastering** here brings a finished stereo song to that streaming target — **-14 LUFS integrated, -1 dBTP true-peak** — so the whole catalogue sits at a consistent, safe level.
+
+## What it does — and does NOT
+- **Does:** a two-pass \`loudnorm\` (measure, then correct) to -14 LUFS / -1 dBTP, written as a 24-bit / 48 kHz WAV. Level + peak only. Validated to +/-1 LU against reference ffmpeg.
+- **Does NOT:** EQ, compression, saturation, stereo widening, de-essing. This is **loudness mastering, not tonal/creative mastering** — it changes a song's *level*, never its *tone*. For a flagship song that needs tonal work, send that one to a mastering service or engineer.
+- Works on a **finished stereo file** — it is not mixing (no stems/multitrack).
+
+## Before you start
+- The song's audio must already be an **object in S3**. You need its **key** — the path after the bucket, e.g. \`audio/poem-music/en-mannavane.mp3\`. If a song plays on the site, its \`audioUrl\` is the CDN domain + this key.
+- You must be **logged into the admin portal** — the mastering endpoints are admin-gated.
+
+## How to run it (one song)
+> **There is no button for this yet.** The loudness *badge* on every logged take is measured automatically; *mastering* is a separate on-demand step, triggered by an admin API call. (A one-click "Master" button in the Attempts list is a planned follow-up — ask if you want it built.)
+
+**1. Start the job.** Logged into \`/admin\`, open the browser dev-console and run:
+\`\`\`js
+const token = /* your admin bearer token (what adminFetch puts in Authorization) */;
+const r = await fetch('/api/admin/music-lab/master', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+  body: JSON.stringify({ s3Key: 'audio/poem-music/YOUR-SONG.mp3', target: -14 }),
+}).then(x => x.json());
+console.log(r); // { success: true, jobId: '...', status: 'queued' }
+\`\`\`
+
+**2. Poll until done** (runs off-request, up to ~15 min; usually well under a minute):
+\`\`\`js
+const job = await fetch('/api/admin/music-lab/master/' + r.jobId, {
+  headers: { Authorization: 'Bearer ' + token },
+}).then(x => x.json());
+console.log(job.status, job.masterKey, job.beforeLufs);
+\`\`\`
+- \`status\` moves \`processing\` -> \`done\` (or \`error\`).
+- When \`done\`: \`masterKey\` is the new file, written beside the original as **\`<key>-master.wav\`**; \`beforeLufs\` is what it measured going in.
+
+**3. Verify.** Download the \`-master.wav\` and confirm it reads **-14.0 LUFS / -1.0 dBTP**. Your original is never overwritten.
+
+## Testing checklist (do ONE song first)
+1. Pick one song; copy its S3 key.
+2. Note its current loudness — a take logged in Music Lab shows the measured LUFS badge (\`hot\` / \`quiet\` / on-target). A quiet or hot song shows the clearest change.
+3. Run steps 1-2 above; wait for \`done\`.
+4. Compare \`beforeLufs\` to the -14.0 the master lands on, and listen to both — the master should sound the same, only at a steadier level.
+
+> Rule of thumb: a song already near -14 LUFS barely changes — that's correct, not a failure. The win is on the quiet and hot outliers.`,
+  },
+  {
     slug: 'suno-instrument-palette',
     title: 'Instrument palette for SUNO prompts',
     category: 'Composer',
