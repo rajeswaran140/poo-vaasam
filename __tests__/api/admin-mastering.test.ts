@@ -97,7 +97,7 @@ describe('download presign', () => {
     expect(mockSignedGet).not.toHaveBeenCalled();
   });
 
-  it('signs a key inside the workspace', async () => {
+  it('signs a key inside the workspace with a de-noised default filename', async () => {
     const key = `${MASTERING_PREFIX}1_a_song-master-14LUFS.wav`;
     const res = await downloadGET(get(`?key=${encodeURIComponent(key)}`));
     expect(res.status).toBe(200);
@@ -105,9 +105,29 @@ describe('download presign', () => {
     expect(body).toMatchObject({ success: true, url: 'https://s3.example/signed-get' });
     // Third arg forces Content-Disposition: attachment. Without it the browser
     // honours the object's audio/wav type and plays the master instead of
-    // saving it.
-    expect(mockSignedGet).toHaveBeenCalledWith(key, expect.any(Number), '1_a_song-master-14LUFS.wav');
-    expect(body.filename).toBe('1_a_song-master-14LUFS.wav');
+    // saving it. The storage noise (1_a_) is stripped from the presented name.
+    expect(mockSignedGet).toHaveBeenCalledWith(key, expect.any(Number), 'song-master-14LUFS.wav');
+    expect(body.filename).toBe('song-master-14LUFS.wav');
+  });
+
+  it('uses a sanitised caller-supplied name for the download filename', async () => {
+    const key = `${MASTERING_PREFIX}1_a_song-master-14LUFS.wav`;
+    const name = 'Amma En Agame (Master -14 LUFS)';
+    const res = await downloadGET(get(`?key=${encodeURIComponent(key)}&name=${encodeURIComponent(name)}`));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // The storage key is unchanged; only the presented filename reflects the title.
+    const [signedKey, , disposition] = mockSignedGet.mock.calls[0];
+    expect(signedKey).toBe(key);
+    expect(disposition).toBe('Amma En Agame (Master -14 LUFS).wav');
+    expect(body.filename).toBe('Amma En Agame (Master -14 LUFS).wav');
+  });
+
+  it('keeps a Tamil master title through the download name', async () => {
+    const key = `${MASTERING_PREFIX}1_a_song-master-14LUFS.wav`;
+    const res = await downloadGET(get(`?key=${encodeURIComponent(key)}&name=${encodeURIComponent('அம்மம்மா என் அகமே')}`));
+    expect(res.status).toBe(200);
+    expect((await res.json()).filename).toBe('அம்மம்மா என் அகமே.wav');
   });
 
   it('refuses to sign anything outside the workspace', async () => {

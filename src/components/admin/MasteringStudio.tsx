@@ -28,6 +28,7 @@ import { adminFetch } from '@/lib/client-auth';
 import { pollJob } from '@/lib/poll-job';
 import { statusFor } from '@/lib/loudness-targets';
 import { MAX_UPLOAD_BYTES, ACCEPTED_UPLOAD_TYPES } from '@/lib/mastering-storage';
+import { buildMasterReport, reportFilename } from '@/lib/master-report';
 import { MasteringComparePlayer } from '@/components/admin/MasteringComparePlayer';
 import type { MasterJob } from '@/types/masterJob';
 
@@ -120,6 +121,9 @@ export function MasteringStudio() {
   const [target, setTarget] = useState<number>(-14);
   const [job, setJob] = useState<MasterJob | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
+  // Optional human title for the export. Storage stays UUID-based; this only
+  // shapes the download filename and the saved report. Empty ⇒ de-noised default.
+  const [masterName, setMasterName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [announce, setAnnounce] = useState('');
@@ -307,7 +311,14 @@ export function MasteringStudio() {
     if (!job?.masterKey) return;
     setError(null);
     try {
-      const res = await adminFetch(`/api/admin/mastering/download?key=${encodeURIComponent(job.masterKey)}`);
+      // Present a friendly filename ("<title> (Master -14 LUFS).wav") when the
+      // admin has named the master; the server sanitises it. Storage key is
+      // untouched. No name ⇒ the route falls back to a de-noised default.
+      const title = masterName.trim();
+      const nameParam = title ? `&name=${encodeURIComponent(`${title} (Master ${job.target} LUFS)`)}` : '';
+      const res = await adminFetch(
+        `/api/admin/mastering/download?key=${encodeURIComponent(job.masterKey)}${nameParam}`
+      );
       const body = await res.json();
       if (!res.ok || !body.success) throw new Error(body.error || 'Could not create the download link.');
       // A new tab, not window.location — the response is Content-Disposition:
@@ -317,7 +328,21 @@ export function MasteringStudio() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [job]);
+  }, [job, masterName]);
+
+  /** Save the loudness summary as a text file that travels with the WAV. */
+  const downloadReport = useCallback(() => {
+    if (!job?.masterKey) return;
+    const blob = new Blob([buildMasterReport(job, masterName)], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = reportFilename(masterName);
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, [job, masterName]);
 
   /** Selecting a different target after a run re-arms rather than dead-ending. */
   const pickTarget = useCallback((lufsValue: number) => {
@@ -598,6 +623,26 @@ export function MasteringStudio() {
             />
           )}
 
+          <div className="mt-4">
+            <label htmlFor={`${inputId}-name`} className="block text-xs font-medium text-gray-600 dark:text-gray-300">
+              Name this master <span className="font-normal text-gray-400">(optional)</span>
+            </label>
+            <input
+              id={`${inputId}-name`}
+              type="text"
+              value={masterName}
+              onChange={(e) => setMasterName(e.target.value)}
+              placeholder="e.g. Amma En Agame"
+              maxLength={120}
+              className="mt-1 w-full max-w-md rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+            />
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {masterName.trim()
+                ? `Downloads as “${masterName.trim()} (Master ${job.target} LUFS).wav”. Tamil names work too.`
+                : 'Used only for the download filename and report — the stored file keeps its unique id.'}
+            </p>
+          </div>
+
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button
               type="button"
@@ -605,6 +650,13 @@ export function MasteringStudio() {
               className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
             >
               <Download className="h-4 w-4" aria-hidden="true" /> Download for Adobe
+            </button>
+            <button
+              type="button"
+              onClick={downloadReport}
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+            >
+              <FileAudio className="h-4 w-4" aria-hidden="true" /> Download report
             </button>
           </div>
 

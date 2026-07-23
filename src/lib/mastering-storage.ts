@@ -65,7 +65,35 @@ export function masteringUploadKey(filename: string, now: number, nonce: string)
   return `${MASTERING_PREFIX}${now}_${nonce}_${safe.replace(/-master/gi, '_master')}.wav`;
 }
 
-/** Filename to offer the browser when downloading a key. */
+/**
+ * The default download name for a key when the admin hasn't titled the master.
+ * Strips our storage noise — the `<timestamp>_<nonce>_` prefix added on upload —
+ * and any leading punctuation a SUNO export leaves behind ("- 01 8"), so the
+ * saved file reads as cleanly as the source name allows. Always ends in .wav.
+ */
 export function downloadFilename(key: string): string {
-  return key.slice(key.lastIndexOf('/') + 1) || 'master.wav';
+  const base = key.slice(key.lastIndexOf('/') + 1).replace(/\.[a-z0-9]+$/i, '');
+  const cleaned = base
+    .replace(/^\d+_[a-z0-9]+_/i, '') // drop the timestamp_nonce_ we prepend
+    .replace(/^[^\p{L}\p{N}]+/u, '') // drop leading punctuation from the SUNO stem
+    .trim();
+  return `${cleaned || 'master'}.wav`;
+}
+
+/**
+ * Turn a user-supplied master title into a safe download filename. Unicode
+ * letters/marks are kept so Tamil survives (அம்மம்மா என் அகமே); path separators,
+ * control characters and quotes are stripped so the value can neither escape a
+ * folder nor break out of the Content-Disposition header. Capped, single .wav.
+ */
+export function sanitizeMasterFilename(name: string): string {
+  const cleaned = name
+    .normalize('NFC')
+    .replace(/[\x00-\x1f\x7f]/g, '') // strip C0 control chars + DEL
+    .replace(/["\\/]+/g, ' ') // no quotes or path separators
+    .replace(/\s+/g, ' ')
+    .replace(/\.wave?$/i, '') // we re-append the extension ourselves
+    .trim()
+    .slice(0, 120);
+  return `${cleaned || 'master'}.wav`;
 }
