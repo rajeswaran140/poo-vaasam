@@ -2,11 +2,13 @@
  * GET /api/admin/mastering/download?key=... — a short-lived presigned GET so
  * the admin can pull a mastered WAV down for Adobe.
  *
- * The bucket is private (CloudFront + OAC serves only *published* media), and
- * these working files are deliberately not on the CDN, so a presigned S3 GET is
- * the way out. The key is constrained to the mastering prefix: without that
- * check this route would presign ANY object in the bucket for anyone holding an
- * admin session, which is a much wider door than this feature needs.
+ * The bucket is private (no direct S3 GET), so a presigned S3 GET is the way
+ * out. NB: CloudFront fronts the whole bucket by default, so `audio/mastering/*`
+ * is kept off the public CDN by an explicit bucket-policy Deny on the CloudFront
+ * principal (Sid DenyCloudFrontOnMasteringWorkspace) — not by the prefix being
+ * absent from the CDN. The key is constrained to the mastering prefix: without
+ * that check this route would presign ANY object in the bucket for anyone
+ * holding an admin session, which is a much wider door than this feature needs.
  *
  * Returns a URL rather than proxying the bytes — a 60 MB WAV through the SSR
  * Lambda would be slow and would burn the response-size ceiling.
