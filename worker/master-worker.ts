@@ -17,7 +17,13 @@ import { join } from 'node:path';
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import { parseLoudnormStats, buildPass2Loudnorm } from '@/lib/loudness-measure';
+import {
+  parseLoudnormStats,
+  buildPass2Loudnorm,
+  isValidTarget,
+  masterKeyFor,
+  isMasterKey,
+} from '@/lib/loudness-measure';
 
 const FFMPEG = process.env.FFMPEG_PATH || '/opt/bin/ffmpeg';
 const REGION = process.env.AWS_REGION || 'ca-central-1';
@@ -61,10 +67,20 @@ export const handler = async (event: MasterEvent) => {
   const jobId = event?.jobId;
   const s3Key = event?.s3Key;
   const bucket = event?.bucket || TAKES_BUCKET;
-  const target = typeof event?.target === 'number' ? event.target : -14;
+  const target = event?.target === undefined ? -14 : event.target;
   if (!jobId || !s3Key || !bucket) {
     console.error('[master-worker] bad event', JSON.stringify({ jobId: !!jobId, s3Key: !!s3Key, bucket: !!bucket }));
     return { ok: false, error: 'jobId, s3Key and bucket are required' };
+  }
+  // The route validates these too; re-check here because the Lambda is
+  // Event-invoked and a bad payload would otherwise fail deep inside ffmpeg.
+  if (!isValidTarget(target)) {
+    await patch(jobId, { status: 'error', error: { code: 'bad-target', message: `target must be a number in [-70, -5], got ${target}` } });
+    return { ok: false };
+  }
+  if (isMasterKey(s3Key)) {
+    await patch(jobId, { status: 'error', error: { code: 'already-mastered', message: 'that key is already a mastering output; master the original source instead' } });
+    return { ok: false };
   }
 
   const dir = mkdtempSync(join(tmpdir(), 'master-'));
@@ -90,9 +106,23 @@ export const handler = async (event: MasterEvent) => {
       return { ok: false };
     }
 
-    const masterKey = `${s3Key}-master.wav`;
+    // Pass 3 — re-measure the output so the job records what it actually landed
+    // on. Saves the operator downloading the file to confirm the target was hit;
+    // a few seconds against a 15 min budget.
+    const p3 = ff(['-hide_banner', '-nostats', '-i', outPath, '-af', `loudnorm=I=${target}:TP=-1:LRA=11:print_format=json`, '-f', 'null', '-']);
+    const after = parseLoudnormStats(`${p3.stdout ?? ''}${p3.stderr ?? ''}`);
+
+    const masterKey = masterKeyFor(s3Key, target);
     await s3.send(new PutObjectCommand({ Bucket: bucket, Key: masterKey, Body: readFileSync(outPath), ContentType: 'audio/wav' }));
-    await patch(jobId, { status: 'done', masterKey, beforeLufs: stats.input_i, target });
+    await patch(jobId, {
+      status: 'done',
+      masterKey,
+      beforeLufs: stats.input_i,
+      beforeTp: stats.input_tp,
+      afterLufs: after?.input_i ?? null,
+      afterTp: after?.input_tp ?? null,
+      target,
+    });
     return { ok: true, masterKey };
   } catch (err) {
     console.error('[master-worker] failed:', err instanceof Error ? err.message : String(err));

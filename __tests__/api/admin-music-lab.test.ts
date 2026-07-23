@@ -87,6 +87,31 @@ describe('master enqueue', () => {
     expect(mockCreate).not.toHaveBeenCalled();
     expect(mockSend).not.toHaveBeenCalled();
   });
+
+  it('400s rather than silently defaulting when target is unusable', async () => {
+    // A string target used to fall through to -14: asking for Apple's -16 and
+    // quietly getting -14 is the failure this guards.
+    for (const target of ['-16', -100, 0, NaN, null]) {
+      const res = await masterPOST(post('/api/admin/music-lab/master', { s3Key: 'audio/take.wav', target }));
+      expect(res.status).toBe(400);
+    }
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  it('honours a valid non-default target', async () => {
+    const res = await masterPOST(post('/api/admin/music-lab/master', { s3Key: 'audio/take.wav', target: -16 }));
+    expect(res.status).toBe(202);
+    expect(mockCreate).toHaveBeenCalledWith(expect.any(String), { s3Key: 'audio/take.wav', target: -16 });
+  });
+
+  it('400s on re-mastering a mastering output', async () => {
+    for (const s3Key of ['audio/take-master-14LUFS.wav', 'audio/take.mp3-master.wav']) {
+      expect((await masterPOST(post('/api/admin/music-lab/master', { s3Key }))).status).toBe(400);
+    }
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockSend).not.toHaveBeenCalled();
+  });
 });
 
 describe('master status', () => {
@@ -96,9 +121,14 @@ describe('master status', () => {
     expect((await statusGET(new NextRequest('https://x/api/admin/music-lab/master/j1'), ctx('j1'))).status).toBe(404);
   });
   it('returns the job when found', async () => {
-    mockGet.mockResolvedValueOnce({ id: 'j1', status: 'done', masterKey: 'audio/take.mp3-master.wav', beforeLufs: -8, target: -14 });
+    mockGet.mockResolvedValueOnce({
+      id: 'j1', status: 'done', masterKey: 'audio/take-master-14LUFS.wav',
+      beforeLufs: -8, afterLufs: -14, afterTp: -1, target: -14,
+    });
     const res = await statusGET(new NextRequest('https://x/api/admin/music-lab/master/j1'), ctx('j1'));
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ success: true, status: 'done', masterKey: 'audio/take.mp3-master.wav' });
+    expect(await res.json()).toMatchObject({
+      success: true, status: 'done', masterKey: 'audio/take-master-14LUFS.wav', afterLufs: -14,
+    });
   });
 });

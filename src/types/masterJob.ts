@@ -17,7 +17,15 @@ export interface MasterJob {
   target: number;
   /** S3 key of the mastered WAV, once done. */
   masterKey: string | null;
-  /** Integrated loudness of the input, once measured by the worker. */
+  /** Integrated loudness / true peak of the input, once measured by the worker. */
   beforeLufs: number | null;
+  beforeTp: number | null;
+  /**
+   * Integrated loudness / true peak the output actually landed on (worker pass
+   * 3). `afterLufs` should equal `target` within ~0.1 LU — it is the job's own
+   * evidence the master hit the mark, so verifying needs no download.
+   */
+  afterLufs: number | null;
+  afterTp: number | null;
   error: { code: string; message: string } | null;
 }

@@ -15,6 +15,7 @@ import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
 import { MasterJobRepository } from '@/infrastructure/database/MasterJobRepository';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { awsConfig } from '@/lib/aws-config';
+import { isValidTarget, isMasterKey, MIN_TARGET_LUFS, MAX_TARGET_LUFS } from '@/lib/loudness-measure';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,7 +37,21 @@ export async function POST(request: NextRequest) {
   if (!validKey(s3Key)) {
     return NextResponse.json({ success: false, error: 'A valid s3Key is required' }, { status: 400 });
   }
-  const target = Number.isFinite(body?.target) ? Number(body.target) : -14;
+  if (isMasterKey(s3Key)) {
+    return NextResponse.json(
+      { success: false, error: 'That key is already a mastering output — master the original source instead.' },
+      { status: 400 }
+    );
+  }
+  // Reject a bad target outright rather than silently falling back to -14: a
+  // caller asking for Apple's -16 and getting -14 would never notice.
+  const target = body?.target === undefined ? -14 : body.target;
+  if (!isValidTarget(target)) {
+    return NextResponse.json(
+      { success: false, error: `target must be a number in [${MIN_TARGET_LUFS}, ${MAX_TARGET_LUFS}] LUFS` },
+      { status: 400 }
+    );
+  }
   const bucket = typeof body?.bucket === 'string' ? body.bucket : undefined;
   const jobId = randomUUID();
 

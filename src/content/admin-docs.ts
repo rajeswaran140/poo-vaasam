@@ -135,6 +135,13 @@ Right after a SUNO (or other engine) run comes back. SUNO has no API, so there's
 
 Streaming platforms (YouTube, Spotify, Apple) normalise every track to about **-14 LUFS** — a song that's too quiet gets pushed up (hiss with it), one that's too loud gets squashed. **Mastering** here brings a finished stereo song to that streaming target — **-14 LUFS integrated, -1 dBTP true-peak** — so the whole catalogue sits at a consistent, safe level.
 
+> ## Read this first: the current catalogue does not need this
+> Measured 2026-07-23, every song already lands on target **at source** — the 11 served MP3s sit between **-14.03 and -14.89 LUFS**, and their WAV masters between **-13.58 and -14.68**. True peaks are all **-2.7 to -4.1 dBTP**, nowhere near the -1 ceiling. SUNO is already delivering at streaming level.
+>
+> So the largest correction available anywhere in the catalogue is **0.68 LU** — below the ~1 dB threshold where a loudness change becomes audible. Running this on the existing songs is a **no-op you can hear no difference in**, and that is the correct result, not a failure.
+>
+> **What it is still worth using for:** a future song that comes back off-target, a non-SUNO or externally-recorded source, or when you need one guaranteed peak-safe 24/48 WAV to hand to Premiere / a distributor. Reach for it when a measurement says a song is off — not as a routine step on every release.
+
 ## What it does — and does NOT
 - **Does:** a two-pass \`loudnorm\` (measure, then correct) to -14 LUFS / -1 dBTP, written as a 24-bit / 48 kHz WAV. Level + peak only. Validated to +/-1 LU against reference ffmpeg.
 - **Does NOT:** EQ, compression, saturation, stereo widening, de-essing. This is **loudness mastering, not tonal/creative mastering** — it changes a song's *level*, never its *tone*. For a flagship song that needs tonal work, send that one to a mastering service or engineer.
@@ -142,12 +149,17 @@ Streaming platforms (YouTube, Spotify, Apple) normalise every track to about **-
 
 ## Start from a WAV, not the MP3
 Master the **lossless source**, not the 192 kbps MP3 the site serves. Mastering a lossy MP3 only fixes its level while baking the compression artefacts in — mastering cannot recover what MP3 encoding already discarded. So:
-- **New song:** export the **WAV from SUNO** (Premier allows WAV), upload *that* to S3, and point \`s3Key\` at the WAV.
-- **Older song:** its WAV master is in the \`tamilagaval-audio-masters\` bucket (Glacier Instant Retrieval — usable immediately); point at the WAV there, not the served MP3.
+- **New song:** export the **WAV from SUNO** (its *Premier* plan — nothing to do with Premiere Pro), upload *that* to \`tamil-web-media\`, and point \`s3Key\` at the WAV.
+- **Older song:** its WAV master is in the \`tamilagaval-audio-masters\` bucket (Glacier Instant Retrieval — no restore wait). **The worker cannot read that bucket** — its IAM role grants S3 only on \`tamil-web-media\`. Copy the WAV across first (both buckets are \`us-east-1\`, so this is a fast server-side copy):
+  \`\`\`bash
+  aws s3 cp "s3://tamilagaval-audio-masters/audio/poem-music/SONG.wav" \\
+            "s3://tamil-web-media/audio/masters-staging/SONG.wav"
+  \`\`\`
+  then master \`audio/masters-staging/SONG.wav\`.
 - The master **output is itself a WAV** (24-bit / 48 kHz) — ideal to bring straight into a video editor with no generation loss.
 
 ## Before you start
-- The song's audio must already be an **object in S3**. You need its **key** — the path after the bucket, e.g. \`audio/poem-music/en-mannavane.mp3\`. If a song plays on the site, its \`audioUrl\` is the CDN domain + this key.
+- The song's audio must already be an **object in \`tamil-web-media\`**. You need its **key** — the path after the bucket, e.g. \`audio/poem-music/en-mannavane.wav\`. If a song plays on the site, its \`audioUrl\` is the CDN domain + this key.
 - You must be **logged into the admin portal** — the mastering endpoints are admin-gated.
 
 ## How to run it (one song)
@@ -155,31 +167,35 @@ Master the **lossless source**, not the 192 kbps MP3 the site serves. Mastering 
 
 **1. Start the job.** Logged into \`/admin\`, open the browser dev-console and run:
 \`\`\`js
-const token = /* your admin bearer token (what adminFetch puts in Authorization) */;
+// Your Cognito ID token — the same one adminFetch sends.
+const token = localStorage.getItem(
+  Object.keys(localStorage).find(k => k.endsWith('.idToken'))
+);
 const r = await fetch('/api/admin/music-lab/master', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-  body: JSON.stringify({ s3Key: 'audio/poem-music/YOUR-SONG.mp3', target: -14 }),
+  body: JSON.stringify({ s3Key: 'audio/masters-staging/YOUR-SONG.wav', target: -14 }),
 }).then(x => x.json());
 console.log(r); // { success: true, jobId: '...', status: 'queued' }
 \`\`\`
+The job is rejected with a 400 if \`target\` is not a number in **[-70, -5]**, or if \`s3Key\` is already a mastering output (re-mastering a master compounds the correction).
 
 **2. Poll until done** (runs off-request, up to ~15 min; usually well under a minute):
 \`\`\`js
 const job = await fetch('/api/admin/music-lab/master/' + r.jobId, {
   headers: { Authorization: 'Bearer ' + token },
 }).then(x => x.json());
-console.log(job.status, job.masterKey, job.beforeLufs);
+console.log(job.status, job.masterKey, job.beforeLufs, job.afterLufs);
 \`\`\`
-- \`status\` moves \`processing\` -> \`done\` (or \`error\`).
-- When \`done\`: \`masterKey\` is the new file, written beside the original as **\`<key>-master.wav\`**; \`beforeLufs\` is what it measured going in.
+- The enqueue response says \`queued\`; the stored job starts at \`processing\` and moves to \`done\` (or \`error\`).
+- When \`done\`: \`masterKey\` is the new file, written beside the original as **\`<name>-master-14LUFS.wav\`** (the target is in the name, so a -14 and a -16 master of the same song don't overwrite each other).
 
-**3. Verify.** Download the \`-master.wav\` and confirm it reads **-14.0 LUFS / -1.0 dBTP**. Your original is never overwritten.
+**3. Verify — no download needed.** The worker re-measures its own output, so the job itself is the evidence: \`afterLufs\` should read your target within ~0.1 LU and \`afterTp\` should sit at or below -1. \`beforeLufs\`/\`beforeTp\` are what it measured going in. Your original is never overwritten.
 
 ## Full pipeline — master -> Premiere -> YouTube
 Mastering is step one of getting a song onto YouTube at consistent quality:
-1. **SUNO WAV -> master** here -> \`<key>-master.wav\` (-14 LUFS / -1 dBTP).
-2. **Download** the \`-master.wav\` from S3 (\`aws s3 cp\` or the S3 console).
+1. **SUNO WAV -> master** here -> \`<name>-master-14LUFS.wav\` (-14 LUFS / -1 dBTP).
+2. **Download** that WAV from S3 (\`aws s3 cp\` or the S3 console).
 3. **Premiere Pro:** import the WAV as the audio track, edit the picture, then **export with PCM or high-bitrate AAC audio and NO loudness normalisation / added gain.**
 4. **Upload** to YouTube.
 
@@ -187,13 +203,25 @@ Mastering is step one of getting a song onto YouTube at consistent quality:
 
 **Why bother, since YouTube normalises anyway?** YouTube turns every upload to about -14 LUFS on playback regardless. Mastering to -14 first means YouTube leaves your track **alone** instead of turning it down and flattening it — and it gives you one clean, peak-safe (-1 dBTP) master that is *also* ready for Spotify (-14) and Apple (-16), where you upload audio, not video. Master for a controlled multi-platform source, not to chase YouTube.
 
-## Testing checklist (do ONE song first)
-1. Pick one song; copy its S3 key.
-2. Note its current loudness — a take logged in Music Lab shows the measured LUFS badge (\`hot\` / \`quiet\` / on-target). A quiet or hot song shows the clearest change.
-3. Run steps 1-2 above; wait for \`done\`.
-4. Compare \`beforeLufs\` to the -14.0 the master lands on, and listen to both — the master should sound the same, only at a steadier level.
+## Test run — already done (2026-07-23)
+The pipeline was proved end-to-end on **தூக்கணாங்குருவி போல**, the catalogue's furthest-off-target song:
 
-> Rule of thumb: a song already near -14 LUFS barely changes — that's correct, not a failure. The win is on the quiet and hot outliers.`,
+| | Integrated | True peak | Format |
+|---|---|---|---|
+| WAV source | -14.68 LUFS | -3.62 dBTP | 48 kHz stereo |
+| After master | **-14.00 LUFS** | -2.94 dBTP | 24-bit / 48 kHz |
+
+Lands exactly on target, peak-safe, linear normalisation (dynamics untouched). The Lambda's output was **bit-identical** to the same ffmpeg chain run locally, so the deployed worker is doing precisely what it claims.
+
+It is also a **0.68 LU change you cannot hear** — which is the honest headline. The machinery is correct; the catalogue simply doesn't need it yet.
+
+## If you want to run it on another song
+1. Pick a song; get a **WAV** into \`tamil-web-media\` (stage it from the masters bucket per above).
+2. Note its current loudness — a take logged in Music Lab shows the measured LUFS badge (\`hot\` / \`quiet\` / on-target). Only a genuinely off-target song will change audibly.
+3. Run steps 1-2 above; wait for \`done\`.
+4. Check \`afterLufs\` == your target. Then listen to both — the master should sound the same, only at a steadier level.
+
+> Rule of thumb: a song already near -14 LUFS barely changes — that's correct, not a failure. The win is on the quiet and hot outliers, and right now you have none.`,
   },
   {
     slug: 'streaming-distribution-spotify',

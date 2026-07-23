@@ -142,6 +142,34 @@ export function buildPass2Loudnorm(stats: LoudnormStats, target = -14): string {
   );
 }
 
+/** loudnorm accepts an integrated target in [-70, -5]; outside that ffmpeg errors. */
+export const MIN_TARGET_LUFS = -70;
+export const MAX_TARGET_LUFS = -5;
+
+export const isValidTarget = (t: unknown): t is number =>
+  typeof t === 'number' && Number.isFinite(t) && t >= MIN_TARGET_LUFS && t <= MAX_TARGET_LUFS;
+
+/**
+ * S3 key for a mastering output. The target is part of the name so the same
+ * source mastered for Spotify (-14) and Apple (-16) yields two files instead of
+ * the second silently overwriting the first, and the source extension is
+ * replaced rather than appended (`song.wav` → `song-master-14LUFS.wav`, not
+ * `song.wav-master.wav`).
+ */
+export function masterKeyFor(s3Key: string, target: number): string {
+  const stem = s3Key.replace(/\.[a-z0-9]+$/i, '');
+  return `${stem}-master-${String(Math.abs(target)).replace('.', '_')}LUFS.wav`;
+}
+
+/**
+ * True if the key is itself a mastering output. Re-mastering one compounds the
+ * correction on an already-corrected file, so both routes refuse it. Also
+ * matches the legacy `<key>-master.wav` shape written before targets were named.
+ */
+export function isMasterKey(s3Key: string): boolean {
+  return /-master(-\d+(?:_\d+)?LUFS)?\.wav$/i.test(s3Key);
+}
+
 /** The single measurement-pass ffmpeg args (used by measure-fn). */
 export function measureArgs(input: string): string[] {
   return [

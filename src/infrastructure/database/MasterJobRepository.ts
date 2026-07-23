@@ -24,6 +24,9 @@ export class MasterJobRepository {
         target: input.target,
         masterKey: null,
         beforeLufs: null,
+        beforeTp: null,
+        afterLufs: null,
+        afterTp: null,
         error: null,
       };
       await DynamoDBOperations.put({
@@ -53,6 +56,9 @@ export class MasterJobRepository {
         target: typeof item.target === 'number' ? item.target : -14,
         masterKey: item.masterKey ?? null,
         beforeLufs: typeof item.beforeLufs === 'number' ? item.beforeLufs : null,
+        beforeTp: typeof item.beforeTp === 'number' ? item.beforeTp : null,
+        afterLufs: typeof item.afterLufs === 'number' ? item.afterLufs : null,
+        afterTp: typeof item.afterTp === 'number' ? item.afterTp : null,
         error: item.error ?? null,
       };
     } catch (error) {

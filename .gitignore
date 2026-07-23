@@ -91,3 +91,8 @@ credentials/
 .amplify-recreate/
 worker-dist/
 worker.zip
+# esbuild output + upload zips for the hand-rolled Lambdas (npm run build:*)
+master-worker-dist/
+measure-fn-dist/
+master-worker.zip
+measure-fn.zip
