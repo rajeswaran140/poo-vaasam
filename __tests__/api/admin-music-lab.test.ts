@@ -72,13 +72,17 @@ describe('measure', () => {
 });
 
 describe('master enqueue', () => {
+  // A source lives in the mastering workspace (that is where the upload route
+  // puts it); keys outside the prefix are refused, see below.
+  const SRC = 'audio/mastering/1700000000000_ab12cd34_take.wav';
+
   it('creates a job and Event-invokes the worker (202)', async () => {
-    const res = await masterPOST(post('/api/admin/music-lab/master', { s3Key: 'audio/take.mp3' }));
+    const res = await masterPOST(post('/api/admin/music-lab/master', { s3Key: SRC }));
     expect(res.status).toBe(202);
     const body = await res.json();
     expect(body.status).toBe('queued');
     expect(body.jobId).toBeTruthy();
-    expect(mockCreate).toHaveBeenCalledWith(body.jobId, { s3Key: 'audio/take.mp3', target: -14 });
+    expect(mockCreate).toHaveBeenCalledWith(body.jobId, { s3Key: SRC, target: -14 });
     expect(MockInvoke.mock.calls[0][0].InvocationType).toBe('Event');
   });
 
@@ -88,11 +92,33 @@ describe('master enqueue', () => {
     expect(mockSend).not.toHaveBeenCalled();
   });
 
+  it('refuses a key outside the mastering workspace — no arbitrary object may be mastered', async () => {
+    // An admin session must not be able to run the ffmpeg worker against just
+    // any bucket object (e.g. a published catalogue track). Only the workspace.
+    for (const s3Key of ['audio/take.wav', 'audio/poem-music/published.wav', 'images/x.wav', 'audio/mastering/']) {
+      const res = await masterPOST(post('/api/admin/music-lab/master', { s3Key }));
+      expect(res.status).toBe(400);
+    }
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  it('ignores a caller-supplied bucket — the worker reads its own TAKES_BUCKET', async () => {
+    const res = await masterPOST(
+      post('/api/admin/music-lab/master', { s3Key: SRC, bucket: 'attacker-controlled-bucket' })
+    );
+    expect(res.status).toBe(202);
+    // The invoke payload must not carry the bucket the caller tried to inject.
+    const payload = JSON.parse(Buffer.from(MockInvoke.mock.calls[0][0].Payload).toString());
+    expect(payload).not.toHaveProperty('bucket');
+    expect(payload).toEqual({ jobId: expect.any(String), s3Key: SRC, target: -14 });
+  });
+
   it('400s rather than silently defaulting when target is unusable', async () => {
     // A string target used to fall through to -14: asking for Apple's -16 and
     // quietly getting -14 is the failure this guards.
     for (const target of ['-16', -100, 0, NaN, null]) {
-      const res = await masterPOST(post('/api/admin/music-lab/master', { s3Key: 'audio/take.wav', target }));
+      const res = await masterPOST(post('/api/admin/music-lab/master', { s3Key: SRC, target }));
       expect(res.status).toBe(400);
     }
     expect(mockCreate).not.toHaveBeenCalled();
@@ -100,13 +126,18 @@ describe('master enqueue', () => {
   });
 
   it('honours a valid non-default target', async () => {
-    const res = await masterPOST(post('/api/admin/music-lab/master', { s3Key: 'audio/take.wav', target: -16 }));
+    const res = await masterPOST(post('/api/admin/music-lab/master', { s3Key: SRC, target: -16 }));
     expect(res.status).toBe(202);
-    expect(mockCreate).toHaveBeenCalledWith(expect.any(String), { s3Key: 'audio/take.wav', target: -16 });
+    expect(mockCreate).toHaveBeenCalledWith(expect.any(String), { s3Key: SRC, target: -16 });
   });
 
   it('400s on re-mastering a mastering output', async () => {
-    for (const s3Key of ['audio/take-master-14LUFS.wav', 'audio/take.mp3-master.wav']) {
+    // Both are inside the workspace, so they clear the prefix check and must be
+    // caught by the re-master guard itself.
+    for (const s3Key of [
+      'audio/mastering/1700000000000_ab12cd34_take-master-14LUFS.wav',
+      'audio/mastering/1700000000000_ab12cd34_take.mp3-master.wav',
+    ]) {
       expect((await masterPOST(post('/api/admin/music-lab/master', { s3Key }))).status).toBe(400);
     }
     expect(mockCreate).not.toHaveBeenCalled();

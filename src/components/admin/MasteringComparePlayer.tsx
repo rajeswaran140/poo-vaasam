@@ -103,8 +103,13 @@ export function MasteringComparePlayer({ sourceKey, masterKey, beforeLufs, after
     applyGains();
   }, [applyGains]);
 
+  // readyState >= 1 (HAVE_METADATA) is enough to enable the transport: duration
+  // is known and the clip is seekable. We deliberately do NOT wait for >= 2
+  // (HAVE_CURRENT_DATA) because preload="metadata" never fetches sample data
+  // until play() is called — waiting for it would leave the button spinning
+  // forever. The bytes stream in on first play.
   const bothReady = () =>
-    !!srcEl.current && !!masEl.current && srcEl.current.readyState >= 2 && masEl.current.readyState >= 2;
+    !!srcEl.current && !!masEl.current && srcEl.current.readyState >= 1 && masEl.current.readyState >= 1;
 
   const onLoaded = useCallback(() => {
     if (bothReady()) {
@@ -186,11 +191,22 @@ export function MasteringComparePlayer({ sourceKey, masterKey, beforeLufs, after
         )}
       </div>
 
-      {/* Hidden media elements — the UI drives them; audio routes via Web Audio. */}
-      <audio ref={srcEl} preload="auto" crossOrigin="anonymous" onLoadedData={onLoaded} onEnded={onEnded} />
+      {/* Hidden media elements — the UI drives them; audio routes via Web Audio.
+          preload="metadata" not "auto": the source and master are multi-hundred-MB
+          WAVs, and buffering BOTH in full the instant a finished job renders would
+          burn ~140 MB before the admin has even chosen to listen. Metadata gives us
+          duration + seekability up front; the bytes stream on first play. */}
+      <audio
+        ref={srcEl}
+        preload="metadata"
+        crossOrigin="anonymous"
+        onLoadedData={onLoaded}
+        onLoadedMetadata={onLoaded}
+        onEnded={onEnded}
+      />
       <audio
         ref={masEl}
-        preload="auto"
+        preload="metadata"
         crossOrigin="anonymous"
         onLoadedData={onLoaded}
         onLoadedMetadata={onLoaded}
