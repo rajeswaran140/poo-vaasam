@@ -28,6 +28,7 @@ import { adminFetch } from '@/lib/client-auth';
 import { pollJob } from '@/lib/poll-job';
 import { statusFor } from '@/lib/loudness-targets';
 import { MAX_UPLOAD_BYTES, ACCEPTED_UPLOAD_TYPES } from '@/lib/mastering-storage';
+import { MasteringComparePlayer } from '@/components/admin/MasteringComparePlayer';
 import type { MasterJob } from '@/types/masterJob';
 
 /** Where the platforms normalise playback. */
@@ -587,6 +588,15 @@ export function MasteringStudio() {
               </span>
             )}
           </p>
+
+          {job.masterKey && job.s3Key && (
+            <MasteringComparePlayer
+              sourceKey={job.s3Key}
+              masterKey={job.masterKey}
+              beforeLufs={job.beforeLufs}
+              afterLufs={job.afterLufs}
+            />
+          )}
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button

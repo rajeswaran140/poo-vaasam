@@ -1,6 +1,14 @@
 /**
- * GET /api/admin/mastering/download?key=... — a short-lived presigned GET so
- * the admin can pull a mastered WAV down for Adobe.
+ * GET /api/admin/mastering/download?key=...[&mode=play] — a short-lived
+ * presigned GET for a workspace WAV.
+ *
+ * Two modes:
+ *  - default (download): Content-Disposition: attachment, so the browser saves
+ *    the mastered WAV for Adobe rather than playing it inline. Short TTL.
+ *  - `mode=play`: no attachment, so an <audio> element can stream it for the
+ *    before/after comparison. Longer TTL, because seeking a 7-minute WAV issues
+ *    range requests minutes after the URL was minted, and a SigV4 URL that has
+ *    expired would 403 the seek mid-listen.
  *
  * The bucket is private (no direct S3 GET), so a presigned S3 GET is the way
  * out. NB: CloudFront fronts the whole bucket by default, so `audio/mastering/*`
@@ -24,6 +32,8 @@ export const dynamic = 'force-dynamic';
 
 // Just long enough to click through to a download.
 const DOWNLOAD_URL_TTL_SECONDS = 5 * 60;
+// Long enough to audition a full song and seek around it well after minting.
+const PLAY_URL_TTL_SECONDS = 60 * 60;
 
 export async function GET(request: NextRequest) {
   try {
@@ -39,16 +49,19 @@ export async function GET(request: NextRequest) {
       { status: 400 }
     );
   }
+  const play = request.nextUrl.searchParams.get('mode') === 'play';
 
   try {
     const filename = downloadFilename(key);
-    // Force a save, not inline playback — see getSignedUrl's `downloadAs`.
-    const url = await S3Operations.getSignedUrl(key, DOWNLOAD_URL_TTL_SECONDS, filename);
+    const ttl = play ? PLAY_URL_TTL_SECONDS : DOWNLOAD_URL_TTL_SECONDS;
+    // Attachment only for download; play mode leaves the audio/wav type intact
+    // so <audio> streams it. See getSignedUrl's `downloadAs`.
+    const url = await S3Operations.getSignedUrl(key, ttl, play ? undefined : filename);
     return NextResponse.json({
       success: true,
       url,
       filename,
-      expiresInSeconds: DOWNLOAD_URL_TTL_SECONDS,
+      expiresInSeconds: ttl,
     });
   } catch (err) {
     console.error('[api/mastering/download] presign failed:', err instanceof Error ? err.message : String(err));
