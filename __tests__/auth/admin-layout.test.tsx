@@ -45,6 +45,7 @@ jest.mock('lucide-react', () => ({
   ScrollText: () => <div data-testid="icon-lyrics" />,
   Library: () => <div data-testid="icon-lexicon" />,
   FlaskConical: () => <div data-testid="icon-music-lab" />,
+  SlidersHorizontal: () => <div data-testid="icon-mastering" />,
   PanelLeftClose: () => <div data-testid="icon-collapse" />,
   PanelLeftOpen: () => <div data-testid="icon-expand" />,
   Menu: () => <div data-testid="icon-menu" />,
