@@ -47,7 +47,7 @@ describe('platformLanding', () => {
     expect(apple.mark).toBe('↓');
     expect(apple.deltaLu).toBeCloseTo(2, 5);
     // Reassuring: normalisation is playback volume, not a re-encode.
-    expect(apple.note).toMatch(/playback lowered ~2\.0 LU · no quality loss/);
+    expect(apple.note).toMatch(/playback normalised ~2\.0 LU · original audio unchanged/);
   });
 
   it('a −16 master sits below the −14 targets', () => {

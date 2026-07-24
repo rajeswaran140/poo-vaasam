@@ -267,7 +267,7 @@ describe('download', () => {
     expect(screen.getByText(/Streaming readiness/i)).toBeInTheDocument();
     // −14 master plays as-is on the −14 streamers, playback lowered on Apple −16.
     expect(screen.getByText(/plays exactly as mastered/i)).toBeInTheDocument();
-    expect(screen.getByText(/playback lowered ~2\.0 LU · no quality loss/)).toBeInTheDocument();
+    expect(screen.getByText(/playback normalised ~2\.0 LU · original audio unchanged/)).toBeInTheDocument();
   });
 });
 

@@ -55,7 +55,7 @@ export interface PlatformLanding {
   /** mastered LUFS − target (LU); >0 ⇒ the platform turns it down. */
   deltaLu: number;
   status: LoudnessStatus;
-  /** A glance mark: ✓ = plays as mastered, ↓ = playback lowered, · = below target. */
+  /** A glance mark: ✓ = plays as mastered, ↓ = playback normalised, · = below target. */
   mark: '✓' | '↓' | '·';
   /**
    * Plain-language outcome for a non-engineer, worded to reassure. Loudness
@@ -89,7 +89,7 @@ export function platformLanding(lufs: number, tolerance = 1): PlatformLanding[] 
         status === 'ok'
           ? 'plays exactly as mastered'
           : status === 'hot'
-            ? `playback lowered ~${deltaLu.toFixed(1)} LU · no quality loss`
+            ? `playback normalised ~${deltaLu.toFixed(1)} LU · original audio unchanged`
             : `~${Math.abs(deltaLu).toFixed(1)} LU below target`;
       return { target, platforms, deltaLu, status, mark, note };
     });
