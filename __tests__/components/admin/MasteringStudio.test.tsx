@@ -264,10 +264,10 @@ describe('download', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to/ })); });
     await screen.findByText(/3 · Result/);
 
-    expect(screen.getByText(/how it lands on each platform/i)).toBeInTheDocument();
-    // −14 master plays as-is on the −14 streamers, turned down on Apple −16.
-    expect(screen.getByText(/plays as mastered/i)).toBeInTheDocument();
-    expect(screen.getByText(/turned down ~2\.0 LU/)).toBeInTheDocument();
+    expect(screen.getByText(/Streaming readiness/i)).toBeInTheDocument();
+    // −14 master plays as-is on the −14 streamers, playback lowered on Apple −16.
+    expect(screen.getByText(/plays exactly as mastered/i)).toBeInTheDocument();
+    expect(screen.getByText(/playback lowered ~2\.0 LU · no quality loss/)).toBeInTheDocument();
   });
 });
 

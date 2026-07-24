@@ -617,13 +617,23 @@ export function MasteringStudio() {
           {typeof job.afterLufs === 'number' && (
             <div className="mt-4 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
               <p className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-xs font-medium text-gray-600 dark:border-gray-800 dark:bg-gray-800/40 dark:text-gray-300">
-                Master once — how it lands on each platform
+                Streaming readiness — how it lands on each platform
               </p>
               <table className="w-full text-sm">
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-800/60">
                   {platformLanding(job.afterLufs).map((row) => (
                     <tr key={row.target}>
-                      <td className="px-4 py-2 tabular-nums text-gray-500 dark:text-gray-400">{row.target} LUFS</td>
+                      <td
+                        className={`w-6 pl-4 text-center font-semibold ${
+                          row.status === 'ok'
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-amber-600 dark:text-amber-400'
+                        }`}
+                        aria-hidden="true"
+                      >
+                        {row.mark}
+                      </td>
+                      <td className="py-2 pl-2 tabular-nums text-gray-500 dark:text-gray-400">{row.target} LUFS</td>
                       <td className="px-4 py-2 text-gray-800 dark:text-gray-200">{row.platforms.join(', ')}</td>
                       <td
                         className={`px-4 py-2 text-right ${

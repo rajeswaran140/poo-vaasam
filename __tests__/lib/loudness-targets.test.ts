@@ -38,19 +38,24 @@ describe('platformLanding', () => {
     expect(rows[1].platforms).toEqual(['Apple Music']);
   });
 
-  it('a −14 master plays as-is on −14 and is turned down on Apple −16', () => {
+  it('a −14 master plays as-is on −14 and is normalised down on Apple −16', () => {
     const [norm, apple] = platformLanding(-14);
     expect(norm.status).toBe('ok');
-    expect(norm.note).toMatch(/plays as mastered/);
-    expect(apple.status).toBe('hot'); // −14 is louder than Apple's −16 → turned down
+    expect(norm.mark).toBe('✓');
+    expect(norm.note).toMatch(/plays exactly as mastered/);
+    expect(apple.status).toBe('hot'); // −14 is louder than Apple's −16 → playback lowered
+    expect(apple.mark).toBe('↓');
     expect(apple.deltaLu).toBeCloseTo(2, 5);
-    expect(apple.note).toMatch(/turned down ~2\.0 LU/);
+    // Reassuring: normalisation is playback volume, not a re-encode.
+    expect(apple.note).toMatch(/playback lowered ~2\.0 LU · no quality loss/);
   });
 
-  it('a −16 master sits under the −14 targets', () => {
+  it('a −16 master sits below the −14 targets', () => {
     const [norm, apple] = platformLanding(-16);
     expect(norm.status).toBe('quiet');
-    expect(norm.note).toMatch(/2\.0 LU under target/);
+    expect(norm.mark).toBe('·');
+    expect(norm.note).toMatch(/2\.0 LU below target/);
     expect(apple.status).toBe('ok');
+    expect(apple.mark).toBe('✓');
   });
 });

@@ -91,9 +91,9 @@ export function platformLandingLines(job: MasterJob): string[] {
   if (typeof job.afterLufs !== 'number') return [];
   const rows = platformLanding(job.afterLufs).map((r) => {
     const platforms = r.platforms.join(', ');
-    return `  ${`${r.target} LUFS`.padEnd(9)} ${platforms.padEnd(38)} ${r.note}`;
+    return `  ${r.mark}  ${`${r.target} LUFS`.padEnd(9)} ${platforms.padEnd(38)} ${r.note}`;
   });
-  return [`Per-platform landing (master at ${lufs(job.afterLufs)})`, ...rows, ''];
+  return [`Streaming readiness (master at ${lufs(job.afterLufs)})`, ...rows, ''];
 }
 
 /**
