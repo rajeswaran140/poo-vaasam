@@ -47,6 +47,47 @@ export function compareToTargets(lufs: number, tolerance = 1): TargetDelta[] {
   });
 }
 
+export interface PlatformLanding {
+  /** LUFS-I this group of platforms normalises to. */
+  target: number;
+  /** Platforms sharing this target (e.g. the four −14 streamers). */
+  platforms: string[];
+  /** mastered LUFS − target (LU); >0 ⇒ the platform turns it down. */
+  deltaLu: number;
+  status: LoudnessStatus;
+  /** Plain-language outcome for a non-engineer. */
+  note: string;
+}
+
+/**
+ * How a master at `lufs` LANDS on each platform, grouped by target so the four
+ * −14 streamers collapse to one row instead of repeating. Answers "I mastered
+ * once — what happens everywhere?": within tolerance it plays as mastered; hotter
+ * than a platform's target and that platform turns it down; quieter and it sits
+ * below the target. Pure — reuses the same delta math as compareToTargets.
+ */
+export function platformLanding(lufs: number, tolerance = 1): PlatformLanding[] {
+  const byTarget = new Map<number, string[]>();
+  for (const t of STREAMING_TARGETS) {
+    const list = byTarget.get(t.lufs) ?? [];
+    list.push(t.platform);
+    byTarget.set(t.lufs, list);
+  }
+  return [...byTarget.entries()]
+    .sort((a, b) => b[0] - a[0]) // loudest target first (−14 before −16)
+    .map(([target, platforms]) => {
+      const deltaLu = Math.round((lufs - target) * 10) / 10;
+      const status = statusFor(deltaLu, tolerance);
+      const note =
+        status === 'ok'
+          ? 'plays as mastered'
+          : status === 'hot'
+            ? `turned down ~${deltaLu.toFixed(1)} LU`
+            : `${Math.abs(deltaLu).toFixed(1)} LU under target`;
+      return { target, platforms, deltaLu, status, note };
+    });
+}
+
 /** One-line verdict vs the −14 streaming norm, e.g. "+3.0 LU hot for streaming". */
 export function streamingNormVerdict(lufs: number, tolerance = 1): { status: LoudnessStatus; deltaLu: number; label: string } {
   const deltaLu = Math.round((lufs - STREAMING_NORM_LUFS) * 10) / 10;

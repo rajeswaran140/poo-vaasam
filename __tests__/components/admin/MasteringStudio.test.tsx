@@ -255,6 +255,20 @@ describe('download', () => {
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:report');
     clickSpy.mockRestore();
   });
+
+  it('shows how the master lands on each streaming platform', async () => {
+    primeHappyPath(); // doneJob masters to −14
+    render(<MasteringStudio />);
+    await uploadA();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Master to/ })).toBeEnabled());
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to/ })); });
+    await screen.findByText(/3 · Result/);
+
+    expect(screen.getByText(/how it lands on each platform/i)).toBeInTheDocument();
+    // −14 master plays as-is on the −14 streamers, turned down on Apple −16.
+    expect(screen.getByText(/plays as mastered/i)).toBeInTheDocument();
+    expect(screen.getByText(/turned down ~2\.0 LU/)).toBeInTheDocument();
+  });
 });
 
 describe('job recovery', () => {

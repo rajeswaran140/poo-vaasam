@@ -11,7 +11,7 @@
  */
 
 import type { MasterJob } from '@/types/masterJob';
-import { STREAMING_TARGETS } from '@/lib/loudness-targets';
+import { STREAMING_TARGETS, platformLanding } from '@/lib/loudness-targets';
 import { sanitizeMasterFilename } from '@/lib/mastering-storage';
 
 const lufs = (v: number | null | undefined) => (typeof v === 'number' ? `${v.toFixed(1)} LUFS` : '—');
@@ -83,6 +83,20 @@ export function turnaroundLabel(createdAt: string, updatedAt: string): string | 
 }
 
 /**
+ * "Master once → what happens everywhere" — how the mastered loudness lands on
+ * each streaming platform, grouped by target. Empty when the output wasn't
+ * measured (no honest number to compare against).
+ */
+export function platformLandingLines(job: MasterJob): string[] {
+  if (typeof job.afterLufs !== 'number') return [];
+  const rows = platformLanding(job.afterLufs).map((r) => {
+    const platforms = r.platforms.join(', ');
+    return `  ${`${r.target} LUFS`.padEnd(9)} ${platforms.padEnd(38)} ${r.note}`;
+  });
+  return [`Per-platform landing (master at ${lufs(job.afterLufs)})`, ...rows, ''];
+}
+
+/**
  * Render the report. `title` is the admin's optional master name; when given it
  * heads the report and names the download.
  */
@@ -108,6 +122,7 @@ export function buildMasterReport(job: MasterJob, title?: string): string {
     `  Before:           ${dbtp(job.beforeTp)}`,
     `  After:            ${dbtp(job.afterTp)}`,
     '',
+    ...platformLandingLines(job),
     `Result:             ${verdictLine(job)}`,
     '',
     'Processing:         Loudness normalisation only (two-pass loudnorm, linear).',
