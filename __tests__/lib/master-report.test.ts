@@ -4,7 +4,13 @@
  * deterministic (timestamp comes from the job, not Date), so it is fully pinned.
  */
 
-import { buildMasterReport, reportFilename, platformsForTarget } from '@/lib/master-report';
+import {
+  buildMasterReport,
+  reportFilename,
+  platformsForTarget,
+  summaryLines,
+  turnaroundLabel,
+} from '@/lib/master-report';
 import type { MasterJob } from '@/types/masterJob';
 
 const baseJob: MasterJob = {
@@ -31,16 +37,60 @@ describe('platformsForTarget', () => {
   });
 });
 
+describe('summaryLines', () => {
+  it('passes a clean master on every check', () => {
+    const s = summaryLines(baseJob).join('\n');
+    expect(s).toMatch(/✓ Streaming ready/);
+    expect(s).toMatch(/✓ Peak-safe/);
+    expect(s).toMatch(/✓ Loudness only/);
+    expect(s).toMatch(/✓ Ready for video editing and distribution/);
+  });
+
+  it('warns — never "ready" — when off target', () => {
+    const s = summaryLines({ ...baseJob, afterLufs: -11 }).join('\n');
+    expect(s).toMatch(/⚠ Off target/);
+    expect(s).not.toMatch(/✓ Ready for video/);
+  });
+
+  it('flags clipping and withholds the ready tick', () => {
+    const s = summaryLines({ ...baseJob, afterTp: -0.2 }).join('\n');
+    expect(s).toMatch(/✗ True peak .* exceeds -1 dBTP/);
+    expect(s).not.toMatch(/✓ Ready for video/);
+  });
+
+  it('handles an unmeasured master without claiming success', () => {
+    const s = summaryLines({ ...baseJob, afterLufs: null, afterTp: null }).join('\n');
+    expect(s).toMatch(/⚠ Loudness not confirmed/);
+    expect(s).toMatch(/True peak not reported/);
+  });
+});
+
+describe('turnaroundLabel', () => {
+  it('formats short and long waits', () => {
+    expect(turnaroundLabel('2026-07-24T00:00:00Z', '2026-07-24T00:00:41Z')).toBe('41s');
+    expect(turnaroundLabel('2026-07-24T00:00:00Z', '2026-07-24T00:02:05Z')).toBe('2m 5s');
+  });
+  it('omits an implausible or unparseable span rather than mislead', () => {
+    expect(turnaroundLabel('2026-07-24T00:05:00Z', '2026-07-24T00:00:00Z')).toBeNull(); // negative
+    expect(turnaroundLabel('2026-07-24T00:00:00Z', '2026-07-24T02:00:00Z')).toBeNull(); // > 1h
+    expect(turnaroundLabel('nope', '2026-07-24T00:00:00Z')).toBeNull();
+  });
+});
+
 describe('buildMasterReport', () => {
-  it('records the loudness numbers, the target and the no-tone-change note', () => {
+  it('records the summary, loudness numbers, job id, target and the no-tone-change note', () => {
     const r = buildMasterReport(baseJob, 'Amma En Agame');
+    expect(r).toMatch(/Summary/);
+    expect(r).toMatch(/✓ Streaming ready/);
     expect(r).toContain('Title:              Amma En Agame');
+    expect(r).toContain('Job ID:             j1');
     expect(r).toContain('-14 LUFS');
     expect(r).toContain('Spotify');
     expect(r).toContain('-17.9 LUFS'); // before
     expect(r).toContain('-14.0 LUFS'); // after
     expect(r).toContain('-3.68 dBTP'); // after true peak
     expect(r).toContain('2026-07-24T00:05:00.000Z');
+    expect(r).toContain('turnaround 5m 0s'); // createdAt→updatedAt
     expect(r).toMatch(/on target/i);
     expect(r).toMatch(/Loudness normalisation only/i);
     expect(r).toMatch(/Unchanged/i);
