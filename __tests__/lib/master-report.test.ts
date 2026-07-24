@@ -10,6 +10,7 @@ import {
   platformsForTarget,
   summaryLines,
   turnaroundLabel,
+  platformLandingLines,
 } from '@/lib/master-report';
 import type { MasterJob } from '@/types/masterJob';
 
@@ -77,13 +78,28 @@ describe('turnaroundLabel', () => {
   });
 });
 
+describe('platformLandingLines', () => {
+  it('shows how a −14 master lands on the streamers and Apple', () => {
+    const s = platformLandingLines(baseJob).join('\n');
+    expect(s).toMatch(/Per-platform landing/);
+    expect(s).toMatch(/Spotify/);
+    expect(s).toMatch(/plays as mastered/);
+    expect(s).toMatch(/Apple Music.*turned down ~2\.0 LU/);
+  });
+  it('is omitted entirely when the output was not measured', () => {
+    expect(platformLandingLines({ ...baseJob, afterLufs: null })).toEqual([]);
+  });
+});
+
 describe('buildMasterReport', () => {
-  it('records the summary, loudness numbers, job id, target and the no-tone-change note', () => {
+  it('records the summary, loudness numbers, job id, target, per-platform landing and the no-tone-change note', () => {
     const r = buildMasterReport(baseJob, 'Amma En Agame');
     expect(r).toMatch(/Summary/);
     expect(r).toMatch(/✓ Streaming ready/);
     expect(r).toContain('Title:              Amma En Agame');
     expect(r).toContain('Job ID:             j1');
+    expect(r).toMatch(/Per-platform landing/);
+    expect(r).toMatch(/Apple Music.*turned down/);
     expect(r).toContain('-14 LUFS');
     expect(r).toContain('Spotify');
     expect(r).toContain('-17.9 LUFS'); // before

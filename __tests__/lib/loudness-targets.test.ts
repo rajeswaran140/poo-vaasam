@@ -1,7 +1,7 @@
 /** @jest-environment node */
 /** loudness-targets — status thresholds, per-platform deltas, streaming-norm verdict. */
 
-import { statusFor, compareToTargets, streamingNormVerdict, STREAMING_TARGETS } from '@/lib/loudness-targets';
+import { statusFor, compareToTargets, streamingNormVerdict, STREAMING_TARGETS, platformLanding } from '@/lib/loudness-targets';
 
 it('classifies hot / quiet / ok against a tolerance', () => {
   expect(statusFor(0)).toBe('ok');
@@ -27,4 +27,30 @@ it('summarises against the −14 streaming norm', () => {
   expect(hot.deltaLu).toBeCloseTo(3, 5);
   expect(hot.label).toMatch(/hot/);
   expect(streamingNormVerdict(-18).status).toBe('quiet');
+});
+
+describe('platformLanding', () => {
+  it('groups the four −14 streamers into one row, Apple separate, loudest first', () => {
+    const rows = platformLanding(-14);
+    expect(rows).toHaveLength(2); // −14 group + −16 (Apple)
+    expect(rows[0].target).toBe(-14); // loudest target first
+    expect(rows[0].platforms).toEqual(expect.arrayContaining(['Spotify', 'YouTube', 'Amazon Music', 'TIDAL']));
+    expect(rows[1].platforms).toEqual(['Apple Music']);
+  });
+
+  it('a −14 master plays as-is on −14 and is turned down on Apple −16', () => {
+    const [norm, apple] = platformLanding(-14);
+    expect(norm.status).toBe('ok');
+    expect(norm.note).toMatch(/plays as mastered/);
+    expect(apple.status).toBe('hot'); // −14 is louder than Apple's −16 → turned down
+    expect(apple.deltaLu).toBeCloseTo(2, 5);
+    expect(apple.note).toMatch(/turned down ~2\.0 LU/);
+  });
+
+  it('a −16 master sits under the −14 targets', () => {
+    const [norm, apple] = platformLanding(-16);
+    expect(norm.status).toBe('quiet');
+    expect(norm.note).toMatch(/2\.0 LU under target/);
+    expect(apple.status).toBe('ok');
+  });
 });

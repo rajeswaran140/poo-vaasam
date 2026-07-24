@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 import { pollJob } from '@/lib/poll-job';
-import { statusFor } from '@/lib/loudness-targets';
+import { statusFor, platformLanding } from '@/lib/loudness-targets';
 import { MAX_UPLOAD_BYTES, ACCEPTED_UPLOAD_TYPES } from '@/lib/mastering-storage';
 import { buildMasterReport, reportFilename } from '@/lib/master-report';
 import { MasteringComparePlayer } from '@/components/admin/MasteringComparePlayer';
@@ -613,6 +613,33 @@ export function MasteringStudio() {
               </span>
             )}
           </p>
+
+          {typeof job.afterLufs === 'number' && (
+            <div className="mt-4 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
+              <p className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-xs font-medium text-gray-600 dark:border-gray-800 dark:bg-gray-800/40 dark:text-gray-300">
+                Master once — how it lands on each platform
+              </p>
+              <table className="w-full text-sm">
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-800/60">
+                  {platformLanding(job.afterLufs).map((row) => (
+                    <tr key={row.target}>
+                      <td className="px-4 py-2 tabular-nums text-gray-500 dark:text-gray-400">{row.target} LUFS</td>
+                      <td className="px-4 py-2 text-gray-800 dark:text-gray-200">{row.platforms.join(', ')}</td>
+                      <td
+                        className={`px-4 py-2 text-right ${
+                          row.status === 'ok'
+                            ? 'text-emerald-700 dark:text-emerald-400'
+                            : 'text-amber-700 dark:text-amber-400'
+                        }`}
+                      >
+                        {row.note}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {job.masterKey && job.s3Key && (
             <MasteringComparePlayer
