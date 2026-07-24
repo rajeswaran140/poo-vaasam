@@ -55,7 +55,13 @@ export interface PlatformLanding {
   /** mastered LUFS − target (LU); >0 ⇒ the platform turns it down. */
   deltaLu: number;
   status: LoudnessStatus;
-  /** Plain-language outcome for a non-engineer. */
+  /** A glance mark: ✓ = plays as mastered, ↓ = playback normalised, · = below target. */
+  mark: '✓' | '↓' | '·';
+  /**
+   * Plain-language outcome for a non-engineer, worded to reassure. Loudness
+   * normalisation is a PLAYBACK-volume adjustment, not a re-encode — a hotter
+   * master isn't "worse", so the copy says so ("no quality loss").
+   */
   note: string;
 }
 
@@ -63,8 +69,8 @@ export interface PlatformLanding {
  * How a master at `lufs` LANDS on each platform, grouped by target so the four
  * −14 streamers collapse to one row instead of repeating. Answers "I mastered
  * once — what happens everywhere?": within tolerance it plays as mastered; hotter
- * than a platform's target and that platform turns it down; quieter and it sits
- * below the target. Pure — reuses the same delta math as compareToTargets.
+ * than a platform's target and that platform lowers PLAYBACK volume (no quality
+ * loss); quieter and it sits below the target. Pure — reuses compareToTargets' math.
  */
 export function platformLanding(lufs: number, tolerance = 1): PlatformLanding[] {
   const byTarget = new Map<number, string[]>();
@@ -78,13 +84,14 @@ export function platformLanding(lufs: number, tolerance = 1): PlatformLanding[] 
     .map(([target, platforms]) => {
       const deltaLu = Math.round((lufs - target) * 10) / 10;
       const status = statusFor(deltaLu, tolerance);
+      const mark: PlatformLanding['mark'] = status === 'ok' ? '✓' : status === 'hot' ? '↓' : '·';
       const note =
         status === 'ok'
-          ? 'plays as mastered'
+          ? 'plays exactly as mastered'
           : status === 'hot'
-            ? `turned down ~${deltaLu.toFixed(1)} LU`
-            : `${Math.abs(deltaLu).toFixed(1)} LU under target`;
-      return { target, platforms, deltaLu, status, note };
+            ? `playback normalised ~${deltaLu.toFixed(1)} LU · original audio unchanged`
+            : `~${Math.abs(deltaLu).toFixed(1)} LU below target`;
+      return { target, platforms, deltaLu, status, mark, note };
     });
 }
 

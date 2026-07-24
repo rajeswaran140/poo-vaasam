@@ -62,7 +62,7 @@ export function summaryLines(job: MasterJob): string[] {
 
   const ready =
     measured && onTarget && peakSafe
-      ? '✓ Ready for video editing and distribution'
+      ? '✓ Ready for streaming, video editing and distribution'
       : '⚠ Review the flags above before distributing';
 
   return [loud, peak, '✓ Loudness only — tone, EQ and compression unchanged', ready];
@@ -91,9 +91,9 @@ export function platformLandingLines(job: MasterJob): string[] {
   if (typeof job.afterLufs !== 'number') return [];
   const rows = platformLanding(job.afterLufs).map((r) => {
     const platforms = r.platforms.join(', ');
-    return `  ${`${r.target} LUFS`.padEnd(9)} ${platforms.padEnd(38)} ${r.note}`;
+    return `  ${r.mark}  ${`${r.target} LUFS`.padEnd(9)} ${platforms.padEnd(38)} ${r.note}`;
   });
-  return [`Per-platform landing (master at ${lufs(job.afterLufs)})`, ...rows, ''];
+  return [`Streaming readiness (master at ${lufs(job.afterLufs)})`, ...rows, ''];
 }
 
 /**
@@ -124,12 +124,18 @@ export function buildMasterReport(job: MasterJob, title?: string): string {
     '',
     ...platformLandingLines(job),
     `Result:             ${verdictLine(job)}`,
+    ...(isPeakSafe(job) ? ['                    No clipping detected — no extra limiting needed.'] : []),
     '',
-    'Processing:         Loudness normalisation only (two-pass loudnorm, linear).',
-    'Tone / EQ / Comp:   Unchanged.',
+    'Processing           Two-pass loudnorm, linear correction — loudness only.',
+    '  ✓ Loudness normalised to target',
+    '  · No EQ   · No compression   · No stereo widening   · No limiting',
     '',
-    'Hand-off: import untouched at 48 kHz; disable any "Auto-Match"/normalisation',
-    'on export, or it re-levels the audio and cancels this master.',
+    'Adobe hand-off',
+    '  1. Import at 48 kHz, untouched.',
+    '  2. Disable Essential Sound "Auto-Match".',
+    '  3. Disable loudness normalisation on export.',
+    '  4. Export PCM or high-bitrate AAC — no added gain.',
+    '  (any of these re-levels the audio and cancels this master.)',
     '',
   ];
   return lines.join('\n');

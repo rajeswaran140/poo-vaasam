@@ -44,19 +44,19 @@ describe('summaryLines', () => {
     expect(s).toMatch(/✓ Streaming ready/);
     expect(s).toMatch(/✓ Peak-safe/);
     expect(s).toMatch(/✓ Loudness only/);
-    expect(s).toMatch(/✓ Ready for video editing and distribution/);
+    expect(s).toMatch(/✓ Ready for streaming, video editing and distribution/);
   });
 
   it('warns — never "ready" — when off target', () => {
     const s = summaryLines({ ...baseJob, afterLufs: -11 }).join('\n');
     expect(s).toMatch(/⚠ Off target/);
-    expect(s).not.toMatch(/✓ Ready for video/);
+    expect(s).not.toMatch(/✓ Ready for streaming/);
   });
 
   it('flags clipping and withholds the ready tick', () => {
     const s = summaryLines({ ...baseJob, afterTp: -0.2 }).join('\n');
     expect(s).toMatch(/✗ True peak .* exceeds -1 dBTP/);
-    expect(s).not.toMatch(/✓ Ready for video/);
+    expect(s).not.toMatch(/✓ Ready for streaming/);
   });
 
   it('handles an unmeasured master without claiming success', () => {
@@ -79,12 +79,12 @@ describe('turnaroundLabel', () => {
 });
 
 describe('platformLandingLines', () => {
-  it('shows how a −14 master lands on the streamers and Apple', () => {
+  it('shows how a −14 master lands, with glance marks and reassuring copy', () => {
     const s = platformLandingLines(baseJob).join('\n');
-    expect(s).toMatch(/Per-platform landing/);
-    expect(s).toMatch(/Spotify/);
-    expect(s).toMatch(/plays as mastered/);
-    expect(s).toMatch(/Apple Music.*turned down ~2\.0 LU/);
+    expect(s).toMatch(/Streaming readiness/);
+    expect(s).toMatch(/✓.*Spotify/);
+    expect(s).toMatch(/plays exactly as mastered/);
+    expect(s).toMatch(/↓.*Apple Music.*playback normalised ~2\.0 LU · original audio unchanged/);
   });
   it('is omitted entirely when the output was not measured', () => {
     expect(platformLandingLines({ ...baseJob, afterLufs: null })).toEqual([]);
@@ -98,8 +98,8 @@ describe('buildMasterReport', () => {
     expect(r).toMatch(/✓ Streaming ready/);
     expect(r).toContain('Title:              Amma En Agame');
     expect(r).toContain('Job ID:             j1');
-    expect(r).toMatch(/Per-platform landing/);
-    expect(r).toMatch(/Apple Music.*turned down/);
+    expect(r).toMatch(/Streaming readiness/);
+    expect(r).toMatch(/Apple Music.*playback normalised/);
     expect(r).toContain('-14 LUFS');
     expect(r).toContain('Spotify');
     expect(r).toContain('-17.9 LUFS'); // before
@@ -108,8 +108,20 @@ describe('buildMasterReport', () => {
     expect(r).toContain('2026-07-24T00:05:00.000Z');
     expect(r).toContain('turnaround 5m 0s'); // createdAt→updatedAt
     expect(r).toMatch(/on target/i);
-    expect(r).toMatch(/Loudness normalisation only/i);
-    expect(r).toMatch(/Unchanged/i);
+    expect(r).toMatch(/loudness only/i);
+    expect(r).toMatch(/No EQ .* No compression .* No stereo widening .* No limiting/);
+  });
+
+  it('reassures a non-engineer: no clipping + expanded hand-off', () => {
+    const r = buildMasterReport(baseJob);
+    expect(r).toMatch(/No clipping detected/);
+    expect(r).toMatch(/Adobe hand-off/);
+    expect(r).toMatch(/Disable Essential Sound "Auto-Match"/);
+    expect(r).toMatch(/Export PCM or high-bitrate AAC/);
+  });
+
+  it('omits the "no clipping" reassurance when the peak is unsafe', () => {
+    expect(buildMasterReport({ ...baseJob, afterTp: -0.2 })).not.toMatch(/No clipping detected/);
   });
 
   it('omits the title line when no name is given', () => {
