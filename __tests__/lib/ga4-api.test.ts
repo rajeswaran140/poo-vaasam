@@ -5,8 +5,6 @@
  * the real GA4 backend.
  */
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 const runReport = jest.fn();
 jest.mock('@google-analytics/data', () => ({
   BetaAnalyticsDataClient: jest.fn().mockImplementation(() => ({ runReport })),

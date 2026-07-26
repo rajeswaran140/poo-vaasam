@@ -21,10 +21,8 @@ jest.mock('@/config/site', () => ({
 import { generateMetadata } from '@/app/videos/page';
 import { s3ThumbnailUrl } from '@/lib/youtube-feed';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 const fetchChannelVideos = (jest.requireMock('@/lib/youtube-feed') as any).fetchChannelVideos as jest.Mock;
 const isConfigured = (jest.requireMock('@/config/site') as any).isYouTubeVideosConfigured as jest.Mock;
-/* eslint-enable @typescript-eslint/no-explicit-any */
 
 const SHORT = { id: 'shortAAAAAAA', title: 'A Short', description: 's', publishedAt: '2026-06-09T00:00:00Z', thumbnail: s3ThumbnailUrl('shortAAAAAAA'), watchUrl: 'w', duration: 'PT50S' };
 const LONG_A = { id: 'longAAAAAAAA', title: 'Song A', description: 'a', publishedAt: '2026-06-08T00:00:00Z', thumbnail: s3ThumbnailUrl('longAAAAAAAA'), watchUrl: 'w', duration: 'PT4M30S' };
