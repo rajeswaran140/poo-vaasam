@@ -5,6 +5,7 @@ import {
   stripScaffoldingLabels,
   splitTrailingHashtags,
   stripForbiddenCreditLines,
+  buildDescriptionLead,
   CREDIT_BLOCK,
 } from '@/lib/youtube-description';
 
@@ -164,5 +165,34 @@ describe('permanent credit block (catalogue-drift guard)', () => {
     expect(out).toContain('✍️ Lyrics: Raj (original, all rights reserved)');
     expect(out).not.toMatch(/100%\s*original/i);
     expect(out).toContain('real line');
+  });
+});
+
+describe('WhatsApp channel link (gated on config)', () => {
+  const CHANNEL = 'https://whatsapp.com/channel/abc123';
+
+  /**
+   * The channel does not exist yet, so SITE.whatsapp.url is ''. Nothing about
+   * it may appear in a published description until it is real — a dead "follow
+   * us on WhatsApp" line across 80+ videos would be worse than no line at all.
+   */
+  it('omits the lead entirely while no channel is configured', () => {
+    expect(buildDescriptionLead()).toBe('');
+    expect(assembleYoutubeDescription('ஒரு பாடல்.\n\n#tamil')).not.toMatch(/WhatsApp/i);
+  });
+
+  it('rejects anything that is not a real channel URL', () => {
+    expect(buildDescriptionLead('https://wa.me/15551234567')).toBe('');
+    expect(buildDescriptionLead('https://tamilagaval.com')).toBe('');
+    expect(buildDescriptionLead('')).toBe('');
+  });
+
+  it('builds the bilingual ask once a real channel URL is supplied', () => {
+    const lead = buildDescriptionLead(CHANNEL);
+    expect(lead).toContain(CHANNEL);
+    expect(lead).toContain('WhatsApp');
+    // Above the fold: YouTube truncates around 150 characters, so an ask that
+    // does not fit inside that window is not seen at all.
+    expect(lead.length).toBeLessThanOrEqual(150);
   });
 });

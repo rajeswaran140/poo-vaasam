@@ -61,7 +61,10 @@ function beacon(type: string, target?: string, songId?: string): void {
  * traffic (referral-side, when YouTube preserves UTMs).
  */
 export function trackSubscribeClick(source: string): void {
-  gtag()?.('event', 'subscribe_click', { source });
+  // `cta_source`, NOT `source` — see the note on trackYouTubeOpen: a GA4 event
+  // parameter literally named `source` is read as a CAMPAIGN field and
+  // rewrites the session's traffic source.
+  gtag()?.('event', 'subscribe_click', { cta_source: source });
   beacon('subscribe', source);
 }
 
@@ -84,7 +87,14 @@ export function trackAudioPlay(songId: string, songTitle: string): void {
  * click came from. Subscribe clicks stay on their own event for clarity.
  */
 export function trackYouTubeOpen(destination: string, source?: string): void {
-  gtag()?.('event', 'youtube_open', source ? { destination, source } : { destination });
+  // NEVER send a GA4 event parameter named `source` (nor `medium`, `campaign`,
+  // `term`, `content`). GA4 treats those as CAMPAIGN parameters, so the value
+  // overwrites the session's traffic source — a visitor who arrived from
+  // YouTube and then clicked a song row was re-attributed to `songs_list_row`,
+  // and their real origin was lost. That is why the 30-day GA4 report showed
+  // 50 sessions from "songs_list_row" and only 18 from youtube.com. The
+  // parameter is a link PLACEMENT, so name it that.
+  gtag()?.('event', 'youtube_open', source ? { destination, link_placement: source } : { destination });
   beacon('youtube', destination);
 }
 
@@ -126,6 +136,10 @@ export function trackInstall(): void {
  * the utm_source (whatsapp / facebook / …).
  */
 export function trackInbound(source: string, songId?: string): void {
-  gtag()?.('event', 'inbound_visit', { source, ...(songId ? { source_song_id: songId } : {}) });
+  // `inbound_source`, not `source` — same reserved-parameter trap. Here the
+  // rewrite happened to be roughly right (the value IS the utm_source), but it
+  // is the wrong mechanism: GA4 already reads utm_source from the URL, so this
+  // was a second, competing write of the same field.
+  gtag()?.('event', 'inbound_visit', { inbound_source: source, ...(songId ? { source_song_id: songId } : {}) });
   beacon('inbound', source, songId);
 }

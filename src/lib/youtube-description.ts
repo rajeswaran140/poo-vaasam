@@ -11,7 +11,7 @@
  * surfaces them). Any leading scaffolding label is stripped defensively.
  */
 
-import { SITE } from '@/config/site';
+import { SITE, isWhatsAppConfigured } from '@/config/site';
 
 const SUBSCRIBE_URL = `${SITE.youtube.channelUrl.replace(/\/+$/, '')}?sub_confirmation=1`;
 const SITE_URL = 'https://tamilagaval.com/?utm_source=youtube&utm_medium=description';
@@ -81,9 +81,30 @@ export function pickThemePlaylist(
   return null;
 }
 
+/**
+ * The one line that goes ABOVE the fold, before YouTube's "...more" cut.
+ *
+ * YouTube shows only the first ~150 characters of a description; everything
+ * after that is a click away and is, in practice, unread. An ask buried in the
+ * footer is invisible — which is why the site currently receives ~18 sessions a
+ * month from ~150k views. So the single most valuable ask leads.
+ *
+ * Returns '' until a real WhatsApp channel URL is configured, so nothing
+ * half-finished can reach a published description. The moment
+ * SITE.whatsapp.url is filled in, every newly assembled description carries it.
+ */
+export function buildDescriptionLead(channelUrl?: string): string {
+  const url = channelUrl ?? (isWhatsAppConfigured() ? SITE.whatsapp.url : '');
+  if (!/whatsapp\.com\/channel\//.test(url)) return '';
+  return `📲 புதிய பாடல்கள் WhatsApp-இல் | New songs on WhatsApp: ${url}`;
+}
+
 /** Tamilagaval's standard description footer (bilingual links). */
 export function buildDescriptionFooter(opts: { emotion?: string; theme?: string } = {}): string {
   const lines = [
+    ...(isWhatsAppConfigured()
+      ? [`📲 WhatsApp சேனல் | Channel: ${SITE.whatsapp.url}`]
+      : []),
     `📺 Subscribe: ${SUBSCRIBE_URL}`,
     `🌐 ${SITE_URL}`,
     '',
@@ -148,5 +169,8 @@ export function assembleYoutubeDescription(
   const clean = stripForbiddenCreditLines(stripScaffoldingLabels(body)).trim();
   const [main, hashtags] = splitTrailingHashtags(clean);
   const footer = buildDescriptionFooter(opts);
-  return [main.trim(), CREDIT_BLOCK, footer, hashtags].filter(Boolean).join('\n\n');
+  // Lead FIRST — it is the only part guaranteed to be seen before "...more".
+  return [buildDescriptionLead(), main.trim(), CREDIT_BLOCK, footer, hashtags]
+    .filter(Boolean)
+    .join('\n\n');
 }
