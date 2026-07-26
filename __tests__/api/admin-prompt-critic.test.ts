@@ -21,8 +21,12 @@ import * as auth from '@/lib/auth-helper';
 
 const requireAdmin = auth.requireAdmin as jest.Mock;
 
-const req = (body: unknown) =>
-  new NextRequest('http://localhost/api/admin/prompt-critic', { method: 'POST', body: JSON.stringify(body) });
+const req = (body: unknown, withBearer = true) =>
+  new NextRequest('http://localhost/api/admin/prompt-critic', {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: withBearer ? { Authorization: 'Bearer test-token' } : undefined,
+  });
 
 beforeEach(() => {
   requireAdmin.mockReset().mockResolvedValue({ userId: 'admin', isAdmin: true });
@@ -33,6 +37,12 @@ describe('POST /api/admin/prompt-critic', () => {
   it('401s when not an admin', async () => {
     requireAdmin.mockRejectedValue(new auth.AuthError('Unauthorized', 401));
     const res = await POST(req({ style: 's', lyrics: 'l' }));
+    expect(res.status).toBe(401);
+    expect(mockCritique).not.toHaveBeenCalled();
+  });
+
+  it('401s without a Bearer token (CSRF defense on the mutation)', async () => {
+    const res = await POST(req({ style: 's', lyrics: 'l' }, false));
     expect(res.status).toBe(401);
     expect(mockCritique).not.toHaveBeenCalled();
   });

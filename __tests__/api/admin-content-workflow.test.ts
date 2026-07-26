@@ -29,14 +29,14 @@ jest.mock('@/lib/aws-config', () => ({
 import { PATCH } from '@/app/api/admin/content/[id]/workflow/route';
 import * as auth from '@/lib/auth-helper';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockSend = (jest.requireMock('@aws-sdk/client-dynamodb') as any).__send as jest.Mock;
 const mockedRequireAdmin = auth.requireAdmin as jest.Mock;
 
-const req = (id: string, body: unknown) =>
+const req = (id: string, body: unknown, withBearer = true) =>
   new NextRequest(`https://tamilagaval.com/api/admin/content/${id}/workflow`, {
     method: 'PATCH',
     body: JSON.stringify(body),
+    headers: withBearer ? { Authorization: 'Bearer test-token' } : undefined,
   });
 const params = (id: string) => ({ params: Promise.resolve({ id }) });
 
@@ -51,6 +51,12 @@ it('rejects with 403 when caller is not admin', async () => {
   mockedRequireAdmin.mockRejectedValueOnce(new AuthError('Forbidden', 403));
   const res = await PATCH(req('cnt_a', { state: 'draft' }), params('cnt_a'));
   expect(res.status).toBe(403);
+  expect(mockSend).not.toHaveBeenCalled();
+});
+
+it('rejects with 401 without a Bearer token (CSRF defense on the mutation)', async () => {
+  const res = await PATCH(req('cnt_a', { state: 'draft' }, false), params('cnt_a'));
+  expect(res.status).toBe(401);
   expect(mockSend).not.toHaveBeenCalled();
 });
 

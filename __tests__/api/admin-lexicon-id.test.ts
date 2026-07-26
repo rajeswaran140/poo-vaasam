@@ -18,9 +18,18 @@ import { PUT, DELETE } from '@/app/api/admin/lexicon/[id]/route';
 import * as auth from '@/lib/auth-helper';
 
 const requireAdmin = auth.requireAdmin as jest.Mock;
-const req = (b: unknown = {}, id = 'lex_1') =>
-  new NextRequest(`https://tamilagaval.com/api/admin/lexicon/${id}`, { method: 'PUT', body: JSON.stringify(b) });
-const delReq = (id = 'lex_1') => new NextRequest(`https://tamilagaval.com/api/admin/lexicon/${id}`, { method: 'DELETE' });
+const BEARER = { Authorization: 'Bearer test-token' };
+const req = (b: unknown = {}, id = 'lex_1', withBearer = true) =>
+  new NextRequest(`https://tamilagaval.com/api/admin/lexicon/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(b),
+    headers: withBearer ? BEARER : undefined,
+  });
+const delReq = (id = 'lex_1', withBearer = true) =>
+  new NextRequest(`https://tamilagaval.com/api/admin/lexicon/${id}`, {
+    method: 'DELETE',
+    headers: withBearer ? BEARER : undefined,
+  });
 const ctx = (id = 'lex_1') => ({ params: Promise.resolve({ id }) });
 
 beforeEach(() => {
@@ -32,6 +41,12 @@ it('PUT 403 for non-admin', async () => {
   const { AuthError } = jest.requireActual('@/lib/auth-helper');
   requireAdmin.mockRejectedValueOnce(new AuthError('Forbidden', 403));
   expect((await PUT(req({ usage: 'retire' }), ctx())).status).toBe(403);
+});
+
+it('PUT/DELETE 401 without a Bearer token (CSRF defense on the mutations)', async () => {
+  expect((await PUT(req({ usage: 'retire' }, 'lex_1', false), ctx())).status).toBe(401);
+  expect((await DELETE(delReq('lex_1', false), ctx())).status).toBe(401);
+  expect(mockUpdate).not.toHaveBeenCalled();
 });
 
 it('PUT 400 on a malformed id', async () => {

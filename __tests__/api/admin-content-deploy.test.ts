@@ -25,15 +25,15 @@ jest.mock('@/lib/amplify-deploy', () => ({ triggerReleaseFromEnv: jest.fn() }));
 import { POST } from '@/app/api/admin/content/route';
 import * as auth from '@/lib/auth-helper';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockExecute = (jest.requireMock('@/application/use-cases/CreateContentUseCase') as any).__execute as jest.Mock;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 const mockTrigger = (jest.requireMock('@/lib/amplify-deploy') as any).triggerReleaseFromEnv as jest.Mock;
 
-const post = (body: unknown) =>
+const post = (body: unknown, withBearer = true) =>
   POST(new NextRequest(new Request('http://localhost/api/admin/content', {
     method: 'POST',
     body: JSON.stringify(body),
+    headers: withBearer ? { Authorization: 'Bearer test-token' } : undefined,
   })));
 
 const base = { type: 'POEMS', title: 'மழையே', body: 'உள்ளடக்கம்', author: 'இராஜ்' };
@@ -45,6 +45,13 @@ beforeEach(() => {
 });
 
 describe('POST /api/admin/content — auto deploy on publish', () => {
+  it('401s without a Bearer token and never deploys (CSRF defense)', async () => {
+    const res = await post({ ...base, status: 'PUBLISHED' }, false);
+    expect(res.status).toBe(401);
+    expect(mockExecute).not.toHaveBeenCalled();
+    expect(mockTrigger).not.toHaveBeenCalled();
+  });
+
   it('triggers a deploy when status is PUBLISHED', async () => {
     mockTrigger.mockResolvedValueOnce({ ok: true, jobId: '200' });
     const res = await post({ ...base, status: 'PUBLISHED' });

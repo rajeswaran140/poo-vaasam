@@ -14,6 +14,10 @@ jest.mock('@/lib/logger', () => ({
 const requireAdmin = jest.fn();
 jest.mock('@/lib/auth-helper', () => ({
   requireAdmin: (...a: unknown[]) => requireAdmin(...a),
+  // Real implementation, so the Bearer/CSRF gate is genuinely exercised rather
+  // than stubbed out (an undefined stub throws and reads as a 401 either way,
+  // which would pass the CSRF test for the wrong reason).
+  requireBearer: jest.requireActual('@/lib/auth-helper').requireBearer,
   authErrorResponse: () => new Response('unauthorized', { status: 401 }),
 }));
 
@@ -53,11 +57,13 @@ function makeContent(id: string, hasAnalysis = false) {
   };
 }
 
-const post = (body: unknown) =>
+const post = (body: unknown, withBearer = true) =>
   POST(
     new NextRequest('https://tamilagaval.com/api/admin/content/analyze-poems', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: withBearer
+        ? { 'content-type': 'application/json', Authorization: 'Bearer test-token' }
+        : { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     })
   );
@@ -71,6 +77,11 @@ beforeEach(() => {
 it('401s when the caller is not an admin', async () => {
   requireAdmin.mockRejectedValueOnce(new Error('nope'));
   expect((await post({ id: 'cnt_abc' })).status).toBe(401);
+});
+
+it('401s without a Bearer token (CSRF defense on the mutation)', async () => {
+  expect((await post({ id: 'cnt_abc' }, false)).status).toBe(401);
+  expect(mockAnalyze).not.toHaveBeenCalled();
 });
 
 it('analyzes and stores a single poem by id', async () => {

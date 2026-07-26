@@ -17,7 +17,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
-import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
+import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { MasterJobRepository } from '@/infrastructure/database/MasterJobRepository';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { awsConfig } from '@/lib/aws-config';
@@ -32,6 +32,9 @@ const MASTER_WORKER_FUNCTION = process.env.MASTER_WORKER_FUNCTION || 'tamilagava
 export async function POST(request: NextRequest) {
   try {
     await requireAdmin(request);
+    // Defense-in-depth CSRF: reject cookie-only auth on this mutation
+    // (matches the pattern on the other admin mutation routes).
+    requireBearer(request);
   } catch (err) {
     return authErrorResponse(err);
   }

@@ -13,7 +13,11 @@ jest.mock('@/lib/amplify-deploy', () => ({ triggerRelease: (...a: unknown[]) => 
 import { POST } from '@/app/api/admin/deploy/route';
 import * as auth from '@/lib/auth-helper';
 
-const req = () => new NextRequest('https://tamilagaval.com/api/admin/deploy', { method: 'POST' });
+const req = (withBearer = true) =>
+  new NextRequest('https://tamilagaval.com/api/admin/deploy', {
+    method: 'POST',
+    headers: withBearer ? { Authorization: 'Bearer test-token' } : undefined,
+  });
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -29,6 +33,11 @@ it('403s for a non-admin', async () => {
   const { AuthError } = jest.requireActual('@/lib/auth-helper');
   (auth.requireAdmin as jest.Mock).mockRejectedValueOnce(new AuthError('Forbidden', 403));
   expect((await POST(req())).status).toBe(403);
+  expect(mockTrigger).not.toHaveBeenCalled();
+});
+
+it('401s without a Bearer token (CSRF defense on the mutation)', async () => {
+  expect((await POST(req(false))).status).toBe(401);
   expect(mockTrigger).not.toHaveBeenCalled();
 });
 

@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
+import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { generateSongCover } from '@/application/use-cases/GenerateSongCover';
 
 export const dynamic = 'force-dynamic';
@@ -17,6 +17,9 @@ const schema = z.object({ prompt: z.string().max(4000).optional() });
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     await requireAdmin(request);
+    // Defense-in-depth CSRF: reject cookie-only auth on this mutation
+    // (matches the pattern on the other admin mutation routes).
+    requireBearer(request);
   } catch (err) {
     return authErrorResponse(err);
   }

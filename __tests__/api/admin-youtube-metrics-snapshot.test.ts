@@ -22,11 +22,17 @@ import * as auth from '@/lib/auth-helper';
 const mockedRequireAdmin = auth.requireAdmin as jest.Mock;
 const SECRET = 'cron-secret-xyz';
 
-const post = (opts?: { cronSecret?: string; days?: number }) =>
-  new NextRequest(`https://tamilagaval.com/api/admin/youtube/metrics/snapshot?days=${opts?.days ?? 3}`, {
+// The admin fallback path is bearer-gated (CSRF defense); the cron path is not,
+// since it authenticates with a shared secret header rather than a session.
+const post = (opts?: { cronSecret?: string; days?: number; withBearer?: boolean }) => {
+  const headers: Record<string, string> = {};
+  if (opts?.cronSecret) headers['x-cron-secret'] = opts.cronSecret;
+  if (opts?.withBearer ?? !opts?.cronSecret) headers.Authorization = 'Bearer test-token';
+  return new NextRequest(`https://tamilagaval.com/api/admin/youtube/metrics/snapshot?days=${opts?.days ?? 3}`, {
     method: 'POST',
-    headers: opts?.cronSecret ? { 'x-cron-secret': opts.cronSecret } : undefined,
+    headers,
   });
+};
 
 beforeEach(() => {
   mockedRequireAdmin.mockReset();
@@ -47,6 +53,13 @@ it('falls back to the admin gate when no cron secret is presented', async () => 
   const res = await POST(post());
   expect(res.status).toBe(200);
   expect(mockedRequireAdmin).toHaveBeenCalledTimes(1);
+});
+
+it('rejects a cookie-only admin (no Bearer) with 401 — CSRF defense', async () => {
+  mockedRequireAdmin.mockResolvedValueOnce({ isAuthenticated: true });
+  const res = await POST(post({ withBearer: false }));
+  expect(res.status).toBe(401);
+  expect(mockCapture).not.toHaveBeenCalled();
 });
 
 it('rejects a wrong cron secret with no admin session (401/403)', async () => {

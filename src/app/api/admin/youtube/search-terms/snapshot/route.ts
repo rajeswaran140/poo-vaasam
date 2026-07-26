@@ -12,7 +12,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
+import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { captureSearchTermsSnapshot } from '@/lib/search-terms-store';
 import { isYouTubeAnalyticsConfigured } from '@/lib/youtube-analytics';
 import { isValidYouTubeId } from '@/lib/youtube-api';
@@ -28,6 +28,9 @@ export async function POST(request: NextRequest) {
   if (!cronAuthorized(request)) {
     try {
       await requireAdmin(request);
+      // Defense-in-depth CSRF: reject cookie-only auth on this mutation
+      // (matches the pattern on the other admin mutation routes).
+      requireBearer(request);
     } catch (err) {
       return authErrorResponse(err);
     }

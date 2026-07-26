@@ -90,16 +90,23 @@ describe('GET /api/admin/subscribers', () => {
 });
 
 describe('PATCH /api/admin/subscribers', () => {
-  const patchReq = (body: unknown) =>
+  const patchReq = (body: unknown, withBearer = true) =>
     new NextRequest('http://localhost/api/admin/subscribers', {
       method: 'PATCH',
       body: JSON.stringify(body),
+      headers: withBearer ? { Authorization: 'Bearer test-token' } : undefined,
     });
 
   it('401s when not an admin', async () => {
     requireAdmin.mockRejectedValue(new auth.AuthError('Unauthorized', 401));
     const res = await PATCH(patchReq({ email: 'a@x.com', action: 'unsubscribe' }));
     expect(res.status).toBe(401);
+  });
+
+  it('401s without a Bearer token (CSRF defense on the mutation)', async () => {
+    const res = await PATCH(patchReq({ email: 'a@x.com', action: 'unsubscribe' }, false));
+    expect(res.status).toBe(401);
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 
   it('validates the body', async () => {
