@@ -12,9 +12,8 @@ import { broadcastPush, isExpiredPushError } from '@/lib/push-broadcast';
 import webpush from 'web-push';
 import * as store from '@/lib/push-store';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 const sendMock = (webpush as any).sendNotification as jest.Mock;
-/* eslint-enable @typescript-eslint/no-explicit-any */
+
 const listMock = store.listPushSubscriptions as jest.Mock;
 const delMock = store.deletePushSubscription as jest.Mock;
 

@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
+import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { LexiconRepository } from '@/infrastructure/database/LexiconRepository';
 import { lexiconWordUpdateSchema } from '@/types/lexicon';
 
@@ -16,6 +16,9 @@ const validId = (id: string) => /^lex_[a-z0-9_]+$/i.test(id);
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     await requireAdmin(request);
+    // Defense-in-depth CSRF: reject cookie-only auth on this mutation
+    // (matches the pattern on the other admin mutation routes).
+    requireBearer(request);
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -52,6 +55,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     await requireAdmin(request);
+    // Defense-in-depth CSRF: reject cookie-only auth on this mutation
+    // (matches the pattern on the other admin mutation routes).
+    requireBearer(request);
   } catch (err) {
     return authErrorResponse(err);
   }

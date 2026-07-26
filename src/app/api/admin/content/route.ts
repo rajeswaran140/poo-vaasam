@@ -9,7 +9,7 @@ import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { CategoryRepository } from '@/infrastructure/database/CategoryRepository';
 import { TagRepository } from '@/infrastructure/database/TagRepository';
 import { CreateContentUseCase } from '@/application/use-cases/CreateContentUseCase';
-import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
+import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { ContentType, ContentStatus, WORKFLOW_STATES } from '@/types/content';
 import { DomainError } from '@/application/errors';
 import { triggerReleaseFromEnv } from '@/lib/amplify-deploy';
@@ -167,6 +167,9 @@ export async function POST(request: NextRequest) {
     // Verify admin authentication
     try {
       await requireAdmin(request);
+      // Defense-in-depth CSRF: reject cookie-only auth on this mutation
+      // (matches the pattern on the other admin mutation routes).
+      requireBearer(request);
     } catch (authError) {
       return authErrorResponse(authError);
     }

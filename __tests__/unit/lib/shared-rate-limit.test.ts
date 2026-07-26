@@ -91,7 +91,7 @@ describe('cross-instance enforcement', () => {
   it('reports remaining and resetAt from the shared count, not the local one', async () => {
     const table = fakeTable();
     update.mockImplementation(table.impl);
-    let t = 1_000_000_000;
+    const t = 1_000_000_000;
     const a = new SharedRateLimiter({ bucket: 'ai', windowMs: 60_000, max: 5, now: () => t });
     const b = new SharedRateLimiter({ bucket: 'ai', windowMs: 60_000, max: 5, now: () => t });
 

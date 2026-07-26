@@ -37,8 +37,12 @@ import * as auth from '@/lib/auth-helper';
 
 const mockedRequireAdmin = auth.requireAdmin as jest.Mock;
 
-const req = (b: unknown = {}) =>
-  new NextRequest('https://tamilagaval.com/api/admin/songs/cnt_1/cover', { method: 'POST', body: JSON.stringify(b) });
+const req = (b: unknown = {}, withBearer = true) =>
+  new NextRequest('https://tamilagaval.com/api/admin/songs/cnt_1/cover', {
+    method: 'POST',
+    body: JSON.stringify(b),
+    headers: withBearer ? { Authorization: 'Bearer test-token' } : undefined,
+  });
 const ctx = (id = 'cnt_1') => ({ params: Promise.resolve({ id }) });
 const songEntity = (o: Record<string, unknown> = { id: 'cnt_1', title: 'அம்மா' }) => ({ toObject: () => o });
 
@@ -52,6 +56,12 @@ it('returns 403 when not admin (no generation)', async () => {
   mockedRequireAdmin.mockRejectedValueOnce(new AuthError('Forbidden', 403));
   const res = await POST(req(), ctx());
   expect(res.status).toBe(403);
+  expect(mockGen).not.toHaveBeenCalled();
+});
+
+it('returns 401 without a Bearer token (CSRF defense on the mutation)', async () => {
+  const res = await POST(req({}, false), ctx());
+  expect(res.status).toBe(401);
   expect(mockGen).not.toHaveBeenCalled();
 });
 

@@ -25,9 +25,13 @@ const mockBroadcast = bc.broadcastPush as jest.Mock;
 const mockCount = store.countPushSubscriptions as jest.Mock;
 
 const get = () => GET(new NextRequest(new Request('http://localhost/api/admin/push/broadcast')));
-const post = (body: unknown) =>
+const post = (body: unknown, withBearer = true) =>
   POST(new NextRequest(new Request('http://localhost/api/admin/push/broadcast', {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    method: 'POST',
+    headers: withBearer
+      ? { 'content-type': 'application/json', Authorization: 'Bearer test-token' }
+      : { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
   })));
 
 beforeEach(() => {
@@ -42,6 +46,11 @@ it('401s a non-admin on both GET and POST', async () => {
   mockAdmin.mockRejectedValue(new AuthError('Unauthorized', 401));
   expect((await get()).status).toBe(401);
   expect((await post({ title: 'a', body: 'b' })).status).toBe(401);
+  expect(mockBroadcast).not.toHaveBeenCalled();
+});
+
+it('401s a POST without a Bearer token (CSRF defense on the mutation)', async () => {
+  expect((await post({ title: 'a', body: 'b' }, false)).status).toBe(401);
   expect(mockBroadcast).not.toHaveBeenCalled();
 });
 

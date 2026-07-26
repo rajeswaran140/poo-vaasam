@@ -9,7 +9,6 @@
  * actual error messages ("PERMISSION_DENIED: …") instead of swallowing
  * failures into indistinguishable "no data yet" empty states.
  */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { BetaAnalyticsDataClient } from '@google-analytics/data';
 

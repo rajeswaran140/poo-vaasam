@@ -5,7 +5,6 @@
  */
 import { DynamoDBOperations } from '@/infrastructure/database/dynamodb-client';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 describe('DynamoDBOperations.scanAll', () => {
   afterEach(() => jest.restoreAllMocks());
 

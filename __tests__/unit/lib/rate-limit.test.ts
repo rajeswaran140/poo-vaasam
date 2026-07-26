@@ -9,7 +9,7 @@ import {
 
 describe('RateLimiter', () => {
   it('allows up to max requests then blocks within the window', () => {
-    let t = 1_000_000;
+    const t = 1_000_000;
     const rl = new RateLimiter({ windowMs: 60_000, max: 3, now: () => t });
 
     expect(rl.check('ip').allowed).toBe(true);
@@ -25,7 +25,7 @@ describe('RateLimiter', () => {
   });
 
   it('tracks each key (IP) independently', () => {
-    let t = 0;
+    const t = 0;
     const rl = new RateLimiter({ windowMs: 1000, max: 1, now: () => t });
 
     expect(rl.check('a').allowed).toBe(true);
@@ -46,7 +46,7 @@ describe('RateLimiter', () => {
   });
 
   it('reports a resetAt in the future when blocked', () => {
-    let t = 5_000;
+    const t = 5_000;
     const rl = new RateLimiter({ windowMs: 2000, max: 1, now: () => t });
     rl.check('ip');
     const blocked = rl.check('ip');

@@ -17,7 +17,7 @@ jest.mock('@/infrastructure/database/dynamodb-client', () => {
   const rows = new Map<string, number>();
   return {
     DynamoDBOperations: {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       update: jest.fn(async ({ key, expressionAttributeValues }: any) => {
         const id = `${key.PK}|${key.SK}`;
         const count = (rows.get(id) ?? 0) + expressionAttributeValues[':one'];
@@ -40,11 +40,9 @@ jest.mock('@/infrastructure/database/ContentRepository', () => {
 
 import { POST } from '@/app/api/content/[id]/view/route';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 const repoMock = jest.requireMock('@/infrastructure/database/ContentRepository') as any;
 const findById = repoMock.__findById as jest.Mock;
 const incrementViewCount = repoMock.__incrementViewCount as jest.Mock;
-/* eslint-enable @typescript-eslint/no-explicit-any */
 
 // Distinct IP per test keeps the module-level rate limiter from bleeding across
 // tests (the limiter buckets by x-forwarded-for).

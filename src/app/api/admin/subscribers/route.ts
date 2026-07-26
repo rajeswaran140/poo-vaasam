@@ -15,7 +15,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { DynamoDBOperations } from '@/infrastructure/database/dynamodb-client';
-import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
+import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import {
   toSubscriber,
   filterByStatus,
@@ -82,6 +82,9 @@ const patchSchema = z.object({
 export async function PATCH(request: NextRequest) {
   try {
     await requireAdmin(request);
+    // Defense-in-depth CSRF: reject cookie-only auth on this mutation
+    // (matches the pattern on the other admin mutation routes).
+    requireBearer(request);
   } catch (err) {
     return authErrorResponse(err);
   }

@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
@@ -26,7 +26,7 @@
     "deploy:master-worker": "npm run build:master-worker && cd master-worker-dist && zip -q -r ../master-worker.zip index.js && cd .. && aws lambda update-function-code --function-name tamilagaval-master-worker --zip-file fileb://master-worker.zip --region ca-central-1"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.90.0",
+    "@anthropic-ai/sdk": "^0.91.1",
     "@aws-amplify/ui-react": "^5.3.3",
     "@aws-sdk/client-amplify": "3.1033.0",
     "@aws-sdk/client-dynamodb": "^3.700.0",
@@ -43,7 +43,7 @@
     "aws-amplify": "^5.3.33",
     "aws-jwt-verify": "^5.1.1",
     "lucide-react": "1.8.0",
-    "next": "^15.5.18",
+    "next": "^15.5.21",
     "openai": "^6.34.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -69,10 +69,14 @@
     "eslint-config-next": "^15.2.0",
     "jest": "30.3.0",
     "jest-environment-jsdom": "30.3.0",
-    "postcss": "^8.4.0",
+    "postcss": "^8.5.23",
     "tailwindcss": "^3.4.0",
     "ts-node": "10.9.2",
     "tsx": "4.21.0",
     "typescript": "5.9.3"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.14.4",
+    "lodash": "^4.18.1"
   }
 }

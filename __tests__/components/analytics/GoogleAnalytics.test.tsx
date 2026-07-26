@@ -17,7 +17,7 @@ import { render } from '@testing-library/react';
 import { GoogleAnalytics } from '@/components/analytics/GoogleAnalytics';
 
 declare global {
-  // eslint-disable-next-line no-var
+   
   var gtag: jest.Mock | undefined;
 }
 

@@ -17,7 +17,7 @@ jest.mock('@/infrastructure/database/dynamodb-client', () => {
   const rows = new Map<string, number>();
   return {
     DynamoDBOperations: {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       update: jest.fn(async ({ key, expressionAttributeValues }: any) => {
         const id = `${key.PK}|${key.SK}`;
         const count = (rows.get(id) ?? 0) + expressionAttributeValues[':one'];

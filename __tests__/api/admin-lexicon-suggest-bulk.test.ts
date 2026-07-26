@@ -26,8 +26,19 @@ import { POST as BULK } from '@/app/api/admin/lexicon/bulk/route';
 import * as auth from '@/lib/auth-helper';
 
 const requireAdmin = auth.requireAdmin as jest.Mock;
-const suggestReq = (b: unknown) => new NextRequest('https://tamilagaval.com/api/admin/lexicon/suggest', { method: 'POST', body: JSON.stringify(b) });
-const bulkReq = (b: unknown) => new NextRequest('https://tamilagaval.com/api/admin/lexicon/bulk', { method: 'POST', body: JSON.stringify(b) });
+const BEARER = { Authorization: 'Bearer test-token' };
+const suggestReq = (b: unknown, withBearer = true) =>
+  new NextRequest('https://tamilagaval.com/api/admin/lexicon/suggest', {
+    method: 'POST',
+    body: JSON.stringify(b),
+    headers: withBearer ? BEARER : undefined,
+  });
+const bulkReq = (b: unknown, withBearer = true) =>
+  new NextRequest('https://tamilagaval.com/api/admin/lexicon/bulk', {
+    method: 'POST',
+    body: JSON.stringify(b),
+    headers: withBearer ? BEARER : undefined,
+  });
 
 beforeEach(() => {
   jest.clearAllMocks();

@@ -28,7 +28,7 @@ import { adminFetch } from '@/lib/client-auth';
 import { pollJob } from '@/lib/poll-job';
 import { statusFor, platformLanding } from '@/lib/loudness-targets';
 import { MAX_UPLOAD_BYTES, ACCEPTED_UPLOAD_TYPES } from '@/lib/mastering-storage';
-import { buildMasterReport, reportFilename } from '@/lib/master-report';
+import { buildMasterReport, reportFilename, sourceInfoLine } from '@/lib/master-report';
 import { MasteringComparePlayer } from '@/components/admin/MasteringComparePlayer';
 import type { MasterJob } from '@/types/masterJob';
 
@@ -66,6 +66,20 @@ const writeStored = (j: StoredJob | null) => {
     /* private mode / quota — resume is a nicety, never a requirement */
   }
 };
+
+/**
+ * True when a rejection is just our own AbortController firing — the admin
+ * pressing "Cancel upload" / "Stop watching", or the component unmounting.
+ *
+ * These reached the shared `catch` and were rendered as red `role="alert"`
+ * banners, so a deliberate cancel reported itself as a failure ("Upload
+ * cancelled.") and stopping the watch could announce "Mastering failed." with a
+ * raw "signal is aborted without reason" — for a job that was, in fact, still
+ * running perfectly well server-side. A cancel is an outcome, not an error.
+ */
+const isAbort = (err: unknown): boolean =>
+  (err instanceof DOMException && err.name === 'AbortError') ||
+  (err instanceof Error && (err.name === 'AbortError' || /abort|cancel/i.test(err.message)));
 
 const MB = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 const lufs = (v: number | null | undefined) => (typeof v === 'number' ? `${v.toFixed(1)} LUFS` : '—');
@@ -128,6 +142,8 @@ export function MasteringStudio() {
   const [elapsed, setElapsed] = useState(0);
   const [announce, setAnnounce] = useState('');
   const [dragging, setDragging] = useState(false);
+  /** A job we stopped watching but which is still running — offers a way back. */
+  const [paused, setPaused] = useState<StoredJob | null>(null);
 
   const mounted = useRef(true);
   const abort = useRef<AbortController | null>(null);
@@ -143,6 +159,7 @@ export function MasteringStudio() {
   /** Attach to a job (new or recovered) and follow it to a terminal state. */
   const watch = useCallback(async (id: string, stored: StoredJob) => {
     setJobId(id);
+    setPaused(null);
     setStage('mastering');
     setElapsed(0);
     setAnnounce('Mastering started.');
@@ -181,6 +198,10 @@ export function MasteringStudio() {
       );
     } catch (err) {
       if (!mounted.current) return;
+      // An abort landing mid-poll is a cancel, not a failed master — the job is
+      // still running and still recoverable. stopWatching has already set the
+      // stage and said so; don't overwrite that with a red alert.
+      if (isAbort(err)) return;
       setError(err instanceof Error ? err.message : String(err));
       setStage('ready');
       setAnnounce('Mastering failed.');
@@ -210,6 +231,7 @@ export function MasteringStudio() {
   const reset = useCallback(() => {
     abort.current?.abort();
     writeStored(null);
+    setPaused(null);
     setStage('idle');
     setSource(null);
     setSourceKey(null);
@@ -221,12 +243,30 @@ export function MasteringStudio() {
     if (fileInput.current) fileInput.current.value = '';
   }, []);
 
-  /** Stop following, but leave the job running and recoverable. */
+  /**
+   * Stop following, but leave the job running and recoverable. The stored job is
+   * deliberately NOT cleared — it is what `resumeWatching` (and a reload)
+   * re-attach to.
+   */
   const stopWatching = useCallback(() => {
     abort.current?.abort();
+    setPaused(readStored());
     setStage('ready');
     setAnnounce('Stopped watching. The master is still being produced.');
   }, []);
+
+  /**
+   * Re-attach to the job we stopped watching. Before this the only way back to a
+   * running master was a full page reload — the copy even said so — which is a
+   * poor answer when the job is one poll away from done.
+   */
+  const resumeWatching = useCallback(() => {
+    const stored = paused ?? readStored();
+    if (!stored) return;
+    setPaused(null);
+    setError(null);
+    void watch(stored.jobId, stored);
+  }, [paused, watch]);
 
   const onPick = useCallback(async (picked: File | null) => {
     if (!picked) return;
@@ -279,6 +319,13 @@ export function MasteringStudio() {
       setAnnounce('Upload complete. Ready to master.');
     } catch (err) {
       if (!mounted.current) return;
+      // "Cancel upload" already reset the UI to idle; surfacing its own abort as
+      // an error banner told the admin something had gone wrong when they had
+      // simply changed their mind.
+      if (isAbort(err)) {
+        setAnnounce('Upload cancelled.');
+        return;
+      }
       setError(err instanceof Error ? err.message : String(err));
       setStage('idle');
       setSource(null);
@@ -550,7 +597,23 @@ export function MasteringStudio() {
           {stage === 'idle' && (
             <span className="text-xs text-gray-500 dark:text-gray-400">Upload a WAV first.</span>
           )}
+          {stage === 'ready' && paused && (
+            <button
+              type="button"
+              onClick={resumeWatching}
+              className="inline-flex items-center gap-1 rounded-lg border border-orange-300 bg-orange-50 px-3 py-1.5 text-xs font-medium text-orange-800 hover:bg-orange-100 dark:border-orange-500/40 dark:bg-orange-500/10 dark:text-orange-300 dark:hover:bg-orange-500/20"
+            >
+              <RotateCcw className="h-3 w-3" aria-hidden="true" /> Resume watching job{' '}
+              <code>{paused.jobId.slice(0, 8)}</code>
+            </button>
+          )}
         </div>
+        {stage === 'ready' && paused && (
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            That master is still being produced. Resume to pick it up where it is — mastering again would start a
+            second, duplicate job.
+          </p>
+        )}
         {stage === 'mastering' && (
           <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
             Two-pass loudnorm — measure, then correct. Usually well under a minute; long sources take a few.
@@ -579,12 +642,24 @@ export function MasteringStudio() {
               </thead>
               <tbody className="divide-y divide-gray-200 text-gray-800 dark:divide-gray-800 dark:text-gray-200">
                 <tr>
-                  <th scope="row" className="px-4 py-2 text-left font-normal">Source</th>
+                  <th scope="row" className="px-4 py-2 text-left font-normal">
+                    Source
+                    {sourceInfoLine(job) && (
+                      <span className="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">
+                        {sourceInfoLine(job)}
+                      </span>
+                    )}
+                  </th>
                   <td className="px-4 py-2 text-right tabular-nums">{lufs(job.beforeLufs)}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{dbtp(job.beforeTp)}</td>
                 </tr>
                 <tr className="bg-emerald-50/40 dark:bg-emerald-500/5">
-                  <th scope="row" className="px-4 py-2 text-left font-medium">Mastered</th>
+                  <th scope="row" className="px-4 py-2 text-left font-medium">
+                    Mastered
+                    <span className="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">
+                      24-bit · 48 kHz
+                    </span>
+                  </th>
                   <td className="px-4 py-2 text-right font-semibold tabular-nums">{lufs(job.afterLufs)}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{dbtp(job.afterTp)}</td>
                 </tr>

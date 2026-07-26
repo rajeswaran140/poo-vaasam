@@ -170,6 +170,96 @@ export function isMasterKey(s3Key: string): boolean {
   return /-master(-\d+(?:_\d+)?LUFS)?\.wav$/i.test(s3Key);
 }
 
+// ---------------------------------------------------------------------------
+// Source file info — parsed from the header ffmpeg already prints
+// ---------------------------------------------------------------------------
+
+/** What the source file actually was, for the report's hand-off record. */
+export interface SourceInfo {
+  /** e.g. "pcm_s24le". */
+  codec: string | null;
+  sampleRate: number | null;
+  channels: number | null;
+  /** ffmpeg's layout token, e.g. "stereo", "mono", "5.1". */
+  channelLayout: string | null;
+  /** Bits per sample, from the pcm_sNN codec (16/24/32). */
+  bitDepth: number | null;
+  durationSec: number | null;
+}
+
+/** ffmpeg's channel-layout tokens → a channel count. */
+const LAYOUT_CHANNELS: Record<string, number> = {
+  mono: 1, stereo: 2, downmix: 2, '2.1': 3, '3.0': 3, quad: 4, '4.0': 4,
+  '5.0': 5, '5.1': 6, '6.1': 7, '7.1': 8,
+};
+
+/**
+ * The `Input #0` header region only.
+ *
+ * CRITICAL — the same class of trap as the ebur128 Summary above: ffmpeg prints
+ * a `Stream #0:0: Audio:` line for the INPUT *and* another for the OUTPUT, and
+ * with a loudnorm filter the output line reports loudnorm's internal 192000 Hz
+ * working rate. Parsing the whole log would therefore report every source as
+ * 192 kHz. Everything from "Stream mapping:"/"Output #" onward is cut away so
+ * only the real source header is read.
+ */
+function inputRegion(stderr: string): string {
+  const start = stderr.indexOf('Input #0');
+  if (start < 0) return '';
+  const rest = stderr.slice(start);
+  const ends = [rest.indexOf('Stream mapping:'), rest.indexOf('\nOutput #')].filter((i) => i > 0);
+  return ends.length ? rest.slice(0, Math.min(...ends)) : rest;
+}
+
+/**
+ * Source format from the header ffmpeg prints anyway during the measurement
+ * pass — so the job records "what came in" without spawning ffprobe or a second
+ * decode. Returns null when the log carries no usable input header; individual
+ * fields are null when only that one is unreadable, so a partial header still
+ * yields whatever it did say.
+ */
+export function parseSourceInfo(stderr: string): SourceInfo | null {
+  const region = inputRegion(stderr);
+  if (!region) return null;
+
+  // "Stream #0:0: Audio: pcm_s24le ([1][0][0][0] / 0x0001), 48000 Hz, 5.1, s32 (24 bit), 6912 kb/s"
+  const stream = region.match(/Stream #\d+:\d+(?:\[[^\]]*\])?[^:]*: Audio:\s*([a-z0-9_]+)/i);
+  const codec = stream?.[1] ?? null;
+  const sampleRate = matchNum(region, /,\s*(\d+)\s*Hz/);
+  const layoutMatch = region.match(/\d+\s*Hz,\s*([^,]+?)\s*(?:,|$)/m);
+  const channelLayout = layoutMatch?.[1]?.trim() ?? null;
+
+  let channels: number | null = null;
+  if (channelLayout) {
+    // ffmpeg falls back to "N channels" for layouts it has no name for.
+    const explicit = channelLayout.match(/^(\d+)\s+channels?$/i);
+    channels = explicit ? Number(explicit[1]) : (LAYOUT_CHANNELS[channelLayout.toLowerCase()] ?? null);
+  }
+
+  // Bit depth from the codec (pcm_s24le → 24) rather than the sample-format
+  // token: ffmpeg decodes 24-bit PCM into an s32 container and prints
+  // "s32 (24 bit)", so the codec is the one that names the file's real depth.
+  const depth = codec?.match(/^pcm_[sfu](\d+)/i);
+  const bitDepth = depth ? Number(depth[1]) : null;
+
+  // "Duration: 00:03:42.10" (or "N/A" on a stream with no known length).
+  const dur = region.match(/Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/);
+  const durationSec = dur
+    ? Math.round((Number(dur[1]) * 3600 + Number(dur[2]) * 60 + Number(dur[3])) * 10) / 10
+    : null;
+
+  const info: SourceInfo = {
+    codec,
+    sampleRate: Number.isFinite(sampleRate) ? sampleRate : null,
+    channels,
+    channelLayout,
+    bitDepth,
+    durationSec,
+  };
+  // An input header with nothing readable in it is worth no more than no header.
+  return Object.values(info).some((v) => v !== null) ? info : null;
+}
+
 /** The single measurement-pass ffmpeg args (used by measure-fn). */
 export function measureArgs(input: string): string[] {
   return [

@@ -26,6 +26,14 @@ const baseJob: MasterJob = {
   beforeTp: -0.3,
   afterLufs: -14.0,
   afterTp: -3.68,
+  source: {
+    codec: 'pcm_s24le',
+    sampleRate: 48000,
+    channels: 2,
+    channelLayout: 'stereo',
+    bitDepth: 24,
+    durationSec: 222.1,
+  },
   error: null,
 };
 
@@ -63,6 +71,50 @@ describe('summaryLines', () => {
     const s = summaryLines({ ...baseJob, afterLufs: null, afterTp: null }).join('\n');
     expect(s).toMatch(/⚠ Loudness not confirmed/);
     expect(s).toMatch(/True peak not reported/);
+  });
+});
+
+describe('the report never claims a check it did not run', () => {
+  it('does not call an unmeasured true peak "peak-safe"', () => {
+    // Regression: the Result line read "on target (-14 LUFS), peak-safe." when
+    // afterTp was null — asserting a safety check that never ran, in the very
+    // file the Summary block above says "True peak not reported". This report is
+    // the evidence that travels to a distributor; it must not overstate.
+    const r = buildMasterReport({ ...baseJob, afterTp: null });
+    expect(r).toMatch(/true peak not reported/i);
+    expect(r).not.toMatch(/peak-safe/);
+    expect(r).not.toMatch(/No clipping detected/);
+    // …and it still reports the loudness it DID measure.
+    expect(r).toMatch(/on target \(-14 LUFS\)/);
+  });
+
+  it('still says peak-safe when the peak was actually measured and is safe', () => {
+    expect(buildMasterReport(baseJob)).toMatch(/peak-safe/);
+  });
+});
+
+describe('source file info', () => {
+  it('records what came in and what went out', () => {
+    const r = buildMasterReport(baseJob);
+    expect(r).toMatch(/Source file: +24-bit · 48 kHz · stereo · 3:42/);
+    expect(r).toMatch(/Output file: +24-bit · 48 kHz WAV/);
+  });
+
+  it('omits the source line entirely for a job recorded before it was captured', () => {
+    // Jobs written by the pre-change worker have source: null — the report must
+    // simply not mention it rather than print an empty or "—" row.
+    const r = buildMasterReport({ ...baseJob, source: null });
+    expect(r).not.toMatch(/Source file:/);
+    expect(r).toMatch(/Output file:/); // ours is always known
+  });
+
+  it('prints only the fields the header actually yielded', () => {
+    const r = buildMasterReport({
+      ...baseJob,
+      source: { codec: null, sampleRate: 44100, channels: null, channelLayout: null, bitDepth: null, durationSec: null },
+    });
+    // 44100 keeps its decimal (44.1 kHz); a round 48000 does not (48 kHz).
+    expect(r).toMatch(/Source file: +44\.1 kHz$/m);
   });
 });
 

@@ -148,6 +148,7 @@ describe('Admin Content API', () => {
 
       const request = new NextRequest('http://localhost:3000/api/admin/content', {
         method: 'POST',
+        headers: { Authorization: 'Bearer test-token' },
         body: JSON.stringify({
           type: 'SONGS', title: 'பூ வாசம்', body: 'Full content body...',
           description: 'A beautiful song', author: 'Test Author', status: 'DRAFT',
@@ -164,9 +165,25 @@ describe('Admin Content API', () => {
       expect(getUseCase().execute).toHaveBeenCalled();
     });
 
+    it('should return 401 without a Bearer token (CSRF defense on the mutation)', async () => {
+      const request = new NextRequest('http://localhost:3000/api/admin/content', {
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'SONGS', title: 'பூ வாசம்', body: 'Full content body...',
+          description: 'A beautiful song', author: 'Test Author', status: 'DRAFT',
+        }),
+      });
+
+      const response = await POST(request);
+
+      expect(response.status).toBe(401);
+      expect(getUseCase().execute).not.toHaveBeenCalled();
+    });
+
     it('should return 400 for missing required fields', async () => {
       const request = new NextRequest('http://localhost:3000/api/admin/content', {
         method: 'POST',
+        headers: { Authorization: 'Bearer test-token' },
         body: JSON.stringify({ type: 'SONGS' }),
       });
 
@@ -182,6 +199,7 @@ describe('Admin Content API', () => {
     it('should return 400 for invalid content type', async () => {
       const request = new NextRequest('http://localhost:3000/api/admin/content', {
         method: 'POST',
+        headers: { Authorization: 'Bearer test-token' },
         body: JSON.stringify({ type: 'INVALID_TYPE', title: 'Test', body: 'Test', author: 'Test' }),
       });
 
@@ -198,6 +216,7 @@ describe('Admin Content API', () => {
 
       const request = new NextRequest('http://localhost:3000/api/admin/content', {
         method: 'POST',
+        headers: { Authorization: 'Bearer test-token' },
         body: JSON.stringify({ type: 'SONGS', title: 'Test', body: 'Test body', author: 'Test' }),
       });
 
@@ -213,6 +232,7 @@ describe('Admin Content API', () => {
 
       const request = new NextRequest('http://localhost:3000/api/admin/content', {
         method: 'POST',
+        headers: { Authorization: 'Bearer test-token' },
         body: JSON.stringify({ type: 'SONGS', title: 'Test', body: 'Test', author: 'Test' }),
       });
 
@@ -229,6 +249,7 @@ describe('Admin Content API', () => {
 
       const request = new NextRequest('http://localhost:3000/api/admin/content', {
         method: 'POST',
+        headers: { Authorization: 'Bearer test-token' },
         body: JSON.stringify({
           type: 'SONGS', title: 'Test', body: 'Test body', author: 'Test',
           audioDuration: '180',
@@ -248,6 +269,7 @@ describe('Admin Content API', () => {
 
       const request = new NextRequest('http://localhost:3000/api/admin/content', {
         method: 'POST',
+        headers: { Authorization: 'Bearer test-token' },
         body: JSON.stringify({
           type: 'SONGS', title: 'Test', body: 'Test body', author: 'Test',
           audioDuration: '',
@@ -265,6 +287,7 @@ describe('Admin Content API', () => {
     it('still rejects a non-numeric audioDuration with 400', async () => {
       const request = new NextRequest('http://localhost:3000/api/admin/content', {
         method: 'POST',
+        headers: { Authorization: 'Bearer test-token' },
         body: JSON.stringify({
           type: 'SONGS', title: 'Test', body: 'Test body', author: 'Test',
           audioDuration: 'not-a-number',
@@ -286,6 +309,7 @@ describe('Admin Content API', () => {
 
       const request = new NextRequest('http://localhost:3000/api/admin/content', {
         method: 'POST',
+        headers: { Authorization: 'Bearer test-token' },
         body: JSON.stringify({ type: 'SONGS', title: 'T', body: 'B', author: 'A', categoryIds: ['cat_x'] }),
       });
 
@@ -306,6 +330,7 @@ describe('Admin Content API', () => {
 
       const request = new NextRequest('http://localhost:3000/api/admin/content', {
         method: 'POST',
+        headers: { Authorization: 'Bearer test-token' },
         body: JSON.stringify({ type: 'SONGS', title: 'T', body: 'B', author: 'A' }),
       });
 

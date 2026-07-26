@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   parseMeasurement, badgeAndVerdict, parseLoudnormStats, buildPass2Loudnorm,
-  isValidTarget, masterKeyFor, isMasterKey,
+  isValidTarget, masterKeyFor, isMasterKey, parseSourceInfo,
 } from '@/lib/loudness-measure';
 
 const hasFfmpeg = (() => {
@@ -99,6 +99,70 @@ describe('loudnorm pass-1 parsing', () => {
   });
 });
 
+// REAL ffmpeg stderr for `-i in.wav -af loudnorm=…`. Note the TWO "Stream #0:0:
+// Audio:" lines — the input's 44100 Hz and, after "Stream mapping:", loudnorm's
+// internal 192000 Hz working rate. This fixture exists to keep that trap covered.
+const HEADER_STDERR = `Guessed Channel Layout for Input Stream #0.0 : stereo
+Input #0, wav, from '/tmp/master-x/in.wav':
+  Metadata:
+    encoder         : Lavf58.76.100
+  Duration: 00:03:42.10, bitrate: 1411 kb/s
+  Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 44100 Hz, stereo, s16, 1411 kb/s
+Stream mapping:
+  Stream #0:0 -> #0:0 (pcm_s16le (native) -> pcm_s16le (native))
+Output #0, null, to 'pipe:':
+  Stream #0:0: Audio: pcm_s16le, 192000 Hz, stereo, s16, 6144 kb/s
+[Parsed_loudnorm_0 @ 0x1]
+{
+	"input_i" : "-9.75"
+}
+`;
+
+describe('parseSourceInfo', () => {
+  it('reads the INPUT header, not loudnorm\'s 192 kHz output line', () => {
+    // The whole reason this parser is region-scoped: a naive search of the log
+    // finds the output stream first/last and reports every source as 192 kHz.
+    const info = parseSourceInfo(HEADER_STDERR)!;
+    expect(info.sampleRate).toBe(44100);
+    expect(info.channels).toBe(2);
+    expect(info.channelLayout).toBe('stereo');
+    expect(info.bitDepth).toBe(16);
+    expect(info.codec).toBe('pcm_s16le');
+    expect(info.durationSec).toBe(222.1); // 00:03:42.10
+  });
+
+  it('takes bit depth from the codec, not the decoded sample format', () => {
+    // ffmpeg decodes 24-bit PCM into an s32 container and prints "s32 (24 bit)";
+    // reading the sample format would report a 24-bit WAV as 32-bit.
+    const info = parseSourceInfo(
+      HEADER_STDERR.replace(
+        'pcm_s16le ([1][0][0][0] / 0x0001), 44100 Hz, stereo, s16, 1411 kb/s',
+        'pcm_s24le ([1][0][0][0] / 0x0001), 48000 Hz, mono, s32 (24 bit), 1152 kb/s'
+      )
+    )!;
+    expect(info.bitDepth).toBe(24);
+    expect(info.sampleRate).toBe(48000);
+    expect(info.channels).toBe(1);
+  });
+
+  it('maps surround layouts and ffmpeg\'s unnamed "N channels" fallback', () => {
+    const of = (stream: string) =>
+      parseSourceInfo(HEADER_STDERR.replace(/pcm_s16le \(\[1\]\[0\]\[0\]\[0\] \/ 0x0001\), 44100 Hz, stereo, s16, 1411 kb\/s/, stream))!;
+    expect(of('pcm_s24le ([1][0][0][0] / 0x0001), 48000 Hz, 5.1, s32 (24 bit), 6912 kb/s').channels).toBe(6);
+    expect(of('pcm_s16le, 48000 Hz, 3 channels, s16, 2304 kb/s').channels).toBe(3);
+    // An unknown layout name must read as "unknown", never as a wrong number.
+    expect(of('pcm_s16le, 48000 Hz, hexadecagonal, s16, 2304 kb/s').channels).toBeNull();
+  });
+
+  it('returns null when there is no input header, and survives a partial one', () => {
+    expect(parseSourceInfo('')).toBeNull();
+    expect(parseSourceInfo(STDERR)).toBeNull(); // a filter-only log
+    const noDuration = parseSourceInfo(HEADER_STDERR.replace(/ +Duration:.*\n/, ''))!;
+    expect(noDuration.durationSec).toBeNull();
+    expect(noDuration.sampleRate).toBe(44100); // the rest still reads
+  });
+});
+
 (hasFfmpeg ? describe : describe.skip)('live ffmpeg end-to-end', () => {
   function run(filter: string): string {
     const dir = mkdtempSync(join(tmpdir(), 'lm-'));
@@ -126,6 +190,35 @@ describe('loudnorm pass-1 parsing', () => {
     const s = parseLoudnormStats(run('loudnorm=I=-14:TP=-1:LRA=11:print_format=json'));
     expect(s).not.toBeNull();
     expect(Number.isFinite(s!.input_i)).toBe(true);
+  });
+
+  it('reads a real 24-bit/48k WAV header off the worker\'s own pass-1 command', () => {
+    // Exercises exactly what master-worker does: write a WAV, run pass 1 against
+    // the FILE (not lavfi), parse the header out of that same stderr. This is
+    // the test that would catch loudnorm's 192 kHz output line against a real
+    // ffmpeg build rather than a fixture.
+    const dir = mkdtempSync(join(tmpdir(), 'lm-src-'));
+    try {
+      const wav = join(dir, 'in.wav');
+      spawnSync('ffmpeg', [
+        '-hide_banner', '-nostats', '-f', 'lavfi',
+        '-i', 'sine=frequency=1000:duration=2:sample_rate=48000',
+        '-ac', '2', '-c:a', 'pcm_s24le', '-y', wav,
+      ], { encoding: 'utf8' });
+      const r = spawnSync('ffmpeg', [
+        '-hide_banner', '-nostats', '-i', wav,
+        '-af', 'loudnorm=I=-14:TP=-1:LRA=11:print_format=json', '-f', 'null', '-',
+      ], { encoding: 'utf8' });
+
+      const info = parseSourceInfo(`${r.stdout ?? ''}${r.stderr ?? ''}`)!;
+      expect(info).not.toBeNull();
+      expect(info.sampleRate).toBe(48000); // NOT 192000
+      expect(info.channels).toBe(2);
+      expect(info.bitDepth).toBe(24);
+      expect(info.durationSec).toBeCloseTo(2, 1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

@@ -23,8 +23,14 @@ import { GET, POST } from '@/app/api/admin/lexicon/route';
 import * as auth from '@/lib/auth-helper';
 
 const requireAdmin = auth.requireAdmin as jest.Mock;
+const BEARER = { Authorization: 'Bearer test-token' };
 const get = (qs = '') => GET(new NextRequest(`https://tamilagaval.com/api/admin/lexicon${qs}`));
-const post = (b: unknown) => POST(new NextRequest('https://tamilagaval.com/api/admin/lexicon', { method: 'POST', body: JSON.stringify(b) }));
+const post = (b: unknown, withBearer = true) =>
+  POST(new NextRequest('https://tamilagaval.com/api/admin/lexicon', {
+    method: 'POST',
+    body: JSON.stringify(b),
+    headers: withBearer ? BEARER : undefined,
+  }));
 
 const WORDS = [
   { id: 'lex_1', word: 'நிலா', gloss: 'moon', register: 'literary', usage: 'fresh', themes: ['love'], usageCount: 0, archived: false },
@@ -57,6 +63,12 @@ it('GET filters by register', async () => {
 it('GET ?archived=true includes archived', async () => {
   const body = await (await get('?archived=true')).json();
   expect(body.total).toBe(3);
+});
+
+it('POST returns 401 without a Bearer token (CSRF defense on the mutation)', async () => {
+  const res = await post({ word: 'வான்', gloss: 'sky', register: 'literary' }, false);
+  expect(res.status).toBe(401);
+  expect(mockCreate).not.toHaveBeenCalled();
 });
 
 it('POST rejects an invalid word (400)', async () => {

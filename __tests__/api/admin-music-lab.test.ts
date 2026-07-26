@@ -32,7 +32,12 @@ import * as auth from '@/lib/auth-helper';
 
 const requireAdmin = auth.requireAdmin as jest.Mock;
 const MockInvoke = InvokeCommand as unknown as jest.Mock;
-const post = (path: string, body: unknown) => new NextRequest(`https://tamilagaval.com${path}`, { method: 'POST', body: JSON.stringify(body) });
+const post = (path: string, body: unknown, withBearer = true) =>
+  new NextRequest(`https://tamilagaval.com${path}`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: withBearer ? { Authorization: 'Bearer test-token' } : undefined,
+  });
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -46,6 +51,12 @@ describe('measure', () => {
     const { AuthError } = jest.requireActual('@/lib/auth-helper');
     requireAdmin.mockRejectedValueOnce(new AuthError('Forbidden', 403));
     expect((await measurePOST(post('/api/admin/music-lab/measure', { s3Key: 'a.mp3' }))).status).toBe(403);
+  });
+
+  it('401s without a Bearer token (CSRF defense on the mutation)', async () => {
+    const res = await measurePOST(post('/api/admin/music-lab/measure', { s3Key: 'audio/take.mp3' }, false));
+    expect(res.status).toBe(401);
+    expect(mockSend).not.toHaveBeenCalled();
   });
 
   it('400s on a bad / traversal key', async () => {
