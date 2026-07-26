@@ -12,14 +12,14 @@ describe('trackSubscribeClick', () => {
     (window as unknown as { gtag?: unknown }).gtag = original;
   });
 
-  it('fires a subscribe_click event with source param via window.gtag', () => {
+  it('fires a subscribe_click event with a cta_source param via window.gtag', () => {
     const spy = jest.fn();
     (window as unknown as { gtag: unknown }).gtag = spy;
 
     trackSubscribeClick('home_hero');
 
     expect(spy).toHaveBeenCalledTimes(1);
-    expect(spy).toHaveBeenCalledWith('event', 'subscribe_click', { source: 'home_hero' });
+    expect(spy).toHaveBeenCalledWith('event', 'subscribe_click', { cta_source: 'home_hero' });
   });
 
   it('no-ops silently when gtag is missing (script not yet loaded)', () => {
@@ -59,7 +59,7 @@ describe('trackYouTubeOpen', () => {
   const original = (window as unknown as { gtag?: unknown }).gtag;
   afterEach(() => { (window as unknown as { gtag?: unknown }).gtag = original; });
 
-  it('fires youtube_open with destination only when source is omitted', () => {
+  it('fires youtube_open with destination only when placement is omitted', () => {
     const spy = jest.fn();
     (window as unknown as { gtag: unknown }).gtag = spy;
 
@@ -68,7 +68,7 @@ describe('trackYouTubeOpen', () => {
     expect(spy).toHaveBeenCalledWith('event', 'youtube_open', { destination: 'channel' });
   });
 
-  it('includes source when provided', () => {
+  it('includes the link placement when provided', () => {
     const spy = jest.fn();
     (window as unknown as { gtag: unknown }).gtag = spy;
 
@@ -76,7 +76,7 @@ describe('trackYouTubeOpen', () => {
 
     expect(spy).toHaveBeenCalledWith('event', 'youtube_open', {
       destination: 'video:abc123',
-      source: 'home_latest_videos',
+      link_placement: 'home_latest_videos',
     });
   });
 
@@ -200,17 +200,59 @@ describe('trackInbound', () => {
   const original = (window as unknown as { gtag?: unknown }).gtag;
   afterEach(() => { (window as unknown as { gtag?: unknown }).gtag = original; });
 
-  it('fires inbound_visit with source only', () => {
+  it('fires inbound_visit with inbound_source only', () => {
     const spy = jest.fn();
     (window as unknown as { gtag: unknown }).gtag = spy;
     trackInbound('whatsapp');
-    expect(spy).toHaveBeenCalledWith('event', 'inbound_visit', { source: 'whatsapp' });
+    expect(spy).toHaveBeenCalledWith('event', 'inbound_visit', { inbound_source: 'whatsapp' });
   });
 
   it('includes source_song_id when the landing carries the shared song', () => {
     const spy = jest.fn();
     (window as unknown as { gtag: unknown }).gtag = spy;
     trackInbound('whatsapp', 'cnt_9');
-    expect(spy).toHaveBeenCalledWith('event', 'inbound_visit', { source: 'whatsapp', source_song_id: 'cnt_9' });
+    expect(spy).toHaveBeenCalledWith('event', 'inbound_visit', { inbound_source: 'whatsapp', source_song_id: 'cnt_9' });
+  });
+});
+
+describe('GA4 reserved campaign parameters', () => {
+  const original = (window as unknown as { gtag?: unknown }).gtag;
+  afterEach(() => {
+    (window as unknown as { gtag?: unknown }).gtag = original;
+  });
+
+  /**
+   * GA4 reads event parameters named source / medium / campaign / term /
+   * content as CAMPAIGN fields, so sending one silently rewrites the session's
+   * traffic source. That is not an error anywhere — it just quietly destroys
+   * attribution, which is exactly how it survived: a visitor arriving from
+   * YouTube who clicked a song row was re-attributed to "songs_list_row", and
+   * the 30-day report showed 50 such sessions against only 18 from youtube.com.
+   *
+   * Every helper is asserted, not just the one that regressed, because the trap
+   * is the parameter NAME and any future event can fall into it.
+   */
+  const RESERVED = ['source', 'medium', 'campaign', 'term', 'content'];
+
+  it('no tracking helper sends a reserved campaign parameter to gtag', () => {
+    const spy = jest.fn();
+    (window as unknown as { gtag: unknown }).gtag = spy;
+
+    trackSubscribeClick('home_hero');
+    trackAudioPlay('cnt_1', 'ஒரு பாடல்');
+    trackYouTubeOpen('video:abc', 'songs_list_row');
+    trackShare('whatsapp', { songId: 'cnt_1' });
+    trackInbound('whatsapp', 'cnt_1');
+
+    expect(spy).toHaveBeenCalled();
+    for (const [, eventName, params] of spy.mock.calls) {
+      for (const key of Object.keys((params ?? {}) as Record<string, unknown>)) {
+        expect({ eventName, key, reserved: RESERVED.includes(key) }).toEqual({
+          eventName,
+          key,
+          reserved: false,
+        });
+      }
+    }
   });
 });
