@@ -5,6 +5,8 @@
  * criticJob.ts; uses the repo's DynamoDB-job idiom (NOT SQS).
  */
 
+import type { SourceInfo } from '@/lib/loudness-measure';
+
 export type MasterJobStatus = 'processing' | 'done' | 'error';
 
 export interface MasterJob {
@@ -27,5 +29,12 @@ export interface MasterJob {
    */
   afterLufs: number | null;
   afterTp: number | null;
+  /**
+   * What the source file actually was (sample rate / channels / bit depth /
+   * duration), read off the header ffmpeg prints during the worker's pass 1 —
+   * no extra decode. Null for jobs written before the worker recorded it, so
+   * every consumer must treat it as optional.
+   */
+  source: SourceInfo | null;
   error: { code: string; message: string } | null;
 }

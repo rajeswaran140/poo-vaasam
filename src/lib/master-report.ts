@@ -26,15 +26,42 @@ export function platformsForTarget(target: number): string {
 const isOnTarget = (job: MasterJob) => typeof job.afterLufs === 'number' && Math.abs(job.afterLufs - job.target) <= 1;
 const isPeakSafe = (job: MasterJob) => typeof job.afterTp === 'number' && job.afterTp <= -1;
 
-/** The verdict line: did the master land on its target, and is it peak-safe? */
+/**
+ * The verdict line: did the master land on its target, and is it peak-safe?
+ *
+ * An unreported true peak is its OWN outcome, never "peak-safe". This report is
+ * the evidence that travels to a distributor, so claiming a safety check that
+ * did not happen is the one thing it must not do — and the Summary block above
+ * already says "not reported" for the same job, so asserting it here contradicted
+ * the very same file.
+ */
 function verdictLine(job: MasterJob): string {
   if (typeof job.afterLufs !== 'number') {
     return 'Master written, but the check measurement did not return — verify before use.';
   }
-  const peakSafe = typeof job.afterTp !== 'number' || job.afterTp <= -1;
   const loud = isOnTarget(job) ? `on target (${job.target} LUFS)` : `${(job.afterLufs - job.target).toFixed(1)} LU off target`;
-  const peak = peakSafe ? 'peak-safe' : 'true peak above -1 dBTP — check for clipping';
+  const peak =
+    typeof job.afterTp !== 'number'
+      ? 'true peak not reported — verify before use'
+      : isPeakSafe(job)
+        ? 'peak-safe'
+        : 'true peak above -1 dBTP — check for clipping';
   return `${loud}, ${peak}.`;
+}
+
+/** "24-bit · 48 kHz · stereo · 3:42" — whatever of it is known. */
+export function sourceInfoLine(job: MasterJob): string | null {
+  const s = job.source;
+  if (!s) return null;
+  const parts: string[] = [];
+  if (s.bitDepth) parts.push(`${s.bitDepth}-bit`);
+  if (s.sampleRate) parts.push(`${(s.sampleRate / 1000).toFixed(s.sampleRate % 1000 ? 1 : 0)} kHz`);
+  if (s.channelLayout) parts.push(s.channelLayout);
+  if (typeof s.durationSec === 'number') {
+    const total = Math.round(s.durationSec);
+    parts.push(`${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`);
+  }
+  return parts.length ? parts.join(' · ') : null;
 }
 
 /**
@@ -114,6 +141,8 @@ export function buildMasterReport(job: MasterJob, title?: string): string {
     `Target:             ${job.target} LUFS  (${platformsForTarget(job.target)})`,
     `Job ID:             ${job.id}`,
     `Mastered:           ${job.updatedAt}${turnaround ? `  (turnaround ${turnaround})` : ''}`,
+    ...(sourceInfoLine(job) ? [`Source file:        ${sourceInfoLine(job)}`] : []),
+    'Output file:        24-bit · 48 kHz WAV',
     '',
     'Integrated loudness',
     `  Before:           ${lufs(job.beforeLufs)}`,

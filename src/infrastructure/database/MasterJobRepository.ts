@@ -27,6 +27,7 @@ export class MasterJobRepository {
         beforeTp: null,
         afterLufs: null,
         afterTp: null,
+        source: null,
         error: null,
       };
       await DynamoDBOperations.put({
@@ -59,6 +60,9 @@ export class MasterJobRepository {
         beforeTp: typeof item.beforeTp === 'number' ? item.beforeTp : null,
         afterLufs: typeof item.afterLufs === 'number' ? item.afterLufs : null,
         afterTp: typeof item.afterTp === 'number' ? item.afterTp : null,
+        // Absent on jobs written before the worker recorded it — null, not undefined,
+        // so the shape stays stable for the status route's consumers.
+        source: item.source ?? null,
         error: item.error ?? null,
       };
     } catch (error) {

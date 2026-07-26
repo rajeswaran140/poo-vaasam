@@ -271,6 +271,127 @@ describe('download', () => {
   });
 });
 
+describe('cancelling is an outcome, not a failure', () => {
+  /** An upload that stays in flight until the component aborts it. */
+  class PendingXHR {
+    status = 0;
+    responseText = '';
+    upload = { onprogress: null as null | ((e: unknown) => void) };
+    onload: null | (() => void) = null;
+    onerror: null | (() => void) = null;
+    onabort: null | (() => void) = null;
+    open() {}
+    send() {
+      this.upload.onprogress?.({ lengthComputable: true, loaded: 256, total: 1024 });
+    }
+    abort() { this.onabort?.(); }
+  }
+
+  it('"Cancel upload" does not render an error alert', async () => {
+    // Regression: the XHR's own abort rejected with "Upload cancelled.", hit the
+    // shared catch and painted a red role="alert" — telling the admin something
+    // had broken when they had simply changed their mind.
+    (global as unknown as { XMLHttpRequest: unknown }).XMLHttpRequest = PendingXHR;
+    mockedFetch.mockResolvedValueOnce(
+      json({ success: true, uploadUrl: 'https://s3/u', fields: { key: 'k' }, key: 'audio/mastering/1_a_song.wav' })
+    );
+
+    render(<MasteringStudio />);
+    await uploadA();
+    const cancel = await screen.findByRole('button', { name: /Cancel upload/i });
+    await act(async () => { fireEvent.click(cancel); });
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    // …and it is genuinely back at the start, ready for another file.
+    expect(screen.getByText(/Drop a WAV here/i)).toBeInTheDocument();
+  });
+
+  it('"Stop watching" does not report the running job as failed', async () => {
+    // Regression: aborting while a poll was in flight rejected the fetch with an
+    // AbortError, which the catch rendered as "Mastering failed." plus a raw
+    // "signal is aborted without reason" — for a job still running fine.
+    mockedFetch
+      .mockResolvedValueOnce(json({ success: true, uploadUrl: 'https://s3/u', fields: { key: 'k' }, key: 'audio/mastering/1_a_song.wav' }))
+      .mockResolvedValueOnce(json({ success: true, jobId: 'job-7', status: 'queued' }))
+      // A status call that behaves like a real aborted fetch: pending until the
+      // caller's signal fires, then rejecting with an AbortError.
+      .mockImplementation((_url: string, init?: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('signal is aborted without reason', 'AbortError'))
+          );
+        })
+      );
+
+    render(<MasteringStudio />);
+    await uploadA();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Master to -14/ })).toBeEnabled());
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
+
+    const stop = await screen.findByRole('button', { name: /Stop watching/i });
+    await act(async () => { fireEvent.click(stop); });
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Mastering failed/i)).not.toBeInTheDocument();
+    // The job is still ours to come back to.
+    expect(screen.getByRole('button', { name: /Resume watching job/i })).toBeInTheDocument();
+    expect(sessionStorage.getItem('mastering-studio-job')).toContain('job-7');
+  });
+
+  it('resumes a stopped watch without a page reload', async () => {
+    mockedFetch
+      .mockResolvedValueOnce(json({ success: true, uploadUrl: 'https://s3/u', fields: { key: 'k' }, key: 'audio/mastering/1_a_song.wav' }))
+      .mockResolvedValueOnce(json({ success: true, jobId: 'job-7', status: 'queued' }))
+      .mockImplementationOnce((_url: string, init?: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+        })
+      );
+
+    render(<MasteringStudio />);
+    await uploadA();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Master to -14/ })).toBeEnabled());
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
+    await act(async () => { fireEvent.click(await screen.findByRole('button', { name: /Stop watching/i })); });
+
+    // The job finished while we weren't looking; resuming must pick it up.
+    mockedFetch.mockResolvedValue(json(doneJob({ id: 'job-7' })));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Resume watching job/i })); });
+
+    await screen.findByText(/3 · Result/);
+    expect(mockedFetch.mock.calls.at(-1)![0]).toBe('/api/admin/music-lab/master/job-7');
+  });
+});
+
+describe('source file info', () => {
+  it('shows what the source actually was next to its measurements', async () => {
+    primeHappyPath(
+      doneJob({
+        source: { codec: 'pcm_s16le', sampleRate: 44100, channels: 2, channelLayout: 'stereo', bitDepth: 16, durationSec: 222.1 },
+      })
+    );
+    render(<MasteringStudio />);
+    await uploadA();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Master to/ })).toBeEnabled());
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to/ })); });
+    await screen.findByText(/3 · Result/);
+
+    expect(screen.getByText('16-bit · 44.1 kHz · stereo · 3:42')).toBeInTheDocument();
+    expect(screen.getByText('24-bit · 48 kHz')).toBeInTheDocument(); // what we wrote
+  });
+
+  it('renders the result table unchanged for a job with no source info', async () => {
+    // Jobs enqueued before the worker captured it carry source: null.
+    primeHappyPath(doneJob({ source: null }));
+    render(<MasteringStudio />);
+    await uploadA();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Master to/ })).toBeEnabled());
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to/ })); });
+    await screen.findByText(/3 · Result/);
+    expect(screen.getByRole('rowheader', { name: /^Source$/ })).toBeInTheDocument();
+  });
+});
+
 describe('job recovery', () => {
   it('re-attaches to a job left running by a previous mount', async () => {
     // The worker keeps going whether or not this component is mounted.
