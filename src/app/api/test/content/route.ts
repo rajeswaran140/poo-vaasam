@@ -216,7 +216,7 @@ export async function POST(request: NextRequest) {
           title: body.title || 'பூ வாசம்',
           body: body.body || 'பூ வாசம் வந்து என்னை கவர்ந்ததடி...',
           description: body.description || 'ஒரு அழகான தமிழ் பாடல்',
-          author: body.author || 'இளையராஜா',
+          author: body.author || 'சோதனை ஆசிரியர் (Test Author)',
           status: body.status || ContentStatus.PUBLISHED,
           categoryIds: body.categoryIds || [],
           tagIds: body.tagIds || [],
@@ -324,7 +324,7 @@ async function seedDatabase() {
 உன் வாசம் என்னை தொடர்ந்ததடி
 கண்கள் தொடர்ந்து நடக்கும் வழியே`,
     description: 'ஒரு அழகான தமிழ் காதல் பாடல்',
-    author: 'இளையராஜா',
+    author: 'சோதனை ஆசிரியர் (Test Author)',
     status: ContentStatus.PUBLISHED,
     categoryIds: [categories[0].id],
     tagIds: [tags[0].id, tags[1].id],
