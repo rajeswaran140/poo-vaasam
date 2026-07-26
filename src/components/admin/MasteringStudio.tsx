@@ -28,7 +28,7 @@ import { adminFetch } from '@/lib/client-auth';
 import { pollJob } from '@/lib/poll-job';
 import { statusFor, platformLanding } from '@/lib/loudness-targets';
 import { MAX_UPLOAD_BYTES, ACCEPTED_UPLOAD_TYPES } from '@/lib/mastering-storage';
-import { buildMasterReport, reportFilename, sourceInfoLine } from '@/lib/master-report';
+import { buildMasterReport, reportFilename, sourceInfoLine, dynamicsPreserved } from '@/lib/master-report';
 import { MasteringComparePlayer } from '@/components/admin/MasteringComparePlayer';
 import type { MasterJob } from '@/types/masterJob';
 
@@ -84,6 +84,7 @@ const isAbort = (err: unknown): boolean =>
 const MB = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 const lufs = (v: number | null | undefined) => (typeof v === 'number' ? `${v.toFixed(1)} LUFS` : '—');
 const dbtp = (v: number | null | undefined) => (typeof v === 'number' ? `${v.toFixed(2)} dBTP` : '—');
+const lu = (v: number | null | undefined) => (typeof v === 'number' ? `${v.toFixed(1)} LU` : '—');
 
 /**
  * pollJob wants a Response but only ever reads `ok`, `status` and `json()`.
@@ -638,6 +639,7 @@ export function MasteringStudio() {
                   <th scope="col" className="px-4 py-2 text-left font-semibold">Stage</th>
                   <th scope="col" className="px-4 py-2 text-right font-semibold">Integrated</th>
                   <th scope="col" className="px-4 py-2 text-right font-semibold">True peak</th>
+                  <th scope="col" className="px-4 py-2 text-right font-semibold">Range (LRA)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 text-gray-800 dark:divide-gray-800 dark:text-gray-200">
@@ -652,16 +654,25 @@ export function MasteringStudio() {
                   </th>
                   <td className="px-4 py-2 text-right tabular-nums">{lufs(job.beforeLufs)}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{dbtp(job.beforeTp)}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{lu(job.beforeLra)}</td>
                 </tr>
                 <tr className="bg-emerald-50/40 dark:bg-emerald-500/5">
                   <th scope="row" className="px-4 py-2 text-left font-medium">
-                    Mastered
+                    Streaming Master
                     <span className="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">
                       24-bit · 48 kHz
                     </span>
                   </th>
                   <td className="px-4 py-2 text-right font-semibold tabular-nums">{lufs(job.afterLufs)}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{dbtp(job.afterTp)}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">
+                    {lu(job.afterLra)}
+                    {dynamicsPreserved(job) && (
+                      <span className="ml-1 text-xs font-normal text-emerald-600 dark:text-emerald-400">
+                        unchanged
+                      </span>
+                    )}
+                  </td>
                 </tr>
               </tbody>
             </table>

@@ -30,6 +30,24 @@ export interface MasterJob {
   afterLufs: number | null;
   afterTp: number | null;
   /**
+   * Loudness range (EBU R128) before and after, in LU. The PROOF behind
+   * "loudness only, never tone": a static gain change moves every sample
+   * equally, so LRA must come out unchanged. If these differ by more than
+   * rounding, something compressed the file.
+   *
+   * NOT the same as crest factor / "DR" — LRA is macro-dynamics across the
+   * whole piece, crest is peak-to-RMS. LRA is the one that exposes compression.
+   */
+  beforeLra: number | null;
+  afterLra: number | null;
+  /**
+   * What loudnorm actually did (see parseNormalizationType). `linear` = one
+   * static gain, dynamics untouched. `dynamic` = ffmpeg refused linear because
+   * it would have clipped, and compressed instead — the tone-preservation
+   * claim does NOT hold for that master. Null for jobs predating this field.
+   */
+  normalizationType: 'linear' | 'dynamic' | null;
+  /**
    * What the source file actually was (sample rate / channels / bit depth /
    * duration), read off the header ffmpeg prints during the worker's pass 1 —
    * no extra decode. Null for jobs written before the worker recorded it, so

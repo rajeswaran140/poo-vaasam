@@ -11,6 +11,8 @@ import {
   summaryLines,
   turnaroundLabel,
   platformLandingLines,
+  dynamicsLine,
+  dynamicsPreserved,
 } from '@/lib/master-report';
 import type { MasterJob } from '@/types/masterJob';
 
@@ -22,6 +24,9 @@ const baseJob: MasterJob = {
   s3Key: 'audio/mastering/1_ab_take.wav',
   target: -14,
   masterKey: 'audio/mastering/1_ab_take-master-14LUFS.wav',
+  beforeLra: 6.8,
+  afterLra: 6.8,
+  normalizationType: 'linear',
   beforeLufs: -17.9,
   beforeTp: -0.3,
   afterLufs: -14.0,
@@ -51,7 +56,9 @@ describe('summaryLines', () => {
     const s = summaryLines(baseJob).join('\n');
     expect(s).toMatch(/✓ Streaming ready/);
     expect(s).toMatch(/✓ Peak-safe/);
-    expect(s).toMatch(/✓ Loudness only/);
+    // Now EARNED, not asserted: baseJob's LRA is unchanged and ffmpeg reported
+    // a linear gain, so the preservation claim is backed by measurement.
+    expect(s).toMatch(/✓ Loudness only — dynamics preserved/);
     expect(s).toMatch(/✓ Ready for streaming, video editing and distribution/);
   });
 
@@ -197,5 +204,61 @@ describe('reportFilename', () => {
   it('falls back to "master" with no title', () => {
     expect(reportFilename()).toBe('master — master report.txt');
     expect(reportFilename('   ')).toBe('master — master report.txt');
+  });
+});
+
+describe('dynamics / loudness range — proving "loudness only, never tone"', () => {
+  const withLra = (over: Partial<MasterJob>): MasterJob => ({ ...baseJob, beforeLra: 6.8, afterLra: 6.8, normalizationType: 'linear', ...over });
+
+  it('reports dynamics preserved when LRA survives a linear gain', () => {
+    const job = withLra({});
+    expect(dynamicsPreserved(job)).toBe(true);
+    expect(dynamicsLine(job)).toMatch(/dynamics preserved/i);
+    expect(dynamicsLine(job)).toContain('6.8 → 6.8 LU');
+  });
+
+  it('tolerates measurement rounding but not real movement', () => {
+    expect(dynamicsPreserved(withLra({ afterLra: 6.5 }))).toBe(true);   // 0.3 LU — rounding
+    expect(dynamicsPreserved(withLra({ afterLra: 5.0 }))).toBe(false);  // 1.8 LU — compression
+    expect(dynamicsLine(withLra({ afterLra: 5.0 }))).toMatch(/moved 1\.8 LU/);
+  });
+
+  /**
+   * The case the whole feature exists for. ffmpeg accepts `linear=true` and then
+   * silently normalizes DYNAMICALLY when a linear gain would clip — no error,
+   * no non-zero exit. Before this, the report cheerfully printed "tone, EQ and
+   * compression unchanged" for such a master.
+   */
+  it('REFUSES the preservation claim when ffmpeg fell back to dynamic mode', () => {
+    const job = withLra({ normalizationType: 'dynamic' });
+    expect(dynamicsPreserved(job)).toBe(false);
+    const line = dynamicsLine(job);
+    expect(line).toMatch(/dynamic normalization/i);
+    expect(line).toMatch(/not preserved/i);
+    expect(line).not.toMatch(/✓/);
+  });
+
+  it('never claims preservation for a dynamic master even if LRA happens to match', () => {
+    // Identical LRA readings must NOT override what ffmpeg reported doing.
+    expect(dynamicsPreserved(withLra({ normalizationType: 'dynamic', afterLra: 6.8 }))).toBe(false);
+  });
+
+  it('says "not recorded" for jobs mastered before LRA capture, rather than claiming the check ran', () => {
+    const legacy = { ...baseJob, beforeLra: null, afterLra: null, normalizationType: null } as MasterJob;
+    expect(dynamicsPreserved(legacy)).toBe(false);
+    expect(dynamicsLine(legacy)).toMatch(/not recorded/i);
+    expect(dynamicsLine(legacy)).not.toMatch(/✓/);
+  });
+
+  it('prints both LRA rows and the processing block honestly', () => {
+    const ok = buildMasterReport(withLra({}));
+    expect(ok).toMatch(/Loudness range \(LRA\)/);
+    expect(ok).toMatch(/← unchanged/);
+    expect(ok).toMatch(/No compression/);
+
+    const fell = buildMasterReport(withLra({ normalizationType: 'dynamic', afterLra: 4.1 }));
+    expect(fell).toMatch(/DYNAMIC fallback/);
+    expect(fell).toMatch(/← CHANGED/);
+    expect(fell).not.toMatch(/· No compression/);
   });
 });

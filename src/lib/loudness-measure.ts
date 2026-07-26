@@ -132,6 +132,32 @@ export function parseLoudnormStats(stderr: string): LoudnormStats | null {
   return Object.values(stats).every((v) => Number.isFinite(v)) ? stats : null;
 }
 
+/**
+ * Which normalization loudnorm ACTUALLY performed, read from its own JSON.
+ *
+ * This is the load-bearing check behind "loudness only, never tone". Pass 2
+ * asks for `linear=true`, which applies ONE static gain to the whole file and
+ * therefore cannot alter dynamics. But ffmpeg silently DOWNGRADES to dynamic
+ * mode when the linear gain would breach the true-peak ceiling — and dynamic
+ * mode compresses. Nothing errors; the file just quietly comes back with its
+ * range squeezed.
+ *
+ * So the promise is only verifiable per-file, after the fact. Parse it from the
+ * PASS 2 log (what was done), not pass 1 (what was predicted).
+ */
+export function parseNormalizationType(log: string): 'linear' | 'dynamic' | null {
+  const start = log.lastIndexOf('{');
+  const end = log.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  try {
+    const obj = JSON.parse(log.slice(start, end + 1)) as Record<string, string>;
+    const t = obj.normalization_type?.toLowerCase();
+    return t === 'linear' || t === 'dynamic' ? t : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The pass-2 linear loudnorm filter string from pass-1 measurements. */
 export function buildPass2Loudnorm(stats: LoudnormStats, target = -14): string {
   return (
