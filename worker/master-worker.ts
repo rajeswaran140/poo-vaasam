@@ -24,6 +24,7 @@ import {
   masterKeyFor,
   isMasterKey,
   parseSourceInfo,
+  parseNormalizationType,
 } from '@/lib/loudness-measure';
 import { isMasteringKey } from '@/lib/mastering-storage';
 
@@ -124,6 +125,10 @@ export const handler = async (event: MasterEvent) => {
       await patch(jobId, { status: 'error', error: { code: 'pass2', message: 'loudnorm pass 2 failed' } });
       return { ok: false };
     }
+    // What pass 2 ACTUALLY did. We ask for linear, but ffmpeg downgrades to
+    // dynamic (i.e. compresses) without erroring when linear would clip — so
+    // this is read from pass 2's own log, not assumed from the request.
+    const normalizationType = parseNormalizationType(`${p2.stdout ?? ''}${p2.stderr ?? ''}`);
 
     // Pass 3 — re-measure the output so the job records what it actually landed
     // on. Saves the operator downloading the file to confirm the target was hit;
@@ -140,6 +145,12 @@ export const handler = async (event: MasterEvent) => {
       beforeTp: stats.input_tp,
       afterLufs: after?.input_i ?? null,
       afterTp: after?.input_tp ?? null,
+      // Both LRAs were already measured (pass 1 on the source, pass 3 on the
+      // output) and previously discarded. Storing them makes the
+      // dynamics-preserved claim checkable rather than asserted.
+      beforeLra: stats.input_lra,
+      afterLra: after?.input_lra ?? null,
+      normalizationType,
       source,
       target,
     });

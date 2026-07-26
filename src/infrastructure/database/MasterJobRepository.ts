@@ -27,6 +27,9 @@ export class MasterJobRepository {
         beforeTp: null,
         afterLufs: null,
         afterTp: null,
+        beforeLra: null,
+        afterLra: null,
+        normalizationType: null,
         source: null,
         error: null,
       };
@@ -58,6 +61,14 @@ export class MasterJobRepository {
         masterKey: item.masterKey ?? null,
         beforeLufs: typeof item.beforeLufs === 'number' ? item.beforeLufs : null,
         beforeTp: typeof item.beforeTp === 'number' ? item.beforeTp : null,
+        // Absent on jobs written before LRA capture — coerced to null so every
+        // consumer takes the "not recorded" branch rather than reading NaN.
+        beforeLra: typeof item.beforeLra === 'number' ? item.beforeLra : null,
+        afterLra: typeof item.afterLra === 'number' ? item.afterLra : null,
+        normalizationType:
+          item.normalizationType === 'linear' || item.normalizationType === 'dynamic'
+            ? item.normalizationType
+            : null,
         afterLufs: typeof item.afterLufs === 'number' ? item.afterLufs : null,
         afterTp: typeof item.afterTp === 'number' ? item.afterTp : null,
         // Absent on jobs written before the worker recorded it — null, not undefined,

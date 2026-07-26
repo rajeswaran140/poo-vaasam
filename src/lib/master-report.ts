@@ -16,6 +16,13 @@ import { sanitizeMasterFilename } from '@/lib/mastering-storage';
 
 const lufs = (v: number | null | undefined) => (typeof v === 'number' ? `${v.toFixed(1)} LUFS` : '—');
 const dbtp = (v: number | null | undefined) => (typeof v === 'number' ? `${v.toFixed(2)} dBTP` : '—');
+const lu = (v: number | null | undefined) => (typeof v === 'number' ? `${v.toFixed(1)} LU` : '—');
+
+/** Inline "(unchanged)" marker — the whole point of printing LRA twice. */
+function lraNote(job: MasterJob): string {
+  if (typeof job.beforeLra !== 'number' || typeof job.afterLra !== 'number') return '';
+  return dynamicsPreserved(job) ? '   ← unchanged' : '   ← CHANGED';
+}
 
 /** Platforms that normalise at this target, for the header (e.g. "Spotify, YouTube"). */
 export function platformsForTarget(target: number): string {
@@ -92,7 +99,56 @@ export function summaryLines(job: MasterJob): string[] {
       ? '✓ Ready for streaming, video editing and distribution'
       : '⚠ Review the flags above before distributing';
 
-  return [loud, peak, '✓ Loudness only — tone, EQ and compression unchanged', ready];
+  return [loud, peak, dynamicsLine(job), ready];
+}
+
+/** Largest LRA drift still attributable to measurement rounding, not compression. */
+export const LRA_TOLERANCE_LU = 0.5;
+
+/**
+ * True when the master demonstrably kept the source's dynamics. Exported so the
+ * Studio badge and the .txt report are driven by ONE rule — a UI that said
+ * "unchanged" while the report warned would be worse than showing neither.
+ */
+export function dynamicsPreserved(job: MasterJob): boolean {
+  if (job.normalizationType === 'dynamic') return false;
+  if (typeof job.beforeLra !== 'number' || typeof job.afterLra !== 'number') return false;
+  return Math.abs(job.afterLra - job.beforeLra) <= LRA_TOLERANCE_LU;
+}
+
+/**
+ * The "loudness only, never tone" claim — PROVEN per file rather than asserted.
+ *
+ * This line used to read "✓ Loudness only — tone, EQ and compression unchanged"
+ * unconditionally, on every report. The intent was right (pass 2 requests
+ * `linear=true`, a single static gain that cannot alter dynamics) but nothing
+ * checked it, and ffmpeg silently downgrades to dynamic mode — which DOES
+ * compress — when the linear gain would breach the true-peak ceiling. So on
+ * exactly the hot sources where it matters most, the report could have promised
+ * something untrue.
+ *
+ * Now it reports what happened: loudness range in vs out. A static gain moves
+ * every sample equally, so LRA must survive unchanged; if it moved, something
+ * compressed.
+ */
+export function dynamicsLine(job: MasterJob): string {
+  const before = job.beforeLra;
+  const after = job.afterLra;
+  const haveLra = typeof before === 'number' && typeof after === 'number';
+
+  if (job.normalizationType === 'dynamic') {
+    return haveLra
+      ? `⚠ Dynamic normalization — ffmpeg could not apply a linear gain without clipping, so range WAS compressed (LRA ${before.toFixed(1)} → ${after.toFixed(1)} LU). Tone is not preserved on this master.`
+      : '⚠ Dynamic normalization — range was compressed; tone is not preserved on this master.';
+  }
+  if (!haveLra) {
+    // Jobs mastered before LRA capture. Say so rather than claim the check ran.
+    return '• Dynamics not recorded for this job — re-master to capture loudness range.';
+  }
+  const drift = Math.abs(after - before);
+  return drift <= LRA_TOLERANCE_LU
+    ? `✓ Loudness only — dynamics preserved: loudness range ${before.toFixed(1)} → ${after.toFixed(1)} LU (no compression, no EQ)`
+    : `⚠ Loudness range moved ${drift.toFixed(1)} LU (${before.toFixed(1)} → ${after.toFixed(1)}) — larger than measurement rounding; inspect before distributing.`;
 }
 
 /**
@@ -150,14 +206,22 @@ export function buildMasterReport(job: MasterJob, title?: string): string {
     'True peak',
     `  Before:           ${dbtp(job.beforeTp)}`,
     `  After:            ${dbtp(job.afterTp)}`,
+    'Loudness range (LRA)',
+    `  Before:           ${lu(job.beforeLra)}`,
+    `  After:            ${lu(job.afterLra)}${lraNote(job)}`,
     '',
     ...platformLandingLines(job),
     `Result:             ${verdictLine(job)}`,
     ...(isPeakSafe(job) ? ['                    No clipping detected — no extra limiting needed.'] : []),
     '',
-    'Processing           Two-pass loudnorm, linear correction — loudness only.',
+    // Reflects what ran, not what was requested — see dynamicsLine().
+    job.normalizationType === 'dynamic'
+      ? 'Processing           Two-pass loudnorm, DYNAMIC fallback — range was compressed.'
+      : 'Processing           Two-pass loudnorm, linear correction — loudness only.',
     '  ✓ Loudness normalised to target',
-    '  · No EQ   · No compression   · No stereo widening   · No limiting',
+    job.normalizationType === 'dynamic'
+      ? '  · No EQ   · No stereo widening   ⚠ Range compressed (linear gain would have clipped)'
+      : '  · No EQ   · No compression   · No stereo widening   · No limiting',
     '',
     'Adobe hand-off',
     '  1. Import at 48 kHz, untouched.',

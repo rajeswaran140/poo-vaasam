@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import {
   parseMeasurement, badgeAndVerdict, parseLoudnormStats, buildPass2Loudnorm,
   isValidTarget, masterKeyFor, isMasterKey, parseSourceInfo,
+  parseNormalizationType,
 } from '@/lib/loudness-measure';
 
 const hasFfmpeg = (() => {
@@ -252,5 +253,46 @@ describe('master output naming + guards', () => {
     for (const bad of ['-16', -70.1, -4.9, 0, NaN, Infinity, null, undefined, {}]) {
       expect(isValidTarget(bad)).toBe(false);
     }
+  });
+});
+
+describe('parseNormalizationType', () => {
+  const json = (type: string) => `
+[Parsed_loudnorm_0 @ 0x55] 
+{
+	"input_i" : "-17.90",
+	"input_tp" : "-3.55",
+	"input_lra" : "6.80",
+	"input_thresh" : "-28.10",
+	"output_i" : "-14.00",
+	"output_tp" : "-3.20",
+	"output_lra" : "6.80",
+	"output_thresh" : "-24.20",
+	"normalization_type" : "${type}",
+	"target_offset" : "0.00"
+}`;
+
+  it('reads the linear verdict', () => {
+    expect(parseNormalizationType(json('linear'))).toBe('linear');
+  });
+
+  /**
+   * The one that matters: ffmpeg accepts linear=true and then reports "dynamic"
+   * when the linear gain would have clipped. Exit status is still 0, so this
+   * string is the ONLY signal that the master was compressed.
+   */
+  it('reads the dynamic fallback ffmpeg reports without erroring', () => {
+    expect(parseNormalizationType(json('dynamic'))).toBe('dynamic');
+  });
+
+  it('is case-insensitive and rejects anything unexpected', () => {
+    expect(parseNormalizationType(json('LINEAR'))).toBe('linear');
+    expect(parseNormalizationType(json('sideways'))).toBeNull();
+  });
+
+  it('returns null on absent/unparseable output rather than guessing', () => {
+    expect(parseNormalizationType('')).toBeNull();
+    expect(parseNormalizationType('no json here')).toBeNull();
+    expect(parseNormalizationType('{ not: valid json }')).toBeNull();
   });
 });
