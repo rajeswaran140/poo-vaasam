@@ -107,7 +107,7 @@ describe('permanent credit block (catalogue-drift guard)', () => {
         '✍️ Lyrics: Raj (original, all rights reserved)',
         '🎵 Music Production & Creative Direction: TamilAgaval.com',
         '🤖 AI-Assisted Music Production',
-        '© 2026 TamilAgaval / Raj Thangarajah',
+        '© 2026 TamilAgaval / Raj',
       ].join('\n')
     );
   });
@@ -117,7 +117,7 @@ describe('permanent credit block (catalogue-drift guard)', () => {
     expect(out).toContain('✍️ Lyrics: Raj (original, all rights reserved)');
     expect(out).toContain('🎵 Music Production & Creative Direction: TamilAgaval.com');
     expect(out).toContain('🤖 AI-Assisted Music Production');
-    expect(out).toContain('© 2026 TamilAgaval / Raj Thangarajah');
+    expect(out).toContain('© 2026 TamilAgaval / Raj');
   });
 
   it('keeps the approved "(original, all rights reserved)" wording — it is NOT the banned "100% original"', () => {
@@ -126,10 +126,12 @@ describe('permanent credit block (catalogue-drift guard)', () => {
     expect(out).not.toContain('100% original');
   });
 
-  it('uses the brand name "Raj Thangarajah" in ©, never the full "Rajeswaran Thangarajah"', () => {
+  it('credits "Raj" only — no surname in a YouTube description', () => {
     const out = assembleYoutubeDescription('வரி.', { emotion: 'love' });
-    expect(out).toContain('Raj Thangarajah');
-    expect(out).not.toContain('Rajeswaran Thangarajah');
+    expect(out).toContain('© 2026 TamilAgaval / Raj');
+    // Neither the old brand wording nor the full legal name belongs here. The
+    // legal name still lives on the Terms page, where it is load-bearing.
+    expect(out).not.toContain('Thangarajah');
   });
 
   it('does NOT emit the forbidden legacy phrases — even when the body contains them', () => {

@@ -38,13 +38,20 @@ const playlistUrl = (id: string) => `https://www.youtube.com/playlist?list=${id}
  * Wording note: "(original, all rights reserved)" is Raj's approved credit — a
  * plain rights assertion, distinct from the still-BANNED bare marketing claim
  * "100% original" (a jurisdiction-specific AI-authorship claim). The copyright
- * line uses the brand name "Raj Thangarajah", never the full "Rajeswaran".
+ * line credits "Raj" — the name used on the Lyrics line, so the two agree.
+ * Raj's decision 2026-07-27; it replaces the earlier "Raj Thangarajah" wording.
+ * The full "Rajeswaran Thangarajah" remains banned outright (see below).
+ *
+ * NOTE: this governs YOUTUBE DESCRIPTIONS ONLY. The site's Terms of Use,
+ * LyricsGate and lyrics-export deliberately still carry the full legal name —
+ * a copyright assertion in a legal document needs an identifying name, which a
+ * first name alone is not.
  */
 export const CREDIT_BLOCK = [
   '✍️ Lyrics: Raj (original, all rights reserved)',
   '🎵 Music Production & Creative Direction: TamilAgaval.com',
   '🤖 AI-Assisted Music Production',
-  '© 2026 TamilAgaval / Raj Thangarajah',
+  '© 2026 TamilAgaval / Raj',
 ].join('\n');
 
 /**
@@ -52,8 +59,7 @@ export const CREDIT_BLOCK = [
  * body ever emits one, the whole line is dropped before the canonical
  * CREDIT_BLOCK is appended — so the output can never carry the old wording.
  * NOTE: bans the bare "100% original" claim, NOT the approved credit wording
- * "(original, all rights reserved)"; bans the full "Rajeswaran Thangarajah",
- * NOT the brand "Raj Thangarajah" used in the copyright line.
+ * "(original, all rights reserved)"; bans the full "Rajeswaran Thangarajah".
  */
 const FORBIDDEN_LINE_RE =
   /music\s+composition:\s*ai-assisted|100%\s*original|rajeswaran\s+thangarajah/i;
