@@ -54,5 +54,15 @@ export interface MasterJob {
    * every consumer must treat it as optional.
    */
   source: SourceInfo | null;
+  /**
+   * Set when the admin saves this master to the library. Saving is what makes
+   * it durable: unsaved jobs carry a 24h ttl and self-expire, so one-off
+   * experiments clean themselves up while anything worth keeping survives.
+   * The WAV in S3 was always permanent — what used to vanish was the record
+   * explaining it (loudness, range, report, compare player).
+   */
+  savedAt: string | null;
+  /** Admin's name for the master; also drives the download filename. */
+  title: string | null;
   error: { code: string; message: string } | null;
 }

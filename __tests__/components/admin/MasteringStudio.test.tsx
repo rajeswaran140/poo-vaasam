@@ -20,6 +20,8 @@ jest.mock('lucide-react', () => ({
   RotateCcw: () => <svg data-testid="i-reset" />,
   X: () => <svg data-testid="i-x" />,
   Info: () => <svg data-testid="i-info" />,
+  Save: () => <svg data-testid="i-save" />,
+  Library: () => <svg data-testid="i-library" />,
 }));
 // The before/after player is its own unit (see MasteringComparePlayer.test);
 // stub it here so the Studio suite tests wiring, not the player's Web Audio /

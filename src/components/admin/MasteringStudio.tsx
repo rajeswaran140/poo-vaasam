@@ -22,7 +22,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import {
   SlidersHorizontal, Upload, Download, Loader2, CheckCircle2,
-  AlertTriangle, FileAudio, RotateCcw, X, Info,
+  AlertTriangle, FileAudio, RotateCcw, X, Info, Save, Library,
 } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 import { pollJob } from '@/lib/poll-job';
@@ -145,6 +145,10 @@ export function MasteringStudio() {
   const [dragging, setDragging] = useState(false);
   /** A job we stopped watching but which is still running — offers a way back. */
   const [paused, setPaused] = useState<StoredJob | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [library, setLibrary] = useState<MasterJob[] | null>(null);
+  const [libraryOpen, setLibraryOpen] = useState(false);
 
   const mounted = useRef(true);
   const abort = useRef<AbortController | null>(null);
@@ -355,17 +359,21 @@ export function MasteringStudio() {
     }
   }, [sourceKey, source, target, watch]);
 
-  const download = useCallback(async () => {
-    if (!job?.masterKey) return;
+  /**
+   * Presign + open one workspace WAV. Shared by the result panel and the saved
+   * library so both get the same friendly filename and the same auth — the
+   * route replies with JSON, not a redirect, so a plain <a href> would render
+   * the JSON instead of downloading, and would carry no bearer token.
+   */
+  const downloadKey = useCallback(async (key: string, title: string, targetLufs: number) => {
     setError(null);
     try {
       // Present a friendly filename ("<title> (Master -14 LUFS).wav") when the
       // admin has named the master; the server sanitises it. Storage key is
       // untouched. No name ⇒ the route falls back to a de-noised default.
-      const title = masterName.trim();
-      const nameParam = title ? `&name=${encodeURIComponent(`${title} (Master ${job.target} LUFS)`)}` : '';
+      const nameParam = title ? `&name=${encodeURIComponent(`${title} (Master ${targetLufs} LUFS)`)}` : '';
       const res = await adminFetch(
-        `/api/admin/mastering/download?key=${encodeURIComponent(job.masterKey)}${nameParam}`
+        `/api/admin/mastering/download?key=${encodeURIComponent(key)}${nameParam}`
       );
       const body = await res.json();
       if (!res.ok || !body.success) throw new Error(body.error || 'Could not create the download link.');
@@ -376,9 +384,64 @@ export function MasteringStudio() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [job, masterName]);
+  }, []);
+
+  const download = useCallback(() => {
+    if (!job?.masterKey) return;
+    void downloadKey(job.masterKey, masterName.trim(), job.target);
+  }, [job, masterName, downloadKey]);
 
   /** Save the loudness summary as a text file that travels with the WAV. */
+  /**
+   * Keep this master. Unsaved jobs expire after 24h — the WAV survives in S3 but
+   * the record explaining it does not, leaving an orphaned machine-named file.
+   */
+  const saveToLibrary = useCallback(async () => {
+    if (!jobId) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await adminFetch(`/api/admin/music-lab/master/${jobId}/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: masterName.trim() || undefined }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.success) throw new Error(body.error || 'Could not save this master.');
+      setSavedAt(new Date().toISOString());
+      setAnnounce('Master saved to the library.');
+      setLibraryOpen(true);
+      void loadLibrary();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  }, [jobId, masterName]);
+
+  /**
+   * Deliberately NOT loaded on mount: listing scans the table, and most visits
+   * to this page are to master a file, not to browse history. Load on first
+   * open, and after a save (which is when the list has actually changed).
+   */
+  const toggleLibrary = useCallback(() => {
+    setLibraryOpen((open) => {
+      if (!open && library === null) void loadLibrary();
+      return !open;
+    });
+  }, [library]);
+
+  const loadLibrary = useCallback(async () => {
+    try {
+      const res = await adminFetch('/api/admin/music-lab/masters');
+      const body = await res.json().catch(() => ({}));
+      if (res.ok && body.success) setLibrary(body.masters as MasterJob[]);
+    } catch {
+      // A library that fails to load must never block mastering — the list is
+      // supplementary, the job in front of the user is the point.
+    }
+  }, []);
+
   const downloadReport = useCallback(() => {
     if (!job?.masterKey) return;
     const blob = new Blob([buildMasterReport(job, masterName)], { type: 'text/plain;charset=utf-8' });
@@ -781,7 +844,24 @@ export function MasteringStudio() {
             >
               <FileAudio className="h-4 w-4" aria-hidden="true" /> Download report
             </button>
+            <button
+              type="button"
+              onClick={saveToLibrary}
+              disabled={saving || !!savedAt}
+              className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 px-4 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-60 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
+            >
+              {saving
+                ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                : <Save className="h-4 w-4" aria-hidden="true" />}
+              {savedAt ? 'Saved to library' : 'Save to library'}
+            </button>
           </div>
+          {!savedAt && (
+            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              Unsaved masters are cleared after 24 hours. The WAV stays in S3, but the loudness
+              report and A/B comparison are lost with the record.
+            </p>
+          )}
 
           <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50/60 p-4 text-sm dark:border-amber-900/40 dark:bg-amber-900/10">
             <p className="font-semibold text-amber-800 dark:text-amber-300">Hand-off to Adobe — master once</p>
@@ -793,6 +873,59 @@ export function MasteringStudio() {
           </div>
         </section>
       )}
+
+
+      <section className="mt-8">
+        <button
+          type="button"
+          onClick={toggleLibrary}
+          aria-expanded={libraryOpen}
+          className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+        >
+          <Library className="h-4 w-4" aria-hidden="true" />
+          Saved masters
+          {library && <span className="font-normal normal-case tracking-normal">({library.length})</span>}
+        </button>
+
+        {libraryOpen && library && library.length === 0 && (
+          <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">
+            No saved masters yet. Master a file and choose <strong>Save to library</strong> to keep it.
+          </p>
+        )}
+
+        {libraryOpen && library && library.length > 0 && (
+          <ul className="mt-3 divide-y divide-gray-200 rounded-lg border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+            {library.map((m) => (
+              <li key={m.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-sm">
+                <span className="min-w-0 grow font-medium text-gray-900 dark:text-gray-100">
+                  {m.title || <span className="text-gray-500 dark:text-gray-400">(untitled)</span>}
+                </span>
+                <span className="tabular-nums text-xs text-gray-500 dark:text-gray-400">
+                  {(m.savedAt ?? '').slice(0, 10)}
+                </span>
+                <span className="tabular-nums text-xs text-gray-600 dark:text-gray-300">
+                  {lufs(m.afterLufs)}
+                </span>
+                <span className="tabular-nums text-xs text-gray-600 dark:text-gray-300">
+                  LRA {lu(m.beforeLra)} → {lu(m.afterLra)}
+                  {dynamicsPreserved(m) && (
+                    <span className="ml-1 text-emerald-600 dark:text-emerald-400">unchanged</span>
+                  )}
+                </span>
+                {m.masterKey && (
+                  <button
+                    type="button"
+                    onClick={() => void downloadKey(m.masterKey!, m.title ?? '', m.target)}
+                    className="text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
+                  >
+                    WAV
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       {busy && (
         <p className="text-xs text-gray-500 dark:text-gray-400">

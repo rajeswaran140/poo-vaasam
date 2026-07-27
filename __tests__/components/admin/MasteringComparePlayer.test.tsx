@@ -13,6 +13,8 @@ jest.mock('lucide-react', () => ({
   Pause: () => <svg data-testid="i-pause" />,
   Loader2: () => <svg data-testid="i-loader" />,
   AlertTriangle: () => <svg data-testid="i-alert" />,
+  Volume2: () => <svg data-testid="i-volume" />,
+  VolumeX: () => <svg data-testid="i-muted" />,
 }));
 
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
@@ -138,4 +140,31 @@ it('becomes ready even if the master metadata arrives before the source metadata
   // Then the source metadata lands — its own handler must flip the button on.
   await act(async () => { states.set(srcAudio, 1); fireEvent.loadedMetadata(srcAudio); });
   expect(screen.getByRole('button', { name: /^play$/i })).toBeEnabled();
+});
+
+describe('volume', () => {
+  /**
+   * The comparison is only meaningful if A and B are heard at matched loudness.
+   * Volume therefore has to sit on a SHARED output stage after the per-side
+   * gains — a control wired to one side would silently reintroduce the
+   * "louder sounds better" bias the match exists to remove.
+   */
+  it('exposes a volume control and a mute toggle', async () => {
+    render(<MasteringComparePlayer sourceKey="a.wav" masterKey="b.wav" beforeLufs={-17.9} afterLufs={-14} />);
+    expect(await screen.findByLabelText('Volume')).toBeInTheDocument();
+    expect(screen.getByLabelText('Mute')).toBeInTheDocument();
+  });
+
+  it('mute toggles to unmute and back', async () => {
+    render(<MasteringComparePlayer sourceKey="a.wav" masterKey="b.wav" beforeLufs={-17.9} afterLufs={-14} />);
+    fireEvent.click(await screen.findByLabelText('Mute'));
+    expect(screen.getByLabelText('Unmute')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Unmute'));
+    expect(screen.getByLabelText('Mute')).toBeInTheDocument();
+  });
+
+  it('starts at full volume so the first listen is not mysteriously quiet', async () => {
+    render(<MasteringComparePlayer sourceKey="a.wav" masterKey="b.wav" beforeLufs={-17.9} afterLufs={-14} />);
+    expect((await screen.findByLabelText('Volume') as HTMLInputElement).value).toBe('1');
+  });
 });
