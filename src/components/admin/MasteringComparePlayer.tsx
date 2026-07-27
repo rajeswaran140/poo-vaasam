@@ -17,7 +17,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Play, Pause, Loader2, AlertTriangle } from 'lucide-react';
+import { Play, Pause, Loader2, AlertTriangle, Volume2, VolumeX } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 import { matchGains, formatClock } from '@/lib/loudness-match';
 
@@ -37,18 +37,38 @@ async function playUrl(key: string): Promise<string> {
   return body.url as string;
 }
 
+/**
+ * Slider position (0..1) -> linear gain.
+ *
+ * Squared rather than linear: loudness perception is roughly logarithmic, so a
+ * linear slider spends most of its travel in a range that barely changes and
+ * then drops off a cliff near zero. Squaring gives even-feeling steps. 0 is
+ * silence, 1 is unity — the slider only ever ATTENUATES, so it can never push
+ * the comparison into clipping.
+ */
+export function outputGain(position: number): number {
+  const p = Math.min(1, Math.max(0, position));
+  return p * p;
+}
+
 export function MasteringComparePlayer({ sourceKey, masterKey, beforeLufs, afterLufs }: Props) {
   const srcEl = useRef<HTMLAudioElement | null>(null);
   const masEl = useRef<HTMLAudioElement | null>(null);
   const ctx = useRef<AudioContext | null>(null);
   const srcGain = useRef<GainNode | null>(null);
   const masGain = useRef<GainNode | null>(null);
+  // Shared OUTPUT stage, after the per-side gains. Volume must never be applied
+  // to one side only — that is exactly what loudness-matching exists to prevent,
+  // and an A/B where one leg is quieter is a broken comparison.
+  const outGain = useRef<GainNode | null>(null);
 
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
   const [which, setWhich] = useState<Which>('master');
   const [matched, setMatched] = useState(true);
+  /** Slider position 0..1. Perceptual curve applied on the way to the node. */
+  const [volume, setVolume] = useState(1);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
 
@@ -95,13 +115,23 @@ export function MasteringComparePlayer({ sourceKey, masterKey, beforeLufs, after
     const c = new AC();
     const sg = c.createGain();
     const mg = c.createGain();
-    c.createMediaElementSource(srcEl.current).connect(sg).connect(c.destination);
-    c.createMediaElementSource(masEl.current).connect(mg).connect(c.destination);
+    const og = c.createGain();
+    og.gain.value = outputGain(volume);
+    c.createMediaElementSource(srcEl.current).connect(sg).connect(og);
+    c.createMediaElementSource(masEl.current).connect(mg).connect(og);
+    og.connect(c.destination);
     ctx.current = c;
     srcGain.current = sg;
     masGain.current = mg;
+    outGain.current = og;
     applyGains();
-  }, [applyGains]);
+  }, [applyGains, volume]);
+
+  // Volume rides the shared output stage, so it scales A and B identically and
+  // cannot skew the comparison.
+  useEffect(() => {
+    if (outGain.current) outGain.current.gain.value = outputGain(volume);
+  }, [volume]);
 
   // readyState >= 1 (HAVE_METADATA) is enough to enable the transport: duration
   // is known and the clip is seekable. We deliberately do NOT wait for >= 2
@@ -250,6 +280,30 @@ export function MasteringComparePlayer({ sourceKey, masterKey, beforeLufs, after
           aria-label="Seek"
           className="h-1.5 grow cursor-pointer accent-orange-600"
         />
+
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setVolume((v) => (v === 0 ? 1 : 0))}
+            aria-label={volume === 0 ? 'Unmute' : 'Mute'}
+            className="rounded p-1 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100"
+          >
+            {volume === 0
+              ? <VolumeX className="h-4 w-4" aria-hidden="true" />
+              : <Volume2 className="h-4 w-4" aria-hidden="true" />}
+          </button>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={volume}
+            onChange={(e) => setVolume(Number(e.target.value))}
+            aria-label="Volume"
+            title="Applies to both A and B — comparison stays loudness-matched"
+            className="h-1.5 w-24 cursor-pointer accent-orange-600"
+          />
+        </div>
       </div>
 
       {/* A/B switch — a radio group so it's clear only one is audible at a time. */}

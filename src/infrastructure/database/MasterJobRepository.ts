@@ -31,6 +31,8 @@ export class MasterJobRepository {
         afterLra: null,
         normalizationType: null,
         source: null,
+        savedAt: null,
+        title: null,
         error: null,
       };
       await DynamoDBOperations.put({
@@ -51,31 +53,79 @@ export class MasterJobRepository {
     try {
       const item = await DynamoDBOperations.get({ PK: `MASTERJOB#${id}`, SK: 'METADATA' });
       if (!item) return null;
-      return {
-        id: item.id,
-        status: item.status,
-        createdAt: item.createdAt,
-        updatedAt: item.updatedAt,
-        s3Key: item.s3Key,
-        target: typeof item.target === 'number' ? item.target : -14,
-        masterKey: item.masterKey ?? null,
-        beforeLufs: typeof item.beforeLufs === 'number' ? item.beforeLufs : null,
-        beforeTp: typeof item.beforeTp === 'number' ? item.beforeTp : null,
-        // Absent on jobs written before LRA capture — coerced to null so every
-        // consumer takes the "not recorded" branch rather than reading NaN.
-        beforeLra: typeof item.beforeLra === 'number' ? item.beforeLra : null,
-        afterLra: typeof item.afterLra === 'number' ? item.afterLra : null,
-        normalizationType:
-          item.normalizationType === 'linear' || item.normalizationType === 'dynamic'
-            ? item.normalizationType
-            : null,
-        afterLufs: typeof item.afterLufs === 'number' ? item.afterLufs : null,
-        afterTp: typeof item.afterTp === 'number' ? item.afterTp : null,
-        // Absent on jobs written before the worker recorded it — null, not undefined,
-        // so the shape stays stable for the status route's consumers.
-        source: item.source ?? null,
-        error: item.error ?? null,
-      };
+      return this.hydrate(item);
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  /**
+   * Raw DynamoDB item -> MasterJob. Shared by get() and listSaved() so the two
+   * can never disagree about how an older/partial row is coerced; every field
+   * added since the first jobs were written must degrade to null here.
+   */
+  private hydrate(item: Record<string, any>): MasterJob {
+    return {
+      id: item.id,
+      status: item.status,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+      s3Key: item.s3Key,
+      target: typeof item.target === 'number' ? item.target : -14,
+      masterKey: item.masterKey ?? null,
+      beforeLufs: typeof item.beforeLufs === 'number' ? item.beforeLufs : null,
+      beforeTp: typeof item.beforeTp === 'number' ? item.beforeTp : null,
+      beforeLra: typeof item.beforeLra === 'number' ? item.beforeLra : null,
+      afterLra: typeof item.afterLra === 'number' ? item.afterLra : null,
+      normalizationType:
+        item.normalizationType === 'linear' || item.normalizationType === 'dynamic'
+          ? item.normalizationType
+          : null,
+      afterLufs: typeof item.afterLufs === 'number' ? item.afterLufs : null,
+      afterTp: typeof item.afterTp === 'number' ? item.afterTp : null,
+      source: item.source ?? null,
+      savedAt: typeof item.savedAt === 'string' ? item.savedAt : null,
+      title: typeof item.title === 'string' ? item.title : null,
+      error: item.error ?? null,
+    };
+  }
+
+  /**
+   * Save a finished master to the library: record the name and, crucially,
+   * REMOVE the ttl so DynamoDB stops counting down on it. Idempotent — saving
+   * twice just rewrites the title.
+   */
+  async save(id: string, title: string | null): Promise<void> {
+    try {
+      await DynamoDBOperations.update({
+        key: { PK: `MASTERJOB#${id}`, SK: 'METADATA' },
+        updateExpression: 'SET #savedAt = :savedAt, #title = :title REMOVE #ttl',
+        expressionAttributeNames: { '#savedAt': 'savedAt', '#title': 'title', '#ttl': 'ttl' },
+        expressionAttributeValues: { ':savedAt': new Date().toISOString(), ':title': title },
+      });
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  /**
+   * Every saved master, newest first.
+   *
+   * Scan + filter rather than a GSI: the table holds a few hundred items and
+   * masters accrue a handful a week, so a new index would cost more than it
+   * saves. Revisit if the table grows into the tens of thousands — the same
+   * trade-off the subscriber list makes.
+   */
+  async listSaved(limit = 100): Promise<MasterJob[]> {
+    try {
+      const { Items } = await DynamoDBOperations.scanAll({
+        filterExpression: 'begins_with(PK, :pk) AND attribute_exists(savedAt)',
+        expressionAttributeValues: { ':pk': 'MASTERJOB#' },
+      });
+      return Items
+        .map((item) => this.hydrate(item))
+        .sort((a: MasterJob, b: MasterJob) => (b.savedAt ?? '').localeCompare(a.savedAt ?? ''))
+        .slice(0, limit);
     } catch (error) {
       handleDynamoDBError(error);
     }
