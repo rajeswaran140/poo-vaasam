@@ -72,6 +72,60 @@ export function sourceInfoLine(job: MasterJob): string | null {
 }
 
 /**
+ * The single glanceable verdict shown at the top of the Studio result panel AND
+ * derived from the same rules as the saved .txt report, so the screen and the
+ * file can never disagree.
+ *
+ * This exists because the Studio's own `verdict` only compared loudness to
+ * target — a master that landed on -14 LUFS while clipping above -1 dBTP still
+ * showed a green tick, while the report it downloaded said "check for
+ * clipping". Readiness needs ALL THREE: on target, peak-safe, and dynamics
+ * preserved.
+ */
+export interface Readiness {
+  ok: boolean;
+  headline: string;
+  /** Compact facts line: loudness · peak · range · output format. */
+  facts: string;
+}
+
+export function streamingReadiness(job: MasterJob): Readiness {
+  const measured = typeof job.afterLufs === 'number';
+  const onTarget = isOnTarget(job);
+  const peakSafe = isPeakSafe(job);
+  const dyn = dynamicsPreserved(job);
+
+  const facts = [
+    lufs(job.afterLufs),
+    dbtp(job.afterTp),
+    typeof job.afterLra === 'number'
+      ? `LRA ${job.afterLra.toFixed(1)}${dyn ? ' unchanged' : ''}`
+      : null,
+    '24-bit/48 kHz',
+  ].filter(Boolean).join(' · ');
+
+  if (!measured) {
+    return { ok: false, headline: 'Loudness not confirmed — the check pass did not return', facts };
+  }
+  if (!onTarget) {
+    return {
+      ok: false,
+      headline: `Review before distributing — measured ${lufs(job.afterLufs)} against ${job.target} LUFS`,
+      facts,
+    };
+  }
+  if (!peakSafe) {
+    // The case the old green tick got wrong.
+    return {
+      ok: false,
+      headline: `Review before distributing — true peak ${dbtp(job.afterTp)} exceeds -1 dBTP`,
+      facts,
+    };
+  }
+  return { ok: true, headline: 'Streaming Ready', facts };
+}
+
+/**
  * A pass/fail checklist for a glance before the numbers. Each line reflects the
  * job's actual state — it never claims "ready" for an off-target or clipping
  * master.
