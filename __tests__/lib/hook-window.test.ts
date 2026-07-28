@@ -71,6 +71,84 @@ describe('pickHookWindow', () => {
     expect(pickHookWindow(build(), { windowSec: 0 })).toBeNull();
   });
 
+  describe('outroSkipFrac (never open on the outro)', () => {
+    // Loudest moment is deliberately at the very END — the real-world failure:
+    // a final chorus edges out the rest on a low-LRA master, so the pick drifts
+    // into the outro.
+    const loudestAtEnd = (): LoudnessSample[] => {
+      const s: LoudnessSample[] = [];
+      for (let t = 0; t <= 100; t += 1) {
+        let lufs = -20;
+        if (t < 8) lufs = -40;
+        else if (t >= 40 && t < 50) lufs = -12; // a mid-track chorus
+        else if (t >= 88) lufs = -10; // louder still, but it's the outro
+        s.push({ t, lufs });
+      }
+      return s;
+    };
+
+    it('excludes a window that would END inside the skipped tail', () => {
+      const hook = pickHookWindow(loudestAtEnd(), {
+        windowSec: 10,
+        minStartSec: 8,
+        totalSec: 100,
+        outroSkipFrac: 0.12,
+      });
+      expect(hook!.end).toBeLessThanOrEqual(88);
+    });
+
+    it('picks the mid-track chorus once the outro is excluded', () => {
+      const hook = pickHookWindow(loudestAtEnd(), {
+        windowSec: 10,
+        minStartSec: 8,
+        totalSec: 100,
+        outroSkipFrac: 0.12,
+      });
+      expect(hook!.start).toBe(40);
+    });
+
+    it('is on by default (the outro pick is not the default behaviour)', () => {
+      const hook = pickHookWindow(loudestAtEnd(), {
+        windowSec: 10,
+        minStartSec: 8,
+        totalSec: 100,
+      });
+      expect(hook!.start).toBe(40);
+    });
+
+    it('can be disabled with 0, restoring the raw loudest-window pick', () => {
+      const hook = pickHookWindow(loudestAtEnd(), {
+        windowSec: 10,
+        minStartSec: 8,
+        totalSec: 100,
+        outroSkipFrac: 0,
+      });
+      expect(hook!.start).toBeGreaterThanOrEqual(88);
+    });
+
+    it('relaxes the guard rather than returning nothing on a short track', () => {
+      // 40s track, 29s window: honouring both minStart and a 12% tail is
+      // impossible, so the guard must yield instead of eliminating every window.
+      const s: LoudnessSample[] = [];
+      for (let t = 0; t <= 40; t += 1) s.push({ t, lufs: t >= 10 ? -12 : -30 });
+      const hook = pickHookWindow(s, { windowSec: 29, minStartSec: 8, totalSec: 40 });
+      expect(hook).not.toBeNull();
+      expect(hook!.start).toBeGreaterThanOrEqual(8);
+      expect(hook!.end).toBeLessThanOrEqual(40);
+    });
+
+    it('clamps an out-of-range fraction instead of trusting it', () => {
+      const hook = pickHookWindow(loudestAtEnd(), {
+        windowSec: 10,
+        minStartSec: 8,
+        totalSec: 100,
+        outroSkipFrac: 5,
+      });
+      expect(hook).not.toBeNull();
+      expect(hook!.start).toBeGreaterThanOrEqual(8);
+    });
+  });
+
   describe('leadInSec (build into the peak)', () => {
     it('defaults to opening exactly on the peak (leadIn 0, back-compat)', () => {
       const hook = pickHookWindow(build(), { windowSec: 10, minStartSec: 8, totalSec: 60 });
