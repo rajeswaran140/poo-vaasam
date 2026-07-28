@@ -306,3 +306,42 @@ describe('streamingReadiness — the Studio banner and the .txt report share one
     expect(r.facts).not.toContain('unchanged');
   });
 });
+
+describe('readiness checks — the itemised integrity list', () => {
+  const job = (over: Partial<MasterJob>): MasterJob => ({ ...baseJob, ...over });
+  const byLabel = (j: MasterJob, l: string) => streamingReadiness(j).checks.find((c) => c.label === l)!;
+
+  /**
+   * FOUR checks, not five. "Clipping" is NOT an independent test — the true-peak
+   * ceiling IS the clipping check. Listing both would imply a second
+   * measurement that was never taken.
+   */
+  it('lists exactly four checks and does not invent a separate clipping test', () => {
+    const cs = streamingReadiness(job({})).checks;
+    expect(cs.map((c) => c.label)).toEqual(['Loudness target', 'True peak', 'Dynamics', 'Gain type']);
+  });
+
+  it('surfaces gain type, which is otherwise recorded but invisible', () => {
+    expect(byLabel(job({ normalizationType: 'linear' }), 'Gain type')).toMatchObject({ ok: true });
+    expect(byLabel(job({ normalizationType: 'linear' }), 'Gain type').detail).toMatch(/linear/);
+  });
+
+  it('marks a dynamic fallback as FAILED, not merely noted', () => {
+    const c = byLabel(job({ normalizationType: 'dynamic' }), 'Gain type');
+    expect(c.ok).toBe(false);
+    expect(c.detail).toMatch(/compressed/);
+  });
+
+  /** Unknown must be its own state — never rendered as a pass. */
+  it('uses null (not false) when a value was never recorded', () => {
+    expect(byLabel(job({ normalizationType: null }), 'Gain type').ok).toBeNull();
+    expect(byLabel(job({ beforeLra: null, afterLra: null }), 'Dynamics').ok).toBeNull();
+    expect(byLabel(job({ afterTp: null }), 'True peak').ok).toBeNull();
+    expect(byLabel(job({ afterLufs: null }), 'Loudness target').ok).toBeNull();
+  });
+
+  it('the saved report names the gain type too, so file and screen agree', () => {
+    expect(buildMasterReport(job({ normalizationType: 'linear' }))).toMatch(/Gain type — linear/);
+    expect(buildMasterReport(job({ normalizationType: 'dynamic' }))).toMatch(/Gain type — DYNAMIC/);
+  });
+});
