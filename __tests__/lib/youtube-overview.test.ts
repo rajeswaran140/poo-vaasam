@@ -1,5 +1,8 @@
 import {
   resolveWindow,
+  resolveCustomWindow,
+  isPartial,
+  SELECTABLE_RANGES,
   summariseOverview,
   deltaPct,
   deriveExactSubscribers,
@@ -185,8 +188,29 @@ describe('deriveExactSubscribers', () => {
     expect(deriveExactSubscribers(null, [], '2026-07-28')).toBeNull();
   });
 
-  it('returns null when the target date precedes the anchor', () => {
-    expect(deriveExactSubscribers(anchor, [], '2026-07-01')).toBeNull();
+  it('does NOT return null when the anchor is ahead of the finalized data', () => {
+    // The normal state after every re-anchor: Studio is exact today while
+    // Analytics still lags 2-3 days. Blanking the tile here would hide the
+    // figure exactly when it is most trustworthy.
+    const r = deriveExactSubscribers(anchor, [], '2026-07-25');
+    expect(r).not.toBeNull();
+    expect(r!.count).toBe(1118);
+    expect(r!.asOf).toBe('2026-07-27');
+    expect(r!.daysSinceAnchor).toBe(0);
+  });
+
+  it('does not accumulate BACKWARDS from an anchor that is ahead', () => {
+    // Days before the anchor are already baked into it; counting them again
+    // would double-subtract.
+    const r = deriveExactSubscribers(
+      anchor,
+      points([
+        ['2026-07-24', 0, 0, 40, 0],
+        ['2026-07-25', 0, 0, 40, 0],
+      ]),
+      '2026-07-25'
+    );
+    expect(r!.count).toBe(1118);
   });
 });
 
@@ -204,5 +228,83 @@ describe('subscriber anchor config', () => {
 
   it('records where each anchor came from so it can be re-derived', () => {
     expect(SUBSCRIBER_ANCHORS.every((a) => a.source.length > 0)).toBe(true);
+  });
+});
+
+describe('SELECTABLE_RANGES', () => {
+  it('offers 7d, 28d and 90d', () => {
+    expect([...SELECTABLE_RANGES]).toEqual(['7d', '28d', '90d']);
+  });
+
+  it('omits 365d, which is not computable until 2028', () => {
+    expect(SELECTABLE_RANGES).not.toContain('365d');
+  });
+});
+
+describe('isPartial (Analytics lags 48-72h)', () => {
+  it('is true when the newest data predates today — the normal state', () => {
+    expect(isPartial('2026-07-25', '2026-07-28')).toBe(true);
+  });
+
+  it('is false only once data reaches today', () => {
+    expect(isPartial('2026-07-28', '2026-07-28')).toBe(false);
+  });
+});
+
+describe('fixture parity — Studio Overview, Jun 30 to Jul 27 2026', () => {
+  // Pinned to an EXPLICIT date range, not a relative 28d: the stored series
+  // currently ends 2026-07-25, two days short of Studio's window, so a relative
+  // request cannot reproduce these totals. Widening a tolerance until it passed
+  // would destroy the test. Per-day values are seeded to Studio's reported
+  // totals, so this pins the AGGREGATION, and the live comparison happens once
+  // 07-26 and 07-27 finalize.
+  const FROM = '2026-06-30';
+  const TO = '2026-07-27';
+  const STUDIO_VIEWS = 201_404;
+  const STUDIO_WATCH_HOURS = 8802.4;
+  const STUDIO_NET_SUBS = 658;
+
+  const seeded: DailyPoint[] = [
+    { date: FROM, views: 100_000, estimatedMinutesWatched: 264_000, subscribersGained: 300, subscribersLost: 20 },
+    { date: TO, views: 101_404, estimatedMinutesWatched: 264_144, subscribersGained: 431, subscribersLost: 53 },
+    // Outside the window — must not leak in.
+    { date: '2026-06-29', views: 999_999, estimatedMinutesWatched: 999_999, subscribersGained: 999, subscribersLost: 0 },
+  ];
+
+  it('spans exactly 28 days', () => {
+    expect(resolveCustomWindow(FROM, TO, DATA_START).current.days).toBe(28);
+  });
+
+  it('reproduces Studio views for the pinned range', () => {
+    const w = resolveCustomWindow(FROM, TO, DATA_START);
+    expect(summariseOverview(seeded, w).views.value).toBe(STUDIO_VIEWS);
+  });
+
+  it('reproduces Studio watch hours to one decimal', () => {
+    const w = resolveCustomWindow(FROM, TO, DATA_START);
+    expect(summariseOverview(seeded, w).watchTimeHours.value).toBeCloseTo(STUDIO_WATCH_HOURS, 1);
+  });
+
+  it('reproduces Studio net subscribers', () => {
+    const w = resolveCustomWindow(FROM, TO, DATA_START);
+    expect(summariseOverview(seeded, w).subscribersNet.value).toBe(STUDIO_NET_SUBS);
+  });
+});
+
+describe('partial-window behaviour for a relative request today', () => {
+  // This is what a live 28d request must report while the series lags — the
+  // behaviour actually worth locking in, separate from the fixture above.
+  const TODAY = '2026-07-28';
+
+  it('ends the window on the last FINALIZED day, not today', () => {
+    expect(resolveWindow('28d', DATA_START, DATA_END).current.to).toBe('2026-07-25');
+  });
+
+  it('flags the result as partial', () => {
+    expect(isPartial(DATA_END, TODAY)).toBe(true);
+  });
+
+  it('is two days short of the Studio fixture window, which is why it is pinned separately', () => {
+    expect(daysBetween(DATA_END, '2026-07-27') - 1).toBe(2);
   });
 });
