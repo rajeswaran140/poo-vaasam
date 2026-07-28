@@ -54,6 +54,104 @@ function summaryRegion(stderr: string): string {
 }
 
 /** Badge + verdict from the metrics. Pure; mirrors the spec precedence. */
+/**
+ * Take-selection advice: what mastering CAN fix versus what it cannot.
+ *
+ * The Music Lab already shows a badge and a `clip-risk`/`squashed` chip, but it
+ * never says which problems are worth walking away from. That distinction is
+ * the whole point: loudness is corrected losslessly by a static gain, whereas
+ * clipping and squashed dynamics are baked into the take and no amount of
+ * mastering will recover them. The standing decision is that dynamics live
+ * UPSTREAM, at take selection — this puts that rule at the moment of the choice
+ * instead of in Raj's head.
+ *
+ * CALIBRATED TO THIS CATALOGUE, not to generic mastering guidance. Tamilagaval's
+ * SUNO sources measure LRA 2.3–5.0 with real masters at 2.8–3.0, so a "narrow
+ * dynamics" warning at a textbook threshold (say 6 LU) would fire on nearly
+ * every take and teach Raj to ignore it. The LRA flag therefore only trips
+ * BELOW the bottom of the observed range.
+ */
+export const CATALOGUE_MIN_LRA = 2.3;
+
+export interface TakeIssue {
+  label: string;
+  detail: string;
+  /** 'mastering' = corrected losslessly downstream. 'take' = pick another. */
+  fix: 'mastering' | 'take';
+}
+
+export interface TakeAdvice {
+  /** false = at least one problem mastering cannot repair. */
+  usable: boolean;
+  headline: string;
+  issues: TakeIssue[];
+}
+
+export function takeAdvice(
+  m: Pick<LoudnessMetrics, 'lufs' | 'truePeak' | 'flatFactor' | 'crest' | 'lra'>,
+  target = -14
+): TakeAdvice {
+  const issues: TakeIssue[] = [];
+
+  // --- not repairable: baked into the recording ---
+  if (m.flatFactor > 0) {
+    issues.push({
+      label: 'Clipped at source',
+      detail: `flat-topped samples (flat factor ${round1(m.flatFactor)}) — the waveform is already squared off`,
+      fix: 'take',
+    });
+  }
+  if (m.truePeak > 0) {
+    issues.push({
+      label: 'Over full scale',
+      detail: `true peak ${round1(m.truePeak)} dBTP is above 0 — already distorting`,
+      fix: 'take',
+    });
+  }
+  if (Number.isFinite(m.crest) && m.crest < 6) {
+    issues.push({
+      label: 'Squashed',
+      detail: `crest ${round1(m.crest)} dB — peaks and body are almost the same level`,
+      fix: 'take',
+    });
+  }
+  if (Number.isFinite(m.lra) && m.lra < CATALOGUE_MIN_LRA) {
+    issues.push({
+      label: 'Unusually narrow dynamics',
+      detail: `LRA ${round1(m.lra)} LU, below this catalogue's usual ${CATALOGUE_MIN_LRA}–5.0`,
+      fix: 'take',
+    });
+  }
+
+  // --- repairable downstream ---
+  const delta = round1(m.lufs - target);
+  if (Math.abs(delta) > 1) {
+    issues.push({
+      label: delta > 0 ? 'Loud' : 'Quiet',
+      detail: `${Math.abs(delta)} LU ${delta > 0 ? 'above' : 'below'} ${target} — corrected by a static gain`,
+      fix: 'mastering',
+    });
+  }
+  if (m.truePeak > -1 && m.truePeak <= 0) {
+    issues.push({
+      label: 'Peak above ceiling',
+      detail: `true peak ${round1(m.truePeak)} dBTP — mastering brings it under -1`,
+      fix: 'mastering',
+    });
+  }
+
+  const blocking = issues.filter((i) => i.fix === 'take');
+  return {
+    usable: blocking.length === 0,
+    headline: blocking.length
+      ? `Consider another take — ${blocking.length} issue${blocking.length > 1 ? 's' : ''} mastering cannot fix`
+      : issues.length
+        ? 'Good take — mastering will handle the rest'
+        : 'Good take — already on target',
+    issues,
+  };
+}
+
 export function badgeAndVerdict(
   m: Pick<LoudnessMetrics, 'lufs' | 'truePeak' | 'flatFactor' | 'crest'>,
   target = -14
@@ -73,7 +171,19 @@ export function badgeAndVerdict(
   }
 
   let verdict: MeasureVerdict;
-  if (m.truePeak > -1 || m.flatFactor > 0) verdict = 'clip-risk';
+  // `clip-risk` means the take is ACTUALLY distorting: samples above full scale,
+  // or flat-topped (already squared off). It used to trip at `truePeak > -1`,
+  // which conflated two different things — a peak of -0.5 dBTP is not clipping,
+  // it merely sits above the -1 dBTP DELIVERY ceiling, and mastering attenuates
+  // it losslessly. That over-strict rule put a red "clip-risk" chip beside a
+  // take that takeAdvice() correctly called fine, so the same screen said two
+  // opposite things. Peaks between -1 and 0 are reported by takeAdvice as a
+  // mastering fix; the verdict now falls through to the loudness status.
+  if (m.truePeak > 0 || m.flatFactor > 0) verdict = 'clip-risk';
+  // NOTE: the crest < 6 threshold is PROVISIONAL — inherited, not calibrated.
+  // Unlike CATALOGUE_MIN_LRA it has never been checked against real takes
+  // (zero measured takes are stored). Revisit once Music Lab has production
+  // data; do not treat 6 dB as validated for this catalogue.
   else if (Number.isFinite(m.crest) && m.crest < 6) verdict = 'squashed';
   else verdict = status;
 

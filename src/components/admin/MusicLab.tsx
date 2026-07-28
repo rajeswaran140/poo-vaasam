@@ -27,6 +27,7 @@ import {
 import { computeInsights, type InsightsReport } from '@/lib/generation-insights';
 import { TAMIL_VOCAL_AXES, MAX_AXIS_SCORE, scoreTamilVocal, type TamilVocalScores } from '@/lib/tamil-vocal-rubric';
 import { streamingNormVerdict, type LoudnessStatus } from '@/lib/loudness-targets';
+import { takeAdvice } from '@/lib/loudness-measure';
 import type { SavedBrief } from '@/types/brief';
 
 function briefLabel(b: SavedBrief): string {
@@ -422,6 +423,38 @@ function LoudnessRow({ l }: { l: LoudnessRecord }) {
       {(l.verdict === 'clip-risk' || l.verdict === 'squashed') && (
         <span className="text-amber-600 dark:text-amber-400">⚠ {l.verdict}</span>
       )}
+      <TakeAdviceRow l={l} />
+    </div>
+  );
+}
+
+/**
+ * Says which problems mastering will fix and which mean picking another take.
+ * The badge above tells you a take is "clip-risk"; this tells you what to DO
+ * about it — the standing rule is that dynamics and clipping are decided
+ * upstream, because no downstream stage recovers them.
+ */
+function TakeAdviceRow({ l }: { l: LoudnessRecord }) {
+  const a = takeAdvice({
+    lufs: l.lufs, truePeak: l.truePeak, flatFactor: l.flatFactor, crest: l.crest, lra: l.lra,
+  });
+  if (!a.issues.length) return null;
+  return (
+    <div className="mt-1 w-full">
+      <p className={a.usable ? 'text-gray-500 dark:text-gray-400' : 'font-medium text-amber-700 dark:text-amber-400'}>
+        {a.usable ? '·' : '⚠'} {a.headline}
+      </p>
+      <ul className="mt-0.5 space-y-0.5">
+        {a.issues.map((i) => (
+          <li key={i.label} className="flex items-baseline gap-1.5">
+            <span className={i.fix === 'take' ? 'text-amber-600 dark:text-amber-400' : 'text-gray-400'}>
+              {i.fix === 'take' ? '✗' : '→'}
+            </span>
+            <span className="font-medium text-gray-700 dark:text-gray-200">{i.label}</span>
+            <span className="text-gray-500 dark:text-gray-400">{i.detail}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

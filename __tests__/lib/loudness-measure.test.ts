@@ -13,6 +13,7 @@ import {
   parseMeasurement, badgeAndVerdict, parseLoudnormStats, buildPass2Loudnorm,
   isValidTarget, masterKeyFor, isMasterKey, parseSourceInfo,
   parseNormalizationType,
+  takeAdvice,
 } from '@/lib/loudness-measure';
 
 const hasFfmpeg = (() => {
@@ -49,10 +50,10 @@ describe('parseMeasurement', () => {
     expect(r.metrics.flatFactor).toBe(0);
   });
 
-  it('classifies the hot + clip-risk take (true-peak above -1)', () => {
+  it('a peak above the -1 delivery ceiling is NOT clip-risk — mastering attenuates it', () => {
     const r = parseMeasurement(STDERR, -14);
     expect(r.badge).toBe('+5 LU hot');      // -9 − (-14) = +5
-    expect(r.verdict).toBe('clip-risk');    // truePeak -0.4 > -1
+    expect(r.verdict).not.toBe('clip-risk'); // -0.4 dBTP is below full scale, not distorting
   });
 });
 
@@ -66,9 +67,11 @@ describe('badgeAndVerdict precedence', () => {
     expect(badgeAndVerdict({ ...base, lufs: -11 }).badge).toBe('+3 LU hot');
     expect(badgeAndVerdict({ ...base, lufs: -18 }).badge).toBe('4 LU quiet');
   });
-  it('clip-risk wins over hot/quiet (true-peak or flat factor)', () => {
-    expect(badgeAndVerdict({ ...base, lufs: -11, truePeak: -0.5 }).verdict).toBe('clip-risk');
+  it('clip-risk wins over hot/quiet, but only for ACTUAL distortion', () => {
+    expect(badgeAndVerdict({ ...base, lufs: -11, truePeak: 0.5 }).verdict).toBe('clip-risk');
     expect(badgeAndVerdict({ ...base, lufs: -11, flatFactor: 1.2 }).verdict).toBe('clip-risk');
+    // below full scale but above the delivery ceiling => not clip-risk
+    expect(badgeAndVerdict({ ...base, lufs: -11, truePeak: -0.5 }).verdict).toBe('hot');
   });
   it('squashed when crest < 6 and not clipping', () => {
     expect(badgeAndVerdict({ ...base, lufs: -14, crest: 4 }).verdict).toBe('squashed');
@@ -299,5 +302,100 @@ describe('parseNormalizationType', () => {
     expect(parseNormalizationType('')).toBeNull();
     expect(parseNormalizationType('no json here')).toBeNull();
     expect(parseNormalizationType('{ not: valid json }')).toBeNull();
+  });
+});
+
+describe('takeAdvice — what mastering can fix vs what it cannot', () => {
+  const m = (over: Partial<Parameters<typeof takeAdvice>[0]> = {}) =>
+    ({ lufs: -14, truePeak: -3, flatFactor: 0, crest: 10, lra: 3.0, ...over });
+
+  it('passes a clean take', () => {
+    const a = takeAdvice(m());
+    expect(a.usable).toBe(true);
+    expect(a.issues).toHaveLength(0);
+  });
+
+  /** Loudness is corrected by a static gain — never a reason to reject a take. */
+  it('treats loudness and peak-above-ceiling as MASTERING fixes, keeping the take usable', () => {
+    const a = takeAdvice(m({ lufs: -9, truePeak: -0.4 }));
+    expect(a.usable).toBe(true);
+    expect(a.issues.every((i) => i.fix === 'mastering')).toBe(true);
+    expect(a.headline).toMatch(/mastering will handle/i);
+  });
+
+  /** These are baked into the recording; no downstream stage recovers them. */
+  it('marks clipping, over-full-scale and squashing as TAKE problems', () => {
+    expect(takeAdvice(m({ flatFactor: 2.1 })).usable).toBe(false);
+    expect(takeAdvice(m({ truePeak: 0.3 })).usable).toBe(false);
+    expect(takeAdvice(m({ crest: 4.5 })).usable).toBe(false);
+    expect(takeAdvice(m({ flatFactor: 2.1 })).headline).toMatch(/cannot fix/i);
+  });
+
+  /**
+   * Calibration guard. This catalogue's SUNO sources run LRA 2.3-5.0 and real
+   * masters measured 2.8 and 3.0. A textbook "narrow dynamics" threshold would
+   * fire on nearly every take and train Raj to ignore the warning.
+   */
+  it('does NOT flag this catalogue\'s normal LRA, only values below its floor', () => {
+    expect(takeAdvice(m({ lra: 3.0 })).usable).toBe(true);
+    expect(takeAdvice(m({ lra: 2.8 })).usable).toBe(true);
+    expect(takeAdvice(m({ lra: 2.4 })).usable).toBe(true);
+    expect(takeAdvice(m({ lra: 1.8 })).usable).toBe(false);
+  });
+
+  it('separates the two kinds of issue on a take that has both', () => {
+    const a = takeAdvice(m({ lufs: -20, flatFactor: 1.5 }));
+    expect(a.usable).toBe(false);
+    expect(a.issues.filter((i) => i.fix === 'take')).toHaveLength(1);
+    expect(a.issues.filter((i) => i.fix === 'mastering')).toHaveLength(1);
+  });
+});
+
+describe('badgeAndVerdict and takeAdvice must never contradict each other', () => {
+  /**
+   * The defect this pins: `clip-risk` used to trip at truePeak > -1, so a take
+   * at -0.5 dBTP got a red "clip-risk" chip while takeAdvice() called it fine
+   * and said mastering would handle it. Two components, same screen, opposite
+   * claims — the same class of bug as the Studio tick disagreeing with the .txt
+   * report (PR #80).
+   *
+   * The invariant: the chip may only cry clip-risk when takeAdvice considers
+   * the take unusable, and vice versa for the clipping-related causes.
+   */
+  const grid = [
+    { lufs: -14, truePeak: -3.0, flatFactor: 0, crest: 10, lra: 3.0 },
+    { lufs: -14, truePeak: -1.0, flatFactor: 0, crest: 10, lra: 3.0 },
+    { lufs: -14, truePeak: -0.5, flatFactor: 0, crest: 10, lra: 3.0 },
+    { lufs: -14, truePeak: -0.2, flatFactor: 0, crest: 10, lra: 3.0 },
+    { lufs: -11, truePeak: -0.5, flatFactor: 0, crest: 10, lra: 3.0 },
+    { lufs: -14, truePeak: 0.3, flatFactor: 0, crest: 10, lra: 3.0 },
+    { lufs: -14, truePeak: -3.0, flatFactor: 1.5, crest: 10, lra: 3.0 },
+    { lufs: -20, truePeak: -6.0, flatFactor: 0, crest: 10, lra: 3.0 },
+  ];
+
+  it('clip-risk on the chip implies takeAdvice rejects the take', () => {
+    for (const m of grid) {
+      if (badgeAndVerdict(m).verdict === 'clip-risk') {
+        expect({ m, usable: takeAdvice(m).usable }).toEqual({ m, usable: false });
+      }
+    }
+  });
+
+  it('a take rejected for clipping/over-scale is always clip-risk on the chip', () => {
+    for (const m of grid) {
+      const blocking = takeAdvice(m).issues.filter((i) => i.fix === 'take');
+      const clipping = blocking.some((i) => /Clipped at source|Over full scale/.test(i.label));
+      if (clipping) {
+        expect({ m, verdict: badgeAndVerdict(m).verdict }).toEqual({ m, verdict: 'clip-risk' });
+      }
+    }
+  });
+
+  it('the specific case that was broken: -0.5 dBTP reads consistently on both', () => {
+    const m = { lufs: -14, truePeak: -0.5, flatFactor: 0, crest: 10, lra: 3.0 };
+    expect(badgeAndVerdict(m).verdict).not.toBe('clip-risk');
+    const a = takeAdvice(m);
+    expect(a.usable).toBe(true);
+    expect(a.issues.find((i) => i.label === 'Peak above ceiling')?.fix).toBe('mastering');
   });
 });
