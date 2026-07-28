@@ -4,6 +4,7 @@ import {
   deriveRealtime,
   isSubscriberCountRounded,
   anchorTargetIso,
+  snapshotFreshness,
   ANCHOR_TOLERANCE_HOURS,
   REALTIME_WINDOW_HOURS,
   type ChannelSnapshot,
@@ -144,5 +145,42 @@ describe('deriveRealtime', () => {
     const anchor = pickAnchor([snap('2026-07-29T12:00:00Z', 999)], TARGET, NOW)!;
     const r = deriveRealtime(snap(NOW, 297_666), anchor);
     expect(r.views48hAvailable).toBe(false);
+  });
+});
+
+describe('snapshotFreshness (dead-man detection)', () => {
+  const NOW_D = new Date('2026-07-28T12:00:00Z');
+
+  it('reports ok for a snapshot from a few minutes ago', () => {
+    const f = snapshotFreshness('2026-07-28T11:56:00Z', NOW_D);
+    expect(f.status).toBe('ok');
+    expect(f.ageMinutes).toBe(4);
+  });
+
+  it('tolerates a few missed runs without crying wolf', () => {
+    // 19 minutes = three missed 5-minute runs; still inside tolerance.
+    expect(snapshotFreshness('2026-07-28T11:41:00Z', NOW_D).status).toBe('ok');
+  });
+
+  it('goes stale past the threshold, catching a dead scheduler same-day', () => {
+    expect(snapshotFreshness('2026-07-28T11:39:00Z', NOW_D).status).toBe('stale');
+  });
+
+  it('distinguishes "never captured" from "stale"', () => {
+    const f = snapshotFreshness(null, NOW_D);
+    expect(f.status).toBe('never');
+    expect(f.ageMinutes).toBeNull();
+  });
+
+  it('treats an unparseable timestamp as never, not as fresh', () => {
+    expect(snapshotFreshness('not-a-date', NOW_D).status).toBe('never');
+  });
+
+  it('never reports a negative age if a snapshot is clock-skewed into the future', () => {
+    expect(snapshotFreshness('2026-07-28T12:05:00Z', NOW_D).ageMinutes).toBe(0);
+  });
+
+  it('honours a custom threshold', () => {
+    expect(snapshotFreshness('2026-07-28T11:50:00Z', NOW_D, 5).status).toBe('stale');
   });
 });

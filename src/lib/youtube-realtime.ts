@@ -283,3 +283,49 @@ export async function loadRealtime(now: Date = new Date()): Promise<RealtimeRead
   }
   return reading;
 }
+
+// ------------------------------------------------- dead-man detection
+
+/**
+ * How stale the snapshot stream may get before it is a problem.
+ *
+ * The cron runs every 5 minutes, so 20 minutes means roughly four consecutive
+ * misses — long enough to ride out a single failed invocation, short enough to
+ * catch a dead scheduler on the same day it dies. This matters because the
+ * failure is otherwise SILENT and deniable: with no snapshots the 48h tile
+ * simply starts reporting a longer-and-longer window, which reads as a data
+ * quirk rather than "the scheduler is gone".
+ */
+export const SNAPSHOT_STALE_AFTER_MINUTES = 20;
+
+export type SnapshotHealthStatus = 'ok' | 'stale' | 'never';
+
+export interface SnapshotFreshness {
+  status: SnapshotHealthStatus;
+  /** Null when no snapshot has ever been captured. */
+  ageMinutes: number | null;
+  lastSnapshotAt: string | null;
+  staleAfterMinutes: number;
+}
+
+/** Is the snapshot stream alive? Pure, so the threshold is unit-tested. */
+export function snapshotFreshness(
+  lastSnapshotAt: string | null,
+  now: Date,
+  staleAfterMinutes: number = SNAPSHOT_STALE_AFTER_MINUTES
+): SnapshotFreshness {
+  if (!lastSnapshotAt) {
+    return { status: 'never', ageMinutes: null, lastSnapshotAt: null, staleAfterMinutes };
+  }
+  const t = Date.parse(lastSnapshotAt);
+  if (!Number.isFinite(t)) {
+    return { status: 'never', ageMinutes: null, lastSnapshotAt, staleAfterMinutes };
+  }
+  const ageMinutes = Math.max(0, (now.getTime() - t) / 60_000);
+  return {
+    status: ageMinutes > staleAfterMinutes ? 'stale' : 'ok',
+    ageMinutes: Number(ageMinutes.toFixed(1)),
+    lastSnapshotAt,
+    staleAfterMinutes,
+  };
+}
