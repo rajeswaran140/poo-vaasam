@@ -171,7 +171,19 @@ export function badgeAndVerdict(
   }
 
   let verdict: MeasureVerdict;
-  if (m.truePeak > -1 || m.flatFactor > 0) verdict = 'clip-risk';
+  // `clip-risk` means the take is ACTUALLY distorting: samples above full scale,
+  // or flat-topped (already squared off). It used to trip at `truePeak > -1`,
+  // which conflated two different things — a peak of -0.5 dBTP is not clipping,
+  // it merely sits above the -1 dBTP DELIVERY ceiling, and mastering attenuates
+  // it losslessly. That over-strict rule put a red "clip-risk" chip beside a
+  // take that takeAdvice() correctly called fine, so the same screen said two
+  // opposite things. Peaks between -1 and 0 are reported by takeAdvice as a
+  // mastering fix; the verdict now falls through to the loudness status.
+  if (m.truePeak > 0 || m.flatFactor > 0) verdict = 'clip-risk';
+  // NOTE: the crest < 6 threshold is PROVISIONAL — inherited, not calibrated.
+  // Unlike CATALOGUE_MIN_LRA it has never been checked against real takes
+  // (zero measured takes are stored). Revisit once Music Lab has production
+  // data; do not treat 6 dB as validated for this catalogue.
   else if (Number.isFinite(m.crest) && m.crest < 6) verdict = 'squashed';
   else verdict = status;
 
