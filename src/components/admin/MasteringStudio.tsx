@@ -473,7 +473,7 @@ export function MasteringStudio() {
       : statusFor(job.afterLufs - job.target) === 'ok'
         ? 'on-target'
         : 'off-target';
-  const readiness = job ? streamingReadiness(job) : { ok: false, headline: '', facts: '' };
+  const readiness = job ? streamingReadiness(job) : { ok: false, headline: '', facts: '', checks: [] };
   const movedLu =
     typeof job?.beforeLufs === 'number' && typeof job?.afterLufs === 'number'
       ? Math.abs(job.afterLufs - job.beforeLufs)
@@ -710,6 +710,27 @@ export function MasteringStudio() {
               {readiness.ok ? '✓' : '⚠'} {readiness.headline}
             </p>
             <p className="mt-0.5 tabular-nums text-gray-700 dark:text-gray-200">{readiness.facts}</p>
+
+            <dl className="mt-2 grid gap-x-4 gap-y-1 border-t border-black/5 pt-2 text-xs dark:border-white/10 sm:grid-cols-2">
+              {readiness.checks.map((c) => (
+                <div key={c.label} className="flex items-baseline gap-1.5">
+                  <span
+                    aria-hidden="true"
+                    className={
+                      c.ok === true
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : c.ok === false
+                          ? 'text-amber-700 dark:text-amber-400'
+                          : 'text-gray-400'
+                    }
+                  >
+                    {c.ok === true ? '✓' : c.ok === false ? '✗' : '·'}
+                  </span>
+                  <dt className="font-medium text-gray-700 dark:text-gray-200">{c.label}</dt>
+                  <dd className="tabular-nums text-gray-500 dark:text-gray-400">{c.detail}</dd>
+                </div>
+              ))}
+            </dl>
           </div>
 
           <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">

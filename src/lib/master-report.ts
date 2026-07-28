@@ -82,11 +82,65 @@ export function sourceInfoLine(job: MasterJob): string | null {
  * clipping". Readiness needs ALL THREE: on target, peak-safe, and dynamics
  * preserved.
  */
+export interface ReadinessCheck {
+  label: string;
+  /** null = could not be determined (older job, missing measurement). */
+  ok: boolean | null;
+  detail: string;
+}
+
 export interface Readiness {
   ok: boolean;
   headline: string;
   /** Compact facts line: loudness · peak · range · output format. */
   facts: string;
+  /** Itemised integrity checks, for the Studio panel. */
+  checks: ReadinessCheck[];
+}
+
+/**
+ * The itemised integrity list. Deliberately FOUR checks, not five: "clipping"
+ * is not an independent test — the true-peak ceiling IS the clipping check, and
+ * listing both would imply a second measurement that was never taken.
+ *
+ * `Gain type` is here because normalizationType is captured (since the pass-2
+ * parser fix, 2026-07-28) but was otherwise displayed nowhere.
+ */
+function readinessChecks(job: MasterJob): ReadinessCheck[] {
+  const measured = typeof job.afterLufs === 'number';
+  const peakReported = typeof job.afterTp === 'number';
+  const haveLra = typeof job.beforeLra === 'number' && typeof job.afterLra === 'number';
+  return [
+    {
+      label: 'Loudness target',
+      ok: measured ? isOnTarget(job) : null,
+      detail: measured
+        ? `${lufs(job.afterLufs)} against ${job.target} LUFS`
+        : 'check pass did not return',
+    },
+    {
+      label: 'True peak',
+      ok: peakReported ? isPeakSafe(job) : null,
+      detail: peakReported ? `${dbtp(job.afterTp)} (ceiling -1 dBTP)` : 'not reported',
+    },
+    {
+      label: 'Dynamics',
+      ok: haveLra ? dynamicsPreserved(job) : null,
+      detail: haveLra
+        ? `LRA ${job.beforeLra!.toFixed(1)} → ${job.afterLra!.toFixed(1)} LU`
+        : 'not recorded for this job',
+    },
+    {
+      label: 'Gain type',
+      ok: job.normalizationType === null ? null : job.normalizationType === 'linear',
+      detail:
+        job.normalizationType === 'linear'
+          ? 'linear — one static gain, dynamics untouched'
+          : job.normalizationType === 'dynamic'
+            ? 'DYNAMIC — ffmpeg could not apply a linear gain; range was compressed'
+            : 'not reported (mastered before this was recorded)',
+    },
+  ];
 }
 
 export function streamingReadiness(job: MasterJob): Readiness {
@@ -95,6 +149,7 @@ export function streamingReadiness(job: MasterJob): Readiness {
   const peakSafe = isPeakSafe(job);
   const dyn = dynamicsPreserved(job);
 
+  const checks = readinessChecks(job);
   const facts = [
     lufs(job.afterLufs),
     dbtp(job.afterTp),
@@ -105,13 +160,14 @@ export function streamingReadiness(job: MasterJob): Readiness {
   ].filter(Boolean).join(' · ');
 
   if (!measured) {
-    return { ok: false, headline: 'Loudness not confirmed — the check pass did not return', facts };
+    return { ok: false, headline: 'Loudness not confirmed — the check pass did not return', facts, checks };
   }
   if (!onTarget) {
     return {
       ok: false,
       headline: `Review before distributing — measured ${lufs(job.afterLufs)} against ${job.target} LUFS`,
       facts,
+      checks,
     };
   }
   if (!peakSafe) {
@@ -120,9 +176,10 @@ export function streamingReadiness(job: MasterJob): Readiness {
       ok: false,
       headline: `Review before distributing — true peak ${dbtp(job.afterTp)} exceeds -1 dBTP`,
       facts,
+      checks,
     };
   }
-  return { ok: true, headline: 'Streaming Ready', facts };
+  return { ok: true, headline: 'Streaming Ready', facts, checks };
 }
 
 /**
@@ -153,7 +210,15 @@ export function summaryLines(job: MasterJob): string[] {
       ? '✓ Ready for streaming, video editing and distribution'
       : '⚠ Review the flags above before distributing';
 
-  return [loud, peak, dynamicsLine(job), ready];
+  // Gain type is what ffmpeg REPORTS it did, distinct from the LRA measurement
+  // above — two independent confirmations rather than one.
+  const gain =
+    job.normalizationType === 'linear'
+      ? '✓ Gain type — linear (one static gain; dynamics cannot be altered)'
+      : job.normalizationType === 'dynamic'
+        ? '⚠ Gain type — DYNAMIC (ffmpeg could not apply a linear gain; range was compressed)'
+        : '• Gain type not reported for this job';
+  return [loud, peak, dynamicsLine(job), gain, ready];
 }
 
 /** Largest LRA drift still attributable to measurement rounding, not compression. */
