@@ -13,6 +13,7 @@ import {
   parseMeasurement, badgeAndVerdict, parseLoudnormStats, buildPass2Loudnorm,
   isValidTarget, masterKeyFor, isMasterKey, parseSourceInfo,
   parseNormalizationType,
+  takeAdvice,
 } from '@/lib/loudness-measure';
 
 const hasFfmpeg = (() => {
@@ -299,5 +300,51 @@ describe('parseNormalizationType', () => {
     expect(parseNormalizationType('')).toBeNull();
     expect(parseNormalizationType('no json here')).toBeNull();
     expect(parseNormalizationType('{ not: valid json }')).toBeNull();
+  });
+});
+
+describe('takeAdvice — what mastering can fix vs what it cannot', () => {
+  const m = (over: Partial<Parameters<typeof takeAdvice>[0]> = {}) =>
+    ({ lufs: -14, truePeak: -3, flatFactor: 0, crest: 10, lra: 3.0, ...over });
+
+  it('passes a clean take', () => {
+    const a = takeAdvice(m());
+    expect(a.usable).toBe(true);
+    expect(a.issues).toHaveLength(0);
+  });
+
+  /** Loudness is corrected by a static gain — never a reason to reject a take. */
+  it('treats loudness and peak-above-ceiling as MASTERING fixes, keeping the take usable', () => {
+    const a = takeAdvice(m({ lufs: -9, truePeak: -0.4 }));
+    expect(a.usable).toBe(true);
+    expect(a.issues.every((i) => i.fix === 'mastering')).toBe(true);
+    expect(a.headline).toMatch(/mastering will handle/i);
+  });
+
+  /** These are baked into the recording; no downstream stage recovers them. */
+  it('marks clipping, over-full-scale and squashing as TAKE problems', () => {
+    expect(takeAdvice(m({ flatFactor: 2.1 })).usable).toBe(false);
+    expect(takeAdvice(m({ truePeak: 0.3 })).usable).toBe(false);
+    expect(takeAdvice(m({ crest: 4.5 })).usable).toBe(false);
+    expect(takeAdvice(m({ flatFactor: 2.1 })).headline).toMatch(/cannot fix/i);
+  });
+
+  /**
+   * Calibration guard. This catalogue's SUNO sources run LRA 2.3-5.0 and real
+   * masters measured 2.8 and 3.0. A textbook "narrow dynamics" threshold would
+   * fire on nearly every take and train Raj to ignore the warning.
+   */
+  it('does NOT flag this catalogue\'s normal LRA, only values below its floor', () => {
+    expect(takeAdvice(m({ lra: 3.0 })).usable).toBe(true);
+    expect(takeAdvice(m({ lra: 2.8 })).usable).toBe(true);
+    expect(takeAdvice(m({ lra: 2.4 })).usable).toBe(true);
+    expect(takeAdvice(m({ lra: 1.8 })).usable).toBe(false);
+  });
+
+  it('separates the two kinds of issue on a take that has both', () => {
+    const a = takeAdvice(m({ lufs: -20, flatFactor: 1.5 }));
+    expect(a.usable).toBe(false);
+    expect(a.issues.filter((i) => i.fix === 'take')).toHaveLength(1);
+    expect(a.issues.filter((i) => i.fix === 'mastering')).toHaveLength(1);
   });
 });
