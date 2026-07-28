@@ -28,7 +28,7 @@ import { adminFetch } from '@/lib/client-auth';
 import { pollJob } from '@/lib/poll-job';
 import { statusFor, platformLanding } from '@/lib/loudness-targets';
 import { MAX_UPLOAD_BYTES, ACCEPTED_UPLOAD_TYPES } from '@/lib/mastering-storage';
-import { buildMasterReport, reportFilename, sourceInfoLine, dynamicsPreserved } from '@/lib/master-report';
+import { buildMasterReport, reportFilename, sourceInfoLine, dynamicsPreserved, streamingReadiness } from '@/lib/master-report';
 import { MasteringComparePlayer } from '@/components/admin/MasteringComparePlayer';
 import type { MasterJob } from '@/types/masterJob';
 
@@ -473,6 +473,7 @@ export function MasteringStudio() {
       : statusFor(job.afterLufs - job.target) === 'ok'
         ? 'on-target'
         : 'off-target';
+  const readiness = job ? streamingReadiness(job) : { ok: false, headline: '', facts: '' };
   const movedLu =
     typeof job?.beforeLufs === 'number' && typeof job?.afterLufs === 'number'
       ? Math.abs(job.afterLufs - job.beforeLufs)
@@ -692,8 +693,24 @@ export function MasteringStudio() {
         <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
           <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
             3 · Result
-            {verdict === 'on-target' && <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-hidden="true" />}
+            {readiness.ok && <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-hidden="true" />}
           </h2>
+
+          {/* One glanceable verdict, driven by the SAME rules as the saved .txt
+              report so the screen and the file cannot disagree. Requires all
+              three: on target, peak-safe, dynamics preserved. */}
+          <div
+            className={`mb-3 rounded-lg border p-3 text-sm ${
+              readiness.ok
+                ? 'border-emerald-300 bg-emerald-50/60 dark:border-emerald-900/40 dark:bg-emerald-900/10'
+                : 'border-amber-300 bg-amber-50/60 dark:border-amber-900/40 dark:bg-amber-900/10'
+            }`}
+          >
+            <p className={`font-semibold ${readiness.ok ? 'text-emerald-800 dark:text-emerald-300' : 'text-amber-800 dark:text-amber-300'}`}>
+              {readiness.ok ? '✓' : '⚠'} {readiness.headline}
+            </p>
+            <p className="mt-0.5 tabular-nums text-gray-700 dark:text-gray-200">{readiness.facts}</p>
+          </div>
 
           <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
             <table className="w-full text-sm">

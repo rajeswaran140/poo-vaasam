@@ -13,6 +13,7 @@ import {
   platformLandingLines,
   dynamicsLine,
   dynamicsPreserved,
+  streamingReadiness,
 } from '@/lib/master-report';
 import type { MasterJob } from '@/types/masterJob';
 
@@ -260,5 +261,48 @@ describe('dynamics / loudness range — proving "loudness only, never tone"', ()
     expect(fell).toMatch(/DYNAMIC fallback/);
     expect(fell).toMatch(/← CHANGED/);
     expect(fell).not.toMatch(/· No compression/);
+  });
+});
+
+describe('streamingReadiness — the Studio banner and the .txt report share one rule', () => {
+  const job = (over: Partial<MasterJob>): MasterJob => ({ ...baseJob, ...over });
+
+  it('says Streaming Ready only when on-target AND peak-safe AND dynamics preserved', () => {
+    const r = streamingReadiness(job({}));
+    expect(r.ok).toBe(true);
+    expect(r.headline).toBe('Streaming Ready');
+    expect(r.facts).toContain('-14.0 LUFS');
+    expect(r.facts).toContain('LRA 6.8 unchanged');
+    expect(r.facts).toContain('24-bit/48 kHz');
+  });
+
+  /**
+   * The exact bug this replaced: the Studio's old `verdict` compared loudness to
+   * target only, so a master that hit -14 LUFS while clipping ABOVE -1 dBTP
+   * still showed a green tick — while the .txt report it downloaded said
+   * "check for clipping". Screen and file disagreed.
+   */
+  it('REFUSES ready for a master that is on target but clipping', () => {
+    const r = streamingReadiness(job({ afterTp: -0.4 }));
+    expect(r.ok).toBe(false);
+    expect(r.headline).toMatch(/exceeds -1 dBTP/);
+  });
+
+  it('refuses ready for an off-target master', () => {
+    const r = streamingReadiness(job({ afterLufs: -11 }));
+    expect(r.ok).toBe(false);
+    expect(r.headline).toMatch(/measured .* against -14 LUFS/);
+  });
+
+  it('treats an unmeasured master as its own state, not a pass', () => {
+    const r = streamingReadiness(job({ afterLufs: null }));
+    expect(r.ok).toBe(false);
+    expect(r.headline).toMatch(/not confirmed/);
+  });
+
+  it('omits the "unchanged" marker when dynamics were not preserved', () => {
+    const r = streamingReadiness(job({ normalizationType: 'dynamic' }));
+    expect(r.facts).toContain('LRA 6.8');
+    expect(r.facts).not.toContain('unchanged');
   });
 });
