@@ -94,6 +94,11 @@ describe('loudnorm pass-1 parsing', () => {
     expect(f).toContain('measured_I=-22.05');
     expect(f).toContain('offset=-0.05');
     expect(f).toContain('linear=true');
+    // REGRESSION GUARD (2026-07-28): without print_format=json, pass 2 prints a
+    // human-readable summary, parseNormalizationType finds no JSON and returns
+    // null — which silently disabled the linear-vs-dynamic check on the first
+    // real master (job 0d51a31e). Passes 1 and 3 always had it; pass 2 did not.
+    expect(f).toContain('print_format=json');
   });
   it('returns null on junk', () => {
     expect(parseLoudnormStats('no json here')).toBeNull();
