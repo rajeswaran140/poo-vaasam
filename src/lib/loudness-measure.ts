@@ -164,7 +164,13 @@ export function buildPass2Loudnorm(stats: LoudnormStats, target = -14): string {
     `loudnorm=I=${target}:TP=-1:LRA=11` +
     `:measured_I=${stats.input_i}:measured_TP=${stats.input_tp}` +
     `:measured_LRA=${stats.input_lra}:measured_thresh=${stats.input_thresh}` +
-    `:offset=${stats.target_offset}:linear=true`
+    // print_format=json so pass 2 reports what it ACTUALLY did in a parseable
+    // form. Without it ffmpeg prints a human-readable summary, parseNormalizationType
+    // finds no JSON object and returns null — which is exactly what happened on
+    // the first real master (job 0d51a31e, 2026-07-28): LRA was captured but
+    // normalizationType came back null, silently disabling the corroborating
+    // check on the linear-vs-dynamic guarantee.
+    `:offset=${stats.target_offset}:linear=true:print_format=json`
   );
 }
 
