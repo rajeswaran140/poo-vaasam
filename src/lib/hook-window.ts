@@ -57,7 +57,27 @@ export interface PickHookOptions {
    * into the skipped intro. Default 0 (open exactly on the peak — legacy).
    */
   leadInSec?: number;
+  /**
+   * Skip this fraction of the track's TAIL, so a clip never opens on the outro.
+   *
+   * Why this is needed at all: the catalogue is mastered to -14 LUFS with a low
+   * loudness range (LRA 2.3-5.0), which leaves barely 0.6-1.3 LU between the
+   * loudest window and the median one — measured 2026-07-28 across four songs,
+   * where 10-41% of ALL candidate windows sat within 0.5 LU of the winner. With
+   * the field that flat, the tiny extra fullness of a FINAL chorus is enough to
+   * win, so the peak drifts to the back of the track (three of four picks landed
+   * at 61-85% in, one ending 25s from the end — i.e. in the outro). An
+   * outro-opening Short is wrong under ANY hook-detection strategy, so this is a
+   * guard on the output, not a fix for the energy heuristic.
+   *
+   * Relaxed automatically when it would leave no legal window (short tracks):
+   * a late window beats no window.
+   */
+  outroSkipFrac?: number;
 }
+
+/** Default tail fraction excluded from hook selection (12% of track length). */
+export const DEFAULT_OUTRO_SKIP_FRAC = 0.12;
 
 /**
  * Pick the most energetic `windowSec` window — the chorus/hook heuristic — then
@@ -76,9 +96,18 @@ export function pickHookWindow(
   const total = opts.totalSec ?? sorted[sorted.length - 1].t;
   const minStart = Math.max(0, opts.minStartSec ?? 8);
   // Latest a full window can start; clamp so we never run past the track.
-  const latestStart = Math.max(0, Math.min(minStart, total - windowSec) === minStart
+  const latestStartRaw = Math.max(0, Math.min(minStart, total - windowSec) === minStart
     ? Math.max(minStart, total - windowSec)
     : total - windowSec);
+
+  // Pull the latest legal start back so the window also ENDS before the outro.
+  // Relaxes to the unguarded bound when the track is too short to honour both
+  // (otherwise a 40s track with a 29s window would have no candidates at all).
+  const outroSkipFrac = Math.min(Math.max(opts.outroSkipFrac ?? DEFAULT_OUTRO_SKIP_FRAC, 0), 0.5);
+  const guardedLatestStart = total * (1 - outroSkipFrac) - windowSec;
+  const latestStart = guardedLatestStart >= minStart
+    ? Math.min(latestStartRaw, guardedLatestStart)
+    : latestStartRaw;
 
   const avgOver = (start: number) => {
     const win = sorted.filter((x) => x.t >= start && x.t < start + windowSec);
