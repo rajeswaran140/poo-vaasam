@@ -267,13 +267,45 @@ export async function loadAnchorCandidates(
   return ((res.Items ?? []) as Record<string, unknown>[]).map(toSnapshot);
 }
 
-/** Full realtime reading: latest snapshot + bounded anchor lookup. */
+/** Oldest snapshot we have — the widest window available. */
+export async function loadOldestSnapshot(): Promise<ChannelSnapshot | null> {
+  const res = await DynamoDBOperations.query({
+    keyConditionExpression: 'PK = :pk',
+    expressionAttributeValues: { ':pk': SNAPSHOT_PK },
+    scanIndexForward: true,
+    limit: 1,
+  });
+  const items = (res.Items ?? []) as Record<string, unknown>[];
+  return items.length ? toSnapshot(items[0]) : null;
+}
+
+/**
+ * Full realtime reading: latest snapshot + bounded anchor lookup, with a
+ * SHORT-HISTORY FALLBACK.
+ *
+ * The ±2h band around the 48h mark is a cost bound, not a suppression rule.
+ * When the stream is younger than ~46h nothing lands in that band, and the
+ * tile went blank — but a real, shorter delta was sitting right there. Blank is
+ * not more honest than "last 25.6 hours"; it is simply less informative.
+ *
+ * So when the band is empty we fall back to the OLDEST snapshot and report the
+ * true elapsed window with windowExact:false, which the UI already knows how to
+ * relabel. This makes the tile useful from the second snapshot onwards instead
+ * of after two days of waiting.
+ */
 export async function loadRealtime(now: Date = new Date()): Promise<RealtimeReading> {
   const latest = await loadLatestSnapshot();
   if (!latest) return deriveRealtime(null, null);
   const targetIso = anchorTargetIso(now);
   const candidates = await loadAnchorCandidates(targetIso);
-  const anchor = pickAnchor(candidates, targetIso, latest.capturedAt);
+  let anchor = pickAnchor(candidates, targetIso, latest.capturedAt);
+  if (!anchor) {
+    const oldest = await loadOldestSnapshot();
+    // Only useful if it is a DIFFERENT, EARLIER snapshot than the newest one.
+    if (oldest && oldest.capturedAt < latest.capturedAt) {
+      anchor = pickAnchor([oldest], targetIso, latest.capturedAt);
+    }
+  }
   const reading = deriveRealtime(latest, anchor);
   if (reading.viewCountDecreased) {
     console.warn(

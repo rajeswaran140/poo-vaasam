@@ -184,3 +184,21 @@ describe('snapshotFreshness (dead-man detection)', () => {
     expect(snapshotFreshness('2026-07-28T11:50:00Z', NOW_D, 5).status).toBe('stale');
   });
 });
+
+describe('short-history fallback (a real 25h delta beats a blank tile)', () => {
+  it('reports the true window when nothing sits near the 48h mark', () => {
+    // Stream is ~25.6h old — the ±2h band around 48h is empty, but this is
+    // still a real, reportable number.
+    const anchor = pickAnchor([snap('2026-07-28T15:06:00Z', 297_666)], TARGET, '2026-07-29T16:44:00Z');
+    const r = deriveRealtime(snap('2026-07-29T16:44:00Z', 303_956), anchor);
+    expect(r.views48hAvailable).toBe(true);
+    expect(r.views48h).toBe(6290);
+    expect(r.windowExact).toBe(false);
+    expect(r.windowHours).toBeCloseTo(25.6, 1);
+  });
+
+  it('still suppresses when the only snapshot IS the latest', () => {
+    const r = deriveRealtime(snap(NOW, 297_666), null);
+    expect(r.views48hAvailable).toBe(false);
+  });
+});
