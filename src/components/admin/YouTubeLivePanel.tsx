@@ -45,6 +45,22 @@ const RANGES = ['7d', '28d', '90d'] as const;
 type RangeKey = (typeof RANGES)[number];
 
 const STORAGE_KEY = 'ta.analytics.range';
+const METRIC_KEY = 'ta.analytics.metric';
+
+/**
+ * What the sparkline can plot. `netSubscribers` is gained MINUS lost, which is
+ * the honest daily figure — a day that gained 20 and lost 3 is a net 17, and
+ * showing only "gained" would flatter every day on the chart.
+ *
+ * (There is no way to list WHO subscribed: YouTube exposes no subscriber
+ * identities to channel owners through any API. Counts are all that exist.)
+ */
+const METRICS = [
+  { key: 'views', label: 'Views' },
+  { key: 'watchMinutes', label: 'Watch time' },
+  { key: 'netSubscribers', label: 'Subscribers' },
+] as const;
+type MetricKey = (typeof METRICS)[number]['key'];
 
 interface MetricDelta {
   value: number;
@@ -230,6 +246,7 @@ export function YouTubeLivePanel() {
   const [realtime, setRealtime] = useState<Realtime | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
   const [series, setSeries] = useState<SeriesPoint[]>([]);
+  const [metric, setMetric] = useState<MetricKey>('views');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -238,6 +255,8 @@ export function YouTubeLivePanel() {
   useEffect(() => {
     const saved = typeof window !== 'undefined' ? window.localStorage.getItem(STORAGE_KEY) : null;
     if (saved && (RANGES as readonly string[]).includes(saved)) setRange(saved as RangeKey);
+    const m = typeof window !== 'undefined' ? window.localStorage.getItem(METRIC_KEY) : null;
+    if (m && METRICS.some((x) => x.key === m)) setMetric(m as MetricKey);
   }, []);
 
   const loadRealtime = useCallback(async () => {
@@ -257,10 +276,9 @@ export function YouTubeLivePanel() {
       setLoading(true);
       setError(null);
       try {
-        const [o, h, t] = await Promise.all([
+        const [o, h] = await Promise.all([
           adminFetch(`/api/admin/youtube/overview?range=${range}`),
           adminFetch(`/api/admin/youtube/analytics-health`),
-          adminFetch(`/api/admin/youtube/timeseries?range=${range}&metric=views`),
         ]);
         if (!alive) return;
         if (o.ok) {
@@ -274,10 +292,6 @@ export function YouTubeLivePanel() {
           const j = await h.json();
           if (isHealth(j)) setHealth(j);
         }
-        if (t.ok) {
-          const j = await t.json();
-          setSeries(Array.isArray(j?.points) ? j.points : []);
-        }
       } catch (e) {
         if (alive) setError(e instanceof Error ? e.message : 'failed to load');
       } finally {
@@ -288,6 +302,25 @@ export function YouTubeLivePanel() {
       alive = false;
     };
   }, [range]);
+
+  // The series reloads on BOTH range and metric, so switching metric does not
+  // refetch the overview it does not depend on.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const t = await adminFetch(`/api/admin/youtube/timeseries?range=${range}&metric=${metric}`);
+        if (!alive || !t.ok) return;
+        const j = await t.json();
+        setSeries(Array.isArray(j?.points) ? j.points : []);
+      } catch {
+        if (alive) setSeries([]);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [range, metric]);
 
   // Realtime polls on its own cadence, paused when the tab is hidden so a
   // backgrounded dashboard doesn't poll all day. Cleared on unmount.
@@ -303,6 +336,15 @@ export function YouTubeLivePanel() {
       document.removeEventListener('visibilitychange', tick);
     };
   }, [loadRealtime]);
+
+  const onMetric = (m: MetricKey) => {
+    setMetric(m);
+    try {
+      window.localStorage.setItem(METRIC_KEY, m);
+    } catch {
+      /* private mode */
+    }
+  };
 
   const onRange = (r: RangeKey) => {
     setRange(r);
@@ -435,7 +477,35 @@ export function YouTubeLivePanel() {
 
       {series.length >= 2 && (
         <div className="mt-3 rounded-lg border border-gray-200 bg-white p-4">
-          <Sparkline points={series} label="Daily views" />
+          <div className="flex flex-wrap gap-1" role="group" aria-label="Chart metric">
+            {METRICS.map((m) => (
+              <button
+                key={m.key}
+                type="button"
+                onClick={() => onMetric(m.key)}
+                aria-pressed={metric === m.key}
+                className={`rounded px-2.5 py-1 text-xs font-medium ${
+                  metric === m.key
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+          <Sparkline
+            points={series}
+            label={`Daily ${METRICS.find((m) => m.key === metric)?.label.toLowerCase() ?? 'views'}`}
+          />
+          {metric === 'netSubscribers' && overview && (
+            <p className="mt-1 text-xs text-gray-600">
+              Net per day (gained − lost). Over this window:{' '}
+              <strong>+{nf.format(overview.metrics.subscribersNet.gained)}</strong> gained,{' '}
+              <strong>−{nf.format(overview.metrics.subscribersNet.lost)}</strong> lost. YouTube does not
+              expose who subscribed — counts only.
+            </p>
+          )}
         </div>
       )}
 

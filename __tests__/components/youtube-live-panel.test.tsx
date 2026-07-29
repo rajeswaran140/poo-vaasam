@@ -9,7 +9,7 @@
  */
 jest.mock('@/lib/client-auth', () => ({ adminFetch: jest.fn() }));
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { YouTubeLivePanel } from '@/components/admin/YouTubeLivePanel';
 import { adminFetch } from '@/lib/client-auth';
 
@@ -203,5 +203,51 @@ describe('resilience', () => {
     route({ overview: { totally: 'wrong' } });
     render(<YouTubeLivePanel />);
     expect(await screen.findByText(/unexpected shape/i)).toBeInTheDocument();
+  });
+});
+
+describe('metric toggle — daily subscribers', () => {
+  it('offers Views, Watch time and Subscribers', async () => {
+    route();
+    render(<YouTubeLivePanel />);
+    expect(await screen.findByRole('button', { name: 'Subscribers' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Views' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Watch time' })).toBeInTheDocument();
+  });
+
+  it('marks the active metric with aria-pressed, and moves it on click', async () => {
+    route();
+    render(<YouTubeLivePanel />);
+    const subs = await screen.findByRole('button', { name: 'Subscribers' });
+    expect(screen.getByRole('button', { name: 'Views' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(subs);
+    await waitFor(() => expect(subs).toHaveAttribute('aria-pressed', 'true'));
+    expect(screen.getByRole('button', { name: 'Views' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('requests the netSubscribers series when Subscribers is chosen', async () => {
+    route();
+    render(<YouTubeLivePanel />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Subscribers' }));
+    await waitFor(() =>
+      expect(
+        mockedFetch.mock.calls.some(([u]: [string]) => u.includes('metric=netSubscribers'))
+      ).toBe(true)
+    );
+  });
+
+  it('breaks out gained vs lost, so net does not hide the unsubscribes', async () => {
+    route();
+    render(<YouTubeLivePanel />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Subscribers' }));
+    expect(await screen.findByText(/\+755/)).toBeInTheDocument();
+    expect(screen.getByText(/−35/)).toBeInTheDocument();
+  });
+
+  it('states plainly that subscriber identities are not available', async () => {
+    route();
+    render(<YouTubeLivePanel />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Subscribers' }));
+    expect(await screen.findByText(/does not\s+expose who subscribed/i)).toBeInTheDocument();
   });
 });
