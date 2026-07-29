@@ -31,6 +31,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
+import { resolveWindow } from '@/lib/youtube-overview';
 
 const RANGES = ['7d', '28d', '90d'] as const;
 type RangeKey = (typeof RANGES)[number];
@@ -230,8 +231,35 @@ export function YouTubeLivePanel() {
     }
   };
 
-  const dot =
-    health?.status === 'ok' ? 'bg-emerald-500' : health?.status === 'warn' ? 'bg-amber-500' : 'bg-rose-500';
+  // An UNLOADED health check is unknown, not broken. Falling through to red +
+  // "stale" meant every page load opened on a false alarm — the opposite of
+  // what this dashboard is for.
+  const dot = !health
+    ? 'bg-gray-300'
+    : health.status === 'ok'
+      ? 'bg-emerald-500'
+      : health.status === 'warn'
+        ? 'bg-amber-500'
+        : 'bg-rose-500';
+
+  const healthLabel = !health
+    ? 'checking…'
+    : health.snapshots?.status === 'ok'
+      ? 'data flowing'
+      : health.snapshots?.status === 'never'
+        ? 'no snapshots yet'
+        : `snapshots stale (${health.snapshots?.ageMinutes ?? '?'} min)`;
+
+  // Which ranges the stored history can actually support. Computed with the
+  // SAME pure function the API uses, so the selector cannot disagree with the
+  // payload it is about to request.
+  const availability = new Map<RangeKey, { blocked: boolean; from: string | null }>();
+  if (overview) {
+    for (const r of RANGES) {
+      const w = resolveWindow(r, overview.dataStart, overview.dataThroughDate);
+      availability.set(r, { blocked: w.insufficientHistory, from: w.availableFrom });
+    }
+  }
 
   return (
     <section className="mb-8" aria-labelledby="yt-live-heading">
@@ -241,11 +269,7 @@ export function YouTubeLivePanel() {
         </h2>
         <span className="flex items-center gap-1.5 text-xs text-gray-600">
           <span className={`inline-block h-2 w-2 rounded-full ${dot}`} aria-hidden="true" />
-          {health?.snapshots?.status === 'ok'
-            ? 'data flowing'
-            : health?.snapshots?.status === 'never'
-              ? 'no snapshots yet'
-              : `snapshots stale (${health?.snapshots?.ageMinutes ?? '?'} min)`}
+          {healthLabel}
         </span>
         <label className="ml-auto text-sm">
           <span className="sr-only">Date range</span>
@@ -255,11 +279,12 @@ export function YouTubeLivePanel() {
             className="rounded border border-gray-300 px-2 py-1 text-sm"
           >
             {RANGES.map((r) => {
-              const blocked = overview?.insufficientHistory && r === range;
+              const a = availability.get(r);
+              const label = r === '7d' ? 'Last 7 days' : r === '28d' ? 'Last 28 days' : 'Last 90 days';
               return (
-                <option key={r} value={r}>
-                  {r === '7d' ? 'Last 7 days' : r === '28d' ? 'Last 28 days' : 'Last 90 days'}
-                  {blocked ? ' (not enough history)' : ''}
+                <option key={r} value={r} disabled={a?.blocked ?? false}>
+                  {label}
+                  {a?.blocked ? ` — from ${a.from ?? 'later'}` : ''}
                 </option>
               );
             })}
