@@ -32,6 +32,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
 import { resolveWindow } from '@/lib/youtube-overview';
+import {
+  buildScale,
+  buildPath,
+  provisionalFrom,
+  nearestIndex,
+  describeSeries,
+  type SeriesPoint,
+} from '@/lib/sparkline';
 
 const RANGES = ['7d', '28d', '90d'] as const;
 type RangeKey = (typeof RANGES)[number];
@@ -126,6 +134,74 @@ function DeltaLine({ delta, days }: { delta: number | null; days: number }) {
   );
 }
 
+/**
+ * Daily-views sparkline. Geometry lives in lib/sparkline (pure + tested); this
+ * only renders it and handles the pointer.
+ *
+ * The provisional tail is DASHED because YouTube revises the last 2-3 days, and
+ * a settling tail that dips is indistinguishable from a real decline unless the
+ * chart says so.
+ */
+function Sparkline({ points, label }: { points: SeriesPoint[]; label: string }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const W = 600;
+  const H = 80;
+  if (points.length < 2) return null;
+  const scale = buildScale(points, W, H);
+  const split = provisionalFrom(points);
+  const solid = split < 0 ? buildPath(points, scale) : buildPath(points, scale, 0, split + 1);
+  const dashed = split < 0 ? '' : buildPath(points, scale, split);
+  const hoveredPoint = hover != null ? points[hover] : null;
+
+  return (
+    <div className="mt-3">
+      <div className="flex items-baseline justify-between">
+        <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
+        <p className="text-xs text-gray-500" aria-hidden="true">
+          {hoveredPoint
+            ? `${hoveredPoint.date} — ${nf.format(Math.round(hoveredPoint.value))}`
+            : `${Math.round(scale.min)}–${Math.round(scale.max)}`}
+        </p>
+      </div>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="none"
+        className="h-20 w-full touch-none"
+        role="img"
+        aria-label={describeSeries(points, label)}
+        onPointerMove={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          if (!r.width) return;
+          setHover(nearestIndex(points, (e.clientX - r.left) / r.width));
+        }}
+        onPointerLeave={() => setHover(null)}
+      >
+        {solid && (
+          <path d={solid} fill="none" stroke="#7c3aed" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+        )}
+        {dashed && (
+          <path
+            d={dashed}
+            fill="none"
+            stroke="#7c3aed"
+            strokeWidth="2"
+            strokeDasharray="4 3"
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
+        {hoveredPoint && (
+          <circle cx={scale.x(hover as number)} cy={scale.y(hoveredPoint.value)} r="3" fill="#7c3aed" />
+        )}
+      </svg>
+      {split >= 0 && (
+        <p className="mt-1 text-xs text-gray-500">
+          Dashed = last {points.length - split - 1} day(s) still settling; YouTube revises these.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function Tile({
   label,
   value,
@@ -153,6 +229,7 @@ export function YouTubeLivePanel() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [realtime, setRealtime] = useState<Realtime | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
+  const [series, setSeries] = useState<SeriesPoint[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -180,9 +257,10 @@ export function YouTubeLivePanel() {
       setLoading(true);
       setError(null);
       try {
-        const [o, h] = await Promise.all([
+        const [o, h, t] = await Promise.all([
           adminFetch(`/api/admin/youtube/overview?range=${range}`),
           adminFetch(`/api/admin/youtube/analytics-health`),
+          adminFetch(`/api/admin/youtube/timeseries?range=${range}&metric=views`),
         ]);
         if (!alive) return;
         if (o.ok) {
@@ -195,6 +273,10 @@ export function YouTubeLivePanel() {
         if (h.ok) {
           const j = await h.json();
           if (isHealth(j)) setHealth(j);
+        }
+        if (t.ok) {
+          const j = await t.json();
+          setSeries(Array.isArray(j?.points) ? j.points : []);
         }
       } catch (e) {
         if (alive) setError(e instanceof Error ? e.message : 'failed to load');
@@ -348,6 +430,12 @@ export function YouTubeLivePanel() {
               </p>
             )}
           </Tile>
+        </div>
+      )}
+
+      {series.length >= 2 && (
+        <div className="mt-3 rounded-lg border border-gray-200 bg-white p-4">
+          <Sparkline points={series} label="Daily views" />
         </div>
       )}
 
