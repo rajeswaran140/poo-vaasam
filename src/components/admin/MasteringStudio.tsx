@@ -30,6 +30,7 @@ import { statusFor, platformLanding } from '@/lib/loudness-targets';
 import { MAX_UPLOAD_BYTES, ACCEPTED_UPLOAD_TYPES } from '@/lib/mastering-storage';
 import { buildMasterReport, reportFilename, sourceInfoLine, dynamicsPreserved, streamingReadiness } from '@/lib/master-report';
 import { MasteringComparePlayer } from '@/components/admin/MasteringComparePlayer';
+import { MasteringEqualizer } from '@/components/admin/MasteringEqualizer';
 import type { MasterJob } from '@/types/masterJob';
 
 /** Where the platforms normalise playback. */
@@ -473,6 +474,15 @@ export function MasteringStudio() {
     const { id, value } = renaming;
     const next = value.trim();
     if (!next) { setRenaming(null); return; }
+    // Enter commits, and the input then unmounts — which can also fire onBlur
+    // with the pre-commit closure still holding `renaming`. Without this the
+    // same rename is PATCHed twice.
+    if (rowBusy === id) return;
+    // Closing an editor without changing anything must not cost a write.
+    if (next === (library?.find((x) => x.id === id)?.title ?? '')) {
+      setRenaming(null);
+      return;
+    }
     setRowBusy(id);
     setError(null);
     try {
@@ -492,7 +502,7 @@ export function MasteringStudio() {
     } finally {
       setRowBusy(null);
     }
-  }, [renaming]);
+  }, [renaming, rowBusy, library]);
 
   const toggleLibrary = useCallback(() => {
     setLibraryOpen((open) => {
@@ -1085,15 +1095,26 @@ export function MasteringStudio() {
             </p>
             {/* Key on the URL so swapping rows reloads the element rather than
                 leaving the previous song's buffer playing. */}
+            {/* A presigned URL lasts an hour. If the panel is left open longer
+                the element fails with no visible cause, so say it plainly and
+                clear the row rather than leaving a dead player on screen. */}
             <audio
               key={playing.url}
               ref={libraryAudio}
               src={playing.url}
+              // Required for the equaliser: Web Audio refuses a tainted source
+              // and would output SILENCE. tamil-web-media allows this origin.
+              crossOrigin="anonymous"
               controls
               autoPlay
               onEnded={() => setPlaying(null)}
+              onError={() => {
+                setError('That playback link expired — press play again to get a fresh one.');
+                setPlaying(null);
+              }}
               className="w-full"
             />
+            <MasteringEqualizer audio={libraryAudio.current} sourceKey={playing.url} />
           </div>
         )}
       </section>
