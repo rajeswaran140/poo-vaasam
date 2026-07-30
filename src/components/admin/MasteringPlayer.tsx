@@ -135,6 +135,21 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
     }
   }, [gains]);
 
+  // Browsers cap concurrent AudioContexts at around six. This component is
+  // keyed on the master URL, so every switch mounts a fresh one — without
+  // closing the old context, auditioning a handful of masters exhausts the
+  // budget and the meter and equaliser stop working with no obvious cause.
+  useEffect(() => {
+    return () => {
+      const ctx = ctxRef.current;
+      ctxRef.current = null;
+      analyserRef.current = null;
+      filtersRef.current = new Map();
+      wired.current = false;
+      if (ctx && ctx.state !== 'closed') void ctx.close();
+    };
+  }, []);
+
   // ---- meter + loop, driven from one animation frame ----------------------
   useEffect(() => {
     if (!playing) {
@@ -143,6 +158,13 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
       return;
     }
     const buf = new Float32Array(analyserRef.current?.fftSize ?? 2048);
+    // The LOOP CHECK must run every frame — `timeupdate` fires ~4x/second and
+    // cannot close a phrase cleanly. The DISPLAY must not: setState twice per
+    // frame re-renders this whole tree 60 times a second for changes too small
+    // to see. So the frame does the timing work, and state only moves when the
+    // rendered value would actually differ.
+    let lastShownPos = -1;
+    let lastShownPeak = Number.NEGATIVE_INFINITY;
     const tick = () => {
       const a = audioRef.current;
       const an = analyserRef.current;
@@ -150,12 +172,18 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
         an.getFloatTimeDomainData(buf);
         const r = measureBlock(buf);
         heldPeak.current = decayPeak(heldPeak.current, r.peakDb);
-        setLevel({ peakDb: heldPeak.current, rmsDb: r.rmsDb, over: r.overCeiling });
+        // 0.5 dB is finer than the bar can show.
+        if (Math.abs(heldPeak.current - lastShownPeak) >= 0.5 || r.overCeiling) {
+          lastShownPeak = heldPeak.current;
+          setLevel({ peakDb: heldPeak.current, rmsDb: r.rmsDb, over: r.overCeiling });
+        }
       }
       if (a) {
-        setPosition(a.currentTime);
-        // Looping lives here rather than on `timeupdate`, which only fires
-        // ~4x/second — far too coarse to loop a phrase cleanly.
+        // The clock shows seconds; 100 ms is already invisible.
+        if (Math.abs(a.currentTime - lastShownPos) >= 0.1) {
+          lastShownPos = a.currentTime;
+          setPosition(a.currentTime);
+        }
         if (shouldLoopBack(a.currentTime, loop) && loop) a.currentTime = loop.start;
       }
       raf.current = requestAnimationFrame(tick);
@@ -412,6 +440,9 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
         controls
         className="mt-2 w-full"
         onPlay={() => {
+          // Reset the held peak, or a loud passage from the previous listen
+          // keeps the bar high over a quiet one until it decays.
+          heldPeak.current = METER_FLOOR_DB;
           ensureGraph();
           void ctxRef.current?.resume();
           setPlaying(true);

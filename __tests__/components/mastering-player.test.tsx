@@ -323,3 +323,43 @@ describe('defects found auditing the composer tools', () => {
     expect(screen.getAllByRole('button', { name: '0:10' })).toHaveLength(1);
   });
 });
+
+describe('resource hygiene', () => {
+  it('CLOSES the AudioContext on unmount — browsers cap them at about six', () => {
+    // Without this, auditioning a handful of masters exhausts the budget and
+    // the meter and equaliser stop working with no visible cause.
+    const closed: string[] = [];
+    class Tracking {
+      state = 'running';
+      destination = {};
+      createMediaElementSource() {
+        return { connect: () => {} };
+      }
+      createBiquadFilter() {
+        return { type: '', frequency: { value: 0 }, Q: { value: 0 }, gain: { value: 0 }, connect: () => {} };
+      }
+      createAnalyser() {
+        return { fftSize: 2048, connect: () => {}, getFloatTimeDomainData: (b: Float32Array) => b.fill(0) };
+      }
+      resume() {}
+      close() {
+        closed.push('closed');
+        this.state = 'closed';
+      }
+    }
+    (window as unknown as { AudioContext: unknown }).AudioContext = Tracking;
+    const { unmount } = setup();
+    // The graph is built lazily on first play.
+    fireEvent.play(document.querySelector('audio') as HTMLAudioElement);
+    unmount();
+    expect(closed).toHaveLength(1);
+  });
+
+  it('resets the held peak on play, so a previous loud passage does not linger', () => {
+    setup();
+    const audio = document.querySelector('audio') as HTMLAudioElement;
+    fireEvent.play(audio);
+    // Both rows sit at the floor rather than carrying a stale peak.
+    expect(screen.getAllByText(/−∞ dB/)).toHaveLength(2);
+  });
+});
