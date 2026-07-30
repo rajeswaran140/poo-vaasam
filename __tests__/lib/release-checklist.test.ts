@@ -187,3 +187,38 @@ describe('what the checklist deliberately does NOT judge', () => {
     expect(JSON.stringify(f)).not.toContain('ஈழம்');
   });
 });
+
+describe('defects found by auditing against the live catalogue (2026-07-30)', () => {
+  it('does not claim the thumbnail is fine — maxres is present on 100% of the catalogue', () => {
+    // YouTube auto-generates maxres for HD uploads, so the old boolean check
+    // could never fire. It must not report a passing gap it never tested.
+    const withThumb = checkRelease(good).find((x) => x.id === 'thumbnail');
+    const withoutThumb = checkRelease({ ...good, hasCustomThumbnail: false }).find(
+      (x) => x.id === 'thumbnail'
+    );
+    // Same verdict either way, because the input is not trustworthy.
+    expect(withThumb?.severity).toBe('note');
+    expect(withoutThumb?.severity).toBe('note');
+    expect(withThumb?.manual).toBe(true);
+  });
+
+  it('a vacuous thumbnail note never blocks readiness', () => {
+    expect(summariseRelease({ ...good, hasCustomThumbnail: false }).ready).toBe(true);
+  });
+
+  it('skips caption findings for an unaired premiere', () => {
+    const premiere = { ...good, isUpcoming: true, captionTracks: [] as VideoSnapshot['captionTracks'] };
+    expect(ids(premiere)).not.toContain('asr-track');
+    expect(ids(premiere)).toContain('upcoming-premiere');
+  });
+
+  it('does not flag a premiere for an ASR track it cannot have yet', () => {
+    const premiere = { ...good, isUpcoming: true, captionTracks: [{ trackKind: 'asr', language: 'en' }] };
+    expect(ids(premiere)).not.toContain('asr-wrong-language');
+  });
+
+  it('still flags wrong-language ASR once the premiere has aired', () => {
+    const aired = { ...good, isUpcoming: false, captionTracks: [{ trackKind: 'asr', language: 'en' }] };
+    expect(ids(aired)).toContain('asr-wrong-language');
+  });
+});
