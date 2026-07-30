@@ -112,7 +112,19 @@ export function checkRelease(v: VideoSnapshot): Finding[] {
   }
 
   // --- captions -------------------------------------------------------------
-  const asr = v.captionTracks.filter((t) => t.trackKind === 'asr');
+  // An UNAIRED premiere has no captions yet — YouTube generates ASR only after
+  // it airs. Judging it now produces a finding the operator cannot act on, and
+  // which fixes itself. `I0F7xHxg7cI` sat in this state on 2026-07-30 (its
+  // contentDetails.duration was even null).
+  const asr = v.isUpcoming ? [] : v.captionTracks.filter((t) => t.trackKind === 'asr');
+  if (v.isUpcoming) {
+    f.push({
+      id: 'upcoming-premiere',
+      severity: 'note',
+      title: 'Unaired premiere — caption checks skipped',
+      detail: 'Captions do not exist until a premiere airs. Re-run this check afterwards.',
+    });
+  }
   const wrongLangAsr = asr.filter((t) => t.language !== 'ta');
   if (wrongLangAsr.length) {
     f.push({
@@ -220,12 +232,21 @@ export function checkRelease(v: VideoSnapshot): Finding[] {
       detail: `Recent uploads carry 20-26. Below ${MIN_TAGS} suggests the field was skipped.`,
     });
   }
-  if (!v.hasCustomThumbnail && !v.isShort) {
+  // NOT a `hasCustomThumbnail` check any more. `thumbnails.maxres` was the
+  // proxy, and measuring it across the catalogue on 2026-07-30 returned 90/90 —
+  // YouTube auto-generates maxres for any HD upload, so the field says nothing
+  // about whether Raj set a custom image. A rule that can never fire is worse
+  // than none: it reports "thumbnail fine" without having looked.
+  if (!v.isShort) {
     f.push({
       id: 'thumbnail',
-      severity: 'gap',
-      title: 'No custom thumbnail',
-      detail: 'Packaging study found the channel gap is a human-emotion face on the thumbnail.',
+      severity: 'note',
+      title: 'Custom thumbnail cannot be verified via the API',
+      detail:
+        'thumbnails.maxres is present on 100% of the catalogue because YouTube generates it for HD ' +
+        'uploads, so it cannot distinguish a custom image from an auto-grab. Confirm in Studio. ' +
+        'The packaging study found the channel gap is a human-emotion face.',
+      manual: true,
     });
   }
   const wantPlaylist = v.isShort ? SHORTS_PLAYLIST_ID : ALL_SONGS_PLAYLIST_ID;
