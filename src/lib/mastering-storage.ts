@@ -86,6 +86,34 @@ export function downloadFilename(key: string): string {
  * control characters and quotes are stripped so the value can neither escape a
  * folder nor break out of the Content-Disposition header. Capped, single .wav.
  */
+/**
+ * Sanitise a DISPLAY title for a saved master.
+ *
+ * Distinct from `sanitizeMasterFilename`, which is a FILENAME sanitiser: that
+ * one always appends `.wav` and falls back to "master" so a download can never
+ * be nameless. Running it over a title was a real defect — every saved master
+ * in the library ended up called `ஈழத்து_மண்ணே_Tamilagaval.wav`, an extension
+ * baked into a human-facing name.
+ *
+ * This keeps the same safety rules (no control characters, no path separators
+ * or quotes) but produces a NAME: no extension, no invented fallback. An empty
+ * result is returned as empty so the caller can refuse rather than silently
+ * storing "master".
+ *
+ * The download filename is still built from the title at download time, so the
+ * two never need the extension stored.
+ */
+export function sanitizeMasterTitle(name: string): string {
+  return (name ?? '')
+    .normalize('NFC')
+    .replace(/[\x00-\x1f\x7f]/g, '')
+    .replace(/["\\/]+/g, ' ')
+    .replace(/\.wave?$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120);
+}
+
 export function sanitizeMasterFilename(name: string): string {
   const cleaned = name
     .normalize('NFC')

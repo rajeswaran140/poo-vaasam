@@ -116,6 +116,29 @@ export class MasterJobRepository {
    * saves. Revisit if the table grows into the tens of thousands — the same
    * trade-off the subscriber list makes.
    */
+  /**
+   * Rename a SAVED master. Deliberately not `save()` with a new title: save
+   * re-stamps `savedAt`, so reusing it would quietly change the library's
+   * "saved on" date every time a typo was fixed. This touches `title` alone.
+   *
+   * A condition on `savedAt` keeps the ttl invariant intact — renaming an
+   * unsaved job would leave a 24h-expiring record wearing a permanent-looking
+   * name, which is worse than refusing.
+   */
+  async rename(id: string, title: string | null): Promise<void> {
+    try {
+      await DynamoDBOperations.update({
+        key: { PK: `MASTERJOB#${id}`, SK: 'METADATA' },
+        updateExpression: 'SET #title = :title',
+        conditionExpression: 'attribute_exists(savedAt) AND savedAt <> :null',
+        expressionAttributeNames: { '#title': 'title' },
+        expressionAttributeValues: { ':title': title, ':null': null },
+      });
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
   async listSaved(limit = 100): Promise<MasterJob[]> {
     try {
       const { Items } = await DynamoDBOperations.scanAll({

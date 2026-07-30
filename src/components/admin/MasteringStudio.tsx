@@ -22,7 +22,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import {
   SlidersHorizontal, Upload, Download, Loader2, CheckCircle2,
-  AlertTriangle, FileAudio, RotateCcw, X, Info, Save, Library,
+  AlertTriangle, FileAudio, RotateCcw, X, Info, Save, Library, Play, Pause, Pencil,
 } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 import { pollJob } from '@/lib/poll-job';
@@ -149,6 +149,12 @@ export function MasteringStudio() {
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [library, setLibrary] = useState<MasterJob[] | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  /** Which saved master is loaded in the library player, and its presigned URL. */
+  const [playing, setPlaying] = useState<{ id: string; url: string } | null>(null);
+  /** Which row is being renamed, and the draft text. */
+  const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
+  const [rowBusy, setRowBusy] = useState<string | null>(null);
+  const libraryAudio = useRef<HTMLAudioElement | null>(null);
 
   const mounted = useRef(true);
   const abort = useRef<AbortController | null>(null);
@@ -424,6 +430,70 @@ export function MasteringStudio() {
    * to this page are to master a file, not to browse history. Load on first
    * open, and after a save (which is when the list has actually changed).
    */
+  /**
+   * Audition a saved master in place.
+   *
+   * The bucket is private, so this mints a presigned URL via the SAME download
+   * route the compare player uses — `mode=play` deliberately omits the
+   * Content-Disposition filename so the browser streams it instead of
+   * downloading. The URL lasts an hour, long enough to seek around a full song.
+   */
+  const playSaved = useCallback(async (m: MasterJob) => {
+    if (!m.masterKey) return;
+    if (playing?.id === m.id) {
+      // Same row again = stop. Releasing the src also stops the network fetch.
+      libraryAudio.current?.pause();
+      setPlaying(null);
+      return;
+    }
+    setRowBusy(m.id);
+    setError(null);
+    try {
+      const res = await adminFetch(
+        `/api/admin/mastering/download?key=${encodeURIComponent(m.masterKey)}&mode=play`
+      );
+      const body = await res.json();
+      if (!res.ok || !body.success) throw new Error(body.error || 'Could not open that master.');
+      setPlaying({ id: m.id, url: body.url as string });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRowBusy(null);
+    }
+  }, [playing]);
+
+  /**
+   * Commit a rename. The server sanitises the title (it also drives the
+   * download filename) and returns the cleaned value, so the row is updated
+   * from the RESPONSE rather than from what was typed — otherwise the list
+   * would show a name the file will never have.
+   */
+  const commitRename = useCallback(async () => {
+    if (!renaming) return;
+    const { id, value } = renaming;
+    const next = value.trim();
+    if (!next) { setRenaming(null); return; }
+    setRowBusy(id);
+    setError(null);
+    try {
+      const res = await adminFetch(`/api/admin/music-lab/master/${id}/rename`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: next }),
+      });
+      const body = await res.json();
+      if (!res.ok || !body.success) throw new Error(body.error || 'Could not rename that master.');
+      setLibrary((prev) =>
+        prev ? prev.map((x) => (x.id === id ? { ...x, title: body.title as string } : x)) : prev
+      );
+      setRenaming(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRowBusy(null);
+    }
+  }, [renaming]);
+
   const toggleLibrary = useCallback(() => {
     setLibraryOpen((open) => {
       if (!open && library === null) void loadLibrary();
@@ -935,9 +1005,52 @@ export function MasteringStudio() {
           <ul className="mt-3 divide-y divide-gray-200 rounded-lg border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
             {library.map((m) => (
               <li key={m.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-sm">
-                <span className="min-w-0 grow font-medium text-gray-900 dark:text-gray-100">
-                  {m.title || <span className="text-gray-500 dark:text-gray-400">(untitled)</span>}
-                </span>
+                {m.masterKey && (
+                  <button
+                    type="button"
+                    onClick={() => void playSaved(m)}
+                    disabled={rowBusy === m.id}
+                    aria-label={playing?.id === m.id ? `Stop ${m.title ?? 'master'}` : `Play ${m.title ?? 'master'}`}
+                    className="shrink-0 rounded-full border border-gray-300 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                  >
+                    {rowBusy === m.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                    ) : playing?.id === m.id ? (
+                      <Pause className="h-3.5 w-3.5" aria-hidden="true" />
+                    ) : (
+                      <Play className="h-3.5 w-3.5" aria-hidden="true" />
+                    )}
+                  </button>
+                )}
+                {renaming?.id === m.id ? (
+                  <input
+                    value={renaming.value}
+                    autoFocus
+                    aria-label="Master name"
+                    maxLength={120}
+                    onChange={(e) => setRenaming({ id: m.id, value: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') void commitRename();
+                      if (e.key === 'Escape') setRenaming(null);
+                    }}
+                    onBlur={() => void commitRename()}
+                    className="min-w-0 grow rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-900"
+                  />
+                ) : (
+                  <span className="flex min-w-0 grow items-center gap-1.5">
+                    <span className="min-w-0 truncate font-medium text-gray-900 dark:text-gray-100">
+                      {m.title || <span className="text-gray-500 dark:text-gray-400">(untitled)</span>}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setRenaming({ id: m.id, value: m.title ?? '' })}
+                      aria-label={`Rename ${m.title ?? 'master'}`}
+                      className="shrink-0 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                    >
+                      <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                  </span>
+                )}
                 <span className="tabular-nums text-xs text-gray-500 dark:text-gray-400">
                   {(m.savedAt ?? '').slice(0, 10)}
                 </span>
@@ -962,6 +1075,26 @@ export function MasteringStudio() {
               </li>
             ))}
           </ul>
+        )}
+
+        {libraryOpen && playing && (
+          <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900/40">
+            <p className="mb-2 text-xs text-gray-600 dark:text-gray-300">
+              {library?.find((x) => x.id === playing.id)?.title || 'Master'} — mastered WAV, streaming
+              from the private workspace.
+            </p>
+            {/* Key on the URL so swapping rows reloads the element rather than
+                leaving the previous song's buffer playing. */}
+            <audio
+              key={playing.url}
+              ref={libraryAudio}
+              src={playing.url}
+              controls
+              autoPlay
+              onEnded={() => setPlaying(null)}
+              className="w-full"
+            />
+          </div>
         )}
       </section>
 
