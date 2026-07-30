@@ -30,6 +30,7 @@ import { statusFor, platformLanding } from '@/lib/loudness-targets';
 import { MAX_UPLOAD_BYTES, ACCEPTED_UPLOAD_TYPES } from '@/lib/mastering-storage';
 import { buildMasterReport, reportFilename, sourceInfoLine, dynamicsPreserved, streamingReadiness } from '@/lib/master-report';
 import { MasteringComparePlayer } from '@/components/admin/MasteringComparePlayer';
+import { MasteringEqualizer } from '@/components/admin/MasteringEqualizer';
 import type { MasterJob } from '@/types/masterJob';
 
 /** Where the platforms normalise playback. */
@@ -1101,6 +1102,9 @@ export function MasteringStudio() {
               key={playing.url}
               ref={libraryAudio}
               src={playing.url}
+              // Required for the equaliser: Web Audio refuses a tainted source
+              // and would output SILENCE. tamil-web-media allows this origin.
+              crossOrigin="anonymous"
               controls
               autoPlay
               onEnded={() => setPlaying(null)}
@@ -1110,6 +1114,7 @@ export function MasteringStudio() {
               }}
               className="w-full"
             />
+            <MasteringEqualizer audio={libraryAudio.current} sourceKey={playing.url} />
           </div>
         )}
       </section>
