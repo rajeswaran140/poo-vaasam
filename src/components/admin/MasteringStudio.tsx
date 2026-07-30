@@ -30,7 +30,7 @@ import { statusFor, platformLanding } from '@/lib/loudness-targets';
 import { MAX_UPLOAD_BYTES, ACCEPTED_UPLOAD_TYPES } from '@/lib/mastering-storage';
 import { buildMasterReport, reportFilename, sourceInfoLine, dynamicsPreserved, streamingReadiness } from '@/lib/master-report';
 import { MasteringComparePlayer } from '@/components/admin/MasteringComparePlayer';
-import { MasteringEqualizer } from '@/components/admin/MasteringEqualizer';
+import { MasteringPlayer } from '@/components/admin/MasteringPlayer';
 import type { MasterJob } from '@/types/masterJob';
 
 /** Where the platforms normalise playback. */
@@ -151,7 +151,7 @@ export function MasteringStudio() {
   const [library, setLibrary] = useState<MasterJob[] | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
   /** Which saved master is loaded in the library player, and its presigned URL. */
-  const [playing, setPlaying] = useState<{ id: string; url: string } | null>(null);
+  const [playing, setPlaying] = useState<{ id: string; url: string; sourceUrl: string | null } | null>(null);
   /** Which row is being renamed, and the draft text. */
   const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
   const [rowBusy, setRowBusy] = useState<string | null>(null);
@@ -455,7 +455,21 @@ export function MasteringStudio() {
       );
       const body = await res.json();
       if (!res.ok || !body.success) throw new Error(body.error || 'Could not open that master.');
-      setPlaying({ id: m.id, url: body.url as string });
+      // The unmastered take, for A/B. Optional: an older job may not have a
+      // reachable source, and a missing comparison must not block playback.
+      let sourceUrl: string | null = null;
+      if (m.s3Key) {
+        try {
+          const sr = await adminFetch(
+            `/api/admin/mastering/download?key=${encodeURIComponent(m.s3Key)}&mode=play`
+          );
+          const sb = await sr.json();
+          if (sr.ok && sb.success) sourceUrl = sb.url as string;
+        } catch {
+          /* A/B simply stays unavailable. */
+        }
+      }
+      setPlaying({ id: m.id, url: body.url as string, sourceUrl });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -1089,32 +1103,19 @@ export function MasteringStudio() {
 
         {libraryOpen && playing && (
           <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900/40">
-            <p className="mb-2 text-xs text-gray-600 dark:text-gray-300">
-              {library?.find((x) => x.id === playing.id)?.title || 'Master'} — mastered WAV, streaming
-              from the private workspace.
-            </p>
             {/* Key on the URL so swapping rows reloads the element rather than
                 leaving the previous song's buffer playing. */}
-            {/* A presigned URL lasts an hour. If the panel is left open longer
-                the element fails with no visible cause, so say it plainly and
-                clear the row rather than leaving a dead player on screen. */}
-            <audio
+            <MasteringPlayer
               key={playing.url}
-              ref={libraryAudio}
-              src={playing.url}
-              // Required for the equaliser: Web Audio refuses a tainted source
-              // and would output SILENCE. tamil-web-media allows this origin.
-              crossOrigin="anonymous"
-              controls
-              autoPlay
-              onEnded={() => setPlaying(null)}
-              onError={() => {
+              masterUrl={playing.url}
+              sourceUrl={playing.sourceUrl}
+              title={library?.find((x) => x.id === playing.id)?.title || 'Master'}
+              afterTp={library?.find((x) => x.id === playing.id)?.afterTp ?? null}
+              onExpired={() => {
                 setError('That playback link expired — press play again to get a fresh one.');
                 setPlaying(null);
               }}
-              className="w-full"
             />
-            <MasteringEqualizer audio={libraryAudio.current} sourceKey={playing.url} />
           </div>
         )}
       </section>
