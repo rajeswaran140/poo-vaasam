@@ -216,6 +216,7 @@ export default async function AdminDashboard() {
           <ActionCard title="New song" description="Publish audio from S3 or via the upload form" icon="🎵" href="/admin/content/new" tone="orange" />
           <ActionCard title="Songs library" description="Themes, durations, play counts per song" icon="📚" href="/admin/songs" tone="indigo" />
           <ActionCard title="YouTube analytics" description="Subscribe-CTA, traffic, audio + outbound" icon="📊" href="/admin/youtube" tone="emerald" />
+          <ActionCard title="Release check" description="Grade an upload against the per-release checklist" icon="✅" href="/admin/release" tone="indigo" />
         </div>
       </section>
     </div>
