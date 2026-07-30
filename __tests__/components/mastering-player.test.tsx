@@ -279,3 +279,47 @@ describe('audition marks — capture at the moment of judgement', () => {
     expect(screen.getByRole('button', { name: /Copy notes/i })).toBeInTheDocument();
   });
 });
+
+describe('defects found auditing the composer tools', () => {
+  const region = () => screen.getByLabelText(/Player for/i);
+
+  it('KEEPS the playback rate across an A/B swap', () => {
+    // Setting src resets playbackRate. Without restoring it, an A/B started at
+    // 0.75x would play the source at 1x — a difference that is only speed.
+    setup();
+    const audio = document.querySelector('audio') as HTMLAudioElement;
+    fireEvent.click(screen.getByRole('button', { name: '0.75×' }));
+    expect(audio.playbackRate).toBe(0.75);
+    fireEvent.click(screen.getByRole('button', { name: /A\/B vs source/i }));
+    expect(audio.playbackRate).toBe(0.75);
+  });
+
+  it('does not drop a mark when typing in the reason dropdown', () => {
+    // "m" in the select should reach melody/mixing, not the mark shortcut.
+    setup();
+    const audio = document.querySelector('audio') as HTMLAudioElement;
+    Object.defineProperty(audio, 'duration', { value: 200, configurable: true });
+    audio.currentTime = 42;
+    fireEvent.keyDown(screen.getByLabelText('Mark reason'), { key: 'm' });
+    expect(screen.queryByRole('button', { name: '0:42' })).not.toBeInTheDocument();
+  });
+
+  it('gives every mark a unique id, even after a removal at the same time', () => {
+    // The old id was time+list-length, which repeated in exactly this sequence
+    // and made one removal delete two marks.
+    setup();
+    const audio = document.querySelector('audio') as HTMLAudioElement;
+    Object.defineProperty(audio, 'duration', { value: 200, configurable: true });
+    audio.currentTime = 5;
+    fireEvent.keyDown(region(), { key: 'm' });
+    audio.currentTime = 10;
+    fireEvent.keyDown(region(), { key: 'm' });
+    fireEvent.click(screen.getByRole('button', { name: /Remove mark at 0:05/ }));
+    audio.currentTime = 10;
+    fireEvent.keyDown(region(), { key: 'm' });
+    // Two distinct marks at 0:10 — removing one must leave the other.
+    expect(screen.getAllByRole('button', { name: '0:10' })).toHaveLength(2);
+    fireEvent.click(screen.getAllByRole('button', { name: /Remove mark at 0:10/ })[0]);
+    expect(screen.getAllByRole('button', { name: '0:10' })).toHaveLength(1);
+  });
+});

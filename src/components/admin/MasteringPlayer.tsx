@@ -218,12 +218,16 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
   }, [rate]);
 
   /** Drop a mark at the current position. */
+  const markSeq = useRef(0);
   const dropMark = useCallback(() => {
     const a = audioRef.current;
     if (!a) return;
     setMarks((m) =>
       addMark(m, {
-        id: `${Math.round(a.currentTime * 1000)}-${m.length}`,
+        // A monotonic counter, NOT list length: marking t, removing an earlier
+        // mark, then marking t again reproduced the same id, which collided as
+        // a React key and made one removal delete both.
+        id: `mark-${markSeq.current++}`,
         time: a.currentTime,
         reason: markReason,
         note: '',
@@ -237,7 +241,10 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
     if (!a) return;
     // Never hijack typing in a field.
     const t = e.target as HTMLElement;
-    if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return;
+    // SELECT matters as much as INPUT here: the mark-reason dropdown lives
+    // inside this region, and typing "m" in it should pick "melody"/"mixing",
+    // not drop a mark.
+    if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT') return;
     if (e.key === ' ') {
       e.preventDefault();
       if (a.paused) void a.play();
@@ -269,9 +276,18 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
     // that restarts from zero compares nothing.
     const at = a.currentTime;
     const wasPlaying = !a.paused;
+    const wasRate = a.playbackRate;
     setComparing((c) => !c);
     a.src = comparing ? masterUrl : sourceUrl;
     a.currentTime = at;
+    // Setting `src` resets playbackRate to the element default. Without this
+    // an A/B started at 0.75x would play the SOURCE at 1x — you would hear a
+    // difference that is only speed, which invalidates the one comparison this
+    // control exists to make.
+    a.playbackRate = wasRate;
+    const el = a as unknown as Record<string, unknown>;
+    if ('preservesPitch' in el) el.preservesPitch = true;
+    else if ('mozPreservesPitch' in el) el.mozPreservesPitch = true;
     if (wasPlaying) void a.play();
   }, [comparing, masterUrl, sourceUrl]);
 
