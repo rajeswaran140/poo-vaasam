@@ -16,7 +16,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { MasterJobRepository } from '@/infrastructure/database/MasterJobRepository';
-import { sanitizeMasterFilename } from '@/lib/mastering-storage';
+import { sanitizeMasterTitle } from '@/lib/mastering-storage';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -53,10 +53,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       );
     }
 
-    // Reuse the download-name sanitiser so a saved title and the filename it
-    // produces can never disagree about what characters are allowed.
+    // A TITLE, not a filename. The download-name sanitiser appends ".wav" and
+    // falls back to "master", which is why the library used to read like a file
+    // listing (`ஈழத்து_மண்ணே_Tamilagaval.wav`). The download filename is still
+    // derived from this title at download time.
     const raw = parsed.data.title?.trim();
-    const title = raw ? sanitizeMasterFilename(raw) || null : null;
+    const title = raw ? sanitizeMasterTitle(raw) || null : null;
 
     await new MasterJobRepository().save(jobId, title);
     return NextResponse.json({ success: true, title });
