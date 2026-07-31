@@ -14,6 +14,7 @@ import {
   dynamicsLine,
   dynamicsPreserved,
   streamingReadiness,
+  dynamicsState,
 } from '@/lib/master-report';
 import type { MasterJob } from '@/types/masterJob';
 
@@ -343,5 +344,150 @@ describe('readiness checks — the itemised integrity list', () => {
   it('the saved report names the gain type too, so file and screen agree', () => {
     expect(buildMasterReport(job({ normalizationType: 'linear' }))).toMatch(/Gain type — linear/);
     expect(buildMasterReport(job({ normalizationType: 'dynamic' }))).toMatch(/Gain type — DYNAMIC/);
+  });
+});
+
+/**
+ * The composed verdict, not its ingredients.
+ *
+ * `dynamicsPreserved` and `dynamicsLine` were already covered exhaustively
+ * above — tolerance boundaries, the dynamic-mode refusal, even a coincidental
+ * LRA match. What nothing asserted was whether the VERDICT that consumes them
+ * actually used them, and it did not: `streamingReadiness` computed the
+ * dynamics result, let it reach only the facts string, and returned ok:true for
+ * a master ffmpeg had compressed. The Studio then drew a green "Streaming
+ * Ready" above its own red ✗ Dynamics row, and the saved .txt carried "range
+ * WAS compressed" and "Ready for distribution" in the same file.
+ *
+ * That is the same shape as the PR #79 escape: units green, composition untested.
+ * These tests pin the composition.
+ */
+describe('readiness is the conjunction it claims to be', () => {
+  const dyn = (over: Partial<MasterJob> = {}): MasterJob => ({ ...baseJob, ...over });
+
+  it('refuses a master ffmpeg silently compressed, even on target and peak-safe', () => {
+    const job = dyn({ normalizationType: 'dynamic', beforeLra: 6.8, afterLra: 4.1 });
+    // The two legs that used to be the whole test still pass...
+    expect(streamingReadiness(job).checks.find((c) => c.label === 'Loudness target')?.ok).toBe(true);
+    expect(streamingReadiness(job).checks.find((c) => c.label === 'True peak')?.ok).toBe(true);
+    // ...and the verdict must still refuse.
+    expect(streamingReadiness(job).ok).toBe(false);
+    expect(streamingReadiness(job).headline).toMatch(/compressed the range/i);
+  });
+
+  it('never shows a green headline above a failing check row', () => {
+    for (const job of [
+      dyn({ normalizationType: 'dynamic' }),
+      dyn({ afterLra: 4.1 }),
+      dyn({ afterTp: -0.2 }),
+      dyn({ afterLufs: -11 }),
+      dyn({ beforeLra: null, afterLra: null, normalizationType: null }),
+    ]) {
+      const r = streamingReadiness(job);
+      const failing = r.checks.filter((c) => c.ok === false);
+      if (failing.length) expect(r.ok).toBe(false);
+      if (r.ok) expect(failing).toHaveLength(0);
+    }
+  });
+
+  it('refuses a linear master whose range drifted more than rounding', () => {
+    const r = streamingReadiness(dyn({ afterLra: 4.1 }));
+    expect(r.ok).toBe(false);
+    expect(r.headline).toMatch(/loudness range moved 2\.7 LU/i);
+  });
+
+  it('blocks an unrecorded job without implying it is damaged', () => {
+    const r = streamingReadiness(dyn({ beforeLra: null, afterLra: null, normalizationType: null }));
+    expect(r.ok).toBe(false);
+    expect(r.headline).toMatch(/not recorded/i);
+    expect(r.headline).not.toMatch(/compressed|moved/i);
+  });
+
+  it('still passes a genuinely clean master', () => {
+    const r = streamingReadiness(baseJob);
+    expect(r.ok).toBe(true);
+    expect(r.headline).toBe('Streaming Ready');
+    expect(r.facts).toMatch(/LRA 6\.8 unchanged/);
+  });
+
+  it('drops "unchanged" from the facts line when dynamics did not survive', () => {
+    expect(streamingReadiness(dyn({ afterLra: 4.1 })).facts).not.toMatch(/unchanged/);
+  });
+});
+
+describe('the screen and the saved file agree', () => {
+  const compressed: MasterJob = { ...baseJob, normalizationType: 'dynamic', beforeLra: 6.8, afterLra: 4.1 };
+
+  it('does not print "Ready for streaming" in a report that also says the range was compressed', () => {
+    const lines = summaryLines(compressed);
+    expect(lines.some((l) => /Dynamic normalization/i.test(l))).toBe(true);
+    expect(lines.some((l) => /✓ Ready for streaming/.test(l))).toBe(false);
+    expect(lines.some((l) => /⚠ Review the flags above/.test(l))).toBe(true);
+  });
+
+  it('keeps the report and the Studio verdict in lockstep across every case', () => {
+    for (const job of [
+      baseJob,
+      { ...baseJob, normalizationType: 'dynamic' as const },
+      { ...baseJob, afterLra: 4.1 },
+      { ...baseJob, afterTp: -0.2 },
+      { ...baseJob, afterLufs: -11 },
+      { ...baseJob, beforeLra: null, afterLra: null, normalizationType: null },
+    ]) {
+      const screenSaysReady = streamingReadiness(job).ok;
+      const fileSaysReady = summaryLines(job).some((l) => /✓ Ready for streaming/.test(l));
+      expect(fileSaysReady).toBe(screenSaysReady);
+    }
+  });
+
+  it('a compressed master reaches the rendered report as a review, not a pass', () => {
+    const text = buildMasterReport(compressed);
+    expect(text).toMatch(/⚠ Review the flags above before distributing/);
+    expect(text).not.toMatch(/✓ Ready for streaming/);
+    expect(text).toMatch(/DYNAMIC fallback — range was compressed/);
+  });
+});
+
+describe('an unmeasured true peak is not an exceeded one', () => {
+  const noPeak: MasterJob = { ...baseJob, afterTp: null };
+
+  it('says the peak was not measured rather than printing an em dash as a reading', () => {
+    const r = streamingReadiness(noPeak);
+    expect(r.ok).toBe(false);
+    expect(r.headline).toMatch(/true peak was not measured/i);
+    expect(r.headline).not.toMatch(/true peak — exceeds/);
+  });
+
+  it('matches the wording the .txt report already used for the same job', () => {
+    expect(buildMasterReport(noPeak)).toMatch(/true peak not reported — verify before use/i);
+    expect(streamingReadiness(noPeak).checks.find((c) => c.label === 'True peak')?.ok).toBeNull();
+  });
+
+  it('still reports an ACTUAL exceedance with its measured value', () => {
+    expect(streamingReadiness({ ...baseJob, afterTp: -0.2 }).headline).toMatch(/-0\.20 dBTP exceeds -1 dBTP/);
+  });
+});
+
+describe('dynamicsState names the reason, not just the verdict', () => {
+  it('separates compressed, drifted, unrecorded and preserved', () => {
+    expect(dynamicsState(baseJob)).toBe('preserved');
+    expect(dynamicsState({ ...baseJob, normalizationType: 'dynamic' })).toBe('compressed');
+    expect(dynamicsState({ ...baseJob, afterLra: 4.1 })).toBe('drifted');
+    expect(dynamicsState({ ...baseJob, beforeLra: null, afterLra: null, normalizationType: null })).toBe('unrecorded');
+  });
+
+  it('reports compressed even when LRA was never captured', () => {
+    expect(dynamicsState({ ...baseJob, beforeLra: null, afterLra: null, normalizationType: 'dynamic' })).toBe('compressed');
+  });
+
+  it('agrees with dynamicsPreserved on every state', () => {
+    for (const job of [
+      baseJob,
+      { ...baseJob, normalizationType: 'dynamic' as const },
+      { ...baseJob, afterLra: 4.1 },
+      { ...baseJob, beforeLra: null, afterLra: null, normalizationType: null },
+    ]) {
+      expect(dynamicsPreserved(job)).toBe(dynamicsState(job) === 'preserved');
+    }
   });
 });
