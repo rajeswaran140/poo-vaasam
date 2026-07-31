@@ -222,3 +222,51 @@ describe('defects found by auditing against the live catalogue (2026-07-30)', ()
     expect(ids(aired)).toContain('asr-wrong-language');
   });
 });
+
+describe('the retired full name (catalogue sweep, 2026-07-31)', () => {
+  it('catches it as a tag — the form 21 of 23 videos actually had', () => {
+    const f = checkRelease({
+      ...good,
+      tags: [...good.tags, 'Rajeswaran Thangarajah'],
+    }).find((x) => x.id === 'retired-name');
+    expect(f?.severity).toBe('gap');
+    expect(f?.detail).toContain('tag');
+    expect(f?.fix).toBe('Raj Thangarajah');
+  });
+
+  it('catches the hashtag form, which has no space between the words', () => {
+    const f = checkRelease({
+      ...good,
+      description: `${good.description}\n#RajeswaranThangarajah`,
+    }).find((x) => x.id === 'retired-name');
+    expect(f?.detail).toContain('description');
+  });
+
+  it('catches it in a title', () => {
+    const f = checkRelease({
+      ...good,
+      title: `${good.title} — Rajeswaran Thangarajah`,
+    }).find((x) => x.id === 'retired-name');
+    expect(f?.detail).toContain('title');
+  });
+
+  it('does not fire on the approved shortened form', () => {
+    expect(
+      ids({ ...good, description: `${good.description}\n© 2026 TamilAgaval / Raj Thangarajah` })
+    ).not.toContain('retired-name');
+  });
+
+  it('reports every field it appears in, not just the first', () => {
+    const f = checkRelease({
+      ...good,
+      description: `${good.description}\n#RajeswaranThangarajah`,
+      tags: [...good.tags, 'Rajeswaran Thangarajah'],
+    }).find((x) => x.id === 'retired-name');
+    expect(f?.detail).toContain('description');
+    expect(f?.detail).toContain('tag');
+  });
+
+  it('keeps a clean upload ready', () => {
+    expect(summariseRelease(good).ready).toBe(true);
+  });
+});

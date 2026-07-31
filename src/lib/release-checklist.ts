@@ -60,6 +60,19 @@ export const SUBSCRIBE_URL = 'https://www.youtube.com/@Tamilagaval?sub_confirmat
 /** Minimum tags before the upload counts as tagged at all. */
 export const MIN_TAGS = 10;
 
+/**
+ * The retired full name. Raj publishes as "Raj" / "Raj Thangarajah"; the older
+ * "Rajeswaran Thangarajah" is not to appear anywhere in public metadata.
+ *
+ * Matching the FIRST NAME alone is deliberate. The 2026-07-18 catalogue sweep
+ * checked only the © credit line and reported clean; on 2026-07-31 the name was
+ * still on 23 of 90 videos — 21 as a `Rajeswaran Thangarajah` tag and 3 as a
+ * `#RajeswaranThangarajah` hashtag, forms a credit-line check never looked at
+ * and a two-word pattern would miss across the hashtag's missing space. One
+ * of the 23 was the channel's biggest upload at 47k views.
+ */
+export const RETIRED_NAME = /rajeswaran/i;
+
 const has = (s: string, re: RegExp) => re.test(s);
 
 /**
@@ -264,6 +277,28 @@ export function checkRelease(v: VideoSnapshot): Finding[] {
       severity: 'note',
       title: 'Not in the Latest playlist',
       detail: 'New songs normally go here so returning viewers find them.',
+    });
+  }
+
+  // --- retired name ---------------------------------------------------------
+  // Checked across every field rather than the credit line, because that is
+  // exactly the assumption that let this drift unnoticed for two weeks.
+  const nameFields: Array<[string, string]> = [
+    ['title', v.title],
+    ['description', d],
+    ...v.tags.map((t) => ['tag', t] as [string, string]),
+  ];
+  const offending = nameFields.filter(([, value]) => RETIRED_NAME.test(value ?? ''));
+  if (offending.length) {
+    const where = [...new Set(offending.map(([field]) => field))].join(', ');
+    f.push({
+      id: 'retired-name',
+      severity: 'gap',
+      title: 'Retired full name present in metadata',
+      detail:
+        `Found in: ${where}. Raj publishes as "Raj" or "Raj Thangarajah" — the older full name should ` +
+        'not appear in public metadata. Swap rather than delete, so the credit and its search value survive.',
+      fix: 'Raj Thangarajah',
     });
   }
 
