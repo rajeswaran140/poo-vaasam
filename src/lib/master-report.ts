@@ -147,14 +147,14 @@ export function streamingReadiness(job: MasterJob): Readiness {
   const measured = typeof job.afterLufs === 'number';
   const onTarget = isOnTarget(job);
   const peakSafe = isPeakSafe(job);
-  const dyn = dynamicsPreserved(job);
+  const dyn = dynamicsState(job);
 
   const checks = readinessChecks(job);
   const facts = [
     lufs(job.afterLufs),
     dbtp(job.afterTp),
     typeof job.afterLra === 'number'
-      ? `LRA ${job.afterLra.toFixed(1)}${dyn ? ' unchanged' : ''}`
+      ? `LRA ${job.afterLra.toFixed(1)}${dyn === 'preserved' ? ' unchanged' : ''}`
       : null,
     '24-bit/48 kHz',
   ].filter(Boolean).join(' · ');
@@ -172,12 +172,42 @@ export function streamingReadiness(job: MasterJob): Readiness {
   }
   if (!peakSafe) {
     // The case the old green tick got wrong.
+    //
+    // An UNMEASURED peak is not an exceeded one. Interpolating dbtp(null) here
+    // rendered "true peak — exceeds -1 dBTP", asserting a reading that was
+    // never taken — while the .txt report for the same job correctly said "not
+    // reported". Blocking readiness is right either way; only the wording was.
     return {
       ok: false,
-      headline: `Review before distributing — true peak ${dbtp(job.afterTp)} exceeds -1 dBTP`,
+      headline:
+        typeof job.afterTp === 'number'
+          ? `Review before distributing — true peak ${dbtp(job.afterTp)} exceeds -1 dBTP`
+          : 'Review before distributing — true peak was not measured',
       facts,
       checks,
     };
+  }
+  // Dynamics is the THIRD leg, and it was computed and then dropped: `dyn` only
+  // reached the facts string, so a master ffmpeg had silently compressed still
+  // returned ok:true. The panel then rendered a green "Streaming Ready" above
+  // its own red ✗ Dynamics and ✗ Gain type rows, and the .txt report carried
+  // both "range WAS compressed" and "Ready for distribution" in one file.
+  //
+  // `unrecorded` blocks too, matching the true-peak leg above: a check that
+  // never ran cannot be reported as passed. Its wording says so plainly rather
+  // than implying the master is damaged.
+  if (dyn !== 'preserved') {
+    const drift =
+      typeof job.beforeLra === 'number' && typeof job.afterLra === 'number'
+        ? Math.abs(job.afterLra - job.beforeLra).toFixed(1)
+        : null;
+    const headline =
+      dyn === 'compressed'
+        ? 'Review before distributing — ffmpeg compressed the range; tone is not preserved'
+        : dyn === 'drifted'
+          ? `Review before distributing — loudness range moved ${drift} LU`
+          : 'Dynamics not recorded — re-master to verify tone was preserved';
+    return { ok: false, headline, facts, checks };
   }
   return { ok: true, headline: 'Streaming Ready', facts, checks };
 }
@@ -205,8 +235,12 @@ export function summaryLines(job: MasterJob): string[] {
       ? `✓ Peak-safe — true peak ${dbtp(job.afterTp)} (within -1 dBTP)`
       : `✗ True peak ${dbtp(job.afterTp)} exceeds -1 dBTP — check for clipping`;
 
+  // Dynamics belongs in this conjunction for the same reason it belongs in
+  // streamingReadiness: without it, this line printed "✓ Ready for streaming"
+  // directly beneath its own "⚠ Dynamic normalization — tone is not preserved"
+  // — one file contradicting itself. Same rule, so screen and file agree.
   const ready =
-    measured && onTarget && peakSafe
+    measured && onTarget && peakSafe && dynamicsPreserved(job)
       ? '✓ Ready for streaming, video editing and distribution'
       : '⚠ Review the flags above before distributing';
 
@@ -225,14 +259,34 @@ export function summaryLines(job: MasterJob): string[] {
 export const LRA_TOLERANCE_LU = 0.5;
 
 /**
+ * WHY a master's dynamics claim holds or fails — not just whether it does.
+ *
+ * `dynamicsPreserved` collapses four distinct outcomes into one boolean, which
+ * is all a tick needs but not enough to write an honest headline: "ffmpeg
+ * compressed this file" and "nobody measured this file" are both `false` and
+ * mean opposite things to the operator. The readiness headline needs to tell
+ * them apart, so the reason is derived once, here, and shared.
+ *
+ *  - `compressed`  ffmpeg fell back to dynamic mode; the range WAS squeezed.
+ *  - `drifted`     linear gain claimed, but LRA moved more than rounding.
+ *  - `unrecorded`  mastered before LRA capture — unknown, not bad.
+ *  - `preserved`   LRA survived; the loudness-only claim is evidenced.
+ */
+export type DynamicsState = 'preserved' | 'compressed' | 'drifted' | 'unrecorded';
+
+export function dynamicsState(job: MasterJob): DynamicsState {
+  if (job.normalizationType === 'dynamic') return 'compressed';
+  if (typeof job.beforeLra !== 'number' || typeof job.afterLra !== 'number') return 'unrecorded';
+  return Math.abs(job.afterLra - job.beforeLra) <= LRA_TOLERANCE_LU ? 'preserved' : 'drifted';
+}
+
+/**
  * True when the master demonstrably kept the source's dynamics. Exported so the
  * Studio badge and the .txt report are driven by ONE rule — a UI that said
  * "unchanged" while the report warned would be worse than showing neither.
  */
 export function dynamicsPreserved(job: MasterJob): boolean {
-  if (job.normalizationType === 'dynamic') return false;
-  if (typeof job.beforeLra !== 'number' || typeof job.afterLra !== 'number') return false;
-  return Math.abs(job.afterLra - job.beforeLra) <= LRA_TOLERANCE_LU;
+  return dynamicsState(job) === 'preserved';
 }
 
 /**
