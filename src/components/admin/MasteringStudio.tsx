@@ -403,6 +403,17 @@ export function MasteringStudio() {
    * Keep this master. Unsaved jobs expire after 24h — the WAV survives in S3 but
    * the record explaining it does not, leaving an orphaned machine-named file.
    */
+  const loadLibrary = useCallback(async () => {
+    try {
+      const res = await adminFetch('/api/admin/music-lab/masters');
+      const body = await res.json().catch(() => ({}));
+      if (res.ok && body.success) setLibrary(body.masters as MasterJob[]);
+    } catch {
+      // A library that fails to load must never block mastering — the list is
+      // supplementary, the job in front of the user is the point.
+    }
+  }, []);
+
   const saveToLibrary = useCallback(async () => {
     if (!jobId) return;
     setSaving(true);
@@ -424,7 +435,8 @@ export function MasteringStudio() {
     } finally {
       setSaving(false);
     }
-  }, [jobId, masterName]);
+  }, [jobId, masterName, loadLibrary]);
+
 
   /**
    * Deliberately NOT loaded on mount: listing scans the table, and most visits
@@ -523,18 +535,8 @@ export function MasteringStudio() {
       if (!open && library === null) void loadLibrary();
       return !open;
     });
-  }, [library]);
+  }, [library, loadLibrary]);
 
-  const loadLibrary = useCallback(async () => {
-    try {
-      const res = await adminFetch('/api/admin/music-lab/masters');
-      const body = await res.json().catch(() => ({}));
-      if (res.ok && body.success) setLibrary(body.masters as MasterJob[]);
-    } catch {
-      // A library that fails to load must never block mastering — the list is
-      // supplementary, the job in front of the user is the point.
-    }
-  }, []);
 
   const downloadReport = useCallback(() => {
     if (!job?.masterKey) return;

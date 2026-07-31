@@ -25,7 +25,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Repeat, X } from 'lucide-react';
+import { Repeat, X, Flag, Copy } from 'lucide-react';
 import { MasteringEqualizer } from '@/components/admin/MasteringEqualizer';
 import { EQ_BANDS, flatGains, clampGain, isFlat, type EqGains } from '@/lib/audio-eq';
 import { measureBlock, barFraction, decayPeak, METER_FLOOR_DB, TRUE_PEAK_CEILING_DB } from '@/lib/audio-meter';
@@ -38,6 +38,12 @@ import {
   shouldRenderWaveform,
   type LoopRegion,
 } from '@/lib/waveform';
+import { PLAYBACK_RATES, DEFAULT_RATE, clampRate, formatRate, isDetailRate, RATE_WARNING } from '@/lib/playback-rate';
+import {
+  addMark, removeMark, marksToText, dominantReasons, reasonLabel, formatMarkTime,
+  type AuditionMark, type MarkReason,
+} from '@/lib/audition-marks';
+import { FAILURE_REASONS } from '@/types/generation';
 
 interface Props {
   /** Presigned URL of the mastered WAV. */
@@ -72,6 +78,11 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
   const [loop, setLoop] = useState<LoopRegion | null>(null);
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [comparing, setComparing] = useState(false);
+  const [rate, setRate] = useState<number>(DEFAULT_RATE);
+  const [pitchShifts, setPitchShifts] = useState(false);
+  const [marks, setMarks] = useState<AuditionMark[]>([]);
+  const [markReason, setMarkReason] = useState<MarkReason>('pronunciation');
+  const [copied, setCopied] = useState(false);
 
   // ---- graph -------------------------------------------------------------
   const ensureGraph = useCallback(() => {
@@ -124,6 +135,21 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
     }
   }, [gains]);
 
+  // Browsers cap concurrent AudioContexts at around six. This component is
+  // keyed on the master URL, so every switch mounts a fresh one — without
+  // closing the old context, auditioning a handful of masters exhausts the
+  // budget and the meter and equaliser stop working with no obvious cause.
+  useEffect(() => {
+    return () => {
+      const ctx = ctxRef.current;
+      ctxRef.current = null;
+      analyserRef.current = null;
+      filtersRef.current = new Map();
+      wired.current = false;
+      if (ctx && ctx.state !== 'closed') void ctx.close();
+    };
+  }, []);
+
   // ---- meter + loop, driven from one animation frame ----------------------
   useEffect(() => {
     if (!playing) {
@@ -132,6 +158,13 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
       return;
     }
     const buf = new Float32Array(analyserRef.current?.fftSize ?? 2048);
+    // The LOOP CHECK must run every frame — `timeupdate` fires ~4x/second and
+    // cannot close a phrase cleanly. The DISPLAY must not: setState twice per
+    // frame re-renders this whole tree 60 times a second for changes too small
+    // to see. So the frame does the timing work, and state only moves when the
+    // rendered value would actually differ.
+    let lastShownPos = -1;
+    let lastShownPeak = Number.NEGATIVE_INFINITY;
     const tick = () => {
       const a = audioRef.current;
       const an = analyserRef.current;
@@ -139,12 +172,18 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
         an.getFloatTimeDomainData(buf);
         const r = measureBlock(buf);
         heldPeak.current = decayPeak(heldPeak.current, r.peakDb);
-        setLevel({ peakDb: heldPeak.current, rmsDb: r.rmsDb, over: r.overCeiling });
+        // 0.5 dB is finer than the bar can show.
+        if (Math.abs(heldPeak.current - lastShownPeak) >= 0.5 || r.overCeiling) {
+          lastShownPeak = heldPeak.current;
+          setLevel({ peakDb: heldPeak.current, rmsDb: r.rmsDb, over: r.overCeiling });
+        }
       }
       if (a) {
-        setPosition(a.currentTime);
-        // Looping lives here rather than on `timeupdate`, which only fires
-        // ~4x/second — far too coarse to loop a phrase cleanly.
+        // The clock shows seconds; 100 ms is already invisible.
+        if (Math.abs(a.currentTime - lastShownPos) >= 0.1) {
+          lastShownPos = a.currentTime;
+          setPosition(a.currentTime);
+        }
         if (shouldLoopBack(a.currentTime, loop) && loop) a.currentTime = loop.start;
       }
       raf.current = requestAnimationFrame(tick);
@@ -192,13 +231,48 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
     };
   }, [masterUrl]);
 
+  // Applying the rate is where pitch preservation is requested. A browser that
+  // refuses transposes the audio, and a transposed vocal cannot be judged for
+  // pronunciation at all — so we detect the refusal and say so.
+  useEffect(() => {
+    const a = audioRef.current;
+    if (!a) return;
+    a.playbackRate = clampRate(rate);
+    const el = a as unknown as Record<string, unknown>;
+    const supported = 'preservesPitch' in el || 'mozPreservesPitch' in el;
+    if ('preservesPitch' in el) el.preservesPitch = true;
+    else if ('mozPreservesPitch' in el) el.mozPreservesPitch = true;
+    setPitchShifts(!supported);
+  }, [rate]);
+
+  /** Drop a mark at the current position. */
+  const markSeq = useRef(0);
+  const dropMark = useCallback(() => {
+    const a = audioRef.current;
+    if (!a) return;
+    setMarks((m) =>
+      addMark(m, {
+        // A monotonic counter, NOT list length: marking t, removing an earlier
+        // mark, then marking t again reproduced the same id, which collided as
+        // a React key and made one removal delete both.
+        id: `mark-${markSeq.current++}`,
+        time: a.currentTime,
+        reason: markReason,
+        note: '',
+      })
+    );
+  }, [markReason]);
+
   // ---- keyboard ----------------------------------------------------------
   const onKeyDown = useCallback((e: React.KeyboardEvent) => {
     const a = audioRef.current;
     if (!a) return;
     // Never hijack typing in a field.
     const t = e.target as HTMLElement;
-    if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return;
+    // SELECT matters as much as INPUT here: the mark-reason dropdown lives
+    // inside this region, and typing "m" in it should pick "melody"/"mixing",
+    // not drop a mark.
+    if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT') return;
     if (e.key === ' ') {
       e.preventDefault();
       if (a.paused) void a.play();
@@ -215,8 +289,12 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
     } else if (e.key.toLowerCase() === 'l') {
       e.preventDefault();
       setLoop(null);
+    } else if (e.key.toLowerCase() === 'm') {
+      // Mark where the thought happens — both hands are already on the player.
+      e.preventDefault();
+      dropMark();
     }
-  }, []);
+  }, [dropMark]);
 
   // ---- A/B ---------------------------------------------------------------
   const toggleCompare = useCallback(() => {
@@ -226,9 +304,18 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
     // that restarts from zero compares nothing.
     const at = a.currentTime;
     const wasPlaying = !a.paused;
+    const wasRate = a.playbackRate;
     setComparing((c) => !c);
     a.src = comparing ? masterUrl : sourceUrl;
     a.currentTime = at;
+    // Setting `src` resets playbackRate to the element default. Without this
+    // an A/B started at 0.75x would play the SOURCE at 1x — you would hear a
+    // difference that is only speed, which invalidates the one comparison this
+    // control exists to make.
+    a.playbackRate = wasRate;
+    const el = a as unknown as Record<string, unknown>;
+    if ('preservesPitch' in el) el.preservesPitch = true;
+    else if ('mozPreservesPitch' in el) el.mozPreservesPitch = true;
     if (wasPlaying) void a.play();
   }, [comparing, masterUrl, sourceUrl]);
 
@@ -268,6 +355,21 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
             <X className="h-3 w-3" aria-hidden="true" />
           </button>
         )}
+        <span className="flex items-center gap-1">
+          {PLAYBACK_RATES.map((r) => (
+            <button
+              key={r}
+              type="button"
+              onClick={() => setRate(r)}
+              aria-pressed={rate === r}
+              className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${
+                rate === r ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'
+              }`}
+            >
+              {formatRate(r)}
+            </button>
+          ))}
+        </span>
         <span className="ml-auto tabular-nums text-gray-500 dark:text-gray-400">
           {formatTime(position)} / {formatTime(duration)}
         </span>
@@ -338,6 +440,9 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
         controls
         className="mt-2 w-full"
         onPlay={() => {
+          // Reset the held peak, or a loud passage from the previous listen
+          // keeps the bar high over a quiet one until it decays.
+          heldPeak.current = METER_FLOOR_DB;
           ensureGraph();
           void ctxRef.current?.resume();
           setPlaying(true);
@@ -377,8 +482,99 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
 
       <MasteringEqualizer gains={gains} onChange={setGains} unavailable={graphError} />
 
+      {isDetailRate(rate) && (
+        <p className="mt-2 rounded border border-gray-200 bg-white px-2 py-1 text-[11px] text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
+          Slowed for detail — consonants and vowel length are audible here.
+          {pitchShifts && <span className="text-amber-700 dark:text-amber-300"> {RATE_WARNING}</span>}
+        </p>
+      )}
+
+      <div className="mt-2 rounded-lg border border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-gray-900/40">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={dropMark}
+            className="flex items-center gap-1 rounded bg-purple-600 px-2 py-1 text-xs font-medium text-white"
+          >
+            <Flag className="h-3 w-3" aria-hidden="true" />
+            Mark here
+          </button>
+          <label className="text-xs">
+            <span className="sr-only">Mark reason</span>
+            <select
+              value={markReason}
+              onChange={(e) => setMarkReason(e.target.value as MarkReason)}
+              className="rounded border border-gray-300 px-1.5 py-1 text-xs dark:border-gray-700 dark:bg-gray-900"
+            >
+              {FAILURE_REASONS.map((r) => (
+                <option key={r} value={r}>
+                  {reasonLabel(r)}
+                </option>
+              ))}
+            </select>
+          </label>
+          {marks.length > 0 && (
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(marksToText(marks, title));
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1500);
+                } catch {
+                  /* clipboard blocked — the list is selectable */
+                }
+              }}
+              className="ml-auto flex items-center gap-1 rounded border border-gray-300 px-2 py-1 text-xs dark:border-gray-700"
+            >
+              <Copy className="h-3 w-3" aria-hidden="true" />
+              {copied ? 'Copied' : 'Copy notes'}
+            </button>
+          )}
+        </div>
+
+        {marks.length === 0 ? (
+          <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+            Press <kbd>M</kbd> while listening to mark a moment. Reasons match the Music Lab
+            vocabulary, so the list pastes straight into a take&rsquo;s notes.
+          </p>
+        ) : (
+          <>
+            <ul className="mt-2 divide-y divide-gray-100 dark:divide-gray-800">
+              {marks.map((m) => (
+                <li key={m.id} className="flex items-center gap-2 py-1 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (audioRef.current) audioRef.current.currentTime = m.time;
+                    }}
+                    className="tabular-nums font-medium text-purple-700 hover:underline dark:text-purple-300"
+                  >
+                    {formatMarkTime(m.time)}
+                  </button>
+                  <span className="text-gray-700 dark:text-gray-200">{reasonLabel(m.reason)}</span>
+                  <button
+                    type="button"
+                    onClick={() => setMarks((x) => removeMark(x, m.id))}
+                    aria-label={`Remove mark at ${formatMarkTime(m.time)}`}
+                    className="ml-auto text-gray-400 hover:text-rose-600"
+                  >
+                    <X className="h-3 w-3" aria-hidden="true" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-[11px] text-gray-600 dark:text-gray-300">
+              Mostly{' '}
+              <strong>{reasonLabel(dominantReasons(marks)[0].reason)}</strong> ({dominantReasons(marks)[0].count} of{' '}
+              {marks.length}) — that is the take&rsquo;s failureReason.
+            </p>
+          </>
+        )}
+      </div>
+
       <p className="mt-2 text-[11px] text-gray-400 dark:text-gray-500">
-        Space play/pause · ← → seek 5s · 0–9 jump · L clear loop · drag the waveform to loop
+        Space play/pause · ← → seek 5s · 0–9 jump · M mark · L clear loop · drag the waveform to loop
       </p>
     </div>
   );
