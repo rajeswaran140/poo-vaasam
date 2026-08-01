@@ -260,6 +260,7 @@ export async function fetchTrafficSnapshot(daysBack = 28): Promise<Result<Traffi
         { name: 'sessions' },
         { name: 'screenPageViews' },
       ],
+      dimensionFilter: publicTrafficFilter(),
     } as any);
     const m = res.rows?.[0]?.metricValues;
     return {
@@ -282,6 +283,46 @@ export async function fetchTrafficSnapshot(daysBack = 28): Promise<Result<Traffi
 // Website-analytics reports (powers /admin/analytics). The map* helpers are
 // pure (no client) so they're unit-testable against sample GA4 payloads.
 // ---------------------------------------------------------------------------
+
+/**
+ * Paths that are the OPERATOR's own browsing, not audience traffic.
+ *
+ * Measured 2026-08-01 over 28 days: 275 of 594 pageviews — **46%** — were
+ * `/admin*`, and `/admin`, `/admin/mastering` and `/admin/youtube` ranked 2nd,
+ * 3rd and 4th in "Top pages", above `/videos` and `/songs`. Every unfiltered
+ * report (totals, trend, pages, sources, geography, devices) inherited that
+ * skew, which is what made the dashboard read as inaccurate.
+ */
+export const NON_PUBLIC_PATH_PREFIXES = ['/admin', '/login', '/debug'] as const;
+
+/**
+ * GA4 `dimensionFilter` that drops the operator's own pages.
+ *
+ * SEMANTICS, because they differ per metric and the difference is not obvious:
+ *   - `screenPageViews` is page-scoped, so this removes admin views exactly.
+ *   - `totalUsers` / `sessions` are session-scoped, so this reads as "users and
+ *     sessions that viewed at least one public page". A session that touched
+ *     both a public page and the dashboard still counts once — correct, since
+ *     it did contain a real visit. The residual is far smaller than the 46%
+ *     inflation it replaces.
+ *
+ * This does NOT cover GA4's own stored data — it filters at query time only. A
+ * property-level internal-traffic filter is the durable complement.
+ */
+export function publicTrafficFilter() {
+  return {
+    notExpression: {
+      orGroup: {
+        expressions: NON_PUBLIC_PATH_PREFIXES.map((prefix) => ({
+          filter: {
+            fieldName: 'pagePath',
+            stringFilter: { matchType: 'BEGINS_WITH', value: prefix },
+          },
+        })),
+      },
+    },
+  };
+}
 
 export interface TrafficDayPoint {
   /** ISO date, YYYY-MM-DD. */
@@ -323,6 +364,7 @@ export async function fetchTrafficTimeseries(daysBack = 28): Promise<Result<Traf
       dateRanges: [{ startDate: `${daysBack}daysAgo`, endDate: 'today' }],
       dimensions: [{ name: 'date' }],
       metrics: [{ name: 'totalUsers' }, { name: 'sessions' }, { name: 'screenPageViews' }],
+      dimensionFilter: publicTrafficFilter(),
       orderBys: [{ dimension: { dimensionName: 'date' } }],
       limit: 400,
     } as any);
@@ -360,6 +402,7 @@ export async function fetchTopPages(daysBack = 28, limit = 15): Promise<Result<P
       dateRanges: [{ startDate: `${daysBack}daysAgo`, endDate: 'today' }],
       dimensions: [{ name: 'pagePath' }, { name: 'pageTitle' }],
       metrics: [{ name: 'screenPageViews' }],
+      dimensionFilter: publicTrafficFilter(),
       orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }],
       limit,
     } as any);
@@ -400,6 +443,7 @@ export async function fetchByDimension(
       dateRanges: [{ startDate: `${daysBack}daysAgo`, endDate: 'today' }],
       dimensions: [{ name: dimension }],
       metrics: [{ name: metric }],
+      dimensionFilter: publicTrafficFilter(),
       orderBys: [{ metric: { metricName: metric }, desc: true }],
       limit,
     } as any);
