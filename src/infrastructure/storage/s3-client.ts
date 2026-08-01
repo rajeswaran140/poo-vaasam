@@ -11,6 +11,7 @@ import {
   DeleteObjectCommand,
   ListObjectsV2Command,
   HeadObjectCommand,
+  CopyObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createPresignedPost, type PresignedPost } from '@aws-sdk/s3-presigned-post';
@@ -110,6 +111,41 @@ export class S3Operations {
   /**
    * Delete a file from S3
    */
+  /**
+   * Server-side copy, optionally into ANOTHER bucket.
+   *
+   * S3 does the transfer itself — no bytes travel through this process, which
+   * matters because the mastering sources are 50-70 MB WAVs and the caller is
+   * an SSR Lambda. Both buckets involved live in us-east-1, so this is a
+   * same-region copy with no egress charge.
+   *
+   * `CopySource` is a PATH, not a key: each segment must be URI-encoded
+   * individually, or a Tamil filename (`அக்கம் பக்கம்.wav`) round-trips as a
+   * 404 and a key containing `/` collapses into the bucket path. Encoding the
+   * whole string would escape the separators too.
+   */
+  static async copyObject(params: {
+    sourceKey: string;
+    destKey: string;
+    sourceBucket?: string;
+    destBucket?: string;
+    storageClass?: 'STANDARD' | 'GLACIER_IR' | 'GLACIER' | 'DEEP_ARCHIVE';
+    contentType?: string;
+  }) {
+    const from = params.sourceBucket || BUCKET_NAME;
+    const encoded = params.sourceKey.split('/').map(encodeURIComponent).join('/');
+    const command = new CopyObjectCommand({
+      Bucket: params.destBucket || BUCKET_NAME,
+      Key: params.destKey,
+      CopySource: `${from}/${encoded}`,
+      ...(params.storageClass ? { StorageClass: params.storageClass } : {}),
+      ...(params.contentType
+        ? { ContentType: params.contentType, MetadataDirective: 'REPLACE' as const }
+        : {}),
+    });
+    return await s3Client.send(command);
+  }
+
   static async deleteFile(key: string) {
     const command = new DeleteObjectCommand({
       Bucket: BUCKET_NAME,

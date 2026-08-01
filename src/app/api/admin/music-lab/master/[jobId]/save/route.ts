@@ -17,6 +17,7 @@ import { z } from 'zod';
 import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { MasterJobRepository } from '@/infrastructure/database/MasterJobRepository';
 import { sanitizeMasterTitle } from '@/lib/mastering-storage';
+import { archiveSavedMaster } from '@/lib/master-archive-service';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -61,7 +62,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const title = raw ? sanitizeMasterTitle(raw) || null : null;
 
     await new MasterJobRepository().save(jobId, title);
-    return NextResponse.json({ success: true, title });
+
+    // Archive the SOURCE into the lossless masters bucket. Best-effort by
+    // design: the save has already succeeded, and failing the request now would
+    // lose the title over a bucket hiccup. The outcome is recorded on the job
+    // either way so the Studio can show it — a silent failure would leave Raj
+    // believing a source is safe in Glacier when it is not.
+    const archive = await archiveSavedMaster(jobId, { ...job, savedAt: new Date().toISOString(), title });
+    return NextResponse.json({ success: true, title, archive });
   } catch (err) {
     console.error('[api/music-lab/master/:jobId/save] failed:', err instanceof Error ? err.message : String(err));
     return NextResponse.json({ success: false, error: 'Failed to save master' }, { status: 502 });
