@@ -274,15 +274,22 @@ export async function fetchChannelVideos(
   return cached ? cached.videos.slice(0, limit) : [];
 }
 
-/** Multi-resolution thumbnail URLs for a YouTube video — Google prefers an
- *  array of sizes for richer video snippets. */
-export function thumbnailVariants(videoId: string): string[] {
-  return [
-    `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
-    `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-    `https://i.ytimg.com/vi/${videoId}/sddefault.jpg`,
-    `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
-  ];
+/**
+ * The single thumbnail URL advertised in structured data.
+ *
+ * Was an array of four resolutions (mq/hq/sd/maxres). Google only needs one,
+ * and at 90 videos the extra three cost ~14k characters — 27% of the /videos
+ * JSON-LD block — for no ranking benefit. `maxresdefault` is the variant
+ * Google prefers for video rich results.
+ *
+ * CAVEAT: YouTube only generates `maxresdefault` above a source-resolution
+ * threshold, so it can 404 on older or low-res uploads and structured data
+ * would then advertise a dead URL. Verified 2026-08-01: all 90 videos on the
+ * channel have it. Re-check when older material is uploaded — `hqdefault` is
+ * the always-present fallback.
+ */
+export function primaryThumbnailUrl(videoId: string): string {
+  return `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
 }
 
 /**
@@ -314,7 +321,7 @@ export function videosItemListJsonLd(videos: ChannelVideo[]): Record<string, unk
         '@type': 'VideoObject',
         name: video.title,
         description: toDescription(video.description || video.title, VIDEO_DESCRIPTION_MAX),
-        thumbnailUrl: thumbnailVariants(video.id),
+        thumbnailUrl: primaryThumbnailUrl(video.id),
         uploadDate: video.publishedAt,
         contentUrl: video.watchUrl,
         embedUrl: `https://www.youtube.com/embed/${video.id}`,

@@ -6,7 +6,7 @@
 // fetchChannelVideos mirrors thumbnails to S3; stub it so tests stay hermetic.
 jest.mock('@/lib/video-thumbnails', () => ({ ensureThumbnailsMirrored: jest.fn().mockResolvedValue(undefined) }));
 
-import { parseChannelFeed, parseDataApiItems, fetchChannelVideos, videosItemListJsonLd, thumbnailVariants, s3ThumbnailUrl, withTruncatedDescriptions, _resetFeedCache, _attachDurations } from '@/lib/youtube-feed';
+import { parseChannelFeed, parseDataApiItems, fetchChannelVideos, videosItemListJsonLd, primaryThumbnailUrl, s3ThumbnailUrl, withTruncatedDescriptions, _resetFeedCache, _attachDurations } from '@/lib/youtube-feed';
 import type { ChannelVideo } from '@/lib/youtube-feed';
 
 const SAMPLE_FEED = `<?xml version="1.0" encoding="UTF-8"?>
@@ -288,15 +288,11 @@ describe('parseDataApiItems', () => {
   });
 });
 
-describe('thumbnailVariants', () => {
-  it('returns mq/hq/sd/maxres URLs in ascending resolution order', () => {
-    const urls = thumbnailVariants('gfywsN483lI');
-    expect(urls).toEqual([
-      'https://i.ytimg.com/vi/gfywsN483lI/mqdefault.jpg',
-      'https://i.ytimg.com/vi/gfywsN483lI/hqdefault.jpg',
-      'https://i.ytimg.com/vi/gfywsN483lI/sddefault.jpg',
-      'https://i.ytimg.com/vi/gfywsN483lI/maxresdefault.jpg',
-    ]);
+describe('primaryThumbnailUrl', () => {
+  it('returns the single maxres URL Google prefers for video rich results', () => {
+    expect(primaryThumbnailUrl('gfywsN483lI')).toBe(
+      'https://i.ytimg.com/vi/gfywsN483lI/maxresdefault.jpg'
+    );
   });
 });
 
@@ -319,14 +315,12 @@ describe('videosItemListJsonLd', () => {
     // Tamil-language signal for regional/language ranking of the videos.
     expect(first.item.inLanguage).toBe('ta');
 
-    // thumbnailUrl is now an array of multi-resolution URLs (Google prefers
-    // this for richer video snippets).
-    expect(first.item.thumbnailUrl).toEqual([
-      'https://i.ytimg.com/vi/gfywsN483lI/mqdefault.jpg',
-      'https://i.ytimg.com/vi/gfywsN483lI/hqdefault.jpg',
-      'https://i.ytimg.com/vi/gfywsN483lI/sddefault.jpg',
-      'https://i.ytimg.com/vi/gfywsN483lI/maxresdefault.jpg',
-    ]);
+    // thumbnailUrl is a SINGLE maxres URL. The previous four-variant array
+    // cost ~27% of the /videos JSON-LD block across 90 videos for no ranking
+    // benefit; Google only needs one.
+    expect(first.item.thumbnailUrl).toBe(
+      'https://i.ytimg.com/vi/gfywsN483lI/maxresdefault.jpg'
+    );
 
     // Entry without a description falls back to its title.
     expect(ld.itemListElement[1].item.description).toBe('Second Video');
