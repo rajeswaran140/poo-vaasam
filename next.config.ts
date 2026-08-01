@@ -102,7 +102,17 @@ const nextConfig: NextConfig = {
   // Image optimization
   images: {
     formats: ['image/avif', 'image/webp'],
-    minimumCacheTTL: 60,
+    // Next's default deviceSizes top out at 3840, so every <Image> emits ten
+    // srcset candidates. On /videos that was 76k characters across 41 images —
+    // 17% of the document — and the non-srcset fallback `src` pointed at
+    // w=3840, a 3x UPSCALE of a 1280x720 YouTube thumbnail. Capping at 1920
+    // drops the candidates no source on the site can fill, while leaving 2x
+    // headroom for poem art, hero images and any higher-resolution artwork
+    // commissioned later (the setting is site-wide, not just thumbnails).
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920],
+    // Thumbnails and cover art are immutable for the life of a video id, so
+    // re-deriving them every minute only burns optimizer invocations.
+    minimumCacheTTL: 604800, // 7 days
     remotePatterns: [
       {
         protocol: 'https',
@@ -133,6 +143,28 @@ const nextConfig: NextConfig = {
         // ~1.3 MB clip on every repeat visit and every Web Share file fetch.
         source: '/clips/:path*',
         headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+      },
+      {
+        // Public pages are `force-dynamic` (Amplify SSR can't run ISR
+        // reliably), so the CDN TTL *is* the freshness mechanism — raising
+        // s-maxage would delay new uploads appearing. Instead keep the 5-minute
+        // revalidation window and extend stale-while-revalidate to a day: the
+        // CDN serves the cached copy immediately and refreshes in the
+        // background. At this traffic level (~170 sessions/month) a 300s cache
+        // is nearly always cold, so visitors were paying a ~5.8s Lambda cold
+        // start; with SWR they get ~60ms and the next request gets fresh data.
+        //
+        // SCOPE MATTERS: this must never reach /api or /admin — a shared
+        // `public` cache in front of an authenticated response is a data-leak
+        // bug, not a perf win. The negative lookahead excludes those, plus the
+        // other non-public prefixes already hidden in robots.txt.
+        source: '/((?!api/|admin|login|debug).*)',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=0, s-maxage=300, stale-while-revalidate=86400',
+          },
+        ],
       },
       {
         source: '/:path*',
