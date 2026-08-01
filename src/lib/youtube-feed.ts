@@ -13,7 +13,7 @@
 
 import { ensureThumbnailsMirrored } from '@/lib/video-thumbnails';
 import { mediaUrl } from '@/lib/aws-config';
-import { toDescription } from '@/lib/seo';
+import { toDescription, SITE_NAME, SITE_URL } from '@/lib/seo';
 
 /**
  * Full YouTube descriptions run up to ~1.6k chars; with 24 videos they bloat
@@ -33,6 +33,14 @@ export interface ChannelVideo {
   watchUrl: string;
   /** ISO-8601 duration (e.g. "PT3M5S"), attached best-effort from the Data API. */
   duration?: string;
+  /**
+   * Lifetime view count, attached best-effort alongside `duration` from the
+   * SAME videos.list call — that endpoint costs 1 quota unit per request
+   * regardless of how many `part`s are asked for, so this is free. Feeds
+   * `interactionStatistic` in the JSON-LD, which is the field Google weighs
+   * most for video rich results.
+   */
+  viewCount?: number;
 }
 
 const FEED_REVALIDATE_SECONDS = 300; // 5 minutes — keep channel deletions visible quickly
@@ -203,37 +211,54 @@ async function fetchViaDataApi(channelId: string, want: number): Promise<Channel
  * JSON-LD (Google shows duration in video rich results). No-op without a key
  * or on any failure. Mutates `videos` in place.
  */
-async function attachDurations(videos: ChannelVideo[]): Promise<void> {
+async function attachVideoDetails(videos: ChannelVideo[]): Promise<void> {
   const key = process.env.YOUTUBE_API_KEY;
   if (!key || videos.length === 0) return;
   try {
-    const byId = new Map<string, string>();
+    const byId = new Map<string, { duration?: string; viewCount?: number }>();
     // videos.list accepts ≤50 ids per call — chunk so we enrich the WHOLE feed,
     // not just the first 50. partitionShorts keys off duration, and an item with
     // unknown duration defaults to long-form, so an un-enriched Short past the
     // 50th item would be mis-placed into the video grid at higher fetch limits.
+    //
+    // `statistics` rides along with `contentDetails` deliberately: videos.list
+    // is 1 quota unit PER REQUEST, not per part, so view counts cost nothing
+    // extra. (Contrast captions.list at 50 units — see the quota notes.)
     for (let i = 0; i < videos.length; i += 50) {
       const ids = videos.slice(i, i + 50).map((v) => v.id).join(',');
-      const url = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${encodeURIComponent(ids)}&key=${encodeURIComponent(key)}`;
+      const url = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails,statistics&id=${encodeURIComponent(ids)}&key=${encodeURIComponent(key)}`;
       const res = await fetch(url, { cache: 'no-store' });
       if (!res.ok) return;
-      const json = (await res.json()) as { items?: { id?: string; contentDetails?: { duration?: string } }[] };
+      const json = (await res.json()) as {
+        items?: {
+          id?: string;
+          contentDetails?: { duration?: string };
+          // The Data API returns statistics as decimal STRINGS, and omits
+          // viewCount entirely when a channel hides its counts.
+          statistics?: { viewCount?: string };
+        }[];
+      };
       for (const it of json.items ?? []) {
-        if (it?.id && typeof it.contentDetails?.duration === 'string') byId.set(it.id, it.contentDetails.duration);
+        if (!it?.id) continue;
+        const duration = typeof it.contentDetails?.duration === 'string' ? it.contentDetails.duration : undefined;
+        const parsed = Number(it.statistics?.viewCount);
+        const viewCount = Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+        byId.set(it.id, { duration, viewCount });
       }
     }
     for (const v of videos) {
-      const d = byId.get(v.id);
-      if (d) v.duration = d;
+      const found = byId.get(v.id);
+      if (found?.duration) v.duration = found.duration;
+      if (found?.viewCount !== undefined) v.viewCount = found.viewCount;
     }
   } catch {
-    /* best-effort — JSON-LD simply omits duration */
+    /* best-effort — JSON-LD simply omits duration / interactionStatistic */
   }
 }
 
-// Test-only export (mirrors _resetFeedCache) so the chunking of duration
-// enrichment can be unit-tested without driving the whole RSS/API pipeline.
-export { attachDurations as _attachDurations };
+// Test-only export (mirrors _resetFeedCache) so the chunking of the enrichment
+// call can be unit-tested without driving the whole RSS/API pipeline.
+export { attachVideoDetails as _attachVideoDetails };
 
 /**
  * Fetch the channel's latest videos, resilient to YouTube's flaky RSS feed:
@@ -264,9 +289,9 @@ export async function fetchChannelVideos(
 
   if (videos.length > 0) {
     // In parallel (and best-effort): mirror new thumbnails to S3 so the
-    // self-hosted URLs exist at render, and attach durations for the JSON-LD.
+    // self-hosted URLs exist at render, and attach duration + view count for the JSON-LD.
     // The in-process caches keep both near-free on warm instances.
-    await Promise.all([ensureThumbnailsMirrored(videos.map((v) => v.id)), attachDurations(videos)]);
+    await Promise.all([ensureThumbnailsMirrored(videos.map((v) => v.id)), attachVideoDetails(videos)]);
     feedCache.set(channelId, { at: now, videos });
     return videos.slice(0, limit);
   }
@@ -329,6 +354,22 @@ export function videosItemListJsonLd(videos: ChannelVideo[]): Record<string, unk
         // Google surface these for Tamil-language and diaspora-region queries.
         inLanguage: 'ta',
         ...(video.duration ? { duration: video.duration } : {}),
+        // Matches the Organization shape already used on /content pages.
+        // 90 identical copies look wasteful but compress to almost nothing —
+        // repeated strings are the best case for gzip.
+        publisher: { '@type': 'Organization', name: SITE_NAME, url: SITE_URL },
+        // The single field Google weighs most for video rich results. Omitted
+        // rather than zeroed when unknown, so a failed enrichment call never
+        // advertises "0 views".
+        ...(video.viewCount !== undefined
+          ? {
+              interactionStatistic: {
+                '@type': 'InteractionCounter',
+                interactionType: { '@type': 'WatchAction' },
+                userInteractionCount: video.viewCount,
+              },
+            }
+          : {}),
       },
     })),
   };

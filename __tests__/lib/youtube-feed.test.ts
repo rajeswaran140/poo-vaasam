@@ -6,7 +6,7 @@
 // fetchChannelVideos mirrors thumbnails to S3; stub it so tests stay hermetic.
 jest.mock('@/lib/video-thumbnails', () => ({ ensureThumbnailsMirrored: jest.fn().mockResolvedValue(undefined) }));
 
-import { parseChannelFeed, parseDataApiItems, fetchChannelVideos, videosItemListJsonLd, primaryThumbnailUrl, s3ThumbnailUrl, withTruncatedDescriptions, _resetFeedCache, _attachDurations } from '@/lib/youtube-feed';
+import { parseChannelFeed, parseDataApiItems, fetchChannelVideos, videosItemListJsonLd, primaryThumbnailUrl, s3ThumbnailUrl, withTruncatedDescriptions, _resetFeedCache, _attachVideoDetails } from '@/lib/youtube-feed';
 import type { ChannelVideo } from '@/lib/youtube-feed';
 
 const SAMPLE_FEED = `<?xml version="1.0" encoding="UTF-8"?>
@@ -58,7 +58,7 @@ function apiItems(ids: string[]) {
 /** A unique, valid 11-char video id for index i. */
 const vid = (i: number): string => `v${i}`.padEnd(11, '0');
 
-describe('_attachDurations — chunks id lists (>50) so the whole feed is enriched', () => {
+describe('_attachVideoDetails — chunks id lists (>50) so the whole feed is enriched', () => {
   it('calls videos.list in batches of ≤50 ids and enriches every video (incl. past the 50th)', async () => {
     process.env.YOUTUBE_API_KEY = 'test-key';
     const videos: ChannelVideo[] = Array.from({ length: 60 }, (_, i) => ({
@@ -73,12 +73,18 @@ describe('_attachDurations — chunks id lists (>50) so the whole feed is enrich
       const ids = new URLSearchParams(url.split('?')[1]).get('id')!.split(',');
       return {
         ok: true,
-        json: async () => ({ items: ids.map((id) => ({ id, contentDetails: { duration: 'PT4M20S' } })) }),
+        json: async () => ({
+          items: ids.map((id) => ({
+            id,
+            contentDetails: { duration: 'PT4M20S' },
+            statistics: { viewCount: '1234' },
+          })),
+        }),
       };
     });
     global.fetch = fetchMock as unknown as typeof fetch;
 
-    await _attachDurations(videos);
+    await _attachVideoDetails(videos);
 
     // 60 videos → two calls (50 + 10), each with ≤50 ids.
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -88,6 +94,12 @@ describe('_attachDurations — chunks id lists (>50) so the whole feed is enrich
     }
     // Every video enriched — the 51st–60th were dropped before the chunking fix.
     expect(videos.every((v) => v.duration === 'PT4M20S')).toBe(true);
+    // statistics rides along in the SAME request (videos.list is 1 quota unit
+    // per request regardless of parts), so view counts cost nothing extra.
+    expect(videos.every((v) => v.viewCount === 1234)).toBe(true);
+    for (const call of fetchMock.mock.calls) {
+      expect(call[0] as string).toContain('part=contentDetails,statistics');
+    }
   });
 });
 
@@ -356,6 +368,46 @@ describe('videosItemListJsonLd', () => {
       itemListElement: Array<{ item: Record<string, unknown> }>;
     };
     expect('duration' in ld.itemListElement[0].item).toBe(false);
+  });
+
+  it('publishes an interactionStatistic watch count when the view count is known', () => {
+    const ld = videosItemListJsonLd([{ ...baseVideo, viewCount: 47308 }]) as {
+      itemListElement: Array<{ item: Record<string, unknown> }>;
+    };
+    expect(ld.itemListElement[0].item.interactionStatistic).toEqual({
+      '@type': 'InteractionCounter',
+      interactionType: { '@type': 'WatchAction' },
+      userInteractionCount: 47308,
+    });
+  });
+
+  it('OMITS interactionStatistic when the view count is unknown — never advertises 0 views', () => {
+    const ld = videosItemListJsonLd([baseVideo]) as {
+      itemListElement: Array<{ item: Record<string, unknown> }>;
+    };
+    // A failed enrichment call must not publish "0 views" as structured data.
+    expect('interactionStatistic' in ld.itemListElement[0].item).toBe(false);
+  });
+
+  it('keeps a genuine zero-view video distinguishable from an unknown count', () => {
+    const ld = videosItemListJsonLd([{ ...baseVideo, viewCount: 0 }]) as {
+      itemListElement: Array<{ item: Record<string, unknown> }>;
+    };
+    const stat = ld.itemListElement[0].item.interactionStatistic as { userInteractionCount: number };
+    expect(stat.userInteractionCount).toBe(0);
+  });
+
+  it('names the publisher on every VideoObject', () => {
+    const ld = videosItemListJsonLd(parseChannelFeed(SAMPLE_FEED)) as {
+      itemListElement: Array<{ item: Record<string, unknown> }>;
+    };
+    for (const el of ld.itemListElement) {
+      expect(el.item.publisher).toEqual({
+        '@type': 'Organization',
+        name: 'Tamilagaval',
+        url: 'https://tamilagaval.com',
+      });
+    }
   });
 
   it('truncates long VideoObject descriptions (keeps the JSON-LD lean)', () => {
