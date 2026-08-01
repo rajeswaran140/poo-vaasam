@@ -64,5 +64,15 @@ export interface MasterJob {
   savedAt: string | null;
   /** Admin's name for the master; also drives the download filename. */
   title: string | null;
+  /**
+   * When this job's SOURCE was copied into the lossless masters bucket, and
+   * where it landed. Set on save, best-effort: archiving must never fail a
+   * save, so a failure records `archiveError` and leaves the other two null.
+   * All three are null for jobs written before archiving existed, and for
+   * masters saved without a title (the archive is named by song, not job id).
+   */
+  archivedAt: string | null;
+  archiveKey: string | null;
+  archiveError: string | null;
   error: { code: string; message: string } | null;
 }

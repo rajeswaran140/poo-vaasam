@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
 import { MasterJobRepository } from '@/infrastructure/database/MasterJobRepository';
+import { isStuck, STUCK_ERROR } from '@/lib/master-stuck';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -22,8 +23,27 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (!jobId) return NextResponse.json({ success: false, error: 'jobId required' }, { status: 400 });
 
   try {
-    const job = await new MasterJobRepository().get(jobId);
+    const repo = new MasterJobRepository();
+    const job = await repo.get(jobId);
     if (!job) return NextResponse.json({ success: false, error: 'Job not found' }, { status: 404 });
+
+    // A worker killed by timeout or OOM never reaches its own catch block, so
+    // the job would claim `processing` until its 24h ttl quietly deleted it —
+    // an endless spinner, then no evidence. Nothing else covers this: the
+    // Lambda has no dead-letter queue and no failure destination. Resolving it
+    // on the poll the Studio already makes needs no new infrastructure and
+    // catches every cause of death, not just the ones Lambda reports.
+    if (isStuck(job, Date.now())) {
+      // Conditional on the status still being `processing`, so a worker that
+      // lands in this same moment wins over our guess.
+      await repo.markStuck(jobId, { ...STUCK_ERROR }).catch(() => {});
+      return NextResponse.json({
+        ...job,
+        success: true,
+        status: 'error',
+        error: { ...STUCK_ERROR },
+      });
+    }
     return NextResponse.json({ success: true, ...job });
   } catch (err) {
     console.error('[api/music-lab/master/:jobId] failed:', err instanceof Error ? err.message : String(err));

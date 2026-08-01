@@ -33,6 +33,9 @@ export class MasterJobRepository {
         source: null,
         savedAt: null,
         title: null,
+        archivedAt: null,
+        archiveKey: null,
+        archiveError: null,
         error: null,
       };
       await DynamoDBOperations.put({
@@ -86,6 +89,9 @@ export class MasterJobRepository {
       source: item.source ?? null,
       savedAt: typeof item.savedAt === 'string' ? item.savedAt : null,
       title: typeof item.title === 'string' ? item.title : null,
+      archivedAt: typeof item.archivedAt === 'string' ? item.archivedAt : null,
+      archiveKey: typeof item.archiveKey === 'string' ? item.archiveKey : null,
+      archiveError: typeof item.archiveError === 'string' ? item.archiveError : null,
       error: item.error ?? null,
     };
   }
@@ -133,6 +139,65 @@ export class MasterJobRepository {
         conditionExpression: 'attribute_exists(savedAt) AND savedAt <> :null',
         expressionAttributeNames: { '#title': 'title' },
         expressionAttributeValues: { ':title': title, ':null': null },
+      });
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  /**
+   * Record the outcome of a source archive. Success and failure are BOTH
+   * written: a silent failure would leave the operator believing the source is
+   * safe in Glacier when it is not, which is worse than no archiving at all.
+   *
+   * No ttl clause — archiving only ever runs after save(), which has already
+   * removed it.
+   */
+  async recordArchive(
+    id: string,
+    result: { archiveKey: string; archivedAt: string } | { archiveError: string }
+  ): Promise<void> {
+    try {
+      const ok = 'archiveKey' in result;
+      await DynamoDBOperations.update({
+        key: { PK: `MASTERJOB#${id}`, SK: 'METADATA' },
+        updateExpression:
+          'SET #archivedAt = :archivedAt, #archiveKey = :archiveKey, #archiveError = :archiveError',
+        expressionAttributeNames: {
+          '#archivedAt': 'archivedAt',
+          '#archiveKey': 'archiveKey',
+          '#archiveError': 'archiveError',
+        },
+        expressionAttributeValues: {
+          ':archivedAt': ok ? result.archivedAt : null,
+          ':archiveKey': ok ? result.archiveKey : null,
+          ':archiveError': ok ? null : result.archiveError,
+        },
+      });
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  /**
+   * Mark a job whose worker died without reporting. Conditional on the status
+   * STILL being `processing`, so a worker that finishes in the same moment the
+   * status route decides it is dead cannot be overwritten with a failure — the
+   * real result wins.
+   */
+  async markStuck(id: string, error: { code: string; message: string }): Promise<void> {
+    try {
+      await DynamoDBOperations.update({
+        key: { PK: `MASTERJOB#${id}`, SK: 'METADATA' },
+        updateExpression: 'SET #status = :error, #err = :err, #updatedAt = :now',
+        conditionExpression: '#status = :processing',
+        expressionAttributeNames: { '#status': 'status', '#err': 'error', '#updatedAt': 'updatedAt' },
+        expressionAttributeValues: {
+          ':error': 'error',
+          ':processing': 'processing',
+          ':err': error,
+          ':now': new Date().toISOString(),
+        },
       });
     } catch (error) {
       handleDynamoDBError(error);
