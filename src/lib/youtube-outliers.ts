@@ -106,6 +106,42 @@ export const RESONANCE_WEIGHTS: SignalWeights = {
 /** Composite z at/above which a song is called an outlier (robust SDs above norm). */
 export const DEFAULT_OUTLIER_THRESHOLD = 2.0;
 
+/**
+ * Below this age, lifetime-views ÷ age is LAUNCH VELOCITY, not a durable rate,
+ * and comparing it against a mature song's decayed average rewards recency
+ * rather than merit. Measured 2026-08-02: a 1-day-old song scored z=22.4 on
+ * viewsPerDay against z=12.5 for the channel's biggest song (48,791 views), and
+ * outranked it. `longTailRatio` already refused to score young songs for exactly
+ * this reason; the highest-weighted signal simply wasn't given the same guard.
+ */
+export const MIN_VELOCITY_AGE_DAYS = 30;
+
+/**
+ * Below this many views, a per-1,000 rate is noise wearing the shape of a
+ * signal. Measured 2026-08-02: ONE comment on a 39-view song read as 25.6
+ * comments/1k (z=15.8) while TWELVE comments on 48,791 views read as 0.25/1k
+ * (z=-0.9) — the single comment carried a day-old song to rank 8. Same
+ * reasoning as the 1,000-view floor used when picking a Show's lead track.
+ */
+export const MIN_RATE_VIEWS = 500;
+
+/**
+ * Signals whose raw distribution is heavy-tailed enough that a z-score against
+ * MAD produces meaningless magnitudes (the catalogue spanned -0.6 to 16.2).
+ * log1p compresses the tail before scoring; the BREAKDOWN still reports the raw
+ * value, so the UI shows "976 views/day", never a logarithm.
+ *
+ * Bounded signals — retention, ctr, growth30d — are deliberately NOT listed:
+ * they are already percentages or ratios and a log would distort them.
+ */
+export const LOG_SCALED_SIGNALS: ReadonlySet<SignalKey> = new Set<SignalKey>([
+  'viewsPerDay',
+  'subsPer1k',
+  'engagement',
+  'likesPer1k',
+  'sharesPer1k',
+]);
+
 // ── robust statistics ───────────────────────────────────────────────────────────
 
 /** MAD→σ consistency constant for normal data (1/0.67449). */
@@ -205,7 +241,9 @@ export function rankOutliers(songs: SongSignals[], opts: RankOptions = {}): Rank
       }
     });
     if (vals.length === 0) continue;
-    const zs = modifiedZScores(vals);
+    // Score on the compressed scale, report on the raw one.
+    const scored = LOG_SCALED_SIGNALS.has(key) ? vals.map((v) => Math.log1p(Math.max(0, v))) : vals;
+    const zs = modifiedZScores(scored);
     if (zs.some((z) => z !== 0)) informative.add(key);
     const map = new Map<number, number>();
     idxs.forEach((songIdx, j) => map.set(songIdx, zs[j]));
@@ -376,16 +414,31 @@ export function longTailRatio(opts: {
  * is the date the counts are current as of — passed in, never clocked — so
  * views/day is reproducible.
  */
-export function deriveSignals(raw: RawVideoStats, asOf: string): SongSignals {
+export interface DeriveOptions {
+  /** Songs younger than this get no velocity signal. @see MIN_VELOCITY_AGE_DAYS */
+  minVelocityAgeDays?: number;
+  /** Songs with fewer views than this get no per-1k rates. @see MIN_RATE_VIEWS */
+  minRateViews?: number;
+}
+
+export function deriveSignals(
+  raw: RawVideoStats,
+  asOf: string,
+  opts: DeriveOptions = {}
+): SongSignals {
+  const minAge = opts.minVelocityAgeDays ?? MIN_VELOCITY_AGE_DAYS;
+  const minViews = opts.minRateViews ?? MIN_RATE_VIEWS;
   const age = ageInDays(raw.publishedAt, asOf);
   const views = Math.max(0, raw.views);
+  // null, never 0 — the ranker renormalizes over the signals a song actually
+  // has, whereas a 0 would be scored as genuinely terrible.
   const per1k = (n: number | null | undefined) =>
-    n == null ? null : views > 0 ? (n / views) * 1000 : 0;
+    n == null || views < minViews ? null : (n / views) * 1000;
   return {
     videoId: raw.videoId,
     title: raw.title,
     theme: raw.theme ?? null,
-    viewsPerDay: views / age,
+    viewsPerDay: age < minAge ? null : views / age,
     subsPer1k: per1k(raw.subscribersGained),
     engagement: per1k(raw.comments),
     retention: raw.retention ?? null,

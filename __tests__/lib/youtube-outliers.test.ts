@@ -83,12 +83,16 @@ describe('rankOutliers', () => {
   it('single informative signal → score equals that signal z, ranked desc', () => {
     const songs = [1, 2, 3, 4, 5].map((v, i) => song(`s${i}`, { viewsPerDay: v }));
     const ranked = rankOutliers(songs);
-    // score == viewsPerDay z (only one signal, weight cancels)
+    // score == viewsPerDay z (only one signal, weight cancels). viewsPerDay is
+    // log-scaled before scoring, so the expectation is derived from the same
+    // primitive rather than hardcoded — a constant here would silently re-encode
+    // the un-scaled behaviour if the transform were ever dropped.
+    const expected = modifiedZScores([1, 2, 3, 4, 5].map((v) => Math.log1p(v)));
     expect(ranked[0].videoId).toBe('s4'); // highest viewsPerDay
-    expect(ranked[0].score).toBeCloseTo(1.34898, 4);
+    expect(ranked[0].score).toBeCloseTo(expected[4], 6);
     expect(ranked[0].rank).toBe(1);
     expect(ranked[4].videoId).toBe('s0');
-    expect(ranked[4].score).toBeCloseTo(-1.34898, 4);
+    expect(ranked[4].score).toBeCloseTo(expected[0], 6);
     expect(ranked.every((r) => !r.isOutlier)).toBe(true); // none clears 2.0
   });
 
@@ -97,22 +101,23 @@ describe('rankOutliers', () => {
     const ranked = rankOutliers(songs, { outlierThreshold: 3.0 });
     const top = ranked[0];
     expect(top.videoId).toBe('s4');
-    expect(top.score).toBeCloseTo(90 / (18 * 1.2533), 3);
+    expect(top.score).toBeCloseTo(modifiedZScores([10, 10, 10, 10, 100].map((v) => Math.log1p(v)))[4], 6);
     expect(top.isOutlier).toBe(true);
     expect(ranked.slice(1).every((r) => !r.isOutlier)).toBe(true);
   });
 
   it('combines two signals as a weight-renormalized mean of their z-scores', () => {
-    // viewsPerDay [1..5] → z multiples of 1/1.4826; retention [50,50,50,50,90]
-    // → MAD 0 fallback, MeanAD 8, scale 10.0264, z(90)=3.98948
+    // viewsPerDay is log-scaled before z; retention is bounded and is NOT.
+    // retention [50,50,50,50,90] → MAD 0 fallback, MeanAD 8, z(90)=3.98948.
     const vpd = [1, 2, 3, 4, 5];
     const ret = [50, 50, 50, 50, 90];
     const songs = vpd.map((v, i) => song(`s${i}`, { viewsPerDay: v, retention: ret[i] }));
     const ranked = rankOutliers(songs);
 
     const top = ranked.find((r) => r.videoId === 's4')!;
-    // (0.25*1.34886 + 0.20*3.98948) / 0.45 = 2.5225
-    expect(top.score).toBeCloseTo(2.5225, 3);
+    const zVpd = modifiedZScores(vpd.map((v) => Math.log1p(v)))[4];
+    const zRet = modifiedZScores(ret)[4];
+    expect(top.score).toBeCloseTo((0.25 * zVpd + 0.2 * zRet) / 0.45, 6);
     expect(top.rank).toBe(1);
     expect(top.isOutlier).toBe(true); // ≥ default 2.0
     // effective weights renormalize to sum to 1 over the two present signals
@@ -122,8 +127,9 @@ describe('rankOutliers', () => {
     expect(vpdW).toBeCloseTo(0.25 / 0.45, 6);
 
     const s3 = ranked.find((r) => r.videoId === 's3')!;
-    // (0.25*0.67449 + 0.20*0) / 0.45 = 0.3747
-    expect(s3.score).toBeCloseTo(0.3747, 3);
+    const zVpd3 = modifiedZScores(vpd.map((v) => Math.log1p(v)))[3];
+    const zRet3 = modifiedZScores(ret)[3];
+    expect(s3.score).toBeCloseTo((0.25 * zVpd3 + 0.2 * zRet3) / 0.45, 6);
   });
 
   it('a missing signal is not penalized — the song is scored on what it has', () => {
@@ -140,7 +146,8 @@ describe('rankOutliers', () => {
     expect(e.breakdown).toHaveLength(1);
     expect(e.breakdown[0].key).toBe('viewsPerDay');
     expect(e.breakdown[0].weight).toBeCloseTo(1, 6);
-    expect(e.score).toBeCloseTo(1.34898, 4); // == viewsPerDay z of value 5
+    // == viewsPerDay z of value 5, on the log-compressed scale
+    expect(e.score).toBeCloseTo(modifiedZScores([1, 2, 3, 4, 5].map((v) => Math.log1p(v)))[4], 6);
   });
 
   it('drops a signal that has no spread across the catalogue', () => {
@@ -213,8 +220,11 @@ describe('summarizeByTheme', () => {
     expect(mother.count).toBe(2);
     expect(mother.meanSignals.viewsPerDay).toBeCloseTo(4.5, 6);
     expect(mother.meanScore).toBeGreaterThan(summary[1].meanScore);
-    // scores are symmetric around 0 here → love mean is the negative of mother mean
-    expect(mother.meanScore).toBeCloseTo(-summary[1].meanScore, 6);
+    // NOT symmetric around 0: viewsPerDay is log-compressed before scoring, so
+    // evenly-spaced raw values are no longer evenly spaced when scored. The
+    // ordering is what the rollup promises, and that still holds.
+    expect(mother.meanScore).toBeGreaterThan(0);
+    expect(summary[1].meanScore).toBeLessThan(0);
   });
 
   it('untagged songs fall into the (untagged) group', () => {
@@ -365,11 +375,15 @@ describe('deriveSignals', () => {
     expect(s.engagement).toBeNull();
   });
 
-  it('zero views → 0 rates (no divide-by-zero)', () => {
+  it('zero views → NULL rates, not 0 (no divide-by-zero, and no false "worst")', () => {
+    // Previously these returned 0, which the ranker scored as genuinely the
+    // worst in the catalogue rather than "unknown". null makes the song be
+    // scored on the signals it actually has.
     const s = deriveSignals({ ...base, views: 0 }, asOf);
-    expect(s.viewsPerDay).toBe(0);
-    expect(s.subsPer1k).toBe(0);
-    expect(s.engagement).toBe(0);
+    expect(s.subsPer1k).toBeNull();
+    expect(s.engagement).toBeNull();
+    // viewsPerDay survives only if the song is old enough to have a rate at all.
+    expect(s.viewsPerDay === null || s.viewsPerDay === 0).toBe(true);
   });
 });
 
