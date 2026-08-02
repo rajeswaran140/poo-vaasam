@@ -20,6 +20,8 @@ export interface RawSongItem {
   status?: string;
   type?: string;
   showLyrics?: boolean;
+  /** Which upload the lyrics belong to — the join the caption module needs. */
+  youtubeVideoId?: string;
   [key: string]: unknown;
 }
 
@@ -34,6 +36,7 @@ export function toRawSong(item: Record<string, unknown>): RawSongItem {
     status: typeof item.status === 'string' ? item.status : undefined,
     type: typeof item.type === 'string' ? item.type : undefined,
     showLyrics: item.showLyrics === true,
+    youtubeVideoId: typeof item.youtubeVideoId === 'string' ? item.youtubeVideoId : undefined,
   };
 }
 
