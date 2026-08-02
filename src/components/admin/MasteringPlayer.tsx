@@ -27,12 +27,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Repeat, X, Flag, Copy } from 'lucide-react';
 import { MasteringEqualizer } from '@/components/admin/MasteringEqualizer';
+import { MasteringWaveform } from '@/components/admin/MasteringWaveform';
 import { EQ_BANDS, flatGains, clampGain, isFlat, type EqGains } from '@/lib/audio-eq';
 import { measureBlock, barFraction, decayPeak, METER_FLOOR_DB, TRUE_PEAK_CEILING_DB } from '@/lib/audio-meter';
 import {
   binPeaks,
   normaliseLoop,
-  ratioToTime,
   shouldLoopBack,
   formatTime,
   shouldRenderWaveform,
@@ -56,7 +56,8 @@ interface Props {
   onExpired?: () => void;
 }
 
-const WAVEFORM_BINS = 240;
+/** Peak resolution captured at decode time; the canvas resamples down to fit. */
+const WAVEFORM_BINS = 1200;
 
 export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpired }: Props) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -76,7 +77,6 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
   const [duration, setDuration] = useState(0);
   const [position, setPosition] = useState(0);
   const [loop, setLoop] = useState<LoopRegion | null>(null);
-  const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [comparing, setComparing] = useState(false);
   const [rate, setRate] = useState<number>(DEFAULT_RATE);
   const [pitchShifts, setPitchShifts] = useState(false);
@@ -375,60 +375,23 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
         </span>
       </div>
 
-      {/* Waveform: click to seek, drag to loop. */}
+      {/* Waveform: click to seek, drag to loop. Canvas, not SVG — the SVG
+          version re-rendered 240 <rect> nodes on every playhead tick. */}
       {peaks ? (
-        <div
-          role="slider"
-          aria-label="Waveform — click to seek, drag to loop"
-          aria-valuemin={0}
-          aria-valuemax={Math.round(duration)}
-          aria-valuenow={Math.round(position)}
-          tabIndex={0}
-          className="relative h-16 w-full cursor-pointer select-none"
-          onPointerDown={(e) => {
-            const r = e.currentTarget.getBoundingClientRect();
-            setDragFrom(ratioToTime((e.clientX - r.left) / r.width, duration));
+        <MasteringWaveform
+          peaks={peaks}
+          duration={duration}
+          position={position}
+          loop={loop}
+          onSeek={(t) => {
+            if (audioRef.current) audioRef.current.currentTime = t;
+            setPosition(t);
           }}
-          onPointerUp={(e) => {
-            const r = e.currentTarget.getBoundingClientRect();
-            const t = ratioToTime((e.clientX - r.left) / r.width, duration);
-            const region = dragFrom !== null ? normaliseLoop(dragFrom, t, duration) : null;
+          onLoopDrag={(from, to) => {
+            const region = normaliseLoop(from, to, duration);
             if (region) setLoop(region);
-            else if (audioRef.current) audioRef.current.currentTime = t;
-            setDragFrom(null);
           }}
-        >
-          <svg viewBox={`0 0 ${WAVEFORM_BINS} 100`} preserveAspectRatio="none" className="h-full w-full">
-            {loop && duration > 0 && (
-              <rect
-                x={(loop.start / duration) * WAVEFORM_BINS}
-                y={0}
-                width={((loop.end - loop.start) / duration) * WAVEFORM_BINS}
-                height={100}
-                className="fill-emerald-200/50 dark:fill-emerald-900/40"
-              />
-            )}
-            {peaks.map((p, i) => (
-              <rect
-                key={i}
-                x={i}
-                y={50 - p * 48}
-                width={0.9}
-                height={Math.max(1, p * 96)}
-                className="fill-purple-500/70"
-              />
-            ))}
-            {duration > 0 && (
-              <rect
-                x={(position / duration) * WAVEFORM_BINS}
-                y={0}
-                width={0.6}
-                height={100}
-                className="fill-gray-900 dark:fill-white"
-              />
-            )}
-          </svg>
-        </div>
+        />
       ) : (
         waveformNote && <p className="text-xs text-gray-500 dark:text-gray-400">{waveformNote}</p>
       )}
