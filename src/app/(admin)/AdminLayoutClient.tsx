@@ -36,8 +36,7 @@ import {
   SearchCheck,
   ScrollText,
   MessageSquareHeart,
-  SlidersHorizontal,
-} from "lucide-react";
+  SlidersHorizontal, Captions} from "lucide-react";
 import { FEATURES } from "@/config/features";
 import { Toaster } from "react-hot-toast";
 import { ThemeProvider } from "@/components/admin/ThemeProvider";
@@ -100,6 +99,11 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
     title: "Lyrics",
     subtitle:
       "பாடல் வரிகள் / Lyrics — publish a song's words behind the email gate; edit the lyrics",
+  },
+  "/admin/captions": {
+    title: "Captions",
+    subtitle:
+      "Time stored lyrics against a video's own auto-caption track — preview before publishing",
   },
   "/admin/comments": {
     title: "Comments",
@@ -324,6 +328,14 @@ export default function AdminLayoutClient({
                 active={pathname.startsWith("/admin/lyrics")}
               >
                 Lyrics
+              </NavLink>
+              <NavLink
+                href="/admin/captions"
+                icon={Captions}
+                collapsed={collapsed}
+                active={pathname.startsWith("/admin/captions")}
+              >
+                Captions
               </NavLink>
               <NavLink
                 href="/admin/workflow"

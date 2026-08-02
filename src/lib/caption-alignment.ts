@@ -329,3 +329,45 @@ export function toSrt(cues: AlignedCue[]): string {
     .map((c, i) => `${i + 1}\n${srtTime(c.startMs)} --> ${srtTime(c.endMs)}\n${c.text}\n`)
     .join('\n');
 }
+
+/**
+ * Read a downloaded caption track into cues. Deliberately lenient: real tracks
+ * from YouTube arrive with CRLF, occasional missing index lines, and cues whose
+ * ranges OVERLAP (the recogniser emits rolling windows — 0.0-5.8s followed by
+ * 2.9-8.6s). Only the start times are load-bearing here, so overlap is fine and
+ * is NOT treated as corruption.
+ */
+export function parseSrtCues(srt: string): AsrCue[] {
+  const out: AsrCue[] = [];
+  const stamp = /(\d{2}):(\d{2}):(\d{2})[,.](\d{1,3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{1,3})/;
+  for (const block of srt.replace(/\r/g, '').split(/\n{2,}/)) {
+    const m = block.match(stamp);
+    if (!m) continue;
+    const ms = (h: string, mi: string, s: string, frac: string) =>
+      +h * 3_600_000 + +mi * 60_000 + +s * 1000 + +frac.padEnd(3, '0');
+    const text = block
+      .split('\n')
+      .filter((l) => !stamp.test(l) && !/^\d+$/.test(l.trim()))
+      .join('\n')
+      .trim();
+    if (!text) continue;
+    out.push({ startMs: ms(m[1], m[2], m[3], m[4]), endMs: ms(m[5], m[6], m[7], m[8]), text });
+  }
+  return out.sort((a, b) => a.startMs - b.startMs);
+}
+
+/**
+ * Split a stored lyrics body into caption cards on blank lines — the same
+ * grouping Raj writes stanzas in.
+ *
+ * ♪ / [இசை] marker lines are DROPPED, not turned into cards. He annotates
+ * instrumental passages when writing the lyric out, but a caption reading "♪"
+ * over a lament is clutter; the gap between cards already says it.
+ */
+export function splitLyricsIntoCards(body: string): LyricCard[] {
+  return body
+    .replace(/\r/g, '')
+    .split(/\n{2,}/)
+    .map((block) => block.split('\n').map((l) => l.trim()).filter((l) => l && !isMusicMarker(l)))
+    .filter((card) => card.length > 0);
+}

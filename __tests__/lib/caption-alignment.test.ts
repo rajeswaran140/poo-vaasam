@@ -14,6 +14,8 @@ import {
   normaliseForMatch,
   verifyRoundTrip,
   toSrt,
+  parseSrtCues,
+  splitLyricsIntoCards,
   type AsrCue,
   type LyricCard,
 } from '@/lib/caption-alignment';
@@ -197,5 +199,64 @@ describe('toSrt', () => {
   it('pads hours and milliseconds correctly past the one-hour mark', () => {
     const srt = toSrt([{ startMs: 3_723_045, endMs: 3_725_000, text: 'x', anchored: true }]);
     expect(srt).toContain('01:02:03,045');
+  });
+});
+
+describe('parseSrtCues — real tracks, not idealised ones', () => {
+  it('parses CRLF and keeps OVERLAPPING cues (the recogniser emits rolling windows)', () => {
+    // Shape observed on the live ta/asr track for 2vgRrCgyOaY.
+    const srt =
+      '1\r\n00:00:00,000 --> 00:00:05,839\r\nநெஞ்ச கூட்டினிலே [பாடுதல்]\r\n\r\n' +
+      '2\r\n00:00:02,879 --> 00:00:08,639\r\nநேச பறவை ஒன்று [இசை]\r\n';
+    const cues = parseSrtCues(srt);
+    expect(cues).toHaveLength(2);
+    expect(cues[0].startMs).toBe(0);
+    expect(cues[1].startMs).toBe(2879);
+    expect(cues[1].startMs).toBeLessThan(cues[0].endMs); // overlap preserved, not "fixed"
+    expect(cues[0].text).toBe('நெஞ்ச கூட்டினிலே [பாடுதல்]');
+  });
+
+  it('sorts by start time and skips blocks with no text', () => {
+    const srt = '1\n00:00:09,000 --> 00:00:11,000\nlater\n\n2\n00:00:01,000 --> 00:00:02,000\n\n\n3\n00:00:04,000 --> 00:00:06,000\nearlier\n';
+    expect(parseSrtCues(srt).map((c) => c.text)).toEqual(['earlier', 'later']);
+  });
+
+  it('returns [] for junk rather than throwing', () => {
+    expect(parseSrtCues('')).toEqual([]);
+    expect(parseSrtCues('not a caption file')).toEqual([]);
+  });
+});
+
+describe('splitLyricsIntoCards', () => {
+  const body = [
+    '♪',
+    '',
+    'நெஞ்சக் கூட்டினிலே',
+    'நேசப் பறவை ஒன்று',
+    '',
+    '[இசை]',
+    '',
+    'மரக் கிளையில கூடு',
+    'அது பறவைக் கூடு',
+    '',
+  ].join('\n');
+
+  it('splits on blank lines and drops ♪ / [இசை] marker blocks entirely', () => {
+    const cards = splitLyricsIntoCards(body);
+    expect(cards).toEqual([
+      ['நெஞ்சக் கூட்டினிலே', 'நேசப் பறவை ஒன்று'],
+      ['மரக் கிளையில கூடு', 'அது பறவைக் கூடு'],
+    ]);
+  });
+
+  it('produces cards that round-trip through alignment unchanged', () => {
+    const cards = splitLyricsIntoCards(body);
+    const asr = [
+      { startMs: 20_000, endMs: 24_000, text: 'நெஞ்சக் கூட்டினிலே' },
+      { startMs: 40_000, endMs: 44_000, text: 'மரக் கிளையில கூடு' },
+    ];
+    const { cues } = alignLyrics(cards, asr);
+    expect(verifyRoundTrip(cues, cards)).toBe(true);
+    expect(cues.every((c) => !c.text.includes('\u266a'))).toBe(true);
   });
 });
