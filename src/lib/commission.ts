@@ -48,6 +48,35 @@ export const MOODS = [
 export const COMMISSION_SUBJECT = 'Music Composition Commission';
 
 /**
+ * The one-line pointer to /music-composition that belongs in a song's YouTube
+ * description.
+ *
+ * WHY IT EXISTS. Audited 2026-08-02: the service page is well built — Service +
+ * AggregateOffer + FAQ schema, bilingual copy, a qualified-brief form wired to
+ * /api/contact — and it has produced **zero** commissions since launch, on 83
+ * pageviews and 38 sessions in 90 days. It isn't a conversion problem; almost
+ * nobody reaches it. The channel has ~316k lifetime views and its descriptions
+ * never mention the service, so the only route in is finding the site first.
+ *
+ * Bilingual and Tamil-led, because the person who wants music FOR THEIR OWN
+ * LYRICS is reading the Tamil half.
+ */
+export const COMPOSITION_CTA_URL =
+  'https://tamilagaval.com/music-composition?utm_source=youtube&utm_medium=description';
+
+export const COMPOSITION_CTA = `🎼 உங்கள் பாடல் வரிகளுக்கு இசை வேண்டுமா? | Need music for your lyrics?\n${COMPOSITION_CTA_URL}`;
+
+/**
+ * True when a description already points at the service. Matches the PATH, not
+ * the full URL, so a link carrying different UTM parameters (or none) still
+ * counts — the check is "does this description route anyone to the service",
+ * not "is this byte-identical to our template".
+ */
+export function hasCompositionCta(description: string): boolean {
+  return /tamilagaval\.com\/music-composition/i.test(description ?? '');
+}
+
+/**
  * Render the fields into a clean, readable brief (stored as the contact message
  * + used as the WhatsApp pre-fill). Optional empty fields are omitted.
  */

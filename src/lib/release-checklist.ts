@@ -18,6 +18,8 @@
  * These are mechanical, verifiable facts about metadata.
  */
 
+import { COMPOSITION_CTA, hasCompositionCta } from '@/lib/commission';
+
 /** Everything the checklist needs to know about one upload. */
 export interface VideoSnapshot {
   videoId: string;
@@ -195,6 +197,18 @@ export function checkRelease(v: VideoSnapshot): Finding[] {
       title: 'No playlist links in the description',
       detail: 'Playlist traffic is the second-largest source on this channel after suggested.',
       fix: `▶️ அனைத்து பாடல்கள் | All Songs: https://www.youtube.com/playlist?list=${ALL_SONGS_PLAYLIST_ID}`,
+    });
+  }
+  // Advisory, not a gap: the service link is a judgement call per song, and a
+  // note keeps it visible in the sweep without ever reading as a defect.
+  if (!hasCompositionCta(d)) {
+    f.push({
+      id: 'composition-cta',
+      severity: 'note',
+      title: 'No link to the music-composition service',
+      detail:
+        'The service page has produced zero commissions on 83 pageviews in 90 days — it is a reach problem, and descriptions are the only channel at scale.',
+      fix: COMPOSITION_CTA,
     });
   }
   if (!has(d, /#[A-Za-z஀-௿]/)) {
