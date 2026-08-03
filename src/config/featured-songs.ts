@@ -32,3 +32,41 @@ export const featuredWatchUrl = (videoId: string): string => `https://www.youtub
 
 /** YouTube thumbnail used as the card cover. */
 export const featuredThumbUrl = (videoId: string): string => `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+
+/**
+ * Schema.org ItemList of the featured songs, for the HOMEPAGE.
+ *
+ * WHY. The homepage is the site's single most-visited page (125 of 369 genuine
+ * pageviews over 28 days, measured 2026-08-02) and it shows five songs with
+ * cover art — but it marked up none of them. /videos carries 90 VideoObjects;
+ * the page that actually gets traffic carried zero, so the songs Google sees
+ * first are the ones on the page nobody lands on.
+ *
+ * Deliberately minimal: `name`, `thumbnailUrl`, `contentUrl`, `embedUrl`,
+ * `inLanguage`. No `description` or `uploadDate` — those are not in this config
+ * and inventing them would be worse than omitting them. `alternateName` carries
+ * the romanisation, which is how the diaspora searches.
+ *
+ * Pure — no I/O, so the shape is unit-testable.
+ */
+export function featuredSongsItemListJsonLd(): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    name: 'மிகவும் விரும்பப்பட்ட பாடல்கள்',
+    numberOfItems: FEATURED_SONGS.length,
+    itemListElement: FEATURED_SONGS.map((song, index) => ({
+      '@type': 'ListItem',
+      position: index + 1,
+      item: {
+        '@type': 'VideoObject',
+        name: song.title,
+        alternateName: song.romanized,
+        thumbnailUrl: featuredThumbUrl(song.videoId),
+        contentUrl: featuredWatchUrl(song.videoId),
+        embedUrl: `https://www.youtube.com/embed/${song.videoId}`,
+        inLanguage: 'ta',
+      },
+    })),
+  };
+}

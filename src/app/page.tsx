@@ -14,6 +14,7 @@ import { LatestVideos } from '@/components/LatestVideos';
 import { FeaturedSongs } from '@/components/FeaturedSongs';
 import { SubscribeButton } from '@/components/SubscribeButton';
 import { JsonLd } from '@/components/JsonLd';
+import { featuredSongsItemListJsonLd } from '@/config/featured-songs';
 import { SITE_URL, SITE_NAME, alternatesFor } from '@/lib/seo';
 
 export const metadata: Metadata = {
@@ -57,8 +58,20 @@ export default function HomePage() {
     <div className="min-h-screen bg-gray-900">
       <JsonLd data={websiteJsonLd} />
       <JsonLd data={personJsonLd} />
+      {/* The five songs on this page were unmarked-up while /videos carried 90
+          VideoObjects — backwards, since this is the page that gets the traffic. */}
+      <JsonLd data={featuredSongsItemListJsonLd()} />
+      {/* WCAG 2.4.1 (Level A): a keyboard user had no way past the header nav.
+          Visually hidden until focused. */}
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:font-tamil focus:text-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-400"
+      >
+        உள்ளடக்கத்திற்குச் செல்லவும்
+      </a>
       <Header />
 
+      <main id="main">
       {/* Hero Section - Centered */}
       <section className="relative overflow-hidden bg-orange-600 text-white pt-20">
         {/* Background Pattern */}
@@ -275,6 +288,8 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      </main>
 
       <Footer />
     </div>
