@@ -109,3 +109,69 @@ export function formatTime(seconds: number): string {
   const s = Math.floor(seconds % 60);
   return `${m}:${String(s).padStart(2, '0')}`;
 }
+
+/**
+ * Resample a peaks array to exactly `buckets` values, taking the MAX of each
+ * source span.
+ *
+ * Max, not mean: a waveform's job is to show you where the loud moments are so
+ * you can seek to them. Averaging buries a short transient — a plosive, a clipped
+ * consonant — which on a mastering player is precisely the thing being hunted.
+ *
+ * Returns [] for a non-positive bucket count so a zero-width canvas cannot throw.
+ */
+export function resamplePeaks(peaks: readonly number[], buckets: number): number[] {
+  const n = Math.floor(buckets);
+  if (n <= 0 || peaks.length === 0) return [];
+  if (peaks.length === n) return [...peaks];
+  const out = new Array<number>(n);
+  const span = peaks.length / n;
+  for (let i = 0; i < n; i++) {
+    const from = Math.floor(i * span);
+    const to = Math.min(peaks.length, Math.max(from + 1, Math.floor((i + 1) * span)));
+    let max = 0;
+    for (let j = from; j < to; j++) if (peaks[j] > max) max = peaks[j];
+    out[i] = max;
+  }
+  return out;
+}
+
+/** Bar count for a canvas of `width` CSS px — one bar per 3px, per the spec. */
+export function bucketsForWidth(width: number, pxPerBar = 3): number {
+  return Math.max(0, Math.floor(Math.max(0, width) / pxPerBar));
+}
+
+/**
+ * Human-readable position for `aria-valuetext`.
+ *
+ * A bare aria-valuenow on a seek bar is announced as a naked number ("73"),
+ * which tells a screen-reader user nothing. This says "01:13 of 03:48".
+ */
+export function describePosition(position: number, duration: number): string {
+  return `${formatTime(position)} of ${formatTime(duration)}`;
+}
+
+/** Keyboard seek offsets for a media slider, in seconds. Home/End are absolute. */
+export const SEEK_STEP_SECONDS = 5;
+export const SEEK_PAGE_SECONDS = 30;
+
+/**
+ * Where a key press should move the playhead, or null when the key is not a
+ * seek key (so the caller can leave the event alone rather than swallowing it).
+ */
+export function seekTargetForKey(
+  key: string,
+  current: number,
+  duration: number
+): number | null {
+  const clamp = (t: number) => Math.min(Math.max(0, t), Math.max(0, duration));
+  switch (key) {
+    case 'ArrowRight': return clamp(current + SEEK_STEP_SECONDS);
+    case 'ArrowLeft': return clamp(current - SEEK_STEP_SECONDS);
+    case 'PageUp': return clamp(current + SEEK_PAGE_SECONDS);
+    case 'PageDown': return clamp(current - SEEK_PAGE_SECONDS);
+    case 'Home': return 0;
+    case 'End': return clamp(duration);
+    default: return null;
+  }
+}
