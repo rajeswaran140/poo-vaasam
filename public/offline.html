@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Offline — Tamilagaval</title>
+<!--
+  The ONLY file the service worker precaches, and the only thing it ever serves
+  from cache. It is deliberately static and carries no account data, because a
+  cached page persists on the device after sign-out.
+-->
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    background: #12100e; color: #e8e3db; padding: 1.5rem;
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .card { max-width: 26rem; text-align: center; }
+  .meter { display: flex; gap: 6px; justify-content: center; align-items: center; height: 56px; margin-bottom: 1.5rem; }
+  .meter i { width: 8px; border-radius: 4px; background: #D3A548; opacity: .55; }
+  .meter i:nth-child(4) { background: #ea580c; opacity: 1; }
+  h1 { font-size: 1.25rem; margin: 0 0 .5rem; }
+  p { margin: 0 0 1.25rem; color: #a9a196; }
+  button {
+    font: inherit; font-weight: 600; cursor: pointer;
+    background: #ea580c; color: #fff; border: 0;
+    border-radius: .5rem; padding: .6rem 1.1rem;
+  }
+  button:hover { background: #c2410c; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="meter" aria-hidden="true">
+      <i style="height:28%"></i><i style="height:52%"></i><i style="height:78%"></i>
+      <i style="height:100%"></i><i style="height:78%"></i><i style="height:52%"></i><i style="height:28%"></i>
+    </div>
+    <h1>You&rsquo;re offline</h1>
+    <p>
+      The mastering studio needs a connection &mdash; takes are uploaded and processed
+      on the server, so there is nothing it can do from here. Your work is not lost.
+    </p>
+    <button type="button" onclick="location.reload()">Try again</button>
+  </div>
+</body>
+</html>
