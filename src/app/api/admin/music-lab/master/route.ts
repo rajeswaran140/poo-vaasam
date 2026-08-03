@@ -1,6 +1,10 @@
 /**
  * POST /api/admin/music-lab/master — enqueue an async mastering job for a "hot"
- * take. Body: { s3Key, target=-14 }. Admin-gated, Node runtime.
+ * take. Body: { s3Key, target=-14, edit? }. Admin-gated, Node runtime.
+ *
+ * `edit` is an optional trim/fade the worker applies in a lossless pre-pass
+ * BEFORE the loudnorm passes — see src/lib/master-edit.ts for why that ordering
+ * is not negotiable. Omitting it masters the full source, exactly as before.
  *
  * Creates a `processing` MasterJob in DynamoDB, fire-and-forget invokes the
  * `master-worker` Lambda (Event invocation — returns instantly), and returns the
@@ -23,6 +27,7 @@ import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { awsConfig } from '@/lib/aws-config';
 import { isValidTarget, isMasterKey, MIN_TARGET_LUFS, MAX_TARGET_LUFS } from '@/lib/loudness-measure';
 import { isMasteringKey } from '@/lib/mastering-storage';
+import { parseMasterEdit, isNoOpEdit } from '@/lib/master-edit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -64,10 +69,20 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
+  // Trim/fade is optional and absent from every pre-existing caller, so a
+  // missing `edit` parses to the identity rather than failing. A malformed one
+  // is rejected here instead of failing deep inside ffmpeg 30 seconds later.
+  const parsedEdit = parseMasterEdit(body?.edit);
+  if (!parsedEdit.ok) {
+    return NextResponse.json({ success: false, error: parsedEdit.error }, { status: 400 });
+  }
+  // Store null for "no edit" so the job record can't imply an edit happened.
+  const edit = isNoOpEdit(parsedEdit.edit) ? null : parsedEdit.edit;
+
   const jobId = randomUUID();
 
   try {
-    await new MasterJobRepository().create(jobId, { s3Key, target });
+    await new MasterJobRepository().create(jobId, { s3Key, target, edit });
     const lambda = new LambdaClient({
       region: awsConfig.region,
       ...(awsConfig.credentials ? { credentials: awsConfig.credentials } : {}),
@@ -76,7 +91,7 @@ export async function POST(request: NextRequest) {
       new InvokeCommand({
         FunctionName: MASTER_WORKER_FUNCTION,
         InvocationType: 'Event', // async — returns at once
-        Payload: Buffer.from(JSON.stringify({ jobId, s3Key, target })),
+        Payload: Buffer.from(JSON.stringify({ jobId, s3Key, target, edit })),
       })
     );
     return NextResponse.json({ success: true, jobId, status: 'queued' }, { status: 202 });

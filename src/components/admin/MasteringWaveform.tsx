@@ -35,6 +35,18 @@ interface Props {
   /** A drag across the waveform proposes a loop region. */
   onLoopDrag: (fromSeconds: number, toSeconds: number) => void;
   height?: number;
+  /**
+   * False when this waveform is not a transport.
+   *
+   * The trim panel draws the same picture but has no playhead — announcing it
+   * as a slider parked at 0:00, with arrow keys wired to a no-op seek, would
+   * describe a control that does not exist. In that mode it becomes an image
+   * and the numeric inputs beside it carry the keyboard interaction; the drag
+   * gesture stays as a pointer convenience.
+   */
+  interactive?: boolean;
+  /** Overrides the default slider label; also used as the image label. */
+  ariaLabel?: string;
 }
 
 /** devicePixelRatio is capped: beyond 2 the extra pixels cost memory and buy nothing. */
@@ -51,6 +63,8 @@ export function MasteringWaveform({
   onSeek,
   onLoopDrag,
   height = 64,
+  interactive = true,
+  ariaLabel,
 }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -153,13 +167,17 @@ export function MasteringWaveform({
   return (
     <div
       ref={hostRef}
-      role="slider"
-      aria-label="Waveform — click to seek, drag to set a loop"
-      aria-valuemin={0}
-      aria-valuemax={Math.max(0, Math.round(duration))}
-      aria-valuenow={Math.round(position)}
-      aria-valuetext={describePosition(position, duration)}
-      tabIndex={0}
+      role={interactive ? 'slider' : 'img'}
+      aria-label={ariaLabel ?? 'Waveform — click to seek, drag to set a loop'}
+      {...(interactive
+        ? {
+            'aria-valuemin': 0,
+            'aria-valuemax': Math.max(0, Math.round(duration)),
+            'aria-valuenow': Math.round(position),
+            'aria-valuetext': describePosition(position, duration),
+            tabIndex: 0,
+          }
+        : {})}
       className="relative w-full cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
       style={{ height }}
       // Pointer Events + capture, so a drag that leaves the element still
