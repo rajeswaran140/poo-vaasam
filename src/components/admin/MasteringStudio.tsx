@@ -749,10 +749,20 @@ export function MasteringStudio() {
           Each target writes its own file, so you can master the same song for both without one overwriting the other.
         </p>
 
-        {(stage === 'ready' || stage === 'done') && (
+        {sourceKey && (
           <div className="mt-4">
-            {/* Only rendered in `ready`/`done`, so it is never live mid-run. */}
-            <MasteringTrimPanel file={pickedFile} onChange={setEdit} />
+            {/*
+              Mounted for as long as a source is loaded — including while the
+              worker runs. Unmounting it mid-run would tear down its region and
+              fade state, and its remount would push `null` back up, so the
+              second target in the dual-target flow would quietly master the
+              UNTRIMMED file. Disabled rather than removed.
+            */}
+            <MasteringTrimPanel
+              file={pickedFile}
+              onChange={setEdit}
+              disabled={stage === 'mastering'}
+            />
           </div>
         )}
 

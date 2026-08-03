@@ -179,6 +179,78 @@ describe('dual-target workflow', () => {
     expect(screen.queryByText(/3 · Result/)).not.toBeInTheDocument();
   });
 
+  it('keeps the trim/fade when mastering the SAME source to a second target', async () => {
+    // The dual-target flow above re-arms without a re-upload, so the edit the
+    // admin set for -14 must still be attached for -16. If the trim panel is
+    // torn down while the worker runs, it remounts empty and silently clears
+    // the edit — the second master would then be the untrimmed file, with
+    // nothing on screen saying so.
+    primeHappyPath();
+    render(<MasteringStudio />);
+    await uploadA();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Master to -14/ })).toBeEnabled());
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/Fade out/i), { target: { value: '6' } });
+    });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
+    await screen.findByText(/3 · Result/);
+
+    await act(async () => { fireEvent.click(screen.getByRole('radio', { name: /-16 LUFS/ })); });
+    mockedFetch.mockResolvedValueOnce(json({ success: true, jobId: 'job-2', status: 'queued' }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -16/ })); });
+
+    const enqueues = mockedFetch.mock.calls.filter(
+      ([url]) => String(url) === '/api/admin/music-lab/master'
+    );
+    expect(enqueues).toHaveLength(2);
+    const second = JSON.parse(String((enqueues[1][1] as RequestInit).body));
+    expect(second.target).toBe(-16);
+    expect(second.edit?.fadeOutSec).toBe(6);
+  });
+
+  it('sends a trim typed into the time boxes, with no waveform involved', async () => {
+    // jsdom has no AudioContext, so the panel never draws — which is exactly
+    // the degraded path the copy promises works. The numbers are the real
+    // input; the picture is an aid.
+    primeHappyPath();
+    render(<MasteringStudio />);
+    await uploadA();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Master to -14/ })).toBeEnabled());
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/Keep from/i), { target: { value: '2.5' } });
+      fireEvent.change(screen.getByLabelText(/Keep until/i), { target: { value: '184' } });
+      fireEvent.change(screen.getByLabelText(/Fade out/i), { target: { value: '6' } });
+    });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
+
+    const enqueue = mockedFetch.mock.calls.find(
+      ([url]) => String(url) === '/api/admin/music-lab/master'
+    )!;
+    const sent = JSON.parse(String((enqueue[1] as RequestInit).body));
+    expect(sent.edit).toEqual({
+      trimStartSec: 2.5, trimEndSec: 184, fadeInSec: 0, fadeOutSec: 6, curve: 'qsin',
+    });
+  });
+
+  it('omits `edit` entirely when nothing was trimmed or faded', async () => {
+    // The backward-compatibility promise: an untouched panel must produce the
+    // exact request body the route always received.
+    primeHappyPath();
+    render(<MasteringStudio />);
+    await uploadA();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Master to -14/ })).toBeEnabled());
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
+
+    const enqueue = mockedFetch.mock.calls.find(
+      ([url]) => String(url) === '/api/admin/music-lab/master'
+    )!;
+    expect(JSON.parse(String((enqueue[1] as RequestInit).body))).toEqual({
+      s3Key: 'audio/mastering/1_a_song.wav', target: -14,
+    });
+  });
+
   it('exposes the targets as a radio group', async () => {
     render(<MasteringStudio />);
     expect(screen.getByRole('radiogroup', { name: /target/i })).toBeInTheDocument();
