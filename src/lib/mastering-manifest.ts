@@ -21,6 +21,13 @@
  */
 
 export const MASTERING_MANIFEST_PATH = '/mastering.webmanifest';
+
+/**
+ * iOS home-screen icon. Separate from the manifest icons below because Safari
+ * does not read them — it uses <link rel="apple-touch-icon">, which the page
+ * must set explicitly or the site-wide one is inherited.
+ */
+export const MASTERING_APPLE_ICON = '/icons/mastering-apple-180.png';
 export const MASTERING_START_URL = '/admin/mastering';
 export const MASTERING_SCOPE = '/admin/';
 

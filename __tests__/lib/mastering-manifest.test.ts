@@ -14,6 +14,7 @@ import {
   MASTERING_SCOPE,
   MASTERING_START_URL,
   MASTERING_MANIFEST_PATH,
+  MASTERING_APPLE_ICON,
 } from '@/lib/mastering-manifest';
 
 const m = masteringManifest();
@@ -92,5 +93,13 @@ describe('coexistence with the public Tamilagaval PWA', () => {
   it('is named for the tool, not the brand — they sit side by side on a home screen', () => {
     expect(m.name).not.toBe(site.name);
     expect(m.short_name).not.toBe(site.short_name);
+  });
+
+  it('has its OWN apple-touch-icon, because iOS never reads manifest icons', () => {
+    // Safari pins <link rel="apple-touch-icon">, not the manifest. Inheriting
+    // the site's would put two identical icons on an iPhone home screen — the
+    // exact place the distinct icon was for.
+    expect(MASTERING_APPLE_ICON).toBe('/icons/mastering-apple-180.png');
+    expect(MASTERING_APPLE_ICON).not.toMatch(/apple-icon\.png$/);
   });
 });

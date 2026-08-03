@@ -16,12 +16,12 @@ import { masteringManifest } from '@/lib/mastering-manifest';
 export const dynamic = 'force-static';
 
 export function GET() {
+  // Cache-Control is deliberately NOT set here. next.config.ts already applies
+  // `public, max-age=0, s-maxage=300, stale-while-revalidate=86400` to every
+  // path outside /api, /admin, /login and /debug, and a config header wins over
+  // one set in the handler — so anything written here would be dead code that
+  // reads as policy. Those values suit a manifest fine.
   return NextResponse.json(masteringManifest(), {
-    headers: {
-      'Content-Type': 'application/manifest+json',
-      // Long-lived but revalidated: an install reads this once, and a stale
-      // copy would keep serving old icons after a rebrand.
-      'Cache-Control': 'public, max-age=0, s-maxage=86400, stale-while-revalidate=604800',
-    },
+    headers: { 'Content-Type': 'application/manifest+json' },
   });
 }
