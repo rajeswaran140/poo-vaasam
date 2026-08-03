@@ -31,6 +31,8 @@ import { MAX_UPLOAD_BYTES, ACCEPTED_UPLOAD_TYPES } from '@/lib/mastering-storage
 import { buildMasterReport, reportFilename, sourceInfoLine, dynamicsPreserved, streamingReadiness } from '@/lib/master-report';
 import { MasteringComparePlayer } from '@/components/admin/MasteringComparePlayer';
 import { MasteringPlayer } from '@/components/admin/MasteringPlayer';
+import { MasteringTrimPanel } from '@/components/admin/MasteringTrimPanel';
+import type { MasterEdit } from '@/lib/master-edit';
 import type { MasterJob } from '@/types/masterJob';
 
 /** Where the platforms normalise playback. */
@@ -135,6 +137,15 @@ export function MasteringStudio() {
   const [sourceKey, setSourceKey] = useState<string | null>(null);
   const [sent, setSent] = useState({ loaded: 0, total: 0 });
   const [target, setTarget] = useState<number>(-14);
+  /**
+   * The picked File, kept only so the trim panel can draw a waveform without a
+   * round trip. Deliberately a ref-like state that is NOT persisted: `source`
+   * above stores name/size precisely because a File handle cannot survive a
+   * remount, and the trim panel degrades to numeric entry when this is null.
+   */
+  const [pickedFile, setPickedFile] = useState<File | null>(null);
+  /** Trim/fade for the next run; null means master the whole file. */
+  const [edit, setEdit] = useState<MasterEdit | null>(null);
   const [job, setJob] = useState<MasterJob | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   // Optional human title for the export. Storage stays UUID-based; this only
@@ -299,6 +310,8 @@ export function MasteringStudio() {
     }
 
     setSource({ name: picked.name, size: picked.size });
+    setPickedFile(picked);
+    setEdit(null);
     setStage('uploading');
     setSent({ loaded: 0, total: picked.size });
     setAnnounce(`Uploading ${picked.name}.`);
@@ -352,7 +365,9 @@ export function MasteringStudio() {
       const res = await adminFetch('/api/admin/music-lab/master', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ s3Key: sourceKey, target }),
+        // `edit` is omitted entirely when null, so a plain run sends the exact
+        // body it always did.
+        body: JSON.stringify({ s3Key: sourceKey, target, ...(edit ? { edit } : {}) }),
       });
       const body = await res.json();
       if (!res.ok || !body.success) throw new Error(body.error || `Could not start mastering (HTTP ${res.status}).`);
@@ -364,7 +379,7 @@ export function MasteringStudio() {
       setError(err instanceof Error ? err.message : String(err));
       setStage('ready');
     }
-  }, [sourceKey, source, target, watch]);
+  }, [sourceKey, source, target, edit, watch]);
 
   /**
    * Presign + open one workspace WAV. Shared by the result panel and the saved
@@ -733,6 +748,13 @@ export function MasteringStudio() {
         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
           Each target writes its own file, so you can master the same song for both without one overwriting the other.
         </p>
+
+        {(stage === 'ready' || stage === 'done') && (
+          <div className="mt-4">
+            {/* Only rendered in `ready`/`done`, so it is never live mid-run. */}
+            <MasteringTrimPanel file={pickedFile} onChange={setEdit} />
+          </div>
+        )}
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button

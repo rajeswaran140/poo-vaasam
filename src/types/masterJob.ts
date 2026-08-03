@@ -6,6 +6,7 @@
  */
 
 import type { SourceInfo } from '@/lib/loudness-measure';
+import type { MasterEdit } from '@/lib/master-edit';
 
 export type MasterJobStatus = 'processing' | 'done' | 'error';
 
@@ -17,6 +18,18 @@ export interface MasterJob {
   /** The take being mastered. */
   s3Key: string;
   target: number;
+  /**
+   * Trim/fade applied by the worker's pre-pass, BEFORE the loudnorm passes —
+   * so `beforeLufs` and `afterLufs` describe the edited programme, which is the
+   * one that ships. Null for jobs written before editing existed and for any
+   * job that asked for no edit; both mean "the full source, untouched".
+   *
+   * The source WAV in S3 is never modified. This is a recipe, not a result:
+   * re-running with different points is a new job over the same file.
+   */
+  edit: MasterEdit | null;
+  /** Duration of the mastered output in seconds, once the worker knows it. */
+  editedDurationSec: number | null;
   /** S3 key of the mastered WAV, once done. */
   masterKey: string | null;
   /** Integrated loudness / true peak of the input, once measured by the worker. */

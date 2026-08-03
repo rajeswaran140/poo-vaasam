@@ -93,7 +93,9 @@ describe('master enqueue', () => {
     const body = await res.json();
     expect(body.status).toBe('queued');
     expect(body.jobId).toBeTruthy();
-    expect(mockCreate).toHaveBeenCalledWith(body.jobId, { s3Key: SRC, target: -14 });
+    // `edit: null` is the "no trim/fade" case — a request that omits it must
+    // still produce exactly the job it always did.
+    expect(mockCreate).toHaveBeenCalledWith(body.jobId, { s3Key: SRC, target: -14, edit: null });
     expect(MockInvoke.mock.calls[0][0].InvocationType).toBe('Event');
   });
 
@@ -122,7 +124,7 @@ describe('master enqueue', () => {
     // The invoke payload must not carry the bucket the caller tried to inject.
     const payload = JSON.parse(Buffer.from(MockInvoke.mock.calls[0][0].Payload).toString());
     expect(payload).not.toHaveProperty('bucket');
-    expect(payload).toEqual({ jobId: expect.any(String), s3Key: SRC, target: -14 });
+    expect(payload).toEqual({ jobId: expect.any(String), s3Key: SRC, target: -14, edit: null });
   });
 
   it('400s rather than silently defaulting when target is unusable', async () => {
@@ -139,7 +141,42 @@ describe('master enqueue', () => {
   it('honours a valid non-default target', async () => {
     const res = await masterPOST(post('/api/admin/music-lab/master', { s3Key: SRC, target: -16 }));
     expect(res.status).toBe(202);
-    expect(mockCreate).toHaveBeenCalledWith(expect.any(String), { s3Key: SRC, target: -16 });
+    expect(mockCreate).toHaveBeenCalledWith(expect.any(String), { s3Key: SRC, target: -16, edit: null });
+  });
+
+  it('carries a trim/fade edit through to the job and the worker payload', async () => {
+    const edit = { trimStartSec: 2, trimEndSec: 200, fadeInSec: 0, fadeOutSec: 6, curve: 'qsin' };
+    const res = await masterPOST(post('/api/admin/music-lab/master', { s3Key: SRC, edit }));
+    expect(res.status).toBe(202);
+    expect(mockCreate).toHaveBeenCalledWith(expect.any(String), { s3Key: SRC, target: -14, edit });
+    const payload = JSON.parse(Buffer.from(MockInvoke.mock.calls[0][0].Payload).toString());
+    expect(payload.edit).toEqual(edit);
+  });
+
+  it('stores null for an edit that changes nothing, so the record cannot imply one', async () => {
+    const res = await masterPOST(
+      post('/api/admin/music-lab/master', {
+        s3Key: SRC,
+        edit: { trimStartSec: 0, trimEndSec: null, fadeInSec: 0, fadeOutSec: 0, curve: 'tri' },
+      })
+    );
+    expect(res.status).toBe(202);
+    expect(mockCreate).toHaveBeenCalledWith(expect.any(String), { s3Key: SRC, target: -14, edit: null });
+  });
+
+  it('400s on a malformed edit rather than failing inside ffmpeg a minute later', async () => {
+    for (const edit of [
+      { trimStartSec: -1 },
+      { fadeOutSec: 'six' },
+      { fadeOutSec: 999 },
+      { trimStartSec: 100, trimEndSec: 40 },
+      { fadeOutSec: 3, curve: 'bounce' },
+    ]) {
+      const res = await masterPOST(post('/api/admin/music-lab/master', { s3Key: SRC, edit }));
+      expect(res.status).toBe(400);
+    }
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(MockInvoke).not.toHaveBeenCalled();
   });
 
   it('400s on re-mastering a mastering output', async () => {
