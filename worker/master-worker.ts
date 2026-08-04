@@ -35,8 +35,16 @@ import {
   buildEditFilterArg,
   validateAgainstSource,
   editedDurationSec,
+  NO_EDIT,
   type MasterEdit,
 } from '@/lib/master-edit';
+import {
+  parseMasterJoin,
+  validateJoinAgainstSources,
+  buildJoinFilterComplex,
+  joinedDurationSec,
+  JOIN_OUTPUT_LABEL,
+} from '@/lib/master-join';
 
 const FFMPEG = process.env.FFMPEG_PATH || '/opt/bin/ffmpeg';
 const REGION = process.env.AWS_REGION || 'ca-central-1';
@@ -74,6 +82,8 @@ interface MasterEvent {
   s3Key?: string;
   target?: number;
   edit?: unknown;
+  /** Two-part assembly: Part B plus the crossfade. See master-join.ts. */
+  join?: unknown;
 }
 
 /**
@@ -132,9 +142,28 @@ export const handler = async (event: MasterEvent) => {
   }
   const edit: MasterEdit = parsedEdit.edit;
 
+  // Two-part assembly. Re-validated here for the same reason as the edit, and
+  // Part B's key gets the SAME workspace guard as Part A: without it a join
+  // payload would be a second, unchecked way to make this function read any
+  // object in the bucket.
+  const parsedJoin = parseMasterJoin(event?.join ?? undefined);
+  if (!parsedJoin.ok) {
+    await patch(jobId, { status: 'error', error: { code: 'bad-join', message: parsedJoin.error } });
+    return { ok: false };
+  }
+  const joinSpec = parsedJoin.join;
+  if (joinSpec && (!isMasteringKey(joinSpec.partBKey) || isMasterKey(joinSpec.partBKey))) {
+    await patch(jobId, {
+      status: 'error',
+      error: { code: 'bad-join-key', message: 'Part B must be an un-mastered file in the mastering workspace' },
+    });
+    return { ok: false };
+  }
+
   const dir = mkdtempSync(join(tmpdir(), 'master-'));
   const ext = s3Key.match(/\.[a-z0-9]+$/i)?.[0] ?? '';
   const inPath = join(dir, `in${ext}`);
+  const inBPath = join(dir, 'in-b.wav');
   const editedPath = join(dir, 'edited.wav');
   const outPath = join(dir, 'out.wav');
   const mp3Path = join(dir, 'out.mp3');
@@ -155,7 +184,58 @@ export const handler = async (event: MasterEvent) => {
     // file, so without this the job would record the intermediate's format as
     // "what came in" — which is exactly what `source` promises it is not.
     let trueSource: SourceInfo | null = null;
-    if (!isNoOpEdit(edit)) {
+
+    if (joinSpec) {
+      // TWO-PART ASSEMBLY. The join happens here, in the pre-pass, for the same
+      // reason the trim does: integrated loudness is an average over a
+      // programme, so mastering the halves separately and crossfading afterwards
+      // leaves neither half on target and spikes the overlap. Joining first
+      // makes the correct order the only order — every number below describes
+      // the assembled song.
+      const objB = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: joinSpec.partBKey }));
+      writeFileSync(inBPath, Buffer.from(await objB.Body!.transformToByteArray()));
+
+      trueSource = probeSource(inPath);
+      const partB = probeSource(inBPath);
+      const durA = trueSource?.durationSec ?? Number.NaN;
+      const durB = partB?.durationSec ?? Number.NaN;
+
+      if (!isNoOpEdit(edit)) {
+        const checkA = validateAgainstSource(edit, Number.isFinite(durA) ? durA : 0);
+        if (!checkA.ok) {
+          await patch(jobId, { status: 'error', error: { code: 'bad-edit', message: checkA.error } });
+          return { ok: false };
+        }
+      }
+      const editA = isNoOpEdit(edit) ? null : edit;
+      const checkJoin = validateJoinAgainstSources(joinSpec, editA, durA, durB);
+      if (!checkJoin.ok) {
+        await patch(jobId, { status: 'error', error: { code: 'bad-join', message: checkJoin.error } });
+        return { ok: false };
+      }
+
+      const graph = buildJoinFilterComplex({ editA, partASec: durA, join: joinSpec, partBSec: durB });
+      const p0 = ff([
+        '-hide_banner', '-nostats',
+        '-i', inPath, '-i', inBPath,
+        '-filter_complex', graph,
+        '-map', `[${JOIN_OUTPUT_LABEL}]`,
+        // Same 32-bit float intermediate as the single-source edit: a crossfade
+        // multiplies both sides by fractional gains, so an integer intermediate
+        // would quantise every sample of the seam before mastering even starts.
+        '-c:a', 'pcm_f32le', '-y', editedPath,
+      ]);
+      if (p0.status !== 0) {
+        await patch(jobId, { status: 'error', error: { code: 'pass0', message: 'crossfade join failed' } });
+        return { ok: false };
+      }
+      sourceForMastering = editedPath;
+      editedDuration = joinedDurationSec(
+        editedDurationSec(edit, durA),
+        editedDurationSec(joinSpec.editB ?? NO_EDIT, durB),
+        joinSpec.overlapSec,
+      );
+    } else if (!isNoOpEdit(edit)) {
       trueSource = probeSource(inPath);
       const durationSec = trueSource?.durationSec ?? null;
       const check = validateAgainstSource(edit, durationSec ?? 0);
@@ -270,6 +350,9 @@ export const handler = async (event: MasterEvent) => {
       // What the admin asked for and what it produced. Stored together so the
       // report can state the edit without re-deriving it from the audio.
       edit: isNoOpEdit(edit) ? null : edit,
+      // The seam, stored so the report and the Studio can state what was
+      // assembled without re-deriving it from the audio.
+      join: joinSpec,
       editedDurationSec: editedDuration,
       mp3Key,
       mp3Lufs,

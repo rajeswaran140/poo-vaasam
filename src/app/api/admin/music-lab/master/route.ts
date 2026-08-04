@@ -6,6 +6,11 @@
  * BEFORE the loudnorm passes — see src/lib/master-edit.ts for why that ordering
  * is not negotiable. Omitting it masters the full source, exactly as before.
  *
+ * `join` is an optional two-part assembly (Part B + an equal-power crossfade),
+ * applied in the SAME pre-pass so the song is spliced before it is measured —
+ * mastering two halves separately and crossfading afterwards leaves neither on
+ * target. See src/lib/master-join.ts.
+ *
  * Creates a `processing` MasterJob in DynamoDB, fire-and-forget invokes the
  * `master-worker` Lambda (Event invocation — returns instantly), and returns the
  * jobId. The worker (ffmpeg layer, up to 15 min) does the two-pass loudnorm off
@@ -28,6 +33,7 @@ import { awsConfig } from '@/lib/aws-config';
 import { isValidTarget, isMasterKey, MIN_TARGET_LUFS, MAX_TARGET_LUFS } from '@/lib/loudness-measure';
 import { isMasteringKey } from '@/lib/mastering-storage';
 import { parseMasterEdit, isNoOpEdit } from '@/lib/master-edit';
+import { parseMasterJoin } from '@/lib/master-join';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -79,10 +85,34 @@ export async function POST(request: NextRequest) {
   // Store null for "no edit" so the job record can't imply an edit happened.
   const edit = isNoOpEdit(parsedEdit.edit) ? null : parsedEdit.edit;
 
+  // Two-part assembly. Optional and absent from every pre-existing caller.
+  const parsedJoin = parseMasterJoin(body?.join);
+  if (!parsedJoin.ok) {
+    return NextResponse.json({ success: false, error: parsedJoin.error }, { status: 400 });
+  }
+  const join = parsedJoin.join;
+  // Part B gets the SAME guards as Part A. Without this the join field would be
+  // a second, unchecked route to running the worker against any object in the
+  // bucket — the exact hole the s3Key check above exists to close.
+  if (join && (!isMasteringKey(join.partBKey) || isMasterKey(join.partBKey))) {
+    return NextResponse.json(
+      { success: false, error: 'Part B must be an un-mastered file in the mastering workspace.' },
+      { status: 400 }
+    );
+  }
+  if (join && join.partBKey === s3Key) {
+    // Crossfading a file into itself produces a shorter copy of the same song
+    // and masters perfectly cleanly, so nothing downstream would flag it.
+    return NextResponse.json(
+      { success: false, error: 'Part B must be a different file from Part A.' },
+      { status: 400 }
+    );
+  }
+
   const jobId = randomUUID();
 
   try {
-    await new MasterJobRepository().create(jobId, { s3Key, target, edit });
+    await new MasterJobRepository().create(jobId, { s3Key, target, edit, join });
     const lambda = new LambdaClient({
       region: awsConfig.region,
       ...(awsConfig.credentials ? { credentials: awsConfig.credentials } : {}),
@@ -91,7 +121,7 @@ export async function POST(request: NextRequest) {
       new InvokeCommand({
         FunctionName: MASTER_WORKER_FUNCTION,
         InvocationType: 'Event', // async — returns at once
-        Payload: Buffer.from(JSON.stringify({ jobId, s3Key, target, edit })),
+        Payload: Buffer.from(JSON.stringify({ jobId, s3Key, target, edit, join })),
       })
     );
     return NextResponse.json({ success: true, jobId, status: 'queued' }, { status: 202 });

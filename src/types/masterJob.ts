@@ -7,6 +7,7 @@
 
 import type { SourceInfo } from '@/lib/loudness-measure';
 import type { MasterEdit } from '@/lib/master-edit';
+import type { MasterJoin } from '@/lib/master-join';
 
 export type MasterJobStatus = 'processing' | 'done' | 'error';
 
@@ -28,6 +29,16 @@ export interface MasterJob {
    * re-running with different points is a new job over the same file.
    */
   edit: MasterEdit | null;
+  /**
+   * Two-part assembly: Part B's key plus the crossfade that joined it to Part A
+   * (this job's `s3Key`). Null for an ordinary single-source master.
+   *
+   * Like `edit`, this is a RECIPE rather than a result — the two source files in
+   * S3 are never modified. It is stored so the report can state what was
+   * assembled without re-deriving it from the audio, and because "why is this
+   * master 6:20 when the take was 3:40" is otherwise unanswerable.
+   */
+  join: MasterJoin | null;
   /** Duration of the mastered output in seconds, once the worker knows it. */
   editedDurationSec: number | null;
   /**

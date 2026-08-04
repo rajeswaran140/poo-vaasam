@@ -412,6 +412,137 @@ Output #0, null, to 'pipe:':
   });
 
   /**
+   * Two-part assembly.
+   *
+   * The reason the join lives in the pre-pass is ordering: splice first, master
+   * the assembled song ONCE. Mastering two halves separately and crossfading
+   * afterwards leaves neither on target, because integrated loudness is an
+   * average over a programme. So the property these pin is the same one the
+   * edit pre-pass has — every measurement downstream must read the ASSEMBLED
+   * file, not either source.
+   */
+  describe('the crossfade join', () => {
+    const PART_B = 'audio/mastering/1_b_partb.wav';
+    const JOIN = { partBKey: PART_B, overlapSec: 3, curve: 'qsin' as const, editB: null };
+    const ffCalls = () => spawnSync.mock.calls.map((c) => c[1] as string[]);
+    const inputOf = (a: string[]) => a[a.indexOf('-i') + 1] ?? '';
+    const graphCall = () => ffCalls().find((a) => a.includes('-filter_complex'));
+    const graphOf = () => graphCall()?.[graphCall()!.indexOf('-filter_complex') + 1] ?? '';
+    const measureCall = () =>
+      ffCalls().find((a) => a.includes('null') && !inputOf(a).includes('out.'));
+    const renderCall = () => ffCalls().find((a) => a[a.length - 1].endsWith('out.wav'));
+
+    it('fetches BOTH parts and crossfades them into one intermediate', async () => {
+      const res = await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14, join: JOIN } as never);
+
+      expect(res).toMatchObject({ ok: true });
+      const gets = s3Send.mock.calls
+        .map((c) => c[0] as { input: Record<string, unknown> })
+        .filter((c) => !('Body' in c.input))
+        .map((c) => c.input.Key);
+      expect(gets).toEqual([SRC_KEY, PART_B]);
+
+      expect(graphOf()).toContain('acrossfade=d=3:c1=qsin:c2=qsin');
+      expect(graphCall()?.[graphCall()!.length - 1]).toContain('edited.wav');
+    });
+
+    it('measures and masters the ASSEMBLED file, never either source', async () => {
+      await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14, join: JOIN } as never);
+
+      const measured = inputOf(measureCall()!);
+      const rendered = inputOf(renderCall()!);
+      expect(measured).toContain('edited.wav');
+      expect(measured).toBe(rendered);
+      // Neither loudnorm pass may read a raw part — that is the whole reason the
+      // join happens here rather than after mastering.
+      expect(measured).not.toContain('in-b.wav');
+    });
+
+    it('keeps Part A as input 0 and Part B as input 1', async () => {
+      // Reversed, this crossfades B's tail into A's head and still produces a
+      // plausible file that masters perfectly cleanly.
+      await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14, join: JOIN } as never);
+      const args = graphCall()!;
+      const inputs = args.reduce<string[]>((acc, a, i) => (a === '-i' ? [...acc, args[i + 1]] : acc), []);
+      expect(inputs[0]).toContain('in.wav');
+      expect(inputs[1]).toContain('in-b.wav');
+    });
+
+    it('renders the seam in 32-bit float', async () => {
+      // A crossfade multiplies both sides by fractional gains; an integer
+      // intermediate quantises every sample of the seam before mastering starts.
+      await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14, join: JOIN } as never);
+      expect(graphCall()).toEqual(expect.arrayContaining(['-c:a', 'pcm_f32le']));
+    });
+
+    it('records the seam on the job, and the ASSEMBLED duration', async () => {
+      await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14, join: JOIN } as never);
+      const p = patched();
+      expect(p.join).toMatchObject({ partBKey: PART_B, overlapSec: 3, curve: 'qsin' });
+      // The fixture header says 365.3s for both parts: 365.3 + 365.3 - 3.
+      expect(p.editedDurationSec).toBeCloseTo(727.6, 1);
+    });
+
+    it('refuses a Part B outside the mastering workspace, without reading it', async () => {
+      // The join field must not become a second, unchecked way to point the
+      // worker at any object in the bucket.
+      const res = await handler({
+        jobId: 'j1', s3Key: SRC_KEY, target: -14,
+        join: { ...JOIN, partBKey: 'audio/poem-music/amma.mp3' },
+      } as never);
+
+      expect(res).toEqual({ ok: false });
+      expect(patched()).toMatchObject({ error: { code: 'bad-join-key' } });
+      expect(s3Send).not.toHaveBeenCalled();
+      expect(spawnSync).not.toHaveBeenCalled();
+    });
+
+    it('refuses one of its own mastering outputs as Part B', async () => {
+      const res = await handler({
+        jobId: 'j1', s3Key: SRC_KEY, target: -14,
+        join: { ...JOIN, partBKey: 'audio/mastering/1_a_song-master-14LUFS.wav' },
+      } as never);
+      expect(res).toEqual({ ok: false });
+      expect(patched()).toMatchObject({ error: { code: 'bad-join-key' } });
+      expect(s3Send).not.toHaveBeenCalled();
+    });
+
+    it('refuses an overlap longer than a part, before spending a render', async () => {
+      // Fixture parts are 365.3s each.
+      const res = await handler({
+        jobId: 'j1', s3Key: SRC_KEY, target: -14,
+        join: { ...JOIN, overlapSec: 3, editB: { trimStartSec: 364, trimEndSec: null, fadeInSec: 0, fadeOutSec: 0, curve: 'qsin' } },
+      } as never);
+
+      expect(res).toEqual({ ok: false });
+      expect(patched()).toMatchObject({ status: 'error', error: { code: 'bad-join' } });
+      expect(putCall()).toBeUndefined();
+    });
+
+    it('fails the job when the crossfade render fails, before any S3 write', async () => {
+      spawnSync.mockImplementation((_b: string, args: string[]) =>
+        args.includes('-filter_complex')
+          ? { status: 1, stdout: '', stderr: 'acrossfade failed' }
+          : dispatch(args)
+      );
+      const res = await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14, join: JOIN } as never);
+
+      expect(res).toEqual({ ok: false });
+      expect(patched()).toMatchObject({ status: 'error', error: { code: 'pass0' } });
+      expect(putCall()).toBeUndefined();
+    });
+
+    it('leaves a single-source master completely untouched', async () => {
+      // The regression that matters most: the join is additive, so a job with no
+      // join must produce exactly the run it always did.
+      await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14 });
+      expect(graphCall()).toBeUndefined();
+      expect(spawnSync).toHaveBeenCalledTimes(5);
+      expect(patched().join).toBeNull();
+    });
+  });
+
+  /**
    * The web MP3 export.
    *
    * This is the only artifact in the module that listeners actually receive, and
