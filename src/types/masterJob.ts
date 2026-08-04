@@ -98,5 +98,18 @@ export interface MasterJob {
   archivedAt: string | null;
   archiveKey: string | null;
   archiveError: string | null;
+  /**
+   * When this job's web MP3 was copied to the site's `audio/poem-music/` prefix,
+   * and under what key. Set by an explicit Publish action, never automatically:
+   * that path is CDN-served and canonical per song, so writing to it is a
+   * deliberate act.
+   *
+   * ⚠️ `publishedAt` means THE FILE IS STAGED, not that the song is live —
+   * `/songs` is build-time SSG and still needs a content record plus a rebuild.
+   * All three are null for every job written before publishing existed.
+   */
+  publishedAt: string | null;
+  publishKey: string | null;
+  publishError: string | null;
   error: { code: string; message: string } | null;
 }

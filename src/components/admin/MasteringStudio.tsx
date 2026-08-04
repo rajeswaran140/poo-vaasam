@@ -160,6 +160,9 @@ export function MasteringStudio() {
   const [paused, setPaused] = useState<StoredJob | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  /** Where the web MP3 landed on the site's audio path, once staged. */
+  const [published, setPublished] = useState<{ key: string; replaced: boolean } | null>(null);
   const [library, setLibrary] = useState<MasterJob[] | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
   /** Which saved master is loaded in the library player, and its presigned URL. */
@@ -264,6 +267,8 @@ export function MasteringStudio() {
     setJobId(null);
     setError(null);
     setAnnounce('');
+    setSavedAt(null);
+    setPublished(null);
     if (fileInput.current) fileInput.current.value = '';
   }, []);
 
@@ -362,6 +367,12 @@ export function MasteringStudio() {
     if (!sourceKey || !source) return;
     setError(null);
     setJob(null);
+    // Per-job state, not per-session. `savedAt` was set on the first save and
+    // never cleared, so mastering a SECOND file in the same visit met a
+    // disabled "Saved to library" button belonging to the previous job — the
+    // new master could not be saved at all without a page reload.
+    setSavedAt(null);
+    setPublished(null);
     try {
       const res = await adminFetch('/api/admin/music-lab/master', {
         method: 'POST',
@@ -468,6 +479,46 @@ export function MasteringStudio() {
     }
   }, [jobId, masterName, loadLibrary]);
 
+
+  /**
+   * Stage the web MP3 at the site's own audio path.
+   *
+   * The destination is canonical per song and CDN-served, so an occupied key
+   * comes back as a 409 conflict rather than being replaced — the admin is the
+   * only one who knows whether the file already there is the same song. Only an
+   * explicit confirm retries with `overwrite`.
+   */
+  const publishToSite = useCallback(async (overwrite = false) => {
+    if (!jobId) return;
+    setPublishing(true);
+    setError(null);
+    try {
+      const res = await adminFetch(`/api/admin/music-lab/master/${jobId}/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(overwrite ? { overwrite: true } : {}),
+      });
+      const body = await res.json().catch(() => ({}));
+
+      if (res.status === 409 && body.conflict) {
+        // Ask before replacing what the site currently serves. The bucket is
+        // versioned, so a confirmed overwrite is recoverable — but it is still
+        // a change to a live song, and must be chosen rather than defaulted.
+        if (window.confirm(`${body.error}\n\nReplace it?`)) {
+          await publishToSite(true);
+        }
+        return;
+      }
+      if (!res.ok || !body.success) throw new Error(body.error || 'Could not publish this master.');
+
+      setPublished({ key: body.key as string, replaced: Boolean(body.replaced) });
+      setAnnounce(body.replaced ? 'Web MP3 replaced on the site path.' : 'Web MP3 staged on the site path.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPublishing(false);
+    }
+  }, [jobId]);
 
   /**
    * Deliberately NOT loaded on mount: listing scans the table, and most visits
@@ -1072,6 +1123,49 @@ export function MasteringStudio() {
             </p>
           )}
 
+          {/* Publish — only once saved, because the title IS the filename and
+              save is what persists it. Deliberately a separate step from Save:
+              this writes to the CDN-served path the site reads. */}
+          {savedAt && job.mp3Key && (
+            <div className="mt-4 rounded-lg border border-gray-200 p-4 dark:border-gray-800">
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => void publishToSite()}
+                  disabled={publishing || !!published}
+                  className="inline-flex items-center gap-2 rounded-lg border border-orange-300 px-4 py-2 text-sm font-medium text-orange-700 transition hover:bg-orange-50 disabled:opacity-60 dark:border-orange-800 dark:text-orange-300 dark:hover:bg-orange-900/20"
+                >
+                  {publishing
+                    ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    : <Upload className="h-4 w-4" aria-hidden="true" />}
+                  {published ? 'Staged on the site path' : 'Publish web MP3 to site'}
+                </button>
+                {published && (
+                  <code className="min-w-0 truncate rounded bg-gray-100 px-2 py-1 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                    {published.key}
+                  </code>
+                )}
+              </div>
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                {published ? (
+                  <>
+                    {published.replaced
+                      ? 'Replaced the file that was already there (the bucket is versioned, so the previous one still exists). '
+                      : 'Copied into the site’s audio folder. '}
+                    <strong>Not live yet</strong> — the song appears on tamilagaval.com once a content
+                    record points at this file and the site rebuilds.
+                  </>
+                ) : (
+                  <>
+                    Copies the measured MP3 to <code>audio/poem-music/</code> under this master’s name,
+                    so it no longer has to be downloaded and re-uploaded by hand. Staging only — the song
+                    goes live when a content record points at it and the site rebuilds.
+                  </>
+                )}
+              </p>
+            </div>
+          )}
+
           <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50/60 p-4 text-sm dark:border-amber-900/40 dark:bg-amber-900/10">
             <p className="font-semibold text-amber-800 dark:text-amber-300">Hand-off to Adobe — master once</p>
             <p className="mt-1 text-gray-700 dark:text-gray-200">
@@ -1164,6 +1258,14 @@ export function MasteringStudio() {
                     <span className="ml-1 text-emerald-600 dark:text-emerald-400">unchanged</span>
                   )}
                 </span>
+                {m.publishedAt && (
+                  <span
+                    title={m.publishKey ?? undefined}
+                    className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300"
+                  >
+                    On site
+                  </span>
+                )}
                 {m.masterKey && (
                   <button
                     type="button"
@@ -1171,6 +1273,18 @@ export function MasteringStudio() {
                     className="text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
                   >
                     WAV
+                  </button>
+                )}
+                {/* The MP3 was reachable only from the result panel of the run
+                    that produced it — so a master saved yesterday had a web
+                    file in S3 that nothing on this page could open. */}
+                {m.mp3Key && (
+                  <button
+                    type="button"
+                    onClick={() => void downloadKey(m.mp3Key!, m.title ?? '', m.target)}
+                    className="text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
+                  >
+                    MP3
                   </button>
                 )}
               </li>
