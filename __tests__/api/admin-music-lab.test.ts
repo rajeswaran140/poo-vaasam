@@ -95,7 +95,7 @@ describe('master enqueue', () => {
     expect(body.jobId).toBeTruthy();
     // `edit: null` is the "no trim/fade" case — a request that omits it must
     // still produce exactly the job it always did.
-    expect(mockCreate).toHaveBeenCalledWith(body.jobId, { s3Key: SRC, target: -14, edit: null });
+    expect(mockCreate).toHaveBeenCalledWith(body.jobId, { s3Key: SRC, target: -14, edit: null, join: null });
     expect(MockInvoke.mock.calls[0][0].InvocationType).toBe('Event');
   });
 
@@ -124,7 +124,7 @@ describe('master enqueue', () => {
     // The invoke payload must not carry the bucket the caller tried to inject.
     const payload = JSON.parse(Buffer.from(MockInvoke.mock.calls[0][0].Payload).toString());
     expect(payload).not.toHaveProperty('bucket');
-    expect(payload).toEqual({ jobId: expect.any(String), s3Key: SRC, target: -14, edit: null });
+    expect(payload).toEqual({ jobId: expect.any(String), s3Key: SRC, target: -14, edit: null, join: null });
   });
 
   it('400s rather than silently defaulting when target is unusable', async () => {
@@ -141,14 +141,14 @@ describe('master enqueue', () => {
   it('honours a valid non-default target', async () => {
     const res = await masterPOST(post('/api/admin/music-lab/master', { s3Key: SRC, target: -16 }));
     expect(res.status).toBe(202);
-    expect(mockCreate).toHaveBeenCalledWith(expect.any(String), { s3Key: SRC, target: -16, edit: null });
+    expect(mockCreate).toHaveBeenCalledWith(expect.any(String), { s3Key: SRC, target: -16, edit: null, join: null });
   });
 
   it('carries a trim/fade edit through to the job and the worker payload', async () => {
     const edit = { trimStartSec: 2, trimEndSec: 200, fadeInSec: 0, fadeOutSec: 6, curve: 'qsin' };
     const res = await masterPOST(post('/api/admin/music-lab/master', { s3Key: SRC, edit }));
     expect(res.status).toBe(202);
-    expect(mockCreate).toHaveBeenCalledWith(expect.any(String), { s3Key: SRC, target: -14, edit });
+    expect(mockCreate).toHaveBeenCalledWith(expect.any(String), { s3Key: SRC, target: -14, edit, join: null });
     const payload = JSON.parse(Buffer.from(MockInvoke.mock.calls[0][0].Payload).toString());
     expect(payload.edit).toEqual(edit);
   });
@@ -161,7 +161,71 @@ describe('master enqueue', () => {
       })
     );
     expect(res.status).toBe(202);
-    expect(mockCreate).toHaveBeenCalledWith(expect.any(String), { s3Key: SRC, target: -14, edit: null });
+    expect(mockCreate).toHaveBeenCalledWith(expect.any(String), { s3Key: SRC, target: -14, edit: null, join: null });
+  });
+
+  /**
+   * Two-part assembly. The guards here matter more than the edit's: `join`
+   * carries a SECOND S3 key, so without the same checks Part A gets it would be
+   * an unchecked way to point the ffmpeg worker at any object in the bucket.
+   */
+  describe('join (two-part assembly)', () => {
+    const PART_B = 'audio/mastering/1700000000000_ff99_partb.wav';
+    const join = (over: Record<string, unknown> = {}) => ({ partBKey: PART_B, overlapSec: 3, ...over });
+
+    it('carries the seam to the job and the worker payload', async () => {
+      const res = await masterPOST(post('/api/admin/music-lab/master', { s3Key: SRC, join: join() }));
+      expect(res.status).toBe(202);
+      const payload = JSON.parse(Buffer.from(MockInvoke.mock.calls[0][0].Payload).toString());
+      // Equal power by default — a linear crossfade dips ~3 dB mid-seam.
+      expect(payload.join).toMatchObject({ partBKey: PART_B, overlapSec: 3, curve: 'qsin' });
+    });
+
+    it('REFUSES a Part B outside the mastering workspace', async () => {
+      // The whole point: the worker's role can read the entire bucket.
+      for (const partBKey of [
+        'audio/poem-music/amma.mp3',
+        'audio/mastering/../poem-music/amma.mp3',
+        'amma.wav',
+      ]) {
+        const res = await masterPOST(post('/api/admin/music-lab/master', { s3Key: SRC, join: join({ partBKey }) }));
+        expect(res.status).toBe(400);
+      }
+      expect(mockCreate).not.toHaveBeenCalled();
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    it('refuses one of its own mastering outputs as Part B', async () => {
+      const res = await masterPOST(post('/api/admin/music-lab/master', {
+        s3Key: SRC,
+        join: join({ partBKey: 'audio/mastering/1700000000000_ab12cd34_take-master-14LUFS.wav' }),
+      }));
+      expect(res.status).toBe(400);
+      expect(mockCreate).not.toHaveBeenCalled();
+    });
+
+    it('refuses crossfading a file into itself', async () => {
+      // This one masters perfectly cleanly and yields a shorter copy of the same
+      // song, so nothing downstream would ever flag it.
+      const res = await masterPOST(post('/api/admin/music-lab/master', { s3Key: SRC, join: join({ partBKey: SRC }) }));
+      expect(res.status).toBe(400);
+      expect(mockCreate).not.toHaveBeenCalled();
+    });
+
+    it('400s on a malformed join rather than failing inside ffmpeg', async () => {
+      for (const bad of [
+        { overlapSec: 3 },                                  // no Part B
+        { partBKey: PART_B },                               // no overlap
+        { partBKey: PART_B, overlapSec: 0 },                // degenerate
+        { partBKey: PART_B, overlapSec: 999 },              // a mix, not a seam
+        { partBKey: PART_B, overlapSec: 3, curve: 'sinc' }, // unknown curve
+        { partBKey: PART_B, overlapSec: 3, editB: { trimStartSec: -1 } },
+      ]) {
+        const res = await masterPOST(post('/api/admin/music-lab/master', { s3Key: SRC, join: bad }));
+        expect(res.status).toBe(400);
+      }
+      expect(mockCreate).not.toHaveBeenCalled();
+    });
   });
 
   it('400s on a malformed edit rather than failing inside ffmpeg a minute later', async () => {

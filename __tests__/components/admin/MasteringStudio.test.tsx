@@ -23,6 +23,7 @@ jest.mock('lucide-react', () => ({
   Save: () => <svg data-testid="i-save" />,
   Library: () => <svg data-testid="i-library" />,
   Scissors: () => <svg data-testid="i-scissors" />,
+  Link2: () => <svg data-testid="i-link" />,
 }));
 // The before/after player is its own unit (see MasteringComparePlayer.test);
 // stub it here so the Studio suite tests wiring, not the player's Web Audio /
@@ -533,5 +534,115 @@ describe('per-job state resets between masters', () => {
     await screen.findByText(/3 · Result/);
 
     expect(screen.queryByRole('button', { name: /Publish web MP3/ })).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Two-part assembly wiring.
+ *
+ * The domain rules live in master-join.test.ts and the render in the worker
+ * suite. What only this layer can prove is that the panel's numbers actually
+ * reach the enqueue call — a seam the admin set but the request never carried
+ * would master Part A alone and look entirely successful.
+ */
+describe('two-part assembly', () => {
+  /**
+   * One presign response, queued immediately before the upload that consumes it.
+   * primeHappyPath queues presign AND enqueue up front, so an extra upload in
+   * between would eat the enqueue response — the queue is order-sensitive, and
+   * these tests upload twice.
+   */
+  const primePresign = (key: string) =>
+    mockedFetch.mockResolvedValueOnce(
+      json({ success: true, uploadUrl: 'https://s3/u', fields: { key: 'k' }, key })
+    );
+
+  /** Upload Part B through the join panel, mirroring uploadA. */
+  async function uploadB(name = 'part-b.wav') {
+    const input = document.getElementById(
+      screen.getByText(/Add Part B/i).closest('label')!.getAttribute('for')!
+    ) as HTMLInputElement;
+    const f = new File(['x'], name, { type: 'audio/wav' });
+    Object.defineProperty(f, 'size', { value: 2048 });
+    primePresign('audio/mastering/1_b_partb.wav');
+    await act(async () => { fireEvent.change(input, { target: { files: [f] } }); });
+  }
+
+  it('carries the seam into the enqueue request', async () => {
+    primePresign('audio/mastering/1_a_song.wav');
+    render(<MasteringStudio />);
+    await uploadA();
+    await uploadB();
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/Crossfade \(seconds\)/i), { target: { value: '4.5' } });
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/Part B starts at/i), { target: { value: '2' } });
+    });
+
+    mockedFetch.mockResolvedValueOnce(json({ success: true, jobId: 'job-1', status: 'queued' }));
+    mockedFetch.mockResolvedValue(json(doneJob()));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
+    await screen.findByText(/3 · Result/);
+
+    const enqueue = mockedFetch.mock.calls.find(
+      (c) => c[0] === '/api/admin/music-lab/master' && c[1]?.method === 'POST'
+    )!;
+    const body = JSON.parse(enqueue[1].body);
+    expect(body.join).toMatchObject({
+      partBKey: 'audio/mastering/1_b_partb.wav',
+      overlapSec: 4.5,
+      // Equal power, always — a linear crossfade dips 3 dB mid-seam.
+      curve: 'qsin',
+    });
+    // The head trim is how Part B's entry lands on the beat.
+    expect(body.join.editB).toMatchObject({ trimStartSec: 2 });
+  });
+
+  it('omits `join` entirely when no Part B was added', async () => {
+    // The single-source path must send exactly the body it always did.
+    primeHappyPath();
+    render(<MasteringStudio />);
+    await uploadA();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
+    await screen.findByText(/3 · Result/);
+
+    const enqueue = mockedFetch.mock.calls.find(
+      (c) => c[0] === '/api/admin/music-lab/master' && c[1]?.method === 'POST'
+    )!;
+    expect(JSON.parse(enqueue[1].body)).not.toHaveProperty('join');
+  });
+
+  it('omits editB when Part B is used from its start', async () => {
+    primePresign('audio/mastering/1_a_song.wav');
+    render(<MasteringStudio />);
+    await uploadA();
+    await uploadB();
+
+    mockedFetch.mockResolvedValueOnce(json({ success: true, jobId: 'job-1', status: 'queued' }));
+    mockedFetch.mockResolvedValue(json(doneJob()));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
+    await screen.findByText(/3 · Result/);
+
+    const enqueue = mockedFetch.mock.calls.find(
+      (c) => c[0] === '/api/admin/music-lab/master' && c[1]?.method === 'POST'
+    )!;
+    expect(JSON.parse(enqueue[1].body).join).not.toHaveProperty('editB');
+  });
+
+  it('refuses an MP3 as Part B, naming the reason', async () => {
+    // Encoder padding adds silent frames at the head and tail that misalign the
+    // overlap — worse here than for a single-source master.
+    primePresign('audio/mastering/1_a_song.wav');
+    render(<MasteringStudio />);
+    await uploadA();
+    const input = document.getElementById(
+      screen.getByText(/Add Part B/i).closest('label')!.getAttribute('for')!
+    ) as HTMLInputElement;
+    const mp3 = new File(['x'], 'part-b.mp3', { type: 'audio/mpeg' });
+    await act(async () => { fireEvent.change(input, { target: { files: [mp3] } }); });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Part B must be a WAV/i);
   });
 });

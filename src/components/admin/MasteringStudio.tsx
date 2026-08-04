@@ -32,6 +32,8 @@ import { buildMasterReport, reportFilename, sourceInfoLine, dynamicsPreserved, s
 import { MasteringComparePlayer } from '@/components/admin/MasteringComparePlayer';
 import { MasteringPlayer } from '@/components/admin/MasteringPlayer';
 import { MasteringTrimPanel } from '@/components/admin/MasteringTrimPanel';
+import { MasteringJoinPanel } from '@/components/admin/MasteringJoinPanel';
+import { DEFAULT_CROSSFADE_CURVE } from '@/lib/master-join';
 import { mp3PeakVerdict } from '@/lib/master-mp3';
 import type { MasterEdit } from '@/lib/master-edit';
 import type { MasterJob } from '@/types/masterJob';
@@ -147,6 +149,13 @@ export function MasteringStudio() {
   const [pickedFile, setPickedFile] = useState<File | null>(null);
   /** Trim/fade for the next run; null means master the whole file. */
   const [edit, setEdit] = useState<MasterEdit | null>(null);
+  /** Part B of a two-part assembly, once uploaded. Null = single-source master. */
+  const [partB, setPartB] = useState<{ key: string; name: string } | null>(null);
+  const [partBUploading, setPartBUploading] = useState(false);
+  const [partBSent, setPartBSent] = useState({ loaded: 0, total: 0 });
+  const [overlapSec, setOverlapSec] = useState(3);
+  /** Head trim on Part B — how its entry is nudged onto the beat. */
+  const [partBStartSec, setPartBStartSec] = useState(0);
   const [job, setJob] = useState<MasterJob | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   // Optional human title for the export. Storage stays UUID-based; this only
@@ -269,6 +278,9 @@ export function MasteringStudio() {
     setAnnounce('');
     setSavedAt(null);
     setPublished(null);
+    setPartB(null);
+    setPartBUploading(false);
+    setPartBStartSec(0);
     if (fileInput.current) fileInput.current.value = '';
   }, []);
 
@@ -296,6 +308,70 @@ export function MasteringStudio() {
     setError(null);
     void watch(stored.jobId, stored);
   }, [paused, watch]);
+
+  /**
+   * Presign + PUT one WAV into the mastering workspace, returning its key.
+   * Shared by Part A and Part B so a second source cannot drift onto a
+   * different upload path (or skip the WAV guard).
+   */
+  const uploadToWorkspace = useCallback(async (
+    file: File,
+    onProgress: (loaded: number, total: number) => void,
+    signal: AbortSignal,
+  ): Promise<string> => {
+    const typeOk = (ACCEPTED_UPLOAD_TYPES as readonly string[]).includes(file.type);
+    const res = await adminFetch('/api/admin/mastering/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filename: file.name,
+        contentType: typeOk ? file.type : 'audio/wav',
+        size: file.size,
+      }),
+      signal,
+    });
+    const body = await res.json();
+    if (!res.ok || !body.success) throw new Error(body.error || `Could not start the upload (HTTP ${res.status}).`);
+    await putToS3(body.uploadUrl, body.fields, file, onProgress, signal);
+    return body.key as string;
+  }, []);
+
+  /**
+   * Part B of a two-part assembly. Same WAV-only rule as Part A: an MP3 here is
+   * worse than usual, because encoder padding adds silent frames at the head and
+   * tail that misalign the overlap.
+   */
+  const onPickPartB = useCallback(async (file: File) => {
+    setError(null);
+    const extOk = /\.wave?$/i.test(file.name);
+    const typeOk = (ACCEPTED_UPLOAD_TYPES as readonly string[]).includes(file.type);
+    if (!typeOk && !extOk) {
+      setError('Part B must be a WAV. MP3 padding adds silent frames that misalign the crossfade.');
+      return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError(`Part B is ${MB(file.size)}, over the ${MB(MAX_UPLOAD_BYTES)} limit.`);
+      return;
+    }
+    setPartBUploading(true);
+    setPartBSent({ loaded: 0, total: file.size });
+    const controller = new AbortController();
+    try {
+      const key = await uploadToWorkspace(
+        file,
+        (loaded, total) => mounted.current && setPartBSent({ loaded, total }),
+        controller.signal,
+      );
+      if (!mounted.current) return;
+      setPartB({ key, name: file.name });
+      setAnnounce('Part B uploaded.');
+    } catch (err) {
+      if (!mounted.current) return;
+      if (!isAbort(err)) setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      if (mounted.current) setPartBUploading(false);
+    }
+  }, [uploadToWorkspace]);
 
   const onPick = useCallback(async (picked: File | null) => {
     if (!picked) return;
@@ -379,7 +455,33 @@ export function MasteringStudio() {
         headers: { 'Content-Type': 'application/json' },
         // `edit` is omitted entirely when null, so a plain run sends the exact
         // body it always did.
-        body: JSON.stringify({ s3Key: sourceKey, target, ...(edit ? { edit } : {}) }),
+        // `edit` and `join` are omitted entirely when unused, so a plain run
+        // sends the exact body it always did.
+        body: JSON.stringify({
+          s3Key: sourceKey,
+          target,
+          ...(edit ? { edit } : {}),
+          ...(partB
+            ? {
+                join: {
+                  partBKey: partB.key,
+                  overlapSec,
+                  curve: DEFAULT_CROSSFADE_CURVE,
+                  ...(partBStartSec > 0
+                    ? {
+                        editB: {
+                          trimStartSec: partBStartSec,
+                          trimEndSec: null,
+                          fadeInSec: 0,
+                          fadeOutSec: 0,
+                          curve: DEFAULT_CROSSFADE_CURVE,
+                        },
+                      }
+                    : {}),
+                },
+              }
+            : {}),
+        }),
       });
       const body = await res.json();
       if (!res.ok || !body.success) throw new Error(body.error || `Could not start mastering (HTTP ${res.status}).`);
@@ -391,7 +493,7 @@ export function MasteringStudio() {
       setError(err instanceof Error ? err.message : String(err));
       setStage('ready');
     }
-  }, [sourceKey, source, target, edit, watch]);
+  }, [sourceKey, source, target, edit, partB, overlapSec, partBStartSec, watch]);
 
   /**
    * Presign + open one workspace WAV. Shared by the result panel and the saved
@@ -828,6 +930,22 @@ export function MasteringStudio() {
             <MasteringTrimPanel
               file={pickedFile}
               onChange={setEdit}
+              disabled={stage === 'mastering'}
+            />
+
+            {/* Both panels edit the SAME pre-pass, upstream of every
+                measurement — which is what makes "master the assembled song
+                once" the only available order. */}
+            <MasteringJoinPanel
+              partB={partB}
+              onPick={(f) => void onPickPartB(f)}
+              onClear={() => { setPartB(null); setPartBStartSec(0); }}
+              overlapSec={overlapSec}
+              onOverlapChange={setOverlapSec}
+              partBStartSec={partBStartSec}
+              onPartBStartChange={setPartBStartSec}
+              uploading={partBUploading}
+              progressPct={partBSent.total ? Math.round((partBSent.loaded / partBSent.total) * 100) : 0}
               disabled={stage === 'mastering'}
             />
           </div>

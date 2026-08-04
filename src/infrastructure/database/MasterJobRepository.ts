@@ -8,6 +8,7 @@
 import { DynamoDBOperations, handleDynamoDBError } from './dynamodb-client';
 import type { MasterJob } from '@/types/masterJob';
 import { parseMasterEdit, isNoOpEdit, type MasterEdit } from '@/lib/master-edit';
+import { parseMasterJoin, type MasterJoin } from '@/lib/master-join';
 
 const TTL_SECONDS = 24 * 60 * 60;
 
@@ -15,7 +16,7 @@ export class MasterJobRepository {
   /** Create a fresh job in the `processing` state. */
   async create(
     id: string,
-    input: { s3Key: string; target: number; edit?: MasterEdit | null }
+    input: { s3Key: string; target: number; edit?: MasterEdit | null; join?: MasterJoin | null }
   ): Promise<MasterJob> {
     try {
       const now = new Date().toISOString();
@@ -27,6 +28,7 @@ export class MasterJobRepository {
         s3Key: input.s3Key,
         target: input.target,
         edit: input.edit ?? null,
+        join: input.join ?? null,
         editedDurationSec: null,
         mp3Key: null,
         mp3Lufs: null,
@@ -87,6 +89,12 @@ export class MasterJobRepository {
     const parsedEdit = parseMasterEdit(item.edit ?? undefined);
     const edit = parsedEdit.ok && !isNoOpEdit(parsedEdit.edit) ? parsedEdit.edit : null;
 
+    // Re-validated for the same reason as the edit: a row written by an older
+    // worker, or hand-patched, must not hand a malformed join to the filter
+    // builder. Anything unparseable degrades to "no join" — a single-source
+    // master, which is how every pre-join row behaves.
+    const parsedJoin = parseMasterJoin(item.join ?? undefined);
+
     return {
       id: item.id,
       status: item.status,
@@ -95,6 +103,7 @@ export class MasterJobRepository {
       s3Key: item.s3Key,
       target: typeof item.target === 'number' ? item.target : -14,
       edit,
+      join: parsedJoin.ok ? parsedJoin.join : null,
       editedDurationSec:
         typeof item.editedDurationSec === 'number' ? item.editedDurationSec : null,
       mp3Key: typeof item.mp3Key === 'string' ? item.mp3Key : null,
