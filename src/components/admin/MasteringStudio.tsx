@@ -696,9 +696,12 @@ export function MasteringStudio() {
       if (!res.ok || !body.success) throw new Error(body.error || 'Could not start the render.');
       setAnnounce('Rendering the video.');
 
+      // Check IMMEDIATELY, then settle into an interval. A short render can be
+      // finished before the first tick would have elapsed, and waiting anyway
+      // would show a spinner for a file that already exists.
       const deadline = Date.now() + 10 * 60 * 1000;
-      for (;;) {
-        await new Promise((r) => setTimeout(r, 4000));
+      for (let attempt = 0; ; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 4000));
         if (!mounted.current) return;
         const s = await adminFetch(`/api/admin/music-lab/master/${jobId}`);
         const fresh = (await s.json()) as MasterJob;

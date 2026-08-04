@@ -800,43 +800,34 @@ describe('render for YouTube', () => {
   });
 
   it('sends the cover and the chosen height, then surfaces the MP4', async () => {
-    jest.useFakeTimers({ doNotFake: ['nextTick'] });
-    try {
-      await masterAndSave();
-      await addCover();
-      await act(async () => {
-        fireEvent.change(screen.getByLabelText(/Upload size/i), { target: { value: '2160' } });
-      });
+    // No fake timers: the poll checks once immediately, so a render that is
+    // already finished resolves without any clock manipulation. Timing-sensitive
+    // tests are the classic thing that passes here and fails on a CI runner.
+    await masterAndSave();
+    await addCover();
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/Upload size/i), { target: { value: '2160' } });
+    });
 
-      mockedFetch.mockResolvedValueOnce(json({ success: true, videoKey: 'v', height: 2160, status: 'queued' }));
-      mockedFetch.mockResolvedValue(
-        json(savedDoneJob({ videoKey: 'audio/mastering/1_a_song-master-14LUFS-2160p.mp4' }))
-      );
-      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Render video/ })); });
-      await act(async () => { await jest.advanceTimersByTimeAsync(5000); });
+    mockedFetch.mockResolvedValueOnce(json({ success: true, videoKey: 'v', height: 2160, status: 'queued' }));
+    mockedFetch.mockResolvedValue(
+      json(savedDoneJob({ videoKey: 'audio/mastering/1_a_song-master-14LUFS-2160p.mp4' }))
+    );
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Render video/ })); });
 
-      const req = mockedFetch.mock.calls.find((c) => String(c[0]).endsWith('/render'))!;
-      expect(JSON.parse(req[1].body)).toEqual({ coverKey: 'audio/mastering/1_c_cover.jpg', height: 2160 });
-      expect(await screen.findByRole('button', { name: /Download MP4/ })).toBeInTheDocument();
-    } finally {
-      jest.useRealTimers();
-    }
+    const req = mockedFetch.mock.calls.find((c) => String(c[0]).endsWith('/render'))!;
+    expect(JSON.parse(req[1].body)).toEqual({ coverKey: 'audio/mastering/1_c_cover.jpg', height: 2160 });
+    expect(await screen.findByRole('button', { name: /Download MP4/ })).toBeInTheDocument();
   });
 
   it('reports a render failure instead of spinning forever', async () => {
-    jest.useFakeTimers({ doNotFake: ['nextTick'] });
-    try {
-      await masterAndSave();
-      await addCover();
-      mockedFetch.mockResolvedValueOnce(json({ success: true, videoKey: 'v', height: 1440, status: 'queued' }));
-      mockedFetch.mockResolvedValue(json(savedDoneJob({ videoError: 'x264 died' })));
-      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Render video/ })); });
-      await act(async () => { await jest.advanceTimersByTimeAsync(5000); });
+    await masterAndSave();
+    await addCover();
+    mockedFetch.mockResolvedValueOnce(json({ success: true, videoKey: 'v', height: 1440, status: 'queued' }));
+    mockedFetch.mockResolvedValue(json(savedDoneJob({ videoError: 'x264 died' })));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Render video/ })); });
 
-      expect(await screen.findByRole('alert')).toHaveTextContent(/x264 died/);
-      expect(screen.getByRole('button', { name: /Render video/ })).toBeEnabled();
-    } finally {
-      jest.useRealTimers();
-    }
+    expect(await screen.findByRole('alert')).toHaveTextContent(/x264 died/);
+    expect(screen.getByRole('button', { name: /Render video/ })).toBeEnabled();
   });
 });
