@@ -22,13 +22,13 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import {
   SlidersHorizontal, Upload, Download, Loader2, CheckCircle2,
-  AlertTriangle, FileAudio, RotateCcw, X, Info, Save, Library, Play, Pause, Pencil,
+  AlertTriangle, FileAudio, RotateCcw, X, Info, Save, Library, Play, Pause, Pencil, Link2,
 } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 import { pollJob } from '@/lib/poll-job';
 import { statusFor, platformLanding } from '@/lib/loudness-targets';
 import { MAX_UPLOAD_BYTES, ACCEPTED_UPLOAD_TYPES } from '@/lib/mastering-storage';
-import { buildMasterReport, reportFilename, sourceInfoLine, dynamicsPreserved, streamingReadiness } from '@/lib/master-report';
+import { buildMasterReport, reportFilename, sourceInfoLine, dynamicsPreserved, streamingReadiness, joinLine } from '@/lib/master-report';
 import { MasteringComparePlayer } from '@/components/admin/MasteringComparePlayer';
 import { MasteringPlayer } from '@/components/admin/MasteringPlayer';
 import { MasteringTrimPanel } from '@/components/admin/MasteringTrimPanel';
@@ -53,6 +53,17 @@ interface StoredJob {
   name: string;
   size: number;
   target: number;
+  /**
+   * The two-part assembly, if any. Persisted because the trim degrades
+   * gracefully on a remount (the panel reappears empty and the admin sees it)
+   * while a lost Part B does not: the join panel would come back collapsed, and
+   * re-mastering to the second target would quietly produce Part A alone —
+   * a different, shorter song, with nothing on screen saying so.
+   */
+  partBKey?: string;
+  partBName?: string;
+  overlapSec?: number;
+  partBStartSec?: number;
 }
 const STORE_KEY = 'mastering-studio-job';
 
@@ -254,6 +265,11 @@ export function MasteringStudio() {
       setSource({ name: stored.name, size: stored.size });
       setSourceKey(stored.sourceKey);
       setTarget(stored.target);
+      if (stored.partBKey) {
+        setPartB({ key: stored.partBKey, name: stored.partBName ?? 'Part B' });
+        if (typeof stored.overlapSec === 'number') setOverlapSec(stored.overlapSec);
+        if (typeof stored.partBStartSec === 'number') setPartBStartSec(stored.partBStartSec);
+      }
       void watch(stored.jobId, stored);
     }
     return () => {
@@ -394,6 +410,12 @@ export function MasteringStudio() {
     setSource({ name: picked.name, size: picked.size });
     setPickedFile(picked);
     setEdit(null);
+    // …and the join. `edit` was already cleared here because a trim placed on
+    // one song is meaningless on the next; a Part B is worse, because it would
+    // silently crossfade an unrelated section onto the new source and master
+    // cleanly while doing it.
+    setPartB(null);
+    setPartBStartSec(0);
     setStage('uploading');
     setSent({ loaded: 0, total: picked.size });
     setAnnounce(`Uploading ${picked.name}.`);
@@ -485,7 +507,10 @@ export function MasteringStudio() {
       });
       const body = await res.json();
       if (!res.ok || !body.success) throw new Error(body.error || `Could not start mastering (HTTP ${res.status}).`);
-      const stored: StoredJob = { jobId: body.jobId, sourceKey, name: source.name, size: source.size, target };
+      const stored: StoredJob = {
+        jobId: body.jobId, sourceKey, name: source.name, size: source.size, target,
+        ...(partB ? { partBKey: partB.key, partBName: partB.name, overlapSec, partBStartSec } : {}),
+      };
       writeStored(stored);
       await watch(body.jobId, stored);
     } catch (err) {
@@ -1091,6 +1116,15 @@ export function MasteringStudio() {
               </tbody>
             </table>
           </div>
+
+          {joinLine(job) && (
+            <p className="mt-3 flex items-start gap-2 text-xs text-gray-600 dark:text-gray-300">
+              <Link2 className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              {/* Same string as the saved .txt — otherwise a master whose length
+                  nobody can account for is explained on screen and nowhere else. */}
+              <span>{joinLine(job)}</span>
+            </p>
+          )}
 
           <p className="mt-3 flex items-start gap-2 text-xs text-gray-500 dark:text-gray-400">
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />

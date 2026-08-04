@@ -646,3 +646,89 @@ describe('two-part assembly', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/Part B must be a WAV/i);
   });
 });
+
+/**
+ * Audit fixes on the two-part assembly (2026-08-04, before merge).
+ *
+ * All three are the same species: a join that is silently WRONG rather than
+ * visibly broken. A stale Part B masters cleanly, a dropped Part B masters
+ * cleanly, and neither says anything on screen — you get a different song and a
+ * green tick.
+ */
+describe('two-part assembly — stale and lost state', () => {
+  const primePresign2 = (key: string) =>
+    mockedFetch.mockResolvedValueOnce(
+      json({ success: true, uploadUrl: 'https://s3/u', fields: { key: 'k' }, key })
+    );
+
+  async function addPartB() {
+    const input = document.getElementById(
+      screen.getByText(/Add Part B/i).closest('label')!.getAttribute('for')!
+    ) as HTMLInputElement;
+    const f = new File(['x'], 'part-b.wav', { type: 'audio/wav' });
+    Object.defineProperty(f, 'size', { value: 2048 });
+    primePresign2('audio/mastering/1_b_partb.wav');
+    await act(async () => { fireEvent.change(input, { target: { files: [f] } }); });
+  }
+
+  it('drops Part B on Start over, so the next song cannot inherit it', async () => {
+    // A Part B surviving into the next song would crossfade an unrelated section
+    // onto it and master perfectly cleanly — wrong audio, green tick.
+    //
+    // Named for the OUTCOME, not a mechanism, because two clears cover this
+    // path (reset() and onPick) and mutation-testing shows neither is solely
+    // load-bearing: removing either alone still passes, removing both fails.
+    // Asserting one of them specifically would be a test that cannot fail for
+    // the reason its name gives. Same call as the parseSourceInfo region cut in
+    // the worker suite.
+    primePresign2('audio/mastering/1_a_song.wav');
+    render(<MasteringStudio />);
+    await uploadA();
+    await addPartB();
+    expect(screen.getByLabelText(/Crossfade \(seconds\)/i)).toBeInTheDocument();
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Start over/i })); });
+    primePresign2('audio/mastering/2_c_other.wav');
+    await uploadA(wavFile('another-song.wav'));
+
+    expect(screen.queryByLabelText(/Crossfade \(seconds\)/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Add Part B/i)).toBeInTheDocument();
+  });
+
+  it('restores the join after a remount, so a reload cannot quietly drop a section', async () => {
+    // Without this the panel comes back collapsed and re-mastering to the second
+    // target produces Part A alone — a shorter song, with nothing saying so.
+    sessionStorage.setItem(
+      'mastering-studio-job',
+      JSON.stringify({
+        jobId: 'job-1', sourceKey: 'audio/mastering/1_a_song.wav',
+        name: 'song.wav', size: 1024, target: -14,
+        partBKey: 'audio/mastering/1_b_partb.wav', partBName: 'part-b.wav',
+        overlapSec: 4.5, partBStartSec: 2,
+      })
+    );
+    mockedFetch.mockResolvedValue(json(doneJob()));
+    render(<MasteringStudio />);
+
+    await screen.findByText(/3 · Result/);
+    // Re-arm for the second target: the join must still be attached.
+    await act(async () => { fireEvent.click(screen.getByRole('radio', { name: /-16 LUFS/ })); });
+    expect(await screen.findByText('part-b.wav')).toBeInTheDocument();
+    expect((screen.getByLabelText(/Crossfade \(seconds\)/i) as HTMLInputElement).value).toBe('4.5');
+    expect((screen.getByLabelText(/Part B starts at/i) as HTMLInputElement).value).toBe('2');
+  });
+
+  it('states the assembly in the result panel', async () => {
+    // A master that is 6:20 when the take was 3:40 is otherwise unexplained.
+    primeHappyPath(doneJob({
+      join: { partBKey: 'audio/mastering/1_b_partb.wav', overlapSec: 3, curve: 'qsin', editB: null },
+      editedDurationSec: 380,
+    }));
+    render(<MasteringStudio />);
+    await uploadA();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
+    await screen.findByText(/3 · Result/);
+
+    expect(screen.getByText(/Two parts joined with a 3s crossfade \(qsin, equal power\) — 6:20 assembled/)).toBeInTheDocument();
+  });
+});

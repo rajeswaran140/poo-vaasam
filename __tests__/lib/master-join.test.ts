@@ -17,7 +17,6 @@ import {
   buildJoinFilterComplex,
   validateJoinAgainstSources,
   joinedDurationSec,
-  describeJoin,
   DEFAULT_CROSSFADE_CURVE,
   MIN_OVERLAP_SECONDS,
   MAX_OVERLAP_SECONDS,
@@ -199,16 +198,5 @@ describe('buildJoinFilterComplex', () => {
     });
     expect(fc).toContain('afade=t=in:st=0:d=0.01:curve=tri');   // A's cut head
     expect(fc).toContain('afade=t=out:st=99.99:d=0.01:curve=tri'); // B's cut tail
-  });
-});
-
-describe('describeJoin', () => {
-  it('names the seam in plain language, and says when it is equal power', () => {
-    expect(describeJoin(join(), 180, 200)).toMatch(/3s crossfade \(qsin, equal power\)/);
-    expect(describeJoin(join({ curve: 'tri' }), 180, 200)).not.toMatch(/equal power/);
-  });
-
-  it('reports the ASSEMBLED length, not either part', () => {
-    expect(describeJoin(join(), 180, 200)).toContain('377s'); // 180 + 200 - 3
   });
 });

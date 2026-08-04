@@ -19,6 +19,29 @@ const lufs = (v: number | null | undefined) => (typeof v === 'number' ? `${v.toF
 const dbtp = (v: number | null | undefined) => (typeof v === 'number' ? `${v.toFixed(2)} dBTP` : '—');
 const lu = (v: number | null | undefined) => (typeof v === 'number' ? `${v.toFixed(1)} LU` : '—');
 
+/** mm:ss for a duration, so a 6:20 master does not read as "380s". */
+function clock(seconds: number): string {
+  const whole = Math.round(seconds);
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
+}
+
+/**
+ * The seam, when this master was assembled from two parts.
+ *
+ * Null for an ordinary single-source master, so nothing is claimed about a job
+ * that had no join. Shared by the Studio result panel and the saved .txt for the
+ * same reason readiness is: a report that did not mention the assembly would
+ * describe a master whose length nobody can account for, and this file is the
+ * evidence that travels to a distributor.
+ */
+export function joinLine(job: MasterJob): string | null {
+  if (!job.join) return null;
+  const equalPower = job.join.curve === 'qsin' ? ', equal power' : '';
+  const length =
+    typeof job.editedDurationSec === 'number' ? ` — ${clock(job.editedDurationSec)} assembled` : '';
+  return `Two parts joined with a ${job.join.overlapSec}s crossfade (${job.join.curve}${equalPower})${length}`;
+}
+
 /** Inline "(unchanged)" marker — the whole point of printing LRA twice. */
 function lraNote(job: MasterJob): string {
   if (typeof job.beforeLra !== 'number' || typeof job.afterLra !== 'number') return '';
@@ -439,6 +462,7 @@ export function buildMasterReport(job: MasterJob, title?: string): string {
     `Mastered:           ${job.updatedAt}${turnaround ? `  (turnaround ${turnaround})` : ''}`,
     ...(sourceInfoLine(job) ? [`Source file:        ${sourceInfoLine(job)}`] : []),
     'Output file:        24-bit · 48 kHz WAV',
+    ...(joinLine(job) ? [`Assembly:           ${joinLine(job)}`] : []),
     // The second deliverable, named only when it exists. Its peak is measured on
     // the encoded file, not inherited from the WAV above.
     ...(job.mp3Key ? [`Web delivery:       ${MP3_BITRATE} MP3 · true peak ${dbtp(job.mp3Tp)}`] : []),

@@ -217,11 +217,3 @@ export function buildJoinFilterComplex(params: {
 
   return [legA, legB, cross].join(';');
 }
-
-/** Plain-language summary for the report and the admin UI. */
-export function describeJoin(join: MasterJoin, partASec: number, partBSec: number): string {
-  const bLen = editedDurationSec(join.editB ?? NO_EDIT, partBSec);
-  const total = joinedDurationSec(partASec, bLen, join.overlapSec);
-  const equalPower = join.curve === DEFAULT_CROSSFADE_CURVE ? ', equal power' : '';
-  return `Two parts joined with a ${ffNum(join.overlapSec)}s crossfade (${join.curve}${equalPower}) — ${ffNum(total)}s assembled`;
-}
