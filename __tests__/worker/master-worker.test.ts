@@ -216,6 +216,13 @@ Output #0, null, to 'pipe:':
    * cannot quietly reroute it here.
    */
   const dispatch = (args: string[]) => {
+    // The source probe: the only call with neither a filter nor an output. It
+    // must answer with a real header — an edit whose duration cannot be read is
+    // refused before ffmpeg ever runs, so a headerless fixture would make every
+    // edit test exercise the refusal path instead of the pre-pass.
+    if (!args.includes('-af') && !args.includes('null') && !args.includes('libmp3lame')) {
+      return { status: 0, stdout: '', stderr: PASS1 };
+    }
     const measuring = args.includes('null');
     if (!measuring) {
       return args.includes('libmp3lame')
@@ -327,6 +334,81 @@ Output #0, null, to 'pipe:':
     const res = await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -16 });
     expect(res).toMatchObject({ masterKey: 'audio/mastering/1_a_song-master-16LUFS.wav' });
     expect(argsOf(0).join(' ')).toContain('I=-16');
+  });
+
+  /**
+   * The trim/fade pre-pass, and the property that makes its copy honest.
+   *
+   * The Studio promises "applied before loudness normalisation, so the master
+   * still lands exactly on target". That holds ONLY if the measurement pass
+   * sees the edited audio. Measure the whole file, render a trimmed region, and
+   * the measured LUFS describes something that was never rendered — trimming a
+   * long quiet intro would push the master 1-3 LU hot, silently, with an
+   * on-target number displayed beside it.
+   *
+   * The worker gets this right by rendering the edit to an intermediate and
+   * pointing BOTH loudnorm passes at that file. NOTHING ASSERTED IT until an
+   * external audit raised it (2026-08-04) — the same shape as every other
+   * defect this module has shipped: correct-looking code, untested composition.
+   */
+  describe('the trim/fade pre-pass', () => {
+    const EDIT = { trimStartSec: 12, trimEndSec: 200, fadeInSec: 0, fadeOutSec: 4, curve: 'qsin' as const };
+
+    // Located by CONTENT, not call index: an edit adds a source probe ahead of
+    // the pre-pass, so positions shift. The property is about which FILE each
+    // pass reads, which is what these read off.
+    const ffCalls = () => spawnSync.mock.calls.map((c) => c[1] as string[]);
+    const inputOf = (a: string[]) => a[a.indexOf('-i') + 1] ?? '';
+    const preCall = () => ffCalls().find((a) => a.join(' ').includes('atrim'));
+    /** Pass 2 — the only call that writes the master. */
+    const renderCall = () => ffCalls().find((a) => a[a.length - 1].endsWith('out.wav'));
+    /** Pass 1 — measures a source, never the finished master. */
+    const measureCall = () =>
+      ffCalls().find((a) => a.includes('null') && !inputOf(a).includes('out.'));
+
+    it('measures the EDITED audio, not the original', async () => {
+      await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14, edit: EDIT } as never);
+
+      expect(preCall()?.join(' ')).toContain('atrim=start=12');
+      expect(preCall()?.[preCall()!.length - 1]).toContain('edited.wav');
+
+      const measured = inputOf(measureCall()!);
+      const rendered = inputOf(renderCall()!);
+      expect(measured).toContain('edited.wav');
+      // THE property: measurement and render read the same file. If they ever
+      // diverge, the LUFS on screen describes audio nobody shipped.
+      expect(measured).toBe(rendered);
+    });
+
+    it('renders the intermediate in 32-bit float, so fades are not quantised twice', async () => {
+      await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14, edit: EDIT } as never);
+      expect(preCall()).toEqual(expect.arrayContaining(['-c:a', 'pcm_f32le']));
+    });
+
+    it('skips the pre-pass entirely for a no-op edit', async () => {
+      // A pointless decode/encode of a 70 MB WAV, and a second chance to alter
+      // audio that was supposed to be untouched.
+      await handler({
+        jobId: 'j1', s3Key: SRC_KEY, target: -14,
+        edit: { trimStartSec: 0, trimEndSec: null, fadeInSec: 0, fadeOutSec: 0, curve: 'qsin' },
+      } as never);
+      expect(preCall()).toBeUndefined();
+      expect(inputOf(measureCall()!)).toContain('in.wav');
+    });
+
+    it('fails the job when the edit cannot be applied, before any S3 write', async () => {
+      logs.encodeStatus = 0;
+      spawnSync.mockImplementation((_b: string, args: string[]) =>
+        args.includes('atrim=start=12:end=200') || args.join(' ').includes('atrim')
+          ? { status: 1, stdout: '', stderr: 'trim failed' }
+          : dispatch(args)
+      );
+      const res = await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14, edit: EDIT } as never);
+
+      expect(res).toEqual({ ok: false });
+      expect(patched()).toMatchObject({ status: 'error', error: { code: 'pass0' } });
+      expect(putCall()).toBeUndefined();
+    });
   });
 
   /**

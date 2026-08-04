@@ -22,6 +22,7 @@ import {
   FADE_CURVES,
   MAX_FADE_SECONDS,
   MIN_MASTER_SECONDS,
+  DECLICK_SECONDS,
   type MasterEdit,
 } from '@/lib/master-edit';
 
@@ -169,8 +170,69 @@ describe('buildEditFilters — the ffmpeg chain', () => {
   });
 
   it('joins the chain with commas for a single -af argument', () => {
+    // The head has no fade-in, so it carries the 10 ms de-click ramp; the tail
+    // asked for a 5 s fade, so it does not.
     const arg = buildEditFilterArg(edit({ trimStartSec: 10, trimEndSec: 70, fadeOutSec: 5 }), 300);
-    expect(arg).toBe('atrim=start=10:end=70,asetpts=PTS-STARTPTS,afade=t=out:st=55:d=5:curve=qsin');
+    expect(arg).toBe(
+      'atrim=start=10:end=70,asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.01:curve=tri,afade=t=out:st=55:d=5:curve=qsin'
+    );
+  });
+});
+
+/**
+ * De-click ramps at cut edges.
+ *
+ * A trim point almost never lands on a zero crossing, so a bare cut starts the
+ * master with a jump from silence to mid-waveform — a click. Nothing in the
+ * loudness chain can see it (it is not a level problem), so it ships.
+ *
+ * The rule is narrow on purpose: only an edge the admin CUT, and only when they
+ * left it bare. An untrimmed start is already silent, and an explicit fade is
+ * already a ramp.
+ */
+describe('de-click ramps', () => {
+  const chain = (over: Partial<MasterEdit>, dur = 300) => buildEditFilters(edit(over), dur);
+
+  it('ramps a bare head cut', () => {
+    const f = chain({ trimStartSec: 10 });
+    expect(f).toContain(`afade=t=in:st=0:d=${DECLICK_SECONDS}:curve=tri`);
+  });
+
+  it('ramps a bare tail cut, ending exactly at the new end', () => {
+    const f = chain({ trimEndSec: 70 });
+    // Kept length is 70s, so the ramp starts at 69.99 and lands on the cut.
+    expect(f).toContain(`afade=t=out:st=69.99:d=${DECLICK_SECONDS}:curve=tri`);
+  });
+
+  it('does NOT ramp an edge that was never cut', () => {
+    // The most important negative: an untrimmed file must come out bit-identical
+    // to what it was before this rule existed.
+    expect(chain({ trimStartSec: 0, trimEndSec: null, fadeInSec: 2 })).toEqual([
+      'afade=t=in:st=0:d=2:curve=qsin',
+    ]);
+    const tailOnly = chain({ trimEndSec: 70 });
+    expect(tailOnly.some((f) => f.startsWith('afade=t=in'))).toBe(false);
+  });
+
+  it('never doubles up on an edge the admin already faded', () => {
+    const f = chain({ trimStartSec: 10, trimEndSec: 70, fadeInSec: 3, fadeOutSec: 4 });
+    expect(f.filter((x) => x.startsWith('afade=t=in'))).toHaveLength(1);
+    expect(f.filter((x) => x.startsWith('afade=t=out'))).toHaveLength(1);
+    expect(f.join(',')).not.toContain('curve=tri');
+  });
+
+  it('is inaudible by construction — an order of magnitude under a real fade', () => {
+    // Guards the constant itself: at 100 ms this would be heard as a fade on a
+    // tool that promises not to change tone.
+    expect(DECLICK_SECONDS).toBeLessThanOrEqual(0.02);
+    expect(DECLICK_SECONDS).toBeGreaterThan(0);
+  });
+
+  it('skips the ramp when the kept section is shorter than the ramp itself', () => {
+    // Defensive: MIN_MASTER_SECONDS already refuses these upstream, but a chain
+    // with a negative `st=` would be an ffmpeg error rather than a clean refusal.
+    const f = chain({ trimStartSec: 0.1, trimEndSec: 0.105 }, 300);
+    expect(f.every((x) => !x.includes('curve=tri'))).toBe(true);
   });
 });
 

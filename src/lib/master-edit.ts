@@ -44,6 +44,22 @@ export const MAX_FADE_SECONDS = 30;
 /** A master shorter than this is a slip of the mouse, not an intention. */
 export const MIN_MASTER_SECONDS = 1;
 
+/**
+ * De-click ramp applied at a CUT edge when no fade was asked for.
+ *
+ * A trim almost never lands on a zero crossing, so the master begins (or ends)
+ * with an instantaneous jump from silence to mid-waveform — heard as a click or
+ * thump. It is not a loudness problem, so nothing in the loudnorm passes
+ * reports it, and it survives into the delivered file.
+ *
+ * 10 ms is the standard edit-boundary ramp: long enough to remove the
+ * discontinuity, far too short to be heard as a fade (a 10 ms move is below the
+ * ~30 ms integration window of the ear). It does NOT weaken the module's
+ * "loudness only, never tone" contract — it applies only to an edge the admin
+ * has explicitly asked to cut, and only when they left that edge bare.
+ */
+export const DECLICK_SECONDS = 0.01;
+
 export interface MasterEdit {
   /** Seconds into the SOURCE where the master begins. */
   trimStartSec: number;
@@ -234,10 +250,20 @@ export function buildEditFilters(edit: MasterEdit, sourceDurationSec: number): s
 
   if (fadeIn > 0) {
     filters.push(`afade=t=in:st=0:d=${ffNum(fadeIn)}:curve=${edit.curve}`);
+  } else if (trimsHead && duration > DECLICK_SECONDS) {
+    // Cut edge with no fade — ramp it. `tri` (linear) deliberately, not the
+    // song-tail curve: over 10 ms the shape is inaudible and a straight line is
+    // the smallest possible intervention.
+    filters.push(`afade=t=in:st=0:d=${ffNum(DECLICK_SECONDS)}:curve=tri`);
   }
+
   if (fadeOut > 0 && duration > 0) {
     const startAt = Math.max(0, duration - fadeOut);
     filters.push(`afade=t=out:st=${ffNum(startAt)}:d=${ffNum(fadeOut)}:curve=${edit.curve}`);
+  } else if (trimsTail && duration > DECLICK_SECONDS) {
+    filters.push(
+      `afade=t=out:st=${ffNum(duration - DECLICK_SECONDS)}:d=${ffNum(DECLICK_SECONDS)}:curve=tri`
+    );
   }
 
   return filters;
