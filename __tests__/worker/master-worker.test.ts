@@ -59,6 +59,122 @@ beforeEach(() => {
   spawnSync.mockClear();
 });
 
+/**
+ * The video render.
+ *
+ * Shares the Lambda (ffmpeg layer, bucket access) and NOTHING else with
+ * mastering. The properties worth pinning are the ones whose failure is silent:
+ * that it encodes the mastered WAV rather than the 192k MP3 sitting on the same
+ * job, and that it never runs a loudness pass — a render that quietly
+ * re-measured a finished master would rewrite numbers the operator has already
+ * read and acted on.
+ */
+describe('video render', () => {
+  const AUDIO = 'audio/mastering/1_a_song-master-14LUFS.wav';
+  const COVER = 'audio/mastering/1_c_cover.jpg';
+  const render = (over: Record<string, unknown> = {}) => ({ audioKey: AUDIO, coverKey: COVER, height: 1440, ...over });
+  const ffArgs = () => spawnSync.mock.calls.map((c) => c[1] as string[]);
+
+  beforeEach(() => {
+    spawnSync.mockReset();
+    spawnSync.mockImplementation(() => ({ status: 0, stdout: '', stderr: '' }));
+    s3Send.mockReset();
+    s3Send.mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'Body' in cmd.input
+        ? Promise.resolve({})
+        : Promise.resolve({ Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) } })
+    );
+  });
+
+  it('encodes the MASTERED WAV, never the 192k MP3', async () => {
+    const res = await handler({ jobId: 'j1', render: render() } as never);
+
+    expect(res).toMatchObject({ ok: true });
+    const args = ffArgs()[0];
+    expect(args[args.lastIndexOf('-i') + 1]).toContain('master.wav');
+    expect(args.join(' ')).not.toContain('.mp3');
+    expect(args[args.indexOf('-b:a') + 1]).toBe('384k');
+  });
+
+  it('runs NO loudness pass and rewrites no measurement', async () => {
+    await handler({ jobId: 'j1', render: render() } as never);
+
+    expect(spawnSync).toHaveBeenCalledTimes(1);
+    expect(ffArgs()[0].join(' ')).not.toContain('loudnorm');
+    const p = patched();
+    for (const field of ['afterLufs', 'afterTp', 'beforeLufs', 'normalizationType', 'status']) {
+      expect(p).not.toHaveProperty(field);
+    }
+  });
+
+  it('fetches both inputs and stores the MP4 beside the master', async () => {
+    await handler({ jobId: 'j1', render: render() } as never);
+
+    const gets = s3Send.mock.calls
+      .map((c) => c[0] as { input: Record<string, unknown> })
+      .filter((c) => !('Body' in c.input)).map((c) => c.input.Key);
+    expect(gets).toEqual([AUDIO, COVER]);
+
+    const put = s3Send.mock.calls
+      .map((c) => c[0] as { input: Record<string, unknown> })
+      .find((c) => 'Body' in c.input);
+    expect(put?.input).toMatchObject({
+      Bucket: 'tamil-web-media',
+      Key: 'audio/mastering/1_a_song-master-14LUFS-1440p.mp4',
+      ContentType: 'video/mp4',
+    });
+    expect(patched()).toMatchObject({ videoKey: 'audio/mastering/1_a_song-master-14LUFS-1440p.mp4', coverKey: COVER });
+  });
+
+  it('records the cover, so a re-render is reproducible', async () => {
+    await handler({ jobId: 'j1', render: render() } as never);
+    expect(patched().coverKey).toBe(COVER);
+    expect(typeof patched().videoRenderedAt).toBe('string');
+  });
+
+  describe('refusals never touch S3', () => {
+    it.each([
+      ['a source outside the workspace', { audioKey: 'audio/poem-music/amma.wav' }],
+      ['a source that is not a master', { audioKey: 'audio/mastering/1_a_song.wav' }],
+      ['a cover outside the workspace', { coverKey: 'images/song-covers/x.png' }],
+      ['an unoffered height', { height: 720 }],
+    ])('%s', async (_label, over) => {
+      const res = await handler({ jobId: 'j1', render: render(over) } as never);
+
+      expect(res).toEqual({ ok: false });
+      expect(patched().videoError).toBeTruthy();
+      expect(s3Send).not.toHaveBeenCalled();
+      expect(spawnSync).not.toHaveBeenCalled();
+    });
+  });
+
+  it('records the failure and leaves the master alone when ffmpeg fails', async () => {
+    // The WAV was already delivered; losing a finished master to a failed
+    // picture render would be absurd.
+    spawnSync.mockImplementation(() => ({ status: 1, stdout: '', stderr: 'x264 died' }));
+    const res = await handler({ jobId: 'j1', render: render() } as never);
+
+    expect(res).toEqual({ ok: false });
+    expect(patched().videoError).toBeTruthy();
+    expect(patched()).not.toHaveProperty('videoKey');
+    const put = s3Send.mock.calls
+      .map((c) => c[0] as { input: Record<string, unknown> })
+      .find((c) => 'Body' in c.input);
+    expect(put).toBeUndefined();
+  });
+
+  it('clears its temp directory on success and on failure', async () => {
+    mockRmSync.mockClear();
+    await handler({ jobId: 'j1', render: render() } as never);
+    expect(mockRmSync).toHaveBeenCalledWith('/tmp/master-test', { recursive: true, force: true });
+
+    mockRmSync.mockClear();
+    spawnSync.mockImplementation(() => ({ status: 1, stdout: '', stderr: '' }));
+    await handler({ jobId: 'j1', render: render() } as never);
+    expect(mockRmSync).toHaveBeenCalledWith('/tmp/master-test', { recursive: true, force: true });
+  });
+});
+
 describe('key guard', () => {
   it.each([
     ['a published catalogue song', 'audio/poem-music/amma.wav'],
