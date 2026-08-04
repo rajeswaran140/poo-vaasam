@@ -45,6 +45,9 @@ export class MasterJobRepository {
         archivedAt: null,
         archiveKey: null,
         archiveError: null,
+        publishedAt: null,
+        publishKey: null,
+        publishError: null,
         error: null,
       };
       await DynamoDBOperations.put({
@@ -114,6 +117,9 @@ export class MasterJobRepository {
       archivedAt: typeof item.archivedAt === 'string' ? item.archivedAt : null,
       archiveKey: typeof item.archiveKey === 'string' ? item.archiveKey : null,
       archiveError: typeof item.archiveError === 'string' ? item.archiveError : null,
+      publishedAt: typeof item.publishedAt === 'string' ? item.publishedAt : null,
+      publishKey: typeof item.publishKey === 'string' ? item.publishKey : null,
+      publishError: typeof item.publishError === 'string' ? item.publishError : null,
       error: item.error ?? null,
     };
   }
@@ -194,6 +200,41 @@ export class MasterJobRepository {
           ':archivedAt': ok ? result.archivedAt : null,
           ':archiveKey': ok ? result.archiveKey : null,
           ':archiveError': ok ? null : result.archiveError,
+        },
+      });
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  /**
+   * Record the outcome of publishing the web MP3 to the site's audio prefix.
+   *
+   * Mirrors recordArchive, including writing failures: an operator who pressed
+   * Publish and saw it fail should find that on the record, not only in a log.
+   *
+   * No ttl clause — publishing only ever runs on a saved job, where save() has
+   * already removed it.
+   */
+  async recordPublish(
+    id: string,
+    result: { publishKey: string; publishedAt: string } | { publishError: string }
+  ): Promise<void> {
+    try {
+      const ok = 'publishKey' in result;
+      await DynamoDBOperations.update({
+        key: { PK: `MASTERJOB#${id}`, SK: 'METADATA' },
+        updateExpression:
+          'SET #publishedAt = :publishedAt, #publishKey = :publishKey, #publishError = :publishError',
+        expressionAttributeNames: {
+          '#publishedAt': 'publishedAt',
+          '#publishKey': 'publishKey',
+          '#publishError': 'publishError',
+        },
+        expressionAttributeValues: {
+          ':publishedAt': ok ? result.publishedAt : null,
+          ':publishKey': ok ? result.publishKey : null,
+          ':publishError': ok ? null : result.publishError,
         },
       });
     } catch (error) {

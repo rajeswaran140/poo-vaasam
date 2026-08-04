@@ -485,3 +485,53 @@ describe('job recovery', () => {
     await waitFor(() => expect(sessionStorage.getItem('mastering-studio-job')).toBeNull());
   });
 });
+
+/**
+ * Save/publish state belongs to the JOB, not the visit.
+ *
+ * Found auditing the page on 2026-08-04. `savedAt` was set on the first save
+ * and never cleared, so mastering a second file in the same session met a
+ * disabled "Saved to library" button belonging to the previous master — the new
+ * one could not be saved without reloading the page. Publishing would have
+ * inherited exactly the same bug.
+ */
+describe('per-job state resets between masters', () => {
+  it('re-enables Save for a second master in the same session', async () => {
+    primeHappyPath(doneJob({ mp3Key: 'audio/mastering/1_a_song-master-14LUFS.mp3', mp3Tp: -3.5 }));
+    render(<MasteringStudio />);
+    await uploadA();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Master to -14/ })).toBeEnabled());
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
+    await screen.findByText(/3 · Result/);
+
+    // Save the first master.
+    mockedFetch.mockResolvedValueOnce(json({ success: true, title: 'One' }));
+    mockedFetch.mockResolvedValueOnce(json({ success: true, masters: [] }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save to library/ })); });
+    await screen.findByRole('button', { name: /Saved to library/ });
+
+    // Master the same source to the other target — a fresh job.
+    await act(async () => { fireEvent.click(screen.getByRole('radio', { name: /-16 LUFS/ })); });
+    mockedFetch.mockResolvedValueOnce(json({ success: true, jobId: 'job-2', status: 'queued' }));
+    mockedFetch.mockResolvedValue(json(doneJob({ id: 'job-2', target: -16, afterLufs: -16 })));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -16/ })); });
+    await screen.findByText(/3 · Result/);
+
+    // The second master must be savable. Before the fix this read "Saved to
+    // library" and was disabled, for a job that had never been saved.
+    const save = await screen.findByRole('button', { name: /Save to library/ });
+    expect(save).toBeEnabled();
+  });
+
+  it('does not offer Publish until the master has been saved', async () => {
+    // The title is the published filename, and save is what persists it.
+    primeHappyPath(doneJob({ mp3Key: 'audio/mastering/1_a_song-master-14LUFS.mp3', mp3Tp: -3.5 }));
+    render(<MasteringStudio />);
+    await uploadA();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Master to -14/ })).toBeEnabled());
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
+    await screen.findByText(/3 · Result/);
+
+    expect(screen.queryByRole('button', { name: /Publish web MP3/ })).not.toBeInTheDocument();
+  });
+});
