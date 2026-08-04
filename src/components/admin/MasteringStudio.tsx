@@ -32,6 +32,7 @@ import { buildMasterReport, reportFilename, sourceInfoLine, dynamicsPreserved, s
 import { MasteringComparePlayer } from '@/components/admin/MasteringComparePlayer';
 import { MasteringPlayer } from '@/components/admin/MasteringPlayer';
 import { MasteringTrimPanel } from '@/components/admin/MasteringTrimPanel';
+import { mp3PeakVerdict } from '@/lib/master-mp3';
 import type { MasterEdit } from '@/lib/master-edit';
 import type { MasterJob } from '@/types/masterJob';
 
@@ -412,6 +413,21 @@ export function MasteringStudio() {
     if (!job?.masterKey) return;
     void downloadKey(job.masterKey, masterName.trim(), job.target);
   }, [job, masterName, downloadKey]);
+
+  /** The 192k web MP3 — what the site serves, built from the master above. */
+  const downloadMp3 = useCallback(() => {
+    if (!job?.mp3Key) return;
+    void downloadKey(job.mp3Key, masterName.trim(), job.target);
+  }, [job, masterName, downloadKey]);
+
+  /**
+   * Is the delivered MP3 peak-safe? This is the only check anywhere on the file
+   * listeners actually receive — the catalogue sweep found two served MP3s over
+   * the ceiling that no earlier step would have caught.
+   */
+  const mp3Verdict = job?.mp3Key
+    ? mp3PeakVerdict({ mp3Tp: job.mp3Tp, wavTp: job.afterTp })
+    : null;
 
   /** Save the loudness summary as a text file that travels with the WAV. */
   /**
@@ -1003,6 +1019,15 @@ export function MasteringStudio() {
             >
               <Download className="h-4 w-4" aria-hidden="true" /> Download for Adobe
             </button>
+            {job.mp3Key && (
+              <button
+                type="button"
+                onClick={downloadMp3}
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+              >
+                <Download className="h-4 w-4" aria-hidden="true" /> Download web MP3
+              </button>
+            )}
             <button
               type="button"
               onClick={downloadReport}
@@ -1010,6 +1035,24 @@ export function MasteringStudio() {
             >
               <FileAudio className="h-4 w-4" aria-hidden="true" /> Download report
             </button>
+            {mp3Verdict && (
+              <p
+                className={`basis-full text-xs ${
+                  mp3Verdict.status === 'hot'
+                    ? 'font-medium text-red-600 dark:text-red-400'
+                    : 'text-gray-500 dark:text-gray-400'
+                }`}
+              >
+                {mp3Verdict.status === 'hot' && (
+                  <AlertTriangle className="mr-1 inline h-3.5 w-3.5" aria-hidden="true" />
+                )}
+                {mp3Verdict.message}
+                {mp3Verdict.encodeDeltaDb !== null && (
+                  <> Encoding moved the peak by {mp3Verdict.encodeDeltaDb >= 0 ? '+' : ''}
+                    {mp3Verdict.encodeDeltaDb.toFixed(2)} dB.</>
+                )}
+              </p>
+            )}
             <button
               type="button"
               onClick={saveToLibrary}

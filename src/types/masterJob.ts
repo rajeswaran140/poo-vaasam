@@ -30,6 +30,17 @@ export interface MasterJob {
   edit: MasterEdit | null;
   /** Duration of the mastered output in seconds, once the worker knows it. */
   editedDurationSec: number | null;
+  /**
+   * The 192k web MP3 built FROM the mastered WAV — the artifact listeners
+   * actually receive, and until now the only one nothing measured. Its true
+   * peak is recorded because that is where the catalogue's real defect lives:
+   * the 2026-07-24 sweep found 2 of 17 served MP3s above the -1 dBTP ceiling.
+   * Null on jobs written before the export existed, and if the encode failed —
+   * a missing MP3 never fails a master.
+   */
+  mp3Key: string | null;
+  mp3Lufs: number | null;
+  mp3Tp: number | null;
   /** S3 key of the mastered WAV, once done. */
   masterKey: string | null;
   /** Integrated loudness / true peak of the input, once measured by the worker. */

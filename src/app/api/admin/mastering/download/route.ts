@@ -29,7 +29,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
 import { S3Operations } from '@/infrastructure/storage/s3-client';
-import { isMasteringKey, downloadFilename, sanitizeMasterFilename } from '@/lib/mastering-storage';
+import { isMasteringKey, downloadFilename, sanitizeMasterFilename, extensionFor } from '@/lib/mastering-storage';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -59,7 +59,11 @@ export async function GET(request: NextRequest) {
   try {
     // A caller-supplied title wins (sanitised); otherwise fall back to the
     // de-noised key name. Play mode never attaches a filename at all.
-    const filename = requestedName ? sanitizeMasterFilename(requestedName) : downloadFilename(key);
+    // The extension follows the KEY, not the request: an MP3 named .wav is a
+    // file most players refuse.
+    const filename = requestedName
+      ? sanitizeMasterFilename(requestedName, extensionFor(key))
+      : downloadFilename(key);
     const ttl = play ? PLAY_URL_TTL_SECONDS : DOWNLOAD_URL_TTL_SECONDS;
     // Attachment only for download; play mode leaves the audio/wav type intact
     // so <audio> streams it. See getSignedUrl's `downloadAs`.

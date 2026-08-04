@@ -382,6 +382,7 @@ describe('readiness is the conjunction it claims to be', () => {
       dyn({ afterTp: -0.2 }),
       dyn({ afterLufs: -11 }),
       dyn({ beforeLra: null, afterLra: null, normalizationType: null }),
+      dyn({ mp3Key: 'audio/mastering/1_ab_take-master-14LUFS.mp3', mp3Tp: -0.4 }),
     ]) {
       const r = streamingReadiness(job);
       const failing = r.checks.filter((c) => c.ok === false);
@@ -489,5 +490,85 @@ describe('dynamicsState names the reason, not just the verdict', () => {
     ]) {
       expect(dynamicsPreserved(job)).toBe(dynamicsState(job) === 'preserved');
     }
+  });
+});
+
+/**
+ * The web MP3 in the verdict.
+ *
+ * The MP3 is the copy listeners receive, and it is measured separately from the
+ * WAV. That makes a NEW way for the module's oldest defect to come back: a
+ * green "Streaming Ready" headline printed over a file the same job had just
+ * measured as clipping. The verdict and the .txt both consume the MP3 through
+ * one function so they cannot disagree — these pin the composition, which is
+ * where every mastering defect so far has actually lived.
+ */
+describe('the web MP3 leg of the verdict', () => {
+  const MP3_KEY = 'audio/mastering/1_ab_take-master-14LUFS.mp3';
+  const withMp3 = (over: Partial<MasterJob> = {}): MasterJob => ({
+    ...baseJob,
+    mp3Key: MP3_KEY,
+    mp3Lufs: -14.0,
+    mp3Tp: -3.55,
+    ...over,
+  });
+
+  it('adds a fifth check ONLY when a second file was actually produced', () => {
+    expect(streamingReadiness(baseJob).checks.map((c) => c.label)).toEqual([
+      'Loudness target', 'True peak', 'Dynamics', 'Gain type',
+    ]);
+    expect(streamingReadiness(withMp3()).checks.map((c) => c.label)).toEqual([
+      'Loudness target', 'True peak', 'Dynamics', 'Gain type', 'Web MP3',
+    ]);
+  });
+
+  it('passes a compliant MP3 and still reads Streaming Ready', () => {
+    const r = streamingReadiness(withMp3());
+    expect(r.ok).toBe(true);
+    expect(r.headline).toBe('Streaming Ready');
+    expect(r.checks.find((c) => c.label === 'Web MP3')?.ok).toBe(true);
+  });
+
+  it('REFUSES a clean master whose delivered MP3 clips', () => {
+    // The master is on target, peak-safe and dynamics-preserved — every leg the
+    // verdict used to consider. Only the file that ships is hot.
+    const r = streamingReadiness(withMp3({ mp3Tp: -0.4 }));
+    expect(r.ok).toBe(false);
+    expect(r.headline).toMatch(/web MP3 peaks at -0\.40 dBTP/);
+    expect(r.checks.find((c) => c.label === 'Web MP3')?.ok).toBe(false);
+  });
+
+  it('does not block on an MP3 that exists but could not be measured', () => {
+    // Deliberately unlike the dynamics leg, where `unrecorded` blocks. There the
+    // missing value is a claim about the WAV itself; here it is a sibling file,
+    // and the master heading to the distributor is unaffected.
+    const r = streamingReadiness(withMp3({ mp3Tp: null, mp3Lufs: null }));
+    expect(r.ok).toBe(true);
+    expect(r.checks.find((c) => c.label === 'Web MP3')?.ok).toBeNull();
+    expect(r.checks.find((c) => c.label === 'Web MP3')?.detail).toMatch(/not measured/);
+  });
+
+  it('never lets the saved report contradict the screen', () => {
+    const hot = withMp3({ mp3Tp: -0.4 });
+    const report = buildMasterReport(hot);
+    expect(streamingReadiness(hot).ok).toBe(false);
+    expect(report).toMatch(/⚠ Review the flags above before distributing/);
+    expect(report).not.toMatch(/✓ Ready for streaming/);
+    // and it says WHERE the fault lies, because re-encoding would not fix it
+    expect(report).toMatch(/Re-master this take|check the file/);
+  });
+
+  it('names the delivered MP3 and its own peak in the report', () => {
+    const report = buildMasterReport(withMp3());
+    expect(report).toMatch(/Web delivery:\s+192k MP3 · true peak -3\.55 dBTP/);
+    expect(report).toMatch(/✓ Web MP3 \(192k\)/);
+  });
+
+  it('says nothing at all about an MP3 when none was produced', () => {
+    // A report for a legacy job must not mention a file that never existed.
+    const report = buildMasterReport(baseJob);
+    expect(report).not.toMatch(/MP3/);
+    expect(summaryLines(baseJob)).toHaveLength(5);
+    expect(summaryLines(withMp3())).toHaveLength(6);
   });
 });
