@@ -50,6 +50,10 @@ export class MasterJobRepository {
         publishedAt: null,
         publishKey: null,
         publishError: null,
+        videoKey: null,
+        videoRenderedAt: null,
+        videoError: null,
+        coverKey: null,
         error: null,
       };
       await DynamoDBOperations.put({
@@ -129,6 +133,10 @@ export class MasterJobRepository {
       publishedAt: typeof item.publishedAt === 'string' ? item.publishedAt : null,
       publishKey: typeof item.publishKey === 'string' ? item.publishKey : null,
       publishError: typeof item.publishError === 'string' ? item.publishError : null,
+      videoKey: typeof item.videoKey === 'string' ? item.videoKey : null,
+      videoRenderedAt: typeof item.videoRenderedAt === 'string' ? item.videoRenderedAt : null,
+      videoError: typeof item.videoError === 'string' ? item.videoError : null,
+      coverKey: typeof item.coverKey === 'string' ? item.coverKey : null,
       error: item.error ?? null,
     };
   }

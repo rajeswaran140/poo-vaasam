@@ -24,6 +24,7 @@ jest.mock('lucide-react', () => ({
   Library: () => <svg data-testid="i-library" />,
   Scissors: () => <svg data-testid="i-scissors" />,
   Link2: () => <svg data-testid="i-link" />,
+  Film: () => <svg data-testid="i-film" />,
 }));
 // The before/after player is its own unit (see MasteringComparePlayer.test);
 // stub it here so the Studio suite tests wiring, not the player's Web Audio /
@@ -730,5 +731,103 @@ describe('two-part assembly — stale and lost state', () => {
     await screen.findByText(/3 · Result/);
 
     expect(screen.getByText(/Two parts joined with a 3s crossfade \(qsin, equal power\) — 6:20 assembled/)).toBeInTheDocument();
+  });
+});
+
+
+/**
+ * The YouTube render, from the page's side.
+ *
+ * The domain rules are in master-video.test.ts and the encode in the worker
+ * suite. Only this layer can show that the panel appears when it should, that a
+ * cover reaches the request, and that the finished MP4 becomes reachable —
+ * a render that succeeded server-side but never surfaced a download would be
+ * indistinguishable from one that never ran.
+ */
+describe('render for YouTube', () => {
+  const savedDoneJob = (over: Record<string, unknown> = {}) =>
+    doneJob({ mp3Key: 'audio/mastering/1_a_song-master-14LUFS.mp3', mp3Tp: -3.5, ...over });
+
+  /** Master, then save — the render panel only exists past that point. */
+  async function masterAndSave(job: Record<string, unknown> = savedDoneJob()) {
+    primeHappyPath(job);
+    render(<MasteringStudio />);
+    await uploadA();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
+    await screen.findByText(/3 · Result/);
+    mockedFetch.mockResolvedValueOnce(json({ success: true, title: 'One' }));
+    mockedFetch.mockResolvedValueOnce(json({ success: true, masters: [] }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save to library/ })); });
+    await screen.findByRole('button', { name: /Saved to library/ });
+  }
+
+  async function addCover() {
+    const input = screen.getByLabelText(/Cover image/i) as HTMLInputElement;
+    const f = new File(['x'], 'cover.jpg', { type: 'image/jpeg' });
+    mockedFetch.mockResolvedValueOnce(
+      json({ success: true, uploadUrl: 'https://s3/u', fields: { key: 'k' }, key: 'audio/mastering/1_c_cover.jpg' })
+    );
+    await act(async () => { fireEvent.change(input, { target: { files: [f] } }); });
+  }
+
+  it('does not offer a render until the master is saved', async () => {
+    // The title becomes the download name, and an unsaved job expires in 24h.
+    primeHappyPath(savedDoneJob());
+    render(<MasteringStudio />);
+    await uploadA();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
+    await screen.findByText(/3 · Result/);
+    expect(screen.queryByRole('button', { name: /Render video/ })).not.toBeInTheDocument();
+  });
+
+  it('uploads the cover as a cover, not as audio', async () => {
+    // The upload route's WAV-only guard would reject an image sent as audio.
+    await masterAndSave();
+    await addCover();
+
+    const upload = mockedFetch.mock.calls
+      .filter((c) => c[0] === '/api/admin/mastering/upload')
+      .map((c) => JSON.parse(c[1].body))
+      .pop();
+    expect(upload).toMatchObject({ kind: 'cover', contentType: 'image/jpeg' });
+  });
+
+  it('needs a cover before it will render', async () => {
+    await masterAndSave();
+    expect(screen.getByRole('button', { name: /Render video/ })).toBeDisabled();
+    await addCover();
+    expect(screen.getByRole('button', { name: /Render video/ })).toBeEnabled();
+  });
+
+  it('sends the cover and the chosen height, then surfaces the MP4', async () => {
+    // No fake timers: the poll checks once immediately, so a render that is
+    // already finished resolves without any clock manipulation. Timing-sensitive
+    // tests are the classic thing that passes here and fails on a CI runner.
+    await masterAndSave();
+    await addCover();
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/Upload size/i), { target: { value: '2160' } });
+    });
+
+    mockedFetch.mockResolvedValueOnce(json({ success: true, videoKey: 'v', height: 2160, status: 'queued' }));
+    mockedFetch.mockResolvedValue(
+      json(savedDoneJob({ videoKey: 'audio/mastering/1_a_song-master-14LUFS-2160p.mp4' }))
+    );
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Render video/ })); });
+
+    const req = mockedFetch.mock.calls.find((c) => String(c[0]).endsWith('/render'))!;
+    expect(JSON.parse(req[1].body)).toEqual({ coverKey: 'audio/mastering/1_c_cover.jpg', height: 2160 });
+    expect(await screen.findByRole('button', { name: /Download MP4/ })).toBeInTheDocument();
+  });
+
+  it('reports a render failure instead of spinning forever', async () => {
+    await masterAndSave();
+    await addCover();
+    mockedFetch.mockResolvedValueOnce(json({ success: true, videoKey: 'v', height: 1440, status: 'queued' }));
+    mockedFetch.mockResolvedValue(json(savedDoneJob({ videoError: 'x264 died' })));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Render video/ })); });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/x264 died/);
+    expect(screen.getByRole('button', { name: /Render video/ })).toBeEnabled();
   });
 });

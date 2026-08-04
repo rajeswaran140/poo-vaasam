@@ -39,6 +39,12 @@ import {
   type MasterEdit,
 } from '@/lib/master-edit';
 import {
+  buildVideoArgs,
+  videoKeyFor,
+  VIDEO_HEIGHTS,
+  type VideoHeight,
+} from '@/lib/master-video';
+import {
   parseMasterJoin,
   validateJoinAgainstSources,
   buildJoinFilterComplex,
@@ -84,6 +90,78 @@ interface MasterEvent {
   edit?: unknown;
   /** Two-part assembly: Part B plus the crossfade. See master-join.ts. */
   join?: unknown;
+  /**
+   * A VIDEO RENDER rather than a mastering run — cover art over an already
+   * mastered WAV. Handled before anything else, so a render can never re-master
+   * (and so re-measure) a file that is already finished.
+   */
+  render?: { audioKey?: string; coverKey?: string; height?: number };
+}
+
+/**
+ * Render the YouTube video: still cover, mastered audio, one encode.
+ *
+ * Separate from the mastering flow on purpose. It shares the Lambda because the
+ * ffmpeg layer and the bucket access are already here, but it shares nothing
+ * else: no loudness pass runs, and the job's measurements are never rewritten.
+ * A failure records `videoError` and leaves the master untouched — the WAV was
+ * already delivered, and losing it to a failed picture render would be absurd.
+ */
+async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render']>, bucket: string) {
+  const audioKey = spec.audioKey ?? '';
+  const coverKey = spec.coverKey ?? '';
+  const height = (spec.height ?? 1440) as VideoHeight;
+
+  // Re-validated here, not trusted from the event: this role can read and write
+  // the whole bucket, and the route is not the only thing that can invoke it.
+  if (!isMasteringKey(audioKey) || !isMasterKey(audioKey)) {
+    await patch(jobId, { videoError: 'render source must be a mastered WAV in the mastering workspace' });
+    return { ok: false };
+  }
+  if (!isMasteringKey(coverKey)) {
+    await patch(jobId, { videoError: 'cover must be in the mastering workspace' });
+    return { ok: false };
+  }
+  if (!VIDEO_HEIGHTS.includes(height)) {
+    await patch(jobId, { videoError: `height must be one of ${VIDEO_HEIGHTS.join(', ')}` });
+    return { ok: false };
+  }
+
+  const dir = mkdtempSync(join(tmpdir(), 'render-'));
+  const audioPath = join(dir, 'master.wav');
+  const coverPath = join(dir, `cover${coverKey.match(/\.[a-z0-9]+$/i)?.[0] ?? '.jpg'}`);
+  const outPath = join(dir, 'out.mp4');
+  try {
+    const audio = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: audioKey }));
+    writeFileSync(audioPath, Buffer.from(await audio.Body!.transformToByteArray()));
+    const cover = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: coverKey }));
+    writeFileSync(coverPath, Buffer.from(await cover.Body!.transformToByteArray()));
+
+    const r = ff(buildVideoArgs({ coverPath, audioPath, outPath, height }));
+    if (r.status !== 0) {
+      await patch(jobId, { videoError: 'the video render failed' });
+      return { ok: false };
+    }
+
+    const videoKey = videoKeyFor(audioKey, height);
+    await s3.send(new PutObjectCommand({
+      Bucket: bucket, Key: videoKey, Body: readFileSync(outPath), ContentType: 'video/mp4',
+    }));
+    await patch(jobId, {
+      videoKey,
+      videoRenderedAt: new Date().toISOString(),
+      videoError: null,
+      coverKey,
+    });
+    return { ok: true, videoKey };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[master-worker] render failed:', message);
+    await patch(jobId, { videoError: message }).catch(() => {});
+    return { ok: false };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 /**
@@ -104,6 +182,16 @@ function probeSource(path: string): SourceInfo | null {
 export const handler = async (event: MasterEvent) => {
   const jobId = event?.jobId;
   const s3Key = event?.s3Key;
+  // A render is a different job entirely — branch before the mastering guards,
+  // which are about a SOURCE key this event does not carry.
+  if (event?.render) {
+    if (!jobId || !TAKES_BUCKET) {
+      console.error('[master-worker] bad render event');
+      return { ok: false, error: 'jobId and TAKES_BUCKET are required' };
+    }
+    return await renderVideo(jobId, event.render, TAKES_BUCKET);
+  }
+
   // The bucket is NOT taken from the event. The worker's IAM role can read and
   // write anywhere in tamil-web-media, so an attacker-shaped payload naming
   // another bucket (or the route regressing to pass one) would widen what this

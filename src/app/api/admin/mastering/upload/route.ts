@@ -19,8 +19,11 @@ import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helpe
 import { S3Operations } from '@/infrastructure/storage/s3-client';
 import {
   ACCEPTED_UPLOAD_TYPES,
+  ACCEPTED_COVER_TYPES,
   MAX_UPLOAD_BYTES,
+  MAX_COVER_BYTES,
   masteringUploadKey,
+  masteringCoverKey,
 } from '@/lib/mastering-storage';
 
 export const runtime = 'nodejs';
@@ -33,6 +36,12 @@ const uploadSchema = z.object({
   filename: z.string().min(1).max(255),
   contentType: z.string().min(1).max(127),
   size: z.number().int().positive().optional(),
+  /**
+   * `cover` uploads the still image the YouTube render is built from. Same
+   * workspace, same guards, different allow-list and a much smaller cap — an
+   * image has no business being 500 MB.
+   */
+  kind: z.enum(['audio', 'cover']).optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -53,32 +62,49 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-  const { filename, contentType, size } = parsed.data;
+  const { filename, contentType, size, kind } = parsed.data;
+  const isCover = kind === 'cover';
 
-  // WAV only. Mastering a lossy source just fixes its level while baking the
-  // compression artefacts in — the doc is explicit about this, so the API is too.
-  if (!(ACCEPTED_UPLOAD_TYPES as readonly string[]).includes(contentType)) {
+  const allowed = isCover ? ACCEPTED_COVER_TYPES : ACCEPTED_UPLOAD_TYPES;
+  if (!(allowed as readonly string[]).includes(contentType)) {
+    // WAV only for audio. Mastering a lossy source just fixes its level while
+    // baking the compression artefacts in — the doc is explicit about this, so
+    // the API is too.
     return NextResponse.json(
-      { success: false, error: 'Upload a WAV. Mastering an MP3 only re-levels a file that has already lost detail.' },
+      {
+        success: false,
+        error: isCover
+          ? 'Upload a JPEG, PNG or WebP cover.'
+          : 'Upload a WAV. Mastering an MP3 only re-levels a file that has already lost detail.',
+      },
       { status: 400 }
     );
   }
-  if (typeof size === 'number' && size > MAX_UPLOAD_BYTES) {
+  const cap = isCover ? MAX_COVER_BYTES : MAX_UPLOAD_BYTES;
+  if (typeof size === 'number' && size > cap) {
     return NextResponse.json(
-      { success: false, error: `File too large — the limit is ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))}MB.` },
+      { success: false, error: `File too large — the limit is ${Math.round(cap / (1024 * 1024))}MB.` },
       { status: 400 }
     );
   }
 
-  const key = masteringUploadKey(filename, Date.now(), randomUUID().slice(0, 8));
+  const nonce = randomUUID().slice(0, 8);
+  const key = isCover
+    ? masteringCoverKey(filename, contentType, Date.now(), nonce)
+    : masteringUploadKey(filename, Date.now(), nonce);
+  if (!key) {
+    return NextResponse.json({ success: false, error: 'Unsupported cover type.' }, { status: 400 });
+  }
 
   try {
     // S3 stores exactly this content type, and rejects anything over the cap
     // even if the browser lied about `size` above.
+    // S3 stores exactly this content type and enforces the cap in its own
+    // policy, so a browser lying about `size` above still cannot exceed it.
     const { url, fields } = await S3Operations.getSignedUploadPost(
       key,
-      'audio/wav',
-      MAX_UPLOAD_BYTES,
+      isCover ? contentType : 'audio/wav',
+      cap,
       UPLOAD_URL_TTL_SECONDS
     );
     return NextResponse.json({ success: true, uploadUrl: url, fields, key });

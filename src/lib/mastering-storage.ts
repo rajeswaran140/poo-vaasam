@@ -25,6 +25,26 @@ export const ACCEPTED_UPLOAD_TYPES = ['audio/wav', 'audio/x-wav', 'audio/wave'] 
  */
 export const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
 
+/**
+ * Cover art for the YouTube render. Kept narrow on purpose: these are decoded by
+ * ffmpeg inside the worker, so the allow-list is the formats that recipe is
+ * known to handle, not "any image".
+ */
+export const ACCEPTED_COVER_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
+
+/** 25 MB clears a 4000×4000 PNG and still refuses a video dropped by mistake. */
+export const MAX_COVER_BYTES = 25 * 1024 * 1024;
+
+/** The stored extension for an accepted cover type. */
+export function coverExtensionFor(contentType: string): string | null {
+  switch (contentType) {
+    case 'image/jpeg': return '.jpg';
+    case 'image/png': return '.png';
+    case 'image/webp': return '.webp';
+    default: return null;
+  }
+}
+
 /** True if the key is inside the mastering workspace. */
 export function isMasteringKey(key: string): boolean {
   return (
@@ -63,6 +83,27 @@ export function masteringUploadKey(filename: string, now: number, nonce: string)
   // occurrence for "_master" makes a false match impossible rather than merely
   // unlikely. The name still reads the same.
   return `${MASTERING_PREFIX}${now}_${nonce}_${safe.replace(/-master/gi, '_master')}.wav`;
+}
+
+/**
+ * The same key rules for an uploaded cover image, differing only in extension.
+ *
+ * Covers live in the mastering workspace rather than the site's image prefix
+ * because that prefix is Denied on CloudFront: a cover staged here cannot leak
+ * to the CDN before the video it belongs to is published. It also means the
+ * worker reads it with the bucket access it already has, and the `-master`
+ * neutralisation above applies unchanged, so a file called "cover-master.png"
+ * cannot produce a key the re-master guard would later refuse.
+ */
+export function masteringCoverKey(
+  filename: string,
+  contentType: string,
+  now: number,
+  nonce: string,
+): string | null {
+  const ext = coverExtensionFor(contentType);
+  if (!ext) return null;
+  return masteringUploadKey(filename, now, nonce).replace(/\.wav$/, ext);
 }
 
 /**

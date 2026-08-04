@@ -122,5 +122,18 @@ export interface MasterJob {
   publishedAt: string | null;
   publishKey: string | null;
   publishError: string | null;
+  /**
+   * The rendered YouTube video — cover art over the MASTERED audio, encoded
+   * once. Null until a render is asked for, and on every job written before
+   * rendering existed.
+   *
+   * `videoKey` names the MP4 in the mastering workspace; the admin downloads it
+   * and uploads that file to YouTube. Nothing here publishes anything.
+   */
+  videoKey: string | null;
+  videoRenderedAt: string | null;
+  videoError: string | null;
+  /** The cover the video was built from, kept so a re-render is reproducible. */
+  coverKey: string | null;
   error: { code: string; message: string } | null;
 }

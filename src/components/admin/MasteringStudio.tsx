@@ -22,7 +22,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import {
   SlidersHorizontal, Upload, Download, Loader2, CheckCircle2,
-  AlertTriangle, FileAudio, RotateCcw, X, Info, Save, Library, Play, Pause, Pencil, Link2,
+  AlertTriangle, FileAudio, RotateCcw, X, Info, Save, Library, Play, Pause, Pencil, Link2, Film,
 } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 import { pollJob } from '@/lib/poll-job';
@@ -181,6 +181,11 @@ export function MasteringStudio() {
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
+  /** Cover art for the YouTube render, once uploaded. */
+  const [cover, setCover] = useState<{ key: string; name: string } | null>(null);
+  const [coverUploading, setCoverUploading] = useState(false);
+  const [videoHeight, setVideoHeight] = useState<number>(1440);
+  const [rendering, setRendering] = useState(false);
   /** Where the web MP3 landed on the site's audio path, once staged. */
   const [published, setPublished] = useState<{ key: string; replaced: boolean } | null>(null);
   const [library, setLibrary] = useState<MasterJob[] | null>(null);
@@ -334,6 +339,7 @@ export function MasteringStudio() {
     file: File,
     onProgress: (loaded: number, total: number) => void,
     signal: AbortSignal,
+    kind: 'audio' | 'cover' = 'audio',
   ): Promise<string> => {
     const typeOk = (ACCEPTED_UPLOAD_TYPES as readonly string[]).includes(file.type);
     const res = await adminFetch('/api/admin/mastering/upload', {
@@ -341,8 +347,11 @@ export function MasteringStudio() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         filename: file.name,
-        contentType: typeOk ? file.type : 'audio/wav',
+        // A cover's own type is sent through: the server pins it into the S3
+        // policy, so an image cannot masquerade as audio/wav.
+        contentType: kind === 'cover' ? file.type : typeOk ? file.type : 'audio/wav',
         size: file.size,
+        ...(kind === 'cover' ? { kind } : {}),
       }),
       signal,
     });
@@ -646,6 +655,72 @@ export function MasteringStudio() {
       setPublishing(false);
     }
   }, [jobId]);
+
+  /** Cover art for the render. Same workspace, same guards, image allow-list. */
+  const onPickCover = useCallback(async (file: File) => {
+    setError(null);
+    setCoverUploading(true);
+    const controller = new AbortController();
+    try {
+      const key = await uploadToWorkspace(file, () => {}, controller.signal, 'cover');
+      if (!mounted.current) return;
+      setCover({ key, name: file.name });
+      setAnnounce('Cover uploaded.');
+    } catch (err) {
+      if (!mounted.current) return;
+      if (!isAbort(err)) setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      if (mounted.current) setCoverUploading(false);
+    }
+  }, [uploadToWorkspace]);
+
+  /**
+   * Render the upload-ready MP4 and wait for it.
+   *
+   * The encode runs in the worker, so this polls the same status route the
+   * mastering flow does until `videoKey` (or `videoError`) appears. Bounded:
+   * a render that has not landed in ten minutes is reported rather than spun on
+   * forever, and the job keeps the result either way.
+   */
+  const renderVideo = useCallback(async () => {
+    if (!jobId || !cover) return;
+    setRendering(true);
+    setError(null);
+    try {
+      const res = await adminFetch(`/api/admin/music-lab/master/${jobId}/render`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ coverKey: cover.key, height: videoHeight }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.success) throw new Error(body.error || 'Could not start the render.');
+      setAnnounce('Rendering the video.');
+
+      // Check IMMEDIATELY, then settle into an interval. A short render can be
+      // finished before the first tick would have elapsed, and waiting anyway
+      // would show a spinner for a file that already exists.
+      const deadline = Date.now() + 10 * 60 * 1000;
+      for (let attempt = 0; ; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 4000));
+        if (!mounted.current) return;
+        const s = await adminFetch(`/api/admin/music-lab/master/${jobId}`);
+        const fresh = (await s.json()) as MasterJob;
+        if (fresh.videoKey) {
+          setJob(fresh);
+          setAnnounce('Video ready.');
+          return;
+        }
+        if (fresh.videoError) throw new Error(fresh.videoError);
+        if (Date.now() > deadline) {
+          throw new Error('The render is taking longer than expected — reload to check on it.');
+        }
+      }
+    } catch (err) {
+      if (mounted.current) setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      if (mounted.current) setRendering(false);
+    }
+  }, [jobId, cover, videoHeight]);
 
   /**
    * Deliberately NOT loaded on mount: listing scans the table, and most visits
@@ -1314,6 +1389,86 @@ export function MasteringStudio() {
                     goes live when a content record points at it and the site rebuilds.
                   </>
                 )}
+              </p>
+            </div>
+          )}
+
+          {/* Render for YouTube — cover art over the MASTERED audio, encoded
+              once. This is what keeps Premiere out of the audio path: no
+              re-export, so nothing can re-level or re-encode the master before
+              YouTube receives it. */}
+          {savedAt && job.masterKey && (
+            <div className="mt-4 rounded-lg border border-gray-200 p-4 dark:border-gray-800">
+              <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                <Film className="h-3.5 w-3.5" aria-hidden="true" /> Render for YouTube
+              </h3>
+
+              <div className="mt-3 flex flex-wrap items-end gap-3">
+                <div>
+                  <label htmlFor={`${inputId}-cover`} className="block text-xs font-medium text-gray-600 dark:text-gray-300">
+                    Cover image
+                  </label>
+                  <input
+                    id={`${inputId}-cover`}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    disabled={rendering || coverUploading}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      e.target.value = '';
+                      if (f) void onPickCover(f);
+                    }}
+                    className="mt-1 block w-full max-w-xs text-xs text-gray-600 file:mr-3 file:rounded-lg file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-gray-700 dark:text-gray-300 dark:file:border-gray-700 dark:file:bg-gray-900 dark:file:text-gray-200"
+                  />
+                </div>
+                <div>
+                  <label htmlFor={`${inputId}-height`} className="block text-xs font-medium text-gray-600 dark:text-gray-300">
+                    Upload size
+                  </label>
+                  <select
+                    id={`${inputId}-height`}
+                    value={videoHeight}
+                    disabled={rendering}
+                    onChange={(e) => setVideoHeight(Number(e.target.value))}
+                    className="mt-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                  >
+                    <option value={1080}>1080p</option>
+                    <option value={1440}>1440p — better audio on YouTube</option>
+                    <option value={2160}>2160p</option>
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void renderVideo()}
+                  disabled={!cover || rendering || coverUploading}
+                  className="inline-flex items-center gap-2 rounded-lg border border-orange-300 px-4 py-2 text-sm font-medium text-orange-700 transition hover:bg-orange-50 disabled:opacity-60 dark:border-orange-800 dark:text-orange-300 dark:hover:bg-orange-900/20"
+                >
+                  {rendering
+                    ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    : <Film className="h-4 w-4" aria-hidden="true" />}
+                  {rendering ? 'Rendering…' : 'Render video'}
+                </button>
+                {job.videoKey && (
+                  <button
+                    type="button"
+                    onClick={() => void downloadKey(job.videoKey!, masterName.trim(), job.target)}
+                    className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900"
+                  >
+                    <Download className="h-4 w-4" aria-hidden="true" /> Download MP4
+                  </button>
+                )}
+              </div>
+
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                {coverUploading
+                  ? 'Uploading cover…'
+                  : cover
+                    ? `Cover: ${cover.name}. `
+                    : 'Add a cover to render. '}
+                Encodes the <strong>mastered WAV</strong> at AAC 384k/48&nbsp;kHz — the audio never
+                passes through another editor, so nothing can re-level it. 1440p is the default
+                because YouTube gives higher-resolution uploads a better audio codec.
+                {job.videoKey && ' Upload the MP4 to YouTube as-is.'}
               </p>
             </div>
           )}

@@ -26,6 +26,7 @@ jest.mock('@/infrastructure/database/MasterJobRepository', () => ({
 
 import { POST as measurePOST } from '@/app/api/admin/music-lab/measure/route';
 import { POST as masterPOST } from '@/app/api/admin/music-lab/master/route';
+import { POST as renderPOST } from '@/app/api/admin/music-lab/master/[jobId]/render/route';
 import { GET as statusGET } from '@/app/api/admin/music-lab/master/[jobId]/route';
 import { InvokeCommand } from '@aws-sdk/client-lambda';
 import * as auth from '@/lib/auth-helper';
@@ -273,5 +274,84 @@ describe('master status', () => {
     expect(await res.json()).toMatchObject({
       success: true, status: 'done', masterKey: 'audio/take-master-14LUFS.wav', afterLufs: -14,
     });
+  });
+});
+
+
+/**
+ * POST /render — build the YouTube video for a saved master.
+ *
+ * The guard that matters is the cover key: it names a SECOND object the worker
+ * will fetch, and that role can read the whole bucket. Everything else defers to
+ * planRender, so the route and the worker cannot disagree about what is
+ * renderable.
+ */
+describe('render enqueue', () => {
+  const JOB_ID = 'job-1';
+  const COVER = 'audio/mastering/1700000000000_cc11_cover.jpg';
+  const doneSavedJob = (over: Record<string, unknown> = {}) => ({
+    id: JOB_ID,
+    status: 'done',
+    s3Key: 'audio/mastering/1700000000000_ab12cd34_take.wav',
+    masterKey: 'audio/mastering/1700000000000_ab12cd34_take-master-14LUFS.wav',
+    mp3Key: 'audio/mastering/1700000000000_ab12cd34_take-master-14LUFS.mp3',
+    target: -14,
+    savedAt: '2026-08-04T00:00:00.000Z',
+    videoKey: null,
+    error: null,
+    ...over,
+  });
+  const renderReq = (body: unknown) =>
+    renderPOST(post(`/api/admin/music-lab/master/${JOB_ID}/render`, body), {
+      params: Promise.resolve({ jobId: JOB_ID }),
+    });
+
+  it('queues a render from the MASTER, never the web MP3', async () => {
+    mockGet.mockResolvedValueOnce(doneSavedJob());
+    const res = await renderReq({ coverKey: COVER });
+    expect(res.status).toBe(202);
+
+    const payload = JSON.parse(Buffer.from(MockInvoke.mock.calls[0][0].Payload).toString());
+    expect(payload.render.audioKey).toMatch(/\.wav$/);
+    expect(payload.render.audioKey).not.toMatch(/\.mp3$/);
+    expect(payload.render).toMatchObject({ coverKey: COVER, height: 1440 });
+    // A render event carries no source key — it must not look like a master run.
+    expect(payload.s3Key).toBeUndefined();
+  });
+
+  it('defaults to 1440p, which earns the better audio codec', async () => {
+    mockGet.mockResolvedValueOnce(doneSavedJob());
+    const res = await renderReq({ coverKey: COVER });
+    expect((await res.json()).height).toBe(1440);
+  });
+
+  it('REFUSES a cover outside the mastering workspace', async () => {
+    for (const coverKey of ['images/song-covers/x.png', 'audio/mastering/../x.png', 'x.png']) {
+      mockGet.mockResolvedValueOnce(doneSavedJob());
+      const res = await renderReq({ coverKey });
+      expect(res.status).toBe(409);
+    }
+    expect(MockInvoke).not.toHaveBeenCalled();
+  });
+
+  it('refuses an unsaved master, and one with no mastered WAV', async () => {
+    mockGet.mockResolvedValueOnce(doneSavedJob({ savedAt: null }));
+    expect((await renderReq({ coverKey: COVER })).status).toBe(409);
+
+    mockGet.mockResolvedValueOnce(doneSavedJob({ masterKey: null }));
+    expect((await renderReq({ coverKey: COVER })).status).toBe(409);
+    expect(MockInvoke).not.toHaveBeenCalled();
+  });
+
+  it('refuses a height it does not offer', async () => {
+    mockGet.mockResolvedValueOnce(doneSavedJob());
+    expect((await renderReq({ coverKey: COVER, height: 720 })).status).toBe(409);
+    expect(MockInvoke).not.toHaveBeenCalled();
+  });
+
+  it('400s without a cover, and 404s an unknown job', async () => {
+    expect((await renderReq({})).status).toBe(400);
+    mockGet.mockResolvedValueOnce(null);
+    expect((await renderReq({ coverKey: COVER })).status).toBe(404);
   });
 });
