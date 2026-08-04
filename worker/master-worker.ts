@@ -1,5 +1,5 @@
 /**
- * master-worker — async trim/fade + two-pass loudnorm mastering Lambda (Event-invoked by
+ * master-worker — async trim/fade + loudnorm mastering + web MP3 export Lambda (Event-invoked by
  * /api/admin/music-lab/master). Brings a "hot" take to -14 LUFS / -1 dBTP and
  * writes a 24-bit/48k WAV to S3 as `<s3Key>-master.wav`. Progress is recorded on
  * the MASTERJOB#<id> DynamoDB item (the repo's job idiom — NOT SQS); the status
@@ -28,6 +28,7 @@ import {
   type SourceInfo,
 } from '@/lib/loudness-measure';
 import { isMasteringKey } from '@/lib/mastering-storage';
+import { buildMp3Args, mp3KeyFor } from '@/lib/master-mp3';
 import {
   parseMasterEdit,
   isNoOpEdit,
@@ -136,6 +137,7 @@ export const handler = async (event: MasterEvent) => {
   const inPath = join(dir, `in${ext}`);
   const editedPath = join(dir, 'edited.wav');
   const outPath = join(dir, 'out.wav');
+  const mp3Path = join(dir, 'out.mp3');
   try {
     const obj = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: s3Key }));
     writeFileSync(inPath, Buffer.from(await obj.Body!.transformToByteArray()));
@@ -212,6 +214,44 @@ export const handler = async (event: MasterEvent) => {
 
     const masterKey = masterKeyFor(s3Key, target);
     await s3.send(new PutObjectCommand({ Bucket: bucket, Key: masterKey, Body: readFileSync(outPath), ContentType: 'audio/wav' }));
+
+    // Pass 4 — the web MP3, encoded FROM the mastered WAV and then measured.
+    //
+    // This is the file listeners receive, and nothing in the pipeline used to
+    // measure it: the 2026-07-24 sweep found 2 of 17 served MP3s above the
+    // -1 dBTP ceiling. Best-effort throughout — the WAV master is the primary
+    // deliverable and a failed encode must never fail the job.
+    let mp3Key: string | null = null;
+    let mp3Lufs: number | null = null;
+    let mp3Tp: number | null = null;
+    try {
+      const mp3 = ff(buildMp3Args(outPath, mp3Path));
+      if (mp3.status === 0) {
+        // Measured on the ENCODED file, not the WAV — a figure copied from the
+        // master would describe a file nobody checked, which is the exact gap
+        // this pass exists to close.
+        const p4 = ff(['-hide_banner', '-nostats', '-i', mp3Path, '-af', `loudnorm=I=${target}:TP=-1:LRA=11:print_format=json`, '-f', 'null', '-']);
+        const measured = parseLoudnormStats(`${p4.stdout ?? ''}${p4.stderr ?? ''}`);
+        const key = mp3KeyFor(masterKey);
+        await s3.send(new PutObjectCommand({
+          Bucket: bucket, Key: key, Body: readFileSync(mp3Path), ContentType: 'audio/mpeg',
+        }));
+        // All three commit TOGETHER, and only once the object is stored. Setting
+        // them before the PutObject left the peak of an MP3 that was never
+        // written recorded on the job: mp3Key null (so nothing renders it) but
+        // the numbers still there for any later consumer to believe.
+        mp3Key = key;
+        mp3Lufs = measured?.input_i ?? null;
+        mp3Tp = measured?.input_tp ?? null;
+      } else {
+        console.error('[master-worker] mp3 encode failed; master is unaffected');
+      }
+    } catch (mp3Err) {
+      console.error('[master-worker] mp3 export failed:', mp3Err instanceof Error ? mp3Err.message : String(mp3Err));
+      mp3Key = null;
+      mp3Lufs = null;
+      mp3Tp = null;
+    }
     await patch(jobId, {
       status: 'done',
       masterKey,
@@ -231,6 +271,9 @@ export const handler = async (event: MasterEvent) => {
       // report can state the edit without re-deriving it from the audio.
       edit: isNoOpEdit(edit) ? null : edit,
       editedDurationSec: editedDuration,
+      mp3Key,
+      mp3Lufs,
+      mp3Tp,
     });
     return { ok: true, masterKey };
   } catch (err) {

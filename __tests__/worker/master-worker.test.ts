@@ -185,25 +185,62 @@ Output #0, null, to 'pipe:':
 }
 `;
 
-  const logs = { p1: PASS1, p2: PASS2, p3: PASS3, p1status: 0, p2status: 0, p3status: 0 };
+  /**
+   * Pass 4 measures the ENCODED MP3, and its numbers deliberately match no other
+   * pass. If the worker ever records the master's peak (pass 3, -3.18) or the
+   * source's (pass 1, -3.53) as the MP3's, this fixture makes that visible —
+   * the MP3 check exists precisely because nothing else measures the delivered
+   * file, so silently reusing another pass's figure would be worse than not
+   * measuring at all.
+   */
+  const PASS4 = `[Parsed_loudnorm_0 @ 0xaa]
+{
+\t"input_i" : "-13.90",
+\t"input_tp" : "-2.95",
+\t"input_lra" : "2.10",
+\t"input_thresh" : "-24.10",
+\t"normalization_type" : "linear",
+\t"target_offset" : "0.00"
+}
+`;
 
-  /** Which ffmpeg invocation is this? Measure passes render to null; pass 2 writes out.wav. */
+  const logs = {
+    p1: PASS1, p2: PASS2, p3: PASS3, p4: PASS4,
+    p1status: 0, p2status: 0, p3status: 0, encodeStatus: 0,
+  };
+
+  /**
+   * Which ffmpeg invocation is this? Measure passes render to null; pass 2
+   * writes out.wav; the MP3 encode writes out.mp3 and is told apart by its
+   * codec flag rather than by elimination, so adding another writing pass
+   * cannot quietly reroute it here.
+   */
   const dispatch = (args: string[]) => {
     const measuring = args.includes('null');
-    if (!measuring) return { status: logs.p2status, stdout: '', stderr: logs.p2 };
+    if (!measuring) {
+      return args.includes('libmp3lame')
+        ? { status: logs.encodeStatus, stdout: '', stderr: '' }
+        : { status: logs.p2status, stdout: '', stderr: logs.p2 };
+    }
     const input = args[args.indexOf('-i') + 1] ?? '';
+    if (input.includes('out.mp3')) return { status: 0, stdout: '', stderr: logs.p4 };
     return input.includes('out.wav')
       ? { status: logs.p3status, stdout: '', stderr: logs.p3 }
       : { status: logs.p1status, stdout: '', stderr: logs.p1 };
   };
 
   const argsOf = (n: number) => spawnSync.mock.calls[n][1] as string[];
-  const putCall = () =>
-    s3Send.mock.calls.map((c) => c[0] as { input: Record<string, unknown> }).find((c) => 'Body' in c.input);
+  const putCalls = () =>
+    s3Send.mock.calls
+      .map((c) => c[0] as { input: Record<string, unknown> })
+      .filter((c) => 'Body' in c.input);
+  /** The WAV master put — the first and primary write. */
+  const putCall = () => putCalls().find((c) => String(c.input.Key).endsWith('.wav'));
+  const mp3Put = () => putCalls().find((c) => String(c.input.Key).endsWith('.mp3'));
 
   beforeEach(() => {
-    logs.p1 = PASS1; logs.p2 = PASS2; logs.p3 = PASS3;
-    logs.p1status = 0; logs.p2status = 0; logs.p3status = 0;
+    logs.p1 = PASS1; logs.p2 = PASS2; logs.p3 = PASS3; logs.p4 = PASS4;
+    logs.p1status = 0; logs.p2status = 0; logs.p3status = 0; logs.encodeStatus = 0;
     mockRmSync.mockClear();
     spawnSync.mockReset();
     spawnSync.mockImplementation((_bin: string, args: string[]) => dispatch(args));
@@ -219,7 +256,8 @@ Output #0, null, to 'pipe:':
     const res = await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14 });
 
     expect(res).toEqual({ ok: true, masterKey: 'audio/mastering/1_a_song-master-14LUFS.wav' });
-    expect(spawnSync).toHaveBeenCalledTimes(3);
+    // measure · master · re-measure · encode MP3 · measure MP3
+    expect(spawnSync).toHaveBeenCalledTimes(5);
     const put = putCall();
     expect(put?.input).toMatchObject({
       Bucket: 'tamil-web-media',
@@ -289,6 +327,105 @@ Output #0, null, to 'pipe:':
     const res = await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -16 });
     expect(res).toMatchObject({ masterKey: 'audio/mastering/1_a_song-master-16LUFS.wav' });
     expect(argsOf(0).join(' ')).toContain('I=-16');
+  });
+
+  /**
+   * The web MP3 export.
+   *
+   * This is the only artifact in the module that listeners actually receive, and
+   * until now nothing measured it — the 2026-07-24 sweep found 2 of 17 served
+   * MP3s above the -1 dBTP ceiling. Two properties matter and neither is
+   * self-evident from reading the handler: the encode reads the MASTER (encoding
+   * the source would ship an unmastered file under a mastered name), and every
+   * MP3 field is best-effort — the WAV is the deliverable, so no MP3 failure may
+   * cost the operator a master they waited 15 minutes for.
+   */
+  describe('the web MP3 export', () => {
+    it('encodes from the MASTER, not from the source', async () => {
+      await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14 });
+      const encode = argsOf(3);
+      expect(encode[encode.indexOf('-i') + 1]).toContain('out.wav');
+      expect(encode[encode.indexOf('-i') + 1]).not.toContain('in.wav');
+      expect(encode).toContain('libmp3lame');
+      expect(encode[encode.indexOf('-b:a') + 1]).toBe('192k');
+    });
+
+    it('stores it beside the master, as audio/mpeg', async () => {
+      await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14 });
+      expect(mp3Put()?.input).toMatchObject({
+        Bucket: 'tamil-web-media',
+        Key: 'audio/mastering/1_a_song-master-14LUFS.mp3',
+        ContentType: 'audio/mpeg',
+      });
+      expect(patched().mp3Key).toBe('audio/mastering/1_a_song-master-14LUFS.mp3');
+    });
+
+    it('records the MP3\'s OWN measurement, not the master\'s and not the source\'s', async () => {
+      // The whole point of the pass. Pass 3 read -3.18 dBTP off the master and
+      // pass 1 read -3.53 off the source; copying either would report a peak for
+      // a file nobody measured, while looking perfectly plausible.
+      await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14 });
+      const p = patched();
+      expect(p.mp3Lufs).toBe(-13.9);
+      expect(p.mp3Tp).toBe(-2.95);
+      expect(p.afterTp).toBe(-3.18);
+      const measure = argsOf(4);
+      expect(measure[measure.indexOf('-i') + 1]).toContain('out.mp3');
+    });
+
+    it('delivers the master anyway when the encode fails, with no MP3 claimed', async () => {
+      logs.encodeStatus = 1;
+      const res = await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14 });
+
+      expect(res).toMatchObject({ ok: true, masterKey: 'audio/mastering/1_a_song-master-14LUFS.wav' });
+      expect(putCall()).toBeDefined();      // the WAV still shipped
+      expect(mp3Put()).toBeUndefined();     // nothing half-written
+      expect(spawnSync).toHaveBeenCalledTimes(4); // no point measuring a file that failed to encode
+      const p = patched();
+      expect(p.status).toBe('done');
+      expect(p.mp3Key).toBeNull();
+      expect(p.mp3Lufs).toBeNull();
+      expect(p.mp3Tp).toBeNull();
+    });
+
+    it('records no peak for an MP3 that was never stored', async () => {
+      // The figures used to be assigned BEFORE the PutObject. When the upload
+      // threw, mp3Key was nulled but mp3Lufs/mp3Tp survived — a measurement on
+      // the job describing a file that does not exist in the bucket. Nothing
+      // rendered it (the Studio keys off mp3Key), which is exactly why it would
+      // have gone unnoticed until some later consumer trusted it.
+      let bodies = 0;
+      s3Send.mockReset();
+      s3Send.mockImplementation((cmd: { input: Record<string, unknown> }) => {
+        if (!('Body' in cmd.input)) {
+          return Promise.resolve({ Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) } });
+        }
+        bodies += 1;
+        return bodies === 1 ? Promise.resolve({}) : Promise.reject(new Error('AccessDenied'));
+      });
+
+      const res = await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14 });
+
+      expect(res).toMatchObject({ ok: true });
+      const p = patched();
+      expect(p.status).toBe('done');
+      expect(p.mp3Key).toBeNull();
+      expect(p.mp3Lufs).toBeNull();
+      expect(p.mp3Tp).toBeNull();
+    });
+
+    it('still ships the MP3 when it cannot be measured, with null figures', async () => {
+      // A missing measurement must not withhold the file; the verdict reads
+      // "unverified" from the nulls rather than assuming it is safe.
+      logs.p4 = 'ffmpeg version 6.0\nno json here\n';
+      await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14 });
+
+      expect(mp3Put()).toBeDefined();
+      const p = patched();
+      expect(p.mp3Key).toBe('audio/mastering/1_a_song-master-14LUFS.mp3');
+      expect(p.mp3Lufs).toBeNull();
+      expect(p.mp3Tp).toBeNull();
+    });
   });
 
   describe('when a pass fails', () => {

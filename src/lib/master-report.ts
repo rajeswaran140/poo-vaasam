@@ -13,6 +13,7 @@
 import type { MasterJob } from '@/types/masterJob';
 import { STREAMING_TARGETS, platformLanding } from '@/lib/loudness-targets';
 import { sanitizeMasterFilename } from '@/lib/mastering-storage';
+import { mp3PeakVerdict, MP3_BITRATE } from '@/lib/master-mp3';
 
 const lufs = (v: number | null | undefined) => (typeof v === 'number' ? `${v.toFixed(1)} LUFS` : '—');
 const dbtp = (v: number | null | undefined) => (typeof v === 'number' ? `${v.toFixed(2)} dBTP` : '—');
@@ -99,9 +100,34 @@ export interface Readiness {
 }
 
 /**
+ * The delivered MP3's own peak check — present ONLY when an MP3 was produced.
+ *
+ * This does not break the "four checks, not five" rule below, which is about
+ * never listing a second name for one measurement. This IS a second
+ * measurement, of a DIFFERENT file: the 192k MP3 the site serves, encoded from
+ * the master and measured separately. A job with no MP3 (every job before the
+ * export existed, and any where the encode failed) still lists exactly four —
+ * a row for a file that does not exist would be a check that never ran.
+ */
+function mp3Check(job: MasterJob): ReadinessCheck | null {
+  if (!job.mp3Key) return null;
+  const v = mp3PeakVerdict({ mp3Tp: job.mp3Tp ?? null, wavTp: job.afterTp ?? null });
+  return {
+    label: 'Web MP3',
+    ok: v.status === 'unknown' ? null : v.status === 'ok',
+    detail:
+      v.status === 'unknown'
+        ? `${MP3_BITRATE} exported, not measured`
+        : `${dbtp(job.mp3Tp)} (ceiling -1 dBTP)`,
+  };
+}
+
+/**
  * The itemised integrity list. Deliberately FOUR checks, not five: "clipping"
  * is not an independent test — the true-peak ceiling IS the clipping check, and
- * listing both would imply a second measurement that was never taken.
+ * listing both would imply a second measurement that was never taken. (`Web
+ * MP3` appends a fifth only when a second FILE was actually measured — see
+ * mp3Check.)
  *
  * `Gain type` is here because normalizationType is captured (since the pass-2
  * parser fix, 2026-07-28) but was otherwise displayed nowhere.
@@ -140,6 +166,7 @@ function readinessChecks(job: MasterJob): ReadinessCheck[] {
             ? 'DYNAMIC — ffmpeg could not apply a linear gain; range was compressed'
             : 'not reported (mastered before this was recorded)',
     },
+    ...(mp3Check(job) ? [mp3Check(job)!] : []),
   ];
 }
 
@@ -209,6 +236,28 @@ export function streamingReadiness(job: MasterJob): Readiness {
           : 'Dynamics not recorded — re-master to verify tone was preserved';
     return { ok: false, headline, facts, checks };
   }
+  // The delivered MP3, when there is one. A measured violation blocks for the
+  // same reason the WAV's does: the module would otherwise print "Streaming
+  // Ready" over a file it had just measured as clipping, and the MP3 is the
+  // copy listeners actually receive.
+  //
+  // Unlike the dynamics leg, an ABSENT or UNMEASURED MP3 does NOT block. The
+  // distinction is what the missing value means. `unrecorded` dynamics is a
+  // claim about the WAV — the artifact this verdict judges — that cannot be
+  // evidenced. A missing MP3 is a second artifact that does not exist (or could
+  // not be read back); the WAV heading to the distributor is unaffected, so
+  // refusing it would be punishing the master for a sibling's absence.
+  if (job.mp3Key) {
+    const mp3 = mp3PeakVerdict({ mp3Tp: job.mp3Tp ?? null, wavTp: job.afterTp ?? null });
+    if (mp3.status === 'hot') {
+      return {
+        ok: false,
+        headline: `Review before distributing — the web MP3 peaks at ${dbtp(job.mp3Tp)}, above -1 dBTP`,
+        facts,
+        checks,
+      };
+    }
+  }
   return { ok: true, headline: 'Streaming Ready', facts, checks };
 }
 
@@ -239,8 +288,26 @@ export function summaryLines(job: MasterJob): string[] {
   // streamingReadiness: without it, this line printed "✓ Ready for streaming"
   // directly beneath its own "⚠ Dynamic normalization — tone is not preserved"
   // — one file contradicting itself. Same rule, so screen and file agree.
+  // The delivered MP3, when one was produced. Omitted entirely otherwise —
+  // a report for a job with no MP3 must not mention a file that never existed.
+  const mp3 = job.mp3Key
+    ? mp3PeakVerdict({ mp3Tp: job.mp3Tp ?? null, wavTp: job.afterTp ?? null })
+    : null;
+  const mp3Line = !mp3
+    ? null
+    : mp3.status === 'ok'
+      ? `✓ Web MP3 (${MP3_BITRATE}) — true peak ${dbtp(job.mp3Tp)}${
+          mp3.encodeDeltaDb !== null ? ` (encoding moved it ${mp3.encodeDeltaDb >= 0 ? '+' : ''}${mp3.encodeDeltaDb.toFixed(2)} dB)` : ''
+        }`
+      : mp3.status === 'hot'
+        ? `✗ Web MP3 (${MP3_BITRATE}) — ${mp3.message}`
+        : `• Web MP3 (${MP3_BITRATE}) exported but not measured — its peak is unverified`;
+
+  // Same conjunction as streamingReadiness, for the same reason: a file that
+  // contradicts the screen is worse than either alone. A hot MP3 blocks; an
+  // absent or unmeasured one does not (see the readiness docblock).
   const ready =
-    measured && onTarget && peakSafe && dynamicsPreserved(job)
+    measured && onTarget && peakSafe && dynamicsPreserved(job) && mp3?.status !== 'hot'
       ? '✓ Ready for streaming, video editing and distribution'
       : '⚠ Review the flags above before distributing';
 
@@ -252,7 +319,7 @@ export function summaryLines(job: MasterJob): string[] {
       : job.normalizationType === 'dynamic'
         ? '⚠ Gain type — DYNAMIC (ffmpeg could not apply a linear gain; range was compressed)'
         : '• Gain type not reported for this job';
-  return [loud, peak, dynamicsLine(job), gain, ready];
+  return [loud, peak, dynamicsLine(job), gain, ...(mp3Line ? [mp3Line] : []), ready];
 }
 
 /** Largest LRA drift still attributable to measurement rounding, not compression. */
@@ -372,6 +439,9 @@ export function buildMasterReport(job: MasterJob, title?: string): string {
     `Mastered:           ${job.updatedAt}${turnaround ? `  (turnaround ${turnaround})` : ''}`,
     ...(sourceInfoLine(job) ? [`Source file:        ${sourceInfoLine(job)}`] : []),
     'Output file:        24-bit · 48 kHz WAV',
+    // The second deliverable, named only when it exists. Its peak is measured on
+    // the encoded file, not inherited from the WAV above.
+    ...(job.mp3Key ? [`Web delivery:       ${MP3_BITRATE} MP3 · true peak ${dbtp(job.mp3Tp)}`] : []),
     '',
     'Integrated loudness',
     `  Before:           ${lufs(job.beforeLufs)}`,

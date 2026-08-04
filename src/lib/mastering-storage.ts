@@ -73,11 +73,25 @@ export function masteringUploadKey(filename: string, now: number, nonce: string)
  */
 export function downloadFilename(key: string): string {
   const base = key.slice(key.lastIndexOf('/') + 1).replace(/\.[a-z0-9]+$/i, '');
+  const ext = extensionFor(key);
   const cleaned = base
     .replace(/^\d+_[a-z0-9]+_/i, '') // drop the timestamp_nonce_ we prepend
     .replace(/^[^\p{L}\p{N}]+/u, '') // drop leading punctuation from the SUNO stem
     .trim();
-  return `${cleaned || 'master'}.wav`;
+  return `${cleaned || 'master'}${ext}`;
+}
+
+/**
+ * The extension the download should carry, taken from the STORED KEY.
+ *
+ * Hardcoding `.wav` was fine while the module produced only WAVs; now that it
+ * also exports a 192k MP3, a fixed extension would hand the admin an MP3 named
+ * `.wav` — a file most players refuse and which would be wrong the moment it
+ * was uploaded anywhere. Anything unrecognised falls back to `.wav`, which is
+ * what every pre-existing key is.
+ */
+export function extensionFor(key: string): string {
+  return /\.mp3$/i.test(key) ? '.mp3' : '.wav';
 }
 
 /**
@@ -114,14 +128,14 @@ export function sanitizeMasterTitle(name: string): string {
     .slice(0, 120);
 }
 
-export function sanitizeMasterFilename(name: string): string {
+export function sanitizeMasterFilename(name: string, ext = '.wav'): string {
   const cleaned = name
     .normalize('NFC')
     .replace(/[\x00-\x1f\x7f]/g, '') // strip C0 control chars + DEL
     .replace(/["\\/]+/g, ' ') // no quotes or path separators
     .replace(/\s+/g, ' ')
-    .replace(/\.wave?$/i, '') // we re-append the extension ourselves
+    .replace(/\.(wave?|mp3)$/i, '') // we re-append the extension ourselves
     .trim()
     .slice(0, 120);
-  return `${cleaned || 'master'}.wav`;
+  return `${cleaned || 'master'}${ext}`;
 }
