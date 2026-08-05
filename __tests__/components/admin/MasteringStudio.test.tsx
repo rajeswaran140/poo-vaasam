@@ -56,11 +56,76 @@ const doneJob = (over: Record<string, unknown> = {}) => ({
 });
 
 /** Drive: presign -> (XHR upload) -> enqueue -> status(done). */
+/**
+ * Route-based default responses.
+ *
+ * Deliberately NOT a queue of mockResolvedValueOnce values. The page makes
+ * fetches whose ORDER is not fixed — the source analysis fires on upload and
+ * races the next user action — so a positional queue hands the wrong body to
+ * whichever call happens to arrive first. That has bitten this suite twice.
+ * Tests that need a specific response still queue a Once value; everything else
+ * falls through to here.
+ */
+function routeDefaults(job: Record<string, unknown> = doneJob(), uploadKey = 'audio/mastering/1_a_song.wav') {
+  mockedFetch.mockImplementation((url: string, init?: { method?: string }) => {
+    const u = String(url);
+    if (u.startsWith('/api/admin/mastering/upload')) {
+      return Promise.resolve(json({ success: true, uploadUrl: 'https://s3/u', fields: { key: 'k' }, key: uploadKey }));
+    }
+    if (u === '/api/admin/mastering/analyse') {
+      return Promise.resolve(json({ success: true, analysisId: 'an-1', status: 'queued' }));
+    }
+    if (u.startsWith('/api/admin/mastering/analyse/')) {
+      return Promise.resolve(json({
+        success: true,
+        analysis: { status: 'done', leadingSilenceSec: 0, trailingSilenceSec: 0, durationSec: 240 },
+        verdicts: { fade: { state: 'steady', dropLu: 0.4, message: 'The tail holds its level' }, partBFade: null, level: null, trim: null },
+      }));
+    }
+    if (u.startsWith('/api/admin/mastering/download')) {
+      return Promise.resolve(json({ success: true, url: 'https://s3/signed', filename: 'x.wav' }));
+    }
+    if (u === '/api/admin/music-lab/master' && init?.method === 'POST') {
+      return Promise.resolve(json({ success: true, jobId: 'job-1', status: 'queued' }));
+    }
+    if (u === '/api/admin/music-lab/masters') {
+      return Promise.resolve(json({ success: true, masters: [] }));
+    }
+    return Promise.resolve(json(job));
+  });
+}
+
+
+/**
+ * Everything answers normally except the STATUS poll, which hangs until the
+ * caller's signal fires and then rejects like a real aborted fetch. Used by the
+ * cancel tests, which are about what an abort does to the UI.
+ */
+function routeWithHangingStatus(jobId: string) {
+  mockedFetch.mockImplementation((url: string, init?: { method?: string; signal?: AbortSignal }) => {
+    const u = String(url);
+    if (u.startsWith('/api/admin/mastering/upload')) {
+      return Promise.resolve(json({ success: true, uploadUrl: 'https://s3/u', fields: { key: 'k' }, key: 'audio/mastering/1_a_song.wav' }));
+    }
+    if (u === '/api/admin/mastering/analyse') return Promise.resolve(json({ success: true, analysisId: 'an-1' }));
+    // Ends the advisory analysis at once so it cannot outlive the test.
+    if (u.startsWith('/api/admin/mastering/analyse/')) {
+      return Promise.resolve(json({ success: true, analysis: { status: 'error' }, verdicts: null }));
+    }
+    if (u === '/api/admin/music-lab/master' && init?.method === 'POST') {
+      return Promise.resolve(json({ success: true, jobId, status: 'queued' }));
+    }
+    return new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () =>
+        reject(new DOMException('signal is aborted without reason', 'AbortError'))
+      );
+    });
+  });
+}
+
+/** Back-compat name used throughout the suite. */
 function primeHappyPath(job: Record<string, unknown> = doneJob()) {
-  mockedFetch
-    .mockResolvedValueOnce(json({ success: true, uploadUrl: 'https://s3/u', fields: { key: 'k' }, key: 'audio/mastering/1_a_song.wav' }))
-    .mockResolvedValueOnce(json({ success: true, jobId: 'job-1', status: 'queued' }))
-    .mockResolvedValue(json(job));
+  routeDefaults(job);
 }
 
 const wavFile = (name = 'song.wav', size = 1024) => {
@@ -391,18 +456,7 @@ describe('cancelling is an outcome, not a failure', () => {
     // Regression: aborting while a poll was in flight rejected the fetch with an
     // AbortError, which the catch rendered as "Mastering failed." plus a raw
     // "signal is aborted without reason" — for a job still running fine.
-    mockedFetch
-      .mockResolvedValueOnce(json({ success: true, uploadUrl: 'https://s3/u', fields: { key: 'k' }, key: 'audio/mastering/1_a_song.wav' }))
-      .mockResolvedValueOnce(json({ success: true, jobId: 'job-7', status: 'queued' }))
-      // A status call that behaves like a real aborted fetch: pending until the
-      // caller's signal fires, then rejecting with an AbortError.
-      .mockImplementation((_url: string, init?: { signal?: AbortSignal }) =>
-        new Promise((_resolve, reject) => {
-          init?.signal?.addEventListener('abort', () =>
-            reject(new DOMException('signal is aborted without reason', 'AbortError'))
-          );
-        })
-      );
+    routeWithHangingStatus('job-7');
 
     render(<MasteringStudio />);
     await uploadA();
@@ -420,14 +474,7 @@ describe('cancelling is an outcome, not a failure', () => {
   });
 
   it('resumes a stopped watch without a page reload', async () => {
-    mockedFetch
-      .mockResolvedValueOnce(json({ success: true, uploadUrl: 'https://s3/u', fields: { key: 'k' }, key: 'audio/mastering/1_a_song.wav' }))
-      .mockResolvedValueOnce(json({ success: true, jobId: 'job-7', status: 'queued' }))
-      .mockImplementationOnce((_url: string, init?: { signal?: AbortSignal }) =>
-        new Promise((_resolve, reject) => {
-          init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
-        })
-      );
+    routeWithHangingStatus('job-7');
 
     render(<MasteringStudio />);
     await uploadA();
@@ -436,7 +483,7 @@ describe('cancelling is an outcome, not a failure', () => {
     await act(async () => { fireEvent.click(await screen.findByRole('button', { name: /Stop watching/i })); });
 
     // The job finished while we weren't looking; resuming must pick it up.
-    mockedFetch.mockResolvedValue(json(doneJob({ id: 'job-7' })));
+    routeDefaults(doneJob({ id: 'job-7' }));
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Resume watching job/i })); });
 
     await screen.findByText(/3 · Result/);

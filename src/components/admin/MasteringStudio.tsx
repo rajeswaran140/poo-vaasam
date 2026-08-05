@@ -34,6 +34,18 @@ import { MasteringPlayer } from '@/components/admin/MasteringPlayer';
 import { MasteringTrimPanel } from '@/components/admin/MasteringTrimPanel';
 import { MasteringJoinPanel } from '@/components/admin/MasteringJoinPanel';
 import { DEFAULT_CROSSFADE_CURVE, type MasterJoin } from '@/lib/master-join';
+import type { FadeVerdict, LevelVerdict } from '@/lib/master-analysis';
+
+/** What GET /api/admin/mastering/analyse/[id] returns once it is done. */
+interface AnalysisResult {
+  leadingSilenceSec: number | null;
+  trailingSilenceSec: number | null;
+  durationSec: number | null;
+  fade: FadeVerdict;
+  partBFade: FadeVerdict | null;
+  level: LevelVerdict | null;
+  trim: { trimStartSec: number; trimEndSec: number | null } | null;
+}
 import { mp3PeakVerdict } from '@/lib/master-mp3';
 import type { MasterEdit } from '@/lib/master-edit';
 import type { MasterJob } from '@/types/masterJob';
@@ -252,6 +264,9 @@ export function MasteringStudio() {
    * another Part B must not inherit the previous one's edit.
    */
   const [seedJoin, setSeedJoin] = useState<MasterJoin | null>(null);
+  /** Pre-master analysis of the uploaded source: measurements + verdicts. */
+  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  const [analysing, setAnalysing] = useState(false);
   /** Where the web MP3 landed on the site's audio path, once staged. */
   const [published, setPublished] = useState<{ key: string; replaced: boolean } | null>(null);
   const [library, setLibrary] = useState<MasterJob[] | null>(null);
@@ -400,6 +415,49 @@ export function MasteringStudio() {
   }, [paused, watch]);
 
   /**
+   * Measure the source before anything is decided about it.
+   *
+   * Read-only and advisory: it proposes a trim and reports whether the tail is
+   * already fading, which is the one finding that changes what you DO (a
+   * baked-in fade is a re-roll, not something to fix in post). Nothing is
+   * applied automatically — a wrong automatic trim would be worse than none.
+   */
+  const runAnalysis = useCallback(async (sourceKeyToRead: string, partBKeyToRead: string | null) => {
+    setAnalysing(true);
+    setAnalysis(null);
+    try {
+      const res = await adminFetch('/api/admin/mastering/analyse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ s3Key: sourceKeyToRead, ...(partBKeyToRead ? { partBKey: partBKeyToRead } : {}) }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.success) return; // advisory — never block mastering
+      const deadline = Date.now() + 5 * 60 * 1000;
+      for (;;) {
+        const r = await adminFetch(`/api/admin/mastering/analyse/${body.analysisId}`);
+        const j = await r.json().catch(() => ({}));
+        if (!mounted.current) return;
+        if (j?.analysis?.status === 'done' && j.verdicts) {
+          setAnalysis({
+            leadingSilenceSec: j.analysis.leadingSilenceSec,
+            trailingSilenceSec: j.analysis.trailingSilenceSec,
+            durationSec: j.analysis.durationSec,
+            ...j.verdicts,
+          });
+          return;
+        }
+        if (j?.analysis?.status === 'error' || Date.now() > deadline) return;
+        await new Promise((r2) => setTimeout(r2, 3000));
+      }
+    } catch {
+      // An analysis that fails must never stop a master — it is advice.
+    } finally {
+      if (mounted.current) setAnalysing(false);
+    }
+  }, []);
+
+  /**
    * Presign + PUT one WAV into the mastering workspace, returning its key.
    * Shared by Part A and Part B so a second source cannot drift onto a
    * different upload path (or skip the WAV guard).
@@ -461,13 +519,15 @@ export function MasteringStudio() {
       // A new Part B must not inherit the previous seam's edit.
       setSeedJoin(null);
       setAnnounce('Part B uploaded.');
+      // Re-measure with both parts so the level comparison becomes available.
+      if (sourceKey) void runAnalysis(sourceKey, key);
     } catch (err) {
       if (!mounted.current) return;
       if (!isAbort(err)) setError(err instanceof Error ? err.message : String(err));
     } finally {
       if (mounted.current) setPartBUploading(false);
     }
-  }, [uploadToWorkspace]);
+  }, [uploadToWorkspace, sourceKey, runAnalysis]);
 
   const onPick = useCallback(async (picked: File | null) => {
     if (!picked) return;
@@ -530,6 +590,7 @@ export function MasteringStudio() {
       setSourceKey(body.key);
       setStage('ready');
       setAnnounce('Upload complete. Ready to master.');
+      void runAnalysis(body.key, null);
     } catch (err) {
       if (!mounted.current) return;
       // "Cancel upload" already reset the UI to idle; surfacing its own abort as
@@ -543,7 +604,7 @@ export function MasteringStudio() {
       setStage('idle');
       setSource(null);
     }
-  }, []);
+  }, [runAnalysis]);
 
   const startMastering = useCallback(async () => {
     if (!sourceKey || !source) return;
@@ -1151,6 +1212,72 @@ export function MasteringStudio() {
               second target in the dual-target flow would quietly master the
               UNTRIMMED file. Disabled rather than removed.
             */}
+            {/* Pre-master analysis — advisory. It measures the source and
+                proposes; nothing is applied without a click, because a wrong
+                automatic trim is worse than no trim. */}
+            {(analysing || analysis) && (
+              <div className="mt-4 rounded-lg border border-gray-200 p-4 text-sm dark:border-gray-800">
+                <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  <Info className="h-3.5 w-3.5" aria-hidden="true" /> Source analysis
+                </h3>
+                {analysing && !analysis && (
+                  <p className="mt-2 flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Measuring the source…
+                  </p>
+                )}
+                {analysis && (
+                  <div className="mt-2 space-y-1.5">
+                    <p className={analysis.fade.state === 'fading'
+                      ? 'font-medium text-amber-700 dark:text-amber-400'
+                      : 'text-gray-600 dark:text-gray-300'}>
+                      {analysis.fade.state === 'fading' && (
+                        <AlertTriangle className="mr-1 inline h-3.5 w-3.5" aria-hidden="true" />
+                      )}
+                      {analysis.fade.message}
+                    </p>
+                    {analysis.partBFade && (
+                      <p className={analysis.partBFade.state === 'fading'
+                        ? 'font-medium text-amber-700 dark:text-amber-400'
+                        : 'text-gray-600 dark:text-gray-300'}>
+                        Part B — {analysis.partBFade.message}
+                      </p>
+                    )}
+                    {analysis.level && (
+                      <p className={analysis.level.matched
+                        ? 'text-gray-600 dark:text-gray-300'
+                        : 'font-medium text-amber-700 dark:text-amber-400'}>
+                        {analysis.level.message}
+                      </p>
+                    )}
+                    <p className="tabular-nums text-gray-500 dark:text-gray-400">
+                      Silence — head {(analysis.leadingSilenceSec ?? 0).toFixed(2)}s · tail {(analysis.trailingSilenceSec ?? 0).toFixed(2)}s
+                    </p>
+                    {analysis.trim && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSeedEdit({
+                            trimStartSec: analysis.trim!.trimStartSec,
+                            trimEndSec: analysis.trim!.trimEndSec,
+                            fadeInSec: 0,
+                            fadeOutSec: 0,
+                            curve: DEFAULT_CROSSFADE_CURVE,
+                          });
+                          setSeedDurationSec(analysis.durationSec ?? 0);
+                          setRecipeNonce((n) => n + 1);
+                          setAnnounce('Suggested trim applied.');
+                        }}
+                        className="mt-1 inline-flex items-center gap-2 rounded-lg border border-orange-300 px-3 py-1.5 text-xs font-medium text-orange-700 transition hover:bg-orange-50 dark:border-orange-800 dark:text-orange-300 dark:hover:bg-orange-900/20"
+                      >
+                        Apply suggested trim ({analysis.trim.trimStartSec}s
+                        {analysis.trim.trimEndSec !== null ? ` – ${analysis.trim.trimEndSec}s` : ' – end'})
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             <MasteringTrimPanel
               key={`trim-${recipeNonce}`}
               file={pickedFile}
