@@ -33,7 +33,7 @@ import { MasteringComparePlayer } from '@/components/admin/MasteringComparePlaye
 import { MasteringPlayer } from '@/components/admin/MasteringPlayer';
 import { MasteringTrimPanel } from '@/components/admin/MasteringTrimPanel';
 import { MasteringJoinPanel } from '@/components/admin/MasteringJoinPanel';
-import { DEFAULT_CROSSFADE_CURVE } from '@/lib/master-join';
+import { DEFAULT_CROSSFADE_CURVE, type MasterJoin } from '@/lib/master-join';
 import { mp3PeakVerdict } from '@/lib/master-mp3';
 import type { MasterEdit } from '@/lib/master-edit';
 import type { MasterJob } from '@/types/masterJob';
@@ -143,6 +143,41 @@ function putToS3(
   });
 }
 
+/**
+ * The join payload for a run: the two fields the panel owns, over whatever the
+ * re-opened recipe carried.
+ *
+ * Rebuilding a seam from scratch is what would silently drop a saved non-default
+ * curve or a fade on Part B — neither of which the panel can show, and both of
+ * which change the audio. `trimStartSec` is always the panel's, including 0,
+ * because clearing the head trim is a real instruction.
+ */
+export function buildJoinPayload(p: {
+  partBKey: string;
+  overlapSec: number;
+  partBStartSec: number;
+  seed: MasterJoin | null;
+}): MasterJoin {
+  const seedEditB = p.seed?.editB ?? null;
+  const editB =
+    p.partBStartSec > 0 || seedEditB
+      ? {
+          trimEndSec: null,
+          fadeInSec: 0,
+          fadeOutSec: 0,
+          curve: DEFAULT_CROSSFADE_CURVE,
+          ...(seedEditB ?? {}),
+          trimStartSec: p.partBStartSec,
+        }
+      : null;
+  return {
+    partBKey: p.partBKey,
+    overlapSec: p.overlapSec,
+    curve: p.seed?.curve ?? DEFAULT_CROSSFADE_CURVE,
+    editB,
+  };
+}
+
 export function MasteringStudio() {
   const inputId = useId();
   const [stage, setStage] = useState<Stage>('idle');
@@ -204,6 +239,19 @@ export function MasteringStudio() {
    * re-sends a redundant edit that costs a pre-pass copying the file for nothing.
    */
   const [seedDurationSec, setSeedDurationSec] = useState(0);
+  /**
+   * The full seam a re-opened master arrived with.
+   *
+   * The panel exposes only the overlap and Part B's head trim, but the API
+   * accepts a richer recipe — a non-default curve, a tail trim or fades on Part
+   * B. Rebuilding the seam from the two visible fields would silently discard
+   * the rest and re-master a DIFFERENT song, so anything not on screen is
+   * carried through untouched.
+   *
+   * Applied only while Part B is still the file it came from: swapping in
+   * another Part B must not inherit the previous one's edit.
+   */
+  const [seedJoin, setSeedJoin] = useState<MasterJoin | null>(null);
   /** Where the web MP3 landed on the site's audio path, once staged. */
   const [published, setPublished] = useState<{ key: string; replaced: boolean } | null>(null);
   const [library, setLibrary] = useState<MasterJob[] | null>(null);
@@ -320,6 +368,9 @@ export function MasteringStudio() {
     setPartB(null);
     setPartBUploading(false);
     setPartBStartSec(0);
+    setSeedEdit(null);
+    setSeedDurationSec(0);
+    setSeedJoin(null);
     if (fileInput.current) fileInput.current.value = '';
   }, []);
 
@@ -407,6 +458,8 @@ export function MasteringStudio() {
       );
       if (!mounted.current) return;
       setPartB({ key, name: file.name });
+      // A new Part B must not inherit the previous seam's edit.
+      setSeedJoin(null);
       setAnnounce('Part B uploaded.');
     } catch (err) {
       if (!mounted.current) return;
@@ -445,6 +498,7 @@ export function MasteringStudio() {
     setPartBStartSec(0);
     setSeedEdit(null);
     setSeedDurationSec(0);
+    setSeedJoin(null);
     setRecipeNonce((n) => n + 1);
     setStage('uploading');
     setSent({ loaded: 0, total: picked.size });
@@ -515,22 +569,13 @@ export function MasteringStudio() {
           ...(edit ? { edit } : {}),
           ...(partB
             ? {
-                join: {
+                join: buildJoinPayload({
                   partBKey: partB.key,
                   overlapSec,
-                  curve: DEFAULT_CROSSFADE_CURVE,
-                  ...(partBStartSec > 0
-                    ? {
-                        editB: {
-                          trimStartSec: partBStartSec,
-                          trimEndSec: null,
-                          fadeInSec: 0,
-                          fadeOutSec: 0,
-                          curve: DEFAULT_CROSSFADE_CURVE,
-                        },
-                      }
-                    : {}),
-                },
+                  partBStartSec,
+                  // Only the seam this Part B actually came from.
+                  seed: seedJoin?.partBKey === partB.key ? seedJoin : null,
+                }),
               }
             : {}),
         }),
@@ -548,7 +593,7 @@ export function MasteringStudio() {
       setError(err instanceof Error ? err.message : String(err));
       setStage('ready');
     }
-  }, [sourceKey, source, target, edit, partB, overlapSec, partBStartSec, watch]);
+  }, [sourceKey, source, target, edit, partB, overlapSec, partBStartSec, seedJoin, watch]);
 
   /**
    * Presign + open one workspace WAV. Shared by the result panel and the saved
@@ -875,10 +920,15 @@ export function MasteringStudio() {
       setPartB({ key: m.join.partBKey, name: downloadFilename(m.join.partBKey) });
       setOverlapSec(m.join.overlapSec);
       setPartBStartSec(m.join.editB?.trimStartSec ?? 0);
+      setSeedJoin(m.join);
     } else {
       setPartB(null);
       setPartBStartSec(0);
+      setSeedJoin(null);
     }
+    // A stopped-watch affordance from a previous job would otherwise sit over
+    // this one, offering to resume something unrelated.
+    setPaused(null);
 
     setRecipeNonce((n) => n + 1);
     setStage('ready');
@@ -1117,7 +1167,7 @@ export function MasteringStudio() {
               key={`join-${recipeNonce}`}
               partB={partB}
               onPick={(f) => void onPickPartB(f)}
-              onClear={() => { setPartB(null); setPartBStartSec(0); }}
+              onClear={() => { setPartB(null); setPartBStartSec(0); setSeedJoin(null); }}
               overlapSec={overlapSec}
               onOverlapChange={setOverlapSec}
               partBStartSec={partBStartSec}
