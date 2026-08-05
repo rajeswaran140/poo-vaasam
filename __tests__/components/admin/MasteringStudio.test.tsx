@@ -25,6 +25,10 @@ jest.mock('lucide-react', () => ({
   Scissors: () => <svg data-testid="i-scissors" />,
   Link2: () => <svg data-testid="i-link" />,
   Film: () => <svg data-testid="i-film" />,
+  // Library ROWS use these three; no earlier test rendered a non-empty list.
+  Play: () => <svg data-testid="i-play" />,
+  Pause: () => <svg data-testid="i-pause" />,
+  Pencil: () => <svg data-testid="i-pencil" />,
 }));
 // The before/after player is its own unit (see MasteringComparePlayer.test);
 // stub it here so the Studio suite tests wiring, not the player's Web Audio /
@@ -36,7 +40,7 @@ jest.mock('@/components/admin/MasteringComparePlayer', () => ({
 }));
 
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import { MasteringStudio } from '@/components/admin/MasteringStudio';
+import { MasteringStudio, buildJoinPayload } from '@/components/admin/MasteringStudio';
 import { adminFetch } from '@/lib/client-auth';
 
 const mockedFetch = adminFetch as jest.Mock;
@@ -615,7 +619,7 @@ describe('two-part assembly', () => {
     expect(JSON.parse(enqueue[1].body)).not.toHaveProperty('join');
   });
 
-  it('omits editB when Part B is used from its start', async () => {
+  it('claims no Part B edit when it is used from its start', async () => {
     primePresign('audio/mastering/1_a_song.wav');
     render(<MasteringStudio />);
     await uploadA();
@@ -629,7 +633,9 @@ describe('two-part assembly', () => {
     const enqueue = mockedFetch.mock.calls.find(
       (c) => c[0] === '/api/admin/music-lab/master' && c[1]?.method === 'POST'
     )!;
-    expect(JSON.parse(enqueue[1].body).join).not.toHaveProperty('editB');
+    // Explicitly null rather than absent — parseMasterJoin treats the two the
+    // same, and null matches the MasterJoin type the payload builder returns.
+    expect(JSON.parse(enqueue[1].body).join.editB).toBeNull();
   });
 
   it('refuses an MP3 as Part B, naming the reason', async () => {
@@ -829,5 +835,259 @@ describe('render for YouTube', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/x264 died/);
     expect(screen.getByRole('button', { name: /Render video/ })).toBeEnabled();
+  });
+});
+
+/**
+ * Edit & re-master from the library.
+ *
+ * The module's whole ordering rests on an edit being a RECIPE over an untouched
+ * source, which means a saved job already carries everything needed to run
+ * again. Before this, coming back the next day to change a fade by half a second
+ * meant re-uploading the WAV.
+ *
+ * The property under test is the ROUND TRIP: what was saved is what comes back
+ * and what gets sent. A recipe that silently loses its trim would re-master the
+ * whole file, produce a longer song, and look completely successful.
+ */
+describe('re-opening a saved master', () => {
+  const EDIT = { trimStartSec: 12, trimEndSec: 200, fadeInSec: 0, fadeOutSec: 6, curve: 'qsin' as const };
+  const saved = (over: Record<string, unknown> = {}) => ({
+    id: 'saved-1',
+    status: 'done',
+    s3Key: 'audio/mastering/1700000000000_ab12_kadhal.wav',
+    masterKey: 'audio/mastering/1700000000000_ab12_kadhal-master-16LUFS.wav',
+    target: -16,
+    title: 'காதல் மழை',
+    savedAt: '2026-08-01T10:00:00.000Z',
+    edit: EDIT,
+    join: null,
+    source: { codec: 'pcm_s24le', sampleRate: 48000, channels: 2, channelLayout: 'stereo', bitDepth: 24, durationSec: 365 },
+    afterLufs: -16, afterTp: -3.2, beforeLra: 3, afterLra: 3,
+    error: null,
+    ...over,
+  });
+
+  /** Open the library and click through to re-master the first row. */
+  async function reopen(job: Record<string, unknown> = saved()) {
+    render(<MasteringStudio />);
+    mockedFetch.mockResolvedValueOnce(json({ success: true, masters: [job] }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Saved masters/i })); });
+    await act(async () => { fireEvent.click(await screen.findByRole('button', { name: /Edit & re-master/i })); });
+  }
+
+  it('restores the source and the trim recipe without a re-upload', async () => {
+    await reopen();
+
+    // Back at the "ready" stage, armed against the SAME source — no dropzone.
+    expect(screen.getByRole('button', { name: /Master to -16/ })).toBeEnabled();
+    expect(screen.queryByText(/Drop a WAV here/i)).not.toBeInTheDocument();
+    // The stored trim is in the boxes, not defaults.
+    expect((screen.getByLabelText(/Keep from/i) as HTMLInputElement).value).toBe('12');
+    expect((screen.getByLabelText(/Fade out/i) as HTMLInputElement).value).toBe('6');
+  });
+
+  it('sends the SAME source key and the restored recipe when re-mastered', async () => {
+    await reopen();
+    mockedFetch.mockResolvedValueOnce(json({ success: true, jobId: 'job-9', status: 'queued' }));
+    mockedFetch.mockResolvedValue(json(doneJob({ id: 'job-9', target: -16, afterLufs: -16 })));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -16/ })); });
+    await screen.findByText(/3 · Result/);
+
+    const enqueue = mockedFetch.mock.calls.find(
+      (c) => c[0] === '/api/admin/music-lab/master' && c[1]?.method === 'POST'
+    )!;
+    const body = JSON.parse(enqueue[1].body);
+    expect(body.s3Key).toBe('audio/mastering/1700000000000_ab12_kadhal.wav');
+    expect(body.target).toBe(-16);
+    expect(body.edit).toMatchObject({ trimStartSec: 12, trimEndSec: 200, fadeOutSec: 6, curve: 'qsin' });
+  });
+
+  it('does not re-send a tail trim that is just the end of the file', async () => {
+    // What the job's recorded duration is actually FOR. A saved edit ending at
+    // 365s on a 365s source is "runs to the end", not a trim; re-sending it as
+    // an explicit end marks the job as edited and buys a pre-pass that copies
+    // the file for nothing. Mutation-verified: with the duration withheld the
+    // redundant end is sent.
+    await reopen(saved({ edit: { ...EDIT, trimEndSec: 365 } }));
+    mockedFetch.mockResolvedValueOnce(json({ success: true, jobId: 'job-9', status: 'queued' }));
+    mockedFetch.mockResolvedValue(json(doneJob({ id: 'job-9', target: -16, afterLufs: -16 })));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -16/ })); });
+    await screen.findByText(/3 · Result/);
+
+    const enqueue = mockedFetch.mock.calls.find(
+      (c) => c[0] === '/api/admin/music-lab/master' && c[1]?.method === 'POST'
+    )!;
+    expect(JSON.parse(enqueue[1].body).edit.trimEndSec).toBeNull();
+  });
+
+  it('restores a two-part seam as well as a trim', async () => {
+    await reopen(saved({
+      join: { partBKey: 'audio/mastering/1700000000001_cd34_partb.wav', overlapSec: 4.5, curve: 'qsin', editB: { trimStartSec: 2, trimEndSec: null, fadeInSec: 0, fadeOutSec: 0, curve: 'qsin' } },
+    }));
+
+    expect((screen.getByLabelText(/Crossfade \(seconds\)/i) as HTMLInputElement).value).toBe('4.5');
+    expect((screen.getByLabelText(/Part B starts at/i) as HTMLInputElement).value).toBe('2');
+  });
+
+  it('carries the title across, so the download name survives', async () => {
+    // The name field lives in the RESULT panel, so the restored title has to
+    // survive the re-master to be worth anything — checking it at the "ready"
+    // stage would assert against an input that is not on screen yet.
+    await reopen();
+    mockedFetch.mockResolvedValueOnce(json({ success: true, jobId: 'job-9', status: 'queued' }));
+    mockedFetch.mockResolvedValue(json(doneJob({ id: 'job-9', target: -16, afterLufs: -16 })));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -16/ })); });
+    await screen.findByText(/3 · Result/);
+
+    expect((screen.getByLabelText(/Name this master/i) as HTMLInputElement).value).toBe('காதல் மழை');
+  });
+
+  it('does NOT present the re-opened job as already saved or published', async () => {
+    // A re-open is a new run. Offering "Saved to library" or a publish against
+    // it would act on a file this run has not produced.
+    await reopen();
+    expect(screen.queryByRole('button', { name: /Saved to library/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Publish web MP3/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/3 · Result/)).not.toBeInTheDocument();
+  });
+
+  it('clears a previous seam when re-opening a single-source master', async () => {
+    // Leaking the last recipe's Part B into an unrelated song is the same
+    // silent-wrong-audio failure the stale-Part-B fix addressed.
+    render(<MasteringStudio />);
+    mockedFetch.mockResolvedValueOnce(json({
+      success: true,
+      masters: [
+        saved({ id: 'with-join', title: 'Joined', join: { partBKey: 'audio/mastering/x_partb.wav', overlapSec: 3, curve: 'qsin', editB: null } }),
+        saved({ id: 'plain', title: 'Plain', join: null }),
+      ],
+    }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Saved masters/i })); });
+    const buttons = await screen.findAllByRole('button', { name: /Edit & re-master/i });
+
+    await act(async () => { fireEvent.click(buttons[0]); });
+    expect(screen.getByLabelText(/Crossfade \(seconds\)/i)).toBeInTheDocument();
+
+    mockedFetch.mockResolvedValueOnce(json({ success: true, masters: [] }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Saved masters/i })); });
+    const again = await screen.findAllByRole('button', { name: /Edit & re-master/i });
+    await act(async () => { fireEvent.click(again[1]); });
+
+    expect(screen.queryByLabelText(/Crossfade \(seconds\)/i)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Audit follow-ups on re-open (2026-08-05, before merge).
+ *
+ * "Restores the recipe" was only nearly true. The panel shows two of the seam's
+ * fields, and rebuilding the seam from those two silently dropped everything
+ * else — a non-default crossfade curve, and any tail trim or fade on Part B.
+ * Neither is reachable through today's UI, but both are accepted by the API and
+ * both CHANGE THE AUDIO, so a re-master would have produced a different song
+ * while reporting complete success.
+ */
+describe('buildJoinPayload — the seam survives what the panel cannot show', () => {
+  const seed = {
+    partBKey: 'audio/mastering/b.wav',
+    overlapSec: 3,
+    curve: 'tri' as const,
+    editB: { trimStartSec: 5, trimEndSec: 180, fadeInSec: 0, fadeOutSec: 2, curve: 'esin' as const },
+  };
+
+  it('keeps a non-default curve rather than resetting it to the default', () => {
+    const out = buildJoinPayload({ partBKey: 'audio/mastering/b.wav', overlapSec: 4, partBStartSec: 5, seed });
+    expect(out.curve).toBe('tri');
+    expect(out.overlapSec).toBe(4); // the panel still owns the overlap
+  });
+
+  it('keeps Part B\'s tail trim and fades, which the panel has no field for', () => {
+    const out = buildJoinPayload({ partBKey: 'audio/mastering/b.wav', overlapSec: 3, partBStartSec: 5, seed });
+    expect(out.editB).toMatchObject({ trimEndSec: 180, fadeOutSec: 2, curve: 'esin' });
+  });
+
+  it('lets the panel win on the head trim, including clearing it to zero', () => {
+    // Setting the box back to 0 is a real instruction, not an absent value.
+    const out = buildJoinPayload({ partBKey: 'audio/mastering/b.wav', overlapSec: 3, partBStartSec: 0, seed });
+    expect(out.editB?.trimStartSec).toBe(0);
+    expect(out.editB?.trimEndSec).toBe(180);
+  });
+
+  it('sends no editB at all for a plain new seam', () => {
+    const out = buildJoinPayload({ partBKey: 'audio/mastering/b.wav', overlapSec: 3, partBStartSec: 0, seed: null });
+    expect(out).toEqual({ partBKey: 'audio/mastering/b.wav', overlapSec: 3, curve: 'qsin', editB: null });
+  });
+
+  it('defaults the curve to equal power when there is nothing to inherit', () => {
+    expect(buildJoinPayload({ partBKey: 'b', overlapSec: 3, partBStartSec: 2, seed: null }).curve).toBe('qsin');
+  });
+});
+
+describe('re-open: the seam seed is scoped to its own Part B', () => {
+  const SEAM = {
+    partBKey: 'audio/mastering/1700000000001_cd34_partb.wav',
+    overlapSec: 4.5,
+    curve: 'tri' as const,
+    editB: { trimStartSec: 2, trimEndSec: 150, fadeInSec: 0, fadeOutSec: 3, curve: 'tri' as const },
+  };
+  const savedWithSeam = {
+    id: 'saved-2', status: 'done',
+    s3Key: 'audio/mastering/1700000000000_ab12_kadhal.wav',
+    masterKey: 'audio/mastering/1700000000000_ab12_kadhal-master-14LUFS.wav',
+    target: -14, title: 'Seamed', savedAt: '2026-08-01T10:00:00.000Z',
+    edit: null, join: SEAM,
+    source: { codec: 'pcm_s24le', sampleRate: 48000, channels: 2, channelLayout: 'stereo', bitDepth: 24, durationSec: 300 },
+    afterLufs: -14, afterTp: -3.2, error: null,
+  };
+
+  async function reopenSeamed() {
+    render(<MasteringStudio />);
+    mockedFetch.mockResolvedValueOnce(json({ success: true, masters: [savedWithSeam] }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Saved masters/i })); });
+    await act(async () => { fireEvent.click(await screen.findByRole('button', { name: /Edit & re-master/i })); });
+  }
+
+  it('re-masters with the ORIGINAL curve and Part B edit, not rebuilt defaults', async () => {
+    await reopenSeamed();
+    mockedFetch.mockResolvedValueOnce(json({ success: true, jobId: 'job-9', status: 'queued' }));
+    mockedFetch.mockResolvedValue(json(doneJob({ id: 'job-9' })));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
+    await screen.findByText(/3 · Result/);
+
+    const body = JSON.parse(
+      mockedFetch.mock.calls.find((c) => c[0] === '/api/admin/music-lab/master' && c[1]?.method === 'POST')![1].body
+    );
+    expect(body.join).toMatchObject({ partBKey: SEAM.partBKey, overlapSec: 4.5, curve: 'tri' });
+    expect(body.join.editB).toMatchObject({ trimStartSec: 2, trimEndSec: 150, fadeOutSec: 3 });
+  });
+
+  it('does NOT apply the old seam to a different Part B', async () => {
+    // Swapping the file must not inherit the previous one's trim — that would
+    // cut an unrelated section and master cleanly.
+    await reopenSeamed();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Remove/i })); });
+
+    const input = document.getElementById(
+      screen.getByText(/Add Part B/i).closest('label')!.getAttribute('for')!
+    ) as HTMLInputElement;
+    const f = new File(['x'], 'other-b.wav', { type: 'audio/wav' });
+    Object.defineProperty(f, 'size', { value: 2048 });
+    mockedFetch.mockResolvedValueOnce(
+      json({ success: true, uploadUrl: 'https://s3/u', fields: { key: 'k' }, key: 'audio/mastering/zz_other.wav' })
+    );
+    await act(async () => { fireEvent.change(input, { target: { files: [f] } }); });
+
+    mockedFetch.mockResolvedValueOnce(json({ success: true, jobId: 'job-9', status: 'queued' }));
+    mockedFetch.mockResolvedValue(json(doneJob({ id: 'job-9' })));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
+    await screen.findByText(/3 · Result/);
+
+    const body = JSON.parse(
+      mockedFetch.mock.calls.find((c) => c[0] === '/api/admin/music-lab/master' && c[1]?.method === 'POST')![1].body
+    );
+    expect(body.join.partBKey).toBe('audio/mastering/zz_other.wav');
+    expect(body.join.curve).toBe('qsin');
+    expect(body.join.editB).toBeNull();
   });
 });
