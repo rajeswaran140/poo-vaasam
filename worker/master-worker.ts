@@ -39,6 +39,15 @@ import {
   type MasterEdit,
 } from '@/lib/master-edit';
 import {
+  buildSilenceArgs,
+  buildTimelineArgs,
+  parseSilences,
+  parseTimeline,
+  leadingSilenceSec,
+  trailingSilenceSec,
+  tailDropLu,
+} from '@/lib/master-analysis';
+import {
   buildVideoArgs,
   videoKeyFor,
   VIDEO_HEIGHTS,
@@ -81,6 +90,25 @@ async function patch(jobId: string, fields: Record<string, unknown>): Promise<vo
   }));
 }
 
+/** Same shape as patch(), against the analysis record. */
+async function patchAnalysis(id: string, fields: Record<string, unknown>): Promise<void> {
+  const names: Record<string, string> = {};
+  const values: Record<string, unknown> = {};
+  const sets: string[] = [];
+  for (const [k, v] of Object.entries({ ...fields, updatedAt: new Date().toISOString() })) {
+    names[`#${k}`] = k;
+    values[`:${k}`] = v;
+    sets.push(`#${k} = :${k}`);
+  }
+  await ddb.send(new UpdateCommand({
+    TableName: TABLE,
+    Key: { PK: `MASTERANALYSIS#${id}`, SK: 'METADATA' },
+    UpdateExpression: `SET ${sets.join(', ')}`,
+    ExpressionAttributeNames: names,
+    ExpressionAttributeValues: values,
+  }));
+}
+
 const ff = (args: string[]) => spawnSync(FFMPEG, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 
 interface MasterEvent {
@@ -96,6 +124,106 @@ interface MasterEvent {
    * (and so re-measure) a file that is already finished.
    */
   render?: { audioKey?: string; coverKey?: string; height?: number };
+  /**
+   * A pre-master ANALYSIS — measure a source before anything is decided about
+   * it. Handled before the mastering guards, like a render: it carries no
+   * target and produces no audio.
+   */
+  analyse?: { analysisId?: string; s3Key?: string; partBKey?: string | null };
+}
+
+/**
+ * Measure one file: how much dead air at each end, and whether its tail is
+ * already fading.
+ *
+ * Two ffmpeg passes, both read-only. The integrated loudness comes free from
+ * the same ebur128 pass that yields the timeline, so comparing two parts costs
+ * one decode each rather than two.
+ */
+function measureSource(path: string): {
+  durationSec: number | null;
+  leading: number | null;
+  trailing: number | null;
+  drop: number | null;
+  integrated: number | null;
+} {
+  const info = probeSource(path);
+  const durationSec = info?.durationSec ?? null;
+
+  const sil = ff(buildSilenceArgs(path));
+  const spans = parseSilences(`${sil.stdout ?? ''}${sil.stderr ?? ''}`, durationSec ?? 0);
+  const leading = leadingSilenceSec(spans);
+  const trailing = trailingSilenceSec(spans, durationSec ?? 0);
+
+  const tl = ff(buildTimelineArgs(path));
+  const log = `${tl.stdout ?? ''}${tl.stderr ?? ''}`;
+  const points = parseTimeline(log);
+  // ebur128's Summary block prints the integrated figure at the end.
+  const integ = /I:\s*(-?[\d.]+)\s*LUFS/g;
+  let m: RegExpExecArray | null;
+  let integrated: number | null = null;
+  while ((m = integ.exec(log)) !== null) integrated = Number(m[1]);
+
+  return { durationSec, leading, trailing, drop: tailDropLu(points, trailing), integrated };
+}
+
+/**
+ * Run a pre-master analysis and record the MEASUREMENTS.
+ *
+ * Deliberately stores numbers, never verdicts: the app decides what a 4 LU tail
+ * drop means, so a threshold or a wording change ships with an Amplify build
+ * instead of a Lambda redeploy.
+ */
+async function analyseSource(
+  analysisId: string,
+  spec: NonNullable<MasterEvent['analyse']>,
+  bucket: string
+) {
+  const s3Key = spec.s3Key ?? '';
+  const partBKey = spec.partBKey || null;
+  if (!isMasteringKey(s3Key) || (partBKey && !isMasteringKey(partBKey))) {
+    await patchAnalysis(analysisId, {
+      status: 'error',
+      error: { code: 'bad-key', message: 'analysis sources must be in the mastering workspace' },
+    });
+    return { ok: false };
+  }
+
+  const dir = mkdtempSync(join(tmpdir(), 'analyse-'));
+  const aPath = join(dir, 'a.wav');
+  const bPath = join(dir, 'b.wav');
+  try {
+    const a = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: s3Key }));
+    writeFileSync(aPath, Buffer.from(await a.Body!.transformToByteArray()));
+    const A = measureSource(aPath);
+
+    let B: ReturnType<typeof measureSource> | null = null;
+    if (partBKey) {
+      const b = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: partBKey }));
+      writeFileSync(bPath, Buffer.from(await b.Body!.transformToByteArray()));
+      B = measureSource(bPath);
+    }
+
+    await patchAnalysis(analysisId, {
+      status: 'done',
+      durationSec: A.durationSec,
+      leadingSilenceSec: A.leading,
+      trailingSilenceSec: A.trailing,
+      tailDropLu: A.drop,
+      integratedLufs: A.integrated,
+      partBDurationSec: B?.durationSec ?? null,
+      partBIntegratedLufs: B?.integrated ?? null,
+      partBTailDropLu: B?.drop ?? null,
+    });
+    return { ok: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[master-worker] analysis failed:', message);
+    await patchAnalysis(analysisId, { status: 'error', error: { code: 'exception', message } }).catch(() => {});
+    return { ok: false };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 /**
@@ -182,6 +310,15 @@ function probeSource(path: string): SourceInfo | null {
 export const handler = async (event: MasterEvent) => {
   const jobId = event?.jobId;
   const s3Key = event?.s3Key;
+  if (event?.analyse) {
+    const id = event.analyse.analysisId;
+    if (!id || !TAKES_BUCKET) {
+      console.error('[master-worker] bad analyse event');
+      return { ok: false, error: 'analysisId and TAKES_BUCKET are required' };
+    }
+    return await analyseSource(id, event.analyse, TAKES_BUCKET);
+  }
+
   // A render is a different job entirely — branch before the mastering guards,
   // which are about a SOURCE key this event does not carry.
   if (event?.render) {

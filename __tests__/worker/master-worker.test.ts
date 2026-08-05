@@ -69,6 +69,137 @@ beforeEach(() => {
  * re-measured a finished master would rewrite numbers the operator has already
  * read and acted on.
  */
+/**
+ * Pre-master analysis.
+ *
+ * Read-only: it decodes a source and writes nothing but numbers. The property
+ * worth pinning is that it stores MEASUREMENTS and never verdicts — the app
+ * decides what a 4 LU tail drop means, so a threshold change ships with an
+ * Amplify build instead of a Lambda redeploy. A worker that quietly started
+ * storing "fading: true" would move that decision back behind a deploy.
+ */
+describe('source analysis', () => {
+  const SRC = 'audio/mastering/1_a_song.wav';
+  const PARTB = 'audio/mastering/1_b_partb.wav';
+  const HEADER = `ffmpeg version 6.0
+Input #0, wav, from '/tmp/a.wav':
+  Duration: 00:04:00.00, bitrate: 1536 kb/s
+  Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 48000 Hz, stereo, s16, 1536 kb/s
+`;
+  const SILENCE = `[silencedetect @ 0x1] silence_start: 0
+[silencedetect @ 0x1] silence_end: 2.5 | silence_duration: 2.5
+[silencedetect @ 0x1] silence_start: 236
+`;
+  /** 25s of steady programme, then a clear fade in the final second. */
+  const timeline = (tailLufs: number) => {
+    const lines: string[] = [];
+    let t = 0;
+    for (let i = 0; i < 250; i++) { t += 0.1; lines.push(`[Parsed_ebur128_0 @ 0x1] t: ${t.toFixed(1)}  M: -18.0 S: -18 I: -17.5 LUFS  LRA: 4 LU`); }
+    for (let i = 0; i < 10; i++) { t += 0.1; lines.push(`[Parsed_ebur128_0 @ 0x1] t: ${t.toFixed(1)}  M: ${tailLufs.toFixed(1)} S: -18 I: -17.5 LUFS  LRA: 4 LU`); }
+    return lines.join('\n');
+  };
+
+  const NO_TRAILING = `[silencedetect @ 0x1] silence_start: 0
+[silencedetect @ 0x1] silence_end: 2.5 | silence_duration: 2.5
+`;
+  const wire = (tailLufs = -18, silence = SILENCE) => {
+    spawnSync.mockReset();
+    spawnSync.mockImplementation((_b: string, args: string[]) => {
+      const j = args.join(' ');
+      if (j.includes('silencedetect')) return { status: 0, stdout: '', stderr: silence };
+      if (j.includes('ebur128')) return { status: 0, stdout: '', stderr: timeline(tailLufs) };
+      return { status: 0, stdout: '', stderr: HEADER }; // the probe
+    });
+    s3Send.mockReset();
+    s3Send.mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'Body' in cmd.input
+        ? Promise.resolve({})
+        : Promise.resolve({ Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) } })
+    );
+  };
+
+  it('stores measurements, never verdicts', async () => {
+    wire(-30);
+    const res = await handler({ analyse: { analysisId: 'an-1', s3Key: SRC } } as never);
+
+    expect(res).toMatchObject({ ok: true });
+    const p = patched();
+    expect(p).toMatchObject({ status: 'done', leadingSilenceSec: 2.5, durationSec: 240 });
+    expect(typeof p.tailDropLu).toBe('number');
+    // The words belong to the app. A worker storing them would put the
+    // threshold behind a Lambda redeploy.
+    for (const word of ['fading', 'verdict', 'message', 'fadeState']) {
+      expect(p).not.toHaveProperty(word);
+    }
+  });
+
+  it('measures the tail drop rather than deciding about it', async () => {
+    // No trailing silence here: the drop is about the MUSIC's shape, and a file
+    // that ends in dead air is a trim problem measured separately.
+    wire(-30, NO_TRAILING); // 12 LU below the body
+    await handler({ analyse: { analysisId: 'an-1', s3Key: SRC } } as never);
+    expect(patched().tailDropLu).toBeCloseTo(12, 1);
+
+    send.mockClear();
+    wire(-18.5, NO_TRAILING); // steady
+    await handler({ analyse: { analysisId: 'an-2', s3Key: SRC } } as never);
+    expect(patched().tailDropLu).toBeCloseTo(0.5, 1);
+  });
+
+  it('excludes trailing SILENCE from the tail measurement', async () => {
+    // With dead air counted as music the drop looks enormous and the advice
+    // flips from "trim this" to "re-roll the take".
+    wire(-30); // fixture: 4s of trailing silence, timeline ends at 26s
+    await handler({ analyse: { analysisId: 'an-1', s3Key: SRC } } as never);
+    expect(patched().tailDropLu).toBeCloseTo(0, 1);
+  });
+
+  it('closes a trailing silence at the duration, not at the last log line', async () => {
+    // silencedetect prints silence_start with no end when the file ends inside
+    // it — the commonest case in a SUNO export.
+    wire();
+    await handler({ analyse: { analysisId: 'an-1', s3Key: SRC } } as never);
+    expect(patched().trailingSilenceSec).toBe(4);
+  });
+
+  it('measures Part B too when one is given, and only then', async () => {
+    wire();
+    await handler({ analyse: { analysisId: 'an-1', s3Key: SRC, partBKey: PARTB } } as never);
+    const gets = s3Send.mock.calls.map((c) => c[0] as { input: Record<string, unknown> })
+      .filter((c) => !('Body' in c.input)).map((c) => c.input.Key);
+    expect(gets).toEqual([SRC, PARTB]);
+    expect(patched().partBIntegratedLufs).toBeCloseTo(-17.5, 1);
+
+    wire();
+    await handler({ analyse: { analysisId: 'an-2', s3Key: SRC } } as never);
+    expect(patched().partBIntegratedLufs).toBeNull();
+  });
+
+  it('writes nothing to S3 — it is a read-only pass', async () => {
+    wire();
+    await handler({ analyse: { analysisId: 'an-1', s3Key: SRC } } as never);
+    const puts = s3Send.mock.calls.map((c) => c[0] as { input: Record<string, unknown> }).filter((c) => 'Body' in c.input);
+    expect(puts).toHaveLength(0);
+  });
+
+  it('refuses keys outside the workspace without reading anything', async () => {
+    wire();
+    for (const spec of [{ s3Key: 'audio/poem-music/amma.wav' }, { s3Key: SRC, partBKey: 'audio/poem-music/x.wav' }]) {
+      s3Send.mockClear();
+      const res = await handler({ analyse: { analysisId: 'an-1', ...spec } } as never);
+      expect(res).toEqual({ ok: false });
+      expect(patched()).toMatchObject({ status: 'error', error: { code: 'bad-key' } });
+      expect(s3Send).not.toHaveBeenCalled();
+    }
+  });
+
+  it('never runs a loudnorm pass — analysis must not master anything', async () => {
+    wire();
+    await handler({ analyse: { analysisId: 'an-1', s3Key: SRC } } as never);
+    expect(spawnSync.mock.calls.every((c) => !(c[1] as string[]).join(' ').includes('loudnorm'))).toBe(true);
+  });
+});
+
 describe('video render', () => {
   const AUDIO = 'audio/mastering/1_a_song-master-14LUFS.wav';
   const COVER = 'audio/mastering/1_c_cover.jpg';
