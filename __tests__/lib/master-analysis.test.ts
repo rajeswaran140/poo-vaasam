@@ -24,14 +24,28 @@ import {
   LEVEL_MATCH_TOLERANCE_LU,
 } from '@/lib/master-analysis';
 
-/** An ebur128 momentary series: `secs` seconds at `lufs`, one point per 100 ms. */
+/**
+ * An ebur128 momentary series in ffmpeg's ACTUAL output format, captured from a
+ * real run:
+ *
+ *   [Parsed_ebur128_0 @ 0x55] t: 0.0999792  TARGET:-23 LUFS    M:-120.7 S:-120.7     I: -70.0 LUFS       LRA:   0.0 LU
+ *
+ * Two details a hand-written fixture gets wrong, and both did: `TARGET:` sits
+ * BETWEEN t: and M:, and M has no space after its colon. A parser written
+ * against the tidy imagined format matched nothing on real audio and made the
+ * tail check permanently "unknown" — invisible, because unknown is a legitimate
+ * state. Caught by running real ffmpeg over a real source; keep this format.
+ */
 const series = (parts: Array<{ secs: number; lufs: number }>): string => {
   const lines: string[] = [];
   let t = 0;
   for (const p of parts) {
     for (let i = 0; i < p.secs * 10; i++) {
       t += 0.1;
-      lines.push(`[Parsed_ebur128_0 @ 0x55] t: ${t.toFixed(1)}  M: ${p.lufs.toFixed(1)} S: -23.0 I: -24.0 LUFS  LRA: 5.0 LU`);
+      lines.push(
+        `[Parsed_ebur128_0 @ 0x55df32723940] t: ${t.toFixed(4)}  TARGET:-23 LUFS    ` +
+        `M:${p.lufs.toFixed(1)} S:-23.0     I: -24.0 LUFS       LRA:   5.0 LU`
+      );
     }
   }
   return lines.join('\n');
@@ -89,12 +103,15 @@ describe('the loudness timeline', () => {
     const pts = parseTimeline(series([{ secs: 1, lufs: -20 }]));
     expect(pts).toHaveLength(10);
     expect(pts[0]).toEqual({ tSec: 0.1, momentaryLufs: -20 });
+    // The TARGET field between t: and M: is what a naive regex trips on.
+    expect(series([{ secs: 0.1, lufs: -20 }])).toContain('TARGET:-23 LUFS');
   });
 
   it('drops ebur128\'s silence floor rather than averaging it in', () => {
     // -120 and below is "no signal", not a measurement. Leaving it in would
     // drag the tail average down and report a fade on a file that just ends.
-    const log = series([{ secs: 1, lufs: -20 }]) + '\n[Parsed_ebur128_0 @ 0x55] t: 2.0  M: -120.7 S: -70 I: -70 LUFS  LRA: 0 LU';
+    const log = series([{ secs: 1, lufs: -20 }]) +
+      '\n[Parsed_ebur128_0 @ 0x55] t: 2.0  TARGET:-23 LUFS    M:-120.7 S:-120.7     I: -70.0 LUFS       LRA:   0.0 LU';
     expect(parseTimeline(log)).toHaveLength(10);
   });
 
@@ -104,28 +121,48 @@ describe('the loudness timeline', () => {
 });
 
 describe('fadeVerdict — the finding that changes what you do', () => {
-  it('catches a real fade-out and says to re-roll, not to fix it', () => {
-    const v = fadeVerdict(parseTimeline(series([
-      { secs: 20, lufs: -18 },
-      { secs: 4, lufs: -18 },
-      { secs: 1, lufs: -26 },
-    ])));
+  const faded = () => parseTimeline(series([
+    { secs: 20, lufs: -18 }, { secs: 4, lufs: -18 }, { secs: 1, lufs: -26 },
+  ]));
+
+  it('catches a real fade-out on the SEAM side and says to re-roll', () => {
+    const v = fadeVerdict(faded(), 0, 'lead-in');
     expect(v.state).toBe('fading');
     expect(v.dropLu).toBe(8);
     expect(v.message).toMatch(/Re-roll/);
     expect(v.message).toMatch(/cannot be removed/);
   });
 
+  /**
+   * The scoping that a real run forced. Both parts of வானவில்லே fade at the tail
+   * (12.6 LU and 18 LU) — and only Part A's mattered, because Part B's fade IS
+   * the end of the song. Warning on an ending would fire on nearly every file
+   * and teach the operator to ignore the panel.
+   */
+  it('does NOT tell you to re-roll a song for ending with a fade', () => {
+    const v = fadeVerdict(faded(), 0, 'ending');
+    expect(v.state).toBe('fading');
+    expect(v.message).toMatch(/normal for a final section/);
+    expect(v.message).not.toMatch(/Re-roll/);
+  });
+
+  it('defaults to treating a tail as an ending, not a seam', () => {
+    // A standalone master is the common case; assuming "seam" would make the
+    // alarming wording the default.
+    expect(fadeVerdict(faded()).message).not.toMatch(/Re-roll/);
+  });
+
   it('does NOT cry fade on a song that merely ends softly', () => {
     // A 2 LU drift is a sustained note or a reverb tail. Flagging it would send
     // Raj to re-roll a perfectly good take.
-    const v = fadeVerdict(parseTimeline(series([
+    const points = parseTimeline(series([
       { secs: 20, lufs: -18 },
       { secs: 4, lufs: -18 },
       { secs: 1, lufs: -20 },
-    ])));
-    expect(v.state).toBe('steady');
-    expect(v.message).toMatch(/good crossfade material/);
+    ]));
+    expect(fadeVerdict(points, 0, 'lead-in').state).toBe('steady');
+    expect(fadeVerdict(points, 0, 'lead-in').message).toMatch(/good crossfade material/);
+    expect(fadeVerdict(points, 0, 'ending').state).toBe('steady');
   });
 
   it('sits exactly on the threshold without flapping', () => {

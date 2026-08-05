@@ -33,8 +33,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       analysis,
       verdicts: ready
         ? {
-            fade: fadeVerdictFromDrop(analysis.tailDropLu),
-            partBFade: analysis.partBKey ? fadeVerdictFromDrop(analysis.partBTailDropLu) : null,
+            // Part A leads into a seam ONLY when a Part B exists; otherwise its
+            // tail is the end of the song and a fade there is correct.
+            fade: fadeVerdictFromDrop(analysis.tailDropLu, analysis.partBKey ? 'lead-in' : 'ending'),
+            partBFade: analysis.partBKey ? fadeVerdictFromDrop(analysis.partBTailDropLu, 'ending') : null,
             level: analysis.partBKey
               ? levelVerdict(analysis.integratedLufs, analysis.partBIntegratedLufs)
               : null,

@@ -131,7 +131,13 @@ export interface TimelinePoint {
 export function parseTimeline(log: string): TimelinePoint[] {
   const points: TimelinePoint[] = [];
   for (const line of log.split('\n')) {
-    const m = /t:\s*([\d.]+)\s+M:\s*(-?[\d.]+)/.exec(line);
+    // Real ebur128 output puts TARGET between t: and M: —
+    //   `t: 0.0999792  TARGET:-23 LUFS    M:-120.7 S:-120.7 ...`
+    // and prints M with no space after the colon. A regex expecting only
+    // whitespace between the two matched NOTHING on real audio, which made the
+    // tail check silently unjudgeable on every file. Caught by running the real
+    // ffmpeg against a real source; no fixture would have found it.
+    const m = /t:\s*([\d.]+).*?M:\s*(-?[\d.]+)/.exec(line);
     if (!m) continue;
     const momentaryLufs = Number(m[2]);
     if (momentaryLufs <= -120) continue;
@@ -141,6 +147,20 @@ export function parseTimeline(log: string): TimelinePoint[] {
 }
 
 export type FadeState = 'fading' | 'steady' | 'unknown';
+
+/**
+ * What this file's tail is FOR, which decides whether a fade is a problem.
+ *
+ * `lead-in`  — it hands over to another section at a crossfade. A baked-in fade
+ *              here double-attenuates the seam, so it is actionable: re-roll.
+ * `ending`   — it is the end of the song (a final section, or a standalone
+ *              master). Fading out is how songs end; warning about it would
+ *              fire on nearly every file and train the operator to ignore this
+ *              panel. Measured 2026-08-05 on real SUNO output: both parts of
+ *              வானவில்லே fade at the tail (12.6 LU and 18 LU), and only Part A's
+ *              mattered.
+ */
+export type TailRole = 'lead-in' | 'ending';
 
 export interface FadeVerdict {
   state: FadeState;
@@ -183,30 +203,42 @@ export function tailDropLu(points: TimelinePoint[], trailingSilence = 0): number
  * and the wording can be tuned without a Lambda redeploy — which in this module
  * is the difference between a one-line change and a trap.
  */
-export function fadeVerdictFromDrop(drop: number | null): FadeVerdict {
+export function fadeVerdictFromDrop(drop: number | null, role: TailRole = 'ending'): FadeVerdict {
   if (drop === null || !Number.isFinite(drop)) {
     return { state: 'unknown', dropLu: null, message: 'Not enough audio to judge the tail.' };
   }
-  if (drop >= FADE_DROP_DB) {
+  if (drop < FADE_DROP_DB) {
     return {
-      state: 'fading',
+      state: 'steady',
       dropLu: drop,
       message:
-        `This take already fades out — the last second sits ${drop} LU below the four before it. ` +
-        `A baked-in fade cannot be removed, and crossfading into it double-attenuates the seam. ` +
-        `Re-roll the generation rather than fixing it here.`,
+        role === 'lead-in'
+          ? `The tail holds its level (last second within ${Math.abs(drop)} LU of the four before it) — good crossfade material.`
+          : `The ending holds its level to the last second (within ${Math.abs(drop)} LU).`,
     };
   }
-  return {
-    state: 'steady',
-    dropLu: drop,
-    message: `The tail holds its level (last second within ${Math.abs(drop)} LU of the four before it) — good crossfade material.`,
-  };
+  // A fade is only a PROBLEM on the side that leads into a seam. On a final
+  // section — or a standalone song — fading out is how songs end, and warning
+  // about it would fire on almost every file this module ever sees.
+  return role === 'lead-in'
+    ? {
+        state: 'fading',
+        dropLu: drop,
+        message:
+          `Part A already fades out — its last second sits ${drop} LU below the four before it. ` +
+          `A baked-in fade cannot be removed, and crossfading into one double-attenuates the seam, ` +
+          `so the join will dip. Re-roll this section rather than fixing it here.`,
+      }
+    : {
+        state: 'fading',
+        dropLu: drop,
+        message: `Ends with a fade (${drop} LU over the last second) — normal for a final section.`,
+      };
 }
 
 /** Measure and judge in one step. The worker uses the two halves separately. */
-export function fadeVerdict(points: TimelinePoint[], trailingSilence = 0): FadeVerdict {
-  return fadeVerdictFromDrop(tailDropLu(points, trailingSilence));
+export function fadeVerdict(points: TimelinePoint[], trailingSilence = 0, role: TailRole = 'ending'): FadeVerdict {
+  return fadeVerdictFromDrop(tailDropLu(points, trailingSilence), role);
 }
 
 export interface LevelVerdict {
