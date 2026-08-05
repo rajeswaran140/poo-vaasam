@@ -27,7 +27,7 @@ import {
 import { adminFetch } from '@/lib/client-auth';
 import { pollJob } from '@/lib/poll-job';
 import { statusFor, platformLanding } from '@/lib/loudness-targets';
-import { MAX_UPLOAD_BYTES, ACCEPTED_UPLOAD_TYPES } from '@/lib/mastering-storage';
+import { MAX_UPLOAD_BYTES, ACCEPTED_UPLOAD_TYPES, downloadFilename } from '@/lib/mastering-storage';
 import { buildMasterReport, reportFilename, sourceInfoLine, dynamicsPreserved, streamingReadiness, joinLine } from '@/lib/master-report';
 import { MasteringComparePlayer } from '@/components/admin/MasteringComparePlayer';
 import { MasteringPlayer } from '@/components/admin/MasteringPlayer';
@@ -186,6 +186,24 @@ export function MasteringStudio() {
   const [coverUploading, setCoverUploading] = useState(false);
   const [videoHeight, setVideoHeight] = useState<number>(1440);
   const [rendering, setRendering] = useState(false);
+  /**
+   * Bumped whenever a saved recipe is loaded. Used as a `key` on the edit
+   * panels so they remount and re-seed: they hold their own state, so without a
+   * remount a re-opened trim would be read once and then ignored.
+   */
+  const [recipeNonce, setRecipeNonce] = useState(0);
+  /** The edit a re-opened master arrived with, seeding the trim panel. */
+  const [seedEdit, setSeedEdit] = useState<MasterEdit | null>(null);
+  /**
+   * The re-opened source's duration, from the job that recorded it.
+   *
+   * Held separately because `reopenMaster` clears `job` — a re-open is a NEW
+   * run, so presenting the old job's result would be wrong — and reading the
+   * duration off `job` therefore always yielded 0. Without it the panel cannot
+   * tell a saved "ends at 365" on a 365s source from a real tail trim, and
+   * re-sends a redundant edit that costs a pre-pass copying the file for nothing.
+   */
+  const [seedDurationSec, setSeedDurationSec] = useState(0);
   /** Where the web MP3 landed on the site's audio path, once staged. */
   const [published, setPublished] = useState<{ key: string; replaced: boolean } | null>(null);
   const [library, setLibrary] = useState<MasterJob[] | null>(null);
@@ -425,6 +443,9 @@ export function MasteringStudio() {
     // cleanly while doing it.
     setPartB(null);
     setPartBStartSec(0);
+    setSeedEdit(null);
+    setSeedDurationSec(0);
+    setRecipeNonce((n) => n + 1);
     setStage('uploading');
     setSent({ loaded: 0, total: picked.size });
     setAnnounce(`Uploading ${picked.name}.`);
@@ -814,6 +835,57 @@ export function MasteringStudio() {
     }
   }, [renaming, rowBusy, library]);
 
+  /**
+   * Re-open a saved master for another pass.
+   *
+   * The point of the module's ordering is that an edit is a RECIPE over an
+   * untouched source, so a saved job already carries everything needed to run
+   * again: the source key, the trim, the seam. Before this, coming back the next
+   * day meant re-uploading the WAV to change a fade by half a second.
+   *
+   * This deliberately does NOT re-run anything. It restores the recipe and
+   * hands control back at the "ready" stage, so the admin adjusts and presses
+   * Master — the same path a fresh upload takes, and the same validation.
+   */
+  const reopenMaster = useCallback((m: MasterJob) => {
+    if (!m.s3Key) return;
+    abort.current?.abort();
+    setError(null);
+    setJob(null);
+    setJobId(null);
+    // A re-opened master is a NEW job: it has not been saved or published, and
+    // showing yesterday's state against it would offer to publish a file this
+    // run has not produced.
+    setSavedAt(null);
+    setPublished(null);
+    setCover(null);
+
+    setSourceKey(m.s3Key);
+    // Name only — the File itself cannot survive, so the trim panel falls back
+    // to numeric entry, which is exactly what it does after any remount.
+    setSource({ name: downloadFilename(m.s3Key), size: 0 });
+    setPickedFile(null);
+    setTarget(m.target);
+    setMasterName(m.title ?? '');
+    setEdit(m.edit);
+    setSeedEdit(m.edit);
+    setSeedDurationSec(m.source?.durationSec ?? 0);
+
+    if (m.join) {
+      setPartB({ key: m.join.partBKey, name: downloadFilename(m.join.partBKey) });
+      setOverlapSec(m.join.overlapSec);
+      setPartBStartSec(m.join.editB?.trimStartSec ?? 0);
+    } else {
+      setPartB(null);
+      setPartBStartSec(0);
+    }
+
+    setRecipeNonce((n) => n + 1);
+    setStage('ready');
+    setLibraryOpen(false);
+    setAnnounce(`Re-opened ${m.title ?? 'master'}. Adjust and master again.`);
+  }, []);
+
   const toggleLibrary = useCallback(() => {
     setLibraryOpen((open) => {
       if (!open && library === null) void loadLibrary();
@@ -967,7 +1039,9 @@ export function MasteringStudio() {
             <FileAudio className="h-5 w-5 shrink-0 text-gray-400" aria-hidden="true" />
             <div className="min-w-0">
               <p className="truncate font-medium text-gray-900 dark:text-gray-100">{source.name}</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{MB(source.size)} · uploaded</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {source.size > 0 ? `${MB(source.size)} · uploaded` : 'from the library · source unchanged'}
+              </p>
             </div>
             {stage !== 'mastering' && (
               <button
@@ -1028,15 +1102,19 @@ export function MasteringStudio() {
               UNTRIMMED file. Disabled rather than removed.
             */}
             <MasteringTrimPanel
+              key={`trim-${recipeNonce}`}
               file={pickedFile}
               onChange={setEdit}
               disabled={stage === 'mastering'}
+              initialEdit={seedEdit}
+              knownDurationSec={seedDurationSec}
             />
 
             {/* Both panels edit the SAME pre-pass, upstream of every
                 measurement — which is what makes "master the assembled song
                 once" the only available order. */}
             <MasteringJoinPanel
+              key={`join-${recipeNonce}`}
               partB={partB}
               onPick={(f) => void onPickPartB(f)}
               onClear={() => { setPartB(null); setPartBStartSec(0); }}
@@ -1592,6 +1670,18 @@ export function MasteringStudio() {
                     className="text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
                   >
                     MP3
+                  </button>
+                )}
+                {/* The source is never modified, so re-opening costs nothing and
+                    loses nothing — it restores the recipe and hands back
+                    control at the "ready" stage. */}
+                {m.s3Key && (
+                  <button
+                    type="button"
+                    onClick={() => reopenMaster(m)}
+                    className="text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
+                  >
+                    Edit &amp; re-master
                   </button>
                 )}
               </li>

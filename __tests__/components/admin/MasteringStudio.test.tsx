@@ -25,6 +25,10 @@ jest.mock('lucide-react', () => ({
   Scissors: () => <svg data-testid="i-scissors" />,
   Link2: () => <svg data-testid="i-link" />,
   Film: () => <svg data-testid="i-film" />,
+  // Library ROWS use these three; no earlier test rendered a non-empty list.
+  Play: () => <svg data-testid="i-play" />,
+  Pause: () => <svg data-testid="i-pause" />,
+  Pencil: () => <svg data-testid="i-pencil" />,
 }));
 // The before/after player is its own unit (see MasteringComparePlayer.test);
 // stub it here so the Studio suite tests wiring, not the player's Web Audio /
@@ -829,5 +833,145 @@ describe('render for YouTube', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/x264 died/);
     expect(screen.getByRole('button', { name: /Render video/ })).toBeEnabled();
+  });
+});
+
+/**
+ * Edit & re-master from the library.
+ *
+ * The module's whole ordering rests on an edit being a RECIPE over an untouched
+ * source, which means a saved job already carries everything needed to run
+ * again. Before this, coming back the next day to change a fade by half a second
+ * meant re-uploading the WAV.
+ *
+ * The property under test is the ROUND TRIP: what was saved is what comes back
+ * and what gets sent. A recipe that silently loses its trim would re-master the
+ * whole file, produce a longer song, and look completely successful.
+ */
+describe('re-opening a saved master', () => {
+  const EDIT = { trimStartSec: 12, trimEndSec: 200, fadeInSec: 0, fadeOutSec: 6, curve: 'qsin' as const };
+  const saved = (over: Record<string, unknown> = {}) => ({
+    id: 'saved-1',
+    status: 'done',
+    s3Key: 'audio/mastering/1700000000000_ab12_kadhal.wav',
+    masterKey: 'audio/mastering/1700000000000_ab12_kadhal-master-16LUFS.wav',
+    target: -16,
+    title: 'காதல் மழை',
+    savedAt: '2026-08-01T10:00:00.000Z',
+    edit: EDIT,
+    join: null,
+    source: { codec: 'pcm_s24le', sampleRate: 48000, channels: 2, channelLayout: 'stereo', bitDepth: 24, durationSec: 365 },
+    afterLufs: -16, afterTp: -3.2, beforeLra: 3, afterLra: 3,
+    error: null,
+    ...over,
+  });
+
+  /** Open the library and click through to re-master the first row. */
+  async function reopen(job: Record<string, unknown> = saved()) {
+    render(<MasteringStudio />);
+    mockedFetch.mockResolvedValueOnce(json({ success: true, masters: [job] }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Saved masters/i })); });
+    await act(async () => { fireEvent.click(await screen.findByRole('button', { name: /Edit & re-master/i })); });
+  }
+
+  it('restores the source and the trim recipe without a re-upload', async () => {
+    await reopen();
+
+    // Back at the "ready" stage, armed against the SAME source — no dropzone.
+    expect(screen.getByRole('button', { name: /Master to -16/ })).toBeEnabled();
+    expect(screen.queryByText(/Drop a WAV here/i)).not.toBeInTheDocument();
+    // The stored trim is in the boxes, not defaults.
+    expect((screen.getByLabelText(/Keep from/i) as HTMLInputElement).value).toBe('12');
+    expect((screen.getByLabelText(/Fade out/i) as HTMLInputElement).value).toBe('6');
+  });
+
+  it('sends the SAME source key and the restored recipe when re-mastered', async () => {
+    await reopen();
+    mockedFetch.mockResolvedValueOnce(json({ success: true, jobId: 'job-9', status: 'queued' }));
+    mockedFetch.mockResolvedValue(json(doneJob({ id: 'job-9', target: -16, afterLufs: -16 })));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -16/ })); });
+    await screen.findByText(/3 · Result/);
+
+    const enqueue = mockedFetch.mock.calls.find(
+      (c) => c[0] === '/api/admin/music-lab/master' && c[1]?.method === 'POST'
+    )!;
+    const body = JSON.parse(enqueue[1].body);
+    expect(body.s3Key).toBe('audio/mastering/1700000000000_ab12_kadhal.wav');
+    expect(body.target).toBe(-16);
+    expect(body.edit).toMatchObject({ trimStartSec: 12, trimEndSec: 200, fadeOutSec: 6, curve: 'qsin' });
+  });
+
+  it('does not re-send a tail trim that is just the end of the file', async () => {
+    // What the job's recorded duration is actually FOR. A saved edit ending at
+    // 365s on a 365s source is "runs to the end", not a trim; re-sending it as
+    // an explicit end marks the job as edited and buys a pre-pass that copies
+    // the file for nothing. Mutation-verified: with the duration withheld the
+    // redundant end is sent.
+    await reopen(saved({ edit: { ...EDIT, trimEndSec: 365 } }));
+    mockedFetch.mockResolvedValueOnce(json({ success: true, jobId: 'job-9', status: 'queued' }));
+    mockedFetch.mockResolvedValue(json(doneJob({ id: 'job-9', target: -16, afterLufs: -16 })));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -16/ })); });
+    await screen.findByText(/3 · Result/);
+
+    const enqueue = mockedFetch.mock.calls.find(
+      (c) => c[0] === '/api/admin/music-lab/master' && c[1]?.method === 'POST'
+    )!;
+    expect(JSON.parse(enqueue[1].body).edit.trimEndSec).toBeNull();
+  });
+
+  it('restores a two-part seam as well as a trim', async () => {
+    await reopen(saved({
+      join: { partBKey: 'audio/mastering/1700000000001_cd34_partb.wav', overlapSec: 4.5, curve: 'qsin', editB: { trimStartSec: 2, trimEndSec: null, fadeInSec: 0, fadeOutSec: 0, curve: 'qsin' } },
+    }));
+
+    expect((screen.getByLabelText(/Crossfade \(seconds\)/i) as HTMLInputElement).value).toBe('4.5');
+    expect((screen.getByLabelText(/Part B starts at/i) as HTMLInputElement).value).toBe('2');
+  });
+
+  it('carries the title across, so the download name survives', async () => {
+    // The name field lives in the RESULT panel, so the restored title has to
+    // survive the re-master to be worth anything — checking it at the "ready"
+    // stage would assert against an input that is not on screen yet.
+    await reopen();
+    mockedFetch.mockResolvedValueOnce(json({ success: true, jobId: 'job-9', status: 'queued' }));
+    mockedFetch.mockResolvedValue(json(doneJob({ id: 'job-9', target: -16, afterLufs: -16 })));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -16/ })); });
+    await screen.findByText(/3 · Result/);
+
+    expect((screen.getByLabelText(/Name this master/i) as HTMLInputElement).value).toBe('காதல் மழை');
+  });
+
+  it('does NOT present the re-opened job as already saved or published', async () => {
+    // A re-open is a new run. Offering "Saved to library" or a publish against
+    // it would act on a file this run has not produced.
+    await reopen();
+    expect(screen.queryByRole('button', { name: /Saved to library/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Publish web MP3/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/3 · Result/)).not.toBeInTheDocument();
+  });
+
+  it('clears a previous seam when re-opening a single-source master', async () => {
+    // Leaking the last recipe's Part B into an unrelated song is the same
+    // silent-wrong-audio failure the stale-Part-B fix addressed.
+    render(<MasteringStudio />);
+    mockedFetch.mockResolvedValueOnce(json({
+      success: true,
+      masters: [
+        saved({ id: 'with-join', title: 'Joined', join: { partBKey: 'audio/mastering/x_partb.wav', overlapSec: 3, curve: 'qsin', editB: null } }),
+        saved({ id: 'plain', title: 'Plain', join: null }),
+      ],
+    }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Saved masters/i })); });
+    const buttons = await screen.findAllByRole('button', { name: /Edit & re-master/i });
+
+    await act(async () => { fireEvent.click(buttons[0]); });
+    expect(screen.getByLabelText(/Crossfade \(seconds\)/i)).toBeInTheDocument();
+
+    mockedFetch.mockResolvedValueOnce(json({ success: true, masters: [] }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Saved masters/i })); });
+    const again = await screen.findAllByRole('button', { name: /Edit & re-master/i });
+    await act(async () => { fireEvent.click(again[1]); });
+
+    expect(screen.queryByLabelText(/Crossfade \(seconds\)/i)).not.toBeInTheDocument();
   });
 });

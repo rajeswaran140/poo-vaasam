@@ -43,9 +43,31 @@ interface Props {
   /** Emitted on every change; null means "master the whole thing". */
   onChange: (edit: MasterEdit | null) => void;
   disabled?: boolean;
+  /**
+   * A recipe to start from — used when re-opening a saved master, where the
+   * trim already exists on the job and there is no File to decode.
+   *
+   * Read ONCE, at mount. The caller remounts this panel (via `key`) when it
+   * loads a different recipe, so seeding cannot fight the admin's own edits
+   * mid-session.
+   */
+  initialEdit?: MasterEdit | null;
+  /**
+   * The source's duration when it is known without decoding — again, the
+   * re-open path, where the job recorded it. Without this a tail trim cannot be
+   * distinguished from "runs to the end", so a saved `trimEndSec` would be
+   * silently dropped as redundant.
+   */
+  knownDurationSec?: number;
 }
 
-export function MasteringTrimPanel({ file, onChange, disabled = false }: Props) {
+export function MasteringTrimPanel({
+  file,
+  onChange,
+  disabled = false,
+  initialEdit = null,
+  knownDurationSec = 0,
+}: Props) {
   const startId = useId();
   const endId = useId();
   const fadeInId = useId();
@@ -53,7 +75,7 @@ export function MasteringTrimPanel({ file, onChange, disabled = false }: Props) 
   const curveId = useId();
 
   const [peaks, setPeaks] = useState<number[] | null>(null);
-  const [duration, setDuration] = useState(0);
+  const [duration, setDuration] = useState(knownDurationSec);
   const [note, setNote] = useState<string | null>(null);
   /**
    * The trim window is held as two plain numbers, NOT a LoopRegion, because the
@@ -61,18 +83,20 @@ export function MasteringTrimPanel({ file, onChange, disabled = false }: Props) 
    * not, so the numeric inputs keep working when the file could not be decoded.
    * `endSec === null` means "run to the end of the file".
    */
-  const [startSec, setStartSec] = useState(0);
-  const [endSec, setEndSec] = useState<number | null>(null);
-  const [fadeInSec, setFadeInSec] = useState(0);
-  const [fadeOutSec, setFadeOutSec] = useState(0);
-  const [curve, setCurve] = useState<FadeCurve>(NO_EDIT.curve);
+  const [startSec, setStartSec] = useState(initialEdit?.trimStartSec ?? 0);
+  const [endSec, setEndSec] = useState<number | null>(initialEdit?.trimEndSec ?? null);
+  const [fadeInSec, setFadeInSec] = useState(initialEdit?.fadeInSec ?? 0);
+  const [fadeOutSec, setFadeOutSec] = useState(initialEdit?.fadeOutSec ?? 0);
+  const [curve, setCurve] = useState<FadeCurve>(initialEdit?.curve ?? NO_EDIT.curve);
 
   // Decode once per file. Mirrors MasteringPlayer's approach so both waveforms
   // are built from the same peak definition.
   useEffect(() => {
     if (!file) {
       setPeaks(null);
-      setDuration(0);
+      // Keep a duration the caller supplied — dropping it here would discard a
+      // re-opened master's tail trim.
+      setDuration(knownDurationSec);
       return;
     }
     if (!shouldRenderWaveform(file.size)) {
@@ -102,7 +126,7 @@ export function MasteringTrimPanel({ file, onChange, disabled = false }: Props) 
     return () => {
       alive = false;
     };
-  }, [file]);
+  }, [file, knownDurationSec]);
 
   const edit: MasterEdit = useMemo(
     () => ({
