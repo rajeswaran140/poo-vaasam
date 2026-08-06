@@ -71,7 +71,11 @@ export function buildSilenceArgs(inPath: string): string[] {
  * so Part A and Part B each cost ONE decode rather than two.
  */
 export function buildTimelineArgs(inPath: string): string[] {
-  return ['-hide_banner', '-nostats', '-i', inPath, '-af', 'ebur128', '-f', 'null', '-'];
+  // `peak=true` is REQUIRED for a true-peak reading — plain `ebur128` prints
+  // none at all. Without it the take screen's strongest rule (will mastering be
+  // forced to compress?) silently received null on every real file and never
+  // fired. Costs nothing: the same pass, one more summary line.
+  return ['-hide_banner', '-nostats', '-i', inPath, '-af', 'ebur128=peak=true', '-f', 'null', '-'];
 }
 
 /**
