@@ -19,6 +19,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import {
   parseLoudnormStats,
+  buildPass1Loudnorm,
   buildPass2Loudnorm,
   isValidTarget,
   masterKeyFor,
@@ -485,7 +486,7 @@ export const handler = async (event: MasterEvent) => {
     }
 
     // Pass 1 — measure for linear loudnorm.
-    const p1 = ff(['-hide_banner', '-nostats', '-i', sourceForMastering, '-af', `loudnorm=I=${target}:TP=-1:LRA=11:print_format=json`, '-f', 'null', '-']);
+    const p1 = ff(['-hide_banner', '-nostats', '-i', sourceForMastering, '-af', buildPass1Loudnorm(target), '-f', 'null', '-']);
     const p1Log = `${p1.stdout ?? ''}${p1.stderr ?? ''}`;
     const stats = parseLoudnormStats(p1Log);
     // Free: pass 1 already prints the input header, so recording what the source

@@ -268,6 +268,29 @@ export function parseNormalizationType(log: string): 'linear' | 'dynamic' | null
   }
 }
 
+/**
+ * The pass-1 measurement loudnorm filter string.
+ *
+ * Shared rather than inlined at the call site so that anything checking the
+ * chain measures with the SAME command the worker runs. A verifier that
+ * re-types production's filter string is only testing the retyping.
+ *
+ * ⚠️ IF PASS 1 REPORTS input_lra EXACTLY 0.00, PASS 2 CANNOT RUN LINEAR.
+ * ffmpeg reads `measured_LRA=0.00` as "not supplied" and silently abandons
+ * linear mode — the file comes back compressed with nothing logged as wrong.
+ * Measured 2026-08-06 and identical on ffmpeg 4.4.2 and 7.0.2 (production's
+ * layer): 0.00 → dynamic, 0.01 → linear, every other input held fixed.
+ *
+ * No real song measures 0.00 — the flattest thing in the catalogue is
+ * வானவில்லே Part B at 1.6 LU — so this has never fired in production, and
+ * `parseNormalizationType` would catch it after the fact if it did. It is
+ * recorded because take-screen's `forces-dynamic` predictor models only the
+ * peak-clipping cause and would NOT see this one coming.
+ */
+export function buildPass1Loudnorm(target = -14): string {
+  return `loudnorm=I=${target}:TP=-1:LRA=11:print_format=json`;
+}
+
 /** The pass-2 linear loudnorm filter string from pass-1 measurements. */
 export function buildPass2Loudnorm(stats: LoudnormStats, target = -14): string {
   return (
