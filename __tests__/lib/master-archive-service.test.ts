@@ -44,7 +44,7 @@ describe('a successful archive', () => {
   it('server-side copies the source into the masters bucket as GLACIER_IR', async () => {
     const out = await archiveSavedMaster('j1', job);
 
-    expect(out).toEqual({ archived: true, key: `${MASTERS_PREFIX}ஒத்த பனங்கீத்தே.wav` });
+    expect(out).toMatchObject({ archived: true, key: `${MASTERS_PREFIX}ஒத்த பனங்கீத்தே.wav` });
     expect(copyObject).toHaveBeenCalledWith({
       sourceKey: job.s3Key,
       destKey: `${MASTERS_PREFIX}ஒத்த பனங்கீத்தே.wav`,
@@ -119,5 +119,57 @@ describe('when there is nothing to archive', () => {
   it('explains the untitled case, which is the only one the operator can fix', async () => {
     const out = await archiveSavedMaster('j1', { ...job, title: null });
     expect(out.message).toMatch(/name this master/i);
+  });
+});
+
+
+/**
+ * A JOINED master has TWO sources.
+ *
+ * Until 2026-08-06 this archived only `job.s3Key` — Part A — and said nothing,
+ * so saving an assembled song protected half of it. Found by reading what a
+ * real session actually wrote to S3: three archived files for வானவில்லே were
+ * all byte-identical Part A copies under three different titles, and Part B
+ * survived only because it happened to be mastered separately afterwards.
+ */
+describe('a two-part master archives BOTH sources', () => {
+  const joined: MasterJob = {
+    ...job,
+    join: {
+      partBKey: 'audio/mastering/1780067292588_cd4e_partb.wav',
+      overlapSec: 3, curve: 'qsin', editB: null,
+    },
+  } as MasterJob;
+
+  it('copies Part A and Part B, named for their parts', async () => {
+    const out = await archiveSavedMaster('j1', joined);
+
+    expect(out.archived).toBe(true);
+    expect(copyObject).toHaveBeenCalledTimes(2);
+    expect(copyObject).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      sourceKey: joined.s3Key,
+      destKey: `${MASTERS_PREFIX}ஒத்த பனங்கீத்தே (Part A).wav`,
+    }));
+    expect(copyObject).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      sourceKey: 'audio/mastering/1780067292588_cd4e_partb.wav',
+      destKey: `${MASTERS_PREFIX}ஒத்த பனங்கீத்தே (Part B).wav`,
+    }));
+    expect(out.keys).toHaveLength(2);
+  });
+
+  it('still writes ONE file for a single-source master, under the bare song name', async () => {
+    // The regression that matters: existing archives stay addressable.
+    await archiveSavedMaster('j1', job);
+    expect(copyObject).toHaveBeenCalledTimes(1);
+    expect(copyObject).toHaveBeenCalledWith(expect.objectContaining({
+      destKey: `${MASTERS_PREFIX}ஒத்த பனங்கீத்தே.wav`,
+    }));
+  });
+
+  it('records Part A as the job\'s archiveKey, so the record shape is unchanged', async () => {
+    await archiveSavedMaster('j1', joined);
+    expect(recordArchive).toHaveBeenCalledWith('j1', expect.objectContaining({
+      archiveKey: `${MASTERS_PREFIX}ஒத்த பனங்கீத்தே (Part A).wav`,
+    }));
   });
 });
