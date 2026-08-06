@@ -120,8 +120,10 @@ describe('the loudness timeline', () => {
     expect(parseTimeline(log)).toHaveLength(10);
   });
 
-  it('uses one pass for both the shape and the integrated level', () => {
-    expect(buildTimelineArgs('/tmp/in.wav').join(' ')).toContain('ebur128');
+  it('uses one pass for the shape, the integrated level AND the true peak', () => {
+    // peak=true is not optional: plain ebur128 prints no peak at all, which
+    // left the take screen's forces-dynamic rule permanently blind.
+    expect(buildTimelineArgs('/tmp/in.wav').join(' ')).toContain('ebur128=peak=true');
   });
 });
 
