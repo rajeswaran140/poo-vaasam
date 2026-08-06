@@ -86,6 +86,38 @@ it('503s when the channel is not configured', async () => {
   expect((await post({ dryRun: true })).status).toBe(503);
 });
 
+it('does not report a video already on the site under ANOTHER content type', async () => {
+  // REGRESSION, found against the real catalogue on 2026-08-06. The diff used
+  // to scan SONGS only, so "அம்மா உந்தன் நினைவுகள்" — already on the site as
+  // the POEM "அம்மா. . . !" — came back as missing. Creating it would have put
+  // a second page in front of the same video, on his mother song.
+  //
+  // A duplicate is worse than a miss: a missing page is visible and fixable,
+  // whereas two pages for one video split the inbound links and neither is
+  // obviously the wrong one.
+  findByType.mockImplementation(async (type: string) => ({
+    items: type === 'POEMS' ? [{ youtubeVideoId: 'aaaaaaaaaaa', videoUrl: null }] : [],
+    hasMore: false,
+    lastEvaluatedKey: undefined,
+  }));
+
+  const json = await (await post({ dryRun: true })).json();
+  expect(json.missing.map((m: { id: string }) => m.id)).toEqual(['bbbbbbbbbbb']);
+
+  // And it must stay excluded in create mode even if explicitly approved —
+  // the re-diff is what makes the approved list safe to replay.
+  const created = await (await post({ dryRun: false, videoIds: ['aaaaaaaaaaa'] })).json();
+  expect(created.created).toEqual([]);
+  expect(execute).not.toHaveBeenCalled();
+});
+
+it('checks every content type when diffing, not just SONGS', async () => {
+  findByType.mockResolvedValue({ items: [], hasMore: false, lastEvaluatedKey: undefined });
+  await post({ dryRun: true });
+  const scanned = findByType.mock.calls.map((c) => c[0]);
+  expect(scanned).toEqual(expect.arrayContaining(['SONGS', 'POEMS', 'LYRICS', 'STORIES', 'ESSAYS']));
+});
+
 it('dry-run lists missing long-form songs and writes nothing', async () => {
   const json = await (await post({ dryRun: true })).json();
   expect(json.dryRun).toBe(true);
