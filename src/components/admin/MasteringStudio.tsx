@@ -386,6 +386,13 @@ export function MasteringStudio() {
     setSeedEdit(null);
     setSeedDurationSec(0);
     setSeedJoin(null);
+    // The song's IDENTITY and its artwork. `masterName` is not cosmetic: it
+    // becomes the saved title, which becomes the archive key AND the public
+    // filename on the site. Carrying it into a different song publishes that
+    // song under this one's name.
+    setMasterName('');
+    setCover(null);
+    setAnalysis(null);
     if (fileInput.current) fileInput.current.value = '';
   }, []);
 
@@ -559,6 +566,11 @@ export function MasteringStudio() {
     setSeedEdit(null);
     setSeedDurationSec(0);
     setSeedJoin(null);
+    // Same reasoning as reset(): a different file is a different song, so the
+    // title, the cover and the previous file's measurements all go with it.
+    setMasterName('');
+    setCover(null);
+    setAnalysis(null);
     setRecipeNonce((n) => n + 1);
     setStage('uploading');
     setSent({ loaded: 0, total: picked.size });

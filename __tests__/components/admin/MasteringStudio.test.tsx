@@ -1138,3 +1138,61 @@ describe('re-open: the seam seed is scoped to its own Part B', () => {
     expect(body.join.editB).toBeNull();
   });
 });
+
+/**
+ * Audit 2026-08-06 — a song's IDENTITY must not survive into the next song.
+ *
+ * `masterName` is not cosmetic. It becomes the saved title, and the title
+ * becomes BOTH the archive key and the public filename on tamilagaval.com
+ * (publishKeyForTitle). So a name left over from the previous song publishes
+ * this one under that name — in the lossless archive and on the live site.
+ * The cover has the same shape: a leftover cover renders the wrong artwork
+ * into the uploaded video. Neither produces an error.
+ */
+describe('per-song identity resets with the source', () => {
+  const named = () => screen.getByLabelText(/Name this master/i) as HTMLInputElement;
+
+  async function masterOnce(key: string) {
+    routeDefaults(doneJob({ mp3Key: 'audio/mastering/x-master-14LUFS.mp3', mp3Tp: -3.5 }), key);
+    await uploadA();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Master to -14/ })).toBeEnabled());
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
+    await screen.findByText(/3 · Result/);
+  }
+
+  it('does NOT carry the previous song\'s name into the next one', async () => {
+    render(<MasteringStudio />);
+    await masterOnce('audio/mastering/1_a_songA.wav');
+    await act(async () => { fireEvent.change(named(), { target: { value: 'அந்தி மேகமே' } }); });
+    expect(named().value).toBe('அந்தி மேகமே');
+
+    // A different file — no Start over, just a new pick.
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Start over/i })); });
+    await masterOnce('audio/mastering/2_b_songB.wav');
+
+    expect(named().value).toBe('');
+  });
+
+  it('does not offer the previous song\'s cover for the next render', async () => {
+    render(<MasteringStudio />);
+    await masterOnce('audio/mastering/1_a_songA.wav');
+    mockedFetch.mockResolvedValueOnce(json({ success: true, title: 'A' }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save to library/ })); });
+    await screen.findByRole('button', { name: /Saved to library/ });
+
+    const cover = screen.getByLabelText(/Cover image/i) as HTMLInputElement;
+    const img = new File(['x'], 'coverA.jpg', { type: 'image/jpeg' });
+    mockedFetch.mockResolvedValueOnce(json({ success: true, uploadUrl: 'https://s3/u', fields: {}, key: 'audio/mastering/coverA.jpg' }));
+    await act(async () => { fireEvent.change(cover, { target: { files: [img] } }); });
+    await waitFor(() => expect(screen.getByRole('button', { name: /Render video/ })).toBeEnabled());
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Start over/i })); });
+    await masterOnce('audio/mastering/2_b_songB.wav');
+    mockedFetch.mockResolvedValueOnce(json({ success: true, title: 'B' }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save to library/ })); });
+    await screen.findByRole('button', { name: /Saved to library/ });
+
+    // Render must be unavailable until a cover is chosen FOR THIS song.
+    expect(screen.getByRole('button', { name: /Render video/ })).toBeDisabled();
+  });
+});

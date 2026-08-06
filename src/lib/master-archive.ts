@@ -40,8 +40,14 @@ export const MASTERS_STORAGE_CLASS = 'GLACIER_IR';
 /** Why a job cannot be archived. Each is a normal outcome, not an error. */
 export type ArchiveRefusal = 'not-done' | 'not-saved' | 'no-title' | 'no-source' | 'already-archived';
 
+/** One source file to copy, and where it lands. */
+export interface ArchiveCopy {
+  sourceKey: string;
+  archiveKey: string;
+}
+
 export type ArchivePlan =
-  | { ok: true; sourceKey: string; archiveKey: string }
+  | { ok: true; sourceKey: string; archiveKey: string; copies: ArchiveCopy[] }
   | { ok: false; reason: ArchiveRefusal };
 
 /**
@@ -56,11 +62,15 @@ export type ArchivePlan =
  * `sanitizeMasterTitle` already strips control characters, quotes and path
  * separators, so a title cannot escape the prefix. Tamil survives it.
  */
-export function archiveKeyForTitle(title: string | null | undefined): string | null {
+export function archiveKeyForTitle(title: string | null | undefined, part?: 'A' | 'B'): string | null {
   const clean = sanitizeMasterTitle(title ?? '')
     .replace(/\.wave?$/i, '')
     .trim();
-  return clean ? `${MASTERS_PREFIX}${clean}.wav` : null;
+  if (!clean) return null;
+  // A two-part song produces TWO sources for one title, so they are named for
+  // the part. A single-source master keeps the bare song name it always had.
+  const suffix = part ? ` (Part ${part})` : '';
+  return `${MASTERS_PREFIX}${clean}${suffix}.wav`;
 }
 
 /**
@@ -70,6 +80,13 @@ export function archiveKeyForTitle(title: string | null | undefined): string | n
  * bucket holds original SUNO renders — that is what cannot be regenerated once
  * SUNO retires a model. A master can always be produced again from the source;
  * the reverse is not true.
+ *
+ * ⚠️ A TWO-PART MASTER HAS TWO SOURCES. Until 2026-08-06 this archived only
+ * `job.s3Key` — Part A — and said nothing, so saving an assembled song
+ * protected half of it. Found by reading what a real session actually wrote to
+ * S3: three archived files for வானவில்லே were all byte-identical Part A copies
+ * under three different titles. `copies` now carries every source, and the
+ * caller must copy them all.
  */
 export function planArchive(job: MasterJob): ArchivePlan {
   if (job.status !== 'done') return { ok: false, reason: 'not-done' };
@@ -78,9 +95,21 @@ export function planArchive(job: MasterJob): ArchivePlan {
   if (!job.savedAt) return { ok: false, reason: 'not-saved' };
   if (job.archivedAt) return { ok: false, reason: 'already-archived' };
   if (!job.s3Key) return { ok: false, reason: 'no-source' };
-  const archiveKey = archiveKeyForTitle(job.title);
+
+  const partBKey = job.join?.partBKey ?? null;
+  // Named for the part only when there IS a second part; a single-source
+  // master keeps the bare song name, so existing archives stay addressable.
+  const archiveKey = archiveKeyForTitle(job.title, partBKey ? 'A' : undefined);
   if (!archiveKey) return { ok: false, reason: 'no-title' };
-  return { ok: true, sourceKey: job.s3Key, archiveKey };
+
+  const copies: ArchiveCopy[] = [{ sourceKey: job.s3Key, archiveKey }];
+  if (partBKey) {
+    const bKey = archiveKeyForTitle(job.title, 'B');
+    if (bKey) copies.push({ sourceKey: partBKey, archiveKey: bKey });
+  }
+  // `sourceKey`/`archiveKey` stay on the plan for Part A so existing callers
+  // and the job's own archiveKey field keep working unchanged.
+  return { ok: true, sourceKey: job.s3Key, archiveKey, copies };
 }
 
 /** Operator-facing wording for a refusal. Only `no-title` is actionable. */

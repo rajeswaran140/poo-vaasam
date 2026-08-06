@@ -19,7 +19,10 @@ import {
 
 export interface ArchiveOutcome {
   archived: boolean;
+  /** Part A's archive key — kept for callers that expect a single key. */
   key?: string;
+  /** Every key written. Two for a joined master, one otherwise. */
+  keys?: string[];
   /** Present when the source was not archived — a refusal or a failure. */
   message?: string;
 }
@@ -39,15 +42,19 @@ export async function archiveSavedMaster(jobId: string, job: MasterJob): Promise
   }
 
   try {
-    await S3Operations.copyObject({
-      sourceKey: plan.sourceKey,
-      destKey: plan.archiveKey,
-      destBucket: MASTERS_BUCKET,
-      storageClass: MASTERS_STORAGE_CLASS,
-    });
+    // EVERY source, not just Part A. A joined master has two, and archiving one
+    // of them silently protected half the song.
+    for (const copy of plan.copies) {
+      await S3Operations.copyObject({
+        sourceKey: copy.sourceKey,
+        destKey: copy.archiveKey,
+        destBucket: MASTERS_BUCKET,
+        storageClass: MASTERS_STORAGE_CLASS,
+      });
+    }
     const archivedAt = new Date().toISOString();
     await new MasterJobRepository().recordArchive(jobId, { archiveKey: plan.archiveKey, archivedAt });
-    return { archived: true, key: plan.archiveKey };
+    return { archived: true, key: plan.archiveKey, keys: plan.copies.map((c) => c.archiveKey) };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[master-archive] failed:', message);
