@@ -13,7 +13,8 @@ import {
   leadingSilenceSec,
   trailingSilenceSec,
   parseTimeline,
-  fadeVerdict,
+  fadeVerdictFromDrop,
+  tailDropLu,
   levelVerdict,
   proposedTrim,
   buildSilenceArgs,
@@ -36,6 +37,10 @@ import {
  * tail check permanently "unknown" — invisible, because unknown is a legitimate
  * state. Caught by running real ffmpeg over a real source; keep this format.
  */
+/** The retired convenience wrapper, kept here so the tests read unchanged. */
+const fadeVerdictFromDrop2 = (pts: Parameters<typeof tailDropLu>[0], trailing = 0, role?: 'lead-in' | 'ending') =>
+  fadeVerdictFromDrop(tailDropLu(pts, trailing), role);
+
 const series = (parts: Array<{ secs: number; lufs: number }>): string => {
   const lines: string[] = [];
   let t = 0;
@@ -126,7 +131,7 @@ describe('fadeVerdict — the finding that changes what you do', () => {
   ]));
 
   it('catches a real fade-out on the SEAM side and says to re-roll', () => {
-    const v = fadeVerdict(faded(), 0, 'lead-in');
+    const v = fadeVerdictFromDrop2(faded(), 0, 'lead-in');
     expect(v.state).toBe('fading');
     expect(v.dropLu).toBe(8);
     expect(v.message).toMatch(/Re-roll/);
@@ -140,7 +145,7 @@ describe('fadeVerdict — the finding that changes what you do', () => {
    * and teach the operator to ignore the panel.
    */
   it('does NOT tell you to re-roll a song for ending with a fade', () => {
-    const v = fadeVerdict(faded(), 0, 'ending');
+    const v = fadeVerdictFromDrop2(faded(), 0, 'ending');
     expect(v.state).toBe('fading');
     expect(v.message).toMatch(/normal for a final section/);
     expect(v.message).not.toMatch(/Re-roll/);
@@ -149,7 +154,7 @@ describe('fadeVerdict — the finding that changes what you do', () => {
   it('defaults to treating a tail as an ending, not a seam', () => {
     // A standalone master is the common case; assuming "seam" would make the
     // alarming wording the default.
-    expect(fadeVerdict(faded()).message).not.toMatch(/Re-roll/);
+    expect(fadeVerdictFromDrop2(faded()).message).not.toMatch(/Re-roll/);
   });
 
   it('does NOT cry fade on a song that merely ends softly', () => {
@@ -160,17 +165,17 @@ describe('fadeVerdict — the finding that changes what you do', () => {
       { secs: 4, lufs: -18 },
       { secs: 1, lufs: -20 },
     ]));
-    expect(fadeVerdict(points, 0, 'lead-in').state).toBe('steady');
-    expect(fadeVerdict(points, 0, 'lead-in').message).toMatch(/good crossfade material/);
-    expect(fadeVerdict(points, 0, 'ending').state).toBe('steady');
+    expect(fadeVerdictFromDrop2(points, 0, 'lead-in').state).toBe('steady');
+    expect(fadeVerdictFromDrop2(points, 0, 'lead-in').message).toMatch(/good crossfade material/);
+    expect(fadeVerdictFromDrop2(points, 0, 'ending').state).toBe('steady');
   });
 
   it('sits exactly on the threshold without flapping', () => {
-    const at = fadeVerdict(parseTimeline(series([
+    const at = fadeVerdictFromDrop2(parseTimeline(series([
       { secs: 20, lufs: -18 }, { secs: 4, lufs: -18 }, { secs: 1, lufs: -18 - FADE_DROP_DB },
     ])));
     expect(at.state).toBe('fading');
-    const under = fadeVerdict(parseTimeline(series([
+    const under = fadeVerdictFromDrop2(parseTimeline(series([
       { secs: 20, lufs: -18 }, { secs: 4, lufs: -18 }, { secs: 1, lufs: -18 - FADE_DROP_DB + 0.5 },
     ])));
     expect(under.state).toBe('steady');
@@ -184,14 +189,14 @@ describe('fadeVerdict — the finding that changes what you do', () => {
       { secs: 5, lufs: -18 },
       { secs: 3, lufs: -60 }, // dead air, still above ebur128's floor
     ]));
-    expect(fadeVerdict(points, 3).state).toBe('steady');
+    expect(fadeVerdictFromDrop2(points, 3).state).toBe('steady');
     // …and with the silence counted as music it would look like a collapse.
-    expect(fadeVerdict(points, 0).state).toBe('fading');
+    expect(fadeVerdictFromDrop2(points, 0).state).toBe('fading');
   });
 
   it('says unknown rather than guessing on a clip too short to judge', () => {
     for (const pts of [[], parseTimeline(series([{ secs: 1, lufs: -18 }]))]) {
-      const v = fadeVerdict(pts);
+      const v = fadeVerdictFromDrop2(pts);
       expect(v.state).toBe('unknown');
       expect(v.dropLu).toBeNull();
     }

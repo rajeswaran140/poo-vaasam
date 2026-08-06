@@ -236,11 +236,6 @@ export function fadeVerdictFromDrop(drop: number | null, role: TailRole = 'endin
       };
 }
 
-/** Measure and judge in one step. The worker uses the two halves separately. */
-export function fadeVerdict(points: TimelinePoint[], trailingSilence = 0, role: TailRole = 'ending'): FadeVerdict {
-  return fadeVerdictFromDrop(tailDropLu(points, trailingSilence), role);
-}
-
 export interface LevelVerdict {
   matched: boolean;
   deltaLu: number | null;
