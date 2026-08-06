@@ -40,18 +40,35 @@ const schema = z.object({
   videoIds: z.array(z.string().regex(/^[A-Za-z0-9_-]{11}$/)).max(100).optional(),
 });
 
-/** Every YouTube video id already covered by a SONGS record (any status). */
+/**
+ * Every YouTube video id already covered by ANY content record, of any type and
+ * any status.
+ *
+ * ⚠️ THIS DELIBERATELY SCANS EVERY TYPE, NOT JUST SONGS. It used to look at
+ * SONGS alone, which silently mis-classified anything Raj had filed under
+ * another type: on 2026-08-06 the channel's "அம்மா உந்தன் நினைவுகள்" was
+ * already on the site as the POEM "அம்மா. . . !", so the scan reported 52
+ * missing songs when only 51 were absent, and creating the 52nd would have put
+ * a SECOND page in front of the same video — on his mother song, of all things.
+ *
+ * A duplicate is worse than a miss here. A missing page is visible and fixable;
+ * two pages for one video split the inbound links and neither is obviously the
+ * wrong one. So the diff is deliberately over-broad: if a video is referenced
+ * anywhere on the site, it is not missing.
+ */
 async function existingSongVideoIds(repo: ContentRepository): Promise<Set<string>> {
   const ids = new Set<string>();
-  let cursor: Record<string, unknown> | undefined;
-  do {
-    const page = await repo.findByType(ContentType.SONGS, { limit: 100, lastEvaluatedKey: cursor });
-    for (const c of page.items) {
-      const vid = c.youtubeVideoId || getYouTubeId(c.videoUrl);
-      if (vid) ids.add(vid);
-    }
-    cursor = page.lastEvaluatedKey as Record<string, unknown> | undefined;
-  } while (cursor);
+  for (const type of Object.values(ContentType)) {
+    let cursor: Record<string, unknown> | undefined;
+    do {
+      const page = await repo.findByType(type, { limit: 100, lastEvaluatedKey: cursor });
+      for (const c of page.items) {
+        const vid = c.youtubeVideoId || getYouTubeId(c.videoUrl);
+        if (vid) ids.add(vid);
+      }
+      cursor = page.lastEvaluatedKey as Record<string, unknown> | undefined;
+    } while (cursor);
+  }
   return ids;
 }
 
