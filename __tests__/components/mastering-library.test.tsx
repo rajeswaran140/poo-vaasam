@@ -50,7 +50,10 @@ function routeFetch(over: { rename?: unknown; play?: unknown } = {}) {
 async function openLibrary() {
   render(<MasteringStudio />);
   fireEvent.click(screen.getByRole('button', { name: /Saved masters/i }));
-  return screen.findByText('ஈழத்து மண்ணே');
+  // findAll, not find: since the library groups by song, the title appears
+  // BOTH as the group heading and on the row itself. Two matches is the
+  // grouping working, not a duplicate row.
+  return screen.findAllByText('ஈழத்து மண்ணே');
 }
 
 beforeEach(() => mockedFetch.mockReset());
@@ -118,7 +121,8 @@ describe('rename', () => {
     const input = screen.getByLabelText('Master name');
     fireEvent.change(input, { target: { value: 'Discarded' } });
     fireEvent.keyDown(input, { key: 'Escape' });
-    await waitFor(() => expect(screen.getByText('ஈழத்து மண்ணே')).toBeInTheDocument());
+    // getAll: grouped library shows the name as heading AND row.
+    await waitFor(() => expect(screen.getAllByText('ஈழத்து மண்ணே').length).toBeGreaterThan(0));
     expect(mockedFetch.mock.calls.some(([u]: [string]) => u.includes('/rename'))).toBe(false);
   });
 
@@ -131,7 +135,7 @@ describe('rename', () => {
     const input = screen.getByLabelText('Master name');
     fireEvent.change(input, { target: { value: 'typed/name' } });
     fireEvent.keyDown(input, { key: 'Enter' });
-    expect(await screen.findByText('Server cleaned')).toBeInTheDocument();
+    expect((await screen.findAllByText('Server cleaned')).length).toBeGreaterThan(0);
   });
 
   it('surfaces a refusal rather than pretending it worked', async () => {

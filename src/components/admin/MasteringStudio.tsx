@@ -34,6 +34,7 @@ import { MasteringPlayer } from '@/components/admin/MasteringPlayer';
 import { MasteringTrimPanel } from '@/components/admin/MasteringTrimPanel';
 import { MasteringJoinPanel } from '@/components/admin/MasteringJoinPanel';
 import { DEFAULT_CROSSFADE_CURVE, type MasterJoin } from '@/lib/master-join';
+import { groupMastersBySong, describeGroup } from '@/lib/master-library';
 import type { FadeVerdict, LevelVerdict } from '@/lib/master-analysis';
 
 /** What GET /api/admin/mastering/analyse/[id] returns once it is done. */
@@ -1726,6 +1727,26 @@ export function MasteringStudio() {
                 )}
               </div>
 
+              {/* PREFLIGHT — what is about to be encoded, before it is.
+                  A leftover cover from the previous song used to render that
+                  song's artwork into this song's video, silently; the fix was
+                  to clear it, and this makes the remaining risk visible. */}
+              {cover && !rendering && (
+                <dl className="mt-3 grid gap-x-4 gap-y-1 rounded-lg bg-gray-50 p-3 text-xs dark:bg-gray-800/40 sm:grid-cols-[7rem_1fr]">
+                  <dt className="font-medium text-gray-600 dark:text-gray-300">Cover</dt>
+                  <dd className="truncate text-gray-800 dark:text-gray-100">{cover.name}</dd>
+                  <dt className="font-medium text-gray-600 dark:text-gray-300">Audio</dt>
+                  <dd className="text-gray-800 dark:text-gray-100">
+                    the mastered WAV{typeof job.afterLufs === 'number' ? ` (${job.afterLufs.toFixed(1)} LUFS)` : ''} → AAC 384k/48 kHz
+                  </dd>
+                  <dt className="font-medium text-gray-600 dark:text-gray-300">Downloads as</dt>
+                  <dd className="truncate text-gray-800 dark:text-gray-100">
+                    {masterName.trim()
+                      ? `${masterName.trim()} (Master ${job.target} LUFS).mp4`
+                      : <span className="text-amber-700 dark:text-amber-400">unnamed — name this master first</span>}
+                  </dd>
+                </dl>
+              )}
               <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                 {coverUploading
                   ? 'Uploading cover…'
@@ -1770,9 +1791,19 @@ export function MasteringStudio() {
           </p>
         )}
 
-        {libraryOpen && library && library.length > 0 && (
-          <ul className="mt-3 divide-y divide-gray-200 rounded-lg border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
-            {library.map((m) => (
+        {/* Grouped by SONG, not by source: no two saved masters share an
+            s3Key (a fresh file is uploaded per attempt), so grouping by source
+            gives one group per row. Titles are what actually repeat. */}
+        {libraryOpen && library && library.length > 0 && groupMastersBySong(library).map((group) => (
+          <div key={group.song || group.masters[0].id} className="mt-3">
+            <p className="flex items-baseline gap-2 px-1 pb-1 text-xs">
+              <span className="font-semibold text-gray-800 dark:text-gray-100">
+                {group.song || <span className="font-normal text-gray-500">(untitled)</span>}
+              </span>
+              <span className="text-gray-500 dark:text-gray-400">{describeGroup(group)}</span>
+            </p>
+          <ul className="divide-y divide-gray-200 rounded-lg border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+            {group.masters.map((m) => (
               <li key={m.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-sm">
                 {m.masterKey && (
                   <button
@@ -1876,7 +1907,8 @@ export function MasteringStudio() {
               </li>
             ))}
           </ul>
-        )}
+          </div>
+        ))}
 
         {libraryOpen && playing && (
           <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900/40">
