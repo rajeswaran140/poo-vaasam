@@ -56,6 +56,26 @@ export const VAD_MUST_BE_DISABLED = true;
  */
 export const SEPARATE_VOCAL_FIRST = true;
 
+/**
+ * ⚠️ TRUST WORD TIMINGS, NEVER SEGMENT TIMINGS.
+ *
+ * A recogniser's SEGMENT start is where it began paying attention, not where
+ * singing begins — it swallows the instrumental run-up. Measured 2026-08-07 on
+ * the same 60s excerpt: the `small` model reported the segment "மழை வருமென்று
+ * மேகம் சொல்லும்…" starting at 10.20s, while its own WORD timings for those
+ * words, and an independent `medium` run, both put them at 28.4s. An 18-second
+ * lie at segment level, sitting right next to the truth at word level.
+ *
+ * This is why wordsToCues consumes words. It also cost an hour of believing a
+ * correct alignment was wrong, because the first accuracy harness scored
+ * against segment starts.
+ *
+ * MEASURED ACCURACY once scored properly: alignment placed both test stanzas
+ * within **0.38 s** of an independent model's word onsets — good enough for
+ * line-level captions, which is what captions and lyric videos need.
+ */
+export const TRUST_WORD_TIMINGS_NOT_SEGMENTS = true;
+
 export interface CueGroupingOptions {
   /** A silence at least this long ends the current cue. */
   gapMs?: number;
