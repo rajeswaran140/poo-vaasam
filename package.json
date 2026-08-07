@@ -15,6 +15,7 @@
     "test:e2e:ui": "playwright test --ui",
     "test:all": "npm run test && npm run test:e2e",
     "test:tts": "node scripts/test-tts-config.js",
+    "align:lyrics": "tsx scripts/align-lyrics.ts",
     "fixtures:make": "bash scripts/make-fixtures.sh test/fixtures/audio",
     "fixtures:verify": "tsx scripts/verify-fixtures.ts test/fixtures/audio",
     "aws:setup": "npm run aws:dynamodb && npm run aws:s3",
