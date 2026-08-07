@@ -98,24 +98,68 @@ async function sitemapUrls(): Promise<string[]> {
   return [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
 }
 
-async function inspect(token: string, url: string): Promise<string> {
+/**
+ * One page's inspection: index coverage plus the rich-result types Google
+ * detected. Rich results are tracked because the structured data is the one
+ * part of the site's search story that is already healthy (Breadcrumbs and
+ * Videos both PASS with zero issues as of 2026-08-07) — so the only thing
+ * worth reporting about them is a REGRESSION. A deploy that breaks the JSON-LD
+ * would otherwise be silent, since nobody looks at the Enhancements tab.
+ */
+interface PageInspection {
+  coverage: string;
+  /** e.g. ['Breadcrumbs', 'Videos'] — empty for pages that legitimately have none. */
+  richTypes: string[];
+  /** Severity-tagged issues, empty when clean. */
+  richIssues: string[];
+}
+
+interface InspectionApiResponse {
+  inspectionResult?: {
+    indexStatusResult?: { coverageState?: string };
+    richResultsResult?: {
+      verdict?: string;
+      detectedItems?: Array<{
+        richResultType?: string;
+        items?: Array<{ name?: string; issues?: Array<{ severity?: string; issueMessage?: string }> }>;
+      }>;
+    };
+  };
+}
+
+async function inspect(token: string, url: string): Promise<PageInspection> {
   try {
     const res = await fetch('https://searchconsole.googleapis.com/v1/urlInspection/index:inspect', {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ inspectionUrl: url, siteUrl: SITE }),
     });
-    if (!res.ok) return `ERROR ${res.status}`;
-    const j = (await res.json()) as { inspectionResult?: { indexStatusResult?: { coverageState?: string } } };
-    return j.inspectionResult?.indexStatusResult?.coverageState ?? 'unknown';
+    if (!res.ok) return { coverage: `ERROR ${res.status}`, richTypes: [], richIssues: [] };
+    const j = (await res.json()) as InspectionApiResponse;
+    const richTypes: string[] = [];
+    const richIssues: string[] = [];
+    for (const item of j.inspectionResult?.richResultsResult?.detectedItems ?? []) {
+      const type = item.richResultType ?? 'unknown';
+      richTypes.push(type);
+      for (const entry of item.items ?? []) {
+        for (const issue of entry.issues ?? []) {
+          richIssues.push(`${type}: [${issue.severity ?? '?'}] ${issue.issueMessage ?? 'unspecified'}`);
+        }
+      }
+    }
+    return {
+      coverage: j.inspectionResult?.indexStatusResult?.coverageState ?? 'unknown',
+      richTypes,
+      richIssues,
+    };
   } catch {
-    return 'ERROR request';
+    return { coverage: 'ERROR request', richTypes: [], richIssues: [] };
   }
 }
 
 /** Inspect with a small worker pool — the API is ~3s per URL, serial is far too slow. */
-async function inspectAll(token: string, urls: string[]): Promise<Map<string, string>> {
-  const out = new Map<string, string>();
+async function inspectAll(token: string, urls: string[]): Promise<Map<string, PageInspection>> {
+  const out = new Map<string, PageInspection>();
   let cursor = 0;
   await Promise.all(
     Array.from({ length: INSPECT_CONCURRENCY }, async () => {
@@ -152,19 +196,27 @@ async function main() {
   ]);
 
   const coverage: Record<string, number> = {};
+  const richTypes: Record<string, number> = {};
   let notIndexed: string[] = [];
+  let richIssues: string[] = [];
   if (!skipIndex) {
     const urls = await sitemapUrls();
     const states = await inspectAll(token, urls);
-    for (const state of states.values()) coverage[state] = (coverage[state] ?? 0) + 1;
+    for (const r of states.values()) {
+      coverage[r.coverage] = (coverage[r.coverage] ?? 0) + 1;
+      for (const t of r.richTypes) richTypes[t] = (richTypes[t] ?? 0) + 1;
+    }
     notIndexed = [...states.entries()]
-      .filter(([, s]) => s !== 'Submitted and indexed' && !s.includes('Indexed'))
+      .filter(([, r]) => r.coverage !== 'Submitted and indexed' && !r.coverage.includes('Indexed'))
       .map(([u]) => u.replace('https://tamilagaval.com', '') || '/');
+    richIssues = [...states.entries()].flatMap(([u, r]) =>
+      r.richIssues.map((i) => `${u.replace('https://tamilagaval.com', '') || '/'} — ${i}`));
   }
 
   if (asJson) {
     console.log(JSON.stringify(
-      { window: { recentStart, end, priorStart, priorEnd }, recent, prior, queries, pages, countries, coverage, notIndexed },
+      { window: { recentStart, end, priorStart, priorEnd }, recent, prior, queries, pages, countries,
+        coverage, notIndexed, richTypes, richIssues },
       null, 2));
     return;
   }
@@ -197,6 +249,24 @@ async function main() {
   section('queries', queries);
   section('pages', pages);
   section('countries', countries);
+
+  if (!skipIndex) {
+    console.log('\n--- structured data ---');
+    if (!Object.keys(richTypes).length) {
+      console.log('  no rich results detected on any page');
+    } else {
+      for (const [type, n] of Object.entries(richTypes).sort((a, b) => b[1] - a[1])) {
+        console.log(`  ${String(n).padStart(3)}  ${type}`);
+      }
+    }
+    // Only a regression is worth saying anything about — see PageInspection.
+    if (richIssues.length) {
+      console.log(`  ⚠️  ${richIssues.length} ISSUE(S) — structured data has REGRESSED:`);
+      for (const i of richIssues.slice(0, 10)) console.log(`      ${i}`);
+    } else {
+      console.log('  ✓ zero issues');
+    }
+  }
 
   if (notIndexed.length) {
     console.log(`\n--- not indexed (${notIndexed.length}) ---`);
