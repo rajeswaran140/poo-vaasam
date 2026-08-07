@@ -25,6 +25,38 @@ describe('songKey — real titles from the live library', () => {
     expect(keys[0]).toBe('ஈழத்து மண்ணே');
   });
 
+  it('collapses the NCY and final markers that used to sit as groups of one', () => {
+    // Found against the real archive 2026-08-07, when Raj named a new master
+    // ஈழத்து மண்ணே-NCY-2.11 by copying the existing NCY pattern — and that
+    // pattern was itself unrecognised, so following it correctly still produced
+    // an orphan group.
+    const keys = [
+      'ஈழத்து மண்ணே',
+      'ஈழத்து மண்ணே-NCY-2.5',
+      'ஈழத்து மண்ணே-NCY-2.11',
+      'ஈழத்து மண்ணே-finalver2',
+      'ஈழத்து மண்ணே-Final-Ver-1.1', // strips "-Ver-1.1" first, then the stray "-Final"
+    ].map(songKey);
+    expect(new Set(keys).size).toBe(1);
+    expect(keys[0]).toBe('ஈழத்து மண்ணே');
+  });
+
+  it('keeps a two-part assembly with its own base take', () => {
+    const keys = [
+      'ஈழத்து மண்ணே-NCY-2.11',
+      'ஈழத்து மண்ணே-NCY-2.11 (Part A)',
+      'ஈழத்து மண்ணே-NCY-2.11 (Part B)',
+    ].map(songKey);
+    expect(new Set(keys).size).toBe(1);
+  });
+
+  it('does not eat a real word that merely ends in a marker-like string', () => {
+    // The rule is anchored and needs a separator, so a title is never truncated
+    // just because it contains "final" or "ncy" inside a word.
+    expect(songKey('இறுதி final call')).toBe('இறுதி final call');
+    expect(songKey('Frequency')).toBe('Frequency');
+  });
+
   it('collapses the அம்மா என் உயிர்த்துணையே takes, including the odd ones', () => {
     const keys = [
       'அம்மா_என்_உயிர்த்துணையே_Tamilagaval',
