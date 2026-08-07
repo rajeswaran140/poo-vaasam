@@ -33,8 +33,23 @@ const TAKE_MARKERS: RegExp[] = [
   /\s*[-–]\s*(?:zz)?v[.\s]*[\d.]+.*$/i,
   /\s*[-–]\s*co[-\s]*[\d.]+.*$/i,
   /\s*[-–]\s*newr[-\s]*[\d.]+.*$/i,
+  // Markers found in the real archive on 2026-08-07 that nothing matched, so
+  // each one sat as a group of one beside the song it belongs to:
+  //   ஈழத்து மண்ணே-NCY-2.5   ஈழத்து மண்ணே-NCY-2.11   ஈழத்து மண்ணே-finalver2
+  // and ஈழத்து மண்ணே-Final-Ver-1.1, which stripped its "-Ver-1.1" and left a
+  // stray "-Final" behind — a partial strip, which is worse than none because
+  // the leftover looks deliberate.
+  /\s*[-–]\s*ncy[-\s]*[\d.]+.*$/i,
+  /\s*[-–]\s*final(?:ver)?[-\s]*[\d.]*\s*$/i,
   /\s*[-–]\s*new[-\s]*z[\d.]+.*$/i,
-  /\s*[-–]?\s*(?:part\s*[ab]|all)[-\s]*[\d.]*\s*$/i,
+  /\s*[-–]?\s*part\s*[ab][-\s]*[\d.]*\s*$/i,
+  // ⚠️ "all" MUST carry a version number. It used to share the rule above,
+  // whose separator is optional (needed for "PartA-1.9", which has a space and
+  // no dash) — so a title merely ENDING in the word "all" lost it: "இறுதி final
+  // call" grouped as "இறுதி final c". In the archive this marker is always
+  // "-All-1.7"-shaped, so requiring the number costs nothing and stops the rule
+  // reaching into real words.
+  /\s*[-–]?\s*all[-\s]*[\d.]+\s*$/i,
   /\s*[-–]\s*(?:female|male)[-_\s]*(?:version)?\s*$/i,
   /\s*\((?:v[\d.]+|female|male|part [ab]|co-[\d.]+)\)\s*$/i,
 ];
