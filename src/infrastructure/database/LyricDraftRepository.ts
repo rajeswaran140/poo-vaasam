@@ -98,6 +98,8 @@ export class LyricDraftRepository {
         theme: meta.theme || undefined,
         status: meta.status,
         latestVersion: meta.latestVersion,
+        workingLyrics: meta.workingLyrics || undefined,
+        workingUpdatedAt: meta.workingUpdatedAt || undefined,
         createdAt: meta.createdAt,
         updatedAt: meta.updatedAt,
         versions,
@@ -127,6 +129,10 @@ export class LyricDraftRepository {
         ...existing,
         latestVersion: n,
         updatedAt: now,
+        // The working copy IS this version now — clearing it stops the editor
+        // offering to "restore unsaved work" that was just filed.
+        workingLyrics: undefined,
+        workingUpdatedAt: undefined,
         versions: [...existing.versions, version],
       };
       await DynamoDBOperations.put(this.metaItem(updated, draftSnippet(input.lyrics)));
@@ -146,6 +152,10 @@ export class LyricDraftRepository {
         ...(updates.title !== undefined ? { title: updates.title } : {}),
         ...(updates.theme !== undefined ? { theme: updates.theme } : {}),
         ...(updates.status !== undefined ? { status: updates.status } : {}),
+        // Autosave target — overwritten in place, never versioned.
+        ...(updates.workingLyrics !== undefined
+          ? { workingLyrics: updates.workingLyrics, workingUpdatedAt: now }
+          : {}),
         updatedAt: now,
       };
       const latestLyrics =
@@ -188,6 +198,10 @@ export class LyricDraftRepository {
       status: d.status,
       latestVersion: d.latestVersion,
       snippet,
+      // Autosave target. metaItem enumerates fields rather than spreading, so a
+      // new field is silently dropped unless added here — this one was.
+      workingLyrics: d.workingLyrics,
+      workingUpdatedAt: d.workingUpdatedAt,
       createdAt: d.createdAt,
       updatedAt: d.updatedAt,
     };

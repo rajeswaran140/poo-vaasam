@@ -36,6 +36,14 @@ export interface LyricDraftVersion {
 export interface LyricDraft {
   id: string;
   title: string;
+  /**
+   * Unsaved in-progress text, overwritten in place by autosave and NEVER
+   * versioned. Versions are deliberate acts — the unit a critique is filed
+   * against — so autosaving into them would bury the handful of real revisions
+   * under keystroke snapshots. See lib/lyric-autosave.
+   */
+  workingLyrics?: string;
+  workingUpdatedAt?: string;
   theme?: string;
   status: LyricDraftStatus;
   latestVersion: number;
@@ -78,6 +86,9 @@ export const updateLyricDraftMetaSchema = z
   .object({
     title: z.string().trim().min(1).max(120).optional(),
     theme: z.string().trim().max(120).optional(),
+    // Autosave target. Same 8000 ceiling as a version's lyrics so a working
+    // copy can always be promoted to one without truncation.
+    workingLyrics: z.string().max(8000).optional(),
     status: lyricDraftStatusSchema.optional(),
   })
   .refine((o) => Object.keys(o).length > 0, { message: 'No fields to update' });

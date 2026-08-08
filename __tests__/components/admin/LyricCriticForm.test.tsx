@@ -8,6 +8,23 @@
 const adminFetch = jest.fn();
 jest.mock('@/lib/client-auth', () => ({ adminFetch: (...a: unknown[]) => adminFetch(...a) }));
 
+// The editor now types Tamil via react-transliterate, which hits a remote
+// suggestion endpoint per word. Stub it to a plain textarea: this suite is
+// about the CRITIC's behaviour, and a network call here would make it flaky.
+jest.mock('react-transliterate', () => ({
+  ReactTransliterate: ({ value, onChangeText, renderComponent, placeholder }: {
+    value: string;
+    onChangeText: (v: string) => void;
+    renderComponent: (p: Record<string, unknown>) => React.ReactElement;
+    placeholder?: string;
+  }) => renderComponent({
+    value,
+    placeholder,
+    onChange: (e: { target: { value: string } }) => onChangeText(e.target.value),
+  }),
+}));
+jest.mock('react-transliterate/dist/index.css', () => ({}), { virtual: true });
+
 const writeText = jest.fn().mockResolvedValue(undefined);
 Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
 

@@ -16,6 +16,13 @@ import { adminFetch } from '@/lib/client-auth';
 import { pollJob } from '@/lib/poll-job';
 import { critiqueToMarkdown } from '@/lib/critique-markdown';
 import { feedbackProgress } from '@/lib/lyric-draft-feedback';
+import { LyricDraftEditor } from '@/components/admin/LyricDraftEditor';
+import {
+  AUTOSAVE_DEBOUNCE_MS,
+  shouldAutosave,
+  autosaveStatus,
+  shouldOfferRestore,
+} from '@/lib/lyric-autosave';
 import { TamilProsodyPanel } from '@/components/admin/TamilProsodyPanel';
 import { exportFilename } from '@/lib/prompt-export';
 import type { LyricCritique, CritiqueAspect } from '@/services/ai/lyricCriticSchema';
@@ -52,6 +59,12 @@ export function LyricCriticForm() {
   // The exact text that produced `result` — only then do we file the critique
   // with the saved version (so an edited-after-critique save doesn't mislabel).
   const [critiquedText, setCritiquedText] = useState<string | null>(null);
+
+  // ---- Autosave (working copy; versions stay an explicit act) ----
+  const [savedWorking, setSavedWorking] = useState<string | null>(null);
+  const [autosaving, setAutosaving] = useState(false);
+  const [autosaveFailed, setAutosaveFailed] = useState(false);
+  const [restorable, setRestorable] = useState<string | null>(null);
 
   // One-click "add to lexicon" on word ideas — grow the personal atlas from drafting.
   const [addedWords, setAddedWords] = useState<Set<string>>(new Set());
@@ -167,6 +180,52 @@ export function LyricCriticForm() {
     });
   }
 
+  const autosaveInput = { draftId, text: lyrics, savedWorking, saving: saving || autosaving };
+  const saveStatus = autosaveStatus(autosaveInput, autosaveFailed);
+
+  /**
+   * Debounced autosave into the draft's WORKING COPY.
+   *
+   * PATCH, not a new version: versions are deliberate and carry the critique
+   * they were judged against, so autosaving into them would bury real revisions
+   * under keystroke snapshots. Only fires on an existing draft — a new one needs
+   * a title, and inventing one would fill the library with "Untitled".
+   */
+  useEffect(() => {
+    if (!shouldAutosave(autosaveInput)) return;
+    const t = setTimeout(async () => {
+      setAutosaving(true);
+      try {
+        const res = await adminFetch(`/api/admin/lyric-drafts/${draftId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ workingLyrics: lyrics }),
+        });
+        if (!res.ok) throw new Error('autosave failed');
+        setSavedWorking(lyrics);
+        setAutosaveFailed(false);
+      } catch {
+        // Never surface as a blocking error — the text is still in the editor.
+        setAutosaveFailed(true);
+      } finally {
+        setAutosaving(false);
+      }
+    }, AUTOSAVE_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lyrics, draftId, savedWorking, saving, autosaving]);
+
+  /** Warn before losing text that autosave has not yet written. */
+  useEffect(() => {
+    if (saveStatus !== 'dirty') return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [saveStatus]);
+
   /** Load a version's snapshot into the editor (text + steering + its critique). */
   function applyVersion(v: LyricDraftVersion) {
     setLyrics(v.lyrics);
@@ -190,6 +249,11 @@ export function LyricCriticForm() {
       setSaveMsg(null);
       const latest = d.versions[d.versions.length - 1];
       if (latest) applyVersion(latest);
+      // A working copy newer than the last filed version = unsaved work from a
+      // previous sitting. Offer it rather than silently overwriting either way.
+      setSavedWorking(d.workingLyrics ?? null);
+      setAutosaveFailed(false);
+      setRestorable(shouldOfferRestore(d.workingLyrics, latest?.lyrics ?? '') ? d.workingLyrics! : null);
     } catch (e) {
       setDraftError(e instanceof Error ? e.message : 'Could not open draft');
     }
@@ -398,19 +462,37 @@ export function LyricCriticForm() {
       {/* ---- Draft input ---- */}
       <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900/40">
         <div>
+          {restorable && (
+            <div className="mb-2 flex flex-wrap items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
+              <span>Unsaved work from a previous sitting was found.</span>
+              <button
+                type="button"
+                onClick={() => { setLyrics(restorable); setRestorable(null); }}
+                className="rounded bg-amber-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-amber-700"
+              >
+                Restore it
+              </button>
+              <button
+                type="button"
+                onClick={() => setRestorable(null)}
+                className="text-xs underline"
+              >
+                Keep the saved version
+              </button>
+            </div>
+          )}
           <label htmlFor="critic-lyrics" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
             Your draft <span className="text-red-500">*</span>
             <span className="ml-1 text-xs font-normal text-gray-400">(paste your own lyric — feedback only, never rewritten)</span>
           </label>
-          <textarea
+          <LyricDraftEditor
             id="critic-lyrics"
             value={lyrics}
-            onChange={(e) => setLyrics(e.target.value)}
+            onChange={setLyrics}
             rows={14}
             maxLength={8000}
-            dir="auto"
-            placeholder={'பல்லவி\nஉங்கள் சொந்த வரிகளை இங்கே ஒட்டுங்கள்…'}
-            className={`mt-1 font-tamil ${inputCls}`}
+            placeholder={'பல்லவி\nஉங்கள் சொந்த வரிகளை இங்கே எழுதுங்கள்…'}
+            status={saveStatus}
           />
         </div>
 
