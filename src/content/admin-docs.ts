@@ -764,13 +764,53 @@ Read from the peak, views are **down 59%**. Read from the pre-surge baseline of 
 
 The peak lasted about four days. It was never the normal level, and a decline back toward the trend is not a collapse.
 
-## Retention is the number that tells you if something is actually wrong
+**Working baseline: a 30-40K weekly-view channel**, not a 75K channel that lost 45K. The objective is to raise that floor (30-40K to 40-50K), not to recreate one exceptional week.
 
-Retention has risen **every week for eleven weeks — 19.2% to 51.1%**, an all-time high, and 7.7 points above the peak week.
+⚠️ **The floor is a hypothesis, not a measurement.** The last four weeks read 39,884, 35,075, 39,672, 30,678 — the most recent is the lowest, and suggested-video views fell 40% in that final week. Two or three more finalized weeks are needed before "30-40K" is established rather than assumed.
 
-That matters because it settles the causal question. If falling impressions were *causing* a decline, retention would fall with them — the same audience, reached less. Instead the audience that still arrives watches **more than half** of each song.
+## Distribution contracted; audience quality improved
 
-**Fewer impressions + higher retention = better matching, not suppression.** YouTube narrowed the funnel and the narrowing improved it.
+That is the right description. Retention has risen **every week for eleven weeks — 19.2% to 51.1%**, an all-time high and 7.7 points above the peak week.
+
+An earlier version of this page went further and argued:
+
+> If falling impressions were causing the decline, retention would be flat or falling with it.
+
+**That inference is invalid and has been withdrawn.** It assumes impression contraction is audience-neutral — a random subsample. It is not. Algorithmic contraction is *selective*: it prunes marginal, low-propensity viewers first, so retention rises mechanically as the funnel narrows, whichever way causation runs. Rising retention is compatible with both stories and discriminates between neither.
+
+What retention does establish is that the audience still arriving is **better matched** — not that the channel is deteriorating. Do not overclaim beyond that.
+
+### The mix-shift objection, and the test that answers it
+
+Channel-level retention could rise purely from composition — more love songs (which retain 51-62% here) and fewer family/grief songs (22-36%). The test is to hold the songs constant. Same five songs, peak week (Jul 2-8) vs Jul 30-Aug 5:
+
+| Song | Peak AVP | Now AVP | Change |
+|---|---|---|---|
+| நீ சிரிச்ச நேரம் | 48.8% | 53.9% | +5.1 |
+| என் மன்னவனே | 43.0% | 56.6% | +13.6 |
+| செவ்வந்தி பூவே | 47.4% | 55.7% | +8.4 |
+| உன்னை பார்த்தால் | 50.9% | 58.7% | +7.8 |
+| என் பொன்மணி | 49.4% | 65.1% | +15.7 |
+
+**All five rose.** Identical files, unchanged. So the gain is audience quality, not composition.
+
+Watch-time per view has risen eight weeks running: 2.02, 2.16, 2.51, 2.78, 2.77, 2.68, 3.03 min/view. Views fell 59% from the peak while watch-minutes fell only 51%.
+
+## Subscriber conversion — always divide by NON-subscriber views
+
+Headline subs per 1,000 views fell from 4.29 (late June) to 2.42 (Jul 23-29) before recovering to 3.16. That reads as decay. Most of it is an artifact.
+
+Views from **already-subscribed** viewers rose from 9.7% to 21.2% of the total, and those people cannot subscribe again. Excluding them:
+
+| Week | subs/1k (all views) | subs/1k (excluding subscriber traffic) |
+|---|---|---|
+| Jun 25-Jul 1 | 4.29 | 4.75 |
+| Jul 2-8 (peak) | 3.43 | 3.92 |
+| Jul 16-22 | 2.94 | 3.50 |
+| Jul 23-29 | 2.42 | 2.87 |
+| Jul 30-Aug 5 | 3.16 | **4.01** |
+
+New-viewer conversion is at its best since June and above the peak week. The headline figure is diluted by your own audience returning more often — a good problem wearing a bad disguise.
 
 ## The direction of causation
 
