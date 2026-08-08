@@ -49,6 +49,7 @@ import { ResonancePanel } from '@/components/admin/ResonancePanel';
 import { PublishAdvisorCard } from '@/components/admin/PublishAdvisorCard';
 import { SharesPanel } from '@/components/admin/SharesPanel';
 import { ReferralCoefficientPanel } from '@/components/admin/ReferralCoefficientPanel';
+import { ImpressionsLogPanel } from '@/components/admin/ImpressionsLogPanel';
 import { FunnelInsightPanel } from '@/components/admin/FunnelInsightPanel';
 import { LazyMount } from '@/components/admin/LazyMount';
 import { mergeVideoRows, pickRetentionBenchmark } from '@/lib/youtube-dashboard';
@@ -480,6 +481,11 @@ export default async function YouTubeAdminPage() {
 
       <LazyMount>
         <SharesPanel ytaConfigured={ytaOn} />
+      </LazyMount>
+
+      {/* Studio-only numbers — no ytaConfigured gate, since no API is involved. */}
+      <LazyMount>
+        <ImpressionsLogPanel />
       </LazyMount>
 
       <SectionHeading>Per-song deep dives</SectionHeading>
