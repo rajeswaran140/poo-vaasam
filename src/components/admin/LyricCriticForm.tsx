@@ -17,6 +17,9 @@ import { pollJob } from '@/lib/poll-job';
 import { critiqueToMarkdown } from '@/lib/critique-markdown';
 import { feedbackProgress } from '@/lib/lyric-draft-feedback';
 import { LyricDraftEditor } from '@/components/admin/LyricDraftEditor';
+import { LyricAssistPanel } from '@/components/admin/LyricAssistPanel';
+import { wordAt } from '@/lib/lyric-word-inspect';
+import type { LexiconWord } from '@/types/lexicon';
 import {
   AUTOSAVE_DEBOUNCE_MS,
   shouldAutosave,
@@ -59,6 +62,38 @@ export function LyricCriticForm() {
   // The exact text that produced `result` — only then do we file the critique
   // with the saved version (so an edited-after-critique save doesn't mislabel).
   const [critiquedText, setCritiquedText] = useState<string | null>(null);
+
+  // ---- Flow & words assist (pure, no LLM on the render path) ----
+  const [selectedWord, setSelectedWord] = useState('');
+  const [lexicon, setLexicon] = useState<LexiconWord[]>([]);
+
+  /**
+   * Lexicon, fetched the first time the assist panel is opened — best-effort.
+   * Lazy for the same reason the drafts panel is: nothing should fetch until
+   * looked at. The panel degrades to singability-only without it, so a failure
+   * must never block writing.
+   */
+  async function loadLexicon() {
+    try {
+      const res = await adminFetch('/api/admin/lexicon');
+      const json = (await res.json().catch(() => ({}))) as { success?: boolean; data?: LexiconWord[] };
+      if (res.ok && json.success) setLexicon(json.data ?? []);
+    } catch {
+      /* assist panel still works without it */
+    }
+  }
+
+  /** Replace the word under the caret with a chosen one. Never automatic. */
+  function useWord(replacement: string) {
+    const el = document.getElementById('critic-lyrics') as HTMLTextAreaElement | null;
+    const caret = el ? el.selectionStart : lyrics.length;
+    const target = wordAt(lyrics, caret);
+    if (!target) return;
+    const start = lyrics.lastIndexOf(target, caret);
+    if (start < 0) return;
+    setLyrics(lyrics.slice(0, start) + replacement + lyrics.slice(start + target.length));
+    setSelectedWord(replacement);
+  }
 
   // ---- Autosave (working copy; versions stay an explicit act) ----
   const [savedWorking, setSavedWorking] = useState<string | null>(null);
@@ -489,11 +524,21 @@ export function LyricCriticForm() {
             id="critic-lyrics"
             value={lyrics}
             onChange={setLyrics}
+            onCaret={(caret) => setSelectedWord(wordAt(lyrics, caret))}
             rows={14}
             maxLength={8000}
             placeholder={'பல்லவி\nஉங்கள் சொந்த வரிகளை இங்கே எழுதுங்கள்…'}
             status={saveStatus}
           />
+          <div className="mt-3">
+            <LyricAssistPanel
+              lyrics={lyrics}
+              selectedWord={selectedWord}
+              lexicon={lexicon}
+              onUseWord={useWord}
+              onFirstOpen={loadLexicon}
+            />
+          </div>
         </div>
 
         <div className="space-y-1.5">

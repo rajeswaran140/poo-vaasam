@@ -90,7 +90,11 @@ it('enqueues, polls, and renders the critique sections', async () => {
 
   // First call is the POST enqueue with the trimmed draft.
   await waitFor(() => expect(adminFetch).toHaveBeenCalled());
-  const [url, init] = adminFetch.mock.calls[0];
+  const critiqueCall = adminFetch.mock.calls.find(
+    ([u, i]: [string, { method?: string }]) => u === '/api/admin/compose/critique' && i?.method === 'POST'
+  );
+  expect(critiqueCall).toBeTruthy();
+  const [url, init] = critiqueCall!;
   expect(url).toBe('/api/admin/compose/critique');
   expect(init.method).toBe('POST');
   expect(JSON.parse(init.body).lyrics).toBe('ஊருக்குப் போகணும்');
@@ -111,7 +115,10 @@ it('includes toggled focus aspects and notes in the enqueue payload', async () =
   fireEvent.click(screen.getByRole('button', { name: /critique my draft/i }));
 
   await waitFor(() => expect(adminFetch).toHaveBeenCalled());
-  const sent = JSON.parse(adminFetch.mock.calls[0][1].body);
+  const enqueue = adminFetch.mock.calls.find(
+    ([u, i]: [string, { method?: string }]) => u === '/api/admin/compose/critique' && i?.method === 'POST'
+  );
+  const sent = JSON.parse(enqueue![1].body);
   expect(sent.focus).toEqual(['meter', 'imagery']);
   expect(sent.notes).toBe('Is the ache sustained?');
 });
