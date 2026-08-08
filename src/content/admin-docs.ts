@@ -731,6 +731,77 @@ Everything else (love / melody / folk) is fine to monetize with light ads.
 Revenue lives in the Monetization panel at \`/admin/analytics\` (and Studio → Revenue). India-heavy audience = low CPM, so it stays modest — the milestone + fan-funding matter more than ad dollars.
 `,
   },
+  {
+    slug: 'reading-impressions-and-reach',
+    title: 'Reading impressions & reach — what the numbers actually mean',
+    category: 'Growth',
+    updatedAt: '2026-08-08',
+    body: `# Reading impressions & reach
+
+Impressions are the most misread number on this channel. This page exists so the same question doesn't have to be re-answered from scratch.
+
+## Impressions are Studio-only — not a bug, not a permissions problem
+
+\`impressions\` and \`impressionsClickThroughRate\` are **not in the YouTube Analytics API**. Requesting them returns \`HTTP 400 — Unknown identifier\`, while \`views,estimatedMinutesWatched\` on the same window succeeds. Verified again 2026-08-08.
+
+So nothing automated — no cron, no dashboard panel — can read impressions. Only **Studio → Analytics → Reach** has them. Everything else uses **suggested-video views** (\`insightTrafficSourceType = RELATED_VIDEO\`) as a proxy, and should say so.
+
+The API's \`cardImpressions\` / \`annotationImpressions\` are a different thing (cards and end screens) and read 0 here.
+
+## Always compare against the pre-surge baseline, never the peak
+
+The channel had a one-off surge that peaked in early July. Measured weekly, finalized through 2026-08-05:
+
+| Week | Views | Net subs | Retention |
+|---|---|---|---|
+| May 21–27 | 2,418 | +11 | 19.2% |
+| Jun 4–10 | 2,520 | +14 | 22.1% |
+| Jul 2–8 (peak) | 75,496 | +259 | 43.4% |
+| Jul 23–29 | 39,672 | +96 | 45.8% |
+| Jul 30–Aug 5 | 30,678 | +97 | 51.1% |
+
+Read from the peak, views are **down 59%**. Read from the pre-surge baseline of ~2,400/week, they are **12.8x higher**. Both are true; only the second describes the channel.
+
+The peak lasted about four days. It was never the normal level, and a decline back toward the trend is not a collapse.
+
+## Retention is the number that tells you if something is actually wrong
+
+Retention has risen **every week for eleven weeks — 19.2% to 51.1%**, an all-time high, and 7.7 points above the peak week.
+
+That matters because it settles the causal question. If falling impressions were *causing* a decline, retention would fall with them — the same audience, reached less. Instead the audience that still arrives watches **more than half** of each song.
+
+**Fewer impressions + higher retention = better matching, not suppression.** YouTube narrowed the funnel and the narrowing improved it.
+
+## The direction of causation
+
+Impressions are downstream of performance, not upstream. YouTube serves impressions based on how the last batch converted. A falling impressions line is usually a **symptom**, not the disease.
+
+There is also a real, benign mechanism behind what Studio shows: YouTube reallocates impression *inventory* toward a new upload during its test window, so older songs genuinely dip. The views data shows they **recover**. A dip that recovers and a dip that persists look identical on the day you check — only the trajectory separates them.
+
+## Three tests that settle "new uploads are cannibalising my old songs"
+
+Run these before accepting the claim (all reproducible from the Analytics API):
+
+1. **Cadence-invariance.** Uploads/week were near-constant Jun 15 to Jul 31 (10, 11, 8, 10, 9, 7, 7) while old-song views/day swung 2,643 to 7,873 to 2,182. A constant input cannot cause a 3x swing.
+2. **Upload-day null.** Over 21 days, the 8 biggest pre-July songs averaged 2,372 views/day on upload days vs 2,360 on quiet days — 0.5% apart. No upload-day dent. (Exclude the surge-tail outlier or the raw figure misleadingly shows -12%.)
+3. **Compounding.** 63 uploads since Jun 15. A -50% penalty per upload would leave 1.1e-19 of baseline reach. Actual: -17% while the catalogue grew 49 to 90 songs. Any multiplicative per-upload penalty is arithmetically impossible.
+
+The settled finding is **dilution, not cannibalisation** — more songs sharing the same total. Which is why **cutting cadence does not raise total reach**.
+
+## Two measurement traps that have caused false alarms
+
+- **Unfinalized days.** Analytics lags ~2-3 days. Studio *displays* recent days but under-reports them and they settle upward. Always state the latest finalized day. When bucketing weeks, divide by the days actually present — a 7-day bucket holding 5 finalized days once produced a false "-41%".
+- **Unequal-age comparison.** Comparing a 3-day-old song to an 8-day-old one will show "the algorithm turned against me" every time. Compare **day-1 to day-1, day-7 to day-7**. One such pair looked like a collapse in Studio; aligned at day 1 the newer song was actually ahead (593 views / 33% AVP vs 510 / 32%).
+
+## What to do when reach genuinely decays
+
+Not paid advertising — ruled out, and it would not address the cause.
+
+The structural issue is that **~84% of traffic is algorithm-fed, i.e. rented**. A surge decays and nothing you own catches the people it brought. The durable answer is owned distribution — the WhatsApp Channel, the email list, playlists (already ~28% of views and holding steady while suggested fell 40%).
+
+Judge the channel on **retention, net subscribers, and playlist/subscriber views**. Those are the signals you influence. Impressions are the algorithm's opinion of last week.
+`,
+  },
 ];
 
 /** Docs grouped by category, in registry order, for the sidebar. */
