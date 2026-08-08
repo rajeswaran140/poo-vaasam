@@ -32,6 +32,12 @@ interface Props {
   placeholder?: string;
   className?: string;
   status?: AutosaveStatus;
+  /**
+   * Caret position after a click, key or selection change — lets the parent
+   * work out which word is under the cursor. Reported rather than resolved
+   * here: this component owns typing, not what the word means.
+   */
+  onCaret?: (caret: number) => void;
   /** Extra hint shown beside the status, e.g. the last-saved time. */
   statusDetail?: string;
 }
@@ -54,8 +60,11 @@ export function LyricDraftEditor({
   className = '',
   status = 'clean',
   statusDetail,
+  onCaret,
 }: Props) {
   const [translit, setTranslit] = useState(true);
+  const reportCaret = (e: React.SyntheticEvent<HTMLTextAreaElement>) =>
+    onCaret?.(e.currentTarget.selectionStart ?? 0);
   const label = autosaveLabel(status);
 
   const shared =
@@ -102,7 +111,17 @@ export function LyricDraftEditor({
           containerClassName="relative"
           activeItemStyles={{ backgroundColor: '#7C3AED', color: 'white' }}
           renderComponent={(props: Record<string, unknown>) => (
-            <textarea {...props} id={id} rows={rows} maxLength={maxLength} dir="auto" className={shared} />
+            <textarea
+              {...props}
+              id={id}
+              rows={rows}
+              maxLength={maxLength}
+              dir="auto"
+              className={shared}
+              onSelect={reportCaret}
+              onClick={reportCaret}
+              onKeyUp={reportCaret}
+            />
           )}
         />
       ) : (
@@ -115,6 +134,9 @@ export function LyricDraftEditor({
           dir="auto"
           placeholder={placeholder}
           className={shared}
+          onSelect={reportCaret}
+          onClick={reportCaret}
+          onKeyUp={reportCaret}
         />
       )}
     </div>
