@@ -9,6 +9,7 @@
 
 import { useMemo, useState } from 'react';
 import { SunoSetupPanel } from '@/components/admin/SunoSetupPanel';
+import { ArrangementEditor } from '@/components/admin/ArrangementEditor';
 import { Copy, Check, FileDown, Printer } from 'lucide-react';
 import { buildExportPack, exportPackToMarkdown, exportFilename, type ExportPack } from '@/lib/prompt-export';
 import type { ComposerAnalysis } from '@/services/ai/composer';
@@ -156,6 +157,16 @@ export function PromptExport({
       <p className="mt-2 text-[11px] text-purple-700/80 dark:text-purple-300/70">
         Packs Lyrics · Style · Exclude Styles · Weirdness · Style Influence into one file. PDF opens your print dialog → choose “Save as PDF”.
       </p>
+
+      {/* Manual arrangement FIRST: break placement is a craft decision, and a
+          hand-built block should take precedence over a generated one. */}
+      <div className="mt-3">
+        <ArrangementEditor
+          lyrics={lyrics}
+          instruments={result.suggested_instruments ?? []}
+          onArranged={(block) => setArranged({ block, exclude: arranged?.exclude ?? [] })}
+        />
+      </div>
 
       <div className="mt-3">
         <SunoSetupPanel
