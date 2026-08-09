@@ -20,9 +20,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      # v5 runs on the Node 24 action runtime. On v4 the runner reported
+      # "Node.js 20 is deprecated … being forced to run on Node.js 24", which
+      # means the action was executing on a runtime it was not built for.
+      # (This only affects how the ACTIONS run; `node-version` below still
+      # decides what the `run:` steps use.)
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '20'
           cache: 'npm'
@@ -31,11 +36,29 @@ jobs:
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
+      # Prove which Node actually ran the steps. A mismatch against the
+      # node-version above is itself the bug, and without this line a
+      # version-specific failure is indistinguishable from a code failure.
+      - name: Environment
+        run: |
+          node --version
+          npm --version
+          echo "cores: $(nproc)  mem: $(free -g | awk '/^Mem:/{print $2}')GB"
+
       - name: Typecheck
         run: npx tsc --noEmit
 
       - name: Lint
         run: npm run lint
 
+      # 385 jsdom suites. Two guards, because a jest worker that dies exits 1
+      # with NO failing assertion reported — indistinguishable from a real test
+      # failure in the summary, which is exactly how this presented:
+      #   --maxWorkers=2       bounds concurrent jsdom environments
+      #   --workerIdleMemoryLimit  recycles a worker before it grows unbounded
+      # --forceExit is deliberately NOT used: it would mask a genuine open
+      # handle rather than surface it.
       - name: Test
-        run: npm test -- --ci
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: npm test -- --ci --maxWorkers=2 --workerIdleMemoryLimit=512MB
