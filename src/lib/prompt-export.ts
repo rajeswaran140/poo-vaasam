@@ -13,10 +13,26 @@
  */
 
 import { composerAnalysisSchema, type ComposerAnalysis } from '@/services/ai/composerSchema';
+import {
+  EXCLUDE_MAX,
+  STYLE_TARGET_MIN,
+  checkSetup,
+  isReady,
+  type SetupFinding,
+} from '@/lib/suno-setup';
 
 export interface ExportPackInput {
   title: string;
   lyrics: string;
+  /**
+   * The lyric arranged into [Kind - Detail] sections with instrumental breaks,
+   * from the setup generator. THIS is what the generator's lyrics box wants —
+   * raw lyrics leave it to guess where the song breathes. Optional: falls back
+   * to the plain lyric so an un-arranged brief still exports.
+   */
+  lyricsBlock?: string;
+  /** Per-song exclusions from the setup generator; falls back to the standing list. */
+  exclude?: string[];
   /** The chosen variant's short style name + full style prompt. */
   styleName: string;
   stylePrompt: string;
@@ -39,7 +55,14 @@ export interface ExportPackInput {
 
 export interface ExportPack {
   title: string;
+  /** Arranged block when available, otherwise the raw lyric. */
   lyrics: string;
+  /** True when `lyrics` carries section tags rather than a bare lyric. */
+  arranged: boolean;
+  /** Deterministic checks over the assembled pack — see lib/suno-setup. */
+  findings: SetupFinding[];
+  /** False when something in the pack would waste a credit. */
+  ready: boolean;
   styleName: string;
   style: string;
   excludeStyles: string;
@@ -64,12 +87,50 @@ const EXPERIMENTAL = /\b(experimental|fusion|modern|electronic|psychedelic|avant
 const TRADITIONAL = /\b(traditional|classical|carnatic|devotional|folk|bhajan|lament|temple)\b/i;
 
 /** Derive a recommended exclusion list: defaults minus anything the style wants. */
-export function deriveExclusions(stylePrompt: string): string {
-  const s = stylePrompt.toLowerCase();
-  return DEFAULT_EXCLUSIONS.filter((x) => !s.includes(x.toLowerCase().split(' ')[0])).join(', ');
+/**
+ * Exclusions for this song.
+ *
+ * Song-supplied ones win: the setup generator sees the lyric and the chosen
+ * style, so it knows what actually threatens THIS song. The standing list is
+ * only a fallback for a brief that never went through the generator.
+ *
+ * Capped at EXCLUDE_MAX either way. The list used to emit all eight at once,
+ * but negatives are attention-priced like positives — a long list dilutes every
+ * item in it, so eight exclusions are weaker than three. Anything the style
+ * actually asks for is dropped first: telling the generator to use and avoid
+ * the same thing is worse than not excluding it at all.
+ */
+export function deriveExclusions(stylePrompt: string, songSpecific: string[] = []): string {
+  const s = (stylePrompt ?? '').toLowerCase();
+  const notContradicted = (x: string) => !s.includes(x.toLowerCase().split(' ')[0]);
+  const chosen = (songSpecific.length ? songSpecific : DEFAULT_EXCLUSIONS).filter(notContradicted);
+  return chosen.slice(0, EXCLUDE_MAX).join(', ');
 }
 
 /** Recommended weirdness %: low for traditional, higher for experimental. */
+/**
+ * Style influence, from how much the style prompt actually specifies.
+ *
+ * Was hardcoded at 50 and commented "moderate-high". It is neither: 50 tells
+ * the generator to follow the prompt only loosely, which throws away exactly
+ * the detail — named voices, a chosen instrument set, an era — that the brief
+ * spent its effort on. Guidance for a dense, specific prompt is 75-95.
+ *
+ * Scaled by density rather than fixed, because the setting genuinely depends on
+ * the prompt: a thin style has little worth enforcing, and forcing strict
+ * adherence to three words just constrains the model without informing it.
+ */
+export function deriveStyleInfluence(stylePrompt: string): number {
+  const s = (stylePrompt ?? '').trim();
+  if (!s) return 50;
+  const descriptors = s.split(/[|,]/).filter((d) => d.trim()).length;
+  // Dense = long AND many distinct descriptors, i.e. the prompt names specifics.
+  if (s.length >= STYLE_TARGET_MIN && descriptors >= 12) return 85;
+  if (s.length >= STYLE_TARGET_MIN || descriptors >= 8) return 75;
+  if (descriptors >= 4) return 65;
+  return 50;
+}
+
 export function deriveWeirdness(stylePrompt: string, mood = ''): number {
   const hay = `${stylePrompt} ${mood}`;
   if (EXPERIMENTAL.test(hay)) return 35;
@@ -116,15 +177,36 @@ export function buildStyleAnchor(input: ExportPackInput): string {
 export function buildExportPack(input: ExportPackInput): ExportPack {
   const stylePrompt = (input.stylePrompt ?? '').trim();
   const anchor = buildStyleAnchor(input);
+  const style = [stylePrompt, anchor].filter(Boolean).join(' ');
+  // The arranged block when the setup generator produced one; the bare lyric
+  // otherwise, so a brief that skipped that step still exports.
+  const arrangedBlock = (input.lyricsBlock ?? '').trim();
+  const lyrics = arrangedBlock || (input.lyrics ?? '').trim();
+  const excludeStyles = deriveExclusions(stylePrompt, input.exclude);
+  const weirdnessPct = deriveWeirdness(stylePrompt, input.mood);
+  const styleInfluencePct = deriveStyleInfluence(style);
+
+  // One set of rules: the pack is checked by the same module the generator is
+  // checked by, so the two can never disagree about what is safe to paste.
+  const findings = checkSetup({
+    lyricsBlock: lyrics,
+    style,
+    weirdness: weirdnessPct,
+    styleInfluence: styleInfluencePct,
+    exclude: excludeStyles ? excludeStyles.split(',').map((x) => x.trim()).filter(Boolean) : [],
+  });
+
   return {
     title: (input.title ?? '').trim() || 'Untitled',
-    lyrics: (input.lyrics ?? '').trim(),
+    lyrics,
+    arranged: Boolean(arrangedBlock),
+    findings,
+    ready: isReady(findings),
     styleName: (input.styleName ?? '').trim(),
-    style: [stylePrompt, anchor].filter(Boolean).join(' '),
-    excludeStyles: deriveExclusions(stylePrompt),
-    weirdnessPct: deriveWeirdness(stylePrompt, input.mood),
-    // Moderate-high: follow the described instrumentation/raga fairly closely.
-    styleInfluencePct: 50,
+    style,
+    excludeStyles,
+    weirdnessPct,
+    styleInfluencePct,
   };
 }
 
