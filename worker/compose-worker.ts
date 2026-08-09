@@ -7,16 +7,22 @@
  * the SAME service code as the app (bundled from src via esbuild — no logic
  * drift), writing the result onto a `<KIND>JOB#<id>` DynamoDB item the form polls.
  *
- * It handles two job kinds (dispatched on `event.kind`, default 'compose' for
+ * It handles three job kinds (dispatched on `event.kind`, default 'compose' for
  * back-compat):
- *   - 'compose'  → composeFromLyrics  → COMPOSEJOB#<id>   (~33s brief)
- *   - 'critique' → critiqueLyric      → CRITICJOB#<id>    (~50-70s feedback)
+ *   - 'compose'    → composeFromLyrics   → COMPOSEJOB#<id>  (~33-41s brief)
+ *   - 'critique'   → critiqueLyric       → CRITICJOB#<id>   (~50-70s feedback)
+ *   - 'suno-setup' → generateSunoSetup   → SUNOJOB#<id>     (arrangement)
+ *
+ * ⚠️ 'suno-setup' shipped INLINE on the Amplify route first and 504'd on every
+ * real song — the same ~30s wall that put compose and critique here. Do not move
+ * any of them back.
  *
  * Build: npm run build:worker  →  worker-dist/index.js (handler: index.handler)
  */
 
 import { composeFromLyrics } from '@/services/ai/composer';
 import { critiqueLyric } from '@/services/ai/lyricCritic';
+import { generateSunoSetup } from '@/services/ai/sunoSetup';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 
@@ -27,13 +33,23 @@ const ddb = DynamoDBDocumentClient.from(
 const TABLE = process.env.DYNAMODB_TABLE_NAME || 'TamilWebContent';
 
 interface JobEvent {
-  kind?: 'compose' | 'critique';
+  kind?: 'compose' | 'critique' | 'suno-setup';
   jobId?: string;
   lyrics?: string;
   focus?: string[]; // critique only
-  notes?: string; // critique only
+  notes?: string; // critique + suno-setup
   lexicon?: string[]; // critique only — poet's personal vocabulary hints
   model?: string;
+  // suno-setup only — the chosen variant's musical direction. Breaks may only
+  // name instruments from `instruments`, so it must reach the worker intact.
+  style?: string;
+  styleBrief?: string;
+  instruments?: string[];
+  ragas?: string[];
+  voices?: string[];
+  bpm?: number;
+  key?: string;
+  mood?: string;
 }
 
 type Patch =
@@ -41,30 +57,53 @@ type Patch =
   | { status: 'error'; result: null; error: { code: string; message: string } };
 
 export const handler = async (event: JobEvent) => {
-  const kind = event?.kind === 'critique' ? 'critique' : 'compose';
+  const kind: NonNullable<JobEvent['kind']> =
+    event?.kind === 'critique' ? 'critique' : event?.kind === 'suno-setup' ? 'suno-setup' : 'compose';
   const jobId = event?.jobId;
   const lyrics = event?.lyrics;
   if (!jobId || !lyrics) {
     console.error('[ai-job-worker] bad event', JSON.stringify({ kind, hasJobId: !!jobId, hasLyrics: !!lyrics }));
     return { ok: false, error: 'jobId and lyrics are required' };
   }
-  const pk = `${kind === 'critique' ? 'CRITICJOB' : 'COMPOSEJOB'}#${jobId}`;
+  const PK_PREFIX = { compose: 'COMPOSEJOB', critique: 'CRITICJOB', 'suno-setup': 'SUNOJOB' } as const;
+  const pk = `${PK_PREFIX[kind]}#${jobId}`;
 
   let patch: Patch;
   try {
-    const result =
-      kind === 'critique'
-        ? await critiqueLyric(
-            { lyrics, focus: event.focus ?? [], ...(event.notes ? { notes: event.notes } : {}) },
-            {
-              ...(event.model ? { model: event.model } : {}),
-              ...(event.lexicon?.length ? { lexicon: event.lexicon } : {}),
-            }
-          )
-        : await composeFromLyrics(lyrics, event.model ? { model: event.model } : {});
-    patch = result.ok
-      ? { status: 'done', result: result.data, error: null }
-      : { status: 'error', result: null, error: { code: result.code, message: result.error } };
+    if (kind === 'suno-setup') {
+      // The setup carries its checks alongside the output — `ready:false` plus
+      // findings is a useful answer, so the whole envelope is stored, not just
+      // `data`. A contradiction is faster to fix by hand than to regenerate.
+      const r = await generateSunoSetup({
+        lyrics,
+        style: event.style ?? '',
+        ...(event.styleBrief ? { styleBrief: event.styleBrief } : {}),
+        instruments: event.instruments ?? [],
+        ragas: event.ragas ?? [],
+        voices: event.voices ?? [],
+        ...(event.bpm ? { bpm: event.bpm } : {}),
+        ...(event.key ? { key: event.key } : {}),
+        ...(event.mood ? { mood: event.mood } : {}),
+        ...(event.notes ? { notes: event.notes } : {}),
+      });
+      patch = r.ok
+        ? { status: 'done', result: { setup: r.data, findings: r.findings, ready: r.ready }, error: null }
+        : { status: 'error', result: null, error: { code: r.code, message: r.error } };
+    } else {
+      const result =
+        kind === 'critique'
+          ? await critiqueLyric(
+              { lyrics, focus: event.focus ?? [], ...(event.notes ? { notes: event.notes } : {}) },
+              {
+                ...(event.model ? { model: event.model } : {}),
+                ...(event.lexicon?.length ? { lexicon: event.lexicon } : {}),
+              }
+            )
+          : await composeFromLyrics(lyrics, event.model ? { model: event.model } : {});
+      patch = result.ok
+        ? { status: 'done', result: result.data, error: null }
+        : { status: 'error', result: null, error: { code: result.code, message: result.error } };
+    }
   } catch (err) {
     console.error(`[ai-job-worker:${kind}] unexpected error:`, err instanceof Error ? err.message : String(err));
     patch = { status: 'error', result: null, error: { code: 'upstream', message: 'The AI service failed. Please try again.' } };
