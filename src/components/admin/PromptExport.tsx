@@ -8,6 +8,7 @@
  */
 
 import { useMemo, useState } from 'react';
+import { SunoSetupPanel } from '@/components/admin/SunoSetupPanel';
 import { Copy, Check, FileDown, Printer } from 'lucide-react';
 import { buildExportPack, exportPackToMarkdown, exportFilename, type ExportPack } from '@/lib/prompt-export';
 import type { ComposerAnalysis } from '@/services/ai/composer';
@@ -62,6 +63,10 @@ export function PromptExport({
 }) {
   const variants = useMemo(() => result.suno_prompts ?? [], [result.suno_prompts]);
   const [copied, setCopied] = useState(false);
+  // The arranged lyrics block + per-song exclusions from the setup generator.
+  // Held here rather than inside the panel so the EXPORT PACK uses them — an
+  // arrangement the pack ignored would look done and paste wrong.
+  const [arranged, setArranged] = useState<{ block: string; exclude: string[] } | null>(null);
 
   const pack = useMemo(() => {
     const v = variants[selectedIdx];
@@ -69,6 +74,8 @@ export function PromptExport({
     return buildExportPack({
       title: result.song_titles?.[0] ?? 'Untitled',
       lyrics,
+      lyricsBlock: arranged?.block,
+      exclude: arranged?.exclude,
       styleName: v.style,
       stylePrompt: v.prompt,
       mood: result.mood,
@@ -83,12 +90,14 @@ export function PromptExport({
       voice: result.recommended_voice,
     });
   }, [
-    variants, selectedIdx, lyrics, result.song_titles, result.mood, result.theme,
+    variants, selectedIdx, lyrics, result.song_titles, result.mood, result.theme, arranged,
     // The structured direction feeds the style anchor — omitting these would
     // serve a stale pack (old BPM/voice) after switching to another brief.
     result.suggested_bpm, result.suggested_key, result.suggested_instruments,
     result.suggested_ragas, result.recommended_voice,
   ]);
+
+  const selected = variants[selectedIdx];
 
   if (!pack) return null;
 
@@ -120,7 +129,10 @@ export function PromptExport({
         <span className="text-xs font-semibold uppercase tracking-wide text-purple-700 dark:text-purple-300">Export for Tamilagaval</span>
         <select
           value={selectedIdx}
-          onChange={(e) => onSelectIdx(Number(e.target.value))}
+          onChange={(e) => {
+            setArranged(null);
+            onSelectIdx(Number(e.target.value));
+          }}
           className="rounded-lg border border-purple-300 bg-white px-2 py-1 text-xs dark:border-purple-700 dark:bg-gray-800 dark:text-gray-100"
           aria-label="Style variant to export"
         >
@@ -144,6 +156,21 @@ export function PromptExport({
       <p className="mt-2 text-[11px] text-purple-700/80 dark:text-purple-300/70">
         Packs Lyrics · Style · Exclude Styles · Weirdness · Style Influence into one file. PDF opens your print dialog → choose “Save as PDF”.
       </p>
+
+      <div className="mt-3">
+        <SunoSetupPanel
+          lyrics={lyrics}
+          styleName={selected?.style ?? ''}
+          stylePrompt={selected?.prompt ?? ''}
+          instruments={result.suggested_instruments}
+          ragas={result.suggested_ragas}
+          voices={result.recommended_voice}
+          bpm={result.suggested_bpm}
+          musicKey={result.suggested_key}
+          mood={result.mood}
+          onArranged={(block, exclude) => setArranged({ block, exclude })}
+        />
+      </div>
     </div>
   );
 }
