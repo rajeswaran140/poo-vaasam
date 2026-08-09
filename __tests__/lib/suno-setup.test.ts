@@ -71,16 +71,26 @@ describe('styleDescriptors', () => {
   });
 });
 
-describe('instrumentsInTag', () => {
-  it('strips role words and keeps the instrument', () => {
+describe('instrumentsInTag — matched against the curated palette', () => {
+  it('finds palette instruments in a tag detail', () => {
     expect(instrumentsInTag('Flute Phrase')).toEqual(['flute']);
-    expect(instrumentsInTag('Dholak and Bass Groove')).toEqual(['dholak', 'bass']);
     expect(instrumentsInTag('Solo Violin')).toEqual(['violin']);
+    expect(instrumentsInTag('Dholak and Bass Groove').sort()).toContain('dholak');
+  });
+
+  it('finds them inside real direction prose', () => {
+    // The old role-word heuristic returned `answers` and `counterpoint` here.
+    expect(instrumentsInTag('Santoor answers in counterpoint')).toEqual(['santoor']);
+    expect(instrumentsInTag('Warm string pad enters beneath')).toEqual([]);
   });
 
   it('yields nothing for a purely structural detail', () => {
     expect(instrumentsInTag('Instrumental')).toEqual([]);
-    expect(instrumentsInTag('Full Band Lift')).toEqual(['band']);
+    expect(instrumentsInTag('Full Band Lift')).toEqual([]);
+  });
+
+  it('matches an alias as well as the canonical name', () => {
+    expect(instrumentsInTag('Saraswati veena answers')).toContain('saraswati veena');
   });
 });
 
@@ -198,5 +208,61 @@ describe('isReady', () => {
     expect(isReady(clean)).toBe(true);
     expect(isReady([{ severity: 'warning', field: 'style', message: 'm' }])).toBe(true);
     expect(isReady([{ severity: 'error', field: 'style', message: 'm' }])).toBe(false);
+  });
+});
+
+describe('parseSectionTags — sections vs performance directions', () => {
+  // Raj's real files carry TWO bracketed levels: a section header, then one or
+  // more bracketed direction lines describing the layers. The parser counted
+  // every bracket as a section — 11 where there were 4 — so the balance and
+  // break-instrument checks were reading noise.
+  const REAL = [
+    '[Intro - Instrumental]',
+    '[Solo bamboo flute states the chorus theme]',
+    '[Warm string pad enters beneath]',
+    '',
+    '[Chorus - Male Lead]',
+    '[Soft close-mic tenor, restrained, pads underneath]',
+    'சாயங்கால வானத்திலே...',
+    '',
+    '[Break - Flute Phrase]',
+    '[Short lyrical flute fill]',
+  ].join('\n');
+
+  it('counts only the section headers', () => {
+    const tags = parseSectionTags(REAL);
+    expect(tags.map((t) => t.raw)).toEqual([
+      'Intro - Instrumental',
+      'Chorus - Male Lead',
+      'Break - Flute Phrase',
+    ]);
+  });
+
+  it('attaches each direction to the section it describes', () => {
+    const tags = parseSectionTags(REAL);
+    expect(tags[0].directions).toHaveLength(2);
+    expect(tags[1].directions).toEqual(['Soft close-mic tenor, restrained, pads underneath']);
+  });
+
+  it('still treats a bare structural bracket as a section', () => {
+    expect(parseSectionTags('[Outro]').map((t) => t.kind)).toEqual(['Outro']);
+    expect(parseSectionTags('[Theme A]').map((t) => t.kind)).toEqual(['Theme A']);
+  });
+
+  it('drops a direction that precedes any section rather than inventing one', () => {
+    expect(parseSectionTags('[Warm pad enters]\n[Chorus - Male Lead]')).toHaveLength(1);
+  });
+
+  it('checks instruments named in DIRECTIONS, not just the tag', () => {
+    // "[Break - Flute Phrase]" is fine, but a layer naming an absent instrument
+    // is the same silent contradiction.
+    const f = checkSetup({
+      lyricsBlock: '[Break - Flute Phrase]\n[Santoor answers in counterpoint]\n[Chorus - Male Lead]\nவரி',
+      style: `bamboo flute motif, ${'y'.repeat(450)}`,
+      weirdness: 50,
+      styleInfluence: 80,
+      exclude: [],
+    });
+    expect(f.some((x) => x.field === 'lyrics' && /santoor/i.test(x.message))).toBe(true);
   });
 });

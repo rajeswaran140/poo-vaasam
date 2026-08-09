@@ -21,6 +21,7 @@
  */
 
 import { PROMPT_LIMITS } from '@/lib/prompt-preflight';
+import { INSTRUMENTS } from '@/data/instruments';
 
 /**
  * Style-box budget. The hard cap is PROMPT_LIMITS.STYLE_MAX (1000). The lower
@@ -64,16 +65,45 @@ export interface SunoSetup {
 
 export interface SectionTag {
   raw: string;
-  /** Intro / Chorus / Verse / Bridge / Break / Interlude / Outro … */
+  /** Intro / Chorus / Verse / Bridge / Break / Interlude / Outro / Theme A … */
   kind: string;
   /** Everything after the dash: "Male Lead", "Flute Phrase", "Instrumental". */
   detail: string;
   /** No sung lines follow it — a purely instrumental marker. */
   instrumental: boolean;
   line: number;
+  /**
+   * Bracketed PERFORMANCE DIRECTIONS that follow this tag, e.g.
+   * "Warm string pad enters beneath", "Bamboo flute answers in counterpoint".
+   * These are where the arrangement actually lives — the layers under the lead.
+   */
+  directions: string[];
 }
 
 const TAG_LINE = /^\s*\[([^\]]+)\]\s*$/;
+/**
+ * A SECTION tag carries a Kind and a Detail separated by a dash
+ * (`[Chorus - Male Lead]`). A DIRECTION line is bracketed prose with no such
+ * separator (`[Warm string pad enters beneath]`).
+ *
+ * ⚠️ THIS DISTINCTION WAS MISSING AND THE PARSER COUNTED EVERY BRACKET AS A
+ * SECTION. On a real lyric that reported 11 sections where there were 4, so the
+ * instrumental-balance and break-instrument checks were both reading noise.
+ */
+const KIND_DETAIL = /\s+[-–—]\s+/;
+/**
+ * A bare bracket is still a SECTION when its whole content is a structural
+ * word — `[Outro]`, `[Chorus]`, `[Theme A]`. Without this, dropping the dash
+ * would silently demote a real section to a direction and the balance count
+ * would be wrong in the other direction.
+ */
+const BARE_SECTION =
+  /^(intro|verse|pre-?chorus|chorus|bridge|hook|outro|drop|break|instrumental|interlude|refrain|coda|pallavi|anupallavi|charanam|theme(\s+[a-z0-9]+)?|final(\s+theme(\s+[a-z0-9]+)?)?)$/i;
+
+/** Is this bracket a section header rather than a performance direction? */
+function isSectionTag(inner: string): boolean {
+  return KIND_DETAIL.test(inner) || BARE_SECTION.test(inner.trim());
+}
 /** Details that describe playing rather than singing. */
 const VOCAL_HINT = /\b(lead|vocal|voice|together|duet|solo vocal|chorus vocals?|male|female|child|choir)\b/i;
 
@@ -91,11 +121,16 @@ export function parseSectionTags(lyricsBlock: string): SectionTag[] {
     const m = TAG_LINE.exec(l);
     if (!m) return;
     const inner = m[1].trim();
-    // Accept an em-dash or hyphen; writers use both.
-    const parts = inner.split(/\s+[-–—]\s+/);
+    if (!isSectionTag(inner)) {
+      // A direction line. Attach it to the section it describes; a stray one
+      // before any section is dropped rather than invented into a section.
+      if (out.length) out[out.length - 1].directions.push(inner);
+      return;
+    }
+    const parts = inner.split(KIND_DETAIL);
     const kind = (parts[0] ?? inner).trim();
     const detail = parts.slice(1).join(' - ').trim();
-    out.push({ raw: inner, kind, detail, instrumental: !VOCAL_HINT.test(detail), line: i });
+    out.push({ raw: inner, kind, detail, instrumental: !VOCAL_HINT.test(detail), line: i, directions: [] });
   });
   return out;
 }
@@ -127,20 +162,27 @@ export function styleDescriptors(style: string): string[] {
 }
 
 /**
- * Words in an instrumental tag's detail that look like instrument names.
+ * Instruments named in a tag's detail or its direction lines.
  *
- * Deliberately loose — it strips the role nouns ("phrase", "fill", "solo") and
- * keeps the rest. A false positive costs one advisory line; a false negative
- * means a contradiction reaches the generator silently.
+ * Matched against the CURATED PALETTE (names + aliases) rather than by
+ * stripping role words. The heuristic version could not keep up with real
+ * direction prose — "Santoor answers in counterpoint" yielded `answers` and
+ * `counterpoint` as instrument candidates — and every added role word was a
+ * guess at vocabulary the poet had not written yet. The palette is the actual
+ * vocabulary of this catalogue, so matching it is both precise and finite.
  */
-const ROLE_WORDS = /\b(phrase|fill|answer|swell|lift|groove|solo|riff|motif|break|section|and|the|full|instrumental|intro|outro|interlude)\b/gi;
+const PALETTE_TERMS: string[] = INSTRUMENTS.flatMap((i) => [i.name, ...(i.aliases ?? [])]).map((n) =>
+  n.toLowerCase()
+);
 
 export function instrumentsInTag(detail: string): string[] {
-  return (detail ?? '')
-    .replace(ROLE_WORDS, ' ')
-    .split(/[\s,]+/)
-    .map((w) => w.trim().toLowerCase())
-    .filter((w) => w.length > 2);
+  const hay = ` ${(detail ?? '').toLowerCase()} `;
+  const found = new Set<string>();
+  for (const term of PALETTE_TERMS) {
+    // Word-boundary match so "veena" does not fire inside another word.
+    if (new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(hay)) found.add(term);
+  }
+  return [...found];
 }
 
 /**
@@ -242,9 +284,9 @@ export function checkSetup(setup: SunoSetup): SetupFinding[] {
 
   // Cross-field: a break naming an instrument the style never mentions.
   for (const t of tags.filter((x) => x.instrumental && x.detail)) {
-    const named = instrumentsInTag(t.detail);
+    const named = instrumentsInTag([t.detail, ...t.directions].join(' '));
     const unknown = named.filter((n) => !styleLower.includes(n));
-    if (named.length > 0 && unknown.length === named.length) {
+    if (unknown.length > 0) {
       findings.push({
         severity: 'warning',
         field: 'lyrics',
