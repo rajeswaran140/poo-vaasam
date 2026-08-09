@@ -43,12 +43,29 @@ export function splitSections(lyrics: string): LyricSection[] {
   }));
 }
 
-const VOICE_LABEL: Record<Voice, string> = { male: 'Male', female: 'Female', duet: 'Duet' };
+/**
+ * Voice detail, in the form Raj actually pastes into SUNO. Taken from a real
+ * working lyric of his, not invented: sung sections name the voice as a role
+ * ("Male Lead"), and a shared chorus is spelled out in full.
+ */
+const VOICE_LABEL: Record<Voice, string> = {
+  male: 'Male Lead',
+  female: 'Female Lead',
+  duet: 'Male and Female Together',
+};
 const KIND_LABEL: Record<SectionKind, string> = { verse: 'Verse', chorus: 'Chorus' };
 
-/** SUNO voice tag for a section, e.g. `[Female Verse]` / `[Duet Chorus]`. */
+/**
+ * Section tag, e.g. `[Verse - Female Lead]` / `[Chorus - Male and Female Together]`.
+ *
+ * ⚠️ KIND FIRST, then the detail after a dash. This used to emit
+ * `[Female Verse]`, which is NOT the grammar Raj's own working lyrics use —
+ * and the two lived on the same page as the SUNO setup generator, which emits
+ * `[Kind - Detail]`. Two grammars on one screen meant a writer could paste
+ * either, and `hasVoiceTags` (below) recognised only one of them.
+ */
 export function duetTag(voice: Voice, kind: SectionKind): string {
-  return `[${VOICE_LABEL[voice]} ${KIND_LABEL[kind]}]`;
+  return `[${KIND_LABEL[kind]} - ${VOICE_LABEL[voice]}]`;
 }
 
 /**
@@ -70,9 +87,18 @@ export function toDuetLyrics(sections: TaggedSection[]): string {
   return sections.map((s) => `${duetTag(s.voice, s.kind)}\n${s.text}`).join('\n\n');
 }
 
-/** Does the text already carry section-level voice tags? (pre-flight signal.) */
+/**
+ * Does the text already carry section-level voice tags? (pre-flight signal.)
+ *
+ * ⚠️ MUST match a voice ANYWHERE inside the bracket, not just at the start.
+ * The old anchored form missed every tag in Raj's real format — `[Chorus - Male
+ * Lead]`, `[Verse - Female Lead]`, `[Chorus - Male and Female Together]` all
+ * read as "untagged", so the duet pre-flight warned about a lyric that was
+ * fully tagged. Both grammars are accepted: legacy `[Female Verse]` still
+ * matches, because older drafts and saved briefs carry it.
+ */
 export function hasVoiceTags(text: string): boolean {
-  return /\[\s*(male|female|duet|both)\b[^\]]*\]/i.test(text ?? '');
+  return /\[[^\]]*\b(male|female|duet|both)\b[^\]]*\]/i.test(text ?? '');
 }
 
 /**

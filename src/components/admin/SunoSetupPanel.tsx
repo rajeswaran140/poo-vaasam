@@ -14,13 +14,23 @@
  * parent feeds it back into buildExportPack so the pack the writer copies is
  * the arranged one. A panel that showed the arrangement but left the pack
  * un-arranged would be worse than none, because it would look done.
+ *
+ * ⚠️ ENQUEUE-AND-POLL, not a single call. The first version awaited the model on
+ * the Amplify route and returned 504 on every real song — the ~30s SSR ceiling
+ * that already forced compose and critique onto the worker. This posts a job and
+ * polls it; the work happens on the 180s worker Lambda.
  */
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Copy, Check, Wand2 } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
+import { pollJob } from '@/lib/poll-job';
 import { PROMPT_LIMITS } from '@/lib/prompt-preflight';
 import { STYLE_TARGET_MIN, STYLE_TARGET_MAX, type SetupFinding } from '@/lib/suno-setup';
+
+/** Matches the critic's polling cadence; the worker's ceiling is 180s. */
+const POLL_INTERVAL_MS = 2500;
+const POLL_TIMEOUT_MS = 170_000;
 
 interface GeneratedSetup {
   lyrics_block: string;
@@ -98,11 +108,25 @@ export function SunoSetupPanel({
   const [ready, setReady] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      abortRef.current?.abort();
+    };
+  }, []);
 
   async function build() {
     setLoading(true);
     setError(null);
+    abortRef.current?.abort(); // supersede any prior in-flight build
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
+      // 1. Enqueue — returns 202 { jobId }.
       const res = await adminFetch('/api/admin/compose/suno-setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -117,23 +141,32 @@ export function SunoSetupPanel({
           ...(musicKey ? { key: musicKey } : {}),
           ...(mood ? { mood } : {}),
         }),
+        signal: controller.signal,
       });
-      const json = (await res.json().catch(() => ({}))) as {
-        success?: boolean;
-        setup?: GeneratedSetup;
-        findings?: SetupFinding[];
-        ready?: boolean;
-        error?: string;
-      };
-      if (!res.ok || !json.success || !json.setup) throw new Error(json.error || `Failed (${res.status})`);
-      setSetup(json.setup);
-      setFindings(json.findings ?? []);
-      setReady(json.ready !== false);
-      onArranged(json.setup.lyrics_block, json.setup.exclude);
+      const enq = (await res.json().catch(() => ({}))) as { success?: boolean; jobId?: string; error?: string };
+      if (!res.ok || !enq.success || !enq.jobId) throw new Error(enq.error || `Failed (${res.status})`);
+
+      // 2. Poll the worker (off-Amplify, no 30s wall).
+      const result = await pollJob<{ setup: GeneratedSetup; findings: SetupFinding[]; ready: boolean }>({
+        fetchStatus: (signal) => adminFetch(`/api/admin/compose/suno-setup/${enq.jobId}`, { signal }),
+        signal: controller.signal,
+        isMounted: () => mountedRef.current,
+        intervalMs: POLL_INTERVAL_MS,
+        timeoutMs: POLL_TIMEOUT_MS,
+        timeoutMessage: 'The arrangement is taking longer than expected. Please try again.',
+      });
+      if (result === undefined || !mountedRef.current) return; // superseded / unmounted
+      setSetup(result.setup);
+      setFindings(result.findings ?? []);
+      setReady(result.ready !== false);
+      onArranged(result.setup.lyrics_block, result.setup.exclude);
     } catch (e) {
+      if (controller.signal.aborted || !mountedRef.current) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      // Only clear loading if THIS run is still current — a superseded run must
+      // not flip the spinner off under a newer in-flight build.
+      if (mountedRef.current && abortRef.current === controller) setLoading(false);
     }
   }
 

@@ -24,10 +24,11 @@ it('builds SUNO-ready tagged lyrics with a default duet assignment', async () =>
   render(<DuetTagger lyrics={LYRICS} />);
   await openPanel();
   const out = screen.getByLabelText('SUNO-ready duet lyrics') as HTMLTextAreaElement;
-  // chorus → [Duet Chorus]; the two verses alternate male → female
-  expect(out.value).toContain('[Duet Chorus]');
-  expect(out.value).toContain('[Male Verse]');
-  expect(out.value).toContain('[Female Verse]');
+  // Kind-first grammar, matching what Raj actually pastes and what the SUNO
+  // setup generator emits — one page, one format.
+  expect(out.value).toContain('[Chorus - Male and Female Together]');
+  expect(out.value).toContain('[Verse - Male Lead]');
+  expect(out.value).toContain('[Verse - Female Lead]');
 });
 
 it('re-tags when a section voice is changed', async () => {
@@ -37,7 +38,7 @@ it('re-tags when a section voice is changed', async () => {
   // Section 1 is the first verse (male by default) → switch it to Female.
   await user.selectOptions(screen.getByLabelText('voice for section 2'), 'female');
   const out = screen.getByLabelText('SUNO-ready duet lyrics') as HTMLTextAreaElement;
-  expect(out.value).not.toContain('[Male Verse]'); // both verses now female
+  expect(out.value).not.toContain('[Verse - Male Lead]'); // both verses now female
 });
 
 it('warns when the assignment is a solo, not a duet', async () => {

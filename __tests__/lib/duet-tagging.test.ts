@@ -40,10 +40,12 @@ describe('splitSections', () => {
 });
 
 describe('duetTag', () => {
-  it('formats SUNO voice tags', () => {
-    expect(duetTag('female', 'verse')).toBe('[Female Verse]');
-    expect(duetTag('male', 'chorus')).toBe('[Male Chorus]');
-    expect(duetTag('duet', 'chorus')).toBe('[Duet Chorus]');
+  it('formats tags KIND-first, matching the grammar Raj actually pastes', () => {
+    // Taken from a real working lyric of his — and the same grammar the SUNO
+    // setup generator emits, so one page cannot produce two formats.
+    expect(duetTag('female', 'verse')).toBe('[Verse - Female Lead]');
+    expect(duetTag('male', 'chorus')).toBe('[Chorus - Male Lead]');
+    expect(duetTag('duet', 'chorus')).toBe('[Chorus - Male and Female Together]');
   });
 });
 
@@ -61,7 +63,9 @@ describe('toDuetLyrics', () => {
       { text: 'male line', kind: 'verse', voice: 'male' },
       { text: 'both line', kind: 'chorus', voice: 'duet' },
     ];
-    expect(toDuetLyrics(sections)).toBe('[Male Verse]\nmale line\n\n[Duet Chorus]\nboth line');
+    expect(toDuetLyrics(sections)).toBe(
+      '[Verse - Male Lead]\nmale line\n\n[Chorus - Male and Female Together]\nboth line'
+    );
   });
 });
 
@@ -104,5 +108,25 @@ describe('duetWarnings', () => {
 
   it('warns when there are no sections', () => {
     expect(duetWarnings([])[0]).toMatch(/no lyric sections/i);
+  });
+});
+
+describe('hasVoiceTags — both grammars', () => {
+  it('detects the kind-first tags Raj actually uses', () => {
+    // The anchored regex used to MISS all of these, so the duet pre-flight
+    // warned "no voice tags" on a fully tagged lyric.
+    expect(hasVoiceTags('[Chorus - Male Lead]\nline')).toBe(true);
+    expect(hasVoiceTags('[Verse - Female Lead]\nline')).toBe(true);
+    expect(hasVoiceTags('[Chorus - Male and Female Together]\nline')).toBe(true);
+  });
+
+  it('still detects the legacy voice-first tags in older drafts and saved briefs', () => {
+    expect(hasVoiceTags('[Female Verse]\nline')).toBe(true);
+    expect(hasVoiceTags('[Duet Chorus]\nline')).toBe(true);
+  });
+
+  it('does not fire on an instrumental break or a plain lyric', () => {
+    expect(hasVoiceTags('[Break - Flute Phrase]\nline')).toBe(false);
+    expect(hasVoiceTags('கண்ணே மணியே')).toBe(false);
   });
 });
