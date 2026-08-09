@@ -125,10 +125,40 @@ describe('buildExportPack', () => {
     expect(pack.styleName).toBe('Carnatic Devotional Ballad');
   });
 
-  it('derives exclusions, weirdness and a moderate style influence', () => {
+  it('derives exclusions and weirdness', () => {
     expect(pack.weirdnessPct).toBe(15); // devotional → low
-    expect(pack.styleInfluencePct).toBe(50);
     expect(pack.excludeStyles.length).toBeGreaterThan(0);
+  });
+
+  it('scales style influence to how much the prompt actually specifies', () => {
+    // Was hardcoded 50 — which tells the generator to follow a dense, carefully
+    // built prompt only loosely, discarding the detail it was built for.
+    const thin = buildExportPack({ title: 'T', lyrics: 'L', styleName: 'S', stylePrompt: 'A ballad.' });
+    const dense = buildExportPack({
+      title: 'T', lyrics: 'L', styleName: 'S',
+      stylePrompt:
+        'Tamil film romantic duet, secular love song, melody-driven playback idiom, 1980s arrangement, 82 BPM, ' +
+        'buoyant 6/8 lilt | male and female alternating leads, soulful baritone, sweet clear female lead, ' +
+        'call-and-response duet, clear Tamil diction | bamboo flute motif, acoustic guitar, warm strings, ' +
+        'solo violin, mandolin, dholak groove | tape saturation, plate reverb | uplifting, radiant, playful',
+    });
+    expect(thin.styleInfluencePct).toBeLessThan(dense.styleInfluencePct);
+    expect(dense.styleInfluencePct).toBeGreaterThanOrEqual(75);
+  });
+
+  it('caps exclusions — a long negative list dilutes every item in it', () => {
+    expect(pack.excludeStyles.split(', ').length).toBeLessThanOrEqual(3);
+  });
+
+  it('reports whether the lyric was arranged, and checks the pack', () => {
+    expect(pack.arranged).toBe(false); // fixture passes a bare lyric
+    expect(Array.isArray(pack.findings)).toBe(true);
+    const tagged = buildExportPack({
+      title: 'T', lyrics: 'raw', styleName: 'S', stylePrompt: 'A ballad.',
+      lyricsBlock: '[Chorus - Male Lead]\nவரி',
+    });
+    expect(tagged.arranged).toBe(true);
+    expect(tagged.lyrics).toContain('[Chorus - Male Lead]');
   });
 
   it('falls back to "Untitled" on a blank title', () => {
@@ -207,6 +237,7 @@ describe('buildExportPack — style anchor', () => {
       title: 'T', lyrics: 'L', styleName: 'S',
       stylePrompt: 'A gentle acoustic ballad.',
       instruments: ['electric guitar'],
+      exclude: ['distorted electric guitar'],
     });
     expect(pack.excludeStyles).toContain('distorted electric guitar');
   });
