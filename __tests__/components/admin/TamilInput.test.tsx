@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { TamilInput } from '@/components/admin/TamilInput';
 
@@ -35,10 +35,20 @@ describe('TamilInput transliteration suggestions', () => {
     expect(await screen.findByText('மாலை')).toBeInTheDocument();
 
     // It hit our same-origin proxy (NOT Google directly) and asked for >1 option.
-    const url = String((global.fetch as jest.Mock).mock.calls.at(-1)?.[0]);
-    expect(url).toContain('/api/admin/transliterate');
-    expect(url).toContain('text=malai');
-    const n = Number(new URL(url, 'https://x.test').searchParams.get('n'));
+    //
+    // ⚠️ WAIT for the request carrying the FULL text — do not sample
+    // `calls.at(-1)`. The component fires one request per keystroke, so the
+    // most recent call at any instant is whichever prefix happened to be in
+    // flight ("ma", "mal", …). The dropdown can already be showing results from
+    // an earlier prefix, so the assertion could run before the final keystroke's
+    // request was issued. That is exactly how this test passed locally and
+    // failed the Amplify build on a slower machine, blocking a deploy.
+    const urls = () => (global.fetch as jest.Mock).mock.calls.map((c) => String(c[0]));
+    await waitFor(() => expect(urls().some((u) => u.includes('text=malai'))).toBe(true));
+
+    const full = urls().find((u) => u.includes('text=malai'))!;
+    expect(full).toContain('/api/admin/transliterate');
+    const n = Number(new URL(full, 'https://x.test').searchParams.get('n'));
     expect(n).toBeGreaterThan(1);
   });
 });
