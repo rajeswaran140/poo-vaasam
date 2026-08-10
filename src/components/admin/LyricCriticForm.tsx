@@ -14,7 +14,15 @@ import {
 } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 import { pollJob } from '@/lib/poll-job';
-import { critiqueToMarkdown } from '@/lib/critique-markdown';
+import { critiqueToMarkdown, confidenceWord } from '@/lib/critique-markdown';
+import type { IssueType } from '@/services/ai/lyricCriticSchema';
+
+/** Faults first, deliberate choices last — same order as the exported report. */
+const ISSUE_RANK: Record<IssueType, number> = {
+  likely_error: 0,
+  possible_issue: 1,
+  artistic_choice: 2,
+};
 import { feedbackProgress } from '@/lib/lyric-draft-feedback';
 import { LyricDraftEditor } from '@/components/admin/LyricDraftEditor';
 import { LyricAssistPanel } from '@/components/admin/LyricAssistPanel';
@@ -652,14 +660,42 @@ export function LyricCriticForm() {
             )}
 
             {result.slackLines.length > 0 && (
-              <CritiqueBlock title="Lines that go slack">
+              <CritiqueBlock title="Lines worth a second look">
                 <ul className="space-y-2">
-                  {result.slackLines.map((l, i) => (
-                    <li key={i} className="border-l-2 border-amber-300 pl-3 text-sm dark:border-amber-700">
-                      <p className="font-tamil text-gray-900 dark:text-gray-100">{l.line}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">{l.issue}</p>
-                    </li>
-                  ))}
+                  {/* Faults first, deliberate choices last — an artistic_choice
+                      note must not read with the weight of an error. */}
+                  {[...result.slackLines]
+                    .sort((a, b) => ISSUE_RANK[a.issueType] - ISSUE_RANK[b.issueType])
+                    .map((l, i) => (
+                      <li
+                        key={i}
+                        className={`border-l-2 pl-3 text-sm ${
+                          l.issueType === 'artistic_choice'
+                            ? 'border-purple-300 dark:border-purple-700'
+                            : l.issueType === 'likely_error'
+                              ? 'border-red-300 dark:border-red-700'
+                              : 'border-amber-300 dark:border-amber-700'
+                        }`}
+                      >
+                        <p className="font-tamil text-gray-900 dark:text-gray-100">{l.line}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {l.issue}{' '}
+                          <span className="whitespace-nowrap text-gray-400 dark:text-gray-500">
+                            ({confidenceWord(l.confidence)} confidence)
+                          </span>
+                        </p>
+                        {l.issueType === 'artistic_choice' && (
+                          <p className="mt-0.5 text-xs font-medium text-purple-700 dark:text-purple-300">
+                            🎨 reads deliberate — noted, not faulted
+                          </p>
+                        )}
+                        {l.questionForWriter && (
+                          <p className="mt-0.5 font-tamil text-xs text-gray-700 dark:text-gray-300">
+                            ❓ {l.questionForWriter}
+                          </p>
+                        )}
+                      </li>
+                    ))}
                 </ul>
               </CritiqueBlock>
             )}
@@ -692,6 +728,12 @@ export function LyricCriticForm() {
                         })}
                       </span>
                       <span className="block text-xs text-gray-500 dark:text-gray-400">{w.why}</span>
+                      {/* Never hidden behind a toggle: an alternative shown
+                          without its cost is how a critic sands originality off
+                          a line. */}
+                      <span className="mt-0.5 block text-xs text-gray-600 dark:text-gray-400">
+                        ⚖️ {w.tradeoff}
+                      </span>
                     </li>
                   ))}
                 </ul>

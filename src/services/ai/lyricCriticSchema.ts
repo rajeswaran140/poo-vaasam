@@ -29,6 +29,35 @@ export const critiqueAspectSchema = z.enum([
 ]);
 export type CritiqueAspect = z.infer<typeof critiqueAspectSchema>;
 
+/**
+ * Is this actually wrong, or does the critic simply not yet understand why the
+ * poet chose it?
+ *
+ * The single most important field in this schema. Without it the critic flags
+ * intentional ambiguity, colloquial Tamil and uncommon imagery with the same
+ * weight as a genuine error — which is how a tool starts eroding the
+ * originality it was built to protect. An experienced poet bends grammar on
+ * purpose; `artistic_choice` is how the critic says "I see this, I think it is
+ * deliberate" instead of "this is weak".
+ */
+export const issueTypeSchema = z.enum(['likely_error', 'possible_issue', 'artistic_choice']);
+export type IssueType = z.infer<typeof issueTypeSchema>;
+
+/**
+ * How sure the critic is, 0..1.
+ *
+ * ⚠️ NOT for meter. Syllable counts, rhyme families and register are MEASURED
+ * and handed to the model as facts (see lyric-profile.ts) — attaching a
+ * confidence to arithmetic would be theatre. Confidence belongs on the
+ * genuinely uncertain calls: intent, freshness of an image, whether a word's
+ * second reading was meant.
+ */
+export const confidenceSchema = z
+  .number()
+  .min(0)
+  .max(1)
+  .describe('0..1. Reserve high confidence for things you can point at in the text.');
+
 /** What the poet submits: their own draft, optionally steered. */
 export const lyricCritiqueInputSchema = z.object({
   lyrics: z
@@ -74,10 +103,21 @@ export const lyricCritiqueOutputSchema = z.object({
       z.object({
         line: z.string().min(1).describe('The actual line from the draft, quoted verbatim.'),
         issue: z.string().min(1).describe('Why this line goes slack — diagnosis only, NEVER a rewrite.'),
+        issueType: issueTypeSchema.describe(
+          'likely_error = a real fault. possible_issue = might read awkwardly. artistic_choice = looks deliberate; you are noting it, not faulting it.'
+        ),
+        confidence: confidenceSchema,
+        questionForWriter: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            'For an AMBIGUOUS line, ask what was intended INSTEAD of downgrading it — e.g. "Did you mean மெய் as body or as truth?"'
+          ),
       })
     )
     .default([])
-    .describe('Specific lines that weaken the song, with the reason — never a replacement line.'),
+    .describe('Specific lines worth a second look, with the reason — never a replacement line.'),
   wordIdeas: z
     .array(
       z.object({
@@ -87,6 +127,12 @@ export const lyricCritiqueOutputSchema = z.object({
           .min(1)
           .describe('Alternative Tamil words to CONSIDER (the poet chooses).'),
         why: z.string().min(1),
+        tradeoff: z
+          .string()
+          .min(1)
+          .describe(
+            'REQUIRED. What the alternative GAINS and what it LOSES. A swap offered without its cost is how a critic quietly sands originality off a line — if you cannot name the loss, do not offer the word.'
+          ),
       })
     )
     .default([])

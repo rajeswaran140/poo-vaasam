@@ -39,8 +39,22 @@ const CRITIQUE = {
   overall: 'A tender pallavi; the charanam loses the thread.',
   strengths: ['The மண்வாசம் image is concrete and earned'],
   observations: [{ aspect: 'meter', note: 'Line 3 runs a beat long against lines 1-2' }],
-  slackLines: [{ line: 'மண்ணை தொடணும்', issue: 'abstract where the rest of the verse is concrete' }],
-  wordIdeas: [{ instead_of: 'அழகு', consider: ['எழில்', 'சாயல்'], why: 'less generic, period-appropriate' }],
+  slackLines: [
+    {
+      line: 'மண்ணை தொடணும்',
+      issue: 'abstract where the rest of the verse is concrete',
+      issueType: 'possible_issue',
+      confidence: 0.6,
+    },
+  ],
+  wordIdeas: [
+    {
+      instead_of: 'அழகு',
+      consider: ['எழில்', 'சாயல்'],
+      why: 'less generic, period-appropriate',
+      tradeoff: 'எழில் is more literary but loses the plainness அழகு carries',
+    },
+  ],
   questions: ['Whose voice is the charanam in — the exile or the land?'],
 };
 
@@ -210,4 +224,158 @@ it('classifies a 429 as a rate-limit error', async () => {
   create.mockRejectedValueOnce(Object.assign(new Error('429 too many requests'), { status: 429 }));
   const r = await critiqueLyric(INPUT);
   expect(r).toMatchObject({ ok: false, code: 'rate_limit' });
+});
+
+/**
+ * GROUNDING + WRITER INTENT (added 2026-08-10).
+ *
+ * The critic used to ask the model to judge "meter/rhythm" and "vocabulary
+ * (repetition, register)" from raw text while this repo already computed those
+ * exactly — it imported none of the analysers. That was the real source of
+ * generic feedback: the model was guessing at facts instead of interpreting
+ * them. These tests pin the fix.
+ */
+const sentPrompt = () => create.mock.calls[0][0].messages[0].content as string;
+const sentSystem = () => create.mock.calls[0][0].system as string;
+
+describe('measured-fact grounding', () => {
+  const GROUNDED = {
+    lyrics: [
+      'சாயங்கால வானத்திலே',
+      'சாய்ந்த வண்ணம் யாரோ',
+      'காதல் வந்த எண்ணத்திலே',
+      'சாய்ந்து போனேன் நானோ',
+    ].join('\n'),
+  };
+
+  it('sends the measured facts BEFORE the lyric, so meter is never guessed', async () => {
+    create.mockResolvedValueOnce(toolResponse(CRITIQUE));
+    await critiqueLyric(GROUNDED);
+    const p = sentPrompt();
+    expect(p).toMatch(/MEASURED FACTS/);
+    expect(p.indexOf('MEASURED FACTS')).toBeLessThan(p.indexOf('சாயங்கால வானத்திலே'));
+  });
+
+  it('states the syllable count as a fact rather than asking for one', async () => {
+    create.mockResolvedValueOnce(toolResponse(CRITIQUE));
+    await critiqueLyric(GROUNDED);
+    expect(sentPrompt()).toMatch(/syllables\/line/);
+  });
+
+  it('surfaces the root motif the poet built the song on', async () => {
+    create.mockResolvedValueOnce(toolResponse(CRITIQUE));
+    await critiqueLyric(GROUNDED);
+    // சாயங்கால / சாய்ந்த / சாய்ந்து — three distinct forms of one root, which a
+    // repeated-word count misses entirely.
+    expect(sentPrompt()).toMatch(/Root motifs/);
+    expect(sentPrompt()).toContain('சாய்ந்து');
+  });
+
+  it('tells the model the facts are not up for debate', async () => {
+    create.mockResolvedValueOnce(toolResponse(CRITIQUE));
+    await critiqueLyric(GROUNDED);
+    expect(sentSystem()).toMatch(/ground truth/i);
+    expect(sentSystem()).toMatch(/Do not re-derive, dispute or re-count/i);
+  });
+
+  it('still sends the poet lexicon alongside the grounding', async () => {
+    create.mockResolvedValueOnce(toolResponse(CRITIQUE));
+    await critiqueLyric(GROUNDED, { lexicon: ['எழில் — beauty [literary]'] });
+    expect(sentPrompt()).toMatch(/MEASURED FACTS/);
+    expect(sentPrompt()).toMatch(/எழில்/);
+  });
+});
+
+describe('writer-intent rules in the system prompt', () => {
+  it('carries the override rule that separates error from artistic choice', async () => {
+    create.mockResolvedValueOnce(toolResponse(CRITIQUE));
+    await critiqueLyric(INPUT);
+    const s = sentSystem();
+    expect(s).toMatch(/WRITER INTENT/);
+    expect(s).toMatch(/do I simply not yet understand why the poet chose it/i);
+    expect(s).toMatch(/artistic_choice/);
+  });
+
+  it('requires register to be inferred from the song before deviation is judged', async () => {
+    create.mockResolvedValueOnce(toolResponse(CRITIQUE));
+    await critiqueLyric(INPUT);
+    expect(sentSystem()).toMatch(/INFER THE SONG'S OWN REGISTER FIRST/);
+  });
+
+  it('asks for line, section AND whole-song reading', async () => {
+    create.mockResolvedValueOnce(toolResponse(CRITIQUE));
+    await critiqueLyric(INPUT);
+    expect(sentSystem()).toMatch(/THREE levels/);
+  });
+
+  it('separates a familiar image from a familiar expression', async () => {
+    create.mockResolvedValueOnce(toolResponse(CRITIQUE));
+    await critiqueLyric(INPUT);
+    expect(sentSystem()).toMatch(/familiar IMAGE from a familiar EXPRESSION/);
+  });
+
+  it('still forbids rewriting and stays apolitical', async () => {
+    create.mockResolvedValueOnce(toolResponse(CRITIQUE));
+    await critiqueLyric(INPUT);
+    expect(sentSystem()).toMatch(/never a rewrite/i);
+    expect(sentSystem()).toMatch(/APOLITICAL/);
+  });
+});
+
+describe('schema now carries uncertainty and cost', () => {
+  it('accepts an artistic_choice flagged with a question instead of a downgrade', async () => {
+    create.mockResolvedValueOnce(
+      toolResponse({
+        overall: 'Strong throughout.',
+        slackLines: [
+          {
+            line: 'மெய்யில் உந்தன் நினைவே முந்தும்',
+            issue: 'மெய் reads as both body and truth here',
+            issueType: 'artistic_choice',
+            confidence: 0.35,
+            questionForWriter: 'Did you intend மெய் as body or as truth?',
+          },
+        ],
+      })
+    );
+    const r = await critiqueLyric(INPUT);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.data.slackLines[0].issueType).toBe('artistic_choice');
+      expect(r.data.slackLines[0].questionForWriter).toMatch(/body or as truth/);
+    }
+  });
+
+  it('REJECTS a slack line with no issueType — the classification is mandatory', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    create.mockResolvedValueOnce(
+      toolResponse({
+        overall: 'ok',
+        slackLines: [{ line: 'ஒரு வரி', issue: 'weak', confidence: 0.5 }],
+      })
+    );
+    expect(await critiqueLyric(INPUT)).toMatchObject({ ok: false, code: 'bad_response' });
+  });
+
+  it('REJECTS a word idea with no tradeoff — a swap without its cost sands originality', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    create.mockResolvedValueOnce(
+      toolResponse({
+        overall: 'ok',
+        wordIdeas: [{ instead_of: 'முத்தமிழின்', consider: ['உயிர்த்தமிழே'], why: 'sings better' }],
+      })
+    );
+    expect(await critiqueLyric(INPUT)).toMatchObject({ ok: false, code: 'bad_response' });
+  });
+
+  it('rejects a confidence outside 0..1', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    create.mockResolvedValueOnce(
+      toolResponse({
+        overall: 'ok',
+        slackLines: [{ line: 'ஒரு வரி', issue: 'weak', issueType: 'likely_error', confidence: 1.7 }],
+      })
+    );
+    expect(await critiqueLyric(INPUT)).toMatchObject({ ok: false, code: 'bad_response' });
+  });
 });
