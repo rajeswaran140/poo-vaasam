@@ -135,19 +135,23 @@ it('threads the draft, focus, and notes into the user message', async () => {
   expect(content).toContain('Does the pallavi carry?'); // notes
 });
 
-it('injects the personal lexicon and tells the model to prefer it for word ideas', async () => {
+it('injects the personal lexicon as REFERENCE, not as a replacement shortlist', async () => {
+  // This test used to assert "prefer words from this lexicon" — the very wording
+  // that caused the critic to reach for உயிர்த்தமிழே against unrelated lines.
+  // It was pinning the bug in place, so it is replaced rather than restored.
   create.mockResolvedValueOnce(toolResponse(CRITIQUE));
   await critiqueLyric(INPUT, { lexicon: ['எழில் — beauty [sangam]', 'நிலா [literary]'] });
   const content = (create.mock.calls[0][0] as { messages: Array<{ content: string }> }).messages[0].content;
   expect(content).toContain('எழில் — beauty [sangam]'); // the poet's own words are in the prompt
-  expect(content).toMatch(/prefer words from this lexicon/i);
+  expect(content).toMatch(/EVIDENCE OF THE POET'S VOICE/i);
+  expect(content).not.toMatch(/prefer words from this lexicon/i);
 });
 
 it('omits the lexicon section entirely when none is provided', async () => {
   create.mockResolvedValueOnce(toolResponse(CRITIQUE));
   await critiqueLyric(INPUT);
   const content = (create.mock.calls[0][0] as { messages: Array<{ content: string }> }).messages[0].content;
-  expect(content).not.toMatch(/personal lexicon/i);
+  expect(content).not.toMatch(/lexicon/i);
 });
 
 it('instructs feedback-not-rewrite and stays apolitical in the system rule', async () => {
@@ -451,5 +455,104 @@ describe('requiresMelodyValidation', () => {
     const r = await critiqueLyric(INPUT);
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.data.slackLines[0].requiresMelodyValidation).toBeUndefined();
+  });
+});
+
+/**
+ * THIRD REVIEW (Raj, 2026-08-10). Metre humility held; five behaviours left.
+ * Each rule below exists because the critic actually did the thing.
+ */
+describe('third-review guardrails', () => {
+  beforeEach(() => create.mockResolvedValueOnce(toolResponse(CRITIQUE)));
+  const sys = () => (create.mock.calls[0][0] as { system: string }).system;
+
+  it('forbids treating a one-off image as an inconsistency', async () => {
+    // அகப்பை was flagged for a "tonal gap" purely because it appeared once,
+    // when the contrast was the point.
+    await critiqueLyric(INPUT);
+    expect(sys()).toMatch(/A ONE-OFF IMAGE IS NOT AN INCONSISTENCY/i);
+    expect(sys()).toMatch(/Never flag an image merely for appearing once/i);
+  });
+
+  it('forbids frequency claims about Tamil poetry it cannot check', async () => {
+    // "appears often in grief lyrics" / "well-worn pairing" — no corpus, no search.
+    await critiqueLyric(INPUT);
+    expect(sys()).toMatch(/NO CORPUS CLAIMS YOU CANNOT SUPPORT/i);
+    expect(sys()).toMatch(/well-worn pairing/);
+    expect(sys()).toMatch(/familiar semantic field/);
+  });
+
+  it('tells the critic to drop a suggestion that loses the line\'s point', async () => {
+    // It reasoned "the body's hunger is the point" and offered the swap anyway.
+    await critiqueLyric(INPUT);
+    expect(sys()).toMatch(/DO NOT OFFER IT AT ALL/);
+    expect(sys()).toMatch(/EMPTY wordIdeas list is a perfectly good answer/i);
+  });
+
+  it('separates what the text says from what the critic infers', async () => {
+    await critiqueLyric(INPUT);
+    expect(sys()).toMatch(/SEPARATE WHAT THE TEXT SAYS FROM WHAT YOU INFER/i);
+    expect(sys()).toMatch(/readingLevel/);
+    expect(sys()).toMatch(/NEVER appear in `?overall`? phrased as the song's settled meaning/i);
+  });
+
+  it('says cliché is not phrase-frequency', async () => {
+    await critiqueLyric(INPUT);
+    expect(sys()).toMatch(/cliché is not phrase-FREQUENCY/i);
+  });
+});
+
+describe('personal lexicon is voice, not a replacement shortlist', () => {
+  it('no longer tells the model to PREFER lexicon words', async () => {
+    // The old wording caused overfitting: உயிர்த்தமிழே proposed against
+    // unrelated lines, twice in one critique.
+    create.mockResolvedValueOnce(toolResponse(CRITIQUE));
+    await critiqueLyric(INPUT, { lexicon: ['உயிர்த்தமிழே — living Tamil [literary]'] });
+    const p = (create.mock.calls[0][0] as { messages: Array<{ content: string }> }).messages[0].content;
+    expect(p).not.toMatch(/PREFER words from this lexicon/i);
+    expect(p).toMatch(/EVIDENCE OF THE POET'S VOICE, NOT a set of replacement candidates/i);
+    expect(p).toMatch(/NEVER propose the same lexicon word for more than one line/i);
+  });
+
+  it('still shows the poet their own words', async () => {
+    create.mockResolvedValueOnce(toolResponse(CRITIQUE));
+    await critiqueLyric(INPUT, { lexicon: ['உயிர்த்தமிழே — living Tamil [literary]'] });
+    const p = (create.mock.calls[0][0] as { messages: Array<{ content: string }> }).messages[0].content;
+    expect(p).toContain('உயிர்த்தமிழே');
+  });
+});
+
+describe('readingLevel', () => {
+  it('accepts an observation marked as one possible reading among several', async () => {
+    create.mockResolvedValueOnce(
+      toolResponse({
+        overall: 'A grief song that keeps the mother in the present tense.',
+        observations: [
+          {
+            aspect: 'emotion',
+            note: 'the final section can be read as consolation offered upward',
+            readingLevel: 'possible_reading',
+          },
+        ],
+      })
+    );
+    const r = await critiqueLyric(INPUT);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.data.observations[0].readingLevel).toBe('possible_reading');
+  });
+
+  it('stays optional for plainly descriptive notes', async () => {
+    create.mockResolvedValueOnce(toolResponse(CRITIQUE));
+    const r = await critiqueLyric(INPUT);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.data.observations[0].readingLevel).toBeUndefined();
+  });
+
+  it('rejects an invented tier', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    create.mockResolvedValueOnce(
+      toolResponse({ overall: 'ok', observations: [{ aspect: 'emotion', note: 'x', readingLevel: 'certain' }] })
+    );
+    expect(await critiqueLyric(INPUT)).toMatchObject({ ok: false, code: 'bad_response' });
   });
 });
