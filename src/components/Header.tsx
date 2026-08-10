@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
+import { StudioCta } from '@/components/StudioCta';
 import { SITE, CONTENT_SECTIONS, isYouTubeChannelConfigured, isYouTubeVideosConfigured } from '@/config/site';
 
 const YouTubeIcon = () => (
@@ -100,7 +101,13 @@ export default function Header() {
             </span>
           </Link>
 
-          {/* Desktop Navigation — four primary items (two dropdowns, two links) */}
+          {/* Desktop Navigation — four primary items (two dropdowns, two links),
+              plus the Studio link. Studio sits OUTSIDE navItems deliberately: it
+              is an external, tracked destination, and folding it into the union
+              would mean every leaf pretending it might be external. Keeping the
+              four-item rule intact was also the reason not to demote
+              /music-composition into a dropdown — that would have changed the
+              traffic to a funnel we are deliberately leaving undisturbed. */}
           <div className="hidden items-center gap-1 md:flex lg:gap-2">
             {navItems.map((item) => {
               if (hasChildren(item)) {
@@ -154,6 +161,8 @@ export default function Header() {
                 </Link>
               );
             })}
+
+            <StudioCta placement="site_nav" variant="nav" />
 
             {showYouTube && (
               <a
@@ -233,6 +242,11 @@ export default function Header() {
                     </Link>
                   )
                 )}
+
+                {/* Mobile gets the Studio link too — on a phone the header nav
+                    is hidden entirely, so omitting it here would mean most
+                    visitors never see the CTA at all. */}
+                <StudioCta placement="site_nav" variant="nav" className="px-3 py-2.5" />
 
                 {showYouTube && (
                   <a

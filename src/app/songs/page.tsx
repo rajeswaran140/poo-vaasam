@@ -21,6 +21,7 @@ import { SongCatalog } from '@/application/use-cases/SongCatalog';
 import { listableSongs } from '@/lib/songs-visibility';
 import type { PublicSongDTO } from '@/domain/songs/PublicSong';
 import { SongsPlaylist, type SongRow } from '@/components/music/SongsPlaylist';
+import { StudioCta } from '@/components/StudioCta';
 import { JsonLd } from '@/components/JsonLd';
 import { SITE_NAME, absoluteUrl, alternatesFor, breadcrumbJsonLd } from '@/lib/seo';
 import { isoDuration } from '@/lib/iso-duration';
@@ -173,6 +174,14 @@ export default async function SongsPage() {
             </ul>
           </nav>
         )}
+
+        {/* The stronger contextual CTA. On /songs specifically, because a
+            visitor browsing a catalogue of finished songs is the closest this
+            site gets to a creator audience — and the mastering pilot needs
+            QUALIFIED exposure, not maximum exposure. */}
+        <div className="container mx-auto max-w-6xl px-4 pb-12 sm:px-6">
+          <StudioCta placement="songs_list" variant="panel" />
+        </div>
       </main>
       <Footer />
     </div>
