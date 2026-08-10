@@ -9,7 +9,7 @@
 import {
   lyricWords,
   normaliseRoot,
-  rootMotifs,
+  openingSoundFamilies,
   repeatedWords,
   registerSignal,
   lyricSections,
@@ -59,9 +59,9 @@ describe('normaliseRoot', () => {
   });
 });
 
-describe('rootMotifs', () => {
+describe('openingSoundFamilies', () => {
   it('finds one root re-inflected across the song', () => {
-    const motifs = rootMotifs(SAAYANGAALA);
+    const motifs = openingSoundFamilies(SAAYANGAALA);
     const saai = motifs.find((m) => m.forms.some((f) => f.startsWith('சாய')));
     expect(saai).toBeDefined();
     expect(saai!.forms).toEqual(expect.arrayContaining(['சாயங்கால', 'சாய்ந்த', 'சாய்ந்து']));
@@ -69,17 +69,17 @@ describe('rootMotifs', () => {
 
   it('needs DISTINCT surface forms — repeating one word is not a motif', () => {
     // Three uses of the same word is repetition; repeatedWords reports that.
-    const motifs = rootMotifs('காதல் வந்தது\nகாதல் போனது\nகாதல் மீண்டும்');
+    const motifs = openingSoundFamilies('காதல் வந்தது\nகாதல் போனது\nகாதல் மீண்டும்');
     expect(motifs.find((m) => m.forms.length >= 2 && m.forms.every((f) => f === 'காதல்'))).toBeUndefined();
   });
 
   it('ignores words too short to carry a root', () => {
     expect(MIN_WORD_GRAPHEMES).toBeGreaterThan(ROOT_PREFIX_GRAPHEMES);
-    expect(rootMotifs('ஒரு இரு')).toEqual([]);
+    expect(openingSoundFamilies('ஒரு இரு')).toEqual([]);
   });
 
   it('returns nothing on an empty draft rather than throwing', () => {
-    expect(rootMotifs('')).toEqual([]);
+    expect(openingSoundFamilies('')).toEqual([]);
   });
 });
 
@@ -208,7 +208,7 @@ describe('buildLyricProfile', () => {
     const p = buildLyricProfile('');
     expect(p.prosody.lyricLineCount).toBe(0);
     expect(p.repeatedWords).toEqual([]);
-    expect(p.rootMotifs).toEqual([]);
+    expect(p.soundFamilies).toEqual([]);
     expect(p.registerSignal.register).toBe('unknown');
   });
 });
@@ -229,10 +229,12 @@ describe('profileGrounding', () => {
     expect(text()).not.toMatch(/syllables\/line/);
   });
 
-  it('names the root motif with its actual surface forms', () => {
+  it('names the sound family with its actual surface forms', () => {
     const t = text();
-    expect(t).toMatch(/Root motifs/);
+    expect(t).toMatch(/OPEN WITH THE SAME SOUND/);
     expect(t).toContain('சாய்ந்து');
+    // and it must NOT claim etymology
+    expect(t).toMatch(/NOT evidence of a shared root or etymology/);
   });
 
   it('tells the critic to judge register against the SONG, not literary Tamil', () => {
@@ -290,5 +292,41 @@ describe('grounding does not overstate Tamil metre', () => {
     const t = profileGrounding(buildLyricProfile(uneven)).join('\n');
     expect(t).toMatch(/longer|shorter/);
     expect(t).not.toMatch(/\(\d+\)/); // no naked per-line syllable numbers
+  });
+});
+
+/**
+ * SOUND IS NOT ETYMOLOGY (Raj, 2026-08-10).
+ *
+ * The detector compares opening graphemes. That groups சாயங்கால/சாய்ந்த/சாய்ந்து
+ * (a real shared verb root) AND அகம்/அகப்பை (no shared root at all) — it cannot
+ * tell them apart. Labelling every match "same root re-inflected" is what led
+ * the critic to assert a shared root between அகம் and அகப்பை. The label was the
+ * bug, not the model.
+ */
+describe('opening-sound families never claim a shared root', () => {
+  it('groups அகம் / அகப்பை — which share a SOUND, not a root', () => {
+    const fam = openingSoundFamilies('அகம் நிறைந்த வீட்டில்\nஅகப்பை தேடுறது');
+    const ak = fam.find((f) => f.forms.includes('அகம்'));
+    expect(ak).toBeDefined();
+    expect(ak!.forms).toEqual(expect.arrayContaining(['அகம்', 'அகப்பை']));
+  });
+
+  it('cannot distinguish a real root motif from a coincidence, and says so', () => {
+    // Both of these look identical to the code. The grounding must therefore
+    // describe SOUND and hand the judgement to whoever reads the words.
+    const real = openingSoundFamilies('சாயங்கால வானம்\nசாய்ந்து போனேன்');
+    const coincidence = openingSoundFamilies('அகம் நிறைந்தது\nஅகப்பை இருந்தது');
+    expect(real.length).toBeGreaterThan(0);
+    expect(coincidence.length).toBeGreaterThan(0);
+    const g = profileGrounding(buildLyricProfile('அகம் நிறைந்தது\nஅகப்பை இருந்தது')).join('\n');
+    expect(g).toMatch(/SOUND correspondence only/);
+    expect(g).toMatch(/NOT evidence of a shared root or etymology/);
+    expect(g).toMatch(/never assert a shared root from sound alone/);
+  });
+
+  it('no longer uses the word "root" as the label for a match', () => {
+    const g = profileGrounding(buildLyricProfile('சாயங்கால வானம்\nசாய்ந்து போனேன்')).join('\n');
+    expect(g).not.toMatch(/Root motifs \(same root re-inflected\)/);
   });
 });

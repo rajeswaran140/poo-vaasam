@@ -267,13 +267,15 @@ describe('measured-fact grounding', () => {
     expect(sentPrompt()).toMatch(/COARSE PROXY, NOT A METRE READING/);
   });
 
-  it('surfaces the root motif the poet built the song on', async () => {
+  it('surfaces the sound family, WITHOUT claiming a shared root', async () => {
     create.mockResolvedValueOnce(toolResponse(CRITIQUE));
     await critiqueLyric(GROUNDED);
-    // சாயங்கால / சாய்ந்த / சாய்ந்து — three distinct forms of one root, which a
-    // repeated-word count misses entirely.
-    expect(sentPrompt()).toMatch(/Root motifs/);
+    // சாயங்கால / சாய்ந்த / சாய்ந்து — three distinct forms a repeated-word
+    // count misses entirely. But the same detector groups அகம்/அகப்பை, which
+    // share no root, so the grounding must describe SOUND only.
+    expect(sentPrompt()).toMatch(/OPEN WITH THE SAME SOUND/);
     expect(sentPrompt()).toContain('சாய்ந்து');
+    expect(sentPrompt()).toMatch(/NOT evidence of a shared root or etymology/);
   });
 
   it('tells the model the facts are not up for debate', async () => {
@@ -554,5 +556,75 @@ describe('readingLevel', () => {
       toolResponse({ overall: 'ok', observations: [{ aspect: 'emotion', note: 'x', readingLevel: 'certain' }] })
     );
     expect(await critiqueLyric(INPUT)).toMatchObject({ ok: false, code: 'bad_response' });
+  });
+});
+
+/**
+ * FOURTH REVIEW (Raj, 2026-08-10). Each rule below exists because the critic
+ * did the thing on a real ammā-song critique.
+ */
+describe('fourth-review guardrails', () => {
+  beforeEach(() => create.mockResolvedValueOnce(toolResponse(CRITIQUE)));
+  const sys = () => (create.mock.calls[0][0] as { system: string }).system;
+
+  it('forbids inferring etymology from sound (அகம் / அகப்பை)', async () => {
+    await critiqueLyric(INPUT);
+    expect(sys()).toMatch(/SOUND IS NOT ETYMOLOGY/i);
+    expect(sys()).toContain('அகப்பை');
+    expect(sys()).toMatch(/never "share a root"/i);
+  });
+
+  it('forbids using a Tamil literary term whose definition does not hold', async () => {
+    await critiqueLyric(INPUT);
+    expect(sys()).toMatch(/USE TAMIL LITERARY TERMS ONLY WHEN THE DEFINITION ACTUALLY HOLDS/i);
+    expect(sys()).toContain('அந்தாதி'); // named, with its real definition
+    expect(sys()).toMatch(/END-RHYME CHAIN, not அந்தாதி/);
+  });
+
+  it('requires enumerating a word\'s jobs and SUPPRESSING a damaging swap', async () => {
+    await critiqueLyric(INPUT);
+    const s = sys();
+    expect(s).toMatch(/list every job the original word is doing/i);
+    expect(s).toMatch(/DO NOT OUTPUT IT/);
+    expect(s).toMatch(/Naming the trade-off is not enough/i);
+    expect(s).toContain('சன்னல்'); // the worked example is in the prompt
+  });
+
+  it('asks what breaks if nothing changes, and permits silence', async () => {
+    await critiqueLyric(INPUT);
+    const s = sys();
+    expect(s).toMatch(/IF THE POET CHANGES NOTHING HERE, WHAT ACTUALLY GOES WRONG/i);
+    expect(s).toMatch(/Do not manufacture criticism to fill a section/i);
+    expect(s).toMatch(/Silence beats a weak note/i);
+  });
+
+  it('requires questions to clarify meaning rather than supply it', async () => {
+    await critiqueLyric(INPUT);
+    const s = sys();
+    expect(s).toMatch(/A QUESTION MUST CLARIFY THE POET'S MEANING, NOT SUPPLY ONE/i);
+    expect(s).toMatch(/puts words in his mouth/i);
+  });
+});
+
+describe('an entirely empty critique is valid', () => {
+  it('accepts a critique that finds nothing to change', async () => {
+    // A mature critic must be able to say "nothing material here". If this ever
+    // fails, the schema is forcing the model to manufacture criticism.
+    create.mockResolvedValueOnce(
+      toolResponse({
+        overall: 'This is working. Nothing here needs changing.',
+        strengths: ['the சன்னல் / மின்னல் / இன்னல் chain carries the whole section'],
+        observations: [],
+        slackLines: [],
+        wordIdeas: [],
+        questions: [],
+      })
+    );
+    const r = await critiqueLyric(INPUT);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.data.slackLines).toEqual([]);
+      expect(r.data.wordIdeas).toEqual([]);
+    }
   });
 });
