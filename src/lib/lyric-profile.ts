@@ -83,8 +83,19 @@ const COLLOQUIAL_SUFFIXES = ['ோட', 'ுங்க', 'ுன்னு', 'ி�
  * still reads the lyric itself and can disagree.
  */
 const COLLOQUIAL_MEDIAL = ['ுற'];
-/** A bare `ல` ending reads colloquial (வரப்பில) but only on a longer word. */
-const SHORT_LOCATIVE = 'ல';
+/**
+ * The colloquial locative: literary `-இல்` loses its pulli and becomes `-இல`
+ * (வரப்பில், நினைவில் → வரப்பில, நினைவுல).
+ *
+ * ⚠️ MUST be tested on the RAW word, never the pulli-stripped one — stripping
+ * is what collapses வரப்பில் (literary) onto வரப்பில (colloquial) and destroys
+ * the only thing distinguishing them.
+ *
+ * ⚠️ AND it must require the ி/ு vowel sign. An earlier version matched any
+ * long word ending in `ல`, which flagged **சாயங்கால** — an ordinary word, in
+ * the first line of the very song this was built for. `ால` is not a locative.
+ */
+const COLLOQUIAL_LOCATIVE = ['ில', 'ுல'];
 
 const isTamil = (w: string) => /[஀-௿]/.test(w);
 
@@ -163,7 +174,9 @@ export function registerSignal(lyrics: string): RegisterSignal {
     const colloquial =
       COLLOQUIAL_SUFFIXES.some((s) => n.endsWith(s)) ||
       COLLOQUIAL_MEDIAL.some((s) => n.includes(s)) ||
-      (n.endsWith(SHORT_LOCATIVE) && toGraphemes(n).length >= 4);
+      // RAW word here — see COLLOQUIAL_LOCATIVE. Using the normalised form
+      // would flag the literary `-இல்` as colloquial.
+      (COLLOQUIAL_LOCATIVE.some((s) => w.endsWith(s)) && toGraphemes(w).length >= 4);
     if (colloquial && !hits.includes(w)) hits.push(w);
   }
   if (words.length === 0) {
@@ -241,19 +254,34 @@ export function profileGrounding(profile: TamilLyricProfile): string[] {
   out.push(`- Lines: ${p.lyricLineCount} lyric lines across ${profile.sections.length} section(s).`);
 
   if (p.dominantSyllables) {
+    // ⚠️ THE SYLLABLE COUNT IS A COARSE PROXY, AND SAYING SO IS THE POINT.
+    // An எழுத்து count is not Tamil metre. Tamil rhythm runs on அசை (நேர்/நிரை),
+    // சீர் and மாத்திரை, where குறில்/நெடில், ஒற்று and diphthongs change a
+    // line's actual weight without changing its letter count. An earlier
+    // version of this block stated the count as settled fact and told the model
+    // not to dispute it, which licensed confident melodic verdicts ("the melody
+    // will rush here") that the number cannot support. Raj caught it.
     out.push(
-      `- Meter: the song settles at ${p.dominantSyllables.count} syllables/line (${p.dominantSyllables.lines} lines).`
+      `- Line length: most lines run about ${p.dominantSyllables.count} எழுத்து (${p.dominantSyllables.lines} lines). ` +
+        'THIS IS A COARSE PROXY, NOT A METRE READING — Tamil rhythm is அசை / சீர் / மாத்திரை, and குறில்/நெடில் ' +
+        'and ஒற்று change a line\'s weight without changing its count. Use it to compare lines against EACH OTHER, ' +
+        'never to pronounce on how the melody will sit.'
     );
     if (p.syllableOutliers.length) {
       const shown = p.syllableOutliers.slice(0, MAX_GROUNDING_OUTLIERS);
       const byIndex = new Map(p.lines.map((l) => [l.index, l]));
+      const dom = p.dominantSyllables.count;
       out.push(
-        `- Lines off that count: ${shown
-          .map((i) => `"${byIndex.get(i)?.text.trim() ?? ''}" (${byIndex.get(i)?.syllables})`)
+        `- Lines that run longer or shorter than the rest: ${shown
+          .map((i) => {
+            const l = byIndex.get(i);
+            const rel = !l ? '' : l.syllables > dom ? 'longer' : 'shorter';
+            return `"${l?.text.trim() ?? ''}" (${rel})`;
+          })
           .join(' · ')}${p.syllableOutliers.length > shown.length ? ' …' : ''}`
       );
     } else {
-      out.push('- Every lyric line hits that count.');
+      out.push('- Line lengths are even across the draft.');
     }
   }
 

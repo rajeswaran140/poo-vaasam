@@ -116,6 +116,22 @@ describe('registerSignal', () => {
     expect(s.colloquialHits.length).toBeGreaterThan(0);
   });
 
+
+  it('does NOT flag ordinary words that merely end in ல', () => {
+    // சாயங்கால appears in the first line of the song this module was built
+    // for, and an earlier rule flagged it as colloquial: any long word ending
+    // in ல matched. `ால` is not a locative.
+    const s = registerSignal('சாயங்கால வானத்திலே சாய்ந்து போனேன்');
+    expect(s.colloquialHits).not.toContain('சாயங்கால');
+  });
+
+  it('separates the colloquial locative from the literary one', () => {
+    // வரப்பில (spoken) vs வரப்பில் (literary) differ ONLY by the pulli, so the
+    // check must run on the raw word — normalising collapses them.
+    expect(registerSignal('வரப்பில நடந்து').colloquialHits).toContain('வரப்பில');
+    expect(registerSignal('வரப்பில் நடந்து').colloquialHits).toEqual([]);
+  });
+
   it('is unknown on an empty draft rather than guessing literary', () => {
     expect(registerSignal('').register).toBe('unknown');
   });
@@ -206,8 +222,11 @@ describe('profileGrounding', () => {
     expect(text()).toMatch(/do not re-derive or dispute/i);
   });
 
-  it('states the meter as a number so the model cannot guess at it', () => {
-    expect(text()).toMatch(/syllables\/line/);
+  it('gives a line-length figure without calling it the metre', () => {
+    // The count is still useful for comparing lines; it just must not be
+    // presented as a metre reading. See the metre-humility block below.
+    expect(text()).toMatch(/எழுத்து/);
+    expect(text()).not.toMatch(/syllables\/line/);
   });
 
   it('names the root motif with its actual surface forms', () => {
@@ -235,5 +254,41 @@ describe('profileGrounding', () => {
   it('produces a well-formed block for an empty draft rather than throwing', () => {
     expect(() => profileGrounding(buildLyricProfile(''))).not.toThrow();
     expect(profileGrounding(buildLyricProfile('')).length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * METRE HUMILITY (added after Raj's review, 2026-08-10).
+ *
+ * The first version of this block stated the syllable count as settled fact and
+ * told the model not to dispute it. That is wrong for Tamil: an எழுத்து count
+ * is not metre — அசை (நேர்/நிரை), சீர் and மாத்திரை decide a line's weight, and
+ * குறில்/நெடில் and ஒற்று change it without changing the count. The confident
+ * numeric framing licensed melodic verdicts the number cannot support.
+ */
+describe('grounding does not overstate Tamil metre', () => {
+  const text = () => profileGrounding(buildLyricProfile(SAAYANGAALA)).join('\n');
+
+  it('names the count a COARSE PROXY rather than a metre reading', () => {
+    expect(text()).toMatch(/COARSE PROXY, NOT A METRE READING/);
+  });
+
+  it('names the real units of Tamil rhythm so the model knows what it lacks', () => {
+    const t = text();
+    expect(t).toContain('அசை');
+    expect(t).toContain('சீர்');
+    expect(t).toContain('மாத்திரை');
+  });
+
+  it('forbids using the count to pronounce on the melody', () => {
+    expect(text()).toMatch(/never to pronounce on how the melody will sit/i);
+  });
+
+  it('describes outlier lines RELATIVELY, not with a bare number', () => {
+    // "runs longer than the rest" is defensible; "(9)" invites a verdict.
+    const uneven = 'காதல் வா\nமிக நீண்ட ஒரு வரி இது ஆகும் நிஜமாக\nகாதல் வா';
+    const t = profileGrounding(buildLyricProfile(uneven)).join('\n');
+    expect(t).toMatch(/longer|shorter/);
+    expect(t).not.toMatch(/\(\d+\)/); // no naked per-line syllable numbers
   });
 });

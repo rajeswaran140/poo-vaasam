@@ -120,3 +120,26 @@ describe('confidenceWord', () => {
     expect(confidenceWord(0)).toBe('low');
   });
 });
+
+describe('a rhythm note that needs the tune reads as provisional', () => {
+  it('marks it so it cannot be mistaken for a settled verdict', () => {
+    const md = critiqueToMarkdown({
+      ...FULL,
+      slackLines: [
+        {
+          line: 'முத்தமிழின் மூன்றெழுத்தே',
+          issue: 'runs longer than the lines around it',
+          issueType: 'possible_issue',
+          confidence: 0.4,
+          requiresMelodyValidation: true,
+        },
+      ],
+    });
+    expect(md).toContain('🎵');
+    expect(md).toMatch(/line length alone cannot decide this/);
+  });
+
+  it('omits the marker when the note is not rhythmic', () => {
+    expect(critiqueToMarkdown(FULL)).not.toContain('🎵');
+  });
+});

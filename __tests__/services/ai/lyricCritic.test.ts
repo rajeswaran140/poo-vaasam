@@ -256,10 +256,11 @@ describe('measured-fact grounding', () => {
     expect(p.indexOf('MEASURED FACTS')).toBeLessThan(p.indexOf('சாயங்கால வானத்திலே'));
   });
 
-  it('states the syllable count as a fact rather than asking for one', async () => {
+  it('gives the line length so the model need not count, but never as a metre verdict', async () => {
     create.mockResolvedValueOnce(toolResponse(CRITIQUE));
     await critiqueLyric(GROUNDED);
-    expect(sentPrompt()).toMatch(/syllables\/line/);
+    expect(sentPrompt()).toMatch(/எழுத்து/);
+    expect(sentPrompt()).toMatch(/COARSE PROXY, NOT A METRE READING/);
   });
 
   it('surfaces the root motif the poet built the song on', async () => {
@@ -377,5 +378,78 @@ describe('schema now carries uncertainty and cost', () => {
       })
     );
     expect(await critiqueLyric(INPUT)).toMatchObject({ ok: false, code: 'bad_response' });
+  });
+});
+
+/**
+ * METRE HUMILITY + NO HISTORICAL LABELS (Raj's review, 2026-08-10).
+ *
+ * The grounded critic started making confident numeric metre claims ("the
+ * song's modal line is 6 syllables", "8 syllables", "the melody will rush")
+ * and period labels ("இம்மை is a Sangam-register philosophical term"). An
+ * எழுத்து count is not Tamil metre — அசை/சீர்/மாத்திரை decide weight — and a
+ * period label is a historical-linguistics claim the draft cannot support.
+ */
+
+describe('metre + label rules reach the model', () => {
+  beforeEach(() => create.mockResolvedValueOnce(toolResponse(CRITIQUE)));
+
+  it('states that an எழுத்து count is not Tamil metre', async () => {
+    await critiqueLyric(INPUT);
+    const s = (create.mock.calls[0][0] as { system: string }).system;
+    expect(s).toMatch(/எழுத்து count is NOT Tamil metre/i);
+    expect(s).toContain('அசை');
+    expect(s).toContain('மாத்திரை');
+  });
+
+  it('forbids predicting a melodic outcome from counts alone', async () => {
+    await critiqueLyric(INPUT);
+    const s = (create.mock.calls[0][0] as { system: string }).system;
+    expect(s).toMatch(/NEVER predict a melodic outcome/i);
+    expect(s).toMatch(/requiresMelodyValidation/);
+  });
+
+  it('forbids period and corpus labels, and names the safe alternative', async () => {
+    await critiqueLyric(INPUT);
+    const s = (create.mock.calls[0][0] as { system: string }).system;
+    expect(s).toMatch(/NO UNSUPPORTED LINGUISTIC OR HISTORICAL LABELS/i);
+    expect(s).toMatch(/Sangam-register term/); // named as a thing NOT to say
+    expect(s).toMatch(/markedly literary register/);
+  });
+
+  it('sends line length relatively, without a modal-syllable verdict', async () => {
+    await critiqueLyric({ lyrics: 'காதல் வா\nமிக நீண்ட ஒரு வரி இது ஆகும் நிஜமாக\nகாதல் வா' });
+    const p = (create.mock.calls[0][0] as { messages: Array<{ content: string }> }).messages[0].content;
+    expect(p).toMatch(/COARSE PROXY, NOT A METRE READING/);
+    expect(p).toMatch(/longer|shorter/);
+  });
+});
+
+describe('requiresMelodyValidation', () => {
+  it('accepts a rhythm note the critic marks as needing the tune', async () => {
+    create.mockResolvedValueOnce(
+      toolResponse({
+        overall: 'Strong.',
+        slackLines: [
+          {
+            line: 'முத்தமிழின் மூன்றெழுத்தே',
+            issue: 'runs longer than the lines around it',
+            issueType: 'possible_issue',
+            confidence: 0.4,
+            requiresMelodyValidation: true,
+          },
+        ],
+      })
+    );
+    const r = await critiqueLyric(INPUT);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.data.slackLines[0].requiresMelodyValidation).toBe(true);
+  });
+
+  it('stays optional — a non-rhythmic note need not carry it', async () => {
+    create.mockResolvedValueOnce(toolResponse(CRITIQUE));
+    const r = await critiqueLyric(INPUT);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.data.slackLines[0].requiresMelodyValidation).toBeUndefined();
   });
 });
