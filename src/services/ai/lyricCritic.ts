@@ -70,7 +70,11 @@ Rules:
 - ROOT MOTIFS are not mere repetition. When the facts show one root re-inflected across the song, treat it as a possible deliberate device and say what it is doing.
 - Every slackLines entry MUST carry \`issueType\` and \`confidence\`. Reserve high confidence for things you can point at in the text; be honestly uncertain about intent.
 - wordIdeas: alternatives to CONSIDER (a thesaurus, not an edit) — and every one MUST carry a \`tradeoff\` naming what the swap gains AND what it loses. If you cannot name the loss, do not offer the word.
-- ORIGINALITY: separate a familiar IMAGE from a familiar EXPRESSION. குயில், மயில், தென்றல் are common nouns; an unusual combination of them is still original. Only call something cliché when the PHRASING is worn, not because the noun is well known.
+- ⚠️ **FILTER YOUR OWN SUGGESTIONS. If the alternative would lose the line's central semantic function, DO NOT OFFER IT AT ALL.** Reasoning your way to "…but the body's hunger is the point, not a metaphor for it" and then presenting the swap anyway wastes the poet's attention. Quality over quantity: an EMPTY wordIdeas list is a perfectly good answer and often the right one.
+- ORIGINALITY: separate a familiar IMAGE from a familiar EXPRESSION. குயில், மயில், தென்றல் are common nouns; an unusual combination of them is still original. Only call something cliché when the PHRASING is worn, not because the noun is well known. And cliché is not phrase-FREQUENCY: judge where the phrase sits, what precedes it, and how it closes the section — a familiar image in a new structural position can be the strongest line in the song.
+- ⚠️ **A ONE-OFF IMAGE IS NOT AN INCONSISTENCY.** Uniqueness alone is no evidence of a tonal gap. When a song's grief is otherwise abstract, a single concrete household object can be exactly the anchor the listener remembers — that is craft, not drift. Never flag an image merely for appearing once.
+- ⚠️ **NO CORPUS CLAIMS YOU CANNOT SUPPORT.** You have no corpus and no search. So never write "appears often in grief lyrics", "well-worn pairing", or any frequency claim about Tamil poetry at large. Say what you can actually stand behind: "belongs to a familiar semantic field", "reads idiomatic". If you still want to flag it, mark the confidence LOW and say the judgement is your impression.
+- ⚠️ **SEPARATE WHAT THE TEXT SAYS FROM WHAT YOU INFER.** Use \`readingLevel\` on any interpretive observation: text_supported / strong_inference / possible_reading / speculative. A reading that is one of several possible must NEVER appear in \`overall\` phrased as the song's settled meaning — attribute it ("this can be read as…") or leave it out.
 - questions: pose a few sharp questions that push the poet's own thinking.
 - BE CONCISE — surface the most valuable few points, not an exhaustive audit. Keep each note to one or two sentences; at most ~5 strengths, ~6 slack lines, ~5 word ideas, ~4 questions. A tight, sharp critique is more useful (and faster) than a long one.
 - Stay strictly APOLITICAL — no parties, movements, regions framed politically, or partisan references.`;
@@ -121,10 +125,18 @@ export function buildCritiquePrompt(input: LyricCritiqueInput, lexicon?: string[
     );
   if (input.notes) lines.push(`The poet's note: ${input.notes}`);
   if (lexicon && lexicon.length) {
+    // ⚠️ THE OLD WORDING SAID "PREFER … wherever they genuinely fit" AND CAUSED
+    // OVERFITTING. The critic began proposing the same lexicon word (உயிர்த்தமிழே)
+    // against unrelated lines, in one run reaching for it twice in a single
+    // critique. Left alone that narrows the poet's vocabulary toward whatever he
+    // already recorded — the opposite of augmenting the craft. The lexicon is
+    // evidence of VOICE, not a shortlist of replacements.
     lines.push(
       "",
-      "The poet keeps a personal lexicon of their own preferred Tamil words. When you offer wordIdeas alternatives, PREFER words from this lexicon wherever they genuinely fit (you may still suggest others, but favour the poet's own palette):",
+      "For reference, words the poet has recorded in their own lexicon:",
       lexicon.join("\n"),
+      "",
+      "⚠️ This list is EVIDENCE OF THE POET'S VOICE, NOT a set of replacement candidates. Do NOT reach for a word merely because it appears here. Suggest one only when it is genuinely the best fit for that specific line, and NEVER propose the same lexicon word for more than one line in a single critique — repeating it is a sign you are pattern-matching on the list rather than reading the line.",
     );
   }
   return lines.join("\n");

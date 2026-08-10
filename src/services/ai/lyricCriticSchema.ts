@@ -58,6 +58,23 @@ export const confidenceSchema = z
   .max(1)
   .describe('0..1. Reserve high confidence for things you can point at in the text.');
 
+/**
+ * How far an interpretive claim is from the text.
+ *
+ * WHY. A critique read "an act of consolation offered upward" as though it were
+ * the song's established meaning, when the plainer reading of the lines was
+ * that the poet wants GOD to feel the loss too. Both are legitimate readings;
+ * presenting the second as the first is not. Confidence (0..1) already covers
+ * "am I sure this line is weak" — this covers the different question of "how
+ * much of this meaning is on the page versus in my head".
+ */
+export const readingLevelSchema = z
+  .enum(['text_supported', 'strong_inference', 'possible_reading', 'speculative'])
+  .describe(
+    'text_supported = the words say it. strong_inference = follows closely. possible_reading = one of several. speculative = your own imaginative extension. Do not dress a possible_reading as text_supported.'
+  );
+export type ReadingLevel = z.infer<typeof readingLevelSchema>;
+
 /** What the poet submits: their own draft, optionally steered. */
 export const lyricCritiqueInputSchema = z.object({
   lyrics: z
@@ -94,6 +111,7 @@ export const lyricCritiqueOutputSchema = z.object({
       z.object({
         aspect: critiqueAspectSchema,
         note: z.string().min(1),
+        readingLevel: readingLevelSchema.optional(),
       })
     )
     .default([])
