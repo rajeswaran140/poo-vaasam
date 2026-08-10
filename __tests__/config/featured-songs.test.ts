@@ -58,12 +58,35 @@ describe('featuredSongsItemListJsonLd', () => {
     }
   });
 
-  it('OMITS fields this config cannot know — no invented description or uploadDate', () => {
-    // Fabricating them would put wrong data in front of Google, which is worse
-    // than omitting an optional field.
+  /**
+   * Regression guard. Omitting uploadDate made every VideoObject INVALID —
+   * Search Console reported 5x ERROR "Missing field uploadDate" on / (found
+   * 2026-08-10). It is a REQUIRED property; without it the markup earns nothing.
+   */
+  it('carries uploadDate on every entry — it is REQUIRED, not optional', () => {
+    for (const el of (featuredSongsItemListJsonLd() as any).itemListElement) {
+      expect(typeof el.item.uploadDate).toBe('string');
+      // ISO 8601, and it must parse to a real instant. A placeholder would be
+      // worse than no markup, which is why these come from the Data API.
+      expect(el.item.uploadDate).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+      expect(Number.isNaN(Date.parse(el.item.uploadDate))).toBe(false);
+    }
+  });
+
+  it('uses each video\'s OWN upload date, not one shared date', () => {
+    const dates = (featuredSongsItemListJsonLd() as any).itemListElement.map(
+      (e: any) => e.item.uploadDate
+    );
+    expect(new Set(dates).size).toBe(FEATURED_SONGS.length);
+    expect(dates).toEqual(FEATURED_SONGS.map((s) => s.uploadDate));
+  });
+
+  it('STILL omits description — recommended, not required, and never ghostwritten', () => {
+    // The only source in reach is the YouTube description's first line, which
+    // is navigation boilerplate. Song copy is Raj's own words; a warning is the
+    // right price until he supplies one line per song.
     for (const el of (featuredSongsItemListJsonLd() as any).itemListElement) {
       expect('description' in el.item).toBe(false);
-      expect('uploadDate' in el.item).toBe(false);
     }
   });
 
