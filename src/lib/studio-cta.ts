@@ -29,12 +29,12 @@
  * The live pilot page.
  *
  * ⚠️ THE CUSTOM SUBDOMAIN, NEVER the Amplify default. Raj assigned
- * `mstr.tamilagaval.com` and asked that `*.amplifyapp.com` not be forwarded or
+ * `studio.tamilagaval.com` and asked that `*.amplifyapp.com` not be forwarded or
  * advertised. Amplify app d1u7y9f55dq005 (its own AWS app, not this one) serves
  * both, so the default would "work" — which is exactly why this is easy to get
  * wrong and worth pinning with a test.
  */
-export const STUDIO_URL = 'https://mstr.tamilagaval.com';
+export const STUDIO_URL = 'https://studio.tamilagaval.com';
 
 /**
  * Where a click came from. Kept as a closed set so a typo cannot silently

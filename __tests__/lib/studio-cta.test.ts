@@ -96,10 +96,10 @@ describe('custom domain', () => {
     // Both addresses serve the same page, so a wrong one still "works" — which
     // is why this needs a test rather than a careful reading. Raj asked that the
     // *.amplifyapp.com default not be forwarded or advertised.
-    expect(STUDIO_URL).toBe('https://mstr.tamilagaval.com');
+    expect(STUDIO_URL).toBe('https://studio.tamilagaval.com');
     for (const p of STUDIO_PLACEMENTS) {
       expect(studioUrl(p)).not.toMatch(/amplifyapp\.com/);
-      expect(studioUrl(p)).toMatch(/^https:\/\/mstr\.tamilagaval\.com\//);
+      expect(studioUrl(p)).toMatch(/^https:\/\/studio\.tamilagaval\.com\//);
     }
   });
 
