@@ -27,6 +27,7 @@ import {
 import { adminFetch } from '@/lib/client-auth';
 import { pollJob } from '@/lib/poll-job';
 import { statusFor, platformLanding } from '@/lib/loudness-targets';
+import { nextRadioIndex, radioTabIndex } from '@/lib/radiogroup-keys';
 import { MAX_UPLOAD_BYTES, ACCEPTED_UPLOAD_TYPES, downloadFilename } from '@/lib/mastering-storage';
 import { buildMasterReport, reportFilename, sourceInfoLine, dynamicsPreserved, streamingReadiness, joinLine } from '@/lib/master-report';
 import { MasteringComparePlayer } from '@/components/admin/MasteringComparePlayer';
@@ -199,6 +200,8 @@ export function MasteringStudio() {
   const [sourceKey, setSourceKey] = useState<string | null>(null);
   const [sent, setSent] = useState({ loaded: 0, total: 0 });
   const [target, setTarget] = useState<number>(-14);
+  /** Arrow keys move focus as well as selection — the radiogroup pattern. */
+  const targetRefs = useRef<Array<HTMLButtonElement | null>>([]);
   /**
    * The picked File, kept only so the trim panel can draw a waveform without a
    * round trip. Deliberately a ref-like state that is NOT persisted: `source`
@@ -1187,13 +1190,25 @@ export function MasteringStudio() {
         </h2>
 
         <div role="radiogroup" aria-label="Streaming loudness target" className="flex flex-wrap gap-2">
-          {TARGETS.map((t) => (
+          {TARGETS.map((t, i) => (
             <button
               key={t.lufs}
+              ref={(el) => { targetRefs.current[i] = el; }}
               type="button"
               role="radio"
               aria-checked={target === t.lufs}
               disabled={stage === 'mastering'}
+              tabIndex={radioTabIndex(i, TARGETS.findIndex((x) => x.lufs === target), TARGETS.length)}
+              onKeyDown={(e) => {
+                // Arrow keys select as they move — the radiogroup pattern. Any
+                // other key (Tab, Space) must pass through untouched.
+                const from = TARGETS.findIndex((x) => x.lufs === target);
+                const to = nextRadioIndex(e.key, from, TARGETS.length);
+                if (to === null) return;
+                e.preventDefault();
+                pickTarget(TARGETS[to].lufs);
+                targetRefs.current[to]?.focus();
+              }}
               onClick={() => pickTarget(t.lufs)}
               className={`flex items-start gap-2 rounded-lg border px-4 py-2 text-left transition disabled:opacity-50 ${
                 target === t.lufs
@@ -1414,8 +1429,13 @@ export function MasteringStudio() {
             </dl>
           </div>
 
-          <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
-            <table className="w-full text-sm">
+          {/* overflow-x-auto, NOT overflow-hidden. This page is an installable
+              PWA meant to live on a phone, and four columns of LUFS/dBTP figures
+              do not fit a 360px screen — hidden would clip them with no way to
+              reach the numbers. min-w keeps the columns legible and lets the
+              table scroll instead of crushing itself. */}
+          <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
+            <table className="w-full min-w-[26rem] text-sm">
               <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500 dark:bg-gray-800/50 dark:text-gray-400">
                 <tr>
                   <th scope="col" className="px-4 py-2 text-left font-semibold">Stage</th>
@@ -1496,7 +1516,12 @@ export function MasteringStudio() {
               <p className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-xs font-medium text-gray-600 dark:border-gray-800 dark:bg-gray-800/40 dark:text-gray-300">
                 Streaming readiness — how it lands on each platform
               </p>
-              <table className="w-full text-sm">
+              {/* Scroller INSIDE the rounded shell, so the header keeps its
+                  corners while the table can still escape a narrow screen. The
+                  platform column is a comma-joined list ("Spotify, YouTube,
+                  Amazon, TIDAL") — the widest content in the module. */}
+              <div className="overflow-x-auto">
+              <table className="w-full min-w-[26rem] text-sm">
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-800/60">
                   {platformLanding(job.afterLufs).map((row) => (
                     <tr key={row.target}>
@@ -1525,6 +1550,7 @@ export function MasteringStudio() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
 

@@ -328,6 +328,50 @@ describe('dual-target workflow', () => {
     expect(screen.getByRole('radio', { name: /-14 LUFS/ })).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByRole('radio', { name: /-16 LUFS/ })).toHaveAttribute('aria-checked', 'false');
   });
+
+  /**
+   * A radiogroup that ignores arrow keys is a radiogroup in name only — the
+   * same rule MasteringWaveform already holds itself to for role="slider".
+   */
+  describe('target keyboard navigation', () => {
+    const targets = () => ({
+      t14: screen.getByRole('radio', { name: /-14 LUFS/ }),
+      t16: screen.getByRole('radio', { name: /-16 LUFS/ }),
+    });
+
+    it('is ONE tab stop, not one per option', () => {
+      render(<MasteringStudio />);
+      const { t14, t16 } = targets();
+      expect(t14).toHaveAttribute('tabindex', '0'); // checked by default
+      expect(t16).toHaveAttribute('tabindex', '-1');
+    });
+
+    it('an arrow key selects as it moves', () => {
+      render(<MasteringStudio />);
+      const { t14, t16 } = targets();
+      fireEvent.keyDown(t14, { key: 'ArrowRight' });
+      expect(t16).toHaveAttribute('aria-checked', 'true');
+      expect(t14).toHaveAttribute('aria-checked', 'false');
+      expect(t16).toHaveAttribute('tabindex', '0');
+    });
+
+    it('wraps around both ends', () => {
+      render(<MasteringStudio />);
+      const { t14, t16 } = targets();
+      fireEvent.keyDown(t14, { key: 'ArrowLeft' }); // wraps to the last
+      expect(t16).toHaveAttribute('aria-checked', 'true');
+      fireEvent.keyDown(t16, { key: 'ArrowRight' }); // wraps back to the first
+      expect(t14).toHaveAttribute('aria-checked', 'true');
+    });
+
+    it('does not swallow keys that are not its own', () => {
+      render(<MasteringStudio />);
+      const { t14, t16 } = targets();
+      fireEvent.keyDown(t14, { key: 'Tab' });
+      expect(t14).toHaveAttribute('aria-checked', 'true');
+      expect(t16).toHaveAttribute('aria-checked', 'false');
+    });
+  });
 });
 
 describe('download', () => {

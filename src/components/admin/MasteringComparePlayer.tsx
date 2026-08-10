@@ -20,8 +20,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Play, Pause, Loader2, AlertTriangle, Volume2, VolumeX } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 import { matchGains, formatClock } from '@/lib/loudness-match';
+import { nextRadioIndex, radioTabIndex } from '@/lib/radiogroup-keys';
 
 type Which = 'source' | 'master';
+
+/** A/B order — also the arrow-key order, so the two can never drift apart. */
+const AB: readonly Which[] = ['source', 'master'];
 
 interface Props {
   sourceKey: string;
@@ -66,6 +70,8 @@ export function MasteringComparePlayer({ sourceKey, masterKey, beforeLufs, after
   const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
   const [which, setWhich] = useState<Which>('master');
+  /** Arrow keys move focus as well as selection — the radiogroup pattern. */
+  const abRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [matched, setMatched] = useState(true);
   /** Slider position 0..1. Perceptual curve applied on the way to the node. */
   const [volume, setVolume] = useState(1);
@@ -306,15 +312,27 @@ export function MasteringComparePlayer({ sourceKey, masterKey, beforeLufs, after
         </div>
       </div>
 
-      {/* A/B switch — a radio group so it's clear only one is audible at a time. */}
+      {/* A/B switch — a radio group so it's clear only one is audible at a time.
+          Arrow keys swap sides in ONE keypress; comparing before/after is the
+          core gesture here, and it should not cost two tab stops and a space
+          while you are trying to hear a difference. */}
       <div role="radiogroup" aria-label="Listen to" className="mt-3 flex gap-2">
-        {(['source', 'master'] as const).map((w) => (
+        {AB.map((w, i) => (
           <button
             key={w}
+            ref={(el) => { abRefs.current[i] = el; }}
             type="button"
             role="radio"
             aria-checked={which === w}
+            tabIndex={radioTabIndex(i, AB.indexOf(which), AB.length)}
             onClick={() => setWhich(w)}
+            onKeyDown={(e) => {
+              const to = nextRadioIndex(e.key, AB.indexOf(which), AB.length);
+              if (to === null) return; // not ours — let Tab/Space through
+              e.preventDefault();
+              setWhich(AB[to]);
+              abRefs.current[to]?.focus();
+            }}
             className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition ${
               which === w
                 ? 'border-orange-500 bg-orange-50 text-orange-800 dark:border-orange-500 dark:bg-orange-500/10 dark:text-orange-300'

@@ -44,9 +44,26 @@ export const metadata: Metadata = {
 /** Read from the manifest so the status bar and the splash can never drift apart. */
 export const viewport: Viewport = { themeColor: masteringManifest().theme_color };
 
+/**
+ * WHY THE WIDTH IS CAPPED HERE AND NOT IN THE ADMIN LAYOUT. The admin shell
+ * puts no `max-w` on its content wrapper, which is right for the data-dense
+ * pages — the YouTube cockpit and the analytics tables want every pixel. The
+ * mastering studio is the opposite: a linear, numbered workflow of prose,
+ * verdict copy and two four-column tables. Unconstrained it stretched to the
+ * full viewport on a desktop, leaving the loudness radios and the readiness
+ * table as sparse bands of text.
+ *
+ * 5xl rather than 3xl because the waveform is an editing surface — precision
+ * scales with width, so this caps the sprawl without cramping the one control
+ * that benefits from room.
+ *
+ * Kept inline, NOT exported: a Next.js page module may only export `default`,
+ * `metadata`, `viewport`, `dynamic` and friends. Exporting a class string here
+ * fails the build with "not a valid Next.js entry export value".
+ */
 export default function AdminMasteringPage() {
   return (
-    <div className="space-y-4">
+    <div className="mx-auto w-full max-w-5xl space-y-4" data-testid="mastering-container">
       <MasteringInstall />
       <MasteringStudio />
     </div>
