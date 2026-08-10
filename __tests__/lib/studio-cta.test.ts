@@ -90,3 +90,23 @@ describe('terms stay in one place', () => {
     expect(STUDIO_PILOT_TRACKS).toBe(5);
   });
 });
+
+describe('custom domain', () => {
+  it('links the assigned subdomain, never the Amplify default', () => {
+    // Both addresses serve the same page, so a wrong one still "works" — which
+    // is why this needs a test rather than a careful reading. Raj asked that the
+    // *.amplifyapp.com default not be forwarded or advertised.
+    expect(STUDIO_URL).toBe('https://mstr.tamilagaval.com');
+    for (const p of STUDIO_PLACEMENTS) {
+      expect(studioUrl(p)).not.toMatch(/amplifyapp\.com/);
+      expect(studioUrl(p)).toMatch(/^https:\/\/mstr\.tamilagaval\.com\//);
+    }
+  });
+
+  it('keeps the pilot on the same apex as the site that links it', () => {
+    // A subdomain of tamilagaval.com reads as the same organisation; a random
+    // amplifyapp host reads as somewhere else entirely, at the moment the
+    // visitor is deciding whether to hand over a song.
+    expect(new URL(STUDIO_URL).hostname.endsWith('.tamilagaval.com')).toBe(true);
+  });
+});
