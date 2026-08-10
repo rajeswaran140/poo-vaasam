@@ -167,4 +167,59 @@ describe('volume', () => {
     render(<MasteringComparePlayer sourceKey="a.wav" masterKey="b.wav" beforeLufs={-17.9} afterLufs={-14} />);
     expect((await screen.findByLabelText('Volume') as HTMLInputElement).value).toBe('1');
   });
+
+  /**
+   * A/B by keyboard. Comparing before and after is the core gesture of the
+   * whole module — it must cost ONE keypress, not two tab stops and a space.
+   */
+  describe('A/B keyboard navigation', () => {
+    const setup = async () => {
+      render(<MasteringComparePlayer sourceKey="a.wav" masterKey="b.wav" beforeLufs={-17.9} afterLufs={-14} />);
+      const before = await screen.findByRole('radio', { name: /Before/ });
+      const after = screen.getByRole('radio', { name: /After/ });
+      return { before, after };
+    };
+
+    it('is ONE tab stop — only the checked option is tabbable', async () => {
+      const { before, after } = await setup();
+      // Defaults to the master, so B holds the tab stop.
+      expect(after).toHaveAttribute('aria-checked', 'true');
+      expect(after).toHaveAttribute('tabindex', '0');
+      expect(before).toHaveAttribute('tabindex', '-1');
+    });
+
+    it('an arrow key both moves and selects, in one press', async () => {
+      const { before, after } = await setup();
+      fireEvent.keyDown(after, { key: 'ArrowLeft' });
+      expect(before).toHaveAttribute('aria-checked', 'true');
+      expect(after).toHaveAttribute('aria-checked', 'false');
+      // Roving tabindex follows the selection.
+      expect(before).toHaveAttribute('tabindex', '0');
+      expect(after).toHaveAttribute('tabindex', '-1');
+    });
+
+    it('wraps, so repeated arrows flip back and forth', async () => {
+      const { before, after } = await setup();
+      fireEvent.keyDown(after, { key: 'ArrowRight' }); // wraps to A
+      expect(before).toHaveAttribute('aria-checked', 'true');
+      fireEvent.keyDown(before, { key: 'ArrowRight' }); // back to B
+      expect(after).toHaveAttribute('aria-checked', 'true');
+    });
+
+    it('Home and End reach the ends', async () => {
+      const { before, after } = await setup();
+      fireEvent.keyDown(after, { key: 'Home' });
+      expect(before).toHaveAttribute('aria-checked', 'true');
+      fireEvent.keyDown(before, { key: 'End' });
+      expect(after).toHaveAttribute('aria-checked', 'true');
+    });
+
+    it('leaves other keys alone so Tab still escapes the group', async () => {
+      const { before, after } = await setup();
+      fireEvent.keyDown(after, { key: 'Tab' });
+      fireEvent.keyDown(after, { key: 'a' });
+      expect(after).toHaveAttribute('aria-checked', 'true');
+      expect(before).toHaveAttribute('aria-checked', 'false');
+    });
+  });
 });
