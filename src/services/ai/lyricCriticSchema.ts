@@ -114,6 +114,12 @@ export const lyricCritiqueOutputSchema = z.object({
           .describe(
             'For an AMBIGUOUS line, ask what was intended INSTEAD of downgrading it — e.g. "Did you mean மெய் as body or as truth?"'
           ),
+        requiresMelodyValidation: z
+          .boolean()
+          .optional()
+          .describe(
+            'TRUE when the concern is rhythmic/melodic and CANNOT be settled from the text. An எழுத்து count is not Tamil metre — அசை, சீர் and மாத்திரை decide weight, and only the sung melody settles whether a line rushes. Say so rather than asserting.'
+          ),
       })
     )
     .default([])

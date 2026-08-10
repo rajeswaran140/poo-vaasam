@@ -54,6 +54,11 @@ export function critiqueToMarkdown(c: LyricCritique): string {
       ...ordered.map((l) => {
         const bits = [`- ${ISSUE_LABEL[l.issueType]} **${l.line}** — ${l.issue}`];
         bits.push(` _(${confidenceWord(l.confidence)} confidence)_`);
+        // A rhythm note that only the tune can settle must never read as a
+        // verdict — an எழுத்து count is not Tamil metre.
+        if (l.requiresMelodyValidation) {
+          bits.push('\n  - 🎵 _needs the melody to settle — line length alone cannot decide this_');
+        }
         if (l.questionForWriter) bits.push(`\n  - ❓ ${l.questionForWriter}`);
         return bits.join('');
       })

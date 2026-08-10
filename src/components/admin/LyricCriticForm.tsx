@@ -689,6 +689,11 @@ export function LyricCriticForm() {
                             🎨 reads deliberate — noted, not faulted
                           </p>
                         )}
+                        {l.requiresMelodyValidation && (
+                          <p className="mt-0.5 text-xs text-blue-700 dark:text-blue-300">
+                            🎵 needs the melody to settle — line length alone cannot decide this
+                          </p>
+                        )}
                         {l.questionForWriter && (
                           <p className="mt-0.5 font-tamil text-xs text-gray-700 dark:text-gray-300">
                             ❓ {l.questionForWriter}
