@@ -9,6 +9,8 @@ import {
   summarizeCurve,
   classifyHook,
   analyzeRetention,
+  boundaryDrop,
+  reboundAfter,
   VERDICT_CHECKPOINT,
   type RetentionCurve,
 } from '@/lib/youtube-retention';
@@ -110,5 +112,89 @@ describe('analyzeRetention', () => {
   });
   it('handles an empty curve as unknown', () => {
     expect(analyzeRetention([]).verdict).toBe('unknown');
+  });
+});
+
+describe('boundaryDrop', () => {
+  const pts = (rows: Array<[number, number]>): RetentionCurve =>
+    rows.map(([ratio, watchRatio]) => ({ ratio, watchRatio }));
+
+  // Vocals end at 5:36 of 10:08 in the paired song+instrumental format.
+  const VOCAL_END = 0.553;
+
+  // Falls off a shelf right at the boundary.
+  const cliff = pts([
+    [0, 1.0], [0.2, 0.85], [0.4, 0.78], [0.5, 0.75], [0.55, 0.74],
+    [0.6, 0.45], [0.7, 0.4], [1, 0.33],
+  ]);
+  // Declines steadily THROUGH the boundary — reacting to nothing.
+  const steady = pts([
+    [0, 1.0], [0.2, 0.85], [0.4, 0.72], [0.5, 0.66], [0.6, 0.61],
+    [0.7, 0.57], [0.8, 0.54], [1, 0.5],
+  ]);
+
+  it('reports the hold either side and the loss across the boundary', () => {
+    const d = boundaryDrop(cliff, VOCAL_END);
+    expect(d.before).toBeCloseTo(0.7494, 3);
+    expect(d.after).toBeCloseTo(0.4485, 3);
+    expect(d.drop).toBeCloseTo(0.3009, 3);
+  });
+
+  it('calls a cliff when the fall STEEPENS at the boundary', () => {
+    const d = boundaryDrop(cliff, VOCAL_END);
+    expect(d.slopeAfter!).toBeGreaterThan(2 * d.slopeBefore!);
+    expect(d.isCliff).toBe(true);
+  });
+
+  it('does NOT call a cliff on a curve that was already declining', () => {
+    // The whole point of the slope comparison: every retention curve falls, so
+    // a raw drop proves nothing. This one loses viewers across the boundary at
+    // the same rate it loses them everywhere else.
+    const d = boundaryDrop(steady, VOCAL_END);
+    expect(d.drop!).toBeGreaterThan(0); // viewers DID leave …
+    expect(d.isCliff).toBe(false); // … but not because of the boundary
+  });
+
+  it('is null-safe on an empty curve rather than inventing a verdict', () => {
+    const d = boundaryDrop([], VOCAL_END);
+    expect(d.isCliff).toBeNull();
+    expect(d.drop).toBeNull();
+    expect(d.ratio).toBe(VOCAL_END);
+  });
+
+  it('clamps at the curve ends instead of extrapolating past them', () => {
+    const d = boundaryDrop(cliff, 0.99);
+    expect(d.after).toBeCloseTo(0.33, 5); // the final point, not beyond it
+    expect(d.before).not.toBeNull();
+  });
+
+  it('rejects a nonsensical window rather than dividing by zero', () => {
+    expect(boundaryDrop(cliff, VOCAL_END, 0).isCliff).toBeNull();
+  });
+
+  describe('reboundAfter', () => {
+    it('detects viewers seeking INTO the second half', () => {
+      // Falls at the boundary, then CLIMBS — impossible from spillover alone,
+      // so people are jumping straight to the music version.
+      const seek = pts([
+        [0, 1.0], [0.5, 0.6], [0.55, 0.58], [0.6, 0.3],
+        [0.7, 0.38], [0.8, 0.44], [1, 0.4],
+      ]);
+      const r = reboundAfter(seek, VOCAL_END);
+      expect(r.rise).toBeCloseTo(0.14, 2); // 0.30 -> 0.44
+      expect(r.atRatio).toBeCloseTo(0.8, 5);
+      expect(r.isSeekIn).toBe(true);
+    });
+
+    it('reports no seek-in on a curve that only ever falls', () => {
+      const r = reboundAfter(steady, VOCAL_END);
+      expect(r.rise).toBe(0);
+      expect(r.isSeekIn).toBe(false);
+    });
+
+    it('is null-safe when there is no curve after the boundary', () => {
+      expect(reboundAfter([], VOCAL_END).isSeekIn).toBeNull();
+      expect(reboundAfter(pts([[0, 1]]), VOCAL_END).isSeekIn).toBeNull();
+    });
   });
 });
