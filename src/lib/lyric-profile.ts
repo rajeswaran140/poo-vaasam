@@ -26,10 +26,20 @@ import { analyzeProsody, toGraphemes, type ProsodyReport } from '@/lib/tamil-pro
 /** U+0BCD விராமம் / pulli — dropped when comparing word roots. */
 const PULLI = '்';
 
-/** A root shared by two or more distinct surface words. */
-export interface RootMotif {
+/**
+ * Two or more distinct words that OPEN WITH THE SAME SOUND.
+ *
+ * ⚠️ DELIBERATELY NOT CALLED A "ROOT". This detector compares the first two
+ * pulli-normalised graphemes — nothing more. That is a SOUND correspondence,
+ * and sound correspondence is not etymology. சாயங்கால / சாய்ந்த / சாய்ந்து do
+ * share a verb root; அகம் / அகப்பை do NOT, yet both pairs look identical to
+ * this code. The earlier version labelled every match "same root re-inflected",
+ * which is how the critic came to assert a shared root between அகம் and அகப்பை.
+ * The label was the bug, not the model.
+ */
+export interface SoundFamily {
   /** The shared opening graphemes, pulli-normalised. */
-  root: string;
+  opening: string;
   /** The distinct surface forms that share it, in first-seen order. */
   forms: string[];
 }
@@ -60,7 +70,7 @@ export interface TamilLyricProfile {
   sections: LyricSection[];
   /** Words used 2+ times, most frequent first. */
   repeatedWords: Array<{ word: string; count: number }>;
-  rootMotifs: RootMotif[];
+  soundFamilies: SoundFamily[];
   registerSignal: RegisterSignal;
 }
 
@@ -113,20 +123,21 @@ export function normaliseRoot(word: string): string {
 }
 
 /**
- * Root motifs — repeated word-ROOTS, not repeated words.
+ * Words sharing an opening sound — a candidate for a motif, never a verdict.
  *
- * `சாயங்கால / சாய்ந்த / சாய்ந்து` is a deliberate root motif, and a plain
- * repeated-word count misses it entirely because the three surface forms all
- * differ. Matching on the first two pulli-normalised graphemes catches the
- * family without collapsing unrelated words that merely share one letter.
+ * `சாயங்கால / சாய்ந்த / சாய்ந்து` is a real motif that a plain repeated-word
+ * count misses entirely, because all three surface forms differ. Matching the
+ * first two pulli-normalised graphemes catches it.
  *
- * Reported as a candidate, never as a verdict — a shared root can be
- * coincidence, and it is the poet who knows whether it was meant.
+ * But the SAME match fires on `அகம் / அகப்பை`, which share no root at all.
+ * This code cannot tell the two cases apart and must not pretend to: it
+ * reports a SOUND correspondence and leaves the poet — or the model reading
+ * the actual words — to judge whether it is a motif, an echo, or coincidence.
  */
 export const ROOT_PREFIX_GRAPHEMES = 2;
 export const MIN_WORD_GRAPHEMES = 3;
 
-export function rootMotifs(lyrics: string): RootMotif[] {
+export function openingSoundFamilies(lyrics: string): SoundFamily[] {
   const byRoot = new Map<string, string[]>();
   for (const raw of lyricWords(lyrics)) {
     const g = toGraphemes(normaliseRoot(raw));
@@ -140,8 +151,8 @@ export function rootMotifs(lyrics: string): RootMotif[] {
   }
   return [...byRoot.entries()]
     .filter(([, forms]) => forms.length >= 2)
-    .map(([root, forms]) => ({ root, forms }))
-    .sort((a, b) => b.forms.length - a.forms.length || a.root.localeCompare(b.root));
+    .map(([opening, forms]) => ({ opening, forms }))
+    .sort((a, b) => b.forms.length - a.forms.length || a.opening.localeCompare(b.opening));
 }
 
 /** Words used more than once, most frequent first. */
@@ -229,7 +240,7 @@ export function buildLyricProfile(lyrics: string): TamilLyricProfile {
     prosody: analyzeProsody(lyrics),
     sections: lyricSections(lyrics),
     repeatedWords: repeatedWords(lyrics),
-    rootMotifs: rootMotifs(lyrics),
+    soundFamilies: openingSoundFamilies(lyrics),
     registerSignal: registerSignal(lyrics),
   };
 }
@@ -304,12 +315,15 @@ export function profileGrounding(profile: TamilLyricProfile): string[] {
     `- Gamaka: mean ${p.gamaka.averageScore}/100; ${p.gamaka.openEndings} line endings sustain, ${p.gamaka.closedEndings} clip.`
   );
 
-  if (profile.rootMotifs.length) {
+  if (profile.soundFamilies.length) {
     out.push(
-      `- Root motifs (same root re-inflected): ${profile.rootMotifs
+      `- Words that OPEN WITH THE SAME SOUND: ${profile.soundFamilies
         .slice(0, MAX_GROUNDING_MOTIFS)
         .map((m) => m.forms.join(' / '))
-        .join(' · ')}`
+        .join(' · ')}. ` +
+        'This is a SOUND correspondence only — it is NOT evidence of a shared root or etymology. ' +
+        'Some of these will be genuine motifs (one verb root re-inflected), others mere echo or ' +
+        'coincidence. Read the words and say which; never assert a shared root from sound alone.'
     );
   }
   if (profile.repeatedWords.length) {
