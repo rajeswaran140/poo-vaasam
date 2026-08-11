@@ -36,6 +36,15 @@ interface Props {
   onLoopDrag: (fromSeconds: number, toSeconds: number) => void;
   height?: number;
   /**
+   * Times (seconds) the engineer flagged a problem at.
+   *
+   * They belong ON the picture: a mark is a claim about a MOMENT, and reading
+   * it from a list underneath means translating "1:15" back into a position by
+   * eye every time. Drawn, the distribution is visible at a glance — three
+   * marks clustered in one phrase is a different problem from three scattered.
+   */
+  marks?: readonly number[];
+  /**
    * False when this waveform is not a transport.
    *
    * The trim panel draws the same picture but has no playhead — announcing it
@@ -54,6 +63,17 @@ const MAX_DPR = 2;
 const UNPLAYED = 'rgba(168, 85, 247, 0.45)';
 const PLAYED = '#D3A548';
 const LOOP_FILL = 'rgba(16, 185, 129, 0.22)';
+/** The playhead itself — the colour boundary alone reads as a fill edge, not a position. */
+const PLAYHEAD = '#F2F4F8';
+/** A marked problem point. Amber so it never reads as the emerald loop region. */
+const MARK_LINE = '#FFC453';
+
+/**
+ * The waveform is the visual centre: it is the only element that says WHERE
+ * something happens. Peak and RMS are 8px supporting bars. Raised from 64 after
+ * Raj read the three regions as competing.
+ */
+export const DEFAULT_WAVEFORM_HEIGHT = 84;
 
 export function MasteringWaveform({
   peaks,
@@ -62,7 +82,8 @@ export function MasteringWaveform({
   loop,
   onSeek,
   onLoopDrag,
-  height = 64,
+  height = DEFAULT_WAVEFORM_HEIGHT,
+  marks = [],
   interactive = true,
   ariaLabel,
 }: Props) {
@@ -136,7 +157,28 @@ export function MasteringWaveform({
       g.drawImage(layers.played, 0, 0, w, h);
       g.restore();
     }
-  }, [loop, duration, position]);
+
+    // Marks first, so the playhead stays readable when it sits on one.
+    if (duration > 0 && marks.length) {
+      g.fillStyle = MARK_LINE;
+      for (const t of marks) {
+        const x = Math.round((Math.min(Math.max(t, 0), duration) / duration) * w);
+        g.fillRect(x - 1, 0, 2, h);
+        // A small cap makes a mark findable even against a busy waveform.
+        g.fillRect(x - 3, 0, 6, 3);
+      }
+    }
+
+    // The playhead. The played/unplayed colour boundary shows how FAR along the
+    // track is, but it reads as the edge of a fill rather than a position — and
+    // at a quiet passage, where both layers are near-silent, there is nothing
+    // to see at all.
+    if (duration > 0 && ratio > 0) {
+      const x = Math.round(w * ratio);
+      g.fillStyle = PLAYHEAD;
+      g.fillRect(x - 0.5, 0, 1.5, h);
+    }
+  }, [loop, duration, position, marks]);
 
   useEffect(() => {
     buildLayers();
