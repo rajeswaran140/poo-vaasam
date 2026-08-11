@@ -8,7 +8,9 @@
  */
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
 import { MasteringPlayer } from '@/components/admin/MasteringPlayer';
+import { DEFAULT_WAVEFORM_HEIGHT } from '@/components/admin/MasteringWaveform';
 
 function installAudioContext() {
   class Fake {
@@ -468,5 +470,30 @@ describe('volume control is keyboard-safe', () => {
     const rate = screen.getAllByRole('button', { pressed: false })
       .find((b) => /^\d/.test(b.textContent || ''));
     if (rate) expect(rate.className).toMatch(/min-h-\[32px\]/);
+  });
+});
+
+/**
+ * WAVEFORM AS THE VISUAL CENTRE (Raj, 2026-08-10).
+ *
+ * Three horizontal regions were competing — waveform, Peak, RMS — when only one
+ * of them says WHERE something happens. The meters are supporting measurement.
+ */
+describe('waveform hierarchy and marks', () => {
+  it('gives the waveform more height than the meters it competes with', () => {
+    // Meters are 8px bars; the waveform is the only element that says WHERE.
+    expect(DEFAULT_WAVEFORM_HEIGHT).toBeGreaterThanOrEqual(84);
+  });
+
+  it('marks are handed to the waveform, not left in the list alone', () => {
+    // A mark is a claim about a MOMENT. Reading "1:15" from a list means
+    // translating it back into a position by eye on every glance.
+    const src = readFileSync('src/components/admin/MasteringPlayer.tsx', 'utf8');
+    expect(src).toMatch(/marks=\{marks\.map\(\(m\) => m\.time\)\}/);
+  });
+
+  it('still records the timestamp automatically when marking', () => {
+    const src = readFileSync('src/components/admin/MasteringPlayer.tsx', 'utf8');
+    expect(src).toMatch(/time: a\.currentTime/);
   });
 });

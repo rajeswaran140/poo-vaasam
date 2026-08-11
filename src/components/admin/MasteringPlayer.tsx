@@ -384,6 +384,7 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
           duration={duration}
           position={position}
           loop={loop}
+          marks={marks.map((m) => m.time)}
           onSeek={(t) => {
             if (audioRef.current) audioRef.current.currentTime = t;
             setPosition(t);
