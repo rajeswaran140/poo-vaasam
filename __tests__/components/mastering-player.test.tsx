@@ -488,8 +488,17 @@ describe('waveform hierarchy and marks', () => {
   it('marks are handed to the waveform, not left in the list alone', () => {
     // A mark is a claim about a MOMENT. Reading "1:15" from a list means
     // translating it back into a position by eye on every glance.
+    //
+    // Asserted as two facts rather than one exact JSX string: the waveform is
+    // given a `marks` prop, and that prop is derived from each mark's time.
+    // The literal-source form of this pinned the array to an inline
+    // `marks.map(...)` in the JSX, which made memoising it — needed to stop
+    // the child rebuilding its canvas layers every tick — read as a
+    // regression when the behaviour was unchanged.
     const src = readFileSync('src/components/admin/MasteringPlayer.tsx', 'utf8');
-    expect(src).toMatch(/marks=\{marks\.map\(\(m\) => m\.time\)\}/);
+    const waveformJsx = src.slice(src.indexOf('<MasteringWaveform'));
+    expect(waveformJsx).toMatch(/marks=\{/);
+    expect(src).toMatch(/marks\.map\(\(m\) => m\.time\)/);
   });
 
   it('still records the timestamp automatically when marking', () => {

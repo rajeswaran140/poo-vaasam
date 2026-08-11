@@ -31,10 +31,15 @@ export function clampRate(rate: number): number {
   return Math.min(max, Math.max(min, rate));
 }
 
-/** "0.75×" — and plain "1×" rather than "1.00×" for the normal case. */
+/**
+ * "0.75×" — and plain "1×" rather than "1.00×" for the normal case.
+ *
+ * Number→string already drops trailing zeros, so no rounding branch is needed;
+ * an earlier `Number.isInteger(r) ? r : r` ternary had identical arms and did
+ * nothing. Kept explicit here so the intent is not mistaken for an omission.
+ */
 export function formatRate(rate: number): string {
-  const r = clampRate(rate);
-  return `${Number.isInteger(r) ? r : r}×`;
+  return `${clampRate(rate)}×`;
 }
 
 /**
