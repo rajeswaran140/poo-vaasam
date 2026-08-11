@@ -330,3 +330,44 @@ describe('opening-sound families never claim a shared root', () => {
     expect(g).not.toMatch(/Root motifs \(same root re-inflected\)/);
   });
 });
+
+/**
+ * PROSODY LABELS (Raj's fifth review, 2026-08-10).
+ *
+ * `monai` is the first grapheme's base sound; `etukai` the second grapheme.
+ * Positional string matches — real மோனை and எதுகை carry metrical conditions
+ * this code does not check. Labelling the groups with the classical names is
+ * what produced "'க' மோனை chains" and a "'ண்'/'ன்' எதுகை web" stated as fact.
+ */
+describe('grounding does not claim classical prosody', () => {
+  const SOUNDS = ['கைவளையல் ஒலிக்க', 'காற்றோடு கூந்தல்', 'செவ்விதழ் சிரிக்க', 'சிந்தையில் நிறைய'].join('\n');
+  const g = () => profileGrounding(buildLyricProfile(SOUNDS)).join('\n');
+
+  it('describes POSITIONAL matches, not மோனை/எதுகை classifications', () => {
+    const t = g();
+    expect(t).toMatch(/Lines sharing an OPENING sound/);
+    expect(t).not.toMatch(/- மோனை \(/);
+    expect(t).not.toMatch(/- எதுகை \(/);
+  });
+
+  it('warns that these are not verified classical forms', () => {
+    expect(g()).toMatch(/POSITIONAL SOUND MATCHES, not verified மோனை/);
+    expect(g()).toMatch(/do NOT name a classical form unless/);
+  });
+
+  it('lists the MEMBER words so a line cannot be misattributed', () => {
+    // The critic claimed செவ்விதழ் sustained a "க" opening; it begins with ச.
+    const t = g();
+    expect(t).toContain('கைவளையல்');
+    expect(t).toContain('செவ்விதழ்');
+    // and the ச words must not appear inside the "க" group
+    const kGroup = t.match(/"க[^"]*" in ([^·\n]*)/)?.[1] ?? '';
+    expect(kGroup).not.toContain('செவ்விதழ்');
+  });
+
+  it('marks word counts as EXACT and forbids inventing others', () => {
+    const t = profileGrounding(buildLyricProfile('கலக்க ஒன்று\nகலக்க இரண்டு\nகலக்க மூன்று')).join('\n');
+    expect(t).toMatch(/EXACT — state no number that is not in this list/);
+    expect(t).toContain('கலக்க ×3');
+  });
+});
