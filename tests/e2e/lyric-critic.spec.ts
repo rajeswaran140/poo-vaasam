@@ -18,6 +18,11 @@ import { test, expect } from '@playwright/test';
 const CRITIQUE = '/admin/compose/critique';
 
 test.describe('Lyric Critic — route protection', () => {
+  // This block asserts what an ANONYMOUS visitor sees, so it must drop the
+  // admin storageState the project supplies — otherwise "redirects to login"
+  // fails precisely because we are correctly signed in.
+  test.use({ storageState: { cookies: [], origins: [] } });
+
   test('the page exists and redirects an anonymous visitor to login', async ({ page }) => {
     const res = await page.goto(CRITIQUE);
     // A 404 would mean the route did not ship; a redirect means it shipped and

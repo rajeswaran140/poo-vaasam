@@ -15,6 +15,42 @@ import { adminCredentials, NO_CREDS_REASON } from '../support/admin-credentials'
 
 test.skip(!adminCredentials(), NO_CREDS_REASON);
 
+/**
+ * Open the saved-master library and start the first master, returning false
+ * when this environment simply has none to audition.
+ *
+ * The player only mounts when a row is playing (MasteringStudio renders it
+ * under `libraryOpen && playing`), so every test below has to get here first.
+ */
+async function auditionFirstMaster(page: import('@playwright/test').Page): Promise<boolean> {
+  await page.getByRole('button', { name: /saved masters/i }).click();
+  const rows = page.getByRole('button', { name: /^Play / });
+  await rows.first().waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {});
+  if ((await rows.count()) === 0) return false;
+  await rows.first().click();
+  return true;
+}
+
+/**
+ * Wait for proof that the waveform DECODE actually completed.
+ *
+ * ⚠️ WITHOUT THIS GATE THESE TESTS PASS VACUOUSLY. The slider only exists once
+ * `peaks` is set, which happens at the end of the fetch → decode path — the
+ * very path being measured. On a slow presigned fetch the assertions were
+ * otherwise evaluated before any of it ran, and "no HEAD request" / "no leaked
+ * context" were both trivially true because nothing had happened yet. Measured
+ * against the pre-fix source they passed for exactly that reason.
+ */
+async function waitForDecodedWaveform(page: import('@playwright/test').Page): Promise<boolean> {
+  const slider = page.getByRole('slider', { name: /waveform/i }).first();
+  try {
+    await slider.waitFor({ state: 'visible', timeout: 60_000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 test.describe('mastering audition player', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/admin/mastering');
@@ -35,13 +71,13 @@ test.describe('mastering audition player', () => {
       if (/\.wav(\?|$)/i.test(u)) wavRequests.push(`${r.method()} ${u.split('?')[0]}`);
     });
 
-    const play = page.getByRole('button', { name: /^play$/i }).first();
-    if (!(await play.isVisible().catch(() => false))) {
-      test.skip(true, 'No master in the library to audition on this environment.');
-    }
-    await play.click();
-    await page.waitForTimeout(4000);
+    const ok = await auditionFirstMaster(page);
+    test.skip(!ok, 'No saved master in this environment to audition.');
+    const decoded = await waitForDecodedWaveform(page);
+    test.skip(!decoded, 'Waveform never decoded here — nothing to measure.');
 
+    // Only meaningful now that the decode demonstrably ran.
+    expect(wavRequests.length).toBeGreaterThan(0);
     expect(wavRequests.filter((r) => r.startsWith('HEAD'))).toHaveLength(0);
   });
 
@@ -51,8 +87,8 @@ test.describe('mastering audition player', () => {
     // leaked one context each time. Browsers stop granting them at ~6, after
     // which the meter and equaliser go silent with no visible cause.
     await page.addInitScript(() => {
-      const w = window as unknown as { __ctx: { made: number; closed: number } };
-      w.__ctx = { made: 0, closed: 0 };
+      const w = window as unknown as { __ctx: { made: number; closed: number; decoded: number } };
+      w.__ctx = { made: 0, closed: 0, decoded: 0 };
       const Real = window.AudioContext;
       class Counted extends Real {
         constructor(...args: ConstructorParameters<typeof Real>) {
@@ -63,41 +99,61 @@ test.describe('mastering audition player', () => {
           w.__ctx.closed++;
           return super.close();
         }
+        decodeAudioData(...a: Parameters<AudioContext['decodeAudioData']>) {
+          w.__ctx.decoded++;
+          return super.decodeAudioData(...a);
+        }
       }
       window.AudioContext = Counted as unknown as typeof AudioContext;
     });
     await page.reload();
 
-    const rows = page.getByRole('button', { name: /^play$/i });
+    await page.getByRole('button', { name: /saved masters/i }).click();
+    const rows = page.getByRole('button', { name: /^Play / });
+    await rows.first().waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {});
     const count = Math.min(await rows.count(), 5);
-    if (count < 2) test.skip(true, 'Need at least two masters to exercise the switch path.');
+    test.skip(count < 2, 'Need at least two saved masters to exercise the switch path.');
 
-    // Switch quickly, so each decode is abandoned mid-flight — the exact path
-    // that leaked.
-    for (let i = 0; i < count; i++) {
+    // Let the first one decode fully, so we know the path runs in this
+    // environment at all; then switch quickly so later decodes are abandoned
+    // mid-flight — the exact path that leaked.
+    await rows.first().click();
+    const decoded = await waitForDecodedWaveform(page);
+    test.skip(!decoded, 'Waveform never decoded here — nothing to measure.');
+
+    for (let i = 1; i < count; i++) {
       await rows.nth(i).click();
-      await page.waitForTimeout(600);
+      await page.waitForTimeout(400);
     }
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(3000);
 
     const ctx = await page.evaluate(
-      () => (window as unknown as { __ctx: { made: number; closed: number } }).__ctx
+      () => (window as unknown as { __ctx: { made: number; closed: number; decoded: number } }).__ctx
     );
+    // Guard against a vacuous pass: if no decode context was ever built there
+    // is nothing to leak and the assertion below proves nothing.
+    expect(ctx.decoded).toBeGreaterThan(0);
     // One context stays open for playback; every decode context must be closed.
     expect(ctx.made - ctx.closed).toBeLessThanOrEqual(1);
   });
 
   test('the waveform is a seek surface and the transport reflects it', async ({ page }) => {
+    const ok = await auditionFirstMaster(page);
+    test.skip(!ok, 'No saved master in this environment to audition.');
     const wave = page.getByRole('slider', { name: /waveform/i }).first();
+    await wave.waitFor({ state: 'visible', timeout: 30_000 }).catch(() => {});
     if (!(await wave.isVisible().catch(() => false))) {
       test.skip(true, 'No decoded waveform available in this environment.');
     }
     const before = await wave.getAttribute('aria-valuenow');
+    // The player sits well below the library list, so raw page.mouse
+    // coordinates can land off-screen. locator.click scrolls it into view and
+    // clicks a point INSIDE the element, which is what a person does.
     const box = await wave.boundingBox();
-    if (!box) test.skip(true, 'Waveform not laid out.');
-    await page.mouse.click(box!.x + box!.width * 0.6, box!.y + box!.height / 2);
+    test.skip(!box, 'Waveform not laid out.');
+    await wave.click({ position: { x: box!.width * 0.6, y: box!.height / 2 } });
     await expect
-      .poll(async () => wave.getAttribute('aria-valuenow'))
+      .poll(async () => wave.getAttribute('aria-valuenow'), { timeout: 10_000 })
       .not.toBe(before);
   });
 });
