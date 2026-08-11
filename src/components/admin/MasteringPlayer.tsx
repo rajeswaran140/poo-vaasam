@@ -25,7 +25,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Repeat, X, Flag, Copy } from 'lucide-react';
+import { Repeat, X, Flag, Copy, Play, Pause, Volume2, VolumeX } from 'lucide-react';
 import { MasteringEqualizer } from '@/components/admin/MasteringEqualizer';
 import { MasteringWaveform } from '@/components/admin/MasteringWaveform';
 import { EQ_BANDS, flatGains, clampGain, isFlat, type EqGains } from '@/lib/audio-eq';
@@ -79,6 +79,10 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
   const [loop, setLoop] = useState<LoopRegion | null>(null);
   const [comparing, setComparing] = useState(false);
   const [rate, setRate] = useState<number>(DEFAULT_RATE);
+  // Volume lives here, not in the native control bar — see the transport below.
+  const [volume, setVolume] = useState(1);
+  const [muted, setMuted] = useState(false);
+  const [volumeOpen, setVolumeOpen] = useState(false);
   const [pitchShifts, setPitchShifts] = useState(false);
   const [marks, setMarks] = useState<AuditionMark[]>([]);
   const [markReason, setMarkReason] = useState<MarkReason>('pronunciation');
@@ -370,9 +374,6 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
             </button>
           ))}
         </span>
-        <span className="ml-auto tabular-nums text-gray-500 dark:text-gray-400">
-          {formatTime(position)} / {formatTime(duration)}
-        </span>
       </div>
 
       {/* Waveform: click to seek, drag to loop. Canvas, not SVG — the SVG
@@ -396,12 +397,75 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
         waveformNote && <p className="text-xs text-gray-500 dark:text-gray-400">{waveformNote}</p>
       )}
 
+      {/* TRANSPORT — replaces `<audio controls>`.
+          The native bar drew a second, plainer progress line directly beneath
+          the waveform, so the page showed the same information twice and the
+          uglier one was the interactive-looking control. The waveform is the
+          seek surface; this row is only play/pause, time and volume.
+
+          The play button is 44px — the platform minimum for a touch target,
+          and this is the control that matters most. */}
+      <div className="mt-3 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => {
+            const a = audioRef.current;
+            if (!a) return;
+            if (a.paused) void a.play();
+            else a.pause();
+          }}
+          aria-label={playing ? 'Pause' : 'Play'}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-purple-600 text-white transition-colors hover:bg-purple-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-500"
+        >
+          {playing ? <Pause className="h-5 w-5" aria-hidden="true" /> : <Play className="h-5 w-5 translate-x-[1px]" aria-hidden="true" />}
+        </button>
+
+        <span className="tabular-nums text-sm text-gray-600 dark:text-gray-300">
+          {formatTime(position)} <span className="text-gray-400 dark:text-gray-500">/ {formatTime(duration)}</span>
+        </span>
+
+        {/* Volume reveals on demand rather than permanently occupying the row. */}
+        <div
+          className="relative ml-auto flex items-center"
+          onMouseEnter={() => setVolumeOpen(true)}
+          onMouseLeave={() => setVolumeOpen(false)}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              const next = !muted;
+              setMuted(next);
+              if (audioRef.current) audioRef.current.muted = next;
+              setVolumeOpen(true); // a tap on touch reveals the slider too
+            }}
+            aria-label={muted ? 'Unmute' : 'Mute'}
+            className="flex h-11 w-11 items-center justify-center rounded-full text-gray-600 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+          >
+            {muted || volume === 0 ? <VolumeX className="h-5 w-5" aria-hidden="true" /> : <Volume2 className="h-5 w-5" aria-hidden="true" />}
+          </button>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={muted ? 0 : volume}
+            aria-label="Volume"
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              setVolume(v);
+              setMuted(v === 0);
+              if (audioRef.current) { audioRef.current.volume = v; audioRef.current.muted = v === 0; }
+            }}
+            className={`w-24 accent-purple-600 transition-opacity ${volumeOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+          />
+        </div>
+      </div>
+
       <audio
         ref={audioRef}
         src={masterUrl}
         crossOrigin="anonymous"
-        controls
-        className="mt-2 w-full"
+        className="sr-only"
         onPlay={() => {
           // Reset the held peak, or a loud passage from the previous listen
           // keeps the bar high over a quiet one until it decays.

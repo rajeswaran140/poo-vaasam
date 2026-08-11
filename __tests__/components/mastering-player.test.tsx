@@ -363,3 +363,72 @@ describe('resource hygiene', () => {
     expect(screen.getAllByText(/−∞ dB/)).toHaveLength(2);
   });
 });
+
+/**
+ * TRANSPORT (2026-08-10). The player rendered `<audio controls>` directly under
+ * the canvas waveform, so the page drew the same progress information twice —
+ * and the plainer, browser-native one looked like the real control. Raj read the
+ * screenshot as "close to a browser-native audio control", which it literally
+ * was.
+ */
+describe('transport', () => {
+  const setup = () =>
+    render(<MasteringPlayer masterUrl="https://x/master.wav" title="சாயங்கால" afterTp={-1.2} />);
+
+  it('does not hand the browser its own control bar', () => {
+    setup();
+    const audio = document.querySelector('audio') as HTMLAudioElement;
+    expect(audio).toBeTruthy();
+    expect(audio.hasAttribute('controls')).toBe(false);
+    // Still in the DOM and still the audio source — just not drawing UI.
+    expect(audio.getAttribute('src')).toContain('master.wav');
+  });
+
+  it('gives play/pause a 44px target — the platform touch minimum', () => {
+    setup();
+    const btn = screen.getByRole('button', { name: /^play$/i });
+    expect(btn.className).toMatch(/h-11/);
+    expect(btn.className).toMatch(/w-11/);
+  });
+
+  it('play/pause drives the element and relabels itself', async () => {
+    setup();
+    const audio = document.querySelector('audio') as HTMLAudioElement;
+    audio.play = jest.fn().mockResolvedValue(undefined);
+    audio.pause = jest.fn();
+    fireEvent.click(screen.getByRole('button', { name: /^play$/i }));
+    expect(audio.play).toHaveBeenCalled();
+    fireEvent.play(audio);
+    await waitFor(() => expect(screen.getByRole('button', { name: /^pause$/i })).toBeInTheDocument());
+  });
+
+  it('keeps the time readout in the form people already understand', () => {
+    setup();
+    expect(screen.getByText(/\/ \d+:\d\d/)).toBeInTheDocument();
+  });
+
+  it('has a volume control that is labelled and reaches silence', () => {
+    setup();
+    const vol = screen.getByLabelText('Volume') as HTMLInputElement;
+    expect(vol.min).toBe('0');
+    expect(vol.max).toBe('1');
+    const audio = document.querySelector('audio') as HTMLAudioElement;
+    fireEvent.change(vol, { target: { value: '0.5' } });
+    expect(audio.volume).toBeCloseTo(0.5);
+  });
+
+  it('mute is a real toggle on the element, not just an icon swap', () => {
+    setup();
+    const audio = document.querySelector('audio') as HTMLAudioElement;
+    fireEvent.click(screen.getByRole('button', { name: /^mute$/i }));
+    expect(audio.muted).toBe(true);
+    expect(screen.getByRole('button', { name: /^unmute$/i })).toBeInTheDocument();
+  });
+
+  it('dragging volume to zero reads as muted', () => {
+    // Otherwise the icon says sound is on while nothing is audible.
+    setup();
+    fireEvent.change(screen.getByLabelText('Volume'), { target: { value: '0' } });
+    expect(screen.getByRole('button', { name: /^unmute$/i })).toBeInTheDocument();
+  });
+});
