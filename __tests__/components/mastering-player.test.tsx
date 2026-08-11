@@ -432,3 +432,41 @@ describe('transport', () => {
     expect(screen.getByRole('button', { name: /^unmute$/i })).toBeInTheDocument();
   });
 });
+
+/**
+ * AUDIT FOLLOW-UP (2026-08-10). Found by re-auditing the transport I had just
+ * shipped — the volume slider was hidden with opacity and pointer-events, which
+ * hides it from the eye and the mouse but NOT from the keyboard.
+ */
+describe('volume control is keyboard-safe', () => {
+  const setup = () =>
+    render(<MasteringPlayer masterUrl="https://x/master.wav" title="சாயங்கால" afterTp={-1.2} />);
+
+  it('is OUT of the tab order while hidden', () => {
+    // opacity-0 leaves a control focusable: a keyboard user lands on an
+    // invisible slider and changes the volume without seeing why.
+    setup();
+    expect(screen.getByLabelText('Volume')).toHaveAttribute('tabindex', '-1');
+  });
+
+  it('focusing the group reveals it and puts it back in the tab order', () => {
+    // A mouse user reveals it by hovering, so a keyboard user must be able to
+    // reveal it by focusing, or the control is mouse-only.
+    setup();
+    fireEvent.focus(screen.getByRole('button', { name: /^mute$/i }));
+    expect(screen.getByLabelText('Volume')).toHaveAttribute('tabindex', '0');
+  });
+
+  it('the transport wraps rather than overflowing a narrow screen', () => {
+    setup();
+    const row = screen.getByRole('button', { name: /^play$/i }).parentElement!;
+    expect(row.className).toMatch(/flex-wrap/);
+  });
+
+  it('playback-rate buttons are not 11px targets next to a 44px play button', () => {
+    setup();
+    const rate = screen.getAllByRole('button', { pressed: false })
+      .find((b) => /^\d/.test(b.textContent || ''));
+    if (rate) expect(rate.className).toMatch(/min-h-\[32px\]/);
+  });
+});

@@ -366,7 +366,7 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
               type="button"
               onClick={() => setRate(r)}
               aria-pressed={rate === r}
-              className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${
+              className={`min-h-[32px] rounded px-2.5 py-1 text-xs font-medium ${
                 rate === r ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'
               }`}
             >
@@ -405,7 +405,7 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
 
           The play button is 44px — the platform minimum for a touch target,
           and this is the control that matters most. */}
-      <div className="mt-3 flex items-center gap-3">
+      <div className="mt-3 flex flex-wrap items-center gap-3">
         <button
           type="button"
           onClick={() => {
@@ -429,6 +429,13 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
           className="relative ml-auto flex items-center"
           onMouseEnter={() => setVolumeOpen(true)}
           onMouseLeave={() => setVolumeOpen(false)}
+          // Keyboard parity: a mouse user reveals the slider by hovering, so a
+          // keyboard user must reveal it by focusing. Without this the control
+          // is mouse-only.
+          onFocus={() => setVolumeOpen(true)}
+          onBlur={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setVolumeOpen(false);
+          }}
         >
           <button
             type="button"
@@ -456,6 +463,12 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
               setMuted(v === 0);
               if (audioRef.current) { audioRef.current.volume = v; audioRef.current.muted = v === 0; }
             }}
+            // ⚠️ tabIndex, not just opacity. `opacity-0` + `pointer-events-none`
+            // hides a control from the eye and the mouse but LEAVES IT IN THE TAB
+            // ORDER — a keyboard user lands on an invisible, fully operable
+            // slider and changes the volume without seeing why. Same trap the
+            // back-to-top button avoids with `hidden`.
+            tabIndex={volumeOpen ? 0 : -1}
             className={`w-24 accent-purple-600 transition-opacity ${volumeOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
           />
         </div>
