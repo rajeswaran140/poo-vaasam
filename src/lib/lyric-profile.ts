@@ -296,19 +296,43 @@ export function profileGrounding(profile: TamilLyricProfile): string[] {
     }
   }
 
-  const rhyme = (label: string, groups: ProsodyReport['monai']) =>
+  // ⚠️ THESE ARE POSITIONAL STRING MATCHES, NOT VERIFIED CLASSICAL PROSODY.
+  // `monai` is the first grapheme's base sound; `etukai` the second grapheme;
+  // `iyaipu` the last. Real மோனை and எதுகை carry metrical conditions this code
+  // does not check — எதுகை needs the second எழுத்து to agree AND the opening
+  // அசை to be equivalent. Labelling these groups "மோனை" and "எதுகை" in the
+  // grounding is what led the critic to announce a "'க' மோனை chain" and a
+  // "'ண்'/'ன்' எதுகை web" as established fact. The label was the bug — the
+  // third time a confident label of mine has been repeated back as certainty.
+  //
+  // Members are listed, not just counts, because the critic also claimed
+  // செவ்விதழ் sustained a க opening — a word that begins with ச. With the
+  // actual lines shown it cannot invent membership.
+  const byIndex = new Map(p.lines.map((l) => [l.index, l]));
+  const firstWord = (i: number) => (byIndex.get(i)?.text.trim().split(/\s+/)[0] ?? '');
+  const pattern = (label: string, groups: ProsodyReport['monai'], show: (i: number) => string) =>
     groups.length
       ? `- ${label}: ${groups
           .slice(0, 3)
-          .map((g) => `"${g.key}" ×${g.lineIndexes.length}`)
-          .join(', ')}`
+          .map((g) => `"${g.key}" in ${g.lineIndexes.slice(0, 4).map(show).filter(Boolean).join(' / ')}`)
+          .join(' · ')}`
       : null;
   for (const line of [
-    rhyme('மோனை (line-opening)', p.monai),
-    rhyme('எதுகை (second letter)', p.etukai),
-    rhyme('இயைபு (line ending)', p.iyaipu),
+    pattern('Lines sharing an OPENING sound', p.monai, firstWord),
+    pattern('Lines sharing a SECOND letter', p.etukai, firstWord),
+    pattern('Lines sharing a FINAL letter', p.iyaipu, (i) => {
+      const w = byIndex.get(i)?.text.trim().split(/\s+/) ?? [];
+      return w[w.length - 1] ?? '';
+    }),
   ]) {
     if (line) out.push(line);
+  }
+  if (p.monai.length || p.etukai.length || p.iyaipu.length) {
+    out.push(
+      '- ⚠️ Those are POSITIONAL SOUND MATCHES, not verified மோனை / எதுகை / இயைபு. ' +
+        'The classical forms carry metrical conditions not checked here. Describe them as ' +
+        'sound patterns; do NOT name a classical form unless you can show its conditions hold.'
+    );
   }
 
   out.push(
@@ -327,8 +351,11 @@ export function profileGrounding(profile: TamilLyricProfile): string[] {
     );
   }
   if (profile.repeatedWords.length) {
+    // EXACT counts. The critic once announced a "five-fold repetition" it had
+    // arrived at by eye. Counting is arithmetic; the model's job is to say what
+    // the count MEANS, never to produce it.
     out.push(
-      `- Repeated words: ${profile.repeatedWords
+      `- Word counts (EXACT — state no number that is not in this list): ${profile.repeatedWords
         .slice(0, MAX_GROUNDING_REPEATS)
         .map((r) => `${r.word} ×${r.count}`)
         .join(', ')}`

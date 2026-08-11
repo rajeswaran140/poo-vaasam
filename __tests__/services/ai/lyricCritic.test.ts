@@ -628,3 +628,48 @@ describe('an entirely empty critique is valid', () => {
     }
   });
 });
+
+/**
+ * FIFTH REVIEW (Raj, 2026-08-10) — Tamil technical terminology and deterministic
+ * facts. The literary reasoning is now sound; the failures left were factual.
+ */
+describe('fifth-review guardrails', () => {
+  beforeEach(() => create.mockResolvedValueOnce(toolResponse(CRITIQUE)));
+  const sys = () => (create.mock.calls[0][0] as { system: string }).system;
+
+  it('forbids naming a classical prosodic form without its conditions', async () => {
+    // "'க' மோனை chains" and a "'ண்'/'ன்' எதுகை web" were stated as fact from
+    // what are only positional string matches.
+    await critiqueLyric(INPUT);
+    expect(sys()).toMatch(/NEVER NAME A CLASSICAL TAMIL PROSODIC FORM/i);
+    expect(sys()).toMatch(/எதுகை is not "the letter ண் recurs"/);
+    expect(sys()).toMatch(/மோனை is not "some lines start with க"/);
+  });
+
+  it('forbids stating any number it was not given', async () => {
+    await critiqueLyric(INPUT);
+    expect(sys()).toMatch(/STATE NO NUMBER YOU HAVE NOT BEEN GIVEN/i);
+    expect(sys()).toMatch(/five-fold repetition/);
+    expect(sys()).toMatch(/Interpret what a count MEANS; never produce one/);
+  });
+
+  it('requires checking a quoted word actually carries the sound', async () => {
+    await critiqueLyric(INPUT);
+    expect(sys()).toMatch(/QUOTE ONLY WHAT IS THERE/i);
+    expect(sys()).toContain('செவ்விதழ்'); // the real error, named
+  });
+
+  it('separates lexical recurrence from thematic recurrence', async () => {
+    await critiqueLyric(INPUT);
+    const s = sys();
+    expect(s).toMatch(/LEXICAL RECURRENCE IS NOT THEMATIC RECURRENCE/i);
+    expect(s).toMatch(/hook word confined to the பல்லவி is often deliberate craft/);
+  });
+
+  it('no longer calls the sound groups எதுகை/மோனை families in the ground-truth rule', async () => {
+    // That sentence was what authorised the classification in the first place.
+    await critiqueLyric(INPUT);
+    expect(sys()).not.toMatch(/எதுகை\/மோனை\/இயைபு families/);
+    expect(sys()).toMatch(/none of them is a classical prosodic classification/);
+  });
+});
