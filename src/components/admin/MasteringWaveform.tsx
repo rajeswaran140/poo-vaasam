@@ -180,20 +180,29 @@ export function MasteringWaveform({
     }
   }, [loop, duration, position, marks]);
 
+  // ⚠️ THIS EFFECT MUST NOT DEPEND ON `paint`. `paint` closes over `position`,
+  // so it is a new function on every playhead tick — listing it here made the
+  // layers rebuild ~10x/second (measured: two fresh offscreen canvases per
+  // tick, plus a re-bin of every peak and a torn-down/rebuilt ResizeObserver),
+  // which is the exact per-frame work the move from SVG to canvas existed to
+  // remove. Layers change only when the BARS change: the peaks or the height.
+  const paintRef = useRef(paint);
+  paintRef.current = paint;
+
   useEffect(() => {
     buildLayers();
-    paint();
+    paintRef.current();
     const host = hostRef.current;
     if (!host || typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(() => {
       buildLayers();
-      paint();
+      paintRef.current();
     });
     ro.observe(host);
     return () => ro.disconnect();
-  }, [buildLayers, paint]);
+  }, [buildLayers]);
 
-  // Repaint on playhead/loop change. This is a composite of two ready-made
+  // Repaint on playhead/loop/mark change. This is a composite of two ready-made
   // images, not a re-render of the bars, so it is cheap enough to run per tick.
   useEffect(() => {
     paint();

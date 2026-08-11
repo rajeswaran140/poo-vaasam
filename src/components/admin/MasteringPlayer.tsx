@@ -24,7 +24,7 @@
  * the site origin; a failure is reported in words rather than played as nothing.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Repeat, X, Flag, Copy, Play, Pause, Volume2, VolumeX } from 'lucide-react';
 import { MasteringEqualizer } from '@/components/admin/MasteringEqualizer';
 import { MasteringWaveform } from '@/components/admin/MasteringWaveform';
@@ -78,6 +78,7 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
   const [position, setPosition] = useState(0);
   const [loop, setLoop] = useState<LoopRegion | null>(null);
   const [comparing, setComparing] = useState(false);
+  const [sourceError, setSourceError] = useState<string | null>(null);
   const [rate, setRate] = useState<number>(DEFAULT_RATE);
   // Volume lives here, not in the native control bar — see the transport below.
   const [volume, setVolume] = useState(1);
@@ -203,35 +204,61 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
     let alive = true;
     setPeaks(null);
     setWaveformNote(null);
+    // Abort the transfer when the row is switched. These are WAVs measured in
+    // tens of MB, so an abandoned decode is not just wasted memory — it is
+    // still occupying the connection while the next master tries to load.
+    const abort = new AbortController();
     (async () => {
+      // Declared out here so `finally` can close it however we leave the block.
+      let ctx: AudioContext | null = null;
       try {
-        const head = await fetch(masterUrl, { method: 'HEAD' });
-        const size = Number(head.headers.get('content-length'));
+        // ONE request, not a HEAD followed by a GET. The size is on the GET's
+        // own headers, and the body is only read once it passes the check —
+        // so an oversized file still costs nothing, and an ordinary one is no
+        // longer fetched twice (the <audio> element is already streaming it).
+        const res = await fetch(masterUrl, { signal: abort.signal });
+        const size = Number(res.headers.get('content-length'));
         if (!shouldRenderWaveform(size)) {
-          setWaveformNote(
-            size
-              ? `Waveform skipped — this file is ${Math.round(size / 1024 / 1024)} MB, large enough to stall the tab.`
-              : 'Waveform unavailable for this file.'
-          );
+          void res.body?.cancel();
+          if (alive) {
+            setWaveformNote(
+              size
+                ? `Waveform skipped — this file is ${Math.round(size / 1024 / 1024)} MB, large enough to stall the tab.`
+                : 'Waveform unavailable for this file.'
+            );
+          }
           return;
         }
-        const buf = await (await fetch(masterUrl)).arrayBuffer();
+        const buf = await res.arrayBuffer();
         const Ctor =
           window.AudioContext ??
           (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
         if (!Ctor) return;
-        const ctx = new Ctor();
+        ctx = new Ctor();
         const decoded = await ctx.decodeAudioData(buf);
         if (!alive) return;
         setPeaks(binPeaks(decoded.getChannelData(0), WAVEFORM_BINS));
         setDuration(decoded.duration);
-        void ctx.close();
-      } catch {
-        if (alive) setWaveformNote('Waveform could not be drawn for this file.');
+      } catch (err) {
+        // An abort is this effect being cleaned up, not a failure to draw.
+        if (alive && !(err instanceof DOMException && err.name === 'AbortError')) {
+          setWaveformNote('Waveform could not be drawn for this file.');
+        }
+      } finally {
+        // ⚠️ MUST be `finally`. This context is separate from the playback one
+        // above and dies as soon as the peaks are extracted — but closing it
+        // only on the success path leaked one per unmount-mid-decode and one
+        // per decode failure. The player is keyed on the master URL
+        // (MasteringStudio), so clicking through the library remounts it every
+        // time; at roughly six concurrent contexts the browser stops granting
+        // them and the meter and equaliser go quiet with nothing to explain it.
+        // The decoded peaks are already copied into state by this point.
+        if (ctx && ctx.state !== 'closed') void ctx.close();
       }
     })();
     return () => {
       alive = false;
+      abort.abort();
     };
   }, [masterUrl]);
 
@@ -248,6 +275,31 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
     else if ('mozPreservesPitch' in el) el.mozPreservesPitch = true;
     setPitchShifts(!supported);
   }, [rate]);
+
+  /**
+   * Seek, and let a deliberate jump out of a loop END that loop.
+   *
+   * `shouldLoopBack` pulls the head back in whenever it lands before the loop
+   * start, which keeps the loop honest while it is running — but it also meant
+   * that clicking anywhere else on the waveform snapped straight back, so
+   * click-to-seek looked broken until you knew to press L first. Treating a
+   * seek outside the region as "I am done with this phrase" removes the dead
+   * end without weakening the guarantee: inside the region, nothing changes.
+   */
+  const seekTo = useCallback((t: number) => {
+    const a = audioRef.current;
+    if (a) a.currentTime = t;
+    setPosition(t);
+    setLoop((current) => (current && (t < current.start || t > current.end) ? null : current));
+  }, []);
+
+  /**
+   * Stable identity for the waveform's `marks` prop.
+   *
+   * A fresh array every render makes the child's paint callback new every
+   * render too, which defeats its dependency checks.
+   */
+  const markTimes = useMemo(() => marks.map((m) => m.time), [marks]);
 
   /** Drop a mark at the current position. */
   const markSeq = useRef(0);
@@ -283,13 +335,13 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
       else a.pause();
     } else if (e.key === 'ArrowRight') {
       e.preventDefault();
-      a.currentTime = Math.min(a.duration || 0, a.currentTime + 5);
+      seekTo(Math.min(a.duration || 0, a.currentTime + 5));
     } else if (e.key === 'ArrowLeft') {
       e.preventDefault();
-      a.currentTime = Math.max(0, a.currentTime - 5);
+      seekTo(Math.max(0, a.currentTime - 5));
     } else if (/^[0-9]$/.test(e.key) && a.duration) {
       e.preventDefault();
-      a.currentTime = (Number(e.key) / 10) * a.duration;
+      seekTo((Number(e.key) / 10) * a.duration);
     } else if (e.key.toLowerCase() === 'l') {
       e.preventDefault();
       setLoop(null);
@@ -298,7 +350,7 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
       e.preventDefault();
       dropMark();
     }
-  }, [dropMark]);
+  }, [dropMark, seekTo]);
 
   // ---- A/B ---------------------------------------------------------------
   const toggleCompare = useCallback(() => {
@@ -309,6 +361,7 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
     const at = a.currentTime;
     const wasPlaying = !a.paused;
     const wasRate = a.playbackRate;
+    setSourceError(null);
     setComparing((c) => !c);
     a.src = comparing ? masterUrl : sourceUrl;
     a.currentTime = at;
@@ -337,6 +390,14 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
         {comparing && (
           <span className="rounded border border-indigo-300 bg-indigo-50 px-1.5 py-0.5 font-medium text-indigo-900 dark:border-indigo-700 dark:bg-indigo-950 dark:text-indigo-200">
             Playing the UNMASTERED take
+          </span>
+        )}
+        {sourceError && (
+          <span
+            role="status"
+            className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 font-medium text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200"
+          >
+            {sourceError}
           </span>
         )}
         {sourceUrl && (
@@ -384,11 +445,8 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
           duration={duration}
           position={position}
           loop={loop}
-          marks={marks.map((m) => m.time)}
-          onSeek={(t) => {
-            if (audioRef.current) audioRef.current.currentTime = t;
-            setPosition(t);
-          }}
+          marks={markTimes}
+          onSeek={seekTo}
           onLoopDrag={(from, to) => {
             const region = normaliseLoop(from, to, duration);
             if (region) setLoop(region);
@@ -491,7 +549,21 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
         onPause={() => setPlaying(false)}
         onEnded={() => setPlaying(false)}
         onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
-        onError={() => onExpired?.()}
+        onError={() => {
+          // Attribute the failure to the file that actually failed. While
+          // A/B-ing, the element is playing the SOURCE — reporting "the
+          // playback link expired" then tears down a perfectly good master
+          // and sends the operator to re-fetch the wrong URL. Fall back to
+          // the master instead, and say which one went.
+          if (comparing) {
+            setComparing(false);
+            setSourceError('The unmastered source link expired — back to the master.');
+            const a = audioRef.current;
+            if (a) a.src = masterUrl;
+            return;
+          }
+          onExpired?.();
+        }}
       />
 
       {/* Level meter. Sample-peak, not true-peak — see lib/audio-meter. */}
@@ -586,9 +658,7 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
                 <li key={m.id} className="flex items-center gap-2 py-1 text-xs">
                   <button
                     type="button"
-                    onClick={() => {
-                      if (audioRef.current) audioRef.current.currentTime = m.time;
-                    }}
+                    onClick={() => seekTo(m.time)}
                     className="tabular-nums font-medium text-purple-700 hover:underline dark:text-purple-300"
                   >
                     {formatMarkTime(m.time)}

@@ -96,3 +96,5 @@ master-worker-dist/
 measure-fn-dist/
 master-worker.zip
 measure-fn.zip
+
+tests/.auth/
