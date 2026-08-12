@@ -12,6 +12,8 @@
 import {
   planRender,
   renderRefusalMessage,
+  buildComposeArgs,
+  VIDEO_FPS,
   buildVideoArgs,
   buildVideoFilter,
   videoKeyFor,
@@ -53,7 +55,7 @@ const job = (over: Partial<MasterJob> = {}): MasterJob => ({ ...baseJob, ...over
 const COVER = 'audio/mastering/1_cd_cover.jpg';
 
 describe('the encode settings are the whole point', () => {
-  const args = buildVideoArgs({ coverPath: '/tmp/c.jpg', audioPath: '/tmp/master.wav', outPath: '/tmp/o.mp4' });
+  const args = buildVideoArgs({ framePath: '/tmp/frame.png', audioPath: '/tmp/master.wav', outPath: '/tmp/o.mp4' });
 
   it('encodes the audio at 384k, well above what YouTube will keep', () => {
     // A quiet regression to 192k here would be inaudible in review and audible
@@ -63,25 +65,18 @@ describe('the encode settings are the whole point', () => {
     expect(args).toContain('aac');
   });
 
-  it('keeps the master\'s own sample rate, so nothing resamples on the way out', () => {
+  it("keeps the master's own sample rate, so nothing resamples on the way out", () => {
     expect(VIDEO_SAMPLE_RATE).toBe(48000);
     expect(args[args.indexOf('-ar') + 1]).toBe('48000');
   });
 
-  it('takes the audio from the second input — the WAV, not the cover', () => {
+  it('takes the audio from the second input — the WAV, not the frame', () => {
     expect(args[args.lastIndexOf('-i') + 1]).toBe('/tmp/master.wav');
     expect(args[args.indexOf('-map', args.indexOf('-map') + 1) + 1]).toBe('1:a');
   });
 
-  it('defaults to 1440p, which is what earns the better codec on YouTube', () => {
-    expect(DEFAULT_VIDEO_HEIGHT).toBe(1440);
-    expect(buildVideoArgs({ coverPath: 'c', audioPath: 'a', outPath: 'o' })).toEqual(
-      buildVideoArgs({ coverPath: 'c', audioPath: 'a', outPath: 'o', height: 1440 })
-    );
-  });
-
   it('ends the video with the audio, and loops the still to get there', () => {
-    // Without -shortest the looped cover never ends and the encode runs until
+    // Without -shortest the looped frame never ends and the encode runs until
     // the Lambda is killed.
     expect(args).toContain('-shortest');
     expect(args).toContain('-loop');
@@ -93,8 +88,59 @@ describe('the encode settings are the whole point', () => {
     expect(args[args.length - 1]).toBe('/tmp/o.mp4');
   });
 
-  it('tunes for a still image, which is what makes a six-minute 1440p render cheap', () => {
+  it('tunes for a still image', () => {
     expect(args).toEqual(expect.arrayContaining(['-tune', 'stillimage']));
+  });
+});
+
+/**
+ * THE RENDER MUST FIT IN A 900 s LAMBDA.
+ *
+ * Measured 2026-08-12 on the real 5:32 master: the original single-pass form
+ * projected to ~43 min inside Lambda, i.e. it could never have completed — the
+ * filter graph re-blurred an unchanging 2560x1440 image on all ~10,000 frames.
+ * These tests pin the two changes that fixed it. Both are invisible in review
+ * and fail as a TIMEOUT rather than an error, which is why they are pinned.
+ */
+describe('render cost — the encode must not re-filter every frame', () => {
+  const encode = buildVideoArgs({ framePath: '/tmp/frame.png', audioPath: '/tmp/a.wav', outPath: '/tmp/o.mp4' });
+  const compose = buildComposeArgs({ coverPath: '/tmp/c.jpg', framePath: '/tmp/frame.png' });
+
+  it('THE ENCODE CARRIES NO FILTER — this single fact is the fix', () => {
+    // Re-adding a -filter_complex here restores the ~4x cost and pushes a
+    // joined master back past the timeout, silently.
+    expect(encode).not.toContain('-filter_complex');
+    expect(encode.join(' ')).not.toContain('boxblur');
+  });
+
+  it('maps the video straight from the composed frame, not a filter label', () => {
+    expect(encode[encode.indexOf('-map') + 1]).toBe('0:v');
+    expect(encode).not.toContain('[v]');
+  });
+
+  it('the compose pass does the filtering, exactly once', () => {
+    expect(compose).toContain('-filter_complex');
+    expect(compose.join(' ')).toContain('boxblur');
+    // One frame out. Without this it would encode a video, not a still.
+    expect(compose[compose.indexOf('-frames:v') + 1]).toBe('1');
+    expect(compose[compose.length - 1]).toBe('/tmp/frame.png');
+  });
+
+  it('composes at the requested height, and defaults to 1440p for the codec bump', () => {
+    expect(DEFAULT_VIDEO_HEIGHT).toBe(1440);
+    expect(buildComposeArgs({ coverPath: 'c', framePath: 'f' })).toEqual(
+      buildComposeArgs({ coverPath: 'c', framePath: 'f', height: 1440 })
+    );
+    expect(buildComposeArgs({ coverPath: 'c', framePath: 'f', height: 1080 }).join(' ')).toContain('1920:1080');
+  });
+
+  it('renders at 10 fps — frame COUNT is the cost, not file size', () => {
+    // 30 fps is 9,972 frames for a 5:32 song against 3,324 at 10: a 2.6x
+    // speedup for a file that is actually smaller. A silent revert to 30
+    // costs a joined master its remaining margin.
+    expect(VIDEO_FPS).toBe(10);
+    expect(encode[encode.indexOf('-framerate') + 1]).toBe('10');
+    expect(encode[encode.indexOf('-r') + 1]).toBe('10');
   });
 });
 

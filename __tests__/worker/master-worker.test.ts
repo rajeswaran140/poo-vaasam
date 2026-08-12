@@ -221,17 +221,42 @@ describe('video render', () => {
     const res = await handler({ jobId: 'j1', render: render() } as never);
 
     expect(res).toMatchObject({ ok: true });
-    const args = ffArgs()[0];
+    // [0] composes the frame, [1] encodes — the audio only enters the second.
+    const args = ffArgs()[1];
     expect(args[args.lastIndexOf('-i') + 1]).toContain('master.wav');
     expect(args.join(' ')).not.toContain('.mp3');
     expect(args[args.indexOf('-b:a') + 1]).toBe('384k');
   });
 
+  /**
+   * ⚠️ TWO ffmpeg passes, and the ORDER matters. Composing the cover into a
+   * single frame first is what keeps the render inside the 900 s timeout —
+   * measured at ~43 min for a 5:32 song when the filter ran per-frame. A
+   * regression here does not throw; the Lambda is simply killed.
+   */
+  it('composes the frame once, THEN encodes against it', async () => {
+    await handler({ jobId: 'j1', render: render() } as never);
+
+    expect(spawnSync).toHaveBeenCalledTimes(2);
+    const [compose, encode] = ffArgs();
+
+    // Pass 1: filters the cover, emits exactly one frame, touches no audio.
+    expect(compose).toContain('-filter_complex');
+    expect(compose[compose.indexOf('-frames:v') + 1]).toBe('1');
+    expect(compose.join(' ')).not.toContain('master.wav');
+
+    // Pass 2: no filter at all — that absence IS the fix.
+    expect(encode).not.toContain('-filter_complex');
+    expect(encode.join(' ')).not.toContain('boxblur');
+    // It must consume the frame pass 1 produced, not the raw cover.
+    expect(encode.join(' ')).toContain('frame.png');
+    expect(encode.join(' ')).not.toContain('cover.jpg');
+  });
+
   it('runs NO loudness pass and rewrites no measurement', async () => {
     await handler({ jobId: 'j1', render: render() } as never);
 
-    expect(spawnSync).toHaveBeenCalledTimes(1);
-    expect(ffArgs()[0].join(' ')).not.toContain('loudnorm');
+    expect(ffArgs().join(' ')).not.toContain('loudnorm');
     const p = patched();
     for (const field of ['afterLufs', 'afterTp', 'beforeLufs', 'normalizationType', 'status']) {
       expect(p).not.toHaveProperty(field);

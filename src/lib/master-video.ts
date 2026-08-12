@@ -45,11 +45,23 @@ export const VIDEO_AUDIO_BITRATE = '384k';
 export const VIDEO_SAMPLE_RATE = 48000;
 
 /**
- * A still image needs no motion smoothness; 30 keeps the file conventional for
- * YouTube's ingest without costing anything, since identical frames compress to
- * almost nothing.
+ * A still image needs no motion smoothness.
+ *
+ * ⚠️ WAS 30, on the reasoning that identical frames "compress to almost
+ * nothing". True of the FILE — a 20 s slice is 1.7 MB at 30 fps and 1.3 MB at
+ * 10 — but not of the TIME. Frame count is what the encoder and (before the
+ * split below) the filter graph are charged for, and a 5:32 song at 30 fps is
+ * 9,972 frames against 3,324 at 10. Measured 2026-08-12: dropping to 10 fps is
+ * a 2.6x speedup for a file 24% SMALLER.
+ *
+ * 10 rather than 1-2 (which is cheaper still) because a very low frame rate is
+ * unusual enough at ingest to be worth avoiding without evidence; 10 is a
+ * conventional value and already buys the whole margin needed.
+ *
+ * The 1440p default exists for YouTube's audio-codec bump, which keys off
+ * RESOLUTION, not frame rate — so this does not cost the Opus upgrade.
  */
-export const VIDEO_FPS = 30;
+export const VIDEO_FPS = 10;
 
 /** 16:9 for every offered height. */
 export function videoWidthFor(height: VideoHeight): number {
@@ -145,26 +157,57 @@ export function buildVideoFilter(height: VideoHeight): string {
 }
 
 /**
- * ffmpeg arguments for the render.
+ * STEP 1 of 2 — compose the finished frame ONCE, to a PNG.
  *
- * `-shortest` ends the video with the audio: the cover is looped indefinitely,
- * so without it the encode never terminates. `-tune stillimage` is what makes a
- * six-minute static 1440p render cheap — consecutive identical frames cost
- * almost nothing once x264 knows to expect them.
+ * ⚠️ THIS SPLIT IS WHY THE RENDER FITS IN THE LAMBDA AT ALL. The filter graph
+ * used to sit inside the encode, so `boxblur=24:4` at 2560x1440 plus the scale
+ * and overlay ran on EVERY frame — recomputing an identical backdrop ~10,000
+ * times from an image that never changes. `-tune stillimage` makes the ENCODER
+ * cheap and does nothing about the FILTER, which is upstream of it.
+ *
+ * Measured 2026-08-12 against the real 5:32 master: 43 min projected inside a
+ * 900 s Lambda as it was, i.e. it could never have completed. Composing once
+ * takes 0.53 s and the output is pixel-identical. With the fps change the whole
+ * render lands near 4 min, and ~6 min for a 7:52 joined master (which fails
+ * even pre-composed at 30 fps — so both changes are load-bearing, not one).
  */
-export function buildVideoArgs(params: {
+export function buildComposeArgs(params: {
   coverPath: string;
-  audioPath: string;
-  outPath: string;
+  framePath: string;
   height?: VideoHeight;
 }): string[] {
   const height = params.height ?? DEFAULT_VIDEO_HEIGHT;
   return [
     '-hide_banner', '-nostats',
-    '-loop', '1', '-framerate', String(VIDEO_FPS), '-i', params.coverPath,
-    '-i', params.audioPath,
+    '-i', params.coverPath,
     '-filter_complex', buildVideoFilter(height),
-    '-map', '[v]', '-map', '1:a',
+    '-map', '[v]',
+    '-frames:v', '1',
+    '-y', params.framePath,
+  ];
+}
+
+/**
+ * STEP 2 of 2 — encode, looping the ALREADY-COMPOSED frame.
+ *
+ * ⚠️ THERE MUST BE NO `-filter_complex` HERE. Its absence is the entire fix;
+ * re-adding one silently reintroduces the per-frame cost and the render starts
+ * timing out again with no error to point at — it would simply be killed at
+ * 900 s. A test pins this.
+ *
+ * `-shortest` ends the video with the audio: the frame is looped indefinitely,
+ * so without it the encode never terminates.
+ */
+export function buildVideoArgs(params: {
+  framePath: string;
+  audioPath: string;
+  outPath: string;
+}): string[] {
+  return [
+    '-hide_banner', '-nostats',
+    '-loop', '1', '-framerate', String(VIDEO_FPS), '-i', params.framePath,
+    '-i', params.audioPath,
+    '-map', '0:v', '-map', '1:a',
     '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'stillimage',
     '-pix_fmt', 'yuv420p', '-r', String(VIDEO_FPS),
     '-c:a', 'aac', '-b:a', VIDEO_AUDIO_BITRATE, '-ar', String(VIDEO_SAMPLE_RATE),

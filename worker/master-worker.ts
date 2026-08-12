@@ -49,6 +49,7 @@ import {
   tailDropLu,
 } from '@/lib/master-analysis';
 import {
+  buildComposeArgs,
   buildVideoArgs,
   videoKeyFor,
   VIDEO_HEIGHTS,
@@ -259,6 +260,7 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
   const dir = mkdtempSync(join(tmpdir(), 'render-'));
   const audioPath = join(dir, 'master.wav');
   const coverPath = join(dir, `cover${coverKey.match(/\.[a-z0-9]+$/i)?.[0] ?? '.jpg'}`);
+  const framePath = join(dir, 'frame.png');
   const outPath = join(dir, 'out.mp4');
   try {
     const audio = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: audioKey }));
@@ -266,7 +268,17 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
     const cover = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: coverKey }));
     writeFileSync(coverPath, Buffer.from(await cover.Body!.transformToByteArray()));
 
-    const r = ff(buildVideoArgs({ coverPath, audioPath, outPath, height }));
+    // TWO passes, deliberately. Composing the frame once and looping THAT is
+    // what brings the render inside the 900 s timeout — see buildComposeArgs.
+    // Reported separately so a failure says which half broke; they fail for
+    // different reasons (an unreadable cover vs an encode problem).
+    const composed = ff(buildComposeArgs({ coverPath, framePath, height }));
+    if (composed.status !== 0) {
+      await patch(jobId, { videoError: 'the cover could not be composed into a frame' });
+      return { ok: false };
+    }
+
+    const r = ff(buildVideoArgs({ framePath, audioPath, outPath }));
     if (r.status !== 0) {
       await patch(jobId, { videoError: 'the video render failed' });
       return { ok: false };
