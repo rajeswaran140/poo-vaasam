@@ -52,7 +52,7 @@ export default function TermsPage() {
               வரவேற்கிறோம் · Welcome
             </h2>
             <p className="mb-3 font-tamil">
-              தமிழகவல் (tamilagaval.com) என்பது ராஜ் தங்கராஜாவின் சொந்தக் கவிதைகள், பாடல்கள் மற்றும் காணொளிகளைப் பகிர்வதற்கான இலவச தனிப்பட்ட தளம். இத்தளத்தைப் பயன்படுத்துவதன் மூலம், கீழே உள்ள விதிமுறைகளை ஏற்றுக்கொள்கிறீர்கள்.
+              தமிழகவல் (tamilagaval.com) என்பது இராஜ் தங்கராஜாவின் சொந்தக் கவிதைகள், பாடல்கள் மற்றும் காணொளிகளைப் பகிர்வதற்கான இலவச தனிப்பட்ட தளம். இத்தளத்தைப் பயன்படுத்துவதன் மூலம், கீழே உள்ள விதிமுறைகளை ஏற்றுக்கொள்கிறீர்கள்.
             </p>
             <p>
               Tamilagaval (tamilagaval.com) is a free, personal website for sharing original poems, songs and videos by Raj Thangarajah. By using the site, you agree to the terms below.
@@ -64,7 +64,7 @@ export default function TermsPage() {
               பதிப்புரிமை · Copyright
             </h2>
             <p className="mb-3 font-tamil">
-              இத்தளத்தில் உள்ள அனைத்து கவிதைகள், பாடல் வரிகள், இசை மற்றும் காணொளிகள் — © ராஜ் தங்கராஜா. அனைத்து உரிமைகளும் பாதுகாக்கப்பட்டவை.
+              இத்தளத்தில் உள்ள அனைத்து கவிதைகள், பாடல் வரிகள், இசை மற்றும் காணொளிகள் — © இராஜ் தங்கராஜா. அனைத்து உரிமைகளும் பாதுகாக்கப்பட்டவை.
             </p>
             <p>
               All poems, lyrics, music and videos on this site are © Raj Thangarajah. All rights reserved.

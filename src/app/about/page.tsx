@@ -42,7 +42,7 @@ const personJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'Person',
   name: 'Raj',
-  alternateName: 'ராஜ்',
+  alternateName: 'இராஜ்',
   url: `${SITE_URL}/about`,
   jobTitle: 'Tamil poet and lyricist',
   description: 'Tamil writer and lyricist publishing original poems, songs and videos at tamilagaval.com. Tamil kavithai and paadal varigal — always free.',
@@ -60,7 +60,7 @@ const aboutJsonLd = [
 ];
 
 const PILLARS = [
-  { icon: '📝', label: 'கவிதைகள்', desc: 'ராஜின் சொந்தக் கவிதைகள் — காதல், இயற்கை, வாழ்க்கை மற்றும் மனித உணர்வுகள்.', href: '/poems' },
+  { icon: '📝', label: 'கவிதைகள்', desc: 'இராஜின் சொந்தக் கவிதைகள் — காதல், இயற்கை, வாழ்க்கை மற்றும் மனித உணர்வுகள்.', href: '/poems' },
   { icon: '🎵', label: 'பாடல்கள்', desc: 'சொந்தப் பாடல் வரிகளும் அவற்றின் இசை வடிவங்களும் — கேட்கவும், ரசிக்கவும், பகிரவும்.', href: '/songs' },
   { icon: '🎬', label: 'காணொளிகள்', desc: 'தமிழகவல் YouTube சேனலில் வெளியாகும் பாடல்கள் மற்றும் காணொளிகள்.', href: '/videos' },
 ] as const;
@@ -85,7 +85,7 @@ export default function AboutPage() {
             தமிழகவல்
           </h1>
           <p className="mt-4 max-w-2xl font-tamil text-lg text-white/90 sm:text-xl">
-            ராஜின் சொந்தக் கவிதைகளும் பாடல்களும் — ஒரே இடத்தில், என்றும் இலவசம்.
+            இராஜின் சொந்தக் கவிதைகளும் பாடல்களும் — ஒரே இடத்தில், என்றும் இலவசம்.
           </p>
           <p className="mt-3 max-w-2xl text-base italic text-white/90 sm:text-lg">
             Where Tamil Poetry Becomes Song
@@ -102,7 +102,7 @@ export default function AboutPage() {
           <h2 className="mb-4 font-kavivanar text-3xl font-bold text-white sm:text-4xl">இந்த தளம் என்ன?</h2>
           <div className="space-y-4 font-tamil leading-relaxed text-gray-300">
             <p>
-              <strong className="text-white">தமிழகவல்</strong> என்பது ராஜின் சொந்தக் கவிதைகள், பாடல்கள் மற்றும் படைப்புகளை ஒரே இடத்தில் கொண்டுவரும் ஒரு தமிழ்ப் படைப்புத் தளம்.
+              <strong className="text-white">தமிழகவல்</strong> என்பது இராஜின் சொந்தக் கவிதைகள், பாடல்கள் மற்றும் படைப்புகளை ஒரே இடத்தில் கொண்டுவரும் ஒரு தமிழ்ப் படைப்புத் தளம்.
             </p>
             <p>
               இது ஒரு பொது தமிழ் இலக்கியத் தொகுப்பு அல்ல — ஒரு எழுத்தாளரின் சொந்தப் படைப்புகளை வாசகர்களுக்கும் இசை ரசிகர்களுக்கும் நேரடியாகக் கொண்டுசேர்க்கும் முயற்சி.
@@ -136,7 +136,7 @@ export default function AboutPage() {
           <h2 className="mb-4 font-kavivanar text-3xl font-bold text-white sm:text-4xl">யார் இதை உருவாக்குகிறார்?</h2>
           <div className="space-y-4 font-tamil leading-relaxed text-gray-300">
             <p>
-              <strong className="text-white">ராஜ்</strong> — தமிழ் எழுத்தாளரும் பாடலாசிரியரும்.
+              <strong className="text-white">இராஜ்</strong> — தமிழ் எழுத்தாளரும் பாடலாசிரியரும்.
             </p>
             <p>
               வாழ்க்கை, காதல், இயற்கை, நினைவுகள் மற்றும் மனித உணர்வுகளை கவிதைகளாகவும் பாடல்களாகவும் எழுதுகிறார்.
@@ -152,7 +152,7 @@ export default function AboutPage() {
           <h2 className="mb-4 font-kavivanar text-3xl font-bold text-white sm:text-4xl">இசை உருவாக்கம்</h2>
           <div className="space-y-4 font-tamil leading-relaxed text-gray-300">
             <p>
-              தமிழகவலில் வெளியாகும் பாடல்களின் <strong className="text-white">பாடல் வரிகள் ராஜின் சொந்தப் படைப்புகள்</strong>.
+              தமிழகவலில் வெளியாகும் பாடல்களின் <strong className="text-white">பாடல் வரிகள் இராஜின் சொந்தப் படைப்புகள்</strong>.
             </p>
             <p>
               இசை மற்றும் குரல் உருவாக்கத்தில் <strong className="text-white">AI-assisted music production</strong> தொழில்நுட்பங்கள் பயன்படுத்தப்படுகின்றன.
