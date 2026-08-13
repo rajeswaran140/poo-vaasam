@@ -44,9 +44,13 @@ describe('About page', () => {
 
   it('transparently explains the AI music platform (how the music is made)', () => {
     render(<AboutPage />);
-    expect(screen.getByRole('heading', { name: /இசை எப்படி உருவாகிறது/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /இசை உருவாக்கம்/ })).toBeInTheDocument();
     // AI-as-a-tool transparency line, present verbatim.
-    expect(screen.getByText(/AI ஒரு கருவி மட்டுமே/)).toBeInTheDocument();
+    // The disclosure Raj wants public: his words, then the AI-assist statement.
+    expect(screen.getByText(/பாடல் வரிகள் ராஜின் சொந்தப் படைப்புகள்/, { selector: 'strong' })).toBeInTheDocument();
+    // Nested <strong> inside <p> matches twice — pin the emphasised span.
+    expect(screen.getByText(/AI-assisted music production/i, { selector: 'strong' })).toBeInTheDocument();
+    expect(screen.getByText(/© 2026 TamilAgaval \/ Raj/)).toBeInTheDocument();
   });
 
   it('shows the "AI-Assisted Musical Platform" brand descriptor in the hero', () => {
