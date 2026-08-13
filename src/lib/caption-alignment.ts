@@ -54,6 +54,17 @@ export interface AlignmentResult {
   cues: AlignedCue[];
   anchoredLines: number;
   interpolatedLines: number;
+  /**
+   * Fraction of the sung stretch (first cue start → last cue end) that actually
+   * has a caption on screen.
+   *
+   * ⚠️ THE GUARD THAT WAS MISSING. `icH689_JQEM` shipped at **0.49** — half the
+   * song blank while Raj was still singing — and passed every other check:
+   * round-trip text true, 52/56 anchored, no warnings, last cue inside the
+   * duration. Coverage is the only measure that sees it. Expect >0.85 on a
+   * song without long instrumental breaks.
+   */
+  coverageRatio: number;
   /** Non-fatal observations worth showing before anyone publishes. */
   warnings: string[];
 }
@@ -63,11 +74,29 @@ export interface AlignOptions {
   matchFloor?: number;
   /** A caption shorter than this flickers unreadably. */
   minCueMs?: number;
-  /** A caption longer than this has outstayed its line. */
+  /**
+   * How long a card shows when the following gap is a genuine instrumental
+   * break — i.e. the screen is deliberately cleared rather than held.
+   */
   maxCueMs?: number;
+  /**
+   * A gap up to this long is treated as ordinary spacing BETWEEN SUNG LINES, so
+   * the card simply holds until the next one. Beyond it, the passage is taken
+   * to be instrumental and the card clears after `maxCueMs`.
+   *
+   * 12 s is set from the real track: on `icH689_JQEM` the median line-to-line
+   * gap is 4.4 s and the genuine instrumental breaks run 14-25 s, so the two
+   * populations separate cleanly with room to spare on both sides.
+   */
+  instrumentalGapMs?: number;
 }
 
-const DEFAULTS = { matchFloor: 0.45, minCueMs: 1200, maxCueMs: 6000 } as const;
+const DEFAULTS = {
+  matchFloor: 0.45,
+  minCueMs: 1200,
+  maxCueMs: 6000,
+  instrumentalGapMs: 12000,
+} as const;
 
 /**
  * Cues that carry no lyric content. YouTube emits these for instrumental
@@ -245,19 +274,19 @@ export function alignLyrics(
   asrCues: AsrCue[],
   options: AlignOptions = {}
 ): AlignmentResult {
-  const { matchFloor, minCueMs, maxCueMs } = { ...DEFAULTS, ...options };
+  const { matchFloor, minCueMs, maxCueMs, instrumentalGapMs } = { ...DEFAULTS, ...options };
   const warnings: string[] = [];
 
   const usable = asrCues
     .filter((c) => !isMusicMarker(c.text))
     .sort((a, b) => a.startMs - b.startMs);
   if (!usable.length) {
-    return { cues: [], anchoredLines: 0, interpolatedLines: 0, warnings: ['no usable ASR cues — nothing to align against'] };
+    return { cues: [], anchoredLines: 0, interpolatedLines: 0, coverageRatio: 0, warnings: ['no usable ASR cues — nothing to align against'] };
   }
 
   const lines = cards.flat();
   if (!lines.length) {
-    return { cues: [], anchoredLines: 0, interpolatedLines: 0, warnings: ['no lyric lines supplied'] };
+    return { cues: [], anchoredLines: 0, interpolatedLines: 0, coverageRatio: 0, warnings: ['no lyric lines supplied'] };
   }
 
   const anchors = globalMatch(lines, usable, matchFloor);
@@ -283,12 +312,29 @@ export function alignLyrics(
   for (let i = 1; i < cues.length; i++) {
     if (cues[i].startMs <= cues[i - 1].startMs) cues[i].startMs = cues[i - 1].startMs + minCueMs;
   }
-  // A card runs until the next one, bounded so it neither flickers nor lingers.
+  // A card HOLDS UNTIL THE NEXT ONE. It is trimmed only when the gap to the
+  // next card is long enough to be a real instrumental break.
+  //
+  // ⚠️ THIS USED TO CLAMP EVERY CUE TO `maxCueMs` (6 s) UNCONDITIONALLY, AND IT
+  // SHIPPED BROKEN CAPTIONS. Raj reported it as a viewer on `icH689_JQEM`
+  // (அம்மா என் உயிர்த்துணையே): all 28 of 28 cues were exactly 6.0 s while the
+  // gaps between them ran a median 4.4 s, so a caption was on screen for only
+  // **49% of the sung section** — it vanished part-way through nearly every
+  // line and the screen sat blank while he was still singing. His lines are
+  // simply longer than six seconds; the cap was written to stop a caption
+  // lingering through an instrumental and instead fired on every line.
+  //
+  // Every existing check passed it: round-trip text true, 52/56 anchored, zero
+  // warnings, and the last cue landing inside the duration. None of them look
+  // at how much of the sung stretch is actually COVERED — see coverageRatio.
   const lastCue = usable[usable.length - 1];
   for (let i = 0; i < cues.length; i++) {
     const nextStart = i + 1 < cues.length ? cues[i + 1].startMs : lastCue.endMs;
-    const span = nextStart - cues[i].startMs;
-    cues[i].endMs = cues[i].startMs + Math.min(maxCueMs, Math.max(minCueMs, span));
+    const span = Math.max(minCueMs, nextStart - cues[i].startMs);
+    // Hold to the next card, unless that would mean sitting through a gap that
+    // is plainly instrumental — then show for `maxCueMs` and clear the screen.
+    const hold = span <= instrumentalGapMs ? span : maxCueMs;
+    cues[i].endMs = cues[i].startMs + hold;
   }
 
   const anchoredLines = anchors.size;
@@ -300,7 +346,20 @@ export function alignLyrics(
   if (cues[0].startMs < 500) {
     warnings.push('first card starts at ~0:00 — check it lands on the vocal entry, not the intro');
   }
-  return { cues, anchoredLines, interpolatedLines, warnings };
+
+  // How much of the sung stretch actually carries a caption. See coverageRatio
+  // on AlignmentResult for why this exists.
+  const span = cues[cues.length - 1].endMs - cues[0].startMs;
+  const shown = cues.reduce((t, c) => t + (c.endMs - c.startMs), 0);
+  const coverageRatio = span > 0 ? Math.min(1, shown / span) : 0;
+  if (coverageRatio < 0.7) {
+    warnings.push(
+      `captions cover only ${Math.round(coverageRatio * 100)}% of the sung section — ` +
+        'the screen goes blank mid-line; check the cue durations before publishing'
+    );
+  }
+
+  return { cues, anchoredLines, interpolatedLines, coverageRatio, warnings };
 }
 
 /**
