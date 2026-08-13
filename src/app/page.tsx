@@ -46,7 +46,7 @@ const personJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'Person',
   name: 'Raj',
-  alternateName: 'ராஜ்',
+  alternateName: 'இராஜ்',
   url: SITE_URL,
   jobTitle: 'Tamil poet and lyricist',
   description: 'Tamil writer and lyricist publishing original poems, songs and videos at tamilagaval.com',
@@ -249,7 +249,7 @@ export default function HomePage() {
                 </div>
                 <div>
                   <h4 className="font-bold text-white mb-2 font-tamil text-base leading-normal">சொந்தப் படைப்புகள்</h4>
-                  <p className="text-gray-300 font-tamil leading-relaxed">ராஜின் சொந்தக் கவிதைகளும் பாடல்களும்</p>
+                  <p className="text-gray-300 font-tamil leading-relaxed">இராஜின் சொந்தக் கவிதைகளும் பாடல்களும்</p>
                 </div>
               </div>
               <div className="flex items-start gap-4">

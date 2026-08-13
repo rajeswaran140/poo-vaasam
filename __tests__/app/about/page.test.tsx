@@ -27,7 +27,7 @@ describe('About page', () => {
 
   it('names the author in the bio section', () => {
     render(<AboutPage />);
-    expect(screen.getAllByText(/ராஜ்/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/இராஜ்/).length).toBeGreaterThan(0);
   });
 
   it('renders the three content pillars linking to /poems, /songs, /videos', () => {
@@ -47,7 +47,7 @@ describe('About page', () => {
     expect(screen.getByRole('heading', { name: /இசை உருவாக்கம்/ })).toBeInTheDocument();
     // AI-as-a-tool transparency line, present verbatim.
     // The disclosure Raj wants public: his words, then the AI-assist statement.
-    expect(screen.getByText(/பாடல் வரிகள் ராஜின் சொந்தப் படைப்புகள்/, { selector: 'strong' })).toBeInTheDocument();
+    expect(screen.getByText(/பாடல் வரிகள் இராஜின் சொந்தப் படைப்புகள்/, { selector: 'strong' })).toBeInTheDocument();
     // Nested <strong> inside <p> matches twice — pin the emphasised span.
     expect(screen.getByText(/AI-assisted music production/i, { selector: 'strong' })).toBeInTheDocument();
     expect(screen.getByText(/© 2026 TamilAgaval \/ Raj/)).toBeInTheDocument();
