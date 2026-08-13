@@ -260,3 +260,54 @@ describe('splitLyricsIntoCards', () => {
     expect(cues.every((c) => !c.text.includes('\u266a'))).toBe(true);
   });
 });
+
+/**
+ * CUE DURATION — the defect Raj reported as a viewer on `icH689_JQEM`.
+ *
+ * Every one of its 28 cues was clamped to exactly 6.0 s while the gaps between
+ * them ran a median 4.4 s, so a caption was on screen for only 49% of the sung
+ * section: it vanished part-way through nearly every line. His sung lines are
+ * simply longer than six seconds. Nothing caught it — round-trip text was true,
+ * 52/56 lines anchored, there were no warnings, and the last cue sat inside the
+ * duration. Only coverage sees it.
+ */
+describe('a card holds until the next line, not for a fixed 6 seconds', () => {
+  /** Lines 8 s apart — ordinary spacing for a sung Tamil line, not a break. */
+  const sung = (n: number, gapMs = 8000): AsrCue[] =>
+    Array.from({ length: n }, (_, i) => ({
+      startMs: 30000 + i * gapMs,
+      endMs: 30000 + i * gapMs + 2000,
+      text: `வரி ${i + 1}`,
+    }));
+  const cards = (n: number): LyricCard[] => Array.from({ length: n }, (_, i) => [`வரி ${i + 1}`]);
+
+  it('holds an 8s line for the full 8s instead of cutting it at 6', () => {
+    const r = alignLyrics(cards(5), sung(5));
+    const held = r.cues.slice(0, -1).map((c) => c.endMs - c.startMs);
+    // Before the fix every one of these was exactly 6000.
+    expect(held.every((d) => d === 8000)).toBe(true);
+  });
+
+  it('reports coverage, and it is high when lines simply follow each other', () => {
+    const r = alignLyrics(cards(5), sung(5));
+    expect(r.coverageRatio).toBeGreaterThan(0.9);
+    expect(r.warnings.join(' ')).not.toMatch(/cover only/);
+  });
+
+  it('STILL clears the screen across a genuine instrumental break', () => {
+    // 20 s apart — past instrumentalGapMs, so the card must not sit there.
+    const r = alignLyrics(cards(3), sung(3, 20000));
+    expect(r.cues[0].endMs - r.cues[0].startMs).toBe(6000);
+  });
+
+  it('warns when coverage is poor — the guard icH689_JQEM needed', () => {
+    const r = alignLyrics(cards(4), sung(4, 20000));
+    expect(r.coverageRatio).toBeLessThan(0.7);
+    expect(r.warnings.join(' ')).toMatch(/cover only/);
+  });
+
+  it('never emits a cue shorter than the flicker floor', () => {
+    const r = alignLyrics(cards(4), sung(4, 1000));
+    expect(Math.min(...r.cues.map((c) => c.endMs - c.startMs))).toBeGreaterThanOrEqual(1200);
+  });
+});
