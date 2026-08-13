@@ -60,9 +60,9 @@ const aboutJsonLd = [
 ];
 
 const PILLARS = [
-  { icon: '📝', label: 'கவிதைகள்', desc: 'சொந்தக் கவிதைகள் — காதல், இயற்கை, வாழ்க்கை', href: '/poems' },
-  { icon: '🎵', label: 'பாடல்கள்', desc: 'பாடல் வரிகளும் இசையும் — கேட்கவும், பகிரவும்', href: '/songs' },
-  { icon: '🎬', label: 'காணொளிகள்', desc: 'YouTube சேனலின் சமீபத்திய காணொளிகள்', href: '/videos' },
+  { icon: '📝', label: 'கவிதைகள்', desc: 'ராஜின் சொந்தக் கவிதைகள் — காதல், இயற்கை, வாழ்க்கை மற்றும் மனித உணர்வுகள்.', href: '/poems' },
+  { icon: '🎵', label: 'பாடல்கள்', desc: 'சொந்தப் பாடல் வரிகளும் அவற்றின் இசை வடிவங்களும் — கேட்கவும், ரசிக்கவும், பகிரவும்.', href: '/songs' },
+  { icon: '🎬', label: 'காணொளிகள்', desc: 'தமிழகவல் YouTube சேனலில் வெளியாகும் பாடல்கள் மற்றும் காணொளிகள்.', href: '/videos' },
 ] as const;
 
 export default function AboutPage() {
@@ -102,7 +102,10 @@ export default function AboutPage() {
           <h2 className="mb-4 font-kavivanar text-3xl font-bold text-white sm:text-4xl">இந்த தளம் என்ன?</h2>
           <div className="space-y-4 font-tamil leading-relaxed text-gray-300">
             <p>
-              தமிழகவல் என்பது ராஜின் சொந்தக் கவிதைகளையும் பாடல்களையும் ஒரே இடத்தில் கொண்டுவரும் தனிப்பட்ட தளம். இது ஒரு பொது தமிழ் இலக்கிய தொகுப்பு அல்ல — இது ஒரு எழுத்தாளரின் படைப்புகளை வாசகருக்கு நேரடியாக கொண்டுசேர்க்கும் முயற்சி.
+              <strong className="text-white">தமிழகவல்</strong> என்பது ராஜின் சொந்தக் கவிதைகள், பாடல்கள் மற்றும் படைப்புகளை ஒரே இடத்தில் கொண்டுவரும் ஒரு தமிழ்ப் படைப்புத் தளம்.
+            </p>
+            <p>
+              இது ஒரு பொது தமிழ் இலக்கியத் தொகுப்பு அல்ல — ஒரு எழுத்தாளரின் சொந்தப் படைப்புகளை வாசகர்களுக்கும் இசை ரசிகர்களுக்கும் நேரடியாகக் கொண்டுசேர்க்கும் முயற்சி.
             </p>
             <p>
               கவிதைகளைப் படிக்கலாம், பாடல்களைக் கேட்கலாம், YouTube சேனலின் காணொளிகளைப் பார்க்கலாம் — அனைத்தும் இங்கேயே. பதிவு செய்யத் தேவையில்லை. கட்டணம் இல்லை.
@@ -130,33 +133,38 @@ export default function AboutPage() {
 
         {/* About the author */}
         <section className="mb-10">
-          <h2 className="mb-4 font-kavivanar text-3xl font-bold text-white sm:text-4xl">யார் இதைத் தொகுக்கிறார்?</h2>
+          <h2 className="mb-4 font-kavivanar text-3xl font-bold text-white sm:text-4xl">யார் இதை உருவாக்குகிறார்?</h2>
           <div className="space-y-4 font-tamil leading-relaxed text-gray-300">
             <p>
-              <strong className="text-white">ராஜ்</strong> — தமிழ் எழுத்தாளரும் பாடலாசிரியரும். அன்றாட வாழ்க்கையின் சிறு தருணங்களையும் உணர்வுகளையும் கவிதையாகவும் பாடலாகவும் வடிக்கிறார்.
+              <strong className="text-white">ராஜ்</strong> — தமிழ் எழுத்தாளரும் பாடலாசிரியரும்.
             </p>
             <p>
-              புதிய படைப்புகள் தளத்திலும் YouTube சேனலிலும் தொடர்ந்து வெளியாகின்றன. சந்தா செலுத்துங்கள் — புதியவை வரும்போதே உங்களுக்குத் தெரியும்.
+              வாழ்க்கை, காதல், இயற்கை, நினைவுகள் மற்றும் மனித உணர்வுகளை கவிதைகளாகவும் பாடல்களாகவும் எழுதுகிறார்.
+            </p>
+            <p>
+              புதிய படைப்புகள் தமிழகவல் தளத்திலும் YouTube சேனலிலும் தொடர்ந்து வெளியாகின்றன.
             </p>
           </div>
         </section>
 
         {/* The platform — how the music is made (AI transparency) */}
         <section className="mb-10">
-          <h2 className="mb-4 font-kavivanar text-3xl font-bold text-white sm:text-4xl">இசை எப்படி உருவாகிறது?</h2>
+          <h2 className="mb-4 font-kavivanar text-3xl font-bold text-white sm:text-4xl">இசை உருவாக்கம்</h2>
           <div className="space-y-4 font-tamil leading-relaxed text-gray-300">
             <p>
-              பாடல் வரிகள் முழுக்க முழுக்க <strong className="text-white">ராஜின்</strong> சொந்தப் படைப்பு. இசையும் குரலும் நவீன AI கருவிகள் மூலம் <strong className="text-white">தமிழகவல் இசைத் தளத்தில்</strong> உருவாக்கப்படுகின்றன.
+              தமிழகவலில் வெளியாகும் பாடல்களின் <strong className="text-white">பாடல் வரிகள் ராஜின் சொந்தப் படைப்புகள்</strong>.
             </p>
             <p>
-              ஒவ்வொரு பாடலும் முதல் முயற்சியிலேயே முடிந்துவிடுவதில்லை — பல முயற்சிகளுக்குப் பிறகு, கவனமாகத் தேர்ந்தெடுக்கப்பட்டு, தரம் பார்க்கப்பட்டு, பிறகே வெளியிடப்படுகிறது. தேர்வும் ரசனையும்தான் இங்கே படைப்பு.
+              இசை மற்றும் குரல் உருவாக்கத்தில் <strong className="text-white">AI-assisted music production</strong> தொழில்நுட்பங்கள் பயன்படுத்தப்படுகின்றன.
             </p>
-            <p>
-              ஏன் இந்த அணுகுமுறை? நேரடியாக இசைக்கலைஞர்களுடன் பதிவு செய்வது பெரும் செலவும் மாதக் கணக்கான நேரமும் கோரும். AI ஒரு தனிப்பட்ட படைப்பாளிக்கு சொந்த தமிழ்ப் பாடல்களை உருவாக்கவே வழிசெய்கிறது.
-            </p>
-            <p>
-              AI ஒரு கருவி மட்டுமே — அது ஒரு உண்மையான இசைக்கலைஞரை மாற்றாது. தமிழ் இசை மரபின் மீதான மரியாதையோடு, வெளிப்படையாக, இந்தப் படைப்புகள் உருவாக்கப்படுகின்றன.
-            </p>
+            {/* Credits + rights, mirroring the block Raj puts on every YouTube
+                description so the site and the channel state the same thing. */}
+            <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-4 not-italic">
+              <p className="font-semibold text-white">Lyrics: Raj</p>
+              <p className="font-semibold text-white">Music Production &amp; Creative Direction: TamilAgaval.com</p>
+              <p className="font-semibold text-white">AI-Assisted Music Production</p>
+              <p className="mt-2 text-sm text-gray-400">© 2026 TamilAgaval / Raj. All rights reserved.</p>
+            </div>
           </div>
         </section>
 
