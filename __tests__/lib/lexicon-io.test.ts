@@ -1,3 +1,4 @@
+import { lexiconWordInputSchema, lexiconWordUpdateSchema, headwordIssue } from '@/types/lexicon';
 import { parsePastedWords, lexiconToCsv, GLOSS_PLACEHOLDER, splitWordList } from '@/lib/lexicon-io';
 
 const OPTS = { register: 'sangam' as const, usage: 'fresh' as const, themes: ['love'] };
@@ -129,5 +130,57 @@ describe('a line may carry a whole word family', () => {
   it('splitWordList is exported for UI-side previewing', () => {
     expect(splitWordList('a, b ,c')).toEqual(['a', 'b', 'c']);
     expect(splitWordList('  ')).toEqual([]);
+  });
+});
+
+/**
+ * A HEADWORD IS ONE WORD — the guard that was missing.
+ *
+ * On 2026-08-14 a real entry got in as
+ * `பொற்கதிர், இளங்கதிர், செங்கதிர்,கதிரொளி,பொற்சுடர்` with gloss "Sun": five
+ * genuine synonyms in one field, accepted because the rule was only
+ * `z.string().max(60)`. It reached the Lyric Critic as a single vocabulary
+ * item and defeated the uniqueness check, which dedupes on the whole string.
+ */
+describe('headword must be a single word', () => {
+  const base = { gloss: 'Sun', register: 'sangam' as const };
+
+  it.each([
+    ['comma + space', 'பொற்கதிர், இளங்கதிர்'],
+    ['comma only', 'பொற்கதிர்,இளங்கதிர்'],
+    ['semicolon', 'பொற்கதிர்; இளங்கதிர்'],
+    ['slash', 'பொற்கதிர்/இளங்கதிர்'],
+    ['pipe', 'பொற்கதிர்|இளங்கதிர்'],
+    ['fullwidth comma', 'பொற்கதிர்，இளங்கதிர்'],
+  ])('rejects a %s list', (_label, word) => {
+    const r = lexiconWordInputSchema.safeParse({ ...base, word });
+    expect(r.success).toBe(false);
+    if (!r.success) expect(r.error.issues[0].message).toMatch(/single word/i);
+  });
+
+  it('points the poet at the bulk endpoint rather than just refusing', () => {
+    const r = lexiconWordInputSchema.safeParse({ ...base, word: 'a,b' });
+    expect(r.success).toBe(false);
+    if (!r.success) expect(r.error.issues[0].message).toMatch(/bulk/i);
+  });
+
+  it('accepts a real single Tamil headword', () => {
+    expect(lexiconWordInputSchema.safeParse({ ...base, word: 'பொற்கதிர்' }).success).toBe(true);
+  });
+
+  it('accepts a multi-SYLLABLE word and an internal space (not a list)', () => {
+    // Tamil compounds and two-part phrases are legitimate headwords.
+    expect(lexiconWordInputSchema.safeParse({ ...base, word: 'உயிர்த்தமிழே' }).success).toBe(true);
+    expect(lexiconWordInputSchema.safeParse({ ...base, word: 'பொன் மாலை' }).success).toBe(true);
+  });
+
+  it('guards UPDATES too — a correction must not smuggle a list back in', () => {
+    const r = lexiconWordUpdateSchema.safeParse({ word: 'பொற்கதிர், இளங்கதிர்' });
+    expect(r.success).toBe(false);
+  });
+
+  it('headwordIssue() explains the problem for UI use', () => {
+    expect(headwordIssue('பொற்கதிர், இளங்கதிர்')).toMatch(/single word/i);
+    expect(headwordIssue('பொற்கதிர்')).toBeNull();
   });
 });
