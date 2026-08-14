@@ -12,7 +12,7 @@ import toast from 'react-hot-toast';
 import { adminFetch } from '@/lib/client-auth';
 import { TransliterateField } from '@/components/admin/TransliterateField';
 import { LEXICON_REGISTERS, LEXICON_USAGES, LEXICON_THEMES } from '@/types/lexicon';
-import { parsePastedWords, lexiconToCsv } from '@/lib/lexicon-io';
+import { parsePastedWords, lexiconToCsv, chunkForBulk } from '@/lib/lexicon-io';
 
 export interface LexiconRow {
   id: string;
@@ -380,6 +380,7 @@ function PasteImport({ onImported }: { onImported: () => void }) {
   const [usage, setUsage] = useState<string>('fresh');
   const [themes, setThemes] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState('');
 
   const parsed = useMemo(
     () => parsePastedWords(text, { register: register as never, usage: usage as never, themes }),
@@ -389,20 +390,36 @@ function PasteImport({ onImported }: { onImported: () => void }) {
   const submit = async () => {
     if (parsed.words.length === 0) { toast.error('No words to import'); return; }
     setBusy(true);
+    // Sent in chunks: the API caps a batch at BULK_MAX_WORDS, and a real paste
+    // is far bigger. Sequential, not parallel — these are writes against one
+    // table and a burst buys nothing but contention.
+    const batches = chunkForBulk(parsed.words);
+    let added = 0, skipped = 0, done = 0;
     try {
-      const res = await adminFetch('/api/admin/lexicon/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ words: parsed.words }),
-      });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d?.error || 'Failed');
-      toast.success(`Added ${d.added}${d.skipped ? `, skipped ${d.skipped}` : ''}`);
+      for (const words of batches) {
+        const res = await adminFetch('/api/admin/lexicon/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ words }),
+        });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d?.error || 'Failed');
+        added += d.added ?? 0;
+        skipped += d.skipped ?? 0;
+        done += 1;
+        if (batches.length > 1) setProgress(`${done}/${batches.length} batches…`);
+      }
+      toast.success(`Added ${added}${skipped ? `, skipped ${skipped} (already known)` : ''}`);
       setText(''); setOpen(false);
       onImported();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Import failed');
+      // Partial success is the common failure here — say what DID land, or the
+      // poet re-pastes everything and every earlier word comes back "skipped".
+      const detail = e instanceof Error ? e.message : 'Import failed';
+      toast.error(added > 0 ? `${detail} — ${added} added before it stopped; re-paste the rest` : detail);
+      if (added > 0) onImported();
     } finally {
+      setProgress('');
       setBusy(false);
     }
   };
@@ -434,7 +451,7 @@ function PasteImport({ onImported }: { onImported: () => void }) {
       <div className="flex flex-wrap items-center gap-2">
         <Select value={register} onChange={setRegister} placeholder="register" options={LEXICON_REGISTERS} />
         <Select value={usage} onChange={setUsage} placeholder="usage" options={LEXICON_USAGES} />
-        <span className="text-xs text-gray-400">{parsed.words.length} ready{parsed.skipped ? `, ${parsed.skipped} skipped` : ''}</span>
+        <span className="text-xs text-gray-400">{progress || `${parsed.words.length} ready${parsed.skipped ? `, ${parsed.skipped} skipped` : ''}`}</span>
       </div>
       <ThemePicker themes={themes} onToggle={(t) => setThemes((p) => p.includes(t) ? p.filter((x) => x !== t) : [...p, t])} />
       <div className="flex gap-2">

@@ -80,6 +80,25 @@ export function parsePastedWords(text: string, opts: PasteOptions): { words: Lex
   return { words, skipped };
 }
 
+/**
+ * The bulk endpoint accepts at most 50 words per request
+ * (`lexiconBulkSchema`). A realistic paste blows straight past that: Raj's
+ * nature list on 2026-08-14 was 55 lines which, once comma-splitting landed,
+ * parsed to **153 words** — a correct parse that the API then rejected whole
+ * with "Too big: expected array to have <=50 items", so the import failed and
+ * nothing was saved. Raising the cap is the wrong fix (an unbounded write
+ * request is worth bounding); sending several requests is the right one.
+ */
+export const BULK_MAX_WORDS = 50;
+
+/** Split a parsed batch into request-sized chunks, order preserved. */
+export function chunkForBulk<T>(words: readonly T[], size = BULK_MAX_WORDS): T[][] {
+  if (size < 1) throw new Error('chunk size must be >= 1');
+  const out: T[][] = [];
+  for (let i = 0; i < words.length; i += size) out.push(words.slice(i, i + size));
+  return out;
+}
+
 export interface CsvRow {
   word: string;
   romanization?: string;
