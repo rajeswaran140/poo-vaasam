@@ -413,14 +413,22 @@ function PasteImport({ onImported }: { onImported: () => void }) {
   return (
     <div className="w-full space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
       <div className="text-xs text-gray-500">
-        One word per line. Optional meaning after a dash/pipe: <code>நிலா — moon</code>. Register/usage/themes below apply to all; fill meanings later by editing.
+        <strong>Type or paste.</strong> Separate words by new lines <em>or</em> commas —{' '}
+        <code>பொற்கதிர், இளங்கதிர்</code> adds two. Optional meaning after a dash/pipe:{' '}
+        <code>நிலா — moon</code>; a whole line of words shares that meaning. Register/usage/themes
+        below apply to all. Typing romanised (<code>nilaa</code>) offers Tamil candidates — ↑↓ choose,
+        Enter/Tab commit.
       </div>
-      <textarea
+      {/* TransliterateField, not a bare <textarea>: Raj's constraint is that
+          typing Tamil manually is the hard part, so the multi-word surface
+          needs the same romanised input the single Add form already had. */}
+      <TransliterateField
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={setText}
+        multiline
         rows={6}
-        placeholder={'நிலா — moon\nகடல்\nவானம் | sky'}
-        aria-label="paste words"
+        ariaLabel="paste words"
+        placeholder={'நிலா — moon\nபொற்கதிர், இளங்கதிர்\nவானம் | sky'}
         className="w-full rounded-md border border-gray-300 px-2 py-1.5 font-tamil dark:border-gray-600 dark:bg-gray-900"
       />
       <div className="flex flex-wrap items-center gap-2">

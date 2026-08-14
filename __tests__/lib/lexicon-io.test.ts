@@ -1,4 +1,4 @@
-import { parsePastedWords, lexiconToCsv, GLOSS_PLACEHOLDER } from '@/lib/lexicon-io';
+import { parsePastedWords, lexiconToCsv, GLOSS_PLACEHOLDER, splitWordList } from '@/lib/lexicon-io';
 
 const OPTS = { register: 'sangam' as const, usage: 'fresh' as const, themes: ['love'] };
 
@@ -75,5 +75,59 @@ describe('lexiconToCsv', () => {
 
   it('handles an empty list (header only)', () => {
     expect(lexiconToCsv([])).toBe('word,romanization,gloss,register,usage,themes');
+  });
+});
+
+/**
+ * COMMA-SEPARATED WORD FAMILIES — the parse gap that let a blob through.
+ *
+ * `parsePastedWords` split on newlines only, so the real paste
+ * `பொற்கதிர், இளங்கதிர், செங்கதிர்,கதிரொளி,பொற்சுடர்` (2026-08-14) was ONE line
+ * and became ONE 49-character entry. People write word families comma-separated.
+ */
+describe('a line may carry a whole word family', () => {
+  const opts = { register: 'sangam' as const, usage: 'fresh' as const, themes: [] as string[] };
+
+  it('splits the real paste into its five words', () => {
+    const r = parsePastedWords('பொற்கதிர், இளங்கதிர், செங்கதிர்,கதிரொளி,பொற்சுடர்', opts);
+    expect(r.words.map((w) => w.word)).toEqual([
+      'பொற்கதிர்', 'இளங்கதிர்', 'செங்கதிர்', 'கதிரொளி', 'பொற்சுடர்',
+    ]);
+  });
+
+  it('shares the line gloss across the whole family', () => {
+    const r = parsePastedWords('பொற்கதிர், இளங்கதிர் — sun', opts);
+    expect(r.words.map((w) => w.gloss)).toEqual(['sun', 'sun']);
+  });
+
+  it('does NOT split a comma inside the gloss', () => {
+    // The gloss separator is matched first, so only the word side splits.
+    const r = parsePastedWords('நிலா — moon, and moonlight', opts);
+    expect(r.words).toHaveLength(1);
+    expect(r.words[0]).toMatchObject({ word: 'நிலா', gloss: 'moon, and moonlight' });
+  });
+
+  it('mixes newlines and commas in one paste', () => {
+    const r = parsePastedWords('கடல்\nபொற்கதிர், இளங்கதிர்\nவானம் | sky', opts);
+    expect(r.words.map((w) => w.word)).toEqual(['கடல்', 'பொற்கதிர்', 'இளங்கதிர்', 'வானம்']);
+  });
+
+  it('still dedupes across the whole paste, not just per line', () => {
+    const r = parsePastedWords('கடல், வானம்\nகடல்', opts);
+    expect(r.words.map((w) => w.word)).toEqual(['கடல்', 'வானம்']);
+    expect(r.skipped).toBe(1);
+  });
+
+  it('handles the fullwidth and ideographic commas too', () => {
+    expect(parsePastedWords('கடல்，வானம்、நிலா', opts).words).toHaveLength(3);
+  });
+
+  it('leaves a single word untouched', () => {
+    expect(parsePastedWords('உயிர்த்தமிழே', opts).words.map((w) => w.word)).toEqual(['உயிர்த்தமிழே']);
+  });
+
+  it('splitWordList is exported for UI-side previewing', () => {
+    expect(splitWordList('a, b ,c')).toEqual(['a', 'b', 'c']);
+    expect(splitWordList('  ')).toEqual([]);
   });
 });
