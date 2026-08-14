@@ -1,39 +1,94 @@
 /**
- * Lyric Lexicon types — the personal word-family dictionary that lets the
- * Composer deliberately draw from a different vocabulary per song (see
- * project_poo_vaasam_lexicon).
+ * Lyric Lexicon types — the Tamil literary and songwriting vocabulary system
+ * behind /admin/lexicon (see project_poo_vaasam_lexicon).
  *
- * Two axes (not five flat buckets):
- *  - register: a word's style/origin (sangam / literary / village / …)
- *  - usage:    its freshness signal (fresh ↔ neutral ↔ retire/overused)
- * A word carries BOTH, plus theme tags + a gloss — so the composer can ask for
- * e.g. "fresh sangam nature words". `usageCount` is 0 for now and is filled
- * from the lyric corpus in P3 (auto retire/fresh detection).
+ * FOUR INDEPENDENT AXES, not one label (the vocabularies and the reasoning live
+ * in `@/types/lexicon-vocabulary`):
+ *   register(s)    — where the word sits stylistically; a word may hold several
+ *   wordType       — its grammatical/lexical kind
+ *   lexicalStatus  — established word vs. coined poetic compound
+ *   usage          — songwriting freshness (nothing to do with history)
+ * plus `confidence`, which says how much weight to put on the first three.
+ *
+ * Everything added after the original four fields is OPTIONAL, and every reader
+ * tolerates its absence: the table holds 1,047 rows written under the old
+ * shape, and none of them are being rewritten to make the new UI work.
  */
 
 import { z } from 'zod';
-import { SONG_THEMES } from '@/config/song-themes';
+import {
+  LEXICON_REGISTERS,
+  LEXICON_USAGES,
+  LEXICON_WORD_TYPES,
+  LEXICAL_STATUSES,
+  LEXICON_CONFIDENCE,
+  LEXICON_MOODS,
+} from '@/types/lexicon-vocabulary';
+import type {
+  LexiconRegister,
+  LexiconUsage,
+  LexiconWordType,
+  LexicalStatus,
+  LexiconConfidence,
+  LexiconMood,
+} from '@/types/lexicon-vocabulary';
+import {
+  migrateRegister,
+  migrateUsage,
+  resolveRegisters,
+  LEGACY_REGISTER_VALUES,
+  LEGACY_USAGE_VALUES,
+} from '@/lib/lexicon-migrate';
+import { matchKey } from '@/lib/tamil-normalize';
 
-/** Word register / origin. Extensible — add values here as the palette grows. */
-export const LEXICON_REGISTERS = ['sangam', 'literary', 'village', 'modern', 'devotional'] as const;
-export type LexiconRegister = (typeof LEXICON_REGISTERS)[number];
-
-/** Freshness status. Manual for now; corpus-derived in P3. */
-export const LEXICON_USAGES = ['fresh', 'neutral', 'retire'] as const;
-export type LexiconUsage = (typeof LEXICON_USAGES)[number];
-
-/** Theme tags reuse the song themes so the lexicon and catalogue speak the same vocabulary. */
-export const LEXICON_THEMES = SONG_THEMES;
+// Re-exported so every existing `from '@/types/lexicon'` import keeps working.
+export * from '@/types/lexicon-vocabulary';
 
 export interface LexiconWord {
   id: string;
-  /** Tamil headword — unique (NFC-normalized) across the lexicon. */
+  /** Tamil headword, exactly as the poet typed it — never normalized in place. */
   word: string;
+  /** Derived match key (NFC, no zero-width chars, folded) for dedupe + search. */
+  normalizedWord: string;
   romanization?: string;
+  /** English gloss. */
   gloss: string;
+  /** Tamil-language meaning — the definition a Tamil reader would want. */
+  tamilMeaning?: string;
+
+  /**
+   * Primary register. Kept as a scalar because the palette, the critic hints
+   * and the CSV export all read it; it is always `registers[0]`.
+   */
   register: LexiconRegister;
+  /** Full register list — a word may legitimately be e.g. common AND literary. */
+  registers: LexiconRegister[];
+
+  wordType?: LexiconWordType;
+  lexicalStatus?: LexicalStatus;
+  /** Absent = never reviewed. Do not default this to a value; absence is data. */
+  confidence?: LexiconConfidence;
+
   usage: LexiconUsage;
   themes: string[];
+  moods: LexiconMood[];
+
+  /** Meaning-side relations. */
+  synonyms: string[];
+  relatedWords: string[];
+  antonyms: string[];
+
+  /** Sound-side relations — the songwriting half. */
+  etukai: string[];
+  monai: string[];
+  rhymesWith: string[];
+  semanticFamily: string[];
+
+  /** How the word behaves in a line, in Tamil or English. */
+  poeticUsage?: string;
+  /** Short ORIGINAL phrases showing natural use. Never quoted from songs. */
+  examples: string[];
+
   /** Times the word appears across the catalogue. 0 until the P3 corpus pass. */
   usageCount: number;
   notes?: string;
@@ -46,9 +101,23 @@ export interface LexiconWord {
 // Validation — shared by the API routes and the AI-suggestion parser.
 // ---------------------------------------------------------------------------
 
-const registerSchema = z.enum(LEXICON_REGISTERS);
-const usageSchema = z.enum(LEXICON_USAGES);
-const themesSchema = z.array(z.string().trim().min(1).max(40)).max(12);
+/**
+ * Registers and usages accept LEGACY values and map them forward, so an old
+ * client, an old test, or a replayed request never 400s on vocabulary that used
+ * to be valid. `village` → `regional`, `retire` → `overused`, and so on.
+ */
+const registerSchema = z
+  .enum([...LEXICON_REGISTERS, ...LEGACY_REGISTER_VALUES])
+  .transform((v) => migrateRegister(v));
+const usageSchema = z.enum([...LEXICON_USAGES, ...LEGACY_USAGE_VALUES]).transform((v) => migrateUsage(v));
+
+const wordTypeSchema = z.enum(LEXICON_WORD_TYPES);
+const lexicalStatusSchema = z.enum(LEXICAL_STATUSES);
+const confidenceSchema = z.enum(LEXICON_CONFIDENCE);
+
+/** Themes stay free-form strings: adding a tag must never invalidate a stored row. */
+const themesSchema = z.array(z.string().trim().min(1).max(40)).max(16);
+const moodsSchema = z.array(z.enum(LEXICON_MOODS)).max(6);
 
 /**
  * A headword is ONE word. Reject list separators.
@@ -87,47 +156,126 @@ const headwordSchema = z
       'A headword must be a single word. To add several at once, use the bulk endpoint (one entry per word) so each stays searchable and de-duplicated.',
   });
 
-/** A single word as created/accepted (also the shape the AI suggester emits). */
-export const lexiconWordInputSchema = z.object({
-  word: headwordSchema,
-  romanization: z.string().trim().max(80).optional(),
-  gloss: z.string().trim().min(1).max(400),
-  register: registerSchema,
-  usage: usageSchema.default('fresh'),
-  themes: themesSchema.default([]),
-  notes: z.string().trim().max(1000).optional(),
-});
+/**
+ * A relation list (synonyms, etukai, …). Each entry is a headword-shaped
+ * string; the same single-word rule as the headword applies, since a relation
+ * that is secretly a comma list is the same blob bug one level down.
+ */
+const relationsSchema = z
+  .array(z.string().trim().min(1).max(60).refine((w) => !WORD_SEPARATORS.test(w)))
+  .max(24);
+
+/** Original example phrases — a line, not a verse. */
+const examplesSchema = z.array(z.string().trim().min(1).max(120)).max(8);
+
+/**
+ * Classification + relation fields, identical in create and update. The free
+ * TEXT fields are deliberately NOT here: create takes them as `optional()`,
+ * update as `nullable()` so an edit can clear one, and merging those two shapes
+ * with a destructure was less readable than writing them twice.
+ */
+const classificationShape = {
+  register: registerSchema.optional(),
+  registers: z.array(registerSchema).min(1).max(3).optional(),
+  wordType: wordTypeSchema.optional(),
+  lexicalStatus: lexicalStatusSchema.optional(),
+  confidence: confidenceSchema.optional(),
+  usage: usageSchema.optional(),
+  themes: themesSchema.optional(),
+  moods: moodsSchema.optional(),
+  synonyms: relationsSchema.optional(),
+  relatedWords: relationsSchema.optional(),
+  antonyms: relationsSchema.optional(),
+  etukai: relationsSchema.optional(),
+  monai: relationsSchema.optional(),
+  rhymesWith: relationsSchema.optional(),
+  semanticFamily: relationsSchema.optional(),
+  examples: examplesSchema.optional(),
+};
+
+/**
+ * A single word as created/accepted (also the shape the AI suggester emits).
+ * The transform collapses `register` / `registers` into both forms, so callers
+ * may send either and consumers always get both.
+ */
+export const lexiconWordInputSchema = z
+  .object({
+    word: headwordSchema,
+    gloss: z.string().trim().min(1).max(400),
+    romanization: z.string().trim().max(80).optional(),
+    tamilMeaning: z.string().trim().max(400).optional(),
+    poeticUsage: z.string().trim().max(600).optional(),
+    notes: z.string().trim().max(1000).optional(),
+    ...classificationShape,
+  })
+  .transform((v) => {
+    const registers = resolveRegisters(v.registers, v.register);
+    return { ...v, registers, register: registers[0], usage: v.usage ?? 'fresh', themes: v.themes ?? [] };
+  });
 export type LexiconWordInput = z.infer<typeof lexiconWordInputSchema>;
 
-/** Partial update — every field optional; word can be corrected too. */
+/**
+ * The shape a CLIENT sends (pre-transform): `registers` may be absent and a
+ * single `register` is enough. Producers that build words to POST — the paste
+ * parser, the AI suggester — use this; only code reading a PARSED word uses
+ * `LexiconWordInput`, which always has both forms filled in.
+ */
+export type LexiconWordDraft = z.input<typeof lexiconWordInputSchema>;
+
+/**
+ * Partial update — every field optional; the word itself can be corrected too.
+ * Text fields are `nullable()` so an edit can CLEAR one (send `null`), which
+ * `undefined` cannot express in a partial patch.
+ */
 export const lexiconWordUpdateSchema = z
   .object({
     word: headwordSchema,
-    romanization: z.string().trim().max(80).nullable(),
     gloss: z.string().trim().min(1).max(400),
-    register: registerSchema,
-    usage: usageSchema,
-    themes: themesSchema,
+    romanization: z.string().trim().max(80).nullable(),
+    tamilMeaning: z.string().trim().max(400).nullable(),
+    poeticUsage: z.string().trim().max(600).nullable(),
     notes: z.string().trim().max(1000).nullable(),
     archived: z.boolean(),
+    ...classificationShape,
   })
   .partial()
-  .refine((v) => Object.keys(v).length > 0, { message: 'No fields to update' });
+  .refine((v) => Object.keys(v).length > 0, { message: 'No fields to update' })
+  .transform((v) => {
+    if (!v.registers && !v.register) return v;
+    const registers = resolveRegisters(v.registers, v.register);
+    return { ...v, registers, register: registers[0] };
+  });
 export type LexiconWordUpdate = z.infer<typeof lexiconWordUpdateSchema>;
 
 /** AI-suggestion request. */
 export const lexiconSuggestSchema = z.object({
-  register: registerSchema,
-  theme: z.enum(SONG_THEMES as unknown as [string, ...string[]]).optional(),
+  register: registerSchema.optional(),
+  theme: z.string().trim().max(40).optional(),
+  wordType: wordTypeSchema.optional(),
+  usage: usageSchema.optional(),
+  mood: z.enum(LEXICON_MOODS).optional(),
+  /** Anchor the suggestions to a word's semantic field rather than its letters. */
+  relatedTo: z.string().trim().max(60).optional(),
   count: z.number().int().min(1).max(30).default(12),
 });
+export type LexiconSuggestRequest = z.infer<typeof lexiconSuggestSchema>;
 
 /** Bulk-accept a batch of suggested/curated words. */
 export const lexiconBulkSchema = z.object({
   words: z.array(lexiconWordInputSchema).min(1).max(50),
 });
 
-/** Normalize a headword for uniqueness comparison (NFC so Tamil compares right). */
+/**
+ * Normalize a headword for STORAGE (the DynamoDB `GSI1SK = <word>#<id>` key).
+ *
+ * ⚠️ FROZEN — do not widen. Every one of the 1,047 existing rows has its sort
+ * key built from exactly this function; changing it would make legacy rows
+ * unfindable by `findByWord`. The richer key used for duplicate detection and
+ * search is `matchKey` in `@/lib/tamil-normalize`, stored separately.
+ */
 export function normalizeWord(word: string): string {
   return word.normalize('NFC').trim();
 }
+
+/** The dedupe/search key for a headword. */
+export { matchKey };

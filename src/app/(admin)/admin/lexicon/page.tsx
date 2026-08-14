@@ -13,14 +13,34 @@ export const dynamic = 'force-dynamic';
 async function getWords(): Promise<LexiconRow[]> {
   try {
     const words = await new LexiconRepository().findAll();
+    // Everything except the Dates: the table renders none of them, and dropping
+    // them keeps the row a plain serialisable object across the server/client
+    // boundary. Explicit rather than a spread so a field added to the domain
+    // type has to be considered here before it reaches the browser.
     return words.map((w) => ({
       id: w.id,
       word: w.word,
+      normalizedWord: w.normalizedWord,
       romanization: w.romanization,
       gloss: w.gloss,
+      tamilMeaning: w.tamilMeaning,
       register: w.register,
+      registers: w.registers,
+      wordType: w.wordType,
+      lexicalStatus: w.lexicalStatus,
+      confidence: w.confidence,
       usage: w.usage,
       themes: w.themes,
+      moods: w.moods,
+      synonyms: w.synonyms,
+      relatedWords: w.relatedWords,
+      antonyms: w.antonyms,
+      etukai: w.etukai,
+      monai: w.monai,
+      rhymesWith: w.rhymesWith,
+      semanticFamily: w.semanticFamily,
+      poeticUsage: w.poeticUsage,
+      examples: w.examples,
       notes: w.notes,
       usageCount: w.usageCount,
       archived: w.archived,

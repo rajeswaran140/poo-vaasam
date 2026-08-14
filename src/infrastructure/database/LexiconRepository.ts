@@ -7,20 +7,39 @@
 import { ILexiconRepository } from '@/domain/repositories/ILexiconRepository';
 import type { LexiconWord, LexiconWordInput, LexiconWordUpdate } from '@/types/lexicon';
 import { normalizeWord } from '@/types/lexicon';
+import { matchKey } from '@/lib/tamil-normalize';
+import { migrateUsage, resolveRegisters } from '@/lib/lexicon-migrate';
 import { DynamoDBOperations, handleDynamoDBError } from './dynamodb-client';
 
 export class LexiconRepository implements ILexiconRepository {
   async create(input: LexiconWordInput): Promise<LexiconWord> {
     try {
       const now = new Date();
+      const stored = normalizeWord(input.word);
       const word: LexiconWord = {
         id: this.generateId(),
-        word: normalizeWord(input.word),
+        word: stored,
+        normalizedWord: matchKey(stored),
         romanization: input.romanization,
         gloss: input.gloss,
+        tamilMeaning: input.tamilMeaning,
         register: input.register,
+        registers: input.registers,
+        wordType: input.wordType,
+        lexicalStatus: input.lexicalStatus,
+        confidence: input.confidence,
         usage: input.usage,
         themes: input.themes ?? [],
+        moods: input.moods ?? [],
+        synonyms: input.synonyms ?? [],
+        relatedWords: input.relatedWords ?? [],
+        antonyms: input.antonyms ?? [],
+        etukai: input.etukai ?? [],
+        monai: input.monai ?? [],
+        rhymesWith: input.rhymesWith ?? [],
+        semanticFamily: input.semanticFamily ?? [],
+        poeticUsage: input.poeticUsage,
+        examples: input.examples ?? [],
         usageCount: 0,
         notes: input.notes,
         archived: false,
@@ -106,14 +125,33 @@ export class LexiconRepository implements ILexiconRepository {
         }
       }
 
+      // A renamed word needs its derived match key rebuilt alongside it.
+      const renamed = updates.word !== undefined ? normalizeWord(updates.word) : undefined;
+
       const merged: LexiconWord = {
         ...existing,
-        ...(updates.word !== undefined ? { word: normalizeWord(updates.word) } : {}),
+        ...(renamed !== undefined ? { word: renamed, normalizedWord: matchKey(renamed) } : {}),
         ...(updates.romanization !== undefined ? { romanization: updates.romanization ?? undefined } : {}),
         ...(updates.gloss !== undefined ? { gloss: updates.gloss } : {}),
-        ...(updates.register !== undefined ? { register: updates.register } : {}),
+        ...(updates.tamilMeaning !== undefined ? { tamilMeaning: updates.tamilMeaning ?? undefined } : {}),
+        ...(updates.registers !== undefined
+          ? { registers: updates.registers, register: updates.registers[0] }
+          : {}),
+        ...(updates.wordType !== undefined ? { wordType: updates.wordType } : {}),
+        ...(updates.lexicalStatus !== undefined ? { lexicalStatus: updates.lexicalStatus } : {}),
+        ...(updates.confidence !== undefined ? { confidence: updates.confidence } : {}),
         ...(updates.usage !== undefined ? { usage: updates.usage } : {}),
         ...(updates.themes !== undefined ? { themes: updates.themes } : {}),
+        ...(updates.moods !== undefined ? { moods: updates.moods } : {}),
+        ...(updates.synonyms !== undefined ? { synonyms: updates.synonyms } : {}),
+        ...(updates.relatedWords !== undefined ? { relatedWords: updates.relatedWords } : {}),
+        ...(updates.antonyms !== undefined ? { antonyms: updates.antonyms } : {}),
+        ...(updates.etukai !== undefined ? { etukai: updates.etukai } : {}),
+        ...(updates.monai !== undefined ? { monai: updates.monai } : {}),
+        ...(updates.rhymesWith !== undefined ? { rhymesWith: updates.rhymesWith } : {}),
+        ...(updates.semanticFamily !== undefined ? { semanticFamily: updates.semanticFamily } : {}),
+        ...(updates.poeticUsage !== undefined ? { poeticUsage: updates.poeticUsage ?? undefined } : {}),
+        ...(updates.examples !== undefined ? { examples: updates.examples } : {}),
         ...(updates.notes !== undefined ? { notes: updates.notes ?? undefined } : {}),
         ...(updates.archived !== undefined ? { archived: updates.archived } : {}),
         id: existing.id,
@@ -152,11 +190,30 @@ export class LexiconRepository implements ILexiconRepository {
       GSI1SK: `${w.word}#${w.id}`,
       id: w.id,
       word: w.word,
+      normalizedWord: w.normalizedWord,
       romanization: w.romanization,
       gloss: w.gloss,
+      tamilMeaning: w.tamilMeaning,
+      // `register` (scalar) is written alongside `registers` so that a rollback
+      // to the previous deploy still reads a valid row, and so the GSI-adjacent
+      // shape never changes underneath 1,047 existing items.
       register: w.register,
+      registers: w.registers,
+      wordType: w.wordType,
+      lexicalStatus: w.lexicalStatus,
+      confidence: w.confidence,
       usage: w.usage,
       themes: w.themes,
+      moods: w.moods,
+      synonyms: w.synonyms,
+      relatedWords: w.relatedWords,
+      antonyms: w.antonyms,
+      etukai: w.etukai,
+      monai: w.monai,
+      rhymesWith: w.rhymesWith,
+      semanticFamily: w.semanticFamily,
+      poeticUsage: w.poeticUsage,
+      examples: w.examples,
       usageCount: w.usageCount,
       notes: w.notes,
       archived: w.archived,
@@ -165,15 +222,46 @@ export class LexiconRepository implements ILexiconRepository {
     };
   }
 
+  /** An array attribute that may be absent on a legacy row. */
+  private list(v: unknown): string[] {
+    return Array.isArray(v) ? (v as string[]) : [];
+  }
+
+  /**
+   * Read one stored item. EVERY field added after the original shape is
+   * tolerated as absent, because the table holds 1,047 rows written before they
+   * existed and none of them are being back-filled:
+   *   - `registers` falls back to the legacy scalar `register`
+   *   - `usage` maps the retired `neutral`/`retire` values forward
+   *   - `normalizedWord` is derived on the fly when missing, so search and
+   *     duplicate detection work on legacy rows without a migration pass
+   */
   private fromDBItem(item: any): LexiconWord {
+    const registers = resolveRegisters(item.registers, item.register);
     return {
       id: item.id,
       word: item.word,
+      normalizedWord: item.normalizedWord || matchKey(item.word ?? ''),
       romanization: item.romanization || undefined,
       gloss: item.gloss,
-      register: item.register,
-      usage: item.usage,
-      themes: Array.isArray(item.themes) ? item.themes : [],
+      tamilMeaning: item.tamilMeaning || undefined,
+      register: registers[0],
+      registers,
+      wordType: item.wordType || undefined,
+      lexicalStatus: item.lexicalStatus || undefined,
+      confidence: item.confidence || undefined,
+      usage: migrateUsage(item.usage),
+      themes: this.list(item.themes),
+      moods: this.list(item.moods) as LexiconWord['moods'],
+      synonyms: this.list(item.synonyms),
+      relatedWords: this.list(item.relatedWords),
+      antonyms: this.list(item.antonyms),
+      etukai: this.list(item.etukai),
+      monai: this.list(item.monai),
+      rhymesWith: this.list(item.rhymesWith),
+      semanticFamily: this.list(item.semanticFamily),
+      poeticUsage: item.poeticUsage || undefined,
+      examples: this.list(item.examples),
       usageCount: typeof item.usageCount === 'number' ? item.usageCount : 0,
       notes: item.notes || undefined,
       archived: !!item.archived,

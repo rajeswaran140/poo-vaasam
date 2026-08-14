@@ -73,11 +73,30 @@ it('PUT 409 when a rename collides with an existing headword', async () => {
 });
 
 it('PUT updates and returns the word', async () => {
-  mockUpdate.mockResolvedValueOnce({ id: 'lex_1', usage: 'retire' });
+  mockUpdate.mockResolvedValueOnce({ id: 'lex_1', usage: 'overused' });
+  const res = await PUT(req({ usage: 'overused' }), ctx());
+  expect(res.status).toBe(200);
+  expect((await res.json()).data.usage).toBe('overused');
+  expect(mockUpdate).toHaveBeenCalledWith('lex_1', { usage: 'overused' });
+});
+
+/**
+ * A retired vocabulary value must still be ACCEPTED and mapped forward rather
+ * than 400ing — an old browser tab, a replayed request, or a bookmarked bulk
+ * payload should not start failing the moment the taxonomy grows.
+ */
+it('PUT accepts a legacy usage value and migrates it before storing', async () => {
+  mockUpdate.mockResolvedValueOnce({ id: 'lex_1', usage: 'overused' });
   const res = await PUT(req({ usage: 'retire' }), ctx());
   expect(res.status).toBe(200);
-  expect((await res.json()).data.usage).toBe('retire');
-  expect(mockUpdate).toHaveBeenCalledWith('lex_1', { usage: 'retire' });
+  expect(mockUpdate).toHaveBeenCalledWith('lex_1', { usage: 'overused' });
+});
+
+it('PUT accepts a legacy register value and migrates it before storing', async () => {
+  mockUpdate.mockResolvedValueOnce({ id: 'lex_1', register: 'regional' });
+  const res = await PUT(req({ register: 'village' }), ctx());
+  expect(res.status).toBe(200);
+  expect(mockUpdate).toHaveBeenCalledWith('lex_1', { register: 'regional', registers: ['regional'] });
 });
 
 it('DELETE removes the word', async () => {

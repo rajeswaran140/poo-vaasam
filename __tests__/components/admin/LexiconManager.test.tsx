@@ -88,7 +88,11 @@ describe('LexiconManager — paste-import', () => {
     expect(bulk?.method).toBe('POST');
     const sent = JSON.parse(bulk!.body!).words;
     expect(sent).toHaveLength(2);
-    expect(sent[0]).toMatchObject({ word: 'நிலா', gloss: 'moon', register: 'sangam' });
+    // ⚠️ NOT 'sangam'. The paste form used to default to LEXICON_REGISTERS[0],
+    // which is how 1,046 of 1,047 live entries ended up filed as Sangam
+    // vocabulary without anyone claiming they were. The default is now the
+    // mildest available register.
+    expect(sent[0]).toMatchObject({ word: 'நிலா', gloss: 'moon', register: 'literary' });
     expect(sent[1]).toMatchObject({ word: 'கடல்', gloss: '—' });
   });
 });

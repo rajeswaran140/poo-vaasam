@@ -6,7 +6,7 @@
  * Kept pure so the parsing/escaping rules are unit-testable in isolation.
  */
 
-import { normalizeWord, type LexiconWordInput, type LexiconRegister, type LexiconUsage } from '@/types/lexicon';
+import { normalizeWord, type LexiconWordDraft, type LexiconRegister, type LexiconUsage } from '@/types/lexicon';
 
 export interface PasteOptions {
   register: LexiconRegister;
@@ -48,9 +48,9 @@ export function splitWordList(wordSide: string): string[] {
  * gloss becomes a placeholder the admin fills in later. `skipped` counts blank,
  * over-long (>60 char), and within-paste duplicate lines that were dropped.
  */
-export function parsePastedWords(text: string, opts: PasteOptions): { words: LexiconWordInput[]; skipped: number } {
+export function parsePastedWords(text: string, opts: PasteOptions): { words: LexiconWordDraft[]; skipped: number } {
   const seen = new Set<string>();
-  const words: LexiconWordInput[] = [];
+  const words: LexiconWordDraft[] = [];
   let skipped = 0;
 
   for (const rawLine of (text ?? '').split('\n')) {
@@ -103,17 +103,91 @@ export interface CsvRow {
   word: string;
   romanization?: string;
   gloss: string;
+  tamilMeaning?: string;
   register: string;
+  registers?: string[];
+  wordType?: string;
+  lexicalStatus?: string;
+  confidence?: string;
   usage: string;
   themes: string[];
+  moods?: string[];
+  synonyms?: string[];
+  relatedWords?: string[];
+  antonyms?: string[];
+  etukai?: string[];
+  monai?: string[];
+  poeticUsage?: string;
+  examples?: string[];
+  notes?: string;
 }
 
-/** Serialise rows to RFC-4180 CSV (header + quoted fields). */
+/**
+ * CSV column order. The FIRST SIX are frozen in this order — an export is a
+ * backup, and Raj has older files on disk that a re-import (or a spreadsheet
+ * he already built) reads positionally. New columns are appended, never
+ * inserted, so an old reader still finds word/gloss/register where it expects.
+ */
+const CSV_COLUMNS = [
+  'word',
+  'romanization',
+  'gloss',
+  'register',
+  'usage',
+  'themes',
+  'tamil_meaning',
+  'registers',
+  'word_type',
+  'lexical_status',
+  'confidence',
+  'moods',
+  'synonyms',
+  'related_words',
+  'antonyms',
+  'etukai',
+  'monai',
+  'poetic_usage',
+  'examples',
+  'notes',
+] as const;
+
+/**
+ * Serialise rows to RFC-4180 CSV (header + quoted fields).
+ *
+ * Multi-value fields join with a space, EXCEPT the ones whose members can
+ * themselves contain a space (examples are phrases): those join with ' | ',
+ * because `வைகறைத் தென்றல் வைகறை வானம்` is unsplittable on re-read.
+ */
 export function lexiconToCsv(rows: CsvRow[]): string {
   const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const header = ['word', 'romanization', 'gloss', 'register', 'usage', 'themes'].join(',');
+  const words = (v?: string[]) => (v ?? []).join(' ');
+  const phrases = (v?: string[]) => (v ?? []).join(' | ');
+
   const lines = rows.map((r) =>
-    [r.word, r.romanization ?? '', r.gloss, r.register, r.usage, (r.themes ?? []).join(' ')].map(esc).join(',')
+    [
+      r.word,
+      r.romanization ?? '',
+      r.gloss,
+      r.register,
+      r.usage,
+      words(r.themes),
+      r.tamilMeaning ?? '',
+      words(r.registers),
+      r.wordType ?? '',
+      r.lexicalStatus ?? '',
+      r.confidence ?? '',
+      words(r.moods),
+      words(r.synonyms),
+      words(r.relatedWords),
+      words(r.antonyms),
+      words(r.etukai),
+      words(r.monai),
+      r.poeticUsage ?? '',
+      phrases(r.examples),
+      r.notes ?? '',
+    ]
+      .map(esc)
+      .join(',')
   );
-  return [header, ...lines].join('\n');
+  return [CSV_COLUMNS.join(','), ...lines].join('\n');
 }
