@@ -7,6 +7,16 @@
  */
 
 const create = jest.fn();
+const generateContent = jest.fn();
+// ⚠️ MUST be module-scope `jest.mock`, not `jest.doMock` in a hook: the module
+// under test imports @google/genai at load time, so a doMock inside beforeAll
+// applies to nothing and the REAL SDK is used — the Gemini tests then pass for
+// the wrong reason (no mock ever called, assertions trivially satisfied).
+jest.mock('@google/genai', () => ({
+  __esModule: true,
+  GoogleGenAI: jest.fn().mockImplementation(() => ({ models: { generateContent } })),
+  FinishReason: {},
+}));
 jest.mock('@anthropic-ai/sdk', () => ({
   __esModule: true,
   default: jest.fn().mockImplementation(() => ({
@@ -671,5 +681,118 @@ describe('fifth-review guardrails', () => {
     await critiqueLyric(INPUT);
     expect(sys()).not.toMatch(/எதுகை\/மோனை\/இயைபு families/);
     expect(sys()).toMatch(/none of them is a classical prosodic classification/);
+  });
+});
+
+/**
+ * ENGINE SELECTION + FAILOVER — added 2026-08-14, the day Anthropic credit ran
+ * out mid-session and /admin/compose/critique stopped answering. The bug that
+ * made it hard to diagnose is pinned first: credit exhaustion arrives as HTTP
+ * **400**, so it used to fall through to "upstream" ("the AI service failed to
+ * respond") and read like an outage rather than a payment problem.
+ */
+describe('engine selection and failover', () => {
+  const ORIG = { engine: process.env.CRITIC_ENGINE, gem: process.env.GEMINI_API_KEY };
+  beforeEach(() => {
+    generateContent.mockReset();
+    delete process.env.CRITIC_ENGINE;
+    delete process.env.GEMINI_API_KEY;
+  });
+  afterAll(() => {
+    if (ORIG.engine === undefined) delete process.env.CRITIC_ENGINE; else process.env.CRITIC_ENGINE = ORIG.engine;
+    if (ORIG.gem === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = ORIG.gem;
+  });
+
+  const creditError = Object.assign(
+    new Error('400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}'),
+    { status: 400 },
+  );
+
+  it('CRITIC_ENGINE=gemini runs the critique on Gemini, not Anthropic', async () => {
+    // The headline behaviour: Raj can move the critic off Anthropic with an
+    // env var alone. Anthropic must not be called at all.
+    process.env.CRITIC_ENGINE = 'gemini';
+    process.env.GEMINI_API_KEY = 'gem-test';
+    generateContent.mockResolvedValueOnce({ text: JSON.stringify(CRITIQUE) });
+    const res = await critiqueLyric(INPUT);
+    expect(res.ok).toBe(true);
+    expect(generateContent).toHaveBeenCalledTimes(1);
+    expect(create).not.toHaveBeenCalled();
+    // Structured output, not prose: JSON mime + a converted responseSchema.
+    const cfg = generateContent.mock.calls[0][0].config;
+    expect(cfg.responseMimeType).toBe('application/json');
+    expect(cfg.responseSchema).toBeDefined();
+  });
+
+  it('fails over Gemini → Anthropic too, not just one direction', async () => {
+    process.env.CRITIC_ENGINE = 'gemini';
+    process.env.GEMINI_API_KEY = 'gem-test';
+    generateContent.mockRejectedValueOnce(Object.assign(new Error('429 quota'), { status: 429 }));
+    create.mockResolvedValueOnce(toolResponse(CRITIQUE));
+    const res = await critiqueLyric(INPUT);
+    expect(res.ok).toBe(true);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports credit exhaustion as `billing`, not `upstream`', async () => {
+    create.mockRejectedValueOnce(creditError);
+    const res = await critiqueLyric(INPUT);
+    expect(res).toMatchObject({ ok: false, code: 'billing' });
+    if (!res.ok) {
+      expect(res.error).toMatch(/out of credit/i);
+      expect(res.error).toMatch(/Plans & Billing|CRITIC_ENGINE=gemini/);
+    }
+  });
+
+  it('does NOT treat an ordinary 400 as billing', async () => {
+    create.mockRejectedValueOnce(Object.assign(new Error('400 malformed request'), { status: 400 }));
+    const res = await critiqueLyric(INPUT);
+    expect(res).toMatchObject({ ok: false, code: 'upstream' });
+  });
+
+  it('does not even ATTEMPT failover when the other engine has no key', async () => {
+    // ⚠️ Asserting "generateContent was not called" is NOT enough: callGemini
+    // short-circuits on a missing key, so that holds whether or not the guard
+    // exists. The guard's only observable effect is that no failover is
+    // announced — so that is what this pins.
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    create.mockRejectedValueOnce(creditError);
+    const res = await critiqueLyric(INPUT);
+    expect(warn.mock.calls.flat().join(' ')).not.toMatch(/failing over/i);
+    expect(generateContent).not.toHaveBeenCalled();
+    expect(res).toMatchObject({ ok: false, code: 'billing' });
+    warn.mockRestore();
+  });
+
+  it('DOES announce and attempt failover when the other engine is configured', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    process.env.GEMINI_API_KEY = 'gem-test';
+    create.mockRejectedValueOnce(creditError);
+    generateContent.mockResolvedValueOnce({ text: JSON.stringify(CRITIQUE) });
+    const res = await critiqueLyric(INPUT);
+    expect(warn.mock.calls.flat().join(' ')).toMatch(/failing over to gemini/i);
+    expect(res.ok).toBe(true);
+    warn.mockRestore();
+  });
+
+  it('keeps the PRIMARY error when the fallback also fails', async () => {
+    process.env.GEMINI_API_KEY = 'gem-test';
+    create.mockRejectedValueOnce(creditError);
+    generateContent.mockRejectedValueOnce(Object.assign(new Error('boom'), { status: 500 }));
+    const res = await critiqueLyric(INPUT);
+    // "out of credit" is the actionable one; a 500 from the fallback is noise.
+    expect(res).toMatchObject({ ok: false, code: 'billing' });
+  });
+
+  it('does not fail over on bad_response — a bad draft fails everywhere', async () => {
+    process.env.GEMINI_API_KEY = 'gem-test';
+    create.mockResolvedValueOnce({
+      stop_reason: 'end_turn',
+      usage: { input_tokens: 10, output_tokens: 10 },
+      content: [{ type: 'text', text: 'no tool block here' }],
+    });
+    const res = await critiqueLyric(INPUT);
+    expect(generateContent).not.toHaveBeenCalled();
+    expect(res).toMatchObject({ ok: false, code: 'bad_response' });
   });
 });

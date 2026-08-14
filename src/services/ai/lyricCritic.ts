@@ -22,6 +22,9 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI } from "@google/genai";
+import type { Schema } from "@google/genai";
+import { toGeminiSchema } from "@/services/ai/engines/toGeminiSchema";
 import { buildLyricProfile, profileGrounding } from "@/lib/lyric-profile";
 import {
   lyricCritiqueInputSchema,
@@ -37,6 +40,14 @@ export type { LyricCritiqueInput, LyricCritique } from "./lyricCriticSchema";
 // <parameter>-wrapped strings (→ schema-validation failure); 4.6 returns clean
 // arrays. Empirically confirmed on a full Tamil ballad critique.
 export const DEFAULT_MODEL = "claude-sonnet-4-6";
+
+/**
+ * Gemini's critic model. 2.5 **Pro**, not Flash: the critic reasons about Tamil
+ * prosody, எதுகை/மோனை and gamaka placement, which is the opposite of the cheap
+ * high-volume work `text-engine.ts` runs on Flash. Override with
+ * CRITIC_GEMINI_MODEL.
+ */
+export const DEFAULT_GEMINI_CRITIC_MODEL = "gemini-2.5-pro";
 // A rich Tamil critique (strengths + observations + slack lines + word ideas +
 // questions) is token-dense; match the Composer's 6000 ceiling for headroom.
 const MAX_OUTPUT_TOKENS = 6000;
@@ -94,6 +105,14 @@ export type LyricCritiqueErrorCode =
   | "auth"
   | "rate_limit"
   | "upstream"
+  /**
+   * The account has no credit. Anthropic returns this as HTTP **400**
+   * (invalid_request_error), not 402/403, so it used to fall through to
+   * "upstream" and surface as "The AI service failed to respond" — which sent
+   * Raj looking for an outage when the real fix was a payment. Distinct code,
+   * distinct message.
+   */
+  | "billing"
   | "bad_response";
 
 export type LyricCritiqueResult =
@@ -103,6 +122,8 @@ export type LyricCritiqueResult =
 export interface LyricCritiqueOptions {
   /** Override the model (e.g. Haiku as a faster fallback). */
   model?: string;
+  /** Force an engine ("anthropic" | "gemini"); otherwise CRITIC_ENGINE env. */
+  engine?: string;
   /** Abort signal — cancels the upstream call on client disconnect / supersede. */
   signal?: AbortSignal;
   /**
@@ -159,24 +180,44 @@ function getClient(): Anthropic | null {
   return new Anthropic({ apiKey: key, maxRetries: 0 });
 }
 
-export async function critiqueLyric(
-  input: unknown,
-  options: LyricCritiqueOptions = {},
-): Promise<LyricCritiqueResult> {
-  const { model = DEFAULT_MODEL, signal, lexicon } = options;
+function geminiKey(): string | undefined {
+  const k = process.env.GEMINI_API_KEY;
+  return k && k !== "dummy-key-for-build" ? k : undefined;
+}
 
-  // Validate here too (defence in depth — the route also validates), so the
-  // service is safe to call standalone and never sends junk upstream.
-  const parseInput = lyricCritiqueInputSchema.safeParse(input);
-  if (!parseInput.success) {
-    return {
-      ok: false,
-      code: "invalid_input",
-      error: parseInput.error.issues[0]?.message || "Invalid input",
-    };
-  }
-  const draft = parseInput.data;
+export type CriticEngineId = "anthropic" | "gemini";
 
+/** Explicit arg → CRITIC_ENGINE env → anthropic. */
+export function selectedCriticEngine(explicit?: string): CriticEngineId {
+  const id = (explicit || process.env.CRITIC_ENGINE || "anthropic")
+    .trim()
+    .toLowerCase();
+  return id === "gemini" ? "gemini" : "anthropic";
+}
+
+/**
+ * Failures where a DIFFERENT engine could plausibly succeed. `bad_response` and
+ * `invalid_input` are excluded on purpose: a malformed critique or a bad draft
+ * will fail identically everywhere, and retrying just burns the second key.
+ */
+const FAILOVER_CODES: ReadonlySet<LyricCritiqueErrorCode> = new Set([
+  "auth",
+  "billing",
+  "rate_limit",
+  "upstream",
+  "not_configured",
+]);
+
+/** Raw structured args from one engine, before Zod validation. */
+type RawCall =
+  | { ok: true; args: unknown }
+  | { ok: false; code: LyricCritiqueErrorCode; error: string };
+
+async function callAnthropic(
+  prompt: string,
+  model: string,
+  signal?: AbortSignal,
+): Promise<RawCall> {
   const client = getClient();
   if (!client) {
     return {
@@ -185,7 +226,6 @@ export async function critiqueLyric(
       error: "AI is not configured (ANTHROPIC_API_KEY missing).",
     };
   }
-
   const startedAt = Date.now();
   let res: Anthropic.Messages.Message;
   try {
@@ -206,7 +246,7 @@ export async function critiqueLyric(
         ],
         // Force the model to answer via the tool — guarantees structured args.
         tool_choice: { type: "tool", name: TOOL_NAME },
-        messages: [{ role: "user", content: buildCritiquePrompt(draft, lexicon) }],
+        messages: [{ role: "user", content: prompt }],
       },
       { signal, timeout: REQUEST_TIMEOUT_MS },
     );
@@ -217,7 +257,18 @@ export async function critiqueLyric(
       `[ai/lyric-critic] Anthropic call failed (status=${status ?? "n/a"}, ms=${Date.now() - startedAt}):`,
       detail,
     );
-
+    // ⚠️ CREDIT EXHAUSTION ARRIVES AS 400, NOT 402/403. Observed verbatim
+    // 2026-08-14: {"type":"invalid_request_error","message":"Your credit
+    // balance is too low to access the Anthropic API."} Matching on 400 +
+    // the phrase keeps a genuine malformed-request 400 out of this branch.
+    if (status === 400 && /credit balance is too low/i.test(detail)) {
+      return {
+        ok: false,
+        code: "billing",
+        error:
+          "The Claude account is out of credit. Top up at console.anthropic.com → Plans & Billing, or set CRITIC_ENGINE=gemini.",
+      };
+    }
     if (status === 401 || status === 403) {
       return {
         ok: false,
@@ -241,13 +292,13 @@ export async function critiqueLyric(
     };
   }
 
-  const elapsedMs = Date.now() - startedAt;
   const outputTokens = res.usage?.output_tokens ?? 0;
   console.info(
     "[ai/lyric-critic] complete",
     JSON.stringify({
+      engine: "anthropic",
       model,
-      ms: elapsedMs,
+      ms: Date.now() - startedAt,
       inputTokens: res.usage?.input_tokens ?? 0,
       outputTokens,
       stopReason: res.stop_reason,
@@ -280,11 +331,155 @@ export async function critiqueLyric(
       error: "The AI returned an unexpected format. Please try again.",
     };
   }
+  return { ok: true, args: toolUse.input };
+}
 
-  const parsed = lyricCritiqueOutputSchema.safeParse(toolUse.input);
+/**
+ * Gemini's equivalent of Claude's forced tool use is STRUCTURED OUTPUT:
+ * `responseMimeType: 'application/json'` + a `responseSchema`. Same contract,
+ * different mechanism — the caller Zod-validates either engine's args with the
+ * identical schema, so the critique shape stays engine-independent.
+ *
+ * The critic's JSON Schema goes through `toGeminiSchema` first: Gemini accepts
+ * only an OpenAPI subset (no $defs/$ref, no minItems/minLength) and wants
+ * uppercase type names.
+ */
+async function callGemini(
+  prompt: string,
+  signal?: AbortSignal,
+): Promise<RawCall> {
+  const key = geminiKey();
+  if (!key) {
+    return {
+      ok: false,
+      code: "not_configured",
+      error: "AI is not configured (GEMINI_API_KEY missing).",
+    };
+  }
+  const model = process.env.CRITIC_GEMINI_MODEL || DEFAULT_GEMINI_CRITIC_MODEL;
+  const startedAt = Date.now();
+  try {
+    const ai = new GoogleGenAI({ apiKey: key });
+    const res = await ai.models.generateContent({
+      model,
+      contents: prompt,
+      config: {
+        systemInstruction: SYSTEM_PROMPT,
+        responseMimeType: "application/json",
+        responseSchema: toGeminiSchema(
+          lyricCritiqueOutputJsonSchema as Record<string, unknown>,
+        ) as Schema,
+        temperature: TEMPERATURE,
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
+        ...(signal ? { abortSignal: signal } : {}),
+      },
+    });
+    console.info(
+      "[ai/lyric-critic] complete",
+      JSON.stringify({ engine: "gemini", model, ms: Date.now() - startedAt }),
+    );
+    const text = (res.text ?? "").trim();
+    if (!text) {
+      return {
+        ok: false,
+        code: "bad_response",
+        error: "The AI returned an empty response. Please try again.",
+      };
+    }
+    try {
+      return { ok: true, args: JSON.parse(text) };
+    } catch {
+      console.error("[ai/lyric-critic] gemini returned non-JSON despite responseSchema");
+      return {
+        ok: false,
+        code: "bad_response",
+        error: "The AI returned an unexpected format. Please try again.",
+      };
+    }
+  } catch (err) {
+    const status = (err as { status?: number })?.status;
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error(
+      `[ai/lyric-critic] Gemini call failed (status=${status ?? "n/a"}, ms=${Date.now() - startedAt}):`,
+      detail,
+    );
+    // AI Studio returns an invalid key as 400 API_KEY_INVALID, not 401.
+    if (status === 401 || status === 403 || (status === 400 && /api[\s_-]?key/i.test(detail))) {
+      return {
+        ok: false,
+        code: "auth",
+        error: "The Gemini API key is invalid, expired, or lacks access. Update GEMINI_API_KEY.",
+      };
+    }
+    if (status === 429) {
+      return {
+        ok: false,
+        code: "rate_limit",
+        error: "The AI service is rate-limited right now. Please retry in a moment.",
+      };
+    }
+    return {
+      ok: false,
+      code: "upstream",
+      error: "The AI service failed to respond. Please try again.",
+    };
+  }
+}
+
+export async function critiqueLyric(
+  input: unknown,
+  options: LyricCritiqueOptions = {},
+): Promise<LyricCritiqueResult> {
+  const { model = DEFAULT_MODEL, signal, lexicon, engine } = options;
+
+  // Validate here too (defence in depth — the route also validates), so the
+  // service is safe to call standalone and never sends junk upstream.
+  const parseInput = lyricCritiqueInputSchema.safeParse(input);
+  if (!parseInput.success) {
+    return {
+      ok: false,
+      code: "invalid_input",
+      error: parseInput.error.issues[0]?.message || "Invalid input",
+    };
+  }
+  const draft = parseInput.data;
+  const prompt = buildCritiquePrompt(draft, lexicon);
+
+  const primary = selectedCriticEngine(engine);
+  const run = (id: CriticEngineId): Promise<RawCall> =>
+    id === "gemini" ? callGemini(prompt, signal) : callAnthropic(prompt, model, signal);
+
+  let raw = await run(primary);
+
+  /**
+   * FAIL OVER TO THE OTHER ENGINE when the primary is unusable rather than
+   * merely unhappy with this draft. Written the day Anthropic credit ran out
+   * mid-session (2026-08-14) — without this the critic simply stops until
+   * someone notices and pays. The fallback is only attempted when the other
+   * engine actually has a key, so a single-engine install behaves exactly as
+   * before and nothing silently changes provider.
+   */
+  if (!raw.ok && FAILOVER_CODES.has(raw.code)) {
+    const secondary: CriticEngineId = primary === "gemini" ? "anthropic" : "gemini";
+    const secondaryConfigured =
+      secondary === "gemini" ? !!geminiKey() : !!process.env.ANTHROPIC_API_KEY;
+    if (secondaryConfigured) {
+      console.warn(
+        `[ai/lyric-critic] ${primary} unusable (${raw.code}) — failing over to ${secondary}`,
+      );
+      const retry = await run(secondary);
+      // Keep the FIRST error if the fallback also fails: the primary's reason
+      // (e.g. "out of credit") is the one that tells Raj what to fix.
+      if (retry.ok) raw = retry;
+    }
+  }
+
+  if (!raw.ok) return { ok: false, code: raw.code, error: raw.error };
+
+  const parsed = lyricCritiqueOutputSchema.safeParse(raw.args);
   if (!parsed.success) {
     console.error(
-      "[ai/lyric-critic] tool output failed schema validation:",
+      "[ai/lyric-critic] output failed schema validation:",
       parsed.error.issues
         .map((i) => `${i.path.join(".")}: ${i.message}`)
         .join("; "),
