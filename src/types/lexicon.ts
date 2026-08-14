@@ -50,9 +50,46 @@ const registerSchema = z.enum(LEXICON_REGISTERS);
 const usageSchema = z.enum(LEXICON_USAGES);
 const themesSchema = z.array(z.string().trim().min(1).max(40)).max(12);
 
+/**
+ * A headword is ONE word. Reject list separators.
+ *
+ * ⚠️ THIS SHIPPED WITHOUT THE GUARD AND A REAL ENTRY GOT IN (2026-08-14):
+ * `பொற்கதிர், இளங்கதிர், செங்கதிர்,கதிரொளி,பொற்சுடர்` with gloss "Sun" — five
+ * genuine synonyms crammed into one field, which `z.string().max(60)` happily
+ * accepted. The damage is not cosmetic:
+ *   - `lexiconHints` emits `word — gloss [register]`, so the Lyric Critic saw
+ *     the whole comma list as ONE vocabulary item — exactly the input most
+ *     likely to trigger the overfitting the critic prompt already warns about.
+ *   - `normalizeWord` dedupes on the whole string, so adding `பொற்கதிர்` alone
+ *     later would NOT be caught as a duplicate.
+ *   - GSI1SK is the word, so the index sorts on the blob.
+ *
+ * The capability he wanted already exists — `/api/admin/lexicon/bulk` takes up
+ * to 50 words in one call — so the message points there rather than just
+ * refusing.
+ */
+export const WORD_SEPARATORS = /[,;/|、，]/;
+
+export function headwordIssue(word: string): string | null {
+  if (WORD_SEPARATORS.test(word)) {
+    return 'A headword must be a single word. To add several at once, use the bulk endpoint (one entry per word) so each stays searchable and de-duplicated.';
+  }
+  return null;
+}
+
+const headwordSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(60)
+  .refine((w) => !WORD_SEPARATORS.test(w), {
+    message:
+      'A headword must be a single word. To add several at once, use the bulk endpoint (one entry per word) so each stays searchable and de-duplicated.',
+  });
+
 /** A single word as created/accepted (also the shape the AI suggester emits). */
 export const lexiconWordInputSchema = z.object({
-  word: z.string().trim().min(1).max(60),
+  word: headwordSchema,
   romanization: z.string().trim().max(80).optional(),
   gloss: z.string().trim().min(1).max(400),
   register: registerSchema,
@@ -65,7 +102,7 @@ export type LexiconWordInput = z.infer<typeof lexiconWordInputSchema>;
 /** Partial update — every field optional; word can be corrected too. */
 export const lexiconWordUpdateSchema = z
   .object({
-    word: z.string().trim().min(1).max(60),
+    word: headwordSchema,
     romanization: z.string().trim().max(80).nullable(),
     gloss: z.string().trim().min(1).max(400),
     register: registerSchema,
