@@ -8,7 +8,7 @@
  * sidesteps the client-entry serializable-props rule.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export interface Pagination<T> {
   page: number;
@@ -19,8 +19,24 @@ export interface Pagination<T> {
   total: number;
 }
 
-export function usePagination<T>(rows: T[], pageSize = 25): Pagination<T> {
+/**
+ * @param resetKey change this to jump back to page 1 — pass whatever defines
+ * the current result SET (filters, search text). Clamping alone is not enough:
+ * with 247 rows, searching from page 7 leaves you on the LAST page of the new
+ * matches, which reads as "my search found nothing near the top". Optional, so
+ * existing callers keep their behaviour exactly.
+ */
+export function usePagination<T>(rows: T[], pageSize = 25, resetKey?: unknown): Pagination<T> {
   const [page, setPage] = useState(0);
+  // The dependency array already gates this: it fires on mount (a no-op, page
+  // is 0) and thereafter only when the key actually changes. An earlier version
+  // also tracked the previous key in a ref and compared it — mutation testing
+  // showed neither the ref nor an `undefined` guard could change any outcome,
+  // so both were removed rather than left as untestable code.
+  useEffect(() => {
+    setPage(0);
+  }, [resetKey]);
+
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const clamped = Math.min(page, totalPages - 1);
   const pageRows = rows.slice(clamped * pageSize, clamped * pageSize + pageSize);
