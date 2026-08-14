@@ -24,7 +24,26 @@ const SEP = /^(.+?)(?:\s+[—–-]\s+|\s*[|=:\t]\s*)(.+)$/;
 export const GLOSS_PLACEHOLDER = '—';
 
 /**
- * Parse pasted text (one word per line) into deduped, create-ready inputs.
+ * Split one pasted/typed line into candidate words.
+ *
+ * ⚠️ NEWLINES ALONE ARE NOT ENOUGH — that assumption put a real blob in the
+ * database. On 2026-08-14 Raj pasted `பொற்கதிர், இளங்கதிர், செங்கதிர்,கதிரொளி,
+ * பொற்சுடர்` (five synonyms for "sun"), which is ONE line, so it became ONE
+ * entry 49 characters long. People paste comma-separated lists because that is
+ * how word families are written down.
+ *
+ * The gloss separator is matched FIRST by the caller, so `நிலா — moon, sky`
+ * keeps "moon, sky" intact as a gloss; only the WORD side is split here.
+ */
+export const LIST_SEPARATORS = /[,;、，]/;
+
+export function splitWordList(wordSide: string): string[] {
+  return wordSide.split(LIST_SEPARATORS).map((w) => w.trim()).filter(Boolean);
+}
+
+/**
+ * Parse pasted or typed text into deduped, create-ready inputs. Words may be
+ * separated by newlines AND/OR commas — `a, b` and `a\nb` both yield two.
  * Register/usage/themes from the panel apply to every parsed word; a missing
  * gloss becomes a placeholder the admin fills in later. `skipped` counts blank,
  * over-long (>60 char), and within-paste duplicate lines that were dropped.
@@ -39,20 +58,23 @@ export function parsePastedWords(text: string, opts: PasteOptions): { words: Lex
     if (!line) continue;
 
     const m = SEP.exec(line);
-    const word = (m ? m[1] : line).trim();
+    const wordSide = (m ? m[1] : line).trim();
     const gloss = (m ? m[2].trim() : '') || GLOSS_PLACEHOLDER;
 
-    if (!word || word.length > 60) {
-      skipped++;
-      continue;
+    // One line can carry a whole word family; they share the line's gloss.
+    for (const word of splitWordList(wordSide)) {
+      if (!word || word.length > 60) {
+        skipped++;
+        continue;
+      }
+      const key = normalizeWord(word);
+      if (seen.has(key)) {
+        skipped++;
+        continue;
+      }
+      seen.add(key);
+      words.push({ word, gloss, register: opts.register, usage: opts.usage, themes: opts.themes });
     }
-    const key = normalizeWord(word);
-    if (seen.has(key)) {
-      skipped++;
-      continue;
-    }
-    seen.add(key);
-    words.push({ word, gloss, register: opts.register, usage: opts.usage, themes: opts.themes });
   }
 
   return { words, skipped };

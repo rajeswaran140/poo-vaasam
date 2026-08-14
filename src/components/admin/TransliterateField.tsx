@@ -25,6 +25,12 @@ interface TransliterateFieldProps {
   className?: string;
   required?: boolean;
   lang?: string;
+  /**
+   * Accessible name. The field renders a bare <input>/<textarea> with no
+   * visible <label>, so without this a screen reader announces an unnamed
+   * combobox — and any test querying by label cannot reach it.
+   */
+  ariaLabel?: string;
 }
 
 export function TransliterateField({
@@ -36,6 +42,7 @@ export function TransliterateField({
   className = '',
   required = false,
   lang = 'ta',
+  ariaLabel,
 }: TransliterateFieldProps) {
   const ref = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const [candidates, setCandidates] = useState<string[]>([]);
@@ -151,6 +158,7 @@ export function TransliterateField({
     onBlur: () => setTimeout(close, 120), // allow click-to-select before closing
     placeholder,
     required,
+    ...(ariaLabel ? { 'aria-label': ariaLabel } : {}),
     'aria-autocomplete': 'list' as const,
     'aria-expanded': open,
     'aria-controls': open ? listId : undefined,
