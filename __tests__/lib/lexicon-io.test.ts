@@ -64,9 +64,37 @@ describe('lexiconToCsv', () => {
   it('emits a header and one quoted row per word', () => {
     const csv = lexiconToCsv(rows);
     const lines = csv.split('\n');
-    expect(lines[0]).toBe('word,romanization,gloss,register,usage,themes');
-    expect(lines[1]).toBe('"நிலா","nila","moon","sangam","fresh","love nature"');
-    expect(lines[2]).toBe('"கடல்","","sea","literary","neutral",""');
+    // The first six columns are frozen in order — an export is a backup, and
+    // older files / spreadsheets read them positionally.
+    expect(lines[0].startsWith('word,romanization,gloss,register,usage,themes,')).toBe(true);
+    expect(lines[1].startsWith('"நிலா","nila","moon","sangam","fresh","love nature",')).toBe(true);
+    expect(lines[2].startsWith('"கடல்","","sea","literary","neutral",""')).toBe(true);
+  });
+
+  it('exports the literary metadata, and joins phrases on | so they survive a re-read', () => {
+    const csv = lexiconToCsv([
+      {
+        word: 'வைகறை',
+        gloss: 'dawn',
+        tamilMeaning: 'பொழுது புலரும் அதிகாலை நேரம்',
+        register: 'literary',
+        registers: ['literary', 'classical'],
+        wordType: 'noun',
+        lexicalStatus: 'established-literary',
+        confidence: 'high',
+        usage: 'fresh',
+        themes: ['dawn'],
+        synonyms: ['புலரி', 'விடியல்'],
+        examples: ['வைகறைத் தென்றல்', 'வைகறை வானம்'],
+      },
+    ]);
+    const row = csv.split('\n')[1];
+    expect(row).toContain('"பொழுது புலரும் அதிகாலை நேரம்"');
+    expect(row).toContain('"literary classical"');
+    expect(row).toContain('"established-literary"');
+    expect(row).toContain('"புலரி விடியல்"');
+    // Space-joining these two phrases would make them unsplittable on re-read.
+    expect(row).toContain('"வைகறைத் தென்றல் | வைகறை வானம்"');
   });
 
   it('escapes embedded double-quotes (RFC 4180)', () => {
@@ -75,7 +103,9 @@ describe('lexiconToCsv', () => {
   });
 
   it('handles an empty list (header only)', () => {
-    expect(lexiconToCsv([])).toBe('word,romanization,gloss,register,usage,themes');
+    const header = lexiconToCsv([]);
+    expect(header.split('\n')).toHaveLength(1);
+    expect(header.startsWith('word,romanization,gloss,register,usage,themes,')).toBe(true);
   });
 });
 

@@ -23,6 +23,8 @@
  */
 
 import { countSyllables, analyzeGamaka } from '@/lib/tamil-prosody';
+import { WORN_USAGES } from '@/types/lexicon';
+import { migrateUsage } from '@/lib/lexicon-migrate';
 import type { LexiconWord } from '@/types/lexicon';
 
 export interface WordSingability {
@@ -90,7 +92,7 @@ export const DEFAULT_CANDIDATE_LIMIT = 8;
  *     only kind that can be tried without re-reading the whole verse.
  *  2. theme overlap, then register match.
  *  3. `usage: 'fresh'` ahead of neutral — the lexicon marks words he wants to
- *     use more; `retire` and archived are excluded outright, because the whole
+ *     use more; worn (`overused`/`avoid`) and archived are excluded outright, because the whole
  *     point of marking a word retired is not to be offered it again.
  *
  * The selected word itself is never returned.
@@ -107,7 +109,7 @@ export function lexiconCandidates(
   const selNorm = sel.normalize('NFC');
 
   const scored = lexicon
-    .filter((w) => !w.archived && w.usage !== 'retire')
+    .filter((w) => !w.archived && !WORN_USAGES.includes(migrateUsage(w.usage)))
     .filter((w) => w.word.normalize('NFC') !== selNorm)
     .map((w) => {
       const syllables = countSyllables(w.word);

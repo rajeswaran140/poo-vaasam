@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { LexiconRepository } from '@/infrastructure/database/LexiconRepository';
 import { lexiconWordInputSchema, normalizeWord } from '@/types/lexicon';
+import { searchLexicon, lexiconCounts } from '@/lib/lexicon-search';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,23 +21,26 @@ export async function GET(request: NextRequest) {
   }
 
   const sp = request.nextUrl.searchParams;
-  const register = sp.get('register') || undefined;
-  const usage = sp.get('usage') || undefined;
-  const theme = sp.get('theme') || undefined;
-  const q = (sp.get('q') || '').normalize('NFC').trim().toLowerCase();
-  const includeArchived = sp.get('archived') === 'true';
+  const filters = {
+    register: sp.get('register') || undefined,
+    usage: sp.get('usage') || undefined,
+    theme: sp.get('theme') || undefined,
+    wordType: sp.get('wordType') || undefined,
+    lexicalStatus: sp.get('lexicalStatus') || undefined,
+    confidence: sp.get('confidence') || undefined,
+    mood: sp.get('mood') || undefined,
+    includeArchived: sp.get('archived') === 'true',
+  };
 
   try {
     const all = await new LexiconRepository().findAll();
-    const data = all.filter((w) => {
-      if (!includeArchived && w.archived) return false;
-      if (register && w.register !== register) return false;
-      if (usage && w.usage !== usage) return false;
-      if (theme && !w.themes.includes(theme)) return false;
-      if (q && !(`${w.word} ${w.romanization ?? ''} ${w.gloss}`.toLowerCase().includes(q))) return false;
-      return true;
-    });
-    return NextResponse.json({ success: true, data, total: data.length });
+    // Search runs over the WHOLE lexicon so relation expansion can see entries
+    // the filters exclude, then the filters are applied inside searchLexicon.
+    const data = searchLexicon(all, sp.get('q') || '', filters);
+    // Counts describe the whole lexicon, not the current page or filter — they
+    // are the header strip ("1,047 words · 96 sangam"), which would be useless
+    // if it changed every time a filter narrowed the table.
+    return NextResponse.json({ success: true, data, total: data.length, counts: lexiconCounts(all) });
   } catch (err) {
     console.error('[GET /api/admin/lexicon] failed', err);
     return NextResponse.json({ success: false, error: 'Failed to load lexicon' }, { status: 500 });

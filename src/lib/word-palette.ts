@@ -3,11 +3,12 @@
  *
  * Pure, deterministic, no I/O and NO LLM — the payoff is at the moment of
  * writing: offer `fresh` lexicon words to draw from, and lint the lyrics draft
- * for `retire`-flagged (overused) words. Kept separate from the UI so the
+ * for worn (`overused` / `avoid`) words. Kept separate from the UI so the
  * selection + tokenisation rules are unit-testable.
  */
 
-import { normalizeWord } from '@/types/lexicon';
+import { normalizeWord, WORN_USAGES } from '@/types/lexicon';
+import { migrateUsage } from '@/lib/lexicon-migrate';
 
 export interface PaletteWord {
   word: string;
@@ -22,20 +23,31 @@ export interface PaletteWord {
 export interface PaletteFilters {
   register?: string;
   theme?: string;
-  /** Include `neutral` words alongside `fresh` ones (default: fresh only). */
+  /**
+   * Widen the palette beyond `fresh` to the un-worn middle (`normal`,
+   * `familiar`). Named for what it does rather than for a usage value, since
+   * the old single `neutral` value is now two.
+   */
   includeNeutral?: boolean;
 }
 
 /**
- * Words to OFFER while writing: never archived, never `retire`; `fresh` by
- * default (optionally `neutral` too), narrowed by register/theme.
+ * Words to OFFER while writing: never archived, never worn; `fresh` by default
+ * (optionally the un-worn middle too), narrowed by register/theme.
+ *
+ * ⚠️ Usage is mapped forward before comparison. A caller holding a row read
+ * outside the repository (a fixture, a cached payload written under the old
+ * vocabulary) would otherwise carry `retire`, which matches none of the current
+ * values — and would be silently OFFERED as a fresh word, the exact inversion
+ * of what the flag means.
  */
 export function buildPalette<T extends PaletteWord>(words: T[], filters: PaletteFilters = {}): T[] {
   const { register, theme, includeNeutral = false } = filters;
   return words.filter((w) => {
     if (w.archived) return false;
-    if (w.usage === 'retire') return false;
-    if (!includeNeutral && w.usage !== 'fresh') return false;
+    const usage = migrateUsage(w.usage);
+    if (WORN_USAGES.includes(usage)) return false;
+    if (!includeNeutral && usage !== 'fresh') return false;
     if (register && w.register !== register) return false;
     if (theme && !w.themes.includes(theme)) return false;
     return true;
@@ -52,7 +64,7 @@ export function tokenizeLyrics(text: string): string[] {
 }
 
 export interface DraftAnalysis<T> {
-  /** Distinct `retire`-flagged lexicon words present in the draft — swap these. */
+  /** Distinct worn (`overused` / `avoid`) words present in the draft — swap these. */
   overused: T[];
   /** Distinct `fresh` lexicon words the draft already uses — encouragement. */
   freshUsed: T[];
@@ -75,8 +87,9 @@ export function analyzeDraft<T extends PaletteWord>(lyrics: string, words: T[]):
   const freshUsed: T[] = [];
   for (const w of words) {
     if (w.archived || !present(w.word)) continue;
-    if (w.usage === 'retire') overused.push(w);
-    else if (w.usage === 'fresh') freshUsed.push(w);
+    const usage = migrateUsage(w.usage);
+    if (WORN_USAGES.includes(usage)) overused.push(w);
+    else if (usage === 'fresh') freshUsed.push(w);
   }
   return { overused, freshUsed };
 }
