@@ -42,12 +42,23 @@ export type { LyricCritiqueInput, LyricCritique } from "./lyricCriticSchema";
 export const DEFAULT_MODEL = "claude-sonnet-4-6";
 
 /**
- * Gemini's critic model. 2.5 **Pro**, not Flash: the critic reasons about Tamil
- * prosody, எதுகை/மோனை and gamaka placement, which is the opposite of the cheap
- * high-volume work `text-engine.ts` runs on Flash. Override with
- * CRITIC_GEMINI_MODEL.
+ * Gemini's critic model — a PRO tier, not Flash: the critic reasons about Tamil
+ * prosody, எதுகை/மோனை and gamaka placement, the opposite of the cheap
+ * high-volume work `text-engine.ts` runs on Flash.
+ *
+ * ⚠️ NOT `gemini-2.5-pro`. It is still LISTED by models.list but refuses
+ * generateContent with 404 "no longer available to new users" (verified
+ * 2026-08-14 against the live key) — listed for legacy callers, closed to new
+ * projects. Probing the key found three that actually answer:
+ * `gemini-3.1-pro-preview`, `gemini-3-flash-preview`, `gemini-2.5-flash`.
+ *
+ * ⚠️ This default is a PREVIEW model, chosen for critique quality. Preview
+ * models can be rate-limited or withdrawn at short notice, and because the
+ * failover partner (Anthropic) is currently out of credit, a Gemini failure is
+ * a full outage. If it flakes, `CRITIC_GEMINI_MODEL=gemini-2.5-flash` is the
+ * proven-stable fallback — it is what mobily.ca runs in production on this key.
  */
-export const DEFAULT_GEMINI_CRITIC_MODEL = "gemini-2.5-pro";
+export const DEFAULT_GEMINI_CRITIC_MODEL = "gemini-3.1-pro-preview";
 // A rich Tamil critique (strengths + observations + slack lines + word ideas +
 // questions) is token-dense; match the Composer's 6000 ceiling for headroom.
 const MAX_OUTPUT_TOKENS = 6000;
