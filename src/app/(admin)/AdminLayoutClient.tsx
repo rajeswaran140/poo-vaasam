@@ -391,6 +391,14 @@ export default function AdminLayoutClient({
                 Music Lab
               </NavLink>
               <NavLink
+                href="/admin/music-lab/theory"
+                icon={Music}
+                collapsed={collapsed}
+                active={pathname.startsWith("/admin/music-lab/theory")}
+              >
+                Composition & Theory
+              </NavLink>
+              <NavLink
                 href="/admin/mastering"
                 icon={SlidersHorizontal}
                 collapsed={collapsed}
