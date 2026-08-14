@@ -11,6 +11,7 @@ import { useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { adminFetch } from '@/lib/client-auth';
 import { TransliterateField } from '@/components/admin/TransliterateField';
+import { usePagination, PAGER_BTN } from '@/components/admin/Pager';
 import { LEXICON_REGISTERS, LEXICON_USAGES, LEXICON_THEMES } from '@/types/lexicon';
 import { parsePastedWords, lexiconToCsv, chunkForBulk } from '@/lib/lexicon-io';
 
@@ -93,6 +94,13 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
     });
   }, [words, fRegister, fUsage, fTheme, q, showArchived]);
 
+  // Reset to page 1 whenever the RESULT SET changes, not just when it shrinks.
+  const { page, setPage, totalPages, pageRows, total } = usePagination(
+    visible,
+    50,
+    `${fRegister}|${fUsage}|${fTheme}|${q}|${showArchived}`
+  );
+
   const reload = async () => {
     const res = await adminFetch('/api/admin/lexicon?archived=true');
     if (res.ok) {
@@ -164,7 +172,7 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> archived
         </label>
         <div className="ml-auto flex items-center gap-2 text-gray-400">
-          <span>{visible.length} words</span>
+          <span>{total} words{totalPages > 1 ? ` · showing ${page * 50 + 1}–${Math.min((page + 1) * 50, total)}` : ''}</span>
           <button onClick={exportCsv} className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 dark:border-gray-600">Export CSV</button>
           <button onClick={exportJson} className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 dark:border-gray-600">JSON</button>
         </div>
@@ -183,7 +191,7 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-            {visible.map((w) =>
+            {pageRows.map((w) =>
               editingId === w.id ? (
                 <tr key={w.id}>
                   <td colSpan={6} className="px-3 py-2">
@@ -222,10 +230,17 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
               )
             )}
             {visible.length === 0 && (
-              <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-400">No words. Add one or use AI suggest.</td></tr>
+              <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-400">{words.length ? 'No words match these filters.' : 'No words. Add one or use AI suggest.'}</td></tr>
             )}
           </tbody>
         </table>
+        {totalPages > 1 && (
+          <nav className="flex items-center justify-end gap-2 border-t border-gray-100 px-3 py-2 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400" aria-label="Pagination">
+            <span>Page {page + 1} of {totalPages} · {total} words</span>
+            <button type="button" className={PAGER_BTN} onClick={() => setPage(page - 1)} disabled={page === 0}>← Prev</button>
+            <button type="button" className={PAGER_BTN} onClick={() => setPage(page + 1)} disabled={page >= totalPages - 1}>Next →</button>
+          </nav>
+        )}
       </div>
     </div>
   );
