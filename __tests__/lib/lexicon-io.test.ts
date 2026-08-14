@@ -1,5 +1,5 @@
-import { lexiconWordInputSchema, lexiconWordUpdateSchema, headwordIssue } from '@/types/lexicon';
-import { parsePastedWords, lexiconToCsv, GLOSS_PLACEHOLDER, splitWordList } from '@/lib/lexicon-io';
+import { lexiconWordInputSchema, lexiconWordUpdateSchema, headwordIssue, lexiconBulkSchema } from '@/types/lexicon';
+import { parsePastedWords, lexiconToCsv, GLOSS_PLACEHOLDER, splitWordList, chunkForBulk, BULK_MAX_WORDS } from '@/lib/lexicon-io';
 
 const OPTS = { register: 'sangam' as const, usage: 'fresh' as const, themes: ['love'] };
 
@@ -182,5 +182,56 @@ describe('headword must be a single word', () => {
   it('headwordIssue() explains the problem for UI use', () => {
     expect(headwordIssue('பொற்கதிர், இளங்கதிர்')).toMatch(/single word/i);
     expect(headwordIssue('பொற்கதிர்')).toBeNull();
+  });
+});
+
+/**
+ * BULK CHUNKING — the reason a correct parse still failed to import.
+ *
+ * Raj's nature list (2026-08-14) was 55 lines which, once comma-splitting
+ * landed, parsed to 153 words — all valid, none skipped. The UI posted them as
+ * ONE request and `lexiconBulkSchema` rejected the batch whole with "Too big:
+ * expected array to have <=50 items". The parse improvement made the import
+ * fail; nothing was saved.
+ */
+describe('chunkForBulk', () => {
+  const words = (n: number) => Array.from({ length: n }, (_, i) => `w${i}`);
+
+  it('splits a 153-word paste into batches the API will accept', () => {
+    const c = chunkForBulk(words(153));
+    expect(c).toHaveLength(4);
+    expect(c.map((b) => b.length)).toEqual([50, 50, 50, 3]);
+    expect(c.every((b) => b.length <= BULK_MAX_WORDS)).toBe(true);
+  });
+
+  it('never drops or reorders a word', () => {
+    const src = words(153);
+    expect(chunkForBulk(src).flat()).toEqual(src);
+  });
+
+  it('leaves a batch that already fits as a single request', () => {
+    expect(chunkForBulk(words(50))).toHaveLength(1);
+    expect(chunkForBulk(words(1))).toHaveLength(1);
+  });
+
+  it('returns nothing for an empty batch rather than one empty request', () => {
+    expect(chunkForBulk([])).toEqual([]);
+  });
+
+  it('every chunk validates against the real bulk schema', () => {
+    const parsed = parsePastedWords(
+      Array.from({ length: 60 }, (_, i) => `சொல்${i} — gloss`).join('\n'),
+      { register: 'sangam', usage: 'fresh', themes: [] }
+    );
+    expect(parsed.words).toHaveLength(60);
+    // The whole batch is rejected; each chunk is accepted.
+    expect(lexiconBulkSchema.safeParse({ words: parsed.words }).success).toBe(false);
+    for (const chunk of chunkForBulk(parsed.words)) {
+      expect(lexiconBulkSchema.safeParse({ words: chunk }).success).toBe(true);
+    }
+  });
+
+  it('refuses a nonsense chunk size instead of looping forever', () => {
+    expect(() => chunkForBulk(words(3), 0)).toThrow(/>= 1/);
   });
 });
