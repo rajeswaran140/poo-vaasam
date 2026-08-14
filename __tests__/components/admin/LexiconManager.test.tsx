@@ -107,3 +107,69 @@ describe('LexiconManager — export', () => {
     expect(within(table).getByText('நிலா')).toBeInTheDocument();
   });
 });
+
+/**
+ * THE DATA-QUALITY PROGRESS LENS (Raj, 2026-08-14): the header count is the way
+ * INTO the classification work, not a passive number. Clicking "N need review"
+ * must show exactly those N rows, and there must be a way back out.
+ */
+describe('LexiconManager — "need review" count is a filter', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  const BARE: LexiconRow = {
+    id: 'lex_bare', word: 'அகநேசம்', gloss: 'inward love', register: 'sangam',
+    usage: 'fresh', themes: [], usageCount: 0, archived: false,
+  };
+  const DONE: LexiconRow = {
+    id: 'lex_done', word: 'வைகறை', gloss: 'dawn', register: 'literary',
+    usage: 'fresh', themes: ['dawn'], tamilMeaning: 'அதிகாலை', confidence: 'high',
+    usageCount: 0, archived: false,
+  };
+
+  it('shows the count, then filters the table to exactly those rows when clicked', async () => {
+    const user = userEvent.setup();
+    render(<LexiconManager initial={[BARE, DONE]} />);
+
+    // Both words are listed to begin with.
+    expect(screen.getByText('அகநேசம்')).toBeInTheDocument();
+    expect(screen.getByText('வைகறை')).toBeInTheDocument();
+
+    const countButton = screen.getByRole('button', { name: /1 need review/i });
+    expect(countButton).toHaveAttribute('aria-pressed', 'false');
+
+    await user.click(countButton);
+
+    // Only the unreviewed word survives — and the count said 1.
+    expect(screen.getByText('அகநேசம்')).toBeInTheDocument();
+    expect(screen.queryByText('வைகறை')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /1 need review/i })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('offers a way back out, restoring the full list', async () => {
+    const user = userEvent.setup();
+    render(<LexiconManager initial={[BARE, DONE]} />);
+
+    await user.click(screen.getByRole('button', { name: /1 need review/i }));
+    expect(screen.queryByText('வைகறை')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /needs review ✕/i }));
+    expect(screen.getByText('வைகறை')).toBeInTheDocument();
+  });
+
+  it('says "nothing left to review" rather than "no words match" when the queue empties', async () => {
+    const user = userEvent.setup();
+    render(<LexiconManager initial={[DONE]} />);
+
+    // Nothing needs review, so the count is not rendered at all...
+    expect(screen.queryByRole('button', { name: /need review/i })).not.toBeInTheDocument();
+    // ...and a normal filter miss still reads as a filter miss.
+    await user.type(screen.getByLabelText(/search lexicon/i), 'zzzznotfound');
+    expect(screen.getByText(/no words match these filters/i)).toBeInTheDocument();
+  });
+
+  it('is off on first render — the table is never silently pre-filtered', () => {
+    render(<LexiconManager initial={[BARE, DONE]} />);
+    expect(screen.getByText('அகநேசம்')).toBeInTheDocument();
+    expect(screen.getByText('வைகறை')).toBeInTheDocument();
+  });
+});

@@ -7,7 +7,7 @@
  * word through a relation that shares none of the query's letters.
  */
 
-import { searchLexicon, passesFilters, lexiconCounts, type SearchableWord } from '@/lib/lexicon-search';
+import { searchLexicon, passesFilters, lexiconCounts, needsReview, type SearchableWord } from '@/lib/lexicon-search';
 
 const w = (o: Partial<SearchableWord> & { id: string; word: string }): SearchableWord => ({
   gloss: '',
@@ -162,5 +162,94 @@ describe('counts', () => {
       w({ id: '2', word: 'bare' }),
     ]);
     expect(counts.needsReview).toBe(1);
+  });
+});
+
+/**
+ * THE PROGRESS LENS. The header says "N need review" and clicking it filters to
+ * exactly those N — Raj's use for it is watching 1,047 → 900 → 500 → 0, so a
+ * count that disagrees with its own list is worse than no count at all.
+ */
+describe('needs-review filter', () => {
+  const complete = w({ id: 'done', word: 'வைகறை', themes: ['dawn'], tamilMeaning: 'அதிகாலை', confidence: 'high' });
+
+  it('flags an entry missing ANY of themes / Tamil meaning / confidence', () => {
+    expect(needsReview(complete)).toBe(false);
+    expect(needsReview({ ...complete, themes: [] })).toBe(true);
+    expect(needsReview({ ...complete, tamilMeaning: undefined })).toBe(true);
+    expect(needsReview({ ...complete, confidence: undefined })).toBe(true);
+  });
+
+  it('treats a legacy row — themes [], no meaning, no confidence — as needing review', () => {
+    expect(needsReview(w({ id: '1', word: 'அகநேசம்', register: 'sangam' }))).toBe(true);
+  });
+
+  /**
+   * ⚠️ THE FIXTURE MUST DISTINGUISH THE RULES. An earlier version of this test
+   * used only fully-bare and fully-complete rows, so a count that checked just
+   * `themes` agreed with the real three-part predicate and the drift went
+   * undetected (mutation-verified). `partial` below has themes but no Tamil
+   * meaning and no confidence — it is the row on which a drifted count lies.
+   */
+  it('filters the table to exactly the entries the count reports', () => {
+    const partial = w({ id: 'partial', word: 'அகவல்', themes: ['poetry'] }); // themes only
+    const rows = [
+      complete,
+      w({ id: 'a', word: 'அகநேசம்' }),
+      w({ id: 'b', word: 'அகமண்' }),
+      partial,
+      w({ id: 'c', word: 'அகமகிழ்வு', themes: ['joy'], tamilMeaning: 'உள்ளக் களிப்பு', confidence: 'medium' }),
+    ];
+    const counted = lexiconCounts(rows).needsReview;
+    const filtered = searchLexicon(rows, '', { needsReview: true });
+    expect(counted).toBe(3);
+    expect(filtered).toHaveLength(counted);
+    expect(filtered.map((r) => r.id).sort()).toEqual(['a', 'b', 'partial']);
+  });
+
+  it('counts a themed-but-unjudged entry as needing review', () => {
+    // Having a theme is not the same as having been classified: the register is
+    // still whatever the import defaulted to until a confidence is recorded.
+    const partial = w({ id: '1', word: 'அகவல்', themes: ['poetry'], registers: ['sangam'] });
+    expect(needsReview(partial)).toBe(true);
+    expect(lexiconCounts([partial]).needsReview).toBe(1);
+  });
+
+  it('composes with the other filters instead of replacing them', () => {
+    const rows = [
+      w({ id: 'bare-sangam', word: 'x', registers: ['sangam'] }),
+      w({ id: 'bare-common', word: 'y', registers: ['common'] }),
+    ];
+    expect(searchLexicon(rows, '', { needsReview: true, register: 'sangam' }).map((r) => r.id)).toEqual([
+      'bare-sangam',
+    ]);
+  });
+
+  it('composes with a search query', () => {
+    const rows = [
+      w({ id: '1', word: 'அகநேசம்', gloss: 'inward love' }),
+      w({ id: '2', word: 'கடல்', gloss: 'sea' }),
+    ];
+    expect(searchLexicon(rows, 'love', { needsReview: true }).map((r) => r.id)).toEqual(['1']);
+  });
+
+  it('is off by default — the table is not silently pre-filtered', () => {
+    const rows = [complete, w({ id: 'bare', word: 'x' })];
+    expect(searchLexicon(rows, '', {})).toHaveLength(2);
+    expect(passesFilters(complete, {})).toBe(true);
+  });
+
+  it('empties as the data is completed — the 1,047 → 0 path', () => {
+    const bare = [w({ id: '1', word: 'a' }), w({ id: '2', word: 'b' })];
+    expect(searchLexicon(bare, '', { needsReview: true })).toHaveLength(2);
+    const fixed = bare.map((r) => ({ ...r, themes: ['love'], tamilMeaning: 'ஒரு பொருள்', confidence: 'high' }));
+    expect(searchLexicon(fixed, '', { needsReview: true })).toHaveLength(0);
+    expect(lexiconCounts(fixed).needsReview).toBe(0);
+  });
+
+  it('still ignores archived entries, as the count does', () => {
+    const rows = [w({ id: '1', word: 'x', archived: true })];
+    expect(searchLexicon(rows, '', { needsReview: true })).toHaveLength(0);
+    expect(lexiconCounts(rows).needsReview).toBe(0);
   });
 });

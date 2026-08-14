@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
     confidence: sp.get('confidence') || undefined,
     mood: sp.get('mood') || undefined,
     includeArchived: sp.get('archived') === 'true',
+    needsReview: sp.get('needsReview') === 'true',
   };
 
   try {

@@ -69,6 +69,28 @@ export interface LexiconFilters {
   confidence?: string;
   mood?: string;
   includeArchived?: boolean;
+  /** Show only entries still awaiting classification — see `needsReview`. */
+  needsReview?: boolean;
+}
+
+/**
+ * Is this entry still awaiting human classification?
+ *
+ * ⚠️ ONE DEFINITION, USED BY BOTH THE COUNT AND THE FILTER. The header strip
+ * says "N need review" and clicking it filters to exactly those N. If the
+ * predicate were written out twice, the two would drift and the number would
+ * stop matching the list — which is the one thing that makes a progress counter
+ * worthless. Raj's use for it is watching 1,047 → 900 → 500 → 0, so the count
+ * and the rows behind it have to be the same question.
+ *
+ * "Needs review" means the entry cannot yet answer a real songwriting query:
+ *   - no themes        → it never appears when browsing by theme
+ *   - no Tamil meaning → the definition a Tamil reader would want is missing
+ *   - no confidence    → nobody has judged its register, so the register is
+ *                        still whatever the import defaulted to
+ */
+export function needsReview(w: SearchableWord): boolean {
+  return !w.themes?.length || !w.tamilMeaning || !w.confidence;
 }
 
 /** Field weights. Headword first, then meaning, then everything else. */
@@ -164,6 +186,7 @@ export function passesFilters(w: SearchableWord, f: LexiconFilters): boolean {
   if (f.lexicalStatus && w.lexicalStatus !== f.lexicalStatus) return false;
   if (f.confidence && w.confidence !== f.confidence) return false;
   if (f.mood && !(w.moods ?? []).includes(f.mood)) return false;
+  if (f.needsReview && !needsReview(w)) return false;
   return true;
 }
 
@@ -253,7 +276,7 @@ export function lexiconCounts(words: readonly SearchableWord[]): LexiconCounts {
   const byLexicalStatus: Record<string, number> = {};
   const byUsage: Record<string, number> = {};
   let archived = 0;
-  let needsReview = 0;
+  let reviewCount = 0;
 
   for (const w of words ?? []) {
     if (w.archived) {
@@ -268,9 +291,9 @@ export function lexiconCounts(words: readonly SearchableWord[]): LexiconCounts {
     }
     if (w.lexicalStatus) byLexicalStatus[w.lexicalStatus] = (byLexicalStatus[w.lexicalStatus] ?? 0) + 1;
     if (w.usage) byUsage[w.usage] = (byUsage[w.usage] ?? 0) + 1;
-    if (!w.themes?.length || !w.tamilMeaning || !w.confidence) needsReview += 1;
+    if (needsReview(w)) reviewCount += 1;
   }
 
   const live = (words ?? []).filter((w) => !w.archived).length;
-  return { total: live, archived, byRegister, byLexicalStatus, byUsage, needsReview };
+  return { total: live, archived, byRegister, byLexicalStatus, byUsage, needsReview: reviewCount };
 }

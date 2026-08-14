@@ -98,6 +98,9 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
   const [fStatus, setFStatus] = useState('');
   const [fConfidence, setFConfidence] = useState('');
   const [q, setQ] = useState('');
+  // Data-quality progress lens: the header count is the way IN to the work,
+  // so it toggles this rather than being a passive number.
+  const [fNeedsReview, setFNeedsReview] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -115,15 +118,16 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
         lexicalStatus: fStatus || undefined,
         confidence: fConfidence || undefined,
         includeArchived: showArchived,
+        needsReview: fNeedsReview,
       }),
-    [words, q, fRegister, fUsage, fTheme, fWordType, fStatus, fConfidence, showArchived]
+    [words, q, fRegister, fUsage, fTheme, fWordType, fStatus, fConfidence, showArchived, fNeedsReview]
   );
 
   // Reset to page 1 whenever the RESULT SET changes, not just when it shrinks.
   const { page, setPage, totalPages, pageRows, total } = usePagination(
     visible,
     50,
-    `${fRegister}|${fUsage}|${fTheme}|${fWordType}|${fStatus}|${fConfidence}|${q}|${showArchived}`
+    `${fRegister}|${fUsage}|${fTheme}|${fWordType}|${fStatus}|${fConfidence}|${q}|${showArchived}|${fNeedsReview}`
   );
 
   const detail = detailId ? words.find((w) => w.id === detailId) ?? null : null;
@@ -200,7 +204,18 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
             </button>
           ))}
         {counts.needsReview > 0 && (
-          <span className="text-amber-600 dark:text-amber-400">{counts.needsReview.toLocaleString()} need review</span>
+          <button
+            onClick={() => setFNeedsReview((v) => !v)}
+            aria-pressed={fNeedsReview}
+            title="Entries with no themes, no Tamil meaning, or no recorded confidence"
+            className={`rounded-full px-2 py-0.5 font-medium ${
+              fNeedsReview
+                ? 'bg-amber-600 text-white'
+                : 'bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300'
+            }`}
+          >
+            {counts.needsReview.toLocaleString()} need review
+          </button>
         )}
         {counts.archived > 0 && <span>{counts.archived} archived</span>}
       </div>
@@ -238,6 +253,14 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
         <label className="flex items-center gap-1 text-gray-500">
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> archived
         </label>
+        {fNeedsReview && (
+          <button
+            onClick={() => setFNeedsReview(false)}
+            className="rounded-full bg-amber-600 px-2 py-0.5 text-xs font-medium text-white"
+          >
+            needs review ✕
+          </button>
+        )}
         <div className="ml-auto flex items-center gap-2 text-gray-400">
           <span>{total} shown</span>
           <button onClick={exportCsv} className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 dark:border-gray-600">Export CSV</button>
@@ -315,7 +338,11 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
                 )
               )}
               {visible.length === 0 && (
-                <tr><td colSpan={8} className="px-3 py-6 text-center text-gray-400">{words.length ? 'No words match these filters.' : 'No words. Add one or use AI suggest.'}</td></tr>
+                <tr><td colSpan={8} className="px-3 py-6 text-center text-gray-400">{!words.length
+                    ? 'No words. Add one or use AI suggest.'
+                    : fNeedsReview
+                      ? '🎉 Nothing left to review under these filters.'
+                      : 'No words match these filters.'}</td></tr>
               )}
             </tbody>
           </table>
