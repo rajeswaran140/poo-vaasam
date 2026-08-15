@@ -105,6 +105,43 @@ function graphemeUnit(g: string): { role: 'nucleus' | 'coda' | 'skip'; vowel: Vo
   return { role: 'skip', vowel: 'none' };
 }
 
+export interface Syllable {
+  /** The எழுத்து/எழுத்துகள் that make up this syllable, as written. */
+  text: string;
+  /** குறில் (short) or நெடில் (long) — decides whether it can be sustained. */
+  vowel: VowelLength;
+  /** Open syllables end in their vowel; a closing மெய் clips the sound. */
+  open: boolean;
+}
+
+/**
+ * Split a word into pronounced syllables, each tagged குறில்/நெடில் and
+ * open/closed.
+ *
+ * This is `analyzeGamaka`'s internal walk, exported: the Lyric Meter Lab needs
+ * the same units to place beats on, and re-deriving them elsewhere would let
+ * the two drift — the melody would be built on a different syllable count than
+ * the prosody report shows.
+ *
+ * A closing மெய் attaches to the syllable it closes, so `மண்` is ONE syllable
+ * (closed, short) rather than two. That is what a singer sings.
+ */
+export function syllabify(word: string): Syllable[] {
+  const out: Syllable[] = [];
+  for (const g of toGraphemes(word)) {
+    const u = graphemeUnit(g);
+    if (u.role === 'nucleus') {
+      out.push({ text: g, vowel: u.vowel, open: true });
+    } else if (u.role === 'coda' && out.length) {
+      // The coda belongs to the syllable before it, which it closes.
+      const prev = out[out.length - 1];
+      prev.text += g;
+      prev.open = false;
+    }
+  }
+  return out;
+}
+
 export interface GamakaProsody {
   /** Final syllable is OPEN (ends in a vowel) — sustainable, no clipping மெய். */
   endsOpen: boolean;

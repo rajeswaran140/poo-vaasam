@@ -33,6 +33,7 @@ import {
   BookOpen,
   FlaskConical,
   NotebookPen,
+  Ruler,
   PenLine,
   SearchCheck,
   ScrollText,
@@ -398,6 +399,14 @@ export default function AdminLayoutClient({
                 active={pathname.startsWith("/admin/music-lab/theory")}
               >
                 Composition & Theory
+              </NavLink>
+              <NavLink
+                href="/admin/music-lab/meter-lab"
+                icon={Ruler}
+                collapsed={collapsed}
+                active={pathname.startsWith("/admin/music-lab/meter-lab")}
+              >
+                Lyric Meter Lab
               </NavLink>
               <NavLink
                 href="/admin/music-lab/notebook"
