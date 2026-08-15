@@ -5,6 +5,8 @@
  * `updatedAt` current when you edit a doc.
  */
 
+import { LEXICON_WORD_GROUPS, LEXICON_WORD_COUNT } from '@/content/lexicon-word-list';
+
 export interface AdminDoc {
   slug: string;
   title: string;
@@ -1170,6 +1172,13 @@ YouTube regenerates automatic caption tracks after you delete them — one reapp
 The thread through most of these: **the API response is not evidence that anything changed.** A separate read is. That applies to privacy, schedules, branding, and tags — where a PUT response returned tags in a form that looked different from what was sent, while a fresh read showed them untouched.
 `,
   },
+  {
+    slug: 'lexicon-word-list',
+    title: `Literary word list — ${LEXICON_WORD_COUNT} words to import`,
+    category: 'Composer',
+    updatedAt: '2026-08-15',
+    body: buildWordListDoc(),
+  },
 ];
 
 /** Docs grouped by category, in registry order, for the sidebar. */
@@ -1182,4 +1191,54 @@ export function docsByCategory(): Record<string, AdminDoc[]> {
 
 export function getDoc(slug: string): AdminDoc | undefined {
   return ADMIN_DOCS.find((d) => d.slug === slug);
+}
+
+/**
+ * Build the word-list doc body FROM THE DATA, so the page and the list can
+ * never disagree. Each theme becomes a fenced block that pastes straight into
+ * /admin/lexicon → Paste list, which is the step that attaches the theme.
+ */
+function buildWordListDoc(): string {
+  const groups = LEXICON_WORD_GROUPS.map((g) => {
+    const lines = g.words.map((w) => `${w.word} — ${w.gloss}`).join('\n');
+    return [
+      `## ${g.theme} — ${g.words.length} words`,
+      '',
+      `Register **${g.register}** · theme **${g.theme.replace(/ \(part \d+\)/, '')}** · select both before importing.`,
+      '',
+      '```',
+      lines,
+      '```',
+      '',
+    ].join('\n');
+  }).join('\n');
+
+  return `# Literary word list — ${LEXICON_WORD_COUNT} words
+
+Proposed vocabulary for the Lexicon, grouped by theme and ready to paste.
+
+## What this is, and what it is not
+
+**De-duplicated against your lexicon.** 833 words were drafted; **252 (30%) you already had** and were dropped. Only the ${LEXICON_WORD_COUNT} you did not have are below — அவனி, ஞாலம், விசும்பு, மாரி, கார்முகில், ஏக்கம், முறுவல் and 245 others were already yours.
+
+**Nothing here is in the database.** Reading this page changes nothing. Each block has to be imported deliberately.
+
+> ⚠️ **The registers are proposals, not findings.** Almost everything is filed \`literary\` on purpose — the mildest available claim. Only the **sangam** group holds genuine Sangam-era technical terms (verse forms, the anthologies, the sections of the Tolkappiyam). Filing a word as \`sangam\` because it sounds classical is exactly what left 1,046 existing entries under a register nobody chose. Change any of these with bulk edit once you have judged them.
+
+**English glosses only.** No Tamil meaning yet — write your own, or let Enrich propose one. Either way the entry still needs your eye.
+
+## How to import a block
+
+1. Go to **Lexicon → 📋 Paste list**
+2. Set the **register** and **theme** named above the block
+3. Copy everything inside the fence and paste it
+4. **Import**
+
+Doing it block by block is what gives each word its theme. All 1,047 existing entries have none, which is why the theme filter is still inert — these ${LEXICON_WORD_COUNT} arrive with one already attached.
+
+Blocks are capped at 50 words to match the bulk endpoint; a longer theme is split into parts.
+
+---
+
+${groups}`;
 }
