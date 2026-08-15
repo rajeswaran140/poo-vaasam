@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Noto_Sans_Tamil, Kavivanar, Baloo_Thambi_2 } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import { MusicPlayerProvider } from "@/components/music/MusicPlayerProvider";
@@ -10,23 +10,57 @@ import { GoogleAnalytics } from "@/components/analytics/GoogleAnalytics";
 import { InboundTracker } from "@/components/analytics/InboundTracker";
 import { GA_ID, GOOGLE_SITE_VERIFICATION } from "@/lib/analytics";
 
-const notoSansTamil = Noto_Sans_Tamil({
-  subsets: ['tamil'],
-  weight: ['400', '500', '600', '700'],
+/**
+ * ⚠️ SELF-HOSTED ON PURPOSE — do not "simplify" this back to `next/font/google`.
+ *
+ * `next/font/google` downloads the font files from fonts.gstatic.com AT BUILD
+ * TIME. When CodeBuild cannot reach it the loader receives null and the whole
+ * build dies with `TypeError: Cannot read properties of null (reading '1')` in
+ * next-font-loader — a failure that names `layout.tsx` and has nothing to do
+ * with the code. It took down Amplify jobs 553 and 558 on 2026-08-14 alone
+ * (2 of 8 builds), each costing a manual retry.
+ *
+ * The .woff2 files now come from the `@fontsource/*` npm packages, which the
+ * build already installs, so a deploy no longer depends on Google being
+ * reachable. These are the SAME files Google serves — Fontsource repackages
+ * the upstream Google Fonts releases.
+ *
+ * Kept deliberately identical to the previous configuration so nothing about
+ * the rendering changes: same three families, same weights, the `tamil` subset
+ * only, `display: swap`, and the same CSS variable names.
+ *
+ * ⚠️ The paths must be written out as LITERALS. `next/font` parses this file
+ * statically and rejects any computed value — a shared path constant or a
+ * `.map()` over the weights fails the build with "Font loader values must be
+ * explicitly written literals", so the repetition below is required.
+ */
+const notoSansTamil = localFont({
+  src: [
+    { path: '../../node_modules/@fontsource/noto-sans-tamil/files/noto-sans-tamil-tamil-400-normal.woff2', weight: '400', style: 'normal' },
+    { path: '../../node_modules/@fontsource/noto-sans-tamil/files/noto-sans-tamil-tamil-500-normal.woff2', weight: '500', style: 'normal' },
+    { path: '../../node_modules/@fontsource/noto-sans-tamil/files/noto-sans-tamil-tamil-600-normal.woff2', weight: '600', style: 'normal' },
+    { path: '../../node_modules/@fontsource/noto-sans-tamil/files/noto-sans-tamil-tamil-700-normal.woff2', weight: '700', style: 'normal' },
+  ],
   display: 'swap',
   variable: '--font-tamil',
 });
 
-const kavivanar = Kavivanar({
-  subsets: ['tamil'],
-  weight: ['400'],
+const kavivanar = localFont({
+  src: [
+    { path: '../../node_modules/@fontsource/kavivanar/files/kavivanar-tamil-400-normal.woff2', weight: '400', style: 'normal' },
+  ],
   display: 'swap',
   variable: '--font-kavivanar',
 });
 
-const balooThambi = Baloo_Thambi_2({
-  subsets: ['tamil'],
-  weight: ['400', '500', '600', '700', '800'],
+const balooThambi = localFont({
+  src: [
+    { path: '../../node_modules/@fontsource/baloo-thambi-2/files/baloo-thambi-2-tamil-400-normal.woff2', weight: '400', style: 'normal' },
+    { path: '../../node_modules/@fontsource/baloo-thambi-2/files/baloo-thambi-2-tamil-500-normal.woff2', weight: '500', style: 'normal' },
+    { path: '../../node_modules/@fontsource/baloo-thambi-2/files/baloo-thambi-2-tamil-600-normal.woff2', weight: '600', style: 'normal' },
+    { path: '../../node_modules/@fontsource/baloo-thambi-2/files/baloo-thambi-2-tamil-700-normal.woff2', weight: '700', style: 'normal' },
+    { path: '../../node_modules/@fontsource/baloo-thambi-2/files/baloo-thambi-2-tamil-800-normal.woff2', weight: '800', style: 'normal' },
+  ],
   display: 'swap',
   variable: '--font-baloo-thambi',
 });
