@@ -51,6 +51,34 @@ describe('structural breakdown', () => {
     expect(screen.getByText('7')).toBeInTheDocument();
   });
 
+  /**
+   * ⚠️ A STANZA IS NOT ONE PHRASE. Four lines used to be measured as one
+   * continuous run, reporting an impossible density for a lyric that sings
+   * fine. Each line now gets its own card and its own estimate.
+   */
+  it('gives every line its own card and its own density', () => {
+    render(<LyricMeterLab />);
+    type('பூபாளம் பாடும் நேரமே\nபுதுக்கோலம் பூணும் வானமே');
+    expect(screen.getByText('line 1')).toBeInTheDocument();
+    expect(screen.getByText('line 2')).toBeInTheDocument();
+    expect(screen.getAllByText(/Estimated vocal density/i)).toHaveLength(2);
+  });
+
+  it('summarises the stanza with counts but NO stanza-level density', () => {
+    render(<LyricMeterLab />);
+    type('பூபாளம் பாடும் நேரமே\nபுதுக்கோலம் பூணும் வானமே');
+    expect(screen.getByText(/2 lines · 17 syllables/)).toBeInTheDocument();
+    expect(screen.getByText(/a verse is not one continuous phrase/i)).toBeInTheDocument();
+  });
+
+  /** ⚠️ Hedged, never a verdict. */
+  it('labels density as an estimate rather than calling the line rushed', () => {
+    render(<LyricMeterLab />);
+    type(LINE);
+    expect(screen.getByText(/Estimated vocal density/i)).toBeInTheDocument();
+    expect(screen.queryByText(/\brushed\b/i)).not.toBeInTheDocument();
+  });
+
   it('splits into phrases on word boundaries and can be re-split', () => {
     render(<LyricMeterLab />);
     type(LINE);
@@ -83,10 +111,17 @@ describe('a suggested meter never renders as a determined one', () => {
     expect(screen.getByText(/^7 syllables .*(tune decides|starting point|Sing it before)/i)).toBeInTheDocument();
   });
 
-  it('names the meters that fit equally well when the line is ambiguous', () => {
+  /**
+   * ⚠️ 3/4 and 6/8 differ by ACCENT GROUPING, which text cannot express. Naming
+   * one as "suggested" would be a musically meaningless answer delivered
+   * confidently, so the UI says the count cannot choose.
+   */
+  it('says the count cannot choose, instead of naming a winner', () => {
     render(<LyricMeterLab />);
     type('மழை பெய்தால் மண்ணில்'); // 6 syllables — fits 3/4 AND 6/8
-    expect(screen.getByText(/fits equally/i)).toBeInTheDocument();
+    expect(screen.getByText(/cannot choose a meter/i)).toBeInTheDocument();
+    expect(screen.getByText(/accent grouping/i)).toBeInTheDocument();
+    expect(screen.queryByText('Suggested')).not.toBeInTheDocument();
   });
 });
 
@@ -176,5 +211,45 @@ describe('word inspection', () => {
     fireEvent.click(screen.getByLabelText('inspect வாசம்'));
     fireEvent.click(screen.getByRole('button', { name: /look up in lexicon/i }));
     expect(await screen.findByText(/not in your lexicon yet/i)).toBeInTheDocument();
+  });
+});
+
+/** ⚠️ Orthographic parsing is not sung syllabification — the poet can correct it. */
+describe('manual musical phrasing', () => {
+  const openWord = (w: string) => {
+    type('பூமியில் மழை');
+    fireEvent.click(screen.getByLabelText(`inspect ${w}`));
+  };
+
+  it('shows the automatic reading and an empty manual field, not one merged number', () => {
+    render(<LyricMeterLab />);
+    openWord('பூமியில்');
+    expect(screen.getByText(/Automatic analysis/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Manual musical phrasing/i)).toHaveValue(null);
+  });
+
+  it('applies the override to the line without touching the lyric text', () => {
+    render(<LyricMeterLab />);
+    openWord('பூமியில்');
+    fireEvent.change(screen.getByLabelText(/Manual musical phrasing/i), { target: { value: '2' } });
+
+    // The word now counts 2, marked as overridden.
+    expect(screen.getByLabelText('inspect பூமியில்').textContent).toMatch(/2\*/);
+    // The lyric is untouched.
+    expect(screen.getByLabelText('lyric line')).toHaveValue('பூமியில் மழை');
+  });
+
+  it('can be reset back to the parser', () => {
+    render(<LyricMeterLab />);
+    openWord('பூமியில்');
+    fireEvent.change(screen.getByLabelText(/Manual musical phrasing/i), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: /reset to automatic/i }));
+    expect(screen.getByLabelText('inspect பூமியில்').textContent).not.toMatch(/\*/);
+  });
+
+  it('says plainly that the lyric is not changed', () => {
+    render(<LyricMeterLab />);
+    openWord('பூமியில்');
+    expect(screen.getByText(/your lyric is not changed/i)).toBeInTheDocument();
   });
 });
