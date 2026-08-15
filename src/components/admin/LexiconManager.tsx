@@ -37,6 +37,7 @@ import {
 import { parsePastedWords, lexiconToCsv, chunkForBulk } from '@/lib/lexicon-io';
 import { searchLexicon, lexiconCounts } from '@/lib/lexicon-search';
 import { WordDetailPanel } from '@/components/admin/lexicon/WordDetailPanel';
+import { BulkEditBar } from '@/components/admin/lexicon/BulkEditBar';
 import { AuditPanel } from '@/components/admin/lexicon/AuditPanel';
 import { LyricContextPanel } from '@/components/admin/lexicon/LyricContextPanel';
 import { EnrichPanel } from '@/components/admin/lexicon/EnrichPanel';
@@ -105,6 +106,8 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>('none');
+  // Bulk selection, held by id so it survives re-sorting and re-filtering.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const counts = useMemo(() => lexiconCounts(words), [words]);
 
@@ -139,6 +142,27 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
       if (Array.isArray(d.data)) setWords(d.data.map(toRow));
     }
   };
+
+  const toggleSelected = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  // "Select all" means the rows the poet can actually see — the current PAGE,
+  // not the 1,047 behind the filter. Selecting rows off-screen and applying a
+  // register to them is not something anyone asks for by ticking one box.
+  const pageIds = pageRows.map((w) => w.id);
+  const allOnPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const togglePage = () =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allOnPageSelected) pageIds.forEach((id) => next.delete(id));
+      else pageIds.forEach((id) => next.add(id));
+      return next;
+    });
 
   const setUsage = async (id: string, usage: string) => {
     setWords((prev) => prev.map((w) => (w.id === id ? { ...w, usage } : w)));
@@ -268,11 +292,27 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
         </div>
       </div>
 
+      {selected.size > 0 && (
+        <BulkEditBar
+          selectedIds={[...selected]}
+          onClear={() => setSelected(new Set())}
+          onApplied={() => { setSelected(new Set()); reload(); }}
+        />
+      )}
+
       <div className={detail ? 'grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]' : ''}>
         <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500 dark:bg-gray-800 dark:text-gray-400">
               <tr>
+                <th className="px-2 py-2">
+                  <input
+                    type="checkbox"
+                    checked={allOnPageSelected}
+                    onChange={togglePage}
+                    aria-label="select all on this page"
+                  />
+                </th>
                 <th className="px-3 py-2">Word</th>
                 <th className="px-3 py-2">Gloss</th>
                 <th className="px-3 py-2">Register</th>
@@ -287,12 +327,20 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
               {pageRows.map((w) =>
                 editingId === w.id ? (
                   <tr key={w.id}>
-                    <td colSpan={8} className="px-3 py-2">
+                    <td colSpan={9} className="px-3 py-2">
                       <EditRow word={w} onSaved={onEdited} onCancel={() => setEditingId(null)} />
                     </td>
                   </tr>
                 ) : (
-                  <tr key={w.id} className={`${w.archived ? 'opacity-50' : ''} ${detailId === w.id ? 'bg-orange-50/60 dark:bg-gray-800/60' : ''}`}>
+                  <tr key={w.id} className={`${w.archived ? 'opacity-50' : ''} ${detailId === w.id ? 'bg-orange-50/60 dark:bg-gray-800/60' : ''} ${selected.has(w.id) ? 'bg-orange-50 dark:bg-gray-800/80' : ''}`}>
+                    <td className="px-2 py-2">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(w.id)}
+                        onChange={() => toggleSelected(w.id)}
+                        aria-label={`select ${w.word}`}
+                      />
+                    </td>
                     <td className="px-3 py-2">
                       <button
                         onClick={() => setDetailId(w.id)}
@@ -338,7 +386,7 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
                 )
               )}
               {visible.length === 0 && (
-                <tr><td colSpan={8} className="px-3 py-6 text-center text-gray-400">{!words.length
+                <tr><td colSpan={9} className="px-3 py-6 text-center text-gray-400">{!words.length
                     ? 'No words. Add one or use AI suggest.'
                     : fNeedsReview
                       ? '🎉 Nothing left to review under these filters.'

@@ -173,3 +173,87 @@ describe('LexiconManager — "need review" count is a filter', () => {
     expect(screen.getByText('வைகறை')).toBeInTheDocument();
   });
 });
+
+/**
+ * BULK ROW-EDITING — the tool for correcting groups of words, and the only
+ * practical way through the ~1,046 entries carrying a defaulted register.
+ */
+describe('LexiconManager — bulk selection', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  const A: LexiconRow = {
+    id: 'lex_a', word: 'அகநேசம்', gloss: 'inward love', register: 'sangam',
+    usage: 'fresh', themes: [], usageCount: 0, archived: false,
+  };
+  const B: LexiconRow = {
+    id: 'lex_b', word: 'அகமண்', gloss: 'inner land', register: 'sangam',
+    usage: 'fresh', themes: [], usageCount: 0, archived: false,
+  };
+
+  it('shows no bulk bar until something is selected', () => {
+    render(<LexiconManager initial={[A, B]} />);
+    expect(screen.queryByText(/selected/i)).not.toBeInTheDocument();
+  });
+
+  it('reveals the bar with a running count', async () => {
+    const user = userEvent.setup();
+    render(<LexiconManager initial={[A, B]} />);
+    await user.click(screen.getByLabelText('select அகநேசம்'));
+    expect(screen.getByText('1 selected')).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText('select அகமண்'));
+    expect(screen.getByText('2 selected')).toBeInTheDocument();
+  });
+
+  it('selects and deselects the whole page from the header checkbox', async () => {
+    const user = userEvent.setup();
+    render(<LexiconManager initial={[A, B]} />);
+    await user.click(screen.getByLabelText('select all on this page'));
+    expect(screen.getByText('2 selected')).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText('select all on this page'));
+    expect(screen.queryByText(/selected/i)).not.toBeInTheDocument();
+  });
+
+  it('posts the chosen register for exactly the selected ids', async () => {
+    const calls: { url: string; body?: string }[] = [];
+    global.fetch = jest.fn(async (url: RequestInfo | URL, opts?: RequestInit) => {
+      calls.push({ url: String(url), body: opts?.body as string });
+      return { ok: true, status: 200, json: async () => ({ success: true, updated: 1, failed: [], requested: 1 }) } as Response;
+    });
+
+    const user = userEvent.setup();
+    render(<LexiconManager initial={[A, B]} />);
+    await user.click(screen.getByLabelText('select அகநேசம்'));
+    await user.click(screen.getByRole('button', { name: 'modern-poetic' }));
+    await user.click(screen.getByRole('button', { name: /apply to 1/i }));
+
+    const bulk = calls.find((c) => c.url.includes('/bulk-update'));
+    expect(JSON.parse(bulk!.body!)).toEqual({ ids: ['lex_a'], registers: ['modern-poetic'] });
+  });
+
+  it('sends a theme as an ADD, never as a wholesale replace', async () => {
+    const calls: { url: string; body?: string }[] = [];
+    global.fetch = jest.fn(async (url: RequestInfo | URL, opts?: RequestInit) => {
+      calls.push({ url: String(url), body: opts?.body as string });
+      return { ok: true, status: 200, json: async () => ({ success: true, updated: 2, failed: [], requested: 2 }) } as Response;
+    });
+
+    const user = userEvent.setup();
+    render(<LexiconManager initial={[A, B]} />);
+    await user.click(screen.getByLabelText('select all on this page'));
+    await user.selectOptions(screen.getByLabelText('bulk add theme'), 'nature');
+    await user.click(screen.getByRole('button', { name: /apply to 2/i }));
+
+    const body = JSON.parse(calls.find((c) => c.url.includes('/bulk-update'))!.body!);
+    expect(body.addThemes).toEqual(['nature']);
+    expect(body).not.toHaveProperty('themes');
+  });
+
+  it('will not apply an empty change', async () => {
+    const user = userEvent.setup();
+    render(<LexiconManager initial={[A, B]} />);
+    await user.click(screen.getByLabelText('select அகநேசம்'));
+    expect(screen.getByRole('button', { name: /apply to 1/i })).toBeDisabled();
+  });
+});

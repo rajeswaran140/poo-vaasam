@@ -169,6 +169,16 @@ const relationsSchema = z
 const examplesSchema = z.array(z.string().trim().min(1).max(120)).max(8);
 
 /**
+ * How many entries one bulk edit may touch.
+ *
+ * 200 is a page-and-a-bit of the table at 50 rows per page, which is as much as
+ * anyone reviews before clicking apply. It also bounds the write burst against
+ * a single DynamoDB partition — the point of a cap is that an unbounded write
+ * request is worth bounding, not that 200 is magic.
+ */
+export const BULK_UPDATE_MAX_IDS = 200;
+
+/**
  * Classification + relation fields, identical in create and update. The free
  * TEXT fields are deliberately NOT here: create takes them as `optional()`,
  * update as `nullable()` so an edit can clear one, and merging those two shapes
@@ -264,6 +274,44 @@ export type LexiconSuggestRequest = z.infer<typeof lexiconSuggestSchema>;
 export const lexiconBulkSchema = z.object({
   words: z.array(lexiconWordInputSchema).min(1).max(50),
 });
+
+/**
+ * Apply ONE change to MANY entries — the tool for correcting groups of words.
+ *
+ * ⚠️ THEMES ADD, THEY DO NOT REPLACE. `themes` on the single-entry update is a
+ * wholesale set, which is right when a human is looking at one word and its
+ * chips. Applied across 200 selected rows it would silently erase whatever
+ * themes each of them already had. So bulk work gets `addThemes`/`removeThemes`
+ * and no way to express "replace the theme list on all of these".
+ *
+ * Everything else here is a genuine set-to-one-value: a register or confidence
+ * applied to a selection is exactly the intent.
+ */
+export const lexiconBulkUpdateSchema = z
+  .object({
+    ids: z.array(z.string().trim().min(1).max(80)).min(1).max(BULK_UPDATE_MAX_IDS),
+    registers: z.array(registerSchema).min(1).max(3).optional(),
+    usage: usageSchema.optional(),
+    wordType: wordTypeSchema.optional(),
+    lexicalStatus: lexicalStatusSchema.optional(),
+    confidence: confidenceSchema.optional(),
+    archived: z.boolean().optional(),
+    addThemes: themesSchema.optional(),
+    removeThemes: themesSchema.optional(),
+  })
+  .refine(
+    (v) =>
+      v.registers !== undefined ||
+      v.usage !== undefined ||
+      v.wordType !== undefined ||
+      v.lexicalStatus !== undefined ||
+      v.confidence !== undefined ||
+      v.archived !== undefined ||
+      v.addThemes?.length ||
+      v.removeThemes?.length,
+    { message: 'Nothing to apply' }
+  );
+export type LexiconBulkUpdateInput = z.infer<typeof lexiconBulkUpdateSchema>;
 
 /**
  * Normalize a headword for STORAGE (the DynamoDB `GSI1SK = <word>#<id>` key).
