@@ -27,7 +27,16 @@ jest.mock('@aws-amplify/ui-react', () => ({
 jest.mock('@/lib/amplify-config', () => ({}));
 
 // Mock Lucide icons
-jest.mock('lucide-react', () => ({
+/**
+ * ⚠️ THIS MOCK FALLS BACK ON PURPOSE. It used to be a plain object listing every
+ * icon by hand, which meant that adding ONE nav link with a new icon made
+ * `NavLink` render `undefined` and took all 25 tests in this file down — a
+ * failure that points at the layout and is really just a missing mock entry.
+ * The named entries below keep their `data-testid`s (tests assert on them); any
+ * other icon resolves to a generic stub instead of undefined.
+ */
+jest.mock('lucide-react', () => {
+  const icons: Record<string, () => JSX.Element> = {
   LayoutDashboard: () => <div data-testid="icon-dashboard" />,
   FileText: () => <div data-testid="icon-content" />,
   Folder: () => <div data-testid="icon-categories" />,
@@ -60,7 +69,12 @@ jest.mock('lucide-react', () => ({
   MessageSquare: () => <div data-testid="icon-comments" />,
   MessageSquareHeart: () => <div data-testid="icon-stories" />,
   BellRing: () => <div data-testid="icon-notify" />,
-}));
+  };
+  return new Proxy(icons, {
+    get: (target, prop: string) =>
+      target[prop] ?? (() => <div data-testid={`icon-${String(prop).toLowerCase()}`} />),
+  });
+});
 
 describe('Admin Layout Authentication', () => {
   const mockPush = jest.fn();

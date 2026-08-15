@@ -32,6 +32,7 @@ import {
   Users,
   BookOpen,
   FlaskConical,
+  NotebookPen,
   PenLine,
   SearchCheck,
   ScrollText,
@@ -397,6 +398,14 @@ export default function AdminLayoutClient({
                 active={pathname.startsWith("/admin/music-lab/theory")}
               >
                 Composition & Theory
+              </NavLink>
+              <NavLink
+                href="/admin/music-lab/notebook"
+                icon={NotebookPen}
+                collapsed={collapsed}
+                active={pathname.startsWith("/admin/music-lab/notebook")}
+              >
+                Composition Notebook
               </NavLink>
               <NavLink
                 href="/admin/mastering"
