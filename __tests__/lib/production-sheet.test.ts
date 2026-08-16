@@ -102,3 +102,33 @@ describe('detecting which bodies need converting', () => {
     expect(parseProductionSheet('').lyrics.sections).toEqual([]);
   });
 });
+
+/**
+ * ⚠️ Raj, 2026-08-16: "copy lyrics only, not musical prompt".
+ *
+ * The header TEXT is prompt — it tells a machine who sings and how ("Chorus -
+ * Female", "Duet (both voices together, in unison)"). Only the derived Tamil
+ * KIND is song form. Storing the header would smuggle the prompt into the data.
+ */
+describe('the musical prompt does not survive into the data', () => {
+  const r = parseProductionSheet(SHEET);
+  const json = JSON.stringify(r.lyrics);
+
+  it('stores no section label at all', () => {
+    for (const s of r.lyrics.sections) expect(s.label).toBeUndefined();
+  });
+
+  it('keeps no voicing or performance direction anywhere in the lyrics', () => {
+    expect(json).not.toMatch(/Female|Male|Duet|unison|Chorus|Verse|Intro|Outro/i);
+    expect(json).not.toMatch(/violin|nadaswaram|tambura|mridangam/i);
+  });
+
+  it('still keeps the Tamil song form, which is not prompt', () => {
+    expect(r.lyrics.sections.map((s) => s.kind)).toEqual(['pallavi', 'charanam']);
+  });
+
+  it('keeps every sung word', () => {
+    expect(json).toContain('நீ சிரிச்ச நேரம்தான்');
+    expect(json).toContain('நீ சொன்ன பேச்செல்லாம்');
+  });
+});
