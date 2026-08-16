@@ -1,4 +1,6 @@
+import { youtubeSubscribeUrl } from '@/config/site';
 import {
+  SUBSCRIBE_URL,
   checkRelease,
   summariseRelease,
   hasRomanizedTitle,
@@ -6,7 +8,7 @@ import {
   ALL_SONGS_PLAYLIST_ID,
   LATEST_PLAYLIST_ID,
   type VideoSnapshot,
-} from '@/lib/release-checklist';
+ } from '@/lib/release-checklist';
 
 /** A fully-correct song upload — the shape everything else deviates from. */
 const good: VideoSnapshot = {
@@ -268,5 +270,21 @@ describe('the retired full name (catalogue sweep, 2026-07-31)', () => {
 
   it('keeps a clean upload ready', () => {
     expect(summariseRelease(good).ready).toBe(true);
+  });
+});
+
+/**
+ * ⚠️ The checklist's `fix` text is pasted into NEW video descriptions, so a
+ * hardcoded handle here outlives any config change — in published descriptions
+ * that cannot be bulk-edited cheaply. It must derive from the canonical URL.
+ */
+describe('SUBSCRIBE_URL derives from the canonical channel URL', () => {
+  it('is the immutable /channel/UC… form, not a @handle', () => {
+    expect(SUBSCRIBE_URL).toMatch(/youtube\.com\/channel\/UC[A-Za-z0-9_-]{22}\?sub_confirmation=1$/);
+    expect(SUBSCRIBE_URL).not.toContain('/@');
+  });
+
+  it('is not a second hardcoded copy — it equals youtubeSubscribeUrl()', () => {
+    expect(SUBSCRIBE_URL).toBe(youtubeSubscribeUrl());
   });
 });

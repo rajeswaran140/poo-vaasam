@@ -6,11 +6,23 @@ export const SITE = {
   name: 'தமிழகவல்',
   youtube: {
     /**
-     * Your YouTube channel URL. Replace the placeholder below with your real
-     * channel (e.g. https://www.youtube.com/@YourHandle). Until it's set to a
-     * real channel, the YouTube/Subscribe links are hidden site-wide.
+     * Canonical channel URL — the IMMUTABLE `/channel/UC…` form, never a
+     * `@handle`.
+     *
+     * ⚠️ WHY NOT THE HANDLE. Handles are mutable and reclaimable: this channel
+     * was itself rebranded `@RajeswaranThangarajah` → `@tamilagaval`, which
+     * FREED the old handle for anyone to register. Every Subscribe CTA on the
+     * site AND the subscribe link written into every YouTube video description
+     * (`youtube-description.ts` builds `SUBSCRIBE_URL` from this one value)
+     * derives from here — so a renamed or reclaimed handle silently redirects
+     * all of them to whoever holds it next, in published descriptions we cannot
+     * bulk-edit cheaply. The channel-ID URL cannot be reassigned, and
+     * `?sub_confirmation=1` works on it identically.
+     *
+     * Until it's set to a real channel, the YouTube/Subscribe links are hidden
+     * site-wide.
      */
-    channelUrl: 'https://www.youtube.com/@Tamilagaval',
+    channelUrl: 'https://www.youtube.com/channel/UCZCuphXleq-mXVYgvqh-OlQ',
     /**
      * Channel ID (UC…, 24 chars) — required for the RSS-backed videos feed.
      * Empty = the /videos page, homepage strip and Subscribe CTAs stay hidden.

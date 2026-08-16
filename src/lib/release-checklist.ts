@@ -52,12 +52,22 @@ export interface Finding {
   manual?: boolean;
 }
 
+import { youtubeSubscribeUrl } from '@/config/site';
+
 export const MUSIC_CATEGORY_ID = '10';
 export const SHORTS_PLAYLIST_ID = 'PLLsCQ9NH4rLQceNHkbO4_4FCerVT4oOKt';
 export const ALL_SONGS_PLAYLIST_ID = 'PLLsCQ9NH4rLSZU0Ycy6I-Xr8DMAbe4vjs';
 export const LATEST_PLAYLIST_ID = 'PLLsCQ9NH4rLQAr8WLqKSZu6JNd-9ns-wU';
 export const SITE_URL_UTM = 'https://tamilagaval.com/?utm_source=youtube&utm_medium=description';
-export const SUBSCRIBE_URL = 'https://www.youtube.com/@Tamilagaval?sub_confirmation=1';
+/**
+ * ⚠️ DERIVED, NOT HARDCODED. This was a second, independent copy of the
+ * subscribe link — and the more dangerous one, because the checklist's `fix`
+ * text is what gets pasted into NEW video descriptions. A handle written here
+ * outlives any config change, in published descriptions we cannot bulk-edit
+ * cheaply. It now comes from the one canonical channel URL, which is the
+ * immutable `/channel/UC…` form; see `SITE.youtube.channelUrl`.
+ */
+export const SUBSCRIBE_URL = youtubeSubscribeUrl();
 
 /** Minimum tags before the upload counts as tagged at all. */
 export const MIN_TAGS = 10;
