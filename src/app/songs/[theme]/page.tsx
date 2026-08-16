@@ -44,7 +44,8 @@ async function getSongs(): Promise<PublicSongDTO[]> {
 
 export async function generateStaticParams(): Promise<{ theme: string }[]> {
   const songs = await getSongs();
-  return eligibleCollectionThemes(songs.map((s) => s.theme)).map((theme) => ({ theme }));
+  // Unclassified songs count toward no collection.
+  return eligibleCollectionThemes(songs.map((s) => s.theme).filter((t): t is string => !!t)).map((theme) => ({ theme }));
 }
 
 interface PageProps {
@@ -81,7 +82,7 @@ export default async function SongCollectionPage({ params }: PageProps) {
   const songs = all.filter((s) => s.theme === theme);
   if (songs.length < MIN_SONGS_FOR_COLLECTION) notFound();
 
-  const others = eligibleCollectionThemes(all.map((s) => s.theme)).filter((t) => t !== theme);
+  const others = eligibleCollectionThemes(all.map((s) => s.theme).filter((t): t is string => !!t)).filter((t) => t !== theme);
 
   const collectionJsonLd = {
     '@context': 'https://schema.org',

@@ -102,8 +102,8 @@ async function main() {
     cursor = page.lastEvaluatedKey as Record<string, unknown> | undefined;
   } while (cursor);
 
-  const changes: Array<{ id: string; title: string; from: SongTheme; to: SongTheme; label: string }> = [];
-  const unclassified: Array<{ id: string; title: string; resolved: SongTheme }> = [];
+  const changes: Array<{ id: string; title: string; from: SongTheme | null; to: SongTheme; label: string }> = [];
+  const unclassified: Array<{ id: string; title: string; resolved: SongTheme | null }> = [];
   const curatedConflicts: Array<{ id: string; title: string; curated: SongTheme; playlist: SongTheme; label: string }> = [];
   let alreadyCorrect = 0;
 
@@ -136,11 +136,11 @@ async function main() {
 
   if (moved.length) {
     console.log('--- visible theme changes ---');
-    for (const c of moved) console.log(`  ${c.from.padEnd(10)} -> ${c.to.padEnd(10)} ${c.title.slice(0, 44)}   [${c.label}]`);
+    for (const c of moved) console.log(`  ${(c.from ?? '(none)').padEnd(10)} -> ${c.to.padEnd(10)} ${c.title.slice(0, 44)}   [${c.label}]`);
   }
   if (unclassified.length) {
-    console.log('\n--- UNCLASSIFIED (showing as their fallback; needs Raj) ---');
-    for (const u of unclassified) console.log(`  ${u.resolved.padEnd(10)} ${u.id}  ${u.title.slice(0, 50)}`);
+    console.log('\n--- UNCLASSIFIED (no theme at all; needs Raj) ---');
+    for (const u of unclassified) console.log(`  ${(u.resolved ?? '(none)').padEnd(10)} ${u.id}  ${u.title.slice(0, 50)}`);
   }
   if (curatedConflicts.length) {
     console.log('\n--- CURATED vs PLAYLIST disagreement (NOT written; needs Raj) ---');

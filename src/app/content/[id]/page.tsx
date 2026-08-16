@@ -159,7 +159,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   // keyword instead of a generic "Tamil Song".
   const descType =
     content.type === ContentType.SONGS
-      ? themeSongLabelEn(themeForSongWithOverride(content.id, content.theme))
+      ? (() => {
+          // Unclassified → the generic label rather than inventing "love song".
+          const t = themeForSongWithOverride(content.id, content.theme);
+          return t ? themeSongLabelEn(t) : enType;
+        })()
       : enType;
   const description =
     content.seoDescription ||

@@ -23,12 +23,24 @@ export const SONG_THEME_LABELS: Record<SongTheme, string> = {
   motivation: 'ஊக்கம்',
 };
 
-/** Default theme for any song not listed in SONG_THEME_BY_ID. */
-export const DEFAULT_SONG_THEME: SongTheme = 'love';
+/**
+ * A theme to DRAW WITH when a visual has to be produced for an unclassified
+ * song (cover art must pick some palette).
+ *
+ * ⚠️ THIS IS A RENDERING FALLBACK, NOT A CLASSIFICATION. It used to be returned
+ * by `themeForSong()` for any unlisted song, which meant **missing data was
+ * silently converted into wrong data**: on 2026-08-16 seven published songs had
+ * no theme and were all filed under `love`, including three mother songs and an
+ * English track. `love` must mean "someone classified this as love", never
+ * "nobody classified this". Use `themeForRendering()` where a visual is
+ * unavoidable; everywhere else, honour the null.
+ */
+export const RENDERING_FALLBACK_THEME: SongTheme = 'love';
 
 /**
- * Curated assignments — edit this when you publish a new song.
- * Songs not listed here fall back to DEFAULT_SONG_THEME.
+ * Curated assignments — edit this when you publish a new song. Being in this
+ * map IS an affirmative classification. Songs not listed here, and with no DB
+ * theme, are UNCLASSIFIED (null) — not `love`.
  */
 export const SONG_THEME_BY_ID: Record<string, SongTheme> = {
   cnt_1780067292588_frlxbwfzh: 'nature',    // இரை தேட சென்றதாய்
@@ -39,12 +51,13 @@ export const SONG_THEME_BY_ID: Record<string, SongTheme> = {
   cnt_1780856529972_6vrbl2icr: 'mother',    // செவ்விழி ஓவியமே (யூடியூப்: h1WgaJW9khI) — தாய் மகள் பாசப் பாடல்
   cnt_1780856975823_fmfd5xgpf: 'mother',    // அம்மா சொன்ன கதை (site-only — no YouTube video yet)
   cnt_1780193983131_fjtgmrgm3: 'homeland',  // என் தேசமே என் சுவாசமே
-  // Everything else → 'love' (என்ன மாயம், தூக்கணாங்குருவி போல, ஒரு நாள் திருநாள்,
-  // அக்கம் பக்கம், முடிவில்லா முகத்தினில், அந்தி மேகமே, பொன்வானம் சாயுதே).
+  // Anything absent here AND without a DB theme is unclassified — it appears
+  // under no theme chip and on no collection page, which is the honest result.
 };
 
-export function themeForSong(id: string): SongTheme {
-  return SONG_THEME_BY_ID[id] ?? DEFAULT_SONG_THEME;
+/** The curated theme for a song, or null when nobody has classified it. */
+export function themeForSong(id: string): SongTheme | null {
+  return SONG_THEME_BY_ID[id] ?? null;
 }
 
 /**
@@ -56,9 +69,19 @@ export function themeForSong(id: string): SongTheme {
 export function themeForSongWithOverride(
   id: string,
   override: unknown
-): SongTheme {
+): SongTheme | null {
   if (typeof override === 'string' && (SONG_THEMES as readonly string[]).includes(override)) {
     return override as SongTheme;
   }
   return themeForSong(id);
+}
+
+/**
+ * The theme to DRAW WITH — never to report. Only for code that must pick a
+ * palette or template for an unclassified song. If you are labelling, filtering,
+ * counting or exposing a theme, use the nullable functions above and show the
+ * absence.
+ */
+export function themeForRendering(theme: SongTheme | null | undefined): SongTheme {
+  return theme ?? RENDERING_FALLBACK_THEME;
 }

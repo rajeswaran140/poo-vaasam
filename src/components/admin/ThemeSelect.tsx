@@ -17,8 +17,13 @@ import { adminFetch } from '@/lib/client-auth';
 
 interface Props {
   songId: string;
-  /** Resolved theme to show as the current selection (override wins, else config default). */
-  initialTheme: SongTheme;
+  /**
+   * Resolved theme to show as the current selection (override wins, else the
+   * curated config map). **Null = UNCLASSIFIED** — the picker shows the
+   * "no theme" entry rather than pre-selecting `love`, which would let a save
+   * silently convert "nobody has judged this" into "this is a love song".
+   */
+  initialTheme: SongTheme | null;
   /** True when this song has an explicit DB override (vs the config default). */
   hasOverride: boolean;
 }
@@ -29,7 +34,7 @@ const RESET_VALUE = '__default__';
 type PickerValue = SongTheme | typeof RESET_VALUE;
 
 export function ThemeSelect({ songId, initialTheme, hasOverride: hasOverrideInitial }: Props) {
-  const [theme, setTheme] = useState<SongTheme>(initialTheme);
+  const [theme, setTheme] = useState<SongTheme | null>(initialTheme);
   const [hasOverride, setHasOverride] = useState(hasOverrideInitial);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -37,7 +42,9 @@ export function ThemeSelect({ songId, initialTheme, hasOverride: hasOverrideInit
 
   // Selected value in the <select>. When no override is active we surface the
   // "Default (configured)" sentinel so the orange highlight + label match.
-  const selectValue: PickerValue = hasOverride ? theme : RESET_VALUE;
+  // With no override the sentinel is shown; with an override but a null theme
+  // (unclassified) the sentinel is also correct — there is no real value to show.
+  const selectValue: PickerValue = hasOverride && theme ? theme : RESET_VALUE;
 
   const save = async (next: PickerValue) => {
     const previousTheme = theme;
@@ -82,7 +89,11 @@ export function ThemeSelect({ songId, initialTheme, hasOverride: hasOverrideInit
         title={hasOverride ? 'DB override active — pick "Default" to clear' : 'Default from config'}
       >
         <option value={RESET_VALUE}>
-          {hasOverride ? '↻ Default (clear override)' : `Default · ${SONG_THEME_LABELS[theme]}`}
+          {hasOverride
+            ? '↻ Default (clear override)'
+            : theme
+              ? `Default · ${SONG_THEME_LABELS[theme]}`
+              : '— Unclassified'}
         </option>
         {SONG_THEMES.map((t) => (
           <option key={t} value={t}>{SONG_THEME_LABELS[t]}</option>

@@ -68,12 +68,18 @@ it('filters by theme (honours the override map)', () => {
   expect(rowTitles()).toEqual(['என் தேசமே']);
 });
 
-it('combines filters as AND — published + love narrows correctly', () => {
+/**
+ * ⚠️ UNTAGGED IS NOT LOVE. These rows used to appear under the `love` filter
+ * because an unclassified song resolved to the default — so filtering for love
+ * returned songs nobody had ever called love songs.
+ */
+it('combines filters as AND, and does NOT sweep untagged songs into love', () => {
   setup();
   fireEvent.change(screen.getByLabelText('Status filter'), { target: { value: 'PUBLISHED' } });
   fireEvent.change(screen.getByLabelText('Theme filter'), { target: { value: 'love' } });
-  // 2 untagged (default love) + 0 published-draft (the draft is filtered out) = 2 published love
-  expect(rowTitles().sort()).toEqual(['அந்தி மேகமே', 'என்ன மாயம்'].sort());
+  // The untagged rows are absent: they are unclassified, not love songs.
+  expect(rowTitles()).not.toContain('அந்தி மேகமே');
+  expect(rowTitles()).not.toContain('என்ன மாயம்');
 });
 
 it('renders a friendly empty state when no rows match', () => {

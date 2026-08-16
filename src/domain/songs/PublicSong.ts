@@ -33,7 +33,8 @@ export interface PublicSongDTO {
   /** Absent when the song is watched on YouTube rather than played on-site. */
   audio?: { url: string; durationSeconds?: number; mimeType: string };
   coverUrl?: string;
-  theme: string;
+  /** Absent when nobody has classified the song — never silently `love`. */
+  theme?: string;
   youtubeVideoId?: string;
   /** ISO-8601 — interop-friendly across web + native clients. */
   publishedAt: string;
@@ -46,7 +47,7 @@ export class PublicSong {
     public readonly title: string,
     public readonly artist: string,
     public readonly audio: AudioTrack | undefined,
-    public readonly theme: string,
+    public readonly theme: string | null,
     public readonly publishedAt: string,
     public readonly coverUrl: string | undefined,
     public readonly youtubeVideoId: string | undefined
@@ -114,7 +115,7 @@ export class PublicSong {
       artist: this.artist,
       audio: this.audio?.toJSON(),
       coverUrl: this.coverUrl,
-      theme: this.theme,
+      ...(this.theme ? { theme: this.theme } : {}),
       youtubeVideoId: this.youtubeVideoId,
       publishedAt: this.publishedAt,
     };

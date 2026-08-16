@@ -13,7 +13,7 @@ export interface RelatedSongInput {
   title: string;
   artist?: string;
   /** Resolved browse theme (love | mother | nature | tamil | homeland). */
-  theme: string;
+  theme: string | null;
   coverUrl?: string;
   /** ISO-8601 — used only to order "most recent first". */
   publishedAt?: string;
@@ -28,7 +28,13 @@ export interface RelatedSongItem {
 
 export function pickRelatedSongs(
   currentId: string,
-  currentTheme: string,
+  /**
+   * Null when the current song is UNCLASSIFIED. Theme affinity is then skipped
+   * entirely and the list falls back to recency — two songs that merely both
+   * lack a theme are not related BY theme, and grouping them would recreate the
+   * "absence means love" bug one level down.
+   */
+  currentTheme: string | null,
   all: RelatedSongInput[],
   toHref: (id: string) => string,
   limit = 6,
@@ -36,8 +42,9 @@ export function pickRelatedSongs(
   const others = all.filter((s) => s.id !== currentId);
   const byRecent = (a: RelatedSongInput, b: RelatedSongInput) =>
     (b.publishedAt ?? '').localeCompare(a.publishedAt ?? '');
-  const sameTheme = others.filter((s) => s.theme === currentTheme).sort(byRecent);
-  const rest = others.filter((s) => s.theme !== currentTheme).sort(byRecent);
+  const affinity = (s: RelatedSongInput) => !!currentTheme && !!s.theme && s.theme === currentTheme;
+  const sameTheme = others.filter(affinity).sort(byRecent);
+  const rest = others.filter((s) => !affinity(s)).sort(byRecent);
   return [...sameTheme, ...rest]
     .slice(0, Math.max(0, limit))
     .map((s) => ({ title: s.title, artist: s.artist, href: toHref(s.id), coverUrl: s.coverUrl }));

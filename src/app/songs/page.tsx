@@ -108,7 +108,10 @@ export default async function SongsPage() {
   const playableCount = tracks.filter((t) => t.src).length;
   // Crawlable internal links to the SEO theme collection pages (only themes
   // with enough songs to have a page).
-  const collectionThemes = eligibleCollectionThemes(songs.map((s) => s.theme));
+  // Unclassified songs contribute to no collection.
+  const collectionThemes = eligibleCollectionThemes(
+    songs.map((s) => s.theme).filter((t): t is string => !!t)
+  );
 
   const firstCover = tracks.map((t) => t.cover).find((c) => !!c);
   const playlistImage = firstCover || FALLBACK_OG_IMAGE;

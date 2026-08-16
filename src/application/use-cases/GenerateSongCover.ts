@@ -11,7 +11,7 @@ import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { DynamoDBOperations } from '@/infrastructure/database/dynamodb-client';
 import { S3Operations } from '@/infrastructure/storage/s3-client';
 import { generateCoverArt, defaultCoverPrompt } from '@/services/ai/cover-art';
-import { themeForSongWithOverride, SONG_THEME_LABELS, type SongTheme } from '@/config/song-themes';
+import { themeForSongWithOverride, themeForRendering, SONG_THEME_LABELS, type SongTheme } from '@/config/song-themes';
 
 export type GenerateSongCoverResult =
   | { ok: true; featuredImage: string }
@@ -32,7 +32,11 @@ export async function generateSongCover(
   }
   if (!song) return { ok: false, status: 404, error: 'Song not found' };
 
-  const themeKey = themeForSongWithOverride(id, song.theme) as SongTheme;
+  // A cover has to be drawn in SOME palette, so an unclassified song falls back
+  // here — explicitly, via themeForRendering. The previous `as SongTheme` cast
+  // would have silently swallowed the null once the fallback was removed, which
+  // the compiler cannot catch.
+  const themeKey: SongTheme = themeForRendering(themeForSongWithOverride(id, song.theme));
   const prompt =
     opts?.prompt?.trim() ||
     defaultCoverPrompt(String(song.title ?? 'Tamil song'), SONG_THEME_LABELS[themeKey]);
