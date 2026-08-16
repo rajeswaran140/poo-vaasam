@@ -24,7 +24,12 @@ export const publicSongSchema = z.object({
   audio: audioTrackSchema.optional(),
   // featuredImage may be an absolute CDN URL or a site-relative path — accept both.
   coverUrl: z.string().min(1).optional(),
-  theme: z.string().min(1),
+  /**
+   * Absent when the song is UNCLASSIFIED. Required-with-a-default would put
+   * `love` back on every unjudged song, which is the bug this contract now
+   * refuses to express.
+   */
+  theme: z.string().min(1).optional(),
   youtubeVideoId: z
     .string()
     .regex(/^[A-Za-z0-9_-]{11}$/, 'Must be an 11-character YouTube video ID')

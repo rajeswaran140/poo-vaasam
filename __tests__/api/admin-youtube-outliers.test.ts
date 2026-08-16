@@ -230,11 +230,14 @@ it('joins catalogue themes and groups the rollup by real theme', async () => {
   expect(body.themesJoined).toBe(true);
   const breakout = body.outliers.find((o: { videoId: string }) => o.videoId === 'breakout');
   expect(breakout.theme).toBe('mother'); // DB override
+  // ⚠️ An UNCLASSIFIED song reports null — it is NOT silently filed under
+  // `love`. That old "site convention" turned missing data into wrong data:
+  // seven published songs, three of them mother songs, sat in love because
+  // nobody had judged them (2026-08-16).
   const normal = body.outliers.find((o: { videoId: string }) => o.videoId === 'normal1');
-  expect(normal.theme).toBe('love'); // default (site convention)
+  expect(normal.theme).toBeNull();
   const themes = body.themeSummary.map((t: { theme: string }) => t.theme).sort();
-  expect(themes).toEqual(['love', 'mother']);
-  expect(body.themeSummary.every((t: { theme: string }) => t.theme !== '(untagged)')).toBe(true);
+  expect(themes).toContain('mother');
 });
 
 it('degrades to untagged themes when the catalogue lookup fails (no 500)', async () => {

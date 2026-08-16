@@ -152,8 +152,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Theme collection pages (/songs/[theme]) — only themes with enough songs to
   // have a generated page, kept in sync with the page's generateStaticParams by
   // using the same SongCatalog source.
+  // An UNCLASSIFIED song counts toward no collection — filtering here keeps the
+  // sitemap identical to what generateStaticParams will actually build.
   const collectionRoutes: MetadataRoute.Sitemap = eligibleCollectionThemes(
-    publishedSongs.map((s) => s.theme)
+    publishedSongs.map((s) => s.theme).filter((t): t is string => !!t)
   ).map((theme) => ({
     url: `${SITE_URL}/songs/${theme}`,
     lastModified,
