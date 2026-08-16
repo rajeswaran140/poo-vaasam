@@ -14,9 +14,10 @@ jest.mock('@/lib/auth-helper', () => ({
 const mockGet = jest.fn();
 const mockSave = jest.fn();
 const mockListSaved = jest.fn();
+const mockListSavedPage = jest.fn();
 jest.mock('@/infrastructure/database/MasterJobRepository', () => ({
   MasterJobRepository: jest.fn().mockImplementation(() => ({
-    get: mockGet, save: mockSave, listSaved: mockListSaved,
+    get: mockGet, save: mockSave, listSaved: mockListSaved, listSavedPage: mockListSavedPage,
   })),
 }));
 
@@ -106,19 +107,33 @@ describe('GET /masters', () => {
   });
 
   it('returns the saved masters', async () => {
-    mockListSaved.mockResolvedValueOnce([{ id: 'j1', title: 'A' }, { id: 'j2', title: 'B' }]);
+    mockListSavedPage.mockResolvedValueOnce({
+      masters: [{ id: 'j1', title: 'A' }, { id: 'j2', title: 'B' }],
+      nextCursor: null,
+    });
     const body = await (await GET(listReq())).json();
     expect(body.success).toBe(true);
     expect(body.count).toBe(2);
+    expect(body.nextCursor).toBeNull();
   });
 
   it('caps limit so a crafted query cannot ask for the whole table', async () => {
+    mockListSavedPage.mockResolvedValueOnce({ masters: [], nextCursor: null });
     await GET(listReq('?limit=99999'));
-    expect(mockListSaved).toHaveBeenCalledWith(200);
+    expect(mockListSavedPage).toHaveBeenCalledWith(100, undefined);
   });
 
-  it('falls back to the default limit on junk input', async () => {
+  it('falls back to the default page size on junk input', async () => {
+    mockListSavedPage.mockResolvedValueOnce({ masters: [], nextCursor: null });
     await GET(listReq('?limit=abc'));
-    expect(mockListSaved).toHaveBeenCalledWith(100);
+    expect(mockListSavedPage).toHaveBeenCalledWith(25, undefined);
+  });
+
+  /** Paging is what makes a library larger than one page reachable at all. */
+  it('passes the cursor through and hands the next one back', async () => {
+    mockListSavedPage.mockResolvedValueOnce({ masters: [{ id: 'j3' }], nextCursor: 'CURSOR2' });
+    const body = await (await GET(listReq('?cursor=CURSOR1'))).json();
+    expect(mockListSavedPage).toHaveBeenCalledWith(25, 'CURSOR1');
+    expect(body.nextCursor).toBe('CURSOR2');
   });
 });

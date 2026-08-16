@@ -8,14 +8,25 @@
  */
 
 jest.mock('@/lib/client-auth', () => ({ adminFetch: jest.fn() }));
-jest.mock('lucide-react', () => ({
-  Play: () => <svg data-testid="i-play" />,
-  Pause: () => <svg data-testid="i-pause" />,
-  Loader2: () => <svg data-testid="i-loader" />,
-  AlertTriangle: () => <svg data-testid="i-alert" />,
-  Volume2: () => <svg data-testid="i-volume" />,
-  VolumeX: () => <svg data-testid="i-muted" />,
-}));
+/**
+ * ⚠️ FALLS BACK ON PURPOSE. Listing icons by hand means that adding one button
+ * to the transport makes the component render `undefined` and takes every test
+ * in this file down with "Element type is invalid" — a failure that reads like
+ * a component bug and is a missing mock entry. Named icons keep their testids.
+ */
+jest.mock('lucide-react', () => {
+  const icons: Record<string, () => JSX.Element> = {
+    Play: () => <svg data-testid="i-play" />,
+    Pause: () => <svg data-testid="i-pause" />,
+    Loader2: () => <svg data-testid="i-loader" />,
+    AlertTriangle: () => <svg data-testid="i-alert" />,
+    Volume2: () => <svg data-testid="i-volume" />,
+    VolumeX: () => <svg data-testid="i-muted" />,
+  };
+  return new Proxy(icons, {
+    get: (t, prop: string) => t[prop] ?? (() => <svg data-testid={`i-${String(prop).toLowerCase()}`} />),
+  });
+});
 
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MasteringComparePlayer } from '@/components/admin/MasteringComparePlayer';

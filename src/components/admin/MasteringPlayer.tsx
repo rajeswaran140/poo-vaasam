@@ -25,7 +25,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Repeat, X, Flag, Copy, Play, Pause, Volume2, VolumeX } from 'lucide-react';
+import { Repeat, X, Flag, Copy, Play, Pause, Volume2, VolumeX, SkipBack, SkipForward } from 'lucide-react';
 import { MasteringEqualizer } from '@/components/admin/MasteringEqualizer';
 import { MasteringWaveform } from '@/components/admin/MasteringWaveform';
 import { EQ_BANDS, flatGains, clampGain, isFlat, type EqGains } from '@/lib/audio-eq';
@@ -54,12 +54,19 @@ interface Props {
   /** The job's measured true peak — the authoritative figure. */
   afterTp?: number | null;
   onExpired?: () => void;
+  /**
+   * Optional library navigation. Present only when the player is auditioning a
+   * saved master with neighbours — the studio's own result panel has none, so
+   * the buttons simply do not render there.
+   */
+  onPrev?: () => void;
+  onNext?: () => void;
 }
 
 /** Peak resolution captured at decode time; the canvas resamples down to fit. */
 const WAVEFORM_BINS = 1200;
 
-export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpired }: Props) {
+export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpired, onPrev, onNext }: Props) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const ctxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -465,6 +472,16 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
           The play button is 44px — the platform minimum for a touch target,
           and this is the control that matters most. */}
       <div className="mt-3 flex flex-wrap items-center gap-3">
+        {onPrev && (
+          <button
+            type="button"
+            onClick={onPrev}
+            aria-label="Previous master"
+            className="rounded p-1.5 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+          >
+            <SkipBack className="h-4 w-4" aria-hidden="true" />
+          </button>
+        )}
         <button
           type="button"
           onClick={() => {
@@ -478,6 +495,17 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
         >
           {playing ? <Pause className="h-5 w-5" aria-hidden="true" /> : <Play className="h-5 w-5 translate-x-[1px]" aria-hidden="true" />}
         </button>
+
+        {onNext && (
+          <button
+            type="button"
+            onClick={onNext}
+            aria-label="Next master"
+            className="rounded p-1.5 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+          >
+            <SkipForward className="h-4 w-4" aria-hidden="true" />
+          </button>
+        )}
 
         <span className="tabular-nums text-sm text-gray-600 dark:text-gray-300">
           {formatTime(position)} <span className="text-gray-400 dark:text-gray-500">/ {formatTime(duration)}</span>
