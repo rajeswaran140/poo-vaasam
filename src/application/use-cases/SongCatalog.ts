@@ -20,16 +20,41 @@ export class SongCatalog {
    * so one page is the whole list today.
    */
   async listPublished(limit = 100): Promise<PublicSongDTO[]> {
+    return (await this.listPublishedDetailed(limit)).songs;
+  }
+
+  /**
+   * Same projection, but it also RETURNS WHAT IT THREW AWAY.
+   *
+   * ⚠️ The 37-song outage was invisible because the loop below used to be
+   * `if (song) out.push(...)` and nothing else — a published record that failed
+   * projection left no trace anywhere: no log, no count, no error. The site
+   * simply served fewer songs than it had, and did so confidently for weeks.
+   *
+   * A discard is a legitimate outcome (a record with neither audio nor a video
+   * really is unshowable), so this does not throw. But it must be COUNTABLE,
+   * because "we dropped 37 of 55" and "we dropped 0 of 55" have to look
+   * different to a monitor. `scripts/catalogue-completeness.ts` reads this.
+   */
+  async listPublishedDetailed(
+    limit = 100
+  ): Promise<{ songs: PublicSongDTO[]; dropped: Array<{ id: string; title: string }> }> {
     const page = await this.contentRepo.findByType(ContentType.SONGS, {
       status: ContentStatus.PUBLISHED,
       limit,
     });
 
-    const out: PublicSongDTO[] = [];
+    const songs: PublicSongDTO[] = [];
+    const dropped: Array<{ id: string; title: string }> = [];
     for (const content of page.items) {
       const song = PublicSong.fromContent(content);
-      if (song) out.push(song.toJSON());
+      if (song) {
+        songs.push(song.toJSON());
+      } else {
+        const obj = content.toObject();
+        dropped.push({ id: String(obj.id), title: String(obj.title ?? '').trim() });
+      }
     }
-    return out;
+    return { songs, dropped };
   }
 }
