@@ -20,7 +20,8 @@ export const publicSongSchema = z.object({
   slug: z.string().min(1),
   title: z.string(),
   artist: z.string(),
-  audio: audioTrackSchema,
+  /** Absent for songs watched on YouTube rather than played on-site. */
+  audio: audioTrackSchema.optional(),
   // featuredImage may be an absolute CDN URL or a site-relative path — accept both.
   coverUrl: z.string().min(1).optional(),
   theme: z.string().min(1),

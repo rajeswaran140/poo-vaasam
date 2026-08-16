@@ -47,9 +47,37 @@ describe('PublicSong.fromContent', () => {
     });
   });
 
-  it('returns null for content with no audio (unplayable → dropped)', () => {
-    expect(PublicSong.fromContent(content({ audioUrl: undefined }))).toBeNull();
-    expect(PublicSong.fromContent(content({ audioUrl: '   ' }))).toBeNull();
+  /**
+   * ⚠️ A SONG IS REACHABLE VIA AUDIO **OR** VIA YOUTUBE.
+   *
+   * Requiring audio silently deleted the whole YouTube-synced catalogue: the
+   * sync deliberately never touches S3, so its pages have no `audioUrl` and
+   * every one was dropped here. On 2026-08-16 that was 37 of 55 published
+   * songs — invisible on /songs and 404 at their own URL while sitting
+   * PUBLISHED in the database. `listableSongs()` was written to surface exactly
+   * these, and could never see them.
+   */
+  it('keeps a YouTube-only song — no audio, but watchable', () => {
+    const song = PublicSong.fromContent(content({ audioUrl: undefined }));
+    expect(song).not.toBeNull();
+    expect(song!.toJSON().audio).toBeUndefined();
+    expect(song!.toJSON().youtubeVideoId).toBe('dQw4w9WgXcQ');
+  });
+
+  it('treats whitespace-only audio as absent, not as a URL', () => {
+    expect(PublicSong.fromContent(content({ audioUrl: '   ' }))!.toJSON().audio).toBeUndefined();
+  });
+
+  it('keeps an audio-only song with no video', () => {
+    const song = PublicSong.fromContent(content({ youtubeVideoId: undefined }));
+    expect(song).not.toBeNull();
+    expect(song!.toJSON().audio?.url).toBeTruthy();
+  });
+
+  /** Neither route = a dead page. That one is still dropped. */
+  it('returns null only when the song is reachable NOWHERE', () => {
+    expect(PublicSong.fromContent(content({ audioUrl: undefined, youtubeVideoId: undefined }))).toBeNull();
+    expect(PublicSong.fromContent(content({ audioUrl: '  ', youtubeVideoId: '  ' }))).toBeNull();
   });
 
   it('lets a valid DB theme override win, else falls back to the config map', () => {
