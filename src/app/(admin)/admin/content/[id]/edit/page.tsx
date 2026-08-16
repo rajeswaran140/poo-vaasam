@@ -13,6 +13,8 @@ import { MediaUploadField } from '@/components/admin/MediaUploadField';
 import { adminFetch } from '@/lib/client-auth';
 import { getYouTubeId } from '@/lib/utils/youtube';
 import { WORKFLOW_STATES, WORKFLOW_LABELS } from '@/types/content';
+import { LyricsField } from '@/components/admin/LyricsField';
+import { lyricsTextToDTO, lyricsDTOToText } from '@/lib/lyrics-text';
 
 // Small reusable input for the Studio asset URLs (matches the new-content page).
 function EditAssetInput({ name, label, placeholder, value, onChange }: {
@@ -73,6 +75,9 @@ export default function EditContentPage({ params }: PageProps) {
     stemsUrl: '',
     midiUrl: '',
     thumbnailUrl: '',
+    // Plain-text lyrics; parsed to a structured LyricsDTO on save. Form-only —
+    // never sent as-is, and never rendered on the public site.
+    lyricsText: '',
     workflowState: '',
     audioDuration: 0,
     seoTitle: '',
@@ -119,6 +124,8 @@ export default function EditContentPage({ params }: PageProps) {
             stemsUrl: content.stemsUrl || '',
             midiUrl: content.midiUrl || '',
             thumbnailUrl: content.thumbnailUrl || '',
+            // Flatten stored structured lyrics back to editable plain text.
+            lyricsText: lyricsDTOToText(content.lyrics),
             workflowState: content.workflowState || '',
             audioDuration: content.audioDuration || 0,
             seoTitle: content.seoTitle || '',
@@ -152,6 +159,7 @@ export default function EditContentPage({ params }: PageProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
+    const { lyricsText, ...rest } = formData;
 
     try {
       const response = await adminFetch('/api/content', {
@@ -159,7 +167,10 @@ export default function EditContentPage({ params }: PageProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: contentId,
-          ...formData,
+          // lyricsText is form-only; the API takes the parsed structured DTO
+          // (null clears). Sending the raw textarea would bypass the Lyrics VO.
+          ...rest,
+          lyrics: lyricsTextToDTO(lyricsText) ?? null,
         }),
       });
 
@@ -288,6 +299,16 @@ export default function EditContentPage({ params }: PageProps) {
               <ContentPreview title={formData.title} body={formData.body} isPoem={formData.type === 'POEMS'} />
             </div>
           </div>
+
+          {/* Structured lyrics — parsed from this textarea on save (empty clears).
+              ⚠️ STORED, NOT PUBLISHED. These feed YouTube caption generation
+              (scripts/upload-captions.ts); no public page renders them. */}
+          {(formData.type === 'SONGS' || formData.type === 'LYRICS') && (
+            <LyricsField
+              value={formData.lyricsText}
+              onChange={(value) => setFormData((prev) => ({ ...prev, lyricsText: value }))}
+            />
+          )}
 
           <TamilInput
             value={formData.description}

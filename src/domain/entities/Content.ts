@@ -15,6 +15,7 @@ import {
   type EmotionAnalysis,
 } from '@/types/content';
 import { generateSlug } from '@/lib/utils/slug';
+import { Lyrics } from '@/domain/songs/Lyrics';
 
 /**
  * Content Domain Entity
@@ -56,7 +57,21 @@ export class Content {
     // Precomputed poem emotion analysis (music/TTS params). Set at publish time
     // via the admin analyze endpoint; read by PoemReader so the LLM never runs
     // in the visitor path. Undefined on legacy/un-backfilled rows.
-    private _emotionAnalysis: EmotionAnalysis | undefined = undefined
+    private _emotionAnalysis: EmotionAnalysis | undefined = undefined,
+    // Structured lyrics (sections → lines, optional romanisation + timestamps).
+    // Feeds YouTube caption generation. Defaults to empty so legacy rows (lyrics
+    // in the `body` blob, or none at all) reconstruct fine.
+    //
+    // ⚠️ STORED, NOT PUBLISHED. Raj's standing instruction is that lyrics are not
+    // displayed on the site. This field exists so a caption track can be built
+    // from them; nothing in the public projection reads it, and PublicSongDTO
+    // carries no lyrics at all.
+    //
+    // NOT to be confused with the email-gated lyrics feature, which is a
+    // SEPARATE mechanism: it serves the free-text `body` behind an admin
+    // `showLyrics` flag plus a signed gate cookie (/api/lyrics/[id]). These
+    // structured lyrics are never routed there.
+    private _lyrics: Lyrics = Lyrics.empty()
   ) {}
 
   // Getters
@@ -72,6 +87,11 @@ export class Content {
   setEmotionAnalysis(analysis: EmotionAnalysis): void {
     this._emotionAnalysis = analysis;
     this._updatedAt = new Date();
+  }
+
+  /** Structured lyrics value object (empty when the song has none yet). */
+  get lyrics(): Lyrics {
+    return this._lyrics;
   }
 
   get title(): string {
@@ -199,7 +219,10 @@ export class Content {
       dto.stemsUrl,
       dto.midiUrl,
       dto.thumbnailUrl,
-      dto.workflowState
+      dto.workflowState,
+      undefined, // theme — set later via /api/admin/songs/[id]/theme
+      undefined, // emotionAnalysis — precomputed later by the analyze endpoint
+      Lyrics.fromObject(dto.lyrics)
     );
   }
 
@@ -275,6 +298,11 @@ export class Content {
 
     if (dto.seoDescription !== undefined) {
       this._seoDescription = dto.seoDescription || undefined;
+    }
+
+    if (dto.lyrics !== undefined) {
+      // null/junk → empty (clears); a structured object → sanitised lyrics.
+      this._lyrics = Lyrics.fromObject(dto.lyrics);
     }
 
     if (dto.status !== undefined) {
@@ -415,6 +443,9 @@ export class Content {
       midiUrl: this._midiUrl,
       thumbnailUrl: this._thumbnailUrl,
       workflowState: this._workflowState,
+      // Omit lyrics entirely when empty so songs without words don't carry an
+      // empty `{sections:[]}` in DynamoDB (consistent with other optional fields).
+      lyrics: this._lyrics.isEmpty() ? undefined : this._lyrics.toObject(),
       categoryIds: this._categoryIds,
       tagIds: this._tagIds,
       theme: this._theme,
@@ -465,7 +496,8 @@ export class Content {
       typeof data.theme === 'string' ? data.theme : undefined,
       data.emotionAnalysis && typeof data.emotionAnalysis === 'object'
         ? (data.emotionAnalysis as EmotionAnalysis)
-        : undefined
+        : undefined,
+      Lyrics.fromObject(data.lyrics)
     );
   }
 

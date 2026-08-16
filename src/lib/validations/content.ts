@@ -6,6 +6,7 @@
 
 import { z } from 'zod';
 import { ContentType, ContentStatus, WORKFLOW_STATES } from '@/types/content';
+import { LYRICS_SECTION_KINDS } from '@/domain/songs/Lyrics';
 
 // Admin forms submit '' for blank URL fields; treat empty string as absent
 // so optional URL validation doesn't reject it.
@@ -14,6 +15,28 @@ const emptyToUndefined = (v: unknown) => (v === '' ? undefined : v);
 /**
  * Create Content Validation Schema
  */
+
+/**
+ * Structured-lyrics input schema. Validates the SHAPE only; the Lyrics value
+ * object does the deeper sanitising (trimming, caps, dropping empties) on the
+ * way into the entity, so this stays permissive on content and strict on type.
+ */
+export const lyricsLineSchema = z.object({
+  text: z.string(),
+  romanized: z.string().optional(),
+  startSeconds: z.number().nonnegative().optional(),
+});
+
+export const lyricsSectionSchema = z.object({
+  kind: z.enum(LYRICS_SECTION_KINDS),
+  label: z.string().optional(),
+  lines: z.array(lyricsLineSchema),
+});
+
+export const lyricsSchema = z.object({
+  sections: z.array(lyricsSectionSchema).max(50, 'Too many lyric sections'),
+});
+
 export const createContentSchema = z.object({
   type: z.nativeEnum(ContentType, {
     message: 'Invalid content type. Must be LYRICS, SONGS, POEMS, STORIES, or ESSAYS.',
@@ -78,6 +101,9 @@ export const createContentSchema = z.object({
     .string()
     .max(160, 'SEO description must be less than 160 characters')
     .optional(),
+  // ⚠️ MUST be declared here or Zod strips it — an unlisted key is dropped
+  // silently, so a save would appear to succeed and store nothing.
+  lyrics: lyricsSchema.optional(),
 });
 
 /**
@@ -137,6 +163,10 @@ export const updateContentSchema = z.object({
   midiUrl: z.preprocess(emptyToUndefined, z.string().url('MIDI URL must be a valid URL').optional().nullable()),
   thumbnailUrl: z.preprocess(emptyToUndefined, z.string().url('Thumbnail URL must be a valid URL').optional().nullable()),
   workflowState: z.preprocess(emptyToUndefined, z.enum(WORKFLOW_STATES as unknown as [string, ...string[]]).optional().nullable()),
+  // ⚠️ MUST be declared here or Zod strips it — an unlisted key is dropped
+  // silently, so the save would appear to succeed and store nothing.
+  // null clears lyrics on edit; absent leaves them untouched.
+  lyrics: lyricsSchema.optional().nullable(),
   audioDuration: z
     .number()
     .int('Audio duration must be an integer')

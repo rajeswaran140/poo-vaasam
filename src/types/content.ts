@@ -5,6 +5,7 @@
  */
 
 import type { Content as ContentEntity } from '@/domain/entities/Content';
+import type { LyricsDTO } from '@/domain/songs/Lyrics';
 
 /**
  * Content Types
@@ -195,6 +196,8 @@ export interface CreateContentDTO {
   status?: ContentStatus;
   seoTitle?: string;
   seoDescription?: string;
+  /** Structured lyrics (sections → lines). Sanitised by the Lyrics value object. */
+  lyrics?: LyricsDTO;
 }
 
 /**
@@ -221,6 +224,8 @@ export interface UpdateContentDTO {
   status?: ContentStatus;
   seoTitle?: string | null;
   seoDescription?: string | null;
+  /** Structured lyrics; pass null/empty to clear. Sanitised by the Lyrics VO. */
+  lyrics?: LyricsDTO | null;
 }
 
 /**
