@@ -5,9 +5,19 @@
  *
  * This is the read side of a CQRS-lite split: the Content aggregate owns writes
  * and the full editorial shape; PublicSong owns the narrow, stable view a
- * listener needs. Projection rules (audio is mandatory, theme resolution, ISO
- * dates) live HERE so route handlers and pages stay thin and every client sees
+ * listener needs. Projection rules (playability, theme resolution, ISO dates)
+ * live HERE so route handlers and pages stay thin and every client sees
  * identical data.
+ *
+ * ⚠️ A SONG IS PLAYABLE VIA AUDIO **OR** VIA YOUTUBE. Audio used to be
+ * mandatory, which silently deleted the entire YouTube-synced catalogue from
+ * the site: `/admin/content → Sync songs from YouTube` deliberately never
+ * touches S3, so the pages it creates have no `audioUrl` — and every one of
+ * them was discarded here. On 2026-08-16 that was 37 of 55 published songs,
+ * absent from /songs AND 404 at their own URL while sitting PUBLISHED in the
+ * database. `listableSongs()` exists precisely to show YouTube-only songs when
+ * on-site playback is off, but it could never see them: they were dropped
+ * before it ran.
  */
 
 import type { Content } from '@/domain/entities/Content';
@@ -20,7 +30,8 @@ export interface PublicSongDTO {
   slug: string;
   title: string;
   artist: string;
-  audio: { url: string; durationSeconds?: number; mimeType: string };
+  /** Absent when the song is watched on YouTube rather than played on-site. */
+  audio?: { url: string; durationSeconds?: number; mimeType: string };
   coverUrl?: string;
   theme: string;
   youtubeVideoId?: string;
@@ -34,7 +45,7 @@ export class PublicSong {
     public readonly slug: string,
     public readonly title: string,
     public readonly artist: string,
-    public readonly audio: AudioTrack,
+    public readonly audio: AudioTrack | undefined,
     public readonly theme: string,
     public readonly publishedAt: string,
     public readonly coverUrl: string | undefined,
@@ -43,26 +54,34 @@ export class PublicSong {
 
   /**
    * Project a Content aggregate onto the public song read-model. Returns null
-   * when the content is not a playable song (no audio URL) — the catalog drops
-   * these rather than emit an unplayable track.
+   * only when the song can be reached NOWHERE — no audio to play and no video
+   * to watch. Such a record would render a dead page, so the catalogue still
+   * drops it.
    */
   static fromContent(content: Content): PublicSong | null {
     const obj = content.toObject();
 
     const audioUrl = typeof obj.audioUrl === 'string' ? obj.audioUrl.trim() : '';
-    if (!audioUrl) return null;
+    const videoId =
+      typeof obj.youtubeVideoId === 'string' && obj.youtubeVideoId.trim()
+        ? obj.youtubeVideoId.trim()
+        : '';
 
-    const audio = AudioTrack.fromUrl(
-      audioUrl,
-      typeof obj.audioDuration === 'number' ? obj.audioDuration : undefined
-    );
+    // Reachable by EITHER route. Neither = nothing to show; drop it.
+    if (!audioUrl && !videoId) return null;
+
+    const audio = audioUrl
+      ? AudioTrack.fromUrl(
+          audioUrl,
+          typeof obj.audioDuration === 'number' ? obj.audioDuration : undefined
+        )
+      : undefined;
 
     const cover =
       typeof obj.featuredImage === 'string' && obj.featuredImage.trim()
         ? obj.featuredImage.trim()
         : undefined;
-    const youtubeVideoId =
-      typeof obj.youtubeVideoId === 'string' && obj.youtubeVideoId ? obj.youtubeVideoId : undefined;
+    const youtubeVideoId = videoId || undefined;
 
     return new PublicSong(
       String(obj.id),
@@ -93,7 +112,7 @@ export class PublicSong {
       slug: this.slug,
       title: this.title,
       artist: this.artist,
-      audio: this.audio.toJSON(),
+      audio: this.audio?.toJSON(),
       coverUrl: this.coverUrl,
       theme: this.theme,
       youtubeVideoId: this.youtubeVideoId,

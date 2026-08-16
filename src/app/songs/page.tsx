@@ -96,9 +96,11 @@ export default async function SongsPage() {
     id: s.id,
     title: s.title,
     artist: s.artist,
-    src: s.audio.url,
+    // '' is the documented Track sentinel for "no audio yet" — a YouTube-only
+    // song routes to YouTube in SongList rather than to the on-site player.
+    src: s.audio?.url ?? '',
     cover: s.coverUrl,
-    duration: s.audio.durationSeconds,
+    duration: s.audio?.durationSeconds,
     addedAt: Date.parse(s.publishedAt) || undefined,
     theme: s.theme,
     youtubeVideoId: s.youtubeVideoId,
