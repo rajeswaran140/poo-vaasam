@@ -13,6 +13,7 @@ import {
   isWhatsAppConfigured,
   socialProfileUrls,
   SITE,
+  isYouTubeChannelConfigured,
 } from '@/config/site';
 
 describe('isValidYouTubeChannelId', () => {
@@ -88,5 +89,36 @@ describe('isContentSectionLive', () => {
     for (const t of ['SONGS', 'POEMS', 'LYRICS', 'STORIES', 'ESSAYS']) {
       expect(isContentSectionLive(t)).toBe(liveTypes.includes(t as typeof liveTypes[number]));
     }
+  });
+});
+
+/**
+ * ⚠️ THE SUBSCRIBE LINK MUST NOT BE A HANDLE.
+ *
+ * Handles are mutable and reclaimable — this channel was rebranded
+ * `@RajeswaranThangarajah` → `@tamilagaval`, freeing the old handle for anyone
+ * to register. Every Subscribe CTA on the site, AND the subscribe link written
+ * into every YouTube video description, derives from this one value, so a
+ * reclaimed handle would silently redirect all of them — including in already
+ * published descriptions, which cannot be bulk-edited cheaply.
+ */
+describe('the canonical channel URL is immutable', () => {
+  it('uses the /channel/UC… form, never a @handle', () => {
+    expect(SITE.youtube.channelUrl).toMatch(/youtube\.com\/channel\/UC[A-Za-z0-9_-]{22}$/);
+    expect(SITE.youtube.channelUrl).not.toContain('/@');
+  });
+
+  /** Two copies of the id can drift; this is why the literal is safe to keep. */
+  it('agrees with channelId — the two cannot drift apart', () => {
+    expect(SITE.youtube.channelUrl).toContain(SITE.youtube.channelId);
+  });
+
+  it('is still recognised as configured', () => {
+    expect(isYouTubeChannelConfigured()).toBe(true);
+  });
+
+  it('still produces a working one-click subscribe link', () => {
+    expect(youtubeSubscribeUrl()).toBe(`${SITE.youtube.channelUrl}?sub_confirmation=1`);
+    expect(youtubeSubscribeUrl()).toMatch(/\/channel\/UC.*\?sub_confirmation=1$/);
   });
 });
