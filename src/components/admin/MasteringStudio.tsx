@@ -19,7 +19,7 @@
  * bounce) must not orphan a master that is about to land in S3.
  */
 
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   SlidersHorizontal, Upload, Download, Loader2, CheckCircle2,
   AlertTriangle, FileAudio, RotateCcw, X, Info, Save, Library, Play, Pause, Pencil, Link2, Film,
@@ -35,7 +35,20 @@ import { MasteringPlayer } from '@/components/admin/MasteringPlayer';
 import { MasteringTrimPanel } from '@/components/admin/MasteringTrimPanel';
 import { MasteringJoinPanel } from '@/components/admin/MasteringJoinPanel';
 import { DEFAULT_CROSSFADE_CURVE, type MasterJoin } from '@/lib/master-join';
-import { groupMastersBySong, describeGroup } from '@/lib/master-library';
+import {
+  groupMastersBySong,
+  describeGroup,
+  filterMasters,
+  sortMasters,
+  LIBRARY_SORTS,
+  type LibrarySort,
+} from '@/lib/master-library';
+
+/**
+ * Rows per library page. 25 is roughly a screenful of grouped rows and keeps
+ * the DynamoDB query well inside one page, so "Show more" is one round trip.
+ */
+const LIBRARY_PAGE_SIZE = 25;
 import type { FadeVerdict, LevelVerdict } from '@/lib/master-analysis';
 
 /** What GET /api/admin/mastering/analyse/[id] returns once it is done. */
@@ -275,6 +288,11 @@ export function MasteringStudio() {
   const [published, setPublished] = useState<{ key: string; replaced: boolean } | null>(null);
   const [library, setLibrary] = useState<MasterJob[] | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  /** Opaque next-page cursor from the API; null = no more pages. */
+  const [libraryCursor, setLibraryCursor] = useState<string | null>(null);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [librarySearch, setLibrarySearch] = useState('');
+  const [librarySort, setLibrarySort] = useState<LibrarySort>('newest');
   /** Which saved master is loaded in the library player, and its presigned URL. */
   const [playing, setPlaying] = useState<{ id: string; url: string; sourceUrl: string | null } | null>(null);
   /** Which row is being renamed, and the draft text. */
@@ -724,14 +742,56 @@ export function MasteringStudio() {
    * Keep this master. Unsaved jobs expire after 24h — the WAV survives in S3 but
    * the record explaining it does not, leaving an orphaned machine-named file.
    */
-  const loadLibrary = useCallback(async () => {
+  /**
+   * Load a page of the library.
+   *
+   * `append` distinguishes "open the library" from "show me more": the first
+   * replaces the list, the second grows it. The cursor is opaque and comes
+   * straight back from the API, so paging never re-reads what is already shown.
+   */
+  /**
+   * The rows actually rendered: this page's masters, searched and sorted.
+   * Both operations are LOCAL to what has been loaded — see `sortMasters`.
+   */
+  const visibleMasters = useMemo(
+    () => sortMasters(filterMasters(library ?? [], librarySearch), librarySort),
+    [library, librarySearch, librarySort]
+  );
+
+  /**
+   * The masters either side of the one playing, in the order shown on screen.
+   *
+   * Deliberately walks `visibleMasters` rather than the raw library: if he has
+   * searched for "பூபாளம்", Next should move to the next பூபாளம் master, not to
+   * whatever happens to sit beside it in the unfiltered list.
+   */
+  const neighbours = useMemo(() => {
+    if (!playing) return { prev: null as MasterJob | null, next: null as MasterJob | null };
+    const i = visibleMasters.findIndex((m) => m.id === playing.id);
+    return {
+      prev: i > 0 ? visibleMasters[i - 1] : null,
+      next: i >= 0 && i < visibleMasters.length - 1 ? visibleMasters[i + 1] : null,
+    };
+  }, [playing, visibleMasters]);
+
+
+  const loadLibrary = useCallback(async (cursor?: string) => {
+    setLibraryLoading(true);
     try {
-      const res = await adminFetch('/api/admin/music-lab/masters');
+      const qs = new URLSearchParams({ limit: String(LIBRARY_PAGE_SIZE) });
+      if (cursor) qs.set('cursor', cursor);
+      const res = await adminFetch(`/api/admin/music-lab/masters?${qs}`);
       const body = await res.json().catch(() => ({}));
-      if (res.ok && body.success) setLibrary(body.masters as MasterJob[]);
+      if (res.ok && body.success) {
+        const page = body.masters as MasterJob[];
+        setLibrary((prev) => (cursor && prev ? [...prev, ...page] : page));
+        setLibraryCursor((body.nextCursor as string | null) ?? null);
+      }
     } catch {
       // A library that fails to load must never block mastering — the list is
       // supplementary, the job in front of the user is the point.
+    } finally {
+      setLibraryLoading(false);
     }
   }, []);
 
@@ -1811,6 +1871,32 @@ export function MasteringStudio() {
           {library && <span className="font-normal normal-case tracking-normal">({library.length})</span>}
         </button>
 
+        {libraryOpen && library && library.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            <input
+              value={librarySearch}
+              onChange={(e) => setLibrarySearch(e.target.value)}
+              placeholder="Search saved masters…"
+              aria-label="search saved masters"
+              className="min-w-[12rem] flex-1 rounded-md border border-gray-300 px-2 py-1 dark:border-gray-600 dark:bg-gray-900"
+            />
+            <select
+              value={librarySort}
+              onChange={(e) => setLibrarySort(e.target.value as LibrarySort)}
+              aria-label="sort saved masters"
+              className="rounded-md border border-gray-300 px-2 py-1 dark:border-gray-600 dark:bg-gray-900"
+            >
+              {LIBRARY_SORTS.map((o) => (
+                <option key={o.id} value={o.id}>{o.label}</option>
+              ))}
+            </select>
+            <span className="text-gray-400">
+              {visibleMasters.length} of {library.length} loaded
+              {libraryCursor ? ' · more available' : ''}
+            </span>
+          </div>
+        )}
+
         {libraryOpen && library && library.length === 0 && (
           <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">
             No saved masters yet. Master a file and choose <strong>Save to library</strong> to keep it.
@@ -1820,7 +1906,7 @@ export function MasteringStudio() {
         {/* Grouped by SONG, not by source: no two saved masters share an
             s3Key (a fresh file is uploaded per attempt), so grouping by source
             gives one group per row. Titles are what actually repeat. */}
-        {libraryOpen && library && library.length > 0 && groupMastersBySong(library).map((group) => (
+        {libraryOpen && library && library.length > 0 && groupMastersBySong(visibleMasters).map((group) => (
           <div key={group.song || group.masters[0].id} className="mt-3">
             <p className="flex items-baseline gap-2 px-1 pb-1 text-xs">
               <span className="font-semibold text-gray-800 dark:text-gray-100">
@@ -1936,6 +2022,26 @@ export function MasteringStudio() {
           </div>
         ))}
 
+        {/* A search that matches nothing LOADED may still match a later page —
+            say so rather than implying the master does not exist. */}
+        {libraryOpen && library && library.length > 0 && visibleMasters.length === 0 && (
+          <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">
+            Nothing here matches &ldquo;{librarySearch}&rdquo;.
+            {libraryCursor && ' Older masters have not been loaded yet — try Show more.'}
+          </p>
+        )}
+
+        {libraryOpen && libraryCursor && (
+          <button
+            type="button"
+            onClick={() => void loadLibrary(libraryCursor)}
+            disabled={libraryLoading}
+            className="mt-3 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+          >
+            {libraryLoading ? 'Loading…' : `Show ${LIBRARY_PAGE_SIZE} more`}
+          </button>
+        )}
+
         {libraryOpen && playing && (
           <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900/40">
             {/* Key on the URL so swapping rows reloads the element rather than
@@ -1950,6 +2056,8 @@ export function MasteringStudio() {
                 setError('That playback link expired — press play again to get a fresh one.');
                 setPlaying(null);
               }}
+              onPrev={neighbours.prev ? () => void playSaved(neighbours.prev!) : undefined}
+              onNext={neighbours.next ? () => void playSaved(neighbours.next!) : undefined}
             />
           </div>
         )}

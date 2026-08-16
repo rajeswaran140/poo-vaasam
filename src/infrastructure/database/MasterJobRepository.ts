@@ -12,6 +12,32 @@ import { parseMasterJoin, type MasterJoin } from '@/lib/master-join';
 
 const TTL_SECONDS = 24 * 60 * 60;
 
+/**
+ * The sparse GSI1 partition holding SAVED masters only. Written by `save()`; an
+ * unsaved job never carries it, so the index contains exactly the rows the
+ * library shows and needs no filter.
+ */
+const SAVED_INDEX_PK = 'MASTERJOB_SAVED';
+
+/** `<savedAt>#<id>` — ISO timestamps sort lexicographically; the id breaks ties. */
+const savedIndexSk = (savedAt: string, id: string) => `${savedAt}#${id}`;
+
+/** DynamoDB's LastEvaluatedKey, base64url'd so it can ride in a query string. */
+function encodeCursor(key: Record<string, unknown> | undefined): string | null {
+  return key ? Buffer.from(JSON.stringify(key), 'utf8').toString('base64url') : null;
+}
+
+function decodeCursor(cursor?: string): Record<string, unknown> | undefined {
+  if (!cursor) return undefined;
+  try {
+    return JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+  } catch {
+    // A malformed cursor restarts at page one rather than 500ing — a stale
+    // bookmark should show the library, not an error.
+    return undefined;
+  }
+}
+
 export class MasterJobRepository {
   /** Create a fresh job in the `processing` state. */
   async create(
@@ -148,25 +174,24 @@ export class MasterJobRepository {
    */
   async save(id: string, title: string | null): Promise<void> {
     try {
+      const savedAt = new Date().toISOString();
       await DynamoDBOperations.update({
         key: { PK: `MASTERJOB#${id}`, SK: 'METADATA' },
-        updateExpression: 'SET #savedAt = :savedAt, #title = :title REMOVE #ttl',
+        updateExpression:
+          'SET #savedAt = :savedAt, #title = :title, GSI1PK = :gpk, GSI1SK = :gsk REMOVE #ttl',
         expressionAttributeNames: { '#savedAt': 'savedAt', '#title': 'title', '#ttl': 'ttl' },
-        expressionAttributeValues: { ':savedAt': new Date().toISOString(), ':title': title },
+        expressionAttributeValues: {
+          ':savedAt': savedAt,
+          ':title': title,
+          ':gpk': SAVED_INDEX_PK,
+          ':gsk': savedIndexSk(savedAt, id),
+        },
       });
     } catch (error) {
       handleDynamoDBError(error);
     }
   }
 
-  /**
-   * Every saved master, newest first.
-   *
-   * Scan + filter rather than a GSI: the table holds a few hundred items and
-   * masters accrue a handful a week, so a new index would cost more than it
-   * saves. Revisit if the table grows into the tens of thousands — the same
-   * trade-off the subscriber list makes.
-   */
   /**
    * Rename a SAVED master. Deliberately not `save()` with a new title: save
    * re-stamps `savedAt`, so reusing it would quietly change the library's
@@ -284,18 +309,60 @@ export class MasterJobRepository {
     }
   }
 
-  async listSaved(limit = 100): Promise<MasterJob[]> {
+  /**
+   * A page of saved masters, newest first.
+   *
+   * ⚠️ THIS WAS A FULL TABLE SCAN, and its cost had nothing to do with how many
+   * masters existed. `TamilWebContent` is a single table: on 2026-08-16 it held
+   * 6,170 items of which 40 were saved masters, so opening the library read
+   * 6,170 items, filtered 6,130 away, then sorted and sliced in memory. Every
+   * lexicon word and composition made the MASTERING page slower — not a
+   * relationship anyone would choose. (The old comment allowed for this,
+   * saying "revisit if the table grows into the tens of thousands"; at 6,170
+   * with a visibly slow page, that revisit had arrived.)
+   *
+   * Now a query on a SPARSE GSI1 partition. `GSI1PK` is written only when a
+   * master is SAVED, so unsaved jobs — which expire by ttl — never enter the
+   * index and no filter is needed to exclude them. `GSI1SK` is
+   * `<savedAt>#<id>` read backwards, so newest-first comes from the index
+   * rather than from sorting in memory.
+   */
+  async listSavedPage(
+    limit = 25,
+    cursor?: string
+  ): Promise<{ masters: MasterJob[]; nextCursor: string | null }> {
     try {
-      const { Items } = await DynamoDBOperations.scanAll({
-        filterExpression: 'begins_with(PK, :pk) AND attribute_exists(savedAt)',
-        expressionAttributeValues: { ':pk': 'MASTERJOB#' },
+      const res = await DynamoDBOperations.query({
+        keyConditionExpression: 'GSI1PK = :pk',
+        expressionAttributeValues: { ':pk': SAVED_INDEX_PK },
+        indexName: 'GSI1',
+        scanIndexForward: false,
+        limit,
+        exclusiveStartKey: decodeCursor(cursor),
       });
-      return Items
-        .map((item) => this.hydrate(item))
-        .sort((a: MasterJob, b: MasterJob) => (b.savedAt ?? '').localeCompare(a.savedAt ?? ''))
-        .slice(0, limit);
+      const masters = ((res.Items as Record<string, unknown>[]) || []).map((i) => this.hydrate(i));
+      return {
+        masters,
+        nextCursor: encodeCursor(res.LastEvaluatedKey as Record<string, unknown> | undefined),
+      };
     } catch (error) {
       handleDynamoDBError(error);
     }
+  }
+
+  /**
+   * The whole library, newest first — for the callers that genuinely need every
+   * row (grouping by song across all masters). Pages through the same index
+   * instead of scanning.
+   */
+  async listSaved(limit = 100): Promise<MasterJob[]> {
+    const out: MasterJob[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await this.listSavedPage(Math.min(100, limit - out.length), cursor);
+      out.push(...page.masters);
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor && out.length < limit);
+    return out.slice(0, limit);
   }
 }

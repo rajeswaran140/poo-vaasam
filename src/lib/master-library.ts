@@ -122,3 +122,67 @@ export function describeGroup(group: SongGroup): string {
   if (published) bits.push(`${published} on site`);
   return bits.join(' · ');
 }
+
+// ---------------------------------------------------------------------------
+// Library search + sort (pure — the page owns the fetching)
+// ---------------------------------------------------------------------------
+
+export type LibrarySort = 'newest' | 'oldest' | 'title' | 'loudest' | 'quietest';
+
+export const LIBRARY_SORTS: ReadonlyArray<{ id: LibrarySort; label: string }> = [
+  { id: 'newest', label: 'Newest' },
+  { id: 'oldest', label: 'Oldest' },
+  { id: 'title', label: 'Title' },
+  { id: 'loudest', label: 'Loudest' },
+  { id: 'quietest', label: 'Quietest' },
+];
+
+/** Case-insensitive title match. Empty query returns everything, unfiltered. */
+export function filterMasters<T extends { title?: string | null }>(masters: readonly T[], query: string): T[] {
+  const q = (query ?? '').normalize('NFC').trim().toLowerCase();
+  if (!q) return [...masters];
+  return masters.filter((m) => (m.title ?? '').normalize('NFC').toLowerCase().includes(q));
+}
+
+/**
+ * Sort a library page.
+ *
+ * ⚠️ SORTING IS PER-PAGE, and the UI has to say so. The rows come from a
+ * newest-first index one page at a time, so "loudest" orders the masters
+ * LOADED, not the whole library — claiming otherwise would be a lie the moment
+ * a second page exists. Sorting a partial list is still useful; pretending it
+ * is global is not.
+ *
+ * Missing loudness sorts last in both directions rather than reading as
+ * silence, which is what a naive `?? 0` would do (0 LUFS is deafening, not
+ * absent).
+ */
+export function sortMasters<T extends { title?: string | null; savedAt?: string | null; measuredLufs?: number | null }>(
+  masters: readonly T[],
+  sort: LibrarySort
+): T[] {
+  const rows = [...masters];
+  const byDate = (a: T, b: T) => (b.savedAt ?? '').localeCompare(a.savedAt ?? '');
+  const loud = (m: T) => (typeof m.measuredLufs === 'number' ? m.measuredLufs : null);
+
+  switch (sort) {
+    case 'oldest':
+      return rows.sort((a, b) => -byDate(a, b));
+    case 'title':
+      return rows.sort((a, b) => (a.title ?? '').localeCompare(b.title ?? '', 'ta'));
+    case 'loudest':
+    case 'quietest': {
+      const dir = sort === 'loudest' ? -1 : 1;
+      return rows.sort((a, b) => {
+        const x = loud(a);
+        const y = loud(b);
+        if (x === null && y === null) return byDate(a, b);
+        if (x === null) return 1; // unmeasured rows sink, either direction
+        if (y === null) return -1;
+        return (x - y) * dir;
+      });
+    }
+    default:
+      return rows.sort(byDate);
+  }
+}

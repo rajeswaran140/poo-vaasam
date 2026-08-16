@@ -17,7 +17,10 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Play, Pause, Loader2, AlertTriangle, Volume2, VolumeX } from 'lucide-react';
+import {
+  Play, Pause, Loader2, AlertTriangle, Volume2, VolumeX,
+  Rewind, FastForward, SkipBack, SkipForward,
+} from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 import { matchGains, formatClock } from '@/lib/loudness-match';
 import { nextRadioIndex, radioTabIndex } from '@/lib/radiogroup-keys';
@@ -28,6 +31,9 @@ type Which = 'source' | 'master';
 const AB: readonly Which[] = ['source', 'master'];
 
 interface Props {
+  /** Optional: move to the previous/next master without leaving the player. */
+  onPrev?: () => void;
+  onNext?: () => void;
   sourceKey: string;
   masterKey: string;
   beforeLufs: number | null;
@@ -55,7 +61,14 @@ export function outputGain(position: number): number {
   return p * p;
 }
 
-export function MasteringComparePlayer({ sourceKey, masterKey, beforeLufs, afterLufs }: Props) {
+export function MasteringComparePlayer({
+  sourceKey,
+  masterKey,
+  beforeLufs,
+  afterLufs,
+  onPrev,
+  onNext,
+}: Props) {
   const srcEl = useRef<HTMLAudioElement | null>(null);
   const masEl = useRef<HTMLAudioElement | null>(null);
   const ctx = useRef<AudioContext | null>(null);
@@ -75,6 +88,11 @@ export function MasteringComparePlayer({ sourceKey, masterKey, beforeLufs, after
   const [matched, setMatched] = useState(true);
   /** Slider position 0..1. Perceptual curve applied on the way to the node. */
   const [volume, setVolume] = useState(1);
+  /**
+   * Playback rate. Both elements must move together or the A/B comparison
+   * drifts apart — the whole point is that the same instant is being compared.
+   */
+  const [rate, setRate] = useState(1);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
 
@@ -188,11 +206,29 @@ export function MasteringComparePlayer({ sourceKey, masterKey, beforeLufs, after
     if (playing && Math.abs(s.currentTime - m.currentTime) > 0.05) s.currentTime = m.currentTime;
   }, [playing]);
 
+  useEffect(() => {
+    if (masEl.current) masEl.current.playbackRate = rate;
+    if (srcEl.current) srcEl.current.playbackRate = rate;
+  }, [rate]);
+
   const seek = useCallback((to: number) => {
     if (masEl.current) masEl.current.currentTime = to;
     if (srcEl.current) srcEl.current.currentTime = to;
     setTime(to);
   }, []);
+
+  /**
+   * Nudge by whole seconds, clamped to the clip.
+   *
+   * ⚠️ Clamping matters. Seeking past the end leaves a media element stalled in
+   * a state `play()` does not recover from, so an unclamped +10s near the end
+   * would silently break the transport instead of simply stopping.
+   */
+  const skip = useCallback((delta: number) => {
+    const el = masEl.current;
+    if (!el) return;
+    seek(Math.min(Math.max(0, el.currentTime + delta), duration || el.duration || 0));
+  }, [seek, duration]);
 
   const onEnded = useCallback(() => {
     setPlaying(false);
@@ -209,6 +245,29 @@ export function MasteringComparePlayer({ sourceKey, masterKey, beforeLufs, after
       void ctx.current?.close();
     };
   }, []);
+
+  /**
+   * Transport keys. Ignored while a text field has focus — otherwise renaming a
+   * master in the library would start and stop playback on every space.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = document.activeElement;
+      if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      switch (e.key) {
+        case ' ': e.preventDefault(); void toggle(); break;
+        case 'ArrowLeft': e.preventDefault(); skip(-10); break;
+        case 'ArrowRight': e.preventDefault(); skip(10); break;
+        case 'j': skip(-10); break;
+        case 'l': skip(10); break;
+        case 'k': void toggle(); break;
+        default: break;
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [toggle, skip]);
 
   return (
     <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50/60 p-4 dark:border-gray-800 dark:bg-gray-800/30">
@@ -258,6 +317,27 @@ export function MasteringComparePlayer({ sourceKey, masterKey, beforeLufs, after
       )}
 
       <div className="flex items-center gap-3">
+        {onPrev && (
+          <button
+            type="button"
+            onClick={onPrev}
+            aria-label="Previous master"
+            className="rounded p-1 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100"
+          >
+            <SkipBack className="h-4 w-4" aria-hidden="true" />
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={() => skip(-10)}
+          disabled={!ready}
+          aria-label="Back 10 seconds"
+          className="rounded p-1 text-gray-500 hover:text-gray-800 disabled:opacity-40 dark:text-gray-400 dark:hover:text-gray-100"
+        >
+          <Rewind className="h-4 w-4" aria-hidden="true" />
+        </button>
+
         <button
           type="button"
           onClick={toggle}
@@ -271,6 +351,27 @@ export function MasteringComparePlayer({ sourceKey, masterKey, beforeLufs, after
               ? <Pause className="h-5 w-5" aria-hidden="true" />
               : <Play className="ml-0.5 h-5 w-5" aria-hidden="true" />}
         </button>
+
+        <button
+          type="button"
+          onClick={() => skip(10)}
+          disabled={!ready}
+          aria-label="Forward 10 seconds"
+          className="rounded p-1 text-gray-500 hover:text-gray-800 disabled:opacity-40 dark:text-gray-400 dark:hover:text-gray-100"
+        >
+          <FastForward className="h-4 w-4" aria-hidden="true" />
+        </button>
+
+        {onNext && (
+          <button
+            type="button"
+            onClick={onNext}
+            aria-label="Next master"
+            className="rounded p-1 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100"
+          >
+            <SkipForward className="h-4 w-4" aria-hidden="true" />
+          </button>
+        )}
 
         <span className="w-20 shrink-0 tabular-nums text-xs text-gray-500 dark:text-gray-400">
           {formatClock(time)} / {formatClock(duration)}
@@ -288,6 +389,18 @@ export function MasteringComparePlayer({ sourceKey, masterKey, beforeLufs, after
         />
 
         <div className="flex shrink-0 items-center gap-1.5">
+          {/* Rate drives BOTH elements (see the effect above) so A/B stays aligned. */}
+          <select
+            value={rate}
+            onChange={(e) => setRate(Number(e.target.value))}
+            aria-label="Playback speed"
+            className="rounded border border-gray-300 bg-transparent px-1 py-0.5 text-xs text-gray-600 dark:border-gray-600 dark:text-gray-300"
+          >
+            {[0.5, 0.75, 1, 1.25, 1.5, 2].map((r) => (
+              <option key={r} value={r}>{r}×</option>
+            ))}
+          </select>
+
           <button
             type="button"
             onClick={() => setVolume((v) => (v === 0 ? 1 : 0))}
