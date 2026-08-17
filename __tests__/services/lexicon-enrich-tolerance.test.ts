@@ -52,3 +52,29 @@ describe('an unknown enum value costs the field, not the word', () => {
     expect(parseEnrichments(raw, asked)).toHaveLength(0);
   });
 });
+
+/**
+ * ⚠️ Themes were a FREE STRING ARRAY, so the model could invent categories and
+ * nothing stopped them. Measured on 1,047 words: 176 distinct themes proposed
+ * against the 40 allowed, only 57% of tags valid, and 301 words carried no
+ * valid theme at all. Applying that would have polluted the theme taxonomy with
+ * `identity`, `art`, `nostalgia` and 134 others.
+ */
+describe('themes are held to the taxonomy', () => {
+  it('drops an invented theme but keeps the word', () => {
+    const raw = JSON.stringify([
+      { word: 'செழுமை', tamilMeaning: 'நிறைவு', themes: ['identity', 'nature', 'nostalgia'] },
+    ]);
+    const out = parseEnrichments(raw, [{ word: 'செழுமை' }]);
+    expect(out).toHaveLength(1);
+    expect(out[0].themes).toEqual(['nature']);
+    expect(out[0].tamilMeaning).toBe('நிறைவு');
+  });
+
+  it('yields an empty list when every theme is invented', () => {
+    const raw = JSON.stringify([{ word: 'செழுமை', themes: ['art', 'literature'] }]);
+    const out = parseEnrichments(raw, [{ word: 'செழுமை' }]);
+    expect(out).toHaveLength(1);
+    expect(out[0].themes ?? []).toEqual([]);
+  });
+});

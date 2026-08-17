@@ -62,12 +62,24 @@ async function main() {
 
   const proposals: Array<Record<string, unknown>> = [];
   let asked = 0;
+  let retried = 0;
   const missed: string[] = [];
 
   for (let i = 0; i < todo.length; i += MAX_ENRICH_BATCH) {
     const batch = todo.slice(i, i + MAX_ENRICH_BATCH);
     asked += batch.length;
-    const got = await enrichWords(batch.map((w) => ({ word: w.word, gloss: w.gloss })));
+
+    // ⚠️ RETRY. Measured on the 1,047-word run: ~10 batches failed outright and
+    // 204 words were lost — not because they were hard, but because the call
+    // failed. ஏக்கவிழி, கவியலை and காதல்மொழி had all enriched fine minutes
+    // earlier in a smaller run. A whole batch vanishing for a transient reason
+    // is worth one more attempt before calling the word unenrichable.
+    let got = await enrichWords(batch.map((w) => ({ word: w.word, gloss: w.gloss })));
+    for (let attempt = 1; attempt < 3 && got.length === 0; attempt++) {
+      await new Promise((r) => setTimeout(r, 1500 * attempt));
+      got = await enrichWords(batch.map((w) => ({ word: w.word, gloss: w.gloss })));
+      if (got.length) retried++;
+    }
     proposals.push(...(got as unknown as Array<Record<string, unknown>>));
 
     // A word asked about but not returned is REPORTED, never quietly lost —
@@ -75,7 +87,7 @@ async function main() {
     const back = new Set(got.map((g) => g.word.normalize('NFC').trim()));
     for (const b of batch) if (!back.has(b.word.normalize('NFC').trim())) missed.push(b.word);
 
-    process.stdout.write(`\r  ${Math.min(i + MAX_ENRICH_BATCH, todo.length)}/${todo.length} · proposals ${proposals.length} · missed ${missed.length}   `);
+    console.log(`  ${Math.min(i + MAX_ENRICH_BATCH, todo.length)}/${todo.length} · proposals ${proposals.length} · missed ${missed.length} · batches recovered ${retried}`);
   }
   console.log('\n');
 
@@ -94,6 +106,24 @@ async function main() {
   for (const [r, n] of [...regs].sort((a, b) => b[1] - a[1])) console.log(`   ${String(n).padStart(5)}  ${r}`);
   const coined = stat((p) => p.lexicalStatus === 'creative-poetic');
   console.log(`flagged creative-poetic (a coined compound, not a dictionary word): ${coined}`);
+  console.log(`batches recovered by retry: ${retried}`);
+
+  // ⚠️ NOT EVERY FIELD IS WORTH APPLYING, and the summary must say so rather
+  // than let a big total imply that it all is. Measured on the first full run:
+  // wordType came back 842 'noun' / 1 'verb' (a 1,047-word poetic lexicon is
+  // not 99.9% nouns), and confidence tracked lexicalStatus 1:1 across all 843 —
+  // a restatement, not a second judgement. Both are reported so the degeneracy
+  // is visible; neither should be bulk-applied while it looks like this.
+  const uniformity = (key: string) => {
+    const c = new Map<string, number>();
+    for (const p of proposals) { const v = String(p[key] ?? '—'); c.set(v, (c.get(v) ?? 0) + 1); }
+    const top = [...c].sort((a, b) => b[1] - a[1])[0];
+    return top ? `${top[0]} ${((100 * top[1]) / Math.max(1, proposals.length)).toFixed(0)}%` : 'n/a';
+  };
+  console.log('\nDEGENERACY CHECK — a field pinned near 100%% is a constant, not a judgement:');
+  for (const k of ['wordType', 'confidence', 'lexicalStatus', 'registers']) {
+    console.log(`   ${k.padEnd(14)} most common: ${uniformity(k)}`);
+  }
 
   writeFileSync(`${out}.json`, JSON.stringify({ proposals, missed }, null, 2), 'utf8');
   const lines = proposals.map((p) => {

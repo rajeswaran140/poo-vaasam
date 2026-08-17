@@ -19,6 +19,8 @@ import {
   LEXICON_WORD_TYPES,
   LEXICON_CONFIDENCE,
   LEXICON_MOODS,
+  LEXICON_THEMES,
+  LEXICON_WORD_TYPES as WORD_TYPES_LIST,
 } from '@/types/lexicon';
 import { generateText } from '@/services/ai/text-engine';
 import { extractJson, looksLikeVerse } from '@/services/ai/lexicon-suggest';
@@ -70,7 +72,12 @@ const enrichmentSchema = z.object({
   wordType: z.enum(LEXICON_WORD_TYPES).optional(),
   lexicalStatus: z.enum(LEXICAL_STATUSES).optional(),
   confidence: z.enum(LEXICON_CONFIDENCE).optional(),
-  themes: z.array(z.string().trim().min(1).max(40)).max(8).optional(),
+  // ⚠️ FILTERED AGAINST THE TAXONOMY. This was a free string array, so the model
+  // could invent categories and nothing stopped them: a 1,047-word run proposed
+  // 176 DISTINCT themes against the 40 allowed, only 57% of tags valid, and
+  // would have polluted the theme system with `identity`, `art`, `nostalgia`…
+  // Unknown themes are dropped rather than rejecting the word (see keepKnown).
+  themes: z.preprocess(keepKnown(LEXICON_THEMES), z.array(z.enum(LEXICON_THEMES as [string, ...string[]])).max(8).optional()),
   moods: z.preprocess(keepKnown(LEXICON_MOODS), z.array(z.enum(LEXICON_MOODS)).max(4).optional()),
   synonyms: z.array(z.string().trim().min(1).max(60)).max(12).optional(),
   relatedWords: z.array(z.string().trim().min(1).max(60)).max(12).optional(),
@@ -118,6 +125,22 @@ Respond with ONLY a JSON array — no prose, no markdown fences.`;
     `{"word":"<the same headword>","gloss":"<English>","tamilMeaning":"<Tamil>","registers":["<1-3>"],` +
     `"wordType":"<type>","lexicalStatus":"<status>","confidence":"<confidence>","themes":["<theme>"],` +
     `"moods":["<mood>"],"synonyms":["<Tamil>"],"relatedWords":["<Tamil>"],` +
+    // ⚠️ SPELL OUT EVERY VOCABULARY. The prompt used to say only
+    // `"lexicalStatus":"<status>"` and never list the permitted values, so the
+    // model invented them — measured 2026-08-17: "standard" for lexicalStatus
+    // (24x), the lexicalStatus value "creative-poetic" placed in registers
+    // (17x), "poetic" as a register (8x), and 176 distinct themes against the
+    // 40 allowed. Each invalid value rejected the WHOLE word, costing 45% of a
+    // run. Naming the vocabularies fixes the cause; loosening validation would
+    // only have hidden it.
+    `\n\nUse ONLY these values, or omit the field:\n` +
+    `registers: ${LEXICON_REGISTERS.join(', ')}\n` +
+    `wordType: ${WORD_TYPES_LIST.join(', ')}\n` +
+    `lexicalStatus: ${LEXICAL_STATUSES.join(', ')}\n` +
+    `confidence: ${LEXICON_CONFIDENCE.join(', ')}\n` +
+    `moods: ${LEXICON_MOODS.join(', ')}\n` +
+    `themes: ${LEXICON_THEMES.join(', ')}\n` +
+    `Do not put a lexicalStatus value in registers — they are separate fields.\n` +
     `"poeticUsage":"<one sentence in Tamil>","examples":["<2-4 word original phrase>"]}\n` +
     `If you are unsure of a field, omit it rather than guessing.`;
 
