@@ -16,11 +16,17 @@
  *
  * Two annotation forms, two different meanings:
  *
- *   [Section]      a STRUCTURAL marker — becomes the section's kind + label,
- *                  never a line. Labels are section metadata and `lyricsToCues`
- *                  never emits them, so they cannot reach the screen.
+ *   [Section]      a STRUCTURAL marker. Only the KIND is kept (pallavi /
+ *                  anupallavi / charanam) — that is genuine song form. The
+ *                  header TEXT is discarded: "Chorus - Female" and "Final
+ *                  Chorus - Duet (both voices together, in unison)" are voicing
+ *                  and arrangement instructions, i.e. musical prompt, not lyric.
  *   (direction)    an ARRANGEMENT note for the performer/tool. Not sung, not
  *                  displayable — dropped.
+ *
+ * ⚠️ LYRIC ONLY, NEVER THE MUSICAL PROMPT (Raj's instruction, 2026-08-16). What
+ * is stored is the sung words plus their Tamil section form. Nothing that tells
+ * a machine how to perform the song survives into the data.
  *
  * Nothing is dropped silently: `dropped` returns every discarded line so a
  * caller can show what was removed before anything is uploaded.
@@ -70,8 +76,7 @@ export function parseProductionSheet(text: string): SheetParseResult {
   const sections: Array<{ header: string; kind: LyricsSectionKind }> = [];
   const out: LyricsDTO = { sections: [] };
 
-  let current: { kind: LyricsSectionKind; label?: string; lines: Array<{ text: string }> } | null =
-    null;
+  let current: { kind: LyricsSectionKind; lines: Array<{ text: string }> } | null = null;
 
   const flush = () => {
     // Only keep a section that actually has words to sing.
@@ -89,7 +94,10 @@ export function parseProductionSheet(text: string): SheetParseResult {
       const label = header[1].trim();
       const kind = sectionKindFor(label);
       sections.push({ header: label, kind });
-      current = { kind, label, lines: [] };
+      // ⚠️ NO `label`. The header text is musical prompt ("Chorus - Female",
+      // "Duet (both voices together, in unison)"); only the derived Tamil kind
+      // is kept. Lyrics.toPlainText renders a Tamil default from the kind.
+      current = { kind, lines: [] };
       continue;
     }
 

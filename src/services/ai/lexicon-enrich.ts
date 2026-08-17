@@ -35,16 +35,43 @@ const REGISTER_RULE = `"sangam" means demonstrably associated with Sangam-era li
 // 1. Enrichment — propose the metadata a bare word is missing.
 // ---------------------------------------------------------------------------
 
+/**
+ * Keep the members of an enum array that are actually valid, and DROP the rest —
+ * rather than rejecting the whole word.
+ *
+ * ⚠️ WHY. Measured 2026-08-17: a sample of 12 words returned 12 good entries and
+ * only 2 survived. Every loss was `moods.0: Invalid option` — the model offered
+ * a mood outside the vocabulary ("serene", "reflective"), and because `moods` is
+ * a plain `z.array(z.enum(...))` the failure rejected the ENTIRE object: correct
+ * Tamil meaning, register, themes, all discarded for one optional adjective.
+ *
+ * An unknown mood is a field-level miss, not a reason to lose the entry. This
+ * is engine-independent — any model proposes an occasional out-of-vocabulary
+ * value, so enrichment had been throwing away most of its own output.
+ *
+ * Applied to `moods` ONLY. Registers stay strict on purpose — see the schema.
+ */
+function keepKnown<T extends string>(allowed: readonly T[]) {
+  const ok = new Set<string>(allowed);
+  return (v: unknown) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string' && ok.has(x)) : v);
+}
+
 const enrichmentSchema = z.object({
   word: z.string().trim().min(1).max(60),
   gloss: z.string().trim().max(400).optional(),
   tamilMeaning: z.string().trim().max(400).optional(),
+  // ⚠️ REGISTERS STAY STRICT — deliberately NOT filtered like moods. Register is
+  // the core classification claim in this system (a wrong one is what put 1,035
+  // words under a false `sangam`), so a model inventing a register is evidence
+  // the whole entry's judgement is unreliable. Measured 2026-08-17: every real
+  // drop was `moods`, none was `registers`, so tolerance here would buy nothing
+  // and cost a guard.
   registers: z.array(z.enum(LEXICON_REGISTERS)).min(1).max(3).optional(),
   wordType: z.enum(LEXICON_WORD_TYPES).optional(),
   lexicalStatus: z.enum(LEXICAL_STATUSES).optional(),
   confidence: z.enum(LEXICON_CONFIDENCE).optional(),
   themes: z.array(z.string().trim().min(1).max(40)).max(8).optional(),
-  moods: z.array(z.enum(LEXICON_MOODS)).max(4).optional(),
+  moods: z.preprocess(keepKnown(LEXICON_MOODS), z.array(z.enum(LEXICON_MOODS)).max(4).optional()),
   synonyms: z.array(z.string().trim().min(1).max(60)).max(12).optional(),
   relatedWords: z.array(z.string().trim().min(1).max(60)).max(12).optional(),
   poeticUsage: z.string().trim().max(600).optional(),
