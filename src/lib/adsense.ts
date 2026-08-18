@@ -13,6 +13,11 @@
  *
  *   NEXT_PUBLIC_ADSENSE_CLIENT   e.g. ca-pub-0000000000000000
  *
+ * ⚠️ This is Raj's EXISTING publisher id — the one already earning on YouTube.
+ * Google allows ONE AdSense account per person; never open a second. A YouTube
+ * account may be HOSTED (Google surfaces only), in which case it is UPGRADED by
+ * adding tamilagaval.com under Sites — not replaced.
+ *
  * ⚠️ EEA/UK CONSENT IS NOT OPTIONAL and is NOT implemented in this code.
  * Google requires a certified CMP for European traffic, and Europe is named in
  * the strategy. Use Google's own **Privacy & messaging → GDPR message** in the

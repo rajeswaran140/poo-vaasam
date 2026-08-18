@@ -45,9 +45,24 @@ a pageview count but differ tenfold in ad value.
 
 ## Setup — the parts only Raj can do
 
-1. **Apply** at adsense.google.com with `tamilagaval.com`. Approval needs real
-   content; the song pages are currently thin stubs, which is the same weakness
-   Search Console reports. Approval is not guaranteed on the first try.
+1. ⚠️ **DO NOT create a new AdSense account.** Raj already has one — YPP
+   required it. **Google allows ONE AdSense account per person**, and a second
+   is a policy violation that can suspend both. YouTube earnings and website
+   earnings share the *same account and the same publisher ID*.
+
+   An account created through YouTube may be a **HOSTED** account, which can
+   only serve on Google-owned surfaces (YouTube, Blogger) and *not* on
+   tamilagaval.com. The fix is to UPGRADE it, not replace it:
+
+   **AdSense → Sites → Add site → `tamilagaval.com`** → verify ownership → review.
+
+   Same login, same payment profile, same publisher ID; YouTube earnings are
+   unaffected throughout. Find the id at **Account → Settings → Account
+   information → Publisher ID**.
+
+   Site review needs real content, and the song pages are currently thin stubs —
+   the same weakness Search Console reports. Approval is not guaranteed first
+   time, and that is a content problem, not an account problem.
 2. **Set in Amplify** → App settings → Environment variables, then redeploy:
    - `NEXT_PUBLIC_ADSENSE_CLIENT` = `ca-pub-…`
    - `NEXT_PUBLIC_ADSENSE_SLOT_CONTENT` = the unit id, once created
