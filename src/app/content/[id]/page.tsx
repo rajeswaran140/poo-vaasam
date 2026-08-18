@@ -19,6 +19,8 @@ import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { SongCatalog } from '@/application/use-cases/SongCatalog';
 import { pickRelatedSongs, type RelatedSongItem } from '@/lib/related-songs';
 import { RelatedSongs } from '@/components/RelatedSongs';
+import { AdSlot } from '@/components/ads/AdSlot';
+import { ADSENSE_SLOT_CONTENT } from '@/lib/adsense';
 import { ContentStatus, ContentType } from '@/types/content';
 import { CONTENT_SECTIONS, SITE } from '@/config/site';
 import { contentJsonLd, type ContentJsonLdInput } from '@/lib/content-jsonld';
@@ -459,6 +461,12 @@ export default async function ContentPage({ params }: PageProps) {
               </Link>
             )}
           </div>
+
+          {/* AdSense trial (2026-08-18). Placed BELOW the poem and ABOVE the
+              related-songs rail — after the reader has finished the work, never
+              interrupting it. One unit per page, manually placed; auto ads are
+              deliberately not enabled. Renders nothing until the unit id is set. */}
+          <AdSlot slot={ADSENSE_SLOT_CONTENT} />
 
           {/* Related songs — keep the visitor exploring the catalogue on-site;
               also cross-links song pages for SEO. Renders nothing for non-songs. */}
