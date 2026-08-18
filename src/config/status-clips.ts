@@ -26,6 +26,25 @@ export interface StatusClip {
   songId: string;
   /** Root-relative, same-origin path under /public (CORS-free for share/download). */
   clip: string;
+  /**
+   * The EXACT master the clip was rendered from, and where in it the 29 seconds
+   * begin. Optional only because the 12 hand-made clips predate the renderer.
+   *
+   * ⚠️ THESE TWO BELONG TOGETHER AND TO EACH OTHER. Master duration does NOT
+   * match published-video duration — measured on ஈழத்து மண்ணே: master 6:41 vs
+   * video 6:02 — so a timestamp is meaningful ONLY against the WAV it was chosen
+   * in. Never carry a start time over from a video, and never reuse one across
+   * master variants of the same song (ஈழத்து மண்ணே has TEN in S3). Recording the
+   * asset alongside the timestamp is what makes a re-render reproducible.
+   */
+  masterAsset?: string;
+  /** Seconds into `masterAsset` where the chosen 29s passage starts. */
+  clipStart?: number;
+  /**
+   * `portrait` when real 9:16 art was supplied (PREFERRED), `blurred-fill` for
+   * the automated landscape-thumbnail fallback. Absent = hand-made, pre-renderer.
+   */
+  artworkMode?: 'portrait' | 'blurred-fill';
 }
 
 /**
