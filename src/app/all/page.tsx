@@ -40,14 +40,38 @@ import { collectionPageJsonLd, type CollectionItem } from '@/lib/collection-json
 import { contentPath } from '@/config/vanity-paths';
 import { WhatsAppShareButton } from '@/components/content/WhatsAppShareButton';
 
+/**
+ * Every published item — PAGED, not a single capped query.
+ *
+ * ⚠️ This used to be one `findAll({ limit: 100 })`. DynamoDB's `Limit` bounds
+ * items EXAMINED per query, not items returned, so a single call silently
+ * returned fewer rows than exist: measured 2026-08-18, 56 published items in
+ * the table rendered as **55 links** — `எங்கள் தேசம்`
+ * (cnt_1781049094952_wstyqacm4) was simply absent, on a page whose entire job
+ * is to list everything. Nothing errored; the page just quietly showed less
+ * than it had, which is the same failure that hid 37 songs from /songs.
+ *
+ * Paging until `hasMore` is false is the only way to be complete, and it also
+ * removes the hidden cliff at 100 items as the catalogue grows.
+ */
 async function getAllContent() {
   try {
     const repo = new ContentRepository();
-    const result = await repo.findAll({
-      limit: 100,
-      status: ContentStatus.PUBLISHED
-    });
-    return result.items.map(item => item.toObject());
+    const out: Awaited<ReturnType<typeof repo.findAll>>['items'] = [];
+    let cursor: Record<string, unknown> | undefined;
+    // Bounded so a malformed cursor can never spin forever; 20 x 100 is far
+    // above any plausible catalogue size and still terminates.
+    for (let page = 0; page < 20; page++) {
+      const result = await repo.findAll({
+        limit: 100,
+        status: ContentStatus.PUBLISHED,
+        lastEvaluatedKey: cursor,
+      });
+      out.push(...result.items);
+      cursor = result.lastEvaluatedKey as Record<string, unknown> | undefined;
+      if (!result.hasMore || !cursor) break;
+    }
+    return out.map((item) => item.toObject());
   } catch (error) {
     console.error('Failed to fetch content:', error);
     return [];

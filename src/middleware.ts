@@ -17,7 +17,14 @@ import type { NextRequest } from 'next/server';
 // it so the browser always revalidates (a cheap 304 via the ETag when nothing
 // changed) while CloudFront still caches for s-maxage. Set in middleware because
 // Next overwrites Cache-Control set via next.config headers() for these routes.
-const FRESH_CONTENT_PATHS = new Set(['/', '/songs', '/poems', '/videos', '/lyrics', '/stories', '/essays']);
+// ⚠️ EVERY content list page belongs here. `/all` was omitted (found 2026-08-18)
+// and was therefore the ONLY list page served `Cache-Control: no-store` with
+// `x-cache: Miss from cloudfront` — every visit and every Googlebot crawl paid a
+// full origin render of a 319 KB page, and TTFB measured 0.91s against 0.50s for
+// the identical-shaped /songs. It builds as static with a 5m revalidate exactly
+// like the others, so this was purely a missing entry, not a design choice.
+// Search Console lists /all as not-indexed, which `no-store` would encourage.
+const FRESH_CONTENT_PATHS = new Set(['/', '/all', '/songs', '/poems', '/videos', '/lyrics', '/stories', '/essays']);
 const FRESH_CACHE_CONTROL = 'public, max-age=0, s-maxage=300, stale-while-revalidate=60';
 
 export function middleware(request: NextRequest) {
