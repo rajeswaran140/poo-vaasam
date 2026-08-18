@@ -41,18 +41,23 @@ import { contentPath } from '@/config/vanity-paths';
 import { WhatsAppShareButton } from '@/components/content/WhatsAppShareButton';
 
 /**
- * Every published item — PAGED, not a single capped query.
+ * Every published item — paged until the cursor is exhausted.
  *
- * ⚠️ This used to be one `findAll({ limit: 100 })`. DynamoDB's `Limit` bounds
- * items EXAMINED per query, not items returned, so a single call silently
- * returned fewer rows than exist: measured 2026-08-18, 56 published items in
- * the table rendered as **55 links** — `எங்கள் தேசம்`
- * (cnt_1781049094952_wstyqacm4) was simply absent, on a page whose entire job
- * is to list everything. Nothing errored; the page just quietly showed less
- * than it had, which is the same failure that hid 37 songs from /songs.
+ * ⚠️ CORRECTION (2026-08-18). An earlier version of this comment claimed a
+ * measured bug: "56 published items rendered as 55 links, `எங்கள் தேசம்` was
+ * absent". **That was WRONG and the claim has been retracted.** The song was
+ * always on the page — it has a VANITY PATH (`/thayagam`, see
+ * `src/config/vanity-paths.ts`), so it renders as `/thayagam` rather than
+ * `/content/<id>`. The audit counted only `href="/content/…"` links and missed
+ * it. The site was never dropping anything.
  *
- * Paging until `hasMore` is false is the only way to be complete, and it also
- * removes the hidden cliff at 100 items as the catalogue grows.
+ * Verified after the correction: GSI4 returns all 56 published rows in a SINGLE
+ * query with no `LastEvaluatedKey`, so `limit: 100` was never truncating.
+ *
+ * The paging below is kept anyway — not as a bug fix, but because a single
+ * capped query would silently return a short list once the catalogue outgrows
+ * one page, and this page's entire job is to be complete. It costs one extra
+ * round trip only when there is genuinely more to fetch.
  */
 async function getAllContent() {
   try {
