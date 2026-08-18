@@ -8,6 +8,7 @@ import { FloatingSubscribe } from "@/components/FloatingSubscribe";
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 import { GoogleAnalytics } from "@/components/analytics/GoogleAnalytics";
 import { InboundTracker } from "@/components/analytics/InboundTracker";
+import { AdSense } from "@/components/ads/AdSense";
 import { GA_ID, GOOGLE_SITE_VERIFICATION } from "@/lib/analytics";
 
 /**
@@ -156,6 +157,9 @@ export default function RootLayout({
         </AuthProvider>
         <GoogleAnalytics gaId={GA_ID} />
         <InboundTracker />
+        {/* Inert until NEXT_PUBLIC_ADSENSE_CLIENT is set, and never on /admin,
+            /privacy, /contact or the paid /music-composition page. */}
+        <AdSense />
       </body>
     </html>
   );
