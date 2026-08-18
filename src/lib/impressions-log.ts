@@ -85,6 +85,11 @@ export interface EntryDelta {
   ctrChangePts: number | null;
   /** Days between this reading and the previous one. */
   daysSincePrevious: number | null;
+  /**
+   * Set when an earlier reading exists but over a DIFFERENT window, so no delta
+   * was computed. Carries that window's size so the UI can say which.
+   */
+  incomparableWindow?: number | null;
 }
 
 const DAY_MS = 86_400_000;
@@ -99,8 +104,28 @@ const DAY_MS = 86_400_000;
 export function withDeltas(entries: ImpressionEntry[]): EntryDelta[] {
   const sorted = [...entries].sort((a, b) => b.observedAt.localeCompare(a.observedAt));
   return sorted.map((entry, i) => {
-    const prev = sorted[i + 1];
-    if (!prev) return { entry, impressionsChangePct: null, ctrChangePts: null, daysSincePrevious: null };
+    // ⚠️ COMPARE LIKE WITH LIKE. Impressions are a CUMULATIVE total over
+    // `windowDays`, so a 7-day reading is arithmetically larger than a 2-day one
+    // for the same video with no change in distribution whatsoever. Diffing
+    // across window sizes reports a fabricated "+250%" that is nothing but the
+    // longer window. The intended workflow — log 48h, then 7d, for a new release
+    // — would have produced exactly that on its first use.
+    //
+    // So a delta is computed ONLY against the most recent earlier reading with
+    // the SAME window. Mixed windows yield nulls, and `interpret()` says why.
+    const prev = sorted.slice(i + 1).find((p) => p.windowDays === entry.windowDays);
+    if (!prev) {
+      const anyEarlier = sorted[i + 1];
+      return {
+        entry,
+        impressionsChangePct: null,
+        ctrChangePts: null,
+        daysSincePrevious: null,
+        // Distinguishes "nothing to compare yet" from "there IS an earlier
+        // reading, but over a different window" — different messages to a human.
+        incomparableWindow: anyEarlier ? anyEarlier.windowDays : null,
+      };
+    }
     const days = Math.round((Date.parse(entry.observedAt) - Date.parse(prev.observedAt)) / DAY_MS);
     return {
       entry,
@@ -108,6 +133,7 @@ export function withDeltas(entries: ImpressionEntry[]): EntryDelta[] {
         prev.impressions > 0 ? ((entry.impressions - prev.impressions) / prev.impressions) * 100 : null,
       ctrChangePts: entry.ctr - prev.ctr,
       daysSincePrevious: Number.isFinite(days) ? days : null,
+      incomparableWindow: null,
     };
   });
 }
@@ -126,6 +152,10 @@ export function withDeltas(entries: ImpressionEntry[]): EntryDelta[] {
  * earlier version of the admin doc claimed otherwise and was wrong.
  */
 export function interpret(d: EntryDelta): string {
+  if (d.incomparableWindow != null) {
+    return `No comparison — the previous reading covers ${d.incomparableWindow} days, this one ${d.entry.windowDays}. ` +
+      `Cumulative impressions are not comparable across windows; log the same window twice to see a change.`;
+  }
   if (d.impressionsChangePct == null || d.ctrChangePts == null) return 'First reading — no comparison yet.';
   const imp = d.impressionsChangePct;
   const ctr = d.ctrChangePts;
