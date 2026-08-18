@@ -23,3 +23,20 @@ if (typeof Headers === 'undefined') {
 if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = function () {};
 }
+
+/**
+ * ⚠️ DEPLOYMENT CONFIG MUST NOT REACH THE TEST RUN.
+ *
+ * On 2026-08-17 `AUX_AI_ENGINE=openai` was set on the Amplify app to revive the
+ * auxiliary AI layer (Anthropic out of credit, no Gemini key). The very next
+ * build FAILED — `youtube-recommendations.test.ts` mocks the Anthropic client
+ * and had silently depended on the engine defaulting to anthropic, which stopped
+ * being true. Four tests failed, DEPLOY was cancelled, and PR #188 never shipped.
+ *
+ * A value changed in a console should never be able to break a build. Any test
+ * that cares about the engine sets it explicitly; every other test starts from a
+ * known-empty state.
+ */
+for (const key of ['AUX_AI_ENGINE', 'COMPOSER_ENGINE', 'CRITIC_ENGINE']) {
+  delete process.env[key];
+}

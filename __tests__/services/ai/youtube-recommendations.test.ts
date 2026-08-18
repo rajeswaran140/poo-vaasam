@@ -12,14 +12,26 @@ import {
 } from '@/services/ai/youtube-recommendations';
 
 const originalEnv = process.env.ANTHROPIC_API_KEY;
+const originalEngine = process.env.AUX_AI_ENGINE;
 
 beforeEach(() => {
   create.mockReset();
   process.env.ANTHROPIC_API_KEY = 'sk-ant-test';
+  // ⚠️ PIN THE ENGINE. These tests mock the Anthropic client, so they only make
+  // sense with the Anthropic adapter selected. They used to inherit whatever
+  // `AUX_AI_ENGINE` the surrounding environment had — which was nothing locally
+  // and nothing in CI, so the dependency stayed invisible until
+  // `AUX_AI_ENGINE=openai` was set on the Amplify app (2026-08-17) to revive
+  // the auxiliary AI layer. The next build then FAILED on 4 of these tests
+  // (job 575) and the deploy was cancelled: a config change in the console
+  // broke a test suite that never named the variable it depended on.
+  delete process.env.AUX_AI_ENGINE;
 });
 
 afterAll(() => {
   process.env.ANTHROPIC_API_KEY = originalEnv;
+  if (originalEngine === undefined) delete process.env.AUX_AI_ENGINE;
+  else process.env.AUX_AI_ENGINE = originalEngine;
 });
 
 const INPUT = {
