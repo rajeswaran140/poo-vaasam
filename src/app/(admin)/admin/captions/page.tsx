@@ -97,37 +97,37 @@ export default function CaptionsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-gray-500 dark:text-gray-400">
           {ready} song{ready === 1 ? '' : 's'} have both stored lyrics and a linked video
         </p>
         <button
           onClick={() => void load()}
-          className="inline-flex items-center gap-2 rounded-md bg-gray-100 px-3 py-1.5 text-sm hover:bg-gray-200"
+          className="inline-flex items-center gap-2 rounded-md bg-gray-100 px-3 py-1.5 text-sm hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
         >
           <RefreshCw className="h-4 w-4" /> Refresh
         </button>
       </div>
 
-      <p className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+      <p className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300">
         Preview only — nothing is uploaded to YouTube from this screen. Timings are derived from the
         video&apos;s own auto-caption track; your words are used verbatim and never the recogniser&apos;s.
       </p>
 
       {error && (
-        <p className="rounded-lg border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</p>
+        <p className="rounded-lg border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-300">{error}</p>
       )}
-      {loading && <p className="text-gray-500">Loading…</p>}
+      {loading && <p className="text-gray-500 dark:text-gray-400">Loading…</p>}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-        <div className="rounded-lg border border-gray-200 bg-white">
-          <ul className="divide-y divide-gray-100">
+        <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+          <ul className="divide-y divide-gray-100 dark:divide-gray-800">
             {songs.map((s) => {
               const usable = s.hasBody && !!s.youtubeVideoId;
               return (
                 <li key={s.id} className="flex items-center justify-between gap-3 px-4 py-3">
                   <div className="min-w-0">
-                    <p className="truncate font-tamil text-sm text-gray-900" title={s.title}>{s.title}</p>
-                    <p className="text-xs text-gray-400">
+                    <p className="truncate font-tamil text-sm text-gray-900 dark:text-gray-100" title={s.title}>{s.title}</p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500">
                       {s.hasBody ? `${s.cardCount} cards` : 'no lyrics stored'}
                       {s.youtubeVideoId ? ` · ${s.youtubeVideoId}` : ' · no linked video'}
                     </p>
@@ -135,43 +135,43 @@ export default function CaptionsPage() {
                   <button
                     disabled={!usable || busy === s.id}
                     onClick={() => void runPreview(s.id)}
-                    className="shrink-0 rounded-md bg-orange-600 px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+                    className="shrink-0 rounded-md bg-orange-600 px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 dark:disabled:bg-gray-800 dark:disabled:text-gray-600"
                   >
                     {busy === s.id ? 'Aligning…' : 'Preview timings'}
                   </button>
                 </li>
               );
             })}
-            {!loading && !songs.length && <li className="px-4 py-6 text-sm text-gray-400">No songs found.</li>}
+            {!loading && !songs.length && <li className="px-4 py-6 text-sm text-gray-400 dark:text-gray-500">No songs found.</li>}
           </ul>
         </div>
 
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
           {!preview ? (
-            <p className="flex items-center gap-2 text-sm text-gray-400">
+            <p className="flex items-center gap-2 text-sm text-gray-400 dark:text-gray-500">
               <Captions className="h-4 w-4" /> Pick a song to see where each card would land.
             </p>
           ) : (
             <>
-              <h3 className="font-tamil text-sm font-semibold text-gray-900">{preview.title}</h3>
-              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+              <h3 className="font-tamil text-sm font-semibold text-gray-900 dark:text-gray-100">{preview.title}</h3>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
                 <span>{preview.asrCueCount} ASR cues</span>
                 <span>{preview.anchoredLines}/{preview.totalLines} lines anchored</span>
                 <span>{preview.interpolatedLines} interpolated</span>
               </div>
 
               {preview.textPreserved ? (
-                <p className="mt-3 flex items-center gap-2 text-xs text-emerald-700">
+                <p className="mt-3 flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-400">
                   <CheckCircle2 className="h-4 w-4" /> Your text is preserved character-for-character.
                 </p>
               ) : (
-                <p className="mt-3 flex items-center gap-2 text-xs font-semibold text-rose-700">
+                <p className="mt-3 flex items-center gap-2 text-xs font-semibold text-rose-700 dark:text-rose-400">
                   <AlertTriangle className="h-4 w-4" /> Text changed — do not publish this.
                 </p>
               )}
 
               {preview.warnings.map((w) => (
-                <p key={w} className="mt-2 flex items-start gap-2 text-xs text-amber-700">
+                <p key={w} className="mt-2 flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400">
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {w}
                 </p>
               ))}
@@ -179,22 +179,22 @@ export default function CaptionsPage() {
               <ul className="mt-4 space-y-1">
                 {preview.cues.map((c, i) => (
                   <li key={i} className="flex items-baseline gap-3 text-sm">
-                    <span className="w-12 shrink-0 tabular-nums text-gray-400">{mmss(c.startMs)}</span>
+                    <span className="w-12 shrink-0 tabular-nums text-gray-400 dark:text-gray-500">{mmss(c.startMs)}</span>
                     <span
                       className={`w-16 shrink-0 text-[10px] uppercase tracking-wide ${
-                        c.anchored ? 'text-emerald-600' : 'text-amber-600'
+                        c.anchored ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'
                       }`}
                     >
                       {c.anchored ? 'anchored' : 'interp'}
                     </span>
-                    <span className="truncate font-tamil text-gray-700" title={c.text}>
+                    <span className="truncate font-tamil text-gray-700 dark:text-gray-300" title={c.text}>
                       {c.text.split('\n')[0]}
                     </span>
                   </li>
                 ))}
               </ul>
 
-              <p className="mt-4 flex items-start gap-2 border-t border-gray-100 pt-3 text-xs text-gray-500">
+              <p className="mt-4 flex items-start gap-2 border-t border-gray-100 pt-3 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
                 <Music className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 Check card 1 lands on the vocal entry, that instrumental breaks show as gaps, and that
                 repeated refrains are spread rather than bunched.
