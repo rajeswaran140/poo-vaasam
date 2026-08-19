@@ -20,7 +20,9 @@ import {
   METERS,
   meterById,
   accentPattern,
+  accentGlyphs,
   countingSyllables,
+  pulseSeconds,
   clampBpm,
   MIN_BPM,
   MAX_BPM,
@@ -88,7 +90,7 @@ export function Metronome({ initialBpm = DEFAULT_BPM, initialMeter = '4/4' as Me
         </button>
 
         <div className="flex items-center gap-2">
-          <label htmlFor="bpm" className="text-xs text-gray-500">BPM</label>
+          <label htmlFor="bpm" className="text-xs text-gray-500 dark:text-gray-400">BPM</label>
           <input
             id="bpm"
             type="range"
@@ -126,7 +128,7 @@ export function Metronome({ initialBpm = DEFAULT_BPM, initialMeter = '4/4' as Me
         </div>
 
         <div className="flex items-center gap-2">
-          <label htmlFor="vol" className="text-xs text-gray-500">Vol</label>
+          <label htmlFor="vol" className="text-xs text-gray-500 dark:text-gray-400">Vol</label>
           <input id="vol" type="range" min={0} max={1} step={0.05} value={volume}
             onChange={(e) => setVolume(Number(e.target.value))} className="w-24" />
         </div>
@@ -144,11 +146,16 @@ export function Metronome({ initialBpm = DEFAULT_BPM, initialMeter = '4/4' as Me
                   pulse === i ? 'scale-125 ring-2 ring-orange-400' : ''
                 }`}
               />
-              <span className="text-[11px] text-gray-500">{counts[i]}</span>
+              <span className="text-[11px] text-gray-500 dark:text-gray-400">{counts[i]}</span>
             </div>
           ))}
         </div>
       </div>
+
+      {/* The same bar as text — the ● ○ ○ ● ○ ○ form the lesson refers to. */}
+      <p className="font-mono text-xs tracking-[0.3em] text-gray-500 dark:text-gray-400" data-testid="accent-glyphs">
+        {accentGlyphs(meter).join(' ')}
+      </p>
 
       {/* Why this meter is not the other one. */}
       <p className="text-xs text-gray-600 dark:text-gray-300">
@@ -156,9 +163,12 @@ export function Metronome({ initialBpm = DEFAULT_BPM, initialMeter = '4/4' as Me
       </p>
       {meter.id === '6/8' && (
         <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-          Compare with <strong>3/4</strong>: both have six pulses, but 3/4 accents every <em>second</em> pulse
-          (three beats of two) and 6/8 every <em>third</em> (two beats of three). Switch between them while it
-          plays — the pulses do not change, the grouping does.
+          Compare with <strong>3/4</strong>: both fit six pulses in a bar, but 3/4 accents every <em>second</em>{' '}
+          pulse (three beats of two) and 6/8 every <em>third</em> (two beats of three). Switch between them while
+          it plays. The <em>beat</em> you tap stays at {bpm} BPM — that is what BPM counts — but each beat now
+          splits three ways instead of two, so the pulses themselves run faster ({Math.round(60 / pulseSeconds(bpm, meter))}
+          {' '}a minute here against {Math.round(60 / pulseSeconds(bpm, meterById('3/4')!))} in 3/4). Listen for
+          where the stresses fall, not for the speed.
         </p>
       )}
     </div>

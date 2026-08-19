@@ -57,6 +57,10 @@ class MusicAudioEngine {
   private pulseIndex = 0;
   private metronome: { bpm: number; meter: MeterDefinition } | null = null;
   private listeners = new Set<MetronomeListener>();
+  /** Pending UI notifications for clicks already scheduled but not yet sounded. */
+  private pulseTimers = new Set<ReturnType<typeof setTimeout>>();
+  /** Master volume, remembered so it can be applied without forcing a context. */
+  private volume = 0.8;
   /** Every source currently sounding, so `stopAll` can silence them. */
   private active = new Set<AudioScheduledSourceNode>();
 
@@ -68,7 +72,7 @@ class MusicAudioEngine {
       if (!Ctor) return null;
       this.ctx = new Ctor();
       this.master = this.ctx.createGain();
-      this.master.gain.value = 0.8;
+      this.master.gain.value = this.volume;
       this.master.connect(this.ctx.destination);
     }
     return this.ctx;
@@ -84,10 +88,17 @@ class MusicAudioEngine {
     return this.timer !== null;
   }
 
-  /** Master volume, 0-1. */
+  /**
+   * Master volume, 0-1.
+   *
+   * ⚠️ Deliberately does NOT create the AudioContext. A volume slider rendering
+   * is not a user gesture, and building the context on mount would have every
+   * visit to the page construct one whether or not anything is ever played.
+   * The value is remembered and applied when the context is first built.
+   */
   setVolume(v: number): void {
-    const ctx = this.context();
-    if (ctx && this.master) this.master.gain.setTargetAtTime(Math.min(1, Math.max(0, v)), ctx.currentTime, 0.01);
+    this.volume = Math.min(1, Math.max(0, v));
+    if (this.ctx && this.master) this.master.gain.setTargetAtTime(this.volume, this.ctx.currentTime, 0.01);
   }
 
   /**
@@ -193,7 +204,11 @@ class MusicAudioEngine {
 
       // Notify the UI at the moment the click actually sounds, not now.
       const delayMs = Math.max(0, (this.nextPulseTime - ctx.currentTime) * 1000);
-      setTimeout(() => this.listeners.forEach((fn) => fn(idx)), delayMs);
+      const t = setTimeout(() => {
+        this.pulseTimers.delete(t);
+        this.listeners.forEach((fn) => fn(idx));
+      }, delayMs);
+      this.pulseTimers.add(t);
 
       this.nextPulseTime += dt;
       this.pulseIndex += 1;
@@ -205,6 +220,11 @@ class MusicAudioEngine {
     this.timer = null;
     this.metronome = null;
     this.pulseIndex = 0;
+    // Clicks were scheduled up to LOOKAHEAD_S ahead, each with a pending UI
+    // notification. Without this the highlight keeps flashing for a quarter of
+    // a second after Stop, re-lighting a dot the UI has already cleared.
+    for (const t of this.pulseTimers) clearTimeout(t);
+    this.pulseTimers.clear();
   }
 
   /**

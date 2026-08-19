@@ -76,46 +76,97 @@ export interface Swara {
   alternate?: string;
 }
 
-/**
- * The twelve swarasthānas (positions), by SEMITONES ABOVE THE TONIC.
- *
- * Several positions carry two names — the same pitch is called Ri2 or Ga1
- * depending on which raga is in force, because the naming follows the raga's
- * scale degrees rather than the pitch alone. Both are shown rather than picking
- * one and quietly implying the other does not exist.
- */
-const SWARASTHANA: readonly Swara[] = [
-  { short: 'S', tamil: 'ஸ' },
-  { short: 'R1', tamil: 'ரி₁' },
-  { short: 'R2', tamil: 'ரி₂', alternate: 'G1' },
-  { short: 'R3', tamil: 'ரி₃', alternate: 'G2' },
-  { short: 'G3', tamil: 'க₃' },
-  { short: 'M1', tamil: 'ம₁' },
-  { short: 'M2', tamil: 'ம₂' },
-  { short: 'P', tamil: 'ப' },
-  { short: 'D1', tamil: 'த₁' },
-  { short: 'D2', tamil: 'த₂', alternate: 'N1' },
-  { short: 'D3', tamil: 'த₃', alternate: 'N2' },
-  { short: 'N3', tamil: 'நி₃' },
-];
-
-/**
- * Which swara a note is, GIVEN the tonic. This is the only way this module will
- * tell you a swara name — pass the tonic that is actually in force.
- *
- * With tonic C, MIDI 60 is Sa. With tonic G, MIDI 60 is Ma1. Same note, and the
- * difference is the entire point.
- */
-export function swaraFor(midi: number, tonicMidi: number): Swara {
-  return SWARASTHANA[pitchClass(midi - tonicMidi)];
+interface SwaraName {
+  short: string;
+  tamil: string;
 }
 
 /**
- * The seven-swara ascent for a scale given as semitone offsets — the "Sa Ri Ga
- * Ma Pa Da Ni Sa" a learner actually sings. Offsets must be within one octave.
+ * The twelve swarasthānas (positions), by SEMITONES ABOVE THE TONIC.
+ *
+ * Four positions carry TWO names — the same pitch is called Ri2 or Ga1
+ * depending on which raga is in force, because the naming follows the scale's
+ * DEGREE rather than the pitch alone. Both are listed; which one applies is
+ * decided per-scale by `sargamForScale`.
  */
-export function sargamFor(scaleOffsets: readonly number[], tonicMidi: number): Swara[] {
-  return scaleOffsets.map((semitones) => swaraFor(tonicMidi + semitones, tonicMidi));
+const SWARASTHANA_NAMES: readonly (readonly SwaraName[])[] = [
+  [{ short: 'S', tamil: 'ஸ' }],
+  [{ short: 'R1', tamil: 'ரி₁' }],
+  [{ short: 'R2', tamil: 'ரி₂' }, { short: 'G1', tamil: 'க₁' }],
+  [{ short: 'R3', tamil: 'ரி₃' }, { short: 'G2', tamil: 'க₂' }],
+  [{ short: 'G3', tamil: 'க₃' }],
+  [{ short: 'M1', tamil: 'ம₁' }],
+  [{ short: 'M2', tamil: 'ம₂' }],
+  [{ short: 'P', tamil: 'ப' }],
+  [{ short: 'D1', tamil: 'த₁' }],
+  [{ short: 'D2', tamil: 'த₂' }, { short: 'N1', tamil: 'நி₁' }],
+  [{ short: 'D3', tamil: 'த₃' }, { short: 'N2', tamil: 'நி₂' }],
+  [{ short: 'N3', tamil: 'நி₃' }],
+];
+
+function swaraAt(position: number, choice = 0): Swara {
+  const names = SWARASTHANA_NAMES[position];
+  const picked = names[choice] ?? names[0];
+  const other = names.find((n) => n !== picked);
+  return { short: picked.short, tamil: picked.tamil, alternate: other?.short };
+}
+
+/**
+ * Which swara POSITION a note occupies, GIVEN the tonic. This is the only way
+ * this module will name a note in isolation — pass the tonic in force.
+ *
+ * With tonic C, MIDI 60 is Sa. With tonic G, MIDI 60 is Ma1. Same note, and the
+ * difference is the entire point.
+ *
+ * ⚠️ This names a POSITION, not a scale degree. Ask `sargamForScale` when a
+ * scale is in force — see the note there for why the two differ.
+ */
+export function swaraFor(midi: number, tonicMidi: number): Swara {
+  return swaraAt(pitchClass(midi - tonicMidi));
+}
+
+/** Letter order a sargam ascends through: S R G M P D N, each used once. */
+const LETTER_RANK: Record<string, number> = { S: 0, R: 1, G: 2, M: 3, P: 4, D: 5, N: 6 };
+
+/**
+ * The sargam of a SCALE — the "Sa Ri Ga Ma Pa Da Ni" a learner actually sings.
+ *
+ * ⚠️ WHY THIS IS NOT JUST `swaraFor` PER NOTE. A position's default name is not
+ * always its name inside a given scale. Three semitones above Sa is Ri3 in a
+ * scale that already reads two semitones as Ri1 — but in Kharaharapriya, where
+ * two semitones is Ri2, the same pitch is GA (Ga2). Naming each note in
+ * isolation produces "S R2 R3 M1 P D2 D3": two Ri's, two Da's, no Ga and no Ni,
+ * which is not a scale anyone can sing.
+ *
+ * A sargam ascends S→R→G→M→P→D→N using each letter at most once, so the names
+ * are chosen as a SEQUENCE: at each degree take the lowest-lettered candidate
+ * still greater than the previous one. Where no such assignment exists (not a
+ * well-formed scale), fall back to position names rather than inventing one.
+ */
+export function sargamForScale(scaleOffsets: readonly number[]): Swara[] {
+  const solve = (i: number, minRank: number): number[] | null => {
+    if (i >= scaleOffsets.length) return [];
+    const position = pitchClass(scaleOffsets[i]);
+    const candidates = SWARASTHANA_NAMES[position];
+    for (let choice = 0; choice < candidates.length; choice++) {
+      const rank = LETTER_RANK[candidates[choice].short[0]];
+      if (rank < minRank) continue;
+      const rest = solve(i + 1, rank + 1);
+      if (rest) return [choice, ...rest];
+    }
+    return null;
+  };
+  const choices = solve(0, 0);
+  return scaleOffsets.map((o, i) => swaraAt(pitchClass(o), choices ? choices[i] : 0));
+}
+
+/**
+ * The sargam of a scale from a tonic. The NAMES do not depend on the tonic —
+ * that is what makes them relative — so this is `sargamForScale` with the tonic
+ * accepted for call-site clarity.
+ */
+export function sargamFor(scaleOffsets: readonly number[], _tonicMidi?: number): Swara[] {
+  return sargamForScale(scaleOffsets);
 }
 
 // ---------------------------------------------------------------------------
@@ -151,7 +202,9 @@ export function buildKeyboard(startMidi: number, octaves: number): KeyboardKey[]
   for (let i = 0; i <= octaves * 12; i++) {
     const midi = startMidi + i;
     const black = isBlackKey(midi);
-    keys.push({ midi, name: noteName(midi), black, whiteIndex: black ? whiteIndex - 1 : whiteIndex });
+    // A keyboard starting ON a black note has no white key before it to anchor
+    // to; clamp to 0 so it renders at the left edge instead of off-canvas.
+    keys.push({ midi, name: noteName(midi), black, whiteIndex: black ? Math.max(0, whiteIndex - 1) : whiteIndex });
     if (!black) whiteIndex++;
   }
   return keys;
@@ -173,6 +226,13 @@ export interface ScaleDefinition {
   /** Semitones above the tonic, ascending, starting at 0. */
   offsets: readonly number[];
   note?: string;
+  /**
+   * This entry names a RAGA, so `RAGA_VS_SCALE_NOTE` must be shown beside it.
+   * Declared per-scale rather than sniffed from the name: a regex over spellings
+   * silently drops the caveat for Kalyani, Hamsadhwani or Revati, and that
+   * caveat is the whole point of listing raga names next to scales.
+   */
+  isRaga?: boolean;
 }
 
 /**
@@ -189,6 +249,7 @@ export const SCALES: readonly ScaleDefinition[] = [
     name: 'Shankarabharanam',
     tamil: 'சங்கராபரணம்',
     offsets: [0, 2, 4, 5, 7, 9, 11],
+    isRaga: true,
     note: 'The same seven positions as the major scale. The raga is not the same thing as the scale — see below.',
   },
   {
@@ -196,9 +257,17 @@ export const SCALES: readonly ScaleDefinition[] = [
     name: 'Kharaharapriya',
     tamil: 'கரஹரப்ரியா',
     offsets: [0, 2, 3, 5, 7, 9, 10],
+    isRaga: true,
     note: 'Shares its positions with the Dorian mode.',
   },
-  { id: 'mohanam', name: 'Mohanam', tamil: 'மோகனம்', offsets: [0, 2, 4, 7, 9], note: 'Five notes — no Ma, no Ni.' },
+  {
+    id: 'mohanam',
+    name: 'Mohanam',
+    tamil: 'மோகனம்',
+    offsets: [0, 2, 4, 7, 9],
+    isRaga: true,
+    note: 'Five notes — no Ma, no Ni.',
+  },
 ];
 
 /**

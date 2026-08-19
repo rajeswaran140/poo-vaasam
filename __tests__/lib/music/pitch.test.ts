@@ -16,6 +16,7 @@ import {
   pitchClass,
   swaraFor,
   sargamFor,
+  sargamForScale,
   isBlackKey,
   buildKeyboard,
   whiteKeyCount,
@@ -112,6 +113,80 @@ describe('swara is relative to the tonic, never fixed to a letter', () => {
   });
 });
 
+/* ------------------------------------------------------------------ *
+ * REGRESSION: a sargam is named by DEGREE, not by position.
+ *
+ * Naming each note in isolation spelled natural minor and Kharaharapriya with
+ * two Ri's, two Da's, no Ga and no Ni — which is not a scale anyone can sing.
+ * Major was the only scale covered, and it is the one case where position and
+ * degree naming coincide, so the bug read as passing.
+ * ------------------------------------------------------------------ */
+
+describe('sargamForScale — degree-correct naming', () => {
+  const shorts = (offsets: readonly number[]) => sargamForScale(offsets).map((s) => s.short);
+
+  it('names Kharaharapriya with a Ga and a Ni, not a second Ri and Da', () => {
+    const k = SCALES.find((s) => s.id === 'kharaharapriya')!;
+    expect(shorts(k.offsets)).toEqual(['S', 'R2', 'G2', 'M1', 'P', 'D2', 'N2']);
+  });
+
+  it('names natural minor the same way', () => {
+    const m = SCALES.find((s) => s.id === 'natural-minor')!;
+    expect(shorts(m.offsets)).toEqual(['S', 'R2', 'G2', 'M1', 'P', 'D1', 'N2']);
+  });
+
+  it('leaves the scales that were already right alone', () => {
+    expect(shorts(SCALES.find((s) => s.id === 'major')!.offsets)).toEqual(['S', 'R2', 'G3', 'M1', 'P', 'D2', 'N3']);
+    expect(shorts(SCALES.find((s) => s.id === 'shankarabharanam')!.offsets)).toEqual(['S', 'R2', 'G3', 'M1', 'P', 'D2', 'N3']);
+    // Pentatonic — Mohanam simply has no Ma and no Ni to name.
+    expect(shorts(SCALES.find((s) => s.id === 'mohanam')!.offsets)).toEqual(['S', 'R2', 'G3', 'P', 'D2']);
+  });
+
+  it('every scale in the catalogue uses each letter at most once, ascending', () => {
+    const RANK = ['S', 'R', 'G', 'M', 'P', 'D', 'N'];
+    for (const scale of SCALES) {
+      const letters = shorts(scale.offsets).map((n) => n[0]);
+      expect(new Set(letters).size).toBe(letters.length); // no duplicate letter
+      const ranks = letters.map((l) => RANK.indexOf(l));
+      expect(ranks).toEqual([...ranks].sort((a, b) => a - b)); // strictly ascending
+      expect(ranks).not.toContain(-1);
+    }
+  });
+
+  it.each([
+    [[0, 1, 3, 5, 7, 8, 10], ['S', 'R1', 'G2', 'M1', 'P', 'D1', 'N2']], // Hanumatodi
+    [[0, 2, 4, 6, 7, 9, 11], ['S', 'R2', 'G3', 'M2', 'P', 'D2', 'N3']], // Kalyani
+    [[0, 1, 3, 6, 7, 8, 10], ['S', 'R1', 'G2', 'M2', 'P', 'D1', 'N2']], // Shanmukhapriya
+    [[0, 2, 4, 7, 11], ['S', 'R2', 'G3', 'P', 'N3']],                   // Hamsadhwani
+  ])('names %j correctly', (offsets, expected) => {
+    expect(shorts(offsets as number[])).toEqual(expected);
+  });
+
+  it('keeps the position name as the alternate, so nothing is hidden', () => {
+    const k = SCALES.find((s) => s.id === 'kharaharapriya')!;
+    expect(sargamForScale(k.offsets)[2]).toMatchObject({ short: 'G2', alternate: 'R3' });
+  });
+
+  it('falls back to position names for a scale with no valid assignment', () => {
+    // Three adjacent semitones cannot be S, then two names above R — there is
+    // no well-formed sargam, so it must not invent one or crash.
+    expect(() => sargamForScale([0, 2, 3, 4])).not.toThrow();
+    expect(shorts([0, 2, 3, 4])).toHaveLength(4);
+  });
+});
+
+/* REGRESSION: the raga caveat is data, not a regex over spellings. */
+describe('isRaga', () => {
+  it('marks every raga entry and no plain scale', () => {
+    const byId = Object.fromEntries(SCALES.map((s) => [s.id, s]));
+    expect(byId['shankarabharanam'].isRaga).toBe(true);
+    expect(byId['kharaharapriya'].isRaga).toBe(true);
+    expect(byId['mohanam'].isRaga).toBe(true);
+    expect(byId['major'].isRaga).toBeFalsy();
+    expect(byId['natural-minor'].isRaga).toBeFalsy();
+  });
+});
+
 describe('keyboard geometry', () => {
   it('knows the black keys', () => {
     expect(isBlackKey(midiFor('C#', 4)!)).toBe(true);
@@ -140,6 +215,15 @@ describe('keyboard geometry', () => {
     expect(byName['D#4'].whiteIndex).toBe(byName['D4'].whiteIndex);
     // E and B have no sharp — F follows E directly.
     expect(byName['F4'].whiteIndex).toBe(byName['E4'].whiteIndex + 1);
+  });
+
+  /** A keyboard starting on a black note has no white key before it to anchor
+   *  to; a negative index would place it off-canvas. */
+  it('clamps the anchor when the first key is black', () => {
+    const keys = buildKeyboard(midiFor('C#', 4)!, 1);
+    expect(keys[0].black).toBe(true);
+    expect(keys[0].whiteIndex).toBe(0);
+    expect(keys.every((k) => k.whiteIndex >= 0)).toBe(true);
   });
 
   it('white indices increase monotonically', () => {
