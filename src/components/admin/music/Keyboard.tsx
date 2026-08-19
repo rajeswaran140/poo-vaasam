@@ -14,13 +14,14 @@
  * because there is no black key between E–F or B–C.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { audioEngine } from '@/lib/music/audio-engine';
 import {
   buildKeyboard,
   whiteKeyCount,
   noteName,
   swaraFor,
+  sargamForScale,
   midiFor,
   isInScale,
   scaleNotes,
@@ -75,14 +76,37 @@ export function Keyboard({ octaves = 2, startOctave = 4 }: { octaves?: number; s
     audioEngine.playSequence(descending ? [...notes].reverse() : notes, 0.38);
   };
 
+  /**
+   * Swara name per pitch class, DEGREE-correct for the selected scale.
+   *
+   * ⚠️ Naming each key in isolation is wrong once a scale is chosen: position
+   * naming spells Kharaharapriya "S R2 R3 M1 P D2 D3" — two Ri's, two Da's, no
+   * Ga and no Ni. `sargamForScale` picks the name each degree actually carries.
+   * Notes outside the scale keep their position name; they have no degree.
+   */
+  const scaleSwara = useMemo(() => {
+    const m = new Map<number, string>();
+    if (!scale) return m;
+    sargamForScale(scale.offsets).forEach((sw, i) => {
+      m.set(((scale.offsets[i] % 12) + 12) % 12, sw.short);
+    });
+    return m;
+  }, [scale]);
+
+  const swaraName = useCallback(
+    (midi: number) =>
+      scaleSwara.get(((midi - tonicMidi) % 12 + 12) % 12) ?? swaraFor(midi, tonicMidi).short,
+    [scaleSwara, tonicMidi]
+  );
+
   const label = (midi: number) =>
-    showSwara ? swaraFor(midi, tonicMidi).short : noteName(midi).replace(/\d/, '');
+    showSwara ? swaraName(midi) : noteName(midi).replace(/\d/, '');
 
   return (
     <div className="space-y-3 rounded-lg border border-gray-200 p-4 dark:border-gray-700">
       <div className="flex flex-wrap items-center gap-3 text-sm">
         <div className="flex items-center gap-1">
-          <label htmlFor="tonic" className="text-xs text-gray-500">Tonic (சுருதி)</label>
+          <label htmlFor="tonic" className="text-xs text-gray-500 dark:text-gray-400">Tonic (சுருதி)</label>
           <select
             id="tonic"
             value={tonicPc}
@@ -96,14 +120,14 @@ export function Keyboard({ octaves = 2, startOctave = 4 }: { octaves?: number; s
         </div>
 
         <div className="flex items-center gap-1">
-          <label htmlFor="octave" className="text-xs text-gray-500">Octave</label>
+          <label htmlFor="octave" className="text-xs text-gray-500 dark:text-gray-400">Octave</label>
           <select id="octave" value={octave} onChange={(e) => setOctave(Number(e.target.value))}
             className="rounded-md border border-gray-300 px-2 py-1 dark:border-gray-600 dark:bg-gray-900">
             {[2, 3, 4, 5].map((o) => <option key={o} value={o}>{o}</option>)}
           </select>
         </div>
 
-        <label className="flex items-center gap-1 text-xs text-gray-500">
+        <label className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
           <input type="checkbox" checked={showSwara} onChange={(e) => setShowSwara(e.target.checked)} />
           show swara
         </label>
@@ -132,7 +156,13 @@ export function Keyboard({ octaves = 2, startOctave = 4 }: { octaves?: number; s
             <button
               key={k.midi}
               onMouseDown={() => play(k.midi)}
-              aria-label={`${noteName(k.midi)}${showSwara ? ` ${swaraFor(k.midi, tonicMidi).short}` : ''}`}
+              onKeyDown={(e) => {
+                // A focusable, labelled control that does nothing on Enter/Space
+                // is not usable from the keyboard. preventDefault stops the
+                // browser also firing a click and double-triggering the note.
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); play(k.midi); }
+              }}
+              aria-label={`${noteName(k.midi)}${showSwara ? ` ${swaraName(k.midi)}` : ''}`}
               className={`absolute top-0 flex h-40 w-10 flex-col items-center justify-end rounded-b border pb-2 text-[11px] ${
                 held === k.midi ? 'bg-orange-200 dark:bg-orange-800' : 'bg-white dark:bg-gray-100'
               } ${isTonic ? 'border-orange-500 border-2' : 'border-gray-300'} ${
@@ -151,7 +181,13 @@ export function Keyboard({ octaves = 2, startOctave = 4 }: { octaves?: number; s
             <button
               key={k.midi}
               onMouseDown={() => play(k.midi)}
-              aria-label={`${noteName(k.midi)}${showSwara ? ` ${swaraFor(k.midi, tonicMidi).short}` : ''}`}
+              onKeyDown={(e) => {
+                // A focusable, labelled control that does nothing on Enter/Space
+                // is not usable from the keyboard. preventDefault stops the
+                // browser also firing a click and double-triggering the note.
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); play(k.midi); }
+              }}
+              aria-label={`${noteName(k.midi)}${showSwara ? ` ${swaraName(k.midi)}` : ''}`}
               className={`absolute top-0 z-10 flex h-24 w-6 flex-col items-center justify-end rounded-b pb-1 text-[10px] text-white ${
                 held === k.midi ? 'bg-orange-600' : 'bg-gray-800'
               } ${isTonic ? 'ring-2 ring-orange-500' : ''} ${scale && !inScale ? 'opacity-40' : ''}`}
@@ -163,13 +199,13 @@ export function Keyboard({ octaves = 2, startOctave = 4 }: { octaves?: number; s
         })}
       </div>
 
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-gray-500 dark:text-gray-400">
         Click a key, or use <code>A W S E D F T G Y H U J K</code>. The tonic is outlined —
         <strong> Sa moves with it</strong>. With tonic {NOTE_NAMES_SHARP[tonicPc]}, {NOTE_NAMES_SHARP[tonicPc]} is Sa
-        and C is {swaraFor(midiFor('C', octave)!, tonicMidi).short}.
+        and C is {swaraName(midiFor('C', octave)!)}.
       </p>
-      {scale?.note && <p className="text-xs text-gray-500">{scale.note}</p>}
-      {scale && /am$|ragam|priya/i.test(scale.name) && (
+      {scale?.note && <p className="text-xs text-gray-500 dark:text-gray-400">{scale.note}</p>}
+      {scale?.isRaga && (
         <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
           {RAGA_VS_SCALE_NOTE}
         </p>

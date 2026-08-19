@@ -129,3 +129,102 @@ describe('Keyboard — playing', () => {
     expect(screen.getByText(/a raga is not a scale/i)).toBeInTheDocument();
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * REGRESSION: labels follow the scale DEGREE once a scale is selected.
+ *
+ * The keyboard named every key by its position above the tonic, so selecting
+ * Kharaharapriya spelled it "S R2 R3 M1 P D2 D3" — two Ri's, two Da's, no Ga
+ * and no Ni. Only 'major' was ever exercised, and major is the one scale where
+ * position and degree naming agree.
+ * ------------------------------------------------------------------ */
+
+describe('Keyboard — swara labels follow the selected scale', () => {
+  const pickScale = (id: string) =>
+    fireEvent.change(screen.getByLabelText(/scale/i), { target: { value: id } });
+
+  it('names the third degree of Kharaharapriya Ga, not a second Ri', () => {
+    render(<Keyboard />);
+    pickScale('kharaharapriya');
+    expect(screen.getByLabelText('D#4 G2')).toBeInTheDocument();
+    expect(screen.queryByLabelText('D#4 R3')).not.toBeInTheDocument();
+  });
+
+  it('names its seventh degree Ni, not a second Da', () => {
+    render(<Keyboard />);
+    pickScale('kharaharapriya');
+    expect(screen.getByLabelText('A#4 N2')).toBeInTheDocument();
+    expect(screen.queryByLabelText('A#4 D3')).not.toBeInTheDocument();
+  });
+
+  it('does the same for natural minor', () => {
+    render(<Keyboard />);
+    pickScale('natural-minor');
+    expect(screen.getByLabelText('D#4 G2')).toBeInTheDocument();
+    expect(screen.getByLabelText('A#4 N2')).toBeInTheDocument();
+  });
+
+  it('leaves major alone — position and degree already agree there', () => {
+    render(<Keyboard />);
+    pickScale('major');
+    expect(screen.getByLabelText('E4 G3')).toBeInTheDocument();
+    expect(screen.getByLabelText('B4 N3')).toBeInTheDocument();
+  });
+
+  it('falls back to position names for notes outside the scale', () => {
+    render(<Keyboard />);
+    pickScale('mohanam'); // no Ma, no Ni
+    expect(screen.getByLabelText('F4 M1')).toBeInTheDocument();
+  });
+
+  it('re-labels by degree when the tonic moves', () => {
+    render(<Keyboard />);
+    pickScale('kharaharapriya');
+    fireEvent.change(screen.getByLabelText(/tonic/i), { target: { value: '7' } }); // G
+    // Three semitones above G is A#, and in this scale that degree is Ga.
+    expect(screen.getByLabelText('A#4 G2')).toBeInTheDocument();
+  });
+});
+
+/* REGRESSION: the raga caveat is driven by data, not by how the name is spelt. */
+describe('Keyboard — raga-vs-scale caveat', () => {
+  const pickScale = (id: string) =>
+    fireEvent.change(screen.getByLabelText(/scale/i), { target: { value: id } });
+
+  it('shows the caveat for raga entries', () => {
+    render(<Keyboard />);
+    pickScale('kharaharapriya');
+    expect(screen.getByText(/A raga is not a scale/i)).toBeInTheDocument();
+  });
+
+  it('does not show it for a plain Western scale', () => {
+    render(<Keyboard />);
+    pickScale('major');
+    expect(screen.queryByText(/A raga is not a scale/i)).not.toBeInTheDocument();
+    pickScale('natural-minor');
+    expect(screen.queryByText(/A raga is not a scale/i)).not.toBeInTheDocument();
+  });
+});
+
+/* REGRESSION: a focusable key that does nothing on Enter is not usable. */
+describe('Keyboard — keys are operable from the keyboard', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('plays on Enter', async () => {
+    render(<Keyboard />);
+    fireEvent.keyDown(screen.getByLabelText('C4 S'), { key: 'Enter' });
+    await waitFor(() => expect(audioEngine.playNote).toHaveBeenCalledWith(60));
+  });
+
+  it('plays on Space', async () => {
+    render(<Keyboard />);
+    fireEvent.keyDown(screen.getByLabelText('C#4 R1'), { key: ' ' });
+    await waitFor(() => expect(audioEngine.playNote).toHaveBeenCalledWith(61));
+  });
+
+  it('ignores other keys on a focused key button', () => {
+    render(<Keyboard />);
+    fireEvent.keyDown(screen.getByLabelText('C4 S'), { key: 'Tab' });
+    expect(audioEngine.playNote).not.toHaveBeenCalled();
+  });
+});

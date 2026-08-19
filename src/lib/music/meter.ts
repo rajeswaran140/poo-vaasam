@@ -39,6 +39,13 @@ export interface MeterDefinition {
   feltBeats: number;
   /** Subdivisions (pulses) per felt beat: 2 for simple, 3 for compound. */
   pulsesPerBeat: number;
+  /**
+   * The stress of each FELT BEAT's downbeat, one entry per `feltBeats`.
+   * Declared rather than derived because the hierarchy is not uniform: in 4/4
+   * beat 3 carries the half-bar and beats 2 and 4 do not, which is what makes
+   * the bar feel like two halves instead of four equal thuds.
+   */
+  beatAccents: readonly Accent[];
   name: string;
   tamil: string;
   description: string;
@@ -52,6 +59,7 @@ export const METERS: readonly MeterDefinition[] = [
     division: 'simple',
     feltBeats: 3,
     pulsesPerBeat: 2,
+    beatAccents: ['strong', 'medium', 'medium'],
     name: 'Simple triple',
     tamil: 'மூன்று அளவு',
     description: 'Three beats in a bar, each splitting in two. Count: ONE-and TWO-and THREE-and. The waltz feel.',
@@ -63,6 +71,9 @@ export const METERS: readonly MeterDefinition[] = [
     division: 'simple',
     feltBeats: 4,
     pulsesPerBeat: 2,
+    // 1 strongest, 3 the half-bar, 2 and 4 light. Three levels cannot express
+    // four tiers, so the weak beats share the subdivision's stress.
+    beatAccents: ['strong', 'weak', 'medium', 'weak'],
     name: 'Simple quadruple',
     tamil: 'நான்கு அளவு',
     description: 'Four beats in a bar. Beat 1 strongest, beat 3 moderately strong. The default for most film songs.',
@@ -74,6 +85,7 @@ export const METERS: readonly MeterDefinition[] = [
     division: 'compound',
     feltBeats: 2,
     pulsesPerBeat: 3,
+    beatAccents: ['strong', 'medium'],
     name: 'Compound duple',
     tamil: 'ஆறு அளவு',
     description:
@@ -98,19 +110,20 @@ export function pulsesPerBar(meter: MeterDefinition): number {
  *   3/4 → strong, weak, medium, weak, medium, weak   (accent every 2)
  *   6/8 → strong, weak, weak,  medium, weak, weak    (accent every 3)
  *
- * 4/4 additionally marks beat 3 as medium — the half-bar — which is why it
- * feels like two halves rather than four equal thuds.
+ * Downbeat strength comes from the meter's own `beatAccents`, so 4/4 marks
+ * beat 3 — the half-bar — while leaving 2 and 4 light:
+ *   4/4 → strong, weak, weak, weak, medium, weak, weak, weak
+ * which is why it feels like two halves rather than four equal thuds.
  */
 export function accentPattern(meter: MeterDefinition): Accent[] {
   const out: Accent[] = [];
   for (let beat = 0; beat < meter.feltBeats; beat++) {
     for (let pulse = 0; pulse < meter.pulsesPerBeat; pulse++) {
       // Only the first pulse of a felt beat is stressed at all; the rest are
-      // the subdivision and stay weak. That single rule is what separates the
-      // two six-pulse meters — 3/4 stresses every 2nd pulse, 6/8 every 3rd.
-      if (pulse !== 0) out.push('weak');
-      else if (beat === 0) out.push('strong');
-      else out.push('medium');
+      // the subdivision and stay weak. That rule is what separates the two
+      // six-pulse meters — 3/4 stresses every 2nd pulse, 6/8 every 3rd — while
+      // `beatAccents` decides HOW strongly each downbeat lands.
+      out.push(pulse === 0 ? (meter.beatAccents[beat] ?? 'medium') : 'weak');
     }
   }
   return out;

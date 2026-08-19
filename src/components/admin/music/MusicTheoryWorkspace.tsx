@@ -11,14 +11,16 @@
  *
  * Phase 1 ships Foundations, Rhythm & Meter, Melody and Tamil Lyrics as lesson
  * text plus the two interactive tools. The Lyric Meter Lab and Composition
- * Notebook are separate routes, linked from here once they land.
+ * Notebook are separate routes, linked below — the Tamil Lyrics lessons send
+ * the reader to them by name, so this page has to be able to get them there.
  */
 
 import { useState } from 'react';
 import { audioEngine } from '@/lib/music/audio-engine';
 import { Metronome } from '@/components/admin/music/Metronome';
 import { Keyboard } from '@/components/admin/music/Keyboard';
-import { MUSIC_LESSONS, type MusicLesson } from '@/content/music-lessons';
+import Link from 'next/link';
+import { lessonsForSection, type MusicLesson } from '@/content/music-lessons';
 
 type SectionId = 'foundations' | 'rhythm' | 'melody' | 'tamil-lyrics';
 
@@ -49,7 +51,7 @@ function LessonCard({ lesson }: { lesson: MusicLesson }) {
           {lesson.terms.map((t) => (
             <div key={t.english} className="flex gap-2">
               <dt className="font-tamil text-gray-700 dark:text-gray-200">{t.tamil}</dt>
-              <dd className="text-gray-500">— {t.english}</dd>
+              <dd className="text-gray-500 dark:text-gray-400">— {t.english}</dd>
             </div>
           ))}
         </dl>
@@ -72,13 +74,13 @@ export function MusicTheoryWorkspace() {
     setSection(id);
   };
 
-  const lessons = MUSIC_LESSONS.filter((l) => l.section === section);
+  const lessons = lessonsForSection(section);
 
   return (
     <div className="space-y-5">
       <header className="space-y-1">
         <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Music Composition &amp; Theory</h1>
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-gray-500 dark:text-gray-400">
           இசைக் கோட்பாடு — learned through songwriting rather than as an academic course.
           Learn → Listen → Practise → Apply to lyrics → Compose.
         </p>
@@ -110,6 +112,15 @@ export function MusicTheoryWorkspace() {
           <LessonCard key={l.id} lesson={l} />
         ))}
       </div>
+
+      <nav className="flex flex-wrap gap-3 border-t border-gray-200 pt-4 text-sm dark:border-gray-700">
+        <Link href="/admin/music-lab/meter-lab" className="text-orange-600 hover:underline dark:text-orange-400">
+          Lyric Meter Lab ↗
+        </Link>
+        <Link href="/admin/music-lab/notebook" className="text-orange-600 hover:underline dark:text-orange-400">
+          Composition Notebook ↗
+        </Link>
+      </nav>
     </div>
   );
 }

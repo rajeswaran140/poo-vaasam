@@ -32,7 +32,7 @@ describe('Metronome — meter changes the pattern, not just the label', () => {
 
   it('draws 4/4 as eight pulses with a stressed half-bar', () => {
     render(<Metronome />);
-    expect(accents()).toEqual(['strong', 'weak', 'medium', 'weak', 'medium', 'weak', 'medium', 'weak']);
+    expect(accents()).toEqual(['strong', 'weak', 'weak', 'weak', 'medium', 'weak', 'weak', 'weak']);
   });
 
   it('draws 3/4 stressing every second pulse', () => {
@@ -67,9 +67,9 @@ describe('Metronome — meter changes the pattern, not just the label', () => {
 
   it('explains the 6/8-vs-3/4 difference only where it is relevant', () => {
     render(<Metronome />);
-    expect(screen.queryByText(/both have six pulses/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/both fit six pulses/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '6/8' }));
-    expect(screen.getByText(/both have six pulses/i)).toBeInTheDocument();
+    expect(screen.getByText(/both fit six pulses/i)).toBeInTheDocument();
   });
 });
 

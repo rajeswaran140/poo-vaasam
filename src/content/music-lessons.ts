@@ -106,7 +106,7 @@ export const MUSIC_LESSONS: readonly MusicLesson[] = [
       'Both fit six eighth-notes in a bar. That is where the similarity ends, and confusing them is the most common rhythm mistake a songwriter makes.',
       '3/4 is THREE beats, each splitting in two: ONE-and TWO-and THREE-and. Stress every second pulse. This is the waltz.',
       '6/8 is TWO beats, each splitting in three: ONE-two-three FOUR-five-six. Stress every third pulse. This is the lilt you hear in a great many folk and devotional songs.',
-      'Play them back to back on the metronome at the same tempo. The pulses arrive at the same rate; the GROUPING is what your body hears, and it changes the song completely.',
+      'Play them back to back on the metronome at the same BPM. What stays constant is the BEAT you tap — BPM always counts felt beats. What changes is how each beat divides: 3/4 splits it in two, 6/8 in three, so at 90 BPM you hear 180 pulses a minute in 3/4 and 270 in 6/8. Listen past the speed to where the stresses land — that grouping is what your body hears, and it changes the song completely.',
     ],
     application:
       'If a melody feels like it is limping, check whether you wrote it in one and are singing it in the other. A three-syllable Tamil word sits naturally on a 6/8 beat and awkwardly across a 3/4 one.',

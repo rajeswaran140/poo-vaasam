@@ -75,9 +75,33 @@ describe('3/4 and 6/8 are not the same meter', () => {
 });
 
 describe('4/4', () => {
+  /**
+   * ⚠️ REGRESSION. This once returned 'medium' for beats 2, 3 AND 4, making the
+   * bar four identical thuds while the module docstring claimed beat 3 was
+   * marked as the half-bar. The test NAME described the intent; the assertion
+   * pinned the bug. Beat 3 must stand out from beats 2 and 4.
+   */
   it('marks beat 3 as the half-bar, so it is not four equal thuds', () => {
-    expect(accentPattern(m44)).toEqual(['strong', 'weak', 'medium', 'weak', 'medium', 'weak', 'medium', 'weak']);
+    expect(accentPattern(m44)).toEqual(['strong', 'weak', 'weak', 'weak', 'medium', 'weak', 'weak', 'weak']);
     expect(pulsesPerBar(m44)).toBe(8);
+  });
+
+  it('distinguishes beat 3 from beats 2 and 4', () => {
+    const p = accentPattern(m44);
+    const downbeats = [p[0], p[2], p[4], p[6]];
+    expect(downbeats).toEqual(['strong', 'weak', 'medium', 'weak']);
+    expect(downbeats[2]).not.toBe(downbeats[1]);
+  });
+
+  it('renders as two halves rather than four equal thuds', () => {
+    expect(accentGlyphs(m44).join(' ')).toBe('● ○ ○ ○ ● ○ ○ ○');
+  });
+
+  it('every meter starts its bar on the strongest accent it has', () => {
+    for (const m of [m34, m44, m68]) {
+      expect(accentPattern(m)[0]).toBe('strong');
+      expect(m.beatAccents).toHaveLength(m.feltBeats);
+    }
   });
 });
 
