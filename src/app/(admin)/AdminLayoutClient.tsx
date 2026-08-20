@@ -19,6 +19,7 @@ import {
   Plus,
   Mail,
   PlaySquare,
+  Radio,
   Music,
   PanelLeftClose,
   PanelLeftOpen,
@@ -474,6 +475,17 @@ export default function AdminLayoutClient({
                 active={pathname === "/admin/notify"}
               >
                 Notify
+              </NavLink>
+            </NavSection>
+
+            <NavSection label="Integrations" collapsed={collapsed}>
+              <NavLink
+                href="/admin/twitch"
+                icon={Radio}
+                collapsed={collapsed}
+                active={pathname === "/admin/twitch"}
+              >
+                Twitch
               </NavLink>
             </NavSection>
 

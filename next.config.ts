@@ -60,6 +60,20 @@ const nextConfig: NextConfig = {
     YOUTUBE_REFRESH_TOKEN: process.env.YOUTUBE_REFRESH_TOKEN || '',
     GA4_PROPERTY_ID: process.env.GA4_PROPERTY_ID || '',
     GA4_SERVICE_ACCOUNT_KEY: process.env.GA4_SERVICE_ACCOUNT_KEY || '',
+    // Twitch integration (OAuth + EventSub). Same constraint as the YouTube
+    // secrets above: Amplify's SSR runtime does NOT expose app env vars, so a
+    // value set only in the Amplify console is `undefined` at runtime and the
+    // integration silently reports "Not configured". Server-only; never emitted
+    // to client bundles. Rotating any of these requires a redeploy to re-inline.
+    //   TWITCH_EVENTSUB_SECRET must be 10-100 ASCII chars (Twitch's rule) and
+    //   must match the secret registered with each EventSub subscription —
+    //   changing it invalidates existing subscriptions, so re-subscribe after.
+    // See docs/TWITCH_INTEGRATION.md.
+    TWITCH_CLIENT_ID: process.env.TWITCH_CLIENT_ID || '',
+    TWITCH_CLIENT_SECRET: process.env.TWITCH_CLIENT_SECRET || '',
+    TWITCH_EVENTSUB_SECRET: process.env.TWITCH_EVENTSUB_SECRET || '',
+    TWITCH_REDIRECT_URI: process.env.TWITCH_REDIRECT_URI || '',
+    TWITCH_EVENTSUB_CALLBACK_URL: process.env.TWITCH_EVENTSUB_CALLBACK_URL || '',
     // Web-push (new-song notifications). Server needs all three to sign payloads
     // at runtime; the public key is ALSO exposed to the client via
     // NEXT_PUBLIC_VAPID_PUBLIC_KEY (auto-inlined by Next). Private key is

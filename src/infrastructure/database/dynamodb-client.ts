@@ -92,6 +92,34 @@ export class DynamoDBOperations {
   }
 
   /**
+   * Put an item ONLY if no item with that primary key exists yet.
+   *
+   * Returns true when the item was written, false when one was already there.
+   * This is a first-writer-wins primitive: the conditional write IS the
+   * idempotency check, so callers need no separate "have I seen this?" store
+   * and no read-then-write race. Used by the Twitch EventSub ingest, where
+   * Twitch delivers each notification AT LEAST once and the message id is the
+   * partition key.
+   *
+   * Any error other than the expected condition failure is re-thrown.
+   */
+  static async putIfNotExists(item: Record<string, any>): Promise<boolean> {
+    try {
+      await dynamoDBClient.send(
+        new PutCommand({
+          TableName: TABLE_NAME,
+          Item: item,
+          ConditionExpression: 'attribute_not_exists(PK)',
+        })
+      );
+      return true;
+    } catch (error: any) {
+      if (error?.name === 'ConditionalCheckFailedException') return false;
+      throw error;
+    }
+  }
+
+  /**
    * Get an item by primary key
    */
   static async get(key: Record<string, any>) {
