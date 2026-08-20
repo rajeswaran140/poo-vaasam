@@ -14,6 +14,7 @@
 import { SongTrendPanel } from '@/components/admin/SongTrendPanel';
 import { GeographyInsightPanel } from '@/components/admin/GeographyInsightPanel';
 import { SearchTermsPanel } from '@/components/admin/SearchTermsPanel';
+import { RevenueGeographyPanel } from '@/components/admin/RevenueGeographyPanel';
 
 export function PerSongDeepDive({
   videos,
@@ -27,12 +28,16 @@ export function PerSongDeepDive({
       <summary className="cursor-pointer text-lg font-semibold text-gray-900 dark:text-gray-100">
         Per-song deep dive
         <span className="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">
-          full daily trend · geography · search terms
+          full daily trend · geography · revenue by country · search terms
         </span>
       </summary>
       <div className="mt-6 space-y-8">
         <SongTrendPanel videos={videos} ytaConfigured={ytaConfigured} />
         <GeographyInsightPanel videos={videos} ytaConfigured={ytaConfigured} />
+        {/* Revenue sits directly under geography on purpose: the two answer the
+            same "where is the audience" question and disagree, which is the
+            point. Views say India; revenue says the diaspora. */}
+        <RevenueGeographyPanel videos={videos} ytaConfigured={ytaConfigured} />
         <SearchTermsPanel videos={videos} ytaConfigured={ytaConfigured} />
       </div>
     </details>
