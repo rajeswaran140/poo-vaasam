@@ -18,6 +18,7 @@
 
 import { fetchWithRetry } from '@/lib/fetch-retry';
 import { parseGeographyRows, type GeographyRawRow } from '@/lib/youtube-geography';
+import { parseRevenueGeoRows, type RevenueGeoRawRow } from '@/lib/youtube-revenue-geography';
 import type {
   FunnelInput,
   FunnelTrafficRow,
@@ -344,6 +345,115 @@ export async function fetchVideoGeography(
     });
     if (!res) return { ok: false, error: 'No response from YouTube Analytics' };
     return { ok: true, data: parseGeographyRows(res.rows) };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Per-video REVENUE by country for a single video. Owner-scoped, monetary
+ * scope required (see fetchEstimatedRevenue for what happens without it).
+ *
+ * NOTE the metric list deliberately omits `playbackBasedCpm`: a per-country CPM
+ * is only meaningful per country, and every consumer wants a blended figure,
+ * which must be derived as Σrevenue / Σviews by `summarizeRevenueGeography`.
+ * Shipping the CPM column invites someone to average it. See
+ * lib/youtube-revenue-geography rule 1.
+ */
+export async function fetchVideoRevenueGeography(
+  videoId: string,
+  daysBack = 28
+): Promise<Result<RevenueGeoRawRow[]>> {
+  if (!isYouTubeAnalyticsConfigured()) {
+    return { ok: false, error: 'YouTube Analytics OAuth not configured' };
+  }
+  if (!videoId) return { ok: false, error: 'videoId is required' };
+  const { startDate, endDate } = dateRange(daysBack);
+  try {
+    const res = await runReport({
+      ids: 'channel==MINE',
+      startDate,
+      endDate,
+      metrics:
+        'views,estimatedRevenue,estimatedAdRevenue,estimatedRedPartnerRevenue,adImpressions,monetizedPlaybacks',
+      dimensions: 'country',
+      filters: `video==${videoId}`,
+      sort: '-estimatedRevenue',
+      maxResults: '200',
+    });
+    if (!res) return { ok: false, error: 'No response from YouTube Analytics' };
+    return { ok: true, data: parseRevenueGeoRows(res.rows) };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * One video's UNDIMENSIONED revenue totals. Required alongside
+ * fetchVideoRevenueGeography because the country breakdown under-counts views
+ * (small markets bill without clearing the geo-attribution threshold), so any
+ * rate derived from the country sums is overstated — see
+ * lib/youtube-revenue-geography rule 4.
+ */
+export async function fetchVideoRevenueTotals(
+  videoId: string,
+  daysBack = 28
+): Promise<Result<{ views: number; estimatedRevenue: number; monetizedPlaybacks: number }>> {
+  if (!isYouTubeAnalyticsConfigured()) {
+    return { ok: false, error: 'YouTube Analytics OAuth not configured' };
+  }
+  if (!videoId) return { ok: false, error: 'videoId is required' };
+  const { startDate, endDate } = dateRange(daysBack);
+  try {
+    const res = await runReport({
+      ids: 'channel==MINE',
+      startDate,
+      endDate,
+      metrics: 'views,estimatedRevenue,monetizedPlaybacks',
+      filters: `video==${videoId}`,
+    });
+    if (!res) return { ok: false, error: 'No response from YouTube Analytics' };
+    const r = res.rows?.[0] ?? [];
+    return {
+      ok: true,
+      data: {
+        views: Number(r[0] ?? 0),
+        estimatedRevenue: Number(r[1] ?? 0),
+        monetizedPlaybacks: Number(r[2] ?? 0),
+      },
+    };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Channel-wide revenue per 1,000 views over the same window — the baseline a
+ * song's RPM is indexed against. Returns `null` rpm (not 0) when the channel
+ * recorded no views, so callers can tell "no baseline" from "baseline of zero".
+ */
+export async function fetchChannelRpm(
+  daysBack = 28
+): Promise<Result<{ views: number; estimatedRevenue: number; rpm: number | null }>> {
+  if (!isYouTubeAnalyticsConfigured()) {
+    return { ok: false, error: 'YouTube Analytics OAuth not configured' };
+  }
+  const { startDate, endDate } = dateRange(daysBack);
+  try {
+    const res = await runReport({
+      ids: 'channel==MINE',
+      startDate,
+      endDate,
+      metrics: 'views,estimatedRevenue',
+    });
+    if (!res) return { ok: false, error: 'No response from YouTube Analytics' };
+    const r = res.rows?.[0] ?? [];
+    const views = Number(r[0] ?? 0);
+    const estimatedRevenue = Number(r[1] ?? 0);
+    return {
+      ok: true,
+      data: { views, estimatedRevenue, rpm: views > 0 ? (estimatedRevenue / views) * 1000 : null },
+    };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
