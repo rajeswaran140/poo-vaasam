@@ -27,6 +27,39 @@ Status legend: ✅ done in repo · 🔧 config/infra action required · 📝 fut
 
 ---
 
+## What the 2026-08-20 audit fixed (in repo + via AWS API)
+
+- ✅ **Leaked AWS IAM key rotated and deleted.** `poo-vaasam-app-user`'s access
+  key (which had `AmazonDynamoDBFullAccess + AmazonS3FullAccess` — full
+  account-wide, not scoped) was rotated to a fresh AKID via `iam
+  create-access-key` → Amplify env-var swap → release build → `iam
+  delete-access-key`. The prior key was exposed as a plaintext Amplify env var
+  readable by anyone with `amplify:GetApp`.
+- ✅ **13 sensitive Amplify env vars mirrored into SSM SecureString** at
+  `/amplify/d3rkmepk4popv0/master/*` (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+  `APP_AWS_*`, `CRON_SECRET`, `GA4_SERVICE_ACCOUNT_KEY`,
+  `GOOGLE_TTS_CREDENTIALS_BASE64`, `LYRICS_GATE_SECRET`, `VAPID_PRIVATE_KEY`,
+  `YOUTUBE_API_KEY`, `YOUTUBE_OAUTH_CLIENT_SECRET`, `YOUTUBE_REFRESH_TOKEN`,
+  `YOUTUBE_WRITE_REFRESH_TOKEN`). Values are the current live values, mirrored
+  in place — the plaintext Amplify env vars are still the authoritative
+  source. Wiring SSM as the source requires build-time injection: see
+  P0 #8 below.
+- ✅ **Production Cognito self-signup DISABLED**
+  (`AdminCreateUserConfig.AllowAdminCreateUserOnly=true` on
+  `ca-central-1_JPXdswqHE`). Random registrations from the internet are
+  blocked; the existing admin is unaffected. Codified in
+  `scripts/apply-cognito-hardening.sh` (idempotent, safe to rerun).
+- ✅ **TOTP MFA enabled as OPTIONAL** on the production Cognito pool. The
+  admin can enrol a TOTP authenticator without lockout risk. Flipping to
+  `MfaConfiguration=ON` is intentionally deferred until enrolment is
+  confirmed — see P0 #9.
+- ✅ **Middleware auth-guard regression test** added
+  (`__tests__/middleware.test.ts`) — asserts `/admin/*` paths 307 to `/login`
+  without a Cognito cookie, pass through with one, reject malformed cookie
+  names, and the www→apex canonical redirect works.
+
+---
+
 ## P0 — Required before any production launch
 
 ### 1. Configure RBAC 🔧
@@ -85,6 +118,62 @@ Because the auth model changed, smoke-test on the deployed URL:
 - Confirm a request with no/expired/garbage `...idToken` cookie gets 401.
 - Confirm the JWKS fetch succeeds from the SSR runtime (no outbound-network block).
 
+### 8. Complete SSM SecureString migration for Amplify env vars 🔧
+> Follow-up from the 2026-08-20 audit — the SSM params are already populated;
+> the build wiring is what's missing.
+
+13 sensitive values sit in SSM SecureString at
+`/amplify/d3rkmepk4popv0/master/*` today, but Amplify Hosting does NOT
+auto-inject them into the SSR runtime for this app. Verified 2026-08-20 by
+removing the plaintext env vars and rebuilding: `yt-snapshot` started 401ing
+within 3 min because `CRON_SECRET` was gone from `process.env` — reverted
+build 589 immediately.
+
+The correct migration is:
+
+1. Grant the Amplify service role `ssm:GetParameter` on
+   `arn:aws:ssm:ca-central-1:975050319109:parameter/amplify/${AWS_APP_ID}/${AWS_BRANCH}/*`
+   (and `kms:Decrypt` on `alias/aws/ssm` if the default key is used).
+2. In `amplify.yml`'s `preBuild`, iterate the sensitive-key list,
+   `aws ssm get-parameter --with-decryption` each, and `export` them so
+   `next.config.ts`'s `env:` block inlines them into the build artifact.
+3. Trigger a build; verify the runtime picks the values up (yt-snapshot's
+   5-min cron returns 200; a page that uses OpenAI/Anthropic renders
+   correctly).
+4. Only THEN remove the plaintext values from the Amplify env vars.
+
+Skipping step 1 or step 3 recreates the 2026-08-20 breakage. Do not attempt
+without first verifying the service role has the permission — the failure
+mode is silent (values just aren't exported), the build succeeds, and the
+runtime breaks minutes later.
+
+### 9. Enable Cognito MFA=ON after admin enrolment 🔧
+The production pool is currently `MfaConfiguration=OPTIONAL` (admin can enrol
+without lockout). Once the admin has a TOTP device enrolled AND has
+confirmed a login with the second factor, flip to REQUIRED so all future
+users must enrol. Command lives in `scripts/apply-cognito-hardening.sh`
+under `=== NEXT STEP ===`.
+
+### 10. Scope down over-broad IAM identities 🔧
+Two identities today have `AmazonDynamoDBFullAccess + AmazonS3FullAccess`
+(full account-wide, not scoped):
+
+- **`poo-vaasam-app-user`** — the runtime IAM user used by the SSR to reach
+  DynamoDB + S3.
+- **`AmplifyBackendRole-TamilWeb`** — the Amplify service role.
+
+Scope both to only what Tamilagaval actually touches:
+- DDB: `arn:aws:dynamodb:ca-central-1:975050319109:table/TamilWebContent`
+  (+ any GSI ARNs)
+- S3: `arn:aws:s3:::tamil-web-media/*`,
+  `arn:aws:s3:::tamil-web-media-gated/*`,
+  `arn:aws:s3:::tamilagaval-audio-masters/*`,
+  `arn:aws:s3:::tamilagaval-cloudfront-logs/*` (plus bucket-level
+  `s3:ListBucket` where the SDK requires it).
+
+A compromise of either identity today is equivalent to compromise of every
+S3 bucket + every DDB table in account `975050319109`.
+
 ---
 
 ## P1 — Strongly recommended
@@ -115,7 +204,14 @@ consistent and never leak request data.
 
 ## P2 — Resilience / scale (infra)
 
-- **DynamoDB**: enable Point-in-Time Recovery (PITR); confirm on-demand billing.
+- **DynamoDB PITR**: currently OFF on `TamilWebContent` in ca-central-1
+  (production, 7532 items, ~1.5 MB → effectively free at ~$0.20/GB-mo).
+  Enable with `scripts/enable-ddb-pitr.sh`.
+- **Lambda concurrency limits**: the four `tamilagaval-*` worker Lambdas
+  have no reserved concurrency, meaning a compromised admin or a client bug
+  could rapidly queue many 3008-MB / 900-s invocations of `master-worker`.
+  Apply reasonable ceilings with `scripts/apply-lambda-concurrency-limits.sh`
+  (defaults: master-worker 3, compose-worker 3, measure-fn 3, yt-snapshot 2).
 - **Backups**: scheduled exports of the table + S3 lifecycle (Glacier) policy.
 - **CDN**: front static/media with CloudFront (cache + TLS + origin shielding).
 - **Multi-region / DR**: single-region today is a SPOF; document RTO/RPO and a failover plan.
@@ -140,4 +236,4 @@ npm audit --omit=dev   # report-only; fail on new high/critical
 
 ---
 
-_Last updated: 2026-06-02 (added build-time key-inlining rotation gotcha + compose 401 incident)._
+_Last updated: 2026-08-20 (DevOps audit: rotated leaked IAM key + deleted; Cognito self-signup off + MFA=OPTIONAL; mirrored 13 secrets to SSM SecureString; new P0 items #8/#9/#10; new scripts/apply-*.sh; middleware smoke test)._
