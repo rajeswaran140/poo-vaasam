@@ -11,8 +11,43 @@ export interface AdminDoc {
   slug: string;
   title: string;
   category: string;
-  updatedAt: string; // YYYY-MM-DD
+  /**
+   * When this doc was last updated. Accepts either a date-only string
+   * (`YYYY-MM-DD`) — how everything was written before 2026-08-21 — or a full
+   * ISO 8601 timestamp (`YYYY-MM-DDTHH:MM:SSZ`). The viewer formats both;
+   * date-only renders "21 Aug 2026", full timestamp renders "21 Aug 2026 · 19:47 UTC".
+   * For a NEW edit prefer the full timestamp so the audit trail is precise —
+   * the sidebar list shows this alongside every entry.
+   */
+  updatedAt: string;
   body: string;
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * Format an `AdminDoc.updatedAt` for display. UTC throughout to keep the
+ * server render and the client render byte-identical (locale-based formatters
+ * would trip hydration on any admin whose browser is not en-GB / UTC).
+ *
+ * Date-only input (`2026-08-21`)          → `21 Aug 2026`
+ * Full ISO input   (`2026-08-21T19:47:00Z`) → `21 Aug 2026 · 19:47 UTC`
+ * Anything unparseable falls back to the raw string so a bad entry is
+ * visible rather than silently blank.
+ */
+export function formatDocUpdatedAt(iso: string): string {
+  if (!iso) return '';
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(iso);
+  const d = new Date(dateOnly ? `${iso}T00:00:00Z` : iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  const mm = MONTHS[d.getUTCMonth()];
+  const yy = d.getUTCFullYear();
+  const dateStr = `${dd} ${mm} ${yy}`;
+  if (dateOnly) return dateStr;
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mi = String(d.getUTCMinutes()).padStart(2, '0');
+  return `${dateStr} · ${hh}:${mi} UTC`;
 }
 
 export const ADMIN_DOCS: AdminDoc[] = [
@@ -195,7 +230,7 @@ Right after a SUNO (or other engine) run comes back. SUNO has no API, so there's
     slug: 'music-lab-mastering',
     title: 'Music Lab — mastering a song for loudness',
     category: 'Music Lab',
-    updatedAt: '2026-08-21',
+    updatedAt: '2026-08-21T19:47:00Z',
     body: `# Master a song for loudness
 
 Streaming platforms (YouTube, Spotify, Apple) normalise every track to about **-14 LUFS** — a song that's too quiet gets pushed up (hiss with it), one that's too loud gets squashed. **Mastering** here brings a finished stereo song to that streaming target — **-14 LUFS integrated, -1 dBTP true-peak** — so the whole catalogue sits at a consistent, safe level.

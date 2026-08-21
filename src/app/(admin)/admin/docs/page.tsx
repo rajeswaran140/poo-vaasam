@@ -7,7 +7,7 @@
 
 import { useState } from 'react';
 import { BookOpen } from 'lucide-react';
-import { ADMIN_DOCS, docsByCategory } from '@/content/admin-docs';
+import { ADMIN_DOCS, docsByCategory, formatDocUpdatedAt } from '@/content/admin-docs';
 import { MarkdownView } from '@/components/admin/MarkdownView';
 import { DocExport } from '@/components/admin/DocExport';
 
@@ -41,7 +41,17 @@ export default function DocsPage() {
                           : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
                       }`}
                     >
-                      {d.title}
+                      <span className="block">{d.title}</span>
+                      <span
+                        className={`mt-0.5 block text-[11px] tabular-nums ${
+                          d.slug === active?.slug
+                            ? 'text-purple-600 dark:text-purple-300'
+                            : 'text-gray-400 dark:text-gray-500'
+                        }`}
+                        title={`Last updated ${d.updatedAt}`}
+                      >
+                        {formatDocUpdatedAt(d.updatedAt)}
+                      </span>
                     </button>
                   </li>
                 ))}
@@ -56,7 +66,9 @@ export default function DocsPage() {
           {active ? (
             <>
               <div className="mb-3 flex items-center justify-between gap-3">
-                <p className="text-xs text-gray-400">Updated {active.updatedAt}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 tabular-nums" title={active.updatedAt}>
+                  Updated {formatDocUpdatedAt(active.updatedAt)}
+                </p>
                 <DocExport doc={active} />
               </div>
               <MarkdownView md={active.body} />
