@@ -52,6 +52,27 @@ describe('Content Security Policy', () => {
     it('keeps GA4 reachable, or analytics silently records nothing', () => {
       expect(directive(prod, 'script-src')).toContain('https://www.googletagmanager.com');
       expect(directive(prod, 'connect-src')).toContain('https://www.google-analytics.com');
+      expect(directive(prod, 'connect-src')).toContain('https://*.analytics.google.com');
+      expect(directive(prod, 'connect-src')).toContain('https://www.googletagmanager.com');
+    });
+
+    describe('connect-src is tight (no bare `https:` wildcard)', () => {
+      // Regression guard for the 2026-08-21 tightening: the previous policy
+      // allowed `https:` — any HTTPS host — as an exfil destination if XSS
+      // ever landed via `'unsafe-inline'` script-src. Do not reintroduce it.
+      it('does NOT allow the bare `https:` scheme in connect-src', () => {
+        // Match a bare `https:` token (with a trailing space), not `https://…`.
+        const connect = directive(prod, 'connect-src');
+        expect(connect).not.toMatch(/(^|\s)https:(\s|$)/);
+      });
+
+      it.each([
+        ['Cognito + S3 presigned uploads', 'https://*.amazonaws.com'],
+        ['CloudFront media distro (MEDIA_BASE_URL)', 'https://d2cdoh43143xxa.cloudfront.net'],
+        ['YouTube thumbnail preflight (video-thumbnails.ts)', 'https://i.ytimg.com'],
+      ])('allows %s', (_purpose, host) => {
+        expect(directive(prod, 'connect-src')).toContain(host);
+      });
     });
 
     it('keeps YouTube embeddable', () => {

@@ -49,9 +49,32 @@ export function buildContentSecurityPolicy(
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
-    // connect-src https: already covers google-analytics.com/g/collect, but
-    // listing the GA hostnames explicitly makes the dependency obvious.
-    "connect-src 'self' https: https://www.google-analytics.com https://*.analytics.google.com",
+    // connect-src: browser-side outbound. Tightened 2026-08-21 — was
+    // `'self' https:` which allowed exfil to any HTTPS host if XSS ever landed
+    // via `'unsafe-inline'` script-src. Now enumerated to only what the app
+    // actually calls from the browser:
+    //   google-analytics.com + *.analytics.google.com  gtag pings
+    //   googletagmanager.com                           gtag config fetches
+    //   *.amazonaws.com                                Cognito auth + S3
+    //                                                  presigned uploads
+    //                                                  (wildcard because bucket
+    //                                                  names + region endpoints
+    //                                                  multiply; IAM scopes
+    //                                                  what's actually reachable)
+    //   d2cdoh43143xxa.cloudfront.net                  MEDIA_BASE_URL — the
+    //                                                  CloudFront distro
+    //                                                  fronting tamil-web-media
+    //   i.ytimg.com                                    thumbnail preflight
+    //                                                  (video-thumbnails.ts)
+    // If a legitimate new destination appears (Sentry, Datadog RUM, a new
+    // API…), add it here — the failure will be a browser CSP violation, not
+    // silent success.
+    "connect-src 'self' " +
+      'https://www.google-analytics.com https://*.analytics.google.com ' +
+      'https://www.googletagmanager.com ' +
+      'https://*.amazonaws.com ' +
+      'https://d2cdoh43143xxa.cloudfront.net ' +
+      'https://i.ytimg.com',
     "media-src 'self' blob: https:",
     "frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com",
     'upgrade-insecure-requests',
