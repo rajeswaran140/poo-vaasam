@@ -16,6 +16,7 @@
 
 import { useEffect, useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
+import { httpErrorMessage } from '@/lib/http-error-message';
 import type { RevenueGeoRow } from '@/lib/youtube-revenue-geography';
 
 interface ChannelRevenueGeoResult {
@@ -47,21 +48,37 @@ export function ChannelRevenueByCountryPanel({ days }: { days: number }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ChannelRevenueGeoResult | null>(null);
+  // 401/403 aren't panel-scoped errors — the outer AnalyticsPage already
+  // renders the admin-level explanation for them (see httpErrorMessage). Ditto
+  // rendering the same wording here would duplicate the message in the DOM,
+  // which the analytics-page test suite catches as "found multiple elements".
+  // We just render nothing in that case; when the session recovers, the whole
+  // page re-mounts.
+  const [suppressed, setSuppressed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setSuppressed(false);
     adminFetch(`/api/admin/youtube/channel-revenue-by-country?days=${days}`)
       .then(async (res) => {
+        if (res.status === 401 || res.status === 403) {
+          if (!cancelled) setSuppressed(true);
+          return null;
+        }
         if (!res.ok) {
+          // Non-auth failure: this route's 502/503 carries a specific upstream
+          // message worth surfacing (a monetary-scope 403 from Google reads as
+          // "PERMISSION_DENIED: …" here). Fall back to the friendly wording
+          // when the body has nothing useful.
           const body = await res.json().catch(() => ({}));
-          throw new Error(body?.error || `HTTP ${res.status}`);
+          throw new Error((body?.error as string) || httpErrorMessage(res.status));
         }
         return res.json();
       })
-      .then((data: ChannelRevenueGeoResult) => {
-        if (!cancelled) setResult(data);
+      .then((data: ChannelRevenueGeoResult | null) => {
+        if (data && !cancelled) setResult(data);
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
@@ -73,6 +90,8 @@ export function ChannelRevenueByCountryPanel({ days }: { days: number }) {
       cancelled = true;
     };
   }, [days]);
+
+  if (suppressed) return null;
 
   return (
     <section aria-labelledby="channel-revenue-country-heading" className="space-y-3">
