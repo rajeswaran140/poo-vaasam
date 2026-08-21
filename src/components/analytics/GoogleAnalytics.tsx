@@ -11,6 +11,7 @@
 import Script from 'next/script';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef } from 'react';
+import { isProductionHostForAnalytics } from '@/lib/analytics';
 
 declare global {
   interface Window { gtag?: (...args: unknown[]) => void; dataLayer?: unknown[] }
@@ -30,6 +31,9 @@ export function GoogleAnalytics({ gaId }: { gaId: string }) {
       return;
     }
     if (!gaId || typeof window === 'undefined' || typeof window.gtag !== 'function') return;
+    // Same production-host gate applied at render (below) — a preview branch's
+    // useEffect must not fire pageviews even when gtag was somehow initialised.
+    if (!isProductionHostForAnalytics(window.location.hostname)) return;
     window.gtag('event', 'page_view', {
       page_location: window.location.href,
       page_title: document.title,
@@ -37,6 +41,20 @@ export function GoogleAnalytics({ gaId }: { gaId: string }) {
   }, [pathname, gaId]);
 
   if (!gaId) return null;
+
+  // Production-host gate. Amplify preview branches (`*.amplifyapp.com`),
+  // `localhost`, and any staging alias must NOT fire the production GA4
+  // property — every dev iteration would otherwise pollute the real
+  // dashboard. Checked inline (not useState/useEffect) because the useEffect
+  // pattern induces an extra render cycle that our SPA-page_view test
+  // struggles to disentangle from the enabled flip. Kept as `typeof window`
+  // guard so SSR renders normally and the client short-circuits on preview.
+  // (Hydration-mismatch warning on preview branches is intentional and cheap
+  // — production branches match perfectly, and preview branches are dev-only
+  // surfaces where we prefer the noise to the false analytics reads.)
+  if (typeof window !== 'undefined' && !isProductionHostForAnalytics(window.location.hostname)) {
+    return null;
+  }
 
   return (
     <>
