@@ -18,3 +18,21 @@
 // staging / personal forks.
 export const GA_ID = process.env.NEXT_PUBLIC_GA_ID || 'G-W2GGGP926B';
 export const GOOGLE_SITE_VERIFICATION = process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION || '';
+
+/**
+ * Hostnames on which GA4 is allowed to fire. Every other host — Amplify preview
+ * branches (`<hash>.amplifyapp.com`), `localhost`, staging aliases — is a
+ * pre-production surface whose visits must NOT count toward the production GA4
+ * property. Kept as a pure function of the hostname so it's unit-testable
+ * without mocking `window.location`. Guarded again at render time in
+ * `<GoogleAnalytics>` (with a `useEffect` gate so SSR + client agree on the
+ * initial render — no hydration mismatch).
+ */
+export const PRODUCTION_HOSTS_FOR_ANALYTICS = new Set([
+  'tamilagaval.com',
+  'www.tamilagaval.com',
+]);
+
+export function isProductionHostForAnalytics(hostname: string): boolean {
+  return PRODUCTION_HOSTS_FOR_ANALYTICS.has(hostname);
+}
