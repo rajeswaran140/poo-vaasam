@@ -195,7 +195,7 @@ Right after a SUNO (or other engine) run comes back. SUNO has no API, so there's
     slug: 'music-lab-mastering',
     title: 'Music Lab — mastering a song for loudness',
     category: 'Music Lab',
-    updatedAt: '2026-07-23',
+    updatedAt: '2026-08-21',
     body: `# Master a song for loudness
 
 Streaming platforms (YouTube, Spotify, Apple) normalise every track to about **-14 LUFS** — a song that's too quiet gets pushed up (hiss with it), one that's too loud gets squashed. **Mastering** here brings a finished stereo song to that streaming target — **-14 LUFS integrated, -1 dBTP true-peak** — so the whole catalogue sits at a consistent, safe level.
@@ -258,6 +258,21 @@ console.log(job.status, job.masterKey, job.beforeLufs, job.afterLufs);
 - When \`done\`: \`masterKey\` is the new file, written beside the original as **\`<name>-master-14LUFS.wav\`** (the target is in the name, so a -14 and a -16 master of the same song don't overwrite each other).
 
 **3. Verify — no download needed.** The worker re-measures its own output, so the job itself is the evidence: \`afterLufs\` should read your target within ~0.1 LU and \`afterTp\` should sit at or below -1. \`beforeLufs\`/\`beforeTp\` are what it measured going in. Your original is never overwritten.
+
+## Compare before & after
+
+Once a master lands, the Sound Engineering page shows an A/B compare player right below it. The source WAV and the mastered WAV load into a shared Web Audio graph and play in **lock-step**: hitting **A** or **B** (or ← / →) swaps which one is audible at the *same instant of the song*, so you can judge the difference honestly. **Space** plays / pauses; **j / l / k** mirror the YouTube shortcuts (back 10, forward 10, play/pause).
+
+**Match loudness is on by default — and it should be.** The louder of two clips always seems better; without matching, you would just be proving that the master is louder, which the numbers already tell you. With matching on, both sides are pulled to the quieter one's level via the measured integrated LUFS, so you are comparing the *sound*, not the loudness. Turn it off ("True levels") when you *want* to hear the level change — but never for a "which is better" call.
+
+Volume rides a **shared output stage** after the A/B split, so it scales both sides identically and cannot skew the comparison. Playback rate does the same. Two things the player deliberately does NOT do: fade between A and B (a hard swap is what mastering engineers use — a fade blends what should be a difference into a haze), and touch EQ or tone (the whole promise of this module is *loudness only, never tone*; the player must not violate it either).
+
+**When it earns its keep:**
+- After running a **0.68 LU change** on a song that was almost on target — the honest answer will usually be "I can't tell", which is the correct answer and worth confirming rather than assuming.
+- When comparing a **hot** or **quiet** outlier against its corrected master — turning match *off* then genuinely shows the loudness fix; turning it back *on* confirms nothing else moved.
+- Between **two masters of the same song at different targets** (-14 vs -16 for Spotify vs Apple) — the prev / next arrows step through them without leaving the player.
+
+**When it is misleading:** if the source and the master have different silence bounds (a trimmed intro on one, not the other), the lock-step alignment plays the same *clock position* but not the same *musical position*. The pre-master analysis flags trim proposals so this can be applied consistently — but if you master with a trim and then A/B, position N in the master maps to position N + trim in the source. Rewind to a point past both intros before switching.
 
 ## Full pipeline — master -> Premiere -> YouTube
 Mastering is step one of getting a song onto YouTube at consistent quality:
