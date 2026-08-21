@@ -41,20 +41,19 @@ frontend:
     build:
       commands:
         - echo "Starting build at $(date)"
-        # P2.4: pull sensitive values from SSM SecureString and export them so
-        # both the .env.production.local heredoc below AND `next.config.ts`'s
-        # env: block (which reads process.env at build time) inline the SSM
-        # value instead of whatever plaintext is in the Amplify env vars.
-        # Fall through to the Amplify env var on lookup failure so a permission
-        # regression doesn't nuke secrets to empty — the 2026-08-20 attempt
-        # assumed Amplify Hosting auto-injects /amplify/<app>/<branch>/* into
-        # the SSR runtime and 401'd yt-snapshot within 3 min when it didn't.
-        # Phase 2 (separate PR) will delete the plaintext env vars and swap
-        # this to fail-loud (set -e) so a silent SSM regression can't zero
-        # out secrets. Amplify commands within one phase share a shell, so
-        # exports here persist to the heredoc + `npm run build` below.
+        # P2.4: SSM SecureString is the sole source of truth for these 13
+        # sensitive keys — the plaintext Amplify env vars have been deleted
+        # (see project_ops_backlog memory / HARDENING.md P0 #8 for history).
+        # Fail-loud: if any lookup fails, abort the build. The 2026-08-20
+        # incident happened because a silent failure shipped empty secrets;
+        # the phase-1 fall-through pattern (build 597) was a coexistence
+        # window only. Loop tries all 13 before aborting so the log shows
+        # the full picture — easier to diagnose a bulk permission regression.
+        # Amplify commands within one phase share a shell, so exports here
+        # persist to the heredoc + `npm run build` below.
         - |
           SSM_PREFIX="/amplify/${AWS_APP_ID:-d3rkmepk4popv0}/${AWS_BRANCH:-master}"
+          FAILED=0
           for KEY in \
             ANTHROPIC_API_KEY \
             APP_AWS_ACCESS_KEY_ID \
@@ -77,9 +76,18 @@ frontend:
               export "$KEY=$VAL"
               printf '  ssm loaded  %-40s %d chars\n' "$KEY" "$(printf %s "$VAL" | wc -c)"
             else
-              printf '  ssm MISSING %-40s falling back to Amplify env var\n' "$KEY"
+              printf '  ssm FAILED  %-40s permission/param regression?\n' "$KEY"
+              FAILED=$((FAILED + 1))
             fi
           done
+          if [ "$FAILED" -gt 0 ]; then
+            echo ""
+            echo "  P2.4 fail-loud: $FAILED of 13 SSM lookups failed. Aborting build —"
+            echo "  refusing to ship an artifact with empty secrets. Check that policy"
+            echo "  P24SsmSecureStringRead is still attached to the Amplify service role"
+            echo "  and that /amplify/${AWS_APP_ID}/${AWS_BRANCH}/* SecureString params exist."
+            exit 1
+          fi
         - |
           cat > .env.production.local << EOF
           APP_AWS_ACCESS_KEY_ID=$APP_AWS_ACCESS_KEY_ID
