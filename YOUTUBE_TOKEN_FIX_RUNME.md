@@ -68,7 +68,7 @@ import json,os
 d=json.loads(os.environ["ENVJSON"])
 d["YOUTUBE_OAUTH_CLIENT_ID"]=os.environ["CID"]
 d["YOUTUBE_OAUTH_CLIENT_SECRET"]=os.environ["CSEC"]
-d["YOUTUBE_REFRESH_TOKEN"]=os.environ["RT"]
+d["YOUTUBE_ANALYTICS_REFRESH_TOKEN"]=os.environ["RT"]
 print(json.dumps(d))')
 aws amplify update-app --app-id d3rkmepk4popv0 --region ca-central-1 --environment-variables "$MERGED" >/dev/null && echo "Amplify env updated (CLIENT_ID + CLIENT_SECRET + REFRESH_TOKEN)"
 

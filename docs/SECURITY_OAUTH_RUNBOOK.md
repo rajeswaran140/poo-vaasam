@@ -6,8 +6,8 @@ Scope: the YouTube OAuth credentials that power tamilagaval.com automation (anal
 
 | Secret (env var) | Scope / power | Risk if leaked |
 |---|---|---|
-| `YOUTUBE_WRITE_REFRESH_TOKEN` | `youtube.force-ssl` — **full channel write incl. DELETE videos/playlists** | 🔴 catalogue destruction |
-| `YOUTUBE_REFRESH_TOKEN` | `yt-analytics.readonly` | 🟡 read analytics only |
+| `YOUTUBE_DATA_REFRESH_TOKEN` | `youtube.force-ssl` — **full channel write incl. DELETE videos/playlists** | 🔴 catalogue destruction |
+| `YOUTUBE_ANALYTICS_REFRESH_TOKEN` | `yt-analytics.readonly` | 🟡 read analytics only |
 | `YOUTUBE_OAUTH_CLIENT_SECRET` + `_CLIENT_ID` | mints tokens from a refresh token | 🔴 with a refresh token |
 | `YOUTUBE_API_KEY` | API-restricted to YouTube Data API, read-only, no referrer/IP restriction | 🟡 quota exhaustion only |
 
