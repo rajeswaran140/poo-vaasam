@@ -10,9 +10,9 @@ refresh token stored in Amplify. When that token expires, the column shows `—`
   - _(Previous client `…-bd9fhrqh…` is retired; tokens minted under it no longer apply.)_
 - **Scope needed:** `https://www.googleapis.com/auth/yt-analytics.readonly`
 - **Amplify app / region:** `d3rkmepk4popv0` / `ca-central-1`
-- **Env vars to update:** normally just `YOUTUBE_REFRESH_TOKEN`. **When switching
+- **Env vars to update:** normally just `YOUTUBE_ANALYTICS_REFRESH_TOKEN`. **When switching
   to a new OAuth client (as on 2026-06-11), update all three:**
-  `YOUTUBE_OAUTH_CLIENT_ID`, `YOUTUBE_OAUTH_CLIENT_SECRET`, `YOUTUBE_REFRESH_TOKEN`.
+  `YOUTUBE_OAUTH_CLIENT_ID`, `YOUTUBE_OAUTH_CLIENT_SECRET`, `YOUTUBE_ANALYTICS_REFRESH_TOKEN`.
   (Env changes apply on the next RELEASE build — secrets are inlined at build time,
   so the live site is unaffected until then.)
 
@@ -129,7 +129,7 @@ import json,os
 d=json.loads(os.environ["ENVJSON"])
 d["YOUTUBE_OAUTH_CLIENT_ID"]=os.environ["CID"]
 d["YOUTUBE_OAUTH_CLIENT_SECRET"]=os.environ["CSEC"]
-d["YOUTUBE_REFRESH_TOKEN"]=os.environ["RTOK"]
+d["YOUTUBE_ANALYTICS_REFRESH_TOKEN"]=os.environ["RTOK"]
 print(json.dumps(d))')
 aws amplify update-app --app-id d3rkmepk4popv0 --region ca-central-1 --environment-variables "$MERGED"
 aws amplify start-job --app-id d3rkmepk4popv0 --branch-name master --region ca-central-1 --job-type RELEASE

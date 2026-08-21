@@ -11,7 +11,7 @@
  *   eval "$(aws amplify get-app --app-id d3rkmepk4popv0 --region ca-central-1 \
  *     --query 'app.environmentVariables' --output json | python3 -c '
  *   import sys,json;e=json.load(sys.stdin)
- *   for k in (\"YOUTUBE_OAUTH_CLIENT_ID\",\"YOUTUBE_OAUTH_CLIENT_SECRET\",\"YOUTUBE_WRITE_REFRESH_TOKEN\"):
+ *   for k in (\"YOUTUBE_OAUTH_CLIENT_ID\",\"YOUTUBE_OAUTH_CLIENT_SECRET\",\"YOUTUBE_DATA_REFRESH_TOKEN\"):
  *       print(f\"export {k}={e[k]}\")')"
  *   npx tsx scripts/upload-captions.ts --id <contentId> [--language ta] \
  *     [--name "பாடல் வரிகள்"] [--vtt] [--draft] [--video <videoIdOverride>] [--duration <sec>]
@@ -38,10 +38,10 @@ const has = (flag: string) => process.argv.includes(flag);
 async function mintWriteToken(): Promise<string> {
   const clientId = process.env.YOUTUBE_OAUTH_CLIENT_ID;
   const clientSecret = process.env.YOUTUBE_OAUTH_CLIENT_SECRET;
-  const refresh = process.env.YOUTUBE_WRITE_REFRESH_TOKEN;
+  const refresh = process.env.YOUTUBE_DATA_REFRESH_TOKEN;
   if (!clientId || !clientSecret || !refresh) {
     throw new Error(
-      'Missing YOUTUBE_OAUTH_CLIENT_ID / _CLIENT_SECRET / YOUTUBE_WRITE_REFRESH_TOKEN in env.'
+      'Missing YOUTUBE_OAUTH_CLIENT_ID / _CLIENT_SECRET / YOUTUBE_DATA_REFRESH_TOKEN in env.'
     );
   }
   const res = await fetch('https://oauth2.googleapis.com/token', {

@@ -7,7 +7,7 @@
  *
  * Run (with OAuth env vars present):
  *   YOUTUBE_OAUTH_CLIENT_ID=... YOUTUBE_OAUTH_CLIENT_SECRET=... \
- *   YOUTUBE_REFRESH_TOKEN=... npx tsx scripts/smoke-youtube-digest.ts
+ *   YOUTUBE_ANALYTICS_REFRESH_TOKEN=... npx tsx scripts/smoke-youtube-digest.ts
  */
 
 import { fetchDailySeries, fetchVideoAnalytics, isYouTubeAnalyticsConfigured } from '../src/lib/youtube-analytics';

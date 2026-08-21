@@ -24,7 +24,7 @@
  * are Studio-only. This measures VIEWS. For the impressions half, use the
  * impressions log on /admin/youtube.
  *
- * Reads only. Needs YOUTUBE_OAUTH_CLIENT_ID/_SECRET + YOUTUBE_REFRESH_TOKEN
+ * Reads only. Needs YOUTUBE_OAUTH_CLIENT_ID/_SECRET + YOUTUBE_ANALYTICS_REFRESH_TOKEN
  * (Analytics) and YOUTUBE_API_KEY (public reads). Never writes creds to disk.
  */
 import { fitDecay, residuals, assessImpact, newViewerSubsPer1k, type DayPoint } from '../src/lib/release-impact';
@@ -47,9 +47,9 @@ function isoDay(offsetDays: number): string {
 }
 
 async function analyticsToken(): Promise<string> {
-  const { YOUTUBE_OAUTH_CLIENT_ID, YOUTUBE_OAUTH_CLIENT_SECRET, YOUTUBE_REFRESH_TOKEN } = process.env;
-  if (!YOUTUBE_OAUTH_CLIENT_ID || !YOUTUBE_OAUTH_CLIENT_SECRET || !YOUTUBE_REFRESH_TOKEN) {
-    throw new Error('YOUTUBE_OAUTH_CLIENT_ID / _SECRET / YOUTUBE_REFRESH_TOKEN are required');
+  const { YOUTUBE_OAUTH_CLIENT_ID, YOUTUBE_OAUTH_CLIENT_SECRET, YOUTUBE_ANALYTICS_REFRESH_TOKEN } = process.env;
+  if (!YOUTUBE_OAUTH_CLIENT_ID || !YOUTUBE_OAUTH_CLIENT_SECRET || !YOUTUBE_ANALYTICS_REFRESH_TOKEN) {
+    throw new Error('YOUTUBE_OAUTH_CLIENT_ID / _SECRET / YOUTUBE_ANALYTICS_REFRESH_TOKEN are required');
   }
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -57,7 +57,7 @@ async function analyticsToken(): Promise<string> {
     body: new URLSearchParams({
       client_id: YOUTUBE_OAUTH_CLIENT_ID,
       client_secret: YOUTUBE_OAUTH_CLIENT_SECRET,
-      refresh_token: YOUTUBE_REFRESH_TOKEN,
+      refresh_token: YOUTUBE_ANALYTICS_REFRESH_TOKEN,
       grant_type: 'refresh_token',
     }),
   });

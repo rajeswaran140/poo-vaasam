@@ -57,26 +57,18 @@ const nextConfig: NextConfig = {
     // Rotating any of these requires a redeploy to re-inline.
     YOUTUBE_OAUTH_CLIENT_ID: process.env.YOUTUBE_OAUTH_CLIENT_ID || '',
     YOUTUBE_OAUTH_CLIENT_SECRET: process.env.YOUTUBE_OAUTH_CLIENT_SECRET || '',
-    // Legacy env-var names — kept during a deprecation window so an operator
-    // can rename Amplify env vars whenever (no coordinated deploy needed).
-    // The new scope-descriptive names below are what src/ code prefers; these
-    // stay as fallbacks. Drop after Amplify env vars are renamed + at least
-    // one build has confirmed the new names work. See P3.H in HARDENING.md.
-    YOUTUBE_REFRESH_TOKEN: process.env.YOUTUBE_REFRESH_TOKEN || '',
-    YOUTUBE_WRITE_REFRESH_TOKEN: process.env.YOUTUBE_WRITE_REFRESH_TOKEN || '',
-    // ⚠️ NAMING TRAP the rename fixes (documented in HARDENING.md P3.H):
-    //   YOUTUBE_REFRESH_TOKEN         has yt-analytics.readonly scope only —
-    //                                 CANNOT call the Data API (videos.list
-    //                                 mine=true, playlists, etc.).
-    //   YOUTUBE_WRITE_REFRESH_TOKEN   has youtube.force-ssl scope — FULL Data
-    //                                 API (read AND write, including delete).
-    // The scope-descriptive names below make the trap obvious without needing
-    // to open the runbook every time. Runtime code should read these; the
-    // legacy names remain as fallbacks until the Amplify migration completes.
-    YOUTUBE_ANALYTICS_REFRESH_TOKEN:
-      process.env.YOUTUBE_ANALYTICS_REFRESH_TOKEN || process.env.YOUTUBE_REFRESH_TOKEN || '',
-    YOUTUBE_DATA_REFRESH_TOKEN:
-      process.env.YOUTUBE_DATA_REFRESH_TOKEN || process.env.YOUTUBE_WRITE_REFRESH_TOKEN || '',
+    // Scope-descriptive YouTube OAuth refresh tokens (renamed 2026-08-21 —
+    // see the archived phases in HARDENING.md P3.H). The names encode WHY
+    // the two tokens exist rather than what direction the calls go:
+    //   YOUTUBE_ANALYTICS_REFRESH_TOKEN  scope = yt-analytics.readonly
+    //                                           (+ yt-analytics-monetary.readonly)
+    //                                    Analytics API only — CANNOT call
+    //                                    Data API videos.list mine=true.
+    //   YOUTUBE_DATA_REFRESH_TOKEN        scope = youtube.force-ssl
+    //                                    FULL Data API (read AND write,
+    //                                    including DELETE videos + playlists).
+    YOUTUBE_ANALYTICS_REFRESH_TOKEN: process.env.YOUTUBE_ANALYTICS_REFRESH_TOKEN || '',
+    YOUTUBE_DATA_REFRESH_TOKEN: process.env.YOUTUBE_DATA_REFRESH_TOKEN || '',
     GA4_PROPERTY_ID: process.env.GA4_PROPERTY_ID || '',
     GA4_SERVICE_ACCOUNT_KEY: process.env.GA4_SERVICE_ACCOUNT_KEY || '',
     // Web-push (new-song notifications). Server needs all three to sign payloads

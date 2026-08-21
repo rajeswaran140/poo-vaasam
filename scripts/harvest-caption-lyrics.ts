@@ -22,7 +22,7 @@
  *   <song> [<id>].srt   — the original track, verbatim
  *   <song> [<id>].json  — cues with timings, for alignment work
  *
- * Credentials: YOUTUBE_OAUTH_CLIENT_ID / _SECRET / YOUTUBE_WRITE_REFRESH_TOKEN
+ * Credentials: YOUTUBE_OAUTH_CLIENT_ID / _SECRET / YOUTUBE_DATA_REFRESH_TOKEN
  * (captions.download needs force-ssl; the read-only Analytics token cannot do
  * it). Never written to disk.
  */
@@ -54,7 +54,7 @@ async function accessToken(): Promise<string> {
   const body = new URLSearchParams({
     client_id: process.env.YOUTUBE_OAUTH_CLIENT_ID!,
     client_secret: process.env.YOUTUBE_OAUTH_CLIENT_SECRET!,
-    refresh_token: process.env.YOUTUBE_WRITE_REFRESH_TOKEN!,
+    refresh_token: process.env.YOUTUBE_DATA_REFRESH_TOKEN!,
     grant_type: 'refresh_token',
   });
   const r = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', body });

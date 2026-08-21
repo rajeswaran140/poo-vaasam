@@ -420,8 +420,8 @@ export default async function YouTubeAdminPage() {
           <p className="text-xs">
             One-time OAuth setup needed: run <code>scripts/get-youtube-refresh-token.ts</code>,
             then set <code>YOUTUBE_OAUTH_CLIENT_ID</code>, <code>YOUTUBE_OAUTH_CLIENT_SECRET</code>,
-            and <code>YOUTUBE_REFRESH_TOKEN</code> in Amplify env. Until then per-video subscriber
-            gains, retention metrics, and AI recommendations stay hidden.
+            and <code>YOUTUBE_ANALYTICS_REFRESH_TOKEN</code> in Amplify env. Until then per-video
+            subscriber gains, retention metrics, and AI recommendations stay hidden.
           </p>
         </section>
       )}

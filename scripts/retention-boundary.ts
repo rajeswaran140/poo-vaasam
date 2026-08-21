@@ -22,7 +22,7 @@
  * percentage at this channel's near-constant ~2:54 of listening — that is
  * length arithmetic, not song quality. See the Video Length vs AVP note.
  *
- * Reads only. Needs YOUTUBE_OAUTH_CLIENT_ID/_SECRET + YOUTUBE_REFRESH_TOKEN
+ * Reads only. Needs YOUTUBE_OAUTH_CLIENT_ID/_SECRET + YOUTUBE_ANALYTICS_REFRESH_TOKEN
  * (Analytics) and YOUTUBE_API_KEY (duration). Never writes creds to disk.
  */
 import { fetchRetentionCurve, isYouTubeAnalyticsConfigured } from '../src/lib/youtube-analytics';

@@ -39,8 +39,8 @@ Status legend: ✅ done in repo · 🔧 config/infra action required · 📝 fut
   `/amplify/d3rkmepk4popv0/master/*` (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
   `APP_AWS_*`, `CRON_SECRET`, `GA4_SERVICE_ACCOUNT_KEY`,
   `GOOGLE_TTS_CREDENTIALS_BASE64`, `LYRICS_GATE_SECRET`, `VAPID_PRIVATE_KEY`,
-  `YOUTUBE_API_KEY`, `YOUTUBE_OAUTH_CLIENT_SECRET`, `YOUTUBE_REFRESH_TOKEN`,
-  `YOUTUBE_WRITE_REFRESH_TOKEN`). Values are the current live values, mirrored
+  `YOUTUBE_API_KEY`, `YOUTUBE_OAUTH_CLIENT_SECRET`, `YOUTUBE_ANALYTICS_REFRESH_TOKEN`,
+  `YOUTUBE_DATA_REFRESH_TOKEN`). Values are the current live values, mirrored
   in place — the plaintext Amplify env vars are still the authoritative
   source. Wiring SSM as the source requires build-time injection: see
   P0 #8 below.
