@@ -25,12 +25,36 @@ import { critiqueLyric } from '@/services/ai/lyricCritic';
 import { generateSunoSetup } from '@/services/ai/sunoSetup';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 
 const ddb = DynamoDBDocumentClient.from(
   new DynamoDBClient({ region: process.env.AWS_REGION || 'ca-central-1' }),
   { marshallOptions: { removeUndefinedValues: true } }
 );
 const TABLE = process.env.DYNAMODB_TABLE_NAME || 'TamilWebContent';
+
+// The AI service modules (composer/lyricCritic/sunoSetup) read Anthropic /
+// Gemini keys from process.env at call time. Populate them once at cold start
+// from SSM SecureString so no plaintext secrets live on the Lambda's env-var
+// config (readable by anyone with lambda:GetFunctionConfiguration). Cached
+// across warm invocations — the Promise is awaited in the handler.
+const ssm = new SSMClient({ region: process.env.AWS_REGION || 'ca-central-1' });
+async function ssmSecret(name: string): Promise<string> {
+  const r = await ssm.send(
+    new GetParameterCommand({ Name: `/tamilagaval/prod/${name}`, WithDecryption: true })
+  );
+  const v = r.Parameter?.Value;
+  if (!v) throw new Error(`SSM /tamilagaval/prod/${name} missing or empty`);
+  return v;
+}
+const secretsLoaded: Promise<void> = (async () => {
+  const [anthropic, gemini] = await Promise.all([
+    ssmSecret('ANTHROPIC_API_KEY'),
+    ssmSecret('GEMINI_API_KEY'),
+  ]);
+  process.env.ANTHROPIC_API_KEY = anthropic;
+  process.env.GEMINI_API_KEY = gemini;
+})();
 
 interface JobEvent {
   kind?: 'compose' | 'critique' | 'suno-setup';
@@ -57,6 +81,7 @@ type Patch =
   | { status: 'error'; result: null; error: { code: string; message: string } };
 
 export const handler = async (event: JobEvent) => {
+  await secretsLoaded;
   const kind: NonNullable<JobEvent['kind']> =
     event?.kind === 'critique' ? 'critique' : event?.kind === 'suno-setup' ? 'suno-setup' : 'compose';
   const jobId = event?.jobId;
