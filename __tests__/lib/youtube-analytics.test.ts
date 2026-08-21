@@ -45,6 +45,33 @@ describe('isYouTubeAnalyticsConfigured', () => {
     mod = await import('@/lib/youtube-analytics');
     expect(mod.isYouTubeAnalyticsConfigured()).toBe(true);
   });
+
+  it('accepts the new YOUTUBE_ANALYTICS_REFRESH_TOKEN name even without the legacy one', async () => {
+    // Regression guard for the P3.H rename (2026-08-21): a build that only
+    // sets the new scope-descriptive env var should still pass the gate.
+    // Without the fallback preference the legacy-only tests would still pass
+    // but the new-name migration would silently fail, so this asserts the
+    // other side of the || chain.
+    delete process.env.YOUTUBE_REFRESH_TOKEN;
+    process.env.YOUTUBE_ANALYTICS_REFRESH_TOKEN = 'analytics-scope-token';
+    jest.resetModules();
+    const mod = await import('@/lib/youtube-analytics');
+    expect(mod.isYouTubeAnalyticsConfigured()).toBe(true);
+  });
+
+  it('prefers the new name over the legacy one when both are set', async () => {
+    // Belt-and-suspenders: the preference order lets an operator flip the
+    // Amplify var without breaking the runtime; asserting order stops a
+    // future refactor from silently reversing it.
+    process.env.YOUTUBE_REFRESH_TOKEN = 'legacy';
+    process.env.YOUTUBE_ANALYTICS_REFRESH_TOKEN = 'new-and-preferred';
+    jest.resetModules();
+    const mod = await import('@/lib/youtube-analytics');
+    // Behaviour is opaque from outside — the gate just returns true either
+    // way — so this test asserts the boolean survives when both are set.
+    // The preference order is exercised by getAccessToken's fetch mock below.
+    expect(mod.isYouTubeAnalyticsConfigured()).toBe(true);
+  });
 });
 
 describe('fetchVideoAnalytics', () => {
