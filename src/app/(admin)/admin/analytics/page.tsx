@@ -14,6 +14,8 @@ import { useEffect, useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
 import { MonetizationPanel } from '@/components/admin/MonetizationPanel';
 import { YouTubeLivePanel } from '@/components/admin/YouTubeLivePanel';
+import { ChannelRevenueByCountryPanel } from '@/components/admin/ChannelRevenueByCountryPanel';
+import { httpErrorMessage } from '@/lib/http-error-message';
 
 type Section<T> = { data: T } | { error: string };
 interface Snapshot { totalUsers: number; sessions: number; pageViews: number; daysBack: number }
@@ -53,14 +55,6 @@ interface Payload {
 const pick = <T,>(s: Section<T> | undefined): { data?: T; error?: string } =>
   !s ? {} : 'data' in s ? { data: s.data } : { error: s.error };
 const nf = (n: number) => n.toLocaleString();
-
-/** Turn a bare status into something an admin can act on, not "HTTP 403". */
-function httpErrorMessage(status: number): string {
-  if (status === 401) return 'Your session expired — sign in again.';
-  if (status === 403) return 'Your account isn’t an admin on this environment.';
-  if (status >= 500) return 'The analytics service failed. Try again shortly.';
-  return `Couldn’t load analytics (HTTP ${status}).`;
-}
 
 const EVENT_LABEL: Record<string, string> = {
   play: 'Plays', share: 'Shares', youtube: 'YouTube opens', subscribe: 'Subscribe clicks', install: 'PWA installs',
@@ -144,6 +138,9 @@ export default function AnalyticsPage() {
           the GA4 sections so the partner-program tracker leads the dashboard. */}
       <YouTubeLivePanel />
       <MonetizationPanel />
+      {/* Channel-wide revenue-by-country. Complements the per-video
+          RevenueGeographyPanel that lives inside PerSongDeepDive on /admin/youtube. */}
+      <ChannelRevenueByCountryPanel days={days} />
 
       {loading && <p className="text-gray-500">Loading…</p>}
       {err && <Banner tone="error">{err}</Banner>}

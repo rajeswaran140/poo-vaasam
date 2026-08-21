@@ -428,6 +428,79 @@ export async function fetchVideoRevenueTotals(
 }
 
 /**
+ * CHANNEL-WIDE revenue by country. Mirrors fetchVideoRevenueGeography but
+ * without the `video==` filter — the whole channel's spread across markets.
+ *
+ * Same three rules apply as the per-video helper (see
+ * lib/youtube-revenue-geography): RPM is Σrevenue / Σviews, the denominator is
+ * views NOT monetized playbacks, and small markets can bill without clearing
+ * the geo-attribution threshold — so the country sums UNDER-COUNT views and
+ * any rate derived from them alone will overstate. Pair with
+ * fetchChannelRevenueTotals so summarizeRevenueGeography can use the
+ * undimensioned totals as the true denominator (rule 4).
+ */
+export async function fetchChannelRevenueByCountry(
+  daysBack = 28
+): Promise<Result<RevenueGeoRawRow[]>> {
+  if (!isYouTubeAnalyticsConfigured()) {
+    return { ok: false, error: 'YouTube Analytics OAuth not configured' };
+  }
+  const { startDate, endDate } = dateRange(daysBack);
+  try {
+    const res = await runReport({
+      ids: 'channel==MINE',
+      startDate,
+      endDate,
+      metrics:
+        'views,estimatedRevenue,estimatedAdRevenue,estimatedRedPartnerRevenue,adImpressions,monetizedPlaybacks',
+      dimensions: 'country',
+      sort: '-estimatedRevenue',
+      maxResults: '200',
+    });
+    if (!res) return { ok: false, error: 'No response from YouTube Analytics' };
+    return { ok: true, data: parseRevenueGeoRows(res.rows) };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * The channel's UNDIMENSIONED revenue totals — parallel to
+ * fetchVideoRevenueTotals but for the whole channel. Provides the true
+ * denominator for RPM per rule 4. Not derivable from fetchChannelRpm because
+ * that helper doesn't return monetizedPlaybacks, which the summary needs to
+ * compute the ad-serving rate.
+ */
+export async function fetchChannelRevenueTotals(
+  daysBack = 28
+): Promise<Result<{ views: number; estimatedRevenue: number; monetizedPlaybacks: number }>> {
+  if (!isYouTubeAnalyticsConfigured()) {
+    return { ok: false, error: 'YouTube Analytics OAuth not configured' };
+  }
+  const { startDate, endDate } = dateRange(daysBack);
+  try {
+    const res = await runReport({
+      ids: 'channel==MINE',
+      startDate,
+      endDate,
+      metrics: 'views,estimatedRevenue,monetizedPlaybacks',
+    });
+    if (!res) return { ok: false, error: 'No response from YouTube Analytics' };
+    const r = res.rows?.[0] ?? [];
+    return {
+      ok: true,
+      data: {
+        views: Number(r[0] ?? 0),
+        estimatedRevenue: Number(r[1] ?? 0),
+        monetizedPlaybacks: Number(r[2] ?? 0),
+      },
+    };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
  * Channel-wide revenue per 1,000 views over the same window — the baseline a
  * song's RPM is indexed against. Returns `null` rpm (not 0) when the channel
  * recorded no views, so callers can tell "no baseline" from "baseline of zero".
