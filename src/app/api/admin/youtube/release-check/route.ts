@@ -46,9 +46,12 @@ function parseIsoDuration(iso: string): number {
 async function mintWriteToken(): Promise<string | null> {
   const id = process.env.YOUTUBE_OAUTH_CLIENT_ID;
   const secret = process.env.YOUTUBE_OAUTH_CLIENT_SECRET;
-  // Captions need force-ssl, which only the WRITE token carries. The analytics
-  // token cannot read caption tracks at all.
-  const refresh = process.env.YOUTUBE_WRITE_REFRESH_TOKEN;
+  // Captions need force-ssl, which only the Data-API-scope token carries. The
+  // Analytics-scope token cannot read caption tracks at all. Prefer the new
+  // scope-descriptive name; fall back to the legacy name during the
+  // deprecation window — see HARDENING.md P3.H + next.config.ts.
+  const refresh =
+    process.env.YOUTUBE_DATA_REFRESH_TOKEN || process.env.YOUTUBE_WRITE_REFRESH_TOKEN;
   if (!id || !secret || !refresh) return null;
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',

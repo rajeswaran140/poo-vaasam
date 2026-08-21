@@ -21,7 +21,10 @@ const Body = z.object({ id: z.string().min(1) });
 async function writeToken(): Promise<string | null> {
   const id = process.env.YOUTUBE_OAUTH_CLIENT_ID;
   const secret = process.env.YOUTUBE_OAUTH_CLIENT_SECRET;
-  const refresh = process.env.YOUTUBE_WRITE_REFRESH_TOKEN;
+  // Prefer the scope-descriptive name; fall back to the legacy name during
+  // the deprecation window — see HARDENING.md P3.H + next.config.ts.
+  const refresh =
+    process.env.YOUTUBE_DATA_REFRESH_TOKEN || process.env.YOUTUBE_WRITE_REFRESH_TOKEN;
   if (!id || !secret || !refresh) return null;
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -59,7 +62,7 @@ export async function POST(request: NextRequest) {
   const token = await writeToken();
   if (!token) {
     return NextResponse.json(
-      { success: false, error: 'YOUTUBE_WRITE_REFRESH_TOKEN is not configured — captions need the force-ssl scope' },
+      { success: false, error: 'YOUTUBE_DATA_REFRESH_TOKEN (or legacy YOUTUBE_WRITE_REFRESH_TOKEN) is not configured — captions need the force-ssl scope' },
       { status: 503 }
     );
   }
