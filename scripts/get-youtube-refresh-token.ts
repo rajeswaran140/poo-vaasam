@@ -23,7 +23,7 @@
  * Paste the three values into Amplify env vars:
  *   YOUTUBE_OAUTH_CLIENT_ID
  *   YOUTUBE_OAUTH_CLIENT_SECRET
- *   YOUTUBE_REFRESH_TOKEN
+ *   YOUTUBE_ANALYTICS_REFRESH_TOKEN
  *
  * Then redeploy. /admin/youtube grows the Analytics + AI cards.
  */
@@ -120,7 +120,7 @@ async function main() {
   console.log('\n3) DONE. Set these in Amplify env vars (server-only):\n');
   console.log(`YOUTUBE_OAUTH_CLIENT_ID     = ${clientId}`);
   console.log(`YOUTUBE_OAUTH_CLIENT_SECRET = ${clientSecret}`);
-  console.log(`YOUTUBE_REFRESH_TOKEN       = ${tokens.refresh_token}`);
+  console.log(`YOUTUBE_ANALYTICS_REFRESH_TOKEN       = ${tokens.refresh_token}`);
   console.log('\nThen redeploy. /admin/youtube grows the Analytics + AI cards.\n');
 }
 

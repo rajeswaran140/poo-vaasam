@@ -7,7 +7,7 @@
  *
  * Run (with the OAuth env vars present in the process):
  *   YOUTUBE_OAUTH_CLIENT_ID=... YOUTUBE_OAUTH_CLIENT_SECRET=... \
- *   YOUTUBE_REFRESH_TOKEN=... npx tsx scripts/smoke-youtube-retention.ts [videoId]
+ *   YOUTUBE_ANALYTICS_REFRESH_TOKEN=... npx tsx scripts/smoke-youtube-retention.ts [videoId]
  *
  * Defaults to the channel's known high-retention template (முத்தமிழின்),
  * which has finalized data, so the smoke test asserts a real, non-'unknown'

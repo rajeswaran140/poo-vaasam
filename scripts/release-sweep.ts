@@ -66,7 +66,7 @@ async function writeToken(env: Record<string, string>): Promise<string | null> {
     body: new URLSearchParams({
       client_id: env.YOUTUBE_OAUTH_CLIENT_ID ?? '',
       client_secret: env.YOUTUBE_OAUTH_CLIENT_SECRET ?? '',
-      refresh_token: env.YOUTUBE_WRITE_REFRESH_TOKEN ?? '',
+      refresh_token: env.YOUTUBE_DATA_REFRESH_TOKEN ?? '',
       grant_type: 'refresh_token',
     }),
   });

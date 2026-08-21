@@ -15,7 +15,7 @@ async function main() {
   const tok = await (await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST', body: new URLSearchParams({
       client_id: env.YOUTUBE_OAUTH_CLIENT_ID, client_secret: env.YOUTUBE_OAUTH_CLIENT_SECRET,
-      refresh_token: env.YOUTUBE_REFRESH_TOKEN, grant_type: 'refresh_token',
+      refresh_token: env.YOUTUBE_ANALYTICS_REFRESH_TOKEN, grant_type: 'refresh_token',
     }),
   })).json();
   const AT = tok.access_token as string;
