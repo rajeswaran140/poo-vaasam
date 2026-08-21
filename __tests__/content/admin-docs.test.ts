@@ -9,7 +9,11 @@ describe('admin docs registry', () => {
       expect(d.slug).toMatch(/^[a-z0-9-]+$/);
       expect(d.title.trim()).not.toBe('');
       expect(d.category.trim()).not.toBe('');
-      expect(d.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      // AdminDoc.updatedAt accepts EITHER a date-only string ('YYYY-MM-DD',
+      // legacy) OR a full ISO 8601 timestamp ('YYYY-MM-DDTHH:MM:SSZ') — the
+      // per-minute form is what a NEW edit should use so the sidebar list
+      // shows an accurate time. See formatDocUpdatedAt in admin-docs.ts.
+      expect(d.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}Z)?$/);
       expect(d.body.trim().length).toBeGreaterThan(0);
     }
   });
