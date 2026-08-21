@@ -19,6 +19,18 @@ const originalEnv = { ...process.env };
 
 beforeEach(() => {
   process.env = { ...originalEnv };
+  // Defensive strip: the P3.H rename (2026-08-21) added
+  // YOUTUBE_ANALYTICS_REFRESH_TOKEN / YOUTUBE_DATA_REFRESH_TOKEN alongside
+  // the legacy names. Amplify's build environment now sets the new names,
+  // so `originalEnv` captured them at module load, and beforeEach's spread
+  // restores them into every test — silently making the
+  // "delete YOUTUBE_REFRESH_TOKEN and expect gate=false" tests fail because
+  // the new name is still set and wins the `NEW || OLD` fallback in
+  // isYouTubeAnalyticsConfigured. Strip both new names here so each test
+  // starts from a clean slate; tests that specifically want to assert the
+  // new-name path set it explicitly below.
+  delete process.env.YOUTUBE_ANALYTICS_REFRESH_TOKEN;
+  delete process.env.YOUTUBE_DATA_REFRESH_TOKEN;
   process.env.YOUTUBE_OAUTH_CLIENT_ID = 'test-id';
   process.env.YOUTUBE_OAUTH_CLIENT_SECRET = 'test-secret';
   process.env.YOUTUBE_REFRESH_TOKEN = 'test-refresh';
