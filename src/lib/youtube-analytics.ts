@@ -10,7 +10,8 @@
  * Env vars (server-only):
  *   YOUTUBE_OAUTH_CLIENT_ID
  *   YOUTUBE_OAUTH_CLIENT_SECRET
- *   YOUTUBE_REFRESH_TOKEN
+ *   YOUTUBE_ANALYTICS_REFRESH_TOKEN   (scope: yt-analytics.readonly +
+ *                                              yt-analytics-monetary.readonly)
  *
  * Without these set, every helper returns { ok: false, error } so the
  * admin dashboard can render a clear "not configured yet" banner.
@@ -57,9 +58,7 @@ export function isYouTubeAnalyticsConfigured(): boolean {
   return Boolean(
     process.env.YOUTUBE_OAUTH_CLIENT_ID &&
     process.env.YOUTUBE_OAUTH_CLIENT_SECRET &&
-    // Prefer the scope-descriptive name; fall back to the legacy name during
-    // the deprecation window (see next.config.ts + HARDENING.md P3.H).
-    (process.env.YOUTUBE_ANALYTICS_REFRESH_TOKEN || process.env.YOUTUBE_REFRESH_TOKEN)
+    process.env.YOUTUBE_ANALYTICS_REFRESH_TOKEN
   );
 }
 
@@ -70,12 +69,8 @@ async function getAccessToken(): Promise<string | null> {
   }
   const id = process.env.YOUTUBE_OAUTH_CLIENT_ID;
   const secret = process.env.YOUTUBE_OAUTH_CLIENT_SECRET;
-  // This helper uses the Analytics-scope token (yt-analytics.readonly +
-  // yt-analytics-monetary.readonly). See HARDENING.md P3.H for why the
-  // legacy `YOUTUBE_REFRESH_TOKEN` name is misleading — that's WHY there's
-  // a second variable at all; the old name doesn't tell you the scope.
-  const refresh =
-    process.env.YOUTUBE_ANALYTICS_REFRESH_TOKEN || process.env.YOUTUBE_REFRESH_TOKEN;
+  // Analytics-scope refresh token (yt-analytics.readonly + monetary).
+  const refresh = process.env.YOUTUBE_ANALYTICS_REFRESH_TOKEN;
   if (!id || !secret || !refresh) return null;
 
   try {

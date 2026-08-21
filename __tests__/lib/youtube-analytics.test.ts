@@ -19,21 +19,14 @@ const originalEnv = { ...process.env };
 
 beforeEach(() => {
   process.env = { ...originalEnv };
-  // Defensive strip: the P3.H rename (2026-08-21) added
-  // YOUTUBE_ANALYTICS_REFRESH_TOKEN / YOUTUBE_DATA_REFRESH_TOKEN alongside
-  // the legacy names. Amplify's build environment now sets the new names,
-  // so `originalEnv` captured them at module load, and beforeEach's spread
-  // restores them into every test — silently making the
-  // "delete YOUTUBE_REFRESH_TOKEN and expect gate=false" tests fail because
-  // the new name is still set and wins the `NEW || OLD` fallback in
-  // isYouTubeAnalyticsConfigured. Strip both new names here so each test
-  // starts from a clean slate; tests that specifically want to assert the
-  // new-name path set it explicitly below.
-  delete process.env.YOUTUBE_ANALYTICS_REFRESH_TOKEN;
-  delete process.env.YOUTUBE_DATA_REFRESH_TOKEN;
+  // Also strip the legacy YOUTUBE_REFRESH_TOKEN name in case the ambient env
+  // still has it during the migration window — the runtime code no longer
+  // reads it (P3.H phase 3 dropped the fallback), so leaving it set would
+  // just be misleading noise.
+  delete process.env.YOUTUBE_REFRESH_TOKEN;
   process.env.YOUTUBE_OAUTH_CLIENT_ID = 'test-id';
   process.env.YOUTUBE_OAUTH_CLIENT_SECRET = 'test-secret';
-  process.env.YOUTUBE_REFRESH_TOKEN = 'test-refresh';
+  process.env.YOUTUBE_ANALYTICS_REFRESH_TOKEN = 'test-refresh';
   jest.restoreAllMocks();
   jest.resetModules();
 });
@@ -49,46 +42,31 @@ const reportOk = (body: unknown) => new Response(JSON.stringify(body), { status:
 
 describe('isYouTubeAnalyticsConfigured', () => {
   it('returns true only when all 3 env vars are set', async () => {
-    delete process.env.YOUTUBE_REFRESH_TOKEN;
+    delete process.env.YOUTUBE_ANALYTICS_REFRESH_TOKEN;
     // Re-import fresh to pick up env change (module-level read).
     let mod = await import('@/lib/youtube-analytics');
     expect(mod.isYouTubeAnalyticsConfigured()).toBe(false);
-    process.env.YOUTUBE_REFRESH_TOKEN = 'r';
+    process.env.YOUTUBE_ANALYTICS_REFRESH_TOKEN = 'r';
     mod = await import('@/lib/youtube-analytics');
     expect(mod.isYouTubeAnalyticsConfigured()).toBe(true);
   });
 
-  it('accepts the new YOUTUBE_ANALYTICS_REFRESH_TOKEN name even without the legacy one', async () => {
-    // Regression guard for the P3.H rename (2026-08-21): a build that only
-    // sets the new scope-descriptive env var should still pass the gate.
-    // Without the fallback preference the legacy-only tests would still pass
-    // but the new-name migration would silently fail, so this asserts the
-    // other side of the || chain.
-    delete process.env.YOUTUBE_REFRESH_TOKEN;
-    process.env.YOUTUBE_ANALYTICS_REFRESH_TOKEN = 'analytics-scope-token';
+  it('ignores the deprecated YOUTUBE_REFRESH_TOKEN name (phase-3 cleanup 2026-08-21)', async () => {
+    // Regression guard: the legacy fallback was intentionally dropped in P3.H
+    // phase 3 so a stale developer shell (or a rollback that left the old
+    // Amplify var in place) can't silently keep an app half-configured. The
+    // ONLY env var the gate consults is the scope-descriptive name.
+    delete process.env.YOUTUBE_ANALYTICS_REFRESH_TOKEN;
+    process.env.YOUTUBE_REFRESH_TOKEN = 'legacy-only';
     jest.resetModules();
     const mod = await import('@/lib/youtube-analytics');
-    expect(mod.isYouTubeAnalyticsConfigured()).toBe(true);
-  });
-
-  it('prefers the new name over the legacy one when both are set', async () => {
-    // Belt-and-suspenders: the preference order lets an operator flip the
-    // Amplify var without breaking the runtime; asserting order stops a
-    // future refactor from silently reversing it.
-    process.env.YOUTUBE_REFRESH_TOKEN = 'legacy';
-    process.env.YOUTUBE_ANALYTICS_REFRESH_TOKEN = 'new-and-preferred';
-    jest.resetModules();
-    const mod = await import('@/lib/youtube-analytics');
-    // Behaviour is opaque from outside — the gate just returns true either
-    // way — so this test asserts the boolean survives when both are set.
-    // The preference order is exercised by getAccessToken's fetch mock below.
-    expect(mod.isYouTubeAnalyticsConfigured()).toBe(true);
+    expect(mod.isYouTubeAnalyticsConfigured()).toBe(false);
   });
 });
 
 describe('fetchVideoAnalytics', () => {
   it('returns ok=false when env is incomplete', async () => {
-    delete process.env.YOUTUBE_REFRESH_TOKEN;
+    delete process.env.YOUTUBE_ANALYTICS_REFRESH_TOKEN;
     jest.resetModules();
     const { fetchVideoAnalytics: fresh } = await import('@/lib/youtube-analytics');
     const out = await fresh(28);
@@ -140,7 +118,7 @@ describe('fetchVideoAnalytics', () => {
 
 describe('fetchSearchTerms (real YT-search queries — viewer truth)', () => {
   it('returns ok=false when env is incomplete', async () => {
-    delete process.env.YOUTUBE_REFRESH_TOKEN;
+    delete process.env.YOUTUBE_ANALYTICS_REFRESH_TOKEN;
     jest.resetModules();
     const { fetchSearchTerms: fresh } = await import('@/lib/youtube-analytics');
     expect((await fresh('kOpNZHlE9FE')).ok).toBe(false);
