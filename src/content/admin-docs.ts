@@ -1229,6 +1229,113 @@ The thread through most of these: **the API response is not evidence that anythi
     updatedAt: '2026-08-15',
     body: buildWordListDoc(),
   },
+  {
+    slug: 'twitch-app-registration',
+    title: 'Twitch — register the developer-console app (first-time setup)',
+    category: 'Integrations',
+    updatedAt: '2026-08-24T05:15:00Z',
+    body: `# Twitch — register the developer-console app
+
+**One-time setup.** Do this before the "Connect Twitch" button on [/admin/twitch](/admin/twitch) will do anything useful. Takes ~5 minutes.
+
+## What this creates
+
+A **Twitch OAuth application** — the identity TamilAgaval presents when it asks a Twitch user (you) to authorize the connection. Twitch identifies our app by a **Client ID** (public) and authenticates our token-exchange calls with a **Client Secret** (server-only, never in the browser). Both live in Twitch's developer console until we copy them into AWS SSM.
+
+## Step 1 — Create the app
+
+1. Open [dev.twitch.tv/console/apps/create](https://dev.twitch.tv/console/apps/create) and sign in with your Twitch account (the same one you'll be connecting).
+2. Fill the form exactly:
+
+| Field | Value |
+|---|---|
+| **Name** | \`TamilAgaval\` — cosmetic; only you see it |
+| **OAuth Redirect URLs** | \`https://tamilagaval.com/api/admin/twitch/callback\` — copy verbatim; Twitch enforces exact match |
+| **Category** | \`Website Integration\` |
+| **Client Type** | **\`Confidential\`** — critical. Public-type clients get no Client Secret; our server-side OAuth flow requires one. |
+
+3. Solve the captcha, click **Create**.
+
+## Step 2 — Save the credentials
+
+The next screen shows your **Client ID** (visible whenever you come back) and a **New Secret** button.
+
+1. Click **New Secret** → Twitch shows the Client Secret **exactly once**. Copy it now.
+2. **Save both values somewhere trustworthy.** A password manager entry named "Twitch — TamilAgaval OAuth app" is ideal.
+3. If you lose the secret later, coming back to this app page + **New Secret** rotates it (any live OAuth session becomes invalid — do it deliberately).
+
+## Step 3 — Get them into AWS SSM
+
+Two paths — pick either. **Nothing else in the integration works until these values are in SSM.**
+
+### Path A — Ask Claude to do it in-chat
+
+Paste the two values in a chat message. Claude will:
+- \`aws ssm put-parameter\` the Client Secret to \`/amplify/d3rkmepk4popv0/master/TWITCH_CLIENT_SECRET\` (SecureString)
+- Generate a random 32-byte \`TWITCH_STATE_SECRET\` and put it alongside
+- Add the Client ID + redirect URI as Amplify environment variables
+- Push a small follow-up PR wiring the four env vars into \`next.config.ts\` + \`amplify.yml\` so the build inlines them
+
+Standard "session transcript exposure — rotate at Twitch if the transcript persists somewhere sensitive" caveat.
+
+### Path B — Do the SSM writes yourself
+
+If you'd rather not send secrets through the chat:
+
+\`\`\`bash
+# Client Secret — SecureString
+aws --region ca-central-1 ssm put-parameter \\
+  --name /amplify/d3rkmepk4popv0/master/TWITCH_CLIENT_SECRET \\
+  --type SecureString --key-id alias/aws/ssm \\
+  --value 'PASTE_CLIENT_SECRET_HERE' \\
+  --overwrite
+
+# State-cookie HMAC secret — random 32 bytes
+aws --region ca-central-1 ssm put-parameter \\
+  --name /amplify/d3rkmepk4popv0/master/TWITCH_STATE_SECRET \\
+  --type SecureString --key-id alias/aws/ssm \\
+  --value "$(openssl rand -base64 32)" \\
+  --overwrite
+\`\`\`
+
+Then paste **just the Client ID** in chat (it's not a secret) so Claude can add it to Amplify env vars + push the wiring PR.
+
+## What Claude adds after credentials land
+
+1. Amplify env vars added (via \`aws amplify update-app --environment-variables\`):
+   - \`TWITCH_CLIENT_ID = <client-id>\`
+   - \`TWITCH_OAUTH_REDIRECT_URI = https://tamilagaval.com/api/admin/twitch/callback\`
+2. Small PR that adds the four keys to \`next.config.ts\`'s \`env:\` block + \`amplify.yml\`'s SSM-fetch loop (same pattern P2.4 already established for the 13 other secrets).
+3. Amplify auto-builds. When the build lands, the \`/admin/twitch\` page's **Connect Twitch** button becomes functional.
+
+## Step 4 — Connect (end-to-end test)
+
+After the wiring PR merges and Amplify builds:
+
+1. Open [/admin/twitch](/admin/twitch) in this admin portal.
+2. Click **Connect Twitch**.
+3. Twitch shows their consent screen — sign in (same account whose channel you want tracked), click **Authorize**.
+4. Twitch redirects back to \`/admin/twitch?connected=1\`. The page should now show your channel avatar + display name + **Connected** badge.
+5. Click **Enable EventSub** (PR 2 feature — only visible once PR 2 merges). The page will list \`stream.online\` and \`stream.offline\` subscriptions as **pending → enabled** within a few seconds.
+6. Go live on Twitch. Within ~30 seconds, the **Stream** panel flips to **LIVE**. Go offline — flips back to **Offline**.
+
+## Rotation & disconnect
+
+- **Rotate the Client Secret** — dev.twitch.tv/console/apps → the app → **New Secret**. Then \`aws ssm put-parameter --overwrite\` the new value. Any active user tokens are invalidated; **Reconnect** on \`/admin/twitch\` picks up the new secret and re-authorizes.
+- **Disconnect** — button on \`/admin/twitch\`. Revokes tokens at Twitch (best-effort) + deletes both SSM token params + flips the DDB record's status to \`disconnected\`. Reversible via **Connect Twitch** again.
+- **Nuke the whole thing** — the disconnect button, followed by deleting the app in Twitch's dev console. Any code paths that call the Twitch API will start returning "not connected"; nothing else in TamilAgaval is affected.
+
+## Troubleshooting
+
+**"Twitch rejected the authorization code."** The \`TWITCH_OAUTH_REDIRECT_URI\` env var doesn't exactly match a Redirect URL registered in the dev console. Log into the console, verify the URLs list, and if you added a second URL for local dev make sure the production one is still there too.
+
+**"State cookie did not match the expected session."** You started the connect flow in one browser and completed it in another — or a browser extension blocked the state cookie. Retry in a single, extension-clean browser tab.
+
+**Connect fires but Twitch shows "You cancelled the authorization."** Twitch's response to that button being clicked; nothing was stored. Just retry.
+
+**\`Enable EventSub\` returns "Could not read or create the EventSub secret."** Rare — happens when the Amplify service role lost SSM write permission for the \`TWITCH_EVENTSUB_SECRET\` path. Check the CloudWatch log for the enable route. Fixable by manually creating the secret with \`aws ssm put-parameter\` (SecureString, 32 random bytes) — the enable route will find it on the next call.
+`,
+  },
 ];
 
 /** Docs grouped by category, in registry order, for the sidebar. */
