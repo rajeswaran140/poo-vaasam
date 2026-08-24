@@ -1229,6 +1229,65 @@ The thread through most of these: **the API response is not evidence that anythi
     updatedAt: '2026-08-15',
     body: buildWordListDoc(),
   },
+  {
+    slug: 'twitch-integration',
+    title: 'Twitch — connect your channel (Phase 1)',
+    category: 'Integrations',
+    updatedAt: '2026-08-24T03:45:00Z',
+    body: `# Twitch — connect your channel
+
+**Where:** [/admin/twitch](/admin/twitch)
+
+Phase 1 of the Twitch integration. Today all it does is prove your channel identity and hold onto an OAuth connection securely. Phase 2 will add LIVE/OFFLINE status and an event feed; Phase 3 will wire streams to the song catalogue. This doc will grow with each phase.
+
+## What the connect flow actually does
+
+1. You hit **Connect Twitch**. The API mints a signed CSRF \`state\` token, sets it as an httpOnly cookie, and hands the browser a Twitch authorize URL.
+2. Twitch shows their consent screen. You approve (or cancel — canceling is safe, nothing is stored).
+3. Twitch redirects back to \`/api/admin/twitch/callback?code=…&state=…\`. The callback route:
+   - Verifies the \`state\` matches the signed cookie (CSRF check).
+   - Exchanges the code for an access + refresh token.
+   - Fetches your Twitch user identity (\`GET /helix/users\`).
+   - Writes both tokens into **SSM SecureString** (never in DDB, never in env vars, never in logs).
+   - Upserts the connection record in DynamoDB.
+   - Clears the state cookie and redirects to \`/admin/twitch?connected=1\`.
+4. The admin page reads \`/api/admin/twitch/status\` and shows your channel avatar + display name + broadcaster id.
+
+Reconnect works identically — the OAuth flow is idempotent, so pressing **Reconnect** just rewrites the tokens. Disconnect deletes the SSM tokens (via \`DeleteParameter\`), best-effort revokes at Twitch, and flips the DDB record's status to \`disconnected\` (record kept for audit).
+
+## Scopes requested
+
+**None.** Phase 1's targeted EventSub subscriptions (\`stream.online\`, \`stream.offline\`) are public events that don't require user scopes; identity from \`GET /helix/users\` works with any authenticated token. When we add richer events in Phase 2 (channel.subscribe, channel.cheer, chat.message) each will bring its own scope with a documented reason.
+
+## Where the secrets live
+
+- \`TWITCH_CLIENT_ID\` — Amplify env var (compile-inlined; not a secret, but not \`NEXT_PUBLIC_\` because Twitch treats it as identifying).
+- \`TWITCH_CLIENT_SECRET\` — SSM SecureString at \`/amplify/<app>/<branch>/TWITCH_CLIENT_SECRET\`.
+- \`TWITCH_STATE_SECRET\` — SSM SecureString, used to HMAC-sign the CSRF state cookie. Independent of \`LYRICS_GATE_SECRET\` so rotating one doesn't cascade.
+- \`TWITCH_ACCESS_TOKEN_<tenantId>\` — SSM SecureString, rotates on every refresh.
+- \`TWITCH_REFRESH_TOKEN_<tenantId>\` — SSM SecureString.
+- \`TWITCH_OAUTH_REDIRECT_URI\` — Amplify env var. Must exactly match one of the redirect URIs registered in the Twitch developer console. Production: \`https://tamilagaval.com/api/admin/twitch/callback\`.
+
+## Troubleshooting
+
+**"The Twitch callback did not match the expected session" (state_mismatch).** Someone (or a browser extension, or a stale tab) tried to complete the callback with a state that wasn't the one this browser started with. Click Connect again from the current tab. If it repeats, clear cookies for tamilagaval.com and retry.
+
+**"You cancelled the Twitch authorization" (access_denied).** You clicked Deny on Twitch's consent screen. Nothing was stored. Click Connect Twitch to retry.
+
+**"Twitch rejected the authorization code" (exchange_failed).** Usually one of: the code expired (>10 min between authorize and callback — network was slow), the \`TWITCH_OAUTH_REDIRECT_URI\` env var doesn't match what's registered in the Twitch dev console, or the client secret was rotated at Twitch but not in SSM. Check the CloudWatch log for the callback route for the exact HTTP status.
+
+**Reconnect loop / can't get past the connect flow.** If Twitch keeps asking to authorize but the connection status never flips to Connected, look at the callback log line \`[api/admin/twitch/callback] failed\` — that's where the exact error is. Rollback: \`aws ssm delete-parameter\` the two token params + \`aws dynamodb delete-item\` the DDB row (\`PK=TENANT#tamilagaval#TWITCH#CONNECTION SK=METADATA\`), then reconnect.
+
+## What Phase 2 will add
+
+- EventSub webhook at \`/api/twitch/eventsub\` (public path, verified by HMAC signature per Twitch's requirements).
+- Persistent \`stream.online\`/\`stream.offline\` event log.
+- LIVE/OFFLINE badge on this page.
+- Subscription-health cron (piggybacks the existing \`tamilagaval-yt-snapshot-5min\` EventBridge rule).
+
+Phase 2 will not touch this page's connect/disconnect flow — only add to it.
+`,
+  },
 ];
 
 /** Docs grouped by category, in registry order, for the sidebar. */
