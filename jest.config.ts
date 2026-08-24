@@ -39,6 +39,15 @@ const config: Config = {
       '<rootDir>/node_modules/@aws-sdk/core/dist-cjs/submodules/$1/index.js',
     '^@smithy/core/(serde|event-streams|endpoints|config)$':
       '<rootDir>/node_modules/@smithy/core/dist-cjs/submodules/$1/index.js',
+    // aws-amplify v5's Interactions module unconditionally drags in
+    // @aws-sdk/client-lex-runtime-{service,v2}, whose transitive
+    // @aws-sdk/middleware-user-agent 3.972+ ships ES-module `export` syntax
+    // that jest's default transform can't parse. Nothing in TamilAgaval
+    // actually uses Lex — stub these two modules to keep jest from touching
+    // the offending chain. Root fix is aws-amplify v5 → v6 (per-category
+    // entrypoints), which is a bigger PR.
+    '^@aws-sdk/client-lex-runtime-service$': '<rootDir>/__mocks__/aws-sdk-lex-empty.js',
+    '^@aws-sdk/client-lex-runtime-v2$': '<rootDir>/__mocks__/aws-sdk-lex-empty.js',
   },
   testMatch: [
     '**/__tests__/**/*.test.[jt]s?(x)',
