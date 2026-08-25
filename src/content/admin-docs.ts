@@ -1336,6 +1336,100 @@ After the wiring PR merges and Amplify builds:
 **\`Enable EventSub\` returns "Could not read or create the EventSub secret."** Rare — happens when the Amplify service role lost SSM write permission for the \`TWITCH_EVENTSUB_SECRET\` path. Check the CloudWatch log for the enable route. Fixable by manually creating the secret with \`aws ssm put-parameter\` (SecureString, 32 random bytes) — the enable route will find it on the next call.
 `,
   },
+  {
+    slug: 'reading-channel-health',
+    title: 'Reading channel health — cool-downs, cadence, and the RPM myth',
+    category: 'Growth',
+    updatedAt: '2026-08-25T20:00:00Z',
+    body: `# Reading channel health — cool-downs, cadence, and the RPM myth
+
+Frameworks for interpreting month-over-month channel numbers without either panicking or over-optimizing. Written after a session where "views dropped 43%, subs dropped 62% this month" turned out to be normal post-surge decay, not a broken channel — the reasoning below is what let us see that instead of firefighting.
+
+Nothing here is universal. It's calibrated to a small-to-mid Tamil-music channel (1,000-10,000 subs) and the audience mix that comes with it. Adjust the specific numbers if the channel scale or genre shifts.
+
+## The post-surge cool-down (the pattern to recognize first)
+
+When a channel goes from a few uploads a month to a burst of 30+ in one month, YouTube's algorithm amplifies BOTH the new videos AND the older catalogue (channel-freshness signal). Views can 20-50× overnight.
+
+When the burst ends, the amplification decays proportionally. The whole channel returns toward a new baseline that's much higher than pre-burst but much lower than peak-burst. From inside the drop it FEELS like the channel is broken — from outside, it's textbook algorithm behaviour.
+
+**How to tell you're in a cool-down (vs a real decline):**
+
+1. The SAME top-5 videos still occupy the top-5 in the new period, just at half the volume each. If the songs are unchanged but the amplification softened, it's a channel-level signal (cadence, freshness), not a per-song quality problem.
+2. Engagement PER view is stable or improving (avg view % steady or up; likes-per-view steady; shares-per-view steady). If per-view quality is fine and only VOLUME is down, the audience that DID watch is still the same audience.
+3. Revenue per 1000 views (RPM) is not falling. Cool-downs affect impressions, not RPM.
+4. Upload cadence is materially different from the surge month. If uploads dropped from 30/month to 10/month, expect view volume to drop proportionally.
+
+**How to tell it's a REAL decline** (the counter-picture):
+
+- Same top-5 videos rank very differently or lose slots — one specific video collapsed while others held
+- Per-view engagement drops (retention, likes-per-view, comments-per-view) — audience quality is degrading
+- RPM drops sharply — advertisers are pulling back OR content-mix is shifting to lower-CPM segments
+- Sub CHURN increases (\`subscribersLost\` climbing month-over-month) — existing subs actively unsubscribing, not just fewer new ones
+
+## The right pace for a small Tamil music channel
+
+30+ uploads per month is a burst pace, not a sustainable one. It works to jump-start algorithm attention but every song that arrives in that burst gets less individual thought (thumbnail, description, promotion, community post).
+
+**The sustainable rhythm is ~2 uploads per week — 8-10 per month.** Enough to keep the channel-freshness signal alive (which prevents impressions on older videos from decaying), few enough that each release gets real attention.
+
+If the current cadence is far above that, be aware: dropping to sustainable is going to LOOK like a decline for 2-4 weeks. It's the algorithm normalising, not the channel dying. Ride through it and keep the rhythm. Stopping uploads mid-cool-down is what turns a cool-down into a real decline.
+
+## The single number worth watching weekly
+
+Not views. Not impressions. Not RPM.
+
+**Net subscribers gained per week** (\`subscribersGained\` minus \`subscribersLost\` over the last 7 days). Track it every Sunday. Compare each week to the prior week — never to a peak week or a burst period.
+
+- Trending up week-over-week: fundamentals working; content resonates
+- Flat: healthy; the channel has found its sustainable audience
+- Trending down for 4+ weeks straight: real signal to investigate
+
+Views are noisier than subs — a single viral moment can distort a week. Subs are the audience's actual "come back for more" vote and change more slowly. Six weekly data points > any single monthly comparison.
+
+## RPM: the honest Tamil-India range
+
+Realistic RPM by market for music content:
+
+| Audience | RPM range |
+|---|---|
+| Tamil-India | **$0.30 – $1.50** |
+| English-India | $1.00 – $3.00 |
+| Sri Lankan Tamil diaspora | $2.00 – $6.00 |
+| Canadian / UK / US Tamil diaspora | $5.00 – $12.00 |
+| Global English music | $3.00 – $10.00 |
+
+Music content typically runs at 40-60% of the RPM of talk / vlog / gaming in the same market because there are fewer ad slots (no mid-rolls under 8 minutes, limited display ads on music content in some markets).
+
+**A channel RPM of $0.40-0.60 for Tamil-India audience is normal, not a sign that revenue is being redirected.** It's the actual market rate. The way to move it is to shift audience geography or to change what qualifies for ads — not to fight anyone.
+
+**The three levers that actually work:**
+
+1. **Geographic mix.** More SL / CA / UK / US audience share lifts CPM naturally. Emotional-tribute themes with cultural / Jaffna Tamil identity signals tend to draw more diaspora viewers, which raises the whole channel's RPM.
+2. **Video length ≥ 8 minutes.** Enables mid-roll ads (multiple ads per view instead of one). Not a reason to artificially lengthen songs — but when a song's arrangement supports 9-10 minutes, taking it there materially lifts RPM on that video.
+3. **Watch-through rate.** Higher retention = more of the video is eligible to serve ads = more revenue per playback. First-minute retention is the highest-leverage part of the curve; a distinctive musical hook in the opening 15-30 seconds does more for RPM than any post-video edit.
+
+## The \`licensedContent: true\` flag — what it does and doesn't mean
+
+The Data API returns \`contentDetails.licensedContent: true\` when YouTube's Content ID system has ANY copyright association with the video's audio. That includes:
+
+- **Self-registration via a music distributor.** If you upload a track to DistroKid / TuneCore / CDBaby and they register it with Content ID on your behalf, then upload the same track to YouTube from your own account, YouTube sees the fingerprint match against DistroKid's registration and sets the flag. This is NOT a third-party claim — it's your own registration matching your own upload.
+- **A third-party claim** (someone else registered content that YouTube's fingerprinter matched against your audio).
+- **Match against a music-library sample** if any of the audio contains a fingerprint that traces to a licensed sample.
+
+**\`licensedContent: true\` alone does NOT mean revenue is being redirected.** To find out what's actually happening, open YouTube Studio → Content → the specific video → the Copyright tab. That view is authoritative: it lists any actual claims, who filed them, what policy is applied (monetize-for-claimant / monetize-for-you / track / block), and whether any dispute is in progress.
+
+**The Distrokid self-vs-self gotcha:** artists who self-upload to YouTube AND self-distribute via DistroKid sometimes see YouTube flag their own video as containing licensed content that "matches" the DistroKid-registered version — because from YouTube's fingerprinter's POV, they're indistinguishable. This shows up as a "claim on your own video" in Studio. The fix is a straightforward dispute (you own both sides); once resolved, the revenue routes correctly to you. \`GXLu3Y7FghU\` (Nee Sirichcha Neram Thaan) was this case in mid-2026; resolved cleanly. Don't extrapolate that resolution to a systemic problem — it's a specific reconciliation, not a pattern.
+
+## What to actually do when the numbers look bad
+
+1. **Don't stop uploading.** The single worst reaction. Silence tells the algorithm "this channel is done" and turns a cool-down into a real decline. Even if you have less to release, ship SOMETHING at the sustainable cadence — a rework, an instrumental cut, a rehearsal snippet.
+2. **Look at the top-5 comparison.** If the same songs still rank, you're in a cool-down. If a specific song collapsed, look at THAT song's Studio numbers for a clue (was the thumbnail changed, description edited, tag list altered — anything reset its algo signal?).
+3. **Look at weekly net-sub trend.** Six data points beat any single monthly comparison.
+4. **Ignore RPM month-over-month noise.** Only worry if RPM drops for 3+ months and stays down.
+5. **Compare to true baseline, not to peak.** May 2026's 4,147 views (before the July burst) is the honest baseline for this channel. Anything meaningfully above that is a win, not a decline.
+`,
+  },
 ];
 
 /** Docs grouped by category, in registry order, for the sidebar. */
