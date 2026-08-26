@@ -42,8 +42,11 @@ import { FEATURES } from '@/config/features';
 
 export type AdminNavSection =
   | 'Overview'
-  | 'Content'
-  | 'Studio'
+  | 'Library'
+  | 'Songs'
+  | 'Compose'
+  | 'Music Lab'
+  | 'Sound'
   | 'Audience'
   | 'Insights'
   | 'System';
@@ -80,8 +83,11 @@ export interface AdminNavItem {
 
 export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
   'Overview',
-  'Content',
-  'Studio',
+  'Library',
+  'Songs',
+  'Compose',
+  'Music Lab',
+  'Sound',
   'Audience',
   'Insights',
   'System',
@@ -98,12 +104,12 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     keywords: ['home', 'kpi'],
   },
 
-  // Content
+  // Library + Songs
   {
     href: '/admin/content',
     title: 'Content',
     subtitle: 'Manage your Tamil content library',
-    section: 'Content',
+    section: 'Library',
     icon: FileText,
     matchMode: 'prefix',
   },
@@ -111,21 +117,21 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     href: '/admin/categories',
     title: 'Categories',
     subtitle: 'Organize content into categories',
-    section: 'Content',
+    section: 'Library',
     icon: Folder,
   },
   {
     href: '/admin/tags',
     title: 'Tags',
     subtitle: 'Manage content tags',
-    section: 'Content',
+    section: 'Library',
     icon: Tag,
   },
   {
     href: '/admin/songs',
     title: 'Songs',
     subtitle: 'Audio library — themes, durations, play counts',
-    section: 'Content',
+    section: 'Songs',
     icon: Music,
     matchMode: 'prefix',
   },
@@ -133,7 +139,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     href: '/admin/songs/publish',
     title: 'Publish Song',
     subtitle: 'One-call publish — upload → autolink YouTube → generate cover',
-    section: 'Content',
+    section: 'Songs',
     icon: Rocket,
     keywords: ['upload', 'new song', 'go live'],
     hiddenInSidebar: true, // reachable from Songs page; palette-only for now
@@ -142,7 +148,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     href: '/admin/lyrics',
     title: 'Lyrics',
     subtitle: "பாடல் வரிகள் — publish a song's words behind the email gate",
-    section: 'Content',
+    section: 'Songs',
     icon: ScrollText,
     matchMode: 'prefix',
   },
@@ -150,7 +156,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     href: '/admin/captions',
     title: 'Captions',
     subtitle: "Time stored lyrics against a video's auto-caption track",
-    section: 'Content',
+    section: 'Songs',
     icon: Captions,
     matchMode: 'prefix',
   },
@@ -158,14 +164,14 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     href: '/admin/workflow',
     title: 'Workflow',
     subtitle: 'Production pipeline — draft → published',
-    section: 'Content',
+    section: 'Songs',
     icon: Kanban,
   },
   {
     href: '/admin/media',
     title: 'Media Library',
     subtitle: 'Manage uploaded media files',
-    section: 'Content',
+    section: 'Library',
     icon: ImageIcon,
     featureFlag: 'MEDIA_LIBRARY',
   },
@@ -173,18 +179,18 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     href: '/admin/release',
     title: 'Release',
     subtitle: 'Release checklist + deploy control',
-    section: 'Content',
+    section: 'Songs',
     icon: Sparkles,
     keywords: ['deploy', 'ship', 'publish', 'go live'],
     hiddenInSidebar: true, // palette-only for now
   },
 
-  // Studio
+  // Compose + Music Lab + Sound
   {
     href: '/admin/compose',
     title: 'Music Director',
     subtitle: 'Tamil lyrics → full production brief',
-    section: 'Studio',
+    section: 'Compose',
     icon: Sparkles,
     keywords: ['compose', 'brief'],
   },
@@ -192,7 +198,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     href: '/admin/compose/lyrics',
     title: 'Lyricist',
     subtitle: 'Brief → original Tamil lyrics',
-    section: 'Studio',
+    section: 'Compose',
     icon: PenLine,
     keywords: ['compose', 'write'],
   },
@@ -200,7 +206,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     href: '/admin/compose/critique',
     title: 'Lyric Critic',
     subtitle: 'Your own draft → honest feedback',
-    section: 'Studio',
+    section: 'Compose',
     icon: SearchCheck,
     keywords: ['compose', 'review'],
   },
@@ -208,7 +214,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     href: '/admin/music-lab',
     title: 'Music Lab',
     subtitle: 'Log and evaluate every generation against its brief',
-    section: 'Studio',
+    section: 'Music Lab',
     icon: FlaskConical,
     keywords: ['ml', 'generations'],
   },
@@ -216,7 +222,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     href: '/admin/music-lab/theory',
     title: 'Composition & Theory',
     subtitle: 'Music-theory reference for the composer',
-    section: 'Studio',
+    section: 'Music Lab',
     icon: Music,
     matchMode: 'prefix',
     keywords: ['ml', 'theory'],
@@ -225,7 +231,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     href: '/admin/music-lab/meter-lab',
     title: 'Lyric Meter Lab',
     subtitle: 'Meter and prosody workbench',
-    section: 'Studio',
+    section: 'Music Lab',
     icon: Ruler,
     matchMode: 'prefix',
     keywords: ['ml', 'prosody', 'meter'],
@@ -234,7 +240,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     href: '/admin/music-lab/notebook',
     title: 'Composition Notebook',
     subtitle: 'Scratchpad for composition experiments',
-    section: 'Studio',
+    section: 'Music Lab',
     icon: NotebookPen,
     matchMode: 'prefix',
     keywords: ['ml', 'scratch'],
@@ -243,7 +249,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     href: '/admin/mastering',
     title: 'Sound Engineering',
     subtitle: 'Master a SUNO WAV to a streaming target',
-    section: 'Studio',
+    section: 'Sound',
     icon: SlidersHorizontal,
     keywords: ['mastering', 'loudness', 'lufs'],
   },
@@ -251,7 +257,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     href: '/admin/lexicon',
     title: 'Lexicon',
     subtitle: 'Lyric word-family dictionary — register × usage',
-    section: 'Studio',
+    section: 'Sound',
     icon: Library,
   },
 
