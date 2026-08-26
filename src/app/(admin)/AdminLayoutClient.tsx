@@ -8,43 +8,44 @@ import "@/lib/amplify-config";
 import { clearCognitoCookies } from "@/lib/client-auth";
 import {
   LucideIcon,
-  LayoutDashboard,
-  FileText,
-  Folder,
-  Tag,
-  Image,
-  Globe,
-  Settings,
   LogOut,
   Plus,
-  Mail,
-  PlaySquare,
-  Music,
   PanelLeftClose,
   PanelLeftOpen,
   Menu,
-  Kanban,
-  Sparkles,
-  BarChart3,
-  MessageSquare,
-  BellRing,
-  Library,
-  Users,
-  BookOpen,
-  FlaskConical,
-  NotebookPen,
-  Ruler,
-  PenLine,
-  SearchCheck,
-  ScrollText,
-  MessageSquareHeart,
-  SlidersHorizontal, Captions,
-  Search} from "lucide-react";
-import { FEATURES } from "@/config/features";
+  Search,
+} from "lucide-react";
 import { Toaster } from "react-hot-toast";
 import { ThemeProvider } from "@/components/admin/ThemeProvider";
 import { ThemeToggle } from "@/components/admin/ThemeToggle";
 import { CommandPalette } from "@/components/admin/CommandPalette";
+import {
+  ADMIN_NAV_ITEMS,
+  ADMIN_NAV_SECTIONS,
+  isSidebarVisible,
+  type AdminNavItem,
+  type AdminNavSection,
+} from "@/config/admin-nav";
+
+// Sidebar-visible items grouped by section. Grouping is deterministic (static
+// config filtered by static feature flags), so it's computed once at module
+// load — no useMemo needed.
+const SIDEBAR_ITEMS_BY_SECTION: Map<AdminNavSection, AdminNavItem[]> = (() => {
+  const map = new Map<AdminNavSection, AdminNavItem[]>();
+  for (const item of ADMIN_NAV_ITEMS) {
+    if (!isSidebarVisible(item)) continue;
+    const bucket = map.get(item.section) ?? [];
+    bucket.push(item);
+    map.set(item.section, bucket);
+  }
+  return map;
+})();
+
+// Sections that render inside a labelled group (Overview items render as
+// top-level nav links instead, so they're excluded here).
+const SECTIONED_NAV: AdminNavSection[] = ADMIN_NAV_SECTIONS.filter(
+  (s) => s !== "Overview",
+);
 
 interface AdminLayoutClientProps {
   children: ReactNode;
@@ -306,249 +307,24 @@ export default function AdminLayoutClient({
             className="mt-2 flex-1 overflow-y-auto pb-4"
             aria-label="Admin navigation"
           >
-            <NavLink
-              href="/admin"
-              icon={LayoutDashboard}
-              collapsed={collapsed}
-              active={pathname === "/admin"}
-            >
-              Dashboard
-            </NavLink>
+            {/* Overview items render as top-level nav links (no group wrapper). */}
+            {SIDEBAR_ITEMS_BY_SECTION.get("Overview")?.map((item) =>
+              renderNavItem(item, pathname, collapsed),
+            )}
 
-            <NavSection label="Content" collapsed={collapsed}>
-              <NavLink
-                href="/admin/content"
-                icon={FileText}
-                collapsed={collapsed}
-                active={pathname.startsWith("/admin/content")}
-              >
-                Content
-              </NavLink>
-              <NavLink
-                href="/admin/categories"
-                icon={Folder}
-                collapsed={collapsed}
-                active={pathname === "/admin/categories"}
-              >
-                Categories
-              </NavLink>
-              <NavLink
-                href="/admin/tags"
-                icon={Tag}
-                collapsed={collapsed}
-                active={pathname === "/admin/tags"}
-              >
-                Tags
-              </NavLink>
-              <NavLink
-                href="/admin/songs"
-                icon={Music}
-                collapsed={collapsed}
-                active={pathname.startsWith("/admin/songs")}
-              >
-                Songs
-              </NavLink>
-              <NavLink
-                href="/admin/lyrics"
-                icon={ScrollText}
-                collapsed={collapsed}
-                active={pathname.startsWith("/admin/lyrics")}
-              >
-                Lyrics
-              </NavLink>
-              <NavLink
-                href="/admin/captions"
-                icon={Captions}
-                collapsed={collapsed}
-                active={pathname.startsWith("/admin/captions")}
-              >
-                Captions
-              </NavLink>
-              <NavLink
-                href="/admin/workflow"
-                icon={Kanban}
-                collapsed={collapsed}
-                active={pathname === "/admin/workflow"}
-              >
-                Workflow
-              </NavLink>
-              {FEATURES.ADMIN.MEDIA_LIBRARY && (
-                <NavLink
-                  href="/admin/media"
-                  icon={Image}
+            {SECTIONED_NAV.map((section) => {
+              const items = SIDEBAR_ITEMS_BY_SECTION.get(section);
+              if (!items || items.length === 0) return null;
+              return (
+                <NavSection
+                  key={section}
+                  label={section}
                   collapsed={collapsed}
-                  active={pathname === "/admin/media"}
                 >
-                  Media Library
-                </NavLink>
-              )}
-            </NavSection>
-
-            <NavSection label="Studio" collapsed={collapsed}>
-              <NavLink
-                href="/admin/compose"
-                icon={Sparkles}
-                collapsed={collapsed}
-                active={pathname === "/admin/compose"}
-              >
-                Music Director
-              </NavLink>
-              <NavLink
-                href="/admin/compose/lyrics"
-                icon={PenLine}
-                collapsed={collapsed}
-                active={pathname === "/admin/compose/lyrics"}
-              >
-                Lyricist
-              </NavLink>
-              <NavLink
-                href="/admin/compose/critique"
-                icon={SearchCheck}
-                collapsed={collapsed}
-                active={pathname === "/admin/compose/critique"}
-              >
-                Lyric Critic
-              </NavLink>
-              <NavLink
-                href="/admin/music-lab"
-                icon={FlaskConical}
-                collapsed={collapsed}
-                active={pathname === "/admin/music-lab"}
-              >
-                Music Lab
-              </NavLink>
-              <NavLink
-                href="/admin/music-lab/theory"
-                icon={Music}
-                collapsed={collapsed}
-                active={pathname.startsWith("/admin/music-lab/theory")}
-              >
-                Composition & Theory
-              </NavLink>
-              <NavLink
-                href="/admin/music-lab/meter-lab"
-                icon={Ruler}
-                collapsed={collapsed}
-                active={pathname.startsWith("/admin/music-lab/meter-lab")}
-              >
-                Lyric Meter Lab
-              </NavLink>
-              <NavLink
-                href="/admin/music-lab/notebook"
-                icon={NotebookPen}
-                collapsed={collapsed}
-                active={pathname.startsWith("/admin/music-lab/notebook")}
-              >
-                Composition Notebook
-              </NavLink>
-              <NavLink
-                href="/admin/mastering"
-                icon={SlidersHorizontal}
-                collapsed={collapsed}
-                active={pathname === "/admin/mastering"}
-              >
-                Sound Engineering
-              </NavLink>
-              <NavLink
-                href="/admin/lexicon"
-                icon={Library}
-                collapsed={collapsed}
-                active={pathname === "/admin/lexicon"}
-              >
-                Lexicon
-              </NavLink>
-            </NavSection>
-
-            <NavSection label="Audience" collapsed={collapsed}>
-              <NavLink
-                href="/admin/messages"
-                icon={Mail}
-                collapsed={collapsed}
-                active={pathname === "/admin/messages"}
-              >
-                Messages
-              </NavLink>
-              <NavLink
-                href="/admin/subscribers"
-                icon={Users}
-                collapsed={collapsed}
-                active={pathname === "/admin/subscribers"}
-              >
-                Subscribers
-              </NavLink>
-              <NavLink
-                href="/admin/stories"
-                icon={MessageSquareHeart}
-                collapsed={collapsed}
-                active={pathname === "/admin/stories"}
-              >
-                Shared Stories
-              </NavLink>
-              <NavLink
-                href="/admin/comments"
-                icon={MessageSquare}
-                collapsed={collapsed}
-                active={pathname === "/admin/comments"}
-              >
-                Comments
-              </NavLink>
-              <NavLink
-                href="/admin/notify"
-                icon={BellRing}
-                collapsed={collapsed}
-                active={pathname === "/admin/notify"}
-              >
-                Notify
-              </NavLink>
-            </NavSection>
-
-            <NavSection label="Insights" collapsed={collapsed}>
-              <NavLink
-                href="/admin/youtube"
-                icon={PlaySquare}
-                collapsed={collapsed}
-                active={pathname === "/admin/youtube"}
-              >
-                YouTube
-              </NavLink>
-              <NavLink
-                href="/admin/analytics"
-                icon={BarChart3}
-                collapsed={collapsed}
-                active={pathname === "/admin/analytics"}
-              >
-                Analytics
-              </NavLink>
-            </NavSection>
-
-            <NavSection label="System" collapsed={collapsed}>
-              <NavLink
-                href="/admin/docs"
-                icon={BookOpen}
-                collapsed={collapsed}
-                active={pathname === "/admin/docs"}
-              >
-                Docs
-              </NavLink>
-              <NavLink
-                href="/"
-                icon={Globe}
-                collapsed={collapsed}
-                active={false}
-              >
-                View Site
-              </NavLink>
-              {FEATURES.ADMIN.SETTINGS_PAGE && (
-                <NavLink
-                  href="/admin/settings"
-                  icon={Settings}
-                  collapsed={collapsed}
-                  active={pathname === "/admin/settings"}
-                >
-                  Settings
-                </NavLink>
-              )}
-            </NavSection>
+                  {items.map((item) => renderNavItem(item, pathname, collapsed))}
+                </NavSection>
+              );
+            })}
           </nav>
 
           <div
@@ -650,6 +426,31 @@ export default function AdminLayoutClient({
         <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       </div>
     </ThemeProvider>
+  );
+}
+
+/** Render a nav link from a config item. Active-state uses item.matchMode
+ *  ('exact' by default; 'prefix' for pages with sub-routes like /admin/songs
+ *  → /admin/songs/publish). Called from the sidebar mapping in the layout. */
+function renderNavItem(
+  item: AdminNavItem,
+  pathname: string,
+  collapsed: boolean,
+) {
+  const isActive =
+    item.matchMode === "prefix"
+      ? pathname.startsWith(item.href)
+      : pathname === item.href;
+  return (
+    <NavLink
+      key={item.href}
+      href={item.href}
+      icon={item.icon}
+      collapsed={collapsed}
+      active={isActive}
+    >
+      {item.title}
+    </NavLink>
   );
 }
 

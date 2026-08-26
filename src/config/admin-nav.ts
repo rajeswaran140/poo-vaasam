@@ -1,12 +1,10 @@
 /**
  * Canonical admin-nav registry — one entry per admin page.
  *
- * Used by the ⌘K command palette (CommandPalette.tsx) as the source of truth
- * for what pages exist. The sidebar in AdminLayoutClient.tsx currently
- * hardcodes its links — a follow-up PR can render the sidebar from this same
- * config so nav lives in one place.
- *
- * Adding a new admin page? Add its entry here so it shows up in the palette.
+ * Single source of truth for BOTH the sidebar (AdminLayoutClient.tsx) and
+ * the ⌘K command palette (CommandPalette.tsx). Add a new admin page here
+ * and it appears in both surfaces (unless you opt-out via hiddenInSidebar
+ * or hiddenInPalette).
  */
 
 import type { LucideIcon } from 'lucide-react';
@@ -32,12 +30,15 @@ import {
   Mail,
   Users,
   ScrollText,
+  MessageSquare,
   MessageSquareHeart,
   BellRing,
   PlaySquare,
   BarChart3,
   Settings,
+  Globe,
 } from 'lucide-react';
+import { FEATURES } from '@/config/features';
 
 export type AdminNavSection =
   | 'Overview'
@@ -47,19 +48,34 @@ export type AdminNavSection =
   | 'Insights'
   | 'System';
 
+/** Which admin feature flag (if any) gates this item's sidebar visibility. */
+export type AdminFeatureGate = 'MEDIA_LIBRARY' | 'SETTINGS_PAGE';
+
 export interface AdminNavItem {
   /** Route this entry navigates to. */
   href: string;
-  /** Label shown in the palette (and sidebar, once wired). */
+  /** Label shown in both sidebar and palette. */
   title: string;
-  /** Short one-liner — helps disambiguate similarly-named pages. */
+  /** Short one-liner — palette-only (helps disambiguate similar names). */
   subtitle: string;
   /** Which sidebar section this page belongs to. */
   section: AdminNavSection;
-  /** Icon shown in the palette row. */
+  /** Icon shown in both sidebar and palette. */
   icon: LucideIcon;
+  /**
+   * How to compute the active state for the sidebar highlight:
+   *   'exact'  — `pathname === href` (default)
+   *   'prefix' — `pathname.startsWith(href)` (for pages with sub-routes)
+   */
+  matchMode?: 'exact' | 'prefix';
   /** Extra search terms — aliases + abbreviations the user might type. */
   keywords?: string[];
+  /** Hide from the sidebar (still shows in palette). */
+  hiddenInSidebar?: boolean;
+  /** Hide from the palette (still shows in sidebar). */
+  hiddenInPalette?: boolean;
+  /** Only render when the named FEATURES.ADMIN.* flag is enabled. */
+  featureFlag?: AdminFeatureGate;
 }
 
 export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
@@ -89,6 +105,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     subtitle: 'Manage your Tamil content library',
     section: 'Content',
     icon: FileText,
+    matchMode: 'prefix',
   },
   {
     href: '/admin/categories',
@@ -110,6 +127,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     subtitle: 'Audio library — themes, durations, play counts',
     section: 'Content',
     icon: Music,
+    matchMode: 'prefix',
   },
   {
     href: '/admin/songs/publish',
@@ -118,13 +136,15 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     section: 'Content',
     icon: Rocket,
     keywords: ['upload', 'new song', 'go live'],
+    hiddenInSidebar: true, // reachable from Songs page; palette-only for now
   },
   {
     href: '/admin/lyrics',
     title: 'Lyrics',
     subtitle: "பாடல் வரிகள் — publish a song's words behind the email gate",
     section: 'Content',
-    icon: PenLine,
+    icon: ScrollText,
+    matchMode: 'prefix',
   },
   {
     href: '/admin/captions',
@@ -132,6 +152,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     subtitle: "Time stored lyrics against a video's auto-caption track",
     section: 'Content',
     icon: Captions,
+    matchMode: 'prefix',
   },
   {
     href: '/admin/workflow',
@@ -146,6 +167,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     subtitle: 'Manage uploaded media files',
     section: 'Content',
     icon: ImageIcon,
+    featureFlag: 'MEDIA_LIBRARY',
   },
   {
     href: '/admin/release',
@@ -154,6 +176,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     section: 'Content',
     icon: Sparkles,
     keywords: ['deploy', 'ship', 'publish', 'go live'],
+    hiddenInSidebar: true, // palette-only for now
   },
 
   // Studio
@@ -191,26 +214,29 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   },
   {
     href: '/admin/music-lab/theory',
-    title: 'Music Lab · Theory',
+    title: 'Composition & Theory',
     subtitle: 'Music-theory reference for the composer',
     section: 'Studio',
-    icon: BookOpen,
+    icon: Music,
+    matchMode: 'prefix',
     keywords: ['ml', 'theory'],
   },
   {
     href: '/admin/music-lab/meter-lab',
-    title: 'Music Lab · Meter Lab',
+    title: 'Lyric Meter Lab',
     subtitle: 'Meter and prosody workbench',
     section: 'Studio',
     icon: Ruler,
+    matchMode: 'prefix',
     keywords: ['ml', 'prosody', 'meter'],
   },
   {
     href: '/admin/music-lab/notebook',
-    title: 'Music Lab · Notebook',
+    title: 'Composition Notebook',
     subtitle: 'Scratchpad for composition experiments',
     section: 'Studio',
     icon: NotebookPen,
+    matchMode: 'prefix',
     keywords: ['ml', 'scratch'],
   },
   {
@@ -249,7 +275,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     title: 'Shared Stories',
     subtitle: 'Fan memories from the Share page',
     section: 'Audience',
-    icon: ScrollText,
+    icon: MessageSquareHeart,
     keywords: ['fan', 'stories'],
   },
   {
@@ -257,7 +283,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     title: 'Comments',
     subtitle: 'Moderate viewer comments on your content',
     section: 'Audience',
-    icon: MessageSquareHeart,
+    icon: MessageSquare,
   },
   {
     href: '/admin/notify',
@@ -296,10 +322,31 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     keywords: ['help', 'guide'],
   },
   {
+    href: '/',
+    title: 'View Site',
+    subtitle: 'Open the public site in a new tab',
+    section: 'System',
+    icon: Globe,
+    hiddenInPalette: true, // links out of admin — palette stays admin-only
+  },
+  {
     href: '/admin/settings',
     title: 'Settings',
     subtitle: 'Configure your platform settings',
     section: 'System',
     icon: Settings,
+    featureFlag: 'SETTINGS_PAGE',
   },
 ];
+
+/** True when this item should render in the sidebar (feature-flag + explicit opt-out). */
+export function isSidebarVisible(item: AdminNavItem): boolean {
+  if (item.hiddenInSidebar) return false;
+  if (item.featureFlag && !FEATURES.ADMIN[item.featureFlag]) return false;
+  return true;
+}
+
+/** True when this item should appear in the ⌘K palette. */
+export function isPaletteVisible(item: AdminNavItem): boolean {
+  return !item.hiddenInPalette;
+}
