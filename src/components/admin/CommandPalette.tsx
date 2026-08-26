@@ -15,8 +15,12 @@ import { Search, X } from 'lucide-react';
 import {
   ADMIN_NAV_ITEMS,
   ADMIN_NAV_SECTIONS,
+  isPaletteVisible,
   type AdminNavItem,
 } from '@/config/admin-nav';
+
+/** Items the palette can navigate to (excludes hiddenInPalette). */
+const PALETTE_ITEMS: AdminNavItem[] = ADMIN_NAV_ITEMS.filter(isPaletteVisible);
 
 interface CommandPaletteProps {
   open: boolean;
@@ -71,8 +75,8 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   // Ranked flat list — used when there's a query. Section-grouped view is
   // computed separately below.
   const ranked: AdminNavItem[] = useMemo(() => {
-    if (!query) return ADMIN_NAV_ITEMS;
-    return ADMIN_NAV_ITEMS
+    if (!query) return PALETTE_ITEMS;
+    return PALETTE_ITEMS
       .map((item) => ({ item, score: scoreItem(item, query) }))
       .filter((x) => x.score > 0)
       .sort((a, b) => b.score - a.score)
