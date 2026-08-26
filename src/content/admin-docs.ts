@@ -604,6 +604,145 @@ Phase 1 uses only \`id\`, \`title\`, \`enabled\`, \`uploadedAt\` in code paths. 
 *This doc is a review artifact. Once Phase 1A ships and the spike report exists, that report becomes a separate doc; when Phase 1B validates, this doc is replaced by a user-facing "how to use reference-track mastering" guide.*`,
   },
   {
+    slug: 'music-lab-reference-mastering-spike-report',
+    title: 'Music Lab — reference-matching Phase 1A spike report',
+    category: 'Music Lab',
+    updatedAt: '2026-08-26T22:21:13Z',
+    body: `# Phase 1A spike report — Matchering feasibility
+
+> **Verdict: GO → Phase 1B, with two adjustments to the plan.** The spike proved Matchering installs cleanly on modern Python + runs correctly on real TamilAgaval audio. LUFS accuracy is within 0.2 LU (commercial-mastering ballpark). Two refinements needed: Lambda memory 4096 MB (not 3008), and Matchering downsamples 48 kHz → 44.1 kHz internally — needs a config check or a resample step.
+
+## Test setup
+
+- **Environment:** Python 3.12 venv on \`crowvault-ide-server\` (7 GB RAM, 2 cores). NOT a Lambda container — native measurements approximate but are not identical to Lambda's ~30% overhead. Docker not installed on the box; a container-equivalent benchmark is deferred to Phase 1B setup.
+- **Matchering:** \`matchering==2.0.6\` (upstream classifiers list Python 3.8-3.10; 3.12 not officially certified but works). Installed in a fresh venv in 23s. Resolved to modern deps: NumPy 2.5.2, SciPy 1.18.1, soundfile 0.14.0, resampy 0.4.3, statsmodels 0.14.6, numba 0.67.0, llvmlite 0.49.0, pandas 3.0.5.
+- **Test audio:** 3 real TamilAgaval pairs from \`tamil-web-media/audio/mastering/\`. Each pair = raw SUNO source + its already-mastered TamilAgaval output (used as the reference — a "would matchering rediscover what we already did" sanity check).
+- **Measurement tools:** \`/usr/bin/time -v\` for wall time + peak resident-set-size, \`ffmpeg ebur128=peak=true\` for LUFS + LRA on the output vs the reference.
+
+## Results
+
+### LUFS matching accuracy — the headline finding
+
+| Test | Duration | Target LUFS | Reference LUFS | Matched LUFS | **Δ from ref** |
+|---|---|---:|---:|---:|---:|
+| 1 (Music-1_1) | 3:22 | -13.5 | -14.0 | -14.2 | **0.2 LU** |
+| 2 (Fm-55_4) | 6:42 | -15.4 | -14.0 | -14.0 | **0.0 LU** |
+| 3 (Ver-1_1) | 9:36 | -14.0 | -14.0 | -13.9 | **0.1 LU** |
+
+All within 0.2 LU. That's the ballpark of what iZotope Ozone Master Assistant achieves — the mechanical accuracy is not the ceiling here.
+
+### LRA (dynamic range) preservation
+
+| Test | Reference LRA | Matched LRA | Δ from ref |
+|---|---:|---:|---:|
+| 1 | 3.7 LU | 4.3 LU | +0.6 LU (slightly more dynamic) |
+| 2 | 3.7 LU | 3.8 LU | +0.1 LU |
+| 3 | 3.7 LU | 3.6 LU | -0.1 LU |
+
+Good — dynamics stay close to reference. Test 1's +0.6 delta is worth watching but not alarming for a 3:22 short piece.
+
+### Performance envelope
+
+| Test | Duration | Wall time | Peak memory | Sec / min-of-audio |
+|---|---|---:|---:|---:|
+| 1 | 3:22 (202s) | **25 s** | **1.28 GB** | 7.5 |
+| 2 | 6:42 (402s) | **53 s** | **2.31 GB** | 7.9 |
+| 3 | 9:36 (576s) | **70 s** | **3.14 GB** | 7.3 |
+
+- Wall time is roughly linear at **7-8 sec per minute of audio**. A 12-minute track projects to ~90s, still comfortably under the 900s Lambda cap.
+- Peak memory grows near-linearly with duration. **Test 3's 3.14 GB exceeds the 3008 MB Lambda config** I originally proposed — it would OOM.
+- Matchering is single-threaded (101% CPU on 1 core) — memory-bound, not compute-bound. More Lambda cores won't help.
+
+### Output integrity
+
+All 3 outputs opened cleanly with soundfile. Format: \`44100 Hz stereo PCM_24\`. This is a downgrade from the input's 48 kHz — Matchering's default internal sample rate is 44.1 kHz and it always emits at that rate. **Real break from the current TamilAgaval pipeline**, which stays at 48 kHz throughout.
+
+Possible fixes (need testing in Phase 1B setup):
+- \`matchering.Config(internal_sample_rate=48000)\` if the API supports it (needs verification against source)
+- Post-process resample via \`resampy\` or \`sox\` back to 48 kHz — trivial to add, small quality hit
+- Accept 44.1 kHz for the reference-matched output specifically (YouTube/Spotify normalize both; user won't hear the difference)
+
+### Install experience
+
+\`\`\`
+pip install matchering==2.0.6
+
+Downloaded: 1.3 MB matchering + 10.3 MB statsmodels + 11.0 MB pandas + ~40 MB
+  numba/llvmlite + smaller deps
+Installed: 16 packages
+Time: 23.6 seconds
+Import test: passes
+mg.process API: available
+\`\`\`
+
+Clean. No compile failures, no dependency conflicts, no runtime warnings on import.
+
+## Interpretation
+
+**What the spike proved:**
+1. Matchering isn't broken on modern Python/NumPy despite being dormant since Oct 2022. That was the biggest open risk in the plan — it's resolved GREEN.
+2. The output is technically sound — LUFS matching is commercial-grade, LRA is preserved, no processing errors.
+3. Memory and time envelope fit within Lambda's capabilities with a slight sizing adjustment.
+
+**What the spike did NOT prove:**
+1. Whether the matched output SOUNDS better than the existing loudnorm master on TamilAgaval source. That's subjective and needs blind human A/B — the criterion for Phase 1C flag flip, not Phase 1B GO.
+2. Cold-start latency in a Lambda container. Native venv skipped container overhead. Rough estimate: +5-10s cold start based on the ~500 MB container image size.
+3. True-peak measurement on the outputs. My ffmpeg regex missed the "True peak" label (matched "Peak" only). Not a Matchering issue — a spike-tooling issue. Easy retry.
+
+## Adjustments to the Phase 1B plan
+
+### 1. Lambda memory: **4096 MB** (not 3008 MB as originally proposed)
+
+Measured peak on a 9:36 track was 3.14 GB. 3008 MB would OOM. Recommend:
+- 4096 MB baseline (~30% headroom on the measured peak)
+- Explicit 4096 MB ephemeral storage (unchanged from plan)
+- Test 6144 MB in Phase 1B against a 12+ min track OR a 24-bit/96kHz variant if you ever produce those. If memory grows past 4096 MB there, escalate to 6144.
+
+Cost impact per invocation at 4096 MB × 90s: ~$0.006 per master. Trivial.
+
+### 2. Sample rate: **investigate + fix in Phase 1B**
+
+Matchering emits 44.1 kHz. Two paths in the Phase 1B Python worker:
+- **Preferred:** \`matchering.Config(internal_sample_rate=48000)\` if the API supports it — spike didn't test.
+- **Fallback:** post-process resample via \`resampy\` or an ffmpeg passthrough back to 48 kHz. Adds ~2-3s per job.
+
+Either path preserves parity with the existing pipeline. Do NOT ship a 44.1 kHz reference-matched output alongside a 48 kHz loudnorm output — the A/B compare needs consistent rates for fair listening.
+
+### 3. Everything else in the plan holds
+
+- GPL isolation strategy still applies (separate container Lambda, private ECR, LICENSING.md)
+- Event-invoke async orchestration still preferred over sync invoke
+- Job schema additions still valid (\`referenceId\`, \`matchingMethod\`, \`matchedMasterKey\`, \`matchingStage\`, \`matchingStats\`)
+- 3-5 TamilAgaval-owned references only for Phase 1B
+- Feature flag \`MASTERING_REFERENCE_MATCHING = false\` until Phase 1C blind-A/B validates
+
+## Reproduce this spike
+
+\`\`\`bash
+cd spike/matchering-feasibility
+./reproduce.sh
+\`\`\`
+
+~5 min end-to-end. Requires \`python3-venv\`, \`ffmpeg\`, and AWS creds with \`s3:GetObject\` on \`tamil-web-media/audio/mastering/*\`.
+
+## Next steps
+
+If you accept the GO recommendation:
+1. **Approve the sizing adjustment** (4096 MB Lambda) in the plan doc for consistency
+2. **Kick off Phase 1B:** build the container Lambda + IAM + schema + start-route wire + tests
+3. **In Phase 1B, resolve the sample-rate question first** (before wiring anything to the existing pipeline) — either Config override or resample stage
+4. **Curate 3-5 TamilAgaval reference tracks** for the initial reference bank
+
+If you want to iterate on Phase 1A before proceeding:
+- Test more diverse audio (folk, orchestral, instrumental) to widen the "does matchering handle X" question
+- Build the Docker container variant to confirm Lambda-equivalent numbers
+- Investigate the \`matchering.Config\` API for internal_sample_rate
+
+---
+
+*Spike ran 2026-08-26 22:00-22:20 UTC on \`crowvault-ide-server\`. Test WAVs pulled from and deleted; reproduction script at \`spike/matchering-feasibility/reproduce.sh\`. Recommendation supersedes the plan doc's earlier "GO WITH CHANGES → Phase 1A only" — Phase 1A is complete; new recommendation is GO to Phase 1B with the sizing + sample-rate adjustments above.*`,
+  },
+  {
     slug: 'streaming-distribution-spotify',
     title: 'Spotify & streaming — get the catalogue discoverable',
     category: 'Distribution',
