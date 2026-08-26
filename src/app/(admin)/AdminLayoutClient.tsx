@@ -38,11 +38,13 @@ import {
   SearchCheck,
   ScrollText,
   MessageSquareHeart,
-  SlidersHorizontal, Captions} from "lucide-react";
+  SlidersHorizontal, Captions,
+  Search} from "lucide-react";
 import { FEATURES } from "@/config/features";
 import { Toaster } from "react-hot-toast";
 import { ThemeProvider } from "@/components/admin/ThemeProvider";
 import { ThemeToggle } from "@/components/admin/ThemeToggle";
+import { CommandPalette } from "@/components/admin/CommandPalette";
 
 interface AdminLayoutClientProps {
   children: ReactNode;
@@ -193,11 +195,34 @@ export default function AdminLayoutClient({
   // Desktop collapse state (md+ only). Seeded from the server-read cookie so the
   // first paint matches the admin's saved preference (no hydration flash).
   const [collapsed, setCollapsed] = useState(initialCollapsed);
+  // ⌘K/Ctrl+K command palette (CommandPalette.tsx).
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   // Close mobile drawer on route change.
   useEffect(() => {
     setSidebarOpen(false);
   }, [pathname]);
+
+  // Global ⌘K / Ctrl+K opens the command palette. Escape/close handled inside.
+  // Skips when the user is typing in an <input>/<textarea>/contentEditable so
+  // we don't hijack legitimate text-field shortcuts.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        const target = e.target as HTMLElement | null;
+        const tag = target?.tagName;
+        const isTextField =
+          tag === "INPUT" ||
+          tag === "TEXTAREA" ||
+          (target?.isContentEditable ?? false);
+        if (isTextField) return;
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -596,6 +621,16 @@ export default function AdminLayoutClient({
                 </div>
               </div>
               <div className="flex flex-shrink-0 items-center gap-2 sm:gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPaletteOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+                  aria-label="Open command palette"
+                  title="Jump to page (⌘K)"
+                >
+                  <Search className="h-4 w-4" />
+                  <kbd className="hidden font-mono text-[10px] sm:inline">⌘K</kbd>
+                </button>
                 <ThemeToggle />
                 <Link
                   href="/admin/content/new"
@@ -612,6 +647,7 @@ export default function AdminLayoutClient({
         </main>
 
         <Toaster />
+        <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       </div>
     </ThemeProvider>
   );
