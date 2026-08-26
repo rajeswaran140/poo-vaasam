@@ -17,6 +17,12 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
+// Browser push has a hard ~4 KB payload cap AFTER encryption overhead (~86 B),
+// so plaintext must fit under ~4010 B. Tamil is 3 bytes/char in UTF-8, so the
+// worst-case JSON envelope at the current caps is ~1620 B (40% of the budget).
+// If you raise any max() here, add a `.refine()` that checks the JSON.stringify
+// byte length OR update this note with the new headroom calculation. Silent
+// truncation past 4 KB is how new-song broadcasts stop reaching subscribers.
 const schema = z.object({
   title: z.string().trim().min(1).max(120),
   body: z.string().trim().min(1).max(300),
