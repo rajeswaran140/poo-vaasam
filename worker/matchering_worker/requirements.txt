@@ -1,0 +1,22 @@
+# Pinned to the versions that resolved cleanly in the Phase 1A spike
+# (2026-08-26). Matchering itself is dormant since Oct 2022; NumPy 2.x and the
+# other deps are current — the combination WAS empirically validated but is
+# outside upstream's cert range, so pin explicitly.
+#
+# License: matchering is GPL-3.0-or-later. See LICENSING.md.
+
+matchering==2.0.6
+
+# Transitive-but-pin: these were the versions the spike successfully resolved.
+# Locking them keeps container rebuilds byte-reproducible.
+numpy==2.5.2
+scipy==1.18.1
+soundfile==0.14.0
+resampy==0.4.3
+statsmodels==0.14.6
+numba==0.67.0
+llvmlite==0.49.0
+
+# AWS SDK — Lambda's base image includes boto3 but pinning here ensures the
+# handler tests against a known version if we ever run this outside Lambda.
+boto3==1.35.0
