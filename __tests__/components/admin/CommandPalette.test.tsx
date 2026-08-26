@@ -20,12 +20,13 @@ it('renders nothing when closed', () => {
   expect(container).toBeEmptyDOMElement();
 });
 
-it('renders a dialog with all sections when open with no query', () => {
+it('renders a dialog with all section headers when open with no query', () => {
   render(<CommandPalette open={true} onOpenChange={() => {}} />);
   expect(screen.getByRole('dialog', { name: /command palette/i })).toBeInTheDocument();
-  // At least the section headers we expect.
+  // Target headers by testid so we don't collide with same-named page rows
+  // (e.g. the "Content" section contains a page also titled "Content").
   ['Overview', 'Content', 'Studio', 'Audience', 'Insights', 'System'].forEach((s) => {
-    expect(screen.getByText(s)).toBeInTheDocument();
+    expect(screen.getByTestId(`palette-section-${s}`)).toBeInTheDocument();
   });
 });
 

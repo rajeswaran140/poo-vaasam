@@ -190,7 +190,10 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           ) : showGrouped ? (
             grouped.map(({ section, items }) => (
               <div key={section} className="pb-1">
-                <div className="px-4 py-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+                <div
+                  data-testid={`palette-section-${section}`}
+                  className="px-4 py-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500"
+                >
                   {section}
                 </div>
                 {items.map((item) => {
