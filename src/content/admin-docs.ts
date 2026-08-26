@@ -341,6 +341,180 @@ It is also a **0.68 LU change you cannot hear** — which is the honest headline
 > Rule of thumb: a song already near -14 LUFS barely changes — that's correct, not a failure. The win is on the quiet and hot outliers, and right now you have none.`,
   },
   {
+    slug: 'music-lab-reference-mastering-plan',
+    title: 'Music Lab — reference-track mastering (Phase 1 plan, PROPOSAL)',
+    category: 'Music Lab',
+    updatedAt: '2026-08-26T19:18:51Z',
+    body: `# Reference-track mastering — Phase 1 plan
+
+> **Status: PROPOSAL — not yet built.** This is a design doc for review. Nothing in \`/admin/mastering\` changes until this is approved and shipped.
+
+## Goal + scope
+
+Add reference-matched mastering as a second path alongside the existing loudnorm-only pipeline. You pick a reference track from a curated bank; **Matchering** (open source, MIT) produces a master matched to its tonal balance + loudness. The existing loudnorm pipeline stays unchanged; both outputs land in the A/B compare so you pick per song.
+
+**Not in scope (later phases):** stem separation, multi-target rendering, automatic QC, spectral visualization.
+
+## Architecture
+
+\`\`\`
+                       ┌──────────────────────────┐
+                       │  Mastering Studio (UI)   │
+                       │  + reference picker      │
+                       │  + method toggle         │
+                       │  + 3-way A/B compare     │
+                       └────────┬─────────────────┘
+                                │ POST /api/admin/music-lab/master
+                                │   { s3Key, ...edits, referenceId?, method? }
+                                ▼
+                       ┌──────────────────────────┐
+                       │  Next.js API route       │
+                       │  requireAdmin+Bearer     │
+                       │  Event-invoke worker     │
+                       └────────┬─────────────────┘
+                                │ Lambda.Invoke(Event)
+                                ▼
+                       ┌──────────────────────────┐
+                       │  master-worker (Node)    │
+                       │  existing: loudnorm→WAV  │
+                       │  NEW: if referenceId,    │
+                       │       invoke matchering  │
+                       │       -worker + collect  │
+                       └────┬───────────┬─────────┘
+                            │           │ Lambda.Invoke(RequestResponse)
+                 writes     │           ▼
+                 to S3      │  ┌──────────────────────────┐
+                            │  │  matchering-worker       │
+                            │  │  (Python 3.11 + numpy    │
+                            │  │  + matchering ~40 MB)    │
+                            │  │  reads: reference + WAV  │
+                            │  │  writes: matched WAV     │
+                            │  └──────────────────────────┘
+                            ▼
+                       patches MASTERJOB#{id} with:
+                       - master_key (loudnorm-only)
+                       - matched_master_key (nullable)
+                       - matching_stats (nullable)
+\`\`\`
+
+**Key architectural decision:** Matchering runs in a **separate Python Lambda** invoked synchronously by the Node master-worker. Reasons: Python matches Matchering's native runtime; keeps the Node worker's package small; Phase 3 (Demucs stem separation) will also live in a Python Lambda so the pattern generalizes.
+
+## Component-by-component plan
+
+### 1. Matchering Lambda (~2-3 days)
+
+- **Name:** \`tamilagaval-matchering-worker\`
+- **Runtime:** Python 3.11, 3008 MB, 900s timeout
+- **Handler:** \`handler.py\` — takes \`{sourceKey, referenceKey, jobId, outputKey}\`, downloads both from S3, runs Matchering, uploads output, returns stats.
+- **Package strategy:** container image (Matchering + numpy + scipy + soundfile + boto3 exceeds the 250 MB zip limit). Base: \`public.ecr.aws/lambda/python:3.11\`. ~500 MB uncompressed, ~120 MB compressed.
+- **IAM:** new role \`tamilagaval-matchering-worker-role\` — \`s3:GetObject\` on \`tamil-web-media/audio/mastering/*\` + \`tamil-web-media/references/*\`, \`s3:PutObject\` on \`tamil-web-media/audio/mastering/*\`, \`dynamodb:UpdateItem\` on \`TamilWebContent\` scoped to \`MASTERJOB#\` items.
+- **Deploy:** \`npm run deploy:matchering-worker\` builds container + pushes to ECR + updates the Lambda.
+- **Progress:** Matchering has stage callbacks (analyzing → matching → normalizing → writing). Post each to \`MASTERJOB#\` as \`matchingStage\` so the UI shows live progress.
+
+### 2. Reference bank in S3 (~0.5 day)
+
+- **Prefix:** \`tamil-web-media/references/\`
+- **Layout per reference:**
+  - \`references/<id>.wav\` (or .flac) — the audio, 24-bit/48k
+  - \`references/<id>.json\` — metadata: \`{ id, title, artist, notes, uploadedAt, genre_tag }\`
+- **CloudFront:** extend \`DenyCloudFrontOnMasteringWorkspace\` bucket-policy Sid to cover \`references/*\` too. Private-only.
+- **Curation:** you provide 5-10 reference Tamil masters as the initial bank ("the sound you want"). Standard studio practice; private-copy fair use.
+
+### 3. Job schema extension (~0.5 day)
+
+Add nullable fields to \`MASTERJOB#\` items:
+
+- \`referenceId?: string\`
+- \`matchingMethod?: 'loudnorm' | 'matched' | 'both'\`
+- \`matchedMasterKey?: string\`
+- \`matchingStats?: { referenceLufs, matchedLufs, tonalDeltaDb, elapsedSec }\`
+- \`matchingStage?: 'analyzing' | 'matching' | 'normalizing' | 'writing'\`
+
+Backward-compatible; existing jobs continue as loudnorm-only when \`referenceId\` is absent.
+
+### 4. API changes (~1 day)
+
+**Existing route extended:**
+
+- \`POST /api/admin/music-lab/master\` — body zod gains \`referenceId: z.string().optional()\`, \`matchingMethod: z.enum(['loudnorm','matched','both']).default('loudnorm')\`.
+
+**New routes:**
+
+- \`GET  /api/admin/mastering/references\` — list (admin only)
+- \`POST /api/admin/mastering/references\` — presigned S3 POST + metadata write (admin + Bearer)
+- \`PATCH /api/admin/mastering/references/[id]\` — update metadata (admin + Bearer)
+- \`DELETE /api/admin/mastering/references/[id]\` — remove (admin + Bearer)
+
+All follow existing conventions (\`requireAdmin\`, \`requireBearer\` on mutations, zod validation).
+
+### 5. UI changes (~2 days)
+
+Additions to \`src/app/(admin)/admin/mastering/page.tsx\`:
+
+- **Reference picker** — dropdown next to the master button, populated from \`GET /references\`. Empty option = "no reference (loudnorm only)".
+- **Method toggle** — radio: Loudness only | Matched to reference | Both. Auto-enables when a reference is picked.
+- **A/B compare** — extend the existing 2-way player to 3-way (original vs loudness-master vs matched-master) when both outputs exist.
+- **Live progress** — subscribe to existing polling; show \`matchingStage\` when set.
+- **Manage references panel** — list + upload + delete. ~200 LOC.
+
+### 6. Feature flag + rollout (~0.5 day)
+
+- Add \`FEATURES.ADMIN.MASTERING_REFERENCE_MATCHING = false\` to \`src/config/features.ts\`
+- Backend always deployed; UI + start-route acceptance gated on the flag
+- When flag = false: reference picker hidden, API rejects \`referenceId\` with 501 "feature disabled"
+- Flip to \`true\` once you've uploaded 5+ curated references and done a listening pass
+
+## Testing plan
+
+- **Unit** (jest): matchering Lambda contract test (mock S3/DDB), API zod validation of new params, reference CRUD routes
+- **Integration** (manual): full round-trip from studio UI with one uploaded reference → verify matched WAV appears in A/B compare
+- **Blind A/B** (product): 3 songs across genres, produce both masters, listen blind, note whether matched wins on ≥2 of 3. If yes → flip the flag. If no → iterate on reference selection.
+
+## Effort estimate
+
+| Component | Effort |
+|---|---:|
+| Matchering Lambda (container + IAM + deploy) | 2-3 days |
+| Reference bank S3 layout + CRUD routes | 1.5 days |
+| Job schema + repo update | 0.5 day |
+| Start-route extension | 0.5 day |
+| UI (picker + toggle + 3-way A/B + manage panel) | 2 days |
+| Feature flag + wiring | 0.5 day |
+| Tests | 1 day |
+| **Total** | **~1 week focused** |
+
+Suggested split: 4 PRs — Lambda + IAM · reference bank routes · UI + start-route extension · feature-flag flip.
+
+## Risks + mitigations
+
+| Risk | Mitigation |
+|---|---|
+| Matched output sounds worse than loudnorm-only on some songs | A/B compare — you pick per song; never auto-replace |
+| Reference genre-mismatch produces dud output | Add a "drift threshold" — if LUFS/tonal delta exceeds a limit, warn in the UI. Don't auto-abort; just flag. |
+| Container Lambda cold-start ~5-10s | Acceptable for manually-triggered mastering; not real-time |
+| Matchering package size (~500 MB image) | ECR cost negligible; only impacts cold-start |
+| Reference bank curation is ongoing work | Design the manage-panel from day one so add/remove is trivial |
+
+## Design decision this forces
+
+The current tool's docstring says *"loudness only, never tone."* Reference matching **expands that scope to opinionated tonal shaping**. That's not a bug, but it's a real change worth acknowledging in the tool's philosophy comment. Once you add reference matching, "never tone" is no longer strictly true.
+
+## Open questions before starting
+
+1. **Reference bank sourcing** — you provide 5-10 Tamil masters as the initial bank, or start with what you have on hand and iterate?
+2. **Rollout** — feature-flag it (ship dark, flip when curated), or ship live with reference bank already seeded?
+3. **Fair use** — OK with storing commercial reference tracks privately in the admin S3 workspace for internal mastering use? (Standard studio practice; not distributed publicly.)
+4. **PR shape** — 4 small PRs (reviewable, atomic rollback per component) or 1 big PR (atomic ship)?
+
+## What happens after approval
+
+Default execution order: **start with the Matchering Lambda + IAM** (foundation everything else depends on). Then reference-bank routes → start-route extension → UI → feature-flag flip.
+
+---
+
+*This doc is a review artifact. Once approved and shipping begins, this page will be replaced by a user-facing "how to use reference-track mastering" guide.*`,
+  },
+  {
     slug: 'streaming-distribution-spotify',
     title: 'Spotify & streaming — get the catalogue discoverable',
     category: 'Distribution',
