@@ -31,9 +31,11 @@ import { MasterJobRepository } from '@/infrastructure/database/MasterJobReposito
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { awsConfig } from '@/lib/aws-config';
 import { isValidTarget, isMasterKey, MIN_TARGET_LUFS, MAX_TARGET_LUFS } from '@/lib/loudness-measure';
-import { isMasteringKey } from '@/lib/mastering-storage';
+import { isMasteringKey, isReferenceKey } from '@/lib/mastering-storage';
 import { parseMasterEdit, isNoOpEdit } from '@/lib/master-edit';
 import { parseMasterJoin } from '@/lib/master-join';
+import { FEATURES } from '@/config/features';
+import type { MatchingMethod } from '@/types/masterJob';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -109,10 +111,69 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Reference-matched mastering (Phase 1B). All three fields optional;
+  // absent → loudnorm-only, existing behaviour. Feature-flagged: when the
+  // flag is off any use of these fields is refused with 501 rather than
+  // silently ignored, because a silent ignore would let the UI ship the
+  // feature "quietly" without ever being wired through.
+  const rawMethod = body?.matchingMethod;
+  const rawRefKey = typeof body?.referenceKey === 'string' ? body.referenceKey.replace(/^\/+/, '') : undefined;
+  const rawRefId = typeof body?.referenceId === 'string' ? body.referenceId : undefined;
+  const wantsMatchingFields = !!rawRefKey || rawMethod === 'matched' || rawMethod === 'both';
+  if (wantsMatchingFields && !FEATURES.ADMIN.MASTERING_REFERENCE_MATCHING) {
+    return NextResponse.json(
+      { success: false, error: 'Reference-matched mastering is not enabled.' },
+      { status: 501 }
+    );
+  }
+  let matchingMethod: MatchingMethod | undefined;
+  if (rawMethod !== undefined) {
+    if (rawMethod === 'loudnorm' || rawMethod === 'matched' || rawMethod === 'both') {
+      matchingMethod = rawMethod;
+    } else {
+      return NextResponse.json(
+        { success: false, error: `matchingMethod must be 'loudnorm', 'matched' or 'both'` },
+        { status: 400 }
+      );
+    }
+  }
+  let referenceKey: string | undefined;
+  let referenceId: string | undefined;
+  if (matchingMethod === 'matched' || matchingMethod === 'both') {
+    if (!rawRefKey) {
+      return NextResponse.json(
+        { success: false, error: 'referenceKey is required when matchingMethod is matched or both' },
+        { status: 400 }
+      );
+    }
+    if (!isReferenceKey(rawRefKey)) {
+      return NextResponse.json(
+        { success: false, error: 'referenceKey must live under audio/references/' },
+        { status: 400 }
+      );
+    }
+    referenceKey = rawRefKey;
+    referenceId = rawRefId; // may be undefined; matchedMasterKeyFor falls back to 'unknown'
+  } else if (rawRefKey) {
+    // referenceKey supplied without a matchingMethod that uses it — treat as
+    // bad request rather than silently ignoring, since the caller clearly
+    // intended matching. Prevents the class of "why isn't matching running?"
+    // debugging where the answer is "you forgot matchingMethod".
+    return NextResponse.json(
+      { success: false, error: 'matchingMethod must be set when referenceKey is supplied' },
+      { status: 400 }
+    );
+  }
+
   const jobId = randomUUID();
 
   try {
-    await new MasterJobRepository().create(jobId, { s3Key, target, edit, join });
+    await new MasterJobRepository().create(jobId, {
+      s3Key, target, edit, join,
+      referenceKey: referenceKey ?? null,
+      referenceId: referenceId ?? null,
+      matchingMethod: matchingMethod ?? null,
+    });
     const lambda = new LambdaClient({
       region: awsConfig.region,
       ...(awsConfig.credentials ? { credentials: awsConfig.credentials } : {}),
@@ -121,7 +182,12 @@ export async function POST(request: NextRequest) {
       new InvokeCommand({
         FunctionName: MASTER_WORKER_FUNCTION,
         InvocationType: 'Event', // async — returns at once
-        Payload: Buffer.from(JSON.stringify({ jobId, s3Key, target, edit, join })),
+        Payload: Buffer.from(JSON.stringify({
+          jobId, s3Key, target, edit, join,
+          // Only include reference-matching fields when actually requested —
+          // keeps existing loudnorm-only payloads byte-identical to before.
+          ...(referenceKey ? { referenceKey, referenceId, matchingMethod } : {}),
+        })),
       })
     );
     return NextResponse.json({ success: true, jobId, status: 'queued' }, { status: 202 });
