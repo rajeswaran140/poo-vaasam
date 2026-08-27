@@ -791,6 +791,135 @@ If you want to iterate on Phase 1A before proceeding:
 *Spike ran 2026-08-26 22:00-22:20 UTC on \`crowvault-ide-server\`. Test WAVs pulled from and deleted; reproduction script at \`spike/matchering-feasibility/reproduce.sh\`. Recommendation supersedes the plan doc's earlier "GO WITH CHANGES → Phase 1A only" — Phase 1A is complete; new recommendation is GO to Phase 1B with the sizing + sample-rate adjustments above.*`,
   },
   {
+    slug: 'music-lab-reference-mastering-guide',
+    title: 'Music Lab — reference-matched mastering (how to use it)',
+    category: 'Music Lab',
+    updatedAt: '2026-08-27T14:15:37Z',
+    body: `# Reference-matched mastering — how to use it
+
+> The Sound Engineering studio now optionally produces a **second master** alongside the loudnorm one, matched to a reference track from your bank. You pick per song whether to use it. This guide covers what changed vs the old flow, when to use it, and what to ignore.
+
+## Core difference
+
+The old tool produced one output (the loudnorm master). The new tool optionally produces a **second output** — the reference-matched master — and shows all three tracks (source · loudnorm master · matched master) in a 3-way A/B/C compare so you can decide with your ears.
+
+If you never touch the reference-picker, everything works exactly as before. Reference matching is opt-in per job.
+
+## Old vs new
+
+| Dimension | Previous (loudnorm only) | Now (with reference matching) |
+|---|---|---|
+| **Outputs per job** | 1 master WAV (+ MP3 + video) | 1 or 2 master WAVs — loudnorm always, matched when requested |
+| **What changes in the audio** | LUFS + true peak only. Tone untouched — "loudness only, never tone" | Matched output ALSO shifts tonal balance to resemble a reference. That's opinionated tonal shaping — the "never tone" claim doesn't hold for the C track |
+| **Compare player** | 2-way A/B (source vs master) | 3-way A/B/C (source vs loudnorm master vs matched master) — sample-aligned, loudness-matched |
+| **Failure mode** | Job succeeds or fails as one | Split: loudnorm can succeed while matching fails. You still get the loudnorm master + an inline error explaining why matching failed |
+| **Wall time (4-6 min song)** | ~20-30 s | ~45 s when matching is requested |
+| **Cost per master** | ~$0.001 | ~$0.009 when matching (still trivial) |
+| **Adobe hand-off** | Same advice: pass through untouched | Unchanged — you just choose which WAV (loudnorm or matched) to hand off |
+
+## What changed in your workflow
+
+**Before:** Upload → optional trim/edit → click Master → get 1 WAV + A/B compare.
+
+**Now:** Upload → *optionally* pick a reference + method (Matched only / Both) → click Master → get 1 or 2 WAVs + A/B or A/B/C compare.
+
+If you leave the reference-picker on "— none (loudnorm only) —", the workflow is byte-identical to before. Deliberately.
+
+## The non-obvious philosophical change
+
+The old tool's philosophy was: *"loudness only, never tone."* That was a specific, verifiable claim — the loudnorm master applies a single static gain, so \`LRA before === LRA after\` proves nothing compressed the file. The status table's "unchanged" LU marker was the visible evidence.
+
+The **matched output can't make that claim.** Matchering does EQ + gentle limiting to match the reference's tonal balance. That's opinionated shaping. So the B and C tracks are philosophically different animals:
+
+- **B (loudnorm master)** — your song, at the right loudness, nothing else touched.
+- **C (reference-matched)** — what if this song sat next to your reference's mastering.
+
+Neither is "the right answer." They're both real; the 3-way compare exists so you can decide honestly per song.
+
+## Which output for what
+
+- **Loudnorm master (B)** — the safe default. Adobe hand-off, YouTube upload, catalogue. What you've always done.
+- **Matched master (C)** — an alternative to compare-and-decide. If C sounds noticeably better than B on THIS song, use C. If not, ship B. The goal is per-song judgment, not auto-replacement.
+
+## Using it
+
+### 1. Seeding references
+
+Before you can pick a reference, one has to exist in the bank. There's no upload UI yet — for now, seed via:
+
+\`\`\`
+aws s3 cp <your-mastered-file.wav> \\
+  s3://tamil-web-media/audio/references/<short-id>.wav
+\`\`\`
+
+The picker dropdown lists the short-id (filename without \`.wav\`). Pick 3-5 of your best-mastered TamilAgaval releases as your starting reference bank — the goal is a **consistent TamilAgaval house sound**, not chasing other artists.
+
+### 2. Picking a reference in the studio
+
+After you upload a WAV to master, above the Master button:
+
+- **Reference dropdown** — populated on first click. Pick one, or leave on "none" for loudnorm-only.
+- **Method radio** (only appears when you've picked a reference):
+  - *Matched only* — produces just the matched output. Loudnorm still runs (that's how the master-worker works), but the picker downplays it.
+  - *Both* — produces the matched output alongside the loudnorm master. **This is what you want for A/B/C compare.**
+
+Click **Master**. The loudnorm master finishes first (usually 20-30 s), then the matched output arrives ~15-30 s later.
+
+### 3. Reading the progress
+
+Below the LUFS status table, when matching is requested, you'll see a small progress line:
+
+> **Reference-matched output:** matching… · [download matched WAV]
+
+Stages transition: *downloading → matching → uploading → completed*.
+
+If matching fails, the line shows *failed* with the error code + message. Common failures:
+
+| Code | What it means |
+|---|---|
+| \`bad-reference-key\` | The reference key you sent doesn't live under \`audio/references/\`. Shouldn't happen via the UI. |
+| \`invoke-failed\` | The master-worker couldn't Event-invoke the matchering-worker. Usually IAM (documented invariant). |
+| Anything else | Matchering itself errored — check the CloudWatch logs for \`tamilagaval-matchering-worker\`. |
+
+The loudnorm master succeeds independently, so a matching failure never costs you the run.
+
+### 4. Comparing with the 3-way player
+
+Once both outputs land, the compare player becomes 3-way: **A · Before (source) | B · After (master) | C · Reference-matched**.
+
+Same controls as before: Match loudness toggle, arrow keys move across A/B/C, sample-aligned playback. What sample-alignment gives you: the *same instant* of the song is comparing, either way. That's the honest test.
+
+## Reference bank guidance
+
+- **Use TamilAgaval-owned masters** as references. Legal + technical: your own mastering IS your target sound.
+- **Match reference to song class.** A romantic ballad reference doesn't work for a folk-percussion track. Curate 3-5 refs across the classes you regularly release.
+- **Keep the bank small.** Better to have 3 well-chosen references than 30 random ones.
+
+## What stayed the same
+
+- The S3 workspace layout (\`audio/mastering/*\`)
+- The download flow, the report, the Save-to-library, the video render
+- The Adobe hand-off advice — pass through untouched, no Auto-Match, no export gain
+- The streaming-readiness matrix (Spotify/YouTube/Apple LUFS targets)
+- The Save-clears-in-24h rule
+- LUFS / dBTP / LRA measurement + verdict copy
+
+Reference matching is an *addition*, not a rewrite.
+
+## Turning it off entirely
+
+If you ever want to hide the picker + method radio + progress line and revert to the pre-Phase-1B UI:
+
+- Flip \`FEATURES.ADMIN.MASTERING_REFERENCE_MATCHING\` from \`true\` to \`false\` in \`src/config/features.ts\`, ship it. Route immediately returns 501 for any matching request; existing loudnorm jobs unaffected.
+- The picker JSX, the mount fetch, and the enqueue body-spread are all three-way gated by this flag, so the UI reverts byte-identically to the old shape.
+
+## See also
+
+- **[Music Lab — mastering a song for loudness](#music-lab-mastering)** — the original how-to guide; still authoritative for the loudnorm path.
+- **[Music Lab — reference-matching plan & status](#music-lab-reference-mastering-plan)** — architecture record + PR-by-PR status if you want the whole design story.
+- **[Music Lab — reference-matching Phase 1A spike report](#music-lab-reference-mastering-spike-report)** — the empirical findings that decided this feature was worth building.`,
+  },
+  {
     slug: 'streaming-distribution-spotify',
     title: 'Spotify & streaming — get the catalogue discoverable',
     category: 'Distribution',
