@@ -11,6 +11,13 @@ export const FEATURES = {
     SEO_FIELDS: true,         // SEO title and description in content forms
     SETTINGS_PAGE: false,     // Settings page in admin sidebar
     MEDIA_LIBRARY: false,     // Media library page in admin sidebar
+    // Reference-matched mastering (Phase 1B). When false, the master start
+    // route rejects referenceKey/matchingMethod with 501 "not enabled" — no
+    // Python matchering-worker invocation happens. Flip to true only after
+    // Phase 1C blind-A/B listening validates the output on TamilAgaval material.
+    // Consumer: src/app/api/admin/music-lab/master/route.ts (gate at the top
+    // of the reference-matching validation block).
+    MASTERING_REFERENCE_MATCHING: false,
     // NOTE: Comments (/admin/comments) and Analytics (/admin/analytics) are LIVE
     // and always linked in the sidebar — they were never gated by a flag. The old
     // COMMENTS/ANALYTICS flags here were dead (zero consumers) and falsely read
