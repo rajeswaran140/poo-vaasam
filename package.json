@@ -26,7 +26,8 @@
     "build:measure-fn": "esbuild worker/measure-fn.ts --bundle --platform=node --target=node20 --format=cjs --outfile=measure-fn-dist/index.js --external:@aws-sdk/* --tsconfig=tsconfig.json",
     "deploy:measure-fn": "npm run build:measure-fn && cd measure-fn-dist && zip -q -r ../measure-fn.zip index.js && cd .. && aws lambda update-function-code --function-name tamilagaval-measure-fn --zip-file fileb://measure-fn.zip --region ca-central-1",
     "build:master-worker": "esbuild worker/master-worker.ts --bundle --platform=node --target=node20 --format=cjs --outfile=master-worker-dist/index.js --external:@aws-sdk/* --tsconfig=tsconfig.json",
-    "deploy:master-worker": "npm run build:master-worker && cd master-worker-dist && zip -q -r ../master-worker.zip index.js && cd .. && aws lambda update-function-code --function-name tamilagaval-master-worker --zip-file fileb://master-worker.zip --region ca-central-1"
+    "deploy:master-worker": "npm run build:master-worker && cd master-worker-dist && zip -q -r ../master-worker.zip index.js && cd .. && aws lambda update-function-code --function-name tamilagaval-master-worker --zip-file fileb://master-worker.zip --region ca-central-1",
+    "deploy:matchering-worker": "bash scripts/deploy-matchering-worker.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.91.1",
