@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { LyricDraftEditor } from '@/components/admin/LyricDraftEditor';
 
@@ -160,10 +160,14 @@ describe('LyricDraftEditor', () => {
   });
 
   describe('copy all', () => {
-    it('copies the whole draft to the clipboard on click', async () => {
-      const user = userEvent.setup();
+    // Using fireEvent rather than userEvent — v14's user.click adds
+    // hoverability + focus checks that were dropping the call silently on
+    // Tamil-value inputs in CI (the counterpart tests here that do pass
+    // use short ASCII values). fireEvent dispatches the click directly and
+    // is the same pattern LyricReadView.test.tsx uses successfully.
+    it('copies the whole draft to the clipboard on click', () => {
       setup({ value: 'கண்ணே\nஉன்னைக் காண' });
-      await user.click(screen.getByRole('button', { name: /copy all lyrics/i }));
+      fireEvent.click(screen.getByRole('button', { name: /copy all lyrics/i }));
       expect(writeText).toHaveBeenCalledWith('கண்ணே\nஉன்னைக் காண');
     });
 
@@ -173,12 +177,10 @@ describe('LyricDraftEditor', () => {
     });
 
     it('flashes a "Copied" state after a successful copy', async () => {
-      const user = userEvent.setup();
       setup({ value: 'x' });
-      const btn = screen.getByRole('button', { name: /copy all lyrics/i });
-      await user.click(btn);
-      // The button text switches from "Copy" to "Copied" for ~1.5s. userEvent
-      // resolves the promise chain from the async handler for us.
+      fireEvent.click(screen.getByRole('button', { name: /copy all lyrics/i }));
+      // The button text switches from "Copy" to "Copied" once the async
+      // writeText resolves. findByText polls until React re-renders.
       await screen.findByText(/copied/i);
     });
   });

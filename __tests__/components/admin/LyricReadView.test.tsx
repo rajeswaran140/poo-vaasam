@@ -90,7 +90,10 @@ it('locks body scroll while open and restores it on close', () => {
 
 describe('copy', () => {
   it('copies the whole lyric via the Copy-all button', () => {
-    render(<LyricReadView lyrics="alpha\nbeta" onClose={() => {}} />);
+    // A JS expression, NOT an attribute string — `"alpha\n"` inside a JSX
+    // attribute is 8 literal chars, not 7 including a newline. Handler
+    // writes back verbatim so the assertion must see the same string.
+    render(<LyricReadView lyrics={'alpha\nbeta'} onClose={() => {}} />);
     fireEvent.click(screen.getByLabelText(/copy all lyrics/i));
     expect(writeText).toHaveBeenCalledWith('alpha\nbeta');
   });
