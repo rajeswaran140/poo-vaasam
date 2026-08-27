@@ -234,3 +234,42 @@ describe('volume', () => {
     });
   });
 });
+
+describe('3-way A/B/C when a reference-matched output is supplied (Phase 1C UI)', () => {
+  const matchedProps = {
+    ...props,
+    matchedKey: 'audio/mastering/1_a_song-matched-raj-emo-01.wav',
+  };
+
+  it('fetches a play URL for source, master AND matched', async () => {
+    mockedFetch.mockResolvedValue(json({ success: true, url: 'https://s3/x' }));
+    render(<MasteringComparePlayer {...matchedProps} />);
+    await waitFor(() => expect(mockedFetch).toHaveBeenCalledTimes(3));
+    const urls = mockedFetch.mock.calls.map((c) => c[0] as string);
+    expect(urls.some((u) => u.includes(encodeURIComponent(matchedProps.matchedKey)))).toBe(true);
+  });
+
+  it('exposes a THIRD radio button (C · Reference-matched)', async () => {
+    mockedFetch.mockResolvedValue(json({ success: true, url: 'https://s3/x' }));
+    render(<MasteringComparePlayer {...matchedProps} />);
+    expect(screen.getByRole('radio', { name: /Reference-matched/i })).toBeInTheDocument();
+    // All three radios present.
+    expect(screen.getAllByRole('radio')).toHaveLength(3);
+  });
+
+  it('lets you switch to the matched track', async () => {
+    mockedFetch.mockResolvedValue(json({ success: true, url: 'https://s3/x' }));
+    render(<MasteringComparePlayer {...matchedProps} />);
+    const matched = screen.getByRole('radio', { name: /Reference-matched/i });
+    await act(async () => { fireEvent.click(matched); });
+    expect(matched).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: /After/ })).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('renders exactly A/B (no C) when matchedKey is absent — 2-way callers unaffected', async () => {
+    mockedFetch.mockResolvedValue(json({ success: true, url: 'https://s3/x' }));
+    render(<MasteringComparePlayer {...props} />);
+    expect(screen.getAllByRole('radio')).toHaveLength(2);
+    expect(screen.queryByRole('radio', { name: /Reference-matched/i })).not.toBeInTheDocument();
+  });
+});

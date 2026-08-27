@@ -1781,6 +1781,10 @@ export function MasteringStudio() {
               masterKey={job.masterKey}
               beforeLufs={job.beforeLufs}
               afterLufs={job.afterLufs}
+              // Phase 1C UI: 3-way A/B/C when the matchering-worker produced
+              // a matched output alongside the loudnorm master. Absent →
+              // player renders as it always has.
+              matchedKey={job.matchingStage === 'completed' ? job.matchedMasterKey : null}
             />
           )}
 

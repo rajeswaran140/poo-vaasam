@@ -25,10 +25,7 @@ import { adminFetch } from '@/lib/client-auth';
 import { matchGains, formatClock } from '@/lib/loudness-match';
 import { nextRadioIndex, radioTabIndex } from '@/lib/radiogroup-keys';
 
-type Which = 'source' | 'master';
-
-/** A/B order — also the arrow-key order, so the two can never drift apart. */
-const AB: readonly Which[] = ['source', 'master'];
+type Which = 'source' | 'master' | 'matched';
 
 interface Props {
   /** Optional: move to the previous/next master without leaving the player. */
@@ -38,6 +35,18 @@ interface Props {
   masterKey: string;
   beforeLufs: number | null;
   afterLufs: number | null;
+  /**
+   * Reference-matched output key (Phase 1C UI). When set, the player renders
+   * a THIRD track (C) that plays the matchering-worker output alongside the
+   * loudnorm master. Absent → the player is exactly 2-way as before.
+   *
+   * Loudness matching assumes the matched output sits at the same LUFS as the
+   * loudnorm master (matchering ships output at the reference's loudness, and
+   * TamilAgaval-owned references are already at target). Empirically holds
+   * to within ~0.2 LU per the Phase 1A spike; a follow-up can measure the
+   * matched output via measure-fn if the assumption slips.
+   */
+  matchedKey?: string | null;
 }
 
 async function playUrl(key: string): Promise<string> {
@@ -68,12 +77,20 @@ export function MasteringComparePlayer({
   afterLufs,
   onPrev,
   onNext,
+  matchedKey,
 }: Props) {
+  // Track order — also the arrow-key order, so the tracks can never drift
+  // apart. 2-way (source, master) when there is no matched output; 3-way
+  // (source, master, matched) when reference-matching produced one.
+  const ABC: readonly Which[] = matchedKey ? ['source', 'master', 'matched'] : ['source', 'master'];
+
   const srcEl = useRef<HTMLAudioElement | null>(null);
   const masEl = useRef<HTMLAudioElement | null>(null);
+  const matEl = useRef<HTMLAudioElement | null>(null);
   const ctx = useRef<AudioContext | null>(null);
   const srcGain = useRef<GainNode | null>(null);
   const masGain = useRef<GainNode | null>(null);
+  const matGain = useRef<GainNode | null>(null);
   // Shared OUTPUT stage, after the per-side gains. Volume must never be applied
   // to one side only — that is exactly what loudness-matching exists to prevent,
   // and an A/B where one leg is quieter is a broken comparison.
@@ -99,15 +116,19 @@ export function MasteringComparePlayer({
   const gains = matchGains(beforeLufs, afterLufs);
   const canMatch = gains !== null;
 
-  // Load both presigned URLs and wait for both to be seekable.
+  // Load presigned URLs and wait for readiness. Extra fetch happens only when
+  // matchedKey is set — 2-way callers pay for exactly what they used to.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [su, mu] = await Promise.all([playUrl(sourceKey), playUrl(masterKey)]);
+        const jobs: Promise<string>[] = [playUrl(sourceKey), playUrl(masterKey)];
+        if (matchedKey) jobs.push(playUrl(matchedKey));
+        const [su, mu, cu] = await Promise.all(jobs);
         if (cancelled) return;
         if (srcEl.current) srcEl.current.src = su;
         if (masEl.current) masEl.current.src = mu;
+        if (matchedKey && matEl.current && cu) matEl.current.src = cu;
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
       }
@@ -115,15 +136,18 @@ export function MasteringComparePlayer({
     return () => {
       cancelled = true;
     };
-  }, [sourceKey, masterKey]);
+  }, [sourceKey, masterKey, matchedKey]);
 
-  // Apply the audible gains for the current A/B + match state. Gains live on the
-  // Web Audio nodes; the media elements themselves always run at volume 1 so
-  // their clocks stay honest.
+  // Apply the audible gains for the current A/B/C + match state. Gains live on
+  // the Web Audio nodes; the media elements themselves always run at volume 1
+  // so their clocks stay honest. All non-active tracks are silenced.
   const applyGains = useCallback(() => {
     const active = matched && gains ? gains : { source: 1, master: 1 };
+    // Matched output uses the master's gain assumption (see Props docstring).
+    const matchedGain = active.master;
     if (srcGain.current) srcGain.current.gain.value = which === 'source' ? active.source : 0;
     if (masGain.current) masGain.current.gain.value = which === 'master' ? active.master : 0;
+    if (matGain.current) matGain.current.gain.value = which === 'matched' ? matchedGain : 0;
   }, [which, matched, gains]);
 
   useEffect(() => {
@@ -134,6 +158,10 @@ export function MasteringComparePlayer({
   // created from a user gesture or it starts suspended).
   const ensureGraph = useCallback(() => {
     if (ctx.current || !srcEl.current || !masEl.current) return;
+    // If the caller supplied a matched key, wait for its element to be mounted
+    // before building the graph so we can wire all three sources at once —
+    // rebuilding an AudioContext later is messy and refs-only.
+    if (matchedKey && !matEl.current) return;
     const AC: typeof AudioContext =
       window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     const c = new AC();
@@ -143,13 +171,18 @@ export function MasteringComparePlayer({
     og.gain.value = outputGain(volume);
     c.createMediaElementSource(srcEl.current).connect(sg).connect(og);
     c.createMediaElementSource(masEl.current).connect(mg).connect(og);
+    if (matchedKey && matEl.current) {
+      const cg = c.createGain();
+      c.createMediaElementSource(matEl.current).connect(cg).connect(og);
+      matGain.current = cg;
+    }
     og.connect(c.destination);
     ctx.current = c;
     srcGain.current = sg;
     masGain.current = mg;
     outGain.current = og;
     applyGains();
-  }, [applyGains, volume]);
+  }, [applyGains, volume, matchedKey]);
 
   // Volume rides the shared output stage, so it scales A and B identically and
   // cannot skew the comparison.
@@ -178,42 +211,51 @@ export function MasteringComparePlayer({
     if (playing) {
       srcEl.current.pause();
       masEl.current.pause();
+      matEl.current?.pause();
       setPlaying(false);
       return;
     }
     ensureGraph();
     await ctx.current?.resume();
-    // Re-sync the pair to the master's clock before playing so any drift from a
-    // previous pause is corrected — they must start from the same instant.
+    // Re-sync the group to the master's clock before playing so any drift from
+    // a previous pause is corrected — all tracks must start from the same
+    // instant for the A/B/C comparison to hold.
     const t = masEl.current.currentTime;
     srcEl.current.currentTime = t;
+    if (matEl.current) matEl.current.currentTime = t;
     applyGains();
     try {
-      await Promise.all([srcEl.current.play(), masEl.current.play()]);
+      const plays: Promise<void>[] = [srcEl.current.play(), masEl.current.play()];
+      if (matEl.current) plays.push(matEl.current.play());
+      await Promise.all(plays);
       setPlaying(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Playback was blocked.');
     }
   }, [playing, ensureGraph, applyGains]);
 
-  // Keep the pair aligned: master drives the clock, the source is nudged if it
-  // drifts more than 50 ms (network jitter on two independent streams).
+  // Keep the group aligned: master drives the clock, others are nudged if they
+  // drift more than 50 ms (network jitter on independent streams).
   const onMasterTime = useCallback(() => {
     const m = masEl.current;
     const s = srcEl.current;
+    const mt = matEl.current;
     if (!m || !s) return;
     setTime(m.currentTime);
     if (playing && Math.abs(s.currentTime - m.currentTime) > 0.05) s.currentTime = m.currentTime;
+    if (playing && mt && Math.abs(mt.currentTime - m.currentTime) > 0.05) mt.currentTime = m.currentTime;
   }, [playing]);
 
   useEffect(() => {
     if (masEl.current) masEl.current.playbackRate = rate;
     if (srcEl.current) srcEl.current.playbackRate = rate;
+    if (matEl.current) matEl.current.playbackRate = rate;
   }, [rate]);
 
   const seek = useCallback((to: number) => {
     if (masEl.current) masEl.current.currentTime = to;
     if (srcEl.current) srcEl.current.currentTime = to;
+    if (matEl.current) matEl.current.currentTime = to;
     setTime(to);
   }, []);
 
@@ -239,9 +281,11 @@ export function MasteringComparePlayer({
     // Snapshot the nodes now; refs may point elsewhere by cleanup time.
     const s = srcEl.current;
     const m = masEl.current;
+    const mt = matEl.current;
     return () => {
       s?.pause();
       m?.pause();
+      mt?.pause();
       void ctx.current?.close();
     };
   }, []);
@@ -308,6 +352,16 @@ export function MasteringComparePlayer({
         onTimeUpdate={onMasterTime}
         onEnded={onEnded}
       />
+      {matchedKey && (
+        <audio
+          ref={matEl}
+          preload="metadata"
+          crossOrigin="anonymous"
+          onLoadedData={onLoaded}
+          onLoadedMetadata={onLoaded}
+          onEnded={onEnded}
+        />
+      )}
 
       {error && (
         <div role="alert" className="mb-3 flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-800 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300">
@@ -430,20 +484,20 @@ export function MasteringComparePlayer({
           core gesture here, and it should not cost two tab stops and a space
           while you are trying to hear a difference. */}
       <div role="radiogroup" aria-label="Listen to" className="mt-3 flex gap-2">
-        {AB.map((w, i) => (
+        {ABC.map((w, i) => (
           <button
             key={w}
             ref={(el) => { abRefs.current[i] = el; }}
             type="button"
             role="radio"
             aria-checked={which === w}
-            tabIndex={radioTabIndex(i, AB.indexOf(which), AB.length)}
+            tabIndex={radioTabIndex(i, ABC.indexOf(which), ABC.length)}
             onClick={() => setWhich(w)}
             onKeyDown={(e) => {
-              const to = nextRadioIndex(e.key, AB.indexOf(which), AB.length);
+              const to = nextRadioIndex(e.key, ABC.indexOf(which), ABC.length);
               if (to === null) return; // not ours — let Tab/Space through
               e.preventDefault();
-              setWhich(AB[to]);
+              setWhich(ABC[to]);
               abRefs.current[to]?.focus();
             }}
             className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition ${
@@ -452,7 +506,11 @@ export function MasteringComparePlayer({
                 : 'border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'
             }`}
           >
-            {w === 'source' ? 'A · Before (source)' : 'B · After (master)'}
+            {w === 'source'
+              ? 'A · Before (source)'
+              : w === 'master'
+                ? 'B · After (master)'
+                : 'C · Reference-matched'}
           </button>
         ))}
       </div>
