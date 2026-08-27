@@ -11,6 +11,7 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import {
   SearchCheck, MessageCircleQuestion, Copy, Check, Download,
   Save, FolderOpen, History, Plus, ChevronDown, CheckCircle2,
+  BookOpen,
 } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 import { pollJob } from '@/lib/poll-job';
@@ -26,6 +27,7 @@ const ISSUE_RANK: Record<IssueType, number> = {
 import { feedbackProgress } from '@/lib/lyric-draft-feedback';
 import { LyricDraftEditor } from '@/components/admin/LyricDraftEditor';
 import { LyricAssistPanel } from '@/components/admin/LyricAssistPanel';
+import { LyricReadView } from '@/components/admin/LyricReadView';
 import { wordAt } from '@/lib/lyric-word-inspect';
 import type { LexiconWord } from '@/types/lexicon';
 import {
@@ -108,6 +110,9 @@ export function LyricCriticForm() {
   const [autosaving, setAutosaving] = useState(false);
   const [autosaveFailed, setAutosaveFailed] = useState(false);
   const [restorable, setRestorable] = useState<string | null>(null);
+  // Read mode — full-viewport, non-editable view of the current lyric. See
+  // LyricReadView. Toggled from the button bar; Escape or backdrop closes.
+  const [reading, setReading] = useState(false);
 
   // One-click "add to lexicon" on word ideas — grow the personal atlas from drafting.
   const [addedWords, setAddedWords] = useState<Set<string>>(new Set());
@@ -410,6 +415,15 @@ export function LyricCriticForm() {
             <Plus className="h-4 w-4" /> New
           </button>
         )}
+        <button
+          type="button"
+          onClick={() => setReading(true)}
+          disabled={!lyrics.trim()}
+          className="flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+          title="Read the current lyric full-screen — no chrome, no editing"
+        >
+          <BookOpen className="h-4 w-4" /> Read
+        </button>
         <button
           type="button"
           onClick={toggleDrafts}
@@ -760,6 +774,13 @@ export function LyricCriticForm() {
         )}
       </div>
     </div>
+    {reading && (
+      <LyricReadView
+        lyrics={lyrics}
+        title={title || undefined}
+        onClose={() => setReading(false)}
+      />
+    )}
     </div>
   );
 }
