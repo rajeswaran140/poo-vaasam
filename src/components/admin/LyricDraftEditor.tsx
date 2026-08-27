@@ -106,9 +106,11 @@ export function LyricDraftEditor({
 
   // Expanded mode wraps the whole editor in a fixed overlay. Same DOM tree,
   // so the ReactTransliterate context + suggestion popup + autosave state
-  // all persist across the toggle.
+  // all persist across the toggle. z-50 puts us above the admin sidebar
+  // (also z-50, but earlier in DOM order) and the sticky admin header (z-40)
+  // — anything lower left the sidebar visibly on top of the "expanded" view.
   const wrapperClass = expanded
-    ? 'fixed inset-0 z-40 flex flex-col overflow-hidden bg-white p-6 sm:p-10 dark:bg-gray-950'
+    ? 'fixed inset-0 z-50 flex flex-col overflow-hidden bg-white p-6 sm:p-10 dark:bg-gray-950'
     : '';
 
   return (
