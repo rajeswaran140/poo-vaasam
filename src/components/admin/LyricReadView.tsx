@@ -17,8 +17,8 @@
  * rendering; falls through to the shell's font stack for mixed content.
  */
 
-import { useEffect, useRef } from 'react';
-import { X, Printer } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { X, Printer, Copy, Check } from 'lucide-react';
 
 interface LyricReadViewProps {
   lyrics: string;
@@ -26,8 +26,37 @@ interface LyricReadViewProps {
   onClose: () => void;
 }
 
+// `null` = nothing recently copied, `'all'` = the whole lyric, a number =
+// the line index. Read view supports both because a Suno prompt wants the
+// whole block, while iterating with an AI reviewer usually wants one line.
+type CopyTarget = null | 'all' | number;
+
 export function LyricReadView({ lyrics, title, onClose }: LyricReadViewProps) {
   const closeRef = useRef<HTMLButtonElement | null>(null);
+  const [copied, setCopied] = useState<CopyTarget>(null);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lines = useMemo(() => lyrics.split('\n'), [lyrics]);
+
+  async function copy(text: string, target: CopyTarget) {
+    if (!text.trim()) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(target);
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(null), 1500);
+    } catch {
+      // Older browsers / locked-down policies — surface it rather than
+      // silently swallowing so the poet notices and can retry.
+      setCopied(null);
+    }
+  }
+
+  useEffect(
+    () => () => {
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    },
+    []
+  );
 
   // Focus the close button on open so Escape/Enter/Space work without an
   // extra tab, and screen-readers announce the modal boundary.
@@ -75,6 +104,25 @@ export function LyricReadView({ lyrics, title, onClose }: LyricReadViewProps) {
       <div className="fixed right-4 top-4 flex items-center gap-2 print:hidden">
         <button
           type="button"
+          onClick={() => copy(lyrics, 'all')}
+          disabled={!lyrics.trim()}
+          className="flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+          aria-label="Copy all lyrics"
+          aria-live="polite"
+          title="Copy the whole lyric — good for a Suno prompt"
+        >
+          {copied === 'all' ? (
+            <>
+              <Check className="h-3.5 w-3.5 text-green-600 dark:text-green-400" aria-hidden="true" /> Copied
+            </>
+          ) : (
+            <>
+              <Copy className="h-3.5 w-3.5" aria-hidden="true" /> Copy all
+            </>
+          )}
+        </button>
+        <button
+          type="button"
           onClick={() => window.print()}
           className="flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
           aria-label="Print"
@@ -101,14 +149,42 @@ export function LyricReadView({ lyrics, title, onClose }: LyricReadViewProps) {
             {title}
           </h1>
         )}
-        <pre
-          // pre + whitespace-pre-wrap: stanza breaks + indentation preserved.
-          // Tabular-nums prevents wobble on any numeric interjection.
-          className="whitespace-pre-wrap font-tamil text-lg leading-relaxed text-gray-900 dark:text-gray-100 print:text-black"
-          style={{ fontFamily: 'inherit' }}
-        >
-          {lyrics}
-        </pre>
+        {/* Per-line rendering so each non-blank line gets its own hover
+            copy affordance — good for "just this line, please" iterations
+            with an AI reviewer. Blank source lines render as an nbsp so a
+            stanza break still occupies vertical space. Wrapping is via
+            whitespace-pre-wrap on each row, so a long line still wraps to
+            multiple visual rows without losing its copy target. */}
+        <div className="font-tamil text-lg leading-relaxed text-gray-900 dark:text-gray-100 print:text-black">
+          {lines.map((line, i) => {
+            const hasText = line.trim().length > 0;
+            return (
+              <div
+                key={i}
+                data-testid="lyric-line"
+                className="group relative -mx-2 flex items-start rounded px-2 hover:bg-gray-100/60 dark:hover:bg-gray-800/40"
+                style={{ fontFamily: 'inherit' }}
+              >
+                <span className="whitespace-pre-wrap">{line || ' '}</span>
+                {hasText && (
+                  <button
+                    type="button"
+                    onClick={() => copy(line, i)}
+                    aria-label={`Copy line ${i + 1}`}
+                    title="Copy this line"
+                    className="ml-auto flex-shrink-0 self-center pl-3 text-gray-400 opacity-0 transition-opacity hover:text-gray-700 focus:opacity-100 group-hover:opacity-100 dark:text-gray-500 dark:hover:text-gray-200 print:hidden"
+                  >
+                    {copied === i ? (
+                      <Check className="h-4 w-4 text-green-600 dark:text-green-400" aria-hidden="true" />
+                    ) : (
+                      <Copy className="h-4 w-4" aria-hidden="true" />
+                    )}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
