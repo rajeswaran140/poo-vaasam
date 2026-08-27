@@ -342,16 +342,64 @@ It is also a **0.68 LU change you cannot hear** — which is the honest headline
   },
   {
     slug: 'music-lab-reference-mastering-plan',
-    title: 'Music Lab — reference-matching feasibility assessment (revised, PROPOSAL)',
+    title: 'Music Lab — reference-matching plan & status (Phase 1B done · 1C in flight)',
     category: 'Music Lab',
-    updatedAt: '2026-08-26T21:24:24Z',
-    body: `# Reference-matching feasibility assessment
+    updatedAt: '2026-08-27T12:23:08Z',
+    body: `# Reference-matching plan & status
 
-> **Status: PROPOSAL — Phase 1A spike, no production code touched.** This replaces an earlier draft that had wrong license info + over-broad scope. Recommendation at the bottom is **GO WITH CHANGES → Phase 1A only** (spike first, decide on Phase 1B after evidence).
+> **Status as of 2026-08-27: Phase 1B DONE + validated end-to-end. Phase 1C UI in flight.** This doc was originally a PROPOSAL for review; the plan below is preserved as the durable design record, with a live-status section up top and per-item ✓/⧗ markers throughout.
 
-> **Two corrections from the earlier draft up front:**
-> - **Matchering is GPL-3.0-or-later, NOT MIT.** Verified against PyPI. Isolation strategy is mandatory (see §4).
-> - **Do not claim fair-use for storing commercial reference tracks.** Phase 1 uses TamilAgaval-owned masters only.
+## What's live in production right now
+
+| Component | State | PR |
+|---|---|---|
+| Matchering container Lambda (\`tamilagaval-matchering-worker\`) | ✅ deployed (ca-central-1, Image, 4096 MB / 900 s / 4096 MB ephemeral) | #225, #226 |
+| ECR repo + IAM role (least-privilege prefix-scoped) | ✅ live | (bootstrap, not a PR) |
+| S3 bucket policy extended to cover \`audio/references/*\` | ✅ live | (bootstrap) |
+| master-worker Event-invokes matchering-worker after loudnorm | ✅ live | #227 |
+| \`MASTERJOB#\` schema extended (matching* fields) | ✅ live | #227 |
+| master-worker's role has \`lambda:InvokeFunction\` on matchering-worker | ✅ live (caught by E2E, doc'd 2026-08-27) | #230 |
+| \`POST /api/admin/music-lab/master\` accepts referenceKey/matchingMethod | ✅ live | #228 |
+| Feature flag \`MASTERING_REFERENCE_MATCHING\` | ✅ ON | #229 |
+| \`GET /api/admin/mastering/references\` list endpoint | ✅ live | #231 |
+| Mastering studio UI — reference picker + method radio + matchingStage progress | ⧗ PR open | #232 |
+| 3-way A/B/C compare player | ⧗ pending (Phase 1C PR 3) | — |
+| Reference-bank CRUD (upload/delete/metadata) | ⧗ deferred — manual \`aws s3 cp\` seeding used for now | — |
+| Blind-A/B listening validation on 10 tracks | ⧗ pending (Raj-driven subjective step) | — |
+
+## End-to-end measured (2026-08-27)
+
+Real Lambda invocation with a source WAV + seeded reference \`audio/references/test-ref-v1.wav\`:
+
+- Wall time (Event-invoke → both outputs land): **~45 s**
+- matchering.process alone: **5.8 s**
+- Peak memory: 1.7 GB (of 4096 MB allocated)
+- Loudnorm hit target: **-14.0 LUFS exact**
+- Matched output landed at \`audio/mastering/<stem>-matched-<referenceId>.wav\`
+- MASTERJOB shows \`status=done\` + \`matchingStage=completed\` + \`matchingStats\` populated
+
+## Two corrections from the original proposal draft (still important)
+
+- **Matchering is GPL-3.0-or-later, NOT MIT.** Verified against PyPI. Isolation strategy is mandatory (see §4).
+- **Do not claim fair-use for storing commercial reference tracks.** Phase 1 uses TamilAgaval-owned masters only.
+
+## Adjustments the Phase 1A spike + 1B execution surfaced
+
+- **Lambda memory 4096 MB, not the originally-hypothesized 3008 MB.** Measured peak was 3.14 GB on a 9:36 track; 3008 would OOM.
+- **\`matchering.Config(internal_sample_rate=48000)\` fixes the 44.1 kHz output default.** Handler passes this unconditionally so parity with the 48 kHz TamilAgaval pipeline is preserved. No resample stage needed.
+- **Base image Python 3.12** (not 3.10) — matches the Phase 1A spike environment; NumPy 2.5.2 pinning requires it.
+- **Image size 1.56 GB** (heavier than the ~500 MB estimate); still well under Lambda's 10 GB cap.
+- **INIT timeout of 10 s hit on first invocation** (Lambda handles it gracefully by restarting init in the invocation phase — non-fatal).
+
+---
+
+_The full original design plan is preserved below as the durable architecture record._
+
+## 1. Current architecture discovered
+
+| Component | State |
+|---|---|
+| **Master-worker Lambda** | \`tamilagaval-master-worker\` · nodejs20.x · **3008 MB · 900s · 4096 MB ephemeral · Zip package** · has ffmpeg Lambda layer (~30 MB) |
 
 ## 1. Current architecture discovered
 
