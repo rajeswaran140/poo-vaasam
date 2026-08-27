@@ -400,28 +400,29 @@ export function MasteringStudio() {
   }, []);
 
   /**
-   * Mount-only fetch of the reference bank (Phase 1C UI). Populates the
-   * reference-picker dropdown. Skips entirely when the feature flag is off, so
-   * a page load costs no extra request until reference-matching is enabled.
-   * Errors don't block anything — worst case the picker shows an empty list.
+   * Lazy fetch of the reference bank (Phase 1C UI). Fires the first time the
+   * admin focuses / clicks the reference-picker dropdown — NOT on mount.
+   * A mount-time fetch adds an adminFetch call before any user action, which
+   * breaks the many pre-existing tests that assert exact call counts
+   * ("reject a non-WAV WITHOUT calling the API") and positional URLs ("first
+   * call is /upload"). Fire-on-focus keeps those assertions correct AND
+   * avoids a wasted request when the admin never uses reference-matching.
    */
-  useEffect(() => {
+  const referencesRequested = useRef(false);
+  const fetchReferencesIfNeeded = useCallback(() => {
+    if (referencesRequested.current) return;
     if (!FEATURES.ADMIN.MASTERING_REFERENCE_MATCHING) return;
-    let cancelled = false;
+    referencesRequested.current = true;
     setReferencesLoading(true);
     setReferencesError(null);
-    // Wrap in Promise.resolve so a test-fixture adminFetch that returns
+    // Promise.resolve wrapper so a test-fixture adminFetch that returns
     // undefined (unmocked route) becomes a resolved undefined instead of
-    // throwing 'Cannot read properties of undefined (reading then)' at mount.
-    // Production adminFetch always returns a Promise; this is test-safety only.
+    // throwing 'Cannot read properties of undefined (reading then)'.
+    // Production adminFetch always returns a Promise.
     Promise.resolve(adminFetch('/api/admin/mastering/references'))
       .then(async (res) => {
-        if (cancelled) return;
-        // Guard against the test-fixture undefined case above — nothing to
-        // parse; leave the empty-list default in place.
         if (!res) return;
         const body = await res.json();
-        if (cancelled) return;
         if (!res.ok || !body.success) {
           setReferencesError(body.error || `Could not load references (HTTP ${res.status}).`);
           setReferences([]);
@@ -430,13 +431,11 @@ export function MasteringStudio() {
         }
       })
       .catch((err: unknown) => {
-        if (cancelled) return;
         setReferencesError(err instanceof Error ? err.message : String(err));
       })
       .finally(() => {
-        if (!cancelled) setReferencesLoading(false);
+        setReferencesLoading(false);
       });
-    return () => { cancelled = true; };
   }, []);
 
   const reset = useCallback(() => {
@@ -1467,7 +1466,9 @@ export function MasteringStudio() {
               <select
                 value={selectedReferenceKey ?? ''}
                 onChange={(e) => setSelectedReferenceKey(e.target.value || null)}
-                disabled={referencesLoading || references.length === 0}
+                onFocus={fetchReferencesIfNeeded}
+                onMouseDown={fetchReferencesIfNeeded}
+                disabled={referencesLoading}
                 className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
               >
                 <option value="">— none (loudnorm only) —</option>
@@ -1504,7 +1505,7 @@ export function MasteringStudio() {
             {referencesLoading && (
               <span className="text-xs text-gray-500">Loading references…</span>
             )}
-            {!referencesLoading && references.length === 0 && !referencesError && (
+            {referencesRequested.current && !referencesLoading && references.length === 0 && !referencesError && (
               <span className="text-xs text-gray-500">
                 No references yet. Seed via <code>aws s3 cp &lt;file.wav&gt; s3://tamil-web-media/audio/references/</code>.
               </span>
