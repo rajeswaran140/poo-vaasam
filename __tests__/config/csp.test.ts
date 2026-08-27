@@ -70,6 +70,11 @@ describe('Content Security Policy', () => {
         ['Cognito + S3 presigned uploads', 'https://*.amazonaws.com'],
         ['CloudFront media distro (MEDIA_BASE_URL)', 'https://d2cdoh43143xxa.cloudfront.net'],
         ['YouTube thumbnail preflight (video-thumbnails.ts)', 'https://i.ytimg.com'],
+        // Restored 2026-08-27 after the 2026-08-21 tightening broke Tamil typing
+        // in the compose forms. react-transliterate posts to this endpoint for
+        // English→Tamil word suggestions; blocking it silently disables the
+        // suggestion popup and makes the "English → Tamil" mode dead.
+        ['react-transliterate English→Tamil suggestions', 'https://inputtools.google.com'],
       ])('allows %s', (_purpose, host) => {
         expect(directive(prod, 'connect-src')).toContain(host);
       });
