@@ -91,6 +91,12 @@ function routeDefaults(job: Record<string, unknown> = doneJob(), uploadKey = 'au
     if (u === '/api/admin/music-lab/masters') {
       return Promise.resolve(json({ success: true, masters: [] }));
     }
+    if (u === '/api/admin/mastering/references') {
+      // Reference-matching bank (Phase 1C UI). Default to empty so tests that
+      // don't specifically exercise the picker aren't affected — a per-test
+      // mockResolvedValueOnce can override with a populated list.
+      return Promise.resolve(json({ success: true, references: [], count: 0 }));
+    }
     return Promise.resolve(json(job));
   });
 }
