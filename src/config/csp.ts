@@ -66,6 +66,17 @@ export function buildContentSecurityPolicy(
     //                                                  fronting tamil-web-media
     //   i.ytimg.com                                    thumbnail preflight
     //                                                  (video-thumbnails.ts)
+    //   inputtools.google.com                          react-transliterate's
+    //                                                  English→Tamil suggestion
+    //                                                  API (LyricDraftEditor,
+    //                                                  TamilInput/-textarea,
+    //                                                  lib/transliterate.ts).
+    //                                                  Missed in the 2026-08-21
+    //                                                  tightening — restored
+    //                                                  2026-08-27 after Raj
+    //                                                  reported Tamil typing
+    //                                                  had stopped working
+    //                                                  in the compose forms.
     // If a legitimate new destination appears (Sentry, Datadog RUM, a new
     // API…), add it here — the failure will be a browser CSP violation, not
     // silent success.
@@ -74,7 +85,8 @@ export function buildContentSecurityPolicy(
       'https://www.googletagmanager.com ' +
       'https://*.amazonaws.com ' +
       'https://d2cdoh43143xxa.cloudfront.net ' +
-      'https://i.ytimg.com',
+      'https://i.ytimg.com ' +
+      'https://inputtools.google.com',
     "media-src 'self' blob: https:",
     "frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com",
     'upgrade-insecure-requests',
