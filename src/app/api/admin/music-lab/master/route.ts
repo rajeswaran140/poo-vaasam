@@ -170,9 +170,10 @@ export async function POST(request: NextRequest) {
   try {
     await new MasterJobRepository().create(jobId, {
       s3Key, target, edit, join,
-      referenceKey: referenceKey ?? null,
-      referenceId: referenceId ?? null,
-      matchingMethod: matchingMethod ?? null,
+      // Only include matching fields when actually requested — keeps the
+      // create() call shape byte-identical for loudnorm-only jobs, and lets
+      // the repository default-null-fill for absent fields.
+      ...(referenceKey ? { referenceKey, referenceId: referenceId ?? null, matchingMethod: matchingMethod ?? null } : {}),
     });
     const lambda = new LambdaClient({
       region: awsConfig.region,

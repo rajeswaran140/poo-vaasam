@@ -52,10 +52,12 @@ describe('feature-flag gate — MASTERING_REFERENCE_MATCHING off', () => {
     const res = await invoke({ s3Key: 'audio/mastering/song.wav' });
     expect(res.status).toBe(202);
     expect(createMock).toHaveBeenCalledTimes(1);
-    // Reference-matching fields ARE persisted as null, but no matching params leak into the Lambda payload.
+    // The create() call shape stays byte-identical to before: matching fields
+    // are only spread in when actually requested. Repository defaults-null-fill
+    // absent fields, so the DB row still shows null for the matching columns.
     const [, input] = createMock.mock.calls[0];
-    expect(input.referenceKey).toBe(null);
-    expect(input.matchingMethod).toBe(null);
+    expect(input).not.toHaveProperty('referenceKey');
+    expect(input).not.toHaveProperty('matchingMethod');
     const payload = JSON.parse(Buffer.from(lambdaSend.mock.calls[0][0].args.Payload).toString());
     expect(payload).not.toHaveProperty('referenceKey');
     expect(payload).not.toHaveProperty('matchingMethod');
