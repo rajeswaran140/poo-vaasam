@@ -63,7 +63,8 @@ interface AnalysisResult {
 }
 import { mp3PeakVerdict } from '@/lib/master-mp3';
 import type { MasterEdit } from '@/lib/master-edit';
-import type { MasterJob } from '@/types/masterJob';
+import type { MasterJob, MatchingMethod } from '@/types/masterJob';
+import { FEATURES } from '@/config/features';
 
 /** Where the platforms normalise playback. */
 const TARGETS = [
@@ -233,6 +234,16 @@ export function MasteringStudio() {
   const [partBStartSec, setPartBStartSec] = useState(0);
   const [job, setJob] = useState<MasterJob | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
+
+  // Reference-matched mastering (Phase 1C UI). All three pieces of state are
+  // gated on FEATURES.ADMIN.MASTERING_REFERENCE_MATCHING at the render site;
+  // when the flag is off the picker never shows, the fetch never fires, and
+  // the enqueue body stays byte-identical to the loudnorm-only shape.
+  const [references, setReferences] = useState<{ id: string; key: string }[]>([]);
+  const [referencesLoading, setReferencesLoading] = useState(false);
+  const [referencesError, setReferencesError] = useState<string | null>(null);
+  const [selectedReferenceKey, setSelectedReferenceKey] = useState<string | null>(null);
+  const [matchingMethod, setMatchingMethod] = useState<Exclude<MatchingMethod, 'loudnorm'>>('both');
   // Optional human title for the export. Storage stays UUID-based; this only
   // shapes the download filename and the saved report. Empty ⇒ de-noised default.
   const [masterName, setMasterName] = useState('');
@@ -386,6 +397,45 @@ export function MasteringStudio() {
     };
     // Mount-only: re-running this on `watch` identity change would re-attach.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * Lazy fetch of the reference bank (Phase 1C UI). Fires the first time the
+   * admin focuses / clicks the reference-picker dropdown — NOT on mount.
+   * A mount-time fetch adds an adminFetch call before any user action, which
+   * breaks the many pre-existing tests that assert exact call counts
+   * ("reject a non-WAV WITHOUT calling the API") and positional URLs ("first
+   * call is /upload"). Fire-on-focus keeps those assertions correct AND
+   * avoids a wasted request when the admin never uses reference-matching.
+   */
+  const referencesRequested = useRef(false);
+  const fetchReferencesIfNeeded = useCallback(() => {
+    if (referencesRequested.current) return;
+    if (!FEATURES.ADMIN.MASTERING_REFERENCE_MATCHING) return;
+    referencesRequested.current = true;
+    setReferencesLoading(true);
+    setReferencesError(null);
+    // Promise.resolve wrapper so a test-fixture adminFetch that returns
+    // undefined (unmocked route) becomes a resolved undefined instead of
+    // throwing 'Cannot read properties of undefined (reading then)'.
+    // Production adminFetch always returns a Promise.
+    Promise.resolve(adminFetch('/api/admin/mastering/references'))
+      .then(async (res) => {
+        if (!res) return;
+        const body = await res.json();
+        if (!res.ok || !body.success) {
+          setReferencesError(body.error || `Could not load references (HTTP ${res.status}).`);
+          setReferences([]);
+        } else {
+          setReferences(body.references ?? []);
+        }
+      })
+      .catch((err: unknown) => {
+        setReferencesError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        setReferencesLoading(false);
+      });
   }, []);
 
   const reset = useCallback(() => {
@@ -673,6 +723,19 @@ export function MasteringStudio() {
                 }),
               }
             : {}),
+          // Reference-matched mastering (Phase 1C UI). Spread only when a
+          // reference is selected; loudnorm-only enqueues stay byte-identical
+          // to before. The route rejects a referenceKey without a valid
+          // matchingMethod, so both fields go out together.
+          ...(FEATURES.ADMIN.MASTERING_REFERENCE_MATCHING && selectedReferenceKey
+            ? {
+                referenceKey: selectedReferenceKey,
+                referenceId: selectedReferenceKey
+                  .replace(/^audio\/references\//, '')
+                  .replace(/\.wav$/i, ''),
+                matchingMethod,
+              }
+            : {}),
         }),
       });
       const body = await res.json();
@@ -688,7 +751,7 @@ export function MasteringStudio() {
       setError(err instanceof Error ? err.message : String(err));
       setStage('ready');
     }
-  }, [sourceKey, source, target, edit, partB, overlapSec, partBStartSec, seedJoin, watch]);
+  }, [sourceKey, source, target, edit, partB, overlapSec, partBStartSec, seedJoin, watch, selectedReferenceKey, matchingMethod]);
 
   /**
    * Presign + open one workspace WAV. Shared by the result panel and the saved
@@ -1394,6 +1457,65 @@ export function MasteringStudio() {
           </div>
         )}
 
+        {/* Reference-matched mastering picker (Phase 1C UI). Only rendered
+            when the feature flag is on AND we are not mid-master. */}
+        {FEATURES.ADMIN.MASTERING_REFERENCE_MATCHING && stage !== 'mastering' && (
+          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-gray-50/50 p-3 text-sm dark:border-gray-800 dark:bg-gray-900/40">
+            <label className="flex items-center gap-2 text-gray-700 dark:text-gray-200">
+              <span className="font-medium">Reference:</span>
+              <select
+                value={selectedReferenceKey ?? ''}
+                onChange={(e) => setSelectedReferenceKey(e.target.value || null)}
+                onFocus={fetchReferencesIfNeeded}
+                onMouseDown={fetchReferencesIfNeeded}
+                disabled={referencesLoading}
+                className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
+              >
+                <option value="">— none (loudnorm only) —</option>
+                {references.map((r) => (
+                  <option key={r.key} value={r.key}>{r.id}</option>
+                ))}
+              </select>
+            </label>
+            {selectedReferenceKey && (
+              <fieldset className="flex items-center gap-3">
+                <legend className="sr-only">Matching method</legend>
+                <label className="flex items-center gap-1">
+                  <input
+                    type="radio"
+                    name="matching-method"
+                    value="matched"
+                    checked={matchingMethod === 'matched'}
+                    onChange={() => setMatchingMethod('matched')}
+                  />
+                  Matched only
+                </label>
+                <label className="flex items-center gap-1">
+                  <input
+                    type="radio"
+                    name="matching-method"
+                    value="both"
+                    checked={matchingMethod === 'both'}
+                    onChange={() => setMatchingMethod('both')}
+                  />
+                  Both (loudnorm + matched)
+                </label>
+              </fieldset>
+            )}
+            {referencesLoading && (
+              <span className="text-xs text-gray-500">Loading references…</span>
+            )}
+            {referencesRequested.current && !referencesLoading && references.length === 0 && !referencesError && (
+              <span className="text-xs text-gray-500">
+                No references yet. Seed via <code>aws s3 cp &lt;file.wav&gt; s3://tamil-web-media/audio/references/</code>.
+              </span>
+            )}
+            {referencesError && (
+              <span className="text-xs text-red-600 dark:text-red-400">Error loading references: {referencesError}</span>
+            )}
+          </div>
+        )}
+
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
             type="button"
@@ -1546,6 +1668,45 @@ export function MasteringStudio() {
               {/* Same string as the saved .txt — otherwise a master whose length
                   nobody can account for is explained on screen and nowhere else. */}
               <span>{joinLine(job)}</span>
+            </p>
+          )}
+
+          {/* Reference-matched mastering progress (Phase 1C UI). Rendered only
+              when the job carries a matchingStage — loudnorm-only jobs never
+              set it, so this stays invisible for the legacy path. Falls back
+              to text for stages the Python worker patches; a completed match
+              shows the matched output key so the admin can grab it while the
+              3-way A/B player (Phase 1C PR 3) is still being built. */}
+          {job.matchingStage && (
+            <p className="mt-3 flex items-start gap-2 text-xs text-gray-600 dark:text-gray-300">
+              <SlidersHorizontal className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span>
+                Reference-matched output:{' '}
+                <strong className="tabular-nums">
+                  {job.matchingStage === 'completed'
+                    ? 'ready'
+                    : job.matchingStage === 'failed'
+                      ? 'failed'
+                      : `${job.matchingStage}…`}
+                </strong>
+                {job.matchedMasterKey && (
+                  <>
+                    {' · '}
+                    <button
+                      type="button"
+                      onClick={() => downloadKey(job.matchedMasterKey!, masterName || 'reference-matched', target)}
+                      className="text-orange-700 underline hover:text-orange-800 dark:text-orange-400"
+                    >
+                      download matched WAV
+                    </button>
+                  </>
+                )}
+                {job.matchingError && (
+                  <span className="ml-1 text-red-600 dark:text-red-400">
+                    ({job.matchingError.code}: {job.matchingError.message})
+                  </span>
+                )}
+              </span>
             </p>
           )}
 
