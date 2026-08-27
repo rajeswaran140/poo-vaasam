@@ -11,6 +11,50 @@ import type { MasterJoin } from '@/lib/master-join';
 
 export type MasterJobStatus = 'processing' | 'done' | 'error';
 
+/**
+ * Reference-matching progress (Phase 1B). The Python matchering-worker patches
+ * this as it runs so the UI can show a live status alongside the loudnorm
+ * master's `status`. Null on jobs written before matching existed, and on
+ * every job that did not request reference-matching.
+ */
+export type MatchingStage =
+  | 'queued'
+  | 'downloading'
+  | 'analyzing'
+  | 'matching'
+  | 'normalizing'
+  | 'writing'
+  | 'uploading'
+  | 'completed'
+  | 'failed';
+
+/**
+ * What method(s) of mastering the job requested. Defaults to 'loudnorm' —
+ * jobs written before this field existed are implicitly loudnorm-only.
+ */
+export type MatchingMethod = 'loudnorm' | 'matched' | 'both';
+
+/**
+ * Structured measurements the matchering-worker records on success. `engine` +
+ * `engineVersion` + `referenceId` are always populated; per-metric LUFS/TP/LRA
+ * fields are optional and populated as the worker measures them (currently
+ * only elapsedSec is filled — full EBU R128 needs ffmpeg which the Python
+ * worker doesn't ship; measurement happens in the existing measure-fn).
+ */
+export interface MatchingStats {
+  engine: 'matchering';
+  engineVersion: string;
+  referenceId: string;
+  elapsedSec?: number;
+  inputLufs?: number;
+  referenceLufs?: number;
+  outputLufs?: number;
+  inputTruePeakDbtp?: number;
+  outputTruePeakDbtp?: number;
+  inputLra?: number;
+  outputLra?: number;
+}
+
 export interface MasterJob {
   id: string;
   status: MasterJobStatus;
@@ -136,4 +180,25 @@ export interface MasterJob {
   /** The cover the video was built from, kept so a re-render is reproducible. */
   coverKey: string | null;
   error: { code: string; message: string } | null;
+  /**
+   * Reference-matching fields (Phase 1B). Independent of the loudnorm master:
+   * a job can produce the loudnorm master successfully (`status: done`,
+   * `masterKey` populated) even if reference-matching fails or was never
+   * requested. All fields are null for jobs that didn't request matching or
+   * predate the feature.
+   *
+   * Progress: matchingStage transitions queued → downloading → matching →
+   * uploading → completed. On failure it becomes 'failed' and matchingError
+   * carries the reason.
+   *
+   * Output: matchedMasterKey names the reference-matched WAV in the mastering
+   * workspace (alongside the loudnorm masterKey). matchingStats carries
+   * measurements from the matchering run.
+   */
+  referenceId: string | null;
+  matchingMethod: MatchingMethod | null;
+  matchedMasterKey: string | null;
+  matchingStage: MatchingStage | null;
+  matchingStats: MatchingStats | null;
+  matchingError: { code: string; message: string } | null;
 }

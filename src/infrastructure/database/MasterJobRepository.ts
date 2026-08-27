@@ -38,14 +38,51 @@ function decodeCursor(cursor?: string): Record<string, unknown> | undefined {
   }
 }
 
+/**
+ * The Python matchering-worker writes matchingStats/matchingError as JSON
+ * strings (DynamoDB attribute type S) because its patch helper types values
+ * as strings. Hydrate them back to objects here; anything unparseable degrades
+ * to null so a corrupt row still renders the rest of the job.
+ */
+function safeParseStats(s: string): MasterJob['matchingStats'] {
+  try {
+    const parsed = JSON.parse(s);
+    return parsed && typeof parsed === 'object' ? (parsed as MasterJob['matchingStats']) : null;
+  } catch {
+    return null;
+  }
+}
+function safeParseError(s: string): MasterJob['matchingError'] {
+  try {
+    const parsed = JSON.parse(s);
+    return parsed && typeof parsed === 'object' && typeof parsed.code === 'string' && typeof parsed.message === 'string'
+      ? { code: parsed.code, message: parsed.message }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export class MasterJobRepository {
   /** Create a fresh job in the `processing` state. */
   async create(
     id: string,
-    input: { s3Key: string; target: number; edit?: MasterEdit | null; join?: MasterJoin | null }
+    input: {
+      s3Key: string;
+      target: number;
+      edit?: MasterEdit | null;
+      join?: MasterJoin | null;
+      /** Reference-matching (Phase 1B). Absent → loudnorm-only, matched fields stay null. */
+      referenceId?: string | null;
+      referenceKey?: string | null;
+      matchingMethod?: MasterJob['matchingMethod'];
+    }
   ): Promise<MasterJob> {
     try {
       const now = new Date().toISOString();
+      const wantsMatching =
+        !!input.referenceKey &&
+        (input.matchingMethod === 'matched' || input.matchingMethod === 'both');
       const job: MasterJob = {
         id,
         status: 'processing',
@@ -81,6 +118,14 @@ export class MasterJobRepository {
         videoError: null,
         coverKey: null,
         error: null,
+        referenceId: input.referenceId ?? null,
+        matchingMethod: input.matchingMethod ?? null,
+        matchedMasterKey: null,
+        // 'queued' only when we know the Python worker will be invoked; otherwise
+        // null so the UI shows nothing for the matching column.
+        matchingStage: wantsMatching ? 'queued' : null,
+        matchingStats: null,
+        matchingError: null,
       };
       await DynamoDBOperations.put({
         PK: `MASTERJOB#${id}`,
@@ -164,6 +209,30 @@ export class MasterJobRepository {
       videoError: typeof item.videoError === 'string' ? item.videoError : null,
       coverKey: typeof item.coverKey === 'string' ? item.coverKey : null,
       error: item.error ?? null,
+      // Reference-matching fields (Phase 1B). All degrade to null for pre-feature rows.
+      referenceId: typeof item.referenceId === 'string' ? item.referenceId : null,
+      matchingMethod:
+        item.matchingMethod === 'loudnorm' ||
+        item.matchingMethod === 'matched' ||
+        item.matchingMethod === 'both'
+          ? item.matchingMethod
+          : null,
+      matchedMasterKey:
+        typeof item.matchedMasterKey === 'string' ? item.matchedMasterKey : null,
+      matchingStage: (() => {
+        const s = item.matchingStage;
+        const allowed = new Set([
+          'queued', 'downloading', 'analyzing', 'matching',
+          'normalizing', 'writing', 'uploading', 'completed', 'failed',
+        ]);
+        return typeof s === 'string' && allowed.has(s) ? (s as MasterJob['matchingStage']) : null;
+      })(),
+      matchingStats: item.matchingStats && typeof item.matchingStats === 'object'
+        ? (item.matchingStats as MasterJob['matchingStats'])
+        : (typeof item.matchingStats === 'string' ? safeParseStats(item.matchingStats) : null),
+      matchingError: item.matchingError && typeof item.matchingError === 'object'
+        ? (item.matchingError as MasterJob['matchingError'])
+        : (typeof item.matchingError === 'string' ? safeParseError(item.matchingError) : null),
     };
   }
 

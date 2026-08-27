@@ -16,6 +16,14 @@
 /** Everything this module reads or writes lives here. */
 export const MASTERING_PREFIX = 'audio/mastering/';
 
+/**
+ * Reference tracks used as mastering targets by the matchering-worker (Phase
+ * 1B). Same private-workspace treatment as MASTERING_PREFIX — the S3 bucket
+ * policy's DenyCloudFrontOnMasteringWorkspaceAndReferences Sid covers this
+ * prefix explicitly so a reference is never served over the public CDN.
+ */
+export const REFERENCES_PREFIX = 'audio/references/';
+
 /** Master the lossless source — see the `music-lab-mastering` admin doc. */
 export const ACCEPTED_UPLOAD_TYPES = ['audio/wav', 'audio/x-wav', 'audio/wave'] as const;
 
@@ -54,6 +62,34 @@ export function isMasteringKey(key: string): boolean {
     key.length > MASTERING_PREFIX.length &&
     key.length <= 1024
   );
+}
+
+/** True if the key is inside the references workspace. Mirrors isMasteringKey. */
+export function isReferenceKey(key: string): boolean {
+  return (
+    typeof key === 'string' &&
+    key.startsWith(REFERENCES_PREFIX) &&
+    !key.includes('..') &&
+    key.length > REFERENCES_PREFIX.length &&
+    key.length <= 1024
+  );
+}
+
+/**
+ * S3 key for the reference-matched output of a mastering job. Mirrors the
+ * naming of masterKeyFor() so the two outputs sit alongside each other in
+ * the mastering workspace and the download route recognises both.
+ *
+ * Example: given s3Key `audio/mastering/song.wav` and referenceId `raj-emo-01`
+ * → `audio/mastering/song-matched-raj-emo-01.wav`.
+ *
+ * referenceId is sanitised down to `[a-zA-Z0-9_-]` so a malformed value can't
+ * push the key outside the workspace prefix or collide with an existing file.
+ */
+export function matchedMasterKeyFor(s3Key: string, referenceId: string): string {
+  const stem = s3Key.replace(/\.[a-z0-9]+$/i, '');
+  const safeRef = String(referenceId).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || 'unknown';
+  return `${stem}-matched-${safeRef}.wav`;
 }
 
 /**

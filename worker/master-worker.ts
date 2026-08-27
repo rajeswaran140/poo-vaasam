@@ -17,6 +17,7 @@ import { join } from 'node:path';
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import {
   parseLoudnormStats,
   buildPass1Loudnorm,
@@ -28,7 +29,7 @@ import {
   parseNormalizationType,
   type SourceInfo,
 } from '@/lib/loudness-measure';
-import { isMasteringKey } from '@/lib/mastering-storage';
+import { isMasteringKey, isReferenceKey, matchedMasterKeyFor } from '@/lib/mastering-storage';
 import { buildMp3Args, mp3KeyFor } from '@/lib/master-mp3';
 import {
   parseMasterEdit,
@@ -73,6 +74,12 @@ const s3 = new S3Client({ region: S3_REGION });
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({ region: REGION }), {
   marshallOptions: { removeUndefinedValues: true },
 });
+// Reference-matched mastering (Phase 1B). The Python matchering-worker Lambda
+// is invoked fire-and-forget after the loudnorm master succeeds when the job
+// carries a validated referenceKey and matchingMethod includes 'matched'.
+const MATCHERING_WORKER_FUNCTION =
+  process.env.MATCHERING_WORKER_FUNCTION || 'tamilagaval-matchering-worker';
+const lambdaClient = new LambdaClient({ region: REGION });
 
 async function patch(jobId: string, fields: Record<string, unknown>): Promise<void> {
   const names: Record<string, string> = {};
@@ -132,6 +139,17 @@ interface MasterEvent {
    * target and produces no audio.
    */
   analyse?: { analysisId?: string; s3Key?: string; partBKey?: string | null };
+  /**
+   * Reference-matched mastering (Phase 1B). When referenceKey is set AND
+   * matchingMethod is 'matched' or 'both', this worker completes its loudnorm
+   * pass then Event-invokes tamilagaval-matchering-worker to produce a
+   * matched output alongside the loudnorm master. Fire-and-forget — the
+   * Python worker patches MASTERJOB matchingStage independently. See
+   * worker/matchering_worker/handler.py.
+   */
+  referenceKey?: string;
+  referenceId?: string;
+  matchingMethod?: 'loudnorm' | 'matched' | 'both';
 }
 
 /**
@@ -596,6 +614,62 @@ export const handler = async (event: MasterEvent) => {
       mp3Lufs,
       mp3Tp,
     });
+
+    // Reference-matched mastering (Phase 1B). Fire-and-forget invoke of the
+    // Python matchering-worker. The loudnorm master above already succeeded
+    // (patched status=done); this is an ADDITIONAL output. Any failure here
+    // is non-fatal to the parent job — it only affects the matched output
+    // slot, which the Python worker patches independently via matchingStage.
+    const wantsMatching =
+      !!event?.referenceKey &&
+      (event?.matchingMethod === 'matched' || event?.matchingMethod === 'both');
+    if (wantsMatching) {
+      const referenceKey = event.referenceKey!;
+      const referenceId = event.referenceId ?? '';
+      if (!isReferenceKey(referenceKey)) {
+        // Bad reference key is a payload defect, not a runtime failure. Record
+        // it against the matching slot so the UI can surface it without
+        // affecting the loudnorm master's success.
+        await patch(jobId, {
+          matchingStage: 'failed',
+          matchingError: {
+            code: 'bad-reference-key',
+            message: `referenceKey must live under audio/references/ (got: ${referenceKey})`,
+          },
+        }).catch(() => {});
+      } else {
+        const matchedKey = matchedMasterKeyFor(s3Key, referenceId);
+        try {
+          await lambdaClient.send(new InvokeCommand({
+            FunctionName: MATCHERING_WORKER_FUNCTION,
+            InvocationType: 'Event',
+            Payload: Buffer.from(JSON.stringify({
+              jobId,
+              sourceKey: s3Key,
+              referenceKey,
+              outputKey: matchedKey,
+              referenceId,
+            })),
+          }));
+          // 'queued' — the Python worker will progress through downloading →
+          // matching → uploading → completed on its own.
+          await patch(jobId, { matchingStage: 'queued' }).catch(() => {});
+        } catch (invokeErr) {
+          console.error(
+            '[master-worker] matchering-worker invoke failed:',
+            invokeErr instanceof Error ? invokeErr.message : String(invokeErr),
+          );
+          await patch(jobId, {
+            matchingStage: 'failed',
+            matchingError: {
+              code: 'invoke-failed',
+              message: invokeErr instanceof Error ? invokeErr.message : String(invokeErr),
+            },
+          }).catch(() => {});
+        }
+      }
+    }
+
     return { ok: true, masterKey };
   } catch (err) {
     console.error('[master-worker] failed:', err instanceof Error ? err.message : String(err));
