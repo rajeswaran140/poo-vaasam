@@ -31,7 +31,10 @@ const INPUTTOOLS_PREFIX = 'https://inputtools.google.com/request';
 
 export function useInputtoolsProxyOverride(): void {
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    // jsdom (used by tests) has no window.fetch — guard so tests that render
+    // a Tamil-input component don't blow up at effect time. Production
+    // browsers always have fetch.
+    if (typeof window === 'undefined' || typeof window.fetch !== 'function') return;
     const original = window.fetch.bind(window);
     window.fetch = function proxied(input: RequestInfo | URL, init?: RequestInit) {
       const rawUrl =
