@@ -16,10 +16,10 @@
  * fires on every word and gets in the way. Both modes write to the same value.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ReactTransliterate } from 'react-transliterate';
 import 'react-transliterate/dist/index.css';
-import { Languages, Keyboard, Maximize2, Minimize2 } from 'lucide-react';
+import { Languages, Keyboard, Maximize2, Minimize2, Copy, Check } from 'lucide-react';
 import type { AutosaveStatus } from '@/lib/lyric-autosave';
 import { autosaveLabel } from '@/lib/lyric-autosave';
 import { useInputtoolsProxyOverride } from '@/lib/transliterate-proxy';
@@ -68,6 +68,10 @@ export function LyricDraftEditor({
   // live — this is FOCUS mode, not read mode. Autosave still fires from the
   // parent's effect because the component doesn't unmount.
   const [expanded, setExpanded] = useState(false);
+  // Copy-all flashes to a check for ~1.5s so the user gets non-toast
+  // feedback the write to the clipboard actually happened.
+  const [copied, setCopied] = useState(false);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useInputtoolsProxyOverride();
   const reportCaret = (e: React.SyntheticEvent<HTMLTextAreaElement>) =>
     onCaret?.(e.currentTarget.selectionStart ?? 0);
@@ -95,6 +99,30 @@ export function LyricDraftEditor({
       document.body.style.overflow = prev;
     };
   }, [expanded]);
+
+  // Clear any pending "copied" reset if we unmount, so a stale timer
+  // doesn't try to setState after teardown.
+  useEffect(
+    () => () => {
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    },
+    []
+  );
+
+  async function copyAll() {
+    if (!value.trim()) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Older browsers or a locked-down policy — fall back to selecting
+      // the textarea so the user can hit Ctrl/Cmd-C themselves.
+      const el = document.getElementById(id) as HTMLTextAreaElement | null;
+      el?.select();
+    }
+  }
 
   // Base textarea styling — used in both normal and expanded modes. In
   // expanded mode we override the height so the field fills the viewport.
@@ -141,31 +169,54 @@ export function LyricDraftEditor({
             {statusDetail && status === 'saved' ? ` · ${statusDetail}` : ''}
           </span>
         )}
-        <button
-          type="button"
-          onClick={() => setExpanded((e) => !e)}
-          aria-pressed={expanded}
-          aria-label={expanded ? 'Collapse editor' : 'Expand editor to full screen'}
-          className="ml-auto flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
-          title={expanded ? 'Collapse (Esc)' : 'Expand to full screen'}
-        >
-          {expanded ? (
-            <>
-              <Minimize2 className="h-3 w-3" aria-hidden="true" /> Collapse
-            </>
-          ) : (
-            <>
-              <Maximize2 className="h-3 w-3" aria-hidden="true" /> Expand
-            </>
-          )}
-        </button>
+        <div className="ml-auto flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={copyAll}
+            disabled={!value.trim()}
+            aria-label="Copy all lyrics"
+            aria-live="polite"
+            className="flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+            title="Copy the whole lyric to the clipboard — paste into Suno, ChatGPT, etc."
+          >
+            {copied ? (
+              <>
+                <Check className="h-3 w-3 text-green-600 dark:text-green-400" aria-hidden="true" /> Copied
+              </>
+            ) : (
+              <>
+                <Copy className="h-3 w-3" aria-hidden="true" /> Copy
+              </>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => setExpanded((e) => !e)}
+            aria-pressed={expanded}
+            aria-label={expanded ? 'Collapse editor' : 'Expand editor to full screen'}
+            className="flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+            title={expanded ? 'Collapse (Esc)' : 'Expand to full screen'}
+          >
+            {expanded ? (
+              <>
+                <Minimize2 className="h-3 w-3" aria-hidden="true" /> Collapse
+              </>
+            ) : (
+              <>
+                <Maximize2 className="h-3 w-3" aria-hidden="true" /> Expand
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
-      {/* In expanded mode the field grows to fill the flex column; in normal
-          mode it uses `rows` as before. `flex-1 min-h-0` on the wrapper lets
-          the textarea take all remaining vertical space in expanded mode
-          while a plain `<textarea rows>` still respects rows in normal mode. */}
-      <div className={expanded ? 'flex flex-1 min-h-0 flex-col' : ''}>
+      {/* In expanded mode the field grows to fill the flex column and caps
+          its readable width — a viewport-wide textarea produces long,
+          hard-to-scan lines on a big monitor, so we centre a comfortable
+          reading column. `flex-1 min-h-0` on the wrapper lets the textarea
+          take all remaining vertical space; `mx-auto max-w-3xl w-full`
+          centres it. Normal mode is unchanged. */}
+      <div className={expanded ? 'mx-auto flex w-full max-w-3xl flex-1 min-h-0 flex-col' : ''}>
         {translit ? (
           <ReactTransliterate
             value={value}

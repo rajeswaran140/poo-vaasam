@@ -6,16 +6,28 @@ jest.mock('lucide-react', () => new Proxy({}, { get: () => () => null }));
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { LyricReadView } from '@/components/admin/LyricReadView';
 
+const writeText = jest.fn().mockResolvedValue(undefined);
+beforeEach(() => {
+  writeText.mockClear();
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText },
+  });
+});
+
 afterEach(() => {
   cleanup();
 });
 
-it('renders the lyric text preserving whitespace (stanzas stay stanzas)', () => {
+it('renders each source line separately so blank lines still take vertical space', () => {
   const lyric = 'பல்லவி\nஉறங்கும் உன் நினைவில்\n\nஅனுபல்லவி\nமீள்கிறேன் மீள்கிறேன்';
   render(<LyricReadView lyrics={lyric} onClose={() => {}} />);
-  // <pre> preserves the exact whitespace — the render swallows nothing.
-  const pre = screen.getByText((_c, el) => el?.tagName === 'PRE' && el.textContent === lyric);
-  expect(pre).toBeInTheDocument();
+  const rows = screen.getAllByTestId('lyric-line');
+  // Five source lines: two content + blank + two more content. The blank
+  // line must render as its own row so a stanza break stays visible.
+  expect(rows).toHaveLength(5);
+  expect(rows[0]).toHaveTextContent('பல்லவி');
+  expect(rows[3]).toHaveTextContent('அனுபல்லவி');
 });
 
 it('shows the title as a heading when provided', () => {
@@ -74,4 +86,37 @@ it('locks body scroll while open and restores it on close', () => {
   unmount();
   expect(document.body.style.overflow).toBe('');
   document.body.style.overflow = originalOverflow;
+});
+
+describe('copy', () => {
+  it('copies the whole lyric via the Copy-all button', () => {
+    // A JS expression, NOT an attribute string — `"alpha\n"` inside a JSX
+    // attribute is 8 literal chars, not 7 including a newline. Handler
+    // writes back verbatim so the assertion must see the same string.
+    render(<LyricReadView lyrics={'alpha\nbeta'} onClose={() => {}} />);
+    fireEvent.click(screen.getByLabelText(/copy all lyrics/i));
+    expect(writeText).toHaveBeenCalledWith('alpha\nbeta');
+  });
+
+  it('disables Copy-all when the lyric is empty', () => {
+    render(<LyricReadView lyrics="   " onClose={() => {}} />);
+    expect(screen.getByLabelText(/copy all lyrics/i)).toBeDisabled();
+  });
+
+  it('copies an individual line via its per-line button', () => {
+    const lyric = 'first line\nsecond line\nthird line';
+    render(<LyricReadView lyrics={lyric} onClose={() => {}} />);
+    fireEvent.click(screen.getByLabelText(/copy line 2/i));
+    expect(writeText).toHaveBeenCalledWith('second line');
+    // First and third lines aren't offered a duplicate call.
+    expect(writeText).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not render a copy button on blank lines', () => {
+    render(<LyricReadView lyrics={'first\n\nthird'} onClose={() => {}} />);
+    // Line 2 is blank — no copy target.
+    expect(screen.queryByLabelText(/copy line 2/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/copy line 1/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/copy line 3/i)).toBeInTheDocument();
+  });
 });

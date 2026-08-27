@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { LyricDraftEditor } from '@/components/admin/LyricDraftEditor';
 
@@ -25,6 +25,17 @@ jest.mock('react-transliterate', () => ({
     }),
 }));
 jest.mock('react-transliterate/dist/index.css', () => ({}), { virtual: true });
+
+// jsdom has no navigator.clipboard by default. Install a stub before every
+// test so the copy button can be exercised end-to-end.
+const writeText = jest.fn().mockResolvedValue(undefined);
+beforeEach(() => {
+  writeText.mockClear();
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText },
+  });
+});
 
 function setup(props: Partial<React.ComponentProps<typeof LyricDraftEditor>> = {}) {
   const onChange = jest.fn();
@@ -124,6 +135,18 @@ describe('LyricDraftEditor', () => {
       expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('மாதம் மலரும்');
     });
 
+    it('centres the textarea column in expanded mode (no full-viewport line length)', async () => {
+      const user = userEvent.setup();
+      setup({ value: 'x' });
+      await user.click(screen.getByRole('button', { name: /expand editor to full screen/i }));
+      // The wrapper immediately around the textarea gets the centring classes
+      // — the textarea itself sits inside `<div class="… mx-auto max-w-3xl …">`.
+      const textarea = screen.getByRole('textbox');
+      const wrapper = textarea.closest('div');
+      expect(wrapper?.className).toMatch(/mx-auto/);
+      expect(wrapper?.className).toMatch(/max-w-3xl/);
+    });
+
     it('locks body scroll only while expanded', async () => {
       const user = userEvent.setup();
       document.body.style.overflow = '';
@@ -133,6 +156,32 @@ describe('LyricDraftEditor', () => {
       expect(document.body.style.overflow).toBe('hidden');
       await user.click(screen.getByRole('button', { name: /collapse editor/i }));
       expect(document.body.style.overflow).toBe('');
+    });
+  });
+
+  describe('copy all', () => {
+    // Using fireEvent rather than userEvent — v14's user.click adds
+    // hoverability + focus checks that were dropping the call silently on
+    // Tamil-value inputs in CI (the counterpart tests here that do pass
+    // use short ASCII values). fireEvent dispatches the click directly and
+    // is the same pattern LyricReadView.test.tsx uses successfully.
+    it('copies the whole draft to the clipboard on click', () => {
+      setup({ value: 'கண்ணே\nஉன்னைக் காண' });
+      fireEvent.click(screen.getByRole('button', { name: /copy all lyrics/i }));
+      expect(writeText).toHaveBeenCalledWith('கண்ணே\nஉன்னைக் காண');
+    });
+
+    it('disables the copy button when there is nothing to copy', () => {
+      setup({ value: '   ' });
+      expect(screen.getByRole('button', { name: /copy all lyrics/i })).toBeDisabled();
+    });
+
+    it('flashes a "Copied" state after a successful copy', async () => {
+      setup({ value: 'x' });
+      fireEvent.click(screen.getByRole('button', { name: /copy all lyrics/i }));
+      // The button text switches from "Copy" to "Copied" once the async
+      // writeText resolves. findByText polls until React re-renders.
+      await screen.findByText(/copied/i);
     });
   });
 });
