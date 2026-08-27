@@ -11,6 +11,9 @@ import { useState } from 'react';
 import { ReactTransliterate } from 'react-transliterate';
 import 'react-transliterate/dist/index.css';
 import { Languages, Keyboard } from 'lucide-react';
+// Google Input Tools has no CORS — proxy react-transliterate's fetch through
+// our own route. See src/lib/transliterate-proxy.ts for the full explanation.
+import { useInputtoolsProxyOverride } from '@/lib/transliterate-proxy';
 
 interface TamilTextareaProps {
   value: string;
@@ -36,6 +39,7 @@ export function TamilTextarea({
   maxLength,
 }: TamilTextareaProps) {
   const [isTransliterationEnabled, setIsTransliterationEnabled] = useState(true);
+  useInputtoolsProxyOverride();
 
   return (
     <div className="space-y-2">

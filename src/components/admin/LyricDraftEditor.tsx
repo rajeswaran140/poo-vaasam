@@ -22,6 +22,7 @@ import 'react-transliterate/dist/index.css';
 import { Languages, Keyboard } from 'lucide-react';
 import type { AutosaveStatus } from '@/lib/lyric-autosave';
 import { autosaveLabel } from '@/lib/lyric-autosave';
+import { useInputtoolsProxyOverride } from '@/lib/transliterate-proxy';
 
 interface Props {
   id: string;
@@ -63,6 +64,7 @@ export function LyricDraftEditor({
   onCaret,
 }: Props) {
   const [translit, setTranslit] = useState(true);
+  useInputtoolsProxyOverride();
   const reportCaret = (e: React.SyntheticEvent<HTMLTextAreaElement>) =>
     onCaret?.(e.currentTarget.selectionStart ?? 0);
   const label = autosaveLabel(status);
