@@ -91,4 +91,48 @@ describe('LyricDraftEditor', () => {
     render(<LyricDraftEditor id="f" value="" onChange={() => {}} maxLength={8000} />);
     expect(screen.getByRole('textbox')).toHaveAttribute('maxlength', '8000');
   });
+
+  describe('expand to full screen', () => {
+    it('starts collapsed and toggles to expanded on click', async () => {
+      const user = userEvent.setup();
+      setup();
+      const expandBtn = screen.getByRole('button', { name: /expand editor to full screen/i });
+      expect(expandBtn).toHaveAttribute('aria-pressed', 'false');
+      await user.click(expandBtn);
+      const collapseBtn = screen.getByRole('button', { name: /collapse editor/i });
+      expect(collapseBtn).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('collapses on Escape', async () => {
+      const user = userEvent.setup();
+      setup();
+      await user.click(screen.getByRole('button', { name: /expand editor to full screen/i }));
+      expect(screen.getByRole('button', { name: /collapse editor/i })).toBeInTheDocument();
+      await user.keyboard('{Escape}');
+      expect(screen.getByRole('button', { name: /expand editor to full screen/i })).toBeInTheDocument();
+    });
+
+    it('preserves typed value across expand / collapse (same DOM tree, no remount)', async () => {
+      const user = userEvent.setup();
+      setup({ value: 'மாதம் மலரும்' });
+      // Enter expanded mode
+      await user.click(screen.getByRole('button', { name: /expand editor to full screen/i }));
+      // Value is still displayed by the textarea.
+      expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('மாதம் மலரும்');
+      // Collapse — value still there.
+      await user.click(screen.getByRole('button', { name: /collapse editor/i }));
+      expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('மாதம் மலரும்');
+    });
+
+    it('locks body scroll only while expanded', async () => {
+      const user = userEvent.setup();
+      document.body.style.overflow = '';
+      setup();
+      expect(document.body.style.overflow).toBe('');
+      await user.click(screen.getByRole('button', { name: /expand editor to full screen/i }));
+      expect(document.body.style.overflow).toBe('hidden');
+      await user.click(screen.getByRole('button', { name: /collapse editor/i }));
+      expect(document.body.style.overflow).toBe('');
+    });
+  });
 });
