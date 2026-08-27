@@ -4,7 +4,7 @@
 
 Reference-matched mastering as a separate Python Lambda, invoked by the existing Node master-worker after the loudnorm pass completes. Sits alongside `../compose-worker.ts`, `../master-worker.ts`, `../measure-fn.ts` but ships as a container image rather than a zip — Matchering + NumPy + SciPy exceeds the 250 MB zip limit.
 
-## Deployed state (2026-08-26)
+## Deployed state (2026-08-26 / 2026-08-27)
 
 | Resource | Value |
 |---|---|
@@ -12,9 +12,28 @@ Reference-matched mastering as a separate Python Lambda, invoked by the existing
 | Memory / ephemeral / timeout | 4096 MB / 4096 MB / 900 s |
 | Package type | Image |
 | ECR image URI | `975050319109.dkr.ecr.ca-central-1.amazonaws.com/tamilagaval-matchering-worker:v1` |
-| IAM role | `tamilagaval-matchering-worker-role` (inline policies: `s3-mastering-references-access`, `ddb-masterjob-patch`; managed: `AWSLambdaBasicExecutionRole`) |
+| IAM role (this worker) | `tamilagaval-matchering-worker-role` (inline policies: `s3-mastering-references-access`, `ddb-masterjob-patch`; managed: `AWSLambdaBasicExecutionRole`) |
+| **IAM role (CALLER — master-worker)** | `tamilagaval-compose-worker-role` MUST carry inline policy `invoke-matchering-worker` granting `lambda:InvokeFunction` on this Lambda's ARN (added 2026-08-27 after the Phase 1B E2E test caught the missing permission). Without it master-worker's Event-invoke silently fails and MASTERJOB shows `matchingStage: failed` + `matchingError.code: invoke-failed`. |
 | Env vars | `TAKES_BUCKET=tamil-web-media`, `TAKES_BUCKET_REGION=us-east-1`, `DYNAMODB_TABLE_NAME=TamilWebContent` |
 | S3 bucket policy | Extended `DenyCloudFrontOnMasteringWorkspace` Sid → `DenyCloudFrontOnMasteringWorkspaceAndReferences` (covers both `audio/mastering/*` AND `audio/references/*`) |
+
+## Bootstrap IAM commands (for anyone rebuilding from scratch)
+
+```
+# Grant the master-worker's shared role permission to invoke this Lambda.
+aws iam put-role-policy \
+  --role-name tamilagaval-compose-worker-role \
+  --policy-name invoke-matchering-worker \
+  --policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Sid": "InvokeMatcheringWorker",
+      "Effect": "Allow",
+      "Action": "lambda:InvokeFunction",
+      "Resource": "arn:aws:lambda:ca-central-1:975050319109:function:tamilagaval-matchering-worker"
+    }]
+  }'
+```
 
 ## First-invoke measurements (cold-started, 2026-08-26)
 
