@@ -1,8 +1,49 @@
 # tamilagaval-matchering-worker
 
-**Status:** container recipe only, not deployed. Phase 1B PR 1 of 4.
+**Status:** DEPLOYED to AWS 2026-08-26; NOT YET wired into master-worker.ts.
 
 Reference-matched mastering as a separate Python Lambda, invoked by the existing Node master-worker after the loudnorm pass completes. Sits alongside `../compose-worker.ts`, `../master-worker.ts`, `../measure-fn.ts` but ships as a container image rather than a zip — Matchering + NumPy + SciPy exceeds the 250 MB zip limit.
+
+## Deployed state (2026-08-26)
+
+| Resource | Value |
+|---|---|
+| Lambda function | `tamilagaval-matchering-worker` (ca-central-1) |
+| Memory / ephemeral / timeout | 4096 MB / 4096 MB / 900 s |
+| Package type | Image |
+| ECR image URI | `975050319109.dkr.ecr.ca-central-1.amazonaws.com/tamilagaval-matchering-worker:v1` |
+| IAM role | `tamilagaval-matchering-worker-role` (inline policies: `s3-mastering-references-access`, `ddb-masterjob-patch`; managed: `AWSLambdaBasicExecutionRole`) |
+| Env vars | `TAKES_BUCKET=tamil-web-media`, `TAKES_BUCKET_REGION=us-east-1`, `DYNAMODB_TABLE_NAME=TamilWebContent` |
+| S3 bucket policy | Extended `DenyCloudFrontOnMasteringWorkspace` Sid → `DenyCloudFrontOnMasteringWorkspaceAndReferences` (covers both `audio/mastering/*` AND `audio/references/*`) |
+
+## First-invoke measurements (cold-started, 2026-08-26)
+
+Source: `audio/mastering/1787709165737_fb3a8c83_-_Music-1_1.wav` (3:22, 39 MB)
+Reference: `audio/references/test-ref-v1.wav` (3:22, 58 MB — seeded from an existing mastered file)
+
+| Metric | Value |
+|---|---|
+| Total wall-clock | 53.4 s |
+| Init duration | 10.0 s (hit Lambda's container-init timeout — see below) |
+| matchering.process alone | **6.2 s** |
+| Cross-region S3 download (us-east-1 → ca-central-1) | ~37 s |
+| Peak memory | **1.7 GB** (of 4096 MB) |
+| Cost | ~$0.009 per invocation |
+
+## Two Lambda-specific findings from the first invoke
+
+1. **INIT timeout hit** — matchering + numpy + scipy + numba imports exceed Lambda's fixed 10-sec container-init limit. Lambda handles it (restarts init in the invocation phase, no error), but this is why the first invocation shows 53 s wall time. Warm invocations should be much faster. Fix options if it matters: lazy-import numba inside `run()`, or provisioned concurrency.
+2. **Cross-region S3 I/O dominates wall time** — 37 s of the 53 s was downloading 97 MB across regions. matchering itself is fast. Fix options: replicate references to a ca-central-1 bucket, or accept the latency for a manually-triggered job.
+
+Neither is blocking; both are optimizations to consider only after Phase 1C blind-A/B validates the feature is worth optimizing.
+
+## Deploying updates
+
+```
+npm run deploy:matchering-worker
+```
+
+Wraps `scripts/deploy-matchering-worker.sh` — builds the container, pushes to ECR (overwrites `:v1`), and calls `aws lambda update-function-code`. Requires the docker daemon and AWS creds for account 975050319109.
 
 ## What's in this PR
 
@@ -38,24 +79,8 @@ sudo docker run --rm --entrypoint python tamilagaval-matchering-worker:local -c 
 
 Image size: **1.56 GB** uncompressed. (Under Lambda's 10 GB container limit.) Cold-start estimate: 10-15 seconds. Warm invocation: matchering only, ~7-8 seconds per minute of audio (from spike measurements).
 
-## Next PR — first-time deploy (needs your sign-off before I execute)
+## Phase 1B remaining PRs
 
-The deploy PR will:
-
-1. `aws ecr create-repository --repository-name tamilagaval-matchering-worker --region ca-central-1` (one-time, ~$0.05 + $0.10/GB/month storage)
-2. Create IAM role `tamilagaval-matchering-worker-role` with least-privilege inline policies:
-   - `s3:GetObject` on `tamil-web-media/audio/mastering/*` + `tamil-web-media/audio/references/*`
-   - `s3:PutObject` on `tamil-web-media/audio/mastering/*`
-   - `dynamodb:UpdateItem` on `TamilWebContent` scoped to `MASTERJOB#*` items via LeadingKeys
-   - `AWSLambdaBasicExecutionRole` (CloudWatch logs)
-3. `aws lambda create-function --package-type Image --code ImageUri=... --memory-size 4096 --ephemeral-storage Size=4096 --timeout 900 --role ... --function-name tamilagaval-matchering-worker`
-4. Add `npm run deploy:matchering-worker` to package.json for subsequent updates
-5. First real invocation via a curl-based test event
-
-None of that happens until you approve THIS recipe PR + explicitly authorize the AWS resource creation.
-
-## Phase 1B remaining PRs after deploy
-
-- PR 2 — extend `worker/master-worker.ts` to Event-invoke this Lambda when the incoming job carries `referenceKey`; extend `MASTERJOB#` schema (sparse additions)
-- PR 3 — start-route (`/api/admin/music-lab/master`) zod additions for `referenceId` + `matchingMethod`
-- PR 4 — reference-bank S3 layout + minimal seeded CRUD (deferred to Phase 1C if not needed for validation)
+- **PR 2 (next)** — extend `worker/master-worker.ts` to Event-invoke this Lambda when the incoming job carries `referenceKey`; extend `MASTERJOB#` schema (sparse additions for `referenceId` / `matchingMethod` / `matchedMasterKey` / `matchingStage` / `matchingStats`).
+- **PR 3** — start-route (`/api/admin/music-lab/master`) zod additions for `referenceId` + `matchingMethod`.
+- **PR 4** — reference-bank S3 layout + minimal seeded CRUD (may be deferred to Phase 1C if manual seeding suffices for early validation).

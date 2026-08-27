@@ -6,8 +6,11 @@
 
 import {
   MASTERING_PREFIX,
+  REFERENCES_PREFIX,
   isMasteringKey,
+  isReferenceKey,
   masteringUploadKey,
+  matchedMasterKeyFor,
   downloadFilename,
   sanitizeMasterFilename,
 } from '@/lib/mastering-storage';
@@ -115,6 +118,67 @@ describe('sanitizeMasterFilename', () => {
 
   it('caps runaway length', () => {
     expect(sanitizeMasterFilename('x'.repeat(500)).length).toBeLessThanOrEqual(124); // 120 + ".wav"
+  });
+});
+
+describe('isReferenceKey', () => {
+  it('accepts keys inside the references workspace', () => {
+    expect(isReferenceKey(`${REFERENCES_PREFIX}raj-emo-01.wav`)).toBe(true);
+    expect(isReferenceKey(`${REFERENCES_PREFIX}test-ref-v1.wav`)).toBe(true);
+  });
+
+  it('refuses anything outside it — the boundary that keeps the Python worker from reading the wrong prefix', () => {
+    // Same class of security boundary as isMasteringKey. Handler.py re-checks
+    // this, but the master-worker route is the first gate.
+    expect(isReferenceKey(`${MASTERING_PREFIX}song.wav`)).toBe(false);
+    expect(isReferenceKey('audio/poem-music/song.mp3')).toBe(false);
+    expect(isReferenceKey('')).toBe(false);
+    expect(isReferenceKey(REFERENCES_PREFIX)).toBe(false); // bare prefix isn't an object
+  });
+
+  it('refuses traversal and lookalike prefixes', () => {
+    expect(isReferenceKey(`${REFERENCES_PREFIX}../mastering/song.wav`)).toBe(false);
+    expect(isReferenceKey('audio/references-other/song.wav')).toBe(false);
+    expect(isReferenceKey(`x/${REFERENCES_PREFIX}song.wav`)).toBe(false);
+  });
+
+  it('refuses absurdly long keys', () => {
+    expect(isReferenceKey(REFERENCES_PREFIX + 'a'.repeat(1100))).toBe(false);
+  });
+});
+
+describe('matchedMasterKeyFor', () => {
+  it('lands the matched output alongside the loudnorm master in the workspace', () => {
+    const k = matchedMasterKeyFor(`${MASTERING_PREFIX}song.wav`, 'raj-emo-01');
+    expect(k).toBe(`${MASTERING_PREFIX}song-matched-raj-emo-01.wav`);
+    expect(isMasteringKey(k)).toBe(true);
+  });
+
+  it('sanitises the referenceId so a malformed value cannot escape the prefix', () => {
+    // The Python worker validates outputKey too, but the caller must not be
+    // able to construct a key like `audio/mastering/song-matched-../../etc.wav`.
+    expect(
+      matchedMasterKeyFor(`${MASTERING_PREFIX}song.wav`, '../../evil-id'),
+    ).toBe(`${MASTERING_PREFIX}song-matched-evil-id.wav`);
+    expect(
+      matchedMasterKeyFor(`${MASTERING_PREFIX}song.wav`, 'has spaces and !@#'),
+    ).toBe(`${MASTERING_PREFIX}song-matched-hasspacesand.wav`);
+  });
+
+  it('falls back to "unknown" rather than yielding a bare -matched-.wav', () => {
+    expect(matchedMasterKeyFor(`${MASTERING_PREFIX}song.wav`, '')).toBe(
+      `${MASTERING_PREFIX}song-matched-unknown.wav`,
+    );
+    expect(matchedMasterKeyFor(`${MASTERING_PREFIX}song.wav`, '@@@')).toBe(
+      `${MASTERING_PREFIX}song-matched-unknown.wav`,
+    );
+  });
+
+  it('caps the referenceId length so a runaway string cannot bloat the key', () => {
+    const k = matchedMasterKeyFor(`${MASTERING_PREFIX}song.wav`, 'a'.repeat(200));
+    // 64-char cap on the sanitised referenceId.
+    expect(k.length).toBeLessThan(MASTERING_PREFIX.length + 'song-matched-'.length + 65 + '.wav'.length);
+    expect(isMasteringKey(k)).toBe(true);
   });
 });
 
