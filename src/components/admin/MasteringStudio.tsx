@@ -410,8 +410,16 @@ export function MasteringStudio() {
     let cancelled = false;
     setReferencesLoading(true);
     setReferencesError(null);
-    adminFetch('/api/admin/mastering/references')
+    // Wrap in Promise.resolve so a test-fixture adminFetch that returns
+    // undefined (unmocked route) becomes a resolved undefined instead of
+    // throwing 'Cannot read properties of undefined (reading then)' at mount.
+    // Production adminFetch always returns a Promise; this is test-safety only.
+    Promise.resolve(adminFetch('/api/admin/mastering/references'))
       .then(async (res) => {
+        if (cancelled) return;
+        // Guard against the test-fixture undefined case above — nothing to
+        // parse; leave the empty-list default in place.
+        if (!res) return;
         const body = await res.json();
         if (cancelled) return;
         if (!res.ok || !body.success) {
