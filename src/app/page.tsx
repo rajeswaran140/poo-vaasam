@@ -162,6 +162,46 @@ export default function HomePage() {
           landing page stays static while the feed stays fresh (see LatestVideos). */}
       <LatestVideos />
 
+      {/* Meet the author — the visible surface for the Person JSON-LD that
+          already lives in the head. E-E-A-T signals reward pages that show
+          the author on the page the audience actually lands on; the /about
+          page has one, this now does too. Copy is a distilled reuse of the
+          canonical /about author-block, so both surfaces stay in sync. */}
+      <section className="bg-gray-900 pb-8 pt-4" aria-labelledby="author-heading">
+        <div className="container mx-auto px-4">
+          <div className="mx-auto max-w-4xl">
+            <div className="flex flex-col items-center gap-8 rounded-2xl border border-white/10 bg-white/5 p-8 backdrop-blur-sm sm:flex-row sm:items-start sm:gap-10 sm:p-10">
+              <div
+                aria-hidden="true"
+                className="flex h-24 w-24 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 to-orange-700 shadow-lg ring-2 ring-white/20 sm:h-28 sm:w-28"
+              >
+                <span className="font-kavivanar text-5xl font-bold text-white sm:text-6xl">இ</span>
+              </div>
+              <div className="text-center sm:text-left">
+                <h2 id="author-heading" className="font-kavivanar text-2xl font-bold text-white sm:text-3xl">
+                  இராஜ்
+                </h2>
+                <p className="mt-1 text-sm font-semibold uppercase tracking-wider text-orange-300">
+                  Tamil poet &amp; lyricist
+                </p>
+                <p className="mt-4 font-tamil text-base leading-relaxed text-gray-300 sm:text-lg">
+                  வாழ்க்கை, காதல், இயற்கை, நினைவுகள் மற்றும் மனித உணர்வுகளை கவிதைகளாகவும் பாடல்களாகவும் எழுதுகிறார். புதிய படைப்புகள் இங்கும் YouTube சேனலிலும் தொடர்ந்து வெளியாகின்றன.
+                </p>
+                <div className="mt-5">
+                  <Link
+                    href="/about"
+                    className="inline-flex items-center gap-2 font-tamil text-orange-400 transition-colors hover:text-orange-300"
+                  >
+                    <span>இராஜைப் பற்றி மேலும்</span>
+                    <span aria-hidden="true">→</span>
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Why Choose Section - Free Features */}
       <section className="bg-gray-900 py-20">
         <div className="container mx-auto px-4">
