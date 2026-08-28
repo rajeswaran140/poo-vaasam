@@ -31,8 +31,10 @@ import {
   fetchChannelAnalyticsSnapshot,
   fetchVideoAnalytics,
   fetchDailySeries,
+  fetchCpmByVideo,
   isYouTubeAnalyticsConfigured,
 } from '@/lib/youtube-analytics';
+import { annotateAndSortCpmRows } from '@/lib/youtube-cpm-by-content';
 import { buildDigest, type Digest } from '@/lib/youtube-digest';
 import { YtRecsRepository } from '@/infrastructure/database/YtRecsRepository';
 import { RefreshRecsButton } from '@/components/admin/RefreshRecsButton';
@@ -115,7 +117,7 @@ export default async function YouTubeAdminPage() {
   // Everything else fans out in parallel (each helper is failure-isolated —
   // Result objects or null — so one failure can't blank the page). cachedRecs
   // is in the fan-out too, not a serial await afterwards.
-  const [videos, ga4ClicksRes, ga4TrafficRes, ga4AudioRes, ga4YouTubeRes, ytaChannelRes, ytaVideosRes, dailyRes, cachedRecs] = await Promise.all([
+  const [videos, ga4ClicksRes, ga4TrafficRes, ga4AudioRes, ga4YouTubeRes, ytaChannelRes, ytaVideosRes, dailyRes, cpmRes, cachedRecs] = await Promise.all([
     fetchChannelVideoStats(SITE.youtube.channelId, 200, { channel }),
     ga4On ? fetchSubscribeClicksBySource(ANALYTICS_DAYS) : Promise.resolve(null),
     ga4On ? fetchTrafficSnapshot(ANALYTICS_DAYS) : Promise.resolve(null),
@@ -124,6 +126,7 @@ export default async function YouTubeAdminPage() {
     ytaOn ? fetchChannelAnalyticsSnapshot(ANALYTICS_DAYS) : Promise.resolve(null),
     ytaOn ? fetchVideoAnalytics(ANALYTICS_DAYS) : Promise.resolve(null),
     ytaOn ? fetchDailySeries(ANALYTICS_DAYS) : Promise.resolve(null),
+    ytaOn ? fetchCpmByVideo(ANALYTICS_DAYS) : Promise.resolve(null),
     new YtRecsRepository().get(SITE.youtube.channelId).catch(() => null),
   ]);
 
@@ -143,6 +146,15 @@ export default async function YouTubeAdminPage() {
   // Claude isn't asked to reason about an empty dataset.
   const ytaChannel = ytaChannelRes?.ok ? ytaChannelRes.data : null;
   const ytaVideos = ytaVideosRes?.ok ? ytaVideosRes.data : [];
+  // Per-video playback-based CPM. Filter/annotate/sort in the pure helper so
+  // the section renders honestly (pending rows sink; noise below the min-
+  // playbacks floor drops out). Metadata lookup piggybacks on the `videos`
+  // fetch already above — no extra API round-trip.
+  const cpmVideoMeta = new Map(videos.map((v) => [v.id, { title: v.title, thumbnail: v.thumbnail, publishedAt: v.publishedAt }]));
+  const cpmError = cpmRes && !cpmRes.ok ? cpmRes.error : null;
+  const cpmByContent = cpmRes?.ok
+    ? annotateAndSortCpmRows(cpmRes.data, { get: (id) => cpmVideoMeta.get(id) })
+    : [];
   // Weekly digest + anomaly signal (week-over-week growth + stall/real-drop
   // classification) from the daily series. Built server-side; pure math.
   const dailySeries = dailyRes?.ok ? dailyRes.data : null;
@@ -423,6 +435,83 @@ export default async function YouTubeAdminPage() {
             and <code>YOUTUBE_ANALYTICS_REFRESH_TOKEN</code> in Amplify env. Until then per-video
             subscriber gains, retention metrics, and AI recommendations stay hidden.
           </p>
+        </section>
+      )}
+
+      {/* Playback-based CPM by content — per-video ad-market value, last 28 days.
+          Kept in its own section (not a column on the "Subs gained" list) because
+          it uses a different noise floor (min 100 monetized playbacks, not top
+          performers) and the outlier signal matters more than the ordering. */}
+      {ytaOn && (
+        <section className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 shadow-sm">
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              Playback-based CPM by content · last 28 days
+            </p>
+            <p className="text-[10px] text-gray-400 dark:text-gray-500">
+              Do not average across rows — playbacks differ. Blended figure = Σrevenue / Σviews.
+            </p>
+          </div>
+          {cpmError ? (
+            <pre className="overflow-x-auto rounded-lg border border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-900/20 p-3 text-xs text-red-900 dark:text-red-200">
+              {cpmError}
+            </pre>
+          ) : cpmByContent.length === 0 ? (
+            <p className="rounded-lg bg-gray-50 p-4 dark:bg-gray-800/50 text-sm text-gray-500 dark:text-gray-400">
+              No videos cleared the 100-monetized-playback noise floor in the last 28 days.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-left text-[11px] uppercase tracking-wide text-gray-500 dark:border-gray-800 dark:text-gray-400">
+                    <th className="py-2 pr-3 font-medium">Song</th>
+                    <th className="py-2 pr-3 text-right font-medium">Views</th>
+                    <th className="py-2 pr-3 text-right font-medium">Monetized plays</th>
+                    <th className="py-2 pr-3 text-right font-medium">Playback CPM</th>
+                    <th className="py-2 pr-0 text-right font-medium">Est. revenue</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cpmByContent.map((r) => {
+                    const url = `https://youtu.be/${r.videoId}`;
+                    return (
+                      <tr key={r.videoId} className="border-b border-gray-100 last:border-b-0 dark:border-gray-800/60">
+                        <td className="py-2 pr-3">
+                          <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:underline">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={r.thumbnail} alt="" width={48} height={27} className="h-[27px] w-[48px] flex-shrink-0 rounded object-cover" />
+                            <span className="truncate text-gray-800 dark:text-gray-200" title={r.title}>{r.title}</span>
+                          </a>
+                        </td>
+                        <td className="py-2 pr-3 text-right tabular-nums text-gray-600 dark:text-gray-400">
+                          {numberFmt.format(r.views)}
+                        </td>
+                        <td className="py-2 pr-3 text-right tabular-nums text-gray-600 dark:text-gray-400">
+                          {numberFmt.format(r.monetizedPlaybacks)}
+                        </td>
+                        <td className="py-2 pr-3 text-right tabular-nums font-medium text-gray-900 dark:text-gray-100">
+                          {r.pending ? (
+                            <span className="text-xs font-normal italic text-gray-400 dark:text-gray-500">pending</span>
+                          ) : (
+                            `$${r.playbackBasedCpm.toFixed(2)}`
+                          )}
+                        </td>
+                        <td className="py-2 pr-0 text-right tabular-nums text-gray-600 dark:text-gray-400">
+                          ${r.estimatedRevenue.toFixed(2)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <p className="mt-3 text-[10px] leading-snug text-gray-500 dark:text-gray-400">
+                CPM here is <em>playback-based</em>: gross revenue per 1,000 monetized playbacks, i.e. the ad-market value of each song&apos;s audience.
+                Videos with fewer than 100 monetized playbacks in the window are hidden as noise. Newly-released videos may read
+                <em> pending</em> — YouTube&apos;s monetary metrics lag playback data by 24-72 h.
+              </p>
+            </div>
+          )}
         </section>
       )}
 

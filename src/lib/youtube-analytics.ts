@@ -352,6 +352,65 @@ export async function fetchVideoGeography(
   }
 }
 
+export interface CpmByVideoRow {
+  videoId: string;
+  views: number;
+  monetizedPlaybacks: number;
+  /** USD gross per 1000 monetized playbacks — "ad-market value of THIS video's audience". */
+  playbackBasedCpm: number;
+  estimatedRevenue: number;
+}
+
+/**
+ * Per-video PLAYBACK-BASED CPM. Companion to fetchVideoRevenueGeography: the
+ * geography helper deliberately omits CPM to prevent country-averaging (see
+ * that function's docstring). Per-video CPM is a DIFFERENT beast — it's the
+ * ad-market value of each song's audience, and comparing outliers across
+ * songs is the point.
+ *
+ * IMPORTANT for consumers: even at the per-video level, CPMs must not be
+ * arithmetic-averaged across rows. Each row's playbacks weight are different,
+ * so mean(cpm) is misleading. If a blended figure is wanted, compute it as
+ * Σrevenue / Σplaybacks — but usually the outliers (the $2 song, the $0.50
+ * song) are the interesting signal, not a blend. UI callers should NOT show a
+ * "Total" or "Average CPM" summary row.
+ *
+ * The YouTube Analytics API rejects `sort=-playbackBasedCpm` (unsupported sort
+ * key on the top-videos-earnings report). We sort by revenue server-side to
+ * bring the meaningful top-N videos, then callers re-sort by CPM in-memory.
+ */
+export async function fetchCpmByVideo(
+  daysBack = 28,
+  maxResults = 50
+): Promise<Result<CpmByVideoRow[]>> {
+  if (!isYouTubeAnalyticsConfigured()) {
+    return { ok: false, error: 'YouTube Analytics OAuth not configured' };
+  }
+  const { startDate, endDate } = dateRange(daysBack);
+  try {
+    const res = await runReport({
+      ids: 'channel==MINE',
+      startDate,
+      endDate,
+      metrics: 'views,monetizedPlaybacks,playbackBasedCpm,estimatedRevenue',
+      dimensions: 'video',
+      sort: '-estimatedRevenue',
+      maxResults: String(maxResults),
+    });
+    if (!res) return { ok: false, error: 'No response from YouTube Analytics' };
+    const rows = (res.rows ?? []).map((r): CpmByVideoRow => ({
+      videoId: String(r[0]),
+      views: Number(r[1] ?? 0),
+      monetizedPlaybacks: Number(r[2] ?? 0),
+      playbackBasedCpm: Number(r[3] ?? 0),
+      estimatedRevenue: Number(r[4] ?? 0),
+    }));
+    return { ok: true, data: rows };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 /**
  * Per-video REVENUE by country for a single video. Owner-scoped, monetary
  * scope required (see fetchEstimatedRevenue for what happens without it).
