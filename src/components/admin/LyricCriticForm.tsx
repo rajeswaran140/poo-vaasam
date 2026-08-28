@@ -36,6 +36,13 @@ import {
   autosaveStatus,
   shouldOfferRestore,
 } from '@/lib/lyric-autosave';
+import {
+  PRE_DRAFT_BUFFER_DEBOUNCE_MS,
+  readBuffer as readPreDraftBuffer,
+  writeBuffer as writePreDraftBuffer,
+  clearBuffer as clearPreDraftBuffer,
+  type PreDraftBuffer,
+} from '@/lib/pre-draft-buffer';
 import { TamilProsodyPanel } from '@/components/admin/TamilProsodyPanel';
 import { exportFilename } from '@/lib/prompt-export';
 import type { LyricCritique, CritiqueAspect } from '@/services/ai/lyricCriticSchema';
@@ -110,6 +117,11 @@ export function LyricCriticForm() {
   const [autosaving, setAutosaving] = useState(false);
   const [autosaveFailed, setAutosaveFailed] = useState(false);
   const [restorable, setRestorable] = useState<string | null>(null);
+  // Separate from `restorable` (which is the server-side working copy for an
+  // OPEN draft): this is the local buffer of text the poet typed BEFORE ever
+  // creating a draft record. Different source, different banner copy, so it
+  // gets its own piece of state.
+  const [preDraftRestore, setPreDraftRestore] = useState<PreDraftBuffer | null>(null);
   // Read mode — full-viewport, non-editable view of the current lyric. See
   // LyricReadView. Toggled from the button bar; Escape or backdrop closes.
   const [reading, setReading] = useState(false);
@@ -273,6 +285,44 @@ export function LyricCriticForm() {
     window.addEventListener('beforeunload', onBeforeUnload);
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [saveStatus]);
+
+  /**
+   * Pre-draft buffer — save text to localStorage BEFORE the draft exists, so
+   * the poet can close the tab mid-composition without losing anything. See
+   * [[pre-draft-buffer]] for why this is a separate mechanism from the
+   * server-side working copy.
+   *
+   * Only offer restore on the very first render where the editor is truly
+   * empty AND no draft is loaded — that's the "just opened the tab" case.
+   * If they've already started typing this session, don't interrupt them.
+   */
+  useEffect(() => {
+    if (draftId !== null) return;
+    if (lyrics !== '' || title !== '') return;
+    const buffer = readPreDraftBuffer(localStorage);
+    if (buffer) setPreDraftRestore(buffer);
+    // Run only on mount — subsequent renders can't be "just opened".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    // Only buffer while composing pre-draft. Once a draft record exists, the
+    // server-side working copy takes over and this buffer becomes stale noise.
+    if (draftId !== null) return;
+    const t = setTimeout(() => {
+      writePreDraftBuffer({ lyrics, title }, localStorage);
+    }, PRE_DRAFT_BUFFER_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [lyrics, title, draftId]);
+
+  useEffect(() => {
+    // The moment a draft is saved or opened, the server owns the text —
+    // any local buffer from an earlier session is now obsolete.
+    if (draftId !== null) {
+      clearPreDraftBuffer(localStorage);
+      setPreDraftRestore(null);
+    }
+  }, [draftId]);
 
   /** Load a version's snapshot into the editor (text + steering + its critique). */
   function applyVersion(v: LyricDraftVersion) {
@@ -535,6 +585,35 @@ export function LyricCriticForm() {
                 className="text-xs underline"
               >
                 Keep the saved version
+              </button>
+            </div>
+          )}
+          {preDraftRestore && (
+            <div
+              data-testid="pre-draft-restore"
+              className="mb-2 flex flex-wrap items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200"
+            >
+              <span>Unsaved text from your last session was found — restore it to keep composing?</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setLyrics(preDraftRestore.lyrics);
+                  if (preDraftRestore.title && !title) setTitle(preDraftRestore.title);
+                  setPreDraftRestore(null);
+                }}
+                className="rounded bg-amber-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-amber-700"
+              >
+                Restore
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  clearPreDraftBuffer(localStorage);
+                  setPreDraftRestore(null);
+                }}
+                className="text-xs underline"
+              >
+                Start fresh
               </button>
             </div>
           )}

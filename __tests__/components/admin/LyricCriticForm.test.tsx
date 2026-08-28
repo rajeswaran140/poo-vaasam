@@ -56,6 +56,10 @@ function wireHappyPath() {
 beforeEach(() => {
   adminFetch.mockReset();
   writeText.mockClear();
+  // The form now writes a pre-draft safety buffer to localStorage as the
+  // poet types. Clear between tests so a debounced write from a prior test
+  // doesn't surface as a "restore?" banner in the next one.
+  localStorage.clear();
   wireHappyPath();
 });
 
@@ -220,4 +224,37 @@ it('adds a suggested word idea to the lexicon in one click', async () => {
   expect(JSON.parse(lexCall[1].body)).toMatchObject({ word: 'எழில்', register: 'literary' });
   // The control flips to the "already in lexicon" state.
   expect(await screen.findByRole('button', { name: /எழில் is in your lexicon/i })).toBeInTheDocument();
+});
+
+describe('pre-draft buffer', () => {
+  it('offers to restore unsaved text from a previous session on mount', async () => {
+    localStorage.setItem(
+      'lyric-critic:pre-draft',
+      JSON.stringify({ lyrics: 'கண்ணே\nஉன்னைக் காண', title: 'கண்ணே', updatedAt: Date.now() })
+    );
+    render(<LyricCriticForm />);
+    const banner = await screen.findByTestId('pre-draft-restore');
+    expect(banner).toHaveTextContent(/unsaved text from your last session/i);
+    fireEvent.click(screen.getByRole('button', { name: /^restore$/i }));
+    // Lyrics have been populated from the buffer.
+    expect((draftBox() as HTMLTextAreaElement).value).toBe('கண்ணே\nஉன்னைக் காண');
+    // Banner is dismissed after restore.
+    expect(screen.queryByTestId('pre-draft-restore')).not.toBeInTheDocument();
+  });
+
+  it('does not offer to restore when nothing is in the buffer', () => {
+    render(<LyricCriticForm />);
+    expect(screen.queryByTestId('pre-draft-restore')).not.toBeInTheDocument();
+  });
+
+  it('"Start fresh" dismisses the banner and clears the buffer', () => {
+    localStorage.setItem(
+      'lyric-critic:pre-draft',
+      JSON.stringify({ lyrics: 'text', title: '', updatedAt: Date.now() })
+    );
+    render(<LyricCriticForm />);
+    fireEvent.click(screen.getByRole('button', { name: /start fresh/i }));
+    expect(screen.queryByTestId('pre-draft-restore')).not.toBeInTheDocument();
+    expect(localStorage.getItem('lyric-critic:pre-draft')).toBeNull();
+  });
 });
