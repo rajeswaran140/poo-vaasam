@@ -19,10 +19,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { ReactTransliterate } from 'react-transliterate';
 import 'react-transliterate/dist/index.css';
-import { Languages, Keyboard, Maximize2, Minimize2, Copy, Check } from 'lucide-react';
+import { Languages, Keyboard, Maximize2, Minimize2, Copy, Check, ZoomIn, ZoomOut } from 'lucide-react';
 import type { AutosaveStatus } from '@/lib/lyric-autosave';
 import { autosaveLabel } from '@/lib/lyric-autosave';
 import { useInputtoolsProxyOverride } from '@/lib/transliterate-proxy';
+
+/**
+ * Font-size zoom for the textarea. Tamil combines vowels + consonants into
+ * glyph clusters that get hard to proofread at the default 16px on a big
+ * screen — the two extra steps here (18px and 20px) match what Raj already
+ * uses when zooming the whole browser page, but scoped to the editor so the
+ * rest of the admin chrome stays put. Persisted per-browser so re-opening
+ * the form doesn't force resetting each time.
+ */
+const ZOOM_LEVELS = ['text-base', 'text-lg', 'text-xl', 'text-2xl'] as const;
+const DEFAULT_ZOOM_INDEX = 0;
+const ZOOM_STORAGE_KEY = 'lyric-editor:zoom';
 
 interface Props {
   id: string;
@@ -72,6 +84,32 @@ export function LyricDraftEditor({
   // feedback the write to the clipboard actually happened.
   const [copied, setCopied] = useState(false);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Zoom index defaults to base and hydrates from localStorage in an effect
+  // so SSR + client match; a direct localStorage read in useState would
+  // trip Next's hydration diff on the first render.
+  const [zoomIndex, setZoomIndex] = useState(DEFAULT_ZOOM_INDEX);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = window.localStorage.getItem(ZOOM_STORAGE_KEY);
+      const n = raw == null ? NaN : Number(raw);
+      if (Number.isInteger(n) && n >= 0 && n < ZOOM_LEVELS.length) setZoomIndex(n);
+    } catch {
+      /* private mode / disabled storage — keep default */
+    }
+  }, []);
+  function setZoom(nextIndex: number) {
+    const clamped = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, nextIndex));
+    setZoomIndex(clamped);
+    try {
+      window.localStorage.setItem(ZOOM_STORAGE_KEY, String(clamped));
+    } catch {
+      /* ignore */
+    }
+  }
+  const zoomClass = ZOOM_LEVELS[zoomIndex];
+  const canZoomOut = zoomIndex > 0;
+  const canZoomIn = zoomIndex < ZOOM_LEVELS.length - 1;
   useInputtoolsProxyOverride();
   const reportCaret = (e: React.SyntheticEvent<HTMLTextAreaElement>) =>
     onCaret?.(e.currentTarget.selectionStart ?? 0);
@@ -170,6 +208,40 @@ export function LyricDraftEditor({
           </span>
         )}
         <div className="ml-auto flex items-center gap-1.5">
+          {/* Zoom pair. Kept compact (icon-only + a small level label) so the
+              toolbar doesn't grow — every existing button still has room. */}
+          <div
+            role="group"
+            aria-label="Text size"
+            className="flex items-center gap-0 overflow-hidden rounded-md border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-900"
+          >
+            <button
+              type="button"
+              onClick={() => setZoom(zoomIndex - 1)}
+              disabled={!canZoomOut}
+              aria-label="Decrease text size"
+              className="px-2 py-1 text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-300 dark:hover:bg-gray-800"
+              title="Smaller (fits more on screen)"
+            >
+              <ZoomOut className="h-3 w-3" aria-hidden="true" />
+            </button>
+            <span
+              className="min-w-[1.75rem] border-x border-gray-200 px-1 text-center text-[10px] font-medium tabular-nums text-gray-500 dark:border-gray-800 dark:text-gray-400"
+              aria-hidden="true"
+            >
+              {zoomIndex + 1}/{ZOOM_LEVELS.length}
+            </span>
+            <button
+              type="button"
+              onClick={() => setZoom(zoomIndex + 1)}
+              disabled={!canZoomIn}
+              aria-label="Increase text size"
+              className="px-2 py-1 text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-300 dark:hover:bg-gray-800"
+              title="Bigger (easier to proofread Tamil glyphs)"
+            >
+              <ZoomIn className="h-3 w-3" aria-hidden="true" />
+            </button>
+          </div>
           <button
             type="button"
             onClick={copyAll}
@@ -232,7 +304,7 @@ export function LyricDraftEditor({
                 rows={expanded ? undefined : rows}
                 maxLength={maxLength}
                 dir="auto"
-                className={`${shared}${expanded ? ' flex-1 h-full text-base' : ''}`}
+                className={`${shared} ${zoomClass}${expanded ? ' flex-1 h-full' : ''}`}
                 onSelect={reportCaret}
                 onClick={reportCaret}
                 onKeyUp={reportCaret}

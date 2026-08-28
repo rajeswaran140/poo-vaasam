@@ -159,6 +159,65 @@ describe('LyricDraftEditor', () => {
     });
   });
 
+  describe('zoom', () => {
+    // Keep the browser storage clean between tests so a persisted zoom from
+    // one case doesn't hydrate into the next.
+    beforeEach(() => localStorage.removeItem('lyric-editor:zoom'));
+
+    it('starts at the smallest zoom step (1 of 4)', () => {
+      setup();
+      // aria-hidden label reads "1/4"
+      expect(screen.getByText('1/4')).toBeInTheDocument();
+      expect(screen.getByRole('textbox').className).toMatch(/\btext-base\b/);
+    });
+
+    it('grows the textarea font when Increase text size is clicked', () => {
+      const user = userEvent.setup();
+      setup();
+      fireEvent.click(screen.getByRole('button', { name: /increase text size/i }));
+      expect(screen.getByText('2/4')).toBeInTheDocument();
+      expect(screen.getByRole('textbox').className).toMatch(/\btext-lg\b/);
+      // Twice more — should end at text-2xl (the 4/4 cap).
+      fireEvent.click(screen.getByRole('button', { name: /increase text size/i }));
+      fireEvent.click(screen.getByRole('button', { name: /increase text size/i }));
+      expect(screen.getByText('4/4')).toBeInTheDocument();
+      expect(screen.getByRole('textbox').className).toMatch(/\btext-2xl\b/);
+      // At the cap, the Increase button is disabled — clicking again is a no-op.
+      const inc = screen.getByRole('button', { name: /increase text size/i });
+      expect(inc).toBeDisabled();
+      // silence the unused-user lint from `userEvent.setup()` above.
+      void user;
+    });
+
+    it('shrinks back down on Decrease and disables at the base step', () => {
+      setup();
+      fireEvent.click(screen.getByRole('button', { name: /increase text size/i }));
+      expect(screen.getByRole('textbox').className).toMatch(/\btext-lg\b/);
+      fireEvent.click(screen.getByRole('button', { name: /decrease text size/i }));
+      expect(screen.getByText('1/4')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /decrease text size/i })).toBeDisabled();
+    });
+
+    it('persists the zoom step across remounts (localStorage)', () => {
+      const first = render(<LyricDraftEditor id="a" value="" onChange={() => {}} />);
+      fireEvent.click(screen.getByRole('button', { name: /increase text size/i }));
+      fireEvent.click(screen.getByRole('button', { name: /increase text size/i }));
+      expect(screen.getByText('3/4')).toBeInTheDocument();
+      first.unmount();
+      render(<LyricDraftEditor id="b" value="" onChange={() => {}} />);
+      // On re-mount the effect hydrates from storage — 3/4 sticks.
+      expect(screen.getByText('3/4')).toBeInTheDocument();
+      expect(screen.getByRole('textbox').className).toMatch(/\btext-xl\b/);
+    });
+
+    it('ignores garbage in localStorage rather than crashing', () => {
+      localStorage.setItem('lyric-editor:zoom', 'not-a-number');
+      setup();
+      // Falls back to the base zoom step.
+      expect(screen.getByText('1/4')).toBeInTheDocument();
+    });
+  });
+
   describe('copy all', () => {
     // Using fireEvent rather than userEvent — v14's user.click adds
     // hoverability + focus checks that were dropping the call silently on
