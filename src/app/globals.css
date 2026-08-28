@@ -156,6 +156,38 @@ p {
   background-color: #374151; /* gray-700 */
 }
 
+/* React Transliterate suggestion dropdown — defensive rules for the popup
+   in the Lyric Critic editor (the new-generation <LyricDraftEditor>, which
+   does NOT use the `.tamil-translit` wrapper the older <TamilTextarea>
+   relied on). The library hashes its class name (e.g. `_ReactTransliterate_1b0d4b`)
+   so we match on the hash prefix.
+
+   The bug this addresses: a suggestion list rendered when typing near the
+   bottom of a long textarea extended past the parent card — visually
+   "outside the container" and impossible to click when an ancestor happened
+   to clip (overflow-hidden) or a fixed floating button caught the click.
+   Capping the popup height + forcing scroll inside it keeps it contained;
+   pointer-events: auto guarantees clicks register even if an ancestor
+   inadvertently sets pointer-events: none. */
+[class*='_ReactTransliterate_'] {
+  max-height: 240px;
+  overflow-y: auto;
+  pointer-events: auto;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.18);
+}
+.dark [class*='_ReactTransliterate_'] {
+  background-color: #1f2937; /* gray-800 */
+  border-color: #374151; /* gray-700 */
+  color: #f3f4f6; /* gray-100 */
+}
+.dark [class*='_ReactTransliterate_'] > li {
+  color: #f3f4f6;
+}
+.dark [class*='_ReactTransliterate_'] > li:hover {
+  background-color: #374151;
+}
+
 /* Enhanced Poem Reading Styles */
 .poem-reader-light {
   background-color: #ffffff;

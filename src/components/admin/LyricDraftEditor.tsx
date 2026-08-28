@@ -175,8 +175,14 @@ export function LyricDraftEditor({
   // all persist across the toggle. z-50 puts us above the admin sidebar
   // (also z-50, but earlier in DOM order) and the sticky admin header (z-40)
   // — anything lower left the sidebar visibly on top of the "expanded" view.
+  //
+  // NB: no `overflow-hidden` here. It clipped the transliteration suggestion
+  // popup (position:absolute inside the wrapper, positioned at caret+10) so
+  // suggestions rendered when typing near the bottom of the textarea were
+  // both invisible AND non-interactive. Body-scroll is locked by the effect
+  // above, so the overflow-hidden here was doing nothing except clipping.
   const wrapperClass = expanded
-    ? 'fixed inset-0 z-50 flex flex-col overflow-hidden bg-white p-6 sm:p-10 dark:bg-gray-950'
+    ? 'fixed inset-0 z-50 flex flex-col bg-white p-6 sm:p-10 dark:bg-gray-950'
     : '';
 
   return (
