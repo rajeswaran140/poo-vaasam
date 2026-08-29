@@ -35,6 +35,7 @@ import {
   isYouTubeAnalyticsConfigured,
 } from '@/lib/youtube-analytics';
 import { annotateAndSortCpmRows } from '@/lib/youtube-cpm-by-content';
+import { isBigQueryConfigured, fetchDayOfWeekEngagement } from '@/lib/bigquery-api';
 import { buildDigest, type Digest } from '@/lib/youtube-digest';
 import { YtRecsRepository } from '@/infrastructure/database/YtRecsRepository';
 import { RefreshRecsButton } from '@/components/admin/RefreshRecsButton';
@@ -102,6 +103,7 @@ export default async function YouTubeAdminPage() {
 
   const ga4On = isGA4Configured();
   const ytaOn = isYouTubeAnalyticsConfigured();
+  const bqOn = isBigQueryConfigured();
 
   // Fetch the channel once — its uploadsPlaylistId is reused by the video-stats
   // call below (avoids a duplicate channels.list). Without it the page can't render.
@@ -117,7 +119,7 @@ export default async function YouTubeAdminPage() {
   // Everything else fans out in parallel (each helper is failure-isolated —
   // Result objects or null — so one failure can't blank the page). cachedRecs
   // is in the fan-out too, not a serial await afterwards.
-  const [videos, ga4ClicksRes, ga4TrafficRes, ga4AudioRes, ga4YouTubeRes, ytaChannelRes, ytaVideosRes, dailyRes, cpmRes, cachedRecs] = await Promise.all([
+  const [videos, ga4ClicksRes, ga4TrafficRes, ga4AudioRes, ga4YouTubeRes, ytaChannelRes, ytaVideosRes, dailyRes, cpmRes, bqDowRes, cachedRecs] = await Promise.all([
     fetchChannelVideoStats(SITE.youtube.channelId, 200, { channel }),
     ga4On ? fetchSubscribeClicksBySource(ANALYTICS_DAYS) : Promise.resolve(null),
     ga4On ? fetchTrafficSnapshot(ANALYTICS_DAYS) : Promise.resolve(null),
@@ -127,6 +129,7 @@ export default async function YouTubeAdminPage() {
     ytaOn ? fetchVideoAnalytics(ANALYTICS_DAYS) : Promise.resolve(null),
     ytaOn ? fetchDailySeries(ANALYTICS_DAYS) : Promise.resolve(null),
     ytaOn ? fetchCpmByVideo(ANALYTICS_DAYS) : Promise.resolve(null),
+    bqOn ? fetchDayOfWeekEngagement(ANALYTICS_DAYS) : Promise.resolve(null),
     new YtRecsRepository().get(SITE.youtube.channelId).catch(() => null),
   ]);
 
@@ -151,6 +154,10 @@ export default async function YouTubeAdminPage() {
   // playbacks floor drops out). Metadata lookup piggybacks on the `videos`
   // fetch already above — no extra API round-trip.
   const cpmVideoMeta = new Map(videos.map((v) => [v.id, { title: v.title, thumbnail: v.thumbnail, publishedAt: v.publishedAt }]));
+  // BigQuery day-of-week engagement — pure query, fed by the GA4 native export.
+  // See docs/bigquery-setup.md for the one-time GCP wire-up steps.
+  const bqDowError = bqDowRes && !bqDowRes.ok ? bqDowRes.error : null;
+  const bqDow = bqDowRes?.ok ? bqDowRes.data : [];
   const cpmError = cpmRes && !cpmRes.ok ? cpmRes.error : null;
   const cpmByContent = cpmRes?.ok
     ? annotateAndSortCpmRows(cpmRes.data, { get: (id) => cpmVideoMeta.get(id) })
@@ -509,6 +516,69 @@ export default async function YouTubeAdminPage() {
                 CPM here is <em>playback-based</em>: gross revenue per 1,000 monetized playbacks, i.e. the ad-market value of each song&apos;s audience.
                 Videos with fewer than 100 monetized playbacks in the window are hidden as noise. Newly-released videos may read
                 <em> pending</em> — YouTube&apos;s monetary metrics lag playback data by 24-72 h.
+              </p>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Day-of-week engagement — first BigQuery-backed card. Answers "when
+          does the audience actually show up?" from the GA4 native export.
+          Section renders only when the export is wired (docs/bigquery-setup.md);
+          otherwise the whole thing is invisible so it doesn't clutter the
+          dashboard with a "not configured" banner. */}
+      {bqOn && (
+        <section className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 shadow-sm">
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              Site engagement by day of week · last 28 days
+            </p>
+            <p className="text-[10px] text-gray-400 dark:text-gray-500">
+              Source: GA4 native export → BigQuery
+            </p>
+          </div>
+          {bqDowError ? (
+            <pre className="overflow-x-auto rounded-lg border border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-900/20 p-3 text-xs text-red-900 dark:text-red-200">
+              {bqDowError}
+            </pre>
+          ) : bqDow.length === 0 ? (
+            <p className="rounded-lg bg-gray-50 p-4 dark:bg-gray-800/50 text-sm text-gray-500 dark:text-gray-400">
+              No rows yet. GA4 → BigQuery export runs once/day, so it can take up to 48 h after enabling for the first day&apos;s table to land.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-left text-[11px] uppercase tracking-wide text-gray-500 dark:border-gray-800 dark:text-gray-400">
+                    <th className="py-2 pr-3 font-medium">Day</th>
+                    <th className="py-2 pr-3 text-right font-medium">Sessions</th>
+                    <th className="py-2 pr-3 text-right font-medium">Pageviews</th>
+                    <th className="py-2 pr-0 text-right font-medium">Avg engagement</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bqDow.map((r) => (
+                    <tr key={r.dayOfWeek} className="border-b border-gray-100 last:border-b-0 dark:border-gray-800/60">
+                      <td className="py-2 pr-3 font-medium text-gray-800 dark:text-gray-200">{r.dayLabel}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums text-gray-600 dark:text-gray-400">
+                        {numberFmt.format(r.sessions)}
+                      </td>
+                      <td className="py-2 pr-3 text-right tabular-nums text-gray-600 dark:text-gray-400">
+                        {numberFmt.format(r.pageviews)}
+                      </td>
+                      <td className="py-2 pr-0 text-right tabular-nums text-gray-600 dark:text-gray-400">
+                        {r.avgEngagementSec >= 60
+                          ? `${Math.floor(r.avgEngagementSec / 60)}m ${Math.round(r.avgEngagementSec % 60)}s`
+                          : `${Math.round(r.avgEngagementSec)}s`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="mt-3 text-[10px] leading-snug text-gray-500 dark:text-gray-400">
+                Sessions counted as distinct <code>user_pseudo_id</code> × <code>ga_session_id</code>; engagement is GA4&apos;s
+                <code> engagement_time_msec</code> aggregated per session. Today is excluded — the intraday table is partial and
+                would skew the current day&apos;s average downward.
               </p>
             </div>
           )}
