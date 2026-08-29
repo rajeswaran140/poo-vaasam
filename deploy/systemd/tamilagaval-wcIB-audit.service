@@ -1,0 +1,19 @@
+[Unit]
+Description=Post-premiere audit for YouTube video wcIB_OvX22I (@tamilagaval)
+# Companion to the pre-premiere audit run in a Claude Code session on
+# 2026-08-21. Fires 24h after premiere; oneshot; safe to re-run.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=devuser
+Group=devuser
+WorkingDirectory=/home/devuser
+ExecStart=/home/devuser/bin/tamilagaval-video-post-premiere-audit.sh wcIB_OvX22I
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tamilagaval-wcIB-audit
+# Script itself catches API failures and always exits 0, so we don't retry.
+# TimeoutStartSec bounded so a hung upstream never wedges the unit.
+TimeoutStartSec=5min

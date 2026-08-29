@@ -1,0 +1,14 @@
+[Unit]
+Description=Post-premiere audit for YouTube video HOZ3FGrI2xk (@tamilagaval Poopaalam Paadum Neram Female Version)
+# Companion timer: tamilagaval-HOZ3-audit.timer (fires once at 2026-08-31 12:00 UTC).
+# Report lands at /home/devuser/reports/HOZ3FGrI2xk.post-premiere.md.
+
+[Service]
+Type=oneshot
+User=devuser
+Group=devuser
+ExecStart=/home/devuser/bin/tamilagaval-video-post-premiere-audit.sh HOZ3FGrI2xk
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tamilagaval-HOZ3-audit
+TimeoutStartSec=5min

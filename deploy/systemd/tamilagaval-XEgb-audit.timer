@@ -1,0 +1,14 @@
+[Unit]
+Description=Fire tamilagaval-XEgb-audit.service once at 2026-08-26 12:00 UTC (~72h post-premiere, revenue settled)
+# Premiere: 2026-08-23 11:47 UTC. +72h ~ 2026-08-26 11:47 UTC, rounded up to noon UTC for
+# consistency with the wcIB timer. Analytics API revenue lags 24-72h, so noon UTC on the third
+# day is the earliest point at which "settled" numbers are actually settled.
+
+[Timer]
+OnCalendar=2026-08-26 12:00:00 UTC
+RandomizedDelaySec=60
+Persistent=false
+Unit=tamilagaval-XEgb-audit.service
+
+[Install]
+WantedBy=timers.target

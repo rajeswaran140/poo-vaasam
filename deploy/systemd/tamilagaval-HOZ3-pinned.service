@@ -1,0 +1,16 @@
+[Unit]
+Description=Post the pinned comment for YouTube video HOZ3FGrI2xk after its premiere ends
+# Companion timer: tamilagaval-HOZ3-pinned.timer (fires once at 2026-08-28 11:57 UTC).
+# Comment text lives at /home/devuser/pinned-comments/HOZ3FGrI2xk.txt so the exact
+# copy can be reviewed / edited before the timer fires. Script has an idempotency
+# guard, so a re-fire won't double-post.
+
+[Service]
+Type=oneshot
+User=devuser
+Group=devuser
+ExecStart=/bin/bash -c '/home/devuser/bin/tamilagaval-post-pinned-comment.sh HOZ3FGrI2xk < /home/devuser/pinned-comments/HOZ3FGrI2xk.txt'
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tamilagaval-HOZ3-pinned
+TimeoutStartSec=2min

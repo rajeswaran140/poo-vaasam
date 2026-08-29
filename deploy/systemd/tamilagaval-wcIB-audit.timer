@@ -1,0 +1,17 @@
+[Unit]
+Description=Fire tamilagaval-wcIB-audit.service once at 2026-08-24 12:00 UTC (~72h post-premiere, revenue settled)
+# 2026-08-21 pre-premiere audit → 2026-08-22 +24h audit → 2026-08-24 +72h audit.
+# 72h is when YouTube Analytics revenue + retention are fully settled (24-72h
+# API lag). The Data-API Live-snapshot section in the script is useful at any
+# time; this run is for the settled Analytics-API numbers.
+
+[Timer]
+# One-shot: absolute UTC calendar time. RandomizedDelaySec kept low — the
+# report timing tracks a settled-data window, not a load-shedding concern.
+OnCalendar=2026-08-24 12:00:00 UTC
+RandomizedDelaySec=60
+Persistent=false
+Unit=tamilagaval-wcIB-audit.service
+
+[Install]
+WantedBy=timers.target
