@@ -1,0 +1,13 @@
+[Unit]
+Description=Fire tamilagaval-dljgj-audit.service once at 2026-08-27 12:00 UTC (~72h post-release, revenue settled)
+# Publish: 2026-08-24 11:48 UTC (auto-flip). +72h ~ 2026-08-27 11:48 UTC; rounded to noon UTC
+# to keep the three post-release timers on the same 12:00-UTC cadence for predictability.
+
+[Timer]
+OnCalendar=2026-08-27 12:00:00 UTC
+RandomizedDelaySec=60
+Persistent=false
+Unit=tamilagaval-dljgj-audit.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,14 @@
+[Unit]
+Description=Post-premiere audit for YouTube video XEgb4BLw2-8 (@tamilagaval brother memorial)
+# Companion timer: tamilagaval-XEgb-audit.timer (fires once at 2026-08-26 12:00 UTC).
+# Report lands at /home/devuser/reports/XEgb4BLw2-8.post-premiere.md.
+
+[Service]
+Type=oneshot
+User=devuser
+Group=devuser
+ExecStart=/home/devuser/bin/tamilagaval-video-post-premiere-audit.sh XEgb4BLw2-8
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tamilagaval-XEgb-audit
+TimeoutStartSec=5min

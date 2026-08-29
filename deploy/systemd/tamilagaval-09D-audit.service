@@ -1,0 +1,14 @@
+[Unit]
+Description=Post-premiere audit for YouTube video 09D1KE8QcKk (@tamilagaval Nee Paartha Oru Nodi romantic)
+# Companion timer: tamilagaval-09D-audit.timer (fires once at 2026-08-29 12:00 UTC).
+# Report lands at /home/devuser/reports/09D1KE8QcKk.post-premiere.md.
+
+[Service]
+Type=oneshot
+User=devuser
+Group=devuser
+ExecStart=/home/devuser/bin/tamilagaval-video-post-premiere-audit.sh 09D1KE8QcKk
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tamilagaval-09D-audit
+TimeoutStartSec=5min

@@ -1,0 +1,16 @@
+[Unit]
+Description=Post-release audit for YouTube video dlJgj-jNE8o (@tamilagaval Urumi Melam instrumental)
+# Companion timer: tamilagaval-dljgj-audit.timer (fires once at 2026-08-27 12:00 UTC).
+# Report lands at /home/devuser/reports/dlJgj-jNE8o.post-premiere.md.
+# NB: this video uses publishAt auto-flip, NOT a premiere event, so the script's
+# "premiere upcoming" guard won't trip — liveBroadcastContent stays 'none' throughout.
+
+[Service]
+Type=oneshot
+User=devuser
+Group=devuser
+ExecStart=/home/devuser/bin/tamilagaval-video-post-premiere-audit.sh dlJgj-jNE8o
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tamilagaval-dljgj-audit
+TimeoutStartSec=5min
