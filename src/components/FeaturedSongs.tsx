@@ -58,7 +58,10 @@ function FeaturedSongCard({ song }: { song: FeaturedSong }) {
         <div className="mt-auto flex items-center gap-3 pt-3">
           <WhatsAppShareButton url={shareUrl} title={song.title} verb="listen" songId={song.contentId} compact />
           {song.contentId && (
-            <Link href={`/content/${song.contentId}`} className="font-tamil text-xs font-medium text-orange-400 hover:text-orange-300">
+            <Link
+              href={`/content/${song.contentId}`}
+              className="inline-flex min-h-[44px] items-center rounded-md px-2 py-2 font-tamil text-sm font-medium text-orange-400 hover:text-orange-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/60"
+            >
               விவரங்கள் →
             </Link>
           )}
@@ -79,7 +82,13 @@ export function FeaturedSongs({
     <section aria-labelledby="featured-songs-heading" className="bg-gray-900 py-16">
       <div className="container mx-auto px-4">
         <div className="mx-auto max-w-6xl">
-          <div className="mb-8 flex items-end justify-between gap-4">
+          {/* Header row: on mobile stacks vertically (heading first, "see all"
+              link underneath); on sm+ goes back to the side-by-side spread.
+              The old side-by-side layout with `shrink-0` on the link forced
+              a 409 px width on a 320 px viewport — the primary cause of the
+              horizontal-scroll bug across the whole site. Verified by the
+              mobile audit at scripts/mobile-audit.mjs on 2026-08-30. */}
+          <div className="mb-8 flex flex-col items-start gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
             <div>
               <h2 id="featured-songs-heading" className="font-tamil text-3xl font-bold text-white sm:text-4xl">
                 {heading}
@@ -89,7 +98,10 @@ export function FeaturedSongs({
               </p>
             </div>
             {showAllLink && (
-              <Link href="/popular" className="shrink-0 font-tamil text-orange-400 hover:text-orange-300">
+              <Link
+                href="/popular"
+                className="inline-flex min-h-[44px] items-center rounded-md py-2 font-tamil text-orange-400 hover:text-orange-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/60 sm:shrink-0"
+              >
                 எல்லாம் பார்க்க →
               </Link>
             )}
