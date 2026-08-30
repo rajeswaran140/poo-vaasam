@@ -2009,6 +2009,110 @@ The Data API returns \`contentDetails.licensedContent: true\` when YouTube's Con
 5. **Compare to true baseline, not to peak.** May 2026's 4,147 views (before the July burst) is the honest baseline for this channel. Anything meaningfully above that is a win, not a decline.
 `,
   },
+  {
+    slug: 'reading-post-premiere-audit',
+    title: 'Reading a post-premiere audit report — what the sections mean',
+    category: 'Growth',
+    updatedAt: '2026-08-30T13:00:00Z',
+    body: `# Reading a post-premiere audit report
+
+Every video release now has a T+72h audit — a systemd oneshot fires 72 h after the premiere, calls YouTube Data + Analytics APIs, and writes a report to \`/home/devuser/reports/<VIDEO_ID>.post-premiere.md\` on the crowvault-ide-server. This guide is how to read the sections — what the numbers actually mean, and where the actionable signal is versus what's noise.
+
+The 09D release (Nee Paartha Oru Nodi, 2026-08-26) is the worked example throughout because it was a break-out launch and every section had a clear signal.
+
+## 1. Live snapshot vs first-24h scoreboard
+
+- **Section 1 — Live snapshot** pulls from the public Data API. Near-real-time counters (views, likes, comments). No lag. This is the "honest first-day view" the audience actually sees.
+- **Section 2 — First-24h scoreboard** pulls from the Analytics API. Includes the metrics the algorithm cares about (watch time, avgViewPercentage, subs gained, shares, revenue). This LAGS 24-72 h — a zero in Section 2 for the first day is a data-lag artefact, NOT a genuine zero. Compare against Section 1 to know.
+
+**09D example.** Section 1 showed 2,998 views at T+72h; Section 2 showed 1,267 views for Day 1 (the settled figure). Both are correct — Section 1 is the cumulative "now", Section 2 is the settled "then".
+
+## 2. Retention curve — where the money is
+
+100 sample points across the video. Two numbers per point:
+
+- **audienceWatchRatio** — % of viewers still watching at that moment. Monotonically falling.
+- **relativeRetentionPerformance** — how this video's retention compares to similar-length videos across YouTube at that moment. Can climb.
+
+**Where does the video lose people?** Find the biggest drop between consecutive points. On 09D:
+
+\`\`\`
+t=1%   → 98% watching   (intro grace, normal)
+t=11%  → 53% watching   ← 45-point drop in ~40 s
+t=21%  → 35%
+t=91%  → 14% finish
+\`\`\`
+
+The 45-point drop between 1% and 11% is where nearly half the audience left. Something in the first 40 seconds (of a 6:55 song) triggered the exit. On the NEXT release, iterating on the opening ~40 s is where the biggest lift lives.
+
+**relativeRetentionPerformance rising as viewers stay** (30% at intro → 45% at outro on 09D) means: the audience that stays LOVES the song. The drop isn't a content problem, it's a conversion problem — the intro filters the right audience in, but the filter is losing viewers who might have converted.
+
+## 3. Traffic sources — the algorithm-favor signal
+
+The traffic-sources table tells you WHERE the views came from. The single biggest signal here:
+
+- **RELATED_VIDEO high** = YouTube's suggestion engine is recommending the video alongside other content. Algorithm favor. This powers breakout launches.
+- **SUBSCRIBER high** = the existing audience carried the day, not the algorithm.
+- **YT_SEARCH high** = SEO is working (romanized title, good tags).
+- **NOTIFICATION high** = the subscriber-bell base is active.
+- **BROWSE_FEATURES high** = homepage promotion. The thumbnail is doing the work.
+
+**09D example.** 76% of views came from RELATED_VIDEO. The algorithm actively chose the video — that's the mechanism behind the 10× lift over the prior four premieres.
+
+**Corollary — when the algorithm is favouring a video, don't reset its signal.** Don't change the title, don't edit the thumbnail, don't rewrite the description, don't add/remove tags for at least 2-3 weeks. Every metadata edit re-classifies the video and can wipe the recommendation footprint. Small typo fixes are fine; anything semantic waits.
+
+## 4. Geographic mix — a country-of-audience signal
+
+The top-10 countries table shows where views landed. Compare to the channel-wide baseline (~38% India — see [[reading-channel-health]]):
+
+- **India >> channel average** = the video reached the mainland Tamil audience specifically. Different from diaspora-oriented songs (mother/father memorials over-index on Sri Lanka + UK + Malaysia).
+- **Sri Lanka / UK / Malaysia >> channel average** = diaspora hit. Emotional-tribute songs typically land here.
+- **India ≈ channel average** = the video split the way the channel usually does. Nothing to learn from geo on this release.
+
+**09D example.** 82% India (vs channel average ~38%). This song is being recommended in India specifically. Very different from wcIB (mother, 2026-08-21) which had strong Jaffna-Tamil-diaspora numbers. Both are wins; they're different SEGMENTS of win.
+
+## 5. Ranking + median-per-video
+
+Puts the launch in context of the whole catalogue:
+
+- **Rank / total** tells you where the video sits in the channel's 30-day list.
+- **Views vs channel median** tells you how far above (or below) the middle of the pack it is.
+
+**09D at T+72h**: rank 22 / 105, 1,267 views vs channel median 239 = ~5× the median. Not in top-5 yet (top-5 range 8k-11k), but a strong Day-1.
+
+## 6. Revenue
+
+Three numbers to read together:
+
+- **playbackBasedCpm** — gross per 1,000 monetized playbacks (the ad-market value of THIS audience).
+- **cpm** — gross per 1,000 ad impressions.
+- **estimatedRevenue** — YOUR share (~55% of gross).
+
+Always compare against the Tamil-India baseline (~$0.30-1.50 for both CPM figures — see [[rpm-not-content-id-by-default]] in memory). Anything in that band is normal. Only if RPM stays below $0.30 for weeks does Content ID become worth checking (Studio → Copyright tab).
+
+**09D example.** $0.99 playbackBasedCpm, $0.89 CPM — right in the baseline. Nothing to chase. The $0.51 revenue for Day-1 is preliminary (Analytics lags 24-72h on money); re-run the audit in 3 days for settled numbers.
+
+## 7. The suggested next-actions checklist
+
+The report ends with a boilerplate checklist — "if the numbers look like X, do Y". Pattern-match your specific numbers against those conditionals. They're the shortest version of everything above.
+
+## What NOT to conclude from a post-premiere audit
+
+- **Day-2/3 view decay is not a signal of anything wrong.** Every video on this channel decays sharply after Day 1-2, regardless of what you do next. It's the freshness algorithm. See the wcIB / XEgb / dljgj curves for comparison — all show the same shape.
+- **"Views are down after the new upload" is almost always this same decay pattern, not an interaction between the two uploads.**
+- **A low first-day view count doesn't say the song is weak.** dljgj (Urumi Melam instrumental) got 134 views on Day 1 and had a strong shape; XEgb (brother memorial) got 41 and eventually settled at a reasonable per-day rate. Small-channel launches are noisy at low N.
+
+## Re-running the audit for settled revenue
+
+Revenue lags 24-72 h. To pull the settled figures 3+ days after the initial audit:
+
+\`\`\`bash
+/home/devuser/bin/tamilagaval-video-post-premiere-audit.sh <VIDEO_ID>
+\`\`\`
+
+Same script, same output path — overwrites the previous report with fresh numbers.
+`,
+  },
 ];
 
 /** Docs grouped by category, in registry order, for the sidebar. */
