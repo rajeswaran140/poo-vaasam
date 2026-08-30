@@ -65,7 +65,7 @@ export function WhatsAppShareButton({ url, title, verb = 'listen', compact = fal
         onClick={onClick}
         aria-label={label}
         title="WhatsApp-இல் பகிருங்கள்"
-        className={`flex shrink-0 items-center rounded-full p-2 text-[#25D366] transition-colors hover:bg-[#25D366]/10 hover:text-[#1ebe57] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#25D366]/60 ${className}`}
+        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[#25D366] transition-colors hover:bg-[#25D366]/10 hover:text-[#1ebe57] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#25D366]/60 ${className}`}
       >
         <WhatsAppGlyph className="h-[18px] w-[18px]" />
       </button>
@@ -81,7 +81,7 @@ export function WhatsAppShareButton({ url, title, verb = 'listen', compact = fal
         aria-label={label}
         title="WhatsApp-இல் பகிருங்கள்"
         onClick={record}
-        className={`flex shrink-0 items-center px-2 py-2.5 text-[#25D366] transition-colors hover:text-[#1ebe57] focus-visible:text-[#1ebe57] focus-visible:outline-none ${className}`}
+        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[#25D366] transition-colors hover:bg-[#25D366]/10 hover:text-[#1ebe57] focus-visible:bg-[#25D366]/10 focus-visible:text-[#1ebe57] focus-visible:outline-none ${className}`}
       >
         <WhatsAppGlyph className="h-[18px] w-[18px]" />
       </a>
