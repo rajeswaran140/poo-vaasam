@@ -1,0 +1,14 @@
+[Unit]
+Description=Post-premiere audit for YouTube video Vu1pcY7cp8M (@tamilagaval Enna Idhu Kadhalā? — Tamil village folk love song)
+# Companion timer: tamilagaval-Vu1p-audit.timer (fires once at 2026-09-05 12:00 UTC).
+# Report lands at /home/devuser/reports/Vu1pcY7cp8M.post-premiere.md.
+
+[Service]
+Type=oneshot
+User=devuser
+Group=devuser
+ExecStart=/home/devuser/bin/tamilagaval-video-post-premiere-audit.sh Vu1pcY7cp8M
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tamilagaval-Vu1p-audit
+TimeoutStartSec=5min

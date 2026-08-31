@@ -1,0 +1,16 @@
+[Unit]
+Description=Post the pinned comment for YouTube video Vu1pcY7cp8M after its premiere ends
+# Companion timer: tamilagaval-Vu1p-pinned.timer (fires once at 2026-09-02 12:21 UTC).
+# Comment text lives at /home/devuser/pinned-comments/Vu1pcY7cp8M.txt so the exact
+# copy can be reviewed / edited before the timer fires. Script has an idempotency
+# guard, so a re-fire won't double-post.
+
+[Service]
+Type=oneshot
+User=devuser
+Group=devuser
+ExecStart=/bin/bash -c '/home/devuser/bin/tamilagaval-post-pinned-comment.sh Vu1pcY7cp8M < /home/devuser/pinned-comments/Vu1pcY7cp8M.txt'
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tamilagaval-Vu1p-pinned
+TimeoutStartSec=2min
