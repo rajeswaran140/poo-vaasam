@@ -3,18 +3,23 @@
 One-time wire-up so the `Site engagement by day of week` card on
 `/admin/youtube` renders (and future BigQuery-backed cards work).
 
-## Current state — 2026-08-29
+## Current state — 2026-08-31
 
 | Piece | Status |
 |---|---|
 | BigQuery client + admin card (code) | ✅ shipped (PR #249) |
 | `BIGQUERY_PROJECT_ID=tamilagaval-prod-2026` set on Amplify | ✅ done 2026-08-29 |
-| BigQuery API enabled on `tamilagaval-prod-2026` | ⏳ needs `gcloud services enable` |
-| GA4 SA has `roles/bigquery.jobUser` on the project | ⏳ needs `gcloud add-iam-policy-binding` |
-| **GA4 → BigQuery Link enabled** | ⏳ **GA4 console only — cannot be scripted** |
-| First `events_YYYYMMDD` table populated | ⏳ waits 24-48 h after Link is enabled |
-| GA4 SA has `roles/bigquery.dataViewer` on the dataset | ⏳ do after dataset exists |
-| Amplify redeploy (env var takes effect) | ⏳ next merge or a manual redeploy |
+| BigQuery API enabled on `tamilagaval-prod-2026` | ✅ done 2026-08-29 |
+| GA4 SA has `roles/bigquery.jobUser` on the project | ✅ done 2026-08-29 |
+| GA4 → BigQuery Link enabled | ✅ done 2026-08-29 |
+| Dataset `analytics_539459362` created | ✅ landed by 2026-08-30 |
+| GA4 SA has dataset-level READER access | ✅ done 2026-08-31 (via classic ACL — see Step 3) |
+| `pseudonymous_users_YYYYMMDD` tables landing | ✅ 2026-08-28 + 29 present |
+| **`events_YYYYMMDD` tables landing** | ⏳ **not yet — investigate step 2b** |
+| Amplify redeploy (env var takes effect) | ✅ done — builds 640/641/642 on 2026-08-29/30 |
+
+Everything below is copy-pasteable — values already resolved from the
+GA4 service account key in SSM and the GA4 property id in Amplify env.
 
 Everything below is copy-pasteable — values already resolved from the
 GA4 service account key in SSM and the GA4 property id in Amplify env.
@@ -39,6 +44,8 @@ gcloud projects add-iam-policy-binding "$PROJECT" \
 
 ## Step 2 — GA4 console (only place this can be done)
 
+### 2a. Create the Link
+
 1. GA4 → Admin → Product Links → **BigQuery Links** → *Link*.
 2. Pick project **`tamilagaval-prod-2026`**.
 3. Data location: **US** multi-region (matches `location: 'US'` in
@@ -48,26 +55,58 @@ gcloud projects add-iam-policy-binding "$PROJECT" \
 6. Include advertising identifiers: off — no need for this channel.
 7. Save.
 
-**Wait 24-48 h** — the first `events_YYYYMMDD` table lands as an
-overnight batch job. Confirm with:
+### 2b. Verify BOTH exports are ticked
+
+Once linked, click into the link and confirm — this bit us on the
+2026-08-29 setup: only **User data → Daily** was checked initially,
+so `pseudonymous_users_*` tables started landing but `events_*` did
+not. The two exports are independent toggles on the same Link page.
+
+- **Event data** → *Export type: Daily* — REQUIRED for the day-of-week
+  card (and every other event-driven query).
+- **User data** → *Export type: Daily* — optional; useful for user-
+  attribute cohorts.
+
+If Event data was off, ticking it now starts the next overnight run
+(look for `events_YYYYMMDD` within ~24 h).
+
+### 2c. Wait for the first daily table
+
+The first `events_YYYYMMDD` table lands as an overnight batch job
+(usually 24-48 h after the Link is enabled AND Event export is on).
+Confirm with:
 
 ```bash
-bq ls -n 1 tamilagaval-prod-2026:analytics_539459362
+bq ls -n 20 tamilagaval-prod-2026:analytics_539459362
 ```
 
+Look for names starting with \`events_\` — not just \`pseudonymous_users_\`.
+
 ## Step 3 — CLI (after the dataset exists)
+
+The dataset lands within seconds of the Link being created (well
+before the first table). \`gcloud beta bq / bq add-iam-policy-binding\`
+is the "modern" way BUT it's behind an allowlist on many GCP projects
+(2026-08-31: errored on tamilagaval-prod-2026 with "This feature
+requires allowlisting"). Use the classic-ACL path instead — same
+effect, no allowlist required:
 
 ```bash
 PROJECT=tamilagaval-prod-2026
 GA4_SA=tamilagaval-ga4-reader@tamilagaval-prod-2026.iam.gserviceaccount.com
 DATASET=analytics_539459362
 
-# Dataset-level: read the exported tables
-bq add-iam-policy-binding \
-  --member="serviceAccount:$GA4_SA" \
-  --role="roles/bigquery.dataViewer" \
-  "$PROJECT:$DATASET"
+# Fetch current ACL, append the SA as READER, put back.
+# jq preserves everything else in the dataset config — only appends to `access`.
+bq show --format=prettyjson "$PROJECT:$DATASET" > /tmp/ds.json
+jq --arg sa "$GA4_SA" '.access += [{"role": "READER", "userByEmail": $sa}]' /tmp/ds.json > /tmp/ds-new.json
+bq update --source /tmp/ds-new.json "$PROJECT:$DATASET"
 ```
+
+Fallback if even the classic path errors — the BigQuery Console UI:
+1. https://console.cloud.google.com/bigquery?project=tamilagaval-prod-2026
+2. Expand \`tamilagaval-prod-2026\` → \`analytics_539459362\` → three-dot menu → **Share**
+3. Add principal → the GA4 SA email → Role: **BigQuery Data Viewer** → Save
 
 ## Step 4 — Amplify redeploy
 
@@ -81,8 +120,9 @@ next deploy is live AND step 3 is done.
 
 Visit `/admin/youtube`. The "Site engagement by day of week" section:
 - **Absent** if the env var isn't picked up yet → redeploy Amplify
-- **Present, empty** if the dataset hasn't landed yet → wait longer
-- **Present with an error** if IAM's missing → run step 1 or 3
+- **Present with a "permission denied" error** if step 3 is missing → run step 3
+- **Present with a "Not found: Table events_*" error** → Event export
+  isn't landing. Check step 2b (Event data toggle) or wait ~24 h.
 - **Present with 7 rows** → done. Explore other queries via
   `src/lib/bigquery-api.ts` (add sibling `fetch*` functions).
 
