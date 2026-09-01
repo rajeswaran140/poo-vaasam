@@ -1,0 +1,13 @@
+[Unit]
+Description=Fire tamilagaval-kNdd-audit.service once at 2026-09-05 12:00 UTC (~72h post-premiere, revenue settled)
+# Premiere: 2026-09-02 12:15 UTC. +72h ~ 2026-09-05 12:15 UTC; rounded to noon UTC
+# to keep all post-premiere timers on the same cadence for predictability.
+
+[Timer]
+OnCalendar=2026-09-05 12:00:00 UTC
+RandomizedDelaySec=60
+Persistent=false
+Unit=tamilagaval-kNdd-audit.service
+
+[Install]
+WantedBy=timers.target

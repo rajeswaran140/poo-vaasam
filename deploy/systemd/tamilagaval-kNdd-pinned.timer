@@ -1,0 +1,14 @@
+[Unit]
+Description=Fire tamilagaval-kNdd-pinned.service once at 2026-09-02 12:21 UTC (~6 min after premiere start)
+# Premiere: 2026-09-02 12:15 UTC. Song is ~5-6 min; +6 min lands just after
+# premiere ends and the live chat has settled but the pinned comment still
+# catches post-premiere replay viewers landing on the video page.
+
+[Timer]
+OnCalendar=2026-09-02 12:21:00 UTC
+RandomizedDelaySec=30
+Persistent=false
+Unit=tamilagaval-kNdd-pinned.service
+
+[Install]
+WantedBy=timers.target
