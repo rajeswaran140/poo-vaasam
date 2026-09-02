@@ -1,11 +1,10 @@
 [Unit]
-Description=Fire tamilagaval-Vu1p-audit.service once at 2026-09-08 12:00 UTC (~72h post-premiere, revenue settled)
-# Premiere: 2026-09-05 12:15 UTC (rescheduled 2026-09-01 from Wed 09-02 → Fri 09-05).
-# +72h ~ 2026-09-08 12:15 UTC; rounded to noon UTC to keep all post-premiere
-# timers on the same cadence for predictability.
+Description=Fire tamilagaval-Vu1p-audit.service once at 2026-09-05 12:00 UTC (~72h post-premiere, revenue settled)
+# Premiere: 2026-09-02 12:15 UTC. +72h ~ 2026-09-05 12:15 UTC; rounded to noon
+# UTC to keep all post-premiere timers on the same cadence for predictability.
 
 [Timer]
-OnCalendar=2026-09-08 12:00:00 UTC
+OnCalendar=2026-09-05 12:00:00 UTC
 RandomizedDelaySec=60
 Persistent=false
 Unit=tamilagaval-Vu1p-audit.service
