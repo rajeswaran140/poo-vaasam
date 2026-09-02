@@ -1,11 +1,11 @@
 [Unit]
-Description=Fire tamilagaval-Vu1p-pinned.service once at 2026-09-05 12:21 UTC (~6 min after premiere start)
-# Premiere: 2026-09-05 12:15 UTC (rescheduled 2026-09-01 from Wed 09-02 → Fri 09-05).
+Description=Fire tamilagaval-Vu1p-pinned.service once at 2026-09-02 12:21 UTC (~6 min after premiere start)
+# Premiere: 2026-09-02 12:15 UTC (Raj rescheduled again 2026-09-01 evening → 2026-09-02 morning).
 # Song is ~5-6 min; +6 min lands just after premiere ends and the live chat has
 # settled but the pinned comment still catches post-premiere replay viewers.
 
 [Timer]
-OnCalendar=2026-09-05 12:21:00 UTC
+OnCalendar=2026-09-02 12:21:00 UTC
 RandomizedDelaySec=30
 Persistent=false
 Unit=tamilagaval-Vu1p-pinned.service
