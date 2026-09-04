@@ -1,0 +1,18 @@
+[Unit]
+Description=Post-premiere audit for YouTube video D0E7t4-amRk (@tamilagaval Unnaik Kaana Venum — poetic Tamil romantic duet)
+# Companion timer: tamilagaval-D0E7-audit.timer (fires once at 2026-09-07 12:00 UTC).
+# Report lands at /home/devuser/reports/D0E7t4-amRk.post-premiere.md.
+#
+# This video is the re-upload of the deleted kNdd-LQXSyc. The kNdd units were
+# removed in f10ea02 and never recreated for the re-upload, so this release had
+# no audit coverage at all until these units were added on 2026-09-04.
+
+[Service]
+Type=oneshot
+User=devuser
+Group=devuser
+ExecStart=/home/devuser/bin/tamilagaval-video-post-premiere-audit.sh D0E7t4-amRk
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tamilagaval-D0E7-audit
+TimeoutStartSec=5min

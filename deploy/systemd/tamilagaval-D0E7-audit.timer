@@ -1,0 +1,13 @@
+[Unit]
+Description=Fire tamilagaval-D0E7-audit.service once at 2026-09-07 12:00 UTC (~72h post-premiere, revenue settled)
+# Premiere: 2026-09-04 12:16:05 UTC (actualStartTime). +72h ~ 2026-09-07 12:16 UTC;
+# rounded to noon UTC to keep all post-premiere timers on the same cadence.
+
+[Timer]
+OnCalendar=2026-09-07 12:00:00 UTC
+RandomizedDelaySec=60
+Persistent=false
+Unit=tamilagaval-D0E7-audit.service
+
+[Install]
+WantedBy=timers.target

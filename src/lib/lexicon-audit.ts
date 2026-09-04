@@ -288,3 +288,45 @@ export function sortFindings(findings: readonly AuditFinding[]): AuditFinding[] 
       (a.words[0] ?? '').localeCompare(b.words[0] ?? '', 'ta')
   );
 }
+
+/**
+ * Trim a sorted finding list to `max` while keeping EVERY code represented.
+ *
+ * A plain `sorted.slice(0, max)` is what the audit route used to do, and on the
+ * live lexicon it was silently wrong: ~1,035 high-severity `suspicious-sangam`
+ * findings filled the whole 500-item budget, so `missing-themes` (1,047),
+ * `missing-tamil-meaning` (1,047) and `near-duplicate` (1) never left the
+ * server. The UI builds its filter chips from the UNCAPPED `countsByCode`, so
+ * those chips advertised four-figure counts and then rendered an empty list —
+ * the one genuinely interesting low-severity finding on the whole lexicon was
+ * invisible on every run.
+ *
+ * Each code gets an equal quota first, then any spare budget goes to the
+ * worst-severity leftovers. Result is re-sorted, so callers still get
+ * severity-first ordering.
+ */
+export function capFindings(findings: readonly AuditFinding[], max: number): AuditFinding[] {
+  if (max <= 0) return [];
+  if (findings.length <= max) return [...findings];
+
+  const byCode = new Map<AuditCode, AuditFinding[]>();
+  for (const f of findings) {
+    const bucket = byCode.get(f.code);
+    if (bucket) bucket.push(f);
+    else byCode.set(f.code, [f]);
+  }
+
+  // At least one per code, so no filter chip can ever point at an empty set.
+  const quota = Math.max(1, Math.floor(max / byCode.size));
+  const picked: AuditFinding[] = [];
+  const leftovers: AuditFinding[] = [];
+  for (const bucket of byCode.values()) {
+    picked.push(...bucket.slice(0, quota));
+    leftovers.push(...bucket.slice(quota));
+  }
+
+  const remaining = max - picked.length;
+  if (remaining > 0) picked.push(...sortFindings(leftovers).slice(0, remaining));
+
+  return sortFindings(picked).slice(0, max);
+}
