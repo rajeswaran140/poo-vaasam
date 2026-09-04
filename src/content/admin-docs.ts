@@ -1515,14 +1515,14 @@ That is a real revenue option, and it is a genuine trade against the ad-free lis
     slug: 'reading-impressions-and-reach',
     title: 'Reading impressions & reach — what the numbers actually mean',
     category: 'Growth',
-    updatedAt: '2026-08-08',
+    updatedAt: '2026-09-04T14:45:00Z',
     body: `# Reading impressions & reach
 
 Impressions are the most misread number on this channel. This page exists so the same question doesn't have to be re-answered from scratch.
 
 ## Impressions are Studio-only — not a bug, not a permissions problem
 
-\`impressions\` and \`impressionsClickThroughRate\` are **not in the YouTube Analytics API**. Requesting them returns \`HTTP 400 — Unknown identifier\`, while \`views,estimatedMinutesWatched\` on the same window succeeds. Verified again 2026-08-08.
+\`impressions\` and \`impressionsClickThroughRate\` are **not in the YouTube Analytics API**. Requesting them returns \`HTTP 400 — Unknown identifier\`, while \`views,estimatedMinutesWatched\` on the same window succeeds. Verified again **2026-09-04** against a working analytics token — the same query with valid metrics returned rows, so this is an API limitation and not auth. It has now been re-confirmed twice (2026-08-08, 2026-09-04); treat any CTR figure quoted from Studio as unverifiable from here and say so rather than reasoning as if it were confirmed.
 
 So nothing automated — no cron, no dashboard panel — can read impressions. Only **Studio → Analytics → Reach** has them. Everything else uses **suggested-video views** (\`insightTrafficSourceType = RELATED_VIDEO\`) as a proxy, and should say so.
 
@@ -1736,7 +1736,7 @@ A control to compare against: முத்தமிழின் (\`J2tc_aUNOPA\`
     slug: 'publishing-traps',
     title: 'Publishing traps — things that fail silently',
     category: 'Publishing',
-    updatedAt: '2026-08-10',
+    updatedAt: '2026-09-04T14:45:00Z',
     body: `# Publishing traps — things that fail silently
 
 Each of these cost real time. None of them produce an error message.
@@ -1795,6 +1795,34 @@ YouTube regenerates automatic caption tracks after you delete them — one reapp
 ## A premiere has no duration until it airs
 
 \`contentDetails.duration\` is absent while \`liveBroadcastContent\` is \`upcoming\`. Anything that needs the length — chapter placement, a retention boundary ratio — cannot be computed before it goes live.
+
+## A pinned comment posted before the premiere kills its own automation
+
+The pinned-comment timer fires ~6 minutes after a premiere **starts**. If someone posts the comment by hand before then, the scheduled run hits the idempotency guard, logs \`ABORT: channel already has a comment\` and exits 3. A \`oneshot\` exiting 3 reports as **Failed** in systemd, and nobody reads a timer's exit status — so from the outside it looks like the automation ran.
+
+It happened three times before anyone noticed:
+
+| Video | Premiere | Comment posted | Early by |
+|---|---|---|---|
+| HOZ3FGrI2xk | 2026-08-28 11:51 | 2026-08-28 04:21 | 7h 30m |
+| Vu1pcY7cp8M | 2026-09-02 12:15 | 2026-08-31 04:23 | 2d 7h 52m |
+| D0E7t4-amRk | 2026-09-04 12:16 | 2026-09-03 15:59 | 20h 17m |
+
+The automation had **never once posted a comment** — 0 for 3.
+
+Root cause was that the script had exactly one mode: post immediately. Anyone wanting to check the Tamil text rendered had no way to look at it except by publishing it. Since 2026-09-04 it has \`--dry-run\` (previews the text, posts nothing) and refuses to post until \`liveStreamingDetails.actualStartTime\` exists — \`exit 4\`, deliberately **not** overridable by \`--force\`, because an operator hitting an unexpected abort reaches for the documented override.
+
+The guard keys on \`actualStartTime\`, **not** \`liveBroadcastContent\`. The timer fires while the premiere is still live — Vu1p fired at 12:21:10 against an \`actualEndTime\` of 12:22:54 — so gating on \`liveBroadcastContent === 'none'\` would have replaced one silent no-op with another.
+
+**Never invoke the posting script to preview text. Use \`--dry-run\`, and let the timer post.**
+
+## Re-uploading a video leaves it with no automation
+
+When a video is deleted, its systemd units are removed with it. If the song is then re-uploaded under a new id, the units do not come back: no audit timer, no pinned timer, no comment file, and no report will ever be written.
+
+\`D0E7t4-amRk\` — the re-upload of the deleted \`kNdd-LQXSyc\` — premiered with zero coverage and would have produced no T+72h report at all. Nothing errors. The release simply goes unmeasured, and you find out by noticing a report that never arrived.
+
+**After any re-upload, recreate the units under the new video id.**
 
 ## Verify the write, not the response
 
@@ -1919,7 +1947,7 @@ After the wiring PR merges and Amplify builds:
     slug: 'reading-channel-health',
     title: 'Reading channel health — cool-downs, cadence, and the RPM myth',
     category: 'Growth',
-    updatedAt: '2026-08-25T20:00:00Z',
+    updatedAt: '2026-09-04T14:45:00Z',
     body: `# Reading channel health — cool-downs, cadence, and the RPM myth
 
 Frameworks for interpreting month-over-month channel numbers without either panicking or over-optimizing. Written after a session where "views dropped 43%, subs dropped 62% this month" turned out to be normal post-surge decay, not a broken channel — the reasoning below is what let us see that instead of firefighting.
@@ -1965,6 +1993,39 @@ Not views. Not impressions. Not RPM.
 - Trending down for 4+ weeks straight: real signal to investigate
 
 Views are noisier than subs — a single viral moment can distort a week. Subs are the audience's actual "come back for more" vote and change more slowly. Six weekly data points > any single monthly comparison.
+
+## Rate, not total — the biggest songs convert worst
+
+Net subs per week is the *channel* number. At the **song** level, use per-1,000-view rates, because on this channel reach and conversion rank almost inversely.
+
+Trailing 90 days, measured 2026-09-04:
+
+| Song | subs/1k | likes/1k | Views |
+|---|---|---|---|
+| அன்பை சுமந்து சுமந்து (Father) | **5.5** | 16.4 | 4,744 |
+| நீ பார்த்த ஒரு நொடி (26 Aug) | **5.3** | **16.9** | 5,454 |
+| மெல்ல மெல்ல | 4.9 | 13.7 | 5,322 |
+| அம்மா உந்தன் நினைவுகள் | 4.8 | 11.6 | 12,710 |
+| ஈழத்து மண்ணே | 4.7 | 11.8 | 7,434 |
+| நீ சிரிச்ச நேரம் (biggest) | 3.8 | 8.0 | 56,991 |
+
+The channel's biggest video — ten times the reach of anything near it — converts at **less than half** the like rate of its smallest. Ranking the catalogue by views very nearly inverts the ranking by engagement.
+
+The mechanism: high-view songs earn their reach from browse and suggested traffic, a colder and broader audience that watches without acting. Lower-view songs reach a narrower, warmer audience. **A song with fewer views and a higher conversion rate is not underperforming** — by the measure that matters here it is doing better.
+
+**The theme pattern.** Tribute and heritage songs (father, mother, Eelam) convert markedly better per listener than love songs, which travel further. That is consistent with the Jaffna-diaspora retention signal seen on the mother song in August.
+
+⚠️ **Small-n caution.** Early like rates are unstable and move a long way. Vu1pcY7cp8M read 10% at n=80 and settled at 0.93%. Wait for several hundred views before treating a rate as real — and note the same video went from 80 views at T+6h to 2,052 at T+50h, so early *reach* is no more trustworthy than early engagement.
+
+**Monthly trend through 2026-09-03:**
+
+| Period | Views | Watch minutes | Subs gained | Avg view % |
+|---|---|---|---|---|
+| Jun 06 – Jul 05 | 165,404 | 349,157 | +712 | 37.9% |
+| Jul 06 – Aug 04 | 168,657 | 463,826 | +555 | 46.1% |
+| Aug 05 – Sep 03 | 124,304 | 397,927 | +286 | 54.9% |
+
+Views down 26%, watch minutes down only 14%, retention up every single month. That is contraction in reach alongside improving audience quality — the cool-down this page opens with, not a decline.
 
 ## RPM: the honest Tamil-India range
 
