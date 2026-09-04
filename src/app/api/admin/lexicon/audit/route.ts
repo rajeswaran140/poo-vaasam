@@ -13,11 +13,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
 import { LexiconRepository } from '@/infrastructure/database/LexiconRepository';
-import { auditLexicon, sortFindings } from '@/lib/lexicon-audit';
+import { auditLexicon, sortFindings, capFindings } from '@/lib/lexicon-audit';
 
 export const dynamic = 'force-dynamic';
 
-/** Cap the payload — the report is for review, not for bulk machine processing. */
+/**
+ * Cap the payload — the report is for review, not for bulk machine processing.
+ * The cap is applied per-code by capFindings, NOT as a flat slice of the sorted
+ * list: one high-count code would otherwise consume the whole budget and the
+ * UI's filter chips (built from the uncapped countsByCode) would point at codes
+ * with no findings attached. See capFindings for the live numbers.
+ */
 const MAX_FINDINGS = 500;
 
 export async function GET(request: NextRequest) {
@@ -31,13 +37,14 @@ export async function GET(request: NextRequest) {
     const all = await new LexiconRepository().findAll();
     const report = auditLexicon(all);
     const sorted = sortFindings(report.findings);
+    const capped = capFindings(sorted, MAX_FINDINGS);
 
     return NextResponse.json({
       success: true,
       total: report.total,
       countsByCode: report.countsByCode,
       countsBySeverity: report.countsBySeverity,
-      findings: sorted.slice(0, MAX_FINDINGS),
+      findings: capped,
       // Say so rather than silently truncating: a report that looks complete
       // but is not would let a real problem sit unseen behind the cap.
       truncated: sorted.length > MAX_FINDINGS,

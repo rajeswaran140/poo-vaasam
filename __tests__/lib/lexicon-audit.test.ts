@@ -8,7 +8,7 @@
  * none at all. A destructive proposal here would be applied with one click.
  */
 
-import { auditLexicon, sortFindings } from '@/lib/lexicon-audit';
+import { auditLexicon, sortFindings, capFindings } from '@/lib/lexicon-audit';
 import type { LexiconWord } from '@/types/lexicon';
 
 const word = (o: Partial<LexiconWord> & { id: string; word: string }): LexiconWord => ({
@@ -173,5 +173,53 @@ describe('scope and ordering', () => {
     const report = auditLexicon([word({ id: '1', word: 'அகநேசம்', registers: ['sangam'] })]);
     expect(report.countsByCode['suspicious-sangam']).toBe(1);
     expect(report.countsBySeverity.high).toBeGreaterThan(0);
+  });
+});
+
+describe('capping the payload keeps every code reachable', () => {
+  /**
+   * The live lexicon produces ~1,035 high-severity findings and ~2,095
+   * medium ones. The route sorted by severity and sliced the first 500, so
+   * the payload was 100% `suspicious-sangam` and the UI's filter chips for
+   * `missing-themes` / `missing-tamil-meaning` / `near-duplicate` — which are
+   * built from the UNCAPPED countsByCode — filtered a set those codes were
+   * not in, and rendered an empty list. The chip advertised 1047 and showed 0.
+   */
+  const many = (code: string, severity: 'high' | 'medium' | 'low', n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      code,
+      severity,
+      ids: [`${code}-${i}`],
+      words: [`w${i}`],
+      message: 'm',
+      proposal: null,
+    })) as ReturnType<typeof sortFindings>;
+
+  const crowded = sortFindings([
+    ...many('suspicious-sangam', 'high', 1035),
+    ...many('missing-themes', 'medium', 1047),
+    ...many('near-duplicate', 'low', 1),
+  ]);
+
+  it('keeps at least one finding for every code, even when one code exceeds the cap alone', () => {
+    const capped = capFindings(crowded, 500);
+    const present = new Set(capped.map((f) => f.code));
+    expect(present).toEqual(new Set(['suspicious-sangam', 'missing-themes', 'near-duplicate']));
+  });
+
+  it('never returns more than the cap', () => {
+    expect(capFindings(crowded, 500).length).toBe(500);
+  });
+
+  it('returns everything untouched when the total is under the cap', () => {
+    const few = sortFindings([...many('missing-gloss', 'high', 3)]);
+    expect(capFindings(few, 500)).toEqual(few);
+  });
+
+  it('still orders high severity before medium and low', () => {
+    const capped = capFindings(crowded, 500);
+    const rank = { high: 0, medium: 1, low: 2 } as const;
+    const ranks = capped.map((f) => rank[f.severity]);
+    expect([...ranks].sort((a, b) => a - b)).toEqual(ranks);
   });
 });
