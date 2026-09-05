@@ -203,6 +203,14 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     keywords: ['compose', 'write'],
   },
   {
+    href: '/admin/suno-prompts',
+    title: 'Suno Prompts',
+    subtitle: 'Lyrics → style box, exclude list and sliders, saved for reuse',
+    section: 'Compose',
+    icon: SlidersHorizontal,
+    keywords: ['suno', 'prompt', 'style', 'exclude', 'weirdness'],
+  },
+  {
     href: '/admin/compose/critique',
     title: 'Lyric Critic',
     subtitle: 'Your own draft → honest feedback',
