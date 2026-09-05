@@ -1,0 +1,19 @@
+[Unit]
+Description=Post-premiere audit for YouTube video wPxNf0VKUKQ (@tamilagaval Kanjik Kalayam — Tamil village romantic ballad)
+# Companion timer: tamilagaval-wPxN-audit.timer (fires once at 2026-09-12 12:00 UTC).
+# Report lands at /home/devuser/reports/wPxNf0VKUKQ.post-premiere.md.
+#
+# Added 2026-09-05 during a pre-flight check, four days before the premiere.
+# The release-checklist run found the video had no units at all — the same gap
+# D0E7t4-amRk had, where a release would have gone entirely unmeasured and the
+# only symptom is a report that never arrives.
+
+[Service]
+Type=oneshot
+User=devuser
+Group=devuser
+ExecStart=/home/devuser/bin/tamilagaval-video-post-premiere-audit.sh wPxNf0VKUKQ
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tamilagaval-wPxN-audit
+TimeoutStartSec=5min
