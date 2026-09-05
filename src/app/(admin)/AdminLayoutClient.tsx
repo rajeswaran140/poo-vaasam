@@ -133,6 +133,11 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
     subtitle:
       "Your own draft → honest feedback; coaches your craft, never rewrites",
   },
+  "/admin/suno-prompts": {
+    title: "Suno Prompts",
+    subtitle:
+      "Lyrics \u2192 style box, exclude list and sliders \u2014 saved so a pack can be reopened and reused",
+  },
   "/admin/lexicon": {
     title: "Lexicon",
     subtitle:
