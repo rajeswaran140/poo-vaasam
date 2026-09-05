@@ -18,6 +18,18 @@ if (typeof Headers === 'undefined') {
   global.Headers = class Headers {} as any;
 }
 
+// jsdom omits TextEncoder/TextDecoder. The AWS SDK's Node builds require both,
+// so without these every suite that transitively imports the DynamoDB or SSM
+// client fails with "ReferenceError: TextDecoder is not defined". Node's own
+// implementations are the correct ones here -- this is a jsdom gap, not a
+// behavioural choice.
+if (typeof global.TextEncoder === 'undefined') {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { TextEncoder, TextDecoder } = require('node:util');
+  global.TextEncoder = TextEncoder;
+  global.TextDecoder = TextDecoder as typeof global.TextDecoder;
+}
+
 // jsdom doesn't implement scrollIntoView; stub it so components that call it
 // (e.g. the songs list scrolling the active row into view) don't throw.
 if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
