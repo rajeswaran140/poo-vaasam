@@ -51,8 +51,13 @@ const api = async (tok: string, path: string) => {
 };
 
 async function main() {
-  const videoId = process.argv[2];
-  if (!videoId) { console.error('usage: tamilagaval-release-preflight.ts <VIDEO_ID>'); process.exit(2); }
+  const args = process.argv.slice(2);
+  const forceShort = args.includes('--short');
+  const videoId = args.find((a) => !a.startsWith('--'));
+  if (!videoId) {
+    console.error('usage: tamilagaval-release-preflight.ts <VIDEO_ID> [--short]');
+    process.exit(2);
+  }
   const tok = await token();
 
   const v = await api(tok, `videos?part=snippet,contentDetails,status&id=${videoId}`);
@@ -87,8 +92,12 @@ async function main() {
     defaultAudioLanguage: sn.defaultAudioLanguage,
     // maxres only exists once a custom thumbnail has been set.
     hasCustomThumbnail: Boolean(sn.thumbnails?.maxres),
-    // A premiere has no duration until it airs, so shortness cannot be derived.
-    isShort: duration ? /^PT(\d+S|[1-5]?\dS)$/.test(duration) : false,
+    // The API exposes no "is this a Short" field -- YouTube decides from aspect
+    // ratio as well as length, and neither is derivable here. The duration test
+    // below is a floor, not a verdict: it catches sub-minute clips, but a Short
+    // can now run to 3 minutes, and a premiere has no duration at all until it
+    // airs. Pass --short when you know, which is why the flag exists.
+    isShort: forceShort || (duration ? /^PT(\d{1,2})S$/.test(duration) : false),
     playlistIds,
     captionTracks,
     isUpcoming,

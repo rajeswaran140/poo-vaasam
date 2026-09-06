@@ -1512,6 +1512,107 @@ That is a real revenue option, and it is a genuine trade against the ad-free lis
 `,
   },
   {
+    slug: 'creator-partnerships',
+    title: 'Creator Partnerships — researched, not for now',
+    category: 'Publishing',
+    updatedAt: '2026-09-06T01:45:00Z',
+    body: `# Creator Partnerships
+
+YouTube's system for connecting creators with brands. Separate from ad revenue: the brand pays you directly, you negotiate the deal.
+
+## Decision — not for now (2026-09-06)
+
+Raj's call, after the research below was done. **Do not re-pitch this.** The reasoning:
+
+- **Workload.** A sponsorship adds someone else's deadlines, revisions and approvals on top of a 1-2 song/week cadence that is already at times overwhelming. That cost lands on the fullest part of the week, not the empty part.
+- **Admin.** Brand payments are business income, not AdSense — invoicing, contracts, and GST/HST once past the threshold. Against ~$33/month of current ad revenue, the paperwork can plausibly cost more than the deal returns.
+- **The catalogue.** Even placement *around* a song creates a relationship in which a brand has opinions about the work. The songs are the asset and the reason the channel is worth doing.
+
+**What would change the answer:** a brand approaching unprompted through the site; ad revenue growing enough that the admin overhead becomes proportionate; a specific sponsor whose product is worth standing behind; or simply more slack in the week.
+
+Everything below stays because it is the research, and it will still be true whenever this is revisited.
+
+## Eligibility — verified 2026-09-06
+
+Checked against Google's own help page, not a summary of it:
+
+- enrolled in the **YouTube Partner Program**
+- **18+**
+- based in one of **24 countries**, Canada included
+- no active Community Guidelines strikes
+
+**There is no subscriber threshold.** It is self-serve — if you are eligible, a Creator Partnerships tab appears by itself in Studio's **Earn** tab. Nothing to apply for.
+
+**BrandConnect is now Creator Partnerships — confirmed.** YouTube's own in-product announcement states it: *"BrandConnect இப்போது YouTube கிரியேட்டர் பார்ட்னர்ஷிப்கள் என்றழைக்கப்படுகிறது"* — "BrandConnect is now called YouTube Creator Partnerships. We have made it easier for brands and agencies to discover creators for partnership opportunities."
+
+⚠️ **Where to verify it, and where not to.** Google's public help page (answer/9385307) describes the feature but does **not** mention the rename, so checking there will appear to disconfirm it. The source is the Studio notice. This page previously recorded the rename as unsourced on exactly that reasoning — absence from one page is not absence of a source. If you need to cite it, cite the in-product announcement.
+
+## Why this matters for THIS channel
+
+The case is not "1,510 subscribers". It is the shape of the audience — measured 8 Jun – 4 Sep 2026:
+
+| Country | Share of views | Share of ad revenue | RPM |
+|---|---|---|---|
+| India | **81%** | 34.6% | $0.10 |
+| Sri Lanka | 8% | 0.7% | $0.02 |
+| Canada | 2.3% | **14.0%** | $1.29 |
+| UK | 0.8% | **10.0%** | $2.76 |
+| France | 0.9% | 5.4% | $1.22 |
+
+Canada + UK + France are **4% of views and 29% of ad revenue**. India is 81% of views and returned **$34.70 on 357,000 views**.
+
+Ad revenue cannot pay for the Indian audience. A direct sponsorship can, because a sponsor prices reach against its own customers rather than against a YouTube RPM.
+
+⚠️ **A correction worth keeping.** An early draft of this argument said advertising was "failing to price" the Indian audience. That is not supportable. A $0.10 RPM is what YouTube pays a creator for ad views in that market — it says nothing about what those listeners are worth to a business. Claiming mispricing to a media buyer invites them to discount everything else you say. State the RPM, then say a partnership can be priced differently.
+
+## Lead with shares, not subscribers
+
+Trailing 90 days: **12,272 shares on 469,684 views — 26 per 1,000.** That is an order of magnitude above the like rate and it is the strongest thing this channel can demonstrate.
+
+Be precise about what it proves. Shares are evidence of **active advocacy**; advertisers ultimately buy outcomes — awareness, clicks, installs, sales. Until there is sponsorship conversion data, call 26/1,000 the **strongest demonstrated engagement signal**, not "what advertisers want".
+
+Supporting figures: 20,695 hours watched, 45.9% average view, net +1,468 subscribers (1,562 joined, 94 left — churn is negligible), 90% mobile, audience predominantly male aged 35–64.
+
+## Which sponsors actually fit
+
+Follow the geography, not the passport. Businesses whose customers must physically be in Toronto are reaching **2%** of the audience.
+
+**Fits the data:** remittance and money transfer, telecom and mobile, travel and airlines, streaming and Tamil entertainment, online education, matrimonial and community services, e-commerce that ships to Tamil Nadu or Sri Lanka. Best of all: a brand that serves *both* ends of the split.
+
+**Supplementary, not primary:** Canadian Tamil businesses. ~3,600 Canadian views a month is real but small.
+
+## Placement: around the songs, never inside
+
+The recordings stay unbranded. Sponsorship goes in Shorts, descriptions, pinned comments, community posts, or a dedicated promotional video.
+
+This is not squeamishness — the catalogue is the asset. Retention has risen every month (37.9% → 46.1% → 54.9%) and the newest songs convert better per listener than the biggest ones. Putting a brand inside a song trades the thing that makes the placement worth buying.
+
+## Do not publish a rate card yet
+
+There is enough evidence to approach sponsors and **not** enough sponsorship history to know the market-clearing rate. A published number anchors you low, permanently.
+
+Say **"partnership enquiries — availability and reach estimates on request"**, then quote per campaign against placement type, geography, duration, exclusivity and production work.
+
+## The media kit
+
+Built 2026-09-06 from the figures above, sponsor-facing, no rate card:
+[claude.ai/code/artifact/7ff2a6e2-998b-4f7c-a1eb-ec880442ee92](https://claude.ai/code/artifact/7ff2a6e2-998b-4f7c-a1eb-ec880442ee92)
+
+Enquiries route to **tamilagaval.com/contact**, which delivers to the address in \`CONTACT_NOTIFY_TO\`. No personal email is printed on it — that is a deliberate choice, not an omission.
+
+## If it is ever revisited
+
+In this order, and none of it commits you to a deal:
+
+1. Studio → **Earn** → the Creator Partnerships tab appears by itself if eligible.
+2. **Channel Insights Sharing** is the one that matters — without it a brand searching the tool cannot evaluate the channel, so being listed achieves nothing. It is a toggle, reversible.
+3. Set the business contact in Studio, or inbound enquiries have nowhere to land.
+4. Leave rates blank.
+
+⚠️ **Enabling is not accepting.** The tab, the insights toggle and the listing commit you to nothing — every deal is declined or accepted individually. The risks that made this a "no" are in the deals, not the switch. Worth remembering if the reason for revisiting is that a specific brand got in touch.
+`,
+  },
+  {
     slug: 'reading-impressions-and-reach',
     title: 'Reading impressions & reach — what the numbers actually mean',
     category: 'Growth',
