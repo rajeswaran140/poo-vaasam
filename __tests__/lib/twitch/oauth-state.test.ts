@@ -55,7 +55,24 @@ describe('twitch/oauth-state', () => {
     it('rejects a token whose signature has been altered', () => {
       const { token } = mintOAuthState();
       const [body, sig] = token.split('.');
-      const tamperedSig = sig.slice(0, -1) + (sig.at(-1) === 'A' ? 'B' : 'A');
+      // Tamper with the FIRST character, not the last.
+      //
+      // An HMAC-SHA256 signature is 32 bytes, which base64url-encodes to 43
+      // characters: ten full 3-byte groups plus two leftover bytes. Those two
+      // bytes occupy 16 bits spread over 3 characters (18 bits), so the final
+      // character's low 2 bits are unused padding — 'A', 'B', 'C' and 'D' all
+      // decode to the same trailing byte.
+      //
+      // verifyOAuthState decodes the signature and compares BYTES with
+      // timingSafeEqual, which is the correct thing to do. So flipping the last
+      // character produced a different string that decoded to an identical
+      // signature, and the token still verified. That failed roughly one run in
+      // sixteen — it passed locally and in CI on the Twitch PRs by luck, then
+      // failed on an unrelated docs PR.
+      //
+      // The first character's six bits all land inside byte 0, so changing it
+      // always changes the decoded signature. Deterministic.
+      const tamperedSig = (sig[0] === 'A' ? 'B' : 'A') + sig.slice(1);
       expect(verifyOAuthState(`${body}.${tamperedSig}`)).toBeNull();
     });
 
