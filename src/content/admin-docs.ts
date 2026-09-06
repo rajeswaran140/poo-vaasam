@@ -1600,6 +1600,17 @@ Built 2026-09-06 from the figures above, sponsor-facing, no rate card:
 
 Enquiries route to **tamilagaval.com/contact**, which delivers to the address in \`CONTACT_NOTIFY_TO\`. No personal email is printed on it — that is a deliberate choice, not an omission.
 
+## Related: YouTube Shopping affiliate — ineligible, twice over
+
+Verified 2026-09-06 against Google's help page (\`answer/13376398\`), so it does not need researching again:
+
+- Eligibility requires that **"Your channel is not a music channel, an Official Artist Channel, or associated with music partners."** TamilAgaval is a music channel.
+- **Canada is not a supported creator country.** The list is Argentina, Brazil, India, Indonesia, Japan, Korea, Malaysia, Mexico, Philippines, Singapore, Taiwan, Thailand, the US and Vietnam.
+
+Either condition alone rules it out. This is a hard ineligibility, not a judgement call — nothing to weigh.
+
+Ordinary **external** affiliate links are a different mechanism and remain permitted; YouTube's external-links policy allows affiliate content, though volume can bring it under the spam policy. Different economics too: a sponsor pays for access to the audience, an affiliate merchant pays only when the audience buys. That makes product-intent decisive, and a song audience has none — a microphone link under a love song does not convert because 57,000 people watched the song.
+
 ## If it is ever revisited
 
 In this order, and none of it commits you to a deal:
