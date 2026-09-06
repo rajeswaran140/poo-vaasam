@@ -68,7 +68,8 @@ not. The two exports are independent toggles on the same Link page.
   attribute cohorts.
 
 If Event data was off, ticking it now starts the next overnight run
-(look for `events_YYYYMMDD` within ~24 h).
+(look for `events_YYYYMMDD` — see "How late is late?" below for the
+observed window).
 
 ### 2c. Wait for the first daily table
 
@@ -122,9 +123,44 @@ Visit `/admin/youtube`. The "Site engagement by day of week" section:
 - **Absent** if the env var isn't picked up yet → redeploy Amplify
 - **Present with a "permission denied" error** if step 3 is missing → run step 3
 - **Present with a "Not found: Table events_*" error** → Event export
-  isn't landing. Check step 2b (Event data toggle) or wait ~24 h.
+  isn't landing. Check step 2b (Event data toggle), or wait — see
+  "How late is late?" below before concluding anything is broken.
 - **Present with 7 rows** → done. Explore other queries via
   `src/lib/bigquery-api.ts` (add sibling `fetch*` functions).
+
+## How late is late? (measured, not assumed)
+
+Do not treat a missing `events_YYYYMMDD` as a fault too early. Landing
+times measured on this property, as hours after the day being exported
+closed at 00:00 UTC:
+
+| Day exported | Landed after |
+|---|---|
+| 2026-09-01 | 14.2 h |
+| 2026-09-02 | 15.9 h |
+| 2026-09-03 | 14.4 h |
+| 2026-09-04 | **24.5 h** |
+| 2026-09-05 | 21.6 h |
+
+**Escalate only when a day's table is missing more than 36 h after that
+day closed.**
+
+Two earlier guesses were wrong and are recorded so they are not made
+again:
+
+- "batches around 06:00 UTC" — it does not; nothing has ever landed
+  before ~14 h.
+- "escalate after 24 h" — this was set from four samples that clustered
+  near 14 h. Two of the next five days exceeded it with nothing wrong,
+  so a 24 h gate produces false alarms.
+
+The spread is 14–25 h, so any tight window will misfire. 36 h is chosen
+to sit clearly outside the observed range rather than to hug it.
+
+⚠️ **Also:** GA4 does **not** backfill event data from before the Event
+toggle was enabled. Days before that exist only as
+`pseudonymous_users_*` and will never gain an `events_*` table. Use the
+GA4 UI if that window is ever needed.
 
 ## Alternative: separate BigQuery service account
 
