@@ -1513,12 +1513,24 @@ That is a real revenue option, and it is a genuine trade against the ad-free lis
   },
   {
     slug: 'creator-partnerships',
-    title: 'Creator Partnerships — sponsorship, and what the numbers support',
+    title: 'Creator Partnerships — researched, not for now',
     category: 'Publishing',
     updatedAt: '2026-09-06T01:45:00Z',
     body: `# Creator Partnerships
 
 YouTube's system for connecting creators with brands. Separate from ad revenue: the brand pays you directly, you negotiate the deal.
+
+## Decision — not for now (2026-09-06)
+
+Raj's call, after the research below was done. **Do not re-pitch this.** The reasoning:
+
+- **Workload.** A sponsorship adds someone else's deadlines, revisions and approvals on top of a 1-2 song/week cadence that is already at times overwhelming. That cost lands on the fullest part of the week, not the empty part.
+- **Admin.** Brand payments are business income, not AdSense — invoicing, contracts, and GST/HST once past the threshold. Against ~$33/month of current ad revenue, the paperwork can plausibly cost more than the deal returns.
+- **The catalogue.** Even placement *around* a song creates a relationship in which a brand has opinions about the work. The songs are the asset and the reason the channel is worth doing.
+
+**What would change the answer:** a brand approaching unprompted through the site; ad revenue growing enough that the admin overhead becomes proportionate; a specific sponsor whose product is worth standing behind; or simply more slack in the week.
+
+Everything below stays because it is the research, and it will still be true whenever this is revisited.
 
 ## Eligibility — verified 2026-09-06
 
@@ -1588,12 +1600,16 @@ Built 2026-09-06 from the figures above, sponsor-facing, no rate card:
 
 Enquiries route to **tamilagaval.com/contact**, which delivers to the address in \`CONTACT_NOTIFY_TO\`. No personal email is printed on it — that is a deliberate choice, not an omission.
 
-## What to actually do
+## If it is ever revisited
 
-1. Studio → **Earn** → look for the Creator Partnerships tab.
-2. Turn on **Channel Insights Sharing** — it lets advertisers evaluate the channel and improves visibility in creator search.
-3. Set the business contact in Studio so enquiries have somewhere to land.
+In this order, and none of it commits you to a deal:
+
+1. Studio → **Earn** → the Creator Partnerships tab appears by itself if eligible.
+2. **Channel Insights Sharing** is the one that matters — without it a brand searching the tool cannot evaluate the channel, so being listed achieves nothing. It is a toggle, reversible.
+3. Set the business contact in Studio, or inbound enquiries have nowhere to land.
 4. Leave rates blank.
+
+⚠️ **Enabling is not accepting.** The tab, the insights toggle and the listing commit you to nothing — every deal is declined or accepted individually. The risks that made this a "no" are in the deals, not the switch. Worth remembering if the reason for revisiting is that a specific brand got in touch.
 `,
   },
   {
