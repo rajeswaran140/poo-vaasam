@@ -1632,6 +1632,37 @@ In this order, and none of it commits you to a deal:
 
 Impressions are the most misread number on this channel. This page exists so the same question doesn't have to be re-answered from scratch.
 
+## Measuring sharing: what the API will and will not give you
+
+Two query shapes fail, and one of them fails as a **500** rather than a 400, which makes it look like an outage:
+
+- \`filters=sharingService==WHATSAPP\` → the value is **\`WHATS_APP\`**, with an underscore. \`WHATS_APP_BUSINESS\` is a separate service. The wrong spelling returns \`FIELD_UNKNOWN_VALUE\` inside an HTTP 500.
+- \`dimensions=sharingService&metrics=views\` → **400, unsupported.** \`sharingService\` pairs with \`shares\` only. There is no way to get *views* broken down by sharing service.
+
+**Outbound** (someone tapped Share), 90d to 2026-09-04:
+
+| Service | Shares |
+|---|---|
+| OTHER | 6,382 (51%) |
+| WHATS_APP | 4,518 (36%) |
+| COPY_PASTE | 782 |
+| FACEBOOK | 204 |
+| WHATS_APP_BUSINESS | 184 |
+
+Half of all shares are \`OTHER\` — destination genuinely unknown.
+
+**Inbound** needs a different dimension: \`insightTrafficSourceDetail\` **filtered to** \`insightTrafficSourceType==EXT_URL\` (the filter is required; without it the query 400s). WhatsApp attributes across three separate labels that must be summed:
+
+\`WhatsApp\` 3,728 + \`whatsapp.com\` 1,861 + \`WhatsApp Business\` 128 = **5,717 views**
+
+⚠️ **WhatsApp is not dark social here.** It attributes, and accounts for **86% of all EXT_URL traffic**. Do not assume messenger referrals are invisible — check before claiming it.
+
+**The ratio worth watching:** 4,702 WhatsApp shares returned 5,717 views — about **1.22 views back per share**. Above 1 means sharing brings back more than it costs to produce. Treat it as directional only: shares and returned views are not the same cohort over one window.
+
+**Keep it in proportion.** EXT_URL is **1.4% of all views**. The channel runs on YouTube's own surfaces — suggested 44%, playlists 26%, subscribers 17%. WhatsApp works, but it is a tributary, not the river.
+
+**A threshold to reject if it resurfaces:** "a self-sustaining loop needs 1,000+ WhatsApp views per 1,000 channel views". That would mean every view on the channel arrives from WhatsApp — read as a viral coefficient it is R = 1, indefinite exponential growth. Nothing sustains it. The measured figure is 12.2 per 1,000; being "below" an unreachable bar is not a finding.
+
 ## Impressions are Studio-only — not a bug, not a permissions problem
 
 \`impressions\` and \`impressionsClickThroughRate\` are **not in the YouTube Analytics API**. Requesting them returns \`HTTP 400 — Unknown identifier\`, while \`views,estimatedMinutesWatched\` on the same window succeeds. Verified again **2026-09-04** against a working analytics token — the same query with valid metrics returned rows, so this is an API limitation and not auth. It has now been re-confirmed twice (2026-08-08, 2026-09-04); treat any CTR figure quoted from Studio as unverifiable from here and say so rather than reasoning as if it were confirmed.
