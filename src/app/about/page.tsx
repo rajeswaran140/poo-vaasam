@@ -158,14 +158,22 @@ export default function AboutPage() {
           {/* Circular, not square: the source is a portrait on a white ground,
               and a square would sit on this dark page as a bright block. */}
           <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-            <Image
-              src={PORTRAIT_SRC}
-              alt={PORTRAIT_ALT}
-              width={160}
-              height={160}
-              sizes="160px"
-              className="h-32 w-32 shrink-0 rounded-full object-cover ring-2 ring-white/20 sm:h-40 sm:w-40"
-            />
+            {/* The source is a headshot on a WHITE ground, so a plain circular
+                crop leaves a bright disc floating on this dark page — ring-white/20
+                was far too faint to contain it. The warm gradient collar borrows the
+                hero's orange, which makes the light circle read as a deliberate
+                portrait medallion rather than a hole in the background, and the
+                shadow seats it on the page instead of letting it hover. */}
+            <div className="shrink-0 self-start rounded-full bg-gradient-to-br from-orange-400/70 via-orange-500/30 to-transparent p-[3px] shadow-lg shadow-black/40">
+              <Image
+                src={PORTRAIT_SRC}
+                alt={PORTRAIT_ALT}
+                width={192}
+                height={192}
+                sizes="(min-width: 640px) 176px, 144px"
+                className="h-36 w-36 rounded-full object-cover object-top ring-1 ring-gray-900/60 sm:h-44 sm:w-44"
+              />
+            </div>
             <div className="space-y-4 font-tamil leading-relaxed text-gray-300">
               <p>
                 <strong className="text-white">இராஜ்</strong> — தமிழ் எழுத்தாளரும் பாடலாசிரியரும்.
