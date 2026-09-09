@@ -60,20 +60,39 @@ describe('credit-block doc stays in sync with the code (drift guard)', () => {
   });
 });
 
-describe('publishing cadence guidance is coherent (both docs point at the same experiment)', () => {
-  it('the cadence + release-calendar docs both frame cadence as the themed-day experiment', () => {
-    for (const slug of ['upload-cadence-timing', 'release-calendar-queue']) {
+describe('publishing cadence guidance is coherent (both docs state the adopted policy)', () => {
+  const CADENCE_DOCS = ['upload-cadence-timing', 'release-calendar-queue'];
+
+  // Raj adopted 1-2 songs/week on 2026-08-31, retiring the 3-4/week themed-day
+  // trial. These guards were previously written around that trial and passed
+  // vacuously once it was retired, because the docs still MENTION it
+  // historically. They now assert the live policy instead.
+
+  it('both docs state the 1-2 per week policy', () => {
+    for (const slug of CADENCE_DOCS) {
+      expect(getDoc(slug)!.body).toMatch(/1[–-]2 songs per week/i);
+    }
+  });
+
+  it('both docs carry the 3-4 day minimum spacing rule', () => {
+    for (const slug of CADENCE_DOCS) {
+      expect(getDoc(slug)!.body).toMatch(/3[–-]4 days/i);
+    }
+  });
+
+  it('neither doc presents 3-4/week as current guidance', () => {
+    // Mentioning the retired trial is fine; presenting it as the rhythm is not.
+    for (const slug of CADENCE_DOCS) {
       const body = getDoc(slug)!.body;
-      expect(body).toMatch(/experiment/i);
-      expect(body).toMatch(/themed[- ]day/i);
+      expect(body).not.toMatch(/TESTING themed-day/i);
+      expect(body).not.toMatch(/^##.*3[–-]4\/week/im);
     }
   });
 
   it('does not resurrect the retired flat "1/week" rule as current guidance', () => {
-    // The experiment supersedes it; the docs may mention it historically, but not
-    // as a live "~1 hero song per week" directive.
-    for (const slug of ['upload-cadence-timing', 'release-calendar-queue']) {
+    for (const slug of CADENCE_DOCS) {
       expect(getDoc(slug)!.body).not.toMatch(/Cadence — ~?1 strong hero song per week/i);
+      expect(getDoc(slug)!.body).not.toMatch(/publish \*\*one strong hero song per week\*\*/i);
     }
   });
 });
