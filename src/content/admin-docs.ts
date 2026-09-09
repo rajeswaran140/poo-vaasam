@@ -342,12 +342,44 @@ It is also a **0.68 LU change you cannot hear** — which is the honest headline
   },
   {
     slug: 'music-lab-reference-mastering-plan',
-    title: 'Music Lab — reference-matching plan & status (Phase 1B done · 1C in flight)',
+    title: 'Music Lab — reference-matching (built, but unusable: the reference bank is empty)',
     category: 'Music Lab',
-    updatedAt: '2026-08-27T12:23:08Z',
+    updatedAt: '2026-09-09T13:05:00Z',
     body: `# Reference-matching plan & status
 
-> **Status as of 2026-08-27: Phase 1B DONE + validated end-to-end. Phase 1C UI in flight.** This doc was originally a PROPOSAL for review; the plan below is preserved as the durable design record, with a live-status section up top and per-item ✓/⧗ markers throughout.
+> **Status as of 2026-09-09: every component is built and deployed — and the feature has never run in production.** Not once in 63 master jobs between 28 Jul and 8 Sep.
+
+## ⚠️ Why it has never run: the reference bank is empty
+
+\`\`\`
+s3://tamil-web-media/audio/references/
+  test-ref-v1.wav   55.3 MiB   2026-08-26
+\`\`\`
+
+**One file, and it is the end-to-end test fixture.** The picker renders, offers a test WAV, and there is nothing real to master against — so all 63 jobs went down the loudnorm-only path.
+
+Everything else genuinely works. Verified 2026-09-09:
+
+| Piece | State |
+|---|---|
+| Matchering Lambda | deployed, verified end-to-end (5.8 s process, 1.7 GB peak) |
+| Feature flag \`MASTERING_REFERENCE_MATCHING\` | \`true\` — **hardcoded in \`src/config/features.ts\`**, not an Amplify env var. Checking the Amplify panel shows nothing and is misleading. |
+| Reference-picker UI (PR #232) | merged 2026-08-27, code present in \`MasteringStudio.tsx\` |
+| \`GET /api/admin/mastering/references\` | live |
+
+**The unblock is one command per track:**
+
+\`\`\`bash
+aws s3 cp <your-reference.wav> s3://tamil-web-media/audio/references/
+\`\`\`
+
+Two or three commercially-mastered Tamil tracks worth sounding like. Then the picker has real choices and the blind-A/B validation — pending since 2026-08-27 — becomes possible for the first time.
+
+**The lesson worth keeping:** the table below marked reference-bank seeding as *"⧗ deferred — manual \`aws s3 cp\` seeding used for now"*, filed alongside genuinely optional items. It was not optional; it gated the entire feature. A deferred dependency that everything else needs is not a nice-to-have, and the status read "live" for two weeks while the thing was unusable.
+
+## Original status note (2026-08-27, preserved)
+
+> Phase 1B DONE + validated end-to-end. Phase 1C UI in flight. This doc was originally a PROPOSAL for review; the plan below is preserved as the durable design record, with a live-status section up top and per-item ✓/⧗ markers throughout.
 
 ## What's live in production right now
 
@@ -364,7 +396,7 @@ It is also a **0.68 LU change you cannot hear** — which is the honest headline
 | \`GET /api/admin/mastering/references\` list endpoint | ✅ live | #231 |
 | Mastering studio UI — reference picker + method radio + matchingStage progress | ⧗ PR open | #232 |
 | 3-way A/B/C compare player | ⧗ pending (Phase 1C PR 3) | — |
-| Reference-bank CRUD (upload/delete/metadata) | ⧗ deferred — manual \`aws s3 cp\` seeding used for now | — |
+| Reference-bank CRUD (upload/delete/metadata) | ⧗ deferred — **and the bank was never seeded, which is why nothing has ever used this feature. See the warning above.** | — |
 | Blind-A/B listening validation on 10 tracks | ⧗ pending (Raj-driven subjective step) | — |
 
 ## End-to-end measured (2026-08-27)
