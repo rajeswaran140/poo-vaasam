@@ -1,0 +1,20 @@
+[Unit]
+Description=Post the pinned comment for YouTube video QDJG1P7D0Aw after its premiere starts
+# Companion timer: tamilagaval-QDJG-pinned.timer (fires once at 2026-09-12 12:39 UTC).
+# Comment text lives at /home/devuser/pinned-comments/QDJG1P7D0Aw.txt so the copy
+# can be reviewed or edited before the timer fires.
+#
+# The script refuses to post before liveStreamingDetails.actualStartTime exists
+# (exit 4, not overridable by --force), so an early fire cannot repeat the
+# 0-for-3 pattern where the comment was hand-posted before the premiere and the
+# scheduled run then aborted on the idempotency guard.
+
+[Service]
+Type=oneshot
+User=devuser
+Group=devuser
+ExecStart=/bin/bash -c '/home/devuser/bin/tamilagaval-post-pinned-comment.sh QDJG1P7D0Aw < /home/devuser/pinned-comments/QDJG1P7D0Aw.txt'
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tamilagaval-QDJG-pinned
+TimeoutStartSec=2min
