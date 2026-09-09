@@ -1073,28 +1073,47 @@ On a failure it shows a message and never breaks the page — just try again. A 
 
 Data-backed publishing guide for the Tamilagaval channel. The **day/time** figures are from the trailing 12 weeks (pulled 2026-07-06) — re-check periodically. For the release *system* (queue, lane sequencing, playlist routing) see **Release calendar & queue**.
 
-## Cadence — TESTING themed-day 3–4/week (experiment, from 2026-07-20)
-- **This is under test, not settled.** The earlier "~1/week" call was too strong — it over-read a **surge-confounded** correlation (the 14-in-9-days stretch coincided with the surge unwinding, which was happening anyway; cadence was never proven to be the cause). Running a **6–8-week experiment** instead.
-- **The schedule under test:** 3–4 well-spaced releases per week on themed days — **Mon Love · Wed Parent · Fri Nature/Philosophy/Heritage · Weekend strong** — **never two on the same day** (same-day/back-to-back bursts are still out; well-spaced daily is a different thing).
-- **The hypothesis:** different categories pull **different audience slices**, which may offset the channel-level notification/suggested budget a higher cadence spends. Whether it does is exactly what we're measuring.
-- **Measure WEEKLY aggregates, not single uploads** — per-song views/subs/watch-time + weekly channel totals vs the **settled baseline** (recent settled week ≈ 30.7k views · 1,442 watch-hrs · +84 net-subs, W ending 2026-07-18; NOT the surge-inflated 4-wk avg of ~52k/2,119/+194). Control confounds (season, algo experiments, competition, song variance).
-- **Revert trigger:** net-subs/week AND watch-time both down for **2+ consecutive weeks** vs the settled baseline → step back toward 2/week. Monthly gut-check: *"more subs + watch-time overall than last month?"* Objective = catalogue-building, not single-upload max. Results land in the weekly Cadence-experiment readout.
+## Cadence — 1–2 songs per week (adopted 2026-08-31)
 
-## Best days
-Average daily views by weekday (trailing 12 weeks):
+**Settled policy, not an experiment.** Raj's decision, verbatim: *"Starting in September, I plan to upload 1-2 songs per week. This decision is based on observations that the algorithm exhibits instability when a large number of songs are uploaded. Therefore, a consistent schedule of a minimum of one and a maximum of two songs per week will be maintained."*
 
-| Wed | Tue | Mon | Sun | Sat | Fri | Thu |
-|--:|--:|--:|--:|--:|--:|--:|
-| 1,954 | 1,761 | 1,580 | 1,547 | 1,308 | 1,289 | 939 |
+This **retires the 3–4/week themed-day experiment** that ran from 2026-07-20 (Mon Love · Wed Parent · Fri Nature). It was never completed. The August burst — five releases in the seven days to 2026-08-29 — coincided with HOZ3 underperforming on day 0, and with a maintenance load of 2–3 days per song that does not survive that pace.
 
-- **Publish on Wednesday / Tuesday** (strongest); Sunday and Monday are also good.
-- **Avoid Thursday** — clearly the weakest day (~half the views, and worst for new subscribers too).
+**The spacing rule: never less than 3–4 days between releases.** 1/week = a 7-day gap. 2/week ≈ 3–4 days. Never same-day, never more than two in a week.
 
-## Best time
-- Audience is **~93% India + Sri Lanka** (both UTC+5:30), so target **IST**, not your local time.
-- Publish **~5–7 PM IST** (≈ 11:30–13:30 UTC) — so it is live and gathering early signal just before the 8–10 PM India music-watching peak (YouTube favours publishing ~1–2 hrs ahead of peak).
-- Use Studio → **Schedule** to pin the exact IST time even while you are on Canada time.
-- The exact hourly heatmap is **Studio-only** (Studio → Audience → "When your viewers are on YouTube") — the API cannot return it; the day + timezone guidance above aligns with it.
+**Two-a-week pairs that satisfy it:**
+
+| Pair | Gaps | Note |
+|---|---|---|
+| **Wed + Sat** | 3 / 4 | recommended — best day paired with second-best |
+| Tue + Fri | 3 / 4 | Tuesday is the weakest day |
+| Mon + Thu | 3 / 4 | both mid-table |
+| ~~Wed + Fri~~ | **2** / 5 | fails the spacing rule — this is the lopsided shape the policy exists to prevent |
+
+⚠️ **Does a new release cannibalise the back catalogue?** Measured 2026-09-09 and the answer is no. Back-catalogue views in the 7 days after a release fell **−3.5%** on average across five releases; in quiet periods with no release within ±8 days they fell **−3.7%** across 22 windows. Same number. The catalogue decays at roughly half a percent a day whatever you publish — the release is just the salient event you notice it against. Per-release spread was −9.5%, −7.5%, −6.4%, 0.0%, **+5.8%**; if new songs stole views it would be consistently negative.
+
+
+## Best days — measured 2026-09-06, trailing 54 days
+
+| Day | Avg views/day |
+|---|---|
+| **Wed** | **5,125** |
+| Sat | 5,096 |
+| Fri | 5,055 |
+| Sun | 4,897 |
+| Thu | 4,854 |
+| Mon | 4,588 |
+| Tue | 4,498 |
+
+Only **14%** separates the best day from the worst. Consistency matters more than which day you pick — do not reshuffle a working schedule to chase a 1% weekday edge.
+
+
+## Best time — Toronto morning is the right slot
+
+**08:00–09:00 EDT = 17:30–18:30 in India and Sri Lanka** — early evening for the 89% of the audience who live there, as the day ends and phones come out. Premieres already use 08:32 EDT (12:32 UTC).
+
+Target the audience's clock, not the creator's. Toronto morning happens to land well; that is the reason to keep it, not the hour itself.
+
 
 ## Sequencing a batch
 - **Lead with your strongest song** — early algorithmic impressions compound while the channel is in its breakout window.
@@ -1371,20 +1390,20 @@ The auto clip generator (\`scripts/generate-song-short.ts\`) pulls the MP3 + cov
     updatedAt: '2026-07-18',
     body: `# Release calendar & queue
 
-**The one rule that matters: decouple *creating* from *releasing*.** Compose as freely as inspiration allows — then hold finished songs in the queue below and publish **one strong hero song per week**. The catalogue is already deep enough to run on; you never need to publish as fast as you create.
+**The one rule that matters: decouple *creating* from *releasing*.** Compose as freely as inspiration allows — then hold finished songs in the queue below and publish **one or two songs per week, at least 3–4 days apart**. The catalogue is already deep enough to run on; you never need to publish as fast as you create.
 
 Why: the subscriber-notification + "suggested" test budget is **channel-level, not per-category**. Two uploads a few days apart compete for the same attention even if they're different genres — so bursts starve every new song of the early breakout velocity it needs. Diversity is an asset for *catalogue depth and search*, not a licence for a faster cadence.
 
 > Companion guide: **Upload cadence & timing** has the data-backed best days/times (target IST; lead with your strongest). This guide is the *system* — the queue, lane sequencing, and playlist routing.
 
-## Weekly rhythm — TESTING themed-day 3–4/week (experiment from 2026-07-20)
-- **3–4 well-spaced releases per week, one category per day:** Mon Love · Wed Parent · Fri Nature/Philosophy/Heritage · Weekend strong. **Never two on the same day.** (This supersedes the earlier "1/week", which was too strong — it's under a 6–8-week test; see the **Cadence & timing** doc for the rationale + revert rule, and the weekly Cadence-experiment readout for results.)
-- **One category per day** keeps a predictable rhythm for the algorithm *and* subscribers, and different categories (love / parent / philosophical) pull different audience slices — which may offset the channel-level notification budget a higher cadence spends. That's the hypothesis being tested.
-- **Publish ahead of the India/diaspora evening peak** (see the timing guide) and **seed your WhatsApp Status at publish**.
-- **Judge weekly aggregates, not single uploads.** Objective = building the catalogue (decades of lyrics), not maxing one video.
-- **Lead with reach, follow with resonance within the week:**
-  - *Reach lane* (broad love / melody / folk) chases breadth and fuels suggested.
-  - *Resonance lane* (grief / heritage / niche) is low reach, high advocacy; release these to ride the audience a reach song just built — not two niche songs back-to-back.
+## Weekly rhythm — 1–2 songs per week (adopted 2026-08-31)
+
+**Not an experiment.** The 3–4/week themed-day trial from 2026-07-20 is retired; see **Upload cadence & timing** for the policy, the measured best days and the spacing rule.
+
+- **One or two releases per week**, never more, never same-day.
+- **Minimum 3–4 days between releases.** For two a week the recommended pair is **Wed + Sat** (gaps of 3 and 4). Wed + Fri is a 2-day gap and fails the rule.
+- **Themes still matter for catalogue depth and search** — just not as a licence for a faster cadence. Route each release to its theme playlist as below.
+
 
 ## Release queue *(fill in — newest at the bottom)*
 | Target date | Song (Tamil / romanized) | Lane | Playlists | Notes |
