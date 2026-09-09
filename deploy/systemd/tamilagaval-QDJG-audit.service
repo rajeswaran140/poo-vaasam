@@ -1,0 +1,14 @@
+[Unit]
+Description=Post-premiere audit for YouTube video QDJG1P7D0Aw (@tamilagaval Kannale Yetho Vanthatho — Tamil female romantic song)
+# Companion timer: tamilagaval-QDJG-audit.timer (fires once at 2026-09-15 12:00 UTC).
+# Report lands at /home/devuser/reports/QDJG1P7D0Aw.post-premiere.md.
+
+[Service]
+Type=oneshot
+User=devuser
+Group=devuser
+ExecStart=/home/devuser/bin/tamilagaval-video-post-premiere-audit.sh QDJG1P7D0Aw
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tamilagaval-QDJG-audit
+TimeoutStartSec=5min

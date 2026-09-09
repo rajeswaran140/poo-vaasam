@@ -1,0 +1,13 @@
+[Unit]
+Description=Fire tamilagaval-QDJG-pinned.service once at 2026-09-12 12:39 UTC (~6 min after premiere start)
+# Premiere: 2026-09-12 12:33 UTC. +6 min lands just as the song ends and the
+# live chat settles, while replay viewers are still arriving.
+
+[Timer]
+OnCalendar=2026-09-12 12:39:00 UTC
+RandomizedDelaySec=30
+Persistent=false
+Unit=tamilagaval-QDJG-pinned.service
+
+[Install]
+WantedBy=timers.target
