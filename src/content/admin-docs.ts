@@ -1931,9 +1931,30 @@ A Short's description link to its full song becomes a 404 the moment the song is
 
 **Before deleting, scan the catalogue for references to that video id**, and repoint them. Deleting also silently drops the video from every playlist it belonged to.
 
-## Auto-ASR captions come back
+## Auto-ASR captions come back, and the API cannot stop them
 
-YouTube regenerates automatic caption tracks after you delete them — one reappeared within a day of a catalogue-wide cleanup. Caption hygiene is a **recurring sweep**, not a one-time pass.
+\`captions.delete\` returns **HTTP 204** and the track is still there. Measured 2026-09-09 on \`xEjoDvPllvo\`: deleted on 06 Sep, and three days later the same track was present **with an identical id** (\`AUieDaYu…OxQ\`). Not regenerated — restored. A 204 from this endpoint is not evidence, the same trap this page records for \`channels.update\` and \`videos.update\`.
+
+⚠️ **Setting the language metadata does NOT control the ASR language.** This was tried and it does not work. Five videos, all with \`defaultLanguage: ta\` **and** \`defaultAudioLanguage: ta\`:
+
+| Video | ASR track |
+|---|---|
+| D0E7t4-amRk | **ta** |
+| wPxNf0VKUKQ | en |
+| Vu1pcY7cp8M | en |
+| 09D1KE8QcKk | en |
+| xEjoDvPllvo | en |
+
+Identical metadata, different outcomes. YouTube detects the language from the audio at processing time and mis-hears sung Tamil; D0E7 came out right by luck, not configuration. Setting \`defaultLanguage\` before deleting the track — the obvious theory — changed nothing.
+
+That matches the 16 wrong-language tracks found across the catalogue on 2026-07-29, including on top performers. It has been recurring for months and no API call prevents it.
+
+**What actually works** — both Studio-side:
+
+1. **Turn automatic captions off**, per video or channel-wide. Costs nothing: an English transcription of Tamil singing has no value to anyone.
+2. **Upload a real Tamil caption track.** Durable and genuinely useful, but needs timed captions per song.
+
+**Do not "fix" this by deleting the track through the API.** It reports success, the track returns, and the checklist flags it again on the next run.
 
 ## A premiere has no duration until it airs
 
