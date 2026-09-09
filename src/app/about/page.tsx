@@ -109,10 +109,15 @@ export default function AboutPage() {
         </div>
       </section>
 
-      <main id="main" className="container mx-auto max-w-3xl px-4 py-12 sm:px-6">
+      {/* Vertical rhythm lives here, not on each <section>. Every section
+          previously carried an identical mb-10, so five blocks of quite
+          different jobs read as one flat list. space-y sets the base beat;
+          the two sections that begin a new movement (who made it, and the
+          closing CTA) add to it locally. */}
+      <main id="main" className="container mx-auto max-w-3xl space-y-10 px-4 py-12 sm:px-6 sm:space-y-12">
         {/* What this site is */}
-        <section className="mb-10">
-          <h2 className="mb-4 font-kavivanar text-3xl font-bold text-white sm:text-4xl">இந்த தளம் என்ன?</h2>
+        <section>
+          <h2 className="mb-4 text-balance font-kavivanar text-3xl font-bold text-white sm:text-4xl">இந்த தளம் என்ன?</h2>
           <div className="space-y-4 font-tamil leading-relaxed text-gray-300">
             <p>
               <strong className="text-white">தமிழகவல்</strong> என்பது இராஜின் சொந்தக் கவிதைகள், பாடல்கள் மற்றும் படைப்புகளை ஒரே இடத்தில் கொண்டுவரும் ஒரு தமிழ்ப் படைப்புத் தளம்.
@@ -126,15 +131,17 @@ export default function AboutPage() {
           </div>
         </section>
 
-        {/* Three pillars */}
-        <section className="mb-10">
-          <h2 className="mb-6 font-kavivanar text-3xl font-bold text-white sm:text-4xl">இங்கே என்ன கிடைக்கும்?</h2>
+        {/* Three pillars — the navigational heart of the page: the only place
+            that routes to /poems, /songs and /videos. Given a little more
+            presence than the prose around it so the eye lands here. */}
+        <section>
+          <h2 className="mb-6 text-balance font-kavivanar text-3xl font-bold text-white sm:text-4xl">இங்கே என்ன கிடைக்கும்?</h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             {PILLARS.map((p) => (
               <Link
                 key={p.href}
                 href={p.href}
-                className="group rounded-2xl border border-white/10 bg-white/5 p-5 transition-all hover:-translate-y-0.5 hover:border-orange-400/40 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/60"
+                className="group rounded-2xl border border-white/10 bg-white/5 p-6 transition-all hover:-translate-y-0.5 hover:border-orange-400/40 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/60"
               >
                 <div className="mb-3 text-3xl" aria-hidden>{p.icon}</div>
                 <h3 className="mb-1 font-kavivanar text-xl font-bold text-white">{p.label}</h3>
@@ -144,37 +151,46 @@ export default function AboutPage() {
           </div>
         </section>
 
-        {/* About the author */}
-        <section className="mb-10">
-          <h2 className="mb-4 font-kavivanar text-3xl font-bold text-white sm:text-4xl">யார் இதை உருவாக்குகிறார்?</h2>
+        {/* About the author — the page turns from the site to the person, so
+            it gets extra separation above rather than the base beat. */}
+        <section className="pt-2 sm:pt-4">
+          <h2 className="mb-5 text-balance font-kavivanar text-3xl font-bold text-white sm:text-4xl">யார் இதை உருவாக்குகிறார்?</h2>
           {/* Circular, not square: the source is a portrait on a white ground,
               and a square would sit on this dark page as a bright block. */}
           <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-            <Image
-              src={PORTRAIT_SRC}
-              alt={PORTRAIT_ALT}
-              width={160}
-              height={160}
-              sizes="160px"
-              className="h-32 w-32 shrink-0 rounded-full object-cover ring-2 ring-white/20 sm:h-40 sm:w-40"
-            />
+            {/* The source is a headshot on a WHITE ground, so a plain circular
+                crop leaves a bright disc floating on this dark page — ring-white/20
+                was far too faint to contain it. The warm gradient collar borrows the
+                hero's orange, which makes the light circle read as a deliberate
+                portrait medallion rather than a hole in the background, and the
+                shadow seats it on the page instead of letting it hover. */}
+            <div className="shrink-0 self-start rounded-full bg-gradient-to-br from-orange-400/70 via-orange-500/30 to-transparent p-[3px] shadow-lg shadow-black/40">
+              <Image
+                src={PORTRAIT_SRC}
+                alt={PORTRAIT_ALT}
+                width={192}
+                height={192}
+                sizes="(min-width: 640px) 176px, 144px"
+                className="h-36 w-36 rounded-full object-cover object-top ring-1 ring-gray-900/60 sm:h-44 sm:w-44"
+              />
+            </div>
             <div className="space-y-4 font-tamil leading-relaxed text-gray-300">
-            <p>
-              <strong className="text-white">இராஜ்</strong> — தமிழ் எழுத்தாளரும் பாடலாசிரியரும்.
-            </p>
-            <p>
-              வாழ்க்கை, காதல், இயற்கை, நினைவுகள் மற்றும் மனித உணர்வுகளை கவிதைகளாகவும் பாடல்களாகவும் எழுதுகிறார்.
-            </p>
-            <p>
-              புதிய படைப்புகள் தமிழகவல் தளத்திலும் YouTube சேனலிலும் தொடர்ந்து வெளியாகின்றன.
+              <p>
+                <strong className="text-white">இராஜ்</strong> — தமிழ் எழுத்தாளரும் பாடலாசிரியரும்.
+              </p>
+              <p>
+                வாழ்க்கை, காதல், இயற்கை, நினைவுகள் மற்றும் மனித உணர்வுகளை கவிதைகளாகவும் பாடல்களாகவும் எழுதுகிறார்.
+              </p>
+              <p>
+                புதிய படைப்புகள் தமிழகவல் தளத்திலும் YouTube சேனலிலும் தொடர்ந்து வெளியாகின்றன.
               </p>
             </div>
           </div>
         </section>
 
         {/* The platform — how the music is made (AI transparency) */}
-        <section className="mb-10">
-          <h2 className="mb-4 font-kavivanar text-3xl font-bold text-white sm:text-4xl">இசை உருவாக்கம்</h2>
+        <section>
+          <h2 className="mb-4 text-balance font-kavivanar text-3xl font-bold text-white sm:text-4xl">இசை உருவாக்கம்</h2>
           <div className="space-y-4 font-tamil leading-relaxed text-gray-300">
             <p>
               தமிழகவலில் வெளியாகும் பாடல்களின் <strong className="text-white">பாடல் வரிகள் இராஜின் சொந்தப் படைப்புகள்</strong>.
@@ -184,18 +200,21 @@ export default function AboutPage() {
             </p>
             {/* Credits + rights, mirroring the block Raj puts on every YouTube
                 description so the site and the channel state the same thing. */}
-            <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-4 not-italic">
-              <p className="font-semibold text-white">Lyrics: Raj</p>
-              <p className="font-semibold text-white">Music Production &amp; Creative Direction: TamilAgaval.com</p>
-              <p className="font-semibold text-white">AI-Assisted Music Production</p>
-              <p className="mt-2 text-sm text-gray-400">© 2026 TamilAgaval / Raj. All rights reserved.</p>
+            {/* Credits and rights are fine print, not a call to action. It was
+                previously a bordered card competing with the CTA card below;
+                a left rule marks it as an aside without a second box. */}
+            <div className="border-l-2 border-white/15 py-1 pl-4 not-italic">
+              <p className="text-sm font-semibold text-gray-200">Lyrics: Raj</p>
+              <p className="text-sm font-semibold text-gray-200">Music Production &amp; Creative Direction: TamilAgaval.com</p>
+              <p className="text-sm font-semibold text-gray-200">AI-Assisted Music Production</p>
+              <p className="mt-2 text-xs text-gray-500">© 2026 TamilAgaval / Raj. All rights reserved.</p>
             </div>
           </div>
         </section>
 
         {/* Connect */}
-        <section className="rounded-2xl border border-orange-500/20 bg-gradient-to-br from-orange-500/10 to-orange-700/5 p-6 text-center sm:p-8">
-          <h2 className="mb-2 font-kavivanar text-2xl font-bold text-white sm:text-3xl">தொடர்பில் இருங்கள்</h2>
+        <section className="mt-2 rounded-2xl border border-orange-500/20 bg-gradient-to-br from-orange-500/10 to-orange-700/5 p-6 text-center sm:mt-4 sm:p-8">
+          <h2 className="mb-2 text-balance font-kavivanar text-2xl font-bold text-white sm:text-3xl">தொடர்பில் இருங்கள்</h2>
           <p className="mx-auto mb-6 max-w-md font-tamil text-gray-300">
             புதிய கவிதைகள், பாடல்கள், காணொளிகள் — எதையும் தவறவிடாதீர்கள்.
           </p>
