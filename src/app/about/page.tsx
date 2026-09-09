@@ -7,12 +7,14 @@
 
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import Image from 'next/image';
 import Header from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import { JsonLd } from '@/components/JsonLd';
 import { isYouTubeChannelConfigured, youtubeSubscribeUrl, isYouTubeVideosConfigured, socialProfileUrls } from '@/config/site';
 import { TrackedYouTubeAnchor } from '@/components/TrackedYouTubeAnchor';
 import { SITE_URL, alternatesFor, breadcrumbJsonLd } from '@/lib/seo';
+import { mediaUrl } from '@/lib/aws-config';
 
 // Crawler-facing metadata is romanised English; the visible UI on /about
 // stays Tamil. Real queries here are "rajeswaran thangarajah" /
@@ -38,6 +40,16 @@ export const metadata: Metadata = {
 // truth so /, /about and the footer always agree.
 const personSameAs = socialProfileUrls();
 
+/**
+ * The channel's profile photo, copied once into S3 rather than hot-linked from
+ * yt3.ggpht.com. Two reasons: that host is not in next.config's
+ * remotePatterns, so next/image 400s on it; and YouTube re-issues the avatar
+ * URL whenever the photo changes, which would break this page silently later.
+ * Served through CloudFront like every other media asset.
+ */
+const PORTRAIT_SRC = mediaUrl('images/about/raj.jpg');
+const PORTRAIT_ALT = 'இராஜ் — தமிழகவல்';
+
 const personJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'Person',
@@ -45,6 +57,7 @@ const personJsonLd = {
   alternateName: 'இராஜ்',
   url: `${SITE_URL}/about`,
   jobTitle: 'Tamil poet and lyricist',
+  image: PORTRAIT_SRC,
   description: 'Tamil writer and lyricist publishing original poems, songs and videos at tamilagaval.com. Tamil kavithai and paadal varigal — always free.',
   ...(personSameAs.length > 0 ? { sameAs: personSameAs } : {}),
 };
@@ -134,7 +147,18 @@ export default function AboutPage() {
         {/* About the author */}
         <section className="mb-10">
           <h2 className="mb-4 font-kavivanar text-3xl font-bold text-white sm:text-4xl">யார் இதை உருவாக்குகிறார்?</h2>
-          <div className="space-y-4 font-tamil leading-relaxed text-gray-300">
+          {/* Circular, not square: the source is a portrait on a white ground,
+              and a square would sit on this dark page as a bright block. */}
+          <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
+            <Image
+              src={PORTRAIT_SRC}
+              alt={PORTRAIT_ALT}
+              width={160}
+              height={160}
+              sizes="160px"
+              className="h-32 w-32 shrink-0 rounded-full object-cover ring-2 ring-white/20 sm:h-40 sm:w-40"
+            />
+            <div className="space-y-4 font-tamil leading-relaxed text-gray-300">
             <p>
               <strong className="text-white">இராஜ்</strong> — தமிழ் எழுத்தாளரும் பாடலாசிரியரும்.
             </p>
@@ -143,7 +167,8 @@ export default function AboutPage() {
             </p>
             <p>
               புதிய படைப்புகள் தமிழகவல் தளத்திலும் YouTube சேனலிலும் தொடர்ந்து வெளியாகின்றன.
-            </p>
+              </p>
+            </div>
           </div>
         </section>
 
