@@ -74,6 +74,30 @@ describe('About page — audit fixes', () => {
     expect(screen.getByText(/மின்னஞ்சலில் பெறுங்கள்/)).toBeInTheDocument();
   });
 
+  it('shows the author portrait with a Tamil alt text', () => {
+    render(<AboutPage />);
+    const img = screen.getByAltText('இராஜ் — தமிழகவல்');
+    expect(img).toBeInTheDocument();
+  });
+
+  it('serves the portrait from our own media host, never hot-linked from YouTube', () => {
+    // yt3.ggpht.com is not in next.config remotePatterns, so next/image would
+    // 400 on it — and YouTube re-issues the avatar URL whenever the photo
+    // changes, which would break this page silently later. The asset is copied
+    // into S3 and served through the media base instead.
+    const { container } = render(<AboutPage />);
+    const html = container.innerHTML;
+    expect(html).not.toMatch(/ggpht\.com/);
+    expect(html).toMatch(/images(%2F|\/)about/);
+  });
+
+  it('the Person node carries the portrait, so author cards have an image', () => {
+    const { container } = render(<AboutPage />);
+    const ld = allJsonLd(container);
+    expect(ld).toMatch(/"@type":"Person"/);
+    expect(ld).toMatch(/"image":"[^"]*images(%2F|\/)about[^"]*"/);
+  });
+
   it('structured data carries BOTH a BreadcrumbList and the Person node', () => {
     const { container } = render(<AboutPage />);
     const ld = allJsonLd(container);
