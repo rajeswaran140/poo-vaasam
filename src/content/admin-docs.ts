@@ -233,7 +233,9 @@ Right after a SUNO (or other engine) run comes back. SUNO has no API, so there's
     updatedAt: '2026-09-10T02:30:00Z',
     body: `# Suno quality regression
 
-**Status 2026-09-10.** A newer Suno model produces unusable output for this channel: every song comes out fast-tempo, with poor vocals and poor instrumentation. **v5.5 still produces work at the established standard.** Raj has reported the issue to Suno.
+**Status 2026-09-10.** **Suno v6** produces unusable output for this channel: every song comes out fast-tempo, with poor vocals and poor instrumentation. **v5.5 still produces work at the established standard.** Raj reported it, and **Suno Support has acknowledged the specific tempo/pacing issue and passed the feedback on** — so this is a known defect on their side, not a local misconfiguration.
+
+**Do not burn further generations demonstrating it.** The problem is reproduced, reported and acknowledged; more v6 attempts cost credits and teach nothing new.
 
 This is a **vocal and musical quality** problem, not a prompt problem. The same prompts that worked before now produce worse output, so \\\`checkSetup\\\` findings and style-box tuning are not the lever here.
 
@@ -271,6 +273,16 @@ Raj's six, plus a seventh that the others hide:
 - **Mureka, Loudly, Boomy** are the other full-song options.
 
 **Cannot be answered by research:** *no published comparison evaluates Tamil vocal quality.* Not one review covers non-English singing in any depth. **Gate 1, the one that decides everything, has no public evidence behind it.**
+
+## ⚠️ The compare player does NOT compare two different songs
+
+A natural-sounding plan is *"master the new song, then loudness-matched A/B it against a recent v5.5 release."* **The Studio cannot do that**, and it is worth knowing before relying on it.
+
+\\\`MasteringComparePlayer\\\` compares **the source WAV against its own master** (plus a third reference-matched track when one exists). Both play **in lock-step, sample-aligned** — "you hear the same instant of the song either way". That design is right for hearing a *processing* difference on identical audio, and meaningless across two different pieces of music.
+
+Loudness matching is still the correct instinct: the louder of two clips always sounds better, so any cross-song listening should level-match first. But it has to be done by hand, in a DAW — the Studio will not do it for you.
+
+**And the threshold does not need an A/B anyway.** *"Not as exceptional as v5.5" is acceptable; "noticeably defective" is not* is an **absolute** standard — will a regular listener notice something has gone wrong? That is answered by listening to the song properly, not by comparing it against a different song.
 
 ## The test that settles it
 
