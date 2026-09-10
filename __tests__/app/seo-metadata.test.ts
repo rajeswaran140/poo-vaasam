@@ -25,7 +25,6 @@ import { metadata as allMeta } from '@/app/all/page';
 describe('empty section pages are noindex until they have content', () => {
   it.each([
     ['lyrics', lyricsMeta, '/lyrics'],
-    ['stories', storiesMeta, '/stories'],
     ['essays', essaysMeta, '/essays'],
   ])('%s is noindex, follow', (_name, meta, path) => {
     expect(meta.robots).toEqual({ index: false, follow: true });
@@ -34,6 +33,20 @@ describe('empty section pages are noindex until they have content', () => {
     expect(meta.alternates?.languages).toEqual({
       ta: `${SITE_URL}${path}`,
       'x-default': `${SITE_URL}${path}`,
+    });
+  });
+});
+
+describe('a live section page is indexable', () => {
+  // Stories went live 2026-09-16 with the channel's first YouTube story. This is
+  // the inverse of the noindex cases above: no robots override at all, so the
+  // page inherits the site default and is crawlable.
+  it('stories has no noindex override and keeps its canonical + hreflang', () => {
+    expect(storiesMeta.robots).toBeUndefined();
+    expect(storiesMeta.alternates?.canonical).toBe('/stories');
+    expect(storiesMeta.alternates?.languages).toEqual({
+      ta: `${SITE_URL}/stories`,
+      'x-default': `${SITE_URL}/stories`,
     });
   });
 });

@@ -64,11 +64,12 @@ describe('Header — navigation', () => {
     expect(screen.getByRole('button', { name: /படைப்புகள்/ })).toBeInTheDocument();
   });
 
-  it('surfaces the live sections (songs, poems) and hides empty ones (stories, essays)', () => {
+  it('surfaces the live sections (songs, poems, stories) and hides empty ones (essays)', () => {
     render(<Header />);
     expect(screen.getAllByRole('link', { name: 'பாடல்கள்' }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole('link', { name: 'கவிதைகள்' }).length).toBeGreaterThan(0);
-    expect(screen.queryByRole('link', { name: 'கதைகள்' })).toBeNull();
+    // Stories went live 2026-09-16 with the channel's first YouTube story.
+    expect(screen.getAllByRole('link', { name: 'கதைகள்' }).length).toBeGreaterThan(0);
     expect(screen.queryByRole('link', { name: 'கட்டுரைகள்' })).toBeNull();
   });
 
