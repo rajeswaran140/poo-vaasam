@@ -227,6 +227,68 @@ Right after a SUNO (or other engine) run comes back. SUNO has no API, so there's
 `,
   },
   {
+    slug: 'suno-quality-regression',
+    title: 'Suno quality regression — continuity risk and how to evaluate a replacement',
+    category: 'Music Lab',
+    updatedAt: '2026-09-10T02:30:00Z',
+    body: `# Suno quality regression
+
+**Status 2026-09-10.** A newer Suno model produces unusable output for this channel: every song comes out fast-tempo, with poor vocals and poor instrumentation. **v5.5 still produces work at the established standard.** Raj has reported the issue to Suno.
+
+This is a **vocal and musical quality** problem, not a prompt problem. The same prompts that worked before now produce worse output, so \\\`checkSetup\\\` findings and style-box tuning are not the lever here.
+
+## ⚠️ There is no buffer. This is the part that matters.
+
+**Every completed master is already published.** Checked 2026-09-10: 63 MASTERJOB records, 55 distinct songs once versions collapse, and the ones that did not match a published video are **test masters, not finished songs**.
+
+So the release pipeline has **zero runway**. If Suno cannot produce usable audio, new releases stop immediately — there is nothing banked to publish through the gap. The Wed + Sat cadence (see **Upload cadence & timing**) depends entirely on new generation continuing.
+
+That is the reverse of what **Release calendar & queue** assumes. Its central rule — *decouple creating from releasing, hold finished songs in the queue* — is sound advice that has not been followed. **Building even three or four songs of buffer is the cheapest insurance available**, and it is worth doing the moment generation works again, whichever tool it runs on.
+
+## Do not replace anything before checking the model picker
+
+If **v5.5 is still selectable**, that is continuity at zero cost while alternatives are evaluated. Suno's paid plans have listed v4, v4.5, v4.5+, v5 and v5.5, with v5.5 at the top as current stable (released 2026-03-26) — but availability varies by plan and changes without announcement, so **your own picker is the only authority**.
+
+## The gates
+
+Raj's six, plus a seventh that the others hide:
+
+1. Natural Tamil singing
+2. Strong melodic / raga interpretation
+3. Reliable tempo and phrasing
+4. Complete 4–6 minute song structure
+5. Commercial-use and WAV capability
+6. A cost structure repeatable at current channel revenue (~$70–100/month of ad income — the work is not paid for by the channel)
+7. **It must accept the prompt shape this pipeline already produces**, or the compose flow, the arranger's \\\`[Kind - Detail]\\\` section tags, \\\`checkSetup\\\` and the Suno Prompts tab all need rebuilding too. A good demo can hide weeks of work behind it.
+
+## What research can answer, and what it cannot
+
+**Answered:**
+- **Udio** is the strongest candidate on paper. Reviewers rate its vocal output above Suno's, particularly for complex arrangements and subtle vocal styling — exactly the complaint here. It also holds the only real licensing cover in the field: **Universal Music Group (Oct 2025)** and **Warner Music Group (Nov 2025)**, which speaks directly to gate 5.
+- **Producer.ai** (formerly Riffusion) **fails gate 4 outright** — a 3-minute cap against a 4–6 minute requirement — and its post-rebrand commercial terms are unclear.
+- **Mureka, Loudly, Boomy** are the other full-song options.
+
+**Cannot be answered by research:** *no published comparison evaluates Tamil vocal quality.* Not one review covers non-English singing in any depth. **Gate 1, the one that decides everything, has no public evidence behind it.**
+
+## The test that settles it
+
+Reading more reviews will not help. Instead:
+
+1. Take a song **already published** and generated on Suno v5.5 — one where the standard is known and audible.
+2. Regenerate it on the candidate with the same lyrics and the same style intent.
+3. Compare against the published master, not against an abstraction.
+
+Comparing against a known-good reference is the whole point; judging a new tool on a new song confounds "is this tool good" with "is this song good".
+
+An afternoon of this answers gate 1 definitively, which no amount of searching will.
+
+## What NOT to do
+
+- **Do not rebuild the pipeline before gate 1 passes.** The upstream tooling is Suno-shaped; moving it is only worth doing for a tool that can actually sing Tamil.
+- **Do not judge from the revenue figure.** Measured ad revenue for 2026-08-12 → 09-08 was **$70.39** (Studio showed $97.52; the API settles lower). Neither number pays for the work, so cost-per-song matters far more than the ad line suggests.
+`,
+  },
+  {
     slug: 'music-lab-mastering',
     title: 'Music Lab — mastering a song for loudness',
     category: 'Music Lab',
