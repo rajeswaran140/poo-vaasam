@@ -237,13 +237,15 @@ Right after a SUNO (or other engine) run comes back. SUNO has no API, so there's
 
 This is a **vocal and musical quality** problem, not a prompt problem. The same prompts that worked before now produce worse output, so \\\`checkSetup\\\` findings and style-box tuning are not the lever here.
 
-## ⚠️ There is no buffer. This is the part that matters.
+## ⚠️ The buffer is about two weeks. That is the clock on this.
 
-**Every completed master is already published.** Checked 2026-09-10: 63 MASTERJOB records, 55 distinct songs once versions collapse, and the ones that did not match a published video are **test masters, not finished songs**.
+**Runway as of 2026-09-10: three composed songs, roughly 1–2 weeks** at the Wed + Sat cadence (see **Upload cadence & timing**). Raj confirmed this directly.
 
-So the release pipeline has **zero runway**. If Suno cannot produce usable audio, new releases stop immediately — there is nothing banked to publish through the gap. The Wed + Sat cadence (see **Upload cadence & timing**) depends entirely on new generation continuing.
+Everything already *mastered* is published — 63 MASTERJOB records, 55 distinct songs once versions collapse, and the unmatched ones are **test masters, not finished songs**. So the three composed songs are the entire cushion; there is nothing else banked behind them.
 
-That is the reverse of what **Release calendar & queue** assumes. Its central rule — *decouple creating from releasing, hold finished songs in the queue* — is sound advice that has not been followed. **Building even three or four songs of buffer is the cheapest insurance available**, and it is worth doing the moment generation works again, whichever tool it runs on.
+**Practical deadline: a working generation path is needed by roughly 2026-09-24.** Not "soon" — that is two or three releases away. If nothing is resolved by then the cadence breaks, and a missed slot on a published schedule reads worse than never having promised one.
+
+That is the reverse of what **Release calendar & queue** assumes. Its central rule — *decouple creating from releasing, hold finished songs in the queue* — is sound advice that has not been followed. **Building buffer is the cheapest insurance available** — and the current two weeks exist only because three songs happened to be composed ahead. Deepen it to four or five the moment generation works again, whichever tool it runs on. A buffer is what converts a vendor problem from an emergency into an inconvenience.
 
 ## Do not replace anything before checking the model picker
 
