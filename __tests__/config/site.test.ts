@@ -69,14 +69,15 @@ describe('social profiles', () => {
 });
 
 describe('isContentSectionLive', () => {
-  it('is true for live sections (songs, poems) so they stay indexable', () => {
+  it('is true for live sections (songs, poems, stories) so they stay indexable', () => {
     expect(isContentSectionLive('SONGS')).toBe(true);
     expect(isContentSectionLive('POEMS')).toBe(true);
+    // Stories went live 2026-09-16 with the channel's first YouTube story.
+    expect(isContentSectionLive('STORIES')).toBe(true);
   });
 
-  it('is false for still-empty sections (lyrics, stories, essays) → noindex', () => {
+  it('is false for still-empty sections (lyrics, essays) → noindex', () => {
     expect(isContentSectionLive('LYRICS')).toBe(false);
-    expect(isContentSectionLive('STORIES')).toBe(false);
     expect(isContentSectionLive('ESSAYS')).toBe(false);
   });
 

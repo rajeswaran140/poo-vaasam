@@ -53,8 +53,10 @@ it('includes /videos and the core static routes', async () => {
   expect(urls.some((u) => u.endsWith('/privacy'))).toBe(true);
   expect(urls.some((u) => u.endsWith('/terms'))).toBe(true);
   expect(urls.some((u) => u.endsWith('.com') || u.endsWith('.com/'))).toBe(true); // home
-  // Empty sections are excluded via the live-section registry.
-  for (const empty of ['/lyrics', '/stories', '/essays']) {
+  // Stories went live 2026-09-16 with the channel's first YouTube story.
+  expect(urls.some((u) => u.endsWith('/stories'))).toBe(true);
+  // Still-empty sections stay excluded via the live-section registry.
+  for (const empty of ['/lyrics', '/essays']) {
     expect(urls.some((u) => u.endsWith(empty))).toBe(false);
   }
 });
