@@ -528,18 +528,28 @@ suite is a deploy gate in `amplify.yml`'s preBuild, so anything landing here mus
 Because `FakeVideoProvider` exercises every path, Phases 2–4 are fully testable before
 any BytePlus credential exists.
 
-> Note for whoever adds AWS SDK imports to a test: `jest.config.ts` sets
-> `testEnvironment: 'jsdom'` globally, which makes jest resolve the `browser` export
-> condition. `moduleNameMapper` entries already redirect the affected `@aws-sdk/core` and
-> `@smithy/core` subpaths to their Node builds. If a future SDK bump breaks tests, extend
-> that mapper — do not reach for transforms.
+> **This is a Phase 2 task, not a future risk.** `jest.config.ts` sets
+> `testEnvironment: 'jsdom'` globally, so jest resolves the `browser` export condition for
+> any package publishing one. `moduleNameMapper` currently enumerates exactly six
+> subpaths across `@aws-sdk/core` and `@smithy/core`, anchored, with no wildcards.
+> `@aws-sdk/client-ssm` — pulled in by `credentials.ts` — is a **new import surface for
+> this test suite**. If it or a transitive `@smithy` dependency resolves a
+> `browser`-conditioned subpath that the mapper does not list, the first route test fails
+> in a way that looks like application code and is not. Because the suite is a deploy
+> gate, that would block every deploy of the repository, not only this feature.
+>
+> So: before writing route tests, import `client-ssm` in a throwaway test and confirm it
+> resolves. Extend the mapper by enumerating any new subpath — do not reach for
+> transforms, and do not add a wildcard. Transforming the SDK does not work here: the
+> `@smithy/core` browser builds are valid CJS that parse fine and then fail at runtime
+> with `loadConfig is not a function`, so compiling them only moves the failure.
 
 ## 15. Phases
 
 | Phase | Deliverable | Depends on |
 |---|---|---|
 | 1 | Architecture review and this design | — |
-| 2 | `visualStory.ts` types and zod, `VisualStoryRepository`, `cost.ts`, provider port, `FakeVideoProvider`. Unit tests. No UI. | — |
+| 2 | `visualStory.ts` types and zod, `VisualStoryRepository`, `cost.ts`, provider port, `FakeVideoProvider`. Unit tests. No UI. **First task: confirm `@aws-sdk/client-ssm` resolves under jsdom (see section 14) and extend `moduleNameMapper` if not.** | — |
 | 3 | Studio CRUD: stories, scenes, shots, characters, prompt editing, reference upload, `STILL` mode via `generateCoverArt`. Nav entry. | 2 |
 | 4 | `SeedanceProvider`, credentials, `MOTION` mode, generate/poll/cancel routes, reconcile sweep, budget enforcement end to end. | 3, and the BytePlus API reference (D3) |
 | 5 | Candidate review UI, selection, `HERO` mode, spend reconciliation. | 4 |
