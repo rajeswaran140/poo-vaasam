@@ -2528,7 +2528,7 @@ Phase 2 will not touch this page's connect/disconnect flow — only add to it.
     slug: 'visual-story-studio-plan',
     title: 'Visual Story Studio — the plan (designed, not built)',
     category: 'Visual Story',
-    updatedAt: '2026-09-11T15:05:50Z',
+    updatedAt: '2026-09-12T11:40:43Z',
     body: `# Visual Story Studio
 
 > **Nothing here is built yet.** This is the approved design, recorded so the decisions behind it survive. No code exists, no BytePlus account is connected, and nothing in the admin has changed. The full engineering spec is in the repo at \`docs/superpowers/specs/2026-09-11-visual-story-studio-design.md\`.
@@ -2584,7 +2584,9 @@ Video generation takes minutes. The admin's compute cannot wait that long — it
 
 The difference is who does the watching. **Your open browser drives it.** Each check makes one quick call to the provider and returns. That is what avoids adding new infrastructure for this feature.
 
-**The consequence, stated honestly: if you close the tab mid-generation, nothing is watching, and the job sits unfinished.** It is not lost. The clip still generates at the provider, and the job is always findable. The list page carries a **Reconcile in-flight** action that sweeps every unfinished job, checks each one, and files any that completed. It runs when the list page loads, and it ships in the same phase as generation — not bolted on later.
+**The consequence, stated honestly: if you close the tab mid-generation, nothing is watching, and the job sits unfinished.** It is not lost. The clip still generates at the provider, and the job is always findable. The list page carries a **Reconcile in-flight** button that sweeps every unfinished job, checks each one, and files any that completed. It tells you how many are waiting, so you can see whether it is worth clicking.
+
+It is a button on purpose, and does not run by itself when the page opens. A sweep makes one call to the provider per unfinished job, and until we know whether Seedance charges for those checks, refreshing a page must not be able to cost money. The button ships in the same phase as generation — not bolted on later.
 
 A job that has been waiting too long renders as **stale**, with an explicit prompt to check the provider, rather than looking like it is quietly still working.
 

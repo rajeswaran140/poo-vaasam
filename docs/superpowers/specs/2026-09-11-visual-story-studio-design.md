@@ -329,9 +329,14 @@ ignored:
 1. Non-terminal jobs carry `GSI1PK='VSTORY_INFLIGHT'`, so they are always findable in one
    query — never a table scan.
 2. **`POST /api/admin/visual-story/reconcile`** sweeps that partition, polls each job's
-   provider task once, and advances any that finished. It is exposed as a
-   "Reconcile in-flight" button on the list page and runs automatically when that page
-   loads. This ships in **Phase 4, alongside generation** — not later.
+   provider task once, and advances any that finished. It is **button-only** — the
+   "Reconcile in-flight" action on the list page, triggered by an explicit click. It is
+   deliberately NOT run on page load: a sweep makes one provider call per in-flight job,
+   and until the BytePlus rate card confirms whether polling is billed (section 17,
+   item 4), a page refresh must not be able to spend money. If polling turns out to be
+   unbilled, auto-run on page load becomes a safe convenience; if it turns out to be
+   billed, the next lever is putting `/reconcile` behind `visualStoryLimiter` alongside
+   `/generate`. Either way this ships in **Phase 4, alongside generation** — not later.
 3. Each job carries `attempts` and `lastPolledAt`. A job exceeding `MAX_POLL_ATTEMPTS`
    (default 240) or not polled for over an hour renders as **stale** in the UI with an
    explicit "check provider" action, rather than appearing to be quietly working.
@@ -423,8 +428,9 @@ A new entry in `AdminLayoutClient`'s `PAGE_TITLES`, grouped with the creative to
 
 **`/admin/visual-story`** — table of visual stories with their linked content title,
 status, shot count, and spend against cap. "New from content" opens a content picker.
-"Reconcile in-flight" is present whenever the `VSTORY_INFLIGHT` query returns rows, and
-runs automatically on page load.
+"Reconcile in-flight" is present whenever the `VSTORY_INFLIGHT` query returns rows. It
+is a button, and only a button — nothing sweeps on page load (section 7.3). The count of
+unfinished jobs is shown on it, so the reason to click is visible without clicking.
 
 **`/admin/visual-story/[vsId]`** — three regions:
 
