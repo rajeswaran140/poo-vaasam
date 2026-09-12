@@ -37,6 +37,16 @@ export interface VideoSnapshot {
   captionTracks: Array<{ trackKind: string; language: string }>;
   /** Null when the video is an upcoming premiere that has not aired. */
   isUpcoming?: boolean;
+  /**
+   * When the video was uploaded. While a premiere is still unaired this is
+   * `snippet.publishedAt`; once it airs YouTube overwrites that field with the
+   * premiere time, which is why the window check only runs pre-air.
+   */
+  uploadedAt?: string;
+  /** `liveStreamingDetails.scheduledStartTime` for a premiere. */
+  scheduledStartTime?: string;
+  /** Other releases on the channel, for the notification-density check. */
+  siblingReleases?: Array<{ videoId: string; publishedAt: string }>;
 }
 
 export type Severity = 'blocker' | 'gap' | 'note';
@@ -71,6 +81,21 @@ export const SUBSCRIBE_URL = youtubeSubscribeUrl();
 
 /** Minimum tags before the upload counts as tagged at all. */
 export const MIN_TAGS = 10;
+
+/**
+ * How long a video may sit as an unaired premiere before its arrival
+ * notification is treated as spent. YouTube notifies subscribers when the
+ * upcoming page appears, not when the premiere airs, so a long gap means the
+ * one push this release gets is fired at an empty room.
+ */
+export const MAX_PREMIERE_WINDOW_HOURS = 48;
+
+/**
+ * Releases landing within this window of each other compete for the same
+ * subscriber notifications. YouTube rate-limits per channel; it will not push
+ * three uploads in a day.
+ */
+export const RELEASE_DENSITY_WINDOW_HOURS = 36;
 
 /**
  * The retired full name. Raj publishes as "Raj" / "Raj Thangarajah"; the older
@@ -327,6 +352,50 @@ export function checkRelease(v: VideoSnapshot): Finding[] {
   }
 
   // --- things no API can check ---------------------------------------------
+  // --- premiere reach -------------------------------------------------------
+  // Added 2026-09-12. QDJG1P7D0Aw drew 2 views in its first 89 minutes against a
+  // 200-500 baseline. Every check above passed: public, HD, `ta`, category 10,
+  // 24 tags, maxres thumbnail, all three playlists, position 0 of the uploads
+  // feed. Nothing was misconfigured. What was different was the SCHEDULE, and
+  // nothing looked at it. These two checks do.
+  if (v.isUpcoming && v.uploadedAt && v.scheduledStartTime) {
+    const hours = (Date.parse(v.scheduledStartTime) - Date.parse(v.uploadedAt)) / 3_600_000;
+    if (Number.isFinite(hours) && hours > MAX_PREMIERE_WINDOW_HOURS) {
+      f.push({
+        id: 'premiere-window',
+        severity: 'gap',
+        title: `Premiere is ${hours.toFixed(1)}h after upload`,
+        detail:
+          `Subscribers are notified when the upcoming page appears, not when the premiere airs. ` +
+          `After ${hours.toFixed(1)}h that notification is long spent, so the premiere itself opens to ` +
+          `whoever happens to be looking. QDJG1P7D0Aw sat unaired for 71.6h and took 2 views in its ` +
+          `first 89 minutes. Keep the gap under ${MAX_PREMIERE_WINDOW_HOURS}h, and avoid rescheduling ` +
+          `once set — each move re-points the reminders people already have.`,
+      });
+    }
+  }
+
+  if (v.siblingReleases && v.scheduledStartTime) {
+    const at = Date.parse(v.scheduledStartTime);
+    const near = v.siblingReleases.filter(
+      (r) =>
+        r.videoId !== v.videoId &&
+        Math.abs(Date.parse(r.publishedAt) - at) / 3_600_000 <= RELEASE_DENSITY_WINDOW_HOURS
+    );
+    if (near.length > 0) {
+      f.push({
+        id: 'release-density',
+        severity: 'gap',
+        title: `${near.length} other release${near.length > 1 ? 's' : ''} within ${RELEASE_DENSITY_WINDOW_HOURS}h`,
+        detail:
+          `${near.map((r) => r.videoId).join(', ')}. YouTube rate-limits how often it notifies a ` +
+          `channel's subscribers, and this channel runs on subscriber traffic — wPxNf0VKUKQ took 75% of ` +
+          `its first-day views from that source. Releases stacked this closely split one notification ` +
+          `budget between them.`,
+      });
+    }
+  }
+
   f.push({
     id: 'pinned-comment',
     severity: 'note',

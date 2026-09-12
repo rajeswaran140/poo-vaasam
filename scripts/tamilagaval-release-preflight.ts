@@ -60,7 +60,7 @@ async function main() {
   }
   const tok = await token();
 
-  const v = await api(tok, `videos?part=snippet,contentDetails,status&id=${videoId}`);
+  const v = await api(tok, `videos?part=snippet,contentDetails,status,liveStreamingDetails&id=${videoId}`);
   const item = v.items?.[0];
   if (!item) { console.error(`video ${videoId} not found`); process.exit(1); }
   const sn = item.snippet;
@@ -81,6 +81,18 @@ async function main() {
 
   const duration: string | undefined = item.contentDetails?.duration;
   const isUpcoming = sn.liveBroadcastContent === 'upcoming';
+  const scheduledStartTime: string | undefined = item.liveStreamingDetails?.scheduledStartTime;
+
+  // Recent uploads, for the notification-density check. `videoPublishedAt` is
+  // the feed's own ordering key, so it is the right clock here — and unlike
+  // snippet.publishedAt it stays put once a premiere airs.
+  const uploads = await api(tok, `playlistItems?part=contentDetails&playlistId=UUZCuphXleq-mXVYgvqh-OlQ&maxResults=15`);
+  const siblingReleases = (uploads.items ?? [])
+    .map((it: any) => ({
+      videoId: it.contentDetails?.videoId as string,
+      publishedAt: it.contentDetails?.videoPublishedAt as string,
+    }))
+    .filter((r: { videoId?: string; publishedAt?: string }) => r.videoId && r.publishedAt);
 
   const snapshot: VideoSnapshot = {
     videoId,
@@ -101,6 +113,12 @@ async function main() {
     playlistIds,
     captionTracks,
     isUpcoming,
+    // While a premiere is unaired, snippet.publishedAt IS the upload time.
+    // Once it airs YouTube overwrites it with the premiere time, which is why
+    // the window check in checkRelease() only runs pre-air.
+    uploadedAt: sn.publishedAt,
+    scheduledStartTime,
+    siblingReleases,
   };
 
   const findings: Finding[] = checkRelease(snapshot);
@@ -114,6 +132,10 @@ async function main() {
   console.log(`category   : ${snapshot.categoryId}   lang: ${snapshot.defaultLanguage ?? '-'} / audio: ${snapshot.defaultAudioLanguage ?? '-'}`);
   console.log(`tags       : ${snapshot.tags.length}   playlists: ${playlistIds.length}   captions: ${captionTracks.length}`);
   console.log(`thumbnail  : ${snapshot.hasCustomThumbnail ? 'custom' : 'MISSING'}`);
+  if (scheduledStartTime) {
+    const gapH = (Date.parse(scheduledStartTime) - Date.parse(sn.publishedAt)) / 3_600_000;
+    console.log(`premiere   : ${scheduledStartTime}   ${isUpcoming ? `${gapH.toFixed(1)}h after upload` : '(aired)'}`);
+  }
   console.log('');
   console.log(`findings   : ${bySev('blocker').length} blocker · ${bySev('gap').length} gap · ${bySev('note').length} note`);
   console.log('');
