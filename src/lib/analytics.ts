@@ -36,3 +36,35 @@ export const PRODUCTION_HOSTS_FOR_ANALYTICS = new Set([
 export function isProductionHostForAnalytics(hostname: string): boolean {
   return PRODUCTION_HOSTS_FOR_ANALYTICS.has(hostname);
 }
+
+/**
+ * Route prefixes whose page views must NEVER reach the production GA4 property.
+ *
+ * These are operator surfaces, not audience surfaces. The 2026-09-12 GA4 audit
+ * measured 380 of 745 page views over 28 days — 51% — landing on /admin,
+ * /login or /debug-auth. That is one person working, and it silently inflated
+ * every headline metric: `/admin/mastering` alone was 100 page views, so the
+ * 4m26s "average session duration" largely described time spent in the
+ * mastering studio rather than anything a visitor did.
+ *
+ * Excluding in code rather than with a GA4 internal-traffic IP filter is
+ * deliberate: an IP filter breaks the moment the operator works from a
+ * different network, and GA4 ships those filters in "Testing" mode where they
+ * silently do nothing until someone remembers to activate them.
+ */
+export const ANALYTICS_EXCLUDED_PATH_PREFIXES = ['/admin', '/login', '/debug-auth'] as const;
+
+/**
+ * True when `pathname` is an operator surface that must not be tracked.
+ *
+ * Matches the prefix itself and anything beneath it, but NOT a public path that
+ * merely shares its opening characters — `/administrators` and `/logins` are
+ * ordinary pages and keep their analytics. Pure function of the path so it is
+ * testable without rendering React or touching `window`.
+ */
+export function isAnalyticsExcludedPath(pathname: string): boolean {
+  if (!pathname || !pathname.startsWith('/')) return false;
+  return ANALYTICS_EXCLUDED_PATH_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+  );
+}

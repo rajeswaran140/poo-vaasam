@@ -5,13 +5,14 @@
  * client-side route change (the default GA SPA snippet only counts the first
  * page, so without this Next.js App Router visits look like one-page sessions).
  *
- * Renders nothing (and ships no scripts) when no GA ID is configured.
+ * Renders nothing (and ships no scripts) when no GA ID is configured, on a
+ * non-production host, or on an operator surface (/admin, /login, /debug-auth).
  */
 
 import Script from 'next/script';
 import { usePathname } from 'next/navigation';
-import { useEffect, useRef } from 'react';
-import { isProductionHostForAnalytics } from '@/lib/analytics';
+import { useEffect, useRef, useState } from 'react';
+import { isProductionHostForAnalytics, isAnalyticsExcludedPath } from '@/lib/analytics';
 
 declare global {
   interface Window { gtag?: (...args: unknown[]) => void; dataLayer?: unknown[] }
@@ -20,25 +21,45 @@ declare global {
 export function GoogleAnalytics({ gaId }: { gaId: string }) {
   const pathname = usePathname();
 
-  // `gtag('config')` already sends the initial page_view, so fire manual ones
-  // ONLY on subsequent client-side route changes — skip the first effect run so
-  // the landing page isn't double-counted. (GA4 derives the path from
-  // page_location; the old UA-style `page_path` param was ignored.)
-  const isFirstRun = useRef(true);
+  // Operator surfaces are not audience surfaces. See isAnalyticsExcludedPath —
+  // the 2026-09-12 audit measured 51% of all page views as the operator's own
+  // /admin and /login sessions, which inflated every headline metric.
+  const excluded = isAnalyticsExcludedPath(pathname);
+
+  // Latches true on the first non-excluded path. Once the scripts are mounted
+  // they STAY mounted, even while the operator is inside /admin: unmounting
+  // them would re-run `gtag('config')` on the way back out, which sends its own
+  // automatic page_view on top of the one the effect below sends.
+  const [loaded, setLoaded] = useState(false);
+
+  // The path `gtag('config')` already covered with its automatic page_view.
+  // Skipping exactly that one path is what prevents a double-count on the
+  // render where the scripts first mount — whether that is the landing page or
+  // the first public page after an admin detour.
+  const configPathRef = useRef<string | null>(null);
+
   useEffect(() => {
-    if (isFirstRun.current) {
-      isFirstRun.current = false;
-      return;
-    }
-    if (!gaId || typeof window === 'undefined' || typeof window.gtag !== 'function') return;
+    if (!gaId || typeof window === 'undefined') return;
     // Same production-host gate applied at render (below) — a preview branch's
     // useEffect must not fire pageviews even when gtag was somehow initialised.
     if (!isProductionHostForAnalytics(window.location.hostname)) return;
+    if (excluded) return;
+
+    if (!loaded) {
+      configPathRef.current = pathname;
+      setLoaded(true);
+      return;
+    }
+    if (configPathRef.current === pathname) return;
+    if (typeof window.gtag !== 'function') return;
+
+    // GA4 derives the path from page_location; the old UA-style `page_path`
+    // param was ignored.
     window.gtag('event', 'page_view', {
       page_location: window.location.href,
       page_title: document.title,
     });
-  }, [pathname, gaId]);
+  }, [pathname, gaId, excluded, loaded]);
 
   if (!gaId) return null;
 
@@ -55,6 +76,10 @@ export function GoogleAnalytics({ gaId }: { gaId: string }) {
   if (typeof window !== 'undefined' && !isProductionHostForAnalytics(window.location.hostname)) {
     return null;
   }
+
+  // Never load on an admin landing. `pathname` is known during SSR too, so the
+  // server and the client agree here and no hydration mismatch is introduced.
+  if (excluded && !loaded) return null;
 
   return (
     <>
