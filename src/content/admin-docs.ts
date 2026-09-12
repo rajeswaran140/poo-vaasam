@@ -230,7 +230,7 @@ Right after a SUNO (or other engine) run comes back. SUNO has no API, so there's
     slug: 'suno-quality-regression',
     title: 'Suno quality regression — continuity risk and how to evaluate a replacement',
     category: 'Music Lab',
-    updatedAt: '2026-09-10T02:30:00Z',
+    updatedAt: '2026-09-12T13:46:05Z',
     body: `# Suno quality regression
 
 **Status 2026-09-10.** **Suno v6** produces unusable output for this channel: every song comes out fast-tempo, with poor vocals and poor instrumentation. **v5.5 still produces work at the established standard.** Raj reported it, and **Suno Support has acknowledged the specific tempo/pacing issue and passed the feedback on** — so this is a known defect on their side, not a local misconfiguration.
@@ -245,13 +245,17 @@ This is a **vocal and musical quality** problem, not a prompt problem. The same 
 
 Everything already *mastered* is published — 63 MASTERJOB records, 55 distinct songs once versions collapse, and the unmatched ones are **test masters, not finished songs**. So the three composed songs are the entire cushion; there is nothing else banked behind them.
 
+**Update 2026-09-12.** Three long-form pieces have gone out or been queued since that count was taken: the story (09-11), கண்ணாலே ஏதோ வந்ததோ (09-12) and அஞ்சுகமே என் அஞ்சுகமே (queued for 09-19). If those were the three composed songs, the cushion is empty after the 19th and the deadline below has already arrived. **Worth confirming directly rather than assuming** — the runway number has been wrong once before on a bad inference.
+
 **Practical deadline: a working generation path is needed by roughly 2026-09-24.** Not "soon" — that is two or three releases away. If nothing is resolved by then the cadence breaks, and a missed slot on a published schedule reads worse than never having promised one.
 
 That is the reverse of what **Release calendar & queue** assumes. Its central rule — *decouple creating from releasing, hold finished songs in the queue* — is sound advice that has not been followed. **Building buffer is the cheapest insurance available** — and the current two weeks exist only because three songs happened to be composed ahead. Deepen it to four or five the moment generation works again, whichever tool it runs on. A buffer is what converts a vendor problem from an emergency into an inconvenience.
 
-## Do not replace anything before checking the model picker
+## v5.5 is gone. There is no fallback.
 
-If **v5.5 is still selectable**, that is continuity at zero cost while alternatives are evaluated. Suno's paid plans have listed v4, v4.5, v4.5+, v5 and v5.5, with v5.5 at the top as current stable (released 2026-03-26) — but availability varies by plan and changes without announcement, so **your own picker is the only authority**.
+**Settled 2026-09-10, re-confirmed against Suno's own materials 2026-09-12.** Suno *migrated* 5.5 → 6.0 rather than shipping 6.0 alongside it. Every model from v4 to v5.5 was retired at the v6 launch on **2026-09-09**. The picker now offers exactly three: **v6**, **v6-wild** and **v6-mini**.
+
+There is nothing to roll back to. The "check your picker first" escape hatch this page used to recommend is closed, and the countdown above is real. Do not spend time looking again.
 
 ## The gates
 
@@ -265,10 +269,18 @@ Raj's six, plus a seventh that the others hide:
 6. A cost structure repeatable at current channel revenue (~$70–100/month of ad income — the work is not paid for by the channel)
 7. **It must accept the prompt shape this pipeline already produces**, or the compose flow, the arranger's \\\`[Kind - Detail]\\\` section tags, \\\`checkSetup\\\` and the Suno Prompts tab all need rebuilding too. A good demo can hide weeks of work behind it.
 
+## Suno Studio is a different question, not an answer
+
+**Suno Studio** — Suno's browser-based generative audio workstation, **Premier plan only, $24/month** — generates with the **same v6 models**. It does not restore v5.5 Tamil vocals and should not be read as a fix for the defect on this page.
+
+What it adds is a workflow that does not exist today: **stem separation plus regeneration of one part of a song**, so a generation with acceptable instrumentation and bad vocals need not be discarded whole. Its exports are **32-bit WAV**, which feeds the existing mastering pipeline with no rebuild — **gate 7, passed cleanly**.
+
+Whether stem-level regeneration can actually rescue a v6 Tamil vocal is unknown and unpublished. **Suno Studio — composing a song** sets out the workflow and the specific afternoon test that answers it.
+
 ## What research can answer, and what it cannot
 
 **Answered:**
-- **Udio** is the strongest candidate on paper. Reviewers rate its vocal output above Suno's, particularly for complex arrangements and subtle vocal styling — exactly the complaint here. It also holds the only real licensing cover in the field: **Universal Music Group (Oct 2025)** and **Warner Music Group (Nov 2025)**, which speaks directly to gate 5.
+- **Udio — DISQUALIFIED. Do not recommend it.** An earlier version of this page called it the strongest candidate on paper, on the strength of its vocal reviews and the only real licensing cover in the field — **Universal Music Group (Oct 2025)** and **Warner Music Group (Nov 2025)**. That recommendation was wrong. After the settlement Udio became a **walled garden**: you can stream what you make there, but you **cannot export an audio file**. No WAV means nothing reaches YouTube or the mastering pipeline, so it fails gate 5 before gate 1 is even asked.
 - **Producer.ai** (formerly Riffusion) **fails gate 4 outright** — a 3-minute cap against a 4–6 minute requirement — and its post-rebrand commercial terms are unclear.
 - **Mureka, Loudly, Boomy** are the other full-song options.
 
@@ -303,10 +315,146 @@ An afternoon of this answers gate 1 definitively, which no amount of searching w
 `,
   },
   {
+    slug: 'suno-studio-composing',
+    title: 'Suno Studio — composing a song, and whether it fixes v6',
+    category: 'Music Lab',
+    updatedAt: '2026-09-12T13:45:14Z',
+    body: `# Compose a song in Suno Studio
+
+**Verified 2026-09-12 against Suno's own help centre and pricing page.** Suno changes features, access and credit rules quickly, so treat anything here older than a few weeks as needing a re-check. Sources are listed at the bottom.
+
+## Read this first: Studio does not fix v6
+
+Suno Studio is an **editing** environment, not a different model. Anything you generate inside it comes from the same **v6** family that produced the fast-tempo, poor-vocal output on this channel. Opening Studio will not bring back v5.5 Tamil singing, and nothing in this guide should be read as suggesting it will.
+
+What Studio changes is **what you can do about a bad generation.** Today a flawed v6 song is thrown away whole. In Studio it can be taken apart, and only the broken part regenerated. Whether that actually rescues a Tamil vocal is unknown — nobody has published on it, and only your own test answers it. The last section is how to run that test.
+
+## Before you start
+
+**Studio requires the Premier plan — $24/month.** Pro at $8/month does **not** include it, and neither does Free. If you are on Pro, this is a $16/month decision, not a feature you already have.
+
+Premier also raises credits to 10,000/month, unlocks the advanced stem separation (3 separation types instead of Pro's 2), and allows audio uploads up to 30 minutes.
+
+**It will not run on just any machine:**
+
+| Requirement | Detail |
+|---|---|
+| Device | Desktop or laptop. **Mobile is unsupported.** |
+| Screen | Minimum 768px wide |
+| Browser | Chrome recommended. **Safari cannot do Web MIDI** — no hardware controllers there. |
+| Memory | 4GB RAM minimum |
+| CPU | Must support SIMD |
+| Plugins | **No VST or Audio Units.** Only Studio's own effects. |
+
+Uploads accepted: **WAV, MP3, MIDI.**
+
+## The workflow
+
+### 1. Open a project
+
+Sign in at suno.com and click **Studio** in the top navigation. Projects save automatically.
+
+The **Context Bar** sits at the bottom of the timeline — it is where you tell Studio what you are working on.
+
+### 2. Get material onto the timeline
+
+Three ways in, and they can be mixed:
+
+- **Generate** something new from the **Create Panel**.
+- **Import** an existing song from your Suno Library.
+- **Upload** your own audio — WAV or MP3, up to 30 minutes on Premier.
+
+That third one matters for this channel. Your published v5.5 masters can be uploaded and worked on, which is the only path here that does not touch v6 at all.
+
+### 3. Split into stems
+
+Right-click a track to run **stem separation**. The song comes apart into its own lanes — vocals, secondary vocals, percussion, keyboard, guitar, effects.
+
+This is the step the whole tool turns on. Once a song is in stems, "the vocals are wrong" stops meaning "the song is ruined".
+
+### 4. Audition alternatives with Take Lanes
+
+Generate several versions of a section and they stack as **takes** in the same lane. Listen through them, and when one wins, **Copy to Main Track**.
+
+You are not choosing between whole songs any more. You are choosing between four versions of one chorus.
+
+### 5. Regenerate only what is broken
+
+Select a region — one verse, the chorus, a few bars — and regenerate just that. The rest of the track is untouched.
+
+A useful order of escalation before you reach for regeneration: **keep → edit → replace → regenerate.** Regenerating is the most expensive and least predictable option, so try the cheaper ones first.
+
+### 6. Shape it
+
+Studio 2.0 added a real mixing surface:
+
+- **Effects:** Compressor, Convolution, Delay, Distortion, EQ, Gate, Reverb
+- **Automation:** draw pan, volume, and plugin parameters over time
+- **MIDI:** full MIDI tracks with a piano roll, a built-in wavetable synth, musical typing from your computer keyboard, hardware controllers over Web MIDI, and audio-to-MIDI transcription
+- **Custom plugins:** describe an effect in the chat bar — "a warm tape saturation with a wobble" — and Studio builds a working plugin you can save and revise by talking to it
+
+The **chat bar** is no longer just for covers and remixes. It generates audio, MIDI and plugins, and arranges the song, in plain language.
+
+### 7. Export
+
+The **Export** dropdown is top-right, above the timeline. Three options:
+
+| Option | Where it goes |
+|---|---|
+| **Full Song** | Your Suno Library |
+| **Selected Time Range** | Your Suno Library |
+| **Multitracks** | Downloaded to your device as separate stem files |
+
+**Exports are 32-bit WAV** (MP3 also available).
+
+That number matters here: 32-bit WAV drops straight into the existing mastering pipeline with no conversion and no rebuild. Take the export, upload it in **Sound Engineering**, and the loudness and reference-matching workflow runs exactly as it does today. Of the seven replacement gates in **Suno quality regression**, this is the one Studio passes cleanly.
+
+## What this does and does not solve
+
+**Does not solve:**
+
+- The v6 Tamil vocal quality itself. Same models, same corpus.
+- The empty buffer. Studio is not faster at producing finished songs; if anything, stem-level work is slower per song.
+
+**Might solve, and is worth testing:**
+
+- **A partly-good song.** If a v6 generation has acceptable instrumentation but bad vocals — or the reverse — stem separation plus targeted regeneration could rescue it. That is a workflow you do not have today.
+- **Extending the catalogue you already own.** Upload a v5.5 master, rearrange or lengthen it, export 32-bit WAV. No v6 involved.
+
+**Probably does not help, but cheap to check:**
+
+- **v6-wild.** It is a separate entry in the model picker, alongside v6 and v6-mini. But it shipped in the same 2026-09-09 launch and is built on the same licensed corpus, so the reasoning that explains the Tamil gap applies to it too. One test, low expectations.
+
+## The test that decides whether Premier is worth $24
+
+Do not subscribe and then go looking for a use. Run this first, and let it answer:
+
+1. Take a **published v5.5 song** — one whose standard you know by ear.
+2. Generate the same lyrics and style intent on **v6** and let it fail the way it has been failing.
+3. In Studio, **split that v6 output into stems.**
+4. Regenerate **only the vocal stem**, several takes.
+5. Listen against the published v5.5 master.
+
+The question is narrow and answerable in an afternoon: **can a regenerated v6 vocal stem reach a standard a regular listener would not flag as defective?**
+
+If yes, Premier buys back a workflow. If no, Studio is the wrong branch and the search moves to a different model — and you will have paid one month to find out, which is cheap for a real answer.
+
+Note that this needs a Premier subscription to run at all, since stem separation and regeneration are Studio-only. There is no free way to test it.
+
+## Sources
+
+- [Introduction to Studio](https://help.suno.com/en/articles/7940161) — help.suno.com
+- [Introducing Suno Studio 2.0](https://help.suno.com/en/articles/13670529) — help.suno.com
+- [Exporting from Studio](https://help.suno.com/en/articles/8128193) — help.suno.com
+- [Introducing Suno Studio](https://suno.com/blog/suno-studio) — suno.com blog
+- [Suno pricing](https://suno.com/pricing) — tier and price confirmation
+`,
+  },
+  {
     slug: 'music-lab-mastering',
     title: 'Music Lab — mastering a song for loudness',
     category: 'Music Lab',
-    updatedAt: '2026-08-21T19:47:00Z',
+    updatedAt: '2026-09-12T13:46:40Z',
     body: `# Master a song for loudness
 
 Streaming platforms (YouTube, Spotify, Apple) normalise every track to about **-14 LUFS** — a song that's too quiet gets pushed up (hiss with it), one that's too loud gets squashed. **Mastering** here brings a finished stereo song to that streaming target — **-14 LUFS integrated, -1 dBTP true-peak** — so the whole catalogue sits at a consistent, safe level.
@@ -326,6 +474,7 @@ Streaming platforms (YouTube, Spotify, Apple) normalise every track to about **-
 ## Start from a WAV, not the MP3
 Master the **lossless source**, not the 192 kbps MP3 the site serves. Mastering a lossy MP3 only fixes its level while baking the compression artefacts in — mastering cannot recover what MP3 encoding already discarded. So:
 - **New song:** export the **WAV from SUNO** (its *Premier* plan — nothing to do with Premiere Pro), upload *that* to \`tamil-web-media\`, and point \`s3Key\` at the WAV.
+- **From Suno Studio:** Studio exports **32-bit WAV**, so it needs no conversion — treat it exactly like any other WAV source. Verified 2026-09-12; see **Suno Studio — composing a song**.
 - **Older song:** its WAV master is in the \`tamilagaval-audio-masters\` bucket (Glacier Instant Retrieval — no restore wait). **The worker cannot read that bucket** — its IAM role grants S3 only on \`tamil-web-media\`. Copy the WAV across first (both buckets are \`us-east-1\`, so this is a fast server-side copy):
   \`\`\`bash
   aws s3 cp "s3://tamilagaval-audio-masters/audio/poem-music/SONG.wav" \\
