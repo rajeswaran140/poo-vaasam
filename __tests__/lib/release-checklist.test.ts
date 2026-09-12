@@ -288,3 +288,107 @@ describe('SUBSCRIBE_URL derives from the canonical channel URL', () => {
     expect(SUBSCRIBE_URL).toBe(youtubeSubscribeUrl());
   });
 });
+
+// ---------------------------------------------------------------------------
+// Premiere reach — added 2026-09-12 after QDJG1P7D0Aw drew 2 views in its first
+// 89 minutes against a 200–500 baseline. Nothing about that upload was
+// misconfigured: it was public, HD, `ta`, category 10, 24 tags, a maxres
+// thumbnail, in all three playlists, at position 0 of the uploads feed. Every
+// existing check passed, and the release still reached nobody.
+//
+// What was different was the SCHEDULE, which no check looked at. These two do.
+// ---------------------------------------------------------------------------
+
+/** A snapshot that passes every pre-existing check, so only the new ones fire. */
+function cleanUpcoming(over: Partial<VideoSnapshot> = {}): VideoSnapshot {
+  return {
+    ...good,
+    isUpcoming: true,
+    uploadedAt: '2026-09-19T09:00:00Z',
+    scheduledStartTime: '2026-09-19T12:45:00Z',
+    siblingReleases: [],
+    ...over,
+  };
+}
+
+describe('premiere-window', () => {
+  it('does not fire when a premiere airs the same day it is uploaded', () => {
+    const ids = checkRelease(cleanUpcoming()).map((x) => x.id);
+    expect(ids).not.toContain('premiere-window');
+  });
+
+  it('fires when the video sits as an unaired premiere for more than 48h', () => {
+    const found = checkRelease(
+      cleanUpcoming({
+        uploadedAt: '2026-09-09T12:57:00Z',
+        scheduledStartTime: '2026-09-12T12:33:00Z', // QDJG: 71.6h
+      })
+    ).find((x) => x.id === 'premiere-window');
+
+    expect(found).toBeDefined();
+    expect(found!.severity).toBe('gap');
+    expect(found!.detail).toMatch(/71|72/); // reports the actual gap in hours
+  });
+
+  it('is silent on a video that has already aired', () => {
+    const ids = checkRelease(
+      cleanUpcoming({
+        isUpcoming: false,
+        uploadedAt: '2026-09-09T12:57:00Z',
+        scheduledStartTime: '2026-09-12T12:33:00Z',
+      })
+    ).map((x) => x.id);
+    expect(ids).not.toContain('premiere-window');
+  });
+
+  it('is silent when the schedule is unknown rather than guessing', () => {
+    const ids = checkRelease(
+      cleanUpcoming({ uploadedAt: undefined, scheduledStartTime: undefined })
+    ).map((x) => x.id);
+    expect(ids).not.toContain('premiere-window');
+  });
+});
+
+describe('release-density', () => {
+  it('does not fire when the nearest other release is a week away', () => {
+    const ids = checkRelease(
+      cleanUpcoming({
+        siblingReleases: [{ videoId: 'other1', publishedAt: '2026-09-12T12:00:00Z' }],
+      })
+    ).map((x) => x.id);
+    expect(ids).not.toContain('release-density');
+  });
+
+  it('fires when another release lands within 36h', () => {
+    const found = checkRelease(
+      cleanUpcoming({
+        scheduledStartTime: '2026-09-12T12:33:00Z',
+        siblingReleases: [
+          { videoId: 'NlVv9R0nzYE', publishedAt: '2026-09-11T12:33:05Z' }, // 24h before
+          { videoId: 'fH7O5jqj554', publishedAt: '2026-09-11T15:43:05Z' }, // 20.8h before
+        ],
+      })
+    ).find((x) => x.id === 'release-density');
+
+    expect(found).toBeDefined();
+    expect(found!.severity).toBe('gap');
+    expect(found!.title).toContain('2 other releases');
+    // and it names them, so the operator knows which ones competed
+    expect(found!.detail).toContain('NlVv9R0nzYE');
+    expect(found!.detail).toContain('fH7O5jqj554');
+  });
+
+  it('ignores the video itself when counting neighbours', () => {
+    const snap = cleanUpcoming({
+      videoId: 'SELF',
+      scheduledStartTime: '2026-09-12T12:33:00Z',
+      siblingReleases: [{ videoId: 'SELF', publishedAt: '2026-09-12T12:33:00Z' }],
+    });
+    expect(checkRelease(snap).map((x) => x.id)).not.toContain('release-density');
+  });
+
+  it('is silent when sibling data was not supplied', () => {
+    const ids = checkRelease(cleanUpcoming({ siblingReleases: undefined })).map((x) => x.id);
+    expect(ids).not.toContain('release-density');
+  });
+});
