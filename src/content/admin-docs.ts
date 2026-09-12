@@ -230,7 +230,7 @@ Right after a SUNO (or other engine) run comes back. SUNO has no API, so there's
     slug: 'suno-quality-regression',
     title: 'Suno quality regression — continuity risk and how to evaluate a replacement',
     category: 'Music Lab',
-    updatedAt: '2026-09-12T13:46:05Z',
+    updatedAt: '2026-09-12T19:27:06Z',
     body: `# Suno quality regression
 
 **Status 2026-09-10.** **Suno v6** produces unusable output for this channel: every song comes out fast-tempo, with poor vocals and poor instrumentation. **v5.5 still produces work at the established standard.** Raj reported it, and **Suno Support has acknowledged the specific tempo/pacing issue and passed the feedback on** — so this is a known defect on their side, not a local misconfiguration.
@@ -271,7 +271,7 @@ Raj's six, plus a seventh that the others hide:
 
 ## Suno Studio is a different question, not an answer
 
-**Suno Studio** — Suno's browser-based generative audio workstation, **Premier plan only, $24/month** — generates with the **same v6 models**. It does not restore v5.5 Tamil vocals and should not be read as a fix for the defect on this page.
+**Suno Studio** — Suno's browser-based generative audio workstation, included in the **Premier plan we already hold** — generates with the **same v6 models**. It does not restore v5.5 Tamil vocals and should not be read as a fix for the defect on this page.
 
 What it adds is a workflow that does not exist today: **stem separation plus regeneration of one part of a song**, so a generation with acceptable instrumentation and bad vocals need not be discarded whole. Its exports are **32-bit WAV**, which feeds the existing mastering pipeline with no rebuild — **gate 7, passed cleanly**.
 
@@ -318,7 +318,7 @@ An afternoon of this answers gate 1 definitively, which no amount of searching w
     slug: 'suno-studio-composing',
     title: 'Suno Studio — composing a song, and whether it fixes v6',
     category: 'Music Lab',
-    updatedAt: '2026-09-12T13:45:14Z',
+    updatedAt: '2026-09-12T19:27:06Z',
     body: `# Compose a song in Suno Studio
 
 **Verified 2026-09-12 against Suno's own help centre and pricing page.** Suno changes features, access and credit rules quickly, so treat anything here older than a few weeks as needing a re-check. Sources are listed at the bottom.
@@ -331,9 +331,11 @@ What Studio changes is **what you can do about a bad generation.** Today a flawe
 
 ## Before you start
 
-**Studio requires the Premier plan — $24/month.** Pro at $8/month does **not** include it, and neither does Free. If you are on Pro, this is a $16/month decision, not a feature you already have.
+**We are already on Premier, so Studio is already available at no extra cost.** Confirmed 2026-09-12. Nothing on this page needs a purchase decision — open it and use it.
 
-Premier also raises credits to 10,000/month, unlocks the advanced stem separation (3 separation types instead of Pro's 2), and allows audio uploads up to 30 minutes.
+For reference: Studio is Premier-only. Pro ($8/month) and Free do not include it; Premier is $24/month. Premier also gives 10,000 credits/month, the advanced stem separation (3 separation types instead of Pro's 2), and audio uploads up to 30 minutes.
+
+**Stems are downloadable on this plan** — see *What Studio is already earning its keep for* below.
 
 **It will not run on just any machine:**
 
@@ -425,9 +427,9 @@ That number matters here: 32-bit WAV drops straight into the existing mastering 
 
 - **v6-wild.** It is a separate entry in the model picker, alongside v6 and v6-mini. But it shipped in the same 2026-09-09 launch and is built on the same licensed corpus, so the reasoning that explains the Tamil gap applies to it too. One test, low expectations.
 
-## The test that decides whether Premier is worth $24
+## The test worth running, and it costs nothing
 
-Do not subscribe and then go looking for a use. Run this first, and let it answer:
+This was previously framed as deciding whether $24/month was worth spending. That is no longer the question — the subscription is already held. It is simply an experiment nobody has run:
 
 1. Take a **published v5.5 song** — one whose standard you know by ear.
 2. Generate the same lyrics and style intent on **v6** and let it fail the way it has been failing.
@@ -437,9 +439,25 @@ Do not subscribe and then go looking for a use. Run this first, and let it answe
 
 The question is narrow and answerable in an afternoon: **can a regenerated v6 vocal stem reach a standard a regular listener would not flag as defective?**
 
-If yes, Premier buys back a workflow. If no, Studio is the wrong branch and the search moves to a different model — and you will have paid one month to find out, which is cheap for a real answer.
+If yes, we have a workflow that rescues v6 output instead of discarding it. If no, Studio is the wrong branch for the vocal problem and the search moves to a different model — settled in an afternoon, at no cost.
 
-Note that this needs a Premier subscription to run at all, since stem separation and regeneration are Studio-only. There is no free way to test it.
+## What Studio is already earning its keep for
+
+Independent of the v6 question, Premier's **downloadable stems** solved a paid commission on 2026-09-12 — a buyer ordered two **karaoke** (instrumental) versions at CAD $40 each.
+
+Karaoke from stems beats karaoke from separation software. Tools like Demucs *estimate* where the vocal sits and subtract it, leaving smeared reverb tails and a ghost of the melody. Suno's stems were never mixed together, so summing everything except the vocal tracks gives a backing bed with **no separation artefacts at all**.
+
+It also recovers songs whose masters are missing. **செவ்வந்தி பூவே has no WAV in \`tamilagaval-audio-masters\` or in the web bucket** — but the original generation is still in the Suno library, so its stems are reachable even though the mastered file is not.
+
+The workflow:
+
+1. Export **all** stems for the song (Studio → Export → Multitracks, 32-bit WAV each). Take the full set — lead and backing vocals must both be identifiable, or a stray harmony survives into the karaoke.
+2. Sum every non-vocal stem.
+3. Check the result against the published song so the arrangement matches what the buyer knows.
+4. Normalise to -14 LUFS / -1 dBTP and confirm LRA did not move (see **Music Lab — building a volume album from existing songs**).
+5. Render 320 kbps MP3.
+
+**Before quoting a commission, confirm the song is actually in the Suno library.** The S3 archive is incomplete, and a confirmed price on an unsourceable song is the one avoidable mistake here.
 
 ## Sources
 
