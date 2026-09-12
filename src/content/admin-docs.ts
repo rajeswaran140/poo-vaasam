@@ -541,6 +541,118 @@ The header now prints the upload-to-premiere gap directly. Its first run caught 
 `,
   },
   {
+    slug: 'volume-album-build',
+    title: 'Music Lab — building a volume album from existing songs',
+    category: 'Music Lab',
+    updatedAt: '2026-09-12T19:10:15Z',
+    body: `# Build a volume album from existing songs
+
+**Written 2026-09-12, from the first build.** A "volume album" is one long upload that plays several finished songs back to back, with chapters. Love Songs Volume 1 was the first.
+
+## Why this format matters right now
+
+**It needs no generation.** Every track already exists. While Suno v6 cannot sing Tamil at the established standard, this is the one release format that does not touch the broken tool at all — the catalogue is the raw material.
+
+Two other properties worth knowing: a five-song album runs about 30 minutes, which clears the **8-minute threshold for multiple mid-roll ad slots** (a 5–7 minute song gets one), and it gives songs that converted well but never found an audience a second chance in front of listeners who arrived for a different track.
+
+## ⚠️ Check the source audio BEFORE choosing the tracklist
+
+This is the step that reorders everything, and it caught the first build out. Of five chosen songs, only three had usable audio anywhere in S3:
+
+| where | what is there |
+|---|---|
+| \`tamilagaval-audio-masters\` | 136 objects, named by Tamil title. Covers **some** songs, often with several variants of the same one. |
+| \`tamil-web-media/audio/poem-music/\` | Only **18** files, mostly 192 kbps MP3 — the site's served audio. |
+
+Two of the five had **nothing in either bucket**. Neither the archive nor the site had them; the only copies are wherever they were made.
+
+So: **resolve every track to a real file before promising a tracklist.** Pick songs that are sourceable, then rank those — not the other way round.
+
+**Variants are ambiguous.** The archive holds things like \`-Cov-11.2\`, \`-DV-1.6\`, \`-Vox-1.3\` and a plain \`.wav\` for the same song, with no canonical marker. Match by **duration against the published YouTube runtime** — that identifies the released version faster than listening. Expect a few seconds of difference; the video usually carries a short outro the audio file does not.
+
+## ⚠️ Archive WAVs are NOT all at -14 LUFS
+
+The mastering guide says the catalogue already lands on target and that mastering it again is a no-op. **That is true of the served MP3s. It is not true of the archive WAVs.**
+
+Measured on the first three tracks pulled for Volume 1:
+
+| track source | integrated | true peak |
+|---|---:|---:|
+| WAV, archive | **-15.4 LUFS** | -4.4 dBFS |
+| MP3, site | **-13.7 LUFS** | -1.7 dBFS |
+| WAV, archive | **-14.5 LUFS** | -3.0 dBFS |
+
+A **1.7 LU spread**. Well above the ~1 dB point where a level change becomes audible, so joining these untouched would put a step at every track boundary.
+
+**Always normalise each track before joining.** Do not skip it because the mastering doc says the catalogue is already on target.
+
+## The build
+
+Everything below runs on \`crowvault-ide-server\`, where ffmpeg 6.1.1 is installed.
+
+**1. Normalise each track to -14 LUFS / -1 dBTP.** Two passes: measure, then correct with the measured values. \`linear=true\` matters — it applies one static gain rather than compressing.
+
+\`\`\`bash
+# pass 1 — measure
+ffmpeg -i in.wav -af loudnorm=I=-14:TP=-1:LRA=11:print_format=json -f null -
+# pass 2 — apply, substituting the measured_* values from pass 1
+ffmpeg -i in.wav -af "loudnorm=I=-14:TP=-1:LRA=11:measured_I=...:measured_TP=...:measured_LRA=...:measured_thresh=...:offset=...:linear=true" \\
+  -ar 48000 -ac 2 -c:a pcm_s16le out.wav
+\`\`\`
+
+**2. Join with a gap.** 1.5 seconds of silence between tracks reads as an album rather than a crossfade mix.
+
+\`\`\`bash
+ffmpeg -f lavfi -i anullsrc=r=48000:cl=stereo -t 1.5 -c:a pcm_s16le gap.wav
+printf "file '%s'\\n" n1.wav gap.wav n2.wav gap.wav n3.wav > concat.txt
+ffmpeg -f concat -safe 0 -i concat.txt -c:a pcm_s16le -ar 48000 -ac 2 album.wav
+\`\`\`
+
+The pipeline's own \`MasterJoin\` is **two-part only**, with a crossfade. It does not do a five-track album, which is why this is a direct ffmpeg concat.
+
+**3. Verify, do not assume.** Measure the assembled file:
+
+\`\`\`bash
+ffmpeg -i album.wav -af ebur128=peak=true:framelog=quiet -f null -
+\`\`\`
+
+Volume 1's sample came out at **-14.0 LUFS integrated, -2.0 dBFS true peak, LRA 3.6 LU**. The LRA is the proof: the sources measured 3.4–3.7 LU and the album measures 3.6, so the gain was linear and nothing was compressed. **If LRA moves much, something squashed the audio** — go back and check \`linear=true\`.
+
+**4. Render the video.** A still image over the audio.
+
+\`\`\`bash
+ffmpeg -loop 1 -i cover.jpg -i album.wav \\
+  -c:v libx264 -tune stillimage -pix_fmt yuv420p -r 5 \\
+  -vf "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2" \\
+  -c:a aac -b:a 320k -ar 48000 -ac 2 -shortest -movflags +faststart out.mp4
+\`\`\`
+
+## Chapters are not optional
+
+A 30-minute upload without chapters is one undifferentiated block. Timestamps let a listener jump to the track they came for, and the first line **must** be \`00:00\`.
+
+\`\`\`
+00:00 நீ பார்த்த ஒரு நொடி
+06:44 முடிவில்லா முகத்தினில்
+12:31 உன்னைக் காண வேணும்
+\`\`\`
+
+Compute the offsets from the **normalised** file durations plus the gaps, not from the YouTube runtimes — those differ by a few seconds.
+
+## Publishing it
+
+- **Test uploads go out unlisted.** A public test lands in the subscriber feed and spends a notification. See **Why a release reaches nobody**.
+- **Do not release an album in the same week as a song.** Same reason: releases inside 36 hours of each other split one notification budget.
+- The album is an ordinary release in every other respect — run \`npx tsx scripts/tamilagaval-release-preflight.ts <VIDEO_ID>\` before it premieres.
+
+## Where Volume 1's files are
+
+On \`crowvault-ide-server\` at \`~/albums/love-songs-vol1/\`: the 1080p MP4, a 320 kbps MP3, and \`album.wav\` (lossless, 199 MB). The cover on the sample is a **placeholder** — a thumbnail borrowed from one of the tracks, not album art.
+
+The sample is **three tracks, not five**, for the sourcing reason at the top of this page.
+`,
+  },
+  {
     slug: 'music-lab-mastering',
     title: 'Music Lab — mastering a song for loudness',
     category: 'Music Lab',
@@ -555,6 +667,8 @@ Streaming platforms (YouTube, Spotify, Apple) normalise every track to about **-
 > So the largest correction available anywhere in the catalogue is **0.68 LU** — below the ~1 dB threshold where a loudness change becomes audible. Running this on the existing songs is a **no-op you can hear no difference in**, and that is the correct result, not a failure.
 >
 > **What it is still worth using for:** a future song that comes back off-target, a non-SUNO or externally-recorded source, or when you need one guaranteed peak-safe 24/48 WAV to hand to Premiere / a distributor. Reach for it when a measurement says a song is off — not as a routine step on every release.
+>
+> **⚠️ This applies to the SERVED catalogue, not the archive.** WAVs in \`tamilagaval-audio-masters\` are a mix of versions and are NOT all on target — three pulled for Love Songs Volume 1 on 2026-09-12 measured -15.4, -13.7 and -14.5 LUFS, a 1.7 LU spread. Anything assembled from archive sources must be normalised per track first. See **Music Lab — building a volume album from existing songs**.
 
 ## What it does — and does NOT
 - **Does:** a two-pass \`loudnorm\` (measure, then correct) to -14 LUFS / -1 dBTP, written as a 24-bit / 48 kHz WAV. Level + peak only. Validated to +/-1 LU against reference ffmpeg.
