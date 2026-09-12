@@ -451,6 +451,96 @@ Note that this needs a Premier subscription to run at all, since stem separation
 `,
   },
   {
+    slug: 'release-reach-postmortem',
+    title: 'Why a release reaches nobody — the QDJG post-mortem',
+    category: 'Publishing',
+    updatedAt: '2026-09-12T14:50:04Z',
+    body: `# Why a release reaches nobody
+
+**Written 2026-09-12, the day கண்ணாலே ஏதோ வந்ததோ premiered to 2 views.** This page is here so the next time a release lands flat, the diagnosis takes ten minutes instead of an afternoon.
+
+## What normal looks like
+
+**A song normally takes 200–500 views in its first one to two hours.** That is the number to judge a same-day release against — not the 30-day median, which is a different question.
+
+For a fuller picture, \`wPxNf0VKUKQ\` (கஞ்சிக் கலயம், 2026-09-09) did **3,675 views in its first 24 hours**, of which **2,757 — 75% — came from SUBSCRIBER traffic**.
+
+That 75% is the most important number on this page. **This channel runs on the subscriber notification.** Search brings 28 views. Suggested brings a few hundred. If the notification does not reach people, nothing else makes up the difference.
+
+## What happened to கண்ணாலே ஏதோ வந்ததோ
+
+\`QDJG1P7D0Aw\` premiered 2026-09-12 at 12:36 UTC and had **2 views 89 minutes later**. Against the baseline above that is a **100–250× shortfall**. The song was v5.5, one Raj rates among his best.
+
+Two checks ruled out the boring explanations:
+
+- **Not counter lag.** Re-checked 25 minutes apart, still 2.
+- **Not a channel-wide penalty.** wPxN had done 3,675 views three days earlier on the same channel. Whatever went wrong was specific to this video.
+
+## Everything that was checked, and passed
+
+Compared field by field against wPxN as a control:
+
+| Check | QDJG | wPxN |
+|---|---|---|
+| privacy / embeddable / publicStatsViewable | public / true / true | identical |
+| uploadStatus + processingStatus | processed / succeeded, no warnings | identical |
+| regionRestriction | none | none |
+| categoryId | 10 (Music) | 10 |
+| defaultAudioLanguage | \`ta\` | \`ta\` |
+| tags | 24 | 25 |
+| maxres thumbnail | present | present |
+| caption tracks | 1 | 1 |
+| playlists | All Songs, Latest, Love Songs | same |
+| position in the uploads feed | **0** — the top | — |
+
+**Nothing about the upload was wrong.** That is what makes this worth writing down: every mechanical check the release checklist knew how to make came back clean, and the release still reached nobody.
+
+## What was actually different: the schedule
+
+**1. It sat as an unaired premiere for 71.6 hours.**
+
+Subscribers are notified when the *upcoming page appears*, not when the premiere airs. QDJG was uploaded on 09-09 and premiered on 09-12, so its one notification went out three days before anyone could watch. By premiere time it was spent, and the premiere opened to whoever happened to be looking.
+
+The corroborating detail is sitting right next to it: **\`fH7O5jqj554\` had 10 likes and 0 views while still unaired.** Its upload notification worked fine — people arrived at the waiting page and liked it. QDJG's had already been used up.
+
+**2. Three items hit the subscriber feed in 26 hours.**
+
+The story (09-11 12:33), அஞ்சுகமே's upload (09-11 15:43), and QDJG (09-12 12:36). YouTube rate-limits how often it notifies a channel's subscribers. It will not push three in a day, and this channel cannot afford to lose one.
+
+**3. The premiere was rescheduled twice.** 09-12 → 09-16 → back to 09-12, the last move made about twelve hours out. Every reschedule re-points the reminders people already set.
+
+## The one number that settles it, and only Raj can see it
+
+**Studio → Analytics → Reach → Impressions.**
+
+- **Impressions near zero** → YouTube never showed it. Distribution, as described above.
+- **Impressions normal, CTR near zero** → it was shown and nobody clicked. That is thumbnail and title, an entirely different problem with an entirely different fix.
+
+Those two lead in opposite directions, so read this before acting on anything else. **Impressions and click-through rate are not available in the public YouTube Analytics API** — they exist only in Studio. No script can fetch them, and any diagnosis written without them is a hypothesis.
+
+## What the checklist now catches
+
+Two checks were added to \`src/lib/release-checklist.ts\` on 2026-09-12, both \`gap\` rather than \`blocker\` because cadence is a judgement call:
+
+- **\`premiere-window\`** — fires when a premiere is more than **48 hours** after upload.
+- **\`release-density\`** — fires when another release lands within **36 hours**.
+
+Run them before any premiere:
+
+\`\`\`bash
+npx tsx scripts/tamilagaval-release-preflight.ts <VIDEO_ID>
+\`\`\`
+
+The header now prints the upload-to-premiere gap directly. Its first run caught \`fH7O5jqj554\` at **116.9h**.
+
+## The three rules this leaves behind
+
+1. **Keep the gap between upload and premiere under 48 hours.** The notification is the release.
+2. **Do not reschedule a premiere once it is set.** If the date must change, understand that you are spending the reach, not moving it.
+3. **Leave three to four days between releases.** Not only for the audience — for the notification budget. This is the same spacing the cadence policy already recommends, arrived at from a different direction.
+`,
+  },
+  {
     slug: 'music-lab-mastering',
     title: 'Music Lab — mastering a song for loudness',
     category: 'Music Lab',
