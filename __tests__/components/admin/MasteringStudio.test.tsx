@@ -1246,3 +1246,83 @@ describe('per-song identity resets with the source', () => {
     expect(screen.getByRole('button', { name: /Render video/ })).toBeDisabled();
   });
 });
+
+/**
+ * Rendering a video for a master saved in an earlier session.
+ *
+ * The inline render panel is gated on `savedAt && job.masterKey`, and `savedAt`
+ * is set in exactly one place — the moment Save is clicked in THIS session.
+ * `reopenMaster` deliberately clears it, because a re-open is a new run against
+ * the same source. The consequence was that a master saved yesterday could
+ * never be rendered: its masterKey was in S3 and its videoKey column was in
+ * DynamoDB, and nothing on the page could reach either.
+ *
+ * This is the same defect the MP3 button already fixed for the web file. These
+ * tests pin the video half.
+ */
+describe('rendering from the saved-masters library', () => {
+  const row = (over: Record<string, unknown> = {}) => ({
+    id: 'saved-vid-1',
+    status: 'done',
+    s3Key: 'audio/mastering/1700000000000_ab12_kadhal.wav',
+    masterKey: 'audio/mastering/1700000000000_ab12_kadhal-master-14LUFS.wav',
+    mp3Key: null,
+    videoKey: null,
+    target: -14,
+    title: 'காதல் மழை',
+    savedAt: '2026-08-01T10:00:00.000Z',
+    edit: null, join: null, source: null,
+    afterLufs: -14, afterTp: -3.2, beforeLra: 3, afterLra: 3,
+    error: null,
+    ...over,
+  });
+
+  async function openLibrary(job: Record<string, unknown> = row()) {
+    render(<MasteringStudio />);
+    mockedFetch.mockResolvedValueOnce(json({ success: true, masters: [job] }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Saved masters/i })); });
+    // Same readiness signal the re-open tests use — the row's own control.
+    await screen.findByRole('button', { name: /Edit & re-master/i });
+  }
+
+  it('offers the finished MP4 on a row that already has one', async () => {
+    // Previously reachable only from the run that produced it.
+    await openLibrary(row({ videoKey: 'audio/mastering/1_a-master-14LUFS-1440p.mp4' }));
+    expect(screen.getByRole('button', { name: /^Video$/ })).toBeInTheDocument();
+  });
+
+  it('offers a render on a saved master that has none yet', async () => {
+    await openLibrary();
+    expect(await screen.findByRole('button', { name: /Render video for காதல் மழை/ })).toBeInTheDocument();
+  });
+
+  it('does not offer a render on a row whose master file is gone', async () => {
+    await openLibrary(row({ masterKey: null }));
+    expect(screen.queryByRole('button', { name: /Render video for/ })).not.toBeInTheDocument();
+  });
+
+  it('sends the row-s own job id and cover, not the active job-s', async () => {
+    await openLibrary();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Render video for காதல் மழை/ }));
+    });
+
+    const input = await screen.findByLabelText(/Cover for காதல் மழை/i);
+    mockedFetch.mockResolvedValueOnce(
+      json({ success: true, uploadUrl: 'https://s3/u', fields: { key: 'k' }, key: 'audio/mastering/1_c_cover.jpg' })
+    );
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [new File(['x'], 'c.jpg', { type: 'image/jpeg' })] } });
+    });
+
+    mockedFetch.mockResolvedValueOnce(json({ success: true, videoKey: 'v', height: 1440, status: 'queued' }));
+    mockedFetch.mockResolvedValue(json(row({ videoKey: 'audio/mastering/done-1440p.mp4' })));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Render$/ }));
+    });
+
+    const req = mockedFetch.mock.calls.find((c) => String(c[0]).endsWith('/render'))!;
+    expect(String(req[0])).toContain('/master/saved-vid-1/render');
+    expect(JSON.parse(req[1].body).coverKey).toBe('audio/mastering/1_c_cover.jpg');
+  });
+});
