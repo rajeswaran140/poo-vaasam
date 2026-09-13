@@ -262,6 +262,15 @@ export function MasteringStudio() {
   const [videoHeight, setVideoHeight] = useState<number>(1440);
   const [rendering, setRendering] = useState(false);
   /**
+   * Rendering a video for a master saved in an EARLIER session, from the
+   * library. The inline panel above cannot do this: it is gated on `savedAt`,
+   * which is set only by clicking Save in the current session and is cleared by
+   * `reopenMaster`. So a master saved yesterday had a masterKey in S3 and a
+   * videoKey column in DynamoDB that nothing on this page could reach — the
+   * same defect the MP3 row button already fixed for the web file.
+   */
+  const [rowRender, setRowRender] = useState<{ id: string; cover: { key: string; name: string } | null } | null>(null);
+  /**
    * Bumped whenever a saved recipe is loaded. Used as a `key` on the edit
    * panels so they remount and re-seed: they hold their own state, so without a
    * remount a re-opened trim would be read once and then ignored.
@@ -948,15 +957,17 @@ export function MasteringStudio() {
    * a render that has not landed in ten minutes is reported rather than spun on
    * forever, and the job keeps the result either way.
    */
-  const renderVideo = useCallback(async () => {
-    if (!jobId || !cover) return;
-    setRendering(true);
-    setError(null);
-    try {
-      const res = await adminFetch(`/api/admin/music-lab/master/${jobId}/render`, {
+  /**
+   * POST the render and poll until the MP4 lands. Shared by the inline panel
+   * and the library row, so both wait the same way and time out the same way.
+   * Resolves with the finished job, or null if the component unmounted.
+   */
+  const startRender = useCallback(
+    async (targetId: string, coverKey: string, height: number): Promise<MasterJob | null> => {
+      const res = await adminFetch(`/api/admin/music-lab/master/${targetId}/render`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ coverKey: cover.key, height: videoHeight }),
+        body: JSON.stringify({ coverKey, height }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.success) throw new Error(body.error || 'Could not start the render.');
@@ -968,25 +979,77 @@ export function MasteringStudio() {
       const deadline = Date.now() + 10 * 60 * 1000;
       for (let attempt = 0; ; attempt++) {
         if (attempt > 0) await new Promise((r) => setTimeout(r, 4000));
-        if (!mounted.current) return;
-        const s = await adminFetch(`/api/admin/music-lab/master/${jobId}`);
+        if (!mounted.current) return null;
+        const s = await adminFetch(`/api/admin/music-lab/master/${targetId}`);
         const fresh = (await s.json()) as MasterJob;
         if (fresh.videoKey) {
-          setJob(fresh);
           setAnnounce('Video ready.');
-          return;
+          return fresh;
         }
         if (fresh.videoError) throw new Error(fresh.videoError);
         if (Date.now() > deadline) {
           throw new Error('The render is taking longer than expected — reload to check on it.');
         }
       }
+    },
+    []
+  );
+
+  const renderVideo = useCallback(async () => {
+    if (!jobId || !cover) return;
+    setRendering(true);
+    setError(null);
+    try {
+      const fresh = await startRender(jobId, cover.key, videoHeight);
+      if (fresh) setJob(fresh);
     } catch (err) {
       if (mounted.current) setError(err instanceof Error ? err.message : String(err));
     } finally {
       if (mounted.current) setRendering(false);
     }
-  }, [jobId, cover, videoHeight]);
+  }, [jobId, cover, videoHeight, startRender]);
+
+  /** Cover for a library row's render. Same upload path as the inline panel. */
+  const onPickRowCover = useCallback(
+    async (id: string, file: File) => {
+      setError(null);
+      setRowBusy(id);
+      const controller = new AbortController();
+      try {
+        const key = await uploadToWorkspace(file, () => {}, controller.signal, 'cover');
+        if (!mounted.current) return;
+        setRowRender({ id, cover: { key, name: file.name } });
+        setAnnounce('Cover uploaded.');
+      } catch (err) {
+        if (mounted.current && !isAbort(err)) setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (mounted.current) setRowBusy(null);
+      }
+    },
+    [uploadToWorkspace]
+  );
+
+  /**
+   * Render from the library. On success the row is patched in place rather than
+   * the whole list reloaded — the only thing that changed is this master's
+   * videoKey, and a reload would lose the reader's scroll position.
+   */
+  const renderRowVideo = useCallback(async () => {
+    if (!rowRender?.cover) return;
+    const { id, cover: rowCover } = rowRender;
+    setRowBusy(id);
+    setError(null);
+    try {
+      const fresh = await startRender(id, rowCover.key, videoHeight);
+      if (!fresh) return;
+      setLibrary((prev) => (prev ? prev.map((x) => (x.id === id ? { ...x, videoKey: fresh.videoKey } : x)) : prev));
+      setRowRender(null);
+    } catch (err) {
+      if (mounted.current) setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      if (mounted.current) setRowBusy(null);
+    }
+  }, [rowRender, videoHeight, startRender]);
 
   /**
    * Deliberately NOT loaded on mount: listing scans the table, and most visits
@@ -2169,6 +2232,33 @@ export function MasteringStudio() {
                     MP3
                   </button>
                 )}
+                {/* Same fix as the MP3 button above, for the video: a render
+                    that finished in an earlier session had no route back. */}
+                {m.videoKey && (
+                  <button
+                    type="button"
+                    onClick={() => void downloadKey(m.videoKey!, m.title ?? '', m.target)}
+                    className="text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
+                  >
+                    Video
+                  </button>
+                )}
+                {/* And a way to MAKE one. The inline panel is gated on savedAt,
+                    which only this session's Save sets, so without this a master
+                    saved yesterday could never be rendered at all. */}
+                {m.masterKey && !m.videoKey && (
+                  <button
+                    type="button"
+                    disabled={rowBusy === m.id}
+                    onClick={() =>
+                      setRowRender((prev) => (prev?.id === m.id ? null : { id: m.id, cover: null }))
+                    }
+                    aria-label={`Render video for ${m.title ?? 'this master'}`}
+                    className="text-xs font-medium text-orange-600 hover:underline disabled:opacity-50 dark:text-orange-400"
+                  >
+                    Render video
+                  </button>
+                )}
                 {/* The source is never modified, so re-opening costs nothing and
                     loses nothing — it restores the recipe and hands back
                     control at the "ready" stage. */}
@@ -2180,6 +2270,38 @@ export function MasteringStudio() {
                   >
                     Edit &amp; re-master
                   </button>
+                )}
+                {rowRender?.id === m.id && (
+                  <span className="mt-2 flex w-full flex-wrap items-center gap-2 border-t border-gray-100 pt-2 dark:border-gray-800">
+                    <label
+                      htmlFor={`${inputId}-rowcover-${m.id}`}
+                      className="text-xs font-medium text-gray-600 dark:text-gray-300"
+                    >
+                      Cover for {m.title || 'this master'}
+                    </label>
+                    <input
+                      id={`${inputId}-rowcover-${m.id}`}
+                      type="file"
+                      accept="image/*"
+                      disabled={rowBusy === m.id}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) void onPickRowCover(m.id, f);
+                      }}
+                      className="text-xs"
+                    />
+                    <button
+                      type="button"
+                      disabled={!rowRender.cover || rowBusy === m.id}
+                      onClick={() => void renderRowVideo()}
+                      className="rounded bg-orange-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
+                    >
+                      Render
+                    </button>
+                    {rowBusy === m.id && (
+                      <span className="text-xs text-gray-500 dark:text-gray-400">Working…</span>
+                    )}
+                  </span>
                 )}
               </li>
             ))}
