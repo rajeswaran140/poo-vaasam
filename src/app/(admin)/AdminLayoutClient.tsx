@@ -148,6 +148,10 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
     subtitle:
       "Log & evaluate every generation against its brief — turn failed attempts into a research dataset",
   },
+  "/admin/mastering/bulk": {
+    title: "Bulk upload",
+    subtitle: "Put a batch of WAVs into the mastering workspace in one go",
+  },
   "/admin/mastering": {
     title: "Sound Engineering",
     subtitle:
