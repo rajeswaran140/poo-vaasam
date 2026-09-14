@@ -25,6 +25,7 @@ import {
   AlertTriangle, FileAudio, RotateCcw, X, Info, Save, Library, Play, Pause, Pencil, Link2, Film,
 } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
+import { putToS3, uploadToWorkspace } from '@/lib/mastering-upload-client';
 import { pollJob } from '@/lib/poll-job';
 import { statusFor, platformLanding } from '@/lib/loudness-targets';
 import { nextRadioIndex, radioTabIndex } from '@/lib/radiogroup-keys';
@@ -141,35 +142,6 @@ const asResponse = (body: unknown): Response =>
   ({ ok: true, status: 200, json: async () => body }) as Response;
 
 /** Upload straight to S3 with progress. fetch() can't report upload progress. */
-function putToS3(
-  uploadUrl: string,
-  fields: Record<string, string>,
-  file: File,
-  onProgress: (loaded: number, total: number) => void,
-  signal: AbortSignal
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const form = new FormData();
-    // Every policy field first, the file part LAST — S3 requires this order.
-    Object.entries(fields).forEach(([k, v]) => form.append(k, v));
-    form.append('file', file);
-
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', uploadUrl);
-    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded, e.total);
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) return resolve();
-      // S3 replies with an XML <Error><Code>…</Code></Error>; surfacing the code
-      // turns an opaque "HTTP 403" into "ExpiredToken" / "EntityTooLarge".
-      const code = /<Code>([^<]+)<\/Code>/.exec(xhr.responseText ?? '')?.[1];
-      reject(new Error(`S3 rejected the upload (HTTP ${xhr.status}${code ? ` — ${code}` : ''}).`));
-    };
-    xhr.onerror = () => reject(new Error('Network error during upload.'));
-    xhr.onabort = () => reject(new Error('Upload cancelled.'));
-    signal.addEventListener('abort', () => xhr.abort(), { once: true });
-    xhr.send(form);
-  });
-}
 
 /**
  * The join payload for a run: the two fields the panel owns, over whatever the
@@ -550,31 +522,6 @@ export function MasteringStudio() {
    * Shared by Part A and Part B so a second source cannot drift onto a
    * different upload path (or skip the WAV guard).
    */
-  const uploadToWorkspace = useCallback(async (
-    file: File,
-    onProgress: (loaded: number, total: number) => void,
-    signal: AbortSignal,
-    kind: 'audio' | 'cover' = 'audio',
-  ): Promise<string> => {
-    const typeOk = (ACCEPTED_UPLOAD_TYPES as readonly string[]).includes(file.type);
-    const res = await adminFetch('/api/admin/mastering/upload', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        filename: file.name,
-        // A cover's own type is sent through: the server pins it into the S3
-        // policy, so an image cannot masquerade as audio/wav.
-        contentType: kind === 'cover' ? file.type : typeOk ? file.type : 'audio/wav',
-        size: file.size,
-        ...(kind === 'cover' ? { kind } : {}),
-      }),
-      signal,
-    });
-    const body = await res.json();
-    if (!res.ok || !body.success) throw new Error(body.error || `Could not start the upload (HTTP ${res.status}).`);
-    await putToS3(body.uploadUrl, body.fields, file, onProgress, signal);
-    return body.key as string;
-  }, []);
 
   /**
    * Part B of a two-part assembly. Same WAV-only rule as Part A: an MP3 here is
@@ -615,7 +562,7 @@ export function MasteringStudio() {
     } finally {
       if (mounted.current) setPartBUploading(false);
     }
-  }, [uploadToWorkspace, sourceKey, runAnalysis]);
+  }, [sourceKey, runAnalysis]);
 
   const onPick = useCallback(async (picked: File | null) => {
     if (!picked) return;
@@ -947,7 +894,7 @@ export function MasteringStudio() {
     } finally {
       if (mounted.current) setCoverUploading(false);
     }
-  }, [uploadToWorkspace]);
+  }, []);
 
   /**
    * Render the upload-ready MP4 and wait for it.
@@ -1026,7 +973,7 @@ export function MasteringStudio() {
         if (mounted.current) setRowBusy(null);
       }
     },
-    [uploadToWorkspace]
+    []
   );
 
   /**
