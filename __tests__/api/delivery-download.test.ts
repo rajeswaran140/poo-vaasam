@@ -11,22 +11,12 @@ jest.mock('@/infrastructure/database/DeliveryRepository', () => ({
 jest.mock('@/infrastructure/storage/s3-client', () => ({
   S3Operations: { getSignedUrl: (...a: unknown[]) => getSignedUrl(...a) },
 }));
-jest.mock('@/lib/rate-limit', () => {
-  const rateLimiterInstances: any[] = [];
-  return {
-    SharedRateLimiter: jest.fn(function(config: any) {
-      const instance = { reset: jest.fn(), config };
-      rateLimiterInstances.push(instance);
-      return instance;
-    }),
-    checkRateLimit: (...a: unknown[]) => checkRateLimit(...a),
-    rateLimitedResponse: (...a: unknown[]) => rateLimitedResponse(...a),
-    clientIp: (r: any) => '1.2.3.4',
-    __resetAllLimiters: () => {
-      rateLimiterInstances.forEach(instance => instance.reset());
-    },
-  };
-});
+jest.mock('@/lib/rate-limit', () => ({
+  SharedRateLimiter: jest.fn(),
+  checkRateLimit: (...a: unknown[]) => checkRateLimit(...a),
+  rateLimitedResponse: (...a: unknown[]) => rateLimitedResponse(...a),
+  clientIp: (r: any) => '1.2.3.4',
+}));
 
 import { NextRequest } from 'next/server';
 import { GET } from '@/app/api/d/[token]/route';
@@ -44,9 +34,9 @@ const live = (over = {}) => ({
 
 beforeEach(() => {
   jest.clearAllMocks();
-  // Access the __resetAllLimiters from the mocked module
-  const { __resetAllLimiters } = require('@/lib/rate-limit');
-  __resetAllLimiters();
+  // Module mocks provide isolation: each test gets fresh jest.fn() instances that are
+  // cleared above. Explicit re-assignment of mock return values below ensures every test
+  // starts from the known state, preventing flakes from accumulated mock state.
   checkRateLimit.mockResolvedValue({ allowed: true });
   rateLimitedResponse.mockReturnValue(new Response('rate limited', { status: 429 }));
 });
@@ -94,6 +84,8 @@ it('refuses an expired link before consuming a download', async () => {
   findByToken.mockResolvedValueOnce(live({ expiresAt: '2020-01-01T00:00:00.000Z' }));
   const res = await GET(req(), ctx());
   expect(res.headers.get('location')).toContain('e=expired');
+  expect(res.headers.get('location')).not.toContain('deliveries/a.mp3');
+  expect(await res.text()).not.toContain('deliveries/a.mp3');
   expect(consume).not.toHaveBeenCalled();
 });
 
@@ -110,6 +102,8 @@ it('honours the race lost at the database, not the read before it', async () => 
   consume.mockResolvedValueOnce({ ok: false, reason: 'exhausted' });
   const res = await GET(req(), ctx());
   expect(res.headers.get('location')).toContain('e=exhausted');
+  expect(res.headers.get('location')).not.toContain('deliveries/a.mp3');
+  expect(await res.text()).not.toContain('deliveries/a.mp3');
   expect(getSignedUrl).not.toHaveBeenCalled();
 });
 
