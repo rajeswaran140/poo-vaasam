@@ -10,15 +10,22 @@ interface Row {
 
 export function DeliveryManager() {
   const [rows, setRows] = useState<Row[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<string | null>(null);
   const [form, setForm] = useState({ s3Key: '', filename: '', label: '' });
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const res = await adminFetch('/api/admin/deliveries');
-    const body = await res.json();
-    setRows(body.deliveries ?? []);
+    try {
+      const res = await adminFetch('/api/admin/deliveries');
+      const body = await res.json();
+      if (!res.ok || !body.success) throw new Error(body.error || 'Could not load delivery links.');
+      setLoadError(null);
+      setRows(body.deliveries ?? []);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
+    }
   }, []);
 
   useEffect(() => { void load(); }, [load]);
@@ -39,8 +46,15 @@ export function DeliveryManager() {
   }, [form, load]);
 
   const revoke = useCallback(async (token: string) => {
-    await adminFetch(`/api/admin/deliveries/${token}/revoke`, { method: 'POST' });
-    await load();
+    setError(null);
+    try {
+      const res = await adminFetch(`/api/admin/deliveries/${token}/revoke`, { method: 'POST' });
+      const body = await res.json();
+      if (!res.ok || !body.success) throw new Error(body.error || 'Could not revoke the link.');
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   }, [load]);
 
   return (
@@ -74,7 +88,8 @@ export function DeliveryManager() {
         )}
       </div>
 
-      {rows === null ? <p className="text-sm text-gray-500">Loading…</p>
+      {loadError ? <p role="alert" className="text-sm text-red-600">{loadError}</p>
+        : rows === null ? <p className="text-sm text-gray-500">Loading…</p>
         : rows.length === 0 ? <p className="text-sm text-gray-500">No delivery links yet.</p>
         : (
         <ul className="space-y-1">

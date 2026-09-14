@@ -37,6 +37,15 @@ it('creates a link and shows the URL for copying', async () => {
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Create link/i })); });
 
   await waitFor(() => expect(screen.getByDisplayValue(`https://tamilagaval.com/d/${TOKEN}`)).toBeInTheDocument());
+
+  expect(mockedFetch).toHaveBeenCalledWith('/api/admin/deliveries', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ s3Key: 'deliveries/a.mp3', filename: 'a.mp3', label: 'Buyer' }),
+  });
+  // Real refresh assertion: the list GET fires once on mount and again after create.
+  const getCalls = mockedFetch.mock.calls.filter(([url, init]) => url === '/api/admin/deliveries' && init === undefined);
+  expect(getCalls).toHaveLength(2);
 });
 
 it('surfaces a rejected key instead of failing silently', async () => {
@@ -53,4 +62,47 @@ it('surfaces a rejected key instead of failing silently', async () => {
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Create link/i })); });
 
   expect(await screen.findByRole('alert')).toHaveTextContent(/deliveries\//);
+});
+
+it('revokes a link and refreshes the list', async () => {
+  mockedFetch.mockResolvedValueOnce(json({ success: true, deliveries: [
+    { token: TOKEN, filename: 'Song.mp3', label: 'Anton — karaoke', downloadCount: 1,
+      maxDownloads: 3, expiresAt: '2026-09-21T00:00:00.000Z', revokedAt: null },
+  ] }));
+  render(<DeliveryManager />);
+  await screen.findByText('Anton — karaoke');
+
+  mockedFetch.mockResolvedValueOnce(json({ success: true }));
+  mockedFetch.mockResolvedValueOnce(json({ success: true, deliveries: [
+    { token: TOKEN, filename: 'Song.mp3', label: 'Anton — karaoke', downloadCount: 1,
+      maxDownloads: 3, expiresAt: '2026-09-21T00:00:00.000Z', revokedAt: '2026-09-15T00:00:00.000Z' },
+  ] }));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Revoke/i })); });
+
+  expect(mockedFetch).toHaveBeenCalledWith(`/api/admin/deliveries/${TOKEN}/revoke`, { method: 'POST' });
+  expect(await screen.findByText('revoked')).toBeInTheDocument();
+  const getCalls = mockedFetch.mock.calls.filter(([url, init]) => url === '/api/admin/deliveries' && init === undefined);
+  expect(getCalls).toHaveLength(2);
+});
+
+it('surfaces a failed revoke instead of pretending the link is dead', async () => {
+  mockedFetch.mockResolvedValueOnce(json({ success: true, deliveries: [
+    { token: TOKEN, filename: 'Song.mp3', label: 'Anton — karaoke', downloadCount: 1,
+      maxDownloads: 3, expiresAt: '2026-09-21T00:00:00.000Z', revokedAt: null },
+  ] }));
+  render(<DeliveryManager />);
+  await screen.findByText('Anton — karaoke');
+
+  mockedFetch.mockResolvedValueOnce(json({ success: false, error: 'Session expired' }, 401));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Revoke/i })); });
+
+  expect(await screen.findByRole('alert')).toHaveTextContent(/Session expired/);
+  expect(screen.getByRole('button', { name: /Revoke/i })).toBeInTheDocument();
+});
+
+it('shows an honest error instead of hanging on Loading… when the list fetch fails', async () => {
+  mockedFetch.mockRejectedValueOnce(new Error('Network error'));
+  render(<DeliveryManager />);
+
+  expect(await screen.findByRole('alert')).toHaveTextContent(/Network error/);
 });
