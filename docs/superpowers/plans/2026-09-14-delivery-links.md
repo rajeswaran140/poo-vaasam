@@ -393,8 +393,16 @@ export class DeliveryRepository {
         downloads: [],
         revokedAt: null,
       };
+      // `revokedAt` is deliberately NOT written. A JS null marshals to a
+      // DynamoDB NULL-type attribute, which EXISTS — and consume()'s
+      // `attribute_not_exists(revokedAt)` condition would then be false for
+      // every row, failing every download as 'exhausted'. `removeUndefinedValues`
+      // does not strip nulls. revoke() is what creates the attribute; the read
+      // side already defaults it to null. Same sparse-attribute idiom as
+      // MasterJobRepository REMOVEing GSI1PK on a terminal state.
+      const { revokedAt: _omit, ...persisted } = delivery;
       await DynamoDBOperations.put({
-        PK: pk(token), SK: 'METADATA', entityType: 'DELIVERY', ...delivery,
+        PK: pk(token), SK: 'METADATA', entityType: 'DELIVERY', ...persisted,
         GSI1PK: DELIVERY_INDEX_PK,
         GSI1SK: `${delivery.createdAt}#${token}`,
         ttl: Math.floor((Date.parse(expiresAt) + TTL_GRACE_DAYS * 86_400_000) / 1000),
@@ -773,7 +781,12 @@ export default async function DeliveryPage({
 
   const delivery = isDeliveryToken(token) ? await new DeliveryRepository().findByToken(token) : null;
   const status = delivery ? deliveryStatusOf(delivery) : 'invalid';
-  const problem = status !== 'active' ? MESSAGES[status] ?? MESSAGES.invalid : e ? MESSAGES[e] : null;
+  // The ROW is authoritative. `e` is advisory context from the redirect and must
+  // never override an active row — otherwise appending ?e=revoked to a live link
+  // hides the download button, and a transient consume() failure (which redirects
+  // with e=exhausted) strands a buyer who still has downloads left.
+  const blocked = status !== 'active' ? MESSAGES[status] ?? MESSAGES.invalid : null;
+  const advisory = status === 'active' && e ? MESSAGES[e] : null;
 
   return (
     <main className="mx-auto max-w-lg px-4 py-16">
