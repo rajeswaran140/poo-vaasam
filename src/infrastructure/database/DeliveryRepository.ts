@@ -55,8 +55,9 @@ export class DeliveryRepository {
         downloads: [],
         revokedAt: null,
       };
+      const { revokedAt, ...deliveryWithoutRevoked } = delivery;
       await DynamoDBOperations.put({
-        PK: pk(token), SK: 'METADATA', entityType: 'DELIVERY', ...delivery,
+        PK: pk(token), SK: 'METADATA', entityType: 'DELIVERY', ...deliveryWithoutRevoked,
         GSI1PK: DELIVERY_INDEX_PK,
         GSI1SK: `${delivery.createdAt}#${token}`,
         ttl: Math.floor((Date.parse(expiresAt) + TTL_GRACE_DAYS * 86_400_000) / 1000),

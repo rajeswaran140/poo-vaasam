@@ -39,6 +39,12 @@ describe('create', () => {
     const item = put.mock.calls[0][0];
     expect(item.ttl * 1000).toBeGreaterThan(Date.parse(item.expiresAt));
   });
+
+  it('does not write revokedAt, so the ConditionExpression works on first claim', async () => {
+    await new DeliveryRepository().create({ s3Key: 'deliveries/a.mp3', filename: 'a.mp3', label: 'B' });
+    const item = put.mock.calls[0][0];
+    expect('revokedAt' in item).toBe(false);
+  });
 });
 
 describe('consume', () => {
