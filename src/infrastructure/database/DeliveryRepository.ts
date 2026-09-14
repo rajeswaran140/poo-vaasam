@@ -93,10 +93,15 @@ export class DeliveryRepository {
   /**
    * Claim one download. The condition is the cap: a failure means the link is
    * used up or revoked, which is an answer, not an error.
+   *
+   * The cap comes from the row, passed in by the caller that already read it.
+   * A ConditionExpression cannot compare a value against another attribute of the same item,
+   * which is why it arrives as an argument rather than being read here.
    */
   async consume(
     token: string,
-    ip: string
+    ip: string,
+    maxDownloads: number
   ): Promise<{ ok: true; delivery: Delivery } | { ok: false; reason: 'exhausted' }> {
     const hit = { at: new Date().toISOString(), ip };
     try {
@@ -106,7 +111,7 @@ export class DeliveryRepository {
           'ADD downloadCount :one SET downloads = list_append(if_not_exists(downloads, :empty), :hit)',
         conditionExpression: 'downloadCount < :max AND attribute_not_exists(revokedAt)',
         expressionAttributeValues: {
-          ':one': 1, ':hit': [hit], ':empty': [], ':max': DEFAULT_MAX_DOWNLOADS,
+          ':one': 1, ':hit': [hit], ':empty': [], ':max': maxDownloads,
         },
       });
       return { ok: true, delivery: toDelivery((updated ?? {}) as Record<string, unknown>) };
