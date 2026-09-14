@@ -189,6 +189,17 @@ export class S3Operations {
     }
   }
 
+  /** Byte size of an object, or null when it is not there. */
+  static async getContentLength(key: string): Promise<number | null> {
+    try {
+      const r = await s3Client.send(new HeadObjectCommand({ Bucket: BUCKET_NAME, Key: key }));
+      return r.ContentLength ?? null;
+    } catch (error: any) {
+      if (error.name === 'NotFound') return null;
+      throw error;
+    }
+  }
+
   /**
    * Get a signed URL for temporary access.
    *
