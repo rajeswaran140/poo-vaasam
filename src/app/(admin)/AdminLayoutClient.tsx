@@ -171,7 +171,7 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   },
   "/admin/media": {
     title: "Media Library",
-    subtitle: "Manage uploaded media files",
+    subtitle: "Not built yet — use Sound Engineering → Bulk upload",
   },
   "/admin/settings": {
     title: "Settings",

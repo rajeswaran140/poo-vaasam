@@ -1,170 +1,78 @@
 /**
- * Admin Media Library Page Tests
+ * Media Library page — the honest placeholder.
  *
- * Component tests for media library page
+ * This page used to render a convincing mock: an "Upload Media" button, a
+ * "Select Files" drop zone, gradient stat cards and a storage-usage
+ * percentage, none of it wired to anything. Raj went looking for somewhere to
+ * upload stem files, landed here, and lost time before finding out.
+ *
+ * The previous 18 tests pinned that mock's appearance — gradients, dashed
+ * borders, grid classes. They passed while the page misled its only user,
+ * which is the clearest possible sign they were testing the wrong thing.
+ *
+ * These test the property that actually matters: someone landing here learns
+ * within a second that nothing uploads, and where to go instead. The negative
+ * assertions are the load-bearing ones — they stop the fake controls coming
+ * back.
  */
 
 import { render, screen } from '@testing-library/react';
 import MediaLibraryPage from '@/app/(admin)/admin/media/page';
 
-// Mock Next.js Link component
 jest.mock('next/link', () => {
-  return ({ children, href }: { children: React.ReactNode; href: string }) => {
-    return <a href={href}>{children}</a>;
-  };
+  const Link = ({ children, href }: { children: React.ReactNode; href: string }) => (
+    <a href={href}>{children}</a>
+  );
+  Link.displayName = 'Link';
+  return Link;
 });
 
-// Mock Lucide React icons
 jest.mock('lucide-react', () => ({
-  Image: () => <div data-testid="image-icon">Image</div>,
-  Music: () => <div data-testid="music-icon">Music</div>,
-  Upload: () => <div data-testid="upload-icon">Upload</div>,
-  Folder: () => <div data-testid="folder-icon">Folder</div>,
+  Folder: () => <div data-testid="folder-icon" />,
+  UploadCloud: () => <div data-testid="upload-icon" />,
+  ArrowRight: () => <div data-testid="arrow-icon" />,
 }));
 
-describe('Media Library Page', () => {
-  it('should render media library header', () => {
+describe('Media Library page', () => {
+  it('says plainly that it is not built', () => {
     render(<MediaLibraryPage />);
-
-    expect(screen.getByText('Media Library')).toBeInTheDocument();
-    expect(screen.getByText('Manage images, audio files, and media assets')).toBeInTheDocument();
-  });
-
-  it('should render Upload Media button in header', () => {
-    render(<MediaLibraryPage />);
-
-    const uploadButtons = screen.getAllByRole('button', { name: /upload media/i });
-    expect(uploadButtons.length).toBeGreaterThan(0);
-  });
-
-  it('should display media stats cards', () => {
-    render(<MediaLibraryPage />);
-
-    expect(screen.getByText('Images')).toBeInTheDocument();
-    expect(screen.getByText('Audio Files')).toBeInTheDocument();
-    expect(screen.getByText('Total Storage')).toBeInTheDocument();
-  });
-
-  it('should show zero state for all media stats', () => {
-    render(<MediaLibraryPage />);
-
-    // Check for zero counts
-    const zeroTexts = screen.getAllByText('0');
-    expect(zeroTexts.length).toBeGreaterThan(0);
-
-    expect(screen.getAllByText('Total size: 0 MB').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText('0 MB').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('of 10 GB used')).toBeInTheDocument();
-  });
-
-  it('should render upload zone', () => {
-    render(<MediaLibraryPage />);
-
-    expect(screen.getByText('Drag and drop files here')).toBeInTheDocument();
-    expect(screen.getByText(/or click to browse from your computer/i)).toBeInTheDocument();
-  });
-
-  it('should display Select Files button in upload zone', () => {
-    render(<MediaLibraryPage />);
-
-    const selectButton = screen.getByRole('button', { name: /select files/i });
-    expect(selectButton).toBeInTheDocument();
-  });
-
-  it('should show supported file formats', () => {
-    render(<MediaLibraryPage />);
-
+    expect(screen.getByText(/Not built yet/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/Supported formats: JPG, PNG, GIF, MP3, WAV/i)
-    ).toBeInTheDocument();
-    expect(screen.getByText(/Max 10MB/i)).toBeInTheDocument();
-  });
-
-  it('should render Recent Uploads section', () => {
-    render(<MediaLibraryPage />);
-
-    expect(screen.getByText('Recent Uploads')).toBeInTheDocument();
-  });
-
-  it('should show empty state for recent uploads', () => {
-    render(<MediaLibraryPage />);
-
-    expect(screen.getByText('No media files yet')).toBeInTheDocument();
-    expect(
-      screen.getByText(/Upload your first image or audio file to get started/i)
+      screen.getByText(/Nothing on this page uploads, lists or deletes a file/i)
     ).toBeInTheDocument();
   });
 
-  it('should display under development notice', () => {
+  it('sends the reader to the uploader that works', () => {
     render(<MediaLibraryPage />);
-
-    expect(screen.getByText('Under Development')).toBeInTheDocument();
-    expect(
-      screen.getByText(/Media Library functionality is currently under development/i)
-    ).toBeInTheDocument();
+    const link = screen.getByRole('link', { name: /Go to Bulk upload/i });
+    expect(link).toHaveAttribute('href', '/admin/mastering/bulk');
   });
 
-  it('should list planned features', () => {
+  it('mentions the content-form upload, so the reader is not left thinking nothing works', () => {
     render(<MediaLibraryPage />);
-
-    expect(screen.getByText(/Drag-and-drop file upload to AWS S3/i)).toBeInTheDocument();
-    expect(screen.getByText(/Image resizing and optimization/i)).toBeInTheDocument();
-    expect(screen.getByText(/Gallery view with thumbnails/i)).toBeInTheDocument();
-    expect(screen.getByText(/Search and filter by file type/i)).toBeInTheDocument();
-    expect(screen.getByText(/Bulk delete and organize/i)).toBeInTheDocument();
-    expect(screen.getByText(/Direct integration with content forms/i)).toBeInTheDocument();
+    expect(screen.getByText(/upload field on\s+the content form/i)).toBeInTheDocument();
   });
 
-  it('should render Back to Dashboard link', () => {
+  it('records the non-obvious requirement for a real bulk delete', () => {
+    // Deleting an S3 key a content record still points at breaks the site.
     render(<MediaLibraryPage />);
-
-    const dashboardLink = screen.getByRole('link', { name: /back to dashboard/i });
-    expect(dashboardLink).toBeInTheDocument();
-    expect(dashboardLink).toHaveAttribute('href', '/admin');
+    expect(screen.getByText(/no content record still points at the key/i)).toBeInTheDocument();
   });
 
-  it('should render all required icons', () => {
+  // --- the load-bearing half: the mock must not come back ------------------
+
+  it('offers no upload control of its own', () => {
     render(<MediaLibraryPage />);
-
-    // Icons may appear multiple times in the layout
-    expect(screen.getAllByTestId('folder-icon').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByTestId('image-icon').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByTestId('music-icon').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByTestId('upload-icon').length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByRole('button', { name: /Upload Media/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Select Files/i })).not.toBeInTheDocument();
+    expect(document.querySelector('input[type="file"]')).toBeNull();
   });
 
-  it('should have gradient backgrounds for stat cards', () => {
-    const { container } = render(<MediaLibraryPage />);
-
-    expect(container.querySelector('.from-blue-500.to-blue-600')).toBeInTheDocument();
-    expect(container.querySelector('.from-green-500.to-green-600')).toBeInTheDocument();
-    expect(container.querySelector('.from-purple-500.to-purple-600')).toBeInTheDocument();
-  });
-
-  it('should have dashed border for upload zone', () => {
-    const { container } = render(<MediaLibraryPage />);
-
-    const uploadZone = container.querySelector('.border-dashed');
-    expect(uploadZone).toBeInTheDocument();
-  });
-
-  it('should display proper grid layout for stats', () => {
-    const { container } = render(<MediaLibraryPage />);
-
-    const gridContainer = container.querySelector('.grid.grid-cols-1.md\\:grid-cols-3');
-    expect(gridContainer).toBeInTheDocument();
-  });
-
-  it('should have blue warning styling for development notice', () => {
-    const { container } = render(<MediaLibraryPage />);
-
-    const notice = container.querySelector('.bg-blue-50.border-blue-400');
-    expect(notice).toBeInTheDocument();
-  });
-
-  it('should show storage usage percentage', () => {
+  it('shows no invented statistics', () => {
+    // The old page displayed zeroed stat cards and a storage percentage that
+    // were never read from anywhere.
     render(<MediaLibraryPage />);
-
-    expect(screen.getByText('of 10 GB used')).toBeInTheDocument();
+    expect(screen.queryByText(/storage used/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/%/)).not.toBeInTheDocument();
   });
 });

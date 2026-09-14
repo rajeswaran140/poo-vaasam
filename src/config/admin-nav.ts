@@ -170,7 +170,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   {
     href: '/admin/media',
     title: 'Media Library',
-    subtitle: 'Manage uploaded media files',
+    subtitle: 'Not built yet — use Sound Engineering → Bulk upload',
     section: 'Library',
     icon: ImageIcon,
     featureFlag: 'MEDIA_LIBRARY',
