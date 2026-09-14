@@ -32,18 +32,24 @@ export default async function DeliveryPage({
 
   const delivery = isDeliveryToken(token) ? await new DeliveryRepository().findByToken(token) : null;
   const status = delivery ? deliveryStatusOf(delivery) : 'invalid';
-  const problem = status !== 'active' ? MESSAGES[status] ?? MESSAGES.invalid : e ? MESSAGES[e] : null;
+  const blocked = status !== 'active' ? MESSAGES[status] ?? MESSAGES.invalid : null;
+  const advisory = status === 'active' && e ? MESSAGES[e] : null;
 
   return (
     <main className="mx-auto max-w-lg px-4 py-16">
       <h1 className="text-2xl font-bold text-gray-900">TamilAgaval</h1>
 
-      {problem || !delivery ? (
+      {blocked || !delivery ? (
         <p className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-6 text-gray-700">
-          {problem ?? MESSAGES.invalid}
+          {blocked ?? MESSAGES.invalid}
         </p>
       ) : (
         <div className="mt-6 rounded-lg border border-gray-200 p-6">
+          {advisory && (
+            <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              {advisory}
+            </p>
+          )}
           <p className="font-medium text-gray-900">{delivery.filename}</p>
           <p className="mt-1 text-sm text-gray-500">
             {(delivery.contentLength / MB).toFixed(1)} MB ·{' '}

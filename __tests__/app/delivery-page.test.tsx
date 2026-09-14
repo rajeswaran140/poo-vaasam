@@ -65,3 +65,25 @@ it('handles an unknown token without leaking that it never existed vs expired', 
   render(await DeliveryPage(props('invalid')));
   expect(screen.getByText(/not valid/i)).toBeInTheDocument();
 });
+
+it('shows active row with advisory when e is present but row is valid', async () => {
+  // Proves that an active row + ?e= still shows the Download button
+  findByToken.mockResolvedValueOnce(live());
+  render(await DeliveryPage(props('exhausted')));
+
+  // Download button must still be present for an active row
+  const link = screen.getByRole('link', { name: /Download/i });
+  expect(link).toHaveAttribute('href', `/api/d/${TOKEN}`);
+
+  // But the advisory message also appears
+  expect(screen.getByText(/already been used/i)).toBeInTheDocument();
+});
+
+it('shows error from dead row without e parameter, proving row state is authoritative', async () => {
+  // Dead row without ?e= should still show its error message
+  findByToken.mockResolvedValueOnce(live({ revokedAt: '2026-09-14T00:00:00.000Z' }));
+  render(await DeliveryPage(props())); // No e parameter
+
+  expect(screen.getByText(/no longer active/i)).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /Download/i })).not.toBeInTheDocument();
+});
