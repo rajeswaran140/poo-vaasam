@@ -34,6 +34,16 @@ describe('tokens', () => {
       expect(isDeliveryToken(bad)).toBe(false);
     }
   });
+  it('rejects 43-char strings with forbidden characters (charset test)', () => {
+    // Must be exactly 43 chars and differ only by the forbidden character
+    const valid43 = 'a'.repeat(42) + 'b'; // valid base64url
+    expect(valid43).toHaveLength(43);
+    expect(isDeliveryToken(valid43)).toBe(true);
+    // Replace the last char with forbidden ones
+    expect(isDeliveryToken(valid43.slice(0, -1) + '/')).toBe(false); // slash forbidden
+    expect(isDeliveryToken(valid43.slice(0, -1) + '.')).toBe(false); // dot forbidden
+    expect(isDeliveryToken(valid43.slice(0, -1) + '+')).toBe(false); // plus forbidden
+  });
 });
 
 describe('deliveryStatusOf', () => {
@@ -53,6 +63,16 @@ describe('deliveryStatusOf', () => {
   it('reports revoked ahead of expired when both apply', () => {
     // The operator killing a link is the more informative fact.
     const d = base({ revokedAt: '2026-09-13T00:00:00.000Z', expiresAt: '2026-09-14T00:00:00.000Z' });
+    expect(deliveryStatusOf(d, NOW)).toBe('revoked');
+  });
+  it('reports expired ahead of exhausted when both apply', () => {
+    // Expiration is checked before download cap.
+    const d = base({ expiresAt: '2026-09-14T00:00:00.000Z', downloadCount: 3 });
+    expect(deliveryStatusOf(d, NOW)).toBe('expired');
+  });
+  it('reports revoked ahead of exhausted when both apply', () => {
+    // Revocation takes precedence over all other states.
+    const d = base({ revokedAt: '2026-09-14T12:00:00.000Z', downloadCount: 3 });
     expect(deliveryStatusOf(d, NOW)).toBe('revoked');
   });
 });
