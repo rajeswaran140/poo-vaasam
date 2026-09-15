@@ -382,6 +382,43 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
 }
 
 /**
+ * Content-Type for `thumbnails.set`, from the cover's own file extension.
+ *
+ * The cover-upload route accepts .jpg/.jpeg, .png and .webp. Hardcoding
+ * `image/png` made every JPEG cover fail the thumbnail call silently — it
+ * lands in `problems` and the job still reads `uploaded`, so the only way to
+ * notice was to look at the video. `.jpg`/1_c_cover.jpg is the worker's own
+ * test fixture and was exactly the failing case.
+ */
+function coverContentType(key: string): string {
+  const ext = key.match(/\.[a-z0-9]+$/i)?.[0]?.toLowerCase();
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.webp') return 'image/webp';
+  return 'image/png';
+}
+
+/**
+ * True when a resumable session is definitely gone and must be abandoned
+ * (cleared from the job, a fresh one opened) rather than resumed.
+ *
+ * 404/410 are Google's own "this upload URI no longer exists" statuses — the
+ * session expired or was never valid. 400 is included for a narrower reason:
+ * the ONLY way a `Content-Range` total mismatches what a session was opened
+ * with is a re-render that replaced the MP4 (and so its size) between
+ * attempts, which Google rejects as a bad Content-Range — the session cannot
+ * be trusted against a file it was never opened against, either.
+ *
+ * Anything else (5xx, a network-layer failure) does NOT prove the session is
+ * dead, so it must be LEFT ALONE — clearing it there is how the exact jam the
+ * staleness window exists to prevent gets reintroduced: a good session
+ * abandoned, and the next retry opening (and risking) a second video instead
+ * of resuming.
+ */
+function sessionIsGone(status: number): boolean {
+  return status === 404 || status === 410 || status === 400;
+}
+
+/**
  * Upload a rendered video to YouTube as a PRIVATE draft, then read it back.
  *
  * ⚠️ WHY THIS RUNS HERE AND NOT IN THE WEB APP. The token this needs is
@@ -395,18 +432,38 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
  * hand. planUpload refuses when youtubeVideoId is set; the id is written the
  * MOMENT the insert returns, before the thumbnail or the playlists, so a later
  * failure can never orphan it.
+ *
+ * ⚠️ RESUMING AN EXISTING SESSION FOLLOWS GOOGLE'S RESUMABLE-UPLOAD PROTOCOL,
+ * not a bare re-PUT of the whole body: the session is QUERIED first (a PUT
+ * with an empty body and a `Content-Range: bytes STAR/SIZE`-shaped header,
+ * "STAR" meaning a literal asterisk), because a bare
+ * re-PUT cannot tell "still uploading" apart from "already finished — the id
+ * write just never landed", and guessing wrong either duplicates the insert
+ * or loses the id forever. The query's status decides what happens next; see
+ * the branches below and `sessionIsGone`. `now` is threaded through to
+ * `planUpload` (default `Date.now()`) so this function's staleness behaviour
+ * is directly unit-testable rather than only reachable via the real clock.
  */
-async function uploadToYoutube(
+export async function uploadToYoutube(
   jobId: string,
   spec: NonNullable<MasterEvent['youtube']>,
   bucket: string,
+  now: number = Date.now(),
 ) {
   const job = await getJob(jobId);
   if (!job) return { ok: false };
 
-  const plan = planUpload(job, spec);
+  const plan = planUpload(job, spec, now);
   if (!plan.ok) {
-    await patch(jobId, { uploadStatus: 'failed', uploadError: uploadRefusalMessage(plan.reason) });
+    // A refusal must never overwrite a TERMINAL 'uploaded' state. Marking
+    // 'already-uploaded' as 'failed' is what invited an operator to clear
+    // youtubeVideoId by hand to "retry" a job whose video is already live —
+    // producing the exact duplicate this whole file exists to prevent. Every
+    // other refusal is a genuine non-terminal problem and may still fail.
+    await patch(jobId, {
+      uploadStatus: plan.reason === 'already-uploaded' ? 'uploaded' : 'failed',
+      uploadError: uploadRefusalMessage(plan.reason),
+    });
     return { ok: false };
   }
 
@@ -424,70 +481,146 @@ async function uploadToYoutube(
     // Resume an interrupted session rather than opening a new one — opening a
     // new one is how a retry becomes a duplicate video.
     let sessionUri = job.uploadSessionUri ?? null;
-    if (!sessionUri) {
-      const meta = {
-        snippet: {
-          title: plan.title,
-          description: plan.description,
-          tags: plan.tags,
-          categoryId: plan.categoryId,
-          defaultLanguage: 'ta',
-          defaultAudioLanguage: 'ta',
-        },
-        status: {
-          privacyStatus: plan.privacyStatus,
-          selfDeclaredMadeForKids: false,
-          license: 'youtube',
-          embeddable: true,
-        },
-      };
-      const open = await fetch(
-        'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
-        {
-          method: 'POST',
+    let videoId: string | undefined;
+
+    if (sessionUri) {
+      const query = await fetch(sessionUri, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Range': `bytes */${size}` },
+      });
+
+      if (query.status === 200 || query.status === 201) {
+        // The upload had ALREADY finished on a prior attempt — this is the
+        // sole recovery path for "the PUT succeeded but the youtubeVideoId
+        // write never landed". The response body IS the video resource;
+        // treat it exactly as if videos.insert had just returned it.
+        const already = await query.json();
+        videoId = already?.id as string | undefined;
+        if (!videoId) {
+          await patch(jobId, {
+            uploadStatus: 'failed',
+            uploadError: 'YouTube reported the upload complete but returned no video id.',
+          });
+          return { ok: false };
+        }
+      } else if (query.status === 308) {
+        // Incomplete. Re-sending the whole body from byte 0 with a correct
+        // Content-Range is acceptable given this artifact is ~58 MB — the
+        // `Range` response header (bytes Google already has) is not needed to
+        // make that resend correct, only to make a partial resend possible,
+        // which isn't attempted here.
+        const put = await fetch(sessionUri, {
+          method: 'PUT',
           headers: {
             Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json; charset=UTF-8',
-            'X-Upload-Content-Length': String(size),
-            'X-Upload-Content-Type': 'video/mp4',
+            'Content-Type': 'video/mp4',
+            'Content-Range': `bytes 0-${size - 1}/${size}`,
           },
-          body: JSON.stringify(meta),
-        },
-      );
-      if (!open.ok) {
-        await patch(jobId, { uploadStatus: 'failed', uploadError: await quotaAwareError(open) });
+          body: readFileSync(videoPath),
+        });
+        if (!put.ok) {
+          await patch(jobId, {
+            uploadStatus: 'failed',
+            uploadError: await quotaAwareError(put),
+            ...(sessionIsGone(put.status) ? { uploadSessionUri: null } : {}),
+          });
+          return { ok: false };
+        }
+        const inserted = await put.json();
+        videoId = inserted?.id as string | undefined;
+        if (!videoId) {
+          await patch(jobId, { uploadStatus: 'failed', uploadError: 'YouTube accepted the upload but returned no video id.' });
+          return { ok: false };
+        }
+      } else if (sessionIsGone(query.status)) {
+        // Expired, invalid, or opened against a since-replaced file (see
+        // sessionIsGone). Clear it and fall through to opening a fresh one
+        // below — the same single-PUT flow a first attempt uses.
+        sessionUri = null;
+        await patch(jobId, { uploadSessionUri: null });
+      } else {
+        // Some other status querying the session (5xx, a network-layer
+        // response) does not prove it is dead — KEEP uploadSessionUri so the
+        // next invocation still resumes instead of risking a second video.
+        await patch(jobId, { uploadStatus: 'failed', uploadError: await quotaAwareError(query) });
         return { ok: false };
       }
-      sessionUri = open.headers.get('location');
+    }
+
+    if (videoId === undefined) {
+      // Either a genuinely first attempt, or the previous session was just
+      // found to be gone above — both take the same single-PUT flow.
       if (!sessionUri) {
-        await patch(jobId, { uploadStatus: 'failed', uploadError: 'YouTube did not return an upload session.' });
+        const meta = {
+          snippet: {
+            title: plan.title,
+            description: plan.description,
+            tags: plan.tags,
+            categoryId: plan.categoryId,
+            defaultLanguage: 'ta',
+            defaultAudioLanguage: 'ta',
+          },
+          status: {
+            privacyStatus: plan.privacyStatus,
+            selfDeclaredMadeForKids: false,
+            license: 'youtube',
+            embeddable: true,
+          },
+        };
+        const open = await fetch(
+          'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json; charset=UTF-8',
+              'X-Upload-Content-Length': String(size),
+              'X-Upload-Content-Type': 'video/mp4',
+            },
+            body: JSON.stringify(meta),
+          },
+        );
+        if (!open.ok) {
+          await patch(jobId, { uploadStatus: 'failed', uploadError: await quotaAwareError(open) });
+          return { ok: false };
+        }
+        sessionUri = open.headers.get('location');
+        if (!sessionUri) {
+          await patch(jobId, { uploadStatus: 'failed', uploadError: 'YouTube did not return an upload session.' });
+          return { ok: false };
+        }
+        await patch(jobId, { uploadSessionUri: sessionUri });
+      }
+
+      const put = await fetch(sessionUri, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'video/mp4' },
+        body: readFileSync(videoPath),
+      });
+      if (!put.ok) {
+        await patch(jobId, {
+          uploadStatus: 'failed',
+          uploadError: await quotaAwareError(put),
+          ...(sessionIsGone(put.status) ? { uploadSessionUri: null } : {}),
+        });
         return { ok: false };
       }
-      await patch(jobId, { uploadSessionUri: sessionUri });
+      const inserted = await put.json();
+      videoId = inserted?.id as string | undefined;
+      if (!videoId) {
+        await patch(jobId, { uploadStatus: 'failed', uploadError: 'YouTube accepted the upload but returned no video id.' });
+        return { ok: false };
+      }
     }
 
-    const put = await fetch(sessionUri, {
-      method: 'PUT',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'video/mp4' },
-      body: readFileSync(videoPath),
-    });
-    if (!put.ok) {
-      await patch(jobId, { uploadStatus: 'failed', uploadError: await quotaAwareError(put) });
-      return { ok: false };
-    }
-    const inserted = await put.json();
     // ⚠️ THE ONLY VIDEO THIS FUNCTION MAY EVER WRITE TO. `videoId` is captured
-    // directly from THIS insert's response, in this narrowest possible scope,
-    // and every write below (the patch, the thumbnail, every playlist add)
-    // must read this same constant — never the job row, never the event. See
-    // the thumbnail and playlist call sites for why.
-    const videoId = inserted?.id as string | undefined;
-    if (!videoId) {
-      await patch(jobId, { uploadStatus: 'failed', uploadError: 'YouTube accepted the upload but returned no video id.' });
-      return { ok: false };
-    }
+    // directly from THIS invocation's own insert/resume response, in the
+    // narrowest scope available, and every write below (the patch, the
+    // thumbnail, every playlist add) must read this same constant — never the
+    // job row, never the event. See the thumbnail and playlist call sites for
+    // why.
 
-    // FIRST write after the insert, before anything else can fail.
+    // FIRST write after the id is known, before anything else can fail.
     await patch(jobId, {
       youtubeVideoId: videoId,
       uploadedToYoutubeAt: new Date().toISOString(),
@@ -501,14 +634,18 @@ async function uploadToYoutube(
       try {
         const cover = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: plan.coverKey }));
         const bytes = Buffer.from(await cover.Body!.transformToByteArray());
-        // MUST be `videoId` from the insert above — never a job-row or event id.
-        // This video has never been seen by the operator; pointing this call at
-        // an existing video would overwrite the artwork of a live, published
+        // MUST be `videoId` from above — never a job-row or event id. This
+        // video has never been seen by the operator; pointing this call at an
+        // existing video would overwrite the artwork of a live, published
         // video on a channel with a real audience, and that is not recoverable
         // by re-running anything.
         const t = await fetch(
           `https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${videoId}`,
-          { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'image/png' }, body: bytes },
+          {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': coverContentType(plan.coverKey) },
+            body: bytes,
+          },
         );
         if (!t.ok) problems.push('thumbnail');
       } catch { problems.push('thumbnail'); }
