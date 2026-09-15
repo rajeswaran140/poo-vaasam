@@ -375,6 +375,26 @@ export class MasterJobRepository {
   }
 
   /**
+   * Mark an upload queued, so a second press of the button loses the race at
+   * planUpload's `in-flight` guard rather than starting two uploads.
+   *
+   * No ttl clause — uploading only ever runs on a saved job, where save() has
+   * already removed it.
+   */
+  async markUploadQueued(id: string): Promise<void> {
+    try {
+      await DynamoDBOperations.update({
+        key: { PK: `MASTERJOB#${id}`, SK: 'METADATA' },
+        updateExpression: 'SET #uploadStatus = :uploadStatus, #uploadError = :uploadError',
+        expressionAttributeNames: { '#uploadStatus': 'uploadStatus', '#uploadError': 'uploadError' },
+        expressionAttributeValues: { ':uploadStatus': 'queued', ':uploadError': null },
+      });
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  /**
    * Mark a job whose worker died without reporting. Conditional on the status
    * STILL being `processing`, so a worker that finishes in the same moment the
    * status route decides it is dead cannot be overwritten with a failure — the
