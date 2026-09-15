@@ -191,7 +191,11 @@ async function main() {
   console.log(`Checked ${results.length} upload(s) from the last ${days} days (~${cost} quota units).`);
   console.log(`${results.length - needing.length} ready · ${needing.length} needing attention\n`);
   for (const r of needing) {
-    const actionable = r.findings.filter((f) => f.severity !== 'note');
+    // Same widening as ReleaseChecker.tsx: 'not-checked' is the rule saying
+    // it never ran (this sweep's snapshot carries neither scheduledStartTime
+    // nor siblingReleases, so release-density always lands here) — it is not
+    // an actionable finding and must not print under the same bullet as one.
+    const actionable = r.findings.filter((f) => f.severity !== 'note' && f.severity !== 'not-checked');
     console.log(`${r.id}  ${r.title.slice(0, 54)}`);
     for (const f of actionable) console.log(`   ${f.severity === 'blocker' ? '✗' : '•'} ${f.title}`);
     console.log('');

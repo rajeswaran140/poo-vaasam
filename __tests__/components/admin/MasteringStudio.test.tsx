@@ -914,7 +914,12 @@ describe('render for YouTube', () => {
 
     mockedFetch.mockResolvedValueOnce(json({ success: true, videoKey: 'v', height: 2160, status: 'queued' }));
     mockedFetch.mockResolvedValue(
-      json(savedDoneJob({ videoKey: 'audio/mastering/1_a_song-master-14LUFS-2160p.mp4' }))
+      json(
+        savedDoneJob({
+          videoKey: 'audio/mastering/1_a_song-master-14LUFS-2160p.mp4',
+          videoRenderedAt: '2026-09-15T00:00:00.000Z',
+        })
+      )
     );
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Render video/ })); });
 
@@ -1333,7 +1338,9 @@ describe('rendering from the saved-masters library', () => {
     });
 
     mockedFetch.mockResolvedValueOnce(json({ success: true, videoKey: 'v', height: 1440, status: 'queued' }));
-    mockedFetch.mockResolvedValue(json(row({ videoKey: 'audio/mastering/done-1440p.mp4' })));
+    mockedFetch.mockResolvedValue(
+      json(row({ videoKey: 'audio/mastering/done-1440p.mp4', videoRenderedAt: '2026-09-15T00:00:00.000Z' }))
+    );
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /^Render$/ }));
     });
@@ -1342,4 +1349,71 @@ describe('rendering from the saved-masters library', () => {
     expect(String(req[0])).toContain('/master/saved-vid-1/render');
     expect(JSON.parse(req[1].body).coverKey).toBe('audio/mastering/1_c_cover.jpg');
   });
+
+  it('does not announce success from a stale videoRenderedAt on a re-render', async () => {
+    // Regression guard for "a re-render reports success before it has
+    // started": the render route never clears the PREVIOUS videoKey /
+    // videoRenderedAt on enqueue, so attempt 0 of the poll can read the old
+    // render's leftovers. A row that already has a video (videoRenderedAt
+    // T0) is re-rendered; the first poll comes back with that SAME
+    // videoRenderedAt (a stale read), and only the second poll carries a
+    // new one. This must not settle on the stale read — it must keep
+    // polling until videoRenderedAt actually changes.
+    const oldRenderedAt = '2026-01-01T00:00:00.000Z';
+    const oldVideoKey = 'audio/mastering/1_a-master-14LUFS-1440p.mp4';
+    const newRenderedAt = '2026-09-15T00:00:00.000Z';
+    const newVideoKey = 'audio/mastering/1_a-master-14LUFS-1440p-NEW.mp4';
+
+    await openLibrary(row({ videoKey: oldVideoKey, videoRenderedAt: oldRenderedAt }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Render video for காதல் மழை/ }));
+    });
+
+    const input = await screen.findByLabelText(/Cover for காதல் மழை/i);
+    mockedFetch.mockResolvedValueOnce(
+      json({ success: true, uploadUrl: 'https://s3/u', fields: { key: 'k' }, key: 'audio/mastering/1_c_cover.jpg' })
+    );
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [new File(['x'], 'c.jpg', { type: 'image/jpeg' })] } });
+    });
+
+    // POST /render — accepted, queued. The route does NOT clear the job's
+    // existing videoKey/videoRenderedAt.
+    mockedFetch.mockResolvedValueOnce(json({ success: true, videoKey: 'v', height: 1440, status: 'queued' }));
+    // Poll attempt 0: a stale read — same videoRenderedAt as before this
+    // render started. This must NOT be treated as completion.
+    mockedFetch.mockResolvedValueOnce(json(row({ videoKey: oldVideoKey, videoRenderedAt: oldRenderedAt })));
+    // Poll attempt 1 (after the interval): the real completion, with a
+    // videoRenderedAt that has actually changed.
+    mockedFetch.mockResolvedValue(json(row({ videoKey: newVideoKey, videoRenderedAt: newRenderedAt })));
+
+    // The click kicks off an un-awaited async chain (POST, then a real
+    // multi-second poll interval before attempt 1) — fire it and wait for
+    // the row-render panel to close, which only happens once `startRender`
+    // actually resolves with a completed job. That is the unambiguous
+    // "fully done" signal, well past the default waitFor window since
+    // attempt 1 only fires after the real 4s poll interval.
+    fireEvent.click(screen.getByRole('button', { name: /^Render$/ }));
+    await waitFor(
+      () => expect(screen.queryByRole('button', { name: /^Render$/ })).not.toBeInTheDocument(),
+      { timeout: 8000, interval: 250 }
+    );
+
+    // Now that the render has genuinely finished, the status route must have
+    // been polled MORE than once: settling on attempt 0's stale response
+    // alone (never re-polling) is exactly the bug this guards against.
+    const statusCalls = mockedFetch.mock.calls.filter((c) => String(c[0]).endsWith('/saved-vid-1'));
+    expect(statusCalls.length).toBeGreaterThan(1);
+
+    // And the row must have picked up the SECOND poll's key, never the
+    // stale first one — clicking "Video" must download the NEW file.
+    const videoBtn = screen.getByRole('button', { name: /^Video$/ });
+    mockedFetch.mockResolvedValueOnce(json({ success: true, url: 'https://s3/presigned' }));
+    await act(async () => {
+      fireEvent.click(videoBtn);
+    });
+    const downloadReq = mockedFetch.mock.calls.find((c) => String(c[0]).includes('/mastering/download'))!;
+    expect(String(downloadReq[0])).toContain(encodeURIComponent(newVideoKey));
+    expect(String(downloadReq[0])).not.toContain(encodeURIComponent(oldVideoKey));
+  }, 15000);
 });

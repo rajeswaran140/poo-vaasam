@@ -49,11 +49,20 @@ export interface VideoSnapshot {
    * Other releases on the channel, for the notification-density check.
    *
    * `publishedAt` is the uploads feed's `videoPublishedAt` — UPLOAD time.
-   * `scheduledStartTime` is when an unaired premiere will AIR. Density is about
-   * when subscribers are notified, so air time is the right clock; upload time
-   * is only the fallback for a video that has already aired.
+   * `scheduledStartTime` is when an unaired premiere will AIR;
+   * `actualStartTime` is when an AIRED premiere actually aired (YouTube keeps
+   * `liveStreamingDetails`, actualStartTime included, after a premiere airs).
+   * Density is about when subscribers are notified, so air time — actual in
+   * preference to scheduled — is the right clock; `publishedAt` (upload time)
+   * is only the fallback for a video with no air time known at all (never
+   * premiered, or the sibling fetch could not tell).
    */
-  siblingReleases?: Array<{ videoId: string; publishedAt: string; scheduledStartTime?: string }>;
+  siblingReleases?: Array<{
+    videoId: string;
+    publishedAt: string;
+    scheduledStartTime?: string;
+    actualStartTime?: string;
+  }>;
 }
 
 export type Severity = 'blocker' | 'gap' | 'note' | 'not-checked';
@@ -389,17 +398,27 @@ export function checkRelease(v: VideoSnapshot): Finding[] {
     });
   }
 
-  if (v.scheduledStartTime && v.siblingReleases && v.siblingReleases.length > 0) {
-    const at = Date.parse(v.scheduledStartTime);
-    // ⚠️ AIR TIME, NOT UPLOAD TIME. This compared `publishedAt` (upload) against
-    // `at` (air) until 2026-09-15, so two premieres airing 24h apart but
-    // uploaded a week apart did not register — which is exactly what happened
-    // on 2026-09-16 and why nothing flagged it.
+  // Subject's own air time. Guarded for finiteness the same way the sibling
+  // side is below: a malformed `scheduledStartTime` must fall through to the
+  // `not-checked` branch, not silently produce a NaN that makes every
+  // comparison false and the whole check report nothing at all — which is
+  // exactly the silent hole `not-checked` exists to close.
+  const subjectAirTime = v.scheduledStartTime ? Date.parse(v.scheduledStartTime) : NaN;
+  if (Number.isFinite(subjectAirTime) && v.siblingReleases && v.siblingReleases.length > 0) {
+    // ⚠️ AIR TIME, NOT UPLOAD TIME, on BOTH sides. This originally compared
+    // `publishedAt` (upload) against the subject's air time, so two premieres
+    // airing 24h apart but uploaded a week apart did not register. Fixed to
+    // compare air time to air time — but an AIRED sibling still fell back to
+    // `publishedAt` because its `actualStartTime` (its real air time) was
+    // being dropped upstream. `actualStartTime` persists on YouTube's side
+    // after a premiere airs, so prefer it, then `scheduledStartTime` (an
+    // unaired premiere's planned air time); `publishedAt` is only the
+    // fallback for "no air time known at all".
     const near = v.siblingReleases.filter((r) => {
       if (r.videoId === v.videoId) return false;
-      const when = Date.parse(r.scheduledStartTime ?? r.publishedAt);
+      const when = Date.parse(r.actualStartTime ?? r.scheduledStartTime ?? r.publishedAt);
       if (!Number.isFinite(when)) return false;
-      return Math.abs(when - at) / 3_600_000 <= RELEASE_DENSITY_WINDOW_HOURS;
+      return Math.abs(when - subjectAirTime) / 3_600_000 <= RELEASE_DENSITY_WINDOW_HOURS;
     });
     if (near.length > 0) {
       f.push({

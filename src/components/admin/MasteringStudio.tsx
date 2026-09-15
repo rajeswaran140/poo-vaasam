@@ -900,17 +900,34 @@ export function MasteringStudio() {
    * Render the upload-ready MP4 and wait for it.
    *
    * The encode runs in the worker, so this polls the same status route the
-   * mastering flow does until `videoKey` (or `videoError`) appears. Bounded:
-   * a render that has not landed in ten minutes is reported rather than spun on
-   * forever, and the job keeps the result either way.
+   * mastering flow does until `videoRenderedAt` (or `videoError`) CHANGES.
+   * Bounded: a render that has not landed in ten minutes is reported rather
+   * than spun on forever, and the job keeps the result either way.
    */
   /**
    * POST the render and poll until the MP4 lands. Shared by the inline panel
    * and the library row, so both wait the same way and time out the same way.
    * Resolves with the finished job, or null if the component unmounted.
+   *
+   * `videoKey` is NOT a safe "done" signal: the render route never clears the
+   * job's existing `videoKey`/`videoError` on enqueue, it just re-invokes the
+   * worker to overwrite the same S3 key. On a RE-render, attempt 0 would see
+   * the *previous* render's leftovers and declare success (or failure)
+   * instantly, before the new encode has done anything. `videoRenderedAt` is
+   * the one field the worker only ever writes on completion, so the caller
+   * captures its value (and `videoError`'s) BEFORE the POST and this polls
+   * until either one actually CHANGES. A first render has
+   * `videoRenderedAt === null`, so "changed from null to a timestamp" covers
+   * that case with the same logic — no special-casing needed.
    */
   const startRender = useCallback(
-    async (targetId: string, coverKey: string, height: number): Promise<MasterJob | null> => {
+    async (
+      targetId: string,
+      coverKey: string,
+      height: number,
+      priorVideoRenderedAt: string | null,
+      priorVideoError: string | null
+    ): Promise<MasterJob | null> => {
       const res = await adminFetch(`/api/admin/music-lab/master/${targetId}/render`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -929,11 +946,14 @@ export function MasteringStudio() {
         if (!mounted.current) return null;
         const s = await adminFetch(`/api/admin/music-lab/master/${targetId}`);
         const fresh = (await s.json()) as MasterJob;
-        if (fresh.videoKey) {
+        if (fresh.videoRenderedAt && fresh.videoRenderedAt !== priorVideoRenderedAt) {
           setAnnounce('Video ready.');
           return fresh;
         }
-        if (fresh.videoError) throw new Error(fresh.videoError);
+        // A stale error from a previous attempt can also be sitting on the job
+        // at attempt 0 (the route does not clear `videoError` either) — only a
+        // DIFFERENT error belongs to this render.
+        if (fresh.videoError && fresh.videoError !== priorVideoError) throw new Error(fresh.videoError);
         if (Date.now() > deadline) {
           throw new Error('The render is taking longer than expected — reload to check on it.');
         }
@@ -947,14 +967,23 @@ export function MasteringStudio() {
     setRendering(true);
     setError(null);
     try {
-      const fresh = await startRender(jobId, cover.key, videoHeight);
+      // Capture the job's CURRENT videoRenderedAt/videoError before the POST,
+      // so a re-render can tell its own completion apart from the leftovers
+      // of a previous one.
+      const fresh = await startRender(
+        jobId,
+        cover.key,
+        videoHeight,
+        job?.videoRenderedAt ?? null,
+        job?.videoError ?? null
+      );
       if (fresh) setJob(fresh);
     } catch (err) {
       if (mounted.current) setError(err instanceof Error ? err.message : String(err));
     } finally {
       if (mounted.current) setRendering(false);
     }
-  }, [jobId, cover, videoHeight, startRender]);
+  }, [jobId, cover, videoHeight, job, startRender]);
 
   /** Cover for a library row's render. Same upload path as the inline panel. */
   const onPickRowCover = useCallback(
@@ -987,16 +1016,33 @@ export function MasteringStudio() {
     setRowBusy(id);
     setError(null);
     try {
-      const fresh = await startRender(id, rowCover.key, videoHeight);
+      // Same discriminator as the inline panel: capture this row's CURRENT
+      // videoRenderedAt/videoError from the loaded library before the POST.
+      const row = library?.find((x) => x.id === id);
+      const fresh = await startRender(
+        id,
+        rowCover.key,
+        videoHeight,
+        row?.videoRenderedAt ?? null,
+        row?.videoError ?? null
+      );
       if (!fresh) return;
-      setLibrary((prev) => (prev ? prev.map((x) => (x.id === id ? { ...x, videoKey: fresh.videoKey } : x)) : prev));
+      setLibrary((prev) =>
+        prev
+          ? prev.map((x) =>
+              x.id === id
+                ? { ...x, videoKey: fresh.videoKey, videoRenderedAt: fresh.videoRenderedAt, videoError: fresh.videoError }
+                : x
+            )
+          : prev
+      );
       setRowRender(null);
     } catch (err) {
       if (mounted.current) setError(err instanceof Error ? err.message : String(err));
     } finally {
       if (mounted.current) setRowBusy(null);
     }
-  }, [rowRender, videoHeight, startRender]);
+  }, [rowRender, videoHeight, library, startRender]);
 
   /**
    * Deliberately NOT loaded on mount: listing scans the table, and most visits

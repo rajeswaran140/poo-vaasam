@@ -183,10 +183,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Uploads feed, for the density check. `videoPublishedAt` is upload time;
-    // scheduledStartTime for any unaired sibling is fetched alongside so density
-    // can compare air time to air time. A failed fetch here must not throw —
-    // it leaves siblingReleases empty, which makes the density check report
-    // not-checked instead of silently passing.
+    // scheduledStartTime/actualStartTime for each sibling is fetched alongside
+    // so density can compare air time to air time. A failed fetch here must
+    // not throw — it leaves siblingReleases empty, which makes the density
+    // check report not-checked instead of silently passing.
     let siblingReleases: VideoSnapshot['siblingReleases'] = [];
     try {
       const feedRes = await fetch(
@@ -205,10 +205,20 @@ export async function GET(request: NextRequest) {
         : null;
       const siblingDetail = detailRes?.ok ? await detailRes.json() : { items: [] };
 
+      // `liveStreamingDetails` PERSISTS after a premiere airs, carrying both
+      // `actualStartTime` and `actualEndTime` — so an AIRED sibling is not
+      // "no air time known", it is air time known for certain. Track it
+      // separately from `scheduledStartTime` (an UNAIRED premiere's planned
+      // air time) rather than dropping it, which is what previously pushed
+      // aired siblings onto the `publishedAt` (upload time) fallback below —
+      // the exact upload-vs-air mismatch this density check exists to catch.
       const schedById = new Map<string, string>();
+      const actualById = new Map<string, string>();
       for (const it of siblingDetail.items ?? []) {
-        const s = it?.liveStreamingDetails?.scheduledStartTime;
-        if (it?.id && s && !it?.liveStreamingDetails?.actualStartTime) schedById.set(it.id, s);
+        const lsd = it?.liveStreamingDetails;
+        if (!it?.id || !lsd) continue;
+        if (lsd.actualStartTime) actualById.set(it.id, lsd.actualStartTime);
+        else if (lsd.scheduledStartTime) schedById.set(it.id, lsd.scheduledStartTime);
       }
 
       siblingReleases = (feed.items ?? [])
@@ -216,6 +226,7 @@ export async function GET(request: NextRequest) {
           videoId: it.contentDetails?.videoId as string,
           publishedAt: it.contentDetails?.videoPublishedAt as string,
           scheduledStartTime: schedById.get(it.contentDetails?.videoId as string),
+          actualStartTime: actualById.get(it.contentDetails?.videoId as string),
         }))
         .filter((r: { videoId?: string; publishedAt?: string }) => r.videoId && r.publishedAt);
     } catch (err) {
