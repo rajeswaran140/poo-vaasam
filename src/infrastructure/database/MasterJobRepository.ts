@@ -126,6 +126,11 @@ export class MasterJobRepository {
         matchingStage: wantsMatching ? 'queued' : null,
         matchingStats: null,
         matchingError: null,
+        uploadStatus: null,
+        uploadSessionUri: null,
+        youtubeVideoId: null,
+        uploadedToYoutubeAt: null,
+        uploadError: null,
       };
       await DynamoDBOperations.put({
         PK: `MASTERJOB#${id}`,
@@ -233,6 +238,20 @@ export class MasterJobRepository {
       matchingError: item.matchingError && typeof item.matchingError === 'object'
         ? (item.matchingError as MasterJob['matchingError'])
         : (typeof item.matchingError === 'string' ? safeParseError(item.matchingError) : null),
+      // YouTube upload fields. All degrade to null for pre-feature rows.
+      uploadStatus:
+        item.uploadStatus === 'idle' ||
+        item.uploadStatus === 'queued' ||
+        item.uploadStatus === 'uploading' ||
+        item.uploadStatus === 'uploaded' ||
+        item.uploadStatus === 'failed'
+          ? item.uploadStatus
+          : null,
+      uploadSessionUri: typeof item.uploadSessionUri === 'string' ? item.uploadSessionUri : null,
+      youtubeVideoId: typeof item.youtubeVideoId === 'string' ? item.youtubeVideoId : null,
+      uploadedToYoutubeAt:
+        typeof item.uploadedToYoutubeAt === 'string' ? item.uploadedToYoutubeAt : null,
+      uploadError: typeof item.uploadError === 'string' ? item.uploadError : null,
     };
   }
 

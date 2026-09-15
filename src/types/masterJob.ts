@@ -201,4 +201,21 @@ export interface MasterJob {
   matchingStage: MatchingStage | null;
   matchingStats: MatchingStats | null;
   matchingError: { code: string; message: string } | null;
+  /**
+   * YouTube upload state. All null/absent on every job written before uploading
+   * existed, so every consumer must treat them as optional.
+   *
+   * ⚠️ `uploadStatus` and `uploadSessionUri` exist so a RETRY IS SAFE. An upload
+   * that succeeds while its status write fails would otherwise be re-inserted on
+   * retry, producing a second public video — exactly the mess that had to be
+   * cleaned up by hand on 2026-09-15 (Pif11nJ3Gzg, m9pfr-qWcgQ). The worker
+   * refuses to insert when `youtubeVideoId` is set, and resumes
+   * `uploadSessionUri` rather than opening a new session.
+   */
+  uploadStatus: 'idle' | 'queued' | 'uploading' | 'uploaded' | 'failed' | null;
+  uploadSessionUri: string | null;
+  /** Written the moment videos.insert returns, BEFORE thumbnail or playlists. */
+  youtubeVideoId: string | null;
+  uploadedToYoutubeAt: string | null;
+  uploadError: string | null;
 }
