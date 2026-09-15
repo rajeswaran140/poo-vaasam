@@ -14,10 +14,11 @@
 
 import { useCallback, useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
+import type { Severity } from '@/lib/release-checklist';
 
 interface Finding {
   id: string;
-  severity: 'blocker' | 'gap' | 'note';
+  severity: Severity;
   title: string;
   detail: string;
   fix?: string;
@@ -34,6 +35,7 @@ interface Result {
   blockers: number;
   gaps: number;
   notes: number;
+  notChecked: number;
   ready: boolean;
   findings: Finding[];
   quota?: { used: number; limit: number; spent: number };
@@ -64,6 +66,12 @@ const TONE: Record<Finding['severity'], { badge: string; label: string }> = {
   blocker: { badge: 'bg-rose-100 text-rose-800 border-rose-200', label: 'Blocker' },
   gap: { badge: 'bg-amber-100 text-amber-900 border-amber-200', label: 'Gap' },
   note: { badge: 'bg-gray-100 text-gray-700 border-gray-200', label: 'Note' },
+  // Muted and dashed on purpose: this is not a pass (no green/tick) and not a
+  // problem (no rose/amber) — it is the rule saying it never ran.
+  'not-checked': {
+    badge: 'bg-slate-50 text-slate-400 border-slate-200 border-dashed italic',
+    label: 'Not checked',
+  },
 };
 
 function FindingRow({ f }: { f: Finding }) {
@@ -141,8 +149,13 @@ export function ReleaseChecker() {
     }
   }, [input]);
 
-  const actionable = result?.findings.filter((f) => f.severity !== 'note') ?? [];
+  const actionable =
+    result?.findings.filter((f) => f.severity !== 'note' && f.severity !== 'not-checked') ?? [];
   const notes = result?.findings.filter((f) => f.severity === 'note') ?? [];
+  // Kept apart from both actionable findings and notes: a not-checked finding
+  // is neither a problem to fix nor an opinion the rule reached — it is the
+  // rule saying it never ran, and must never read as either of those.
+  const notChecked = result?.findings.filter((f) => f.severity === 'not-checked') ?? [];
 
   return (
     <div className="mx-auto max-w-3xl p-4">
@@ -222,6 +235,19 @@ export function ReleaseChecker() {
               </summary>
               <ul className="mt-2 space-y-2">
                 {notes.map((f) => (
+                  <FindingRow key={f.id} f={f} />
+                ))}
+              </ul>
+            </details>
+          )}
+
+          {notChecked.length > 0 && (
+            <details className="mt-3">
+              <summary className="cursor-pointer text-sm italic text-slate-400">
+                {notChecked.length} check{notChecked.length === 1 ? '' : 's'} not run — inputs were missing, not clear
+              </summary>
+              <ul className="mt-2 space-y-2">
+                {notChecked.map((f) => (
                   <FindingRow key={f.id} f={f} />
                 ))}
               </ul>

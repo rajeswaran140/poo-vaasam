@@ -247,6 +247,54 @@ async function analyseSource(
 }
 
 /**
+ * Cover dimensions, as width/height. Undefined when they cannot be read.
+ *
+ * Undefined is a real answer, not a failure: buildVideoFilter treats an unknown
+ * aspect as "use the blurred backdrop", which never crops the artwork. Guessing
+ * 16:9 and being wrong would.
+ *
+ * ⚠️ SCANS EVERY "Video:" LINE AND PICKS THE LARGEST BY PIXEL AREA — this
+ * supersedes a single first-match regex. A JPEG cover can carry an embedded
+ * EXIF/MPF thumbnail as its own, separate video stream, printed BEFORE the
+ * real image in ffmpeg's header. A first-match read can therefore probe the
+ * thumbnail's aspect instead of the cover's: if that aspect happens to land
+ * inside 16:9±tolerance while the real image is not 16:9, the fill-frame
+ * branch fires on the wrong ratio and crops the operator's artwork — the one
+ * outcome he has rejected outright. Missing the fill (false negative) is
+ * merely cosmetic; firing it wrongly (false positive) destroys the picture.
+ * A real thumbnail is always far smaller in pixel area than the real image,
+ * so largest-wins picks the correct stream in every realistic case.
+ */
+function probeCoverAspect(coverPath: string): number | undefined {
+  try {
+    // `ffmpeg -i FILE` with no output prints the header and exits non-zero by
+    // design — the same trick probeSource() already uses. Deliberately NOT
+    // ffprobe: the Lambda layer is pinned by FFMPEG_PATH and is not guaranteed
+    // to ship ffprobe, and a missing binary here would silently disable the
+    // fill-frame branch for every render.
+    const r = ff(['-hide_banner', '-i', coverPath]);
+    const log = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+    // e.g. "Stream #0:0: Video: png, rgb24, 1672x941 [SAR 1:1 DAR 1672:941]"
+    // Global, so every "Video:" line in the header is considered, not just
+    // the first — see the largest-wins note above.
+    const re = /Video:.*?\s(\d{2,5})x(\d{2,5})/g;
+    let best: { w: number; h: number; area: number } | null = null;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(log)) !== null) {
+      const w = Number(m[1]);
+      const h = Number(m[2]);
+      if (!w || !h) continue;
+      const area = w * h;
+      if (!best || area > best.area) best = { w, h, area };
+    }
+    if (!best) return undefined;
+    return best.w / best.h;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Render the YouTube video: still cover, mastered audio, one encode.
  *
  * Separate from the mastering flow on purpose. It shares the Lambda because the
@@ -290,7 +338,8 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
     // what brings the render inside the 900 s timeout — see buildComposeArgs.
     // Reported separately so a failure says which half broke; they fail for
     // different reasons (an unreadable cover vs an encode problem).
-    const composed = ff(buildComposeArgs({ coverPath, framePath, height }));
+    const coverAspect = probeCoverAspect(coverPath);
+    const composed = ff(buildComposeArgs({ coverPath, framePath, height, coverAspect }));
     if (composed.status !== 0) {
       await patch(jobId, { videoError: 'the cover could not be composed into a frame' });
       return { ok: false };

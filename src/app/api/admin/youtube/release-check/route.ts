@@ -88,7 +88,21 @@ export async function GET(request: NextRequest) {
 
   // Charge before spending, so a runaway caller is stopped by our own ledger.
   // Playlist membership may need several pages each — budget 3 per playlist.
-  const cost = QUOTA_COST.videosList + CAPTIONS_LIST_COST + PLAYLISTS_TO_CHECK.length * 3;
+  // The density check adds two more real calls: one playlistItems.list for the
+  // uploads feed, and one videos.list for the siblings' liveStreamingDetails.
+  // The second of those is CONDITIONAL in the code below (it only runs when
+  // the uploads feed returned at least one sibling id) — charged here
+  // unconditionally anyway. That is deliberate: a ledger that undercounts is
+  // how real usage drifts above the recorded total, and an empty uploads feed
+  // is rare enough that the over-charge on that path costs nothing in
+  // practice. Over-charging is the safe direction for a quota guard;
+  // under-charging is not.
+  const cost =
+    QUOTA_COST.videosList +
+    CAPTIONS_LIST_COST +
+    PLAYLISTS_TO_CHECK.length * 3 +
+    QUOTA_COST.playlistItemsList +
+    QUOTA_COST.videosList;
   const quota = await consumeQuota(cost, { surface: 'data' });
   if (quota.blocked) {
     return NextResponse.json(
@@ -104,7 +118,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const vRes = await fetch(
-      `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,status&id=${videoId}&key=${key}`
+      `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,status,liveStreamingDetails&id=${videoId}&key=${key}`
     );
     const vJson = (await vRes.json()) as { items?: Array<Record<string, any>>; error?: { message: string } };
     if (vJson.error) throw new Error(vJson.error.message);
@@ -117,6 +131,7 @@ export async function GET(request: NextRequest) {
     }
 
     const snippet = item.snippet ?? {};
+    const live = item.liveStreamingDetails;
     const durationSeconds = parseIsoDuration(item.contentDetails?.duration ?? '');
     const isShort =
       durationSeconds > 0 && durationSeconds <= SHORT_MAX_SECONDS
@@ -167,6 +182,58 @@ export async function GET(request: NextRequest) {
       if (found) playlistIds.push(pid);
     }
 
+    // Uploads feed, for the density check. `videoPublishedAt` is upload time;
+    // scheduledStartTime/actualStartTime for each sibling is fetched alongside
+    // so density can compare air time to air time. A failed fetch here must
+    // not throw — it leaves siblingReleases empty, which makes the density
+    // check report not-checked instead of silently passing.
+    let siblingReleases: VideoSnapshot['siblingReleases'] = [];
+    try {
+      const feedRes = await fetch(
+        `https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&playlistId=UUZCuphXleq-mXVYgvqh-OlQ&maxResults=15&key=${key}`
+      );
+      const feed = feedRes.ok ? await feedRes.json() : { items: [] };
+
+      const siblingIds = (feed.items ?? [])
+        .map((it: { contentDetails?: { videoId?: string } }) => it.contentDetails?.videoId)
+        .filter(Boolean) as string[];
+
+      const detailRes = siblingIds.length
+        ? await fetch(
+            `https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id=${siblingIds.join(',')}&key=${key}`
+          )
+        : null;
+      const siblingDetail = detailRes?.ok ? await detailRes.json() : { items: [] };
+
+      // `liveStreamingDetails` PERSISTS after a premiere airs, carrying both
+      // `actualStartTime` and `actualEndTime` — so an AIRED sibling is not
+      // "no air time known", it is air time known for certain. Track it
+      // separately from `scheduledStartTime` (an UNAIRED premiere's planned
+      // air time) rather than dropping it, which is what previously pushed
+      // aired siblings onto the `publishedAt` (upload time) fallback below —
+      // the exact upload-vs-air mismatch this density check exists to catch.
+      const schedById = new Map<string, string>();
+      const actualById = new Map<string, string>();
+      for (const it of siblingDetail.items ?? []) {
+        const lsd = it?.liveStreamingDetails;
+        if (!it?.id || !lsd) continue;
+        if (lsd.actualStartTime) actualById.set(it.id, lsd.actualStartTime);
+        else if (lsd.scheduledStartTime) schedById.set(it.id, lsd.scheduledStartTime);
+      }
+
+      siblingReleases = (feed.items ?? [])
+        .map((it: { contentDetails?: { videoId?: string; videoPublishedAt?: string } }) => ({
+          videoId: it.contentDetails?.videoId as string,
+          publishedAt: it.contentDetails?.videoPublishedAt as string,
+          scheduledStartTime: schedById.get(it.contentDetails?.videoId as string),
+          actualStartTime: actualById.get(it.contentDetails?.videoId as string),
+        }))
+        .filter((r: { videoId?: string; publishedAt?: string }) => r.videoId && r.publishedAt);
+    } catch (err) {
+      console.error('[release-check] sibling fetch failed:', err);
+      siblingReleases = [];
+    }
+
     const snapshot: VideoSnapshot = {
       videoId,
       title: String(snippet.title ?? ''),
@@ -180,6 +247,9 @@ export async function GET(request: NextRequest) {
       playlistIds,
       captionTracks,
       isUpcoming: snippet.liveBroadcastContent === 'upcoming',
+      uploadedAt: snippet.publishedAt,
+      scheduledStartTime: live?.scheduledStartTime,
+      siblingReleases,
     };
 
     const summary = summariseRelease(snapshot);

@@ -159,7 +159,7 @@ describe('summary ordering and counts', () => {
       defaultAudioLanguage: 'en-US',
       tags: [],
     }).map((f) => f.severity);
-    const rank = { blocker: 0, gap: 1, note: 2 } as const;
+    const rank = { blocker: 0, gap: 1, note: 2, 'not-checked': 3 } as const;
     for (let i = 1; i < sevs.length; i++) {
       expect(rank[sevs[i]]).toBeGreaterThanOrEqual(rank[sevs[i - 1]]);
     }
@@ -341,11 +341,11 @@ describe('premiere-window', () => {
     expect(ids).not.toContain('premiere-window');
   });
 
-  it('is silent when the schedule is unknown rather than guessing', () => {
-    const ids = checkRelease(
+  it('reports not-checked, not silent, when the schedule is unknown', () => {
+    const found = checkRelease(
       cleanUpcoming({ uploadedAt: undefined, scheduledStartTime: undefined })
-    ).map((x) => x.id);
-    expect(ids).not.toContain('premiere-window');
+    ).find((x) => x.id === 'premiere-window');
+    expect(found?.severity).toBe('not-checked');
   });
 });
 
@@ -387,8 +387,120 @@ describe('release-density', () => {
     expect(checkRelease(snap).map((x) => x.id)).not.toContain('release-density');
   });
 
-  it('is silent when sibling data was not supplied', () => {
-    const ids = checkRelease(cleanUpcoming({ siblingReleases: undefined })).map((x) => x.id);
-    expect(ids).not.toContain('release-density');
+  it('reports not-checked, not silent, when sibling data was not supplied', () => {
+    const found = checkRelease(cleanUpcoming({ siblingReleases: undefined })).find(
+      (x) => x.id === 'release-density'
+    );
+    expect(found?.severity).toBe('not-checked');
+  });
+});
+
+describe('release-density compares air time to air time', () => {
+  const base = (over: Partial<VideoSnapshot>): VideoSnapshot => ({
+    videoId: 'NEW', title: 't', description: 'd', tags: ['a'], categoryId: '10',
+    hasCustomThumbnail: true, isShort: false, playlistIds: [], captionTracks: [],
+    ...over,
+  });
+
+  it('flags two premieres airing 24h apart even when uploaded a week apart', () => {
+    const f = checkRelease(base({
+      scheduledStartTime: '2026-09-17T11:45:00Z',
+      siblingReleases: [{
+        videoId: 'OTHER',
+        publishedAt: '2026-09-10T00:00:00Z',        // uploaded a week earlier
+        scheduledStartTime: '2026-09-16T11:45:00Z', // but AIRS 24h before
+      }],
+    }));
+    expect(f.find((x) => x.id === 'release-density')).toBeTruthy();
+  });
+
+  it('does NOT flag a sibling uploaded nearby but airing weeks later', () => {
+    const f = checkRelease(base({
+      scheduledStartTime: '2026-09-17T11:45:00Z',
+      siblingReleases: [{
+        videoId: 'OTHER',
+        publishedAt: '2026-09-17T09:00:00Z',        // uploaded 3h before
+        scheduledStartTime: '2026-10-05T11:45:00Z', // airs 18 days later
+      }],
+    }));
+    expect(f.find((x) => x.id === 'release-density')).toBeUndefined();
+  });
+
+  it('falls back to publishedAt when no air time is known at all', () => {
+    // Neither scheduledStartTime nor actualStartTime supplied — the genuine
+    // "nothing else to go on" case, where publishedAt is the only clock.
+    const f = checkRelease(base({
+      scheduledStartTime: '2026-09-17T11:45:00Z',
+      siblingReleases: [{ videoId: 'OTHER', publishedAt: '2026-09-17T00:00:00Z' }],
+    }));
+    expect(f.find((x) => x.id === 'release-density')).toBeTruthy();
+  });
+
+  it('prefers actualStartTime over publishedAt for an already-aired sibling', () => {
+    // Regression guard: liveStreamingDetails.actualStartTime PERSISTS after a
+    // premiere airs, so an aired sibling's real air time is knowable and must
+    // not fall back to publishedAt (upload time) — the exact mismatch this
+    // whole check exists to catch.
+    const f = checkRelease(base({
+      scheduledStartTime: '2026-09-17T11:45:00Z',
+      siblingReleases: [{
+        videoId: 'OTHER',
+        publishedAt: '2026-09-10T00:00:00Z',      // uploaded a week earlier
+        actualStartTime: '2026-09-16T11:45:00Z',  // but AIRED 24h before
+      }],
+    }));
+    expect(f.find((x) => x.id === 'release-density')).toBeTruthy();
+  });
+
+  it('does NOT flag an aired sibling whose actualStartTime is far away, even with a nearby publishedAt', () => {
+    // The complementary case: if publishedAt were still used, this would
+    // wrongly fire (uploaded 3h before). actualStartTime must win.
+    const f = checkRelease(base({
+      scheduledStartTime: '2026-09-17T11:45:00Z',
+      siblingReleases: [{
+        videoId: 'OTHER',
+        publishedAt: '2026-09-17T09:00:00Z',       // uploaded 3h before
+        actualStartTime: '2026-10-05T11:45:00Z',   // but actually aired 18 days later
+      }],
+    }));
+    expect(f.find((x) => x.id === 'release-density')).toBeUndefined();
+  });
+});
+
+describe('a check that could not run says so, rather than passing', () => {
+  it('reports release-density as not-checked when siblings are absent', () => {
+    const f = checkRelease({
+      videoId: 'NEW', title: 't', description: 'd', tags: ['a'], categoryId: '10',
+      hasCustomThumbnail: true, isShort: false, playlistIds: [], captionTracks: [],
+      scheduledStartTime: '2026-09-17T11:45:00Z',
+    });
+    const d = f.find((x) => x.id === 'release-density');
+    expect(d?.severity).toBe('not-checked');
+  });
+
+  it('reports premiere-window as not-checked when uploadedAt is absent', () => {
+    const f = checkRelease({
+      videoId: 'NEW', title: 't', description: 'd', tags: ['a'], categoryId: '10',
+      hasCustomThumbnail: true, isShort: false, playlistIds: [], captionTracks: [],
+      isUpcoming: true, scheduledStartTime: '2026-09-17T11:45:00Z',
+    });
+    expect(f.find((x) => x.id === 'premiere-window')?.severity).toBe('not-checked');
+  });
+
+  it('reports release-density as not-checked, not silently nothing, when the subject air time is malformed', () => {
+    // Regression guard: Date.parse(v.scheduledStartTime) on a malformed value
+    // yields NaN with no finiteness check, which used to make every
+    // comparison false and the check report NOTHING — neither a gap nor
+    // not-checked. That silent hole is exactly what not-checked exists to
+    // close, so a bad subject air time must land there instead.
+    const f = checkRelease({
+      videoId: 'NEW', title: 't', description: 'd', tags: ['a'], categoryId: '10',
+      hasCustomThumbnail: true, isShort: false, playlistIds: [], captionTracks: [],
+      scheduledStartTime: 'not-a-real-timestamp',
+      siblingReleases: [{ videoId: 'OTHER', publishedAt: '2026-09-17T00:00:00Z' }],
+    });
+    const d = f.find((x) => x.id === 'release-density');
+    expect(d).toBeDefined();
+    expect(d?.severity).toBe('not-checked');
   });
 });

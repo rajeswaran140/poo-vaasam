@@ -63,6 +63,25 @@ export const VIDEO_SAMPLE_RATE = 48000;
  */
 export const VIDEO_FPS = 10;
 
+/**
+ * Quality target for the picture. There was none before this, so the encode ran
+ * libx264's default CRF 23 at `veryfast` and produced 116 kbps of video on a
+ * 2560x1440 still — visibly soft, and rejected by eye on 2026-09-15.
+ *
+ * Measured on the real 5:30 master: CRF 16 with a 10-second GOP gives 1.01 Mbps
+ * and costs 52 seconds (2m59.9s -> 3m54s). That is affordable against 900 s.
+ * `-preset veryfast` stays: a slower preset is what does NOT fit.
+ */
+export const VIDEO_CRF = 16;
+/** Keyframe every 10 s at 10 fps. The picture never changes; these are the only expensive frames. */
+export const VIDEO_GOP = 100;
+
+/**
+ * How far from 16:9 a cover may sit and still be treated as 16:9.
+ * 1672x941 (the 2026-09-15 cover) is 1.77683 against 1.77778 — 0.05% out.
+ */
+export const FRAME_FILL_ASPECT_TOLERANCE = 0.02;
+
 /** 16:9 for every offered height. */
 export function videoWidthFor(height: VideoHeight): number {
   return Math.round((height * 16) / 9 / 2) * 2; // even width — yuv420p requires it
@@ -136,22 +155,48 @@ export function renderRefusalMessage(reason: RenderRefusal): string {
 }
 
 /**
- * The filter graph: the cover blurred to fill the frame, with the artwork itself
- * centred at native aspect on top.
+ * The filter graph. TWO shapes, chosen by the cover's own aspect ratio.
  *
- * Same shape as the Shorts pipeline's, which is proven on this ffmpeg build —
- * a blurred fill rather than pillarbox bars, because a square cover in a 16:9
- * frame otherwise leaves two black slabs that read as a broken upload.
+ * ⚠️ THIS USED TO HAVE ONE SHAPE, AND IT WAS THE BUG. `art = height * 0.82`
+ * fits any cover into a SQUARE box, whatever its aspect — so a 16:9 cover
+ * rendered at 1181x1181 inside 2560x1440: 46% of the frame, floating on a
+ * blurred copy of itself. It was written for square art and nothing checked.
+ *
+ *  - 16:9 within tolerance -> FILL the frame. increase+crop loses at most a row
+ *    or two. lanczos because the artwork is usually smaller than the frame, and
+ *    a mild unsharp to counter that upscale. Both run ONCE, in the compose pass,
+ *    so they cost 0.18 s — see buildComposeArgs.
+ *  - anything else -> the original blurred backdrop, which is correct for square
+ *    and portrait art and is why this code was written that way.
+ *
+ * An UNKNOWN aspect takes the backdrop branch deliberately. Assuming 16:9 and
+ * being wrong crops the operator's artwork, which is the one outcome he has
+ * rejected outright ("do not mask").
  */
-export function buildVideoFilter(height: VideoHeight): string {
+export function buildVideoFilter(height: VideoHeight, coverAspect?: number): string {
   const width = videoWidthFor(height);
+  const target = 16 / 9;
+  const fills =
+    typeof coverAspect === 'number' &&
+    Number.isFinite(coverAspect) &&
+    coverAspect > 0 &&
+    Math.abs(coverAspect - target) / target <= FRAME_FILL_ASPECT_TOLERANCE;
+
+  if (fills) {
+    return (
+      `[0:v]scale=${width}:${height}:force_original_aspect_ratio=increase:` +
+      `flags=lanczos+accurate_rnd+full_chroma_int,` +
+      `crop=${width}:${height},unsharp=5:5:0.55:5:5:0.0[v]`
+    );
+  }
+
   // The artwork occupies most of the frame height, leaving a margin so the blur
   // is visibly a backdrop rather than a border artefact.
   const art = Math.round(height * 0.82);
   return (
     `[0:v]scale=${width}:${height}:force_original_aspect_ratio=increase,` +
     `crop=${width}:${height},boxblur=24:4,eq=brightness=-0.06[bg];` +
-    `[0:v]scale=${art}:${art}:force_original_aspect_ratio=decrease[fg];` +
+    `[0:v]scale=${art}:${art}:force_original_aspect_ratio=decrease:flags=lanczos[fg];` +
     `[bg][fg]overlay=(W-w)/2:(H-h)/2[v]`
   );
 }
@@ -175,12 +220,14 @@ export function buildComposeArgs(params: {
   coverPath: string;
   framePath: string;
   height?: VideoHeight;
+  /** width/height of the cover, probed by the worker. Undefined = unknown. */
+  coverAspect?: number;
 }): string[] {
   const height = params.height ?? DEFAULT_VIDEO_HEIGHT;
   return [
     '-hide_banner', '-nostats',
     '-i', params.coverPath,
-    '-filter_complex', buildVideoFilter(height),
+    '-filter_complex', buildVideoFilter(height, params.coverAspect),
     '-map', '[v]',
     '-frames:v', '1',
     '-y', params.framePath,
@@ -209,6 +256,7 @@ export function buildVideoArgs(params: {
     '-i', params.audioPath,
     '-map', '0:v', '-map', '1:a',
     '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'stillimage',
+    '-crf', String(VIDEO_CRF), '-g', String(VIDEO_GOP), '-keyint_min', String(VIDEO_FPS),
     '-pix_fmt', 'yuv420p', '-r', String(VIDEO_FPS),
     '-c:a', 'aac', '-b:a', VIDEO_AUDIO_BITRATE, '-ar', String(VIDEO_SAMPLE_RATE),
     // faststart moves the index to the front so YouTube can begin processing

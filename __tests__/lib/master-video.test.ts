@@ -23,6 +23,8 @@ import {
   DEFAULT_VIDEO_HEIGHT,
   VIDEO_AUDIO_BITRATE,
   VIDEO_SAMPLE_RATE,
+  VIDEO_CRF,
+  VIDEO_GOP,
 } from '@/lib/master-video';
 import type { MasterJob } from '@/types/masterJob';
 
@@ -90,6 +92,17 @@ describe('the encode settings are the whole point', () => {
 
   it('tunes for a still image', () => {
     expect(args).toEqual(expect.arrayContaining(['-tune', 'stillimage']));
+  });
+
+  it('sets an explicit quality target — the default CRF 23 measured 116 kbps', () => {
+    const a = buildVideoArgs({ framePath: 'f.png', audioPath: 'a.wav', outPath: 'o.mp4' });
+    expect(a[a.indexOf('-crf') + 1]).toBe(String(VIDEO_CRF));
+    expect(a[a.indexOf('-g') + 1]).toBe(String(VIDEO_GOP));
+  });
+
+  it('stays on veryfast — a slower preset does not fit the 900s Lambda', () => {
+    const a = buildVideoArgs({ framePath: 'f.png', audioPath: 'a.wav', outPath: 'o.mp4' });
+    expect(a[a.indexOf('-preset') + 1]).toBe('veryfast');
   });
 });
 
@@ -167,6 +180,43 @@ describe('frame geometry', () => {
 
   it('scales the artwork itself without distorting it', () => {
     expect(buildVideoFilter(1440)).toContain('force_original_aspect_ratio=decrease');
+  });
+
+  it('FILLS the frame for a 16:9 cover — no backdrop, no inset', () => {
+    const f = buildVideoFilter(1440, 16 / 9);
+    expect(f).toContain('scale=2560:1440:force_original_aspect_ratio=increase');
+    expect(f).toContain('crop=2560:1440');
+    // The 46% inset bug: a square art box has no business in a 16:9 render.
+    expect(f).not.toContain('boxblur');
+    expect(f).not.toContain('overlay');
+  });
+
+  it('uses lanczos and a mild unsharp, which cost nothing in a one-frame pass', () => {
+    const f = buildVideoFilter(1440, 16 / 9);
+    expect(f).toContain('flags=lanczos');
+    expect(f).toContain('unsharp=');
+  });
+
+  it('keeps the blurred backdrop for a SQUARE cover, which genuinely needs one', () => {
+    const f = buildVideoFilter(1440, 1);
+    expect(f).toContain('boxblur');
+    expect(f).toContain('overlay');
+  });
+
+  it('keeps the blurred backdrop for a PORTRAIT cover', () => {
+    expect(buildVideoFilter(1440, 0.75)).toContain('boxblur');
+  });
+
+  it('falls back to the backdrop when the aspect is unknown, rather than guessing', () => {
+    // An unprobed cover must not be assumed 16:9 — cropping the operator's
+    // artwork is the one outcome he has rejected outright.
+    expect(buildVideoFilter(1440)).toContain('boxblur');
+  });
+
+  it('treats a near-16:9 cover as 16:9 — real artwork is rarely exact', () => {
+    // 1672x941 = 1.77683 vs 1.77778. This is the real cover from 2026-09-15.
+    expect(buildVideoFilter(1440, 1672 / 941)).toContain('crop=2560:1440');
+    expect(buildVideoFilter(1440, 1672 / 941)).not.toContain('boxblur');
   });
 });
 
