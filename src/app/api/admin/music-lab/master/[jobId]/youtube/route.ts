@@ -78,6 +78,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     return NextResponse.json({ success: true, status: 'queued' }, { status: 202 });
   } catch (err) {
+    // NO COMPENSATING WRITE HERE ON PURPOSE. If `lambda.send` throws after
+    // `markUploadQueued` already succeeded, the job is left sitting at
+    // `queued` with (as far as this route knows) no worker running, and the
+    // caller gets a 502. Rolling `uploadStatus` back to something retryable
+    // would be worse: a network timeout can follow a request the Lambda
+    // service actually accepted, so a rollback could let a second invoke
+    // start while the first is genuinely running — exactly the duplicate
+    // video this whole queued-before-invoke ordering exists to prevent.
+    // Leaving it `queued` fails closed. `markUploadQueued` stamps
+    // `updatedAt`, so `UPLOAD_STALE_AFTER_MS` is the recovery path: once the
+    // Lambda's 900s ceiling plus margin has passed with no update, the job is
+    // provably not still running and `planUpload` lets the operator retry.
     console.error('[api/music-lab/master/:jobId/youtube] failed:', err instanceof Error ? err.message : String(err));
     return NextResponse.json({ success: false, error: 'Could not start the upload.' }, { status: 502 });
   }

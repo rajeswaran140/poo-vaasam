@@ -378,6 +378,16 @@ export class MasterJobRepository {
    * Mark an upload queued, so a second press of the button loses the race at
    * planUpload's `in-flight` guard rather than starting two uploads.
    *
+   * `updatedAt` MUST be refreshed here, not just `uploadStatus`: planUpload's
+   * in-flight check decides "queued but not yet stale" purely from the age of
+   * `updatedAt` against `UPLOAD_STALE_AFTER_MS`. A render can sit reviewed for
+   * half an hour before the operator presses Upload, so if this left the
+   * render's old `updatedAt` in place, the job would be marked `queued` and be
+   * ALREADY STALE at that instant — a double-click would read `isStale` as
+   * true, sail past the guard, and start a second invoke. Stamping `updatedAt`
+   * now is what makes the 20-minute window measure time-since-queued instead
+   * of time-since-something-else.
+   *
    * No ttl clause — uploading only ever runs on a saved job, where save() has
    * already removed it.
    */
@@ -385,9 +395,18 @@ export class MasterJobRepository {
     try {
       await DynamoDBOperations.update({
         key: { PK: `MASTERJOB#${id}`, SK: 'METADATA' },
-        updateExpression: 'SET #uploadStatus = :uploadStatus, #uploadError = :uploadError',
-        expressionAttributeNames: { '#uploadStatus': 'uploadStatus', '#uploadError': 'uploadError' },
-        expressionAttributeValues: { ':uploadStatus': 'queued', ':uploadError': null },
+        updateExpression:
+          'SET #uploadStatus = :uploadStatus, #uploadError = :uploadError, #updatedAt = :now',
+        expressionAttributeNames: {
+          '#uploadStatus': 'uploadStatus',
+          '#uploadError': 'uploadError',
+          '#updatedAt': 'updatedAt',
+        },
+        expressionAttributeValues: {
+          ':uploadStatus': 'queued',
+          ':uploadError': null,
+          ':now': new Date().toISOString(),
+        },
       });
     } catch (error) {
       handleDynamoDBError(error);

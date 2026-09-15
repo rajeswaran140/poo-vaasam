@@ -60,3 +60,14 @@ it('404s an unknown job', async () => {
   get.mockResolvedValue(null);
   expect((await POST(req(), ctx)).status).toBe(404);
 });
+
+// Code review Finding 3 (round 1): the four tests above would all still pass
+// if the route invoked the worker BEFORE marking the job queued — the exact
+// reversal that turns a double-click into two uploads. Pin the order itself.
+it('marks the job queued BEFORE invoking the worker, not after', async () => {
+  get.mockResolvedValue(okJob);
+  await POST(req(), ctx);
+  expect(markUploadQueued).toHaveBeenCalledTimes(1);
+  expect(send).toHaveBeenCalledTimes(1);
+  expect(markUploadQueued.mock.invocationCallOrder[0]).toBeLessThan(send.mock.invocationCallOrder[0]);
+});

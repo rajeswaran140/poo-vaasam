@@ -2,6 +2,21 @@
 import { planUpload, uploadRefusalMessage, UPLOAD_STALE_AFTER_MS, type UploadRefusal } from '@/lib/youtube-upload';
 import type { MasterJob } from '@/types/masterJob';
 
+// Only used by the markUploadQueued describe block below, but must be
+// declared/mocked before the MasterJobRepository import for jest's hoisting.
+const mockUpdate = jest.fn();
+jest.mock('@/infrastructure/database/dynamodb-client', () => ({
+  DynamoDBOperations: {
+    update: (...a: unknown[]) => mockUpdate(...a),
+    put: jest.fn(),
+    get: jest.fn(),
+    query: jest.fn(),
+    delete: jest.fn(),
+  },
+  handleDynamoDBError: (e: unknown) => { throw e; },
+}));
+import { MasterJobRepository } from '@/infrastructure/database/MasterJobRepository';
+
 const job = (over: Partial<MasterJob> = {}): MasterJob => ({
   ...({} as MasterJob),
   id: 'j1',
@@ -129,5 +144,41 @@ describe('planUpload — resuming a crashed upload', () => {
       youtubeVideoId: 'abc123',
     });
     expect(planUpload(j, input, NOW)).toEqual({ ok: false, reason: 'already-uploaded' });
+  });
+});
+
+/**
+ * Code review Finding 1 (round 1): markUploadQueued must refresh `updatedAt`,
+ * not just `uploadStatus`. planUpload's in-flight guard decides "queued but
+ * not yet stale" purely from the age of `updatedAt`. A render can sit
+ * reviewed for half an hour before Upload is pressed — if markUploadQueued
+ * left the render's old `updatedAt` in place, the job would be marked
+ * `queued` and be ALREADY STALE at that instant, so a double-click would read
+ * `isStale` as true and start a second invoke. This test proves the write
+ * actually stamps a fresh `updatedAt`, and that the fresh value is what keeps
+ * an immediate re-check `in-flight` rather than stale.
+ */
+describe('markUploadQueued refreshes updatedAt', () => {
+  beforeEach(() => mockUpdate.mockClear());
+
+  it('stamps updatedAt so a job marked queued is NOT immediately treated as stale', async () => {
+    mockUpdate.mockResolvedValueOnce({});
+    await new MasterJobRepository().markUploadQueued('j1');
+
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    const args = mockUpdate.mock.calls[0][0];
+    expect(args.updateExpression).toContain('#updatedAt = :now');
+    expect(args.expressionAttributeNames['#updatedAt']).toBe('updatedAt');
+    const stampedUpdatedAt = args.expressionAttributeValues[':now'];
+    expect(typeof stampedUpdatedAt).toBe('string');
+
+    // Simulate the double-click: read the job back right after this write
+    // (uploadStatus: 'queued', updatedAt: the value just stamped) and press
+    // Upload again a second later. It must be refused as in-flight, not
+    // treated as stale — proving the fresh timestamp actually reaches the
+    // guard, not merely that the DynamoDB call shape looks plausible.
+    const requeuedJob = job({ uploadStatus: 'queued', updatedAt: stampedUpdatedAt });
+    const oneSecondLater = Date.parse(stampedUpdatedAt) + 1000;
+    expect(planUpload(requeuedJob, input, oneSecondLater)).toEqual({ ok: false, reason: 'in-flight' });
   });
 });
