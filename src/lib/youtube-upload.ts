@@ -42,9 +42,35 @@ export type UploadPlan =
 const TITLE_LIMIT = 100;
 const DESCRIPTION_LIMIT = 5000;
 
-export function planUpload(job: MasterJob, input: UploadInput): UploadPlan {
+/**
+ * How long an `'uploading'`/`'queued'` status is trusted as genuinely
+ * in-flight before it is treated as abandoned and resumable.
+ *
+ * Derived from a hard platform fact, not a guessed number: the master-worker
+ * Lambda's configured timeout is 900s (verified against the live function —
+ * `aws lambda get-function-configuration --function-name tamilagaval-master-worker`
+ * → `Timeout: 900` — on 2026-09-15). The worker CANNOT still be running past
+ * that, so once `updatedAt` is older than the timeout the status can only be
+ * a crash artifact. The extra 5 minutes of margin absorbs clock skew and a
+ * slow final write. If the Lambda's timeout is ever raised, this constant
+ * must be raised with it.
+ *
+ * This is a SAFETY NET, not the primary duplicate-insert defense — that is
+ * still `youtubeVideoId` (checked first, below, and unaffected by staleness)
+ * and the resumed `uploadSessionUri`. Even if this window is ever too short
+ * and a second invocation overlaps a genuinely-running upload, both of those
+ * still hold: the id guard fires before any insert, and a stored session uri
+ * makes the second attempt RESUME the same resumable upload instead of
+ * opening a new one. The worst case is a resumed PUT, never a second video.
+ */
+export const UPLOAD_STALE_AFTER_MS = 15 * 60 * 1000 + 5 * 60 * 1000; // 900s Lambda ceiling + 5min margin
+
+export function planUpload(job: MasterJob, input: UploadInput, now: number = Date.now()): UploadPlan {
   // Ordered so the most decisive refusal wins: a job that already produced a
-  // video must never reach the insert path, whatever else is wrong with it.
+  // video must never reach the insert path, whatever else is wrong with it —
+  // and staleness must NEVER weaken this. A stale-and-already-uploaded job
+  // still refuses `already-uploaded`, because this check runs first and does
+  // not consult time at all.
   //
   // ⚠️ This MUST stay a JS truthiness check. Every job row is created with
   // `youtubeVideoId: null`, and DynamoDB persists a JS null as a NULL-type
@@ -55,7 +81,13 @@ export function planUpload(job: MasterJob, input: UploadInput): UploadPlan {
   // own doc comment in masterJob.ts.
   if (job.youtubeVideoId) return { ok: false, reason: 'already-uploaded' };
   if (job.uploadStatus === 'uploading' || job.uploadStatus === 'queued') {
-    return { ok: false, reason: 'in-flight' };
+    // Unknown/unparseable `updatedAt` cannot prove staleness, so it is
+    // treated as still in-flight — the safe direction when the evidence is
+    // missing rather than merely old.
+    const updatedAtMs = job.updatedAt ? Date.parse(job.updatedAt) : NaN;
+    const age = now - updatedAtMs;
+    const isStale = Number.isFinite(age) && age > UPLOAD_STALE_AFTER_MS;
+    if (!isStale) return { ok: false, reason: 'in-flight' };
   }
   if (!job.videoKey) return { ok: false, reason: 'no-video' };
   if (!job.savedAt) return { ok: false, reason: 'not-saved' };

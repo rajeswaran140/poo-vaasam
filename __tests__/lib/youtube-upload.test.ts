@@ -1,5 +1,5 @@
 /** @jest-environment node */
-import { planUpload, uploadRefusalMessage, type UploadRefusal } from '@/lib/youtube-upload';
+import { planUpload, uploadRefusalMessage, UPLOAD_STALE_AFTER_MS, type UploadRefusal } from '@/lib/youtube-upload';
 import type { MasterJob } from '@/types/masterJob';
 
 const job = (over: Partial<MasterJob> = {}): MasterJob => ({
@@ -75,5 +75,59 @@ describe('planUpload', () => {
   it('every refusal has actionable wording', () => {
     const all: UploadRefusal[] = ['no-video', 'not-saved', 'no-title', 'no-description', 'already-uploaded', 'in-flight'];
     for (const r of all) expect(uploadRefusalMessage(r).length).toBeGreaterThan(10);
+  });
+});
+
+/**
+ * Resuming a crashed upload.
+ *
+ * The whole point of `uploadSessionUri` is to resume an upload that died
+ * partway — but a worker that dies mid-PUT leaves `uploadStatus: 'uploading'`
+ * behind forever, and without a staleness window `planUpload` would refuse
+ * every subsequent attempt as `in-flight` permanently. The resume path would
+ * exist in the code and be unreachable in practice.
+ *
+ * `now` is passed explicitly (never `Date.now()` inside `planUpload` itself)
+ * so every case here is deterministic.
+ */
+describe('planUpload — resuming a crashed upload', () => {
+  const NOW = Date.parse('2026-09-15T12:00:00.000Z');
+  const at = (msBeforeNow: number) => new Date(NOW - msBeforeNow).toISOString();
+
+  it('refuses in-flight when uploading and updatedAt is fresh', () => {
+    const j = job({ uploadStatus: 'uploading', updatedAt: at(1000) });
+    expect(planUpload(j, input, NOW)).toEqual({ ok: false, reason: 'in-flight' });
+  });
+
+  it('treats uploading as resumable once updatedAt is older than the stale window', () => {
+    const j = job({ uploadStatus: 'uploading', updatedAt: at(UPLOAD_STALE_AFTER_MS + 1000) });
+    expect(planUpload(j, input, NOW).ok).toBe(true);
+  });
+
+  it('queued gets the identical treatment: fresh refuses, stale proceeds', () => {
+    const fresh = job({ uploadStatus: 'queued', updatedAt: at(1000) });
+    expect(planUpload(fresh, input, NOW)).toEqual({ ok: false, reason: 'in-flight' });
+
+    const stale = job({ uploadStatus: 'queued', updatedAt: at(UPLOAD_STALE_AFTER_MS + 1000) });
+    expect(planUpload(stale, input, NOW).ok).toBe(true);
+  });
+
+  it('right at the boundary is still in-flight — only strictly beyond the window is stale', () => {
+    const j = job({ uploadStatus: 'uploading', updatedAt: at(UPLOAD_STALE_AFTER_MS) });
+    expect(planUpload(j, input, NOW)).toEqual({ ok: false, reason: 'in-flight' });
+  });
+
+  it('missing/unparseable updatedAt cannot prove staleness, so it still refuses in-flight', () => {
+    const j = job({ uploadStatus: 'uploading', updatedAt: undefined as unknown as string });
+    expect(planUpload(j, input, NOW)).toEqual({ ok: false, reason: 'in-flight' });
+  });
+
+  it('THE IMPORTANT ONE: a stale-and-already-uploaded job still refuses already-uploaded — staleness must never weaken the duplicate guard', () => {
+    const j = job({
+      uploadStatus: 'uploading',
+      updatedAt: at(UPLOAD_STALE_AFTER_MS + 1000),
+      youtubeVideoId: 'abc123',
+    });
+    expect(planUpload(j, input, NOW)).toEqual({ ok: false, reason: 'already-uploaded' });
   });
 });
