@@ -334,6 +334,80 @@ describe('video render', () => {
     await handler({ jobId: 'j1', render: render() } as never);
     expect(mockRmSync).toHaveBeenCalledWith('/tmp/master-test', { recursive: true, force: true });
   });
+
+  /**
+   * probeCoverAspect() feeds buildVideoFilter() — this is the whole point of
+   * Task 1 + Task 2, and until now nothing pinned that the wiring actually
+   * fires the fill branch on a real 16:9 probe result. Every other test in
+   * this suite mocks spawnSync unconditionally, so the probe call always saw
+   * an empty log and buildVideoFilter always took the backdrop branch.
+   *
+   * The probe call is distinguished from compose/encode by shape: it is
+   * exactly `['-hide_banner', '-i', coverPath]` — nothing else in renderVideo
+   * calls ffmpeg with that signature.
+   */
+  describe('the cover probe result reaches buildVideoFilter', () => {
+    const isProbeCall = (args: string[]) =>
+      args.length === 3 && args[0] === '-hide_banner' && args[1] === '-i';
+
+    /** Only the probe call returns `header`; compose and encode still succeed. */
+    const mockProbeHeader = (header: string) => {
+      spawnSync.mockImplementation((_cmd: string, args: string[]) =>
+        isProbeCall(args)
+          ? { status: 1, stdout: '', stderr: header }
+          : { status: 0, stdout: '', stderr: '' }
+      );
+    };
+
+    const composeFilter = () => {
+      const [, compose] = ffArgs();
+      return compose[compose.indexOf('-filter_complex') + 1];
+    };
+
+    it('a 16:9 cover fills the frame: crop to the full frame, no blurred backdrop', async () => {
+      mockProbeHeader('Stream #0:0: Video: png, rgb24, 1672x941 [SAR 1:1 DAR 1672:941]');
+      const res = await handler({ jobId: 'j1', render: render() } as never);
+
+      expect(res).toMatchObject({ ok: true });
+      const filter = composeFilter();
+      expect(filter).toContain('crop=2560:1440');
+      expect(filter).not.toContain('boxblur');
+    });
+
+    it('a square cover uses the blurred backdrop', async () => {
+      mockProbeHeader('Stream #0:0: Video: png, rgb24, 1000x1000 [SAR 1:1 DAR 1:1]');
+      await handler({ jobId: 'j1', render: render() } as never);
+
+      expect(composeFilter()).toContain('boxblur');
+    });
+
+    it('an unreadable header falls back to the blurred backdrop, not a guessed 16:9', async () => {
+      mockProbeHeader('no recognizable stream info here');
+      await handler({ jobId: 'j1', render: render() } as never);
+
+      expect(composeFilter()).toContain('boxblur');
+    });
+
+    /**
+     * The dangerous case Finding 2 is about: a camera JPEG can print an
+     * embedded EXIF/MPF thumbnail as its OWN "Video:" line, before the real
+     * image's line. A first-match read would probe the thumbnail instead of
+     * the cover. Here the SMALLER (first) stream is square — if it won, the
+     * backdrop branch would fire — and the LARGER (second) stream is 16:9.
+     * Largest-by-area must win, so the fill branch must fire.
+     */
+    it('an embedded thumbnail does not fool the probe — the largest stream wins', async () => {
+      mockProbeHeader(
+        'Stream #0:0: Video: mjpeg, yuvj420p, 160x160 [SAR 1:1 DAR 1:1], 90k tbr\n' +
+        'Stream #0:1: Video: mjpeg, yuvj420p, 1672x941 [SAR 1:1 DAR 1672:941], 25 tbr'
+      );
+      await handler({ jobId: 'j1', render: render() } as never);
+
+      const filter = composeFilter();
+      expect(filter).toContain('crop=2560:1440');
+      expect(filter).not.toContain('boxblur');
+    });
+  });
 });
 
 describe('key guard', () => {
