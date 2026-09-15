@@ -1224,6 +1224,12 @@ async function getJob(jobId: string): Promise<MasterJob | null> {
 
 Add imports: `planUpload`, `uploadRefusalMessage` from `@/lib/youtube-upload` — the alias the worker already uses for `@/lib/mastering-storage` and `@/lib/master-mp3`; `GetCommand` from `@aws-sdk/lib-dynamodb`; `SSMClient`, `GetParameterCommand` from `@aws-sdk/client-ssm`, with `const ssm = new SSMClient({ region });`; `statSync` from `node:fs`.
 
+**Also change the bundle to include the SSM client.** The worker builds with `--external:@aws-sdk/*`, so every AWS client must resolve from the Lambda runtime. The four it imports today (client-s3, client-dynamodb, lib-dynamodb, client-lambda) are proven to resolve; `@aws-sdk/client-ssm` is not, and a runtime-resolution failure appears as `MODULE_NOT_FOUND` in CloudWatch with **no build error** — the worst failure shape available. Replace the wildcard in `package.json`'s `build:master-worker` with the four proven externals, letting client-ssm bundle:
+
+```
+--external:@aws-sdk/client-s3 --external:@aws-sdk/client-dynamodb --external:@aws-sdk/lib-dynamodb --external:@aws-sdk/client-lambda
+```
+
 - [ ] **Step 4: Typecheck and bundle**
 
 ```bash
@@ -1534,6 +1540,24 @@ git commit -m "feat(mastering): render, check and upload a release from the port
 Two things are **deliberately not in this plan** and remain the operator's call:
 
 1. **Deploying the worker.** `npm run deploy:master-worker` pushes new code to the live Lambda. Nothing here runs it.
-2. **`YOUTUBE_OAUTH_CLIENT_ID` on the Lambda.** The worker needs it as an environment variable. Setting it is a one-line AWS change the operator makes when they deploy.
+2. **`YOUTUBE_OAUTH_CLIENT_ID` on the Lambda.** The worker needs it as an environment variable. The function currently has only `DYNAMODB_TABLE_NAME`, `TAKES_BUCKET_REGION`, `TAKES_BUCKET` (verified 2026-09-15).
+
+3. **An IAM grant — WITHOUT THIS THE UPLOAD FAILS AT RUNTIME.** Verified against the live account 2026-09-15: `tamilagaval-master-worker` runs as **`tamilagaval-compose-worker-role`**, whose `ssm:GetParameter` grant is scoped to exactly `/tamilagaval/prod/ANTHROPIC_API_KEY` and `/tamilagaval/prod/GEMINI_API_KEY`. The YouTube parameters are not covered, so `youtubeAccessToken()` gets AccessDenied.
+
+   Add the two ARNs to the existing `read-compose-worker-secrets` inline policy:
+
+   ```json
+   {
+     "Sid": "ReadYoutubeUploadSecrets",
+     "Effect": "Allow",
+     "Action": "ssm:GetParameter",
+     "Resource": [
+       "arn:aws:ssm:ca-central-1:975050319109:parameter/amplify/d3rkmepk4popv0/master/YOUTUBE_OAUTH_CLIENT_SECRET",
+       "arn:aws:ssm:ca-central-1:975050319109:parameter/amplify/d3rkmepk4popv0/master/YOUTUBE_DATA_REFRESH_TOKEN"
+     ]
+   }
+   ```
+
+   **No `kms:Decrypt` statement is needed.** Both parameters are `SecureString` under `alias/aws/ssm` — the same key as the two the role already reads successfully with no KMS statement.
 
 The first real upload should be watched, not trusted: confirm the video is private, the thumbnail landed, and the playlists applied, before relying on the panel's own report.
