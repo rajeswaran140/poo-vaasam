@@ -1301,6 +1301,23 @@ describe('rendering from the saved-masters library', () => {
     expect(screen.queryByRole('button', { name: /Render video for/ })).not.toBeInTheDocument();
   });
 
+  it('shows "Re-render" button on a row that already has a video', async () => {
+    // Regression guard: the render button must stay visible even after a successful render,
+    // so a bad render can be redone. This test fails if the gate reverts to m.masterKey && !m.videoKey.
+    await openLibrary(row({ videoKey: 'audio/mastering/1_a-master-14LUFS-1440p.mp4' }));
+    const renderBtn = screen.getByRole('button', { name: /Render video for காதல் மழை/ });
+    expect(renderBtn).toBeInTheDocument();
+    expect(renderBtn).toHaveTextContent('Re-render');
+  });
+
+  it('shows "Render video" button on a row that has no video yet', async () => {
+    // The complementary case: a new render should show the initial label, not "Re-render".
+    await openLibrary();
+    const renderBtn = screen.getByRole('button', { name: /Render video for காதல் மழை/ });
+    expect(renderBtn).toBeInTheDocument();
+    expect(renderBtn).toHaveTextContent('Render video');
+  });
+
   it('sends the row-s own job id and cover, not the active job-s', async () => {
     await openLibrary();
     await act(async () => {

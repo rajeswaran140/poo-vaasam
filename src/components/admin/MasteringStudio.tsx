@@ -2193,7 +2193,7 @@ export function MasteringStudio() {
                 {/* And a way to MAKE one. The inline panel is gated on savedAt,
                     which only this session's Save sets, so without this a master
                     saved yesterday could never be rendered at all. */}
-                {m.masterKey && !m.videoKey && (
+                {m.masterKey && (
                   <button
                     type="button"
                     disabled={rowBusy === m.id}
@@ -2203,7 +2203,7 @@ export function MasteringStudio() {
                     aria-label={`Render video for ${m.title ?? 'this master'}`}
                     className="text-xs font-medium text-orange-600 hover:underline disabled:opacity-50 dark:text-orange-400"
                   >
-                    Render video
+                    {m.videoKey ? 'Re-render' : 'Render video'}
                   </button>
                 )}
                 {/* The source is never modified, so re-opening costs nothing and
