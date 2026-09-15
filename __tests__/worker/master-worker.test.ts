@@ -1091,7 +1091,16 @@ describe('youtube upload', () => {
       savedAt: '2026-09-01T00:00:00.000Z',
       coverKey: 'audio/mastering/1_c_cover.jpg',
       youtubeVideoId: null,
-      uploadStatus: 'idle',
+      // ⚠️ THE STATE THE WORKER ACTUALLY RECEIVES, not a convenient one.
+      // The enqueue route calls markUploadQueued BEFORE it Event-invokes this
+      // worker, so every real invocation reads back `uploadStatus: 'queued'`
+      // with an `updatedAt` seconds old. This fixture used to prime `'idle'`
+      // — a state the route never produces — which is the only reason the
+      // worker's `in-flight` refusal of its own queued job stayed invisible
+      // for twelve commits. Keep these two fields in lockstep with
+      // markUploadQueued's write.
+      uploadStatus: 'queued',
+      updatedAt: new Date().toISOString(),
       uploadSessionUri: null,
     };
 
@@ -1134,6 +1143,33 @@ describe('youtube upload', () => {
       return Promise.resolve({ ok: false, status: 500, text: async () => '' });
     });
     process.env.YOUTUBE_OAUTH_CLIENT_ID = 'test-client-id';
+  });
+
+  /**
+   * ⚠️ THE WORKER MUST NOT REFUSE THE JOB IT WAS INVOKED FOR.
+   *
+   * The enqueue route marks the job `queued` (stamping a fresh `updatedAt`)
+   * and THEN Event-invokes this worker, so the row the worker reads back is
+   * always `queued` and always seconds old. `planUpload`'s `in-flight`
+   * refusal is the ENQUEUE gate — it exists to make a double-click lose the
+   * race. Re-applying it here made the worker refuse its own invocation and
+   * patch `failed` before any insert, so the feature could not complete even
+   * once; a retry just repeated the loop. The worker therefore runs the
+   * planner at `stage: 'execute'`, which skips ONLY that check.
+   */
+  it('uploads the job it was invoked for, even though the route already marked it queued', async () => {
+    // Exactly what markUploadQueued leaves behind, re-read moments later.
+    job.uploadStatus = 'queued';
+    job.updatedAt = new Date().toISOString();
+
+    const res = await handler({ jobId: 'j1', youtube: YT } as never);
+
+    // Asserted first and separately: pre-fix this printed the refusal itself
+    // — "An upload is already running for this master." — which is the worker
+    // declining the very invocation the route had just queued for it.
+    expect(patched().uploadError ?? null).toBeNull();
+    expect(patched()).toMatchObject({ uploadStatus: 'uploaded', youtubeVideoId: 'FRESH_INSERT_ID' });
+    expect(res).toMatchObject({ ok: true, videoId: 'FRESH_INSERT_ID' });
   });
 
   it('uses ONLY the freshly inserted id for the thumbnail and every playlist call', async () => {
@@ -1364,11 +1400,18 @@ describe('youtube upload', () => {
     });
 
     /**
-     * The one case that MAY discard a session with no Google call at all:
-     * local, certain evidence (the file on disk no longer matches what the
-     * session declared) rather than an ambiguous HTTP status.
+     * A LOCAL size mismatch says the bytes on disk are no longer the bytes the
+     * session was opened against — but it says NOTHING about whether that
+     * session already finished.
+     *
+     * ⚠️ Discarding it before the query was a second duplicate-insert path,
+     * and a reachable one: PUT succeeds → the worker dies before the id patch
+     * → the operator re-renders (same videoKey, different bytes) → retry →
+     * mismatch → fresh session → a SECOND video on the channel. The session is
+     * therefore always queried first; the mismatch only decides what happens
+     * after the answer comes back.
      */
-    it('discards and reopens on a LOCAL size mismatch, with no query call needed to decide', async () => {
+    it('queries the session even on a LOCAL size mismatch, then discards it only once the query says 308', async () => {
       // mockStatSync always returns { size: 123456 } (see the top of this
       // file) — a declared size that disagrees with that is unambiguously a
       // different file than the one the session was opened against.
@@ -1377,6 +1420,10 @@ describe('youtube upload', () => {
       fetchMock.mockImplementation((url: string) => {
         if (url.includes('oauth2.googleapis.com/token')) {
           return Promise.resolve({ ok: true, json: async () => ({ access_token: 'ACCESS-TOKEN' }) });
+        }
+        if (url === EXISTING_SESSION) {
+          // Incomplete — so the session really is unusable for these bytes.
+          return Promise.resolve({ status: 308, ok: false, headers: { get: () => null } });
         }
         if (url.includes('uploadType=resumable')) {
           return Promise.resolve({
@@ -1395,10 +1442,58 @@ describe('youtube upload', () => {
       const res = await handler({ jobId: 'j1', youtube: YT } as never);
 
       expect(res).toMatchObject({ ok: true, videoId: 'FRESH_AFTER_SIZE_MISMATCH' });
-      // THE property: the old session URI is never even queried.
-      expect(fetchMock.mock.calls.some((c) => c[0] === EXISTING_SESSION)).toBe(false);
+      // THE property, inverted from what this test used to assert: the stored
+      // session IS asked, exactly once (the query — never a data PUT against
+      // bytes it cannot accept), before it is given up on.
+      const sessionCalls = fetchMock.mock.calls.filter((c) => c[0] === EXISTING_SESSION);
+      expect(sessionCalls).toHaveLength(1);
+      expect((sessionCalls[0][1] as { body?: unknown }).body).toBeUndefined();
       expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('uploadType=resumable'))).toBe(true);
       expect(patched()).toMatchObject({ youtubeVideoId: 'FRESH_AFTER_SIZE_MISMATCH', uploadStatus: 'uploaded' });
+    });
+
+    /**
+     * ⚠️ THE DUPLICATE THIS FIX EXISTS TO STOP. Same mismatch, but the session
+     * had ALREADY completed — the previous invocation's PUT landed and only
+     * the id write was lost. Discarding on the local mismatch skipped this
+     * 200 branch entirely and opened a fresh insert: a second video on a real
+     * channel, removable only by hand.
+     *
+     * The recovered video was built from the OLDER bytes (the re-render is not
+     * what is on YouTube). That is the correct trade: a video file cannot be
+     * replaced on YouTube either way, and recovering the id leaves ONE video
+     * the operator can see and delete, rather than two.
+     */
+    it('recovers the id when a size-mismatched session turns out to have COMPLETED — never a second insert', async () => {
+      job.uploadSessionSize = 999;
+
+      fetchMock.mockImplementation((url: string) => {
+        if (url.includes('oauth2.googleapis.com/token')) {
+          return Promise.resolve({ ok: true, json: async () => ({ access_token: 'ACCESS-TOKEN' }) });
+        }
+        if (url === EXISTING_SESSION) {
+          return Promise.resolve({ ok: true, status: 200, json: async () => ({ id: 'RECOVERED_DESPITE_MISMATCH' }) });
+        }
+        if (url.includes('/thumbnails/set')) return Promise.resolve({ ok: true });
+        if (url.includes('/playlistItems')) return Promise.resolve({ ok: true });
+        return Promise.resolve({ ok: false, status: 500, text: async () => '' });
+      });
+
+      const res = await handler({ jobId: 'j1', youtube: YT } as never);
+
+      expect(res).toMatchObject({ ok: true, videoId: 'RECOVERED_DESPITE_MISMATCH' });
+      // THE property: no second video was created.
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('uploadType=resumable'))).toBe(false);
+      // The query's total describes the SESSION (999), not the re-rendered
+      // file on disk (mockStatSync's 123456). Getting this backwards asks
+      // Google about a size the session never declared — a 400, which
+      // sessionIsGone deliberately keeps, jamming every later retry.
+      const queryCall = fetchMock.mock.calls.find((c) => c[0] === EXISTING_SESSION)!;
+      expect((queryCall[1] as { headers: Record<string, string> }).headers['Content-Range']).toBe('bytes */999');
+      expect(patched()).toMatchObject({
+        youtubeVideoId: 'RECOVERED_DESPITE_MISMATCH',
+        uploadStatus: 'uploaded',
+      });
     });
 
     it('KEEPS a session alive on a 500 query — a 5xx does not prove the session is dead', async () => {

@@ -407,7 +407,8 @@ function coverContentType(key: string): string {
  * ⚠️ 400 IS DELIBERATELY EXCLUDED — this is a considered choice under
  * uncertainty, not an oversight. A 400 is plausibly a Content-Range size
  * mismatch (see the explicit, LOCAL size check in uploadToYoutube, which
- * catches that case without needing Google to tell us anything), but "bad
+ * catches that case in the 308 branch without needing Google to tell us
+ * anything), but "bad
  * request" is a broad class and could mean something else entirely — a
  * transient condition at Google, an intermediary, a malformed header a
  * future edit introduces. The two misclassification costs are not
@@ -454,8 +455,9 @@ function sessionIsGone(status: number): boolean {
  * write just never landed", and guessing wrong either duplicates the insert
  * or loses the id forever. The query's status decides what happens next; see
  * the branches below and `sessionIsGone`. `now` is threaded through to
- * `planUpload` (default `Date.now()`) so this function's staleness behaviour
- * is directly unit-testable rather than only reachable via the real clock.
+ * `planUpload` (default `Date.now()`) so the planner's clock is injectable
+ * from a test; at `stage: 'execute'` the planner does not consult it, because
+ * staleness is the enqueue gate's question, not this function's.
  */
 export async function uploadToYoutube(
   jobId: string,
@@ -466,7 +468,14 @@ export async function uploadToYoutube(
   const job = await getJob(jobId);
   if (!job) return { ok: false };
 
-  const plan = planUpload(job, spec, now);
+  // 'execute', not 'enqueue'. The route marked this job `queued` and stamped a
+  // fresh `updatedAt` BEFORE it invoked this worker, so re-running the gate's
+  // concurrency check here would have the worker refuse the very job it was
+  // invoked for — which it did, for every upload, until this stage argument
+  // existed. 'execute' skips ONLY that refusal; `already-uploaded` (the
+  // duplicate-video guard) and every eligibility check still apply, and this
+  // is the only caller that could actually create the duplicate.
+  const plan = planUpload(job, spec, { now, stage: 'execute' });
   if (!plan.ok) {
     // A refusal must never overwrite a TERMINAL 'uploaded' state. Marking
     // 'already-uploaded' as 'failed' is what invited an operator to clear
@@ -496,22 +505,34 @@ export async function uploadToYoutube(
     let sessionUri = job.uploadSessionUri ?? null;
     let videoId: string | undefined;
 
-    if (sessionUri && typeof job.uploadSessionSize === 'number' && job.uploadSessionSize !== size) {
-      // UNAMBIGUOUS, LOCAL evidence the session is invalid — no Google call
-      // needed to decide. The file on disk right now (most likely re-rendered
-      // since the session was opened) is not the file this session declared
-      // via X-Upload-Content-Length, so resuming it can only fail. This is
-      // exactly the certainty a bare HTTP status doesn't give us, which is
-      // why sessionIsGone() deliberately does NOT try to infer this from a
-      // 400 — see its doc comment.
-      sessionUri = null;
-      await patch(jobId, { uploadSessionUri: null, uploadSessionSize: null });
-    }
+    // UNAMBIGUOUS, LOCAL evidence that the bytes on disk are no longer the
+    // bytes this session declared via X-Upload-Content-Length — the file was
+    // almost certainly re-rendered since. It means the session cannot RECEIVE
+    // these bytes.
+    //
+    // ⚠️ IT IS NOT EVIDENCE THAT THE SESSION NEVER FINISHED, so it must not
+    // decide anything before the query. Discarding here was a second
+    // duplicate-insert path, and a reachable one: PUT succeeds → the worker
+    // dies before the id patch → the operator re-renders → retry → mismatch →
+    // fresh session → a SECOND video on the channel. The mismatch is recorded
+    // now and consulted only in the 308 branch below, AFTER the query has had
+    // its say; a 200/201 still recovers the id and completes.
+    const sizeMismatch =
+      typeof job.uploadSessionSize === 'number' && job.uploadSessionSize !== size;
 
     if (sessionUri) {
       const query = await fetch(sessionUri, {
         method: 'PUT',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Range': `bytes */${size}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          // The total must describe the SESSION being queried, not the file
+          // sitting on disk — and the two differ in exactly the mismatch case
+          // this query now runs for. Sending the local size against a session
+          // that declared a different one invites a 400, which `sessionIsGone`
+          // deliberately does not treat as dead, so the job would fail with the
+          // session retained and every retry would jam the same way.
+          'Content-Range': `bytes */${job.uploadSessionSize ?? size}`,
+        },
       });
 
       if (query.status === 200 || query.status === 201) {
@@ -519,6 +540,12 @@ export async function uploadToYoutube(
         // sole recovery path for "the PUT succeeded but the youtubeVideoId
         // write never landed". The response body IS the video resource;
         // treat it exactly as if videos.insert had just returned it.
+        //
+        // Deliberately reached even when `sizeMismatch` is true: the video on
+        // YouTube was built from the OLDER bytes, which cannot be changed (a
+        // video file is not replaceable), so the choice is one video whose id
+        // the operator can see and delete, or that one PLUS a second insert.
+        // Recovering the id is the recoverable direction.
         const already = await query.json();
         videoId = already?.id as string | undefined;
         if (!videoId) {
@@ -528,6 +555,13 @@ export async function uploadToYoutube(
           });
           return { ok: false };
         }
+      } else if (query.status === 308 && sizeMismatch) {
+        // Incomplete AND the bytes have changed: this session can never accept
+        // the file now on disk, and the query has just proved it did not
+        // already finish. Only here is discarding it safe — and it is the same
+        // fall-through the 404 branch uses, which opens a fresh session below.
+        sessionUri = null;
+        await patch(jobId, { uploadSessionUri: null, uploadSessionSize: null });
       } else if (query.status === 308) {
         // Incomplete. Re-sending the whole body from byte 0 with a correct
         // Content-Range is acceptable given this artifact is ~58 MB — the
@@ -560,8 +594,8 @@ export async function uploadToYoutube(
       } else if (sessionIsGone(query.status)) {
         // 404/410 only — expired or never valid. Clear it and fall through to
         // opening a fresh one below, the same single-PUT flow a first attempt
-        // uses. (A since-replaced file is caught LOCALLY above, before this
-        // query ever runs — see the uploadSessionSize check.)
+        // uses. (A since-replaced file takes the same fall-through, but only
+        // from the 308 branch above — never before the query.)
         sessionUri = null;
         await patch(jobId, { uploadSessionUri: null, uploadSessionSize: null });
       } else {

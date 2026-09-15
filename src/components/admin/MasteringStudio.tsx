@@ -36,6 +36,10 @@ import { MasteringPlayer } from '@/components/admin/MasteringPlayer';
 import { MasteringTrimPanel } from '@/components/admin/MasteringTrimPanel';
 import { MasteringJoinPanel } from '@/components/admin/MasteringJoinPanel';
 import { DEFAULT_CROSSFADE_CURVE, type MasterJoin } from '@/lib/master-join';
+// The SAME constant the enqueue route's planner uses, never a second copy of
+// the number: this panel's Retry must become available exactly when the server
+// would start accepting a new attempt, not a minute either side of it.
+import { UPLOAD_STALE_AFTER_MS } from '@/lib/youtube-upload';
 import {
   groupMastersBySong,
   describeGroup,
@@ -1125,8 +1129,63 @@ export function MasteringStudio() {
    * between uploading a cover and the job coming back with it.
    */
   const frameKey = job?.coverKey ?? cover?.key ?? null;
-  /** The upload panel exists only once there is a rendered MP4 to upload. */
-  const uploadPanelOpen = Boolean(savedAt && job?.videoKey);
+  /**
+   * The upload panel exists only once there is a rendered MP4 to upload.
+   *
+   * ⚠️ GATED ON THE JOB ROW'S OWN `savedAt` FIRST, not on the session-local
+   * flag. `savedAt` (the state) is set only by a Save in THIS session and is
+   * cleared by `reset`, `onPickFile` and `reopenMaster` — so gating on it
+   * alone meant that any remount hid the panel, taking the upload's resume
+   * path (`uploadSessionUri`, `UPLOAD_STALE_AFTER_MS`) off screen with it. The
+   * persisted value survives, so a job re-attached after a remount reopens the
+   * panel on its own. The session flag stays as the fallback for the one case
+   * the row cannot cover: the moments right after a Save, which writes
+   * `savedAt` server-side but does not re-fetch the job.
+   */
+  const uploadPanelOpen = Boolean((job?.savedAt ?? savedAt) && job?.videoKey);
+
+  /**
+   * Is the row's `queued`/`uploading` status still believable?
+   *
+   * ⚠️ THE OTHER HALF OF THE REACHABILITY BUG. The Upload button was disabled
+   * for `queued`/`uploading` unconditionally, so a worker that died mid-upload
+   * left the job pinned at `queued` and the ONLY control that could resume it
+   * permanently greyed out — `UPLOAD_STALE_AFTER_MS` and `uploadSessionUri`
+   * were unreachable from the browser no matter what the panel's gate said.
+   *
+   * The same rule the server applies: past the worker's own ceiling plus
+   * margin, the status can only be a crash artifact, so the button comes back
+   * as Retry. Pressing it re-enqueues, and the worker RESUMES the stored
+   * session rather than inserting a second video — the duplicate guard does
+   * not depend on this window (see planUpload's doc comment).
+   */
+  const uploadRunning = job?.uploadStatus === 'queued' || job?.uploadStatus === 'uploading';
+  const uploadStale =
+    uploadRunning &&
+    (() => {
+      const age = Date.now() - (job?.updatedAt ? Date.parse(job.updatedAt) : NaN);
+      // An unparseable timestamp cannot PROVE staleness, so it reads as still
+      // running — the same direction the planner takes on missing evidence.
+      return Number.isFinite(age) && age > UPLOAD_STALE_AFTER_MS;
+    })();
+  /** Genuinely in flight: running, and not old enough to be a crash artifact. */
+  const uploadInFlight = uploadRunning && !uploadStale;
+  const UPLOAD_STALE_MINUTES = Math.round(UPLOAD_STALE_AFTER_MS / 60000);
+
+  /**
+   * `uploadStale` reads the clock during render, and a panel parked on a
+   * `queued` row has nothing left re-rendering it — the master's own poll ended
+   * at `done`, and the upload poll only runs inside `uploadToYoutube`. Without
+   * this nudge Retry would never appear on its own, and the amber note below
+   * promises exactly that it will. Same shape as the elapsed counter above, and
+   * it runs only while an upload is actually believed to be in flight.
+   */
+  const [, tickUploadClock] = useState(0);
+  useEffect(() => {
+    if (!uploadInFlight) return;
+    const t = setInterval(() => tickUploadClock((n) => n + 1), 30_000);
+    return () => clearInterval(t);
+  }, [uploadInFlight]);
 
   /**
    * Presign the cover so the operator can SEE it before pressing Upload.
@@ -1276,7 +1335,11 @@ export function MasteringStudio() {
           throw new Error(fresh.uploadError || 'The upload failed.');
         }
         if (Date.now() > deadline) {
-          throw new Error('The upload is taking longer than expected — reload to check on it.');
+          // Same rule as the panel's amber note: a reload does NOT pick this
+          // up, it loses the panel. Stay put; Retry re-enables on staleness.
+          throw new Error(
+            'The upload is taking longer than expected. It keeps going server-side — stay on this page and use Retry upload once it becomes available.',
+          );
         }
       }
     } catch (err) {
@@ -2657,8 +2720,10 @@ export function MasteringStudio() {
                     uploadingToYoutube ||
                     !uploadTitleValue.trim() ||
                     Boolean(job.youtubeVideoId) ||
-                    job.uploadStatus === 'queued' ||
-                    job.uploadStatus === 'uploading'
+                    // Not `uploadStatus === 'queued' || 'uploading'`: that form
+                    // had no expiry, so a crashed upload disabled its own
+                    // recovery forever. See `uploadStale`.
+                    uploadInFlight
                   }
                   className="inline-flex items-center gap-2 rounded-lg border border-orange-300 px-4 py-2 text-sm font-medium text-orange-700 transition hover:bg-orange-50 disabled:opacity-60 dark:border-orange-800 dark:text-orange-300 dark:hover:bg-orange-900/20"
                 >
@@ -2669,23 +2734,31 @@ export function MasteringStudio() {
                     ? 'Uploading…'
                     : job.youtubeVideoId
                       ? 'Already uploaded'
-                      : job.uploadStatus === 'failed'
+                      : job.uploadStatus === 'failed' || uploadStale
                         ? 'Retry upload'
                         : 'Upload to YouTube'}
                 </button>
-                {!job.youtubeVideoId && !uploadingToYoutube &&
-                  (job.uploadStatus === 'queued' || job.uploadStatus === 'uploading') && (
-                    /* The row says an upload is running but nothing in THIS
-                       mount is following it — a remount, or a re-master after
-                       navigating away. The button is correctly disabled (a
-                       second invoke is exactly what the planner's in-flight
-                       guard exists to stop), so the panel must SAY why rather
-                       than show a dead grey button with no explanation. */
-                    <span className="text-xs text-amber-800 dark:text-amber-400">
-                      An upload is already running for this master — reload the page to pick it up.
-                    </span>
-                  )}
-                {!job.youtubeVideoId && job.uploadStatus !== 'queued' && job.uploadStatus !== 'uploading' && (
+                {!job.youtubeVideoId && !uploadingToYoutube && uploadInFlight && (
+                  /* The row says an upload is running but nothing in THIS
+                     mount is following it — a remount, or a re-master after
+                     navigating away. The button is correctly disabled (a
+                     second invoke is exactly what the planner's in-flight
+                     guard exists to stop), so the panel must SAY why rather
+                     than show a dead grey button with no explanation.
+
+                     ⚠️ IT MUST NOT SAY "reload the page", which is what it
+                     said until this was fixed. A reload clears the studio's
+                     stored pointer to a finished job, so it does not pick the
+                     upload up — it takes this panel away, and with it the only
+                     control that can ever retry. The honest instruction is the
+                     opposite one, plus when the retry becomes available. */
+                  <span className="text-xs text-amber-800 dark:text-amber-400">
+                    An upload is already running for this master — it keeps going server-side.
+                    Stay on this page: Retry becomes available here if it has not finished within{' '}
+                    {UPLOAD_STALE_MINUTES} minutes.
+                  </span>
+                )}
+                {!job.youtubeVideoId && !uploadInFlight && (
                   <span className="text-xs text-gray-500 dark:text-gray-400">
                     Uploads as a <strong>private</strong> draft. Nothing here makes a video public.
                   </span>

@@ -111,30 +111,30 @@ describe('planUpload — resuming a crashed upload', () => {
 
   it('refuses in-flight when uploading and updatedAt is fresh', () => {
     const j = job({ uploadStatus: 'uploading', updatedAt: at(1000) });
-    expect(planUpload(j, input, NOW)).toEqual({ ok: false, reason: 'in-flight' });
+    expect(planUpload(j, input, { now: NOW })).toEqual({ ok: false, reason: 'in-flight' });
   });
 
   it('treats uploading as resumable once updatedAt is older than the stale window', () => {
     const j = job({ uploadStatus: 'uploading', updatedAt: at(UPLOAD_STALE_AFTER_MS + 1000) });
-    expect(planUpload(j, input, NOW).ok).toBe(true);
+    expect(planUpload(j, input, { now: NOW }).ok).toBe(true);
   });
 
   it('queued gets the identical treatment: fresh refuses, stale proceeds', () => {
     const fresh = job({ uploadStatus: 'queued', updatedAt: at(1000) });
-    expect(planUpload(fresh, input, NOW)).toEqual({ ok: false, reason: 'in-flight' });
+    expect(planUpload(fresh, input, { now: NOW })).toEqual({ ok: false, reason: 'in-flight' });
 
     const stale = job({ uploadStatus: 'queued', updatedAt: at(UPLOAD_STALE_AFTER_MS + 1000) });
-    expect(planUpload(stale, input, NOW).ok).toBe(true);
+    expect(planUpload(stale, input, { now: NOW }).ok).toBe(true);
   });
 
   it('right at the boundary is still in-flight — only strictly beyond the window is stale', () => {
     const j = job({ uploadStatus: 'uploading', updatedAt: at(UPLOAD_STALE_AFTER_MS) });
-    expect(planUpload(j, input, NOW)).toEqual({ ok: false, reason: 'in-flight' });
+    expect(planUpload(j, input, { now: NOW })).toEqual({ ok: false, reason: 'in-flight' });
   });
 
   it('missing/unparseable updatedAt cannot prove staleness, so it still refuses in-flight', () => {
     const j = job({ uploadStatus: 'uploading', updatedAt: undefined as unknown as string });
-    expect(planUpload(j, input, NOW)).toEqual({ ok: false, reason: 'in-flight' });
+    expect(planUpload(j, input, { now: NOW })).toEqual({ ok: false, reason: 'in-flight' });
   });
 
   it('THE IMPORTANT ONE: a stale-and-already-uploaded job still refuses already-uploaded — staleness must never weaken the duplicate guard', () => {
@@ -143,7 +143,67 @@ describe('planUpload — resuming a crashed upload', () => {
       updatedAt: at(UPLOAD_STALE_AFTER_MS + 1000),
       youtubeVideoId: 'abc123',
     });
-    expect(planUpload(j, input, NOW)).toEqual({ ok: false, reason: 'already-uploaded' });
+    expect(planUpload(j, input, { now: NOW })).toEqual({ ok: false, reason: 'already-uploaded' });
+  });
+});
+
+/**
+ * THE TWO ROLES.
+ *
+ * The route marks a job `queued` (with a fresh `updatedAt`) and only THEN
+ * invokes the worker, so the worker always re-reads a job that looks
+ * in-flight — because it is, and the worker is what makes it so. Running the
+ * gate's concurrency refusal in the worker made it refuse every job it was
+ * ever invoked for: the feature could not complete once, and each retry
+ * repeated the loop. `stage: 'execute'` drops that ONE refusal.
+ *
+ * Everything below the concurrency check is a property of the JOB, not of who
+ * is asking, so none of it may be skipped at either stage — `already-uploaded`
+ * least of all, since the worker is the only caller that can actually create
+ * the duplicate video.
+ */
+describe('planUpload — enqueue vs execute', () => {
+  const NOW = Date.parse('2026-09-15T12:00:00.000Z');
+  const justQueued = () =>
+    job({ uploadStatus: 'queued', updatedAt: new Date(NOW - 1000).toISOString() });
+
+  it('THE BUG: enqueue refuses a freshly-queued job, execute proceeds with it', () => {
+    // Identical job, identical clock — only the role differs.
+    expect(planUpload(justQueued(), input, { now: NOW, stage: 'enqueue' })).toEqual({
+      ok: false,
+      reason: 'in-flight',
+    });
+    expect(planUpload(justQueued(), input, { now: NOW, stage: 'execute' }).ok).toBe(true);
+  });
+
+  it('execute also proceeds on a fresh `uploading` — that is the resume, not a race', () => {
+    const j = job({ uploadStatus: 'uploading', updatedAt: new Date(NOW - 1000).toISOString() });
+    expect(planUpload(j, input, { now: NOW, stage: 'execute' }).ok).toBe(true);
+  });
+
+  it('⚠️ execute NEVER skips already-uploaded — the duplicate-video guard is not role-dependent', () => {
+    const j = job({
+      uploadStatus: 'queued',
+      updatedAt: new Date(NOW - 1000).toISOString(),
+      youtubeVideoId: 'abc123',
+    });
+    expect(planUpload(j, input, { now: NOW, stage: 'execute' })).toEqual({
+      ok: false,
+      reason: 'already-uploaded',
+    });
+  });
+
+  it('execute keeps every other eligibility refusal too', () => {
+    const q = { uploadStatus: 'queued' as const, updatedAt: new Date(NOW - 1000).toISOString() };
+    const exec = { now: NOW, stage: 'execute' as const };
+    expect(planUpload(job({ ...q, videoKey: null }), input, exec)).toEqual({ ok: false, reason: 'no-video' });
+    expect(planUpload(job({ ...q, savedAt: null }), input, exec)).toEqual({ ok: false, reason: 'not-saved' });
+    expect(planUpload(job(q), { ...input, title: ' ' }, exec)).toEqual({ ok: false, reason: 'no-title' });
+    expect(planUpload(job(q), { ...input, description: '' }, exec)).toEqual({ ok: false, reason: 'no-description' });
+  });
+
+  it('defaults to the stricter role when no stage is named, so a forgotten option fails closed', () => {
+    expect(planUpload(justQueued(), input, { now: NOW })).toEqual({ ok: false, reason: 'in-flight' });
   });
 });
 
@@ -179,6 +239,6 @@ describe('markUploadQueued refreshes updatedAt', () => {
     // guard, not merely that the DynamoDB call shape looks plausible.
     const requeuedJob = job({ uploadStatus: 'queued', updatedAt: stampedUpdatedAt });
     const oneSecondLater = Date.parse(stampedUpdatedAt) + 1000;
-    expect(planUpload(requeuedJob, input, oneSecondLater)).toEqual({ ok: false, reason: 'in-flight' });
+    expect(planUpload(requeuedJob, input, { now: oneSecondLater })).toEqual({ ok: false, reason: 'in-flight' });
   });
 });

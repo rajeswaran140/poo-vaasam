@@ -1657,6 +1657,95 @@ describe('upload to YouTube', () => {
   }, 15000);
 });
 
+/**
+ * ⚠️ THE RESUME PATH HAS TO BE REACHABLE FROM A BROWSER.
+ *
+ * The panel used to be gated on the session-local `savedAt` flag — set only by
+ * a Save in the current visit, cleared by `reset`, `onPickFile` and
+ * `reopenMaster`. So every remount hid the panel, and with it `uploadSessionUri`
+ * and `UPLOAD_STALE_AFTER_MS`: half the job state existed for a path nothing
+ * on the page could take. The panel even told the operator to reload, which is
+ * precisely what removed it.
+ *
+ * Gating on the ROW's persisted `savedAt` fixes the first half; re-enabling the
+ * button once the row is provably stale fixes the second. Both are pinned here.
+ */
+describe('upload panel reachability after a remount', () => {
+  const RENDERED = 'audio/mastering/1_a_song-master-14LUFS-1440p.mp4';
+
+  /** A saved, rendered master as the STATUS ROUTE returns it — persisted state only. */
+  const persisted = (over: Record<string, unknown> = {}) =>
+    doneJob({
+      id: 'job-9',
+      savedAt: '2026-09-14T09:00:00.000Z',
+      videoKey: RENDERED,
+      coverKey: 'audio/mastering/1_c_cover.jpg',
+      videoRenderedAt: '2026-09-14T09:30:00.000Z',
+      updatedAt: '2026-09-14T09:30:00.000Z',
+      uploadStatus: null,
+      youtubeVideoId: null,
+      uploadError: null,
+      ...over,
+    });
+
+  /**
+   * A remount, not a Save: the component comes up cold, re-attaches to the
+   * stored job and learns everything it knows from the row. `setSavedAt` is
+   * never called on this path — which is the point.
+   */
+  async function remountWith(job: Record<string, unknown>) {
+    sessionStorage.setItem(
+      'mastering-studio-job',
+      JSON.stringify({ jobId: 'job-9', sourceKey: 'audio/mastering/1_a_song.wav', name: 'song.wav', size: 1024, target: -14 })
+    );
+    mockedFetch.mockImplementation((url: string) => {
+      const u = String(url);
+      if (u.startsWith('/api/admin/mastering/download')) {
+        return Promise.resolve(json({ success: true, url: 'https://s3/signed' }));
+      }
+      if (u === '/api/admin/music-lab/masters') return Promise.resolve(json({ success: true, masters: [] }));
+      return Promise.resolve(json(job));
+    });
+    render(<MasteringStudio />);
+    await screen.findByText(/3 · Result/);
+  }
+
+  it('opens the panel from the job row alone, with no Save in this session', async () => {
+    await remountWith(persisted());
+
+    // Proof the session-local flag is NOT what opened it: an unsaved-looking
+    // Save button is still sitting there offering to save.
+    expect(screen.getByRole('button', { name: /Save to library/ })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /Upload to YouTube/i })).toBeInTheDocument();
+  });
+
+  it('offers Retry once a queued row is older than the stale window — the resume, reachable', async () => {
+    // Older than any plausible window, so no fake clock is needed. The worker's
+    // own ceiling is 900s; a row this old cannot still be running.
+    await remountWith(persisted({ uploadStatus: 'queued', updatedAt: '2020-01-01T00:00:00.000Z' }));
+    await screen.findByRole('heading', { name: /Upload to YouTube/i });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/Video title/i), { target: { value: 'ஒரு பாடல்' } });
+    });
+
+    const retry = screen.getByRole('button', { name: /Retry upload/ });
+    expect(retry).toBeEnabled();
+    // And it no longer tells the operator to do the thing that hides the panel.
+    expect(screen.queryByText(/reload the page to pick it up/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps it disabled while a queued row is still fresh — the double-click guard is untouched', async () => {
+    await remountWith(persisted({ uploadStatus: 'queued', updatedAt: new Date().toISOString() }));
+    await screen.findByRole('heading', { name: /Upload to YouTube/i });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/Video title/i), { target: { value: 'ஒரு பாடல்' } });
+    });
+
+    expect(screen.getByRole('button', { name: /Upload to YouTube/ })).toBeDisabled();
+    expect(screen.getByText(/An upload is already running for this master/)).toBeInTheDocument();
+  });
+});
+
 describe('upload metadata parsing', () => {
   it('splits, trims and de-duplicates tags, and caps the list at 60', () => {
     expect(parseTagList('tamil song, , melody ,tamil song')).toEqual(['tamil song', 'melody']);

@@ -56,8 +56,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!job) return NextResponse.json({ success: false, error: 'Job not found' }, { status: 404 });
 
     // Every eligibility rule lives in the planner, so the route and the worker
-    // cannot disagree. The worker re-runs it on the event it receives.
-    const plan = planUpload(job, parsed.data);
+    // cannot disagree. The worker re-runs it on the event it receives — at
+    // `stage: 'execute'`, because by then THIS request has already marked the
+    // job queued and the worker is the upload that status refers to.
+    //
+    // 'enqueue' is this route's role: the gate, standing outside the upload.
+    // It is the one caller that must honour the `in-flight` refusal, which is
+    // what makes a double-click lose the race below.
+    const plan = planUpload(job, parsed.data, { stage: 'enqueue' });
     if (!plan.ok) {
       return NextResponse.json({ success: false, error: uploadRefusalMessage(plan.reason) }, { status: 409 });
     }
