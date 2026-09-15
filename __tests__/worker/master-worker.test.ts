@@ -221,8 +221,9 @@ describe('video render', () => {
     const res = await handler({ jobId: 'j1', render: render() } as never);
 
     expect(res).toMatchObject({ ok: true });
-    // [0] composes the frame, [1] encodes — the audio only enters the second.
-    const args = ffArgs()[1];
+    // [0] probes the cover, [1] composes the frame, [2] encodes — the audio
+    // only enters the last.
+    const args = ffArgs()[2];
     expect(args[args.lastIndexOf('-i') + 1]).toContain('master.wav');
     expect(args.join(' ')).not.toContain('.mp3');
     expect(args[args.indexOf('-b:a') + 1]).toBe('384k');
@@ -237,8 +238,12 @@ describe('video render', () => {
   it('composes the frame once, THEN encodes against it', async () => {
     await handler({ jobId: 'j1', render: render() } as never);
 
-    expect(spawnSync).toHaveBeenCalledTimes(2);
-    const [compose, encode] = ffArgs();
+    expect(spawnSync).toHaveBeenCalledTimes(3);
+    const [probe, compose, encode] = ffArgs();
+
+    // Pass 0: reads the cover's header only — no filter, no frame output.
+    expect(probe).toContain('-i');
+    expect(probe).not.toContain('-filter_complex');
 
     // Pass 1: filters the cover, emits exactly one frame, touches no audio.
     expect(compose).toContain('-filter_complex');
