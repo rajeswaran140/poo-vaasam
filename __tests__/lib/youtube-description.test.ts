@@ -1,6 +1,7 @@
 import {
   assembleYoutubeDescription,
   buildDescriptionFooter,
+  buildUploadDescription,
   pickThemePlaylist,
   stripScaffoldingLabels,
   splitTrailingHashtags,
@@ -196,5 +197,40 @@ describe('WhatsApp channel link (gated on config)', () => {
     // Above the fold: YouTube truncates around 150 characters, so an ask that
     // does not fit inside that window is not seen at all.
     expect(lead.length).toBeLessThanOrEqual(150);
+  });
+});
+
+describe('buildUploadDescription', () => {
+  const body = 'காதல் வந்து அரும்பியதே\n\nஇரு மனங்கள்...';
+
+  it('keeps the operator’s own text verbatim', () => {
+    expect(buildUploadDescription({ body })).toContain(body.trim());
+  });
+
+  it('carries the canonical credit block, so no upload can invent its own', () => {
+    const out = buildUploadDescription({ body });
+    for (const line of CREDIT_BLOCK.split('\n')) expect(out).toContain(line);
+  });
+
+  it('strips a retired credit line pasted into the body', () => {
+    const out = buildUploadDescription({ body: 'Lyrics: Raj (Rajeswaran Thangarajah)\n\n' + body });
+    expect(out).not.toContain('Rajeswaran Thangarajah)');
+  });
+
+  it('always includes subscribe and all three playlists', () => {
+    const out = buildUploadDescription({ body });
+    expect(out).toContain('sub_confirmation=1');
+    expect(out).toContain('PLLsCQ9NH4rLSZU0Ycy6I-Xr8DMAbe4vjs');
+    expect(out).toContain('PLLsCQ9NH4rLQAr8WLqKSZu6JNd-9ns-wU');
+    expect(out).toContain('PLLsCQ9NH4rLRQMADaAhuHN_VBTHpwZ-DW');
+  });
+
+  it('stays inside YouTube’s 5000-character limit', () => {
+    expect(buildUploadDescription({ body: 'x'.repeat(4000) }).length).toBeLessThanOrEqual(5000);
+  });
+
+  it('puts hashtags last, where YouTube expects them', () => {
+    const out = buildUploadDescription({ body, hashtags: ['#TamilAgaval', '#TamilLoveSong'] });
+    expect(out.trimEnd().endsWith('#TamilLoveSong')).toBe(true);
   });
 });
