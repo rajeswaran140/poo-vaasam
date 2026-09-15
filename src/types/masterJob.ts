@@ -215,6 +215,20 @@ export interface MasterJob {
   uploadStatus: 'idle' | 'queued' | 'uploading' | 'uploaded' | 'failed' | null;
   uploadSessionUri: string | null;
   /**
+   * The video file's byte size at the moment `uploadSessionUri` was opened.
+   * Set alongside it, cleared alongside it (on success, or once a session is
+   * discarded).
+   *
+   * Exists so a re-render replacing the MP4 between attempts can be detected
+   * LOCALLY, without a Google call: if `statSync` on resume disagrees with
+   * this number, the session was opened against a file that no longer
+   * exists, and is unambiguously invalid — that is different from an
+   * ambiguous HTTP status (see `sessionIsGone` in master-worker.ts, which
+   * deliberately does NOT treat a 400 the same way, for exactly this reason:
+   * this field gives certain evidence where a 400 gives none).
+   */
+  uploadSessionSize: number | null;
+  /**
    * Written the moment videos.insert returns, BEFORE thumbnail or playlists.
    *
    * ⚠️ NEVER guard the duplicate-insert check with a DynamoDB conditional write

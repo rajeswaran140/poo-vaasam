@@ -128,6 +128,7 @@ export class MasterJobRepository {
         matchingError: null,
         uploadStatus: null,
         uploadSessionUri: null,
+        uploadSessionSize: null,
         youtubeVideoId: null,
         uploadedToYoutubeAt: null,
         uploadError: null,
@@ -248,6 +249,7 @@ export class MasterJobRepository {
           ? item.uploadStatus
           : null,
       uploadSessionUri: typeof item.uploadSessionUri === 'string' ? item.uploadSessionUri : null,
+      uploadSessionSize: typeof item.uploadSessionSize === 'number' ? item.uploadSessionSize : null,
       youtubeVideoId: typeof item.youtubeVideoId === 'string' ? item.youtubeVideoId : null,
       uploadedToYoutubeAt:
         typeof item.uploadedToYoutubeAt === 'string' ? item.uploadedToYoutubeAt : null,

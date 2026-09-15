@@ -1334,13 +1334,49 @@ describe('youtube upload', () => {
       expect(patched()).toMatchObject({ youtubeVideoId: 'FRESH_AFTER_404', uploadStatus: 'uploaded' });
     });
 
-    it('clears a 400 session too — the shape a size mismatch from a since-changed render takes', async () => {
+    /**
+     * ⚠️ A 400 is deliberately NOT treated as "session gone" — see
+     * sessionIsGone's doc comment for the asymmetry that decides this: a
+     * live session wrongly discarded costs a duplicate video (unrecoverable
+     * without a manual delete on the channel); a dead one wrongly kept costs
+     * only a failed job an operator has to look at (fully recoverable). A
+     * bare 400 is not proof enough to risk the first outcome.
+     */
+    it('does NOT clear a 400 session — the ambiguous status takes the recoverable branch, not the discard branch', async () => {
       fetchMock.mockImplementation((url: string) => {
         if (url.includes('oauth2.googleapis.com/token')) {
           return Promise.resolve({ ok: true, json: async () => ({ access_token: 'ACCESS-TOKEN' }) });
         }
         if (url === EXISTING_SESSION) {
-          return Promise.resolve({ ok: false, status: 400, text: async () => 'Content-Range total mismatch' });
+          return Promise.resolve({ ok: false, status: 400, text: async () => 'Bad Request' });
+        }
+        return Promise.resolve({ ok: false, status: 500, text: async () => '' });
+      });
+
+      const res = await handler({ jobId: 'j1', youtube: YT } as never);
+
+      expect(res).toEqual({ ok: false });
+      // THE property: a 400 must never open a second insert.
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('uploadType=resumable'))).toBe(false);
+      const p = patched();
+      expect(p.uploadStatus).toBe('failed');
+      expect(p).not.toHaveProperty('uploadSessionUri');
+    });
+
+    /**
+     * The one case that MAY discard a session with no Google call at all:
+     * local, certain evidence (the file on disk no longer matches what the
+     * session declared) rather than an ambiguous HTTP status.
+     */
+    it('discards and reopens on a LOCAL size mismatch, with no query call needed to decide', async () => {
+      // mockStatSync always returns { size: 123456 } (see the top of this
+      // file) — a declared size that disagrees with that is unambiguously a
+      // different file than the one the session was opened against.
+      job.uploadSessionSize = 999;
+
+      fetchMock.mockImplementation((url: string) => {
+        if (url.includes('oauth2.googleapis.com/token')) {
+          return Promise.resolve({ ok: true, json: async () => ({ access_token: 'ACCESS-TOKEN' }) });
         }
         if (url.includes('uploadType=resumable')) {
           return Promise.resolve({
@@ -1349,7 +1385,7 @@ describe('youtube upload', () => {
           });
         }
         if (url === 'https://upload.example/session-new') {
-          return Promise.resolve({ ok: true, json: async () => ({ id: 'FRESH_AFTER_400' }) });
+          return Promise.resolve({ ok: true, json: async () => ({ id: 'FRESH_AFTER_SIZE_MISMATCH' }) });
         }
         if (url.includes('/thumbnails/set')) return Promise.resolve({ ok: true });
         if (url.includes('/playlistItems')) return Promise.resolve({ ok: true });
@@ -1358,8 +1394,11 @@ describe('youtube upload', () => {
 
       const res = await handler({ jobId: 'j1', youtube: YT } as never);
 
-      expect(res).toMatchObject({ ok: true, videoId: 'FRESH_AFTER_400' });
+      expect(res).toMatchObject({ ok: true, videoId: 'FRESH_AFTER_SIZE_MISMATCH' });
+      // THE property: the old session URI is never even queried.
+      expect(fetchMock.mock.calls.some((c) => c[0] === EXISTING_SESSION)).toBe(false);
       expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('uploadType=resumable'))).toBe(true);
+      expect(patched()).toMatchObject({ youtubeVideoId: 'FRESH_AFTER_SIZE_MISMATCH', uploadStatus: 'uploaded' });
     });
 
     it('KEEPS a session alive on a 500 query — a 5xx does not prove the session is dead', async () => {

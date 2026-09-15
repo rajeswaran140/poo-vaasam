@@ -398,24 +398,37 @@ function coverContentType(key: string): string {
 }
 
 /**
- * True when a resumable session is definitely gone and must be abandoned
+ * True when a resumable session is UNAMBIGUOUSLY gone and must be abandoned
  * (cleared from the job, a fresh one opened) rather than resumed.
  *
- * 404/410 are Google's own "this upload URI no longer exists" statuses — the
- * session expired or was never valid. 400 is included for a narrower reason:
- * the ONLY way a `Content-Range` total mismatches what a session was opened
- * with is a re-render that replaced the MP4 (and so its size) between
- * attempts, which Google rejects as a bad Content-Range — the session cannot
- * be trusted against a file it was never opened against, either.
+ * ONLY 404 and 410 — Google's own "this upload URI no longer exists"
+ * statuses. Nothing else qualifies, most importantly NOT a bare 400.
+ *
+ * ⚠️ 400 IS DELIBERATELY EXCLUDED — this is a considered choice under
+ * uncertainty, not an oversight. A 400 is plausibly a Content-Range size
+ * mismatch (see the explicit, LOCAL size check in uploadToYoutube, which
+ * catches that case without needing Google to tell us anything), but "bad
+ * request" is a broad class and could mean something else entirely — a
+ * transient condition at Google, an intermediary, a malformed header a
+ * future edit introduces. The two misclassification costs are not
+ * symmetric: treating a genuinely-dead session as alive costs a failed job
+ * an operator has to look at — annoying, fully recoverable. Treating a
+ * genuinely-alive session as dead costs a SECOND `videos.insert` — a
+ * duplicate video on a real channel, recoverable only by finding and
+ * deleting it by hand. When the evidence is ambiguous, the branch that
+ * fails in the recoverable direction is correct, so 400 is treated like a
+ * 5xx: keep the session, mark the job failed, let the operator decide. If
+ * 400's meaning is ever confirmed against the live API, this may be
+ * revisited — it is excluded on principle here, not on certainty.
  *
  * Anything else (5xx, a network-layer failure) does NOT prove the session is
- * dead, so it must be LEFT ALONE — clearing it there is how the exact jam the
- * staleness window exists to prevent gets reintroduced: a good session
- * abandoned, and the next retry opening (and risking) a second video instead
- * of resuming.
+ * dead either, so it too must be LEFT ALONE — clearing it there is how the
+ * exact jam the staleness window exists to prevent gets reintroduced: a good
+ * session abandoned, and the next retry opening (and risking) a second video
+ * instead of resuming.
  */
 function sessionIsGone(status: number): boolean {
-  return status === 404 || status === 410 || status === 400;
+  return status === 404 || status === 410;
 }
 
 /**
@@ -483,6 +496,18 @@ export async function uploadToYoutube(
     let sessionUri = job.uploadSessionUri ?? null;
     let videoId: string | undefined;
 
+    if (sessionUri && typeof job.uploadSessionSize === 'number' && job.uploadSessionSize !== size) {
+      // UNAMBIGUOUS, LOCAL evidence the session is invalid — no Google call
+      // needed to decide. The file on disk right now (most likely re-rendered
+      // since the session was opened) is not the file this session declared
+      // via X-Upload-Content-Length, so resuming it can only fail. This is
+      // exactly the certainty a bare HTTP status doesn't give us, which is
+      // why sessionIsGone() deliberately does NOT try to infer this from a
+      // 400 — see its doc comment.
+      sessionUri = null;
+      await patch(jobId, { uploadSessionUri: null, uploadSessionSize: null });
+    }
+
     if (sessionUri) {
       const query = await fetch(sessionUri, {
         method: 'PUT',
@@ -522,7 +547,7 @@ export async function uploadToYoutube(
           await patch(jobId, {
             uploadStatus: 'failed',
             uploadError: await quotaAwareError(put),
-            ...(sessionIsGone(put.status) ? { uploadSessionUri: null } : {}),
+            ...(sessionIsGone(put.status) ? { uploadSessionUri: null, uploadSessionSize: null } : {}),
           });
           return { ok: false };
         }
@@ -533,11 +558,12 @@ export async function uploadToYoutube(
           return { ok: false };
         }
       } else if (sessionIsGone(query.status)) {
-        // Expired, invalid, or opened against a since-replaced file (see
-        // sessionIsGone). Clear it and fall through to opening a fresh one
-        // below — the same single-PUT flow a first attempt uses.
+        // 404/410 only — expired or never valid. Clear it and fall through to
+        // opening a fresh one below, the same single-PUT flow a first attempt
+        // uses. (A since-replaced file is caught LOCALLY above, before this
+        // query ever runs — see the uploadSessionSize check.)
         sessionUri = null;
-        await patch(jobId, { uploadSessionUri: null });
+        await patch(jobId, { uploadSessionUri: null, uploadSessionSize: null });
       } else {
         // Some other status querying the session (5xx, a network-layer
         // response) does not prove it is dead — KEEP uploadSessionUri so the
@@ -589,7 +615,10 @@ export async function uploadToYoutube(
           await patch(jobId, { uploadStatus: 'failed', uploadError: 'YouTube did not return an upload session.' });
           return { ok: false };
         }
-        await patch(jobId, { uploadSessionUri: sessionUri });
+        // Recorded alongside the uri so a later resume can tell — LOCALLY,
+        // with no Google call — whether this file is still the one the
+        // session was opened against. See the uploadSessionSize check above.
+        await patch(jobId, { uploadSessionUri: sessionUri, uploadSessionSize: size });
       }
 
       const put = await fetch(sessionUri, {
@@ -601,7 +630,7 @@ export async function uploadToYoutube(
         await patch(jobId, {
           uploadStatus: 'failed',
           uploadError: await quotaAwareError(put),
-          ...(sessionIsGone(put.status) ? { uploadSessionUri: null } : {}),
+          ...(sessionIsGone(put.status) ? { uploadSessionUri: null, uploadSessionSize: null } : {}),
         });
         return { ok: false };
       }
@@ -625,6 +654,7 @@ export async function uploadToYoutube(
       youtubeVideoId: videoId,
       uploadedToYoutubeAt: new Date().toISOString(),
       uploadSessionUri: null,
+      uploadSessionSize: null,
     });
 
     // Thumbnail and playlists are best-effort: the video exists, and failing
