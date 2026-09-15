@@ -88,7 +88,21 @@ export async function GET(request: NextRequest) {
 
   // Charge before spending, so a runaway caller is stopped by our own ledger.
   // Playlist membership may need several pages each — budget 3 per playlist.
-  const cost = QUOTA_COST.videosList + CAPTIONS_LIST_COST + PLAYLISTS_TO_CHECK.length * 3;
+  // The density check adds two more real calls: one playlistItems.list for the
+  // uploads feed, and one videos.list for the siblings' liveStreamingDetails.
+  // The second of those is CONDITIONAL in the code below (it only runs when
+  // the uploads feed returned at least one sibling id) — charged here
+  // unconditionally anyway. That is deliberate: a ledger that undercounts is
+  // how real usage drifts above the recorded total, and an empty uploads feed
+  // is rare enough that the over-charge on that path costs nothing in
+  // practice. Over-charging is the safe direction for a quota guard;
+  // under-charging is not.
+  const cost =
+    QUOTA_COST.videosList +
+    CAPTIONS_LIST_COST +
+    PLAYLISTS_TO_CHECK.length * 3 +
+    QUOTA_COST.playlistItemsList +
+    QUOTA_COST.videosList;
   const quota = await consumeQuota(cost, { surface: 'data' });
   if (quota.blocked) {
     return NextResponse.json(
