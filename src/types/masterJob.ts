@@ -214,7 +214,19 @@ export interface MasterJob {
    */
   uploadStatus: 'idle' | 'queued' | 'uploading' | 'uploaded' | 'failed' | null;
   uploadSessionUri: string | null;
-  /** Written the moment videos.insert returns, BEFORE thumbnail or playlists. */
+  /**
+   * Written the moment videos.insert returns, BEFORE thumbnail or playlists.
+   *
+   * ⚠️ NEVER guard the duplicate-insert check with a DynamoDB conditional write
+   * (`attribute_not_exists(youtubeVideoId)`). Every job row is created with this
+   * field set to JS `null`, which `DynamoDBOperations.put` persists as a
+   * DynamoDB NULL-type attribute — an attribute that EXISTS. So
+   * `attribute_not_exists` is false for every row, forever, and a conditional
+   * write "hardened" this way would refuse every upload permanently, looking
+   * like an improvement while silently breaking the feature. The guard must
+   * stay the plain JS truthiness check in `planUpload` (`if (job.youtubeVideoId)`),
+   * which handles null correctly.
+   */
   youtubeVideoId: string | null;
   uploadedToYoutubeAt: string | null;
   uploadError: string | null;

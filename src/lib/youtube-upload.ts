@@ -45,6 +45,14 @@ const DESCRIPTION_LIMIT = 5000;
 export function planUpload(job: MasterJob, input: UploadInput): UploadPlan {
   // Ordered so the most decisive refusal wins: a job that already produced a
   // video must never reach the insert path, whatever else is wrong with it.
+  //
+  // ⚠️ This MUST stay a JS truthiness check. Every job row is created with
+  // `youtubeVideoId: null`, and DynamoDB persists a JS null as a NULL-type
+  // attribute — an attribute that EXISTS. So a conditional write using
+  // `attribute_not_exists(youtubeVideoId)` would evaluate false for every row,
+  // forever, and "upgrading" this guard to one would refuse every upload
+  // permanently while looking like a hardening improvement. See the field's
+  // own doc comment in masterJob.ts.
   if (job.youtubeVideoId) return { ok: false, reason: 'already-uploaded' };
   if (job.uploadStatus === 'uploading' || job.uploadStatus === 'queued') {
     return { ok: false, reason: 'in-flight' };

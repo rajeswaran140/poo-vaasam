@@ -50,8 +50,21 @@ describe('planUpload', () => {
     expect(p).toEqual({ ok: false, reason: 'already-uploaded' });
   });
 
+  it('already-uploaded WINS over every other defect — the job never reaches the insert path', () => {
+    // videoKey is also missing AND the title is blank: either alone would
+    // produce a different refusal. already-uploaded must still be the result,
+    // proving the check runs first, not merely that it exists.
+    const p = planUpload(job({ youtubeVideoId: 'abc123', videoKey: null }), { ...input, title: '  ' });
+    expect(p).toEqual({ ok: false, reason: 'already-uploaded' });
+  });
+
   it('refuses while an upload is already in flight', () => {
     expect(planUpload(job({ uploadStatus: 'uploading' }), input)).toEqual({ ok: false, reason: 'in-flight' });
+  });
+
+  it('in-flight also wins over an independently invalid input', () => {
+    const p = planUpload(job({ uploadStatus: 'queued' }), { ...input, title: '  ' });
+    expect(p).toEqual({ ok: false, reason: 'in-flight' });
   });
 
   it('requires a title and a description', () => {
