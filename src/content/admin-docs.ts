@@ -636,7 +636,7 @@ ffmpeg -i album.wav -af ebur128=peak=true:framelog=quiet -f null -
 
 Volume 1's sample came out at **-14.0 LUFS integrated, -2.0 dBFS true peak, LRA 3.6 LU**. The LRA is the proof: the sources measured 3.4–3.7 LU and the album measures 3.6, so the gain was linear and nothing was compressed. **If LRA moves much, something squashed the audio** — go back and check \`linear=true\`.
 
-**4. Render the video.** A still image over the audio.
+**4. Render the video.** A still image over the audio. The command below pillarboxes the cover and targets 1080p, which is fine for a 30-minute album where the picture is incidental. **For a single song, use the recipe in \`Rendering a song video for YouTube\` instead** — it fills the frame, uploads at 1440p, and explains why a low video bitrate makes the artwork look soft.
 
 \`\`\`bash
 ffmpeg -loop 1 -i cover.jpg -i album.wav \\
@@ -2371,6 +2371,107 @@ It reports the hold either side of the moment, whether the fall steepens, and wh
 A control to compare against: முத்தமிழின் (\`J2tc_aUNOPA\`) at its 3:00 midpoint returns **NO CLIFF** and **SEEK-IN: no** — what a normal single-part song looks like.
 
 **Caution:** do not treat every small rise as proof of demand. Retention data has local variation, replay behaviour and aggregation effects. Want a meaningful rebound and enough views behind it before believing it.
+`,
+  },
+  {
+    slug: 'song-video-render',
+    title: 'Rendering a song video for YouTube',
+    category: 'Publishing',
+    updatedAt: '2026-09-15T06:05:00Z',
+    body: `# Rendering a song video for YouTube
+
+A Tamilagaval song video is one still image held over a mastered audio track. That sounds trivial and is not: four separate renders of காதல் வந்து அரும்பியதே were rejected before one was accepted, and every flag below is the scar of one of them. Read the reasons before you change the recipe.
+
+## The recipe
+
+Runs on \`crowvault-ide-server\`, where ffmpeg is installed. \`cover.png\` is the artwork at its native size; \`song.wav\` is the mastered WAV pulled from the workspace — never an export from Premiere.
+
+\`\`\`bash
+ffmpeg -loop 1 -framerate 25 -i cover.png -i song.wav \\
+  -filter_complex "[0:v]scale=2560:1440:force_original_aspect_ratio=increase:flags=lanczos+accurate_rnd+full_chroma_int,crop=2560:1440,unsharp=5:5:0.55:5:5:0.0,format=yuv420p[v]" \\
+  -map "[v]" -map 1:a \\
+  -c:v libx264 -preset slow -tune stillimage -crf 15 -g 50 -keyint_min 25 \\
+  -c:a aac -b:a 384k -ar 48000 -ac 2 \\
+  -shortest -movflags +faststart final.mp4
+\`\`\`
+
+| Flag | Why it is there |
+|---|---|
+| \`force_original_aspect_ratio=increase\` + \`crop\` | Fills the frame. A 16:9 cover loses at most a row or two of pixels. |
+| \`flags=lanczos\` | The artwork is smaller than the frame and must be scaled up. Lanczos holds edges that the default bicubic softens. |
+| \`unsharp=5:5:0.55\` | Mild, and only to counter the upscale. Push it higher and you get halos around the hair and the horizon. |
+| \`-tune stillimage -crf 15\` | Quality target for a picture that never moves. |
+| \`-g 50\` | A full-quality keyframe every two seconds. Costs file size, gives YouTube's transcoder clean references throughout. |
+| \`2560:1440\` | Not a typo. See **Upload at 1440p** below. |
+| \`-b:a 384k\` | The audio is the product. Do not economise here. |
+
+Expect roughly **290 MB and ~7 Mbps of video** for a five-minute song, and an encode of about 18 minutes. A small file is the warning sign, not the goal.
+
+## The four rejections, and what each one settled
+
+**1. "The video displays only a small thumbnail."** The first render came from the in-app Render-video button and put the artwork in a 1181×1181 box inside a 2560×1440 frame — 46% of the picture, floating on a blurred copy of itself.
+
+**2. "It is masked, can't see the image full in video."** The fix attempt zoomed to fill, which cropped the edges off the artwork. **Never crop his artwork.** If a cover does not fit the frame, the answer is a different frame, not a trimmed picture.
+
+**3. "Do not mask."** A full-width waveform across the bottom covered the credit line. Any overlay has to clear the title at the left and the credits at the bottom-left — bottom-right is the only safe corner.
+
+**4. "Image quality is not very good as we have our original file."** Covered below. This one has a counter-intuitive cause.
+
+## The waveform is why the picture looked soft
+
+The rejected render carried a \`showwaves\` overlay and measured **1.37 Mbps** of video. The reason is not the CRF. A moving waveform means **every frame differs from the last**, so x264 could never hold a static picture — it re-described the whole image twenty-five times a second inside one budget. The artwork got whatever was left.
+
+Drop the overlay and the same budget encodes the picture **once**, at full quality, and holds it: **7.09 Mbps**, a 5.2× rise, from removing something rather than adding anything.
+
+**Removing the animation and raising the image quality are the same change.** If motion is ever wanted back, it must be paid for with bitrate, and it must not sit over the title or the credits.
+
+## Upload at 1440p, not 1080p
+
+YouTube gives uploads of 1440p and above **VP9** instead of AVC, and VP9 holds fine detail through the transcode far better. This is worth doing even when the source artwork is smaller than 1440p: the point is protecting the pixels that exist through YouTube's re-encode, not inventing new ones.
+
+Two consequences when checking a fresh upload:
+
+- **Wait before judging it.** YouTube serves a low rendition first and fills in the higher ones over several minutes. Opened immediately, a good upload looks worse than a bad one.
+- Confirm the quality menu offers 1440p before forming a view.
+
+## The ceiling is the artwork, not the encoder
+
+Once the render is right, crop a detail from the video frame and the same region from the source PNG and compare them at 1:1:
+
+\`\`\`bash
+ffmpeg -v error -y -ss 90 -i final.mp4 -frames:v 1 frame.png
+ffmpeg -v error -y -i cover.png -vf "crop=420:300:620:200" A-source.png
+ffmpeg -v error -y -i frame.png  -vf "crop=643:459:949:306,scale=420:300:flags=lanczos" B-video.png
+\`\`\`
+
+If they are indistinguishable, the encode is no longer losing anything and **the only remaining lever is a larger original**. காதல் வந்து அரும்பியதே's cover was 1672×941 — small for a 1440p frame, and the reason a trace of softness survived a perfect encode. Ask for bigger artwork early, not at 7am on premiere day.
+
+## Verify before uploading, and verify again after
+
+**Loudness, measured off the finished MP4** — not off the source WAV, which proves nothing about what the render did:
+
+\`\`\`bash
+ffmpeg -hide_banner -nostats -i final.mp4 -af ebur128=peak=true -f null - 2>&1 | grep -A8 Summary
+\`\`\`
+
+It must still read **-14.0 LUFS** with the master's **LRA unchanged**. A moved LRA means something compressed the audio.
+
+**After uploading, read the metadata back from the API** rather than trusting the upload response, and poll until \`processingDetails.processingStatus\` is \`succeeded\` — before that, \`duration\` reports \`P0D\` and \`definition\` reports \`sd\` on a perfectly good upload.
+
+Confirm: \`duration\`, \`definition: hd\`, \`privacyStatus\`, a \`maxres\` thumbnail, tag count, description length, \`categoryId: 10\`, and \`defaultLanguage\` / \`defaultAudioLanguage\` both \`ta\`.
+
+## Two defects in the in-app Render video button
+
+Both are live. Until they are fixed, a song video is a manual ffmpeg job.
+
+1. **\`buildVideoFilter\` in \`src/lib/master-video.ts\` fits every cover into a square box** (\`art = height * 0.82\`), whatever its aspect. It was written for square art and nothing checks the input. A 16:9 cover renders at 46% of frame. The fix is to probe the aspect and fill the frame when it matches, keeping the blurred backdrop only for square or portrait art.
+2. **The button disappears once a video exists.** It is gated on \`!m.videoKey\` in \`MasteringStudio.tsx\`, so a bad render can never be redone from the UI. It should read **Re-render**.
+
+## Replacing a video that is already up
+
+**YouTube cannot swap the file on an existing video.** A re-render means a new upload and a new video ID, and every link to the old one dies.
+
+Upload the replacement and verify it **before** deleting the original — the old one is the only fallback if the new upload fails, and on premiere morning there is no time to build a third. Delete it only once the new ID reads back clean.
 `,
   },
   {
