@@ -225,8 +225,29 @@ describe('buildUploadDescription', () => {
     expect(out).toContain('PLLsCQ9NH4rLRQMADaAhuHN_VBTHpwZ-DW');
   });
 
-  it('stays inside YouTube’s 5000-character limit', () => {
-    expect(buildUploadDescription({ body: 'x'.repeat(4000) }).length).toBeLessThanOrEqual(5000);
+  it('does not trim anything when the input is well under the limit', () => {
+    const out = buildUploadDescription({ body });
+    expect(out.length).toBeLessThanOrEqual(5000);
+    expect(out).toContain(body.trim());
+  });
+
+  it('trims an oversized body but keeps the credit block and all three playlists intact', () => {
+    const out = buildUploadDescription({ body: 'x'.repeat(4600) });
+    expect(out.length).toBeLessThanOrEqual(5000);
+    expect(out).toContain(CREDIT_BLOCK);
+    expect(out).toContain('PLLsCQ9NH4rLSZU0Ycy6I-Xr8DMAbe4vjs');
+    expect(out).toContain('PLLsCQ9NH4rLQAr8WLqKSZu6JNd-9ns-wU');
+    expect(out).toContain('PLLsCQ9NH4rLRQMADaAhuHN_VBTHpwZ-DW');
+  });
+
+  it('stays inside the limit even when the fixed footer plus a large hashtag block would otherwise overflow', () => {
+    const hashtags = Array.from({ length: 400 }, (_, i) => `#TamilTag${i}`);
+    const out = buildUploadDescription({ body: 'xx', hashtags });
+    expect(out.length).toBeLessThanOrEqual(5000);
+    expect(out).toContain(CREDIT_BLOCK);
+    expect(out).toContain('PLLsCQ9NH4rLSZU0Ycy6I-Xr8DMAbe4vjs');
+    expect(out).toContain('PLLsCQ9NH4rLQAr8WLqKSZu6JNd-9ns-wU');
+    expect(out).toContain('PLLsCQ9NH4rLRQMADaAhuHN_VBTHpwZ-DW');
   });
 
   it('puts hashtags last, where YouTube expects them', () => {

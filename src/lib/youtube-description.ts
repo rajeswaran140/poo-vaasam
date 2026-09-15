@@ -231,12 +231,33 @@ export function buildUploadDescription(parts: UploadDescriptionParts): string {
     `⭐ சமீபத்திய பாடல்கள் | Recent Songs:\n${playlistUrl(PLAYLIST.latest)}`,
     `❤️ காதல் பாடல்கள் | Tamil Love Songs:\n${playlistUrl(PLAYLIST.love)}`,
   ];
+  // `tail`'s entries are all fixed, always-non-empty constants (credit block,
+  // site link, CTA, subscribe, the three playlists) — they never shrink and
+  // never drop out of the join, so their combined length is a stable budget.
+  const tailStr = tail.join('\n\n');
   const hashtags = (parts.hashtags ?? []).join(' ').trim();
-  const out = [body, ...tail, hashtags].filter(Boolean).join('\n\n');
-  // Trim the OPERATOR's text if anything must go — never the credit block or
-  // the playlist links, which are the parts that must not vary.
+  const assemble = (b: string, h: string) => [b, tailStr, h].filter(Boolean).join('\n\n');
+
+  const out = assemble(body, hashtags);
   if (out.length <= YOUTUBE_DESCRIPTION_LIMIT) return out;
-  const fixed = out.length - body.length;
-  const room = Math.max(0, YOUTUBE_DESCRIPTION_LIMIT - fixed);
-  return [body.slice(0, room).trimEnd(), ...tail, hashtags].filter(Boolean).join('\n\n');
+
+  // Something must go. Priority: the credit block and the three playlist
+  // links (tailStr) never move. Trim the operator's body first — all the
+  // way to empty if necessary — before touching the hashtags at all.
+  const overWithFullBody = out.length - YOUTUBE_DESCRIPTION_LIMIT;
+  const trimmedBody =
+    overWithFullBody < body.length ? body.slice(0, body.length - overWithFullBody).trimEnd() : '';
+  const withTrimmedBody = assemble(trimmedBody, hashtags);
+  if (withTrimmedBody.length <= YOUTUBE_DESCRIPTION_LIMIT) return withTrimmedBody;
+
+  // The body is already empty and it still doesn't fit: the hashtags
+  // themselves are too long alongside the fixed footer. Trim hashtags too —
+  // this is the last resort, after the body, and still never touches
+  // tailStr.
+  const overWithEmptyBody = withTrimmedBody.length - YOUTUBE_DESCRIPTION_LIMIT;
+  const trimmedHashtags =
+    overWithEmptyBody < hashtags.length
+      ? hashtags.slice(0, hashtags.length - overWithEmptyBody).trimEnd()
+      : '';
+  return assemble('', trimmedHashtags);
 }
