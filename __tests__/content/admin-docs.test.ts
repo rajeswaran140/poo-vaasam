@@ -96,3 +96,55 @@ describe('publishing cadence guidance is coherent (both docs state the adopted p
     }
   });
 });
+describe('song video render doc keeps the findings that cost four rejected renders', () => {
+  const doc = getDoc('song-video-render');
+
+  it('the doc exists and is filed under Publishing', () => {
+    expect(doc).toBeTruthy();
+    expect(doc!.category).toBe('Publishing');
+  });
+
+  it('carries the accepted filter chain, not a cropped or letterboxed one', () => {
+    const body = doc!.body;
+    // increase+crop FILLS the frame. `decrease`+pad would pillarbox, and a zoom
+    // would trim the artwork — Raj rejected both ("it is masked", "do not mask").
+    expect(body).toContain('force_original_aspect_ratio=increase');
+    expect(body).toContain('crop=2560:1440');
+    expect(body).toContain('flags=lanczos');
+  });
+
+  it('targets 1440p, which is what earns VP9 rather than AVC', () => {
+    expect(doc!.body).toContain('scale=2560:1440');
+    expect(doc!.body).toMatch(/VP9/);
+  });
+
+  it('records that a moving overlay, not the CRF, is what starved the picture', () => {
+    const body = doc!.body;
+    expect(body).toMatch(/1\.37 Mbps/);
+    expect(body).toMatch(/7\.09 Mbps/);
+    expect(body).toMatch(/every frame differs from the last/i);
+  });
+
+  it('keeps the never-crop-the-artwork rule explicit', () => {
+    expect(doc!.body).toMatch(/Never crop his artwork/i);
+  });
+
+  it('requires loudness to be verified on the finished MP4, not the source WAV', () => {
+    const body = doc!.body;
+    expect(body).toContain('ebur128');
+    expect(body).toMatch(/off the finished MP4/i);
+    expect(body).toMatch(/-14\.0 LUFS/);
+  });
+
+  it('warns that a YouTube video file cannot be replaced in place', () => {
+    const body = doc!.body;
+    expect(body).toMatch(/cannot swap the file on an existing video/i);
+    expect(body).toMatch(/verify it \*\*before\*\* deleting the original/i);
+  });
+
+  it('names both live defects in the in-app render button', () => {
+    const body = doc!.body;
+    expect(body).toContain('master-video.ts');
+    expect(body).toContain('!m.videoKey');
+  });
+});
