@@ -14,16 +14,8 @@
 
 import { useCallback, useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
-import type { Severity } from '@/lib/release-checklist';
-
-interface Finding {
-  id: string;
-  severity: Severity;
-  title: string;
-  detail: string;
-  fix?: string;
-  manual?: boolean;
-}
+import type { Finding } from '@/lib/release-checklist';
+import { FindingRow, groupFindings } from '@/components/admin/ReleaseFindings';
 
 interface Result {
   videoId: string;
@@ -62,61 +54,6 @@ export function extractVideoId(input: string): string | null {
   return null;
 }
 
-const TONE: Record<Finding['severity'], { badge: string; label: string }> = {
-  blocker: { badge: 'bg-rose-100 text-rose-800 border-rose-200', label: 'Blocker' },
-  gap: { badge: 'bg-amber-100 text-amber-900 border-amber-200', label: 'Gap' },
-  note: { badge: 'bg-gray-100 text-gray-700 border-gray-200', label: 'Note' },
-  // Muted and dashed on purpose: this is not a pass (no green/tick) and not a
-  // problem (no rose/amber) — it is the rule saying it never ran.
-  'not-checked': {
-    badge: 'bg-slate-50 text-slate-400 border-slate-200 border-dashed italic',
-    label: 'Not checked',
-  },
-};
-
-function FindingRow({ f }: { f: Finding }) {
-  const [copied, setCopied] = useState(false);
-  const tone = TONE[f.severity];
-  return (
-    <li className="rounded-lg border border-gray-200 bg-white p-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className={`rounded border px-1.5 py-0.5 text-[11px] font-semibold ${tone.badge}`}>
-          {tone.label}
-        </span>
-        <span className="font-medium text-gray-900">{f.title}</span>
-        {f.manual && (
-          <span className="rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[11px] text-gray-600">
-            Studio only
-          </span>
-        )}
-      </div>
-      <p className="mt-1 text-sm text-gray-600">{f.detail}</p>
-      {f.fix && (
-        <div className="mt-2 flex items-start gap-2">
-          <code className="flex-1 overflow-x-auto rounded bg-gray-50 px-2 py-1 text-xs text-gray-800">
-            {f.fix}
-          </code>
-          <button
-            type="button"
-            className="shrink-0 rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50"
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(f.fix as string);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 1500);
-              } catch {
-                /* clipboard blocked — the text is selectable anyway */
-              }
-            }}
-          >
-            {copied ? 'Copied' : 'Copy'}
-          </button>
-        </div>
-      )}
-    </li>
-  );
-}
-
 export function ReleaseChecker() {
   const [input, setInput] = useState('');
   const [result, setResult] = useState<Result | null>(null);
@@ -149,13 +86,12 @@ export function ReleaseChecker() {
     }
   }, [input]);
 
-  const actionable =
-    result?.findings.filter((f) => f.severity !== 'note' && f.severity !== 'not-checked') ?? [];
-  const notes = result?.findings.filter((f) => f.severity === 'note') ?? [];
   // Kept apart from both actionable findings and notes: a not-checked finding
   // is neither a problem to fix nor an opinion the rule reached — it is the
-  // rule saying it never ran, and must never read as either of those.
-  const notChecked = result?.findings.filter((f) => f.severity === 'not-checked') ?? [];
+  // rule saying it never ran, and must never read as either of those. The split
+  // is shared with the Mastering Studio's upload panel so the two screens
+  // cannot disagree about what a severity means.
+  const { actionable, notes, notChecked } = groupFindings(result?.findings);
 
   return (
     <div className="mx-auto max-w-3xl p-4">

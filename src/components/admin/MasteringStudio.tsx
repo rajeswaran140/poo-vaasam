@@ -49,8 +49,8 @@ import {
   ALL_SONGS_PLAYLIST_ID,
   LATEST_PLAYLIST_ID,
   type Finding,
-  type Severity,
 } from '@/lib/release-checklist';
+import { FindingRow, groupFindings } from '@/components/admin/ReleaseFindings';
 
 /**
  * Rows per library page. 25 is roughly a screenful of grouped rows and keeps
@@ -227,50 +227,6 @@ const UPLOAD_PLAYLISTS = [
   { id: ALL_SONGS_PLAYLIST_ID, label: 'All Songs' },
   { id: LATEST_PLAYLIST_ID, label: 'Latest' },
 ] as const;
-
-/**
- * Severity styling. Lifted from ReleaseChecker so the two screens grade the
- * same finding the same way — and, more importantly, so `not-checked` keeps the
- * treatment it was given there: muted, dashed and italic. It is NEITHER a pass
- * (no green, no tick) NOR a problem (no rose, no amber). It is the rule saying
- * it never ran, and a green tick on a check that did not run is worse than no
- * panel at all.
- */
-const FINDING_TONE: Record<Severity, { badge: string; label: string }> = {
-  blocker: { badge: 'border-rose-200 bg-rose-100 text-rose-800', label: 'Blocker' },
-  gap: { badge: 'border-amber-200 bg-amber-100 text-amber-900', label: 'Gap' },
-  note: { badge: 'border-gray-200 bg-gray-100 text-gray-700', label: 'Note' },
-  'not-checked': {
-    badge: 'border-dashed border-slate-300 bg-slate-50 italic text-slate-400',
-    label: 'Not checked',
-  },
-};
-
-/** One release-checklist finding, graded exactly as /admin/release grades it. */
-function ReleaseFinding({ f }: { f: Finding }) {
-  const tone = FINDING_TONE[f.severity];
-  return (
-    <li className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className={`rounded border px-1.5 py-0.5 text-[11px] font-semibold ${tone.badge}`}>
-          {tone.label}
-        </span>
-        <span className="font-medium text-gray-900 dark:text-gray-100">{f.title}</span>
-        {f.manual && (
-          <span className="rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[11px] text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
-            Studio only
-          </span>
-        )}
-      </div>
-      <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{f.detail}</p>
-      {f.fix && (
-        <code className="mt-2 block overflow-x-auto rounded bg-gray-50 px-2 py-1 text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200">
-          {f.fix}
-        </code>
-      )}
-    </li>
-  );
-}
 
 /**
  * Comma/newline-separated text → YouTube tags. Exported for its own unit test:
@@ -1599,14 +1555,16 @@ export function MasteringStudio() {
     releaseCheck && job?.youtubeVideoId && releaseCheck.videoId === job.youtubeVideoId
       ? releaseCheck
       : null;
-  // Findings, split the way /admin/release splits them. A `not-checked` finding
-  // is kept out of BOTH lists: it is not a problem to fix and not an opinion the
-  // rule reached — it is the rule saying it never ran, and it must never read as
-  // either.
-  const checkActionable =
-    videoCheck?.findings.filter((f) => f.severity !== 'note' && f.severity !== 'not-checked') ?? [];
-  const checkNotes = videoCheck?.findings.filter((f) => f.severity === 'note') ?? [];
-  const checkNotChecked = videoCheck?.findings.filter((f) => f.severity === 'not-checked') ?? [];
+  // Findings, split by the SHARED helper /admin/release uses — one definition of
+  // what each severity means, so the two screens cannot drift apart. A
+  // `not-checked` finding is kept out of both other groups: it is not a problem
+  // to fix and not an opinion the rule reached — it is the rule saying it never
+  // ran, and it must never read as either.
+  const {
+    actionable: checkActionable,
+    notes: checkNotes,
+    notChecked: checkNotChecked,
+  } = groupFindings(videoCheck?.findings);
   const stored = videoCheck?.stored;
   /**
    * YouTube reports `duration: P0D` and `definition: sd` on a perfectly good
@@ -2649,7 +2607,7 @@ export function MasteringStudio() {
                     {checkActionable.length > 0 && (
                       <ul className="mt-2 space-y-2">
                         {checkActionable.map((f) => (
-                          <ReleaseFinding key={f.id} f={f} />
+                          <FindingRow key={f.id} f={f} />
                         ))}
                       </ul>
                     )}
@@ -2660,7 +2618,7 @@ export function MasteringStudio() {
                         </summary>
                         <ul className="mt-2 space-y-2">
                           {checkNotes.map((f) => (
-                            <ReleaseFinding key={f.id} f={f} />
+                            <FindingRow key={f.id} f={f} />
                           ))}
                         </ul>
                       </details>
@@ -2676,7 +2634,7 @@ export function MasteringStudio() {
                         </summary>
                         <ul className="mt-2 space-y-2">
                           {checkNotChecked.map((f) => (
-                            <ReleaseFinding key={f.id} f={f} />
+                            <FindingRow key={f.id} f={f} />
                           ))}
                         </ul>
                       </details>
