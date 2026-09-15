@@ -11,13 +11,14 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, UpdateCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
+import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import {
   parseLoudnormStats,
   buildPass1Loudnorm,
@@ -63,6 +64,8 @@ import {
   joinedDurationSec,
   JOIN_OUTPUT_LABEL,
 } from '@/lib/master-join';
+import { planUpload, uploadRefusalMessage } from '@/lib/youtube-upload';
+import type { MasterJob } from '@/types/masterJob';
 
 const FFMPEG = process.env.FFMPEG_PATH || '/opt/bin/ffmpeg';
 const REGION = process.env.AWS_REGION || 'ca-central-1';
@@ -80,6 +83,7 @@ const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({ region: REGION }), 
 const MATCHERING_WORKER_FUNCTION =
   process.env.MATCHERING_WORKER_FUNCTION || 'tamilagaval-matchering-worker';
 const lambdaClient = new LambdaClient({ region: REGION });
+const ssm = new SSMClient({ region: REGION });
 
 async function patch(jobId: string, fields: Record<string, unknown>): Promise<void> {
   const names: Record<string, string> = {};
@@ -150,6 +154,11 @@ interface MasterEvent {
   referenceKey?: string;
   referenceId?: string;
   matchingMethod?: 'loudnorm' | 'matched' | 'both';
+  /**
+   * Upload an already-rendered video to YouTube. Handled before the mastering
+   * guards, like `render`, so an upload can never re-master.
+   */
+  youtube?: { title: string; description: string; tags: string[]; playlistIds: string[] };
 }
 
 /**
@@ -373,6 +382,224 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
 }
 
 /**
+ * Upload a rendered video to YouTube as a PRIVATE draft, then read it back.
+ *
+ * ⚠️ WHY THIS RUNS HERE AND NOT IN THE WEB APP. The token this needs is
+ * force-ssl scoped: it can delete videos and post comments on the channel. The
+ * deployed Next.js app is public-facing and holds only readonly analytics
+ * scope, and it stays that way. This function is private, already reads SSM,
+ * and already has the MP4 on local disk.
+ *
+ * ⚠️ WHY IT REFUSES TO INSERT TWICE. A video file cannot be replaced on
+ * YouTube, so a duplicate insert means a second video to find and delete by
+ * hand. planUpload refuses when youtubeVideoId is set; the id is written the
+ * MOMENT the insert returns, before the thumbnail or the playlists, so a later
+ * failure can never orphan it.
+ */
+async function uploadToYoutube(
+  jobId: string,
+  spec: NonNullable<MasterEvent['youtube']>,
+  bucket: string,
+) {
+  const job = await getJob(jobId);
+  if (!job) return { ok: false };
+
+  const plan = planUpload(job, spec);
+  if (!plan.ok) {
+    await patch(jobId, { uploadStatus: 'failed', uploadError: uploadRefusalMessage(plan.reason) });
+    return { ok: false };
+  }
+
+  await patch(jobId, { uploadStatus: 'uploading', uploadError: null });
+
+  const dir = mkdtempSync(join(tmpdir(), 'ytupload-'));
+  const videoPath = join(dir, 'video.mp4');
+  try {
+    const token = await youtubeAccessToken();
+
+    const obj = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: plan.videoKey }));
+    writeFileSync(videoPath, Buffer.from(await obj.Body!.transformToByteArray()));
+    const size = statSync(videoPath).size;
+
+    // Resume an interrupted session rather than opening a new one — opening a
+    // new one is how a retry becomes a duplicate video.
+    let sessionUri = job.uploadSessionUri ?? null;
+    if (!sessionUri) {
+      const meta = {
+        snippet: {
+          title: plan.title,
+          description: plan.description,
+          tags: plan.tags,
+          categoryId: plan.categoryId,
+          defaultLanguage: 'ta',
+          defaultAudioLanguage: 'ta',
+        },
+        status: {
+          privacyStatus: plan.privacyStatus,
+          selfDeclaredMadeForKids: false,
+          license: 'youtube',
+          embeddable: true,
+        },
+      };
+      const open = await fetch(
+        'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json; charset=UTF-8',
+            'X-Upload-Content-Length': String(size),
+            'X-Upload-Content-Type': 'video/mp4',
+          },
+          body: JSON.stringify(meta),
+        },
+      );
+      if (!open.ok) {
+        await patch(jobId, { uploadStatus: 'failed', uploadError: await quotaAwareError(open) });
+        return { ok: false };
+      }
+      sessionUri = open.headers.get('location');
+      if (!sessionUri) {
+        await patch(jobId, { uploadStatus: 'failed', uploadError: 'YouTube did not return an upload session.' });
+        return { ok: false };
+      }
+      await patch(jobId, { uploadSessionUri: sessionUri });
+    }
+
+    const put = await fetch(sessionUri, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'video/mp4' },
+      body: readFileSync(videoPath),
+    });
+    if (!put.ok) {
+      await patch(jobId, { uploadStatus: 'failed', uploadError: await quotaAwareError(put) });
+      return { ok: false };
+    }
+    const inserted = await put.json();
+    // ⚠️ THE ONLY VIDEO THIS FUNCTION MAY EVER WRITE TO. `videoId` is captured
+    // directly from THIS insert's response, in this narrowest possible scope,
+    // and every write below (the patch, the thumbnail, every playlist add)
+    // must read this same constant — never the job row, never the event. See
+    // the thumbnail and playlist call sites for why.
+    const videoId = inserted?.id as string | undefined;
+    if (!videoId) {
+      await patch(jobId, { uploadStatus: 'failed', uploadError: 'YouTube accepted the upload but returned no video id.' });
+      return { ok: false };
+    }
+
+    // FIRST write after the insert, before anything else can fail.
+    await patch(jobId, {
+      youtubeVideoId: videoId,
+      uploadedToYoutubeAt: new Date().toISOString(),
+      uploadSessionUri: null,
+    });
+
+    // Thumbnail and playlists are best-effort: the video exists, and failing
+    // them must not mark the upload failed or invite a re-insert.
+    const problems: string[] = [];
+    if (plan.coverKey) {
+      try {
+        const cover = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: plan.coverKey }));
+        const bytes = Buffer.from(await cover.Body!.transformToByteArray());
+        // MUST be `videoId` from the insert above — never a job-row or event id.
+        // This video has never been seen by the operator; pointing this call at
+        // an existing video would overwrite the artwork of a live, published
+        // video on a channel with a real audience, and that is not recoverable
+        // by re-running anything.
+        const t = await fetch(
+          `https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${videoId}`,
+          { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'image/png' }, body: bytes },
+        );
+        if (!t.ok) problems.push('thumbnail');
+      } catch { problems.push('thumbnail'); }
+    }
+    for (const playlistId of plan.playlistIds) {
+      try {
+        // MUST be `videoId` from the insert above — never a job-row or event
+        // id. Adding the wrong video's id to a playlist changes the membership
+        // of a live, published video that a real audience already sees, and
+        // that is not recoverable by re-running anything. There is also no
+        // `videos.update` call anywhere in this file, deliberately: nothing
+        // here may ever modify an existing video's metadata.
+        const r = await fetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ snippet: { playlistId, resourceId: { kind: 'youtube#video', videoId } } }),
+        });
+        if (!r.ok) problems.push(`playlist ${playlistId}`);
+      } catch { problems.push(`playlist ${playlistId}`); }
+    }
+
+    await patch(jobId, {
+      uploadStatus: 'uploaded',
+      uploadError: problems.length ? `Uploaded, but these did not apply: ${problems.join(', ')}.` : null,
+    });
+    return { ok: true, videoId };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[master-worker] youtube upload failed:', message);
+    await patch(jobId, { uploadStatus: 'failed', uploadError: message }).catch(() => {});
+    return { ok: false };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * A YouTube access token with WRITE scope, from SSM SecureString.
+ * Never logged, never written to disk, never returned to the caller's caller.
+ */
+async function youtubeAccessToken(): Promise<string> {
+  const prefix = process.env.YOUTUBE_SSM_PREFIX || '/amplify/d3rkmepk4popv0/master';
+  const read = async (name: string) => {
+    const r = await ssm.send(new GetParameterCommand({ Name: `${prefix}/${name}`, WithDecryption: true }));
+    return r.Parameter?.Value ?? '';
+  };
+  const [secret, refresh] = await Promise.all([
+    read('YOUTUBE_OAUTH_CLIENT_SECRET'),
+    read('YOUTUBE_DATA_REFRESH_TOKEN'),
+  ]);
+  const clientId = process.env.YOUTUBE_OAUTH_CLIENT_ID ?? '';
+  if (!secret || !refresh || !clientId) throw new Error('YouTube credentials are not configured.');
+
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: secret,
+      refresh_token: refresh,
+      grant_type: 'refresh_token',
+    }),
+  });
+  const j = await res.json();
+  if (!j.access_token) throw new Error('Could not refresh the YouTube access token.');
+  return j.access_token as string;
+}
+
+/**
+ * Quota exhaustion needs its own wording. videos.insert costs 1600 units of a
+ * 10,000/day default shared with the analytics routes, so a generic failure
+ * message invites a retry that burns what is left.
+ */
+async function quotaAwareError(res: Response): Promise<string> {
+  const body = await res.text().catch(() => '');
+  if (res.status === 403 && /quota/i.test(body)) {
+    return 'Daily YouTube upload quota exhausted. videos.insert costs 1600 of 10,000 units a day — wait for the Pacific-midnight reset rather than retrying.';
+  }
+  return `YouTube rejected the upload (HTTP ${res.status}).`;
+}
+
+/** Read a job back for the upload guards. */
+async function getJob(jobId: string): Promise<MasterJob | null> {
+  const r = await ddb.send(new GetCommand({
+    TableName: TABLE,
+    Key: { PK: `MASTERJOB#${jobId}`, SK: 'METADATA' },
+  }));
+  return (r.Item as MasterJob) ?? null;
+}
+
+/**
  * Read a file's header without decoding it.
  *
  * `ffmpeg -i FILE` with no output prints the input header and exits non-zero —
@@ -407,6 +634,16 @@ export const handler = async (event: MasterEvent) => {
       return { ok: false, error: 'jobId and TAKES_BUCKET are required' };
     }
     return await renderVideo(jobId, event.render, TAKES_BUCKET);
+  }
+
+  // A YouTube upload, likewise — branch before the mastering guards, so an
+  // upload can never re-master.
+  if (event?.youtube) {
+    if (!jobId || !TAKES_BUCKET) {
+      console.error('[master-worker] bad youtube event');
+      return { ok: false, error: 'jobId and TAKES_BUCKET are required' };
+    }
+    return await uploadToYoutube(jobId, event.youtube, TAKES_BUCKET);
   }
 
   // The bucket is NOT taken from the event. The worker's IAM role can read and

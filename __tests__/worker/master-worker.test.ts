@@ -15,6 +15,8 @@
 const send = jest.fn().mockResolvedValue({});
 const s3Send = jest.fn();
 const spawnSync = jest.fn();
+const ssmSend = jest.fn();
+const fetchMock = jest.fn();
 
 jest.mock('node:child_process', () => ({ spawnSync: (...a: unknown[]) => spawnSync(...a) }));
 jest.mock('@aws-sdk/client-s3', () => ({
@@ -23,20 +25,29 @@ jest.mock('@aws-sdk/client-s3', () => ({
   PutObjectCommand: class { constructor(public input: unknown) {} },
 }));
 jest.mock('@aws-sdk/client-dynamodb', () => ({ DynamoDBClient: class {} }));
+jest.mock('@aws-sdk/client-ssm', () => ({
+  SSMClient: class { send = (...a: unknown[]) => ssmSend(...a); },
+  GetParameterCommand: class { constructor(public input: unknown) {} },
+}));
 const mockRmSync = jest.fn();
 const mockWriteFileSync = jest.fn();
+const mockStatSync = jest.fn(() => ({ size: 123456 }));
 jest.mock('node:fs', () => ({
   mkdtempSync: () => '/tmp/master-test',
   writeFileSync: (...a: unknown[]) => mockWriteFileSync(...a),
   readFileSync: () => Buffer.from('MASTERED-WAV-BYTES'),
   rmSync: (...a: unknown[]) => mockRmSync(...a),
+  statSync: (...a: unknown[]) => mockStatSync(...a),
 }));
 jest.mock('@aws-sdk/lib-dynamodb', () => ({
   DynamoDBDocumentClient: { from: () => ({ send: (...a: unknown[]) => send(...a) }) },
   UpdateCommand: class { constructor(public input: Record<string, unknown>) {} },
+  GetCommand: class { constructor(public input: Record<string, unknown>) {} },
 }));
 
 process.env.TAKES_BUCKET = 'tamil-web-media';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(global as any).fetch = (...a: unknown[]) => fetchMock(...a);
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { handler } = require('../../worker/master-worker') as typeof import('../../worker/master-worker');
@@ -1049,5 +1060,164 @@ Output #0, null, to 'pipe:':
     logs.p2status = 1;
     await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14 });
     expect(mockRmSync).toHaveBeenCalledWith('/tmp/master-test', { recursive: true, force: true });
+  });
+});
+
+/**
+ * The YouTube upload.
+ *
+ * ⚠️ THE PROPERTY THAT MATTERS MOST: this function may only ever write to the
+ * video its OWN `videos.insert` just created. thumbnails.set and every
+ * playlistItems.insert must carry exactly the id that came back from that
+ * insert — never the job's pre-existing `youtubeVideoId`, never anything off
+ * the event. And when `planUpload` refuses because the job already has a
+ * `youtubeVideoId`, the whole operation must stop: no insert, no thumbnail,
+ * no playlist call, no network activity at all.
+ */
+describe('youtube upload', () => {
+  const YT = {
+    title: 'A song title',
+    description: 'A description of the song.',
+    tags: ['tamil', 'poem'],
+    playlistIds: ['PL_ONE', 'PL_TWO'],
+  };
+
+  let job: Record<string, unknown>;
+
+  beforeEach(() => {
+    job = {
+      id: 'j1',
+      videoKey: 'audio/mastering/1_a_song-master-14LUFS-1440p.mp4',
+      savedAt: '2026-09-01T00:00:00.000Z',
+      coverKey: 'audio/mastering/1_c_cover.jpg',
+      youtubeVideoId: null,
+      uploadStatus: 'idle',
+      uploadSessionUri: null,
+    };
+
+    send.mockReset();
+    send.mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'UpdateExpression' in cmd.input
+        ? Promise.resolve({})
+        : Promise.resolve({ Item: job })
+    );
+    s3Send.mockReset();
+    s3Send.mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'Body' in cmd.input
+        ? Promise.resolve({})
+        : Promise.resolve({ Body: { transformToByteArray: async () => new Uint8Array([9, 9, 9]) } })
+    );
+    ssmSend.mockReset();
+    ssmSend.mockResolvedValue({ Parameter: { Value: 'shhh' } });
+    fetchMock.mockReset();
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('oauth2.googleapis.com/token')) {
+        return Promise.resolve({ ok: true, json: async () => ({ access_token: 'ACCESS-TOKEN' }) });
+      }
+      if (url.includes('uploadType=resumable')) {
+        return Promise.resolve({
+          ok: true,
+          headers: { get: (k: string) => (k === 'location' ? 'https://upload.example/session-abc' : null) },
+        });
+      }
+      if (url === 'https://upload.example/session-abc') {
+        // The id ONLY this response may ever produce — see the describe block
+        // comment. It must never match anything already sitting on the job.
+        return Promise.resolve({ ok: true, json: async () => ({ id: 'FRESH_INSERT_ID' }) });
+      }
+      if (url.includes('/thumbnails/set')) {
+        return Promise.resolve({ ok: true });
+      }
+      if (url.includes('/playlistItems')) {
+        return Promise.resolve({ ok: true });
+      }
+      return Promise.resolve({ ok: false, status: 500, text: async () => '' });
+    });
+    process.env.YOUTUBE_OAUTH_CLIENT_ID = 'test-client-id';
+  });
+
+  it('uses ONLY the freshly inserted id for the thumbnail and every playlist call', async () => {
+    // A decoy id riding along on the event, shaped like something a careless
+    // future refactor might reach for instead of the insert response. The
+    // event type carries no such field — this asserts the extra property is
+    // simply ignored, not merely absent.
+    const res = await handler({ jobId: 'j1', youtube: { ...YT, videoId: 'DECOY_FROM_EVENT' } } as never);
+
+    expect(res).toMatchObject({ ok: true, videoId: 'FRESH_INSERT_ID' });
+
+    const thumbCall = fetchMock.mock.calls.find((c) => String(c[0]).includes('/thumbnails/set'));
+    expect(thumbCall).toBeDefined();
+    expect(String(thumbCall![0])).toContain('videoId=FRESH_INSERT_ID');
+
+    const playlistCalls = fetchMock.mock.calls.filter((c) => String(c[0]).includes('/playlistItems'));
+    expect(playlistCalls).toHaveLength(2);
+    for (const call of playlistCalls) {
+      const body = JSON.parse((call[1] as { body: string }).body);
+      // Not job.youtubeVideoId (null here), not anything from the event —
+      // exactly the id this run's own insert returned.
+      expect(body.snippet.resourceId.videoId).toBe('FRESH_INSERT_ID');
+    }
+
+    expect(patched()).toMatchObject({ uploadStatus: 'uploaded', youtubeVideoId: 'FRESH_INSERT_ID' });
+  });
+
+  it('writes youtubeVideoId the moment the insert returns, before the thumbnail or playlists', async () => {
+    await handler({ jobId: 'j1', youtube: YT } as never);
+
+    const idWriteIndex = send.mock.calls.findIndex((c) => {
+      const values = (c[0] as { input: { ExpressionAttributeValues?: Record<string, unknown> } }).input
+        .ExpressionAttributeValues;
+      return values?.[':youtubeVideoId'] === 'FRESH_INSERT_ID';
+    });
+    const thumbIndex = fetchMock.mock.calls.findIndex((c) => String(c[0]).includes('/thumbnails/set'));
+
+    expect(idWriteIndex).toBeGreaterThan(-1);
+    expect(thumbIndex).toBeGreaterThan(-1);
+    // jest.fn() stamps every call across every mock with a shared, monotonic
+    // invocationCallOrder — this is the one reliable way to compare "when" two
+    // calls on DIFFERENT mocks happened relative to each other.
+    expect(send.mock.invocationCallOrder[idWriteIndex]).toBeLessThan(
+      fetchMock.mock.invocationCallOrder[thumbIndex],
+    );
+  });
+
+  it('stops entirely when the job already has a youtubeVideoId — no insert, no thumbnail, no playlist call', async () => {
+    job.youtubeVideoId = 'EXISTING_LIVE_VIDEO_ID';
+
+    const res = await handler({ jobId: 'j1', youtube: YT } as never);
+
+    expect(res).toEqual({ ok: false });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(patched()).toMatchObject({ uploadStatus: 'failed' });
+    expect(patched().youtubeVideoId).toBeUndefined();
+  });
+
+  it('marks the upload uploaded-with-a-note, never failed, when the thumbnail rejects', async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('oauth2.googleapis.com/token')) {
+        return Promise.resolve({ ok: true, json: async () => ({ access_token: 'ACCESS-TOKEN' }) });
+      }
+      if (url.includes('uploadType=resumable')) {
+        return Promise.resolve({
+          ok: true,
+          headers: { get: (k: string) => (k === 'location' ? 'https://upload.example/session-abc' : null) },
+        });
+      }
+      if (url === 'https://upload.example/session-abc') {
+        return Promise.resolve({ ok: true, json: async () => ({ id: 'FRESH_INSERT_ID' }) });
+      }
+      if (url.includes('/thumbnails/set')) {
+        return Promise.resolve({ ok: false, status: 400, text: async () => 'bad thumbnail' });
+      }
+      return Promise.resolve({ ok: true });
+    });
+
+    const res = await handler({ jobId: 'j1', youtube: YT } as never);
+
+    expect(res).toMatchObject({ ok: true, videoId: 'FRESH_INSERT_ID' });
+    const p = patched();
+    expect(p.uploadStatus).toBe('uploaded');
+    expect(p.youtubeVideoId).toBe('FRESH_INSERT_ID');
+    expect(String(p.uploadError)).toContain('thumbnail');
   });
 });
