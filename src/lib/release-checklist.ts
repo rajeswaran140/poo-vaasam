@@ -45,11 +45,18 @@ export interface VideoSnapshot {
   uploadedAt?: string;
   /** `liveStreamingDetails.scheduledStartTime` for a premiere. */
   scheduledStartTime?: string;
-  /** Other releases on the channel, for the notification-density check. */
-  siblingReleases?: Array<{ videoId: string; publishedAt: string }>;
+  /**
+   * Other releases on the channel, for the notification-density check.
+   *
+   * `publishedAt` is the uploads feed's `videoPublishedAt` — UPLOAD time.
+   * `scheduledStartTime` is when an unaired premiere will AIR. Density is about
+   * when subscribers are notified, so air time is the right clock; upload time
+   * is only the fallback for a video that has already aired.
+   */
+  siblingReleases?: Array<{ videoId: string; publishedAt: string; scheduledStartTime?: string }>;
 }
 
-export type Severity = 'blocker' | 'gap' | 'note';
+export type Severity = 'blocker' | 'gap' | 'note' | 'not-checked';
 
 export interface Finding {
   id: string;
@@ -373,15 +380,27 @@ export function checkRelease(v: VideoSnapshot): Finding[] {
           `once set — each move re-points the reminders people already have.`,
       });
     }
+  } else if (v.isUpcoming) {
+    f.push({
+      id: 'premiere-window',
+      severity: 'not-checked',
+      title: 'Premiere window not checked',
+      detail: 'Needs both the upload time and the scheduled premiere time.',
+    });
   }
 
-  if (v.siblingReleases && v.scheduledStartTime) {
+  if (v.scheduledStartTime && v.siblingReleases && v.siblingReleases.length > 0) {
     const at = Date.parse(v.scheduledStartTime);
-    const near = v.siblingReleases.filter(
-      (r) =>
-        r.videoId !== v.videoId &&
-        Math.abs(Date.parse(r.publishedAt) - at) / 3_600_000 <= RELEASE_DENSITY_WINDOW_HOURS
-    );
+    // ⚠️ AIR TIME, NOT UPLOAD TIME. This compared `publishedAt` (upload) against
+    // `at` (air) until 2026-09-15, so two premieres airing 24h apart but
+    // uploaded a week apart did not register — which is exactly what happened
+    // on 2026-09-16 and why nothing flagged it.
+    const near = v.siblingReleases.filter((r) => {
+      if (r.videoId === v.videoId) return false;
+      const when = Date.parse(r.scheduledStartTime ?? r.publishedAt);
+      if (!Number.isFinite(when)) return false;
+      return Math.abs(when - at) / 3_600_000 <= RELEASE_DENSITY_WINDOW_HOURS;
+    });
     if (near.length > 0) {
       f.push({
         id: 'release-density',
@@ -394,6 +413,15 @@ export function checkRelease(v: VideoSnapshot): Finding[] {
           `budget between them.`,
       });
     }
+  } else {
+    f.push({
+      id: 'release-density',
+      severity: 'not-checked',
+      title: 'Release density not checked',
+      detail:
+        'Needs the premiere time and the channel’s other releases. Without both this says nothing — ' +
+        'which is not the same as saying the schedule is clear.',
+    });
   }
 
   f.push({
@@ -405,7 +433,7 @@ export function checkRelease(v: VideoSnapshot): Finding[] {
     manual: true,
   });
 
-  const order: Record<Severity, number> = { blocker: 0, gap: 1, note: 2 };
+  const order: Record<Severity, number> = { blocker: 0, gap: 1, note: 2, 'not-checked': 3 };
   return f.sort((a, b) => order[a.severity] - order[b.severity]);
 }
 
@@ -414,6 +442,12 @@ export interface ReleaseSummary {
   blockers: number;
   gaps: number;
   notes: number;
+  /**
+   * Findings whose inputs were missing, so the rule never ran. Kept separate
+   * from `notes` — a note is an opinion the rule reached; a not-checked finding
+   * is the rule saying nothing, which must never be counted as if it passed.
+   */
+  notChecked: number;
   /** True when nothing mechanical is outstanding (notes may remain). */
   ready: boolean;
   findings: Finding[];
@@ -427,6 +461,7 @@ export function summariseRelease(v: VideoSnapshot): ReleaseSummary {
     blockers: count('blocker'),
     gaps: count('gap'),
     notes: count('note'),
+    notChecked: count('not-checked'),
     ready: count('blocker') === 0 && count('gap') === 0,
     findings,
   };
