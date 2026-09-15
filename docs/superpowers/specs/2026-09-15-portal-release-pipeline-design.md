@@ -18,6 +18,37 @@ be uploaded and deleted because a video's file cannot be replaced in place.
 This brings render, metadata, preflight and upload into `/admin` so a release
 is finished in the browser — up to the two steps YouTube's API cannot perform.
 
+## The pipeline, as the operator states it
+
+Four steps, replacing Premiere Pro end to end. Two already work; the spec covers
+the other two.
+
+| Step | State today | This spec |
+|---|---|---|
+| **1. Master the WAV from Suno** | **Built and live.** WAV in -> worker two-pass `loudnorm` -> -14 LUFS / -1 dBTP -> saved master. WAV only: mastering an MP3 re-levels a file that has already lost detail. | unchanged |
+| **2. Render the video** | **Built, broken.** Square-box crop at 46% of frame; button vanishes after one render; no quality target. | fixed (component 1, 7) |
+| **3. Encode the audio** | **Built.** Happens inside the render: mastered WAV -> AAC 384k / 48 kHz, ONE encode, no intermediate. | unchanged; quality target added to the picture only |
+| **4. Upload to YouTube** | **Does not exist.** Manual shell script on the host. | built (components 3-7) |
+
+Cover-image upload already exists too — `src/app/api/admin/mastering/upload/route.ts`
+takes `kind: 'cover'` (JPEG/PNG/WebP, separate allow-list and size cap).
+
+### Why step 3 is the whole point
+
+The operator moved off Premiere Pro because *"the sound quality was
+unsatisfactory"*. Premiere's encoder was never the fault. Essential Sound's
+"Auto-Match to -14" and export gain **re-process audio that is already
+mastered** — the master is undone, then re-encoded, and the listener hears both.
+
+The portal path never touches the audio after mastering: the mastered WAV is fed
+straight to `-c:a aac -b:a 384k -ar 48000`, a single encode, and YouTube's own
+transcode is the only other generation. Verified 2026-09-15 on the real release —
+the finished MP4 measured **-14.0 LUFS / LRA 3.5**, identical to its master.
+
+This is why `planRender` refuses to render from the 192k web MP3 and why the
+audio bitrate is not a tunable: both would quietly reintroduce the generation
+loss the whole pipeline exists to remove.
+
 ## What this is NOT
 
 **The YouTube Data API cannot create a Premiere, and cannot pin a comment.**
