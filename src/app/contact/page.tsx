@@ -21,7 +21,7 @@ export default function ContactPage() {
       <Header />
       <main id="main" className="flex-1">
         {/* Hero — matches the site's dark/orange brand */}
-        <section className="relative bg-gray-900 text-white py-16">
+        <section className="relative bg-gray-900 text-white pb-16 pt-28">
           <div aria-hidden className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-orange-500/70 to-transparent" />
           <div className="container mx-auto px-4">
             <h1 className="text-3xl sm:text-5xl font-bold mb-3 font-kavivanar">தொடர்பு</h1>

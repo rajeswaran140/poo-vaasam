@@ -25,7 +25,7 @@ export default function PrivacyPage() {
       <Header />
 
       <section className="relative w-full overflow-hidden text-white">
-        <div className="relative container mx-auto px-6 py-16 sm:px-10">
+        <div className="relative container mx-auto px-6 pb-16 pt-28 sm:px-10">
           <h1 className="font-kavivanar text-4xl font-extrabold leading-tight drop-shadow-md sm:text-5xl">
             தனியுரிமை · Privacy
           </h1>

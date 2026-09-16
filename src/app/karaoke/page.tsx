@@ -141,7 +141,7 @@ export default async function KaraokePage() {
       <Header />
       <JsonLd data={jsonLd} />
 
-      <main className="mx-auto max-w-5xl px-4 py-12 sm:py-16">
+      <main className="mx-auto max-w-5xl px-4 pb-12 pt-28 sm:pb-16">
         <section className="text-center">
           <h1 className="mb-4 font-tamil text-4xl font-bold text-white sm:text-5xl">கராஓகே சேவை</h1>
           <p className="mx-auto mb-2 max-w-2xl font-tamil text-lg text-gray-300">
