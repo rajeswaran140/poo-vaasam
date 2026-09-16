@@ -112,14 +112,14 @@ below is designed so that split can be made later without redesigning anything.
 ```
 Browser (MasteringStudio)
   │  POST /api/admin/music-lab/master/[jobId]/render     (exists, fixed)
-  │  POST /api/admin/music-lab/master/[jobId]/publish    (new)
+  │  POST /api/admin/music-lab/master/[jobId]/youtube     (new)
   ▼
 Next.js route on Amplify  ── validates, writes state, Event-invokes, returns 202
   │                          NEVER does the work: ~30 s cap, after() is dropped
   ▼
 tamilagaval-master-worker (900 s)
   ├─ renderVideo()   ffprobe cover → compose frame → encode → S3 videoKey
-  └─ publishVideo()  read force-ssl token from SSM → resumable videos.insert
+  └─ uploadToYoutube()  read force-ssl token from SSM → resumable videos.insert
                      → thumbnails.set → playlistItems.insert → read back
 ```
 
@@ -133,6 +133,21 @@ Putting that token in the web app would mean a compromise of the public site is
 a compromise of the channel. The worker is a private function with no public
 invoke path, already reads secrets from SSM, and already has the MP4 on local
 disk — so it uploads without the file crossing a network twice.
+
+## A correction to this spec, made during implementation
+
+This document originally named the worker branch `publishVideo()` and the route
+`POST …/[jobId]/publish`. **Both were wrong and the code is right.**
+
+`src/app/api/admin/music-lab/master/[jobId]/publish/route.ts` ALREADY EXISTS and
+does something else entirely: it stages the mastered web MP3 to the site's public
+`audio/poem-music/` prefix. `MasterJob.publishedAt` and `publishKey` mean THAT,
+not YouTube. Shipping a second, unrelated "publish" at the same path would have
+collided, and the two senses of the word would have been indistinguishable in the
+job row forever.
+
+The route is `[jobId]/youtube`, the worker event key is `youtube`, and the worker
+function is `uploadToYoutube()`. This spec has been corrected to match.
 
 ## Components
 
@@ -172,9 +187,9 @@ testable without credentials. Mirrors `planRender`.
 Refusals: no `videoKey`, no title, no description, `youtubeVideoId` already set,
 job not saved.
 
-### 4. `worker/master-worker.ts` — `publishVideo()` (new branch)
+### 4. `worker/master-worker.ts` — `uploadToYoutube()` (new branch)
 
-Branches on a `publish` event shape before the mastering guards, exactly as
+Branches on a `youtube` event shape before the mastering guards, exactly as
 `render` does, so a publish can never re-master.
 
 1. Read `YOUTUBE_OAUTH_CLIENT_SECRET` + `YOUTUBE_DATA_REFRESH_TOKEN` from SSM

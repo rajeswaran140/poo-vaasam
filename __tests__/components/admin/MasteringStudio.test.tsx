@@ -40,7 +40,7 @@ jest.mock('@/components/admin/MasteringComparePlayer', () => ({
 }));
 
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import { MasteringStudio, buildJoinPayload } from '@/components/admin/MasteringStudio';
+import { MasteringStudio, buildJoinPayload, parseTagList, parseHashtags } from '@/components/admin/MasteringStudio';
 import { adminFetch } from '@/lib/client-auth';
 
 const mockedFetch = adminFetch as jest.Mock;
@@ -1416,4 +1416,388 @@ describe('rendering from the saved-masters library', () => {
     expect(String(downloadReq[0])).toContain(encodeURIComponent(newVideoKey));
     expect(String(downloadReq[0])).not.toContain(encodeURIComponent(oldVideoKey));
   }, 15000);
+});
+
+/**
+ * Upload to YouTube, from the page's side.
+ *
+ * The worker does the upload and the planner owns the refusals; only this layer
+ * can show that the operator sees the picture and the FULL description before
+ * pressing the button, that what YouTube is holding is read back rather than
+ * echoed, that a check which could not run never reads as a pass, and that the
+ * panel never implies the release is finished when two Studio-only steps remain.
+ */
+describe('upload to YouTube', () => {
+  const RENDERED = 'audio/mastering/1_a_song-master-14LUFS-1440p.mp4';
+  const readyJob = (over: Record<string, unknown> = {}) =>
+    doneJob({
+      mp3Key: 'audio/mastering/1_a_song-master-14LUFS.mp3',
+      mp3Tp: -3.5,
+      videoKey: RENDERED,
+      coverKey: 'audio/mastering/1_c_cover.jpg',
+      videoRenderedAt: '2026-09-15T00:00:00.000Z',
+      updatedAt: 't0',
+      uploadStatus: null,
+      youtubeVideoId: null,
+      uploadedToYoutubeAt: null,
+      uploadError: null,
+      ...over,
+    });
+
+  /** A release check as the route answers it, read-back included. */
+  const checkBody = (over: Record<string, unknown> = {}) => ({
+    videoId: 'abcdefghijk',
+    title: 'ஒரு பாடல் | Oru Paadal',
+    blockers: 0,
+    gaps: 1,
+    notes: 0,
+    notChecked: 1,
+    ready: false,
+    captionsChecked: true,
+    findings: [
+      { id: 'tag-count', severity: 'gap', title: 'Only 2 tags', detail: 'Ten or more is the target.' },
+      {
+        id: 'release-density',
+        severity: 'not-checked',
+        title: 'Release density not checked',
+        detail: 'No sibling releases were readable, so the rule never ran.',
+      },
+    ],
+    stored: {
+      duration: 'PT4M14S',
+      durationSeconds: 254,
+      definition: 'hd',
+      privacyStatus: 'private',
+      categoryId: '10',
+      tagCount: 24,
+      defaultLanguage: 'ta',
+      defaultAudioLanguage: 'ta',
+      thumbnail: { name: 'maxres', url: 'https://i.ytimg.com/x.jpg', width: 1280, height: 720 },
+      playlistIds: ['PL-all', 'PL-latest'],
+    },
+    ...over,
+  });
+
+  /** Master + save with a job that already carries a rendered MP4. */
+  async function openPanel(job: Record<string, unknown> = readyJob()) {
+    primeHappyPath(job);
+    render(<MasteringStudio />);
+    await uploadA();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
+    await screen.findByText(/3 · Result/);
+    mockedFetch.mockResolvedValueOnce(json({ success: true, title: 'One' }));
+    mockedFetch.mockResolvedValueOnce(json({ success: true, masters: [] }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save to library/ })); });
+    await screen.findByRole('button', { name: /Saved to library/ });
+    // A title is required — the route rejects a body without one, so the
+    // button stays disabled until there is something to publish under.
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/Video title/i), {
+        target: { value: 'ஒரு பாடல் | Oru Paadal' },
+      });
+    });
+  }
+
+  /**
+   * Answers for the upload phase. `polls` are the status responses AFTER the
+   * POST, in order; the last one repeats, so a test can hand back a stale row
+   * first and a finished one second.
+   */
+  function primeUploadPhase(polls: Record<string, unknown>[], check: unknown = checkBody()) {
+    const queue = [...polls];
+    mockedFetch.mockImplementation((url: string, init?: { method?: string }) => {
+      const u = String(url);
+      if (u.endsWith('/youtube') && init?.method === 'POST') {
+        return Promise.resolve(json({ success: true, status: 'queued' }, true, 202));
+      }
+      if (u.startsWith('/api/admin/youtube/release-check')) return Promise.resolve(json(check));
+      if (u.startsWith('/api/admin/mastering/download')) {
+        return Promise.resolve(json({ success: true, url: 'https://s3/signed' }));
+      }
+      return Promise.resolve(json(queue.length > 1 ? queue.shift()! : queue[0]));
+    });
+  }
+
+  it('shows the picture and the FULL assembled description before uploading', async () => {
+    // The two things a bad release got past: nobody saw the frame, and nobody
+    // saw the text that was actually going to be published.
+    await openPanel();
+    const frame = await screen.findByAltText(/Cover art the video was rendered from/i);
+    expect(frame).toHaveAttribute('src', 'https://s3/signed');
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/Your description/i), {
+        target: { value: 'மழையின் நினைவுகள்.' },
+      });
+      fireEvent.change(screen.getByLabelText(/Hashtags/i), { target: { value: 'tamilagaval song' } });
+    });
+
+    const preview = screen.getByLabelText('Assembled description preview');
+    expect(preview).toHaveTextContent('மழையின் நினைவுகள்.');
+    // The tail the operator does not own, and cannot edit away.
+    expect(preview).toHaveTextContent('© 2026 TamilAgaval / Raj');
+    expect(preview).toHaveTextContent('#tamilagaval #song');
+  });
+
+  it('sends the assembled description and parsed tags, not the raw body', async () => {
+    await openPanel();
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/Video title/i), { target: { value: 'ஒரு பாடல்' } });
+      fireEvent.change(screen.getByLabelText(/Your description/i), { target: { value: 'body text' } });
+      fireEvent.change(screen.getByLabelText(/^Tags/i), { target: { value: 'tamil song, , melody' } });
+    });
+
+    primeUploadPhase([
+      readyJob({
+        updatedAt: 't1',
+        uploadStatus: 'uploaded',
+        youtubeVideoId: 'abcdefghijk',
+        uploadedToYoutubeAt: '2026-09-15T10:00:00.000Z',
+      }),
+    ]);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Upload to YouTube/ })); });
+
+    const req = mockedFetch.mock.calls.find((c) => String(c[0]).endsWith('/youtube'))!;
+    const sent = JSON.parse(req[1].body);
+    expect(sent.title).toBe('ஒரு பாடல்');
+    expect(sent.tags).toEqual(['tamil song', 'melody']);
+    expect(sent.description).toContain('body text');
+    expect(sent.description).toContain('© 2026 TamilAgaval / Raj');
+    expect(sent.playlistIds).toHaveLength(2);
+  });
+
+  it('states the two Studio-only steps and links to Studio', async () => {
+    // Not decorative copy: the Data API cannot create a Premiere and cannot pin
+    // a comment, so "uploaded" is never "released".
+    await openPanel();
+    primeUploadPhase([
+      readyJob({
+        updatedAt: 't1',
+        uploadStatus: 'uploaded',
+        youtubeVideoId: 'abcdefghijk',
+        uploadedToYoutubeAt: '2026-09-15T10:00:00.000Z',
+      }),
+    ]);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Upload to YouTube/ })); });
+
+    expect(await screen.findByText(/Two steps remain in YouTube Studio/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Open in YouTube Studio/ })).toHaveAttribute(
+      'href',
+      'https://studio.youtube.com/video/abcdefghijk/edit'
+    );
+  });
+
+  it('shows what YouTube stored, not what was sent', async () => {
+    await openPanel();
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/^Tags/i), { target: { value: 'one, two' } });
+    });
+    primeUploadPhase([
+      readyJob({
+        updatedAt: 't1',
+        uploadStatus: 'uploaded',
+        youtubeVideoId: 'abcdefghijk',
+        uploadedToYoutubeAt: '2026-09-15T10:00:00.000Z',
+      }),
+    ]);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Upload to YouTube/ })); });
+
+    // 24 tags is what the API is holding; 2 is what this form sent.
+    const readback = (await screen.findByText(/What YouTube stored/)).closest('div')!;
+    expect(readback).toHaveTextContent('24');
+    expect(readback).toHaveTextContent('hd');
+    expect(readback).toHaveTextContent('4:14');
+    expect(readback).toHaveTextContent('maxres · 1280×720');
+    expect(readback).toHaveTextContent('ta · audio ta');
+  });
+
+  it('renders a not-checked finding as not run — never as a pass, never as a problem', async () => {
+    await openPanel();
+    primeUploadPhase([
+      readyJob({
+        updatedAt: 't1',
+        uploadStatus: 'uploaded',
+        youtubeVideoId: 'abcdefghijk',
+        uploadedToYoutubeAt: '2026-09-15T10:00:00.000Z',
+      }),
+    ]);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Upload to YouTube/ })); });
+
+    const notChecked = await screen.findByText('Release density not checked');
+    const group = notChecked.closest('details')!;
+    expect(group).toHaveTextContent(/1 check not run/);
+    // The actionable gap is NOT inside that group — a check that did not run
+    // must not be filed with the problems either.
+    expect(group).not.toHaveTextContent('Only 2 tags');
+    expect(screen.getByText('Only 2 tags').closest('details')).toBeNull();
+  });
+
+  it('does not report the PREVIOUS attempt as this attempt', async () => {
+    // The same trap the render poll was fixed for, one field over: a retry
+    // arrives with uploadStatus 'failed' and the old error already on the row,
+    // so a poll that discriminates on "is it terminal" announces the old
+    // failure instantly. The discriminator must be a value that CHANGED.
+    await openPanel(readyJob({ uploadStatus: 'failed', uploadError: 'the previous attempt died' }));
+    primeUploadPhase([
+      // attempt 0 — the stale row, unchanged updatedAt
+      readyJob({ updatedAt: 't0', uploadStatus: 'failed', uploadError: 'the previous attempt died' }),
+      // attempt 1 — this attempt's real outcome
+      readyJob({
+        updatedAt: 't1',
+        uploadStatus: 'uploaded',
+        youtubeVideoId: 'abcdefghijk',
+        uploadedToYoutubeAt: '2026-09-15T10:00:00.000Z',
+      }),
+    ]);
+    // No act() wrapper: attempt 1 only fires after the real 4s poll interval.
+    fireEvent.click(screen.getByRole('button', { name: /Retry upload/ }));
+    expect(await screen.findByText(/Two steps remain in YouTube Studio/, undefined, { timeout: 8000 }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  }, 15000);
+});
+
+/**
+ * ⚠️ THE RESUME PATH HAS TO BE REACHABLE FROM A BROWSER.
+ *
+ * The panel used to be gated on the session-local `savedAt` flag — set only by
+ * a Save in the current visit, cleared by `reset`, `onPickFile` and
+ * `reopenMaster`. So every remount hid the panel, and with it `uploadSessionUri`
+ * and `UPLOAD_STALE_AFTER_MS`: half the job state existed for a path nothing
+ * on the page could take. The panel even told the operator to reload, which is
+ * precisely what removed it.
+ *
+ * Gating on the ROW's persisted `savedAt` fixes the first half; re-enabling the
+ * button once the row is provably stale fixes the second. Both are pinned here.
+ */
+describe('upload panel reachability after a remount', () => {
+  const RENDERED = 'audio/mastering/1_a_song-master-14LUFS-1440p.mp4';
+
+  /** A saved, rendered master as the STATUS ROUTE returns it — persisted state only. */
+  const persisted = (over: Record<string, unknown> = {}) =>
+    doneJob({
+      id: 'job-9',
+      savedAt: '2026-09-14T09:00:00.000Z',
+      videoKey: RENDERED,
+      coverKey: 'audio/mastering/1_c_cover.jpg',
+      videoRenderedAt: '2026-09-14T09:30:00.000Z',
+      updatedAt: '2026-09-14T09:30:00.000Z',
+      uploadStatus: null,
+      youtubeVideoId: null,
+      uploadError: null,
+      ...over,
+    });
+
+  /**
+   * A remount, not a Save: the component comes up cold, re-attaches to the
+   * stored job and learns everything it knows from the row. `setSavedAt` is
+   * never called on this path — which is the point.
+   */
+  async function remountWith(job: Record<string, unknown>) {
+    sessionStorage.setItem(
+      'mastering-studio-job',
+      JSON.stringify({ jobId: 'job-9', sourceKey: 'audio/mastering/1_a_song.wav', name: 'song.wav', size: 1024, target: -14 })
+    );
+    mockedFetch.mockImplementation((url: string) => {
+      const u = String(url);
+      if (u.startsWith('/api/admin/mastering/download')) {
+        return Promise.resolve(json({ success: true, url: 'https://s3/signed' }));
+      }
+      if (u === '/api/admin/music-lab/masters') return Promise.resolve(json({ success: true, masters: [] }));
+      return Promise.resolve(json(job));
+    });
+    render(<MasteringStudio />);
+    await screen.findByText(/3 · Result/);
+  }
+
+  it('opens the panel from the job row alone, with no Save in this session', async () => {
+    await remountWith(persisted());
+
+    // Proof the session-local flag is NOT what opened it: an unsaved-looking
+    // Save button is still sitting there offering to save.
+    expect(screen.getByRole('button', { name: /Save to library/ })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /Upload to YouTube/i })).toBeInTheDocument();
+  });
+
+  it('offers Retry once a queued row is older than the stale window — the resume, reachable', async () => {
+    // Older than any plausible window, so no fake clock is needed. The worker's
+    // own ceiling is 900s; a row this old cannot still be running.
+    await remountWith(persisted({ uploadStatus: 'queued', updatedAt: '2020-01-01T00:00:00.000Z' }));
+    await screen.findByRole('heading', { name: /Upload to YouTube/i });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/Video title/i), { target: { value: 'ஒரு பாடல்' } });
+    });
+
+    const retry = screen.getByRole('button', { name: /Retry upload/ });
+    expect(retry).toBeEnabled();
+    // And it no longer tells the operator to do the thing that hides the panel.
+    expect(screen.queryByText(/reload the page to pick it up/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps it disabled while a queued row is still fresh — the double-click guard is untouched', async () => {
+    await remountWith(persisted({ uploadStatus: 'queued', updatedAt: new Date().toISOString() }));
+    await screen.findByRole('heading', { name: /Upload to YouTube/i });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/Video title/i), { target: { value: 'ஒரு பாடல்' } });
+    });
+
+    expect(screen.getByRole('button', { name: /Upload to YouTube/ })).toBeDisabled();
+    expect(screen.getByText(/An upload is already running for this master/)).toBeInTheDocument();
+  });
+});
+
+describe('upload metadata parsing', () => {
+  it('splits, trims and de-duplicates tags, and caps the list at 60', () => {
+    expect(parseTagList('tamil song, , melody ,tamil song')).toEqual(['tamil song', 'melody']);
+    expect(parseTagList(Array.from({ length: 70 }, (_, i) => `t${i}`).join(','))).toHaveLength(60);
+  });
+
+  it('normalises hashtags to exactly one # and no spaces', () => {
+    expect(parseHashtags('#tamil song  ##two,three')).toEqual(['#tamil', '#song', '#two', '#three']);
+    expect(parseHashtags('')).toEqual([]);
+  });
+});
+
+/**
+ * Two states the upload panel must not render dishonestly: an upload someone
+ * else's mount started, and a report about a different video.
+ */
+describe('upload panel honesty', () => {
+  const RENDERED = 'audio/mastering/1_a_song-master-14LUFS-1440p.mp4';
+  const inFlight = (over: Record<string, unknown> = {}) =>
+    doneJob({
+      mp3Key: 'audio/mastering/1_a_song-master-14LUFS.mp3',
+      videoKey: RENDERED,
+      coverKey: 'audio/mastering/1_c_cover.jpg',
+      updatedAt: 't0',
+      youtubeVideoId: null,
+      ...over,
+    });
+
+  async function openPanelWith(job: Record<string, unknown>) {
+    primeHappyPath(job);
+    render(<MasteringStudio />);
+    await uploadA();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
+    await screen.findByText(/3 · Result/);
+    mockedFetch.mockResolvedValueOnce(json({ success: true, title: 'One' }));
+    mockedFetch.mockResolvedValueOnce(json({ success: true, masters: [] }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save to library/ })); });
+    await screen.findByRole('button', { name: /Saved to library/ });
+  }
+
+  it('says an upload is already running instead of showing a dead button', async () => {
+    // Nothing in THIS mount is following that upload, and a second invoke is
+    // what the planner's in-flight guard exists to stop — so the disabled
+    // button has to explain itself.
+    await openPanelWith(inFlight({ uploadStatus: 'uploading' }));
+    expect(screen.getByRole('button', { name: /Upload to YouTube/ })).toBeDisabled();
+    expect(screen.getByText(/An upload is already running for this master/)).toBeInTheDocument();
+  });
+
+  it('offers the plain private-draft note when no upload is running', async () => {
+    await openPanelWith(inFlight({ uploadStatus: null }));
+    expect(screen.queryByText(/An upload is already running/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Nothing here makes a video public/)).toBeInTheDocument();
+  });
 });

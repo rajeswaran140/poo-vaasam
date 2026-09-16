@@ -201,4 +201,47 @@ export interface MasterJob {
   matchingStage: MatchingStage | null;
   matchingStats: MatchingStats | null;
   matchingError: { code: string; message: string } | null;
+  /**
+   * YouTube upload state. All null/absent on every job written before uploading
+   * existed, so every consumer must treat them as optional.
+   *
+   * ⚠️ `uploadStatus` and `uploadSessionUri` exist so a RETRY IS SAFE. An upload
+   * that succeeds while its status write fails would otherwise be re-inserted on
+   * retry, producing a second public video — exactly the mess that had to be
+   * cleaned up by hand on 2026-09-15 (Pif11nJ3Gzg, m9pfr-qWcgQ). The worker
+   * refuses to insert when `youtubeVideoId` is set, and resumes
+   * `uploadSessionUri` rather than opening a new session.
+   */
+  uploadStatus: 'idle' | 'queued' | 'uploading' | 'uploaded' | 'failed' | null;
+  uploadSessionUri: string | null;
+  /**
+   * The video file's byte size at the moment `uploadSessionUri` was opened.
+   * Set alongside it, cleared alongside it (on success, or once a session is
+   * discarded).
+   *
+   * Exists so a re-render replacing the MP4 between attempts can be detected
+   * LOCALLY, without a Google call: if `statSync` on resume disagrees with
+   * this number, the session was opened against a file that no longer
+   * exists, and is unambiguously invalid — that is different from an
+   * ambiguous HTTP status (see `sessionIsGone` in master-worker.ts, which
+   * deliberately does NOT treat a 400 the same way, for exactly this reason:
+   * this field gives certain evidence where a 400 gives none).
+   */
+  uploadSessionSize: number | null;
+  /**
+   * Written the moment videos.insert returns, BEFORE thumbnail or playlists.
+   *
+   * ⚠️ NEVER guard the duplicate-insert check with a DynamoDB conditional write
+   * (`attribute_not_exists(youtubeVideoId)`). Every job row is created with this
+   * field set to JS `null`, which `DynamoDBOperations.put` persists as a
+   * DynamoDB NULL-type attribute — an attribute that EXISTS. So
+   * `attribute_not_exists` is false for every row, forever, and a conditional
+   * write "hardened" this way would refuse every upload permanently, looking
+   * like an improvement while silently breaking the feature. The guard must
+   * stay the plain JS truthiness check in `planUpload` (`if (job.youtubeVideoId)`),
+   * which handles null correctly.
+   */
+  youtubeVideoId: string | null;
+  uploadedToYoutubeAt: string | null;
+  uploadError: string | null;
 }

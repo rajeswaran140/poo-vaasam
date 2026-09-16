@@ -43,6 +43,29 @@ function parseIsoDuration(iso: string): number {
   return Number(m[1] ?? 0) * 3600 + Number(m[2] ?? 0) * 60 + Number(m[3] ?? 0);
 }
 
+/**
+ * The biggest thumbnail on the snippet, by pixel area.
+ *
+ * Deliberately NOT "is `maxres` present" — release-checklist already records
+ * why that boolean is worthless (YouTube generates `maxres` for any HD upload,
+ * so it is true for 100% of this catalogue). A width × height plus the URL is
+ * something the operator can actually look at.
+ */
+function largestThumbnail(
+  thumbnails: Record<string, { url?: string; width?: number; height?: number }> | undefined
+): { name: string; url: string; width: number; height: number } | null {
+  let best: { name: string; url: string; width: number; height: number } | null = null;
+  for (const [name, t] of Object.entries(thumbnails ?? {})) {
+    if (!t?.url) continue;
+    const width = Number(t.width ?? 0);
+    const height = Number(t.height ?? 0);
+    if (!best || width * height > best.width * best.height) {
+      best = { name, url: String(t.url), width, height };
+    }
+  }
+  return best;
+}
+
 async function mintWriteToken(): Promise<string | null> {
   const id = process.env.YOUTUBE_OAUTH_CLIENT_ID;
   const secret = process.env.YOUTUBE_OAUTH_CLIENT_SECRET;
@@ -262,6 +285,41 @@ export async function GET(request: NextRequest) {
         durationSeconds,
         isUpcoming: snapshot.isUpcoming,
         captionsChecked,
+        /**
+         * WHAT YOUTUBE ACTUALLY STORED — read off the SAME `videos.list`
+         * response the checklist was graded from, so it costs no extra call
+         * and no extra quota. Purely additive: every field above keeps its
+         * name and its meaning.
+         *
+         * The Mastering Studio's upload panel shows these instead of echoing
+         * the metadata it sent. An upload response is a claim ("I asked for 24
+         * Tamil tags"); a read-back is evidence ("YouTube is holding 24 tags
+         * and defaultAudioLanguage: ta"). The four uploads that shipped broken
+         * in July 2026 were all broken in exactly that gap.
+         *
+         * `processingDetails` is deliberately NOT added to the `part` list
+         * above: that part is owner-authorized only and this call carries an
+         * API key rather than OAuth, so asking for it would be dropped quietly
+         * instead of failing loudly. The panel therefore infers the processing
+         * window from what IS here — a `durationSeconds` of 0 or
+         * `definition: 'sd'` on a fresh upload means YouTube has not finished
+         * processing, NOT that a bad file was sent (see admin-docs, "read the
+         * metadata back") — and offers a re-check rather than a verdict.
+         */
+        stored: {
+          duration: item.contentDetails?.duration ?? null,
+          durationSeconds,
+          definition: item.contentDetails?.definition ?? null,
+          privacyStatus: item.status?.privacyStatus ?? null,
+          categoryId: snapshot.categoryId || null,
+          tagCount: snapshot.tags.length,
+          defaultLanguage: snapshot.defaultLanguage ?? null,
+          defaultAudioLanguage: snapshot.defaultAudioLanguage ?? null,
+          // The largest thumbnail YouTube is actually serving, by pixel area —
+          // the picture itself, not a boolean claiming one exists.
+          thumbnail: largestThumbnail(snippet.thumbnails),
+          playlistIds,
+        },
         quota: { used: quota.used, limit: quota.limit, spent: cost },
       },
       { headers: { 'Cache-Control': 'private, max-age=60' } }

@@ -36,6 +36,10 @@ import { MasteringPlayer } from '@/components/admin/MasteringPlayer';
 import { MasteringTrimPanel } from '@/components/admin/MasteringTrimPanel';
 import { MasteringJoinPanel } from '@/components/admin/MasteringJoinPanel';
 import { DEFAULT_CROSSFADE_CURVE, type MasterJoin } from '@/lib/master-join';
+// The SAME constant the enqueue route's planner uses, never a second copy of
+// the number: this panel's Retry must become available exactly when the server
+// would start accepting a new attempt, not a minute either side of it.
+import { UPLOAD_STALE_AFTER_MS } from '@/lib/youtube-upload';
 import {
   groupMastersBySong,
   describeGroup,
@@ -44,6 +48,13 @@ import {
   LIBRARY_SORTS,
   type LibrarySort,
 } from '@/lib/master-library';
+import { buildUploadDescription } from '@/lib/youtube-description';
+import {
+  ALL_SONGS_PLAYLIST_ID,
+  LATEST_PLAYLIST_ID,
+  type Finding,
+} from '@/lib/release-checklist';
+import { FindingRow, groupFindings } from '@/components/admin/ReleaseFindings';
 
 /**
  * Rows per library page. 25 is roughly a screenful of grouped rows and keeps
@@ -178,6 +189,86 @@ export function buildJoinPayload(p: {
   };
 }
 
+/**
+ * What `GET /api/admin/youtube/release-check` returns. `stored` is the
+ * READ-BACK: the values YouTube is actually holding, off the same videos.list
+ * call the findings were graded from. Everything in it is optional-by-type
+ * because a response from a deploy predating the read-back must degrade to
+ * "not available" rather than crash the panel.
+ */
+interface ReleaseCheckResult {
+  videoId: string;
+  title: string;
+  blockers: number;
+  gaps: number;
+  notes: number;
+  notChecked: number;
+  ready: boolean;
+  findings: Finding[];
+  captionsChecked?: boolean;
+  stored?: {
+    duration: string | null;
+    durationSeconds: number;
+    definition: string | null;
+    privacyStatus: string | null;
+    categoryId: string | null;
+    tagCount: number;
+    defaultLanguage: string | null;
+    defaultAudioLanguage: string | null;
+    thumbnail: { name: string; url: string; width: number; height: number } | null;
+    playlistIds: string[];
+  };
+  quota?: { used: number; limit: number; spent: number };
+}
+
+/**
+ * Playlists an upload can be added to. The two the release checklist grades
+ * every song against — imported from it rather than re-typed, so a playlist
+ * that moves cannot leave the panel adding songs to a dead id while the
+ * checker keeps reporting them missing.
+ */
+const UPLOAD_PLAYLISTS = [
+  { id: ALL_SONGS_PLAYLIST_ID, label: 'All Songs' },
+  { id: LATEST_PLAYLIST_ID, label: 'Latest' },
+] as const;
+
+/**
+ * Comma/newline-separated text → YouTube tags. Exported for its own unit test:
+ * the upload route caps the list at 60 and rejects the whole body with a
+ * generic "A title and description are required." if it is longer, so an
+ * over-long list must be trimmed HERE, where the operator can see it, rather
+ * than turning into an unexplained 400.
+ */
+export function parseTagList(input: string): string[] {
+  const seen = new Set<string>();
+  for (const raw of (input ?? '').split(/[,\n]/)) {
+    const tag = raw.trim().replace(/\s+/g, ' ');
+    if (tag) seen.add(tag);
+  }
+  return [...seen].slice(0, 60);
+}
+
+/**
+ * Free text → hashtags, as `buildUploadDescription` wants them: DATA, not
+ * text pasted into the body and hoped to survive.
+ *
+ * A hashtag cannot contain a space, so each entry is split on whitespace and
+ * commas and given exactly one leading `#`. YouTube shows only the first three
+ * above the title, but the rest are still indexed, so the cap is generous
+ * rather than three.
+ */
+export function parseHashtags(input: string): string[] {
+  const seen = new Set<string>();
+  for (const raw of (input ?? '').split(/[\s,]+/)) {
+    const bare = raw.replace(/^#+/, '').trim();
+    if (bare) seen.add(`#${bare}`);
+  }
+  return [...seen].slice(0, 15);
+}
+
+/** Seconds → m:ss, for the read-back duration. */
+const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+
 export function MasteringStudio() {
   const inputId = useId();
   const [stage, setStage] = useState<Stage>('idle');
@@ -233,6 +324,31 @@ export function MasteringStudio() {
   const [coverUploading, setCoverUploading] = useState(false);
   const [videoHeight, setVideoHeight] = useState<number>(1440);
   const [rendering, setRendering] = useState(false);
+  /**
+   * YouTube upload panel. The title is `null` until the operator types in it —
+   * NOT '' — so an untouched field can mirror `masterName` (the name already
+   * given to this master) while a deliberately cleared one stays cleared. A
+   * plain '' could not tell those two apart, and an effect that copied
+   * `masterName` in would fight whatever was being typed.
+   */
+  const [uploadTitle, setUploadTitle] = useState<string | null>(null);
+  const [uploadBody, setUploadBody] = useState('');
+  const [uploadTagsText, setUploadTagsText] = useState('');
+  const [uploadHashtagsText, setUploadHashtagsText] = useState('');
+  const [uploadPlaylistIds, setUploadPlaylistIds] = useState<string[]>(
+    UPLOAD_PLAYLISTS.map((p) => p.id)
+  );
+  const [uploadingToYoutube, setUploadingToYoutube] = useState(false);
+  /**
+   * Presigned URL for the cover the video was built from — the picture, on
+   * screen, BEFORE the upload. A bad render reaching YouTube unseen is the
+   * whole reason this panel exists.
+   */
+  const [framePreviewUrl, setFramePreviewUrl] = useState<string | null>(null);
+  /** The release check + read-back for the uploaded video. */
+  const [releaseCheck, setReleaseCheck] = useState<ReleaseCheckResult | null>(null);
+  const [releaseChecking, setReleaseChecking] = useState(false);
+  const [releaseCheckError, setReleaseCheckError] = useState<string | null>(null);
   /**
    * Rendering a video for a master saved in an EARLIER session, from the
    * library. The inline panel above cannot do this: it is gated on `savedAt`,
@@ -419,6 +535,26 @@ export function MasteringStudio() {
       });
   }, []);
 
+  /**
+   * Forget the YouTube upload draft.
+   *
+   * Called wherever the SONG changes — start over, a new source file, a master
+   * re-opened from the library. Carrying a title, a lyric description or a
+   * preflight report from one song into another is the same class of mistake as
+   * carrying the cover, except it publishes the wrong words rather than the
+   * wrong picture.
+   */
+  const clearUploadDraft = useCallback(() => {
+    setUploadTitle(null);
+    setUploadBody('');
+    setUploadTagsText('');
+    setUploadHashtagsText('');
+    setUploadPlaylistIds(UPLOAD_PLAYLISTS.map((p) => p.id));
+    setFramePreviewUrl(null);
+    setReleaseCheck(null);
+    setReleaseCheckError(null);
+  }, []);
+
   const reset = useCallback(() => {
     abort.current?.abort();
     writeStored(null);
@@ -446,8 +582,9 @@ export function MasteringStudio() {
     setMasterName('');
     setCover(null);
     setAnalysis(null);
+    clearUploadDraft();
     if (fileInput.current) fileInput.current.value = '';
-  }, []);
+  }, [clearUploadDraft]);
 
   /**
    * Stop following, but leave the job running and recoverable. The stored job is
@@ -599,6 +736,7 @@ export function MasteringStudio() {
     setMasterName('');
     setCover(null);
     setAnalysis(null);
+    clearUploadDraft();
     setRecipeNonce((n) => n + 1);
     setStage('uploading');
     setSent({ loaded: 0, total: picked.size });
@@ -644,7 +782,7 @@ export function MasteringStudio() {
       setStage('idle');
       setSource(null);
     }
-  }, [runAnalysis]);
+  }, [runAnalysis, clearUploadDraft]);
 
   const startMastering = useCallback(async () => {
     if (!sourceKey || !source) return;
@@ -985,6 +1123,232 @@ export function MasteringStudio() {
     }
   }, [jobId, cover, videoHeight, job, startRender]);
 
+  /**
+   * The picture the video was built from. `job.coverKey` is what the worker
+   * actually encoded (it survives a reload); `cover.key` covers the moment
+   * between uploading a cover and the job coming back with it.
+   */
+  const frameKey = job?.coverKey ?? cover?.key ?? null;
+  /**
+   * The upload panel exists only once there is a rendered MP4 to upload.
+   *
+   * ⚠️ GATED ON THE JOB ROW'S OWN `savedAt` FIRST, not on the session-local
+   * flag. `savedAt` (the state) is set only by a Save in THIS session and is
+   * cleared by `reset`, `onPickFile` and `reopenMaster` — so gating on it
+   * alone meant that any remount hid the panel, taking the upload's resume
+   * path (`uploadSessionUri`, `UPLOAD_STALE_AFTER_MS`) off screen with it. The
+   * persisted value survives, so a job re-attached after a remount reopens the
+   * panel on its own. The session flag stays as the fallback for the one case
+   * the row cannot cover: the moments right after a Save, which writes
+   * `savedAt` server-side but does not re-fetch the job.
+   */
+  const uploadPanelOpen = Boolean((job?.savedAt ?? savedAt) && job?.videoKey);
+
+  /**
+   * Is the row's `queued`/`uploading` status still believable?
+   *
+   * ⚠️ THE OTHER HALF OF THE REACHABILITY BUG. The Upload button was disabled
+   * for `queued`/`uploading` unconditionally, so a worker that died mid-upload
+   * left the job pinned at `queued` and the ONLY control that could resume it
+   * permanently greyed out — `UPLOAD_STALE_AFTER_MS` and `uploadSessionUri`
+   * were unreachable from the browser no matter what the panel's gate said.
+   *
+   * The same rule the server applies: past the worker's own ceiling plus
+   * margin, the status can only be a crash artifact, so the button comes back
+   * as Retry. Pressing it re-enqueues, and the worker RESUMES the stored
+   * session rather than inserting a second video — the duplicate guard does
+   * not depend on this window (see planUpload's doc comment).
+   */
+  const uploadRunning = job?.uploadStatus === 'queued' || job?.uploadStatus === 'uploading';
+  const uploadStale =
+    uploadRunning &&
+    (() => {
+      const age = Date.now() - (job?.updatedAt ? Date.parse(job.updatedAt) : NaN);
+      // An unparseable timestamp cannot PROVE staleness, so it reads as still
+      // running — the same direction the planner takes on missing evidence.
+      return Number.isFinite(age) && age > UPLOAD_STALE_AFTER_MS;
+    })();
+  /** Genuinely in flight: running, and not old enough to be a crash artifact. */
+  const uploadInFlight = uploadRunning && !uploadStale;
+  const UPLOAD_STALE_MINUTES = Math.round(UPLOAD_STALE_AFTER_MS / 60000);
+
+  /**
+   * `uploadStale` reads the clock during render, and a panel parked on a
+   * `queued` row has nothing left re-rendering it — the master's own poll ended
+   * at `done`, and the upload poll only runs inside `uploadToYoutube`. Without
+   * this nudge Retry would never appear on its own, and the amber note below
+   * promises exactly that it will. Same shape as the elapsed counter above, and
+   * it runs only while an upload is actually believed to be in flight.
+   */
+  const [, tickUploadClock] = useState(0);
+  useEffect(() => {
+    if (!uploadInFlight) return;
+    const t = setInterval(() => tickUploadClock((n) => n + 1), 30_000);
+    return () => clearInterval(t);
+  }, [uploadInFlight]);
+
+  /**
+   * Presign the cover so the operator can SEE it before pressing Upload.
+   *
+   * Fired only when the upload panel is actually on screen, never on mount:
+   * a fetch on the plain done-state path would change the call sequence every
+   * other test in this module asserts against, which is the same reason the
+   * reference bank loads on focus rather than on mount.
+   *
+   * Cleared first, so a re-render with a different cover can never show the
+   * previous song's artwork while the new URL is still being minted — showing
+   * the wrong picture confidently is the exact failure this panel prevents.
+   */
+  useEffect(() => {
+    if (!uploadPanelOpen || !frameKey) return;
+    let cancelled = false;
+    setFramePreviewUrl(null);
+    void (async () => {
+      try {
+        const res = await adminFetch(
+          `/api/admin/mastering/download?key=${encodeURIComponent(frameKey)}&mode=play`
+        );
+        const body = await res.json().catch(() => ({}));
+        if (cancelled || !mounted.current) return;
+        if (res.ok && body.success && body.url) setFramePreviewUrl(body.url as string);
+      } catch {
+        // The preview is evidence, not a gate. A presign that fails leaves the
+        // picture unshown and says so; it must never block an upload.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [uploadPanelOpen, frameKey]);
+
+  const uploadTags = useMemo(() => parseTagList(uploadTagsText), [uploadTagsText]);
+  const uploadHashtags = useMemo(() => parseHashtags(uploadHashtagsText), [uploadHashtagsText]);
+  /**
+   * THE string that will be uploaded — not a preview of a different string.
+   * The operator owns `body` and the hashtags; the credit block, the site link,
+   * the commission CTA and the three playlist links are assembled by
+   * `buildUploadDescription` and are not theirs to edit. Rendering anything
+   * else here would re-open the hand-built-description hole that kept putting a
+   * retired credit line on new videos.
+   */
+  const uploadDescription = useMemo(
+    () => buildUploadDescription({ body: uploadBody, hashtags: uploadHashtags }),
+    [uploadBody, uploadHashtags]
+  );
+  /** Untouched title mirrors the master's name; see `uploadTitle`'s null state. */
+  const uploadTitleValue = uploadTitle ?? masterName;
+
+  /**
+   * Grade the uploaded video against the release checklist, and read back what
+   * YouTube actually stored (the same route returns both — one videos.list, no
+   * extra quota).
+   *
+   * Only ever runs against a video that EXISTS on YouTube: the route needs an
+   * 11-character id, and grading the form we are about to submit would be
+   * grading our own claim. Findings never gate the Upload button — this is a
+   * "warn, don't block" panel by design.
+   */
+  const runReleaseCheck = useCallback(async (videoId: string) => {
+    setReleaseChecking(true);
+    setReleaseCheckError(null);
+    try {
+      const res = await adminFetch(`/api/admin/youtube/release-check?videoId=${videoId}`);
+      const body = await res.json().catch(() => ({}));
+      if (!mounted.current) return;
+      if (!res.ok) {
+        setReleaseCheckError(body?.error?.message ?? `The release check failed (HTTP ${res.status}).`);
+        return;
+      }
+      setReleaseCheck(body as ReleaseCheckResult);
+    } catch (err) {
+      if (mounted.current) setReleaseCheckError(err instanceof Error ? err.message : String(err));
+    } finally {
+      if (mounted.current) setReleaseChecking(false);
+    }
+  }, []);
+
+  /**
+   * Upload the rendered MP4 to YouTube as a PRIVATE draft, then follow it.
+   *
+   * ⚠️ THE POLL DISCRIMINATES ON A VALUE THAT CHANGES, NOT ONE THAT EXISTS —
+   * the same trap the render poll was fixed for. A retry after a failed attempt
+   * arrives with `uploadStatus: 'failed'` and the previous `uploadError`
+   * ALREADY on the row, so "poll until the status is terminal" would announce
+   * the OLD failure instantly, before the worker had done anything. `updatedAt`
+   * is stamped by `markUploadQueued`, which the route completes before it
+   * returns its 202, so capturing `updatedAt` BEFORE the POST and requiring it
+   * to move is a reliable "this attempt, not the last one" test. Success
+   * additionally requires a `youtubeVideoId` and a moved `uploadedToYoutubeAt`:
+   * the id is the only proof a video exists, and the timestamp tells this
+   * upload's id apart from one left by an earlier run.
+   */
+  const uploadToYoutube = useCallback(async () => {
+    if (!jobId || !job) return;
+    const title = uploadTitleValue.trim();
+    if (!title) return;
+    setUploadingToYoutube(true);
+    setError(null);
+    setReleaseCheck(null);
+    setReleaseCheckError(null);
+    const priorUpdatedAt = job.updatedAt ?? null;
+    const priorUploadedAt = job.uploadedToYoutubeAt ?? null;
+    try {
+      const res = await adminFetch(`/api/admin/music-lab/master/${jobId}/youtube`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title,
+          description: uploadDescription,
+          tags: uploadTags,
+          playlistIds: uploadPlaylistIds,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      // A 409 is the planner refusing (already uploaded, an upload in flight,
+      // no video, not saved). Its message IS the answer — there is nothing to
+      // poll for.
+      if (!res.ok || !body.success) throw new Error(body.error || `Could not start the upload (HTTP ${res.status}).`);
+      setAnnounce('Uploading to YouTube.');
+
+      // The worker's own ceiling is 900s; allow for a queued invoke on top.
+      const deadline = Date.now() + 20 * 60 * 1000;
+      for (let attempt = 0; ; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 4000));
+        if (!mounted.current) return;
+        const s = await adminFetch(`/api/admin/music-lab/master/${jobId}`);
+        const fresh = (await s.json()) as MasterJob;
+        const moved = fresh.updatedAt !== priorUpdatedAt;
+        if (
+          moved &&
+          fresh.uploadStatus === 'uploaded' &&
+          fresh.youtubeVideoId &&
+          fresh.uploadedToYoutubeAt !== priorUploadedAt
+        ) {
+          setJob(fresh);
+          setAnnounce('Uploaded to YouTube as a private draft.');
+          // Read back what YouTube stored, rather than trusting what we sent.
+          void runReleaseCheck(fresh.youtubeVideoId);
+          return;
+        }
+        if (moved && fresh.uploadStatus === 'failed') {
+          setJob(fresh);
+          throw new Error(fresh.uploadError || 'The upload failed.');
+        }
+        if (Date.now() > deadline) {
+          // Same rule as the panel's amber note: a reload does NOT pick this
+          // up, it loses the panel. Stay put; Retry re-enables on staleness.
+          throw new Error(
+            'The upload is taking longer than expected. It keeps going server-side — stay on this page and use Retry upload once it becomes available.',
+          );
+        }
+      }
+    } catch (err) {
+      if (mounted.current) setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      if (mounted.current) setUploadingToYoutube(false);
+    }
+  }, [jobId, job, uploadTitleValue, uploadDescription, uploadTags, uploadPlaylistIds, runReleaseCheck]);
+
   /** Cover for a library row's render. Same upload path as the inline panel. */
   const onPickRowCover = useCallback(
     async (id: string, file: File) => {
@@ -1160,6 +1524,7 @@ export function MasteringStudio() {
     setSavedAt(null);
     setPublished(null);
     setCover(null);
+    clearUploadDraft();
 
     setSourceKey(m.s3Key);
     // Name only — the File itself cannot survive, so the trim panel falls back
@@ -1190,7 +1555,7 @@ export function MasteringStudio() {
     setStage('ready');
     setLibraryOpen(false);
     setAnnounce(`Re-opened ${m.title ?? 'master'}. Adjust and master again.`);
-  }, []);
+  }, [clearUploadDraft]);
 
   const toggleLibrary = useCallback(() => {
     setLibraryOpen((open) => {
@@ -1239,6 +1604,37 @@ export function MasteringStudio() {
 
   const pct = sent.total ? Math.round((sent.loaded / sent.total) * 100) : 0;
   const busy = stage === 'uploading' || stage === 'mastering';
+
+  /**
+   * A release check belongs to ONE video, and is shown only against that video.
+   *
+   * `job` can be replaced without the panel unmounting in between (mastering the
+   * same source to the second target clears and re-creates it), and a report
+   * graded against yesterday's upload rendered under today's would be evidence
+   * about the wrong video — which is precisely the confusion this panel exists
+   * to remove. Matching on the id makes that impossible rather than unlikely.
+   */
+  const videoCheck =
+    releaseCheck && job?.youtubeVideoId && releaseCheck.videoId === job.youtubeVideoId
+      ? releaseCheck
+      : null;
+  // Findings, split by the SHARED helper /admin/release uses — one definition of
+  // what each severity means, so the two screens cannot drift apart. A
+  // `not-checked` finding is kept out of both other groups: it is not a problem
+  // to fix and not an opinion the rule reached — it is the rule saying it never
+  // ran, and it must never read as either.
+  const {
+    actionable: checkActionable,
+    notes: checkNotes,
+    notChecked: checkNotChecked,
+  } = groupFindings(videoCheck?.findings);
+  const stored = videoCheck?.stored;
+  /**
+   * YouTube reports `duration: P0D` and `definition: sd` on a perfectly good
+   * upload until processing finishes, so neither is evidence of anything yet.
+   * Say that, instead of showing a freshly uploaded 1440p master as "sd".
+   */
+  const storedStillProcessing = Boolean(stored && (stored.durationSeconds === 0 || stored.definition === 'sd'));
 
   return (
     <div className="space-y-6">
@@ -2063,8 +2459,405 @@ export function MasteringStudio() {
                 Encodes the <strong>mastered WAV</strong> at AAC 384k/48&nbsp;kHz — the audio never
                 passes through another editor, so nothing can re-level it. 1440p is the default
                 because YouTube gives higher-resolution uploads a better audio codec.
-                {job.videoKey && ' Upload the MP4 to YouTube as-is.'}
+                {job.videoKey && ' Upload it below, or download the MP4 and do it by hand.'}
               </p>
+            </div>
+          )}
+
+          {/*
+            UPLOAD TO YOUTUBE — the last step that used to happen outside the
+            portal. Four sections in order: the picture, the metadata, the
+            preflight, the upload. Only reachable once a video actually exists;
+            `planUpload` refuses everything else server-side, and offering a
+            button that can only 409 is worse than not offering one.
+          */}
+          {uploadPanelOpen && (
+            <div className="mt-4 rounded-lg border border-gray-200 p-4 dark:border-gray-800">
+              <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                <Upload className="h-3.5 w-3.5" aria-hidden="true" /> Upload to YouTube
+              </h3>
+
+              {/* 1 — THE PICTURE. A bad render reached YouTube unseen once;
+                  the whole panel exists so that cannot happen again. */}
+              <div className="mt-3">
+                <p className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                  The picture that will be published
+                </p>
+                {framePreviewUrl ? (
+                  // A short-lived presigned S3 URL: next/image would need the
+                  // bucket host in remotePatterns and would proxy a private
+                  // object through the SSR function for no benefit.
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={framePreviewUrl}
+                    alt="Cover art the video was rendered from"
+                    className="mt-2 max-h-56 w-auto rounded-lg border border-gray-200 object-contain dark:border-gray-800"
+                  />
+                ) : (
+                  <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                    {frameKey ? 'Loading the cover…' : 'No cover recorded for this render.'}
+                  </p>
+                )}
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  This is the cover the MP4 was encoded from — the frame itself is this image fitted
+                  to {videoHeight}p. If it is the wrong picture, re-render above before uploading:
+                  YouTube cannot swap a video file, so a wrong frame means deleting the video and
+                  starting again.
+                </p>
+              </div>
+
+              {/* 2 — METADATA. The operator owns the title, the tags and the
+                  body text; the description's tail is assembled, not typed. */}
+              <div className="mt-4 space-y-3">
+                <div>
+                  <label htmlFor={`${inputId}-yt-title`} className="block text-xs font-medium text-gray-600 dark:text-gray-300">
+                    Video title
+                  </label>
+                  <input
+                    id={`${inputId}-yt-title`}
+                    type="text"
+                    value={uploadTitleValue}
+                    onChange={(e) => setUploadTitle(e.target.value)}
+                    // YouTube's own ceiling, and the upload route's zod cap. A
+                    // longer title is rejected with a generic error, so it is
+                    // stopped here where the operator can see it happening.
+                    maxLength={100}
+                    placeholder="Tamil title | Romanized title"
+                    className="mt-1 w-full max-w-md rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                  />
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {uploadTitleValue.length}/100 · starts from this master&rsquo;s name; edit it freely.
+                  </p>
+                </div>
+
+                <div>
+                  <label htmlFor={`${inputId}-yt-tags`} className="block text-xs font-medium text-gray-600 dark:text-gray-300">
+                    Tags <span className="font-normal text-gray-400">(comma separated)</span>
+                  </label>
+                  <input
+                    id={`${inputId}-yt-tags`}
+                    type="text"
+                    value={uploadTagsText}
+                    onChange={(e) => setUploadTagsText(e.target.value)}
+                    placeholder="tamil song, tamil melody, காதல் பாடல்"
+                    className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                  />
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {uploadTags.length} tag{uploadTags.length === 1 ? '' : 's'} · the checklist wants at
+                    least 10. Anything past 60 is dropped before sending.
+                  </p>
+                </div>
+
+                <div>
+                  <label htmlFor={`${inputId}-yt-hashtags`} className="block text-xs font-medium text-gray-600 dark:text-gray-300">
+                    Hashtags <span className="font-normal text-gray-400">(space separated)</span>
+                  </label>
+                  <input
+                    id={`${inputId}-yt-hashtags`}
+                    type="text"
+                    value={uploadHashtagsText}
+                    onChange={(e) => setUploadHashtagsText(e.target.value)}
+                    placeholder="#tamilagaval #tamilsong"
+                    className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                  />
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Kept as data and placed last, where YouTube surfaces them — not typed into the
+                    text below. The first three show above the title.
+                  </p>
+                </div>
+
+                <fieldset>
+                  <legend className="text-xs font-medium text-gray-600 dark:text-gray-300">Playlists</legend>
+                  <div className="mt-1 flex flex-wrap gap-4">
+                    {UPLOAD_PLAYLISTS.map((p) => (
+                      <label key={p.id} className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-200">
+                        <input
+                          type="checkbox"
+                          checked={uploadPlaylistIds.includes(p.id)}
+                          onChange={(e) =>
+                            setUploadPlaylistIds((prev) =>
+                              e.target.checked ? [...new Set([...prev, p.id])] : prev.filter((x) => x !== p.id)
+                            )
+                          }
+                        />
+                        {p.label}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+
+                <div>
+                  <label htmlFor={`${inputId}-yt-body`} className="block text-xs font-medium text-gray-600 dark:text-gray-300">
+                    Your description — lyrics and imagery
+                  </label>
+                  <textarea
+                    id={`${inputId}-yt-body`}
+                    value={uploadBody}
+                    onChange={(e) => setUploadBody(e.target.value)}
+                    rows={6}
+                    placeholder="பாடலின் கதை, படிமங்கள்…"
+                    className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                  />
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    This part is yours. The credit block, the site link, the commission line and the
+                    playlist links are added below it automatically and are not editable here — that
+                    is what stopped a retired credit line reappearing on new uploads.
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                    The full description, exactly as it will be sent
+                  </p>
+                  <pre
+                    aria-label="Assembled description preview"
+                    className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-800 dark:border-gray-800 dark:bg-gray-800/40 dark:text-gray-200"
+                  >
+                    {uploadDescription}
+                  </pre>
+                  <p className="mt-1 tabular-nums text-xs text-gray-500 dark:text-gray-400">
+                    {uploadDescription.length}/5000 characters
+                    {uploadDescription.length >= 5000 && (
+                      <span className="ml-1 text-amber-700 dark:text-amber-400">
+                        — at the API limit; your text is trimmed before the credit block is.
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              {/* 3 — PREFLIGHT. Never gates the button: it grades the video
+                  that exists on YouTube, which is why it can only run after the
+                  upload. Grading the form would be grading our own claim. */}
+              <div className="mt-4 border-t border-gray-100 pt-3 dark:border-gray-800">
+                <div className="flex flex-wrap items-center gap-3">
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Release check
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => job.youtubeVideoId && void runReleaseCheck(job.youtubeVideoId)}
+                    disabled={!job.youtubeVideoId || releaseChecking}
+                    className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                  >
+                    {releaseChecking && <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />}
+                    {videoCheck ? 'Check again' : 'Run the release check'}
+                  </button>
+                </div>
+                {!job.youtubeVideoId && (
+                  <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                    Runs once the video exists on YouTube — the checklist grades what the API is
+                    holding, not what this form is about to send. It never blocks the upload.
+                  </p>
+                )}
+                {releaseCheckError && (
+                  <p className="mt-2 text-xs text-red-600 dark:text-red-400">{releaseCheckError}</p>
+                )}
+                {videoCheck && (
+                  <div className="mt-2">
+                    <p className="text-sm font-semibold">
+                      {videoCheck.ready ? (
+                        <span className="text-emerald-700 dark:text-emerald-400">
+                          Nothing mechanical outstanding
+                        </span>
+                      ) : (
+                        <span className="text-amber-800 dark:text-amber-400">
+                          {videoCheck.blockers} blocker{videoCheck.blockers === 1 ? '' : 's'},{' '}
+                          {videoCheck.gaps} gap{videoCheck.gaps === 1 ? '' : 's'}
+                        </span>
+                      )}
+                    </p>
+                    {checkActionable.length > 0 && (
+                      <ul className="mt-2 space-y-2">
+                        {checkActionable.map((f) => (
+                          <FindingRow key={f.id} f={f} />
+                        ))}
+                      </ul>
+                    )}
+                    {checkNotes.length > 0 && (
+                      <details className="mt-2">
+                        <summary className="cursor-pointer text-xs text-gray-600 dark:text-gray-300">
+                          {checkNotes.length} note{checkNotes.length === 1 ? '' : 's'} — nothing to fix
+                        </summary>
+                        <ul className="mt-2 space-y-2">
+                          {checkNotes.map((f) => (
+                            <FindingRow key={f.id} f={f} />
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                    {/* Kept apart from both lists above, and styled muted +
+                        dashed + italic: a check that could not run is not a
+                        pass, and showing it as one would launder a known gap. */}
+                    {checkNotChecked.length > 0 && (
+                      <details className="mt-2">
+                        <summary className="cursor-pointer text-xs italic text-slate-400">
+                          {checkNotChecked.length} check{checkNotChecked.length === 1 ? '' : 's'} not
+                          run — inputs were missing, not clear
+                        </summary>
+                        <ul className="mt-2 space-y-2">
+                          {checkNotChecked.map((f) => (
+                            <FindingRow key={f.id} f={f} />
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                    {videoCheck.captionsChecked === false && (
+                      <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                        Caption tracks could not be read — caption findings are absent, not clear.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* 4 — UPLOAD. Private draft; nothing here publishes anything. */}
+              <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-gray-100 pt-3 dark:border-gray-800">
+                <button
+                  type="button"
+                  onClick={() => void uploadToYoutube()}
+                  disabled={
+                    uploadingToYoutube ||
+                    !uploadTitleValue.trim() ||
+                    Boolean(job.youtubeVideoId) ||
+                    // Not `uploadStatus === 'queued' || 'uploading'`: that form
+                    // had no expiry, so a crashed upload disabled its own
+                    // recovery forever. See `uploadStale`.
+                    uploadInFlight
+                  }
+                  className="inline-flex items-center gap-2 rounded-lg border border-orange-300 px-4 py-2 text-sm font-medium text-orange-700 transition hover:bg-orange-50 disabled:opacity-60 dark:border-orange-800 dark:text-orange-300 dark:hover:bg-orange-900/20"
+                >
+                  {uploadingToYoutube
+                    ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    : <Upload className="h-4 w-4" aria-hidden="true" />}
+                  {uploadingToYoutube
+                    ? 'Uploading…'
+                    : job.youtubeVideoId
+                      ? 'Already uploaded'
+                      : job.uploadStatus === 'failed' || uploadStale
+                        ? 'Retry upload'
+                        : 'Upload to YouTube'}
+                </button>
+                {!job.youtubeVideoId && !uploadingToYoutube && uploadInFlight && (
+                  /* The row says an upload is running but nothing in THIS
+                     mount is following it — a remount, or a re-master after
+                     navigating away. The button is correctly disabled (a
+                     second invoke is exactly what the planner's in-flight
+                     guard exists to stop), so the panel must SAY why rather
+                     than show a dead grey button with no explanation.
+
+                     ⚠️ IT MUST NOT SAY "reload the page", which is what it
+                     said until this was fixed. A reload clears the studio's
+                     stored pointer to a finished job, so it does not pick the
+                     upload up — it takes this panel away, and with it the only
+                     control that can ever retry. The honest instruction is the
+                     opposite one, plus when the retry becomes available. */
+                  <span className="text-xs text-amber-800 dark:text-amber-400">
+                    An upload is already running for this master — it keeps going server-side.
+                    Stay on this page: Retry becomes available here if it has not finished within{' '}
+                    {UPLOAD_STALE_MINUTES} minutes.
+                  </span>
+                )}
+                {!job.youtubeVideoId && !uploadInFlight && (
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    Uploads as a <strong>private</strong> draft. Nothing here makes a video public.
+                  </span>
+                )}
+              </div>
+
+              {job.uploadStatus === 'failed' && job.uploadError && !job.youtubeVideoId && (
+                <p className="mt-2 text-xs text-red-600 dark:text-red-400">{job.uploadError}</p>
+              )}
+
+              {job.youtubeVideoId && (
+                <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 text-sm dark:border-emerald-900/40 dark:bg-emerald-900/10">
+                  <p className="font-semibold text-emerald-800 dark:text-emerald-300">
+                    Uploaded as a private draft —{' '}
+                    <code className="rounded bg-white/70 px-1 dark:bg-black/20">{job.youtubeVideoId}</code>
+                  </p>
+                  {/* An "uploaded" job can still carry an error: the thumbnail
+                      or a playlist insert failed AFTER the video landed. The
+                      video is real; those steps are not, and saying so is the
+                      difference between a report and a claim. */}
+                  {job.uploadError && (
+                    <p className="mt-1 flex items-start gap-1.5 text-xs text-amber-800 dark:text-amber-400">
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                      <span>{job.uploadError}</span>
+                    </p>
+                  )}
+
+                  {/* WHAT YOUTUBE IS HOLDING — read back from the API, not
+                      echoed from the form. An upload response is a claim. */}
+                  <p className="mt-3 text-xs font-medium text-gray-700 dark:text-gray-200">
+                    What YouTube stored (read back from the API)
+                  </p>
+                  {stored ? (
+                    <>
+                      <dl className="mt-1 grid gap-x-4 gap-y-1 text-xs sm:grid-cols-[9rem_1fr]">
+                        <dt className="font-medium text-gray-600 dark:text-gray-300">Duration</dt>
+                        <dd className="tabular-nums text-gray-800 dark:text-gray-100">
+                          {stored.durationSeconds > 0 ? clock(stored.durationSeconds) : '—'}
+                        </dd>
+                        <dt className="font-medium text-gray-600 dark:text-gray-300">Definition</dt>
+                        <dd className="text-gray-800 dark:text-gray-100">{stored.definition ?? '—'}</dd>
+                        <dt className="font-medium text-gray-600 dark:text-gray-300">Thumbnail</dt>
+                        <dd className="text-gray-800 dark:text-gray-100">
+                          {stored.thumbnail
+                            ? `${stored.thumbnail.name} · ${stored.thumbnail.width}×${stored.thumbnail.height}`
+                            : 'none'}
+                        </dd>
+                        <dt className="font-medium text-gray-600 dark:text-gray-300">Tags</dt>
+                        <dd className="tabular-nums text-gray-800 dark:text-gray-100">{stored.tagCount}</dd>
+                        <dt className="font-medium text-gray-600 dark:text-gray-300">Language</dt>
+                        <dd className="text-gray-800 dark:text-gray-100">
+                          {stored.defaultLanguage ?? '—'} · audio {stored.defaultAudioLanguage ?? '—'}
+                        </dd>
+                        <dt className="font-medium text-gray-600 dark:text-gray-300">Privacy</dt>
+                        <dd className="text-gray-800 dark:text-gray-100">{stored.privacyStatus ?? '—'}</dd>
+                        <dt className="font-medium text-gray-600 dark:text-gray-300">Playlists</dt>
+                        {/* Every checklist playlist the video was found in —
+                            which can legitimately exceed the two this panel
+                            adds (Shorts is graded too), so it is reported as a
+                            count plus the names that matched, never "2 of 2". */}
+                        <dd className="text-gray-800 dark:text-gray-100">
+                          <span className="tabular-nums">{stored.playlistIds.length}</span>
+                          {' — '}
+                          {UPLOAD_PLAYLISTS.filter((p) => stored.playlistIds.includes(p.id))
+                            .map((p) => p.label)
+                            .join(', ') || 'neither of the two this panel adds'}
+                        </dd>
+                      </dl>
+                      {storedStillProcessing && (
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          YouTube reports a zero duration and <code>sd</code> until it has finished
+                          processing an upload, so those two say nothing yet — check again in a few
+                          minutes before reading anything into them.
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      Not read back yet — run the release check above.
+                    </p>
+                  )}
+
+                  {/* ⚠️ ALWAYS, whether or not the check has run. The panel must
+                      never imply a release is finished when it is not: the Data
+                      API cannot create a Premiere and cannot pin a comment. */}
+                  <p className="mt-3 text-gray-800 dark:text-gray-100">
+                    Two steps remain in YouTube Studio — the Data API cannot do either: set the{' '}
+                    <strong>Premiere</strong> date and time, and <strong>pin</strong> your comment.
+                  </p>
+                  <a
+                    href={`https://studio.youtube.com/video/${job.youtubeVideoId}/edit`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-1 inline-flex items-center gap-1 text-sm font-medium text-orange-700 underline hover:text-orange-800 dark:text-orange-400"
+                  >
+                    <Link2 className="h-3.5 w-3.5" aria-hidden="true" /> Open in YouTube Studio
+                  </a>
+                </div>
+              )}
             </div>
           )}
 

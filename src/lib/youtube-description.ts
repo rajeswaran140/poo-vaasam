@@ -12,6 +12,7 @@
  */
 
 import { SITE, isWhatsAppConfigured } from '@/config/site';
+import { COMPOSITION_CTA } from '@/lib/commission';
 
 const SUBSCRIBE_URL = `${SITE.youtube.channelUrl.replace(/\/+$/, '')}?sub_confirmation=1`;
 const SITE_URL = 'https://tamilagaval.com/?utm_source=youtube&utm_medium=description';
@@ -179,4 +180,84 @@ export function assembleYoutubeDescription(
   return [buildDescriptionLead(), main.trim(), CREDIT_BLOCK, footer, hashtags]
     .filter(Boolean)
     .join('\n\n');
+}
+
+/** Input to {@link buildUploadDescription}: the operator's finished text, plus hashtags. */
+export interface UploadDescriptionParts {
+  /**
+   * The operator's OWN, already-final lyric/imagery text (not a raw AI draft —
+   * that path is `assembleYoutubeDescription`, above). Kept verbatim other than
+   * the forbidden-credit-line strip.
+   */
+  body: string;
+  /** Hashtags as data, not text the caller embeds in `body` and hopes survives intact. */
+  hashtags?: string[];
+}
+
+const YOUTUBE_DESCRIPTION_LIMIT = 5000;
+
+/**
+ * THE only place a PORTAL UPLOAD description is assembled (`feat/portal-youtube-upload`:
+ * the admin portal calling the YouTube Data API directly, no copy/paste into Studio).
+ *
+ * Descriptions used to be hand-built in a text editor before every upload, which is
+ * why a retired credit line kept reappearing on new videos
+ * (project_description_template_leak). Sweeping the catalogue chased the leak; this
+ * closes it: `stripForbiddenCreditLines` runs on the operator's text so a pasted old
+ * credit cannot survive, and CREDIT_BLOCK — reused from the same single source of
+ * truth `assembleYoutubeDescription` uses, pinned by the admin-docs drift guard — is
+ * the only attribution the output can carry.
+ *
+ * NOT a duplicate of `assembleYoutubeDescription`: that one parses a raw AI-generated
+ * draft (strips leaked scaffolding labels, splits hashtags out of the body text,
+ * offers a WhatsApp lead, picks ONE theme playlist) for a human to copy into YouTube
+ * Studio by hand. This one takes the operator's already-finished text and a
+ * structured hashtag list from the upload form, always links all three playlists
+ * (an API upload has no "read more" reason to economize the way the copy/paste
+ * footer does), and enforces YouTube's hard 5000-character API limit — a rule that
+ * only matters when the text is going straight to the API, never when a human is
+ * pasting and can see it doesn't fit. Folding the two together would force one of
+ * them to grow silently-wrong optional params (a themed-playlist mode a portal
+ * upload never uses, or a fixed-3-playlist mode the AI-draft flow never wants).
+ */
+export function buildUploadDescription(parts: UploadDescriptionParts): string {
+  const body = stripForbiddenCreditLines(parts.body).trim();
+  const tail = [
+    CREDIT_BLOCK,
+    `🌐 ${SITE_URL}`,
+    COMPOSITION_CTA,
+    `🔔 Subscribe\n${SUBSCRIBE_URL}`,
+    `▶️ அனைத்து பாடல்கள் | All Songs:\n${playlistUrl(PLAYLIST.all)}`,
+    `⭐ சமீபத்திய பாடல்கள் | Recent Songs:\n${playlistUrl(PLAYLIST.latest)}`,
+    `❤️ காதல் பாடல்கள் | Tamil Love Songs:\n${playlistUrl(PLAYLIST.love)}`,
+  ];
+  // `tail`'s entries are all fixed, always-non-empty constants (credit block,
+  // site link, CTA, subscribe, the three playlists) — they never shrink and
+  // never drop out of the join, so their combined length is a stable budget.
+  const tailStr = tail.join('\n\n');
+  const hashtags = (parts.hashtags ?? []).join(' ').trim();
+  const assemble = (b: string, h: string) => [b, tailStr, h].filter(Boolean).join('\n\n');
+
+  const out = assemble(body, hashtags);
+  if (out.length <= YOUTUBE_DESCRIPTION_LIMIT) return out;
+
+  // Something must go. Priority: the credit block and the three playlist
+  // links (tailStr) never move. Trim the operator's body first — all the
+  // way to empty if necessary — before touching the hashtags at all.
+  const overWithFullBody = out.length - YOUTUBE_DESCRIPTION_LIMIT;
+  const trimmedBody =
+    overWithFullBody < body.length ? body.slice(0, body.length - overWithFullBody).trimEnd() : '';
+  const withTrimmedBody = assemble(trimmedBody, hashtags);
+  if (withTrimmedBody.length <= YOUTUBE_DESCRIPTION_LIMIT) return withTrimmedBody;
+
+  // The body is already empty and it still doesn't fit: the hashtags
+  // themselves are too long alongside the fixed footer. Trim hashtags too —
+  // this is the last resort, after the body, and still never touches
+  // tailStr.
+  const overWithEmptyBody = withTrimmedBody.length - YOUTUBE_DESCRIPTION_LIMIT;
+  const trimmedHashtags =
+    overWithEmptyBody < hashtags.length
+      ? hashtags.slice(0, hashtags.length - overWithEmptyBody).trimEnd()
+      : '';
+  return assemble('', trimmedHashtags);
 }

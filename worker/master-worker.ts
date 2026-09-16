@@ -11,13 +11,14 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, UpdateCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
+import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import {
   parseLoudnormStats,
   buildPass1Loudnorm,
@@ -63,6 +64,8 @@ import {
   joinedDurationSec,
   JOIN_OUTPUT_LABEL,
 } from '@/lib/master-join';
+import { planUpload, uploadRefusalMessage } from '@/lib/youtube-upload';
+import type { MasterJob } from '@/types/masterJob';
 
 const FFMPEG = process.env.FFMPEG_PATH || '/opt/bin/ffmpeg';
 const REGION = process.env.AWS_REGION || 'ca-central-1';
@@ -80,6 +83,7 @@ const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({ region: REGION }), 
 const MATCHERING_WORKER_FUNCTION =
   process.env.MATCHERING_WORKER_FUNCTION || 'tamilagaval-matchering-worker';
 const lambdaClient = new LambdaClient({ region: REGION });
+const ssm = new SSMClient({ region: REGION });
 
 async function patch(jobId: string, fields: Record<string, unknown>): Promise<void> {
   const names: Record<string, string> = {};
@@ -150,6 +154,11 @@ interface MasterEvent {
   referenceKey?: string;
   referenceId?: string;
   matchingMethod?: 'loudnorm' | 'matched' | 'both';
+  /**
+   * Upload an already-rendered video to YouTube. Handled before the mastering
+   * guards, like `render`, so an upload can never re-master.
+   */
+  youtube?: { title: string; description: string; tags: string[]; playlistIds: string[] };
 }
 
 /**
@@ -373,6 +382,425 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
 }
 
 /**
+ * Content-Type for `thumbnails.set`, from the cover's own file extension.
+ *
+ * The cover-upload route accepts .jpg/.jpeg, .png and .webp. Hardcoding
+ * `image/png` made every JPEG cover fail the thumbnail call silently — it
+ * lands in `problems` and the job still reads `uploaded`, so the only way to
+ * notice was to look at the video. `.jpg`/1_c_cover.jpg is the worker's own
+ * test fixture and was exactly the failing case.
+ */
+function coverContentType(key: string): string {
+  const ext = key.match(/\.[a-z0-9]+$/i)?.[0]?.toLowerCase();
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.webp') return 'image/webp';
+  return 'image/png';
+}
+
+/**
+ * True when a resumable session is UNAMBIGUOUSLY gone and must be abandoned
+ * (cleared from the job, a fresh one opened) rather than resumed.
+ *
+ * ONLY 404 and 410 — Google's own "this upload URI no longer exists"
+ * statuses. Nothing else qualifies, most importantly NOT a bare 400.
+ *
+ * ⚠️ 400 IS DELIBERATELY EXCLUDED — this is a considered choice under
+ * uncertainty, not an oversight. A 400 is plausibly a Content-Range size
+ * mismatch (see the explicit, LOCAL size check in uploadToYoutube, which
+ * catches that case in the 308 branch without needing Google to tell us
+ * anything), but "bad
+ * request" is a broad class and could mean something else entirely — a
+ * transient condition at Google, an intermediary, a malformed header a
+ * future edit introduces. The two misclassification costs are not
+ * symmetric: treating a genuinely-dead session as alive costs a failed job
+ * an operator has to look at — annoying, fully recoverable. Treating a
+ * genuinely-alive session as dead costs a SECOND `videos.insert` — a
+ * duplicate video on a real channel, recoverable only by finding and
+ * deleting it by hand. When the evidence is ambiguous, the branch that
+ * fails in the recoverable direction is correct, so 400 is treated like a
+ * 5xx: keep the session, mark the job failed, let the operator decide. If
+ * 400's meaning is ever confirmed against the live API, this may be
+ * revisited — it is excluded on principle here, not on certainty.
+ *
+ * Anything else (5xx, a network-layer failure) does NOT prove the session is
+ * dead either, so it too must be LEFT ALONE — clearing it there is how the
+ * exact jam the staleness window exists to prevent gets reintroduced: a good
+ * session abandoned, and the next retry opening (and risking) a second video
+ * instead of resuming.
+ */
+function sessionIsGone(status: number): boolean {
+  return status === 404 || status === 410;
+}
+
+/**
+ * Upload a rendered video to YouTube as a PRIVATE draft, then read it back.
+ *
+ * ⚠️ WHY THIS RUNS HERE AND NOT IN THE WEB APP. The token this needs is
+ * force-ssl scoped: it can delete videos and post comments on the channel. The
+ * deployed Next.js app is public-facing and holds only readonly analytics
+ * scope, and it stays that way. This function is private, already reads SSM,
+ * and already has the MP4 on local disk.
+ *
+ * ⚠️ WHY IT REFUSES TO INSERT TWICE. A video file cannot be replaced on
+ * YouTube, so a duplicate insert means a second video to find and delete by
+ * hand. planUpload refuses when youtubeVideoId is set; the id is written the
+ * MOMENT the insert returns, before the thumbnail or the playlists, so a later
+ * failure can never orphan it.
+ *
+ * ⚠️ RESUMING AN EXISTING SESSION FOLLOWS GOOGLE'S RESUMABLE-UPLOAD PROTOCOL,
+ * not a bare re-PUT of the whole body: the session is QUERIED first (a PUT
+ * with an empty body and a `Content-Range: bytes STAR/SIZE`-shaped header,
+ * "STAR" meaning a literal asterisk), because a bare
+ * re-PUT cannot tell "still uploading" apart from "already finished — the id
+ * write just never landed", and guessing wrong either duplicates the insert
+ * or loses the id forever. The query's status decides what happens next; see
+ * the branches below and `sessionIsGone`. `now` is threaded through to
+ * `planUpload` (default `Date.now()`) so the planner's clock is injectable
+ * from a test; at `stage: 'execute'` the planner does not consult it, because
+ * staleness is the enqueue gate's question, not this function's.
+ */
+export async function uploadToYoutube(
+  jobId: string,
+  spec: NonNullable<MasterEvent['youtube']>,
+  bucket: string,
+  now: number = Date.now(),
+) {
+  const job = await getJob(jobId);
+  if (!job) return { ok: false };
+
+  // 'execute', not 'enqueue'. The route marked this job `queued` and stamped a
+  // fresh `updatedAt` BEFORE it invoked this worker, so re-running the gate's
+  // concurrency check here would have the worker refuse the very job it was
+  // invoked for — which it did, for every upload, until this stage argument
+  // existed. 'execute' skips ONLY that refusal; `already-uploaded` (the
+  // duplicate-video guard) and every eligibility check still apply, and this
+  // is the only caller that could actually create the duplicate.
+  const plan = planUpload(job, spec, { now, stage: 'execute' });
+  if (!plan.ok) {
+    // A refusal must never overwrite a TERMINAL 'uploaded' state. Marking
+    // 'already-uploaded' as 'failed' is what invited an operator to clear
+    // youtubeVideoId by hand to "retry" a job whose video is already live —
+    // producing the exact duplicate this whole file exists to prevent. Every
+    // other refusal is a genuine non-terminal problem and may still fail.
+    await patch(jobId, {
+      uploadStatus: plan.reason === 'already-uploaded' ? 'uploaded' : 'failed',
+      uploadError: uploadRefusalMessage(plan.reason),
+    });
+    return { ok: false };
+  }
+
+  await patch(jobId, { uploadStatus: 'uploading', uploadError: null });
+
+  const dir = mkdtempSync(join(tmpdir(), 'ytupload-'));
+  const videoPath = join(dir, 'video.mp4');
+  try {
+    const token = await youtubeAccessToken();
+
+    const obj = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: plan.videoKey }));
+    writeFileSync(videoPath, Buffer.from(await obj.Body!.transformToByteArray()));
+    const size = statSync(videoPath).size;
+
+    // Resume an interrupted session rather than opening a new one — opening a
+    // new one is how a retry becomes a duplicate video.
+    let sessionUri = job.uploadSessionUri ?? null;
+    let videoId: string | undefined;
+
+    // UNAMBIGUOUS, LOCAL evidence that the bytes on disk are no longer the
+    // bytes this session declared via X-Upload-Content-Length — the file was
+    // almost certainly re-rendered since. It means the session cannot RECEIVE
+    // these bytes.
+    //
+    // ⚠️ IT IS NOT EVIDENCE THAT THE SESSION NEVER FINISHED, so it must not
+    // decide anything before the query. Discarding here was a second
+    // duplicate-insert path, and a reachable one: PUT succeeds → the worker
+    // dies before the id patch → the operator re-renders → retry → mismatch →
+    // fresh session → a SECOND video on the channel. The mismatch is recorded
+    // now and consulted only in the 308 branch below, AFTER the query has had
+    // its say; a 200/201 still recovers the id and completes.
+    const sizeMismatch =
+      typeof job.uploadSessionSize === 'number' && job.uploadSessionSize !== size;
+
+    if (sessionUri) {
+      const query = await fetch(sessionUri, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          // The total must describe the SESSION being queried, not the file
+          // sitting on disk — and the two differ in exactly the mismatch case
+          // this query now runs for. Sending the local size against a session
+          // that declared a different one invites a 400, which `sessionIsGone`
+          // deliberately does not treat as dead, so the job would fail with the
+          // session retained and every retry would jam the same way.
+          'Content-Range': `bytes */${job.uploadSessionSize ?? size}`,
+        },
+      });
+
+      if (query.status === 200 || query.status === 201) {
+        // The upload had ALREADY finished on a prior attempt — this is the
+        // sole recovery path for "the PUT succeeded but the youtubeVideoId
+        // write never landed". The response body IS the video resource;
+        // treat it exactly as if videos.insert had just returned it.
+        //
+        // Deliberately reached even when `sizeMismatch` is true: the video on
+        // YouTube was built from the OLDER bytes, which cannot be changed (a
+        // video file is not replaceable), so the choice is one video whose id
+        // the operator can see and delete, or that one PLUS a second insert.
+        // Recovering the id is the recoverable direction.
+        const already = await query.json();
+        videoId = already?.id as string | undefined;
+        if (!videoId) {
+          await patch(jobId, {
+            uploadStatus: 'failed',
+            uploadError: 'YouTube reported the upload complete but returned no video id.',
+          });
+          return { ok: false };
+        }
+      } else if (query.status === 308 && sizeMismatch) {
+        // Incomplete AND the bytes have changed: this session can never accept
+        // the file now on disk, and the query has just proved it did not
+        // already finish. Only here is discarding it safe — and it is the same
+        // fall-through the 404 branch uses, which opens a fresh session below.
+        sessionUri = null;
+        await patch(jobId, { uploadSessionUri: null, uploadSessionSize: null });
+      } else if (query.status === 308) {
+        // Incomplete. Re-sending the whole body from byte 0 with a correct
+        // Content-Range is acceptable given this artifact is ~58 MB — the
+        // `Range` response header (bytes Google already has) is not needed to
+        // make that resend correct, only to make a partial resend possible,
+        // which isn't attempted here.
+        const put = await fetch(sessionUri, {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'video/mp4',
+            'Content-Range': `bytes 0-${size - 1}/${size}`,
+          },
+          body: readFileSync(videoPath),
+        });
+        if (!put.ok) {
+          await patch(jobId, {
+            uploadStatus: 'failed',
+            uploadError: await quotaAwareError(put),
+            ...(sessionIsGone(put.status) ? { uploadSessionUri: null, uploadSessionSize: null } : {}),
+          });
+          return { ok: false };
+        }
+        const inserted = await put.json();
+        videoId = inserted?.id as string | undefined;
+        if (!videoId) {
+          await patch(jobId, { uploadStatus: 'failed', uploadError: 'YouTube accepted the upload but returned no video id.' });
+          return { ok: false };
+        }
+      } else if (sessionIsGone(query.status)) {
+        // 404/410 only — expired or never valid. Clear it and fall through to
+        // opening a fresh one below, the same single-PUT flow a first attempt
+        // uses. (A since-replaced file takes the same fall-through, but only
+        // from the 308 branch above — never before the query.)
+        sessionUri = null;
+        await patch(jobId, { uploadSessionUri: null, uploadSessionSize: null });
+      } else {
+        // Some other status querying the session (5xx, a network-layer
+        // response) does not prove it is dead — KEEP uploadSessionUri so the
+        // next invocation still resumes instead of risking a second video.
+        await patch(jobId, { uploadStatus: 'failed', uploadError: await quotaAwareError(query) });
+        return { ok: false };
+      }
+    }
+
+    if (videoId === undefined) {
+      // Either a genuinely first attempt, or the previous session was just
+      // found to be gone above — both take the same single-PUT flow.
+      if (!sessionUri) {
+        const meta = {
+          snippet: {
+            title: plan.title,
+            description: plan.description,
+            tags: plan.tags,
+            categoryId: plan.categoryId,
+            defaultLanguage: 'ta',
+            defaultAudioLanguage: 'ta',
+          },
+          status: {
+            privacyStatus: plan.privacyStatus,
+            selfDeclaredMadeForKids: false,
+            license: 'youtube',
+            embeddable: true,
+          },
+        };
+        const open = await fetch(
+          'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json; charset=UTF-8',
+              'X-Upload-Content-Length': String(size),
+              'X-Upload-Content-Type': 'video/mp4',
+            },
+            body: JSON.stringify(meta),
+          },
+        );
+        if (!open.ok) {
+          await patch(jobId, { uploadStatus: 'failed', uploadError: await quotaAwareError(open) });
+          return { ok: false };
+        }
+        sessionUri = open.headers.get('location');
+        if (!sessionUri) {
+          await patch(jobId, { uploadStatus: 'failed', uploadError: 'YouTube did not return an upload session.' });
+          return { ok: false };
+        }
+        // Recorded alongside the uri so a later resume can tell — LOCALLY,
+        // with no Google call — whether this file is still the one the
+        // session was opened against. See the uploadSessionSize check above.
+        await patch(jobId, { uploadSessionUri: sessionUri, uploadSessionSize: size });
+      }
+
+      const put = await fetch(sessionUri, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'video/mp4' },
+        body: readFileSync(videoPath),
+      });
+      if (!put.ok) {
+        await patch(jobId, {
+          uploadStatus: 'failed',
+          uploadError: await quotaAwareError(put),
+          ...(sessionIsGone(put.status) ? { uploadSessionUri: null, uploadSessionSize: null } : {}),
+        });
+        return { ok: false };
+      }
+      const inserted = await put.json();
+      videoId = inserted?.id as string | undefined;
+      if (!videoId) {
+        await patch(jobId, { uploadStatus: 'failed', uploadError: 'YouTube accepted the upload but returned no video id.' });
+        return { ok: false };
+      }
+    }
+
+    // ⚠️ THE ONLY VIDEO THIS FUNCTION MAY EVER WRITE TO. `videoId` is captured
+    // directly from THIS invocation's own insert/resume response, in the
+    // narrowest scope available, and every write below (the patch, the
+    // thumbnail, every playlist add) must read this same constant — never the
+    // job row, never the event. See the thumbnail and playlist call sites for
+    // why.
+
+    // FIRST write after the id is known, before anything else can fail.
+    await patch(jobId, {
+      youtubeVideoId: videoId,
+      uploadedToYoutubeAt: new Date().toISOString(),
+      uploadSessionUri: null,
+      uploadSessionSize: null,
+    });
+
+    // Thumbnail and playlists are best-effort: the video exists, and failing
+    // them must not mark the upload failed or invite a re-insert.
+    const problems: string[] = [];
+    if (plan.coverKey) {
+      try {
+        const cover = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: plan.coverKey }));
+        const bytes = Buffer.from(await cover.Body!.transformToByteArray());
+        // MUST be `videoId` from above — never a job-row or event id. This
+        // video has never been seen by the operator; pointing this call at an
+        // existing video would overwrite the artwork of a live, published
+        // video on a channel with a real audience, and that is not recoverable
+        // by re-running anything.
+        const t = await fetch(
+          `https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${videoId}`,
+          {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': coverContentType(plan.coverKey) },
+            body: bytes,
+          },
+        );
+        if (!t.ok) problems.push('thumbnail');
+      } catch { problems.push('thumbnail'); }
+    }
+    for (const playlistId of plan.playlistIds) {
+      try {
+        // MUST be `videoId` from the insert above — never a job-row or event
+        // id. Adding the wrong video's id to a playlist changes the membership
+        // of a live, published video that a real audience already sees, and
+        // that is not recoverable by re-running anything. There is also no
+        // `videos.update` call anywhere in this file, deliberately: nothing
+        // here may ever modify an existing video's metadata.
+        const r = await fetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ snippet: { playlistId, resourceId: { kind: 'youtube#video', videoId } } }),
+        });
+        if (!r.ok) problems.push(`playlist ${playlistId}`);
+      } catch { problems.push(`playlist ${playlistId}`); }
+    }
+
+    await patch(jobId, {
+      uploadStatus: 'uploaded',
+      uploadError: problems.length ? `Uploaded, but these did not apply: ${problems.join(', ')}.` : null,
+    });
+    return { ok: true, videoId };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[master-worker] youtube upload failed:', message);
+    await patch(jobId, { uploadStatus: 'failed', uploadError: message }).catch(() => {});
+    return { ok: false };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * A YouTube access token with WRITE scope, from SSM SecureString.
+ * Never logged, never written to disk, never returned to the caller's caller.
+ */
+async function youtubeAccessToken(): Promise<string> {
+  const prefix = process.env.YOUTUBE_SSM_PREFIX || '/amplify/d3rkmepk4popv0/master';
+  const read = async (name: string) => {
+    const r = await ssm.send(new GetParameterCommand({ Name: `${prefix}/${name}`, WithDecryption: true }));
+    return r.Parameter?.Value ?? '';
+  };
+  const [secret, refresh] = await Promise.all([
+    read('YOUTUBE_OAUTH_CLIENT_SECRET'),
+    read('YOUTUBE_DATA_REFRESH_TOKEN'),
+  ]);
+  const clientId = process.env.YOUTUBE_OAUTH_CLIENT_ID ?? '';
+  if (!secret || !refresh || !clientId) throw new Error('YouTube credentials are not configured.');
+
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: secret,
+      refresh_token: refresh,
+      grant_type: 'refresh_token',
+    }),
+  });
+  const j = await res.json();
+  if (!j.access_token) throw new Error('Could not refresh the YouTube access token.');
+  return j.access_token as string;
+}
+
+/**
+ * Quota exhaustion needs its own wording. videos.insert costs 1600 units of a
+ * 10,000/day default shared with the analytics routes, so a generic failure
+ * message invites a retry that burns what is left.
+ */
+async function quotaAwareError(res: Response): Promise<string> {
+  const body = await res.text().catch(() => '');
+  if (res.status === 403 && /quota/i.test(body)) {
+    return 'Daily YouTube upload quota exhausted. videos.insert costs 1600 of 10,000 units a day — wait for the Pacific-midnight reset rather than retrying.';
+  }
+  return `YouTube rejected the upload (HTTP ${res.status}).`;
+}
+
+/** Read a job back for the upload guards. */
+async function getJob(jobId: string): Promise<MasterJob | null> {
+  const r = await ddb.send(new GetCommand({
+    TableName: TABLE,
+    Key: { PK: `MASTERJOB#${jobId}`, SK: 'METADATA' },
+  }));
+  return (r.Item as MasterJob) ?? null;
+}
+
+/**
  * Read a file's header without decoding it.
  *
  * `ffmpeg -i FILE` with no output prints the input header and exits non-zero —
@@ -407,6 +835,16 @@ export const handler = async (event: MasterEvent) => {
       return { ok: false, error: 'jobId and TAKES_BUCKET are required' };
     }
     return await renderVideo(jobId, event.render, TAKES_BUCKET);
+  }
+
+  // A YouTube upload, likewise — branch before the mastering guards, so an
+  // upload can never re-master.
+  if (event?.youtube) {
+    if (!jobId || !TAKES_BUCKET) {
+      console.error('[master-worker] bad youtube event');
+      return { ok: false, error: 'jobId and TAKES_BUCKET are required' };
+    }
+    return await uploadToYoutube(jobId, event.youtube, TAKES_BUCKET);
   }
 
   // The bucket is NOT taken from the event. The worker's IAM role can read and

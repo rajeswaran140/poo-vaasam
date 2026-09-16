@@ -126,6 +126,12 @@ export class MasterJobRepository {
         matchingStage: wantsMatching ? 'queued' : null,
         matchingStats: null,
         matchingError: null,
+        uploadStatus: null,
+        uploadSessionUri: null,
+        uploadSessionSize: null,
+        youtubeVideoId: null,
+        uploadedToYoutubeAt: null,
+        uploadError: null,
       };
       await DynamoDBOperations.put({
         PK: `MASTERJOB#${id}`,
@@ -233,6 +239,21 @@ export class MasterJobRepository {
       matchingError: item.matchingError && typeof item.matchingError === 'object'
         ? (item.matchingError as MasterJob['matchingError'])
         : (typeof item.matchingError === 'string' ? safeParseError(item.matchingError) : null),
+      // YouTube upload fields. All degrade to null for pre-feature rows.
+      uploadStatus:
+        item.uploadStatus === 'idle' ||
+        item.uploadStatus === 'queued' ||
+        item.uploadStatus === 'uploading' ||
+        item.uploadStatus === 'uploaded' ||
+        item.uploadStatus === 'failed'
+          ? item.uploadStatus
+          : null,
+      uploadSessionUri: typeof item.uploadSessionUri === 'string' ? item.uploadSessionUri : null,
+      uploadSessionSize: typeof item.uploadSessionSize === 'number' ? item.uploadSessionSize : null,
+      youtubeVideoId: typeof item.youtubeVideoId === 'string' ? item.youtubeVideoId : null,
+      uploadedToYoutubeAt:
+        typeof item.uploadedToYoutubeAt === 'string' ? item.uploadedToYoutubeAt : null,
+      uploadError: typeof item.uploadError === 'string' ? item.uploadError : null,
     };
   }
 
@@ -346,6 +367,45 @@ export class MasterJobRepository {
           ':publishedAt': ok ? result.publishedAt : null,
           ':publishKey': ok ? result.publishKey : null,
           ':publishError': ok ? null : result.publishError,
+        },
+      });
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  /**
+   * Mark an upload queued, so a second press of the button loses the race at
+   * planUpload's `in-flight` guard rather than starting two uploads.
+   *
+   * `updatedAt` MUST be refreshed here, not just `uploadStatus`: planUpload's
+   * in-flight check decides "queued but not yet stale" purely from the age of
+   * `updatedAt` against `UPLOAD_STALE_AFTER_MS`. A render can sit reviewed for
+   * half an hour before the operator presses Upload, so if this left the
+   * render's old `updatedAt` in place, the job would be marked `queued` and be
+   * ALREADY STALE at that instant — a double-click would read `isStale` as
+   * true, sail past the guard, and start a second invoke. Stamping `updatedAt`
+   * now is what makes the 20-minute window measure time-since-queued instead
+   * of time-since-something-else.
+   *
+   * No ttl clause — uploading only ever runs on a saved job, where save() has
+   * already removed it.
+   */
+  async markUploadQueued(id: string): Promise<void> {
+    try {
+      await DynamoDBOperations.update({
+        key: { PK: `MASTERJOB#${id}`, SK: 'METADATA' },
+        updateExpression:
+          'SET #uploadStatus = :uploadStatus, #uploadError = :uploadError, #updatedAt = :now',
+        expressionAttributeNames: {
+          '#uploadStatus': 'uploadStatus',
+          '#uploadError': 'uploadError',
+          '#updatedAt': 'updatedAt',
+        },
+        expressionAttributeValues: {
+          ':uploadStatus': 'queued',
+          ':uploadError': null,
+          ':now': new Date().toISOString(),
         },
       });
     } catch (error) {

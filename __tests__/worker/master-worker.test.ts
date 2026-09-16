@@ -15,6 +15,8 @@
 const send = jest.fn().mockResolvedValue({});
 const s3Send = jest.fn();
 const spawnSync = jest.fn();
+const ssmSend = jest.fn();
+const fetchMock = jest.fn();
 
 jest.mock('node:child_process', () => ({ spawnSync: (...a: unknown[]) => spawnSync(...a) }));
 jest.mock('@aws-sdk/client-s3', () => ({
@@ -23,20 +25,29 @@ jest.mock('@aws-sdk/client-s3', () => ({
   PutObjectCommand: class { constructor(public input: unknown) {} },
 }));
 jest.mock('@aws-sdk/client-dynamodb', () => ({ DynamoDBClient: class {} }));
+jest.mock('@aws-sdk/client-ssm', () => ({
+  SSMClient: class { send = (...a: unknown[]) => ssmSend(...a); },
+  GetParameterCommand: class { constructor(public input: unknown) {} },
+}));
 const mockRmSync = jest.fn();
 const mockWriteFileSync = jest.fn();
+const mockStatSync = jest.fn(() => ({ size: 123456 }));
 jest.mock('node:fs', () => ({
   mkdtempSync: () => '/tmp/master-test',
   writeFileSync: (...a: unknown[]) => mockWriteFileSync(...a),
   readFileSync: () => Buffer.from('MASTERED-WAV-BYTES'),
   rmSync: (...a: unknown[]) => mockRmSync(...a),
+  statSync: (...a: unknown[]) => mockStatSync(...a),
 }));
 jest.mock('@aws-sdk/lib-dynamodb', () => ({
   DynamoDBDocumentClient: { from: () => ({ send: (...a: unknown[]) => send(...a) }) },
   UpdateCommand: class { constructor(public input: Record<string, unknown>) {} },
+  GetCommand: class { constructor(public input: Record<string, unknown>) {} },
 }));
 
 process.env.TAKES_BUCKET = 'tamil-web-media';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(global as any).fetch = (...a: unknown[]) => fetchMock(...a);
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { handler } = require('../../worker/master-worker') as typeof import('../../worker/master-worker');
@@ -1049,5 +1060,484 @@ Output #0, null, to 'pipe:':
     logs.p2status = 1;
     await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14 });
     expect(mockRmSync).toHaveBeenCalledWith('/tmp/master-test', { recursive: true, force: true });
+  });
+});
+
+/**
+ * The YouTube upload.
+ *
+ * ⚠️ THE PROPERTY THAT MATTERS MOST: this function may only ever write to the
+ * video its OWN `videos.insert` just created. thumbnails.set and every
+ * playlistItems.insert must carry exactly the id that came back from that
+ * insert — never the job's pre-existing `youtubeVideoId`, never anything off
+ * the event. And when `planUpload` refuses because the job already has a
+ * `youtubeVideoId`, the whole operation must stop: no insert, no thumbnail,
+ * no playlist call, no network activity at all.
+ */
+describe('youtube upload', () => {
+  const YT = {
+    title: 'A song title',
+    description: 'A description of the song.',
+    tags: ['tamil', 'poem'],
+    playlistIds: ['PL_ONE', 'PL_TWO'],
+  };
+
+  let job: Record<string, unknown>;
+
+  beforeEach(() => {
+    job = {
+      id: 'j1',
+      videoKey: 'audio/mastering/1_a_song-master-14LUFS-1440p.mp4',
+      savedAt: '2026-09-01T00:00:00.000Z',
+      coverKey: 'audio/mastering/1_c_cover.jpg',
+      youtubeVideoId: null,
+      // ⚠️ THE STATE THE WORKER ACTUALLY RECEIVES, not a convenient one.
+      // The enqueue route calls markUploadQueued BEFORE it Event-invokes this
+      // worker, so every real invocation reads back `uploadStatus: 'queued'`
+      // with an `updatedAt` seconds old. This fixture used to prime `'idle'`
+      // — a state the route never produces — which is the only reason the
+      // worker's `in-flight` refusal of its own queued job stayed invisible
+      // for twelve commits. Keep these two fields in lockstep with
+      // markUploadQueued's write.
+      uploadStatus: 'queued',
+      updatedAt: new Date().toISOString(),
+      uploadSessionUri: null,
+    };
+
+    send.mockReset();
+    send.mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'UpdateExpression' in cmd.input
+        ? Promise.resolve({})
+        : Promise.resolve({ Item: job })
+    );
+    s3Send.mockReset();
+    s3Send.mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'Body' in cmd.input
+        ? Promise.resolve({})
+        : Promise.resolve({ Body: { transformToByteArray: async () => new Uint8Array([9, 9, 9]) } })
+    );
+    ssmSend.mockReset();
+    ssmSend.mockResolvedValue({ Parameter: { Value: 'shhh' } });
+    fetchMock.mockReset();
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('oauth2.googleapis.com/token')) {
+        return Promise.resolve({ ok: true, json: async () => ({ access_token: 'ACCESS-TOKEN' }) });
+      }
+      if (url.includes('uploadType=resumable')) {
+        return Promise.resolve({
+          ok: true,
+          headers: { get: (k: string) => (k === 'location' ? 'https://upload.example/session-abc' : null) },
+        });
+      }
+      if (url === 'https://upload.example/session-abc') {
+        // The id ONLY this response may ever produce — see the describe block
+        // comment. It must never match anything already sitting on the job.
+        return Promise.resolve({ ok: true, json: async () => ({ id: 'FRESH_INSERT_ID' }) });
+      }
+      if (url.includes('/thumbnails/set')) {
+        return Promise.resolve({ ok: true });
+      }
+      if (url.includes('/playlistItems')) {
+        return Promise.resolve({ ok: true });
+      }
+      return Promise.resolve({ ok: false, status: 500, text: async () => '' });
+    });
+    process.env.YOUTUBE_OAUTH_CLIENT_ID = 'test-client-id';
+  });
+
+  /**
+   * ⚠️ THE WORKER MUST NOT REFUSE THE JOB IT WAS INVOKED FOR.
+   *
+   * The enqueue route marks the job `queued` (stamping a fresh `updatedAt`)
+   * and THEN Event-invokes this worker, so the row the worker reads back is
+   * always `queued` and always seconds old. `planUpload`'s `in-flight`
+   * refusal is the ENQUEUE gate — it exists to make a double-click lose the
+   * race. Re-applying it here made the worker refuse its own invocation and
+   * patch `failed` before any insert, so the feature could not complete even
+   * once; a retry just repeated the loop. The worker therefore runs the
+   * planner at `stage: 'execute'`, which skips ONLY that check.
+   */
+  it('uploads the job it was invoked for, even though the route already marked it queued', async () => {
+    // Exactly what markUploadQueued leaves behind, re-read moments later.
+    job.uploadStatus = 'queued';
+    job.updatedAt = new Date().toISOString();
+
+    const res = await handler({ jobId: 'j1', youtube: YT } as never);
+
+    // Asserted first and separately: pre-fix this printed the refusal itself
+    // — "An upload is already running for this master." — which is the worker
+    // declining the very invocation the route had just queued for it.
+    expect(patched().uploadError ?? null).toBeNull();
+    expect(patched()).toMatchObject({ uploadStatus: 'uploaded', youtubeVideoId: 'FRESH_INSERT_ID' });
+    expect(res).toMatchObject({ ok: true, videoId: 'FRESH_INSERT_ID' });
+  });
+
+  it('uses ONLY the freshly inserted id for the thumbnail and every playlist call', async () => {
+    // A decoy id riding along on the event, shaped like something a careless
+    // future refactor might reach for instead of the insert response. The
+    // event type carries no such field — this asserts the extra property is
+    // simply ignored, not merely absent.
+    const res = await handler({ jobId: 'j1', youtube: { ...YT, videoId: 'DECOY_FROM_EVENT' } } as never);
+
+    expect(res).toMatchObject({ ok: true, videoId: 'FRESH_INSERT_ID' });
+
+    const thumbCall = fetchMock.mock.calls.find((c) => String(c[0]).includes('/thumbnails/set'));
+    expect(thumbCall).toBeDefined();
+    expect(String(thumbCall![0])).toContain('videoId=FRESH_INSERT_ID');
+
+    const playlistCalls = fetchMock.mock.calls.filter((c) => String(c[0]).includes('/playlistItems'));
+    expect(playlistCalls).toHaveLength(2);
+    for (const call of playlistCalls) {
+      const body = JSON.parse((call[1] as { body: string }).body);
+      // Not job.youtubeVideoId (null here), not anything from the event —
+      // exactly the id this run's own insert returned.
+      expect(body.snippet.resourceId.videoId).toBe('FRESH_INSERT_ID');
+    }
+
+    // The cover is job.coverKey's own '1_c_cover.jpg' — a hardcoded
+    // 'image/png' Content-Type would silently fail this call (finding 5).
+    const thumbHeaders = (thumbCall![1] as { headers: Record<string, string> }).headers;
+    expect(thumbHeaders['Content-Type']).toBe('image/jpeg');
+
+    expect(patched()).toMatchObject({ uploadStatus: 'uploaded', youtubeVideoId: 'FRESH_INSERT_ID' });
+  });
+
+  it('writes youtubeVideoId the moment the insert returns, before the thumbnail or playlists', async () => {
+    await handler({ jobId: 'j1', youtube: YT } as never);
+
+    const idWriteIndex = send.mock.calls.findIndex((c) => {
+      const values = (c[0] as { input: { ExpressionAttributeValues?: Record<string, unknown> } }).input
+        .ExpressionAttributeValues;
+      return values?.[':youtubeVideoId'] === 'FRESH_INSERT_ID';
+    });
+    const thumbIndex = fetchMock.mock.calls.findIndex((c) => String(c[0]).includes('/thumbnails/set'));
+
+    expect(idWriteIndex).toBeGreaterThan(-1);
+    expect(thumbIndex).toBeGreaterThan(-1);
+    // jest.fn() stamps every call across every mock with a shared, monotonic
+    // invocationCallOrder — this is the one reliable way to compare "when" two
+    // calls on DIFFERENT mocks happened relative to each other.
+    expect(send.mock.invocationCallOrder[idWriteIndex]).toBeLessThan(
+      fetchMock.mock.invocationCallOrder[thumbIndex],
+    );
+  });
+
+  it('stops entirely when the job already has a youtubeVideoId — no insert, no thumbnail, no playlist call', async () => {
+    job.youtubeVideoId = 'EXISTING_LIVE_VIDEO_ID';
+
+    const res = await handler({ jobId: 'j1', youtube: YT } as never);
+
+    expect(res).toEqual({ ok: false });
+    expect(fetchMock).not.toHaveBeenCalled();
+    // ⚠️ A refusal must NEVER overwrite a terminal 'uploaded' state as
+    // 'failed' — that is what invites an operator to clear youtubeVideoId by
+    // hand to "retry" a job whose video is already live, producing exactly
+    // the duplicate this file exists to prevent.
+    const p = patched();
+    expect(p.uploadStatus).toBe('uploaded');
+    expect(String(p.uploadError)).toContain('already');
+    expect(p.youtubeVideoId).toBeUndefined();
+  });
+
+  it('marks the upload uploaded-with-a-note, never failed, when the thumbnail rejects', async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('oauth2.googleapis.com/token')) {
+        return Promise.resolve({ ok: true, json: async () => ({ access_token: 'ACCESS-TOKEN' }) });
+      }
+      if (url.includes('uploadType=resumable')) {
+        return Promise.resolve({
+          ok: true,
+          headers: { get: (k: string) => (k === 'location' ? 'https://upload.example/session-abc' : null) },
+        });
+      }
+      if (url === 'https://upload.example/session-abc') {
+        return Promise.resolve({ ok: true, json: async () => ({ id: 'FRESH_INSERT_ID' }) });
+      }
+      if (url.includes('/thumbnails/set')) {
+        return Promise.resolve({ ok: false, status: 400, text: async () => 'bad thumbnail' });
+      }
+      return Promise.resolve({ ok: true });
+    });
+
+    const res = await handler({ jobId: 'j1', youtube: YT } as never);
+
+    expect(res).toMatchObject({ ok: true, videoId: 'FRESH_INSERT_ID' });
+    const p = patched();
+    expect(p.uploadStatus).toBe('uploaded');
+    expect(p.youtubeVideoId).toBe('FRESH_INSERT_ID');
+    expect(String(p.uploadError)).toContain('thumbnail');
+  });
+
+  /**
+   * Resuming an existing session.
+   *
+   * `grep uploadSessionUri __tests__/worker/master-worker.test.ts` used to
+   * hit exactly one `null` fixture — the resume branch (`job.uploadSessionUri
+   * ?? null`) had NOTHING behind it. A refactor that dropped it would open a
+   * fresh `videos.insert` on every retry — a second video on the channel to
+   * find and delete by hand — and all other suites would stay green. These
+   * pin the actual resumable-upload protocol: query first, never a bare
+   * re-PUT (see `uploadToYoutube`'s doc comment for why a bare re-PUT cannot
+   * tell "still uploading" apart from "already finished").
+   */
+  describe('resuming an existing session', () => {
+    const EXISTING_SESSION = 'https://upload.example/existing-session-777';
+
+    beforeEach(() => {
+      job.uploadSessionUri = EXISTING_SESSION;
+    });
+
+    it('queries the stored session and NEVER opens a new one — the resume, pinned', async () => {
+      fetchMock.mockImplementation((url: string, init?: { body?: unknown }) => {
+        if (url.includes('oauth2.googleapis.com/token')) {
+          return Promise.resolve({ ok: true, json: async () => ({ access_token: 'ACCESS-TOKEN' }) });
+        }
+        if (url === EXISTING_SESSION) {
+          // The query carries no body; the resumed data PUT does — that is
+          // how this fixture tells the two apart, exactly as the real fetch
+          // calls differ.
+          if (!init?.body) return Promise.resolve({ status: 308, ok: false, headers: { get: () => null } });
+          return Promise.resolve({ ok: true, status: 200, json: async () => ({ id: 'RESUMED_INSERT_ID' }) });
+        }
+        if (url.includes('/thumbnails/set')) return Promise.resolve({ ok: true });
+        if (url.includes('/playlistItems')) return Promise.resolve({ ok: true });
+        return Promise.resolve({ ok: false, status: 500, text: async () => '' });
+      });
+
+      const res = await handler({ jobId: 'j1', youtube: YT } as never);
+
+      expect(res).toMatchObject({ ok: true, videoId: 'RESUMED_INSERT_ID' });
+      // THE property this whole describe exists to pin.
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('uploadType=resumable'))).toBe(false);
+      // Both the query and the resumed PUT went to the STORED uri.
+      const sessionCalls = fetchMock.mock.calls.filter((c) => c[0] === EXISTING_SESSION);
+      expect(sessionCalls).toHaveLength(2);
+      expect(patched()).toMatchObject({ youtubeVideoId: 'RESUMED_INSERT_ID', uploadStatus: 'uploaded' });
+    });
+
+    it('recovers a lost id when the query reports the upload already completed (200/201) — no second PUT', async () => {
+      fetchMock.mockImplementation((url: string) => {
+        if (url.includes('oauth2.googleapis.com/token')) {
+          return Promise.resolve({ ok: true, json: async () => ({ access_token: 'ACCESS-TOKEN' }) });
+        }
+        if (url === EXISTING_SESSION) {
+          // This IS the sole recovery for "the PUT succeeded on a prior
+          // invocation but the youtubeVideoId write never landed."
+          return Promise.resolve({ ok: true, status: 200, json: async () => ({ id: 'RECOVERED_ID' }) });
+        }
+        if (url.includes('/thumbnails/set')) return Promise.resolve({ ok: true });
+        if (url.includes('/playlistItems')) return Promise.resolve({ ok: true });
+        return Promise.resolve({ ok: false, status: 500, text: async () => '' });
+      });
+
+      const res = await handler({ jobId: 'j1', youtube: YT } as never);
+
+      expect(res).toMatchObject({ ok: true, videoId: 'RECOVERED_ID' });
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('uploadType=resumable'))).toBe(false);
+      const sessionCalls = fetchMock.mock.calls.filter((c) => c[0] === EXISTING_SESSION);
+      expect(sessionCalls).toHaveLength(1); // the query alone — no data PUT needed
+      expect(patched()).toMatchObject({ youtubeVideoId: 'RECOVERED_ID', uploadStatus: 'uploaded' });
+    });
+
+    it('clears a 404 session and opens a fresh one, instead of jamming forever', async () => {
+      fetchMock.mockImplementation((url: string, init?: { body?: unknown }) => {
+        if (url.includes('oauth2.googleapis.com/token')) {
+          return Promise.resolve({ ok: true, json: async () => ({ access_token: 'ACCESS-TOKEN' }) });
+        }
+        if (url === EXISTING_SESSION) {
+          return Promise.resolve({ ok: false, status: 404, text: async () => 'gone' });
+        }
+        if (url.includes('uploadType=resumable')) {
+          return Promise.resolve({
+            ok: true,
+            headers: { get: (k: string) => (k === 'location' ? 'https://upload.example/session-new' : null) },
+          });
+        }
+        if (url === 'https://upload.example/session-new') {
+          return Promise.resolve({ ok: true, json: async () => ({ id: 'FRESH_AFTER_404' }) });
+        }
+        if (url.includes('/thumbnails/set')) return Promise.resolve({ ok: true });
+        if (url.includes('/playlistItems')) return Promise.resolve({ ok: true });
+        return Promise.resolve({ ok: false, status: 500, text: async () => '' });
+      });
+
+      const res = await handler({ jobId: 'j1', youtube: YT } as never);
+
+      expect(res).toMatchObject({ ok: true, videoId: 'FRESH_AFTER_404' });
+      // A 404 proved the OLD session dead, so opening a new one here is
+      // correct — unlike the 5xx case below, where it would not be.
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('uploadType=resumable'))).toBe(true);
+      expect(patched()).toMatchObject({ youtubeVideoId: 'FRESH_AFTER_404', uploadStatus: 'uploaded' });
+    });
+
+    /**
+     * ⚠️ A 400 is deliberately NOT treated as "session gone" — see
+     * sessionIsGone's doc comment for the asymmetry that decides this: a
+     * live session wrongly discarded costs a duplicate video (unrecoverable
+     * without a manual delete on the channel); a dead one wrongly kept costs
+     * only a failed job an operator has to look at (fully recoverable). A
+     * bare 400 is not proof enough to risk the first outcome.
+     */
+    it('does NOT clear a 400 session — the ambiguous status takes the recoverable branch, not the discard branch', async () => {
+      fetchMock.mockImplementation((url: string) => {
+        if (url.includes('oauth2.googleapis.com/token')) {
+          return Promise.resolve({ ok: true, json: async () => ({ access_token: 'ACCESS-TOKEN' }) });
+        }
+        if (url === EXISTING_SESSION) {
+          return Promise.resolve({ ok: false, status: 400, text: async () => 'Bad Request' });
+        }
+        return Promise.resolve({ ok: false, status: 500, text: async () => '' });
+      });
+
+      const res = await handler({ jobId: 'j1', youtube: YT } as never);
+
+      expect(res).toEqual({ ok: false });
+      // THE property: a 400 must never open a second insert.
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('uploadType=resumable'))).toBe(false);
+      const p = patched();
+      expect(p.uploadStatus).toBe('failed');
+      expect(p).not.toHaveProperty('uploadSessionUri');
+    });
+
+    /**
+     * A LOCAL size mismatch says the bytes on disk are no longer the bytes the
+     * session was opened against — but it says NOTHING about whether that
+     * session already finished.
+     *
+     * ⚠️ Discarding it before the query was a second duplicate-insert path,
+     * and a reachable one: PUT succeeds → the worker dies before the id patch
+     * → the operator re-renders (same videoKey, different bytes) → retry →
+     * mismatch → fresh session → a SECOND video on the channel. The session is
+     * therefore always queried first; the mismatch only decides what happens
+     * after the answer comes back.
+     */
+    it('queries the session even on a LOCAL size mismatch, then discards it only once the query says 308', async () => {
+      // mockStatSync always returns { size: 123456 } (see the top of this
+      // file) — a declared size that disagrees with that is unambiguously a
+      // different file than the one the session was opened against.
+      job.uploadSessionSize = 999;
+
+      fetchMock.mockImplementation((url: string) => {
+        if (url.includes('oauth2.googleapis.com/token')) {
+          return Promise.resolve({ ok: true, json: async () => ({ access_token: 'ACCESS-TOKEN' }) });
+        }
+        if (url === EXISTING_SESSION) {
+          // Incomplete — so the session really is unusable for these bytes.
+          return Promise.resolve({ status: 308, ok: false, headers: { get: () => null } });
+        }
+        if (url.includes('uploadType=resumable')) {
+          return Promise.resolve({
+            ok: true,
+            headers: { get: (k: string) => (k === 'location' ? 'https://upload.example/session-new' : null) },
+          });
+        }
+        if (url === 'https://upload.example/session-new') {
+          return Promise.resolve({ ok: true, json: async () => ({ id: 'FRESH_AFTER_SIZE_MISMATCH' }) });
+        }
+        if (url.includes('/thumbnails/set')) return Promise.resolve({ ok: true });
+        if (url.includes('/playlistItems')) return Promise.resolve({ ok: true });
+        return Promise.resolve({ ok: false, status: 500, text: async () => '' });
+      });
+
+      const res = await handler({ jobId: 'j1', youtube: YT } as never);
+
+      expect(res).toMatchObject({ ok: true, videoId: 'FRESH_AFTER_SIZE_MISMATCH' });
+      // THE property, inverted from what this test used to assert: the stored
+      // session IS asked, exactly once (the query — never a data PUT against
+      // bytes it cannot accept), before it is given up on.
+      const sessionCalls = fetchMock.mock.calls.filter((c) => c[0] === EXISTING_SESSION);
+      expect(sessionCalls).toHaveLength(1);
+      expect((sessionCalls[0][1] as { body?: unknown }).body).toBeUndefined();
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('uploadType=resumable'))).toBe(true);
+      expect(patched()).toMatchObject({ youtubeVideoId: 'FRESH_AFTER_SIZE_MISMATCH', uploadStatus: 'uploaded' });
+    });
+
+    /**
+     * ⚠️ THE DUPLICATE THIS FIX EXISTS TO STOP. Same mismatch, but the session
+     * had ALREADY completed — the previous invocation's PUT landed and only
+     * the id write was lost. Discarding on the local mismatch skipped this
+     * 200 branch entirely and opened a fresh insert: a second video on a real
+     * channel, removable only by hand.
+     *
+     * The recovered video was built from the OLDER bytes (the re-render is not
+     * what is on YouTube). That is the correct trade: a video file cannot be
+     * replaced on YouTube either way, and recovering the id leaves ONE video
+     * the operator can see and delete, rather than two.
+     */
+    it('recovers the id when a size-mismatched session turns out to have COMPLETED — never a second insert', async () => {
+      job.uploadSessionSize = 999;
+
+      fetchMock.mockImplementation((url: string) => {
+        if (url.includes('oauth2.googleapis.com/token')) {
+          return Promise.resolve({ ok: true, json: async () => ({ access_token: 'ACCESS-TOKEN' }) });
+        }
+        if (url === EXISTING_SESSION) {
+          return Promise.resolve({ ok: true, status: 200, json: async () => ({ id: 'RECOVERED_DESPITE_MISMATCH' }) });
+        }
+        if (url.includes('/thumbnails/set')) return Promise.resolve({ ok: true });
+        if (url.includes('/playlistItems')) return Promise.resolve({ ok: true });
+        return Promise.resolve({ ok: false, status: 500, text: async () => '' });
+      });
+
+      const res = await handler({ jobId: 'j1', youtube: YT } as never);
+
+      expect(res).toMatchObject({ ok: true, videoId: 'RECOVERED_DESPITE_MISMATCH' });
+      // THE property: no second video was created.
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('uploadType=resumable'))).toBe(false);
+      // The query's total describes the SESSION (999), not the re-rendered
+      // file on disk (mockStatSync's 123456). Getting this backwards asks
+      // Google about a size the session never declared — a 400, which
+      // sessionIsGone deliberately keeps, jamming every later retry.
+      const queryCall = fetchMock.mock.calls.find((c) => c[0] === EXISTING_SESSION)!;
+      expect((queryCall[1] as { headers: Record<string, string> }).headers['Content-Range']).toBe('bytes */999');
+      expect(patched()).toMatchObject({
+        youtubeVideoId: 'RECOVERED_DESPITE_MISMATCH',
+        uploadStatus: 'uploaded',
+      });
+    });
+
+    it('KEEPS a session alive on a 500 query — a 5xx does not prove the session is dead', async () => {
+      fetchMock.mockImplementation((url: string) => {
+        if (url.includes('oauth2.googleapis.com/token')) {
+          return Promise.resolve({ ok: true, json: async () => ({ access_token: 'ACCESS-TOKEN' }) });
+        }
+        if (url === EXISTING_SESSION) {
+          return Promise.resolve({ ok: false, status: 500, text: async () => 'server error' });
+        }
+        return Promise.resolve({ ok: false, status: 500, text: async () => '' });
+      });
+
+      const res = await handler({ jobId: 'j1', youtube: YT } as never);
+
+      expect(res).toEqual({ ok: false });
+      // Opening a new session here would be exactly how a genuinely-alive
+      // session gets abandoned and a retry risks a second video.
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('uploadType=resumable'))).toBe(false);
+      const p = patched();
+      expect(p.uploadStatus).toBe('failed');
+      expect(p).not.toHaveProperty('uploadSessionUri');
+    });
+
+    it('clears the session when the resumed PUT itself reports it gone (410) — the same discrimination applied to the data PUT, not just the query', async () => {
+      fetchMock.mockImplementation((url: string, init?: { body?: unknown }) => {
+        if (url.includes('oauth2.googleapis.com/token')) {
+          return Promise.resolve({ ok: true, json: async () => ({ access_token: 'ACCESS-TOKEN' }) });
+        }
+        if (url === EXISTING_SESSION) {
+          if (!init?.body) return Promise.resolve({ status: 308, ok: false, headers: { get: () => null } });
+          return Promise.resolve({ ok: false, status: 410, text: async () => 'gone mid-flight' });
+        }
+        return Promise.resolve({ ok: false, status: 500, text: async () => '' });
+      });
+
+      const res = await handler({ jobId: 'j1', youtube: YT } as never);
+
+      expect(res).toEqual({ ok: false });
+      const p = patched();
+      expect(p.uploadStatus).toBe('failed');
+      // Cleared — so the NEXT invocation opens a fresh session instead of
+      // resuming a URI Google has already discarded.
+      expect(p.uploadSessionUri).toBeNull();
+    });
   });
 });
