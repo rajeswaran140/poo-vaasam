@@ -421,6 +421,249 @@ describe('video render', () => {
   });
 });
 
+/**
+ * The vertical short.
+ *
+ * A third thing sharing the Lambda, and the properties worth pinning are the
+ * same shape as the video's: it must cut from the MASTERED WAV, it must never
+ * run a loudness pass that rewrites the job's measurements, and — the one that
+ * is specific to it — the hook window it chooses must actually reach the
+ * encode's `-ss`. A short that silently always opened at 0:00 would look
+ * perfectly fine in every other assertion here.
+ */
+describe('short render', () => {
+  const AUDIO = 'audio/mastering/1_a_song-master-14LUFS.wav';
+  const COVER = 'audio/mastering/1_c_cover.jpg';
+  const short = (over: Record<string, unknown> = {}) => ({ audioKey: AUDIO, coverKey: COVER, ...over });
+  const ffArgs = () => spawnSync.mock.calls.map((c) => c[1] as string[]);
+
+  /**
+   * A 4-minute track whose loudest stretch sits at 100-140s. Written as real
+   * ebur128 lines so the parser is exercised, not bypassed.
+   */
+  const EBUR = (() => {
+    const lines: string[] = [];
+    for (let t = 0; t <= 240; t += 1) {
+      const loud = t >= 100 && t < 140 ? -9.0 : -20.0;
+      lines.push(`[Parsed_ebur128_0 @ 0x1] t: ${t.toFixed(1)}  TARGET:-23 LUFS  M: ${loud.toFixed(1)} S: -20.1 I: -16.0 LUFS  LRA: 6.0 LU`);
+    }
+    return lines.join('\n');
+  })();
+
+  beforeEach(() => {
+    spawnSync.mockReset();
+    // Only the ebur128 pass produces a log; compose and encode succeed silently.
+    spawnSync.mockImplementation((_cmd: unknown, args: string[]) =>
+      args.join(' ').includes('ebur128')
+        ? { status: 0, stdout: '', stderr: EBUR }
+        : { status: 0, stdout: '', stderr: '' }
+    );
+    s3Send.mockReset();
+    s3Send.mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'Body' in cmd.input
+        ? Promise.resolve({})
+        : Promise.resolve({ Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) } })
+    );
+  });
+
+  it('cuts from the MASTERED WAV, never the 192k MP3', async () => {
+    const res = await handler({ jobId: 'j1', short: short() } as never);
+
+    expect(res).toMatchObject({ ok: true });
+    const encode = ffArgs()[2];
+    expect(encode[encode.lastIndexOf('-i') + 1]).toContain('master.wav');
+    expect(encode.join(' ')).not.toContain('.mp3');
+  });
+
+  /**
+   * ⚠️ THREE passes, and the order matters for the same reason the video's two
+   * do: composing the blurred 9:16 backdrop once and looping THAT frame is what
+   * keeps the encode cheap. A regression does not throw — it just gets slow.
+   */
+  it('measures, THEN composes the frame once, THEN encodes against it', async () => {
+    await handler({ jobId: 'j1', short: short() } as never);
+
+    expect(spawnSync).toHaveBeenCalledTimes(3);
+    const [measure, compose, encode] = ffArgs();
+
+    // Pass 0: loudness only. Writes no file.
+    expect(measure.join(' ')).toContain('ebur128');
+    expect(measure[measure.indexOf('-f') + 1]).toBe('null');
+
+    // Pass 1: filters the cover, emits exactly one frame, touches no audio.
+    expect(compose).toContain('-filter_complex');
+    expect(compose[compose.indexOf('-frames:v') + 1]).toBe('1');
+    expect(compose.join(' ')).not.toContain('master.wav');
+
+    // Pass 2: no -filter_complex at all — that absence IS what keeps it cheap.
+    expect(encode).not.toContain('-filter_complex');
+    expect(encode.join(' ')).not.toContain('boxblur');
+    expect(encode.join(' ')).toContain('frame.png');
+    expect(encode.join(' ')).not.toContain('cover.jpg');
+  });
+
+  /**
+   * The assertion the rest of this block cannot make for itself: the window the
+   * picker chose has to arrive at the encode. A short that always opened at
+   * 0:00 would satisfy every other test here.
+   */
+  it('seeks to the loudest stretch, minus the lead-in', async () => {
+    await handler({ jobId: 'j1', short: short() } as never);
+
+    const encode = ffArgs()[2];
+    const ss = Number(encode[encode.indexOf('-ss') + 1]);
+    // Peak starts at 100s; SHORT_LEAD_IN_SEC pulls the opening back to 96s.
+    expect(ss).toBeCloseTo(96, 3);
+    // And the seek is BEFORE its input, or ffmpeg decodes from zero. The
+    // duration has to be on the input side too — an output-only -t reads the
+    // whole file and only truncates what it writes.
+    expect(encode.indexOf('-ss')).toBeLessThan(encode.lastIndexOf('-i'));
+    expect(encode.indexOf('-t')).toBeLessThan(encode.lastIndexOf('-i'));
+    expect(patched().shortStartSec).toBeCloseTo(96, 2);
+  });
+
+  it('runs no loudnorm and rewrites no measurement', async () => {
+    await handler({ jobId: 'j1', short: short() } as never);
+
+    expect(ffArgs().join(' ')).not.toContain('loudnorm');
+    const p = patched();
+    for (const field of ['afterLufs', 'afterTp', 'beforeLufs', 'normalizationType', 'status', 'videoKey']) {
+      expect(p).not.toHaveProperty(field);
+    }
+  });
+
+  it('stores the MP4 beside the master under its own key', async () => {
+    await handler({ jobId: 'j1', short: short() } as never);
+
+    const put = s3Send.mock.calls
+      .map((c) => c[0] as { input: Record<string, unknown> })
+      .find((c) => 'Body' in c.input);
+    expect(put?.input).toMatchObject({
+      Bucket: 'tamil-web-media',
+      Key: 'audio/mastering/1_a_song-master-14LUFS-short-1920.mp4',
+      ContentType: 'video/mp4',
+    });
+    expect(patched()).toMatchObject({
+      shortKey: 'audio/mastering/1_a_song-master-14LUFS-short-1920.mp4',
+      coverKey: COVER,
+    });
+    expect(typeof patched().shortRenderedAt).toBe('string');
+  });
+
+  /**
+   * NO BURNED TEXT. The Lambda has no python3 and no Pillow-with-raqm, and
+   * ffmpeg's drawtext does no complex-script shaping — Tamil clusters break.
+   * Broken Tamil on a public feed is worse than no caption at all.
+   */
+  it('burns no text into the clip', async () => {
+    await handler({ jobId: 'j1', short: short() } as never);
+    const all = ffArgs().join(' ');
+    expect(all).not.toContain('drawtext');
+    expect(all).not.toContain('subtitles');
+    expect(all).not.toContain('ass=');
+  });
+
+  describe('refusals never touch S3', () => {
+    it.each([
+      ['a source outside the workspace', { audioKey: 'audio/poem-music/amma.wav' }],
+      ['a source that is not a master', { audioKey: 'audio/mastering/1_a_song.wav' }],
+      ['a cover outside the workspace', { coverKey: 'images/song-covers/x.png' }],
+      ['no cover at all', { coverKey: undefined }],
+    ])('%s', async (_label, over) => {
+      const res = await handler({ jobId: 'j1', short: short(over) } as never);
+
+      expect(res).toEqual({ ok: false });
+      expect(patched().shortError).toBeTruthy();
+      expect(s3Send).not.toHaveBeenCalled();
+      expect(spawnSync).not.toHaveBeenCalled();
+    });
+  });
+
+  it('records the failure and leaves the master alone when ffmpeg fails', async () => {
+    spawnSync.mockImplementation((_cmd: unknown, args: string[]) =>
+      args.join(' ').includes('ebur128')
+        ? { status: 0, stdout: '', stderr: EBUR }
+        : { status: 1, stdout: '', stderr: 'x264 died' }
+    );
+    const res = await handler({ jobId: 'j1', short: short() } as never);
+
+    expect(res).toEqual({ ok: false });
+    expect(patched().shortError).toBeTruthy();
+    expect(patched()).not.toHaveProperty('shortKey');
+    const put = s3Send.mock.calls
+      .map((c) => c[0] as { input: Record<string, unknown> })
+      .find((c) => 'Body' in c.input);
+    expect(put).toBeUndefined();
+  });
+
+  it('refuses rather than guessing when the track cannot be measured', async () => {
+    spawnSync.mockImplementation(() => ({ status: 0, stdout: '', stderr: '' }));
+    const res = await handler({ jobId: 'j1', short: short() } as never);
+
+    expect(res).toEqual({ ok: false });
+    expect(patched().shortError).toBeTruthy();
+    expect(patched()).not.toHaveProperty('shortKey');
+  });
+
+  /**
+   * planShort refuses a track it KNOWS is too short, but a job whose duration
+   * was never measured reaches the worker unrefused. The ebur128 pass is then
+   * the only thing that knows how long the track is, so the clip length is
+   * clamped against it — otherwise a 20s track yields a 30s file whose last
+   * 10s are silence over a still, with a fade-out that never fires.
+   */
+  describe('a track shorter than the clip', () => {
+    const upTo = (last: number) => {
+      const lines: string[] = [];
+      for (let t = 0; t <= last; t += 1) {
+        lines.push(`[Parsed_ebur128_0 @ 0x1] t: ${t.toFixed(1)}  TARGET:-23 LUFS  M: -18.0 S: -20.1 I: -16.0 LUFS  LRA: 6.0 LU`);
+      }
+      return lines.join('\n');
+    };
+    const measuring = (log: string) => (_cmd: unknown, args: string[]) =>
+      args.join(' ').includes('ebur128')
+        ? { status: 0, stdout: '', stderr: log }
+        : { status: 0, stdout: '', stderr: '' };
+
+    it('cuts only as much as there is, and fades at the real end', async () => {
+      spawnSync.mockImplementation(measuring(upTo(25)));
+      const res = await handler({ jobId: 'j1', short: short() } as never);
+
+      expect(res).toMatchObject({ ok: true });
+      const encode = ffArgs()[2];
+      // Both -t values are the clamped length, not the nominal 30.
+      expect(encode.filter((a, i) => encode[i - 1] === '-t')).toEqual(['25', '25']);
+      // The fade-out is scheduled inside the audio that exists.
+      expect(encode[encode.indexOf('-af') + 1]).toContain('st=24.400');
+      expect(patched().shortSeconds).toBe(25);
+    });
+
+    it('refuses outright when there is not even a stub to cut', async () => {
+      spawnSync.mockImplementation(measuring(upTo(6)));
+      const res = await handler({ jobId: 'j1', short: short() } as never);
+
+      expect(res).toEqual({ ok: false });
+      expect(patched().shortError).toMatch(/shorter/i);
+      expect(patched()).not.toHaveProperty('shortKey');
+      const put = s3Send.mock.calls
+        .map((c) => c[0] as { input: Record<string, unknown> })
+        .find((c) => 'Body' in c.input);
+      expect(put).toBeUndefined();
+    });
+  });
+
+  it('clears its temp directory on success and on failure', async () => {
+    mockRmSync.mockClear();
+    await handler({ jobId: 'j1', short: short() } as never);
+    expect(mockRmSync).toHaveBeenCalledWith('/tmp/master-test', { recursive: true, force: true });
+
+    mockRmSync.mockClear();
+    spawnSync.mockImplementation(() => ({ status: 1, stdout: '', stderr: '' }));
+    await handler({ jobId: 'j1', short: short() } as never);
+    expect(mockRmSync).toHaveBeenCalledWith('/tmp/master-test', { recursive: true, force: true });
+  });
+});
+
 describe('key guard', () => {
   it.each([
     ['a published catalogue song', 'audio/poem-music/amma.wav'],

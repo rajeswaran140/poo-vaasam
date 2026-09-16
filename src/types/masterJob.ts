@@ -177,6 +177,21 @@ export interface MasterJob {
   videoKey: string | null;
   videoRenderedAt: string | null;
   videoError: string | null;
+  /**
+   * The vertical hook clip for Reels / Instagram / Shorts — 1080x1920, cut from
+   * the loudest window of the SAME mastered audio. Null until one is asked for,
+   * and on every job written before shorts existed.
+   *
+   * `shortStartSec` records where in the track the clip was taken from, so a
+   * clip that opens in the wrong place can be diagnosed without re-measuring.
+   * Like the video, nothing here publishes anything — the operator downloads
+   * the MP4 and posts it by hand.
+   */
+  shortKey: string | null;
+  shortRenderedAt: string | null;
+  shortStartSec: number | null;
+  shortSeconds: number | null;
+  shortError: string | null;
   /** The cover the video was built from, kept so a re-render is reproducible. */
   coverKey: string | null;
   error: { code: string; message: string } | null;

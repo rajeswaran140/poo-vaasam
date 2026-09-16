@@ -58,6 +58,18 @@ import {
   type VideoHeight,
 } from '@/lib/master-video';
 import {
+  buildLoudnessArgs,
+  buildShortComposeArgs,
+  buildShortArgs,
+  shortKeyFor,
+  SHORT_SECONDS,
+  SHORT_MIN_START_SEC,
+  SHORT_MIN_SECONDS,
+  SHORT_LEAD_IN_SEC,
+  shortRefusalMessage,
+} from '@/lib/master-short';
+import { parseEbur128Loudness, pickHookWindow } from '@/lib/hook-window';
+import {
   parseMasterJoin,
   validateJoinAgainstSources,
   buildJoinFilterComplex,
@@ -159,6 +171,12 @@ interface MasterEvent {
    * guards, like `render`, so an upload can never re-master.
    */
   youtube?: { title: string; description: string; tags: string[]; playlistIds: string[] };
+  /**
+   * Cut a hook-first vertical clip for Reels/Shorts from a saved master.
+   * Handled before the mastering guards, like `render`, so it can never
+   * re-master.
+   */
+  short?: { audioKey?: string; coverKey?: string };
 }
 
 /**
@@ -300,6 +318,110 @@ function probeCoverAspect(coverPath: string): number | undefined {
     return best.w / best.h;
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * Render a hook-first vertical clip for Reels / Instagram / Shorts.
+ *
+ * Three passes, each cheap:
+ *   1. ebur128 over the master to get momentary loudness. No output file —
+ *      only the log matters.
+ *   2. compose the 1080x1920 frame ONCE (the split that keeps renders inside
+ *      the Lambda timeout — see buildComposeArgs).
+ *   3. encode `SHORT_SECONDS` of audio from the hook, looping that frame.
+ *
+ * ⚠️ NO BURNED LYRICS. scripts/generate-song-short.ts can burn synchronised
+ * Tamil via python3 + Pillow-with-raqm. This runtime has neither, and ffmpeg's
+ * drawtext does no complex-script shaping - Tamil clusters break. Adding text
+ * here would ship visibly broken Tamil to a public feed. The CLI keeps that job.
+ */
+async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']>, bucket: string) {
+  const audioKey = spec.audioKey ?? '';
+  const coverKey = spec.coverKey ?? '';
+
+  // Re-validated here, not trusted from the event: this role can read and write
+  // the whole bucket, and the route is not the only thing that can invoke it.
+  if (!isMasteringKey(audioKey) || !isMasterKey(audioKey)) {
+    await patch(jobId, { shortError: 'short source must be a mastered WAV in the mastering workspace' });
+    return { ok: false };
+  }
+  if (!isMasteringKey(coverKey)) {
+    await patch(jobId, { shortError: 'cover must be in the mastering workspace' });
+    return { ok: false };
+  }
+
+  const dir = mkdtempSync(join(tmpdir(), 'short-'));
+  const audioPath = join(dir, 'master.wav');
+  const coverPath = join(dir, `cover${coverKey.match(/\.[a-z0-9]+$/i)?.[0] ?? '.jpg'}`);
+  const framePath = join(dir, 'frame.png');
+  const outPath = join(dir, 'short.mp4');
+  try {
+    const audio = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: audioKey }));
+    writeFileSync(audioPath, Buffer.from(await audio.Body!.transformToByteArray()));
+    const cover = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: coverKey }));
+    writeFileSync(coverPath, Buffer.from(await cover.Body!.transformToByteArray()));
+
+    // 1. Where is the hook? ebur128 writes its samples to stderr.
+    const loud = ff(buildLoudnessArgs(audioPath));
+    const samples = parseEbur128Loudness(`${loud.stdout ?? ''}${loud.stderr ?? ''}`);
+    // leadInSec is the picker's own job: it pulls the start back so the clip
+    // rises INTO the peak, clamped so it never reaches into the skipped intro.
+    const hook = pickHookWindow(samples, {
+      windowSec: SHORT_SECONDS,
+      minStartSec: SHORT_MIN_START_SEC,
+      leadInSec: SHORT_LEAD_IN_SEC,
+    });
+    if (!hook) {
+      await patch(jobId, { shortError: 'could not measure the track to find its hook' });
+      return { ok: false };
+    }
+    const startSec = Math.max(0, hook.start);
+
+    // planShort refuses a track it KNOWS is shorter than the clip, but a job
+    // whose duration was never measured reaches here with nothing refused. The
+    // measurement we just took is the authority, so clamp against it: without
+    // this, a 20s track yields a 30s file whose last 10s are silence over a
+    // still — and the fade-out, scheduled at 29.4s, never fires.
+    const measuredEnd = samples[samples.length - 1]?.t ?? 0;
+    const seconds = Math.min(SHORT_SECONDS, Math.floor(measuredEnd - startSec));
+    if (seconds < SHORT_MIN_SECONDS) {
+      await patch(jobId, { shortError: shortRefusalMessage('too-short') });
+      return { ok: false };
+    }
+
+    const composed = ff(buildShortComposeArgs({ coverPath, framePath }));
+    if (composed.status !== 0) {
+      await patch(jobId, { shortError: 'the cover could not be composed into a vertical frame' });
+      return { ok: false };
+    }
+
+    const r = ff(buildShortArgs({ framePath, audioPath, startSec, outPath, seconds }));
+    if (r.status !== 0) {
+      await patch(jobId, { shortError: 'the short render failed' });
+      return { ok: false };
+    }
+
+    const shortKey = shortKeyFor(audioKey);
+    await s3.send(new PutObjectCommand({
+      Bucket: bucket, Key: shortKey, Body: readFileSync(outPath), ContentType: 'video/mp4',
+    }));
+    await patch(jobId, {
+      shortKey,
+      shortRenderedAt: new Date().toISOString(),
+      shortStartSec: Number(startSec.toFixed(2)),
+      shortSeconds: seconds,
+      shortError: null,
+      coverKey,
+    });
+    return { ok: true, shortKey, startSec };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[master-worker] short render failed:', message);
+    await patch(jobId, { shortError: message }).catch(() => {});
+    return { ok: false };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 }
 
@@ -845,6 +967,15 @@ export const handler = async (event: MasterEvent) => {
       return { ok: false, error: 'jobId and TAKES_BUCKET are required' };
     }
     return await uploadToYoutube(jobId, event.youtube, TAKES_BUCKET);
+  }
+
+  // A vertical short, likewise — before the mastering guards.
+  if (event?.short) {
+    if (!jobId || !TAKES_BUCKET) {
+      console.error('[master-worker] bad short event');
+      return { ok: false, error: 'jobId and TAKES_BUCKET are required' };
+    }
+    return await renderShort(jobId, event.short, TAKES_BUCKET);
   }
 
   // The bucket is NOT taken from the event. The worker's IAM role can read and
