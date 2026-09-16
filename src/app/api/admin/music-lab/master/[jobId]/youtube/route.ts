@@ -21,6 +21,7 @@ import { MasterJobRepository } from '@/infrastructure/database/MasterJobReposito
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { awsConfig } from '@/lib/aws-config';
 import { planUpload, uploadRefusalMessage } from '@/lib/youtube-upload';
+import { consumeQuota, youtubeUploadCost } from '@/lib/youtube-quota';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -66,6 +67,35 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const plan = planUpload(job, parsed.data, { stage: 'enqueue' });
     if (!plan.ok) {
       return NextResponse.json({ success: false, error: uploadRefusalMessage(plan.reason) }, { status: 409 });
+    }
+
+    // CHARGE THE QUOTA LEDGER BEFORE ENQUEUEING, never after.
+    //
+    // An upload is the most expensive thing this project does — videos.insert
+    // alone is 1600 of a 10,000/day budget shared with the analytics routes,
+    // and the thumbnail and each playlist add 50 more. Until 2026-09-16 none
+    // of it was charged: an audit found the ledger reading 65 units on a day
+    // roughly 2,100 had been spent. The guard would have reported headroom
+    // right up to the moment Google started returning 403.
+    //
+    // Charged here rather than in the worker because the worker is fire-and-
+    // forget: if it fails or is throttled, the units it already sent to Google
+    // are spent regardless. Over-charging when an upload later fails is the
+    // safe direction; under-charging is what leaves the operator staring at an
+    // unexplained 403 with a ledger that says there is room.
+    const cost = youtubeUploadCost({
+      withThumbnail: Boolean(plan.coverKey),
+      playlistCount: plan.playlistIds.length,
+    });
+    const quota = await consumeQuota(cost, { surface: 'data' });
+    if (quota.blocked) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Daily YouTube quota guard tripped (${quota.used}/${quota.limit} for ${quota.day} Pacific). An upload costs ${cost} units. Resets at midnight Pacific.`,
+        },
+        { status: 429 }
+      );
     }
 
     // Queued BEFORE the invoke, so a double-click loses the race at the

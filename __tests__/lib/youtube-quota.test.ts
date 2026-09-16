@@ -10,6 +10,7 @@ import {
   QUOTA_COST,
   DEFAULT_QUOTA_LIMIT,
   DEFAULT_WARN_THRESHOLD,
+  youtubeUploadCost,
 } from '@/lib/youtube-quota';
 import { DynamoDBOperations } from '@/infrastructure/database/dynamodb-client';
 
@@ -200,5 +201,51 @@ describe('Analytics placeholder must not self-inflict an outage', () => {
       'analytics'
     );
     expect(q.blocked).toBe(true);
+  });
+});
+
+describe('write costs — the upload is the biggest spender and was charged nothing', () => {
+  it('prices the writes at their real Data API cost', () => {
+    // These are Google's published figures. They are here because their
+    // ABSENCE was the bug: an upload cost the ledger 0 until 2026-09-16.
+    expect(QUOTA_COST.videosInsert).toBe(1600);
+    expect(QUOTA_COST.thumbnailsSet).toBe(50);
+    expect(QUOTA_COST.playlistItemsInsert).toBe(50);
+    expect(QUOTA_COST.videosUpdate).toBe(50);
+  });
+
+  it('a single insert is 16% of the whole daily budget', () => {
+    // Stated as a test so the ratio is visible: ~6 uploads/day is the ceiling,
+    // not the ~10,000 units an unaware reader might assume.
+    expect(QUOTA_COST.videosInsert / DEFAULT_QUOTA_LIMIT).toBeCloseTo(0.16, 5);
+    expect(Math.floor(DEFAULT_QUOTA_LIMIT / QUOTA_COST.videosInsert)).toBe(6);
+  });
+});
+
+describe('youtubeUploadCost — a caller cannot under-charge by forgetting a part', () => {
+  it('charges insert + thumbnail + one per playlist', () => {
+    expect(youtubeUploadCost({ withThumbnail: true, playlistCount: 3 })).toBe(1600 + 50 + 150);
+  });
+
+  it('a real release (cover + three playlists) costs 1800', () => {
+    // The shape every Tamilagaval release actually takes.
+    expect(youtubeUploadCost({ withThumbnail: true, playlistCount: 3 })).toBe(1800);
+  });
+
+  it('omits the thumbnail charge only when there is no cover', () => {
+    expect(youtubeUploadCost({ withThumbnail: false, playlistCount: 0 })).toBe(1600);
+    expect(youtubeUploadCost({ withThumbnail: true, playlistCount: 0 })).toBe(1650);
+  });
+
+  it('never returns less than the insert, whatever nonsense it is handed', () => {
+    // A negative or NaN playlist count must not DISCOUNT the upload — under-
+    // charging is the failure direction that leaves a 403 unexplained.
+    for (const n of [-5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(youtubeUploadCost({ withThumbnail: false, playlistCount: n })).toBe(1600);
+    }
+  });
+
+  it('truncates a fractional count rather than charging a fraction of a unit', () => {
+    expect(youtubeUploadCost({ withThumbnail: false, playlistCount: 2.9 })).toBe(1600 + 100);
   });
 });
