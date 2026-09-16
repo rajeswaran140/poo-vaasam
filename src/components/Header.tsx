@@ -52,6 +52,7 @@ export default function Header() {
       ],
     },
     { href: '/music-composition', label: 'இசையமைப்பு' },
+    { href: '/karaoke', label: 'கராஓகே' },
     { href: '/about', label: 'பற்றி' },
   ];
 

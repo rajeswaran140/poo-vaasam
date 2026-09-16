@@ -48,7 +48,7 @@ export function isAdSenseConfigured(): boolean {
  * his own pageviews. The others are transactional or legal pages where an ad
  * beside the text would undercut the page's purpose.
  */
-const NEVER: readonly string[] = ['/admin', '/privacy', '/terms', '/contact', '/music-composition'];
+const NEVER: readonly string[] = ['/admin', '/privacy', '/terms', '/contact', '/music-composition', '/karaoke'];
 
 export function adsAllowedOn(pathname: string): boolean {
   if (!isAdSenseConfigured()) return false;
