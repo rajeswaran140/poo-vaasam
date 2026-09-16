@@ -48,7 +48,44 @@ export const QUOTA_COST = {
   playlistItemsList: 1,
   /** FORBIDDEN — see the note above. Present for cost documentation only. */
   searchList: 100,
+  /**
+   * WRITES. These dwarf every read in this table and were missing from it
+   * until 2026-09-16, which meant a portal upload — the single most expensive
+   * thing this project does — was charged NOTHING. An audit that day found the
+   * ledger reading 65 units on a day roughly 2,100 had actually been spent.
+   *
+   * That is the dangerous direction: the guard would report headroom right up
+   * to the moment Google itself starts returning 403, because it could not see
+   * the biggest spender.
+   */
+  videosInsert: 1600,
+  videosUpdate: 50,
+  thumbnailsSet: 50,
+  playlistItemsInsert: 50,
 } as const;
+
+/**
+ * What one portal upload costs, end to end.
+ *
+ * Exists so a caller cannot under-charge by forgetting a part. The upload is
+ * not one API call: it is an insert, optionally a thumbnail, and one
+ * playlistItems.insert per playlist. Charging only the insert would still
+ * undercount by 50 per playlist.
+ *
+ * ⚠️ Charge this BEFORE the work is enqueued, never after. A call that reached
+ * Google has spent its units whether or not the response arrived, so charging
+ * on success would undercount exactly the failures that matter.
+ */
+export function youtubeUploadCost(opts: { withThumbnail: boolean; playlistCount: number }): number {
+  const playlists = Number.isFinite(opts.playlistCount) && opts.playlistCount > 0
+    ? Math.trunc(opts.playlistCount)
+    : 0;
+  return (
+    QUOTA_COST.videosInsert +
+    (opts.withThumbnail ? QUOTA_COST.thumbnailsSet : 0) +
+    playlists * QUOTA_COST.playlistItemsInsert
+  );
+}
 
 /** Data API v3 default: 10,000 units/day. Well documented and stable. */
 export const DEFAULT_QUOTA_LIMIT = 10_000;
