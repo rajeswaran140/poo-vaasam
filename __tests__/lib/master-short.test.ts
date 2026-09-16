@@ -4,6 +4,7 @@ import {
   buildShortComposeArgs, buildShortArgs, buildLoudnessArgs,
   SHORT_WIDTH, SHORT_HEIGHT, SHORT_SECONDS, SHORT_FPS, SHORT_FADE_SEC,
   SHORT_PICK_MIN_SECONDS, SHORT_PICK_MAX_SECONDS,
+  buildShortFrameFilter,
   type ShortRefusal,
 } from '@/lib/master-short';
 import type { MasterJob } from '@/types/masterJob';
@@ -191,5 +192,88 @@ describe('planShort with a chosen window', () => {
     ] as const) {
       expect(shortRefusalMessage(reason).trim().length).toBeGreaterThan(0);
     }
+  });
+});
+
+
+/**
+ * The frame the clip is composed into.
+ *
+ * ⚠️ THE SQUARE BOX IS THE BUG. A 941x1672 cover — 9:16 to three decimal
+ * places — was being scaled to fit inside a 994x994 square, rendering at
+ * 559x994: about a QUARTER of the frame, floating on a blurred copy of itself.
+ * That is the same defect buildVideoFilter was fixed for in the long-form
+ * render, reproduced here. These tests exist so it cannot come back a third
+ * time.
+ */
+describe('the vertical frame', () => {
+  const REAL_COVER = 941 / 1672; // the cover Raj actually used
+  const fill = (aspect?: number) => buildShortFrameFilter(aspect);
+
+  it('fills the frame with a cover that is already 9:16', () => {
+    const f = fill(REAL_COVER);
+    expect(f).toContain(`scale=${SHORT_WIDTH}:${SHORT_HEIGHT}:force_original_aspect_ratio=increase`);
+    expect(f).toContain(`crop=${SHORT_WIDTH}:${SHORT_HEIGHT}`);
+    // No backdrop at all — nothing to blur behind a picture that covers it.
+    expect(f).not.toContain('boxblur');
+    expect(f).not.toContain('overlay');
+  });
+
+  it('NEVER scales the artwork into a square box', () => {
+    // The literal shape of the old bug: a WxW scale target.
+    for (const aspect of [REAL_COVER, 16 / 9, 1, 0.75, undefined]) {
+      expect(fill(aspect)).not.toContain(`scale=${SHORT_WIDTH}:${SHORT_WIDTH}`);
+      expect(fill(aspect)).not.toMatch(/scale=(\d+):\1:/);
+    }
+  });
+
+  it('keeps the blurred backdrop only for a cover that cannot fill 9:16', () => {
+    const wide = fill(16 / 9);
+    expect(wide).toContain('boxblur');
+    expect(wide).toContain('overlay');
+    // ...and the picture still spans the FRAME, so it is full width at its own
+    // ratio rather than shrunk into the middle.
+    expect(wide).toContain(`scale=${SHORT_WIDTH}:${SHORT_HEIGHT}:force_original_aspect_ratio=decrease`);
+  });
+
+  it('assumes it cannot fill when the aspect is unknown', () => {
+    // An unreadable cover must not be cropped on a guess.
+    expect(fill(undefined)).toContain('boxblur');
+    expect(fill(Number.NaN)).toContain('boxblur');
+    expect(fill(0)).toContain('boxblur');
+  });
+
+  it('passes the probed aspect through from the compose args', () => {
+    const args = buildShortComposeArgs({ coverPath: '/tmp/c.png', framePath: '/tmp/f.png', coverAspect: REAL_COVER });
+    expect(args[args.indexOf('-filter_complex') + 1]).toBe(fill(REAL_COVER));
+    expect(args[args.indexOf('-frames:v') + 1]).toBe('1');
+  });
+});
+
+/**
+ * The ceiling that was wrong: 60s was a convention applied over the channel's
+ * own evidence. Its 1-2 minute vertical videos perform well, and some songs
+ * need two minutes to reach the passage worth posting.
+ */
+describe('how long a chosen clip may be', () => {
+  const job = (over: Record<string, unknown> = {}) =>
+    ({ status: 'done', savedAt: 'x', masterKey: 'audio/mastering/a-master-14LUFS.wav', editedDurationSec: 300, ...over }) as unknown as MasterJob;
+
+  it('accepts two minutes, which the old 60s cap refused', () => {
+    expect(planShort(job(), COVER, { startSec: 96, seconds: 120 })).toMatchObject({ ok: true });
+  });
+
+  it('accepts the full three minutes both platforms allow', () => {
+    expect(planShort(job(), COVER, { startSec: 0, seconds: SHORT_PICK_MAX_SECONDS })).toMatchObject({ ok: true });
+    expect(SHORT_PICK_MAX_SECONDS).toBe(180);
+  });
+
+  it('still refuses past the ceiling', () => {
+    expect(planShort(job(), COVER, { startSec: 0, seconds: SHORT_PICK_MAX_SECONDS + 1 }))
+      .toEqual({ ok: false, reason: 'bad-window' });
+  });
+
+  it('names the limits in minutes, not a bare number of seconds', () => {
+    expect(shortRefusalMessage('bad-window')).toMatch(/3 minutes/);
   });
 });

@@ -17,9 +17,14 @@
  * ⚠️ NOTHING HERE TOUCHES AUDIO. It emits two numbers, like the trim panel.
  */
 
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Scissors, RotateCcw } from 'lucide-react';
-import { SHORT_PICK_MIN_SECONDS, SHORT_PICK_MAX_SECONDS, SHORT_SECONDS } from '@/lib/master-short';
+import {
+  SHORT_PICK_MIN_SECONDS,
+  SHORT_PICK_MAX_SECONDS,
+  SHORT_FB_REELS_MAX_SECONDS,
+  SHORT_SECONDS,
+} from '@/lib/master-short';
 
 export interface ShortWindowValue {
   startSec: number;
@@ -63,88 +68,96 @@ export function formatClock(seconds: number): string {
 export function ShortWindowFields({ value, onChange, disabled = false, idPrefix, compact = false }: Props) {
   const auto = useId();
   const startId = `${idPrefix ?? auto}-start`;
-  const lenId = `${idPrefix ?? auto}-length`;
+  const endId = `${idPrefix ?? auto}-end`;
+  const noteId = `${idPrefix ?? auto}-note`;
 
   /**
-   * The length, remembered even before a start time exists.
+   * START AND END, not start and length.
    *
-   * ⚠️ THE LENGTH MUST NOT DEPEND ON THE START. The first version disabled this
-   * control until a window existed, which made it dead on an freshly-opened
-   * panel — and if you typed a start and clicked straight into it, that click
-   * was spent committing the start field and swallowed by the disabled→enabled
-   * switch, so it took two clicks and felt broken. Holding the choice locally
-   * lets it be picked in either order and applied when the start arrives.
+   * A lyric sheet is read as "this line is at 1:36 and that one ends at 3:36".
+   * Asking for a duration instead made the operator do the subtraction, and the
+   * fixed list it was offered (30-60s in 5s steps) could not express a
+   * two-minute clip at all.
+   *
+   * Both fields are held as RAW TEXT while being typed, and a window is emitted
+   * only when both parse and make sense together. There is no hidden default:
+   * a start with no end is an unfinished thought, not a 30-second clip.
    */
-  const [draftSeconds, setDraftSeconds] = useState(value?.seconds ?? SHORT_SECONDS);
-  const seconds = value?.seconds ?? draftSeconds;
+  const [startText, setStartText] = useState(value ? formatClock(value.startSec) : '');
+  const [endText, setEndText] = useState(value ? formatClock(value.startSec + value.seconds) : '');
 
-  /** Turn what was typed into a window, or clear it. */
-  const commitStart = (text: string) => {
-    const parsed = parseClock(text);
-    if (parsed === null) {
-      // An unreadable or emptied field means "you decide" — the whole window
-      // goes, rather than leaving a start with no length.
-      onChange(null);
+  // Re-seed when the window arrives from somewhere else — the player's "Use for
+  // the short" button, or a different master's row. Keyed on the numbers rather
+  // than the object so typing is never fought mid-keystroke.
+  const vStart = value?.startSec ?? null;
+  const vSeconds = value?.seconds ?? null;
+  useEffect(() => {
+    setStartText(vStart === null ? '' : formatClock(vStart));
+    setEndText(vStart === null || vSeconds === null ? '' : formatClock(vStart + vSeconds));
+  }, [vStart, vSeconds]);
+
+  const start = parseClock(startText);
+  const end = parseClock(endText);
+  const span = start !== null && end !== null ? Math.round((end - start) * 10) / 10 : null;
+
+  /** Why this pair cannot be used, or null when it can. */
+  const problem =
+    start === null && end === null ? null
+    : start === null ? 'Enter a start time.'
+    : end === null ? 'Enter an end time.'
+    : span !== null && span <= 0 ? 'The end must come after the start.'
+    : span !== null && span < SHORT_PICK_MIN_SECONDS ? `That is ${span}s — the shortest clip is ${SHORT_PICK_MIN_SECONDS}s.`
+    : span !== null && span > SHORT_PICK_MAX_SECONDS ? `That is ${formatClock(span)} — the longest is ${formatClock(SHORT_PICK_MAX_SECONDS)}.`
+    : null;
+
+  // Emit on every change that produces a usable pair, and clear the window the
+  // moment it stops being usable — a stale window surviving an edit is how the
+  // wrong seconds get rendered.
+  useEffect(() => {
+    if (start !== null && end !== null && !problem && span !== null) {
+      if (value?.startSec === start && value?.seconds === span) return;
+      onChange({ startSec: start, seconds: span });
       return;
     }
-    onChange({ startSec: parsed, seconds });
-  };
+    if (value) onChange(null);
+    // onChange identity is not stable in the caller; the guard above makes a
+    // re-run harmless.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [start, end, span, problem]);
+
+  const field = (id: string, label: string, text: string, set: (v: string) => void) => (
+    <div>
+      <label htmlFor={id} className="block text-xs font-medium text-gray-600 dark:text-gray-300">
+        {label}
+      </label>
+      <input
+        id={id}
+        type="text"
+        inputMode="numeric"
+        disabled={disabled}
+        placeholder="auto"
+        value={text}
+        // Points at the reason this pair cannot be used, so a screen reader
+        // reaches it from the field rather than hunting for it.
+        aria-describedby={problem ? noteId : undefined}
+        aria-invalid={problem ? true : undefined}
+        onChange={(e) => set(e.target.value)}
+        className="mt-1 w-24 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm tabular-nums text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+      />
+    </div>
+  );
+
+  const longForFacebook = span !== null && !problem && span > SHORT_FB_REELS_MAX_SECONDS;
 
   return (
     <div className="w-full">
       <div className="flex flex-wrap items-end gap-3">
-        <div>
-          <label htmlFor={startId} className="block text-xs font-medium text-gray-600 dark:text-gray-300">
-            Start at
-          </label>
-          <input
-            id={startId}
-            type="text"
-            inputMode="numeric"
-            disabled={disabled}
-            placeholder="auto"
-            defaultValue={value ? formatClock(value.startSec) : ''}
-            // Keyed on the value so the player's handoff re-seeds the field,
-            // while typing is never fought mid-keystroke by a controlled value.
-            key={value ? `s-${value.startSec}` : 's-auto'}
-            onBlur={(e) => commitStart(e.target.value)}
-            onKeyDown={(e) => {
-              // Enter commits too. Blur alone means a value typed and left
-              // alone while reaching for the render button can be lost.
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                commitStart((e.target as HTMLInputElement).value);
-              }
-            }}
-            className="mt-1 w-24 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
-          />
-        </div>
-        <div>
-          <label htmlFor={lenId} className="block text-xs font-medium text-gray-600 dark:text-gray-300">
-            Length
-          </label>
-          <select
-            id={lenId}
-            disabled={disabled}
-            value={seconds}
-            onChange={(e) => {
-              const next = Number(e.target.value);
-              setDraftSeconds(next);
-              // Only a window that already has a start can be updated; without
-              // one this is remembered and applied the moment a start is typed.
-              if (value) onChange({ ...value, seconds: next });
-            }}
-            className="mt-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
-          >
-            {[30, 35, 40, 45, 50, 55, 60].map((n) => (
-              <option key={n} value={n}>{n}s</option>
-            ))}
-          </select>
-        </div>
-        {value && (
+        {field(startId, 'Start at', startText, setStartText)}
+        {field(endId, 'End at', endText, setEndText)}
+        {(startText || endText) && (
           <button
             type="button"
-            onClick={() => onChange(null)}
+            onClick={() => { setStartText(''); setEndText(''); }}
             disabled={disabled}
             className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200"
           >
@@ -152,24 +165,33 @@ export function ShortWindowFields({ value, onChange, disabled = false, idPrefix,
           </button>
         )}
       </div>
-      <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-        {value ? (
-          <>
-            <Scissors className="mr-1 inline h-3 w-3" aria-hidden="true" />
-            Cutting <strong>{formatClock(value.startSec)}&ndash;{formatClock(value.startSec + value.seconds)}</strong>{' '}
-            ({value.seconds}s). A window must be {SHORT_PICK_MIN_SECONDS}&ndash;{SHORT_PICK_MAX_SECONDS} seconds.
-          </>
-        ) : compact ? (
-          <>Blank ⇒ the loudest {SHORT_SECONDS}s is chosen for you.</>
-        ) : (
-          <>
-            Leave this blank and the loudest {SHORT_SECONDS}&nbsp;seconds are chosen for you — which finds the
-            chorus, not necessarily the lines you want. To choose: press play on a saved master below, drag
-            across the waveform to loop a phrase, then <strong>Use for the short</strong>. Or type the start
-            time here if you already know it.
-          </>
-        )}
-      </p>
+
+      {problem ? (
+        <p id={noteId} className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-400">
+          {problem}
+        </p>
+      ) : span !== null ? (
+        <p className="mt-2 text-xs text-gray-600 dark:text-gray-300">
+          <Scissors className="mr-1 inline h-3 w-3" aria-hidden="true" />
+          Cutting <strong>{formatClock(start!)}&ndash;{formatClock(end!)}</strong> — {formatClock(span)}.
+          {longForFacebook && (
+            <> Past {SHORT_FB_REELS_MAX_SECONDS}s, so YouTube Shorts and Instagram will take it but Facebook Reels will not.</>
+          )}
+        </p>
+      ) : (
+        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+          {compact ? (
+            <>Blank ⇒ the loudest {SHORT_SECONDS}s is chosen for you.</>
+          ) : (
+            <>
+              Leave both blank and the loudest {SHORT_SECONDS}&nbsp;seconds are chosen for you — which finds
+              the chorus, not necessarily the lines you want. To choose: type the times from the lyric sheet,
+              or press play on a saved master below, drag across the waveform to loop a phrase, then{' '}
+              <strong>Use for the short</strong>.
+            </>
+          )}
+        </p>
+      )}
     </div>
   );
 }

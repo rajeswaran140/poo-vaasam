@@ -1160,16 +1160,16 @@ describe('render for YouTube', () => {
         expect(body).toEqual({ coverKey: 'audio/mastering/1_c_cover.jpg' });
       });
 
-      it('takes a typed start time in mm:ss and sends it', async () => {
+      it('takes typed start and end times in mm:ss', async () => {
+        // A lyric sheet reads "this line is at 1:36, that one ends at 2:21" —
+        // the operator should never do the subtraction.
         await masterAndSave();
         await addCover();
-        const start = screen.getByLabelText(/Start at/i);
         await act(async () => {
-          fireEvent.change(start, { target: { value: '1:36' } });
-          fireEvent.blur(start);
+          fireEvent.change(screen.getByLabelText(/Start at/i), { target: { value: '1:36' } });
         });
         await act(async () => {
-          fireEvent.change(screen.getByLabelText(/^Length$/i), { target: { value: '45' } });
+          fireEvent.change(screen.getByLabelText(/End at/i), { target: { value: '2:21' } });
         });
 
         await primeShortResponse();
@@ -1180,62 +1180,83 @@ describe('render for YouTube', () => {
       });
 
       /**
-       * ⚠️ THE LENGTH MUST NOT DEPEND ON THE START.
-       *
-       * The first version disabled the length control until a window existed,
-       * so it was dead on a freshly-opened panel — and typing a start then
-       * clicking straight into it spent that click on committing the start and
-       * had it swallowed by the disabled→enabled switch. It took two clicks and
-       * read as broken. Raj hit exactly this.
+       * The ceiling that was wrong. 60s was a convention applied over the
+       * channel's own evidence; two minutes is what this song needed.
        */
-      it('lets the length be chosen BEFORE a start time, and applies it after', async () => {
+      it('accepts a two-minute clip', async () => {
         await masterAndSave();
         await addCover();
-
-        const length = screen.getByLabelText(/^Length$/i) as HTMLSelectElement;
-        expect(length).toBeEnabled();
-        await act(async () => { fireEvent.change(length, { target: { value: '60' } }); });
-        expect(length.value).toBe('60');
-
-        const start = screen.getByLabelText(/Start at/i);
         await act(async () => {
-          fireEvent.change(start, { target: { value: '1:36' } });
-          fireEvent.blur(start);
+          fireEvent.change(screen.getByLabelText(/Start at/i), { target: { value: '1:36' } });
         });
+        await act(async () => {
+          fireEvent.change(screen.getByLabelText(/End at/i), { target: { value: '3:36' } });
+        });
+        expect(screen.getByText(/Cutting/)).toHaveTextContent('2:00');
 
         await primeShortResponse();
         await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Make a short/ })); });
 
-        // The length chosen first is the one that travels.
         const body = JSON.parse(mockedFetch.mock.calls.find((c) => String(c[0]).endsWith('/short'))![1].body);
-        expect(body).toMatchObject({ startSec: 96, seconds: 60 });
+        expect(body).toMatchObject({ startSec: 96, seconds: 120 });
       });
 
-      it('commits the start on Enter, not only on blur', async () => {
-        // A value typed and then left alone while reaching for the render
-        // button used to be lost.
+      it('says why a pair cannot be used, and sends nothing while it cannot', async () => {
         await masterAndSave();
         await addCover();
-        const start = screen.getByLabelText(/Start at/i);
         await act(async () => {
-          fireEvent.change(start, { target: { value: '1:36' } });
-          fireEvent.keyDown(start, { key: 'Enter' });
+          fireEvent.change(screen.getByLabelText(/Start at/i), { target: { value: '2:00' } });
         });
+        // An end before the start, then one that is too short a span.
+        await act(async () => {
+          fireEvent.change(screen.getByLabelText(/End at/i), { target: { value: '1:00' } });
+        });
+        expect(screen.getByText(/end must come after the start/i)).toBeInTheDocument();
+
+        await act(async () => {
+          fireEvent.change(screen.getByLabelText(/End at/i), { target: { value: '2:10' } });
+        });
+        expect(screen.getByText(/shortest clip is 30s/i)).toBeInTheDocument();
+        // And the fields say so themselves, not just the page.
+        expect(screen.getByLabelText(/End at/i)).toHaveAttribute('aria-invalid', 'true');
 
         await primeShortResponse();
         await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Make a short/ })); });
-
         const body = JSON.parse(mockedFetch.mock.calls.find((c) => String(c[0]).endsWith('/short'))![1].body);
-        expect(body).toMatchObject({ startSec: 96 });
+        expect(body).toEqual({ coverKey: 'audio/mastering/1_c_cover.jpg' });
+      });
+
+      it('warns that a clip past 90s is not a Facebook Reel, without refusing it', async () => {
+        await masterAndSave();
+        await addCover();
+        await act(async () => {
+          fireEvent.change(screen.getByLabelText(/Start at/i), { target: { value: '0:10' } });
+        });
+        await act(async () => {
+          fireEvent.change(screen.getByLabelText(/End at/i), { target: { value: '2:10' } });
+        });
+        expect(screen.getByText(/Facebook Reels will not/i)).toBeInTheDocument();
+        // A warning, not a refusal — the window is still sent.
+        expect(screen.getByLabelText(/End at/i)).not.toHaveAttribute('aria-invalid');
+      });
+
+      /**
+       * The old Length dropdown is gone. It offered 30-60s in 5s steps, which
+       * could not express a two-minute clip at all — the reason it read as
+       * "not functioning" rather than merely limited.
+       */
+      it('offers no fixed-length control at all', () => {
+        expect(screen.queryByLabelText(/^Length$/i)).not.toBeInTheDocument();
       });
 
       it('clearing the field goes back to letting it pick', async () => {
         await masterAndSave();
         await addCover();
-        const start = screen.getByLabelText(/Start at/i);
         await act(async () => {
-          fireEvent.change(start, { target: { value: '1:36' } });
-          fireEvent.blur(start);
+          fireEvent.change(screen.getByLabelText(/Start at/i), { target: { value: '1:36' } });
+        });
+        await act(async () => {
+          fireEvent.change(screen.getByLabelText(/End at/i), { target: { value: '2:21' } });
         });
         expect(screen.getByRole('button', { name: /Let it pick/i })).toBeInTheDocument();
 
@@ -1255,10 +1276,8 @@ describe('render for YouTube', () => {
         // this picker exists to prevent.
         await masterAndSave();
         await addCover();
-        const start = screen.getByLabelText(/Start at/i);
         await act(async () => {
-          fireEvent.change(start, { target: { value: 'chorus' } });
-          fireEvent.blur(start);
+          fireEvent.change(screen.getByLabelText(/Start at/i), { target: { value: 'chorus' } });
         });
 
         await primeShortResponse();
@@ -1867,10 +1886,11 @@ describe('rendering from the saved-masters library', () => {
         fireEvent.change(input, { target: { files: [new File(['x'], 'c.jpg', { type: 'image/jpeg' })] } });
       });
 
-      const start = screen.getByLabelText(/Start at/i);
       await act(async () => {
-        fireEvent.change(start, { target: { value: '3:42' } });
-        fireEvent.blur(start);
+        fireEvent.change(screen.getByLabelText(/Start at/i), { target: { value: '3:42' } });
+      });
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText(/End at/i), { target: { value: '5:42' } });
       });
 
       mockedFetch.mockResolvedValueOnce(json({ success: true, shortKey: 's', status: 'queued' }));
@@ -1882,7 +1902,7 @@ describe('rendering from the saved-masters library', () => {
       });
 
       const body = JSON.parse(mockedFetch.mock.calls.find((c) => String(c[0]).endsWith('/short'))![1].body);
-      expect(body).toMatchObject({ startSec: 222, seconds: 30 });
+      expect(body).toMatchObject({ startSec: 222, seconds: 120 });
     });
 
     /**
@@ -1904,10 +1924,11 @@ describe('rendering from the saved-masters library', () => {
       await act(async () => {
         fireEvent.click(screen.getByRole('button', { name: /Render video for காதல் மழை/ }));
       });
-      const start = screen.getByLabelText(/Start at/i);
       await act(async () => {
-        fireEvent.change(start, { target: { value: '3:42' } });
-        fireEvent.blur(start);
+        fireEvent.change(screen.getByLabelText(/Start at/i), { target: { value: '3:42' } });
+      });
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText(/End at/i), { target: { value: '4:42' } });
       });
 
       // Now open the SECOND row. Its field must be empty, not inherited.

@@ -469,17 +469,30 @@ describe('short enqueue', () => {
       expect('seconds' in payload.short).toBe(false);
     });
 
-    it('refuses a window outside 30-60s, and a half-given one', async () => {
+    it('refuses a window outside 30s-3min, and a half-given one', async () => {
       for (const body of [
-        { coverKey: COVER, startSec: 10, seconds: 20 },
-        { coverKey: COVER, startSec: 10, seconds: 90 },
-        { coverKey: COVER, startSec: 10 },
-        { coverKey: COVER, seconds: 45 },
+        { coverKey: COVER, startSec: 10, seconds: 20 },   // under the floor
+        { coverKey: COVER, startSec: 10, seconds: 200 },  // past three minutes
+        { coverKey: COVER, startSec: 10 },                // no length
+        { coverKey: COVER, seconds: 45 },                 // no start
       ]) {
         mockGet.mockResolvedValueOnce(doneSavedJob());
         expect((await shortReq(body)).status).toBe(409);
       }
       expect(MockInvoke).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The ceiling that was wrong. 60s was a convention applied over the
+     * channel's own evidence, and it refused the two-minute clip this song
+     * needed.
+     */
+    it('accepts a two-minute window', async () => {
+      mockGet.mockResolvedValueOnce(doneSavedJob({ editedDurationSec: 300 }));
+      const res = await shortReq({ coverKey: COVER, startSec: 96, seconds: 120 });
+      expect(res.status).toBe(202);
+      const payload = JSON.parse(Buffer.from(MockInvoke.mock.calls[0][0].Payload).toString());
+      expect(payload.short).toMatchObject({ startSec: 96, seconds: 120 });
     });
 
     it('refuses a window that runs past the end of the track', async () => {

@@ -572,7 +572,11 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
       }
     }
 
-    const composed = ff(buildShortComposeArgs({ coverPath, framePath }));
+    // Probe the cover so a vertical one FILLS the frame instead of being
+    // dropped into a box on a blurred copy of itself — the same wiring the
+    // long-form render has had since the small-thumbnail fix.
+    const coverAspect = probeCoverAspect(coverPath);
+    const composed = ff(buildShortComposeArgs({ coverPath, framePath, coverAspect }));
     if (composed.status !== 0) {
       await patch(jobId, { shortError: 'the cover could not be composed into a vertical frame' });
       return { ok: false };
