@@ -83,9 +83,13 @@ export type NormalizationMode = 'loudness' | 'peak';
 - `'peak'` — measure true peak, apply one gain change to land at the ceiling,
   touch nothing else.
 
-`target` stays a number and stays required, because it still names the file and
-still appears in the report. In `'peak'` mode it is **recorded and never acted
-on**; the ceiling is what matters.
+`target` stays a number and keeps its `-14` default, so the request shape is
+unchanged. In `'peak'` mode it is **recorded and never acted on**: it does not
+name the file (`karaokeMasterKeyFor` ignores it), it is not a loudnorm argument,
+and the report shows it only as part of the request that was made. The ceiling
+is what matters. It is kept rather than made optional so that one field does not
+have to become conditional across the route, the job record and the worker
+event.
 
 ### Why a mode rather than a magic target value
 
@@ -172,8 +176,8 @@ gain = PEAK_CEILING_DBTP - measuredTruePeak
 filter = `volume=${gain.toFixed(2)}dB`
 ```
 
-No `loudnorm`, no limiter, no compressor. Output is 24-bit / 48 kHz PCM, as with
-every other master.
+No `loudnorm`, no limiter, no compressor. Output is `-ar 48000 -c:a pcm_s24le`,
+identical to the loudness path's pass 2 (`worker/master-worker.ts:1153`).
 
 **Refusals:**
 
@@ -227,7 +231,9 @@ Selecting it:
 - Hides the **Render for YouTube** and upload panels entirely, and the library
   row's Render/Make-short buttons for karaoke rows.
 - Changes the download filename suffix from `(Master -14 LUFS)` to
-  `(Karaoke bed -1 dBTP)`.
+  `(Karaoke bed -1 dBTP)`. `downloadKey` already takes an optional label
+  argument for exactly this (added for the vertical short), so this is a call
+  site, not a change.
 - Shows the deliverable note: *320 kbps MP3, no vocals, headroom for a live
   voice* — the same three claims `KARAOKE_DELIVERABLE` makes to buyers.
 
