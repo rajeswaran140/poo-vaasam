@@ -17,7 +17,7 @@
  * ⚠️ NOTHING HERE TOUCHES AUDIO. It emits two numbers, like the trim panel.
  */
 
-import { useId } from 'react';
+import { useId, useState } from 'react';
 import { Scissors, RotateCcw } from 'lucide-react';
 import { SHORT_PICK_MIN_SECONDS, SHORT_PICK_MAX_SECONDS, SHORT_SECONDS } from '@/lib/master-short';
 
@@ -65,6 +65,31 @@ export function ShortWindowFields({ value, onChange, disabled = false, idPrefix,
   const startId = `${idPrefix ?? auto}-start`;
   const lenId = `${idPrefix ?? auto}-length`;
 
+  /**
+   * The length, remembered even before a start time exists.
+   *
+   * ⚠️ THE LENGTH MUST NOT DEPEND ON THE START. The first version disabled this
+   * control until a window existed, which made it dead on an freshly-opened
+   * panel — and if you typed a start and clicked straight into it, that click
+   * was spent committing the start field and swallowed by the disabled→enabled
+   * switch, so it took two clicks and felt broken. Holding the choice locally
+   * lets it be picked in either order and applied when the start arrives.
+   */
+  const [draftSeconds, setDraftSeconds] = useState(value?.seconds ?? SHORT_SECONDS);
+  const seconds = value?.seconds ?? draftSeconds;
+
+  /** Turn what was typed into a window, or clear it. */
+  const commitStart = (text: string) => {
+    const parsed = parseClock(text);
+    if (parsed === null) {
+      // An unreadable or emptied field means "you decide" — the whole window
+      // goes, rather than leaving a start with no length.
+      onChange(null);
+      return;
+    }
+    onChange({ startSec: parsed, seconds });
+  };
+
   return (
     <div className="w-full">
       <div className="flex flex-wrap items-end gap-3">
@@ -82,15 +107,14 @@ export function ShortWindowFields({ value, onChange, disabled = false, idPrefix,
             // Keyed on the value so the player's handoff re-seeds the field,
             // while typing is never fought mid-keystroke by a controlled value.
             key={value ? `s-${value.startSec}` : 's-auto'}
-            onBlur={(e) => {
-              const parsed = parseClock(e.target.value);
-              if (parsed === null) {
-                // An unreadable or emptied field means "you decide" — the whole
-                // window goes, rather than leaving a start with no length.
-                onChange(null);
-                return;
+            onBlur={(e) => commitStart(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter commits too. Blur alone means a value typed and left
+              // alone while reaching for the render button can be lost.
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                commitStart((e.target as HTMLInputElement).value);
               }
-              onChange({ startSec: parsed, seconds: value?.seconds ?? SHORT_SECONDS });
             }}
             className="mt-1 w-24 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
           />
@@ -101,11 +125,14 @@ export function ShortWindowFields({ value, onChange, disabled = false, idPrefix,
           </label>
           <select
             id={lenId}
-            disabled={disabled || !value}
-            value={value?.seconds ?? SHORT_SECONDS}
+            disabled={disabled}
+            value={seconds}
             onChange={(e) => {
-              if (!value) return;
-              onChange({ ...value, seconds: Number(e.target.value) });
+              const next = Number(e.target.value);
+              setDraftSeconds(next);
+              // Only a window that already has a start can be updated; without
+              // one this is remembered and applied the moment a start is typed.
+              if (value) onChange({ ...value, seconds: next });
             }}
             className="mt-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
           >
