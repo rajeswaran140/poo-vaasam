@@ -201,12 +201,20 @@ export default async function KaraokePage() {
         </section>
 
         <section className="mt-16 text-center">
-          <p className="font-tamil text-gray-400">
-            உங்கள் சொந்த வரிகளுக்கு புதிய பாடல் வேண்டுமா?{' '}
-            <Link href="/music-composition" className="text-orange-400 underline hover:text-orange-300">
-              இசையமைப்பு சேவை
-            </Link>
-          </p>
+          <p className="font-tamil text-gray-400">உங்கள் சொந்த வரிகளுக்கு புதிய பாடல் வேண்டுமா?</p>
+          {/*
+            inline-flex + min-h-11 (44px), not an inline <a> inside the sentence.
+            A mobile audit on 2026-09-16 measured the inline version at 186x20 —
+            under the 44px minimum a thumb needs. Wrapping it in the sentence
+            made it a 20px-tall target; giving it its own line and real padding
+            makes it a real one.
+          */}
+          <Link
+            href="/music-composition"
+            className="mt-3 inline-flex min-h-11 items-center justify-center rounded-full border border-gray-700 px-5 py-2.5 font-tamil text-orange-400 transition-colors hover:border-orange-500 hover:text-orange-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
+          >
+            இசையமைப்பு சேவை →
+          </Link>
         </section>
       </main>
 
