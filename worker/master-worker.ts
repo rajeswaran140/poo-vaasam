@@ -64,7 +64,9 @@ import {
   shortKeyFor,
   SHORT_SECONDS,
   SHORT_MIN_START_SEC,
-  SHORT_MIN_SECONDS,
+  SHORT_FLOOR_SECONDS,
+  SHORT_PICK_MIN_SECONDS,
+  SHORT_PICK_MAX_SECONDS,
   SHORT_LEAD_IN_SEC,
   shortRefusalMessage,
 } from '@/lib/master-short';
@@ -176,7 +178,7 @@ interface MasterEvent {
    * Handled before the mastering guards, like `render`, so it can never
    * re-master.
    */
-  short?: { audioKey?: string; coverKey?: string };
+  short?: { audioKey?: string; coverKey?: string; startSec?: number; seconds?: number };
 }
 
 /**
@@ -322,6 +324,22 @@ function probeCoverAspect(coverPath: string): number | undefined {
 }
 
 /**
+ * Re-validate an operator's window HERE, not only at the route.
+ *
+ * Same reason every key in this file is re-checked: the route is not the only
+ * thing that can invoke this Lambda. `planShort` applies the identical rule on
+ * the way in; this is the copy that actually guards the ffmpeg call.
+ */
+function readPickedWindow(spec: NonNullable<MasterEvent['short']>): { startSec: number; seconds: number } | null {
+  const { startSec, seconds } = spec;
+  if (typeof startSec !== 'number' || typeof seconds !== 'number') return null;
+  if (!Number.isFinite(startSec) || !Number.isFinite(seconds)) return null;
+  if (startSec < 0) return null;
+  if (seconds < SHORT_PICK_MIN_SECONDS || seconds > SHORT_PICK_MAX_SECONDS) return null;
+  return { startSec: Math.round(startSec * 10) / 10, seconds: Math.round(seconds * 10) / 10 };
+}
+
+/**
  * Render a hook-first vertical clip for Reels / Instagram / Shorts.
  *
  * Three passes, each cheap:
@@ -362,32 +380,61 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
     const cover = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: coverKey }));
     writeFileSync(coverPath, Buffer.from(await cover.Body!.transformToByteArray()));
 
-    // 1. Where is the hook? ebur128 writes its samples to stderr.
-    const loud = ff(buildLoudnessArgs(audioPath));
-    const samples = parseEbur128Loudness(`${loud.stdout ?? ''}${loud.stderr ?? ''}`);
-    // leadInSec is the picker's own job: it pulls the start back so the clip
-    // rises INTO the peak, clamped so it never reaches into the skipped intro.
-    const hook = pickHookWindow(samples, {
-      windowSec: SHORT_SECONDS,
-      minStartSec: SHORT_MIN_START_SEC,
-      leadInSec: SHORT_LEAD_IN_SEC,
-    });
-    if (!hook) {
-      await patch(jobId, { shortError: 'could not measure the track to find its hook' });
-      return { ok: false };
-    }
-    const startSec = Math.max(0, hook.start);
+    // 1. WHERE TO CUT. Two paths, and only one of them measures.
+    //
+    // When the operator picked a window on the waveform there is nothing to
+    // find: running ebur128 anyway would burn a pass to produce a number we
+    // would immediately discard, and would leave two sources of truth for one
+    // decision. The chosen window is checked against the FILE's own header
+    // instead — one spawn, no decoding — because the job's recorded duration
+    // can be null, and because the file is the thing being cut.
+    let startSec: number;
+    let seconds: number;
 
-    // planShort refuses a track it KNOWS is shorter than the clip, but a job
-    // whose duration was never measured reaches here with nothing refused. The
-    // measurement we just took is the authority, so clamp against it: without
-    // this, a 20s track yields a 30s file whose last 10s are silence over a
-    // still — and the fade-out, scheduled at 29.4s, never fires.
-    const measuredEnd = samples[samples.length - 1]?.t ?? 0;
-    const seconds = Math.min(SHORT_SECONDS, Math.floor(measuredEnd - startSec));
-    if (seconds < SHORT_MIN_SECONDS) {
-      await patch(jobId, { shortError: shortRefusalMessage('too-short') });
-      return { ok: false };
+    if (spec.startSec !== undefined || spec.seconds !== undefined) {
+      const picked = readPickedWindow(spec);
+      if (!picked) {
+        await patch(jobId, { shortError: shortRefusalMessage('bad-window') });
+        return { ok: false };
+      }
+      const header = ff(['-hide_banner', '-i', audioPath]);
+      const info = parseSourceInfo(`${header.stdout ?? ''}${header.stderr ?? ''}`);
+      const total = info?.durationSec ?? null;
+      // Null means the header would not say. Trust the pick rather than refuse
+      // on missing data — the operator heard these seconds play.
+      if (total !== null && picked.startSec + picked.seconds > total) {
+        await patch(jobId, { shortError: shortRefusalMessage('window-past-end') });
+        return { ok: false };
+      }
+      ({ startSec, seconds } = picked);
+    } else {
+      // Nothing picked: find the hook. ebur128 writes its samples to stderr.
+      const loud = ff(buildLoudnessArgs(audioPath));
+      const samples = parseEbur128Loudness(`${loud.stdout ?? ''}${loud.stderr ?? ''}`);
+      // leadInSec is the picker's own job: it pulls the start back so the clip
+      // rises INTO the peak, clamped so it never reaches into the skipped intro.
+      const hook = pickHookWindow(samples, {
+        windowSec: SHORT_SECONDS,
+        minStartSec: SHORT_MIN_START_SEC,
+        leadInSec: SHORT_LEAD_IN_SEC,
+      });
+      if (!hook) {
+        await patch(jobId, { shortError: 'could not measure the track to find its hook' });
+        return { ok: false };
+      }
+      startSec = Math.max(0, hook.start);
+
+      // planShort refuses a track it KNOWS is shorter than the clip, but a job
+      // whose duration was never measured reaches here with nothing refused.
+      // The measurement we just took is the authority, so clamp against it:
+      // without this, a 20s track yields a 30s file whose last 10s are silence
+      // over a still — and the fade-out, scheduled at 29.4s, never fires.
+      const measuredEnd = samples[samples.length - 1]?.t ?? 0;
+      seconds = Math.min(SHORT_SECONDS, Math.floor(measuredEnd - startSec));
+      if (seconds < SHORT_FLOOR_SECONDS) {
+        await patch(jobId, { shortError: shortRefusalMessage('too-short') });
+        return { ok: false };
+      }
     }
 
     const composed = ff(buildShortComposeArgs({ coverPath, framePath }));
@@ -411,6 +458,7 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
       shortRenderedAt: new Date().toISOString(),
       shortStartSec: Number(startSec.toFixed(2)),
       shortSeconds: seconds,
+      shortPicked: spec.startSec !== undefined || spec.seconds !== undefined,
       shortError: null,
       coverKey,
     });

@@ -442,4 +442,52 @@ describe('short enqueue', () => {
     expect(res.status).toBe(401);
     expect(MockInvoke).not.toHaveBeenCalled();
   });
+
+  /**
+   * The operator's own window. It reaches the worker as `startSec`/`seconds` on
+   * the short event, and its ABSENCE has to survive the trip: the worker
+   * branches on `!== undefined` to decide whether to measure at all, so a
+   * payload carrying explicit nulls would silently disable the loudness pass.
+   */
+  describe('a chosen window', () => {
+    it('passes the window through to the worker', async () => {
+      mockGet.mockResolvedValueOnce(doneSavedJob());
+      const res = await shortReq({ coverKey: COVER, startSec: 128.4, seconds: 45 });
+      expect(res.status).toBe(202);
+
+      const payload = JSON.parse(Buffer.from(MockInvoke.mock.calls[0][0].Payload).toString());
+      expect(payload.short).toMatchObject({ coverKey: COVER, startSec: 128.4, seconds: 45 });
+      expect((await res.json()).window).toEqual({ startSec: 128.4, seconds: 45 });
+    });
+
+    it('omits the window entirely when none was chosen', async () => {
+      mockGet.mockResolvedValueOnce(doneSavedJob());
+      await shortReq({ coverKey: COVER });
+
+      const payload = JSON.parse(Buffer.from(MockInvoke.mock.calls[0][0].Payload).toString());
+      expect('startSec' in payload.short).toBe(false);
+      expect('seconds' in payload.short).toBe(false);
+    });
+
+    it('refuses a window outside 30-60s, and a half-given one', async () => {
+      for (const body of [
+        { coverKey: COVER, startSec: 10, seconds: 20 },
+        { coverKey: COVER, startSec: 10, seconds: 90 },
+        { coverKey: COVER, startSec: 10 },
+        { coverKey: COVER, seconds: 45 },
+      ]) {
+        mockGet.mockResolvedValueOnce(doneSavedJob());
+        expect((await shortReq(body)).status).toBe(409);
+      }
+      expect(MockInvoke).not.toHaveBeenCalled();
+    });
+
+    it('refuses a window that runs past the end of the track', async () => {
+      mockGet.mockResolvedValueOnce(doneSavedJob({ editedDurationSec: 100 }));
+      const res = await shortReq({ coverKey: COVER, startSec: 80, seconds: 30 });
+      expect(res.status).toBe(409);
+      expect((await res.json()).error).toMatch(/past the end/i);
+      expect(MockInvoke).not.toHaveBeenCalled();
+    });
+  });
 });

@@ -31,6 +31,14 @@ const MASTER_WORKER_FUNCTION = process.env.MASTER_WORKER_FUNCTION || 'tamilagava
 
 const bodySchema = z.object({
   coverKey: z.string().min(1),
+  /**
+   * The window the operator picked on the waveform, or typed. Both or neither:
+   * `planShort` treats a half-given window as a caller that does not mean what
+   * this route would have to decide for it. Omit both to let the worker find
+   * the loudest stretch, which is the original behaviour.
+   */
+  startSec: z.number().optional(),
+  seconds: z.number().optional(),
 });
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ jobId: string }> }) {
@@ -55,7 +63,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     // Every eligibility rule lives in the planner, so the route and the worker
     // cannot disagree about what can produce a short.
-    const plan = planShort(job, parsed.data.coverKey);
+    const plan = planShort(job, parsed.data.coverKey, {
+      startSec: parsed.data.startSec,
+      seconds: parsed.data.seconds,
+    });
     if (!plan.ok) {
       return NextResponse.json(
         { success: false, error: shortRefusalMessage(plan.reason) },
@@ -77,14 +88,21 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             // A distinct shape again: the worker branches on `short` before the
             // mastering guards, so cutting a clip can never re-master (and
             // re-measure) a file that is already finished.
-            short: { audioKey: plan.audioKey, coverKey: plan.coverKey },
+            short: {
+              audioKey: plan.audioKey,
+              coverKey: plan.coverKey,
+              // Spread, not `...plan.window`-with-nulls: an absent window must
+              // stay ABSENT in the payload, because the worker branches on
+              // `!== undefined` to decide whether to measure at all.
+              ...(plan.window ?? {}),
+            },
           })
         ),
       })
     );
 
     return NextResponse.json(
-      { success: true, shortKey: plan.shortKey, status: 'queued' },
+      { success: true, shortKey: plan.shortKey, window: plan.window, status: 'queued' },
       { status: 202 }
     );
   } catch (err) {
