@@ -172,7 +172,8 @@ The order list. Approve (with the S4 confirm step). **No refund control** — pe
 - `stripe/checkout.ts`: the price comes from the constant and **cannot** be overridden by input; `metadata.entity` and the statement descriptor are always present.
 - Webhook route: valid event fulfils exactly once; **the same event twice fulfils once**; an unknown order id returns 200 without writing; a bad signature returns 403.
 - Repository: the conditional transition succeeds once and fails the second time.
-- Admin routes: `requireAdmin` + `requireBearer`, and refund requires an explicit confirm flag.
+- Admin routes: `requireAdmin` + `requireBearer`, and approval requires an explicit confirm flag (S4).
+- **A test that the app has no refund capability**: no route, client or helper calls Stripe's refund API. This is a permission the key does not carry, so code that tried would fail at runtime in production while passing any mocked test — the guard has to be that the call site does not exist.
 
 **jest, not vitest.** Never pipe a test run to `tail` — it swallows the exit code.
 
