@@ -29,6 +29,7 @@ const PAGES = [
   'privacy/page.tsx',
   'contact/page.tsx',
   'music-composition/page.tsx',
+  'karaoke/terms/page.tsx',
 ] as const;
 
 describe('pages that render the fixed header must clear it', () => {
