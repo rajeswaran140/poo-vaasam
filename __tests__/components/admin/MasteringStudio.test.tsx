@@ -1649,35 +1649,35 @@ describe('rendering from the saved-masters library', () => {
 
   it('offers a render on a saved master that has none yet', async () => {
     await openLibrary();
-    expect(await screen.findByRole('button', { name: /Render video for காதல் மழை/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Video or short for காதல் மழை/ })).toBeInTheDocument();
   });
 
   it('does not offer a render on a row whose master file is gone', async () => {
     await openLibrary(row({ masterKey: null }));
-    expect(screen.queryByRole('button', { name: /Render video for/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Video or short for/ })).not.toBeInTheDocument();
   });
 
   it('shows "Re-render" button on a row that already has a video', async () => {
     // Regression guard: the render button must stay visible even after a successful render,
     // so a bad render can be redone. This test fails if the gate reverts to m.masterKey && !m.videoKey.
     await openLibrary(row({ videoKey: 'audio/mastering/1_a-master-14LUFS-1440p.mp4' }));
-    const renderBtn = screen.getByRole('button', { name: /Render video for காதல் மழை/ });
+    const renderBtn = screen.getByRole('button', { name: /Video or short for காதல் மழை/ });
     expect(renderBtn).toBeInTheDocument();
-    expect(renderBtn).toHaveTextContent('Re-render');
+    expect(renderBtn).toHaveTextContent('Video / short');
   });
 
   it('shows "Render video" button on a row that has no video yet', async () => {
     // The complementary case: a new render should show the initial label, not "Re-render".
     await openLibrary();
-    const renderBtn = screen.getByRole('button', { name: /Render video for காதல் மழை/ });
+    const renderBtn = screen.getByRole('button', { name: /Video or short for காதல் மழை/ });
     expect(renderBtn).toBeInTheDocument();
-    expect(renderBtn).toHaveTextContent('Render video');
+    expect(renderBtn).toHaveTextContent('Make video or short');
   });
 
   it('sends the row-s own job id and cover, not the active job-s', async () => {
     await openLibrary();
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Render video for காதல் மழை/ }));
+      fireEvent.click(screen.getByRole('button', { name: /Video or short for காதல் மழை/ }));
     });
 
     const input = await screen.findByLabelText(/Cover for காதல் மழை/i);
@@ -1693,7 +1693,7 @@ describe('rendering from the saved-masters library', () => {
       json(row({ videoKey: 'audio/mastering/done-1440p.mp4', videoRenderedAt: '2026-09-15T00:00:00.000Z' }))
     );
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /^Render$/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Render video/ }));
     });
 
     const req = mockedFetch.mock.calls.find((c) => String(c[0]).endsWith('/render'))!;
@@ -1717,7 +1717,7 @@ describe('rendering from the saved-masters library', () => {
 
     await openLibrary(row({ videoKey: oldVideoKey, videoRenderedAt: oldRenderedAt }));
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Render video for காதல் மழை/ }));
+      fireEvent.click(screen.getByRole('button', { name: /Video or short for காதல் மழை/ }));
     });
 
     const input = await screen.findByLabelText(/Cover for காதல் மழை/i);
@@ -1744,9 +1744,9 @@ describe('rendering from the saved-masters library', () => {
     // actually resolves with a completed job. That is the unambiguous
     // "fully done" signal, well past the default waitFor window since
     // attempt 1 only fires after the real 4s poll interval.
-    fireEvent.click(screen.getByRole('button', { name: /^Render$/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Render video/ }));
     await waitFor(
-      () => expect(screen.queryByRole('button', { name: /^Render$/ })).not.toBeInTheDocument(),
+      () => expect(screen.queryByRole('button', { name: /^Render video/ })).not.toBeInTheDocument(),
       { timeout: 8000, interval: 250 }
     );
 
@@ -1776,6 +1776,33 @@ describe('rendering from the saved-masters library', () => {
    * session would be reachable for exactly the wrong songs.
    */
   describe('cutting a short from the library', () => {
+    /**
+     * The two actions must NAME WHAT THEY PRODUCE.
+     *
+     * Raj pressed the video button while trying to cut a short and got a
+     * 3-minute 1440p render instead. The buttons sat side by side, the video
+     * one read only "Render", and the control that opened the strip said
+     * "Render video" — so the whole panel read as being about video.
+     */
+    it('names what each button produces, so neither can be mistaken for the other', async () => {
+      await openLibrary();
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Video or short for காதல் மழை/ }));
+      });
+
+      const video = screen.getByRole('button', { name: /^Render video/ });
+      const short = screen.getByRole('button', { name: /^Make vertical short$/ });
+      expect(video).toBeInTheDocument();
+      expect(short).toBeInTheDocument();
+      // Neither label may be a prefix of the other, or a regex — or an eye —
+      // can match the wrong one.
+      expect(video.textContent).not.toBe(short.textContent);
+      expect(video).toHaveTextContent(/video/i);
+      expect(short).toHaveTextContent(/short/i);
+      // And the video button says which size it will produce.
+      expect(video).toHaveTextContent(/1440p/);
+    });
+
     it('offers the finished clip on a row that already has one', async () => {
       await openLibrary(row({ shortKey: 'audio/mastering/1_a-master-14LUFS-short-1920.mp4' }));
       expect(screen.getByRole('button', { name: /^Short$/ })).toBeInTheDocument();
@@ -1784,7 +1811,7 @@ describe('rendering from the saved-masters library', () => {
     it('sends the row-s own job id and cover to the short route', async () => {
       await openLibrary();
       await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: /Render video for காதல் மழை/ }));
+        fireEvent.click(screen.getByRole('button', { name: /Video or short for காதல் மழை/ }));
       });
 
       const input = await screen.findByLabelText(/Cover for காதல் மழை/i);
@@ -1807,7 +1834,7 @@ describe('rendering from the saved-masters library', () => {
         )
       );
       await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: /^Make short$/ }));
+        fireEvent.click(screen.getByRole('button', { name: /^Make vertical short$/ }));
       });
 
       const req = mockedFetch.mock.calls.find((c) => String(c[0]).endsWith('/short'))!;
@@ -1829,7 +1856,7 @@ describe('rendering from the saved-masters library', () => {
 
       await openLibrary(row({ shortKey: oldKey, shortRenderedAt: oldAt }));
       await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: /Render video for காதல் மழை/ }));
+        fireEvent.click(screen.getByRole('button', { name: /Video or short for காதல் மழை/ }));
       });
       const input = await screen.findByLabelText(/Cover for காதல் மழை/i);
       mockedFetch.mockResolvedValueOnce(
@@ -1847,9 +1874,9 @@ describe('rendering from the saved-masters library', () => {
 
       // A row that already has a clip offers "Re-cut short", not "Make short".
       // The panel closes only once startShort resolves with a finished job.
-      fireEvent.click(screen.getByRole('button', { name: /^Re-cut short$/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Re-cut vertical short$/ }));
       await waitFor(
-        () => expect(screen.queryByRole('button', { name: /^Re-cut short$/ })).not.toBeInTheDocument(),
+        () => expect(screen.queryByRole('button', { name: /^Re-cut vertical short$/ })).not.toBeInTheDocument(),
         { timeout: 8000, interval: 250 }
       );
 
@@ -1876,7 +1903,7 @@ describe('rendering from the saved-masters library', () => {
     it('lets the window be TYPED on the row, not only dragged in the player', async () => {
       await openLibrary();
       await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: /Render video for காதல் மழை/ }));
+        fireEvent.click(screen.getByRole('button', { name: /Video or short for காதல் மழை/ }));
       });
       const input = await screen.findByLabelText(/Cover for காதல் மழை/i);
       mockedFetch.mockResolvedValueOnce(
@@ -1898,7 +1925,7 @@ describe('rendering from the saved-masters library', () => {
         json(row({ shortKey: 'audio/mastering/done-short-1920.mp4', shortRenderedAt: '2026-09-16T00:00:00.000Z' }))
       );
       await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: /^Make short$/ }));
+        fireEvent.click(screen.getByRole('button', { name: /^Make vertical short$/ }));
       });
 
       const body = JSON.parse(mockedFetch.mock.calls.find((c) => String(c[0]).endsWith('/short'))![1].body);
@@ -1918,11 +1945,11 @@ describe('rendering from the saved-masters library', () => {
       render(<MasteringStudio />);
       mockedFetch.mockResolvedValueOnce(json({ success: true, masters: [row(), other] }));
       await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Saved masters/i })); });
-      await screen.findByRole('button', { name: /Render video for காதல் மழை/ });
+      await screen.findByRole('button', { name: /Video or short for காதல் மழை/ });
 
       // Set a window on the FIRST row.
       await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: /Render video for காதல் மழை/ }));
+        fireEvent.click(screen.getByRole('button', { name: /Video or short for காதல் மழை/ }));
       });
       await act(async () => {
         fireEvent.change(screen.getByLabelText(/Start at/i), { target: { value: '3:42' } });
@@ -1933,7 +1960,7 @@ describe('rendering from the saved-masters library', () => {
 
       // Now open the SECOND row. Its field must be empty, not inherited.
       await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: /Render video for வேறு பாடல்/ }));
+        fireEvent.click(screen.getByRole('button', { name: /Video or short for வேறு பாடல்/ }));
       });
       const secondStart = screen.getByLabelText(/Start at/i) as HTMLInputElement;
       expect(secondStart.value).toBe('');
@@ -1952,7 +1979,7 @@ describe('rendering from the saved-masters library', () => {
         json({ ...other, shortRenderedAt: '2026-09-16T00:00:00.000Z' })
       );
       await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: /^Make short$/ }));
+        fireEvent.click(screen.getByRole('button', { name: /^Make vertical short$/ }));
       });
 
       const req = mockedFetch.mock.calls.find((c) => String(c[0]).endsWith('/short'))!;
@@ -1965,7 +1992,7 @@ describe('rendering from the saved-masters library', () => {
       // look exactly like success and silently produce the wrong file.
       await openLibrary();
       await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: /Render video for காதல் மழை/ }));
+        fireEvent.click(screen.getByRole('button', { name: /Video or short for காதல் மழை/ }));
       });
       const input = await screen.findByLabelText(/Cover for காதல் மழை/i);
       mockedFetch.mockResolvedValueOnce(
@@ -1980,7 +2007,7 @@ describe('rendering from the saved-masters library', () => {
         json(row({ shortKey: 'audio/mastering/done-short-1920.mp4', shortRenderedAt: '2026-09-16T00:00:00.000Z' }))
       );
       await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: /^Make short$/ }));
+        fireEvent.click(screen.getByRole('button', { name: /^Make vertical short$/ }));
       });
 
       expect(mockedFetch.mock.calls.filter((c) => String(c[0]).endsWith('/render'))).toHaveLength(0);

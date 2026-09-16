@@ -3317,10 +3317,10 @@ export function MasteringStudio() {
                     onClick={() =>
                       setRowRender((prev) => (prev?.id === m.id ? null : { id: m.id, cover: null }))
                     }
-                    aria-label={`Render video for ${m.title ?? 'this master'}`}
+                    aria-label={`Video or short for ${m.title ?? 'this master'}`}
                     className="text-xs font-medium text-orange-600 hover:underline disabled:opacity-50 dark:text-orange-400"
                   >
-                    {m.videoKey ? 'Re-render' : 'Render video'}
+                    {m.videoKey || m.shortKey ? 'Video / short' : 'Make video or short'}
                   </button>
                 )}
                 {/* The source is never modified, so re-opening costs nothing and
@@ -3354,13 +3354,18 @@ export function MasteringStudio() {
                       }}
                       className="text-xs"
                     />
+                    {/* "Render" alone did not say WHAT it rendered, and it sat
+                        first in a strip opened by a button reading "Render
+                        video" — so the whole panel read as being about video
+                        and the short button was easy to miss. Both now name
+                        their output. */}
                     <button
                       type="button"
                       disabled={!rowRender.cover || rowBusy === m.id}
                       onClick={() => void renderRowVideo()}
                       className="rounded bg-orange-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
                     >
-                      Render
+                      Render video ({videoHeight}p)
                     </button>
                     {/* The same cover feeds both. A short is not a step on the
                         way to the video and does not need one to exist. */}
@@ -3370,7 +3375,7 @@ export function MasteringStudio() {
                       onClick={() => void makeRowShort()}
                       className="rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
                     >
-                      {m.shortKey ? 'Re-cut short' : 'Make short'}
+                      {m.shortKey ? 'Re-cut vertical short' : 'Make vertical short'}
                     </button>
                     {rowBusy === m.id && (
                       <span className="text-xs text-gray-500 dark:text-gray-400">Working…</span>
