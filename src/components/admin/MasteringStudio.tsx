@@ -346,7 +346,25 @@ export function MasteringStudio() {
    * player at the bottom of the library, and a per-row copy would mean the
    * player had to know which row it was feeding.
    */
-  const [shortWindow, setShortWindow] = useState<{ startSec: number; seconds: number } | null>(null);
+  const [shortWindow, setShortWindow] =
+    useState<{ jobId: string; startSec: number; seconds: number } | null>(null);
+
+  /**
+   * The window for THIS master, or null — never another master's.
+   *
+   * ⚠️ The first cut of this was a bare {startSec, seconds} shared by every
+   * row, so a window set while listening to one song silently applied to
+   * whichever row was rendered next: a clip cut from the wrong part of a
+   * different song, with nothing on screen saying so. Scoping it to an id makes
+   * that impossible.
+   */
+  const windowFor = useCallback(
+    (id: string | null) =>
+      id && shortWindow?.jobId === id
+        ? { startSec: shortWindow.startSec, seconds: shortWindow.seconds }
+        : null,
+    [shortWindow]
+  );
   /**
    * YouTube upload panel. The title is `null` until the operator types in it —
    * NOT '' — so an untouched field can mirror `masterName` (the name already
@@ -1180,9 +1198,10 @@ export function MasteringStudio() {
       const res = await adminFetch(`/api/admin/music-lab/master/${targetId}/short`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // A window is sent only when one was chosen. Sending zeroes would read
-        // as "start at 0:00 for 0s" rather than "you decide".
-        body: JSON.stringify({ coverKey, ...(shortWindow ?? {}) }),
+        // A window is sent only when one was chosen, and only ever the one
+        // belonging to THIS master. Sending zeroes would read as "start at
+        // 0:00 for 0s" rather than "you decide".
+        body: JSON.stringify({ coverKey, ...(windowFor(targetId) ?? {}) }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.success) throw new Error(body.error || 'Could not start the short.');
@@ -1204,7 +1223,7 @@ export function MasteringStudio() {
         }
       }
     },
-    [shortWindow]
+    [windowFor]
   );
 
   const makeShort = useCallback(async () => {
@@ -2663,8 +2682,8 @@ export function MasteringStudio() {
                   </button>
                 )}
                 <ShortWindowFields
-                  value={shortWindow}
-                  onChange={setShortWindow}
+                  value={windowFor(jobId)}
+                  onChange={(w) => setShortWindow(w && jobId ? { jobId, ...w } : null)}
                   disabled={shorting}
                   idPrefix={`${inputId}-short`}
                 />
@@ -3317,7 +3336,7 @@ export function MasteringStudio() {
                   </button>
                 )}
                 {rowRender?.id === m.id && (
-                  <span className="mt-2 flex w-full flex-wrap items-center gap-2 border-t border-gray-100 pt-2 dark:border-gray-800">
+                  <div className="mt-2 flex w-full flex-wrap items-center gap-2 border-t border-gray-100 pt-2 dark:border-gray-800">
                     <label
                       htmlFor={`${inputId}-rowcover-${m.id}`}
                       className="text-xs font-medium text-gray-600 dark:text-gray-300"
@@ -3353,19 +3372,23 @@ export function MasteringStudio() {
                     >
                       {m.shortKey ? 'Re-cut short' : 'Make short'}
                     </button>
-                    {/* Which window this will use. The region is chosen in the
-                        player at the bottom of the list, which may be scrolled
-                        out of sight by the time the button is pressed — so it
-                        is restated where the decision is acted on. */}
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                      {shortWindow
-                        ? `short: ${formatTime(shortWindow.startSec)} + ${shortWindow.seconds}s`
-                        : 'short: loudest part'}
-                    </span>
                     {rowBusy === m.id && (
                       <span className="text-xs text-gray-500 dark:text-gray-400">Working…</span>
                     )}
-                  </span>
+                    {/* The window, EDITABLE here — not a read-only echo of it.
+                        This is where the songs that want a short actually live:
+                        the inline panel is gated on savedAt, so from the library
+                        the only way to set a window used to be the player's
+                        "Use for the short" button, and a timestamp read off a
+                        lyric sheet could not be typed at all. */}
+                    <ShortWindowFields
+                      compact
+                      value={windowFor(m.id)}
+                      onChange={(w) => setShortWindow(w ? { jobId: m.id, ...w } : null)}
+                      disabled={rowBusy === m.id}
+                      idPrefix={`${inputId}-rowshort-${m.id}`}
+                    />
+                  </div>
                 )}
               </li>
             ))}
@@ -3420,7 +3443,9 @@ export function MasteringStudio() {
                   SHORT_PICK_MAX_SECONDS,
                   Math.max(SHORT_PICK_MIN_SECONDS, Math.round(raw))
                 );
-                setShortWindow({ startSec: Math.round(r.start * 10) / 10, seconds });
+                // Stamped with the master being auditioned, so it can never
+                // be offered to a different song.
+                setShortWindow({ jobId: playing.id, startSec: Math.round(r.start * 10) / 10, seconds });
                 setAnnounce(
                   seconds === Math.round(raw)
                     ? `Short window set to ${seconds}s from ${formatTime(r.start)}.`

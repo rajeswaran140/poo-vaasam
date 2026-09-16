@@ -1797,6 +1797,98 @@ describe('rendering from the saved-masters library', () => {
       expect(String(dl[0])).not.toContain(encodeURIComponent(oldKey));
     }, 15000);
 
+    /**
+     * The library row is where the songs that want a short actually live — the
+     * inline panel is gated on `savedAt`, which only this session's Save sets.
+     * Shipping the picker without these was a real gap: from the library the
+     * only way to set a window was the player's button, and a timestamp read
+     * off a lyric sheet could not be typed at all.
+     */
+    it('lets the window be TYPED on the row, not only dragged in the player', async () => {
+      await openLibrary();
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Render video for காதல் மழை/ }));
+      });
+      const input = await screen.findByLabelText(/Cover for காதல் மழை/i);
+      mockedFetch.mockResolvedValueOnce(
+        json({ success: true, uploadUrl: 'https://s3/u', fields: { key: 'k' }, key: 'audio/mastering/1_c_cover.jpg' })
+      );
+      await act(async () => {
+        fireEvent.change(input, { target: { files: [new File(['x'], 'c.jpg', { type: 'image/jpeg' })] } });
+      });
+
+      const start = screen.getByLabelText(/Start at/i);
+      await act(async () => {
+        fireEvent.change(start, { target: { value: '3:42' } });
+        fireEvent.blur(start);
+      });
+
+      mockedFetch.mockResolvedValueOnce(json({ success: true, shortKey: 's', status: 'queued' }));
+      mockedFetch.mockResolvedValue(
+        json(row({ shortKey: 'audio/mastering/done-short-1920.mp4', shortRenderedAt: '2026-09-16T00:00:00.000Z' }))
+      );
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /^Make short$/ }));
+      });
+
+      const body = JSON.parse(mockedFetch.mock.calls.find((c) => String(c[0]).endsWith('/short'))![1].body);
+      expect(body).toMatchObject({ startSec: 222, seconds: 30 });
+    });
+
+    /**
+     * ⚠️ A window belongs to the master it was chosen for.
+     *
+     * The first cut shared one {startSec, seconds} across every row, so a
+     * window set while auditioning one song silently applied to whichever row
+     * was rendered next — a clip cut from the wrong part of a different song,
+     * with nothing on screen saying so.
+     */
+    it('does not apply one master-s window to a different master', async () => {
+      const other = row({ id: 'saved-vid-2', title: 'வேறு பாடல்' });
+      render(<MasteringStudio />);
+      mockedFetch.mockResolvedValueOnce(json({ success: true, masters: [row(), other] }));
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Saved masters/i })); });
+      await screen.findByRole('button', { name: /Render video for காதல் மழை/ });
+
+      // Set a window on the FIRST row.
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Render video for காதல் மழை/ }));
+      });
+      const start = screen.getByLabelText(/Start at/i);
+      await act(async () => {
+        fireEvent.change(start, { target: { value: '3:42' } });
+        fireEvent.blur(start);
+      });
+
+      // Now open the SECOND row. Its field must be empty, not inherited.
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Render video for வேறு பாடல்/ }));
+      });
+      const secondStart = screen.getByLabelText(/Start at/i) as HTMLInputElement;
+      expect(secondStart.value).toBe('');
+
+      // And rendering it must send no window at all.
+      mockedFetch.mockResolvedValueOnce(
+        json({ success: true, uploadUrl: 'https://s3/u', fields: { key: 'k' }, key: 'audio/mastering/1_c_cover.jpg' })
+      );
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText(/Cover for வேறு பாடல்/i), {
+          target: { files: [new File(['x'], 'c.jpg', { type: 'image/jpeg' })] },
+        });
+      });
+      mockedFetch.mockResolvedValueOnce(json({ success: true, shortKey: 's', status: 'queued' }));
+      mockedFetch.mockResolvedValue(
+        json({ ...other, shortRenderedAt: '2026-09-16T00:00:00.000Z' })
+      );
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /^Make short$/ }));
+      });
+
+      const req = mockedFetch.mock.calls.find((c) => String(c[0]).endsWith('/short'))!;
+      expect(String(req[0])).toContain('/master/saved-vid-2/short');
+      expect(JSON.parse(req[1].body)).toEqual({ coverKey: 'audio/mastering/1_c_cover.jpg' });
+    });
+
     it('never posts a short to the render route, or a render to the short route', async () => {
       // Two buttons, one cover, adjacent in the DOM — a crossed handler would
       // look exactly like success and silently produce the wrong file.
