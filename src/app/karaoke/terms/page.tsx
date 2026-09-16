@@ -195,7 +195,7 @@ export default function KaraokeTermsPage() {
   return (
     <div className="min-h-screen bg-gray-900">
       <Header />
-      <main className="mx-auto max-w-3xl px-4 py-12 sm:py-16">
+      <main className="mx-auto max-w-3xl px-4 pb-12 pt-28 sm:pb-16">
         <div className="mb-8 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
           <p className="text-sm text-amber-200">
             <strong>Draft — not yet in force.</strong> This page is awaiting legal review and is not
