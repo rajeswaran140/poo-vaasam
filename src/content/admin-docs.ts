@@ -2564,7 +2564,7 @@ A control to compare against: முத்தமிழின் (\`J2tc_aUNOPA\`
     slug: 'song-video-render',
     title: 'Rendering a song video for YouTube',
     category: 'Publishing',
-    updatedAt: '2026-09-16T21:00:00Z',
+    updatedAt: '2026-09-16T23:00:00Z',
     body: `# Rendering a song video for YouTube
 
 A Tamilagaval song video is one still image held over a mastered audio track. That sounds trivial and is not: four separate renders of காதல் வந்து அரும்பியதே were rejected before one was accepted, and every flag below is the scar of one of them. Read the reasons before you change the recipe.
@@ -2669,6 +2669,7 @@ Beside **Render video** on a saved master. It cuts a **1080×1920, 30-second** c
 - **Leaving it blank.** An \`ebur128\` pass measures momentary loudness and the loudest 30-second window wins, skipping the first 8 seconds so a quiet opening is never chosen and backing off the last stretch so it does not land on the outro. The start is pulled back **4 seconds** so the clip *rises into* the peak instead of opening on it and deflating. **This finds the chorus, not the best lines** — it is the fast option, not the good one.
 - **A window running past the end is refused, never shortened.** You auditioned those seconds; handing back a different clip than the one you heard would be worse than saying no. The message names the problem and you move the window earlier or make it shorter.
 - The last clip's position is shown under the button, so one that opens in the wrong place can be diagnosed without re-listening to the whole song.
+- **Fades: 0.6s in, 3s out.** Different jobs. The clip is judged in its first seconds, so easing in slowly would spend the only attention it gets on near-silence; the end has to sound like the music *finished* rather than like the file was cut off, which a short fade does not. On a clip too brief for a 3s fade the fade is clamped to a quarter of its length. Audio only — the picture is a still and holds to the last frame.
 - **A vertical cover fills the frame.** Artwork already at 9:16 (a 941×1672 cover, say) spans edge to edge. Only a cover that genuinely cannot fill 9:16 — square or widescreen — gets the blurred backdrop, and even then it spans the full width at its own ratio rather than being shrunk into the middle. An earlier build put *every* cover in a square box, so a perfectly vertical cover rendered at about a quarter of the frame on a blurred copy of itself: the same square-box defect the long-form render was fixed for, repeated. If you see a small picture floating on a blur, that bug is back.
 - **30 seconds to 3 minutes.** YouTube Shorts and Instagram Reels both take three minutes; Facebook Reels stops at 90s, which is reported under the fields rather than enforced. An earlier build capped this at 60s on the reasoning that a longer clip "stops being a clip" — a convention applied over this channel's own evidence, where 1-2 minute vertical videos do well.
 - **No lyrics are burned in.** The worker has no python3 and no Pillow-with-raqm, and ffmpeg's \`drawtext\` does no complex-script shaping, so Tamil clusters break. Broken Tamil on a public feed is worse than no caption. \`scripts/generate-song-short.ts\` on \`crowvault-ide-server\` still renders the lyric version when one is wanted.

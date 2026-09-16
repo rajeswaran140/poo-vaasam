@@ -2,7 +2,8 @@
 import {
   planShort, shortRefusalMessage, shortKeyFor, isShortKey,
   buildShortComposeArgs, buildShortArgs, buildLoudnessArgs,
-  SHORT_WIDTH, SHORT_HEIGHT, SHORT_SECONDS, SHORT_FPS, SHORT_FADE_SEC,
+  SHORT_WIDTH, SHORT_HEIGHT, SHORT_SECONDS, SHORT_FPS,
+  SHORT_FADE_IN_SEC, SHORT_FADE_OUT_SEC, shortFadeOutFor,
   SHORT_PICK_MIN_SECONDS, SHORT_PICK_MAX_SECONDS,
   buildShortFrameFilter,
   type ShortRefusal,
@@ -65,7 +66,7 @@ describe('the clip opens on the hook, not the intro', () => {
   it('fades out ending exactly at the clip end, never past it', () => {
     const a = buildShortArgs({ framePath: 'f.png', audioPath: 'a.wav', startSec: 10, outPath: 'o.mp4' });
     const af = a[a.indexOf('-af') + 1];
-    expect(af).toContain(`st=${(SHORT_SECONDS - SHORT_FADE_SEC).toFixed(3)}`);
+    expect(af).toContain(`st=${(SHORT_SECONDS - SHORT_FADE_OUT_SEC).toFixed(3)}`);
   });
 
   it('measures loudness without producing a file — only the log matters', () => {
@@ -275,5 +276,45 @@ describe('how long a chosen clip may be', () => {
 
   it('names the limits in minutes, not a bare number of seconds', () => {
     expect(shortRefusalMessage('bad-window')).toMatch(/3 minutes/);
+  });
+});
+
+
+/**
+ * The two fades do different jobs and must not share a number.
+ *
+ * In: a clip in a feed is judged in its first seconds, so easing in over three
+ * of them spends the only attention it gets on near-silence.
+ * Out: has to sound like the music ENDED rather than like the file was cut off,
+ * which 0.6s did not.
+ */
+describe('fading', () => {
+  it('eases in quickly and out slowly', () => {
+    expect(SHORT_FADE_IN_SEC).toBe(0.6);
+    expect(SHORT_FADE_OUT_SEC).toBe(3);
+    const af = buildShortArgs({
+      framePath: '/tmp/f.png', audioPath: '/tmp/a.wav', startSec: 10, outPath: '/tmp/o.mp4', seconds: 60,
+    });
+    const filter = af[af.indexOf('-af') + 1];
+    expect(filter).toContain('afade=t=in:st=0:d=0.6');
+    // Out starts three seconds before the end, not 0.6.
+    expect(filter).toContain('afade=t=out:st=57.000:d=3');
+  });
+
+  it('never lets the fade eat more than a quarter of a short clip', () => {
+    // The auto path can clamp to SHORT_FLOOR_SECONDS on a brief track, and a 3s
+    // fade on a 10s clip is the whole back half.
+    expect(shortFadeOutFor(10)).toBe(2.5);
+    expect(shortFadeOutFor(8)).toBe(2);
+    // Anything of normal length gets the full three seconds.
+    expect(shortFadeOutFor(30)).toBe(3);
+    expect(shortFadeOutFor(121)).toBe(3);
+  });
+
+  it('schedules the clamped fade against the clip it belongs to', () => {
+    const af = buildShortArgs({
+      framePath: '/tmp/f.png', audioPath: '/tmp/a.wav', startSec: 0, outPath: '/tmp/o.mp4', seconds: 10,
+    });
+    expect(af[af.indexOf('-af') + 1]).toContain('afade=t=out:st=7.500:d=2.5');
   });
 });
