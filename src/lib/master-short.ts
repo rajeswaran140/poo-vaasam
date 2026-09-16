@@ -27,6 +27,7 @@
 
 import type { MasterJob } from '@/types/masterJob';
 import { isMasteringKey } from '@/lib/mastering-storage';
+import { FRAME_FILL_ASPECT_TOLERANCE } from '@/lib/master-video';
 
 /** Vertical, the only shape Reels and Shorts serve. */
 export const SHORT_WIDTH = 1080;
@@ -41,14 +42,26 @@ export const SHORT_SECONDS = 30;
 /**
  * The range an OPERATOR may choose, when they pick the window themselves.
  *
- * These are editorial bounds, not technical ones: below 30s a chosen lyric has
- * no room to land, and above 60s a clip stops being a clip. Every platform this
- * feeds (Reels, Instagram, Shorts) accepts far more than 60s — the ceiling is
- * about what is worth posting, not what is allowed. Distinct from
- * SHORT_FLOOR_SECONDS, which is about what can physically be rendered.
+ * The ceiling is the real platform limit, NOT a view about what a clip should
+ * be. An earlier version capped this at 60s on the reasoning that "above 60s a
+ * clip stops being a clip" — which was a convention applied over the channel's
+ * own evidence: its 1-2 minute vertical videos perform well, and some songs
+ * need two minutes to reach the passage worth posting. YouTube Shorts and
+ * Instagram Reels both accept three minutes; Facebook Reels stops at 90s, which
+ * is reported rather than enforced (see SHORT_FB_REELS_MAX_SECONDS).
+ *
+ * Distinct from SHORT_FLOOR_SECONDS, which is about what can physically be
+ * rendered rather than what is worth posting.
  */
 export const SHORT_PICK_MIN_SECONDS = 30;
-export const SHORT_PICK_MAX_SECONDS = 60;
+export const SHORT_PICK_MAX_SECONDS = 180;
+
+/**
+ * Facebook Reels stops at 90s where YouTube Shorts and Instagram Reels take
+ * three minutes. A clip past this is not refused — it is simply not a Facebook
+ * Reel, and saying so is more use than blocking it.
+ */
+export const SHORT_FB_REELS_MAX_SECONDS = 90;
 
 /** Skip this much intro before looking for the hook. */
 export const SHORT_MIN_START_SEC = 8;
@@ -176,7 +189,7 @@ export function shortRefusalMessage(reason: ShortRefusal): string {
     case 'bad-cover': return 'That cover is not in the mastering workspace.';
     case 'not-done': return 'Only a finished master can make a short.';
     case 'too-short': return `The track is shorter than ${SHORT_SECONDS}s, so there is no clip to cut.`;
-    case 'bad-window': return `Pick a window between ${SHORT_PICK_MIN_SECONDS} and ${SHORT_PICK_MAX_SECONDS} seconds long.`;
+    case 'bad-window': return `A clip must be between ${SHORT_PICK_MIN_SECONDS} seconds and ${SHORT_PICK_MAX_SECONDS / 60} minutes long.`;
     case 'window-past-end': return 'That window runs past the end of the track — move it earlier or make it shorter.';
   }
 }
@@ -196,21 +209,57 @@ export function buildLoudnessArgs(audioPath: string): string[] {
  * backdrop recomputed on every frame is what pushed the old pipeline past the
  * Lambda timeout. Composing once costs well under a second.
  */
-export function buildShortComposeArgs(params: { coverPath: string; framePath: string }): string[] {
-  const art = Math.round(SHORT_WIDTH * 0.92);
+export function buildShortComposeArgs(params: {
+  coverPath: string;
+  framePath: string;
+  /** width/height of the cover, from probeCoverAspect. Omit ⇒ assume it cannot fill. */
+  coverAspect?: number;
+}): string[] {
   return [
     '-hide_banner', '-nostats',
     '-i', params.coverPath,
-    '-filter_complex',
-    // Backdrop fills the tall frame; the cover sits centred at native aspect.
-    // Vertical ALWAYS gets the backdrop — a 16:9 cover cannot fill 9:16 without
-    // cropping most of the picture away, which is the one thing never to do.
-    `[0:v]scale=${SHORT_WIDTH}:${SHORT_HEIGHT}:force_original_aspect_ratio=increase,` +
-      `crop=${SHORT_WIDTH}:${SHORT_HEIGHT},boxblur=28:4,eq=brightness=-0.10[bg];` +
-      `[0:v]scale=${art}:${art}:force_original_aspect_ratio=decrease:flags=lanczos[fg];` +
-      `[bg][fg]overlay=(W-w)/2:(H-h)/2[v]`,
+    '-filter_complex', buildShortFrameFilter(params.coverAspect),
     '-map', '[v]', '-frames:v', '1', '-y', params.framePath,
   ];
+}
+
+/**
+ * The frame itself. Two branches, and the first one is the whole point.
+ *
+ * ⚠️ NEVER PUT THE ARTWORK IN A SQUARE BOX. The first version scaled every
+ * cover to fit inside a 994x994 square regardless of its shape, so a 941x1672
+ * cover — already 9:16 to three decimal places — rendered at 559x994, about a
+ * QUARTER of the frame, floating on a blurred copy of itself. That is the same
+ * defect `buildVideoFilter` was fixed for in the long-form render (the old
+ * `art = height * 0.82`), reproduced here. A cover that fits the frame must
+ * fill it.
+ */
+export function buildShortFrameFilter(coverAspect?: number): string {
+  const target = SHORT_WIDTH / SHORT_HEIGHT;
+  const fills =
+    typeof coverAspect === 'number' && Number.isFinite(coverAspect) &&
+    coverAspect > 0 && Math.abs(coverAspect - target) / target <= FRAME_FILL_ASPECT_TOLERANCE;
+
+  if (fills) {
+    // Edge to edge. The crop takes at most a row or two, which is what
+    // `increase` plus a matching aspect means.
+    return (
+      `[0:v]scale=${SHORT_WIDTH}:${SHORT_HEIGHT}:force_original_aspect_ratio=increase:` +
+      `flags=lanczos+accurate_rnd+full_chroma_int,crop=${SHORT_WIDTH}:${SHORT_HEIGHT},` +
+      `unsharp=5:5:0.55:5:5:0.0[v]`
+    );
+  }
+
+  // A cover that genuinely cannot fill 9:16 — a square or widescreen one — is
+  // scaled to the FRAME, not to a square box, so it still spans the full width
+  // at its own ratio. The blurred backdrop fills what is left rather than
+  // cropping the picture away.
+  return (
+    `[0:v]scale=${SHORT_WIDTH}:${SHORT_HEIGHT}:force_original_aspect_ratio=increase,` +
+      `crop=${SHORT_WIDTH}:${SHORT_HEIGHT},boxblur=28:4,eq=brightness=-0.10[bg];` +
+    `[0:v]scale=${SHORT_WIDTH}:${SHORT_HEIGHT}:force_original_aspect_ratio=decrease:flags=lanczos[fg];` +
+    `[bg][fg]overlay=(W-w)/2:(H-h)/2[v]`
+  );
 }
 
 /**

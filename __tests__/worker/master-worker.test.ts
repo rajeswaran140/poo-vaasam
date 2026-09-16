@@ -436,6 +436,14 @@ describe('short render', () => {
   const COVER = 'audio/mastering/1_c_cover.jpg';
   const short = (over: Record<string, unknown> = {}) => ({ audioKey: AUDIO, coverKey: COVER, ...over });
   const ffArgs = () => spawnSync.mock.calls.map((c) => c[1] as string[]);
+  /**
+   * Passes are selected by SHAPE, not by index. renderShort gained a cover
+   * probe between measuring and composing, and every positional assertion in
+   * here broke at once — for a change that altered nothing they were testing.
+   */
+  const composePass = () => ffArgs().find((a) => a.includes('-frames:v'))!;
+  const encodePass = () => ffArgs().find((a) => a.includes('-c:v'))!;
+  const probePass = () => ffArgs().find((a) => a.length === 3 && a[1] === '-i')!;
 
   /**
    * A 4-minute track whose loudest stretch sits at 100-140s. Written as real
@@ -470,7 +478,7 @@ describe('short render', () => {
     const res = await handler({ jobId: 'j1', short: short() } as never);
 
     expect(res).toMatchObject({ ok: true });
-    const encode = ffArgs()[2];
+    const encode = encodePass();
     expect(encode[encode.lastIndexOf('-i') + 1]).toContain('master.wav');
     expect(encode.join(' ')).not.toContain('.mp3');
   });
@@ -483,8 +491,12 @@ describe('short render', () => {
   it('measures, THEN composes the frame once, THEN encodes against it', async () => {
     await handler({ jobId: 'j1', short: short() } as never);
 
-    expect(spawnSync).toHaveBeenCalledTimes(3);
-    const [measure, compose, encode] = ffArgs();
+    // measure, probe the cover, compose, encode.
+    expect(spawnSync).toHaveBeenCalledTimes(4);
+    const measure = ffArgs()[0];
+    const compose = composePass();
+    const encode = encodePass();
+    expect(probePass()).toBeTruthy();
 
     // Pass 0: loudness only. Writes no file.
     expect(measure.join(' ')).toContain('ebur128');
@@ -510,7 +522,7 @@ describe('short render', () => {
   it('seeks to the loudest stretch, minus the lead-in', async () => {
     await handler({ jobId: 'j1', short: short() } as never);
 
-    const encode = ffArgs()[2];
+    const encode = encodePass();
     const ss = Number(encode[encode.indexOf('-ss') + 1]);
     // Peak starts at 100s; SHORT_LEAD_IN_SEC pulls the opening back to 96s.
     expect(ss).toBeCloseTo(96, 3);
@@ -630,7 +642,7 @@ describe('short render', () => {
       const res = await handler({ jobId: 'j1', short: short() } as never);
 
       expect(res).toMatchObject({ ok: true });
-      const encode = ffArgs()[2];
+      const encode = encodePass();
       // Both -t values are the clamped length, not the nominal 30.
       expect(encode.filter((a, i) => encode[i - 1] === '-t')).toEqual(['25', '25']);
       // The fade-out is scheduled inside the audio that exists.
@@ -682,7 +694,7 @@ Input #0, wav, from '/tmp/master.wav':
       const all = ffArgs().join(' ');
       expect(all).not.toContain('ebur128');
 
-      const encode = ffArgs()[ffArgs().length - 1];
+      const encode = encodePass();
       expect(Number(encode[encode.indexOf('-ss') + 1])).toBeCloseTo(128.4, 3);
       expect(encode.filter((a, i) => encode[i - 1] === '-t')).toEqual(['45', '45']);
       // The fade-out is scheduled against the chosen length, not the default.
@@ -716,7 +728,7 @@ Input #0, wav, from '/tmp/master.wav':
     it.each([
       ['a half-given window', { startSec: 128 }],
       ['a length under the editorial floor', { startSec: 10, seconds: 20 }],
-      ['a length over the ceiling', { startSec: 10, seconds: 90 }],
+      ['a length over the ceiling', { startSec: 10, seconds: 200 }],
       ['a negative start', { startSec: -5, seconds: 30 }],
     ])('re-validates the event itself and refuses %s', async (_label, over) => {
       // The route is not the only thing that can invoke this Lambda.

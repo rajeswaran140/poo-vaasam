@@ -188,11 +188,22 @@ describe('song video render doc keeps the findings that cost four rejected rende
     expect(body).toMatch(/finds the chorus, not the best lines/i);
   });
 
+  it('records that a vertical cover FILLS the frame, and what it means if it does not', () => {
+    // The square-box defect has now shipped twice — once in the long-form
+    // render, once in the short. The doc is where an operator finds out that a
+    // small picture on a blur is a bug rather than the design.
+    const body = doc!.body;
+    expect(body).toMatch(/vertical cover fills the frame/i);
+    expect(body).toMatch(/quarter of the frame/i);
+    expect(body).toMatch(/3 minutes/);
+    expect(body).toMatch(/Facebook Reels stops at 90s/i);
+  });
+
   it('documents BOTH ways to set the window, and that it is per-master', () => {
     const body = doc!.body;
     // Typing a timestamp is the one that matters for lyric-sheet work, and it
     // was unreachable from the library in the first build.
-    expect(body).toMatch(/type the start time straight in/i);
+    expect(body).toMatch(/type \*\*Start at\*\* and \*\*End at\*\*/i);
     expect(body).toMatch(/belongs to the master it was chosen for/i);
   });
 });
