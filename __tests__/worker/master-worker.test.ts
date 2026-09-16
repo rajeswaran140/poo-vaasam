@@ -645,8 +645,9 @@ describe('short render', () => {
       const encode = encodePass();
       // Both -t values are the clamped length, not the nominal 30.
       expect(encode.filter((a, i) => encode[i - 1] === '-t')).toEqual(['25', '25']);
-      // The fade-out is scheduled inside the audio that exists.
-      expect(encode[encode.indexOf('-af') + 1]).toContain('st=24.400');
+      // The fade-out is scheduled inside the audio that exists — 3s before the
+      // clamped end, not before the nominal 30.
+      expect(encode[encode.indexOf('-af') + 1]).toContain('afade=t=out:st=22.000:d=3');
       expect(patched().shortSeconds).toBe(25);
     });
 
@@ -698,7 +699,7 @@ Input #0, wav, from '/tmp/master.wav':
       expect(Number(encode[encode.indexOf('-ss') + 1])).toBeCloseTo(128.4, 3);
       expect(encode.filter((a, i) => encode[i - 1] === '-t')).toEqual(['45', '45']);
       // The fade-out is scheduled against the chosen length, not the default.
-      expect(encode[encode.indexOf('-af') + 1]).toContain('st=44.400');
+      expect(encode[encode.indexOf('-af') + 1]).toContain('afade=t=out:st=42.000:d=3');
       expect(patched()).toMatchObject({ shortStartSec: 128.4, shortSeconds: 45, shortPicked: true });
     });
 

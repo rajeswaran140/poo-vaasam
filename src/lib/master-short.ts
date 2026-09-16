@@ -78,8 +78,38 @@ export const SHORT_FLOOR_SECONDS = 10;
 /** Start this far before the hook so the clip builds into it rather than opening mid-phrase. */
 export const SHORT_LEAD_IN_SEC = 4;
 
-/** Audio fade at each end, seconds — a hard cut mid-music reads as a broken file. */
-export const SHORT_FADE_SEC = 0.6;
+/**
+ * Fade IN, seconds. Deliberately short.
+ *
+ * A clip in a feed is judged in its first seconds, so easing in over three of
+ * them would spend the only attention it gets on near-silence. This is just
+ * long enough that opening mid-phrase does not click.
+ */
+export const SHORT_FADE_IN_SEC = 0.6;
+
+/**
+ * Fade OUT, seconds. Deliberately long.
+ *
+ * Different job from the fade in: this one has to sound like the piece of music
+ * ENDED rather than like the file was cut off. At 0.6s it read as an
+ * interruption — technically clean, but the ear hears a stop, not an ending.
+ */
+export const SHORT_FADE_OUT_SEC = 3;
+
+/**
+ * A fade may never eat more than this share of the clip.
+ *
+ * The auto path can clamp a clip to as little as SHORT_FLOOR_SECONDS when the
+ * track is short, and a 3s fade on a 10s clip is a third of it fading — which
+ * is no longer an ending, it is the whole back half.
+ */
+export const SHORT_FADE_MAX_FRACTION = 0.25;
+
+/** The fade-out actually used for a clip of this length. */
+export function shortFadeOutFor(seconds: number): number {
+  const allowed = Math.max(0, seconds) * SHORT_FADE_MAX_FRACTION;
+  return Math.round(Math.min(SHORT_FADE_OUT_SEC, allowed) * 100) / 100;
+}
 
 /**
  * 25 fps, not the 10 the long-form render uses.
@@ -276,14 +306,15 @@ export function buildShortArgs(params: {
   seconds?: number;
 }): string[] {
   const secs = params.seconds ?? SHORT_SECONDS;
-  const fade = SHORT_FADE_SEC;
+  const fadeIn = SHORT_FADE_IN_SEC;
+  const fadeOut = shortFadeOutFor(secs);
   return [
     '-hide_banner', '-nostats',
     '-loop', '1', '-framerate', String(SHORT_FPS), '-i', params.framePath,
     // Seek BEFORE the input so ffmpeg jumps rather than decoding from zero.
     '-ss', params.startSec.toFixed(3), '-t', String(secs), '-i', params.audioPath,
     '-map', '0:v', '-map', '1:a',
-    '-af', `afade=t=in:st=0:d=${fade},afade=t=out:st=${(secs - fade).toFixed(3)}:d=${fade}`,
+    '-af', `afade=t=in:st=0:d=${fadeIn},afade=t=out:st=${(secs - fadeOut).toFixed(3)}:d=${fadeOut}`,
     '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'stillimage',
     '-crf', '20', '-pix_fmt', 'yuv420p', '-r', String(SHORT_FPS),
     '-c:a', 'aac', '-b:a', '192k', '-ar', '48000',
