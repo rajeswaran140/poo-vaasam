@@ -26,6 +26,7 @@ import {
   Ruler,
   NotebookPen,
   SlidersHorizontal,
+  UploadCloud,
   Library,
   Mail,
   Users,
@@ -269,6 +270,14 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     section: 'Sound',
     icon: SlidersHorizontal,
     keywords: ['mastering', 'loudness', 'lufs'],
+  },
+  {
+    href: '/admin/mastering/bulk',
+    title: 'Bulk upload',
+    subtitle: 'Put a batch of WAVs into the mastering workspace',
+    section: 'Sound',
+    icon: UploadCloud,
+    keywords: ['upload', 'stems', 'batch', 'wav', 'multiple'],
   },
   {
     href: '/admin/lexicon',

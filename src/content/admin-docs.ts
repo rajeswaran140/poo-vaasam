@@ -671,6 +671,131 @@ The sample is **three tracks, not five**, for the sourcing reason at the top of 
 `,
   },
   {
+    slug: 'karaoke-from-stems',
+    title: 'Music Lab — making a karaoke version from Suno stems',
+    category: 'Music Lab',
+    updatedAt: '2026-09-14T01:26:26Z',
+    body: `# Make a karaoke version from Suno stems
+
+**Written 2026-09-14, from the first paid commission** — a buyer ordered two instrumental versions at CAD $40 each. This is the whole workflow, including the two decisions that are easy to get wrong.
+
+## Why stems, and not a vocal remover
+
+A karaoke track is the song with the voice removed. There are two ways to get one, and they are not close in quality.
+
+**Separation software** (Demucs, Spleeter and the rest) *estimates* where the vocal sits in a finished stereo mix and subtracts it. What is left carries the evidence: smeared reverb tails, a ghost of the melody in the mid-range, and a hollow patch where the voice used to be.
+
+**Suno stems were never mixed together.** Summing everything except the vocal tracks gives a backing bed with **no separation artefacts at all**, because nothing was separated. Premier includes stem export, so this is already paid for.
+
+Stems also **recover songs whose masters are lost.** செவ்வந்தி பூவே has no WAV in \`tamilagaval-audio-masters\` or the web bucket — but the original generation was still in the Suno library, so its stems were reachable when the mastered file was not.
+
+## ⚠️ Confirm the song is in the Suno library BEFORE quoting
+
+The S3 archive is incomplete and the published catalogue is not a guide to what is recoverable. A confirmed price on a song whose stems cannot be found is the one avoidable mistake in this line of work.
+
+Also check the **length**. A song with several generations (ஈழத்து மண்ணே has Male, Female, v3.5 and several "Final" variants) needs the take that matches the published runtime — anything else is a different arrangement, and a buyer singing to it will hear that immediately.
+
+## 1. Export the stems
+
+**Studio → Export → Multitracks.** One 32-bit WAV per stem. A song comes back as about nine:
+
+\`\`\`
+0_Lead_Vocals   1_Backing_Vocals   2_Drums   3_Bass   4_Guitar
+5_Percussion    6_Strings          7_Synth   8_Other
+\`\`\`
+
+**Take the whole set, not just the ones that look useful.** Lead and backing vocals must both be identifiable, or a stray harmony survives into the karaoke.
+
+## 2. Get them onto the box
+
+**Suno exports a ZIP, and no admin route accepts archives.** Both upload routes validate content type against an allow-list; neither includes \`application/zip\`, and nothing in the codebase extracts untrusted input. That is deliberate — path traversal and zip bombs are not worth taking on for an occasional upload.
+
+So: **unzip on your own machine first**, then drag the WAVs into **Sound Engineering → Bulk upload** (\`/admin/mastering/bulk\`). It takes the whole batch and uploads them one at a time. They land in \`audio/mastering/\` keeping their original names at the end of the key.
+
+## 3. Sum the non-vocal stems
+
+Straight sum with \`normalize=0\`, kept in float so seven summed stems cannot clip before mastering.
+
+\`\`\`bash
+ffmpeg -i 2_Drums.wav -i 3_Bass.wav -i 4_Guitar.wav -i 5_Percussion.wav \\
+       -i 6_Strings.wav -i 7_Synth.wav -i 8_Other.wav \\
+  -filter_complex "amix=inputs=7:normalize=0:duration=longest" \\
+  -c:a pcm_f32le -ar 48000 -ac 2 bed_raw.wav
+\`\`\`
+
+**Check the durations first.** All seven stems for செவ்வந்தி பூவே measured 303.7s against the published song's 304s — that match is what confirms you have the right recording before spending any more time on it.
+
+## 4. Prove the voice is actually gone
+
+Do not rely on a quick listen. Band-limit to the vocal range and correlate the bed against the vocal stems:
+
+\`\`\`bash
+for P in "bed.wav bed" "0_Lead_Vocals.wav lead"; do set -- $P
+  ffmpeg -y -i "$1" -af "highpass=f=300,lowpass=f=3400" -ac 1 -ar 8000 -f s16le "$2.raw"
+done
+\`\`\`
+
+Then a Pearson correlation between the two raw streams. On the first build:
+
+| | r |
+|---|---:|
+| bed vs **lead vocal** | **+0.0100** |
+| bed vs **backing vocal** | −0.0077 |
+| lead vs backing *(two real signals, for scale)* | −0.0048 |
+
+The bed correlates with the voice about as much as two unrelated signals do.
+
+**The per-window RMS is the more intuitive proof.** Bleed makes the bed swell *with* the voice. Clean separation does the opposite:
+
+\`\`\`
+ 50s  bed= 440   lead=2662     singing, bed quiet
+ 70s  bed=2078   lead=   0     instrumental break, bed loud
+170s  bed=2537   lead= 166
+\`\`\`
+
+\`numpy\` is not installed on the box; plain Python over an 8 kHz mono stream is fast enough.
+
+## 5. ⚠️ The loudness decision — do NOT reflexively master to -14
+
+This is the part that needs a judgement, and the pipeline's default is wrong for a karaoke bed.
+
+A summed bed is **peaky**: the first build measured **-19.4 LUFS with a true peak of -0.22 dBFS**. Reaching -14 therefore needs +5.4 dB on a file already at the ceiling, and \`loudnorm\` responds by giving up on linear gain and **compressing** — it reported \`normalization_type: dynamic\`.
+
+| | LUFS | true peak | LRA |
+|---|---:|---:|---:|
+| raw sum | -19.4 | -0.2 | 6.4 |
+| **studio** — linear gain only | -20.2 | -1.0 | **6.4** unchanged |
+| **standard** — loudnorm to -14 | -14.0 | -0.9 | 5.8 |
+
+**0.6 LU of range loss is mild, not mangling.** An initial instinct to ship only the clean version was too purist: a buyer comparing a -20 LUFS file against commercial karaoke tracks hears "quiet", and quiet reads as unfinished.
+
+**So ship both, and let the buyer choose.** Name them so the choice explains itself:
+
+- **standard** — normal listening level, ready to sing along to
+- **studio** — quieter, full dynamic range, for someone recording and mixing their own vocal
+
+Always check \`normalization_type\` in loudnorm's JSON output. If it says \`dynamic\`, the file was compressed, and you should know that rather than discover it later.
+
+## 6. Deliver
+
+Render **320 kbps MP3** — that is what buyers ask for. Copy to \`audio/karaoke/\` in \`tamil-web-media\`, which CloudFront serves at a short, clean URL:
+
+\`\`\`
+https://d2cdoh43143xxa.cloudfront.net/audio/karaoke/<name>.mp3
+\`\`\`
+
+**Presigned S3 links are the wrong tool here.** They work, but they run to ~380 characters across eight parameters, and chat clients routinely break them across lines or linkify only part. A CDN path is 79 characters and survives copying.
+
+⚠️ **A CDN path is public.** No signature, no expiry — anyone with it can download. It is not guessable and not linked from anywhere, but it is not protected either. **Delete the file once the buyer has it**; the masters stay on the box at \`~/albums/karaoke/<song>/\`.
+
+## What this is NOT
+
+**None of this appears in the admin.** The bed is built with ffmpeg on the box, so no \`MASTERJOB#\` record exists and nothing shows in Saved masters. Putting one there means either hand-writing a DynamoDB row — which bypasses the app and is not worth the risk — or re-mastering through the pipeline, **which would compress the bed to -14 and undo section 5**.
+
+If karaoke becomes a regular product, the right fix is a "keep current loudness" target in the mastering pipeline: peak-normalise to -1 dBTP, no loudness matching. That would make the studio version a first-class citizen instead of a file living outside the system.
+`,
+  },
+  {
     slug: 'music-lab-mastering',
     title: 'Music Lab — mastering a song for loudness',
     category: 'Music Lab',
