@@ -3,6 +3,7 @@ import {
   planShort, shortRefusalMessage, shortKeyFor, isShortKey,
   buildShortComposeArgs, buildShortArgs, buildLoudnessArgs,
   SHORT_WIDTH, SHORT_HEIGHT, SHORT_SECONDS, SHORT_FPS, SHORT_FADE_SEC,
+  SHORT_PICK_MIN_SECONDS, SHORT_PICK_MAX_SECONDS,
   type ShortRefusal,
 } from '@/lib/master-short';
 import type { MasterJob } from '@/types/masterJob';
@@ -115,5 +116,80 @@ describe('shortKeyFor / isShortKey', () => {
   it('does not claim the long-form video or the master', () => {
     expect(isShortKey('audio/mastering/x-master-14LUFS-1440p.mp4')).toBe(false);
     expect(isShortKey('audio/mastering/x-master-14LUFS.wav')).toBe(false);
+  });
+});
+
+/**
+ * The operator's own window.
+ *
+ * The loudness pass finds the chorus, which is not the same question as "where
+ * are the best lines". These rules exist so a chosen window is either used as
+ * chosen or refused out loud — never silently adjusted into something the
+ * operator did not audition.
+ */
+describe('planShort with a chosen window', () => {
+
+  it('carries the window through, rounded to the tenth a waveform can express', () => {
+    const plan = planShort(job(), COVER, { startSec: 96.04, seconds: 45 });
+    expect(plan).toMatchObject({ ok: true, window: { startSec: 96, seconds: 45 } });
+  });
+
+  it('means "you decide" when neither field is given', () => {
+    expect(planShort(job(), COVER)).toMatchObject({ ok: true, window: null });
+    expect(planShort(job(), COVER, {})).toMatchObject({ ok: true, window: null });
+    expect(planShort(job(), COVER, null)).toMatchObject({ ok: true, window: null });
+  });
+
+  it('refuses a half-given window rather than inventing the other half', () => {
+    // Guessing a length for a start the operator chose is how a clip nobody
+    // auditioned gets posted.
+    expect(planShort(job(), COVER, { startSec: 96 })).toEqual({ ok: false, reason: 'bad-window' });
+    expect(planShort(job(), COVER, { seconds: 45 })).toEqual({ ok: false, reason: 'bad-window' });
+  });
+
+  it.each([
+    ['shorter than the editorial floor', { startSec: 10, seconds: SHORT_PICK_MIN_SECONDS - 1 }],
+    ['longer than the ceiling', { startSec: 10, seconds: SHORT_PICK_MAX_SECONDS + 1 }],
+    ['a negative start', { startSec: -1, seconds: 30 }],
+    ['a non-finite start', { startSec: Number.NaN, seconds: 30 }],
+    ['a non-finite length', { startSec: 10, seconds: Number.POSITIVE_INFINITY }],
+  ])('refuses %s', (_label, want) => {
+    expect(planShort(job(), COVER, want)).toEqual({ ok: false, reason: 'bad-window' });
+  });
+
+  it('accepts both ends of the allowed range', () => {
+    expect(planShort(job(), COVER, { startSec: 0, seconds: SHORT_PICK_MIN_SECONDS })).toMatchObject({ ok: true });
+    expect(planShort(job(), COVER, { startSec: 0, seconds: SHORT_PICK_MAX_SECONDS })).toMatchObject({ ok: true });
+  });
+
+  it('REFUSES a window running past the end — never quietly shortens it', () => {
+    // The operator heard those seconds. Handing back a different clip than the
+    // one they auditioned is the worst of both.
+    const plan = planShort(job({ editedDurationSec: 100 }), COVER, { startSec: 80, seconds: 30 });
+    expect(plan).toEqual({ ok: false, reason: 'window-past-end' });
+    expect(shortRefusalMessage('window-past-end')).toMatch(/past the end/i);
+  });
+
+  it('allows a window on a track whose duration was never measured', () => {
+    // The worker re-checks against the file's own header; refusing here on
+    // missing data would block the exact jobs that predate the measurement.
+    expect(planShort(job({ editedDurationSec: null }), COVER, { startSec: 80, seconds: 30 }))
+      .toMatchObject({ ok: true, window: { startSec: 80, seconds: 30 } });
+  });
+
+  it('does not apply the too-short refusal to a chosen window', () => {
+    // `too-short` asks "is there room for the DEFAULT clip"; a chosen window
+    // answers that question itself.
+    const plan = planShort(job({ editedDurationSec: 35 }), COVER, { startSec: 0, seconds: 30 });
+    expect(plan).toMatchObject({ ok: true });
+  });
+
+  it('every refusal reason still has wording', () => {
+    for (const reason of [
+      'not-done', 'not-saved', 'no-master', 'no-cover', 'bad-cover', 'too-short',
+      'bad-window', 'window-past-end',
+    ] as const) {
+      expect(shortRefusalMessage(reason).trim().length).toBeGreaterThan(0);
+    }
   });
 });

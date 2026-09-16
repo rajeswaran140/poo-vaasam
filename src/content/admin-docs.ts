@@ -2564,7 +2564,7 @@ A control to compare against: முத்தமிழின் (\`J2tc_aUNOPA\`
     slug: 'song-video-render',
     title: 'Rendering a song video for YouTube',
     category: 'Publishing',
-    updatedAt: '2026-09-16T00:00:00Z',
+    updatedAt: '2026-09-16T18:00:00Z',
     body: `# Rendering a song video for YouTube
 
 A Tamilagaval song video is one still image held over a mastered audio track. That sounds trivial and is not: four separate renders of காதல் வந்து அரும்பியதே were rejected before one was accepted, and every flag below is the scar of one of them. Read the reasons before you change the recipe.
@@ -2660,12 +2660,17 @@ The recipe above is still the reference for what the render *should* produce, an
 
 Beside **Render video** on a saved master. It cuts a **1080×1920, 30-second** clip for Reels, Instagram and YouTube Shorts from the **same mastered WAV** and the same cover, and it is a separate render, not a crop of the finished video.
 
-- **Where the clip comes from.** An \`ebur128\` pass measures momentary loudness across the track and the loudest 30-second window wins, skipping the first 8 seconds so a quiet opening is never chosen and backing off the last stretch so it does not land on the outro. The start is then pulled back **4 seconds** so the clip *rises into* the peak instead of opening on it and deflating. The chosen position is shown under the button, so a clip that opens in the wrong place can be diagnosed without re-measuring.
+- **Choosing the window yourself — the usual case.** Press play on a saved master, **drag across the waveform** to loop a phrase, listen, then press **Use for the short**. That fills in *Start at* and *Length* (30-60s) on the short panel; you can also just type the start time if you already know it from the lyric sheet. When a window is set, **no loudness pass runs at all** — the clip is cut exactly where you said, and checked only against the length of the file.
+- **Leaving it blank.** An \`ebur128\` pass measures momentary loudness and the loudest 30-second window wins, skipping the first 8 seconds so a quiet opening is never chosen and backing off the last stretch so it does not land on the outro. The start is pulled back **4 seconds** so the clip *rises into* the peak instead of opening on it and deflating. **This finds the chorus, not the best lines** — it is the fast option, not the good one.
+- **A window running past the end is refused, never shortened.** You auditioned those seconds; handing back a different clip than the one you heard would be worse than saying no. The message names the problem and you move the window earlier or make it shorter.
+- The last clip's position is shown under the button, so one that opens in the wrong place can be diagnosed without re-listening to the whole song.
 - **Vertical always keeps the blurred backdrop.** A 16:9 cover cannot fill a 9:16 frame without cropping most of the picture away — and per rejection 2 above, the artwork is never cropped.
 - **No lyrics are burned in.** The worker has no python3 and no Pillow-with-raqm, and ffmpeg's \`drawtext\` does no complex-script shaping, so Tamil clusters break. Broken Tamil on a public feed is worse than no caption. \`scripts/generate-song-short.ts\` on \`crowvault-ide-server\` still renders the lyric version when one is wanted.
 - **Nothing is published.** The MP4 lands in the mastering workspace, which is Denied to CloudFront. Download it and post it by hand — there is no Meta API in this path and no scheduled posting.
 
 - **Reachable from Saved masters too.** The inline panel only appears for a master saved in the current session, so the library row carries its own **Make short** beside **Render video** — the surplus songs are usually ones mastered days earlier.
+
+**Why the picker exists.** The machine can only find *energy*. Picking by lyric is a judgement about meaning, and no measurement substitutes for hearing the line. The waveform + loop is how you find it by ear; the fields are how you state it.
 
 It is there because the channel posts **2-3 songs a week to YouTube** by design, and the surplus goes to Tamilagaval, Facebook Reels and Instagram rather than to a fourth upload.
 

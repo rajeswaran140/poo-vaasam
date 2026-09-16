@@ -172,6 +172,21 @@ describe('song video render doc keeps the findings that cost four rejected rende
     expect(body).toMatch(/blurred backdrop/i);
     expect(body).toMatch(/Denied to CloudFront/i);
   });
+
+  /**
+   * The picker is the part an operator has to be TOLD about — the loop-drag
+   * gesture already existed for months and went unused because nothing said it
+   * could feed a clip. A doc that only describes the automatic behaviour leaves
+   * them back where they started, picking by loudness.
+   */
+  it('tells the operator how to choose the window by ear', () => {
+    const body = doc!.body;
+    expect(body).toMatch(/drag across the waveform/i);
+    expect(body).toMatch(/Use for the short/);
+    expect(body).toMatch(/30-60s|30-60 seconds/);
+    // And is honest that the automatic pick answers a different question.
+    expect(body).toMatch(/finds the chorus, not the best lines/i);
+  });
 });
 
 /**

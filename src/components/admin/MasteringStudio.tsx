@@ -34,6 +34,9 @@ import { MAX_UPLOAD_BYTES, ACCEPTED_UPLOAD_TYPES, downloadFilename } from '@/lib
 import { buildMasterReport, reportFilename, sourceInfoLine, dynamicsPreserved, streamingReadiness, joinLine } from '@/lib/master-report';
 import { MasteringComparePlayer } from '@/components/admin/MasteringComparePlayer';
 import { MasteringPlayer } from '@/components/admin/MasteringPlayer';
+import { ShortWindowFields } from '@/components/admin/ShortWindowFields';
+import { SHORT_PICK_MIN_SECONDS, SHORT_PICK_MAX_SECONDS } from '@/lib/master-short';
+import { formatTime } from '@/lib/waveform';
 import { MasteringTrimPanel } from '@/components/admin/MasteringTrimPanel';
 import { MasteringJoinPanel } from '@/components/admin/MasteringJoinPanel';
 import { DEFAULT_CROSSFADE_CURVE, type MasterJoin } from '@/lib/master-join';
@@ -334,6 +337,16 @@ export function MasteringStudio() {
   const [rendering, setRendering] = useState(false);
   /** The vertical hook clip for Reels/Shorts — a separate render from the video. */
   const [shorting, setShorting] = useState(false);
+  /**
+   * The window for the short, when the operator chose one.
+   *
+   * `null` means "let it pick the loudest stretch" — the original behaviour and
+   * still the default. It is deliberately ONE piece of state shared by the
+   * inline panel and the library rows: the region is chosen in the audition
+   * player at the bottom of the library, and a per-row copy would mean the
+   * player had to know which row it was feeding.
+   */
+  const [shortWindow, setShortWindow] = useState<{ startSec: number; seconds: number } | null>(null);
   /**
    * YouTube upload panel. The title is `null` until the operator types in it —
    * NOT '' — so an untouched field can mirror `masterName` (the name already
@@ -1167,7 +1180,9 @@ export function MasteringStudio() {
       const res = await adminFetch(`/api/admin/music-lab/master/${targetId}/short`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ coverKey }),
+        // A window is sent only when one was chosen. Sending zeroes would read
+        // as "start at 0:00 for 0s" rather than "you decide".
+        body: JSON.stringify({ coverKey, ...(shortWindow ?? {}) }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.success) throw new Error(body.error || 'Could not start the short.');
@@ -1189,7 +1204,7 @@ export function MasteringStudio() {
         }
       }
     },
-    []
+    [shortWindow]
   );
 
   const makeShort = useCallback(async () => {
@@ -2647,15 +2662,19 @@ export function MasteringStudio() {
                     <Download className="h-4 w-4" aria-hidden="true" /> Download short
                   </button>
                 )}
+                <ShortWindowFields
+                  value={shortWindow}
+                  onChange={setShortWindow}
+                  disabled={shorting}
+                  idPrefix={`${inputId}-short`}
+                />
                 <p className="w-full text-xs text-gray-500 dark:text-gray-400">
-                  1080&times;1920, up to 30&nbsp;seconds, cut from the loudest stretch of the song
-                  and faded at both ends. No lyrics are burned in — download it and post it to
-                  Reels or Instagram by hand.
+                  1080&times;1920, faded at both ends. No lyrics are burned in — download it and
+                  post it to Reels or Instagram by hand.
                   {typeof job.shortStartSec === 'number' && (
                     <>
-                      {' '}Last clip: {job.shortSeconds ?? 30}s from{' '}
-                      {Math.floor(job.shortStartSec / 60)}:
-                      {String(Math.round(job.shortStartSec % 60)).padStart(2, '0')}.
+                      {' '}Last clip: {job.shortSeconds ?? 30}s from {formatTime(job.shortStartSec)}
+                      {job.shortPicked === false ? ' (chosen by loudness).' : '.'}
                     </>
                   )}
                 </p>
@@ -3334,6 +3353,15 @@ export function MasteringStudio() {
                     >
                       {m.shortKey ? 'Re-cut short' : 'Make short'}
                     </button>
+                    {/* Which window this will use. The region is chosen in the
+                        player at the bottom of the list, which may be scrolled
+                        out of sight by the time the button is pressed — so it
+                        is restated where the decision is acted on. */}
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      {shortWindow
+                        ? `short: ${formatTime(shortWindow.startSec)} + ${shortWindow.seconds}s`
+                        : 'short: loudest part'}
+                    </span>
                     {rowBusy === m.id && (
                       <span className="text-xs text-gray-500 dark:text-gray-400">Working…</span>
                     )}
@@ -3381,6 +3409,25 @@ export function MasteringStudio() {
               }}
               onPrev={neighbours.prev ? () => void playSaved(neighbours.prev!) : undefined}
               onNext={neighbours.next ? () => void playSaved(neighbours.next!) : undefined}
+              useRegionLabel="Use for the short"
+              onUseRegion={(r) => {
+                // Clamped to what a short may be, and reported rather than
+                // silently adjusted — a drag is approximate, and a region the
+                // operator thinks they set is worse than one they were told
+                // about.
+                const raw = Math.max(0, r.end - r.start);
+                const seconds = Math.min(
+                  SHORT_PICK_MAX_SECONDS,
+                  Math.max(SHORT_PICK_MIN_SECONDS, Math.round(raw))
+                );
+                setShortWindow({ startSec: Math.round(r.start * 10) / 10, seconds });
+                setAnnounce(
+                  seconds === Math.round(raw)
+                    ? `Short window set to ${seconds}s from ${formatTime(r.start)}.`
+                    : `Short window set to ${seconds}s from ${formatTime(r.start)} — ` +
+                      `a short must be ${SHORT_PICK_MIN_SECONDS}-${SHORT_PICK_MAX_SECONDS}s.`
+                );
+              }}
             />
           </div>
         )}

@@ -25,7 +25,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Repeat, X, Flag, Copy, Play, Pause, Volume2, VolumeX, SkipBack, SkipForward } from 'lucide-react';
+import { Repeat, X, Flag, Copy, Play, Pause, Volume2, VolumeX, SkipBack, SkipForward, Smartphone } from 'lucide-react';
 import { MasteringEqualizer } from '@/components/admin/MasteringEqualizer';
 import { MasteringWaveform } from '@/components/admin/MasteringWaveform';
 import { EQ_BANDS, flatGains, clampGain, isFlat, type EqGains } from '@/lib/audio-eq';
@@ -61,12 +61,27 @@ interface Props {
    */
   onPrev?: () => void;
   onNext?: () => void;
+  /**
+   * Hand the current loop region to whoever wants a clip of it.
+   *
+   * The region is the gesture the operator already makes to find a phrase —
+   * drag it, hear it loop, decide. Until this existed the region lived and died
+   * in local state, so the one place a chosen window was known was the one
+   * place nothing could read it. Absent ⇒ no button; this player is also used
+   * where there is nothing to hand a window to.
+   */
+  onUseRegion?: (region: LoopRegion) => void;
+  /** Wording for that button — the caller says what it is FOR. */
+  useRegionLabel?: string;
 }
 
 /** Peak resolution captured at decode time; the canvas resamples down to fit. */
 const WAVEFORM_BINS = 1200;
 
-export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpired, onPrev, onNext }: Props) {
+export function MasteringPlayer({
+  masterUrl, sourceUrl, title, afterTp, onExpired, onPrev, onNext,
+  onUseRegion, useRegionLabel = 'Use this region',
+}: Props) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const ctxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -425,6 +440,18 @@ export function MasteringPlayer({ masterUrl, sourceUrl, title, afterTp, onExpire
             <Repeat className="h-3 w-3" aria-hidden="true" />
             Looping {formatTime(loop.start)}–{formatTime(loop.end)}
             <X className="h-3 w-3" aria-hidden="true" />
+          </button>
+        )}
+        {/* Beside the region it names, not somewhere else on the page: the
+            banner above is already where the chosen seconds are stated. */}
+        {loop && onUseRegion && (
+          <button
+            type="button"
+            onClick={() => onUseRegion(loop)}
+            className="flex items-center gap-1 rounded border border-indigo-300 bg-indigo-50 px-2 py-0.5 font-medium text-indigo-900 dark:border-indigo-700 dark:bg-indigo-950 dark:text-indigo-200"
+          >
+            <Smartphone className="h-3 w-3" aria-hidden="true" />
+            {useRegionLabel}
           </button>
         )}
         <span className="flex items-center gap-1">

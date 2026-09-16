@@ -652,6 +652,90 @@ describe('short render', () => {
     });
   });
 
+  /**
+   * The operator picked the window themselves.
+   *
+   * The property that matters is that NOTHING measures: running ebur128 anyway
+   * would spend a pass producing a number this path discards, and would leave
+   * two answers to one question. The length check moves to the file's own
+   * header, which is one spawn and no decoding.
+   */
+  describe('a window the operator chose', () => {
+    const HEADER = `ffmpeg version 6.0
+Input #0, wav, from '/tmp/master.wav':
+  Duration: 00:04:00.00, bitrate: 1536 kb/s
+  Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 48000 Hz, stereo, s16, 1536 kb/s
+`;
+    beforeEach(() => {
+      spawnSync.mockImplementation((_cmd: unknown, args: string[]) =>
+        // The header probe is `-hide_banner -i FILE` and nothing else.
+        args.length === 3 && args[0] === '-hide_banner' && args[1] === '-i'
+          ? { status: 0, stdout: '', stderr: HEADER }
+          : { status: 0, stdout: '', stderr: '' }
+      );
+    });
+
+    it('cuts exactly where it was told, and never measures loudness', async () => {
+      const res = await handler({ jobId: 'j1', short: short({ startSec: 128.4, seconds: 45 }) } as never);
+
+      expect(res).toMatchObject({ ok: true });
+      const all = ffArgs().join(' ');
+      expect(all).not.toContain('ebur128');
+
+      const encode = ffArgs()[ffArgs().length - 1];
+      expect(Number(encode[encode.indexOf('-ss') + 1])).toBeCloseTo(128.4, 3);
+      expect(encode.filter((a, i) => encode[i - 1] === '-t')).toEqual(['45', '45']);
+      // The fade-out is scheduled against the chosen length, not the default.
+      expect(encode[encode.indexOf('-af') + 1]).toContain('st=44.400');
+      expect(patched()).toMatchObject({ shortStartSec: 128.4, shortSeconds: 45, shortPicked: true });
+    });
+
+    it('records that the machine chose, when it did', async () => {
+      spawnSync.mockImplementation((_cmd: unknown, args: string[]) =>
+        args.join(' ').includes('ebur128')
+          ? { status: 0, stdout: '', stderr: EBUR }
+          : { status: 0, stdout: '', stderr: '' }
+      );
+      await handler({ jobId: 'j1', short: short() } as never);
+      expect(patched().shortPicked).toBe(false);
+    });
+
+    it('REFUSES a window running past the end of the file', async () => {
+      // 3:50 + 30s on a 4:00 track. Refused, not shortened — the operator
+      // auditioned those seconds.
+      const res = await handler({ jobId: 'j1', short: short({ startSec: 230, seconds: 30 }) } as never);
+
+      expect(res).toEqual({ ok: false });
+      expect(patched().shortError).toMatch(/past the end/i);
+      const put = s3Send.mock.calls
+        .map((c) => c[0] as { input: Record<string, unknown> })
+        .find((c) => 'Body' in c.input);
+      expect(put).toBeUndefined();
+    });
+
+    it.each([
+      ['a half-given window', { startSec: 128 }],
+      ['a length under the editorial floor', { startSec: 10, seconds: 20 }],
+      ['a length over the ceiling', { startSec: 10, seconds: 90 }],
+      ['a negative start', { startSec: -5, seconds: 30 }],
+    ])('re-validates the event itself and refuses %s', async (_label, over) => {
+      // The route is not the only thing that can invoke this Lambda.
+      const res = await handler({ jobId: 'j1', short: short(over) } as never);
+
+      expect(res).toEqual({ ok: false });
+      expect(patched().shortError).toBeTruthy();
+      expect(patched()).not.toHaveProperty('shortKey');
+    });
+
+    it('trusts the pick when the header will not say how long the file is', async () => {
+      spawnSync.mockImplementation(() => ({ status: 0, stdout: '', stderr: 'ffmpeg version 6.0\n' }));
+      const res = await handler({ jobId: 'j1', short: short({ startSec: 30, seconds: 30 }) } as never);
+
+      expect(res).toMatchObject({ ok: true });
+      expect(ffArgs().join(' ')).not.toContain('ebur128');
+    });
+  });
+
   it('clears its temp directory on success and on failure', async () => {
     mockRmSync.mockClear();
     await handler({ jobId: 'j1', short: short() } as never);
