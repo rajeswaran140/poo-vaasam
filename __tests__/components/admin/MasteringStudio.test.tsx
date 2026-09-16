@@ -29,6 +29,9 @@ jest.mock('lucide-react', () => ({
   Play: () => <svg data-testid="i-play" />,
   Pause: () => <svg data-testid="i-pause" />,
   Pencil: () => <svg data-testid="i-pencil" />,
+  // The seam preview's own two. A missing entry does not fail as a missing
+  // icon — React renders `undefined` and the whole component throws.
+  Headphones: () => <svg data-testid="i-headphones" />,
   // The vertical-clip button. A missing entry here does not fail as a missing
   // icon — React renders `undefined` and the WHOLE component throws, so every
   // test in this file goes red at once.
@@ -673,6 +676,101 @@ describe('two-part assembly', () => {
     primePresign('audio/mastering/1_b_partb.wav');
     await act(async () => { fireEvent.change(input, { target: { files: [f] } }); });
   }
+
+  /**
+   * Hearing the seam before mastering.
+   *
+   * The join panel's own note has always said to nudge Part B's head trim "by
+   * ear" — but until this existed there was nothing to nudge against: hearing
+   * the result meant mastering the whole song. The properties worth pinning are
+   * that the request carries the settings CURRENTLY on screen, and that a stale
+   * preview is never left playing under new numbers.
+   */
+  describe('hearing the seam', () => {
+    async function setUpSeam() {
+      primePresign('audio/mastering/1_a_song.wav');
+      render(<MasteringStudio />);
+      await uploadA();
+      await uploadB();
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText(/Crossfade \(seconds\)/i), { target: { value: '4.5' } });
+      });
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText(/Part B starts at/i), { target: { value: '2' } });
+      });
+    }
+
+    it('sends the settings currently on screen, not the ones it started with', async () => {
+      await setUpSeam();
+      mockedFetch.mockResolvedValueOnce(json({ success: true, previewKey: 'audio/mastering/seam/abc.mp3', status: 'queued' }));
+      mockedFetch.mockResolvedValue(
+        json({ success: true, status: 'ready', url: 'https://s3/seam.mp3', levelsNote: 'within 0.3 LU', levels: { mismatched: false } })
+      );
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Hear the seam/i })); });
+
+      const req = mockedFetch.mock.calls.find(
+        (c) => String(c[0]) === '/api/admin/mastering/seam-preview' && c[1]?.method === 'POST'
+      )!;
+      const body = JSON.parse(req[1].body);
+      expect(body.partAKey).toBe('audio/mastering/1_a_song.wav');
+      expect(body.join).toMatchObject({
+        partBKey: 'audio/mastering/1_b_partb.wav',
+        overlapSec: 4.5,
+        editB: expect.objectContaining({ trimStartSec: 2 }),
+      });
+    });
+
+    it('plays the clip on a loop and reports what the two sides measured', async () => {
+      await setUpSeam();
+      mockedFetch.mockResolvedValueOnce(json({ success: true, previewKey: 'audio/mastering/seam/abc.mp3', status: 'queued' }));
+      mockedFetch.mockResolvedValue(
+        json({
+          success: true, status: 'ready', url: 'https://s3/seam.mp3',
+          levelsNote: 'Part A-s tail and Part B-s head are 3 LU apart.',
+          levels: { mismatched: true, gapLu: 3 },
+        })
+      );
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Hear the seam/i })); });
+
+      const audio = await screen.findByLabelText(/crossfade between Part A and Part B/i);
+      expect(audio).toHaveAttribute('src', 'https://s3/seam.mp3');
+      expect(audio).toHaveAttribute('loop');
+      expect(screen.getByText(/3 LU apart/)).toBeInTheDocument();
+    });
+
+    it('clears the previous clip before the new one renders', async () => {
+      // The one way a preview lies: the operator hears the OLD settings, judges
+      // them fine, and masters something else.
+      await setUpSeam();
+      mockedFetch.mockResolvedValueOnce(json({ success: true, previewKey: 'audio/mastering/seam/abc.mp3', status: 'queued' }));
+      mockedFetch.mockResolvedValue(json({ success: true, status: 'ready', url: 'https://s3/first.mp3', levelsNote: '', levels: {} }));
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Hear the seam/i })); });
+      expect(await screen.findByLabelText(/crossfade between Part A/i)).toHaveAttribute('src', 'https://s3/first.mp3');
+
+      // Now change a value and ask again; the first clip must go immediately.
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText(/Crossfade \(seconds\)/i), { target: { value: '6' } });
+      });
+      mockedFetch.mockResolvedValueOnce(json({ success: true, previewKey: 'audio/mastering/seam/def.mp3', status: 'queued' }));
+      mockedFetch.mockResolvedValue(json({ success: true, status: 'ready', url: 'https://s3/second.mp3', levelsNote: '', levels: {} }));
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Hear the seam/i })); });
+
+      const audio = await screen.findByLabelText(/crossfade between Part A/i);
+      expect(audio).toHaveAttribute('src', 'https://s3/second.mp3');
+      expect(screen.queryByText('https://s3/first.mp3')).not.toBeInTheDocument();
+    });
+
+    it('reports a refusal instead of spinning', async () => {
+      await setUpSeam();
+      mockedFetch.mockResolvedValueOnce(
+        json({ success: false, error: "the 4.5s crossfade is longer than Part B" }, false, 409)
+      );
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Hear the seam/i })); });
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(/longer than Part B/);
+      expect(screen.getByRole('button', { name: /Hear the seam/i })).toBeEnabled();
+    });
+  });
 
   it('carries the seam into the enqueue request', async () => {
     primePresign('audio/mastering/1_a_song.wav');

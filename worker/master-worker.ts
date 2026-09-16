@@ -72,6 +72,14 @@ import {
 } from '@/lib/master-short';
 import { parseEbur128Loudness, pickHookWindow } from '@/lib/hook-window';
 import {
+  planSeamPreview,
+  buildSeamPreviewArgs,
+  buildSeamLoudnessArgs,
+  seamLevelRegions,
+  summariseSeamLevels,
+  seamRefusalMessage,
+} from '@/lib/seam-preview';
+import {
   parseMasterJoin,
   validateJoinAgainstSources,
   buildJoinFilterComplex,
@@ -179,6 +187,12 @@ interface MasterEvent {
    * re-master.
    */
   short?: { audioKey?: string; coverKey?: string; startSec?: number; seconds?: number };
+  /**
+   * Render ~20s around a two-part crossfade so it can be judged without
+   * mastering the whole song. Handled before the mastering guards: it must
+   * never look like a master run, and it writes no job record at all.
+   */
+  seam?: { partAKey?: string; partBKey?: string; editA?: unknown; join?: unknown };
 }
 
 /**
@@ -321,6 +335,127 @@ function probeCoverAspect(coverPath: string): number | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Render ~20 seconds around a two-part crossfade, and measure both sides of it.
+ *
+ * NO JOB RECORD. A preview is scratch: it is named by a fingerprint of the
+ * exact settings that produced it, so asking twice for the same seam costs
+ * nothing and nudging a trim by a tenth writes a DIFFERENT file rather than
+ * overwriting the one still playing. There is nothing to patch, and nothing to
+ * clean up but the object itself.
+ *
+ * The two loudness readings ride on the object's own S3 metadata rather than a
+ * sidecar: the caller has to HEAD the key anyway to learn whether the render
+ * has landed, so the answer arrives in the request it was already making.
+ *
+ * ⚠️ THE PREVIEW USES THE REAL JOIN GRAPH — see seam-preview.ts. A preview
+ * built from a different recipe would let a seam sound right here and wrong in
+ * the delivered file, which is worse than having no preview at all.
+ */
+async function renderSeamPreview(spec: NonNullable<MasterEvent['seam']>, bucket: string) {
+  const parsedEdit = parseMasterEdit(spec.editA ?? null);
+  if (!parsedEdit.ok) return { ok: false, error: parsedEdit.error };
+  const parsedJoin = parseMasterJoin(spec.join ?? null);
+  if (!parsedJoin.ok) return { ok: false, error: parsedJoin.error };
+  const theJoin = parsedJoin.join;
+  if (!theJoin) return { ok: false, error: seamRefusalMessage('no-join') };
+
+  // The event's own partBKey must not disagree with the join's — one of them
+  // would then name a file nobody chose.
+  if (spec.partBKey && spec.partBKey !== theJoin.partBKey) {
+    return { ok: false, error: 'the seam event names two different Part Bs' };
+  }
+
+  // Re-validated here, not trusted from the event: the route is not the only
+  // thing that can invoke this Lambda.
+  const plan = planSeamPreview({
+    partAKey: spec.partAKey ?? '',
+    partBKey: theJoin.partBKey,
+    editA: parsedEdit.edit,
+    join: theJoin,
+  });
+  if (!plan.ok) return { ok: false, error: seamRefusalMessage(plan.reason) };
+
+  const dir = mkdtempSync(join(tmpdir(), 'seam-'));
+  const aPath = join(dir, 'a.wav');
+  const bPath = join(dir, 'b.wav');
+  const outPath = join(dir, 'seam.mp3');
+  try {
+    const a = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: plan.spec.partAKey }));
+    writeFileSync(aPath, Buffer.from(await a.Body!.transformToByteArray()));
+    const b = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: plan.spec.partBKey }));
+    writeFileSync(bPath, Buffer.from(await b.Body!.transformToByteArray()));
+
+    const infoA = probeSource(aPath);
+    const infoB = probeSource(bPath);
+    const partASec = infoA?.durationSec ?? Number.NaN;
+    const partBSec = infoB?.durationSec ?? Number.NaN;
+    if (!Number.isFinite(partASec) || !Number.isFinite(partBSec)) {
+      return { ok: false, error: seamRefusalMessage('not-measurable') };
+    }
+    // The same check the real master applies, so a crossfade that cannot work
+    // is refused here rather than previewed as something that will later fail.
+    const legal = validateJoinAgainstSources(theJoin, parsedEdit.edit, partASec, partBSec);
+    if (!legal.ok) return { ok: false, error: legal.error };
+
+    const args = buildSeamPreviewArgs({
+      partAPath: aPath, partBPath: bPath,
+      editA: parsedEdit.edit, partASec, join: theJoin, partBSec,
+      outPath,
+    });
+    if (!args) return { ok: false, error: seamRefusalMessage('not-measurable') };
+    const r = ff(args);
+    if (r.status !== 0) {
+      console.error('[master-worker] seam preview failed:', r.stderr?.slice(-400));
+      return { ok: false, error: 'the seam preview could not be rendered' };
+    }
+
+    // Both sides of the overlap, measured where they actually overlap. A level
+    // step here is the one cause no placement can fix.
+    const regions = seamLevelRegions({ editA: parsedEdit.edit, partASec, join: theJoin, partBSec });
+    const read = (path: string, region: { startSec: number; seconds: number }) => {
+      const m = ff(buildSeamLoudnessArgs({ path, ...region }));
+      return integratedLufs(`${m.stdout ?? ''}${m.stderr ?? ''}`);
+    };
+    const levels = regions
+      ? summariseSeamLevels(read(aPath, regions.a), read(bPath, regions.b))
+      : summariseSeamLevels(null, null);
+
+    await s3.send(new PutObjectCommand({
+      Bucket: bucket,
+      Key: plan.previewKey,
+      Body: readFileSync(outPath),
+      ContentType: 'audio/mpeg',
+      // S3 user metadata is ASCII-only, so these are plain decimal strings.
+      Metadata: {
+        'seam-tail-lufs': levels.tailLufs === null ? '' : String(levels.tailLufs),
+        'seam-head-lufs': levels.headLufs === null ? '' : String(levels.headLufs),
+        'seam-gap-lu': levels.gapLu === null ? '' : String(levels.gapLu),
+      },
+    }));
+    return { ok: true, previewKey: plan.previewKey, levels };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[master-worker] seam preview failed:', message);
+    return { ok: false, error: message };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Integrated loudness from an ebur128 summary — the `I:` line of the block
+ * ffmpeg prints at the end. Returns null rather than 0 when there is nothing to
+ * read: "could not measure" and "measured as silence" must not look alike.
+ */
+function integratedLufs(log: string): number | null {
+  const all = log.match(/I:\s*(-?\d+(?:\.\d+)?)\s*LUFS/g);
+  if (!all?.length) return null;
+  const last = all[all.length - 1].match(/(-?\d+(?:\.\d+)?)/);
+  const value = last ? Number(last[1]) : Number.NaN;
+  return Number.isFinite(value) ? value : null;
 }
 
 /**
@@ -1015,6 +1150,16 @@ export const handler = async (event: MasterEvent) => {
       return { ok: false, error: 'jobId and TAKES_BUCKET are required' };
     }
     return await uploadToYoutube(jobId, event.youtube, TAKES_BUCKET);
+  }
+
+  // A seam preview — before the mastering guards, and with no jobId: it is
+  // scratch, keyed by its own settings, and belongs to no job.
+  if (event?.seam) {
+    if (!TAKES_BUCKET) {
+      console.error('[master-worker] bad seam event');
+      return { ok: false, error: 'TAKES_BUCKET is required' };
+    }
+    return await renderSeamPreview(event.seam, TAKES_BUCKET);
   }
 
   // A vertical short, likewise — before the mastering guards.

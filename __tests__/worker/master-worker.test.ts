@@ -748,6 +748,175 @@ Input #0, wav, from '/tmp/master.wav':
   });
 });
 
+/**
+ * The seam preview.
+ *
+ * A third kind of event, and the only one that writes NO job record: a preview
+ * belongs to a set of settings, not to a job, because at the moment the
+ * crossfade is being decided there is usually no job at all. The properties
+ * worth pinning are that it never touches DynamoDB, that it refuses the same
+ * crossfades the real master would, and that what it renders is the real join
+ * graph rather than a lookalike.
+ */
+describe('seam preview', () => {
+  const A = 'audio/mastering/1700000000000_ab12_part-a.wav';
+  const B = 'audio/mastering/1700000000000_cd34_part-b.wav';
+  const seam = (over: Record<string, unknown> = {}) => ({
+    partAKey: A,
+    editA: null,
+    join: { partBKey: B, overlapSec: 4, curve: 'qsin', editB: null },
+    ...over,
+  });
+  const ffArgs = () => spawnSync.mock.calls.map((c) => c[1] as string[]);
+  const header = (seconds: number) => `ffmpeg version 6.0
+Input #0, wav, from '/tmp/x.wav':
+  Duration: 00:0${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, '0')}.00, bitrate: 1536 kb/s
+  Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 48000 Hz, stereo, s16, 1536 kb/s
+`;
+  const SUMMARY = `[Parsed_ebur128_0 @ 0x1] Summary:
+
+  Integrated loudness:
+    I:         -14.2 LUFS
+    Threshold: -24.8 LUFS
+`;
+
+  beforeEach(() => {
+    spawnSync.mockReset();
+    // Probes report 2:00 per part; the ebur128 runs report a summary; the
+    // render itself says nothing.
+    spawnSync.mockImplementation((_cmd: unknown, args: string[]) => {
+      if (args.length === 3 && args[1] === '-i') return { status: 0, stdout: '', stderr: header(120) };
+      if (args.join(' ').includes('ebur128')) return { status: 0, stdout: '', stderr: SUMMARY };
+      return { status: 0, stdout: '', stderr: '' };
+    });
+    s3Send.mockReset();
+    s3Send.mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'Body' in cmd.input
+        ? Promise.resolve({})
+        : Promise.resolve({ Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) } })
+    );
+  });
+
+  it('writes NO job record — a preview belongs to no job', async () => {
+    const res = await handler({ seam: seam() } as never);
+
+    expect(res).toMatchObject({ ok: true });
+    // The one assertion that distinguishes this from every other branch here.
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('renders the REAL join graph, trimmed around the seam', async () => {
+    await handler({ seam: seam() } as never);
+
+    const render = ffArgs().find((a) => a.includes('-filter_complex'))!;
+    const graph = render[render.indexOf('-filter_complex') + 1];
+    // Equal-power crossfade at the asked-for length — the same filter the
+    // master will run, not a lookalike built for previewing.
+    expect(graph).toContain('acrossfade=d=4:c1=qsin:c2=qsin');
+    expect(graph).toContain('atrim=start=108:end=128');
+    expect(graph).toContain('asetpts=PTS-STARTPTS');
+    expect(graph).not.toContain('loudnorm');
+  });
+
+  it('stores an MP3 under the seam prefix, with both readings on it', async () => {
+    await handler({ seam: seam() } as never);
+
+    const put = s3Send.mock.calls
+      .map((c) => c[0] as { input: Record<string, unknown> })
+      .find((c) => 'Body' in c.input)!;
+    expect(String(put.input.Key)).toMatch(/^audio\/mastering\/seam\/[0-9a-f]{16}\.mp3$/);
+    expect(put.input.ContentType).toBe('audio/mpeg');
+    // The readings ride on the object, so the poll that asks "is it ready" also
+    // learns why the seam sounds the way it does.
+    expect(put.input.Metadata).toMatchObject({
+      'seam-tail-lufs': '-14.2',
+      'seam-head-lufs': '-14.2',
+      'seam-gap-lu': '0',
+    });
+  });
+
+  it('measures both sides of the overlap where they actually overlap', async () => {
+    await handler({ seam: seam() } as never);
+
+    const measures = ffArgs().filter((a) => a.join(' ').includes('ebur128'));
+    expect(measures).toHaveLength(2);
+    // Part A's tail: 2:00 long, 6s window ⇒ from 114s.
+    expect(measures[0][measures[0].indexOf('-ss') + 1]).toBe('114');
+    // Part B's head: from its own start.
+    expect(measures[1][measures[1].indexOf('-ss') + 1]).toBe('0');
+  });
+
+  describe('refusals never write anything', () => {
+    it.each([
+      ['Part A outside the workspace', { partAKey: 'audio/poem-music/a.wav' }],
+      ['Part B outside the workspace', { join: { partBKey: 'audio/poem-music/b.wav', overlapSec: 4, curve: 'qsin', editB: null } }],
+      ['no crossfade at all', { join: null }],
+      ['two different Part Bs', { partBKey: 'audio/mastering/other.wav' }],
+    ])('%s', async (_label, over) => {
+      const res = await handler({ seam: seam(over) } as never);
+
+      expect(res).toMatchObject({ ok: false });
+      expect(send).not.toHaveBeenCalled();
+      const put = s3Send.mock.calls
+        .map((c) => c[0] as { input: Record<string, unknown> })
+        .find((c) => 'Body' in c.input);
+      expect(put).toBeUndefined();
+    });
+  });
+
+  it('refuses a crossfade the real master would refuse, rather than previewing it', async () => {
+    // An overlap longer than a part silently truncates the join — and a
+    // silently truncated join still masters cleanly, which is what makes it
+    // dangerous. Better to say no here than to preview a lie. The check is the
+    // SAME validateJoinAgainstSources the real master runs.
+    spawnSync.mockImplementation((_cmd: unknown, args: string[]) =>
+      args.length === 3 && args[1] === '-i'
+        ? { status: 0, stdout: '', stderr: header(20) }
+        : { status: 0, stdout: '', stderr: SUMMARY }
+    );
+    const res = await handler({
+      seam: seam({ join: { partBKey: B, overlapSec: 25, curve: 'qsin', editB: null } }),
+    } as never);
+
+    expect(res).toMatchObject({ ok: false });
+    expect(String((res as { error?: string }).error)).toMatch(/longer than Part/i);
+    const put = s3Send.mock.calls
+      .map((c) => c[0] as { input: Record<string, unknown> })
+      .find((c) => 'Body' in c.input);
+    expect(put).toBeUndefined();
+  });
+
+  it('refuses an overlap outside the module-s own bounds before reading anything', async () => {
+    const res = await handler({
+      seam: seam({ join: { partBKey: B, overlapSec: 200, curve: 'qsin', editB: null } }),
+    } as never);
+
+    expect(res).toMatchObject({ ok: false });
+    expect(s3Send).not.toHaveBeenCalled();
+    expect(spawnSync).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed render instead of storing a broken file', async () => {
+    spawnSync.mockImplementation((_cmd: unknown, args: string[]) => {
+      if (args.length === 3 && args[1] === '-i') return { status: 0, stdout: '', stderr: header(120) };
+      return { status: 1, stdout: '', stderr: 'lame died' };
+    });
+    const res = await handler({ seam: seam() } as never);
+
+    expect(res).toMatchObject({ ok: false });
+    const put = s3Send.mock.calls
+      .map((c) => c[0] as { input: Record<string, unknown> })
+      .find((c) => 'Body' in c.input);
+    expect(put).toBeUndefined();
+  });
+
+  it('clears its temp directory either way', async () => {
+    mockRmSync.mockClear();
+    await handler({ seam: seam() } as never);
+    expect(mockRmSync).toHaveBeenCalledWith('/tmp/master-test', { recursive: true, force: true });
+  });
+});
+
 describe('key guard', () => {
   it.each([
     ['a published catalogue song', 'audio/poem-music/amma.wav'],

@@ -299,6 +299,13 @@ export function MasteringStudio() {
   const [overlapSec, setOverlapSec] = useState(3);
   /** Head trim on Part B — how its entry is nudged onto the beat. */
   const [partBStartSec, setPartBStartSec] = useState(0);
+  /**
+   * The seam preview. Held as ONE object so the URL and the note it belongs to
+   * can never be shown together from different renders — a level reading
+   * describing settings the audio no longer matches is worse than no reading.
+   */
+  const [seamPreview, setSeamPreview] = useState<{ url: string; note: string; mismatched: boolean } | null>(null);
+  const [seamBusy, setSeamBusy] = useState(false);
   const [job, setJob] = useState<MasterJob | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
 
@@ -1215,6 +1222,69 @@ export function MasteringStudio() {
   }, [jobId, cover, job, startShort]);
 
   /**
+   * Render ~20 seconds around the crossfade and play it.
+   *
+   * Enqueue, then poll the preview key. The key is a fingerprint of the exact
+   * settings, so the route answers `ready` immediately for a seam already
+   * rendered — nudging a value back to one already heard costs one request.
+   *
+   * The previous preview is cleared FIRST. Leaving it on screen while the new
+   * one renders is the way a preview lies: the operator hears the old settings,
+   * decides they are fine, and masters something else.
+   */
+  const previewSeam = useCallback(async () => {
+    if (!partB || !sourceKey) return;
+    setSeamBusy(true);
+    setSeamPreview(null);
+    setError(null);
+    try {
+      const join = buildJoinPayload({
+        partBKey: partB.key,
+        overlapSec,
+        partBStartSec,
+        seed: seedJoin?.partBKey === partB.key ? seedJoin : null,
+      });
+      const res = await adminFetch('/api/admin/mastering/seam-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ partAKey: sourceKey, editA: edit, join }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.success) throw new Error(body.error || 'Could not render the seam.');
+      const previewKey = body.previewKey as string;
+
+      // Short renders, short deadline: this is ~20s of audio from two files
+      // that are already in the workspace. A minute without a result is a
+      // failure, not slowness.
+      const deadline = Date.now() + 60 * 1000;
+      for (let attempt = 0; ; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 2000));
+        if (!mounted.current) return;
+        const poll = await adminFetch(
+          `/api/admin/mastering/seam-preview?key=${encodeURIComponent(previewKey)}`
+        );
+        const state = await poll.json().catch(() => ({}));
+        if (state?.status === 'ready' && state.url) {
+          setSeamPreview({
+            url: state.url as string,
+            note: (state.levelsNote as string) ?? '',
+            mismatched: Boolean(state.levels?.mismatched),
+          });
+          setAnnounce('The seam is ready, looping.');
+          return;
+        }
+        if (Date.now() > deadline) {
+          throw new Error('The seam preview did not arrive — check the crossfade values and try again.');
+        }
+      }
+    } catch (err) {
+      if (mounted.current) setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      if (mounted.current) setSeamBusy(false);
+    }
+  }, [partB, sourceKey, overlapSec, partBStartSec, seedJoin, edit]);
+
+  /**
    * The picture the video was built from. `job.coverKey` is what the worker
    * actually encoded (it survives a reload); `cover.key` covers the moment
    * between uploading a cover and the job coming back with it.
@@ -2036,6 +2106,11 @@ export function MasteringStudio() {
               uploading={partBUploading}
               progressPct={partBSent.total ? Math.round((partBSent.loaded / partBSent.total) * 100) : 0}
               disabled={stage === 'mastering'}
+              onPreviewSeam={() => void previewSeam()}
+              previewBusy={seamBusy}
+              previewUrl={seamPreview?.url ?? null}
+              previewNote={seamPreview?.note ?? null}
+              previewMismatched={seamPreview?.mismatched ?? false}
             />
           </div>
         )}

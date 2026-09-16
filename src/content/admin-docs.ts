@@ -913,6 +913,68 @@ It is also a **0.68 LU change you cannot hear** — which is the honest headline
 > Rule of thumb: a song already near -14 LUFS barely changes — that's correct, not a failure. The win is on the quiet and hot outliers, and right now you have none.`,
   },
   {
+    slug: 'two-part-seam',
+    title: 'Joining Part A and Part B without an audible seam',
+    // Sits with music-lab-mastering rather than inventing a one-doc category:
+    // this is the same workflow, one step earlier.
+    category: 'Music Lab',
+    updatedAt: '2026-09-16T19:00:00Z',
+    body: `# Joining Part A and Part B without an audible seam
+
+A song generated in two sections has to be **spliced before it is mastered**, and the splice has to be invisible. This is what decides whether it is.
+
+## The crossfade curve is already right — it is not your problem
+
+The join uses an **equal-power** crossfade (\`qsin\`), the same shape as Reaper's Equal Power and Premiere's Constant Power. Measured on the box at the midpoint of a 3-second crossfade between two steady tones:
+
+| | RMS at the midpoint |
+|---|---|
+| Either source alone | -21.07 dB |
+| Equal power (\`qsin\`) | **-21.08 dB** — flat |
+| Linear (\`tri\`) | -24.08 dB — a 3 dB hole |
+
+A linear crossfade digs a 3 dB hole in the middle of **every** join, heard as a dip exactly where attention is highest. You are not getting that. So when a seam still sounds wrong, the curve is the wrong thing to reach for.
+
+## What actually makes a seam audible
+
+In the order it is usually true:
+
+1. **Part B's first downbeat does not land where Part A's bar ends.** You hear a stumble, and no curve hides it. This is what **Part B starts at** is for.
+2. **The two generations differ in level.** If A's tail and B's head sit more than about 1.5 LU apart, the crossfade stops being a join and becomes a volume ramp between two recordings. **No placement fixes this** — the parts have to be matched first.
+3. **The two generations differ in character** — key centre, vocal timbre, reverb tail. A longer overlap only smears it. The honest fix is regenerating Part B with Part A as the audio reference.
+4. **The overlap is the wrong length for the material.** Long over a section change reads as a blur; short over sustained notes clicks.
+
+## Hear the seam before you master
+
+Press **Hear the seam** in the join panel. It renders about **20 seconds around the join and nothing else** — eight seconds of Part A, the crossfade, eight seconds of Part B — and loops it.
+
+It is rendered from the **same filter graph the master will use**, then trimmed. That is deliberate and worth protecting: a preview built from its own recipe would let a seam sound right in the panel and wrong in the delivered file, which is worse than having no preview, because it would be trusted.
+
+**How to use it:** press it, listen, change **Part B starts at** by a tenth or two, press it again. Each set of settings renders its own file, so the clip you are listening to keeps playing until the next one lands — you are never comparing against something that has silently changed underneath you. Asking again for settings you already heard returns instantly; nothing is re-rendered.
+
+The first render takes a few seconds. A minute without one is a failure, not slowness.
+
+## Read the level line underneath
+
+Every preview also reports what the **two sides of the overlap** measured — Part A's last six seconds as it will be used, and Part B's first six.
+
+- **Within 1.5 LU** — "placement, not level, is what decides this seam". Nudging the trim is the right job.
+- **1.5 LU or more apart** — stop nudging. That step is heard as a different recording starting, and the answer is to match the parts before joining them.
+
+This is the one reading that tells you whether you are about to spend twenty minutes on the wrong problem.
+
+## Two standing rules
+
+**Do not fade out Part A's tail.** The crossfade is already pulling it down; both together dip at the seam — the same 3 dB hole, reintroduced by hand.
+
+**Never master the halves separately and join afterwards.** Integrated loudness is an average over a programme, so two files that each read -14 LUFS do not read -14 LUFS once joined, and the overlap spikes where two full-level sources sum. The panel makes the correct order the only one available: the join runs in the same pre-pass as trim and fade, upstream of every measurement.
+
+## What this deliberately does not do
+
+**Beat detection.** Landing Part B's downbeat on the grid is the judgement that decides the seam, and an automatic guess that lands off-grid is worse than nudging by ear — it looks authoritative and is wrong. The panel gives you the numbers and now lets you hear them; the judgement stays yours.
+`,
+  },
+  {
     slug: 'music-lab-reference-mastering-plan',
     title: 'Music Lab — reference-matching (built, but unusable: the reference bank is empty)',
     category: 'Music Lab',

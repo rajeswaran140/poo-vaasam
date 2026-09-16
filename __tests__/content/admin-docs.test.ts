@@ -188,3 +188,49 @@ describe('song video render doc keeps the findings that cost four rejected rende
     expect(body).toMatch(/finds the chorus, not the best lines/i);
   });
 });
+
+/**
+ * The two-part seam doc.
+ *
+ * It exists because the operator's instinct was to blame the crossfade curve,
+ * which is already equal-power and measured flat. A doc that does not say so
+ * plainly sends him back to the one setting that is not the problem.
+ */
+describe('two-part seam doc', () => {
+  const doc = getDoc('two-part-seam');
+
+  it('exists and sits with the other mastering material', () => {
+    // Same category as music-lab-mastering — this is that workflow, one step
+    // earlier, and a one-doc category of its own would read as an orphan.
+    expect(doc).toBeTruthy();
+    expect(doc!.category).toBe(getDoc('music-lab-mastering')!.category);
+  });
+
+  it('shows the measurement that clears the curve of blame', () => {
+    const body = doc!.body;
+    expect(body).toMatch(/equal.power/i);
+    expect(body).toContain('qsin');
+    // The numbers, not just the claim — the 3 dB hole is the whole argument.
+    expect(body).toMatch(/-21\.08 dB/);
+    expect(body).toMatch(/-24\.08 dB/);
+  });
+
+  it('names alignment as the usual cause, and level as the unfixable one', () => {
+    const body = doc!.body;
+    expect(body).toMatch(/downbeat/i);
+    expect(body).toMatch(/1\.5 LU/);
+    expect(body).toMatch(/No placement fixes this|no placement fixes this/);
+  });
+
+  it('explains that the preview is the master-s own graph', () => {
+    // If this stops being true, a seam can sound right in the panel and wrong
+    // in the delivered file.
+    expect(doc!.body).toMatch(/same filter graph the master will use/i);
+  });
+
+  it('keeps the two standing rules', () => {
+    const body = doc!.body;
+    expect(body).toMatch(/not fade out Part A/i);
+    expect(body).toMatch(/Never master the halves separately/i);
+  });
+});
