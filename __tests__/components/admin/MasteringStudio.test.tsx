@@ -1179,6 +1179,56 @@ describe('render for YouTube', () => {
         expect(body).toMatchObject({ startSec: 96, seconds: 45 });
       });
 
+      /**
+       * ⚠️ THE LENGTH MUST NOT DEPEND ON THE START.
+       *
+       * The first version disabled the length control until a window existed,
+       * so it was dead on a freshly-opened panel — and typing a start then
+       * clicking straight into it spent that click on committing the start and
+       * had it swallowed by the disabled→enabled switch. It took two clicks and
+       * read as broken. Raj hit exactly this.
+       */
+      it('lets the length be chosen BEFORE a start time, and applies it after', async () => {
+        await masterAndSave();
+        await addCover();
+
+        const length = screen.getByLabelText(/^Length$/i) as HTMLSelectElement;
+        expect(length).toBeEnabled();
+        await act(async () => { fireEvent.change(length, { target: { value: '60' } }); });
+        expect(length.value).toBe('60');
+
+        const start = screen.getByLabelText(/Start at/i);
+        await act(async () => {
+          fireEvent.change(start, { target: { value: '1:36' } });
+          fireEvent.blur(start);
+        });
+
+        await primeShortResponse();
+        await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Make a short/ })); });
+
+        // The length chosen first is the one that travels.
+        const body = JSON.parse(mockedFetch.mock.calls.find((c) => String(c[0]).endsWith('/short'))![1].body);
+        expect(body).toMatchObject({ startSec: 96, seconds: 60 });
+      });
+
+      it('commits the start on Enter, not only on blur', async () => {
+        // A value typed and then left alone while reaching for the render
+        // button used to be lost.
+        await masterAndSave();
+        await addCover();
+        const start = screen.getByLabelText(/Start at/i);
+        await act(async () => {
+          fireEvent.change(start, { target: { value: '1:36' } });
+          fireEvent.keyDown(start, { key: 'Enter' });
+        });
+
+        await primeShortResponse();
+        await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Make a short/ })); });
+
+        const body = JSON.parse(mockedFetch.mock.calls.find((c) => String(c[0]).endsWith('/short'))![1].body);
+        expect(body).toMatchObject({ startSec: 96 });
+      });
+
       it('clearing the field goes back to letting it pick', async () => {
         await masterAndSave();
         await addCover();
