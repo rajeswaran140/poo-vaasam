@@ -23,6 +23,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import {
   SlidersHorizontal, Upload, Download, Loader2, CheckCircle2,
   AlertTriangle, FileAudio, RotateCcw, X, Info, Save, Library, Play, Pause, Pencil, Link2, Film,
+  Smartphone,
 } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 import { putToS3, uploadToWorkspace } from '@/lib/mastering-upload-client';
@@ -324,6 +325,8 @@ export function MasteringStudio() {
   const [coverUploading, setCoverUploading] = useState(false);
   const [videoHeight, setVideoHeight] = useState<number>(1440);
   const [rendering, setRendering] = useState(false);
+  /** The vertical hook clip for Reels/Shorts — a separate render from the video. */
+  const [shorting, setShorting] = useState(false);
   /**
    * YouTube upload panel. The title is `null` until the operator types in it —
    * NOT '' — so an untouched field can mirror `masterName` (the name already
@@ -853,13 +856,23 @@ export function MasteringStudio() {
    * route replies with JSON, not a redirect, so a plain <a href> would render
    * the JSON instead of downloading, and would carry no bearer token.
    */
-  const downloadKey = useCallback(async (key: string, title: string, targetLufs: number) => {
+  const downloadKey = useCallback(async (
+    key: string,
+    title: string,
+    targetLufs: number,
+    /**
+     * Overrides the "(Master -14 LUFS)" suffix. A short is not a master, and
+     * labelling it one is how the wrong file gets uploaded as the full song.
+     */
+    label?: string,
+  ) => {
     setError(null);
     try {
       // Present a friendly filename ("<title> (Master -14 LUFS).wav") when the
       // admin has named the master; the server sanitises it. Storage key is
       // untouched. No name ⇒ the route falls back to a de-noised default.
-      const nameParam = title ? `&name=${encodeURIComponent(`${title} (Master ${targetLufs} LUFS)`)}` : '';
+      const suffix = label ?? `Master ${targetLufs} LUFS`;
+      const nameParam = title ? `&name=${encodeURIComponent(`${title} (${suffix})`)}` : '';
       const res = await adminFetch(
         `/api/admin/mastering/download?key=${encodeURIComponent(key)}${nameParam}`
       );
@@ -1122,6 +1135,69 @@ export function MasteringStudio() {
       if (mounted.current) setRendering(false);
     }
   }, [jobId, cover, videoHeight, job, startRender]);
+
+  /**
+   * POST the short and poll until the clip lands.
+   *
+   * Same completion rule as `startRender`, for the same reason: the route never
+   * clears the job's existing `shortKey`/`shortError` on enqueue, so on a SECOND
+   * short attempt 0 would read the previous clip's leftovers and declare the new
+   * one finished before the encode had started. `shortRenderedAt` is the field
+   * the worker only writes on completion, so the caller captures it (and
+   * `shortError`) BEFORE the POST and this polls until one of them CHANGES.
+   *
+   * The deadline is shorter than the video's: a 30s clip from a composed still
+   * is under a minute of work, so three minutes without a result means something
+   * is wrong rather than slow.
+   */
+  const startShort = useCallback(
+    async (
+      targetId: string,
+      coverKey: string,
+      priorShortRenderedAt: string | null,
+      priorShortError: string | null
+    ): Promise<MasterJob | null> => {
+      const res = await adminFetch(`/api/admin/music-lab/master/${targetId}/short`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ coverKey }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.success) throw new Error(body.error || 'Could not start the short.');
+      setAnnounce('Cutting the short.');
+
+      const deadline = Date.now() + 3 * 60 * 1000;
+      for (let attempt = 0; ; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 4000));
+        if (!mounted.current) return null;
+        const s = await adminFetch(`/api/admin/music-lab/master/${targetId}`);
+        const fresh = (await s.json()) as MasterJob;
+        if (fresh.shortRenderedAt && fresh.shortRenderedAt !== priorShortRenderedAt) {
+          setAnnounce('Short ready.');
+          return fresh;
+        }
+        if (fresh.shortError && fresh.shortError !== priorShortError) throw new Error(fresh.shortError);
+        if (Date.now() > deadline) {
+          throw new Error('The short is taking longer than expected — reload to check on it.');
+        }
+      }
+    },
+    []
+  );
+
+  const makeShort = useCallback(async () => {
+    if (!jobId || !cover) return;
+    setShorting(true);
+    setError(null);
+    try {
+      const fresh = await startShort(jobId, cover.key, job?.shortRenderedAt ?? null, job?.shortError ?? null);
+      if (fresh) setJob(fresh);
+    } catch (err) {
+      if (mounted.current) setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      if (mounted.current) setShorting(false);
+    }
+  }, [jobId, cover, job, startShort]);
 
   /**
    * The picture the video was built from. `job.coverKey` is what the worker
@@ -1407,6 +1483,46 @@ export function MasteringStudio() {
       if (mounted.current) setRowBusy(null);
     }
   }, [rowRender, videoHeight, library, startRender]);
+
+  /**
+   * Cut a short from the library, for the same reason renderRowVideo exists:
+   * the inline panel is gated on `savedAt`, which only this session's Save
+   * sets. Most songs that want a short are the surplus ones — masters finished
+   * days ago — so without this the feature would be reachable only in the one
+   * session that produced the master.
+   */
+  const makeRowShort = useCallback(async () => {
+    if (!rowRender?.cover) return;
+    const { id, cover: rowCover } = rowRender;
+    setRowBusy(id);
+    setError(null);
+    try {
+      const row = library?.find((x) => x.id === id);
+      const fresh = await startShort(id, rowCover.key, row?.shortRenderedAt ?? null, row?.shortError ?? null);
+      if (!fresh) return;
+      setLibrary((prev) =>
+        prev
+          ? prev.map((x) =>
+              x.id === id
+                ? {
+                    ...x,
+                    shortKey: fresh.shortKey,
+                    shortRenderedAt: fresh.shortRenderedAt,
+                    shortStartSec: fresh.shortStartSec,
+                    shortSeconds: fresh.shortSeconds,
+                    shortError: fresh.shortError,
+                  }
+                : x
+            )
+          : prev
+      );
+      setRowRender(null);
+    } catch (err) {
+      if (mounted.current) setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      if (mounted.current) setRowBusy(null);
+    }
+  }, [rowRender, library, startShort]);
 
   /**
    * Deliberately NOT loaded on mount: listing scans the table, and most visits
@@ -2430,6 +2546,46 @@ export function MasteringStudio() {
                 )}
               </div>
 
+              {/* THE VERTICAL CLIP. A second, independent render from the same
+                  cover and the same mastered WAV — not a crop of the video, and
+                  not a step on the way to one. It exists because the channel
+                  posts 2-3 songs a week to YouTube and the rest goes to Reels
+                  and Instagram, which want 9:16. */}
+              <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-gray-200 pt-4 dark:border-gray-800">
+                <button
+                  type="button"
+                  onClick={() => void makeShort()}
+                  disabled={!cover || shorting || rendering || coverUploading}
+                  className="inline-flex items-center gap-2 rounded-lg border border-indigo-300 px-4 py-2 text-sm font-medium text-indigo-700 transition hover:bg-indigo-50 disabled:opacity-60 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-900/20"
+                >
+                  {shorting
+                    ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    : <Smartphone className="h-4 w-4" aria-hidden="true" />}
+                  {shorting ? 'Cutting…' : 'Make a short'}
+                </button>
+                {job.shortKey && (
+                  <button
+                    type="button"
+                    onClick={() => void downloadKey(job.shortKey!, masterName.trim(), job.target, 'Short')}
+                    className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900"
+                  >
+                    <Download className="h-4 w-4" aria-hidden="true" /> Download short
+                  </button>
+                )}
+                <p className="w-full text-xs text-gray-500 dark:text-gray-400">
+                  1080&times;1920, up to 30&nbsp;seconds, cut from the loudest stretch of the song
+                  and faded at both ends. No lyrics are burned in — download it and post it to
+                  Reels or Instagram by hand.
+                  {typeof job.shortStartSec === 'number' && (
+                    <>
+                      {' '}Last clip: {job.shortSeconds ?? 30}s from{' '}
+                      {Math.floor(job.shortStartSec / 60)}:
+                      {String(Math.round(job.shortStartSec % 60)).padStart(2, '0')}.
+                    </>
+                  )}
+                </p>
+              </div>
+
               {/* PREFLIGHT — what is about to be encoded, before it is.
                   A leftover cover from the previous song used to render that
                   song's artwork into this song's video, silently; the fix was
@@ -3029,6 +3185,15 @@ export function MasteringStudio() {
                     Video
                   </button>
                 )}
+                {m.shortKey && (
+                  <button
+                    type="button"
+                    onClick={() => void downloadKey(m.shortKey!, m.title ?? '', m.target, 'Short')}
+                    className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+                  >
+                    Short
+                  </button>
+                )}
                 {/* And a way to MAKE one. The inline panel is gated on savedAt,
                     which only this session's Save sets, so without this a master
                     saved yesterday could never be rendered at all. */}
@@ -3083,6 +3248,16 @@ export function MasteringStudio() {
                       className="rounded bg-orange-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
                     >
                       Render
+                    </button>
+                    {/* The same cover feeds both. A short is not a step on the
+                        way to the video and does not need one to exist. */}
+                    <button
+                      type="button"
+                      disabled={!rowRender.cover || rowBusy === m.id}
+                      onClick={() => void makeRowShort()}
+                      className="rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
+                    >
+                      {m.shortKey ? 'Re-cut short' : 'Make short'}
                     </button>
                     {rowBusy === m.id && (
                       <span className="text-xs text-gray-500 dark:text-gray-400">Working…</span>

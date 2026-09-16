@@ -29,6 +29,10 @@ jest.mock('lucide-react', () => ({
   Play: () => <svg data-testid="i-play" />,
   Pause: () => <svg data-testid="i-pause" />,
   Pencil: () => <svg data-testid="i-pencil" />,
+  // The vertical-clip button. A missing entry here does not fail as a missing
+  // icon — React renders `undefined` and the WHOLE component throws, so every
+  // test in this file goes red at once.
+  Smartphone: () => <svg data-testid="i-smartphone" />,
 }));
 // The before/after player is its own unit (see MasteringComparePlayer.test);
 // stub it here so the Studio suite tests wiring, not the player's Web Audio /
@@ -938,6 +942,94 @@ describe('render for YouTube', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/x264 died/);
     expect(screen.getByRole('button', { name: /Render video/ })).toBeEnabled();
   });
+
+  /**
+   * The vertical clip. It shares the cover and the gate with the video but is
+   * NOT downstream of it — the surplus songs that want a short are the ones
+   * that never get a YouTube video at all, so a short must not require one.
+   */
+  describe('the vertical short', () => {
+    it('does not need a rendered video first', async () => {
+      await masterAndSave();
+      await addCover();
+      expect(screen.getByRole('button', { name: /Make a short/ })).toBeEnabled();
+      // ...and nothing has been rendered.
+      expect(screen.queryByRole('button', { name: /Download MP4/ })).not.toBeInTheDocument();
+    });
+
+    it('needs a cover before it will cut', async () => {
+      await masterAndSave();
+      expect(screen.getByRole('button', { name: /Make a short/ })).toBeDisabled();
+      await addCover();
+      expect(screen.getByRole('button', { name: /Make a short/ })).toBeEnabled();
+    });
+
+    it('sends the cover, then offers the clip and says where it was cut from', async () => {
+      await masterAndSave();
+      await addCover();
+
+      mockedFetch.mockResolvedValueOnce(json({ success: true, shortKey: 's', status: 'queued' }));
+      mockedFetch.mockResolvedValue(
+        json(
+          savedDoneJob({
+            shortKey: 'audio/mastering/1_a_song-master-14LUFS-short-1920.mp4',
+            shortRenderedAt: '2026-09-16T00:00:00.000Z',
+            shortStartSec: 96,
+            shortSeconds: 30,
+          })
+        )
+      );
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Make a short/ })); });
+
+      const req = mockedFetch.mock.calls.find((c) => String(c[0]).endsWith('/short'))!;
+      expect(JSON.parse(req[1].body)).toEqual({ coverKey: 'audio/mastering/1_c_cover.jpg' });
+      expect(await screen.findByRole('button', { name: /Download short/ })).toBeInTheDocument();
+      // The position is shown so a clip that opens in the wrong place can be
+      // diagnosed without re-measuring the track.
+      expect(screen.getByText(/30s from 1:36/)).toBeInTheDocument();
+    });
+
+    it('downloads under a name that does not call it a master', async () => {
+      // A file named "(Master -14 LUFS).mp4" is how a 30s clip gets uploaded
+      // as the full song.
+      await masterAndSave();
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText(/Name this master/i), { target: { value: 'காதல் மழை' } });
+      });
+      await addCover();
+      mockedFetch.mockResolvedValueOnce(json({ success: true, shortKey: 's', status: 'queued' }));
+      mockedFetch.mockResolvedValue(
+        json(
+          savedDoneJob({
+            shortKey: 'audio/mastering/1_a_song-master-14LUFS-short-1920.mp4',
+            shortRenderedAt: '2026-09-16T00:00:00.000Z',
+            shortStartSec: 96,
+            shortSeconds: 30,
+          })
+        )
+      );
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Make a short/ })); });
+
+      const btn = await screen.findByRole('button', { name: /Download short/ });
+      mockedFetch.mockResolvedValueOnce(json({ success: true, url: 'https://s3/presigned' }));
+      await act(async () => { fireEvent.click(btn); });
+
+      const req = mockedFetch.mock.calls.find((c) => String(c[0]).includes('/mastering/download'))!;
+      expect(decodeURIComponent(String(req[0]))).toContain('(Short)');
+      expect(decodeURIComponent(String(req[0]))).not.toContain('Master -14 LUFS');
+    });
+
+    it('reports a failure instead of spinning forever', async () => {
+      await masterAndSave();
+      await addCover();
+      mockedFetch.mockResolvedValueOnce(json({ success: true, shortKey: 's', status: 'queued' }));
+      mockedFetch.mockResolvedValue(json(savedDoneJob({ shortError: 'could not measure the track' })));
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Make a short/ })); });
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(/could not measure the track/);
+      expect(screen.getByRole('button', { name: /Make a short/ })).toBeEnabled();
+    });
+  });
 });
 
 /**
@@ -1416,6 +1508,131 @@ describe('rendering from the saved-masters library', () => {
     expect(String(downloadReq[0])).toContain(encodeURIComponent(newVideoKey));
     expect(String(downloadReq[0])).not.toContain(encodeURIComponent(oldVideoKey));
   }, 15000);
+
+  /**
+   * The short has to be reachable from here too, and this is the whole reason
+   * why: the inline panel is gated on `savedAt`, which only this session's Save
+   * sets. The songs that want a short are the SURPLUS ones — mastered days ago,
+   * never given a YouTube slot — so a short reachable only from the mastering
+   * session would be reachable for exactly the wrong songs.
+   */
+  describe('cutting a short from the library', () => {
+    it('offers the finished clip on a row that already has one', async () => {
+      await openLibrary(row({ shortKey: 'audio/mastering/1_a-master-14LUFS-short-1920.mp4' }));
+      expect(screen.getByRole('button', { name: /^Short$/ })).toBeInTheDocument();
+    });
+
+    it('sends the row-s own job id and cover to the short route', async () => {
+      await openLibrary();
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Render video for காதல் மழை/ }));
+      });
+
+      const input = await screen.findByLabelText(/Cover for காதல் மழை/i);
+      mockedFetch.mockResolvedValueOnce(
+        json({ success: true, uploadUrl: 'https://s3/u', fields: { key: 'k' }, key: 'audio/mastering/1_c_cover.jpg' })
+      );
+      await act(async () => {
+        fireEvent.change(input, { target: { files: [new File(['x'], 'c.jpg', { type: 'image/jpeg' })] } });
+      });
+
+      mockedFetch.mockResolvedValueOnce(json({ success: true, shortKey: 's', status: 'queued' }));
+      mockedFetch.mockResolvedValue(
+        json(
+          row({
+            shortKey: 'audio/mastering/done-short-1920.mp4',
+            shortRenderedAt: '2026-09-16T00:00:00.000Z',
+            shortStartSec: 96,
+            shortSeconds: 30,
+          })
+        )
+      );
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /^Make short$/ }));
+      });
+
+      const req = mockedFetch.mock.calls.find((c) => String(c[0]).endsWith('/short'))!;
+      expect(String(req[0])).toContain('/master/saved-vid-1/short');
+      expect(JSON.parse(req[1].body).coverKey).toBe('audio/mastering/1_c_cover.jpg');
+      // The row picks up the new clip without a list reload.
+      expect(await screen.findByRole('button', { name: /^Short$/ })).toBeInTheDocument();
+    });
+
+    it('does not announce success from a stale shortRenderedAt on a re-cut', async () => {
+      // The same trap the video re-render guard exists for: the short route
+      // never clears the job's previous shortKey/shortRenderedAt on enqueue, so
+      // poll attempt 0 can read the PREVIOUS clip's leftovers and settle on
+      // them before the new encode has started.
+      const oldAt = '2026-01-01T00:00:00.000Z';
+      const oldKey = 'audio/mastering/1_a-master-14LUFS-short-1920.mp4';
+      const newAt = '2026-09-16T00:00:00.000Z';
+      const newKey = 'audio/mastering/1_a-master-14LUFS-short-1920-NEW.mp4';
+
+      await openLibrary(row({ shortKey: oldKey, shortRenderedAt: oldAt }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Render video for காதல் மழை/ }));
+      });
+      const input = await screen.findByLabelText(/Cover for காதல் மழை/i);
+      mockedFetch.mockResolvedValueOnce(
+        json({ success: true, uploadUrl: 'https://s3/u', fields: { key: 'k' }, key: 'audio/mastering/1_c_cover.jpg' })
+      );
+      await act(async () => {
+        fireEvent.change(input, { target: { files: [new File(['x'], 'c.jpg', { type: 'image/jpeg' })] } });
+      });
+
+      mockedFetch.mockResolvedValueOnce(json({ success: true, shortKey: 's', status: 'queued' }));
+      // Attempt 0: a stale read. Must NOT be treated as completion.
+      mockedFetch.mockResolvedValueOnce(json(row({ shortKey: oldKey, shortRenderedAt: oldAt })));
+      // Attempt 1, after the real poll interval: the actual completion.
+      mockedFetch.mockResolvedValue(json(row({ shortKey: newKey, shortRenderedAt: newAt })));
+
+      // A row that already has a clip offers "Re-cut short", not "Make short".
+      // The panel closes only once startShort resolves with a finished job.
+      fireEvent.click(screen.getByRole('button', { name: /^Re-cut short$/ }));
+      await waitFor(
+        () => expect(screen.queryByRole('button', { name: /^Re-cut short$/ })).not.toBeInTheDocument(),
+        { timeout: 8000, interval: 250 }
+      );
+
+      const statusCalls = mockedFetch.mock.calls.filter((c) => String(c[0]).endsWith('/saved-vid-1'));
+      expect(statusCalls.length).toBeGreaterThan(1);
+
+      // And the row carries the SECOND poll's key, never the stale first one.
+      mockedFetch.mockResolvedValueOnce(json({ success: true, url: 'https://s3/presigned' }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /^Short$/ }));
+      });
+      const dl = mockedFetch.mock.calls.find((c) => String(c[0]).includes('/mastering/download'))!;
+      expect(String(dl[0])).toContain(encodeURIComponent(newKey));
+      expect(String(dl[0])).not.toContain(encodeURIComponent(oldKey));
+    }, 15000);
+
+    it('never posts a short to the render route, or a render to the short route', async () => {
+      // Two buttons, one cover, adjacent in the DOM — a crossed handler would
+      // look exactly like success and silently produce the wrong file.
+      await openLibrary();
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Render video for காதல் மழை/ }));
+      });
+      const input = await screen.findByLabelText(/Cover for காதல் மழை/i);
+      mockedFetch.mockResolvedValueOnce(
+        json({ success: true, uploadUrl: 'https://s3/u', fields: { key: 'k' }, key: 'audio/mastering/1_c_cover.jpg' })
+      );
+      await act(async () => {
+        fireEvent.change(input, { target: { files: [new File(['x'], 'c.jpg', { type: 'image/jpeg' })] } });
+      });
+
+      mockedFetch.mockResolvedValueOnce(json({ success: true, shortKey: 's', status: 'queued' }));
+      mockedFetch.mockResolvedValue(
+        json(row({ shortKey: 'audio/mastering/done-short-1920.mp4', shortRenderedAt: '2026-09-16T00:00:00.000Z' }))
+      );
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /^Make short$/ }));
+      });
+
+      expect(mockedFetch.mock.calls.filter((c) => String(c[0]).endsWith('/render'))).toHaveLength(0);
+    });
+  });
 });
 
 /**

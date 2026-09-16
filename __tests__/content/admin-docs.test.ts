@@ -142,9 +142,34 @@ describe('song video render doc keeps the findings that cost four rejected rende
     expect(body).toMatch(/verify it \*\*before\*\* deleting the original/i);
   });
 
-  it('names both live defects in the in-app render button', () => {
+  /**
+   * Both defects are FIXED (the aspect probe, and Re-render). The doc keeps
+   * naming them because the manual recipe above was written while they were
+   * live, and a reader who finds the recipe without the correction will keep
+   * doing by hand what the portal now does.
+   */
+  it('names both render-button defects and records that they are fixed', () => {
     const body = doc!.body;
-    expect(body).toContain('master-video.ts');
-    expect(body).toContain('!m.videoKey');
+    expect(body).toMatch(/buildVideoFilter/);
+    expect(body).toMatch(/art = height \* 0\.82/);
+    expect(body).toMatch(/Re-render/);
+    expect(body).toMatch(/both fixed/i);
+    // And it must not still tell the operator the button is unusable.
+    expect(body).not.toMatch(/Both are live/);
+  });
+
+  /**
+   * The vertical clip is a public-feed deliverable, and two of its rules are
+   * the kind that get "improved" away by someone who does not know the cost:
+   * no burned Tamil (ffmpeg cannot shape the clusters), and the backdrop stays
+   * (a 16:9 cover cannot fill 9:16 without cropping the artwork).
+   */
+  it('documents the vertical clip, including why it burns no lyrics', () => {
+    const body = doc!.body;
+    expect(body).toMatch(/Make a short/);
+    expect(body).toMatch(/1080.{0,3}1920/);
+    expect(body).toMatch(/No lyrics are burned in/i);
+    expect(body).toMatch(/blurred backdrop/i);
+    expect(body).toMatch(/Denied to CloudFront/i);
   });
 });

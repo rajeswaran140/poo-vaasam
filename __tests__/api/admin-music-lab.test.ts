@@ -27,6 +27,7 @@ jest.mock('@/infrastructure/database/MasterJobRepository', () => ({
 import { POST as measurePOST } from '@/app/api/admin/music-lab/measure/route';
 import { POST as masterPOST } from '@/app/api/admin/music-lab/master/route';
 import { POST as renderPOST } from '@/app/api/admin/music-lab/master/[jobId]/render/route';
+import { POST as shortPOST } from '@/app/api/admin/music-lab/master/[jobId]/short/route';
 import { GET as statusGET } from '@/app/api/admin/music-lab/master/[jobId]/route';
 import { InvokeCommand } from '@aws-sdk/client-lambda';
 import * as auth from '@/lib/auth-helper';
@@ -353,5 +354,92 @@ describe('render enqueue', () => {
     expect((await renderReq({})).status).toBe(400);
     mockGet.mockResolvedValueOnce(null);
     expect((await renderReq({ coverKey: COVER })).status).toBe(404);
+  });
+});
+
+
+/**
+ * POST /short — cut the vertical hook clip for Reels / Instagram / Shorts.
+ *
+ * The sibling of /render and guarded the same way, for the same reason: the
+ * cover key names a second object the worker will fetch with a role that can
+ * read the whole bucket. The one property unique to this route is that the
+ * event must carry `short` and NOTHING else the worker branches on — a payload
+ * that also looked like a render or a master run would do the wrong work.
+ */
+describe('short enqueue', () => {
+  const JOB_ID = 'job-1';
+  const COVER = 'audio/mastering/1700000000000_cc11_cover.jpg';
+  const doneSavedJob = (over: Record<string, unknown> = {}) => ({
+    id: JOB_ID,
+    status: 'done',
+    s3Key: 'audio/mastering/1700000000000_ab12cd34_take.wav',
+    masterKey: 'audio/mastering/1700000000000_ab12cd34_take-master-14LUFS.wav',
+    mp3Key: 'audio/mastering/1700000000000_ab12cd34_take-master-14LUFS.mp3',
+    target: -14,
+    savedAt: '2026-08-04T00:00:00.000Z',
+    editedDurationSec: 240,
+    shortKey: null,
+    error: null,
+    ...over,
+  });
+  const shortReq = (body: unknown) =>
+    shortPOST(post(`/api/admin/music-lab/master/${JOB_ID}/short`, body), {
+      params: Promise.resolve({ jobId: JOB_ID }),
+    });
+
+  it('queues a short from the MASTER, never the web MP3', async () => {
+    mockGet.mockResolvedValueOnce(doneSavedJob());
+    const res = await shortReq({ coverKey: COVER });
+    expect(res.status).toBe(202);
+
+    const payload = JSON.parse(Buffer.from(MockInvoke.mock.calls[0][0].Payload).toString());
+    expect(payload.short.audioKey).toMatch(/\.wav$/);
+    expect(payload.short.audioKey).not.toMatch(/\.mp3$/);
+    expect(payload.short).toMatchObject({ coverKey: COVER });
+    // It must not also look like a render or a master run.
+    expect(payload.render).toBeUndefined();
+    expect(payload.s3Key).toBeUndefined();
+    expect((await res.json()).shortKey).toMatch(/-short-1920\.mp4$/);
+  });
+
+  it('REFUSES a cover outside the mastering workspace', async () => {
+    for (const coverKey of ['images/song-covers/x.png', 'audio/mastering/../x.png', 'x.png']) {
+      mockGet.mockResolvedValueOnce(doneSavedJob());
+      expect((await shortReq({ coverKey })).status).toBe(409);
+    }
+    expect(MockInvoke).not.toHaveBeenCalled();
+  });
+
+  it('refuses an unsaved master, and one with no mastered WAV', async () => {
+    mockGet.mockResolvedValueOnce(doneSavedJob({ savedAt: null }));
+    expect((await shortReq({ coverKey: COVER })).status).toBe(409);
+
+    mockGet.mockResolvedValueOnce(doneSavedJob({ masterKey: null }));
+    expect((await shortReq({ coverKey: COVER })).status).toBe(409);
+    expect(MockInvoke).not.toHaveBeenCalled();
+  });
+
+  it('refuses a track shorter than the clip', async () => {
+    mockGet.mockResolvedValueOnce(doneSavedJob({ editedDurationSec: 22 }));
+    const res = await shortReq({ coverKey: COVER });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/shorter/i);
+    expect(MockInvoke).not.toHaveBeenCalled();
+  });
+
+  it('400s without a cover, and 404s an unknown job', async () => {
+    expect((await shortReq({})).status).toBe(400);
+    mockGet.mockResolvedValueOnce(null);
+    expect((await shortReq({ coverKey: COVER })).status).toBe(404);
+  });
+
+  it('401s without a Bearer token (CSRF defense on the mutation)', async () => {
+    const res = await shortPOST(
+      post(`/api/admin/music-lab/master/${JOB_ID}/short`, { coverKey: COVER }, false),
+      { params: Promise.resolve({ jobId: JOB_ID }) }
+    );
+    expect(res.status).toBe(401);
+    expect(MockInvoke).not.toHaveBeenCalled();
   });
 });

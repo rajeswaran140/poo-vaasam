@@ -2502,7 +2502,7 @@ A control to compare against: முத்தமிழின் (\`J2tc_aUNOPA\`
     slug: 'song-video-render',
     title: 'Rendering a song video for YouTube',
     category: 'Publishing',
-    updatedAt: '2026-09-15T06:05:00Z',
+    updatedAt: '2026-09-16T00:00:00Z',
     body: `# Rendering a song video for YouTube
 
 A Tamilagaval song video is one still image held over a mastered audio track. That sounds trivial and is not: four separate renders of காதல் வந்து அரும்பியதே were rejected before one was accepted, and every flag below is the scar of one of them. Read the reasons before you change the recipe.
@@ -2585,12 +2585,27 @@ It must still read **-14.0 LUFS** with the master's **LRA unchanged**. A moved L
 
 Confirm: \`duration\`, \`definition: hd\`, \`privacyStatus\`, a \`maxres\` thumbnail, tag count, description length, \`categoryId: 10\`, and \`defaultLanguage\` / \`defaultAudioLanguage\` both \`ta\`.
 
-## Two defects in the in-app Render video button
+## The two defects in the in-app Render video button — both fixed
 
-Both are live. Until they are fixed, a song video is a manual ffmpeg job.
+Recorded here because the recipe above was written while they were live, and the manual ffmpeg job it describes is no longer the only way to get a song video.
 
-1. **\`buildVideoFilter\` in \`src/lib/master-video.ts\` fits every cover into a square box** (\`art = height * 0.82\`), whatever its aspect. It was written for square art and nothing checks the input. A 16:9 cover renders at 46% of frame. The fix is to probe the aspect and fill the frame when it matches, keeping the blurred backdrop only for square or portrait art.
-2. **The button disappears once a video exists.** It is gated on \`!m.videoKey\` in \`MasteringStudio.tsx\`, so a bad render can never be redone from the UI. It should read **Re-render**.
+1. **\`buildVideoFilter\` fitted every cover into a square box** (\`art = height * 0.82\`), whatever its aspect — a 16:9 cover rendered at 46% of frame. It now probes the cover's aspect and fills the frame when it matches, keeping the blurred backdrop only for square or portrait art.
+2. **The button disappeared once a video existed**, so a bad render could never be redone from the UI. It now reads **Re-render**.
+
+The recipe above is still the reference for what the render *should* produce, and still the fallback when something about a particular cover needs hand-tuning.
+
+## The vertical clip — "Make a short"
+
+Beside **Render video** on a saved master. It cuts a **1080×1920, 30-second** clip for Reels, Instagram and YouTube Shorts from the **same mastered WAV** and the same cover, and it is a separate render, not a crop of the finished video.
+
+- **Where the clip comes from.** An \`ebur128\` pass measures momentary loudness across the track and the loudest 30-second window wins, skipping the first 8 seconds so a quiet opening is never chosen and backing off the last stretch so it does not land on the outro. The start is then pulled back **4 seconds** so the clip *rises into* the peak instead of opening on it and deflating. The chosen position is shown under the button, so a clip that opens in the wrong place can be diagnosed without re-measuring.
+- **Vertical always keeps the blurred backdrop.** A 16:9 cover cannot fill a 9:16 frame without cropping most of the picture away — and per rejection 2 above, the artwork is never cropped.
+- **No lyrics are burned in.** The worker has no python3 and no Pillow-with-raqm, and ffmpeg's \`drawtext\` does no complex-script shaping, so Tamil clusters break. Broken Tamil on a public feed is worse than no caption. \`scripts/generate-song-short.ts\` on \`crowvault-ide-server\` still renders the lyric version when one is wanted.
+- **Nothing is published.** The MP4 lands in the mastering workspace, which is Denied to CloudFront. Download it and post it by hand — there is no Meta API in this path and no scheduled posting.
+
+- **Reachable from Saved masters too.** The inline panel only appears for a master saved in the current session, so the library row carries its own **Make short** beside **Render video** — the surplus songs are usually ones mastered days earlier.
+
+It is there because the channel posts **2-3 songs a week to YouTube** by design, and the surplus goes to Tamilagaval, Facebook Reels and Instagram rather than to a fourth upload.
 
 ## Replacing a video that is already up
 
