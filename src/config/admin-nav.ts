@@ -37,6 +37,7 @@ import {
   BarChart3,
   Settings,
   Globe,
+  Send,
 } from 'lucide-react';
 import { FEATURES } from '@/config/features';
 
@@ -174,6 +175,14 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     section: 'Library',
     icon: ImageIcon,
     featureFlag: 'MEDIA_LIBRARY',
+  },
+  {
+    href: '/admin/deliveries',
+    title: 'Delivery links',
+    subtitle: 'Expiring download links for paid files',
+    section: 'Library',
+    icon: Send,
+    keywords: ['delivery', 'download', 'link', 'expiring', 'karaoke', 'commission'],
   },
   {
     href: '/admin/release',

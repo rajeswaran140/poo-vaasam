@@ -173,6 +173,10 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
     title: "Media Library",
     subtitle: "Not built yet — use Sound Engineering → Bulk upload",
   },
+  "/admin/deliveries": {
+    title: "Delivery links",
+    subtitle: "Expiring download links for paid files",
+  },
   "/admin/settings": {
     title: "Settings",
     subtitle: "Configure your platform settings",
