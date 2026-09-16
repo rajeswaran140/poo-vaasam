@@ -187,6 +187,14 @@ describe('song video render doc keeps the findings that cost four rejected rende
     // And is honest that the automatic pick answers a different question.
     expect(body).toMatch(/finds the chorus, not the best lines/i);
   });
+
+  it('documents BOTH ways to set the window, and that it is per-master', () => {
+    const body = doc!.body;
+    // Typing a timestamp is the one that matters for lyric-sheet work, and it
+    // was unreachable from the library in the first build.
+    expect(body).toMatch(/type the start time straight in/i);
+    expect(body).toMatch(/belongs to the master it was chosen for/i);
+  });
 });
 
 /**

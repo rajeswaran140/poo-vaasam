@@ -32,6 +32,12 @@ interface Props {
   onChange: (next: ShortWindowValue | null) => void;
   disabled?: boolean;
   idPrefix?: string;
+  /**
+   * Drop the long explainer, for the library row where the same controls sit
+   * inside a dense list. The fields and the "cutting X-Y" line stay: those are
+   * the state, not the teaching.
+   */
+  compact?: boolean;
 }
 
 /** "1:36" → 96. Returns null for anything that is not a time. */
@@ -54,7 +60,7 @@ export function formatClock(seconds: number): string {
   return `${m}:${shown}`;
 }
 
-export function ShortWindowFields({ value, onChange, disabled = false, idPrefix }: Props) {
+export function ShortWindowFields({ value, onChange, disabled = false, idPrefix, compact = false }: Props) {
   const auto = useId();
   const startId = `${idPrefix ?? auto}-start`;
   const lenId = `${idPrefix ?? auto}-length`;
@@ -126,6 +132,8 @@ export function ShortWindowFields({ value, onChange, disabled = false, idPrefix 
             Cutting <strong>{formatClock(value.startSec)}&ndash;{formatClock(value.startSec + value.seconds)}</strong>{' '}
             ({value.seconds}s). A window must be {SHORT_PICK_MIN_SECONDS}&ndash;{SHORT_PICK_MAX_SECONDS} seconds.
           </>
+        ) : compact ? (
+          <>Blank ⇒ the loudest {SHORT_SECONDS}s is chosen for you.</>
         ) : (
           <>
             Leave this blank and the loudest {SHORT_SECONDS}&nbsp;seconds are chosen for you — which finds the

@@ -2564,7 +2564,7 @@ A control to compare against: முத்தமிழின் (\`J2tc_aUNOPA\`
     slug: 'song-video-render',
     title: 'Rendering a song video for YouTube',
     category: 'Publishing',
-    updatedAt: '2026-09-16T18:00:00Z',
+    updatedAt: '2026-09-16T20:00:00Z',
     body: `# Rendering a song video for YouTube
 
 A Tamilagaval song video is one still image held over a mastered audio track. That sounds trivial and is not: four separate renders of காதல் வந்து அரும்பியதே were rejected before one was accepted, and every flag below is the scar of one of them. Read the reasons before you change the recipe.
@@ -2660,7 +2660,12 @@ The recipe above is still the reference for what the render *should* produce, an
 
 Beside **Render video** on a saved master. It cuts a **1080×1920, 30-second** clip for Reels, Instagram and YouTube Shorts from the **same mastered WAV** and the same cover, and it is a separate render, not a crop of the finished video.
 
-- **Choosing the window yourself — the usual case.** Press play on a saved master, **drag across the waveform** to loop a phrase, listen, then press **Use for the short**. That fills in *Start at* and *Length* (30-60s) on the short panel; you can also just type the start time if you already know it from the lyric sheet. When a window is set, **no loudness pass runs at all** — the clip is cut exactly where you said, and checked only against the length of the file.
+- **Choosing the window yourself — the usual case.** Two ways, and both end in the same two fields.
+  - *By ear:* press play on a saved master, **drag across the waveform** to loop a phrase, listen, then press **Use for the short**. That fills in *Start at* and *Length* (30-60s).
+  - *By the clock:* open the row's **Render video / Make short** panel and type the start time straight in — \`3:42\`, or plain seconds. This is the one to use when the timestamp is already written on the lyric sheet.
+
+  When a window is set, **no loudness pass runs at all** — the clip is cut exactly where you said, and checked only against the length of the file.
+- **A window belongs to the master it was chosen for.** Set one while auditioning a song and it is offered to that song only; open another row and the field is empty. An earlier build shared one window across every row, which meant a clip could be cut from the wrong part of a different song with nothing on screen saying so.
 - **Leaving it blank.** An \`ebur128\` pass measures momentary loudness and the loudest 30-second window wins, skipping the first 8 seconds so a quiet opening is never chosen and backing off the last stretch so it does not land on the outro. The start is pulled back **4 seconds** so the clip *rises into* the peak instead of opening on it and deflating. **This finds the chorus, not the best lines** — it is the fast option, not the good one.
 - **A window running past the end is refused, never shortened.** You auditioned those seconds; handing back a different clip than the one you heard would be worse than saying no. The message names the problem and you move the window earlier or make it shorter.
 - The last clip's position is shown under the button, so one that opens in the wrong place can be diagnosed without re-listening to the whole song.
