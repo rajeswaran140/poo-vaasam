@@ -191,6 +191,8 @@ export interface MasterJob {
   shortRenderedAt: string | null;
   shortStartSec: number | null;
   shortSeconds: number | null;
+  /** True when the operator chose the window; false when the loudness pass did. */
+  shortPicked: boolean | null;
   shortError: string | null;
   /** The cover the video was built from, kept so a re-render is reproducible. */
   coverKey: string | null;

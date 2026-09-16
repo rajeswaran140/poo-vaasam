@@ -32,17 +32,35 @@ import { isMasteringKey } from '@/lib/mastering-storage';
 export const SHORT_WIDTH = 1080;
 export const SHORT_HEIGHT = 1920;
 
-/** Clip length. 30s is long enough to carry a chorus and short enough to be watched twice. */
+/**
+ * Clip length when the machine picks the window. 30s is long enough to carry a
+ * chorus and short enough to be watched twice.
+ */
 export const SHORT_SECONDS = 30;
+
+/**
+ * The range an OPERATOR may choose, when they pick the window themselves.
+ *
+ * These are editorial bounds, not technical ones: below 30s a chosen lyric has
+ * no room to land, and above 60s a clip stops being a clip. Every platform this
+ * feeds (Reels, Instagram, Shorts) accepts far more than 60s — the ceiling is
+ * about what is worth posting, not what is allowed. Distinct from
+ * SHORT_FLOOR_SECONDS, which is about what can physically be rendered.
+ */
+export const SHORT_PICK_MIN_SECONDS = 30;
+export const SHORT_PICK_MAX_SECONDS = 60;
 
 /** Skip this much intro before looking for the hook. */
 export const SHORT_MIN_START_SEC = 8;
 
 /**
- * Shortest clip worth producing. Below this a "short" is a stub, and the render
- * is better refused than delivered — the operator can see why and cut by hand.
+ * Physical floor. Below this a "short" is a stub, and the render is better
+ * refused than delivered — the operator can see why and cut by hand. This
+ * bounds the AUTO path, where the window comes from a measurement of a track
+ * whose length nothing else knew; an operator's own pick is bounded by
+ * SHORT_PICK_MIN_SECONDS instead, which is higher.
  */
-export const SHORT_MIN_SECONDS = 10;
+export const SHORT_FLOOR_SECONDS = 10;
 
 /** Start this far before the hook so the clip builds into it rather than opening mid-phrase. */
 export const SHORT_LEAD_IN_SEC = 4;
@@ -59,10 +77,22 @@ export const SHORT_FADE_SEC = 0.6;
  */
 export const SHORT_FPS = 25;
 
-export type ShortRefusal = 'not-done' | 'not-saved' | 'no-master' | 'no-cover' | 'bad-cover' | 'too-short';
+export type ShortRefusal =
+  | 'not-done' | 'not-saved' | 'no-master' | 'no-cover' | 'bad-cover' | 'too-short'
+  | 'bad-window' | 'window-past-end';
+
+/**
+ * An operator-chosen window. `null` anywhere this appears means "no choice was
+ * made" — measure the track and take the loudest stretch, the original
+ * behaviour.
+ */
+export interface ShortWindow {
+  startSec: number;
+  seconds: number;
+}
 
 export type ShortPlan =
-  | { ok: true; audioKey: string; coverKey: string; shortKey: string }
+  | { ok: true; audioKey: string; coverKey: string; shortKey: string; window: ShortWindow | null }
   | { ok: false; reason: ShortRefusal };
 
 /** S3 key for the short, beside the master it came from. */
@@ -82,19 +112,59 @@ export function isShortKey(key: string): boolean {
  * in 24 hours, and a clip whose provenance vanishes overnight is the orphan the
  * library exists to prevent.
  */
-export function planShort(job: MasterJob, coverKey: string | null | undefined): ShortPlan {
+export function planShort(
+  job: MasterJob,
+  coverKey: string | null | undefined,
+  /** What the operator picked on the waveform, or typed. Omit to let it pick. */
+  want?: Partial<ShortWindow> | null
+): ShortPlan {
   if (job.status !== 'done') return { ok: false, reason: 'not-done' };
   if (!job.savedAt) return { ok: false, reason: 'not-saved' };
   if (!job.masterKey) return { ok: false, reason: 'no-master' };
   if (!coverKey) return { ok: false, reason: 'no-cover' };
   if (!isMasteringKey(coverKey)) return { ok: false, reason: 'bad-cover' };
-  // A track shorter than the clip cannot yield one. Duration is known once
-  // mastering has measured it; null means "not measured", which we allow
-  // through rather than refusing on missing data.
-  if (job.editedDurationSec !== null && job.editedDurationSec < SHORT_SECONDS) {
+
+  const window = readWindow(want);
+  if (window === 'invalid') return { ok: false, reason: 'bad-window' };
+
+  // Duration is known once mastering has measured it; null means "not
+  // measured", which we allow through rather than refusing on missing data —
+  // the worker re-checks against the file's own header either way.
+  const duration = job.editedDurationSec;
+  if (window) {
+    // A chosen window that runs off the end is REFUSED, never quietly
+    // shortened: the operator auditioned those seconds, and handing back a
+    // different clip than the one they heard is the worst of both.
+    if (duration !== null && window.startSec + window.seconds > duration) {
+      return { ok: false, reason: 'window-past-end' };
+    }
+  } else if (duration !== null && duration < SHORT_SECONDS) {
     return { ok: false, reason: 'too-short' };
   }
-  return { ok: true, audioKey: job.masterKey, coverKey, shortKey: shortKeyFor(job.masterKey) };
+
+  return { ok: true, audioKey: job.masterKey, coverKey, shortKey: shortKeyFor(job.masterKey), window };
+}
+
+/**
+ * Normalise what arrived over the wire into a window, `null` (nothing picked)
+ * or `'invalid'`.
+ *
+ * Deliberately strict rather than clamping. A start of -5 or a length of 600
+ * is not a near-miss to be rounded into range — it is a caller that does not
+ * mean what this function would decide for it.
+ */
+function readWindow(want: Partial<ShortWindow> | null | undefined): ShortWindow | null | 'invalid' {
+  if (!want) return null;
+  const { startSec, seconds } = want;
+  // Neither given is the same as no window at all.
+  if (startSec === undefined && seconds === undefined) return null;
+  if (typeof startSec !== 'number' || typeof seconds !== 'number') return 'invalid';
+  if (!Number.isFinite(startSec) || !Number.isFinite(seconds)) return 'invalid';
+  if (startSec < 0) return 'invalid';
+  if (seconds < SHORT_PICK_MIN_SECONDS || seconds > SHORT_PICK_MAX_SECONDS) return 'invalid';
+  // Round to the tenth the waveform can actually express; ffmpeg gets three
+  // decimals but nobody can drag to a millisecond.
+  return { startSec: Math.round(startSec * 10) / 10, seconds: Math.round(seconds * 10) / 10 };
 }
 
 /** Operator-facing wording. Says what to DO wherever there is something. */
@@ -106,6 +176,8 @@ export function shortRefusalMessage(reason: ShortRefusal): string {
     case 'bad-cover': return 'That cover is not in the mastering workspace.';
     case 'not-done': return 'Only a finished master can make a short.';
     case 'too-short': return `The track is shorter than ${SHORT_SECONDS}s, so there is no clip to cut.`;
+    case 'bad-window': return `Pick a window between ${SHORT_PICK_MIN_SECONDS} and ${SHORT_PICK_MAX_SECONDS} seconds long.`;
+    case 'window-past-end': return 'That window runs past the end of the track — move it earlier or make it shorter.';
   }
 }
 

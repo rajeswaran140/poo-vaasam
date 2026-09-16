@@ -1029,6 +1029,98 @@ describe('render for YouTube', () => {
       expect(await screen.findByRole('alert')).toHaveTextContent(/could not measure the track/);
       expect(screen.getByRole('button', { name: /Make a short/ })).toBeEnabled();
     });
+
+    /**
+     * Choosing the window by lyric rather than by loudness. The operator's own
+     * method is to pick the best lines, which the energy pass cannot find.
+     */
+    describe('choosing the window', () => {
+      async function primeShortResponse() {
+        mockedFetch.mockResolvedValueOnce(json({ success: true, shortKey: 's', status: 'queued' }));
+        mockedFetch.mockResolvedValue(
+          json(
+            savedDoneJob({
+              shortKey: 'audio/mastering/1_a_song-master-14LUFS-short-1920.mp4',
+              shortRenderedAt: '2026-09-16T00:00:00.000Z',
+              shortStartSec: 96,
+              shortSeconds: 45,
+              shortPicked: true,
+            })
+          )
+        );
+      }
+
+      it('sends no window at all until one is set', async () => {
+        // Absence is the signal for "you decide" — zeroes would read as
+        // "start at 0:00 for 0s".
+        await masterAndSave();
+        await addCover();
+        await primeShortResponse();
+        await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Make a short/ })); });
+
+        const body = JSON.parse(mockedFetch.mock.calls.find((c) => String(c[0]).endsWith('/short'))![1].body);
+        expect(body).toEqual({ coverKey: 'audio/mastering/1_c_cover.jpg' });
+      });
+
+      it('takes a typed start time in mm:ss and sends it', async () => {
+        await masterAndSave();
+        await addCover();
+        const start = screen.getByLabelText(/Start at/i);
+        await act(async () => {
+          fireEvent.change(start, { target: { value: '1:36' } });
+          fireEvent.blur(start);
+        });
+        await act(async () => {
+          fireEvent.change(screen.getByLabelText(/^Length$/i), { target: { value: '45' } });
+        });
+
+        await primeShortResponse();
+        await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Make a short/ })); });
+
+        const body = JSON.parse(mockedFetch.mock.calls.find((c) => String(c[0]).endsWith('/short'))![1].body);
+        expect(body).toMatchObject({ startSec: 96, seconds: 45 });
+      });
+
+      it('clearing the field goes back to letting it pick', async () => {
+        await masterAndSave();
+        await addCover();
+        const start = screen.getByLabelText(/Start at/i);
+        await act(async () => {
+          fireEvent.change(start, { target: { value: '1:36' } });
+          fireEvent.blur(start);
+        });
+        expect(screen.getByRole('button', { name: /Let it pick/i })).toBeInTheDocument();
+
+        await act(async () => {
+          fireEvent.click(screen.getByRole('button', { name: /Let it pick/i }));
+        });
+
+        await primeShortResponse();
+        await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Make a short/ })); });
+
+        const body = JSON.parse(mockedFetch.mock.calls.find((c) => String(c[0]).endsWith('/short'))![1].body);
+        expect(body).toEqual({ coverKey: 'audio/mastering/1_c_cover.jpg' });
+      });
+
+      it('an unreadable time drops the whole window rather than starting at 0:00', async () => {
+        // A short that silently opens at the top of the song is exactly what
+        // this picker exists to prevent.
+        await masterAndSave();
+        await addCover();
+        const start = screen.getByLabelText(/Start at/i);
+        await act(async () => {
+          fireEvent.change(start, { target: { value: 'chorus' } });
+          fireEvent.blur(start);
+        });
+
+        await primeShortResponse();
+        await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Make a short/ })); });
+
+        const body = JSON.parse(mockedFetch.mock.calls.find((c) => String(c[0]).endsWith('/short'))![1].body);
+        expect(body).toEqual({ coverKey: 'audio/mastering/1_c_cover.jpg' });
+        expect('startSec' in body).toBe(false);
+      });
+    });
   });
 });
 
