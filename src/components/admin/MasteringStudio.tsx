@@ -36,6 +36,7 @@ import { MasteringComparePlayer } from '@/components/admin/MasteringComparePlaye
 import { MasteringPlayer } from '@/components/admin/MasteringPlayer';
 import { ShortWindowFields } from '@/components/admin/ShortWindowFields';
 import { ReleasePipelineRow } from '@/components/admin/ReleasePipelineRow';
+import type { PartComparison } from '@/lib/part-analysis';
 import { SHORT_PICK_MIN_SECONDS, SHORT_PICK_MAX_SECONDS } from '@/lib/master-short';
 import { formatTime } from '@/lib/waveform';
 import { MasteringTrimPanel } from '@/components/admin/MasteringTrimPanel';
@@ -305,7 +306,13 @@ export function MasteringStudio() {
    * can never be shown together from different renders — a level reading
    * describing settings the audio no longer matches is worse than no reading.
    */
-  const [seamPreview, setSeamPreview] = useState<{ url: string; note: string; mismatched: boolean } | null>(null);
+  const [seamPreview, setSeamPreview] = useState<{
+    url: string;
+    note: string;
+    mismatched: boolean;
+    /** The two parts measured against each other, when the worker managed it. */
+    comparison: PartComparison | null;
+  } | null>(null);
   const [seamBusy, setSeamBusy] = useState(false);
   const [job, setJob] = useState<MasterJob | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
@@ -1289,6 +1296,9 @@ export function MasteringStudio() {
             url: state.url as string,
             note: (state.levelsNote as string) ?? '',
             mismatched: Boolean(state.levels?.mismatched),
+            // Absent on previews rendered before the analysis existed, and on
+            // any whose analysis failed — the clip still plays either way.
+            comparison: (state.analysis as PartComparison | null) ?? null,
           });
           setAnnounce('The seam is ready, looping.');
           return;
@@ -2131,6 +2141,12 @@ export function MasteringStudio() {
               previewUrl={seamPreview?.url ?? null}
               previewNote={seamPreview?.note ?? null}
               previewMismatched={seamPreview?.mismatched ?? false}
+              comparison={seamPreview?.comparison ?? null}
+              onApplySuggestion={({ partBStartSec, overlapSec }) => {
+                setPartBStartSec(partBStartSec);
+                setOverlapSec(overlapSec);
+                setAnnounce(`Set Part B to start at ${partBStartSec}s with a ${overlapSec}s crossfade.`);
+              }}
             />
           </div>
         )}

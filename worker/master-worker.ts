@@ -72,6 +72,17 @@ import {
 } from '@/lib/master-short';
 import { parseEbur128Loudness, pickHookWindow } from '@/lib/hook-window';
 import {
+  comparePartsAndSuggest,
+  onsetEnvelope,
+  estimateTempo,
+  firstOnsetSec,
+  chroma,
+  spectralCentroid,
+  analysisWindowSec,
+  ANALYSIS_SR,
+  type PartMeasurement,
+} from '@/lib/part-analysis';
+import {
   planSeamPreview,
   buildSeamPreviewArgs,
   buildSeamLoudnessArgs,
@@ -354,6 +365,58 @@ function probeCoverAspect(coverPath: string): number | undefined {
  * built from a different recipe would let a seam sound right here and wrong in
  * the delivered file, which is worse than having no preview at all.
  */
+/**
+ * Decode one region of a file to mono float samples for analysis.
+ *
+ * 8 kHz mono is plenty for beat and pitch work and keeps the arrays small
+ * enough to analyse inside the Lambda without a DSP library. Returns an empty
+ * array rather than throwing — a failed probe must degrade the analysis, never
+ * the preview the operator actually asked for.
+ */
+function decodeForAnalysis(path: string, startSec: number, durationSec: number, dir: string): Float32Array {
+  const raw = join(dir, `an-${Math.random().toString(36).slice(2)}.raw`);
+  try {
+    const r = ff([
+      '-hide_banner', '-nostats',
+      '-ss', String(Math.max(0, startSec)), '-t', String(Math.max(0, durationSec)),
+      '-i', path, '-ac', '1', '-ar', String(ANALYSIS_SR),
+      '-f', 's16le', '-acodec', 'pcm_s16le', '-y', raw,
+    ]);
+    if (r.status !== 0) return new Float32Array(0);
+    const buf = readFileSync(raw);
+    const out = new Float32Array(Math.floor(buf.length / 2));
+    for (let i = 0; i < out.length; i++) out[i] = buf.readInt16LE(i * 2) / 32768;
+    return out;
+  } catch {
+    return new Float32Array(0);
+  } finally {
+    rmSync(raw, { force: true });
+  }
+}
+
+/**
+ * Measure one part at the edge that will overlap.
+ *
+ * `atEnd` picks the tail (Part A) or the head (Part B) — the only regions that
+ * matter for a join, and the only ones worth decoding.
+ */
+function measurePart(
+  path: string, durationSec: number, atEnd: boolean, edgeLufs: number | null, dir: string
+): PartMeasurement {
+  const win = analysisWindowSec(durationSec);
+  const start = atEnd ? Math.max(0, durationSec - win) : 0;
+  const x = decodeForAnalysis(path, start, win, dir);
+  const env = onsetEnvelope(x);
+  return {
+    durationSec,
+    edgeLufs,
+    tempo: x.length ? estimateTempo(env) : null,
+    chroma: chroma(x),
+    centroidHz: spectralCentroid(x),
+    ...(atEnd ? {} : { firstOnsetSec: firstOnsetSec(env) }),
+  };
+}
+
 async function renderSeamPreview(spec: NonNullable<MasterEvent['seam']>, bucket: string) {
   const parsedEdit = parseMasterEdit(spec.editA ?? null);
   if (!parsedEdit.ok) return { ok: false, error: parsedEdit.error };
@@ -422,6 +485,26 @@ async function renderSeamPreview(spec: NonNullable<MasterEvent['seam']>, bucket:
     const levels = regions
       ? summariseSeamLevels(read(aPath, regions.a), read(bPath, regions.b))
       : summariseSeamLevels(null, null);
+
+    // The two parts, measured against each other. This rides along with the
+    // preview rather than being its own action because the expensive half —
+    // pulling both WAVs across regions — has already been paid for here.
+    //
+    // Wrapped: a failed analysis must never cost the operator the clip they
+    // actually asked for.
+    try {
+      const mA = measurePart(aPath, partASec, true, levels.tailLufs, dir);
+      const mB = measurePart(bPath, partBSec, false, levels.headLufs, dir);
+      const comparison = comparePartsAndSuggest(mA, mB);
+      await s3.send(new PutObjectCommand({
+        Bucket: bucket,
+        Key: `${plan.previewKey}.json`,
+        Body: JSON.stringify(comparison),
+        ContentType: 'application/json',
+      }));
+    } catch (err) {
+      console.error('[master-worker] part analysis failed:', err instanceof Error ? err.message : String(err));
+    }
 
     await s3.send(new PutObjectCommand({
       Bucket: bucket,

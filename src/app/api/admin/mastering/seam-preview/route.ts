@@ -159,7 +159,11 @@ export async function GET(request: NextRequest) {
  * A miss is `null`, not a throw: "not rendered yet" is the ordinary state while
  * polling, and raising on it would make every poll look like a failure.
  */
-async function head(key: string): Promise<{ levels: ReturnType<typeof summariseSeamLevels>; levelsNote: string } | null> {
+async function head(key: string): Promise<{
+  levels: ReturnType<typeof summariseSeamLevels>;
+  levelsNote: string;
+  analysis: unknown | null;
+} | null> {
   try {
     const r = await s3().send(new HeadObjectCommand({ Bucket: TAKES_BUCKET, Key: key }));
     const num = (v: string | undefined) => {
@@ -171,7 +175,25 @@ async function head(key: string): Promise<{ levels: ReturnType<typeof summariseS
       num(r.Metadata?.['seam-tail-lufs']),
       num(r.Metadata?.['seam-head-lufs'])
     );
-    return { levels, levelsNote: describeSeamLevels(levels) };
+    return { levels, levelsNote: describeSeamLevels(levels), analysis: await readAnalysis(key) };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The two parts measured against each other, written beside the preview by the
+ * worker.
+ *
+ * A miss is null, not a throw: the analysis is an addition to the preview, and
+ * a preview rendered before this existed — or one whose analysis failed — must
+ * still play.
+ */
+async function readAnalysis(previewKey: string): Promise<unknown | null> {
+  try {
+    const r = await s3().send(new GetObjectCommand({ Bucket: TAKES_BUCKET, Key: `${previewKey}.json` }));
+    const body = await r.Body?.transformToString();
+    return body ? JSON.parse(body) : null;
   } catch {
     return null;
   }
