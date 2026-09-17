@@ -32,6 +32,13 @@ jest.mock('lucide-react', () => ({
   // The seam preview's own two. A missing entry does not fail as a missing
   // icon — React renders `undefined` and the whole component throws.
   Headphones: () => <svg data-testid="i-headphones" />,
+  // The release-pipeline status line's icons. A missing entry here does not
+  // fail as a missing icon — React renders `undefined` and the WHOLE component
+  // throws, taking every test in this file with it.
+  CircleDot: () => <svg data-testid="i-circledot" />,
+  Circle: () => <svg data-testid="i-circle" />,
+  ArrowRight: () => <svg data-testid="i-arrowright" />,
+  ExternalLink: () => <svg data-testid="i-externallink" />,
   // The vertical-clip button. A missing entry here does not fail as a missing
   // icon — React renders `undefined` and the WHOLE component throws, so every
   // test in this file goes red at once.
@@ -1640,6 +1647,32 @@ describe('rendering from the saved-masters library', () => {
     // Same readiness signal the re-open tests use — the row's own control.
     await screen.findByRole('button', { name: /Edit & re-master/i });
   }
+
+  /**
+   * The row used to require inference: an MP3 link meant it had been encoded,
+   * and whether the song had reached YouTube was not shown at all. That cost a
+   * wasted 3-minute render on a song already scheduled to premiere.
+   */
+  it('states where the song has got to, and the next thing to do', async () => {
+    await openLibrary(row({ mp3Key: null, videoKey: null }));
+    expect(await screen.findByText(/Encode the web MP3/i)).toBeInTheDocument();
+  });
+
+  it('a song already on YouTube is never told to render or upload again', async () => {
+    await openLibrary(
+      row({
+        mp3Key: 'audio/mastering/x.mp3',
+        coverKey: 'audio/mastering/c.jpg',
+        videoKey: 'audio/mastering/x-1440p.mp4',
+        shortKey: 'audio/mastering/x-short-1920.mp4',
+        youtubeVideoId: 'abc123',
+      })
+    );
+    // The remaining step is Studio-only, and the row has to say so rather than
+    // implying the release is finished.
+    expect(await screen.findByText(/Pin the comment in YouTube Studio/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Render the video/i)).not.toBeInTheDocument();
+  });
 
   it('offers the finished MP4 on a row that already has one', async () => {
     // Previously reachable only from the run that produced it.

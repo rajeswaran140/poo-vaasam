@@ -35,6 +35,7 @@ import { buildMasterReport, reportFilename, sourceInfoLine, dynamicsPreserved, s
 import { MasteringComparePlayer } from '@/components/admin/MasteringComparePlayer';
 import { MasteringPlayer } from '@/components/admin/MasteringPlayer';
 import { ShortWindowFields } from '@/components/admin/ShortWindowFields';
+import { ReleasePipelineRow } from '@/components/admin/ReleasePipelineRow';
 import { SHORT_PICK_MIN_SECONDS, SHORT_PICK_MAX_SECONDS } from '@/lib/master-short';
 import { formatTime } from '@/lib/waveform';
 import { MasteringTrimPanel } from '@/components/admin/MasteringTrimPanel';
@@ -3335,6 +3336,11 @@ export function MasteringStudio() {
                     Edit &amp; re-master
                   </button>
                 )}
+                {/* Where this song has got to, and the one thing to do next —
+                    so the state is read rather than inferred from which
+                    download links happen to be present. */}
+                <ReleasePipelineRow job={m} />
+
                 {rowRender?.id === m.id && (
                   <div className="mt-2 flex w-full flex-wrap items-center gap-2 border-t border-gray-100 pt-2 dark:border-gray-800">
                     <label
