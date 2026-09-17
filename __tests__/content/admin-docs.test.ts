@@ -328,3 +328,68 @@ describe('two-part seam doc', () => {
     expect(body).toMatch(/Never master the halves separately/i);
   });
 });
+
+/**
+ * The A–Z reference.
+ *
+ * It is the page someone reads while staring at a control they do not
+ * recognise, so two properties matter more than completeness: entries are in
+ * alphabetical order (or it is not a reference), and anything currently
+ * BROKEN says so where it will be read, rather than describing the intended
+ * behaviour as though it worked.
+ */
+describe('Mastering Tools A–Z', () => {
+  const doc = getDoc('mastering-tools-a-z');
+  const headings = (doc?.body.match(/^## (.+)$/gm) ?? []).map((h) => h.replace(/^## /, ''));
+
+  it('exists, and sits with the other mastering material', () => {
+    expect(doc).toBeTruthy();
+    expect(doc!.category).toBe(getDoc('music-lab-mastering')!.category);
+  });
+
+  it('is actually alphabetical', () => {
+    const sorted = [...headings].sort((a, b) => a.localeCompare(b, 'en'));
+    expect(headings).toEqual(sorted);
+  });
+
+  it('covers every tool in the module', () => {
+    for (const entry of [
+      'Archive', 'Bulk upload', 'Compare player (A/B/C)', 'Cover art', 'Crossfade',
+      'De-click ramp', 'Download', 'Edit — trim and fade', 'EQ', 'Join — Part A and Part B',
+      'Loudness targets', 'MP3', 'Normalization type — linear vs dynamic', 'Part analysis',
+      'Pipeline status line', 'Reference matching', 'Release check', 'Seam preview',
+      'Short — the vertical clip', 'Stuck-job detection', 'Upload to YouTube', 'Video render',
+      'Worker', 'Workspace and privacy',
+    ]) {
+      expect(headings).toContain(entry);
+    }
+  });
+
+  /**
+   * The entries that exist to stop someone "fixing" a deliberate property, or
+   * trusting a broken one. Each is a scar; none may be quietly dropped.
+   */
+  it('keeps the warnings that cost something to learn', () => {
+    const b = doc!.body;
+    expect(b).toMatch(/no .?videos\.update.? anywhere/i);         // the standing rule, structural
+    expect(b).toMatch(/composed ONCE to a PNG and looped/i);      // the 43-minute render
+    expect(b).toMatch(/Removing the animation and raising the image quality are the same change/i);
+    expect(b).toMatch(/Deploys are MANUAL/i);                     // the worker
+    expect(b).toMatch(/Never crop the artwork/i);
+    expect(b).toMatch(/master the lossless source/i);
+    expect(b).toMatch(/invalidation/i);                           // CloudFront caches survive a Deny
+  });
+
+  it('says plainly that part analysis is not to be trusted yet', () => {
+    // Describing a broken tool as though it works is how a wrong number gets
+    // acted on. This must stay until the tool is actually fixed.
+    const b = doc!.body;
+    expect(b).toMatch(/CURRENTLY UNRELIABLE/);
+    expect(b).toMatch(/81 BPM/);         // the observed wrong value
+    expect(b).toMatch(/~176/);           // and the true one
+  });
+
+  it('records that reference matching was never validated', () => {
+    expect(doc!.body).toMatch(/Never validated/i);
+  });
+});
