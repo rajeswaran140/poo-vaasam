@@ -39,6 +39,7 @@ jest.mock('lucide-react', () => ({
   Circle: () => <svg data-testid="i-circle" />,
   ArrowRight: () => <svg data-testid="i-arrowright" />,
   ExternalLink: () => <svg data-testid="i-externallink" />,
+  Check: () => <svg data-testid="i-check2" />,
   // The vertical-clip button. A missing entry here does not fail as a missing
   // icon — React renders `undefined` and the WHOLE component throws, so every
   // test in this file goes red at once.
@@ -765,6 +766,58 @@ describe('two-part assembly', () => {
       const audio = await screen.findByLabelText(/crossfade between Part A/i);
       expect(audio).toHaveAttribute('src', 'https://s3/second.mp3');
       expect(screen.queryByText('https://s3/first.mp3')).not.toBeInTheDocument();
+    });
+
+    /**
+     * The measurements ride along with the preview, because the expensive half
+     * — pulling both WAVs across regions — is already paid for by rendering it.
+     * Three of the four things they report are ones no crossfade can fix, so
+     * seeing them BEFORE tuning the crossfade is the whole point.
+     */
+    it('shows what the two parts measured, and lets the suggestion be applied', async () => {
+      await setUpSeam();
+      mockedFetch.mockResolvedValueOnce(json({ success: true, previewKey: 'audio/mastering/seam/abc.mp3', status: 'queued' }));
+      mockedFetch.mockResolvedValue(
+        json({
+          success: true, status: 'ready', url: 'https://s3/seam.mp3',
+          levelsNote: 'within 0.5 LU', levels: { mismatched: false },
+          analysis: {
+            a: { durationSec: 222, edgeLufs: -19.2, centroidHz: 327, chroma: new Array(12).fill(1 / 12),
+                 tempo: { bpm: 176.15, periodSec: 0.3406, phaseSec: 0.065, confidence: 0.8 } },
+            b: { durationSec: 224.7, edgeLufs: -18.7, centroidHz: 565, chroma: new Array(12).fill(1 / 12),
+                 tempo: { bpm: 179.07, periodSec: 0.3351, phaseSec: 0.075, confidence: 0.8 }, firstOnsetSec: 0.1 },
+            findings: [
+              { id: 'level', level: 'ok', text: 'Level 0.5 LU apart — close enough that placement decides this seam.' },
+              { id: 'tempo', level: 'warn', text: 'Tempo 1.66% apart — keep the crossfade SHORT; a longer one drifts further.' },
+            ],
+            suggestion: { partBStartSec: 0.1, overlapSec: 2.11, alternatives: [2.45], reason: 'on Part A’s beat grid, and short because the tempos differ' },
+            joinable: false,
+          },
+        })
+      );
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Hear the seam/i })); });
+
+      expect(await screen.findByText(/176\.2 BPM/)).toBeInTheDocument();
+      expect(screen.getByText(/179\.1 BPM/)).toBeInTheDocument();
+      expect(screen.getByText(/keep the crossfade SHORT/i)).toBeInTheDocument();
+
+      // Applying the suggestion writes it into the join fields.
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Use these/i })); });
+      expect((screen.getByLabelText(/Crossfade \(seconds\)/i) as HTMLInputElement).value).toBe('2.11');
+      expect((screen.getByLabelText(/Part B starts at/i) as HTMLInputElement).value).toBe('0.1');
+    });
+
+    it('still plays the clip when no analysis came back', async () => {
+      // Previews rendered before this existed, and any whose analysis failed.
+      await setUpSeam();
+      mockedFetch.mockResolvedValueOnce(json({ success: true, previewKey: 'audio/mastering/seam/abc.mp3', status: 'queued' }));
+      mockedFetch.mockResolvedValue(
+        json({ success: true, status: 'ready', url: 'https://s3/seam.mp3', levelsNote: '', levels: {} })
+      );
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Hear the seam/i })); });
+
+      expect(await screen.findByLabelText(/crossfade between Part A/i)).toBeInTheDocument();
+      expect(screen.queryByText(/Use these/i)).not.toBeInTheDocument();
     });
 
     it('reports a refusal instead of spinning', async () => {

@@ -831,12 +831,18 @@ Input #0, wav, from '/tmp/x.wav':
     expect(graph).not.toContain('loudnorm');
   });
 
+  /**
+   * ⚠️ Select the MP3 by CONTENT TYPE, not by "the first put with a Body".
+   * The analysis sidecar is written first — deliberately, because the MP3's
+   * existence is what the poll treats as readiness, so everything else has to
+   * be in place before it appears.
+   */
   it('stores an MP3 under the seam prefix, with both readings on it', async () => {
     await handler({ seam: seam() } as never);
 
     const put = s3Send.mock.calls
       .map((c) => c[0] as { input: Record<string, unknown> })
-      .find((c) => 'Body' in c.input)!;
+      .find((c) => c.input.ContentType === 'audio/mpeg')!;
     expect(String(put.input.Key)).toMatch(/^audio\/mastering\/seam\/[0-9a-f]{16}\.mp3$/);
     expect(put.input.ContentType).toBe('audio/mpeg');
     // The readings ride on the object, so the poll that asks "is it ready" also
@@ -846,6 +852,37 @@ Input #0, wav, from '/tmp/x.wav':
       'seam-head-lufs': '-14.2',
       'seam-gap-lu': '0',
     });
+  });
+
+  it('writes the part analysis BESIDE the preview, before it', async () => {
+    await handler({ seam: seam() } as never);
+
+    const puts = s3Send.mock.calls
+      .map((c) => c[0] as { input: Record<string, unknown> })
+      .filter((c) => 'Body' in c.input);
+    const json = puts.find((c) => c.input.ContentType === 'application/json');
+    const mp3 = puts.find((c) => c.input.ContentType === 'audio/mpeg');
+
+    expect(String(json?.input.Key)).toBe(`${String(mp3?.input.Key)}.json`);
+    // Order matters: the MP3 appearing is what the poll reads as "ready", so
+    // the analysis must already be there when it does.
+    expect(puts.indexOf(json!)).toBeLessThan(puts.indexOf(mp3!));
+  });
+
+  it('still stores the preview when the analysis cannot be produced', async () => {
+    // A failed measurement must never cost the operator the clip they asked for.
+    spawnSync.mockImplementation((_cmd: unknown, args: string[]) => {
+      if (args.includes('s16le')) return { status: 1, stdout: '', stderr: 'decode failed' };
+      if (args.length === 3 && args[1] === '-i') return { status: 0, stdout: '', stderr: header(120) };
+      return { status: 0, stdout: '', stderr: SUMMARY };
+    });
+    const res = await handler({ seam: seam() } as never);
+
+    expect(res).toMatchObject({ ok: true });
+    const mp3 = s3Send.mock.calls
+      .map((c) => c[0] as { input: Record<string, unknown> })
+      .find((c) => c.input.ContentType === 'audio/mpeg');
+    expect(mp3).toBeTruthy();
   });
 
   it('measures both sides of the overlap where they actually overlap', async () => {

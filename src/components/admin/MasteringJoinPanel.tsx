@@ -24,6 +24,8 @@
 
 import { useId } from 'react';
 import { Link2, Upload, Loader2, X, Headphones, AlertTriangle } from 'lucide-react';
+import { PartComparisonPanel } from '@/components/admin/PartComparisonPanel';
+import type { PartComparison } from '@/lib/part-analysis';
 import { MIN_OVERLAP_SECONDS, MAX_OVERLAP_SECONDS } from '@/lib/master-join';
 
 export interface JoinPanelProps {
@@ -54,6 +56,10 @@ export interface JoinPanelProps {
    */
   previewNote?: string | null;
   previewMismatched?: boolean;
+  /** The two parts measured against each other, once a preview has been rendered. */
+  comparison?: PartComparison | null;
+  /** Put the suggested numbers into the fields above. */
+  onApplySuggestion?: (s: { partBStartSec: number; overlapSec: number }) => void;
 }
 
 export function MasteringJoinPanel({
@@ -63,6 +69,7 @@ export function MasteringJoinPanel({
   uploading, progressPct, disabled,
   onPreviewSeam, previewBusy = false, previewUrl = null,
   previewNote = null, previewMismatched = false,
+  comparison = null, onApplySuggestion,
 }: JoinPanelProps) {
   const id = useId();
 
@@ -197,6 +204,13 @@ export function MasteringJoinPanel({
                     next lands.
                   </p>
                 </>
+              )}
+
+              {/* The measurements sit ABOVE the level note, because three of the
+                  four things they report are ones no crossfade can fix — and
+                  finding that out before tuning the crossfade is the point. */}
+              {comparison && (
+                <PartComparisonPanel comparison={comparison} onApply={onApplySuggestion} />
               )}
 
               {previewNote && (
