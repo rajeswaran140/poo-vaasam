@@ -923,6 +923,14 @@ It is also a **0.68 LU change you cannot hear** — which is the honest headline
 
 A song generated in two sections has to be **spliced before it is mastered**, and the splice has to be invisible. This is what decides whether it is.
 
+## Why there are two parts at all
+
+Suno handles short lyrics well and long lyrics badly. A long set of words therefore gets composed as **two separate generations**, which are then joined here.
+
+That is the root of every problem on this page, and it is worth saying plainly: **Part A and Part B are two independent renderings of different lyrics.** Nothing makes them share a key, a tempo, or a tonal balance. They are not two halves of one performance — they are two performances that have to be persuaded to sound like one.
+
+So the question before mastering is never "what crossfade length?" It is **"are these two close enough to join at all?"**
+
 ## The crossfade curve is already right — it is not your problem
 
 The join uses an **equal-power** crossfade (\`qsin\`), the same shape as Reaper's Equal Power and Premiere's Constant Power. Measured on the box at the midpoint of a 3-second crossfade between two steady tones:
@@ -962,6 +970,52 @@ Every preview also reports what the **two sides of the overlap** measured — Pa
 - **1.5 LU or more apart** — stop nudging. That step is heard as a different recording starting, and the answer is to match the parts before joining them.
 
 This is the one reading that tells you whether you are about to spend twenty minutes on the wrong problem.
+
+## Check all four before you touch the crossfade
+
+The seam preview reports the first. The rest take a minute and save an hour.
+
+| what | how to tell | can a crossfade fix it? |
+|---|---|---|
+| **Level** | the preview's own line: A's tail vs B's head | within 1.5 LU, yes |
+| **Key** | do the two halves sit on the same tonal centre? | **no** |
+| **Tempo** | do they run at the same BPM? | **no — and a longer crossfade makes it worse** |
+| **Timbre** | is one noticeably brighter than the other? | **no** |
+
+Only the first is a crossfade problem. If the other three are wrong the seam will read as two songs no matter what you set, because it *is* two songs.
+
+## A worked example — காணாமல் போன ஆடாக, 2026-09-17
+
+Measured before mastering:
+
+| | Part A | Part B |
+|---|---|---|
+| length | 3:42.00 | 3:44.72 |
+| integrated | -15.8 LUFS | -15.8 LUFS |
+| tail / head | -19.2 LUFS | -18.7 LUFS |
+| tempo | ~176.2 BPM | ~179.1 BPM (**1.66% faster**) |
+| tonal centre | **E** | **E♭** (a semitone below) |
+| brightness | 327 Hz centroid | 565 Hz (**73% brighter**) |
+
+Level was fine. Everything else was not, and the join was heard as two songs — correctly.
+
+**Placing the crossfade on the beat grid.** Part A's beats near its end fall every 0.3406s. With \`acrossfade=d=D\`, Part B enters at (A's length - D), so choosing D to land on one of those beats puts B's downbeat on A's grid. For a 222.00s Part A the on-grid values were 2.114s, 2.454s, 2.795s, 3.135s… **2.11s was chosen** — on the grid, and short.
+
+**Short, because the tempos differed.** Drift across the overlap is proportional to its length: at 1.66% apart, a 2.1s crossfade drifts ~35 ms (about a tenth of a beat) and a 4.8s one drifts ~80 ms (a quarter beat, an audible flam). The instinct to lengthen a crossfade to smooth a rough seam is **backwards** when the tempos disagree.
+
+**The pitch-shift experiment.** Shifting Part B up a semitone with \`rubberband\` (and scaling its tempo by 0.9837 to match A) moved its tonal centre from E♭ to E and raised the chroma correlation with A's tail from **+0.118 to +0.705**. It did *not* fix brightness — 498 Hz against A's 327 — and a semitone shift on a full mix costs some smearing. Useful as a twenty-minute check; not a substitute for the real fix.
+
+## The real fix is upstream: generate Part B against Part A
+
+Give Suno **Part A as the audio reference** when generating Part B. Key, tempo and tonal balance then carry across, and none of the four checks above has anything to find. This is the only fix that addresses all of them, and it costs one regeneration instead of an evening of nudging.
+
+Do this **before** deciding the crossfade, not after.
+
+## When the halves are genuinely different, stop
+
+If the two parts are in different keys and different tempos, the seam will read as two movements however it is joined. That is sometimes acceptable — a long song with a clear section break is a legitimate shape, and it is not worth an evening. Decide it is two movements, use the crossfade that lands on the grid, and move on.
+
+What is NOT worth doing is lengthening the crossfade repeatedly hoping the seam will smooth out. It will not, and each attempt makes the drift worse.
 
 ## Two standing rules
 
