@@ -279,6 +279,49 @@ describe('two-part seam doc', () => {
     expect(doc!.body).toMatch(/same filter graph the master will use/i);
   });
 
+  /**
+   * The root cause. Every problem on that page follows from it, and without it
+   * written down the next reader treats a key mismatch as a crossfade bug —
+   * which is how an evening gets spent on the one setting that was correct.
+   */
+  it('says WHY there are two parts, and that they are independent generations', () => {
+    const body = doc!.body;
+    expect(body).toMatch(/Suno handles short lyrics well and long lyrics badly/i);
+    expect(body).toMatch(/two independent renderings/i);
+    expect(body).toMatch(/are these two close enough to join at all/i);
+  });
+
+  it('lists what a crossfade can and cannot fix', () => {
+    const body = doc!.body;
+    // Level is the only one it can.
+    expect(body).toMatch(/within 1\.5 LU, yes/i);
+    // And the counter-intuitive one, which is the mistake worth preventing.
+    expect(body).toMatch(/a longer crossfade makes it worse/i);
+    expect(body).toMatch(/backwards.{0,40}when the tempos disagree/is);
+  });
+
+  it('keeps the worked example with its real measurements', () => {
+    const body = doc!.body;
+    expect(body).toMatch(/காணாமல் போன ஆடாக/);
+    expect(body).toMatch(/176\.2 BPM/);
+    expect(body).toMatch(/1\.66% faster/);
+    // The beat-grid method, which is the reusable part.
+    expect(body).toMatch(/2\.114s/);
+    expect(body).toMatch(/0\.3406s/);
+  });
+
+  it('names the upstream fix, which is the only one that addresses everything', () => {
+    const body = doc!.body;
+    expect(body).toMatch(/Part A as the audio reference/i);
+    expect(body).toMatch(/before.{0,30}deciding the crossfade/is);
+  });
+
+  it('gives permission to stop', () => {
+    // Two movements is a legitimate shape. Chasing it for an evening is not.
+    expect(doc!.body).toMatch(/stop/i);
+    expect(doc!.body).toMatch(/two movements/i);
+  });
+
   it('keeps the two standing rules', () => {
     const body = doc!.body;
     expect(body).toMatch(/not fade out Part A/i);
