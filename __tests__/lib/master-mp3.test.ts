@@ -170,3 +170,47 @@ describe('download filenames follow the KEY, not a hardcoded extension', () => {
     expect(sanitizeMasterFilename('Song.wav', '.mp3')).toBe('Song.mp3');
   });
 });
+
+/**
+ * The download filename must follow the KEY.
+ *
+ * This started as a hardcoded `.wav`, grew an `.mp3` special case, and kept
+ * "anything unrecognised is a WAV" as its fallback. That stayed true only
+ * while the module produced audio — once it rendered video, every MP4 came
+ * back named `.wav`: valid bytes, unusable name, and nothing about the file
+ * explaining why YouTube refused it. Raj hit exactly that trying to upload a
+ * short.
+ */
+describe('extensionFor follows the key', () => {
+  it.each([
+    ['audio/mastering/a-master-14LUFS.wav', '.wav'],
+    ['audio/mastering/a-master-14LUFS.mp3', '.mp3'],
+    ['audio/mastering/a-master-14LUFS-1440p.mp4', '.mp4'],
+    ['audio/mastering/a-master-14LUFS-short-1920.mp4', '.mp4'],
+    ['audio/mastering/seam/abc.mp3', '.mp3'],
+    ['audio/mastering/1_c_cover.png', '.png'],
+    ['audio/mastering/1_c_cover.JPG', '.jpg'],
+    // A format this module never writes stays a legacy WAV, so the fallback
+    // that every pre-naming key depends on is not quietly defeated.
+    ['audio/mastering/someone-elses.flac', '.wav'],
+  ])('%s → %s', (key, ext) => {
+    expect(extensionFor(key)).toBe(ext);
+  });
+
+  it('falls back to .wav ONLY for a key with no usable extension', () => {
+    // The legacy shape, from before outputs were named.
+    expect(extensionFor('audio/mastering/legacy-master')).toBe('.wav');
+    expect(extensionFor('audio/mastering/odd.zzz')).toBe('.wav');
+  });
+
+  it('gives every rendered output a name it can actually be uploaded under', () => {
+    // The regression, stated as the operator experiences it.
+    for (const key of [
+      'audio/mastering/x-master-14LUFS-1440p.mp4',
+      'audio/mastering/x-master-14LUFS-short-1920.mp4',
+    ]) {
+      expect(downloadFilename(key)).toMatch(/\.mp4$/);
+      expect(downloadFilename(key)).not.toMatch(/\.wav$/);
+    }
+  });
+});

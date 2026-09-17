@@ -159,16 +159,37 @@ export function downloadFilename(key: string): string {
 }
 
 /**
+ * Every extension this module actually WRITES, so the list grows with the
+ * module rather than being rediscovered one broken download at a time.
+ *
+ * Only what is really produced. A speculative entry here is worse than a
+ * missing one: it would hand back an extension for a file this module never
+ * creates, and quietly defeat the "unrecognised means a legacy WAV" fallback
+ * that every pre-naming key still depends on.
+ */
+const DOWNLOADABLE_EXTENSIONS = new Set([
+  '.wav',                           // the master, and every legacy key
+  '.mp3',                           // the web export, and the seam preview
+  '.mp4',                           // the video render and the vertical short
+  '.png', '.jpg', '.jpeg', '.webp', // covers
+]);
+
+/**
  * The extension the download should carry, taken from the STORED KEY.
  *
- * Hardcoding `.wav` was fine while the module produced only WAVs; now that it
- * also exports a 192k MP3, a fixed extension would hand the admin an MP3 named
- * `.wav` — a file most players refuse and which would be wrong the moment it
- * was uploaded anywhere. Anything unrecognised falls back to `.wav`, which is
- * what every pre-existing key is.
+ * ⚠️ THIS MUST FOLLOW THE KEY, NOT A GUESS. It began as a hardcoded `.wav`,
+ * then grew an `.mp3` special case, and kept "anything unrecognised is a WAV"
+ * as its fallback — which was true only while the module produced audio. Once
+ * it also rendered video, every MP4 came back named `.wav`: valid bytes,
+ * unusable name. YouTube refuses it, and nothing about the file says why.
+ *
+ * So the extension is now read off the key and accepted when it is one this
+ * module actually produces. The `.wav` fallback remains only for the legacy
+ * keys that genuinely have no extension.
  */
 export function extensionFor(key: string): string {
-  return /\.mp3$/i.test(key) ? '.mp3' : '.wav';
+  const ext = key.match(/\.[a-z0-9]{1,5}$/i)?.[0]?.toLowerCase() ?? '';
+  return DOWNLOADABLE_EXTENSIONS.has(ext) ? ext : '.wav';
 }
 
 /**
