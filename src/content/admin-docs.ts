@@ -2564,7 +2564,7 @@ A control to compare against: முத்தமிழின் (\`J2tc_aUNOPA\`
     slug: 'song-video-render',
     title: 'Rendering a song video for YouTube',
     category: 'Publishing',
-    updatedAt: '2026-09-16T23:00:00Z',
+    updatedAt: '2026-09-17T00:45:00Z',
     body: `# Rendering a song video for YouTube
 
 A Tamilagaval song video is one still image held over a mastered audio track. That sounds trivial and is not: four separate renders of காதல் வந்து அரும்பியதே were rejected before one was accepted, and every flag below is the scar of one of them. Read the reasons before you change the recipe.
@@ -2680,6 +2680,42 @@ Beside **Render video** on a saved master. It cuts a **1080×1920, 30-second** c
 **Why the picker exists.** The machine can only find *energy*. Picking by lyric is a judgement about meaning, and no measurement substitutes for hearing the line. The waveform + loop is how you find it by ear; the fields are how you state it.
 
 It is there because the channel posts **2-3 songs a week to YouTube** by design, and the surplus goes to Tamilagaval, Facebook Reels and Instagram rather than to a fourth upload.
+
+## Posting the short — what the portal does NOT do
+
+The portal renders the clip and stops. There is no publishing step, deliberately: no Meta API, and the uploader only ever sends the 16:9 video (\`planUpload\` reads \`videoKey\`, never \`shortKey\`). So the clip is downloaded and posted by hand.
+
+**It downloads as \`.mp4\`.** It used to come down named \`.wav\` — valid bytes, unusable name, and nothing about the file explaining why YouTube refused it. Fixed; if a download ever arrives with the wrong extension again, that is the bug and the file itself is fine (rename it).
+
+**YouTube Shorts is just a vertical upload.** There is no separate endpoint and no \`#Shorts\` tag needed — YouTube classifies it from the file. 1080×1920 under three minutes qualifies. Upload it in Studio or the Studio app like any other video.
+
+**The Short is a SEPARATE video from the song's release.** It is not attached to the full song and does not share its stats. Give it its own title and description — shorter than the song's, opening on the lyric rather than the credits.
+
+### Put the full song's link in the Short's description
+
+The single highest-value line, and easy to leave out. A viewer who just watched two minutes and wants the rest should not have to go looking:
+
+\`\`\`
+▶️ முழுப் பாடல் | Full song — Premiere: <date>, <time>
+https://youtu.be/<id>
+🔔 "Notify me" அழுத்தி நினைவூட்டல் வைத்துக்கொள்ளுங்கள்.
+\`\`\`
+
+When the full song is a **scheduled Premiere**, this is worth more than a plain link: the Premiere page is already public before it airs, so the link lets a Short viewer press **Notify me** — turning someone who found you through a clip into someone who turns up at the premiere.
+
+### Timing against a Premiere
+
+Hours apart, not simultaneous. A Short posted the evening before works as a teaser into the next morning's premiere; posted afterwards it points at something people can watch immediately. Published at the same moment, the two split the same attention.
+
+### ⚠️ The description cannot be edited from the portal — by design
+
+There is **no \`videos.update\` anywhere** in the portal or the worker. The rule "do not make changes in existing videos or thumbnails" was made structural rather than left as a convention: the thumbnail and playlist calls bind to an id captured straight from the insert response, and nothing in the codebase can modify a video that already exists.
+
+The practical consequence: **get the description right before you publish.** Afterwards it is a Studio edit. When editing on a phone, copy the whole existing description out first — replacing the entire field is safer than editing one line in a mobile text box.
+
+### Check its captions in a day or two
+
+YouTube keeps generating ASR caption tracks in the wrong language on this channel's Tamil songs — 15 were deleted on 2026-09-16, one of them on a video at 15.8k views. The tracks appear hours to days after publishing, so a check at upload time proves nothing. See **publishing-traps**.
 
 ## Replacing a video that is already up
 

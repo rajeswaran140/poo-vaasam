@@ -199,6 +199,38 @@ describe('song video render doc keeps the findings that cost four rejected rende
     expect(body).toMatch(/Facebook Reels stops at 90s/i);
   });
 
+  /**
+   * The posting half. The portal renders the clip and stops, so everything
+   * after the download is operator knowledge — and it is exactly where the
+   * value leaks: a Short published without a link to the full song sends a
+   * viewer who watched two minutes away with nowhere to go.
+   */
+  it('documents posting the short, including the link that is easy to leave out', () => {
+    const body = doc!.body;
+    expect(body).toMatch(/Shorts is just a vertical upload/i);
+    expect(body).toMatch(/SEPARATE video from the song/i);
+    expect(body).toMatch(/Notify me/);
+    // Timing against a Premiere: hours apart, never simultaneous.
+    expect(body).toMatch(/Hours apart, not simultaneous/i);
+  });
+
+  /**
+   * The constraint that cost two manual steps in one evening. It is a
+   * deliberate safety property, not an oversight, and the doc has to say so —
+   * otherwise the next person reads it as a gap and "fixes" it.
+   */
+  it('records that a description cannot be edited from the portal, and why', () => {
+    const body = doc!.body;
+    expect(body).toMatch(/no .?videos\.update.? anywhere/i);
+    expect(body).toMatch(/do not make changes in existing videos/i);
+    expect(body).toMatch(/get the description right before you publish/i);
+  });
+
+  it('warns that the short downloads as .mp4 and what it means if it does not', () => {
+    expect(doc!.body).toMatch(/downloads as .?\.mp4/i);
+    expect(doc!.body).toMatch(/rename it/i);
+  });
+
   it('documents BOTH ways to set the window, and that it is per-master', () => {
     const body = doc!.body;
     // Typing a timestamp is the one that matters for lyric-sheet work, and it
