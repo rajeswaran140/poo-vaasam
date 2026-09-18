@@ -37,6 +37,8 @@ import {
   MAX_SWEEP_UNITS,
 } from '@/lib/release-sweep';
 
+import { amplifyEnv } from './lib/amplify-env';
+
 const CHANNEL_UPLOADS_PLAYLIST = 'UUZCuphXleq-mXVYgvqh-OlQ';
 const PLAYLISTS = [SHORTS_PLAYLIST_ID, ALL_SONGS_PLAYLIST_ID, LATEST_PLAYLIST_ID];
 
@@ -52,13 +54,6 @@ const arg = (name: string, fallback: number): number => {
   return Number.isFinite(v) && v > 0 ? v : fallback;
 };
 const flag = (name: string) => process.argv.includes(name);
-
-async function amplifyEnv(): Promise<Record<string, string>> {
-  const { AmplifyClient, GetAppCommand } = await import('@aws-sdk/client-amplify');
-  const c = new AmplifyClient({ region: 'ca-central-1' });
-  const app = await c.send(new GetAppCommand({ appId: 'd3rkmepk4popv0' }));
-  return app.app?.environmentVariables ?? {};
-}
 
 async function writeToken(env: Record<string, string>): Promise<string | null> {
   const res = await fetch('https://oauth2.googleapis.com/token', {
@@ -79,7 +74,7 @@ async function main() {
   const limit = arg('--limit', 15);
   const env = await amplifyEnv();
   const key = env.YOUTUBE_API_KEY;
-  if (!key) throw new Error('YOUTUBE_API_KEY missing from the Amplify env');
+  if (!key) throw new Error('YOUTUBE_API_KEY found in neither the Amplify env nor SSM');
   const token = await writeToken(env);
 
   const since = new Date(Date.now() - days * 86_400_000).toISOString();

@@ -5,13 +5,16 @@
  */
 import { execFileSync } from 'node:child_process';
 import { rankRedistribution, topRediscovery, type RedistributionInput } from '@/lib/song-redistribution';
+import { amplifyEnv } from './lib/amplify-env';
 
 const UP = 'UUZCuphXleq-mXVYgvqh-OlQ'; // uploads playlist (channel UC… → UU…)
 const TOP = Number(process.argv.includes('--top') ? process.argv[process.argv.indexOf('--top') + 1] : 12);
 const sh = (c: string) => execFileSync('bash', ['-lc', c], { encoding: 'utf8', maxBuffer: 64e6 });
-const env = JSON.parse(sh(`aws amplify get-app --app-id d3rkmepk4popv0 --region ca-central-1 --query 'app.environmentVariables' --output json`));
 
 async function main() {
+  // Plaintext env plus the SSM SecureStrings — the key and both tokens live in
+  // SSM, so `environmentVariables` alone is a partial environment.
+  const env = await amplifyEnv();
   const tok = await (await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST', body: new URLSearchParams({
       client_id: env.YOUTUBE_OAUTH_CLIENT_ID, client_secret: env.YOUTUBE_OAUTH_CLIENT_SECRET,
