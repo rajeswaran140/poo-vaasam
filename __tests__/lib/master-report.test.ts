@@ -572,3 +572,181 @@ describe('the web MP3 leg of the verdict', () => {
     expect(summaryLines(withMp3())).toHaveLength(6);
   });
 });
+
+/**
+ * A karaoke bed.
+ *
+ * The defect this covers is not cosmetic. A bed is mastered by one gain to
+ * -1 dBTP and lands wherever its own level puts it — -20.2 LUFS on the real
+ * Sevvanthi bed — so every loudness-target rule in this file scored it as a
+ * failed -14 master: "Review before distributing", a red ✗ on the one row that
+ * decides the verdict, and a Processing block describing two loudnorm passes
+ * that never ran. The report is the evidence that travels with a file someone
+ * paid for, so it has to describe what happened to THAT file.
+ *
+ * What stays identical: the peak ceiling, the dynamics rule, and the MP3 check.
+ * A bed is held to those harder than a master is, not more loosely — the whole
+ * product is headroom for a live voice.
+ */
+describe('a karaoke bed', () => {
+  const bedJob: MasterJob = {
+    ...baseJob,
+    id: 'k1',
+    s3Key: 'audio/mastering/2_a_bed.wav',
+    masterKey: 'audio/mastering/2_a_bed-karaoke-1dBTP.wav',
+    normalizationMode: 'peak',
+    peakGainDb: 1.8,
+    // No loudnorm ran, so there is no type to report. The loudness path's
+    // rules must not read this null as "an old job we cannot vouch for".
+    normalizationType: null,
+    beforeLufs: -22.0,
+    beforeTp: -2.8,
+    beforeLra: 6.4,
+    afterLufs: -20.2,
+    afterTp: -1.0,
+    afterLra: 6.4,
+    mp3Key: 'audio/mastering/2_a_bed-karaoke-1dBTP.mp3',
+    mp3Lufs: -20.1,
+    mp3Tp: -1.05,
+  };
+
+  it('is ready, not "review before distributing", at -20.2 LUFS', () => {
+    const r = streamingReadiness(bedJob);
+    expect(r.ok).toBe(true);
+    expect(r.headline).not.toMatch(/off target|Review/i);
+    expect(r.headline).toMatch(/karaoke bed/i);
+  });
+
+  it('scores the ceiling it was given, never the loudness target it was not', () => {
+    const labels = streamingReadiness(bedJob).checks.map((c) => c.label);
+    expect(labels).not.toContain('Loudness target');
+    const peak = streamingReadiness(bedJob).checks.find((c) => /peak/i.test(c.label))!;
+    expect(peak.ok).toBe(true);
+    expect(peak.detail).toContain('-1.00 dBTP');
+  });
+
+  it('reports the gain it applied, in place of a loudnorm gain type', () => {
+    const checks = streamingReadiness(bedJob).checks;
+    expect(checks.map((c) => c.label)).not.toContain('Gain type');
+    const gain = checks.find((c) => c.label === 'Gain applied')!;
+    expect(gain.ok).toBe(true);
+    expect(gain.detail).toContain('+1.80 dB');
+  });
+
+  it('says so plainly when the gain was not recorded', () => {
+    const gain = streamingReadiness({ ...bedJob, peakGainDb: null }).checks
+      .find((c) => c.label === 'Gain applied')!;
+    expect(gain.ok).toBeNull();
+    expect(gain.detail).toMatch(/not recorded/i);
+  });
+
+  it('shows an attenuation with its sign', () => {
+    const gain = streamingReadiness({ ...bedJob, peakGainDb: -1.8 }).checks
+      .find((c) => c.label === 'Gain applied')!;
+    expect(gain.detail).toContain('-1.80 dB');
+  });
+
+  /** The ceiling is the product. A bed over it is a defect, mode regardless. */
+  it('still refuses a bed whose peak is above the ceiling', () => {
+    const r = streamingReadiness({ ...bedJob, afterTp: -0.4 });
+    expect(r.ok).toBe(false);
+    expect(r.headline).toMatch(/-0.40 dBTP/);
+  });
+
+  it('still refuses a bed that will not admit its peak', () => {
+    const r = streamingReadiness({ ...bedJob, afterTp: null });
+    expect(r.ok).toBe(false);
+    expect(r.checks.find((c) => /peak/i.test(c.label))!.ok).toBeNull();
+  });
+
+  /**
+   * Held HARDER than a master here: a bed whose range moved has lost the
+   * headroom it exists to provide, and one gain cannot move a range — so a
+   * change means something else touched the file.
+   */
+  it('still refuses a bed whose range moved', () => {
+    const r = streamingReadiness({ ...bedJob, afterLra: 5.6 });
+    expect(r.ok).toBe(false);
+    expect(r.headline).toMatch(/range/i);
+  });
+
+  it('still refuses a bed whose delivered MP3 is hot', () => {
+    const r = streamingReadiness({ ...bedJob, mp3Tp: -0.4 });
+    expect(r.ok).toBe(false);
+    expect(r.headline).toMatch(/MP3/);
+  });
+
+  describe('the saved report', () => {
+    const text = () => buildMasterReport(bedJob, 'ஈழத்து மண்ணே');
+
+    it('names it a karaoke bed, not a streaming master', () => {
+      expect(text()).toMatch(/Karaoke Bed/i);
+      expect(text()).not.toMatch(/Streaming Master/i);
+    });
+
+    it('prints the ceiling it was held to, not a loudness target', () => {
+      expect(text()).toMatch(/Ceiling:\s+-1 dBTP/);
+      expect(text()).not.toMatch(/^Target:/m);
+      // ...and no "which platforms normalise here" table, which is a claim
+      // about a release. Nobody streams a karaoke bed.
+      expect(text()).not.toContain('Streaming readiness');
+      expect(platformLandingLines(bedJob)).toEqual([]);
+    });
+
+    it('prints loudness and range with before and after, and no verdict on either', () => {
+      const t = text();
+      expect(t).toMatch(/Integrated loudness\n\s+Before:\s+-22\.0 LUFS\n\s+After:\s+-20\.2 LUFS/);
+      expect(t).toMatch(/Loudness range \(LRA\)\n\s+Before:\s+6\.4 LU\n\s+After:\s+6\.4 LU\s+← unchanged/);
+      expect(t).not.toMatch(/off target/i);
+    });
+
+    it('describes what actually ran — one gain, and no loudnorm at all', () => {
+      const t = text();
+      expect(t).toMatch(/one static gain/i);
+      expect(t).toMatch(/\+1\.80 dB/);
+      expect(t).not.toMatch(/loudnorm/i);
+      expect(t).not.toMatch(/Two-pass/i);
+    });
+
+    it('promises the 320k MP3 the buyer was sold, not the 192k web one', () => {
+      expect(text()).toMatch(/320k MP3/);
+      expect(text()).not.toMatch(/192k/);
+    });
+
+    it('hands off with the instruction that matters — do not re-level it', () => {
+      expect(text()).toMatch(/headroom/i);
+    });
+  });
+
+  describe('summary lines', () => {
+    it('lead with the bed, and never with a streaming verdict', () => {
+      const s = summaryLines(bedJob).join('\n');
+      expect(s).toMatch(/✓ Karaoke bed/);
+      expect(s).toMatch(/✓ Peak-safe/);
+      expect(s).toMatch(/✓ Gain applied/);
+      expect(s).not.toMatch(/Streaming ready/i);
+      expect(s).not.toMatch(/Gain type/);
+    });
+
+    it('close with delivery, not distribution', () => {
+      expect(summaryLines(bedJob).at(-1)).toMatch(/Ready for delivery/i);
+    });
+
+    it('flag a bed that is not ready, like any other', () => {
+      expect(summaryLines({ ...bedJob, afterTp: -0.4 }).at(-1)).toMatch(/Review/i);
+    });
+  });
+
+  /**
+   * The regression that matters most: none of the above may reach an ordinary
+   * master. `normalizationMode: null` is every job written before beds existed.
+   */
+  it.each([null, 'loudness' as const])('leaves a %s-mode master judged exactly as before', (mode) => {
+    const r = streamingReadiness({ ...baseJob, normalizationMode: mode });
+    expect(r.ok).toBe(true);
+    expect(r.headline).toBe('Streaming Ready');
+    expect(r.checks.map((c) => c.label)).toContain('Loudness target');
+    expect(r.checks.map((c) => c.label)).toContain('Gain type');
+    expect(buildMasterReport({ ...baseJob, normalizationMode: mode })).toMatch(/Two-pass loudnorm/);
+  });
+});
