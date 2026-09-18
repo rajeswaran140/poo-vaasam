@@ -913,6 +913,190 @@ It is also a **0.68 LU change you cannot hear** — which is the honest headline
 > Rule of thumb: a song already near -14 LUFS barely changes — that's correct, not a failure. The win is on the quiet and hot outliers, and right now you have none.`,
   },
   {
+    slug: 'mastering-tools-a-z',
+    title: 'Mastering Tools A–Z',
+    category: 'Music Lab',
+    updatedAt: '2026-09-17T16:00:00Z',
+    body: `# Mastering Tools A–Z
+
+Every control in **Sound Engineering** (\`/admin/mastering\`), alphabetically, so it can be looked up while you are staring at it. Each entry says what it does, why it works that way, and the trap.
+
+For the workflow rather than the parts, see **Music Lab — mastering a song** and **Joining Part A and Part B**.
+
+---
+
+## Archive
+
+On **Save**, every source WAV is copied to the \`tamilagaval-audio-masters\` bucket. **Every source** — a joined master has two, and archiving one silently protected half the song.
+
+The app can write there and **cannot delete**: an archive is write-once by IAM, not by convention.
+
+## Bulk upload
+
+\`/admin/mastering/bulk\` takes a batch of WAVs and uploads them one at a time into \`audio/mastering/\`, keeping their original names at the end of the key. **Unzip on your own machine first** — it takes files, not archives.
+
+## Compare player (A/B/C)
+
+Plays the source against its master — and a third, reference-matched track when one exists — **in lock-step, sample-aligned**, so you hear the same instant either way.
+
+Volume rides a *shared* output stage after the A/B split, so it scales both sides identically and cannot skew the comparison. Playback rate does the same.
+
+Two things it deliberately will not do: **fade between A and B** (a hard swap is what engineers use; a fade blends what should be a difference into a haze) and **touch EQ or tone** (the module's promise is loudness only — the player must not violate it either).
+
+⚠️ **Misleading when the two have different silence bounds.** A trimmed intro on one and not the other means position N in the master is position N + trim in the source. Rewind past both intros before switching.
+
+## Cover art
+
+**The video and the short want opposite shapes.**
+
+- **Video (16:9)** — a landscape cover fills the frame. A portrait one sits in the middle behind a blurred copy, which is the "masked, can't see the image" result.
+- **Short (9:16)** — a portrait cover fills the frame. Anything else gets the blurred backdrop.
+
+A cover matching its frame **fills it edge to edge**; only one that genuinely cannot gets the backdrop, and even then it spans the full width at its own ratio. If you see a small picture floating on a blur, the aspect probe has broken.
+
+**Never crop the artwork.** If a cover does not fit, the answer is a different frame, not a trimmed picture.
+
+Ask for large originals early — a 1672px cover is small for a 1440p frame, and no encoder recovers pixels that were never there.
+
+## Crossfade
+
+See **Joining Part A and Part B** for the full method. In short: it is **equal power** (\`qsin\`), measured flat across the seam where a linear fade digs a 3 dB hole. The curve is never your problem. What decides a seam is where Part B's downbeat lands, and whether the two generations share a key and a tempo at all.
+
+## De-click ramp
+
+A 10 ms ramp applied at any **cut** edge where no fade was asked for. A trim almost never lands on a zero crossing, so without it the master begins with an instantaneous jump from silence to mid-waveform — heard as a click, invisible to every loudness measurement, and it survives into the delivered file.
+
+Too short to be heard as a fade; 10 ms is below the ear's integration window.
+
+## Download
+
+Filenames follow the **stored key**, so an MP4 comes down as \`.mp4\` and a WAV as \`.wav\`. It briefly did not, and handed back valid video named \`.wav\` — if that ever returns, the file is fine and the *name* is the bug.
+
+The friendly name is the master's title plus what it is: \`(Master -14 LUFS)\`, \`(Short)\`.
+
+## Edit — trim and fade
+
+Applied in a **lossless pre-pass before the loudness passes**, never after.
+
+⚠️ **This ordering is load-bearing.** Integrated loudness is an average over the programme; normalise first and trim afterwards and the delivered file misses its target by up to ~2 LU while still being *recorded* as correct.
+
+## EQ
+
+Playback only. It shapes what you hear in the audition player and is **never written to any file**. The module does loudness, never tone.
+
+## Join — Part A and Part B
+
+Splices two generations before mastering. See its own page. The panel makes the correct order the only one available: the join runs in the same pre-pass as trim and fade, upstream of every measurement.
+
+**Never master the halves separately and join afterwards.** Two files that each read -14 LUFS do not read -14 once joined, and the overlap spikes where two full-level sources sum.
+
+## Loudness targets
+
+**-14 LUFS** (YouTube, Spotify) or **-16** (Apple), with a **-1 dBTP** true-peak ceiling.
+
+Master to -14 and YouTube leaves your track alone instead of turning it down and flattening it. Master for a controlled multi-platform source, not to chase one platform.
+
+## MP3
+
+A measured **192 kbps** export of the master — what the site serves. Master the lossless source, never the MP3: mastering a lossy file fixes its level while baking the artefacts in.
+
+The delivered MP3's true peak is measured and recorded, because it is the only file listeners actually receive.
+
+## Normalization type — linear vs dynamic
+
+The report shows which ffmpeg's \`loudnorm\` chose.
+
+- **Linear** — pure gain. Dynamics untouched. What you want.
+- **Dynamic** — it compressed to reach the target.
+
+⚠️ **A karaoke bed goes Dynamic at every target tried**, even with \`linear=true\` requested — which is why karaoke needs a peak-only mode rather than a quieter number. See the karaoke spec.
+
+Check the **LRA before and after**: unchanged means nothing touched the dynamics.
+
+## Part analysis
+
+Measures Part A against Part B — level, tempo, key, brightness — and suggests a crossfade. Rides along with **Hear the seam**.
+
+⚠️ **CURRENTLY UNRELIABLE. Do not act on its numbers.** Validated against the real files on 2026-09-17 it reported A at 81 BPM where the true figure is ~176, brightness roughly 3× the hand-measured value, and a first onset of 5.19s against a true 0.10s. Two known causes: it measures key and timbre over the whole 25-second analysis window instead of the few seconds that actually overlap, and the tempo estimate takes an octave error that its own confidence score rates 1.00. Being fixed. Until this entry says otherwise, use the method on the two-part-seam page by ear.
+
+## Pipeline status line
+
+On every row in **Saved masters**: which stages are done and the single next thing to do.
+
+It **decides nothing itself** — every "can this be done" question is delegated to the planner the buttons use, so the line and the control beside it cannot disagree.
+
+The last action points **outside** the portal and is coloured to say so. Pinning a comment and creating a Premiere cannot be done by any API, permanently.
+
+## Reference matching
+
+Matches a take toward a reference track's profile, in addition to the loudnorm master. Runs in its own container worker; the output lands beside the loudnorm master and both are kept.
+
+⚠️ **Never validated.** The blind A/B on ten tracks has been outstanding since August, so whether it beats plain loudnorm on this catalogue is genuinely unknown.
+
+## Release check
+
+After an upload, reads the metadata **back from the API** rather than trusting the upload response, and polls until processing has finished — before that, \`duration\` reports \`P0D\` and \`definition\` reports \`sd\` on a perfectly good upload.
+
+Confirms duration, \`definition: hd\`, privacy, thumbnail, tag count, description length, \`categoryId: 10\`, and both language fields as \`ta\`.
+
+⚠️ It runs **once, at upload**. Auto-caption tracks appear hours to days later, so re-check afterwards — see **Publishing traps**.
+
+## Seam preview
+
+Renders about **20 seconds around a two-part join** — 8s of A, the crossfade, 8s of B — and loops it, so a setting can be judged in seconds instead of by mastering the whole song.
+
+⚠️ **It is the master's own filter graph, trimmed.** A preview built from a different recipe would let a seam sound right here and wrong in the delivered file.
+
+Each set of settings renders its own file, so the clip playing keeps playing until the next lands, and a value you already tried returns instantly. Previews accumulate under \`audio/mastering/seam/\` and are safe to empty.
+
+## Short — the vertical clip
+
+**1080×1920**, 30 seconds to 3 minutes, cut from the same mastered WAV.
+
+Pick the window by ear (drag the waveform, **Use for the short**) or by the clock (**Start at** / **End at**). With a window set, **no loudness pass runs at all**. Leave it blank and the loudest 30 seconds are chosen — which finds the chorus, not necessarily the lines you want.
+
+Fades **0.6s in, 3s out** — different jobs. The clip is judged in its first seconds, so easing in slowly wastes them; the end has to sound like the music finished rather than the file being cut.
+
+**No lyrics are burned in.** The worker has no python3 or Pillow-with-raqm, and ffmpeg's \`drawtext\` does no complex-script shaping, so Tamil clusters break.
+
+Nothing publishes. Download it and post by hand.
+
+## Stuck-job detection
+
+A worker killed by timeout or OOM never reaches its own catch block, so the job would claim \`processing\` until its 24-hour TTL quietly deleted it — an endless spinner, then no evidence. The status poll resolves it instead, which needs no new infrastructure and catches every cause of death rather than the ones Lambda reports.
+
+## Upload to YouTube
+
+Sends the **rendered 16:9 video**, never the short. Title, description, tags and playlists are taken from the panel and sent **with the insert**.
+
+⚠️ **There is no \`videos.update\` anywhere**, deliberately — "do not make changes in existing videos or thumbnails" is enforced structurally, not by convention. Thumbnail and playlist calls bind to an id captured straight from the insert response. **Get the description right before publishing**; afterwards it is a Studio edit.
+
+An already-uploaded job is refused **before any network call**, so a second press cannot produce a duplicate.
+
+Cost: **1600 quota units** per upload, from 10,000 a day.
+
+## Video render
+
+A still cover over the mastered audio, encoded once. **1440p by default** — YouTube gives 1440p and above VP9 instead of AVC, which holds fine detail far better through the transcode.
+
+⚠️ **The frame is composed ONCE to a PNG and looped.** A filter recomputed per frame took ~43 minutes for a 5:32 song and was killed by the Lambda timeout. The encode pass carries no \`-filter_complex\` at all, and a test pins that absence.
+
+No waveform overlay: a moving overlay means every frame differs, so the picture is re-described 25 times a second out of one bitrate budget. Removing it raised video bitrate 5.2×. **Removing the animation and raising the image quality are the same change.**
+
+## Worker
+
+\`tamilagaval-master-worker\` — nodejs20, 900s, 3008 MB, with an ffmpeg layer. Does the mastering, the renders, the short, the seam preview and the YouTube upload.
+
+⚠️ **Deploys are MANUAL.** \`npm run deploy:master-worker\`. It does **not** ride along with Amplify — merging a change that touches \`worker/\` and waiting for the site to rebuild leaves the old worker running.
+
+## Workspace and privacy
+
+Everything lives under \`audio/mastering/\` in \`tamil-web-media\`. That prefix is kept off the public CDN by an explicit bucket-policy **Deny** — it is API-only, reachable by presigned link, never by URL.
+
+⚠️ CloudFront caches survive a policy change. Revoking access needs an **invalidation** as well.
+`,
+  },
+  {
     slug: 'two-part-seam',
     title: 'Joining Part A and Part B without an audible seam',
     // Sits with music-lab-mastering rather than inventing a one-doc category:
