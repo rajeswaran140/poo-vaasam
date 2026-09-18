@@ -277,7 +277,7 @@ it('400s peak together with a reference', async () => {
 
 **Interfaces — Consumes:** `planPeakGain`, `buildPeakArgs`, `karaokeMasterKeyFor`, `isKaraokeMasterKey`, `KARAOKE_MP3_BITRATE`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Select ffmpeg passes **by shape, not by index** — the suite already does this for the short, after adding a pass broke six positional assertions at once.
 
@@ -338,10 +338,10 @@ it('loudness mode still runs its two loudnorm passes', async () => {
 });
 ```
 
-- [ ] **Step 2: Run, watch it fail**
-- [ ] **Step 3: Implement.** Branch on `event.normalizationMode === 'peak'` after the edit pre-pass and before pass 1. Widen the re-master guard to `isMasterKey(k) || isKaraokeMasterKey(k)`. Leave the render/short/upload guards alone.
-- [ ] **Step 4: Run — expect PASS, including every pre-existing worker test**
-- [ ] **Step 5: Commit**
+- [x] **Step 2: Run, watch it fail**
+- [x] **Step 3: Implement.** Branch on `event.normalizationMode === 'peak'` after the edit pre-pass and before pass 1. Widen the re-master guard to `isMasterKey(k) || isKaraokeMasterKey(k)`. Leave the render/short/upload guards alone.
+- [x] **Step 4: Run — expect PASS, including every pre-existing worker test**
+- [x] **Step 5: Commit**
 
 ---
 
@@ -351,11 +351,11 @@ it('loudness mode still runs its two loudnorm passes', async () => {
 - Modify: `src/lib/master-report.ts`
 - Test: `__tests__/lib/master-report.test.ts` (extend)
 
-- [ ] **Step 1: Write the failing test** — a job with `normalizationMode: 'peak'`, `afterLufs: -20.2`, `afterTp: -1.0` must NOT produce a failing "on target" row; it produces a passing **peak-safe** row. The "gain type" row is replaced by **gain applied**, showing `peakGainDb`. Integrated loudness and LRA appear with before/after and no verdict.
-- [ ] **Step 2: Run, watch it fail**
-- [ ] **Step 3: Implement**
-- [ ] **Step 4: Run — expect PASS**
-- [ ] **Step 5: Commit**
+- [x] **Step 1: Write the failing test** — a job with `normalizationMode: 'peak'`, `afterLufs: -20.2`, `afterTp: -1.0` must NOT produce a failing "on target" row; it produces a passing **peak-safe** row. The "gain type" row is replaced by **gain applied**, showing `peakGainDb`. Integrated loudness and LRA appear with before/after and no verdict.
+- [x] **Step 2: Run, watch it fail**
+- [x] **Step 3: Implement**
+- [x] **Step 4: Run — expect PASS**
+- [x] **Step 5: Commit**
 
 ---
 
@@ -367,7 +367,7 @@ it('loudness mode still runs its two loudnorm passes', async () => {
 
 ⚠️ **The icon mock.** This suite mocks `lucide-react` with a fixed list. A new icon missing from it does not fail as a missing icon — React renders `undefined` and the whole component throws, taking every test in the file with it. Add any new icon to the mock first.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 it('offers a karaoke bed alongside -14 and -16', async () => {
@@ -393,9 +393,9 @@ it('downloads as a karaoke bed, not as a master', async () => {
 });
 ```
 
-- [ ] **Step 2: Run, watch it fail**
-- [ ] **Step 3: Implement**, including the deliverable note — *320 kbps MP3, no vocals, headroom for a live voice* — matching `KARAOKE_DELIVERABLE`.
-- [ ] **Step 4: Run — expect PASS**
+- [x] **Step 2: Run, watch it fail**
+- [x] **Step 3: Implement**, including the deliverable note — *320 kbps MP3, no vocals, headroom for a live voice* — matching `KARAOKE_DELIVERABLE`.
+- [x] **Step 4: Run — expect PASS**
 
 ⚠️ **Found during Task 4 — the release pipeline will offer a dead-end button.**
 `planRender` (`src/lib/master-video.ts:125-128`) gates on `status === 'done'`,
@@ -407,7 +407,7 @@ hazard. Fix it here, in `planRender`/`planShort`, not in the component: refuse
 `no-master` — or a new reason — when the job's `normalizationMode` is `'peak'`,
 so the pipeline line and the buttons still cannot disagree.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ---
 

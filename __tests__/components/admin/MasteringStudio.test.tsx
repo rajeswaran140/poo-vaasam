@@ -358,6 +358,7 @@ describe('dual-target workflow', () => {
     const targets = () => ({
       t14: screen.getByRole('radio', { name: /-14 LUFS/ }),
       t16: screen.getByRole('radio', { name: /-16 LUFS/ }),
+      bed: screen.getByRole('radio', { name: /Karaoke bed/i }),
     });
 
     it('is ONE tab stop, not one per option', () => {
@@ -378,10 +379,11 @@ describe('dual-target workflow', () => {
 
     it('wraps around both ends', () => {
       render(<MasteringStudio />);
-      const { t14, t16 } = targets();
-      fireEvent.keyDown(t14, { key: 'ArrowLeft' }); // wraps to the last
-      expect(t16).toHaveAttribute('aria-checked', 'true');
-      fireEvent.keyDown(t16, { key: 'ArrowRight' }); // wraps back to the first
+      const { t14, bed } = targets();
+      // The karaoke bed is the LAST entry, so it is what ArrowLeft wraps to.
+      fireEvent.keyDown(t14, { key: 'ArrowLeft' });
+      expect(bed).toHaveAttribute('aria-checked', 'true');
+      fireEvent.keyDown(bed, { key: 'ArrowRight' }); // wraps back to the first
       expect(t14).toHaveAttribute('aria-checked', 'true');
     });
 
@@ -2482,5 +2484,196 @@ describe('upload panel honesty', () => {
     await openPanelWith(inFlight({ uploadStatus: null }));
     expect(screen.queryByText(/An upload is already running/)).not.toBeInTheDocument();
     expect(screen.getByText(/Nothing here makes a video public/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * The karaoke bed — a third master target that is not a loudness target.
+ *
+ * The defect these guard against is the one the whole mode exists to remove: a
+ * bed lands at whatever its own level puts it (-20.2 LUFS on the real Sevvanthi
+ * bed), so every loudness rule on this page scored a correct file as a failed
+ * -14 master — an off-target verdict, a platform table of failures, and a
+ * Render video button the worker refuses.
+ *
+ * ⚠️ The selection is keyed by ID, not by LUFS. A bed carries -14 because the
+ * route requires a target, so a lufs-keyed comparison would treat it and a -14
+ * master as the same entry — and the "switching target re-arms" behaviour would
+ * silently leave a finished bed on screen.
+ */
+describe('the karaoke bed', () => {
+  const bedJob = (over: Record<string, unknown> = {}) =>
+    doneJob({
+      masterKey: 'audio/mastering/1_a_song-karaoke-1dBTP.wav',
+      mp3Key: 'audio/mastering/1_a_song-karaoke-1dBTP.mp3',
+      mp3Tp: -1.4,
+      normalizationMode: 'peak',
+      peakGainDb: 1.8,
+      normalizationType: null,
+      beforeLufs: -22, beforeTp: -2.8, beforeLra: 6.4,
+      afterLufs: -20.2, afterTp: -1.0, afterLra: 6.4,
+      ...over,
+    });
+
+  const pickBed = () => fireEvent.click(screen.getByRole('radio', { name: /Karaoke bed/i }));
+
+  async function runBed(job: Record<string, unknown> = bedJob()) {
+    primeHappyPath(job);
+    render(<MasteringStudio />);
+    await uploadA();
+    pickBed();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Make the karaoke bed/i })); });
+    await screen.findByText(/3 · Result/);
+  }
+
+  it('is offered alongside -14 and -16', async () => {
+    render(<MasteringStudio />);
+    const bed = screen.getByRole('radio', { name: /Karaoke bed/i });
+    expect(bed).toBeInTheDocument();
+    expect(bed).toHaveAttribute('aria-checked', 'false');
+    // Named by what the buyer receives, not by a number nobody aims at.
+    expect(bed).toHaveTextContent(/320k MP3/);
+    expect(bed).toHaveTextContent(/headroom for a live voice/i);
+  });
+
+  it('renames the run button, because it is not mastering to a target', async () => {
+    render(<MasteringStudio />);
+    await uploadA();
+    expect(screen.getByRole('button', { name: /Master to -14 LUFS/ })).toBeInTheDocument();
+    pickBed();
+    expect(screen.getByRole('button', { name: /Make the karaoke bed/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Master to/ })).not.toBeInTheDocument();
+  });
+
+  it('sends normalizationMode peak, and a loudness run still sends none', async () => {
+    primeHappyPath();
+    render(<MasteringStudio />);
+    await uploadA();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
+    const loudnessBody = JSON.parse(
+      (mockedFetch.mock.calls.find((c) => c[0] === '/api/admin/music-lab/master')![1] as { body: string }).body
+    );
+    expect(loudnessBody).not.toHaveProperty('normalizationMode');
+
+    mockedFetch.mockClear();
+    pickBed();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Make the karaoke bed/i })); });
+    const bedBody = JSON.parse(
+      (mockedFetch.mock.calls.find((c) => c[0] === '/api/admin/music-lab/master')![1] as { body: string }).body
+    );
+    expect(bedBody.normalizationMode).toBe('peak');
+  });
+
+  it('hides the reference picker, which the route refuses anyway', async () => {
+    render(<MasteringStudio />);
+    await uploadA();
+    expect(screen.getByText(/Reference:/)).toBeInTheDocument();
+    pickBed();
+    expect(screen.queryByText(/Reference:/)).not.toBeInTheDocument();
+  });
+
+  it('states what the mode does, in place of the dual-target note', async () => {
+    render(<MasteringStudio />);
+    pickBed();
+    expect(screen.getByText(/no loudness normalisation, no compression, no limiting/i)).toBeInTheDocument();
+  });
+
+  it('reports the gain it applied rather than a target it never had', async () => {
+    await runBed();
+    expect(screen.getByText(/Gain applied \+1\.80 dB/)).toBeInTheDocument();
+    expect(screen.queryByText(/worth a listen before you use it/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Landed on -14 LUFS/)).not.toBeInTheDocument();
+  });
+
+  it('omits the streaming-platform table — nobody streams a bed', async () => {
+    await runBed();
+    expect(screen.queryByText(/how it lands on each platform/i)).not.toBeInTheDocument();
+  });
+
+  /** A bed is a deliverable, not a release. */
+  it('hides the publish, render and short panels for a saved bed', async () => {
+    await runBed();
+    mockedFetch.mockResolvedValueOnce(json({ success: true, title: 'ஈழத்து மண்ணே' }));
+    mockedFetch.mockResolvedValueOnce(json({ success: true, masters: [] }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save to library/ })); });
+    await screen.findByRole('button', { name: /Saved to library/ });
+
+    expect(screen.queryByRole('button', { name: /Render video/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Make a short/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Publish/i })).not.toBeInTheDocument();
+  });
+
+  it('downloads as a karaoke bed, not as a master', async () => {
+    await runBed();
+    // The suffix only reaches the URL once the master is named — which is also
+    // the moment the filename starts claiming what the file is.
+    fireEvent.change(screen.getByLabelText(/Name this master/i), { target: { value: 'Eelathu Manne' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Download the bed/i })); });
+    const req = mockedFetch.mock.calls.find((c) => String(c[0]).includes('/mastering/download'))!;
+    const url = decodeURIComponent(String(req[0]));
+    expect(url).toContain('(Karaoke bed -1 dBTP)');
+    expect(url).not.toContain('LUFS');
+  });
+
+  /**
+   * The re-arm, which is why the radio is keyed by id. A bed and a -14 master
+   * share `target: -14`, so a lufs comparison would judge them the same entry
+   * and leave a finished bed's result panel — verdict, downloads and all — on
+   * screen while the Studio was armed to produce a streaming master.
+   */
+  it('clears a finished bed when -14 is chosen, despite the shared target', async () => {
+    await runBed();
+    expect(screen.getByText(/3 · Result/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: /-14 LUFS/ }));
+    await waitFor(() => expect(screen.queryByText(/3 · Result/)).not.toBeInTheDocument());
+  });
+
+  /**
+   * The remount, which is why `targetId` is persisted rather than derived from
+   * the stored `target`. A bed and a -14 master share -14, so without it the
+   * Studio would come back armed for a streaming master and show a red
+   * off-target verdict on a correct bed — the Task 5 defect through another
+   * door.
+   */
+  it('comes back as a bed after a remount, not as a -14 master', async () => {
+    sessionStorage.setItem('mastering-studio-job', JSON.stringify({
+      jobId: 'job-1', sourceKey: 'audio/mastering/1_a_song.wav',
+      name: 'song.wav', size: 1024, target: -14, targetId: 'karaoke',
+    }));
+    primeHappyPath(bedJob());
+    render(<MasteringStudio />);
+    await waitFor(() =>
+      expect(screen.getByRole('radio', { name: /Karaoke bed/i })).toHaveAttribute('aria-checked', 'true')
+    );
+    expect(screen.getByRole('radio', { name: /-14 LUFS/ })).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('a job stored before beds existed still comes back as its loudness target', async () => {
+    sessionStorage.setItem('mastering-studio-job', JSON.stringify({
+      jobId: 'job-1', sourceKey: 'audio/mastering/1_a_song.wav',
+      name: 'song.wav', size: 1024, target: -16,
+    }));
+    primeHappyPath(doneJob({ target: -16 }));
+    render(<MasteringStudio />);
+    await waitFor(() =>
+      expect(screen.getByRole('radio', { name: /-16 LUFS/ })).toHaveAttribute('aria-checked', 'true')
+    );
+  });
+
+  /**
+   * Re-opening from the library arms the radio the job actually used. Derived
+   * from `normalizationMode`, never from `target`, which a bed shares with -14.
+   */
+  it('re-opens a saved bed with the bed selected', async () => {
+    primeHappyPath();
+    render(<MasteringStudio />);
+    mockedFetch.mockResolvedValueOnce(json({
+      success: true,
+      masters: [bedJob({ id: 'm1', title: 'ஈழத்து மண்ணே', savedAt: '2026-09-18T00:00:00.000Z' })],
+    }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Saved masters/i })); });
+    await act(async () => { fireEvent.click(await screen.findByRole('button', { name: /Edit & re-master/i })); });
+    expect(screen.getByRole('radio', { name: /Karaoke bed/i })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: /-14 LUFS/ })).toHaveAttribute('aria-checked', 'false');
   });
 });
