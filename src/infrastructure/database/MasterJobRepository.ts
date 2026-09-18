@@ -6,6 +6,7 @@
  */
 
 import { DynamoDBOperations, handleDynamoDBError } from './dynamodb-client';
+import type { NormalizationMode } from '@/lib/master-peak';
 import type { MasterJob } from '@/types/masterJob';
 import { parseMasterEdit, isNoOpEdit, type MasterEdit } from '@/lib/master-edit';
 import { parseMasterJoin, type MasterJoin } from '@/lib/master-join';
@@ -76,6 +77,8 @@ export class MasterJobRepository {
       referenceId?: string | null;
       referenceKey?: string | null;
       matchingMethod?: MasterJob['matchingMethod'];
+      /** Absent → 'loudness', which is what every pre-existing caller means. */
+      normalizationMode?: NormalizationMode;
     }
   ): Promise<MasterJob> {
     try {
@@ -121,7 +124,7 @@ export class MasterJobRepository {
         shortStartSec: null,
         shortSeconds: null,
         shortPicked: null,
-        normalizationMode: null,
+        normalizationMode: input.normalizationMode ?? null,
         peakGainDb: null,
         shortError: null,
         coverKey: null,
