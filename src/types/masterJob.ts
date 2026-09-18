@@ -6,6 +6,7 @@
  */
 
 import type { SourceInfo } from '@/lib/loudness-measure';
+import type { NormalizationMode } from '@/lib/master-peak';
 import type { MasterEdit } from '@/lib/master-edit';
 import type { MasterJoin } from '@/lib/master-join';
 
@@ -193,6 +194,17 @@ export interface MasterJob {
   shortSeconds: number | null;
   /** True when the operator chose the window; false when the loudness pass did. */
   shortPicked: boolean | null;
+  /**
+   * How this master reached its level.
+   *
+   * `null` means 'loudness' — every row written before karaoke beds existed,
+   * and every ordinary master since. Stored rather than inferred, because the
+   * worker branches on it and the report scores against it: a karaoke bed at
+   * -20 LUFS must never be judged as a failed -14 master.
+   */
+  normalizationMode: NormalizationMode | null;
+  /** The single gain applied in 'peak' mode. Null in 'loudness' mode. */
+  peakGainDb: number | null;
   shortError: string | null;
   /** The cover the video was built from, kept so a re-render is reproducible. */
   coverKey: string | null;

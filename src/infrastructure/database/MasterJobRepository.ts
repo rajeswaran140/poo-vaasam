@@ -121,6 +121,8 @@ export class MasterJobRepository {
         shortStartSec: null,
         shortSeconds: null,
         shortPicked: null,
+        normalizationMode: null,
+        peakGainDb: null,
         shortError: null,
         coverKey: null,
         error: null,
@@ -224,6 +226,15 @@ export class MasterJobRepository {
       shortStartSec: typeof item.shortStartSec === 'number' ? item.shortStartSec : null,
       shortSeconds: typeof item.shortSeconds === 'number' ? item.shortSeconds : null,
       shortPicked: typeof item.shortPicked === 'boolean' ? item.shortPicked : null,
+      // ⚠️ A stored value the code does not recognise is NOT passed through.
+      // The worker branches on this field; an unknown string would fall past
+      // its peak check and master as loudness anyway, so null — which means
+      // exactly that — is the honest answer.
+      normalizationMode:
+        item.normalizationMode === 'peak' || item.normalizationMode === 'loudness'
+          ? item.normalizationMode : null,
+      peakGainDb: typeof item.peakGainDb === 'number' && Number.isFinite(item.peakGainDb)
+        ? item.peakGainDb : null,
       shortError: typeof item.shortError === 'string' ? item.shortError : null,
       coverKey: typeof item.coverKey === 'string' ? item.coverKey : null,
       error: item.error ?? null,
