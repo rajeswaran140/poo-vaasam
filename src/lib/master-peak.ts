@@ -136,3 +136,22 @@ export function buildPeakArgs(params: { inPath: string; outPath: string; gainDb:
     '-y', params.outPath,
   ];
 }
+
+/**
+ * The measurement pass for peak mode.
+ *
+ * ⚠️ `ebur128`, NOT `loudnorm` — and that is the whole reason this function
+ * exists rather than the worker reusing the loudness path's pass 1. `loudnorm`
+ * would report the same true peak, but it would also put the filter this mode
+ * is defined by the absence of into the pipeline, where a later edit could
+ * quietly promote it from measuring to applying. The mode's guarantee is
+ * checkable exactly because the string never appears on this path.
+ *
+ * `peak=true` is REQUIRED: plain `ebur128` prints no true-peak line at all, and
+ * without one `planPeakGain` refuses every file as unreadable.
+ *
+ * Output is discarded — only the log matters, which is why this writes to null.
+ */
+export function buildPeakMeasureArgs(inPath: string): string[] {
+  return ['-hide_banner', '-nostats', '-i', inPath, '-af', 'ebur128=peak=true', '-f', 'null', '-'];
+}

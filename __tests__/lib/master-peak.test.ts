@@ -13,7 +13,7 @@
  */
 import {
   karaokeMasterKeyFor, isKaraokeMasterKey, planPeakGain, buildPeakArgs,
-  isValidNormalizationMode, peakRefusalMessage,
+  isValidNormalizationMode, peakRefusalMessage, buildPeakMeasureArgs,
   PEAK_CEILING_DBTP, MAX_PEAK_GAIN_DB, KARAOKE_MP3_BITRATE,
 } from '@/lib/master-peak';
 import { isMasterKey } from '@/lib/loudness-measure';
@@ -131,5 +131,27 @@ describe('the mode', () => {
 
   it('promises buyers the bitrate the karaoke page advertises', () => {
     expect(KARAOKE_MP3_BITRATE).toBe('320k');
+  });
+});
+
+describe('the measurement pass', () => {
+  it('measures with ebur128 and never with loudnorm', () => {
+    // The mode's guarantee is an absence, and it is checkable only because the
+    // string never appears — including on the pass that merely measures, where
+    // loudnorm would have been the obvious reuse.
+    const a = buildPeakMeasureArgs('/tmp/in.wav');
+    expect(a.join(' ')).not.toContain('loudnorm');
+    expect(a).toEqual(expect.arrayContaining(['-af', 'ebur128=peak=true']));
+  });
+
+  it('asks for the true peak, without which every file is unreadable', () => {
+    // Plain `ebur128` prints no true-peak line at all, so planPeakGain would
+    // refuse every bed as unmeasurable.
+    expect(buildPeakMeasureArgs('/tmp/in.wav')).toContain('ebur128=peak=true');
+  });
+
+  it('writes no audio — only the log matters', () => {
+    const a = buildPeakMeasureArgs('/tmp/in.wav');
+    expect(a.slice(-3)).toEqual(['-f', 'null', '-']);
   });
 });

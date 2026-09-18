@@ -1598,6 +1598,27 @@ Output #0, null, to 'pipe:':
     });
   });
 
+  /**
+   * The loudness path is UNCHANGED by peak mode.
+   *
+   * Peak mode branches inside this same handler, so the cheapest way for it to
+   * go wrong is to alter the path it was supposed to sit beside. This asserts
+   * the loudness shape as a whole: four of the five passes are loudnorm —
+   * measure, normalize, re-measure the WAV, measure the MP3 — and only the
+   * libmp3lame encode is filter-free. If peak mode ever reroutes one of them,
+   * this fails before any of the peak assertions do.
+   */
+  it('loudness mode still runs loudnorm in every pass but the encode', async () => {
+    await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14 });
+    const all = spawnSync.mock.calls.map((c) => c[1] as string[]);
+    expect(all).toHaveLength(5);
+    expect(all.filter((a) => a.join(' ').includes('loudnorm'))).toHaveLength(4);
+    expect(all.filter((a) => a.includes('libmp3lame'))).toHaveLength(1);
+    // And it must never reach for the peak path's one filter.
+    expect(all.join(' ')).not.toContain('volume=');
+    expect(patched().normalizationMode).toBeUndefined();
+  });
+
   it('clears its temp directory on success and on failure', async () => {
     await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14 });
     expect(mockRmSync).toHaveBeenCalledWith('/tmp/master-test', { recursive: true, force: true });
@@ -1605,6 +1626,301 @@ Output #0, null, to 'pipe:':
     mockRmSync.mockClear();
     logs.p2status = 1;
     await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14 });
+    expect(mockRmSync).toHaveBeenCalledWith('/tmp/master-test', { recursive: true, force: true });
+  });
+});
+/**
+ * Peak mode — the karaoke bed.
+ *
+ * The mode is defined by an ABSENCE: no loudnorm, no limiter, no compressor,
+ * anywhere on the path. Measured on the real Sevvanthi bed (2026-09-16),
+ * loudnorm reports `Dynamic` at -14, -18 and -20 alike even with `linear=true`,
+ * so there is no integrated target that leaves a bed's dynamics alone — which
+ * is why the mode exists at all rather than being "master it quieter".
+ *
+ * An absence is only testable if something asserts it, so the first test here
+ * greps every argument list this path produces. It is the test most likely to
+ * catch a future edit that reaches for the loudness path's passes because they
+ * were sitting right there — including the tempting one, reusing pass 1 to
+ * measure. That is why the measurement is `ebur128`.
+ *
+ * The three fixtures below carry DELIBERATELY DIFFERENT numbers, for the same
+ * reason PASS1/PASS3/PASS4 do above: a bed's whole claim is that it came out
+ * the way it went in, so a crossed wire between "before" and "after" would make
+ * that claim unfalsifiable exactly where it matters.
+ */
+describe('peak mode — a karaoke bed', () => {
+  const SRC_KEY = 'audio/mastering/2_a_bed.wav';
+  const BED_KEY = 'audio/mastering/2_a_bed-karaoke-1dBTP.wav';
+
+  /**
+   * The bed as built: -2.80 dBTP, so it needs +1.80 dB to reach the -1 ceiling.
+   * Carries an input header too — the peak path records the source format from
+   * this log, since there is no loudnorm pass 1 to read it from.
+   */
+  const EBU_SRC = `ffmpeg version 6.0
+Input #0, wav, from '/tmp/master-test/in.wav':
+  Duration: 00:07:04.64, bitrate: 2304 kb/s
+  Stream #0:0: Audio: pcm_s24le ([1][0][0][0] / 0x0001), 48000 Hz, stereo, s32 (24 bit), 2304 kb/s
+[Parsed_ebur128_0 @ 0x55] Summary:
+
+  Integrated loudness:
+    I:         -20.2 LUFS
+    Threshold: -30.9 LUFS
+
+  Loudness range:
+    LRA:         6.4 LU
+    Threshold:  -35.0 LUFS
+    LRA low:   -25.1 LUFS
+    LRA high:  -18.7 LUFS
+
+  True peak:
+    Peak:       -2.8 dBFS
+`;
+
+  /** The output: lifted by exactly the gain, dynamics untouched. */
+  const EBU_OUT = `[Parsed_ebur128_0 @ 0x77] Summary:
+
+  Integrated loudness:
+    I:         -18.4 LUFS
+    Threshold: -29.1 LUFS
+
+  Loudness range:
+    LRA:         6.4 LU
+    Threshold:  -33.2 LUFS
+    LRA low:   -23.3 LUFS
+    LRA high:  -16.9 LUFS
+
+  True peak:
+    Peak:       -1.0 dBFS
+`;
+
+  /** The delivered MP3, measured on the ENCODED file and on nothing else. */
+  const EBU_MP3 = `[Parsed_ebur128_0 @ 0x99] Summary:
+
+  Integrated loudness:
+    I:         -18.3 LUFS
+    Threshold: -29.0 LUFS
+
+  Loudness range:
+    LRA:         6.3 LU
+    Threshold:  -33.1 LUFS
+    LRA low:   -23.2 LUFS
+    LRA high:  -16.8 LUFS
+
+  True peak:
+    Peak:       -0.95 dBFS
+`;
+
+  /** A file 19 dB below the ceiling — a stem or a muted bounce, not a bed. */
+  const EBU_QUIET = EBU_SRC.replace('Peak:       -2.8 dBFS', 'Peak:       -20.0 dBFS');
+
+  const logs = { src: EBU_SRC, gainStatus: 0, encodeStatus: 0 };
+
+  /**
+   * Passes are told apart by SHAPE, never by index — adding one pass to the
+   * short broke six positional assertions at once, and this path is about to
+   * grow an MP3 measure that the loudness path numbers differently.
+   */
+  const dispatch = (args: string[]) => {
+    if (args.includes('libmp3lame')) return { status: logs.encodeStatus, stdout: '', stderr: '' };
+    if (args.some((a) => a.startsWith('volume='))) return { status: logs.gainStatus, stdout: '', stderr: '' };
+    if (args.some((a) => a.includes('ebur128'))) {
+      const input = args[args.indexOf('-i') + 1] ?? '';
+      if (input.includes('out.mp3')) return { status: 0, stdout: '', stderr: EBU_MP3 };
+      return input.includes('out.wav')
+        ? { status: 0, stdout: '', stderr: EBU_OUT }
+        : { status: 0, stdout: '', stderr: logs.src };
+    }
+    return { status: 0, stdout: '', stderr: logs.src };
+  };
+
+  const peak = { jobId: 'k1', s3Key: SRC_KEY, target: -14, normalizationMode: 'peak' };
+  const ffArgs = () => spawnSync.mock.calls.map((c) => c[1] as string[]);
+  const putCalls = () =>
+    s3Send.mock.calls
+      .map((c) => c[0] as { input: Record<string, unknown> })
+      .filter((c) => 'Body' in c.input);
+
+  beforeEach(() => {
+    logs.src = EBU_SRC;
+    logs.gainStatus = 0;
+    logs.encodeStatus = 0;
+    spawnSync.mockReset();
+    spawnSync.mockImplementation((_bin: string, args: string[]) => dispatch(args));
+    s3Send.mockReset();
+    s3Send.mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'Body' in cmd.input
+        ? Promise.resolve({})
+        : Promise.resolve({ Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) } })
+    );
+  });
+
+  it.each([-14, -20])('runs NO loudnorm at target %s, not even to measure', async (target) => {
+    await handler({ ...peak, target } as never);
+    expect(ffArgs().join(' ')).not.toContain('loudnorm');
+  });
+
+  it('measures first, then applies ONE gain and nothing else', async () => {
+    await handler(peak as never);
+    const all = ffArgs();
+    const gains = all.filter((a) => a.some((x) => x.startsWith('volume=')));
+    expect(gains).toHaveLength(1);
+
+    const gain = gains[0];
+    expect(gain[gain.indexOf('-af') + 1]).toMatch(/^volume=-?\d+\.\d\ddB$/);
+    // The one filter, and no companions: a limiter or compressor here would
+    // make the mode's name a lie.
+    expect(gain.join(' ')).not.toContain('alimiter');
+    expect(gain.join(' ')).not.toContain('acompressor');
+    // ...and it is written with the same format as the loudness path's pass 2,
+    // so everything downstream treats the two outputs alike.
+    expect(gain).toEqual(expect.arrayContaining(['-ar', '48000', '-c:a', 'pcm_s24le']));
+
+    // Ordering, not just presence: the gain must come FROM a measurement.
+    const measuredAt = all.findIndex((a) => a.some((x) => x.includes('ebur128')));
+    expect(measuredAt).toBeGreaterThanOrEqual(0);
+    expect(measuredAt).toBeLessThan(all.indexOf(gain));
+  });
+
+  it('applies the gain the measured peak actually calls for', async () => {
+    await handler(peak as never);
+    // -2.8 dBTP measured, -1.0 ceiling: +1.80 dB, and no rounding slop.
+    const gain = ffArgs().find((a) => a.some((x) => x.startsWith('volume=')))!;
+    expect(gain[gain.indexOf('-af') + 1]).toBe('volume=1.80dB');
+    expect(patched().peakGainDb).toBe(1.8);
+  });
+
+  it('stores the bed under its own key, never the loudness one', async () => {
+    const res = await handler(peak as never);
+    const put = putCalls().find((c) => String(c.input.Key).endsWith('.wav'))!;
+    expect(String(put.input.Key)).toBe(BED_KEY);
+    expect(String(put.input.Key)).not.toContain('LUFS');
+    expect(res).toEqual({ ok: true, masterKey: BED_KEY });
+    expect(patched().masterKey).toBe(BED_KEY);
+  });
+
+  it('encodes the MP3 at 320k, which is what buyers are promised', async () => {
+    await handler(peak as never);
+    const mp3 = ffArgs().find((a) => a.includes('libmp3lame'))!;
+    // The module default is 192k; KARAOKE_DELIVERABLE promises 320.
+    expect(mp3[mp3.indexOf('-b:a') + 1]).toBe('320k');
+    const put = putCalls().find((c) => String(c.input.Key).endsWith('.mp3'))!;
+    expect(String(put.input.Key)).toBe('audio/mastering/2_a_bed-karaoke-1dBTP.mp3');
+  });
+
+  it('records the mode, and no loudnorm verdict it has no right to', async () => {
+    await handler(peak as never);
+    const p = patched();
+    expect(p.normalizationMode).toBe('peak');
+    expect(p.status).toBe('done');
+    // No loudnorm ran, so there is no normalization type. 'linear' here would
+    // be a claim about a filter that never executed.
+    expect(p.normalizationType).toBeNull();
+  });
+
+  it('takes before from the source and after from the output, never the reverse', async () => {
+    await handler(peak as never);
+    const p = patched();
+    expect(p.beforeLufs).toBe(-20.2);
+    expect(p.beforeTp).toBe(-2.8);
+    expect(p.beforeLra).toBe(6.4);
+    expect(p.afterLufs).toBe(-18.4);
+    expect(p.afterTp).toBe(-1.0);
+    // The claim the whole mode exists to make: the range came out untouched.
+    expect(p.afterLra).toBe(6.4);
+    // Measured on the encoded MP3 and on nothing else.
+    expect(p.mp3Tp).toBe(-0.95);
+    expect(p.mp3Lufs).toBe(-18.3);
+  });
+
+  it('records the source format from the measure pass, there being no pass 1', async () => {
+    await handler(peak as never);
+    expect(patched().source).toMatchObject({ codec: 'pcm_s24le', sampleRate: 48000, channelLayout: 'stereo' });
+  });
+
+  it('refuses a bed needing an absurd boost, and stores nothing', async () => {
+    logs.src = EBU_QUIET;
+    const res = await handler(peak as never);
+    expect(res).toEqual({ ok: false });
+    expect(putCalls()).toHaveLength(0);
+    expect(patched()).toMatchObject({ status: 'error', error: { code: 'needs-too-much-gain' } });
+    // It stopped at the measurement — no gain pass, no encode.
+    expect(ffArgs().some((a) => a.some((x) => x.startsWith('volume=')))).toBe(false);
+  });
+
+  it('refuses a file whose peak cannot be read at all', async () => {
+    logs.src = 'ffmpeg version 6.0\nnothing measurable here\n';
+    const res = await handler(peak as never);
+    expect(res).toEqual({ ok: false });
+    expect(putCalls()).toHaveLength(0);
+    expect(patched()).toMatchObject({ status: 'error', error: { code: 'unreadable-peak' } });
+  });
+
+  it('fails the job rather than storing a bed the gain pass never wrote', async () => {
+    logs.gainStatus = 1;
+    const res = await handler(peak as never);
+    expect(res).toEqual({ ok: false });
+    expect(putCalls()).toHaveLength(0);
+    expect(patched()).toMatchObject({ status: 'error', error: { code: 'peak-pass' } });
+  });
+
+  it('still delivers the WAV when the MP3 encode fails', async () => {
+    logs.encodeStatus = 1;
+    const res = await handler(peak as never);
+    expect(res).toEqual({ ok: true, masterKey: BED_KEY });
+    expect(patched()).toMatchObject({ status: 'done', mp3Key: null });
+  });
+
+  /**
+   * The re-master guard must cover this path's OWN output.
+   *
+   * `isMasterKey` is deliberately not widened to match a karaoke key — it also
+   * answers "is this a valid source for a video, short or upload?", and a bed
+   * must never be eligible for those. So the guard composes the two predicates
+   * instead. See the docblock on isKaraokeMasterKey.
+   */
+  it('refuses to re-master an existing karaoke bed', async () => {
+    const res = await handler({ ...peak, s3Key: BED_KEY } as never);
+    expect(res).toEqual({ ok: false });
+    expect(spawnSync).not.toHaveBeenCalled();
+    expect(s3Send).not.toHaveBeenCalled();
+    expect(patched()).toMatchObject({ status: 'error', error: { code: 'already-mastered' } });
+  });
+
+  it('refuses a karaoke bed as Part B of a join, for the same reason', async () => {
+    const res = await handler({
+      ...peak,
+      join: { partBKey: BED_KEY, overlapSec: 2 },
+    } as never);
+    expect(res).toEqual({ ok: false });
+    expect(spawnSync).not.toHaveBeenCalled();
+    expect(patched()).toMatchObject({ status: 'error', error: { code: 'bad-join-key' } });
+  });
+
+  it('refuses reference matching, which has no meaning without a loudness target', async () => {
+    const res = await handler({
+      ...peak,
+      referenceKey: 'audio/references/a-ref.wav',
+      referenceId: 'ref1',
+      matchingMethod: 'matched',
+    } as never);
+    expect(res).toEqual({ ok: false });
+    expect(spawnSync).not.toHaveBeenCalled();
+    expect(patched()).toMatchObject({ status: 'error', error: { code: 'bad-mode' } });
+  });
+
+  it('refuses a normalization mode it does not recognise', async () => {
+    const res = await handler({ ...peak, normalizationMode: 'brickwall' } as never);
+    expect(res).toEqual({ ok: false });
+    expect(spawnSync).not.toHaveBeenCalled();
+    expect(patched()).toMatchObject({ status: 'error', error: { code: 'bad-mode' } });
+  });
+
+  it('clears its temp directory when it refuses mid-run', async () => {
+    mockRmSync.mockClear();
+    logs.src = EBU_QUIET;
+    await handler(peak as never);
     expect(mockRmSync).toHaveBeenCalledWith('/tmp/master-test', { recursive: true, force: true });
   });
 });

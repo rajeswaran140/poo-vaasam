@@ -21,6 +21,7 @@ import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import {
   parseLoudnormStats,
+  parseMeasurement,
   buildPass1Loudnorm,
   buildPass2Loudnorm,
   isValidTarget,
@@ -32,6 +33,16 @@ import {
 } from '@/lib/loudness-measure';
 import { isMasteringKey, isReferenceKey, matchedMasterKeyFor } from '@/lib/mastering-storage';
 import { buildMp3Args, mp3KeyFor } from '@/lib/master-mp3';
+import {
+  isValidNormalizationMode,
+  isKaraokeMasterKey,
+  karaokeMasterKeyFor,
+  planPeakGain,
+  peakRefusalMessage,
+  buildPeakArgs,
+  buildPeakMeasureArgs,
+  KARAOKE_MP3_BITRATE,
+} from '@/lib/master-peak';
 import {
   parseMasterEdit,
   isNoOpEdit,
@@ -158,6 +169,13 @@ async function patchAnalysis(id: string, fields: Record<string, unknown>): Promi
 
 const ff = (args: string[]) => spawnSync(FFMPEG, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 
+/**
+ * DynamoDB cannot store NaN or Infinity, and ffmpeg produces both: an absent
+ * summary line parses as NaN, and true digital silence prints `-inf`. Either
+ * would throw at write time and fail a job whose audio was fine.
+ */
+const finiteOrNull = (n: number): number | null => (Number.isFinite(n) ? n : null);
+
 interface MasterEvent {
   jobId?: string;
   s3Key?: string;
@@ -205,6 +223,15 @@ interface MasterEvent {
    * never look like a master run, and it writes no job record at all.
    */
   seam?: { partAKey?: string; partBKey?: string; editA?: unknown; join?: unknown };
+  /**
+   * How the master reaches its level. Absent or `'loudness'` is the two-pass
+   * loudnorm every job has always used; `'peak'` is one gain change to -1 dBTP
+   * and nothing else — the karaoke bed. See src/lib/master-peak.ts.
+   *
+   * Typed `unknown` deliberately: the Lambda is Event-invoked, so this is
+   * validated here rather than trusted from the route.
+   */
+  normalizationMode?: unknown;
 }
 
 /**
@@ -1295,8 +1322,30 @@ export const handler = async (event: MasterEvent) => {
     await patch(jobId, { status: 'error', error: { code: 'bad-target', message: `target must be a number in [-70, -5], got ${target}` } });
     return { ok: false };
   }
-  if (isMasterKey(s3Key)) {
+  // ⚠️ TWO predicates, not one widened predicate. `isMasterKey` also answers
+  // "is this a valid SOURCE for a video, short or upload?", and a karaoke bed
+  // must never be eligible for those — so the re-master guard composes the two
+  // instead. See the docblock on isKaraokeMasterKey.
+  if (isMasterKey(s3Key) || isKaraokeMasterKey(s3Key)) {
     await patch(jobId, { status: 'error', error: { code: 'already-mastered', message: 'that key is already a mastering output; master the original source instead' } });
+    return { ok: false };
+  }
+  // How this master reaches its level. Re-validated here for the same reason as
+  // target: the Lambda is Event-invoked, so the route's check is not the only
+  // one that can run. Absent means loudness, so every job written before the
+  // mode existed keeps its behaviour.
+  const rawMode = event?.normalizationMode;
+  if (rawMode !== undefined && rawMode !== null && !isValidNormalizationMode(rawMode)) {
+    await patch(jobId, { status: 'error', error: { code: 'bad-mode', message: `normalizationMode must be 'loudness' or 'peak'` } });
+    return { ok: false };
+  }
+  const mode = isValidNormalizationMode(rawMode) ? rawMode : 'loudness';
+  // Reference matching produces a SECOND output shaped by a reference master's
+  // loudness and tone — the opposite of leaving a bed alone. The route refuses
+  // the combination too; this is the second lock, and refusing beats silently
+  // dropping a matched output the operator asked for.
+  if (mode === 'peak' && event?.referenceKey) {
+    await patch(jobId, { status: 'error', error: { code: 'bad-mode', message: 'reference matching is not available for a peak-normalised bed' } });
     return { ok: false };
   }
   // Re-validated here for the same reason as target: the Lambda is
@@ -1318,7 +1367,7 @@ export const handler = async (event: MasterEvent) => {
     return { ok: false };
   }
   const joinSpec = parsedJoin.join;
-  if (joinSpec && (!isMasteringKey(joinSpec.partBKey) || isMasterKey(joinSpec.partBKey))) {
+  if (joinSpec && (!isMasteringKey(joinSpec.partBKey) || isMasterKey(joinSpec.partBKey) || isKaraokeMasterKey(joinSpec.partBKey))) {
     await patch(jobId, {
       status: 'error',
       error: { code: 'bad-join-key', message: 'Part B must be an un-mastered file in the mastering workspace' },
@@ -1423,6 +1472,115 @@ export const handler = async (event: MasterEvent) => {
         sourceForMastering = editedPath;
         editedDuration = durationSec === null ? null : editedDurationSec(edit, durationSec);
       }
+    }
+
+    // -----------------------------------------------------------------
+    // PEAK MODE — the karaoke bed. One gain change, and nothing else.
+    //
+    // WHY IT IS A SEPARATE PATH rather than a quieter target. Measured on the
+    // real Sevvanthi bed (2026-09-16), `loudnorm` reports `Normalization Type:
+    // Dynamic` at -14, -18 and -20 alike — even with `linear=true` requested —
+    // and misses the target by ~0.7 LU. There is no integrated target at which
+    // the passes below leave a bed's dynamics alone, and a bed with its
+    // dynamics flattened has no headroom left for the voice that sings over it.
+    //
+    // ⚠️ NO LOUDNORM ANYWHERE ON THIS PATH, not even to measure: the
+    // measurement is `ebur128`, which reports the same true peak without
+    // putting the filter this mode is defined by the absence of into the
+    // pipeline. It sits AFTER the pre-pass so a bed can still be trimmed,
+    // faded or assembled from two parts, and BEFORE pass 1 so no loudnorm
+    // pass can run ahead of it. See src/lib/master-peak.ts.
+    // -----------------------------------------------------------------
+    if (mode === 'peak') {
+      const m1 = ff(buildPeakMeasureArgs(sourceForMastering));
+      const m1Log = `${m1.stdout ?? ''}${m1.stderr ?? ''}`;
+      const before = parseMeasurement(m1Log, target).metrics;
+      // Free, and the only chance to record it: there is no loudnorm pass 1
+      // printing the input header on this path. When an edit ran, the probe of
+      // the real download wins, exactly as it does below.
+      const source = trueSource ?? parseSourceInfo(m1Log);
+
+      const gain = planPeakGain(before.truePeak);
+      if (!gain.ok) {
+        await patch(jobId, {
+          status: 'error',
+          error: { code: gain.reason, message: peakRefusalMessage(gain.reason, gain.needsDb) },
+        });
+        return { ok: false };
+      }
+
+      const pk = ff(buildPeakArgs({ inPath: sourceForMastering, outPath, gainDb: gain.gainDb }));
+      if (pk.status !== 0) {
+        await patch(jobId, { status: 'error', error: { code: 'peak-pass', message: 'the peak gain pass failed' } });
+        return { ok: false };
+      }
+
+      // Re-measure the output. The loudness path does this to prove it hit its
+      // target; here it proves the opposite — that the range came out the same
+      // number it went in as, which is the mode's entire claim.
+      const m2 = ff(buildPeakMeasureArgs(outPath));
+      const after = parseMeasurement(`${m2.stdout ?? ''}${m2.stderr ?? ''}`, target).metrics;
+
+      const bedKey = karaokeMasterKeyFor(s3Key);
+      await s3.send(new PutObjectCommand({ Bucket: bucket, Key: bedKey, Body: readFileSync(outPath), ContentType: 'audio/wav' }));
+
+      // The buyer's file. 320k, not the module's 192k default — that is what
+      // KARAOKE_DELIVERABLE promises, and the hand-made Sevvanthi MP3 already
+      // shipped at 320. Best-effort throughout, like the loudness path: the WAV
+      // is the primary deliverable and a failed encode must not fail the job.
+      let bedMp3Key: string | null = null;
+      let bedMp3Lufs: number | null = null;
+      let bedMp3Tp: number | null = null;
+      try {
+        const enc = ff(buildMp3Args(outPath, mp3Path, KARAOKE_MP3_BITRATE));
+        if (enc.status === 0) {
+          const m3 = ff(buildPeakMeasureArgs(mp3Path));
+          const encoded = parseMeasurement(`${m3.stdout ?? ''}${m3.stderr ?? ''}`, target).metrics;
+          const key = mp3KeyFor(bedKey);
+          await s3.send(new PutObjectCommand({
+            Bucket: bucket, Key: key, Body: readFileSync(mp3Path), ContentType: 'audio/mpeg',
+          }));
+          // All three commit together, after the object exists — same reason as
+          // the loudness path: numbers for a file nobody wrote are worse than
+          // no numbers.
+          bedMp3Key = key;
+          bedMp3Lufs = finiteOrNull(encoded.lufs);
+          bedMp3Tp = finiteOrNull(encoded.truePeak);
+        } else {
+          console.error('[master-worker] karaoke mp3 encode failed; the bed is unaffected');
+        }
+      } catch (mp3Err) {
+        console.error('[master-worker] karaoke mp3 export failed:', mp3Err instanceof Error ? mp3Err.message : String(mp3Err));
+        bedMp3Key = null;
+        bedMp3Lufs = null;
+        bedMp3Tp = null;
+      }
+
+      await patch(jobId, {
+        status: 'done',
+        masterKey: bedKey,
+        normalizationMode: 'peak',
+        peakGainDb: gain.gainDb,
+        beforeLufs: finiteOrNull(before.lufs),
+        beforeTp: finiteOrNull(before.truePeak),
+        beforeLra: finiteOrNull(before.lra),
+        afterLufs: finiteOrNull(after.lufs),
+        afterTp: finiteOrNull(after.truePeak),
+        afterLra: finiteOrNull(after.lra),
+        // No loudnorm ran, so there is no normalization type to report. Null is
+        // the honest answer; 'linear' would be a claim about a filter that never
+        // executed, and the report reads this field to describe what was done.
+        normalizationType: null,
+        source,
+        target,
+        edit: isNoOpEdit(edit) ? null : edit,
+        join: joinSpec,
+        editedDurationSec: editedDuration,
+        mp3Key: bedMp3Key,
+        mp3Lufs: bedMp3Lufs,
+        mp3Tp: bedMp3Tp,
+      });
+      return { ok: true, masterKey: bedKey };
     }
 
     // Pass 1 — measure for linear loudnorm.
