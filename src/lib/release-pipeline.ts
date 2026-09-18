@@ -21,6 +21,7 @@ import type { MasterJob } from '@/types/masterJob';
 import { planRender } from '@/lib/master-video';
 import { planShort } from '@/lib/master-short';
 import { planUpload } from '@/lib/youtube-upload';
+import { isPeakMaster, KARAOKE_MP3_BITRATE } from '@/lib/master-peak';
 
 export type StageId = 'master' | 'mp3' | 'video' | 'short' | 'youtube';
 
@@ -31,8 +32,21 @@ export interface Stage {
   done: boolean;
 }
 
-/** The stages in the order a song passes through them. */
+/**
+ * The stages in the order a song passes through them.
+ *
+ * A KARAOKE BED HAS TWO, not five. It is sold to one buyer, never rendered,
+ * never uploaded — so three stages it can never reach would leave every bed
+ * reading "2 of 5" forever, which is a progress bar that measures nothing. Two
+ * honest stages beat five where three are unreachable.
+ */
 export function pipelineFor(job: MasterJob): Stage[] {
+  if (isPeakMaster(job)) {
+    return [
+      { id: 'master', label: 'bed', done: Boolean(job.masterKey) },
+      { id: 'mp3', label: `mp3 ${KARAOKE_MP3_BITRATE}`, done: Boolean(job.mp3Key) },
+    ];
+  }
   return [
     { id: 'master', label: 'master', done: Boolean(job.masterKey) },
     { id: 'mp3', label: 'mp3', done: Boolean(job.mp3Key) },
@@ -48,9 +62,10 @@ export interface NextAction {
   /** Which control does it, so the line can point at something real. */
   stage: StageId | 'studio';
   /**
-   * True when the next step is NOT in this portal — pinning a comment, or
-   * converting to a Premiere. Saying so is the point: the panel must never
-   * imply a release is finished when two Studio-only steps remain.
+   * True when the next step is NOT on this panel — pinning a comment or
+   * converting to a Premiere (YouTube Studio), or creating a delivery link
+   * (Library → Delivery links). Saying so is the point: the panel must never
+   * imply a job is finished when a step it cannot perform remains.
    */
   external?: boolean;
 }
@@ -68,7 +83,34 @@ export interface NextAction {
  * release itself is done, because a clip for a song nobody can watch yet is
  * work in the wrong order.
  */
+/**
+ * The next thing for a karaoke bed, which is a different job entirely.
+ *
+ * It ends at a delivery link, not at YouTube: nothing about a bed is released.
+ * Without this the pipeline delegated to `planRender`, which now refuses a bed,
+ * and the row read "Add a cover image, then render the video" — advice that
+ * would waste an operator's time on a file that must never be rendered.
+ */
+function bedNextAction(job: MasterJob): NextAction {
+  if (job.status !== 'done' || !job.masterKey) {
+    return { label: 'Finish this karaoke bed', stage: 'master' };
+  }
+  if (!job.savedAt) {
+    return { label: 'Save this bed — unsaved jobs expire in 24 hours', stage: 'master' };
+  }
+  if (!job.mp3Key) {
+    return { label: `Encode the ${KARAOKE_MP3_BITRATE} MP3 the buyer receives`, stage: 'mp3' };
+  }
+  return {
+    label: 'Create a delivery link — Library → Delivery links',
+    stage: 'studio',
+    external: true,
+  };
+}
+
 export function nextAction(job: MasterJob): NextAction | null {
+  if (isPeakMaster(job)) return bedNextAction(job);
+
   if (job.status !== 'done' || !job.masterKey) {
     return { label: 'Finish mastering this take', stage: 'master' };
   }

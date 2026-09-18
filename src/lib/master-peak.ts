@@ -85,6 +85,23 @@ export function isKaraokeMasterKey(s3Key: string): boolean {
   return /-karaoke-1dBTP\.wav$/i.test(s3Key);
 }
 
+/**
+ * True when a job reached its level by ONE gain to the ceiling — a karaoke bed.
+ *
+ * The question every loudness rule in the module has to ask, because a bed
+ * lands wherever its own level puts it: the real Sevvanthi bed comes out at
+ * -20.2 LUFS, which scored as a failed -14 master everywhere from the report's
+ * verdict to the library's next-action line. `null` means loudness, so every
+ * job written before beds existed keeps its behaviour to the character.
+ *
+ * Structural rather than typed to `MasterJob`, so this module stays free of the
+ * job shape — it is imported by the report, both render planners and the
+ * release pipeline, and one shared predicate is what keeps them agreeing.
+ */
+export function isPeakMaster(job: { normalizationMode?: NormalizationMode | null }): boolean {
+  return job.normalizationMode === 'peak';
+}
+
 export type PeakRefusal = 'unreadable-peak' | 'needs-too-much-gain';
 
 export type PeakGainPlan =

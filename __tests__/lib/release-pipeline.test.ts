@@ -111,3 +111,63 @@ describe('the next action', () => {
     expect(a.label).not.toMatch(/Render|Upload|Encode/i);
   });
 });
+
+/**
+ * A karaoke bed is a different job, and the line has to say so.
+ *
+ * Before this, a bed took the release path: `planRender` refused it (a bed's
+ * key is not a master key), so the row read "Add a cover image, then render the
+ * video" — advice that would have sent Raj off to render a file the worker must
+ * never render. And the dots read "2 of 5" forever, three of them unreachable.
+ */
+describe('a karaoke bed', () => {
+  const bed = (over: Partial<MasterJob> = {}) =>
+    job({
+      normalizationMode: 'peak',
+      peakGainDb: 1.8,
+      masterKey: 'audio/mastering/a-karaoke-1dBTP.wav',
+      ...over,
+    });
+
+  it('has two stages, not five, because three are unreachable', () => {
+    expect(pipelineFor(bed()).map((s) => s.id)).toEqual(['master', 'mp3']);
+    expect(pipelineFor(bed()).map((s) => s.label)).toEqual(['bed', 'mp3 320k']);
+  });
+
+  it('reads as finished once its MP3 exists, rather than 2 of 5 forever', () => {
+    expect(pipelineSummary(bed())).toBe('1 of 2');
+    expect(pipelineSummary(bed({ mp3Key: 'audio/mastering/a-karaoke-1dBTP.mp3' }))).toBe('2 of 2');
+  });
+
+  it('never sends the operator to render a video', () => {
+    const labels = [
+      nextAction(bed()),
+      nextAction(bed({ mp3Key: 'x.mp3' })),
+      nextAction(bed({ savedAt: null })),
+      nextAction(bed({ status: 'processing' })),
+    ].map((a) => a!.label);
+    for (const l of labels) {
+      expect(l).not.toMatch(/video|short|YouTube/i);
+    }
+  });
+
+  it('ends at a delivery link, and says it is not on this panel', () => {
+    const a = nextAction(bed({ mp3Key: 'audio/mastering/a-karaoke-1dBTP.mp3' }))!;
+    expect(a.label).toMatch(/delivery link/i);
+    expect(a.external).toBe(true);
+  });
+
+  it('asks for the 320k MP3 the buyer receives', () => {
+    expect(nextAction(bed())!.label).toContain('320k');
+  });
+
+  it('still asks for a save first — an unsaved bed expires in 24 hours', () => {
+    expect(nextAction(bed({ savedAt: null }))!.label).toMatch(/Save this bed/);
+  });
+
+  it.each([null, 'loudness' as const])('leaves a %s-mode song on the release path', (mode) => {
+    const j = job({ normalizationMode: mode, ...FULL, shortKey: null });
+    expect(pipelineFor(j).map((s) => s.id)).toEqual(['master', 'mp3', 'video', 'short', 'youtube']);
+    expect(nextAction(j)!.label).toMatch(/vertical short/i);
+  });
+});

@@ -28,6 +28,7 @@
 import type { MasterJob } from '@/types/masterJob';
 import { isMasteringKey } from '@/lib/mastering-storage';
 import { FRAME_FILL_ASPECT_TOLERANCE } from '@/lib/master-video';
+import { isPeakMaster } from '@/lib/master-peak';
 
 /** Vertical, the only shape Reels and Shorts serve. */
 export const SHORT_WIDTH = 1080;
@@ -121,6 +122,7 @@ export function shortFadeOutFor(seconds: number): number {
 export const SHORT_FPS = 25;
 
 export type ShortRefusal =
+  | 'karaoke-bed'
   | 'not-done' | 'not-saved' | 'no-master' | 'no-cover' | 'bad-cover' | 'too-short'
   | 'bad-window' | 'window-past-end';
 
@@ -161,6 +163,10 @@ export function planShort(
   /** What the operator picked on the waveform, or typed. Omit to let it pick. */
   want?: Partial<ShortWindow> | null
 ): ShortPlan {
+  // FIRST, for the same reason as planRender: a bed is a deliverable, not a
+  // release, and it would otherwise pass every check here and offer a button
+  // the worker refuses. See src/lib/master-peak.ts.
+  if (isPeakMaster(job)) return { ok: false, reason: 'karaoke-bed' };
   if (job.status !== 'done') return { ok: false, reason: 'not-done' };
   if (!job.savedAt) return { ok: false, reason: 'not-saved' };
   if (!job.masterKey) return { ok: false, reason: 'no-master' };
@@ -213,6 +219,7 @@ function readWindow(want: Partial<ShortWindow> | null | undefined): ShortWindow 
 /** Operator-facing wording. Says what to DO wherever there is something. */
 export function shortRefusalMessage(reason: ShortRefusal): string {
   switch (reason) {
+    case 'karaoke-bed': return 'A karaoke bed is a deliverable, not a release — there is no short to cut from it.';
     case 'not-saved': return 'Save this master before making a short.';
     case 'no-master': return 'This job has no mastered WAV to cut a short from.';
     case 'no-cover': return 'Add a cover image to make a short.';

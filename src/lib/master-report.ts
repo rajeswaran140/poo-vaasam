@@ -14,25 +14,11 @@ import type { MasterJob } from '@/types/masterJob';
 import { STREAMING_TARGETS, platformLanding } from '@/lib/loudness-targets';
 import { sanitizeMasterFilename } from '@/lib/mastering-storage';
 import { mp3PeakVerdict, MP3_BITRATE } from '@/lib/master-mp3';
-import { KARAOKE_MP3_BITRATE, PEAK_CEILING_DBTP } from '@/lib/master-peak';
+import { KARAOKE_MP3_BITRATE, PEAK_CEILING_DBTP, isPeakMaster } from '@/lib/master-peak';
 
 const lufs = (v: number | null | undefined) => (typeof v === 'number' ? `${v.toFixed(1)} LUFS` : '—');
 const dbtp = (v: number | null | undefined) => (typeof v === 'number' ? `${v.toFixed(2)} dBTP` : '—');
 const lu = (v: number | null | undefined) => (typeof v === 'number' ? `${v.toFixed(1)} LU` : '—');
-
-/**
- * True when this master reached its level by ONE gain to the ceiling rather
- * than by loudnorm — a karaoke bed.
- *
- * Every loudness-target rule below has to ask, because a bed lands wherever its
- * own level puts it: the real Sevvanthi bed comes out at -20.2 LUFS, which
- * scored as a failed -14 master and printed "Review before distributing" over a
- * file that was exactly right. `null` means loudness, so every job written
- * before beds existed keeps its wording to the character.
- */
-export function isPeakMaster(job: MasterJob): boolean {
-  return job.normalizationMode === 'peak';
-}
 
 /** "+1.80 dB" / "-1.80 dB" — the sign is load-bearing; a bed can need pulling down. */
 const signedDb = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(2)} dB`;
