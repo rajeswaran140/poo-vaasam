@@ -245,12 +245,26 @@ describe('master enqueue', () => {
     expect(MockInvoke).not.toHaveBeenCalled();
   });
 
+  it('400s on a karaoke bed as Part B of a join, for the same reason', async () => {
+    const res = await masterPOST(post('/api/admin/music-lab/master', {
+      s3Key: 'audio/mastering/1700000000000_ab12cd34_take.wav',
+      join: { partBKey: 'audio/mastering/1700000000000_ab12cd34_take-karaoke-1dBTP.wav', overlapSec: 3 },
+    }));
+    expect(res.status).toBe(400);
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(MockInvoke).not.toHaveBeenCalled();
+  });
+
   it('400s on re-mastering a mastering output', async () => {
     // Both are inside the workspace, so they clear the prefix check and must be
     // caught by the re-master guard itself.
     for (const s3Key of [
       'audio/mastering/1700000000000_ab12cd34_take-master-14LUFS.wav',
       'audio/mastering/1700000000000_ab12cd34_take.mp3-master.wav',
+      // A karaoke bed. Not matched by `isMasterKey` — deliberately, since that
+      // predicate also answers "is this a valid source for a video, short or
+      // upload?" — so the guard composes the two predicates instead.
+      'audio/mastering/1700000000000_ab12cd34_take-karaoke-1dBTP.wav',
     ]) {
       expect((await masterPOST(post('/api/admin/music-lab/master', { s3Key }))).status).toBe(400);
     }
@@ -502,5 +516,90 @@ describe('short enqueue', () => {
       expect((await res.json()).error).toMatch(/past the end/i);
       expect(MockInvoke).not.toHaveBeenCalled();
     });
+  });
+});
+
+/**
+ * POST /master — the normalization mode.
+ *
+ * A karaoke bed must keep its headroom for a live voice, and loudnorm cannot
+ * deliver that at ANY target: measured on the real Sevvanthi bed it reports
+ * Dynamic at -14, -18 and -20 alike, even with linear=true requested. So the
+ * mode is a separate axis from the target, not a target value.
+ *
+ * Task 3 of docs/superpowers/plans/2026-09-18-karaoke-master-target.md.
+ */
+describe('normalization mode', () => {
+  const SOURCE = 'audio/mastering/1700000000000_ab12cd34_take.wav';
+  const enqueue = (body: Record<string, unknown>) =>
+    masterPOST(post('/api/admin/music-lab/master', { s3Key: SOURCE, target: -14, ...body }));
+  const payload = () => JSON.parse(Buffer.from(MockInvoke.mock.calls[0][0].Payload).toString());
+
+  beforeEach(() => mockCreate.mockResolvedValue({ id: 'job-1' }));
+
+  /**
+   * ⚠️ The loudness path must stay byte-identical. A field appearing in the
+   * payload for every existing caller is a change to a path that was working.
+   */
+  it('sends NO mode field when none was asked for', async () => {
+    expect((await enqueue({})).status).toBe(202);
+    expect('normalizationMode' in payload()).toBe(false);
+  });
+
+  it('sends no mode field for an explicit loudness request either', async () => {
+    expect((await enqueue({ normalizationMode: 'loudness' })).status).toBe(202);
+    expect('normalizationMode' in payload()).toBe(false);
+  });
+
+  it('carries peak through to the worker and onto the job', async () => {
+    expect((await enqueue({ normalizationMode: 'peak' })).status).toBe(202);
+    expect(payload().normalizationMode).toBe('peak');
+    expect(mockCreate.mock.calls[0][1].normalizationMode).toBe('peak');
+  });
+
+  it('400s an unknown mode, naming the two that exist', async () => {
+    const res = await enqueue({ normalizationMode: 'karaoke' });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/loudness.*peak|peak.*loudness/);
+    expect(MockInvoke).not.toHaveBeenCalled();
+  });
+
+  it('400s a mode that is not a string at all', async () => {
+    for (const bad of [1, true, {}, []]) {
+      expect((await enqueue({ normalizationMode: bad })).status).toBe(400);
+    }
+    expect(MockInvoke).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Matchering exists to move a track toward a reference's tonal and loudness
+   * profile — the one thing peak mode promises not to do. Refuse, rather than
+   * silently preferring one, because a silent preference is how someone ships a
+   * bed that was quietly reference-matched.
+   */
+  it('400s peak together with a reference, rather than preferring one', async () => {
+    const res = await enqueue({
+      normalizationMode: 'peak',
+      referenceKey: 'audio/references/test-ref-v1.wav',
+      matchingMethod: 'matched',
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/peak/i);
+    expect(MockInvoke).not.toHaveBeenCalled();
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('400s peak with matchingMethod alone, with no reference key', async () => {
+    expect((await enqueue({ normalizationMode: 'peak', matchingMethod: 'both' })).status).toBe(400);
+    expect(MockInvoke).not.toHaveBeenCalled();
+  });
+
+  it('still allows a reference when the mode is loudness', async () => {
+    const res = await enqueue({
+      normalizationMode: 'loudness',
+      referenceKey: 'audio/references/test-ref-v1.wav',
+      matchingMethod: 'matched',
+    });
+    expect(res.status).toBe(202);
   });
 });

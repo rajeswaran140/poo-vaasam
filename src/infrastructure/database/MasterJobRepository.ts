@@ -6,6 +6,7 @@
  */
 
 import { DynamoDBOperations, handleDynamoDBError } from './dynamodb-client';
+import type { NormalizationMode } from '@/lib/master-peak';
 import type { MasterJob } from '@/types/masterJob';
 import { parseMasterEdit, isNoOpEdit, type MasterEdit } from '@/lib/master-edit';
 import { parseMasterJoin, type MasterJoin } from '@/lib/master-join';
@@ -76,6 +77,8 @@ export class MasterJobRepository {
       referenceId?: string | null;
       referenceKey?: string | null;
       matchingMethod?: MasterJob['matchingMethod'];
+      /** Absent → 'loudness', which is what every pre-existing caller means. */
+      normalizationMode?: NormalizationMode;
     }
   ): Promise<MasterJob> {
     try {
@@ -121,6 +124,8 @@ export class MasterJobRepository {
         shortStartSec: null,
         shortSeconds: null,
         shortPicked: null,
+        normalizationMode: input.normalizationMode ?? null,
+        peakGainDb: null,
         shortError: null,
         coverKey: null,
         error: null,
@@ -224,6 +229,15 @@ export class MasterJobRepository {
       shortStartSec: typeof item.shortStartSec === 'number' ? item.shortStartSec : null,
       shortSeconds: typeof item.shortSeconds === 'number' ? item.shortSeconds : null,
       shortPicked: typeof item.shortPicked === 'boolean' ? item.shortPicked : null,
+      // ⚠️ A stored value the code does not recognise is NOT passed through.
+      // The worker branches on this field; an unknown string would fall past
+      // its peak check and master as loudness anyway, so null — which means
+      // exactly that — is the honest answer.
+      normalizationMode:
+        item.normalizationMode === 'peak' || item.normalizationMode === 'loudness'
+          ? item.normalizationMode : null,
+      peakGainDb: typeof item.peakGainDb === 'number' && Number.isFinite(item.peakGainDb)
+        ? item.peakGainDb : null,
       shortError: typeof item.shortError === 'string' ? item.shortError : null,
       coverKey: typeof item.coverKey === 'string' ? item.coverKey : null,
       error: item.error ?? null,

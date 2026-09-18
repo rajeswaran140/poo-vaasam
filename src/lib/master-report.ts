@@ -14,10 +14,17 @@ import type { MasterJob } from '@/types/masterJob';
 import { STREAMING_TARGETS, platformLanding } from '@/lib/loudness-targets';
 import { sanitizeMasterFilename } from '@/lib/mastering-storage';
 import { mp3PeakVerdict, MP3_BITRATE } from '@/lib/master-mp3';
+import { KARAOKE_MP3_BITRATE, PEAK_CEILING_DBTP, isPeakMaster } from '@/lib/master-peak';
 
 const lufs = (v: number | null | undefined) => (typeof v === 'number' ? `${v.toFixed(1)} LUFS` : '—');
 const dbtp = (v: number | null | undefined) => (typeof v === 'number' ? `${v.toFixed(2)} dBTP` : '—');
 const lu = (v: number | null | undefined) => (typeof v === 'number' ? `${v.toFixed(1)} LU` : '—');
+
+/** "+1.80 dB" / "-1.80 dB" — the sign is load-bearing; a bed can need pulling down. */
+const signedDb = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(2)} dB`;
+
+/** A bed's MP3 is 320k because that is what the buyer was sold. */
+const bitrateFor = (job: MasterJob) => (isPeakMaster(job) ? KARAOKE_MP3_BITRATE : MP3_BITRATE);
 
 /** mm:ss for a duration, so a 6:20 master does not read as "380s". */
 function clock(seconds: number): string {
@@ -67,6 +74,20 @@ const isPeakSafe = (job: MasterJob) => typeof job.afterTp === 'number' && job.af
  * the very same file.
  */
 function verdictLine(job: MasterJob): string {
+  if (isPeakMaster(job)) {
+    // No target to be on or off. The bed's whole claim is the ceiling and the
+    // range, so those are the two things stated — and nothing else is.
+    const peak =
+      typeof job.afterTp !== 'number'
+        ? 'true peak not reported — verify before delivery'
+        : isPeakSafe(job)
+          ? `peak-safe at ${dbtp(job.afterTp)}`
+          : `true peak ${dbtp(job.afterTp)} is above ${PEAK_CEILING_DBTP} dBTP — check the bounce`;
+    const range = dynamicsPreserved(job)
+      ? `loudness range unchanged at ${lu(job.afterLra)}`
+      : 'loudness range moved — inspect before delivery';
+    return `${peak}, ${range}.`;
+  }
   if (typeof job.afterLufs !== 'number') {
     return 'Master written, but the check measurement did not return — verify before use.';
   }
@@ -140,7 +161,7 @@ function mp3Check(job: MasterJob): ReadinessCheck | null {
     ok: v.status === 'unknown' ? null : v.status === 'ok',
     detail:
       v.status === 'unknown'
-        ? `${MP3_BITRATE} exported, not measured`
+        ? `${bitrateFor(job)} exported, not measured`
         : `${dbtp(job.mp3Tp)} (ceiling -1 dBTP)`,
   };
 }
@@ -159,6 +180,40 @@ function readinessChecks(job: MasterJob): ReadinessCheck[] {
   const measured = typeof job.afterLufs === 'number';
   const peakReported = typeof job.afterTp === 'number';
   const haveLra = typeof job.beforeLra === 'number' && typeof job.afterLra === 'number';
+  if (isPeakMaster(job)) {
+    // THREE checks, and the missing one is deliberate. There is no loudness
+    // target row because there is no loudness target: scoring a bed against one
+    // is exactly the defect this branch exists to remove, and a row reading
+    // "n/a" would keep the question alive on screen. The integrated figure is
+    // still shown — in `facts`, and with before/after in the saved report —
+    // where it informs without judging.
+    return [
+      {
+        label: 'Peak ceiling',
+        ok: peakReported ? isPeakSafe(job) : null,
+        detail: peakReported ? `${dbtp(job.afterTp)} (ceiling ${PEAK_CEILING_DBTP} dBTP)` : 'not reported',
+      },
+      {
+        label: 'Dynamics',
+        ok: haveLra ? dynamicsPreserved(job) : null,
+        detail: haveLra
+          ? `LRA ${job.beforeLra!.toFixed(1)} → ${job.afterLra!.toFixed(1)} LU`
+          : 'not recorded for this job',
+      },
+      {
+        // Replaces `Gain type`, which asks what loudnorm decided to do. Nothing
+        // decided anything here: the gain was computed from the measured peak
+        // and applied once, so the honest row is how much.
+        label: 'Gain applied',
+        ok: typeof job.peakGainDb === 'number' ? true : null,
+        detail:
+          typeof job.peakGainDb === 'number'
+            ? `${signedDb(job.peakGainDb)} — one static gain, nothing else`
+            : 'not recorded for this job',
+      },
+      ...(mp3Check(job) ? [mp3Check(job)!] : []),
+    ];
+  }
   return [
     {
       label: 'Loudness target',
@@ -193,14 +248,10 @@ function readinessChecks(job: MasterJob): ReadinessCheck[] {
   ];
 }
 
-export function streamingReadiness(job: MasterJob): Readiness {
-  const measured = typeof job.afterLufs === 'number';
-  const onTarget = isOnTarget(job);
-  const peakSafe = isPeakSafe(job);
+/** Compact glance line, shared by both modes: loudness · peak · range · format. */
+function factsLine(job: MasterJob): string {
   const dyn = dynamicsState(job);
-
-  const checks = readinessChecks(job);
-  const facts = [
+  return [
     lufs(job.afterLufs),
     dbtp(job.afterTp),
     typeof job.afterLra === 'number'
@@ -208,6 +259,72 @@ export function streamingReadiness(job: MasterJob): Readiness {
       : null,
     '24-bit/48 kHz',
   ].filter(Boolean).join(' · ');
+}
+
+/**
+ * Readiness for a karaoke bed.
+ *
+ * Same legs as a master's, minus the target it does not have — and held no more
+ * loosely for it. The peak ceiling and the loudness range are the entire
+ * product: a bed exists to leave room for a voice, so a peak over the ceiling
+ * or a range that moved is a worse defect here than on a song, not a lesser
+ * one. One static gain cannot move a range, so a moved range means something
+ * touched the file that should not have.
+ */
+function bedReadiness(job: MasterJob): Readiness {
+  const checks = readinessChecks(job);
+  const facts = factsLine(job);
+  const dyn = dynamicsState(job);
+
+  if (typeof job.afterTp !== 'number') {
+    return { ok: false, headline: 'Karaoke bed written, but its true peak was not measured', facts, checks };
+  }
+  if (!isPeakSafe(job)) {
+    return {
+      ok: false,
+      headline: `Review before delivering — true peak ${dbtp(job.afterTp)} exceeds ${PEAK_CEILING_DBTP} dBTP`,
+      facts,
+      checks,
+    };
+  }
+  if (dyn !== 'preserved') {
+    const drift =
+      typeof job.beforeLra === 'number' && typeof job.afterLra === 'number'
+        ? Math.abs(job.afterLra - job.beforeLra).toFixed(1)
+        : null;
+    return {
+      ok: false,
+      headline: drift
+        ? `Review before delivering — the loudness range moved ${drift} LU; a bed must keep its headroom`
+        : 'Loudness range not recorded — re-master to verify the bed kept its headroom',
+      facts,
+      checks,
+    };
+  }
+  if (job.mp3Key) {
+    const mp3 = mp3PeakVerdict({ mp3Tp: job.mp3Tp ?? null, wavTp: job.afterTp ?? null });
+    if (mp3.status === 'hot') {
+      return {
+        ok: false,
+        headline: `Review before delivering — the delivered MP3 peaks at ${dbtp(job.mp3Tp)}, above ${PEAK_CEILING_DBTP} dBTP`,
+        facts,
+        checks,
+      };
+    }
+  }
+  return { ok: true, headline: 'Karaoke bed ready — peak-safe, dynamics untouched', facts, checks };
+}
+
+export function streamingReadiness(job: MasterJob): Readiness {
+  if (isPeakMaster(job)) return bedReadiness(job);
+
+  const measured = typeof job.afterLufs === 'number';
+  const onTarget = isOnTarget(job);
+  const peakSafe = isPeakSafe(job);
+
+  const checks = readinessChecks(job);
+  const facts = factsLine(job);
+  const dyn = dynamicsState(job);
 
   if (!measured) {
     return { ok: false, headline: 'Loudness not confirmed — the check pass did not return', facts, checks };
@@ -295,11 +412,18 @@ export function summaryLines(job: MasterJob): string[] {
   const peakReported = typeof job.afterTp === 'number';
   const peakSafe = isPeakSafe(job);
 
-  const loud = !measured
-    ? '⚠ Loudness not confirmed — the check pass did not return; verify before use'
-    : onTarget
-      ? `✓ Streaming ready — mastered to ${job.target} LUFS`
-      : `⚠ Off target — measured ${lufs(job.afterLufs)} against ${job.target} LUFS; verify before use`;
+  // A bed has no target to be on or off, so the leading line states what it IS
+  // — the thing the buyer bought — and leaves the integrated figure to the
+  // before/after block, which reports it without scoring it.
+  const loud = isPeakMaster(job)
+    ? `✓ Karaoke bed — one static gain to ${PEAK_CEILING_DBTP} dBTP, no loudness normalisation${
+        typeof job.afterLufs === 'number' ? ` (lands at ${lufs(job.afterLufs)})` : ''
+      }`
+    : !measured
+      ? '⚠ Loudness not confirmed — the check pass did not return; verify before use'
+      : onTarget
+        ? `✓ Streaming ready — mastered to ${job.target} LUFS`
+        : `⚠ Off target — measured ${lufs(job.afterLufs)} against ${job.target} LUFS; verify before use`;
 
   const peak = !peakReported
     ? '• True peak not reported'
@@ -319,25 +443,34 @@ export function summaryLines(job: MasterJob): string[] {
   const mp3Line = !mp3
     ? null
     : mp3.status === 'ok'
-      ? `✓ Web MP3 (${MP3_BITRATE}) — true peak ${dbtp(job.mp3Tp)}${
+      ? `✓ Web MP3 (${bitrateFor(job)}) — true peak ${dbtp(job.mp3Tp)}${
           mp3.encodeDeltaDb !== null ? ` (encoding moved it ${mp3.encodeDeltaDb >= 0 ? '+' : ''}${mp3.encodeDeltaDb.toFixed(2)} dB)` : ''
         }`
       : mp3.status === 'hot'
-        ? `✗ Web MP3 (${MP3_BITRATE}) — ${mp3.message}`
-        : `• Web MP3 (${MP3_BITRATE}) exported but not measured — its peak is unverified`;
+        ? `✗ Web MP3 (${bitrateFor(job)}) — ${mp3.message}`
+        : `• Web MP3 (${bitrateFor(job)}) exported but not measured — its peak is unverified`;
 
   // Same conjunction as streamingReadiness, for the same reason: a file that
   // contradicts the screen is worse than either alone. A hot MP3 blocks; an
   // absent or unmeasured one does not (see the readiness docblock).
-  const ready =
-    measured && onTarget && peakSafe && dynamicsPreserved(job) && mp3?.status !== 'hot'
+  // A bed is delivered to one buyer, not distributed to platforms — and its
+  // readiness is decided by streamingReadiness so the screen, this file and the
+  // .txt can never disagree about the same job.
+  const ready = isPeakMaster(job)
+    ? streamingReadiness(job).ok
+      ? '✓ Ready for delivery — headroom preserved for a live voice'
+      : '⚠ Review the flags above before delivering'
+    : measured && onTarget && peakSafe && dynamicsPreserved(job) && mp3?.status !== 'hot'
       ? '✓ Ready for streaming, video editing and distribution'
       : '⚠ Review the flags above before distributing';
 
   // Gain type is what ffmpeg REPORTS it did, distinct from the LRA measurement
   // above — two independent confirmations rather than one.
-  const gain =
-    job.normalizationType === 'linear'
+  const gain = isPeakMaster(job)
+    ? typeof job.peakGainDb === 'number'
+      ? `✓ Gain applied — ${signedDb(job.peakGainDb)} (one static gain; dynamics cannot be altered)`
+      : '• Gain applied — not recorded for this job'
+    : job.normalizationType === 'linear'
       ? '✓ Gain type — linear (one static gain; dynamics cannot be altered)'
       : job.normalizationType === 'dynamic'
         ? '⚠ Gain type — DYNAMIC (ffmpeg could not apply a linear gain; range was compressed)'
@@ -434,6 +567,10 @@ export function turnaroundLabel(createdAt: string, updatedAt: string): string | 
  * measured (no honest number to compare against).
  */
 export function platformLandingLines(job: MasterJob): string[] {
+  // A karaoke bed is not released anywhere. This table answers "how will this
+  // land on Spotify", a question nobody asks about a file one buyer sings over,
+  // and every row would read as a failure against a target it never had.
+  if (isPeakMaster(job)) return [];
   if (typeof job.afterLufs !== 'number') return [];
   const rows = platformLanding(job.afterLufs).map((r) => {
     const platforms = r.platforms.join(', ');
@@ -449,15 +586,22 @@ export function platformLandingLines(job: MasterJob): string[] {
 export function buildMasterReport(job: MasterJob, title?: string): string {
   const name = title?.trim();
   const turnaround = turnaroundLabel(job.createdAt, job.updatedAt);
+  const bed = isPeakMaster(job);
   const lines = [
-    'TamilAgaval — Streaming Master',
-    '==============================',
+    ...(bed
+      ? ['TamilAgaval — Karaoke Bed', '=========================']
+      : ['TamilAgaval — Streaming Master', '==============================']),
     '',
     'Summary',
     ...summaryLines(job).map((l) => `  ${l}`),
     '',
     ...(name ? [`Title:              ${name}`] : []),
-    `Target:             ${job.target} LUFS  (${platformsForTarget(job.target)})`,
+    // A bed was held to a ceiling, not aimed at a target. Printing "Target:
+    // -14 LUFS (Spotify, YouTube)" over a file that lands at -20.2 invited
+    // exactly the wrong question about a file that was right.
+    bed
+      ? `Ceiling:            ${PEAK_CEILING_DBTP} dBTP  (karaoke bed — one gain, no loudness target)`
+      : `Target:             ${job.target} LUFS  (${platformsForTarget(job.target)})`,
     `Job ID:             ${job.id}`,
     `Mastered:           ${job.updatedAt}${turnaround ? `  (turnaround ${turnaround})` : ''}`,
     ...(sourceInfoLine(job) ? [`Source file:        ${sourceInfoLine(job)}`] : []),
@@ -465,7 +609,7 @@ export function buildMasterReport(job: MasterJob, title?: string): string {
     ...(joinLine(job) ? [`Assembly:           ${joinLine(job)}`] : []),
     // The second deliverable, named only when it exists. Its peak is measured on
     // the encoded file, not inherited from the WAV above.
-    ...(job.mp3Key ? [`Web delivery:       ${MP3_BITRATE} MP3 · true peak ${dbtp(job.mp3Tp)}`] : []),
+    ...(job.mp3Key ? [`Web delivery:       ${bitrateFor(job)} MP3 · true peak ${dbtp(job.mp3Tp)}`] : []),
     '',
     'Integrated loudness',
     `  Before:           ${lufs(job.beforeLufs)}`,
@@ -481,21 +625,43 @@ export function buildMasterReport(job: MasterJob, title?: string): string {
     `Result:             ${verdictLine(job)}`,
     ...(isPeakSafe(job) ? ['                    No clipping detected — no extra limiting needed.'] : []),
     '',
-    // Reflects what ran, not what was requested — see dynamicsLine().
-    job.normalizationType === 'dynamic'
-      ? 'Processing           Two-pass loudnorm, DYNAMIC fallback — range was compressed.'
-      : 'Processing           Two-pass loudnorm, linear correction — loudness only.',
-    '  ✓ Loudness normalised to target',
-    job.normalizationType === 'dynamic'
-      ? '  · No EQ   · No stereo widening   ⚠ Range compressed (linear gain would have clipped)'
-      : '  · No EQ   · No compression   · No stereo widening   · No limiting',
+    // Reflects what ran, not what was requested — see dynamicsLine(). The bed's
+    // version names no loudnorm because none ran: the measurement is ebur128
+    // and the only filter is one `volume=`. See src/lib/master-peak.ts.
+    ...(bed
+      ? [
+          `Processing           One static gain to ${PEAK_CEILING_DBTP} dBTP — no loudness normalisation.`,
+          typeof job.peakGainDb === 'number'
+            ? `  ✓ Gain applied: ${signedDb(job.peakGainDb)}`
+            : '  • Gain not recorded for this job',
+          '  · No EQ   · No compression   · No limiting   · No stereo widening',
+        ]
+      : [
+          job.normalizationType === 'dynamic'
+            ? 'Processing           Two-pass loudnorm, DYNAMIC fallback — range was compressed.'
+            : 'Processing           Two-pass loudnorm, linear correction — loudness only.',
+          '  ✓ Loudness normalised to target',
+          job.normalizationType === 'dynamic'
+            ? '  · No EQ   · No stereo widening   ⚠ Range compressed (linear gain would have clipped)'
+            : '  · No EQ   · No compression   · No stereo widening   · No limiting',
+        ]),
     '',
-    'Adobe hand-off',
-    '  1. Import at 48 kHz, untouched.',
-    '  2. Disable Essential Sound "Auto-Match".',
-    '  3. Disable loudness normalisation on export.',
-    '  4. Export PCM or high-bitrate AAC — no added gain.',
-    '  (any of these re-levels the audio and cancels this master.)',
+    ...(bed
+      ? [
+          'Karaoke hand-off',
+          '  1. Import at 48 kHz, untouched.',
+          '  2. Do not normalise, compress or limit — the headroom is for the voice.',
+          '  3. Export PCM or high-bitrate AAC — no added gain.',
+          '  (any of these spends the headroom this bed was built to keep.)',
+        ]
+      : [
+          'Adobe hand-off',
+          '  1. Import at 48 kHz, untouched.',
+          '  2. Disable Essential Sound "Auto-Match".',
+          '  3. Disable loudness normalisation on export.',
+          '  4. Export PCM or high-bitrate AAC — no added gain.',
+          '  (any of these re-levels the audio and cancels this master.)',
+        ]),
     '',
   ];
   return lines.join('\n');

@@ -30,6 +30,7 @@
 
 import type { MasterJob } from '@/types/masterJob';
 import { isMasteringKey } from '@/lib/mastering-storage';
+import { isPeakMaster } from '@/lib/master-peak';
 
 /** Upload heights the render offers. 1440 is the default for the codec bump. */
 export const VIDEO_HEIGHTS = [1080, 1440, 2160] as const;
@@ -98,6 +99,7 @@ export function isRenderedVideoKey(key: string): boolean {
 }
 
 export type RenderRefusal =
+  | 'karaoke-bed'
   | 'not-done'
   | 'not-saved'
   | 'no-master'
@@ -122,6 +124,13 @@ export function planRender(
   coverKey: string | null | undefined,
   height: number = DEFAULT_VIDEO_HEIGHT,
 ): RenderPlan {
+  // FIRST, and deliberately: a karaoke bed is a deliverable someone bought, not
+  // a release. It can be saved, named and downloaded like any master, so every
+  // other check here would pass — and the pipeline would offer a Render video
+  // button that the worker then refuses, because `isMasterKey` does not match a
+  // bed's key. Refusing in the planner is what keeps the pipeline's next-action
+  // line and its buttons from disagreeing. See src/lib/master-peak.ts.
+  if (isPeakMaster(job)) return { ok: false, reason: 'karaoke-bed' };
   if (job.status !== 'done') return { ok: false, reason: 'not-done' };
   if (!job.savedAt) return { ok: false, reason: 'not-saved' };
   // The master, never the MP3 — the whole point of rendering here.
@@ -139,6 +148,8 @@ export function planRender(
 /** Operator-facing wording. Says what to DO wherever there is something. */
 export function renderRefusalMessage(reason: RenderRefusal): string {
   switch (reason) {
+    case 'karaoke-bed':
+      return 'A karaoke bed is a deliverable, not a release — there is no video to render from it.';
     case 'not-saved':
       return 'Save this master before rendering its video.';
     case 'no-master':

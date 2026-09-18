@@ -94,6 +94,21 @@ describe('planShort', () => {
     expect(planShort(job({ editedDurationSec: null }), COVER).ok).toBe(true);
   });
 
+  /**
+   * Same refusal as planRender's, and for the same reason: a bed passes every
+   * other check, so without this the pipeline offers a button the worker then
+   * refuses. A bed is sold to one buyer; it is never cut for Shorts.
+   */
+  it('refuses a karaoke bed, which is a deliverable and not a release', () => {
+    expect(planShort(job({ normalizationMode: 'peak' }), COVER))
+      .toEqual({ ok: false, reason: 'karaoke-bed' });
+    expect(shortRefusalMessage('karaoke-bed')).toMatch(/deliverable, not a release/);
+  });
+
+  it.each([null, 'loudness' as const])('still cuts a short from a %s-mode master', (mode) => {
+    expect(planShort(job({ normalizationMode: mode }), COVER).ok).toBe(true);
+  });
+
   it('refuses an unsaved master, whose provenance expires in 24h', () => {
     expect(planShort(job({ savedAt: null }), COVER)).toEqual({ ok: false, reason: 'not-saved' });
   });

@@ -253,6 +253,24 @@ describe('planRender', () => {
     }
   });
 
+  /**
+   * A karaoke bed passes every other check here — it is done, saved, named and
+   * has a masterKey — so without this it would be offered a Render video button
+   * that the worker then refuses, `isMasterKey` not matching a bed's key. The
+   * refusal belongs in the planner because the release pipeline derives both
+   * its next-action line AND its buttons from it; hiding the button in JSX
+   * instead would let the two disagree.
+   */
+  it('refuses a karaoke bed, which is a deliverable and not a release', () => {
+    expect(planRender(job({ normalizationMode: 'peak' }), COVER))
+      .toEqual({ ok: false, reason: 'karaoke-bed' });
+    expect(renderRefusalMessage('karaoke-bed')).toMatch(/deliverable, not a release/);
+  });
+
+  it.each([null, 'loudness' as const])('still renders a %s-mode master', (mode) => {
+    expect(planRender(job({ normalizationMode: mode }), COVER).ok).toBe(true);
+  });
+
   it('refuses an unsaved master — a video whose provenance expires in 24h', () => {
     expect(planRender(job({ savedAt: null }), COVER)).toEqual({ ok: false, reason: 'not-saved' });
   });
@@ -292,7 +310,7 @@ describe('planRender', () => {
   });
 
   it('every refusal has actionable wording', () => {
-    for (const r of ['not-done', 'not-saved', 'no-master', 'no-cover', 'bad-cover', 'bad-height'] as const) {
+    for (const r of ['karaoke-bed', 'not-done', 'not-saved', 'no-master', 'no-cover', 'bad-cover', 'bad-height'] as const) {
       expect(renderRefusalMessage(r).length).toBeGreaterThan(10);
     }
   });

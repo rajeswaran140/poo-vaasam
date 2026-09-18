@@ -80,15 +80,56 @@ interface AnalysisResult {
   trim: { trimStartSec: number; trimEndSec: number | null } | null;
 }
 import { mp3PeakVerdict } from '@/lib/master-mp3';
+import { isPeakMaster, PEAK_CEILING_DBTP, KARAOKE_MP3_BITRATE } from '@/lib/master-peak';
 import type { MasterEdit } from '@/lib/master-edit';
 import type { MasterJob, MatchingMethod } from '@/types/masterJob';
 import { FEATURES } from '@/config/features';
 
 /** Where the platforms normalise playback. */
+/**
+ * What to master TO. Two loudness targets and one that is not a loudness
+ * target at all.
+ *
+ * ⚠️ KEYED BY `id`, NOT BY `lufs`. The karaoke bed carries -14 because the
+ * route requires a target and the job stores one, but nothing aims at it: a bed
+ * is normalised by one gain to the ceiling and lands wherever its own level
+ * puts it. That means a bed and a -14 master SHARE a loudness number, so every
+ * "which one is selected" comparison has to be by id — including the re-arm
+ * below, which would otherwise leave a finished bed on screen when the operator
+ * switched to mastering the same file for Spotify.
+ */
 const TARGETS = [
-  { lufs: -14, label: '-14 LUFS', for: 'Spotify · YouTube · Amazon · TIDAL' },
-  { lufs: -16, label: '-16 LUFS', for: 'Apple Music' },
+  { id: '-14', mode: 'loudness', lufs: -14, label: '-14 LUFS', for: 'Spotify · YouTube · Amazon · TIDAL' },
+  { id: '-16', mode: 'loudness', lufs: -16, label: '-16 LUFS', for: 'Apple Music' },
+  {
+    id: 'karaoke',
+    mode: 'peak',
+    lufs: -14,
+    label: 'Karaoke bed',
+    for: `${KARAOKE_MP3_BITRATE} MP3 · no vocals · headroom for a live voice`,
+  },
 ] as const;
+
+type TargetId = (typeof TARGETS)[number]['id'];
+
+/**
+ * How a bed's download is labelled. A bed is named by what it IS — "(Master
+ * -14 LUFS)" on a file that lands at -20.2 is how the wrong file gets sent to a
+ * buyer, or worse, uploaded as the song.
+ */
+const bedLabel = `Karaoke bed ${PEAK_CEILING_DBTP} dBTP`;
+
+/** The entry for an id, falling back to -14 so a bad stored value cannot break the page. */
+const targetById = (id: string): (typeof TARGETS)[number] =>
+  TARGETS.find((t) => t.id === id) ?? TARGETS[0];
+
+/**
+ * Which entry produced a finished job. Derived rather than stored, so a job
+ * from the library or from sessionStorage lands on the right radio without a
+ * second field that could disagree with `normalizationMode`.
+ */
+const targetIdOf = (job: { target: number; normalizationMode?: MasterJob['normalizationMode'] }): TargetId =>
+  isPeakMaster(job) ? 'karaoke' : ((String(job.target) as TargetId));
 
 type Stage = 'idle' | 'uploading' | 'ready' | 'mastering' | 'done';
 
@@ -99,6 +140,14 @@ interface StoredJob {
   name: string;
   size: number;
   target: number;
+  /**
+   * WHICH radio was chosen. Persisted alongside `target` rather than derived
+   * from it, because a karaoke bed and a -14 master share a target number: a
+   * remount mid-run would otherwise re-attach to a bed as if it were a -14
+   * master and show a red off-target verdict on a file that was exactly right.
+   * Optional so a job stored before beds existed still rehydrates.
+   */
+  targetId?: TargetId;
   /**
    * The two-part assembly, if any. Persisted because the trim degrades
    * gracefully on a remount (the panel reappears empty and the admin sees it)
@@ -282,7 +331,17 @@ export function MasteringStudio() {
   const [source, setSource] = useState<{ name: string; size: number } | null>(null);
   const [sourceKey, setSourceKey] = useState<string | null>(null);
   const [sent, setSent] = useState({ loaded: 0, total: 0 });
-  const [target, setTarget] = useState<number>(-14);
+  /**
+   * The SELECTED radio, which is the single source of truth: `target` and the
+   * normalization mode are derived from it, never stored separately. Two fields
+   * would need updating together at nine call sites, and one of them would
+   * eventually be missed.
+   */
+  const [targetId, setTargetId] = useState<TargetId>('-14');
+  const selectedTarget = targetById(targetId);
+  const target = selectedTarget.lufs;
+  /** True when the next run makes a karaoke bed rather than a streaming master. */
+  const isBed = selectedTarget.mode === 'peak';
   /** Arrow keys move focus as well as selection — the radiogroup pattern. */
   const targetRefs = useRef<Array<HTMLButtonElement | null>>([]);
   /**
@@ -529,7 +588,7 @@ export function MasteringStudio() {
     if (stored) {
       setSource({ name: stored.name, size: stored.size });
       setSourceKey(stored.sourceKey);
-      setTarget(stored.target);
+      setTargetId(stored.targetId ?? (String(stored.target) as TargetId));
       if (stored.partBKey) {
         setPartB({ key: stored.partBKey, name: stored.partBName ?? 'Part B' });
         if (typeof stored.overlapSec === 'number') setOverlapSec(stored.overlapSec);
@@ -854,6 +913,10 @@ export function MasteringStudio() {
         body: JSON.stringify({
           s3Key: sourceKey,
           target,
+          // Spread ONLY for a bed, so a loudness enqueue sends the exact body
+          // it always did — byte-identical, which is what makes "nothing
+          // changed for ordinary masters" checkable rather than asserted.
+          ...(isBed ? { normalizationMode: 'peak' as const } : {}),
           ...(edit ? { edit } : {}),
           ...(partB
             ? {
@@ -870,7 +933,12 @@ export function MasteringStudio() {
           // reference is selected; loudnorm-only enqueues stay byte-identical
           // to before. The route rejects a referenceKey without a valid
           // matchingMethod, so both fields go out together.
-          ...(FEATURES.ADMIN.MASTERING_REFERENCE_MATCHING && selectedReferenceKey
+          // ...and never for a bed: reference matching shapes a second output
+          // by another master's loudness and tone, which is the opposite of
+          // leaving a bed alone. The route refuses the combination with a 400,
+          // so sending it would only produce an error the operator cannot act
+          // on. The picker is hidden in that mode for the same reason.
+          ...(FEATURES.ADMIN.MASTERING_REFERENCE_MATCHING && selectedReferenceKey && !isBed
             ? {
                 referenceKey: selectedReferenceKey,
                 referenceId: selectedReferenceKey
@@ -884,7 +952,7 @@ export function MasteringStudio() {
       const body = await res.json();
       if (!res.ok || !body.success) throw new Error(body.error || `Could not start mastering (HTTP ${res.status}).`);
       const stored: StoredJob = {
-        jobId: body.jobId, sourceKey, name: source.name, size: source.size, target,
+        jobId: body.jobId, sourceKey, name: source.name, size: source.size, target, targetId,
         ...(partB ? { partBKey: partB.key, partBName: partB.name, overlapSec, partBStartSec } : {}),
       };
       writeStored(stored);
@@ -894,7 +962,7 @@ export function MasteringStudio() {
       setError(err instanceof Error ? err.message : String(err));
       setStage('ready');
     }
-  }, [sourceKey, source, target, edit, partB, overlapSec, partBStartSec, seedJoin, watch, selectedReferenceKey, matchingMethod]);
+  }, [sourceKey, source, target, targetId, isBed, edit, partB, overlapSec, partBStartSec, seedJoin, watch, selectedReferenceKey, matchingMethod]);
 
   /**
    * Presign + open one workspace WAV. Shared by the result panel and the saved
@@ -935,13 +1003,13 @@ export function MasteringStudio() {
 
   const download = useCallback(() => {
     if (!job?.masterKey) return;
-    void downloadKey(job.masterKey, masterName.trim(), job.target);
+    void downloadKey(job.masterKey, masterName.trim(), job.target, isPeakMaster(job) ? bedLabel : undefined);
   }, [job, masterName, downloadKey]);
 
-  /** The 192k web MP3 — what the site serves, built from the master above. */
+  /** The web MP3 — what the site serves (or, for a bed, what the buyer receives). */
   const downloadMp3 = useCallback(() => {
     if (!job?.mp3Key) return;
-    void downloadKey(job.mp3Key, masterName.trim(), job.target);
+    void downloadKey(job.mp3Key, masterName.trim(), job.target, isPeakMaster(job) ? bedLabel : undefined);
   }, [job, masterName, downloadKey]);
 
   /**
@@ -1762,7 +1830,7 @@ export function MasteringStudio() {
     // to numeric entry, which is exactly what it does after any remount.
     setSource({ name: downloadFilename(m.s3Key), size: 0 });
     setPickedFile(null);
-    setTarget(m.target);
+    setTargetId(targetIdOf(m));
     setMasterName(m.title ?? '');
     setEdit(m.edit);
     setSeedEdit(m.edit);
@@ -1809,11 +1877,18 @@ export function MasteringStudio() {
     URL.revokeObjectURL(url);
   }, [job, masterName]);
 
-  /** Selecting a different target after a run re-arms rather than dead-ending. */
-  const pickTarget = useCallback((lufsValue: number) => {
-    setTarget(lufsValue);
+  /**
+   * Selecting a different target after a run re-arms rather than dead-ending.
+   *
+   * Compared by ID, not by LUFS. A karaoke bed and a -14 master share a target
+   * number, so the old comparison would have judged them the same entry and
+   * left a finished bed's result panel on screen — verdict, downloads and all —
+   * while the Studio was armed to produce a streaming master.
+   */
+  const pickTarget = useCallback((id: TargetId) => {
+    setTargetId(id);
     setStage((s) => (s === 'done' ? 'ready' : s));
-    setJob((j) => (j && j.target !== lufsValue ? null : j));
+    setJob((j) => (j && targetIdOf(j) !== id ? null : j));
   }, []);
 
   // Verdict. Tolerance is the repo's 1 LU (loudness-targets), not a hair-fine
@@ -1827,6 +1902,12 @@ export function MasteringStudio() {
       : statusFor(job.afterLufs - job.target) === 'ok'
         ? 'on-target'
         : 'off-target';
+  /**
+   * The FINISHED job's mode, which is not always the armed one: the operator
+   * can switch the radio while a result is on screen. Everything the result
+   * panel says has to follow the job, not the selection.
+   */
+  const isBedJob = job ? isPeakMaster(job) : false;
   const readiness = job ? streamingReadiness(job) : { ok: false, headline: '', facts: '', checks: [] };
   const movedLu =
     typeof job?.beforeLufs === 'number' && typeof job?.afterLufs === 'number'
@@ -1995,35 +2076,37 @@ export function MasteringStudio() {
           2 · Target &amp; master
         </h2>
 
-        <div role="radiogroup" aria-label="Streaming loudness target" className="flex flex-wrap gap-2">
+        {/* "Master target", not "Streaming loudness target": one of these is
+            neither streaming nor a loudness target. */}
+        <div role="radiogroup" aria-label="Master target" className="flex flex-wrap gap-2">
           {TARGETS.map((t, i) => (
             <button
-              key={t.lufs}
+              key={t.id}
               ref={(el) => { targetRefs.current[i] = el; }}
               type="button"
               role="radio"
-              aria-checked={target === t.lufs}
+              aria-checked={targetId === t.id}
               disabled={stage === 'mastering'}
-              tabIndex={radioTabIndex(i, TARGETS.findIndex((x) => x.lufs === target), TARGETS.length)}
+              tabIndex={radioTabIndex(i, TARGETS.findIndex((x) => x.id === targetId), TARGETS.length)}
               onKeyDown={(e) => {
                 // Arrow keys select as they move — the radiogroup pattern. Any
                 // other key (Tab, Space) must pass through untouched.
-                const from = TARGETS.findIndex((x) => x.lufs === target);
+                const from = TARGETS.findIndex((x) => x.id === targetId);
                 const to = nextRadioIndex(e.key, from, TARGETS.length);
                 if (to === null) return;
                 e.preventDefault();
-                pickTarget(TARGETS[to].lufs);
+                pickTarget(TARGETS[to].id);
                 targetRefs.current[to]?.focus();
               }}
-              onClick={() => pickTarget(t.lufs)}
+              onClick={() => pickTarget(t.id)}
               className={`flex items-start gap-2 rounded-lg border px-4 py-2 text-left transition disabled:opacity-50 ${
-                target === t.lufs
+                targetId === t.id
                   ? 'border-orange-500 bg-orange-50 dark:border-orange-500 dark:bg-orange-500/10'
                   : 'border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800'
               }`}
             >
               <CheckCircle2
-                className={`mt-0.5 h-4 w-4 shrink-0 ${target === t.lufs ? 'text-orange-600' : 'text-transparent'}`}
+                className={`mt-0.5 h-4 w-4 shrink-0 ${targetId === t.id ? 'text-orange-600' : 'text-transparent'}`}
                 aria-hidden="true"
               />
               <span>
@@ -2034,7 +2117,9 @@ export function MasteringStudio() {
           ))}
         </div>
         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-          Each target writes its own file, so you can master the same song for both without one overwriting the other.
+          {isBed
+            ? `One static gain to ${PEAK_CEILING_DBTP} dBTP — no loudness normalisation, no compression, no limiting. The bed keeps its range, which is the headroom the voice sings into.`
+            : 'Each target writes its own file, so you can master the same song for both without one overwriting the other.'}
         </p>
 
         {sourceKey && (
@@ -2152,8 +2237,11 @@ export function MasteringStudio() {
         )}
 
         {/* Reference-matched mastering picker (Phase 1C UI). Only rendered
-            when the feature flag is on AND we are not mid-master. */}
-        {FEATURES.ADMIN.MASTERING_REFERENCE_MATCHING && stage !== 'mastering' && (
+            when the feature flag is on AND we are not mid-master — and never
+            for a karaoke bed, which the route refuses with a 400: matching
+            shapes an output by another master's tone, the opposite of leaving
+            a bed alone. */}
+        {FEATURES.ADMIN.MASTERING_REFERENCE_MATCHING && stage !== 'mastering' && !isBed && (
           <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-gray-50/50 p-3 text-sm dark:border-gray-800 dark:bg-gray-900/40">
             <label className="flex items-center gap-2 text-gray-700 dark:text-gray-200">
               <span className="font-medium">Reference:</span>
@@ -2220,7 +2308,11 @@ export function MasteringStudio() {
             {stage === 'mastering'
               ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
               : <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />}
-            {stage === 'mastering' ? `Mastering… ${elapsed}s` : `Master to ${target} LUFS`}
+            {stage === 'mastering'
+              ? `${isBed ? 'Making the bed' : 'Mastering'}… ${elapsed}s`
+              : isBed
+                ? 'Make the karaoke bed'
+                : `Master to ${target} LUFS`}
           </button>
           {stage === 'mastering' && (
             <button
@@ -2413,12 +2505,19 @@ export function MasteringStudio() {
           </p>
 
           <p className="mt-3 text-sm text-gray-700 dark:text-gray-300">
-            {verdict === 'on-target' && `Landed on ${job.target} LUFS, peak-safe.`}
-            {verdict === 'off-target' &&
+            {/* A bed has no target to land on. Saying "measured -20.2 against a
+                -14 LUFS target" over a correct bed is the defect this whole
+                mode exists to remove, and it would have said exactly that. */}
+            {isBedJob &&
+              (typeof job.peakGainDb === 'number'
+                ? `Gain applied ${job.peakGainDb >= 0 ? '+' : ''}${job.peakGainDb.toFixed(2)} dB — the bed sits at ${dbtp(job.afterTp)} and lands at ${lufs(job.afterLufs)}, range unchanged.`
+                : `The bed was written at ${dbtp(job.afterTp)}, but the gain it used was not recorded.`)}
+            {!isBedJob && verdict === 'on-target' && `Landed on ${job.target} LUFS, peak-safe.`}
+            {!isBedJob && verdict === 'off-target' &&
               `Measured ${lufs(job.afterLufs)} against a ${job.target} LUFS target — worth a listen before you use it.`}
-            {verdict === 'unmeasured' &&
+            {!isBedJob && verdict === 'unmeasured' &&
               `The master was written, but the check measurement did not come back — download it and verify before use.`}
-            {verdict === 'on-target' && movedLu !== null && movedLu < 1 && (
+            {!isBedJob && verdict === 'on-target' && movedLu !== null && movedLu < 1 && (
               <span className="text-gray-500 dark:text-gray-400">
                 {' '}The source moved {movedLu.toFixed(2)} LU — below what anyone can hear, which is the correct
                 outcome for a song that was already on target.
@@ -2426,7 +2525,9 @@ export function MasteringStudio() {
             )}
           </p>
 
-          {typeof job.afterLufs === 'number' && (
+          {/* Nobody streams a karaoke bed, so this table would grade it against
+              targets it never had — every row a failure on a correct file. */}
+          {typeof job.afterLufs === 'number' && !isBedJob && (
             <div className="mt-4 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
               <p className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-xs font-medium text-gray-600 dark:border-gray-800 dark:bg-gray-800/40 dark:text-gray-300">
                 Streaming readiness — how it lands on each platform
@@ -2497,7 +2598,7 @@ export function MasteringStudio() {
             />
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
               {masterName.trim()
-                ? `Downloads as “${masterName.trim()} (Master ${job.target} LUFS).wav”. Tamil names work too.`
+                ? `Downloads as “${masterName.trim()} (${isBedJob ? bedLabel : `Master ${job.target} LUFS`}).wav”. Tamil names work too.`
                 : 'Used only for the download filename and report — the stored file keeps its unique id.'}
             </p>
           </div>
@@ -2508,7 +2609,8 @@ export function MasteringStudio() {
               onClick={download}
               className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
             >
-              <Download className="h-4 w-4" aria-hidden="true" /> Download for Adobe
+              {/* A bed does not go to Adobe — it goes to the buyer. */}
+              <Download className="h-4 w-4" aria-hidden="true" /> {isBedJob ? 'Download the bed (WAV)' : 'Download for Adobe'}
             </button>
             {job.mp3Key && (
               <button
@@ -2516,7 +2618,7 @@ export function MasteringStudio() {
                 onClick={downloadMp3}
                 className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
               >
-                <Download className="h-4 w-4" aria-hidden="true" /> Download web MP3
+                <Download className="h-4 w-4" aria-hidden="true" /> {isBedJob ? `Download the ${KARAOKE_MP3_BITRATE} MP3` : 'Download web MP3'}
               </button>
             )}
             <button
@@ -2566,7 +2668,10 @@ export function MasteringStudio() {
           {/* Publish — only once saved, because the title IS the filename and
               save is what persists it. Deliberately a separate step from Save:
               this writes to the CDN-served path the site reads. */}
-          {savedAt && job.mp3Key && (
+          {/* Never for a bed: this copies the MP3 into the CDN-served
+              catalogue path. A bed belongs to the buyer who paid for it, not
+              to the site. */}
+          {savedAt && job.mp3Key && !isBedJob && (
             <div className="mt-4 rounded-lg border border-gray-200 p-4 dark:border-gray-800">
               <div className="flex flex-wrap items-center gap-3">
                 <button
@@ -2610,7 +2715,10 @@ export function MasteringStudio() {
               once. This is what keeps Premiere out of the audio path: no
               re-export, so nothing can re-level or re-encode the master before
               YouTube receives it. */}
-          {savedAt && job.masterKey && (
+          {/* A bed is a deliverable, not a release — `planRender` and
+              `planShort` both refuse one, so this panel would offer two buttons
+              whose only outcome is a refusal. */}
+          {savedAt && job.masterKey && !isBedJob && (
             <div className="mt-4 rounded-lg border border-gray-200 p-4 dark:border-gray-800">
               <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                 <Film className="h-3.5 w-3.5" aria-hidden="true" /> Render for YouTube
@@ -3286,7 +3394,7 @@ export function MasteringStudio() {
                 {m.masterKey && (
                   <button
                     type="button"
-                    onClick={() => void downloadKey(m.masterKey!, m.title ?? '', m.target)}
+                    onClick={() => void downloadKey(m.masterKey!, m.title ?? '', m.target, isPeakMaster(m) ? bedLabel : undefined)}
                     className="text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
                   >
                     WAV
@@ -3298,7 +3406,7 @@ export function MasteringStudio() {
                 {m.mp3Key && (
                   <button
                     type="button"
-                    onClick={() => void downloadKey(m.mp3Key!, m.title ?? '', m.target)}
+                    onClick={() => void downloadKey(m.mp3Key!, m.title ?? '', m.target, isPeakMaster(m) ? bedLabel : undefined)}
                     className="text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
                   >
                     MP3
@@ -3327,7 +3435,7 @@ export function MasteringStudio() {
                 {/* And a way to MAKE one. The inline panel is gated on savedAt,
                     which only this session's Save sets, so without this a master
                     saved yesterday could never be rendered at all. */}
-                {m.masterKey && (
+                {m.masterKey && !isPeakMaster(m) && (
                   <button
                     type="button"
                     disabled={rowBusy === m.id}

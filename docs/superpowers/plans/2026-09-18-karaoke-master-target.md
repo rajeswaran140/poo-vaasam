@@ -277,7 +277,7 @@ it('400s peak together with a reference', async () => {
 
 **Interfaces — Consumes:** `planPeakGain`, `buildPeakArgs`, `karaokeMasterKeyFor`, `isKaraokeMasterKey`, `KARAOKE_MP3_BITRATE`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Select ffmpeg passes **by shape, not by index** — the suite already does this for the short, after adding a pass broke six positional assertions at once.
 
@@ -338,10 +338,10 @@ it('loudness mode still runs its two loudnorm passes', async () => {
 });
 ```
 
-- [ ] **Step 2: Run, watch it fail**
-- [ ] **Step 3: Implement.** Branch on `event.normalizationMode === 'peak'` after the edit pre-pass and before pass 1. Widen the re-master guard to `isMasterKey(k) || isKaraokeMasterKey(k)`. Leave the render/short/upload guards alone.
-- [ ] **Step 4: Run — expect PASS, including every pre-existing worker test**
-- [ ] **Step 5: Commit**
+- [x] **Step 2: Run, watch it fail**
+- [x] **Step 3: Implement.** Branch on `event.normalizationMode === 'peak'` after the edit pre-pass and before pass 1. Widen the re-master guard to `isMasterKey(k) || isKaraokeMasterKey(k)`. Leave the render/short/upload guards alone.
+- [x] **Step 4: Run — expect PASS, including every pre-existing worker test**
+- [x] **Step 5: Commit**
 
 ---
 
@@ -351,11 +351,11 @@ it('loudness mode still runs its two loudnorm passes', async () => {
 - Modify: `src/lib/master-report.ts`
 - Test: `__tests__/lib/master-report.test.ts` (extend)
 
-- [ ] **Step 1: Write the failing test** — a job with `normalizationMode: 'peak'`, `afterLufs: -20.2`, `afterTp: -1.0` must NOT produce a failing "on target" row; it produces a passing **peak-safe** row. The "gain type" row is replaced by **gain applied**, showing `peakGainDb`. Integrated loudness and LRA appear with before/after and no verdict.
-- [ ] **Step 2: Run, watch it fail**
-- [ ] **Step 3: Implement**
-- [ ] **Step 4: Run — expect PASS**
-- [ ] **Step 5: Commit**
+- [x] **Step 1: Write the failing test** — a job with `normalizationMode: 'peak'`, `afterLufs: -20.2`, `afterTp: -1.0` must NOT produce a failing "on target" row; it produces a passing **peak-safe** row. The "gain type" row is replaced by **gain applied**, showing `peakGainDb`. Integrated loudness and LRA appear with before/after and no verdict.
+- [x] **Step 2: Run, watch it fail**
+- [x] **Step 3: Implement**
+- [x] **Step 4: Run — expect PASS**
+- [x] **Step 5: Commit**
 
 ---
 
@@ -367,7 +367,7 @@ it('loudness mode still runs its two loudnorm passes', async () => {
 
 ⚠️ **The icon mock.** This suite mocks `lucide-react` with a fixed list. A new icon missing from it does not fail as a missing icon — React renders `undefined` and the whole component throws, taking every test in the file with it. Add any new icon to the mock first.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 it('offers a karaoke bed alongside -14 and -16', async () => {
@@ -393,10 +393,21 @@ it('downloads as a karaoke bed, not as a master', async () => {
 });
 ```
 
-- [ ] **Step 2: Run, watch it fail**
-- [ ] **Step 3: Implement**, including the deliverable note — *320 kbps MP3, no vocals, headroom for a live voice* — matching `KARAOKE_DELIVERABLE`.
-- [ ] **Step 4: Run — expect PASS**
-- [ ] **Step 5: Commit**
+- [x] **Step 2: Run, watch it fail**
+- [x] **Step 3: Implement**, including the deliverable note — *320 kbps MP3, no vocals, headroom for a live voice* — matching `KARAOKE_DELIVERABLE`.
+- [x] **Step 4: Run — expect PASS**
+
+⚠️ **Found during Task 4 — the release pipeline will offer a dead-end button.**
+`planRender` (`src/lib/master-video.ts:125-128`) gates on `status === 'done'`,
+`savedAt` and `masterKey` — never on `isMasterKey` — so `pipelineFor` in
+`src/lib/release-pipeline.ts:83` will offer **Render video** on a finished
+karaoke job. The worker then refuses it (`isMasterKey(audioKey)` is false for a
+bed; a Task 4 test pins that refusal), so the button is a dead end rather than a
+hazard. Fix it here, in `planRender`/`planShort`, not in the component: refuse
+`no-master` — or a new reason — when the job's `normalizationMode` is `'peak'`,
+so the pipeline line and the buttons still cannot disagree.
+
+- [x] **Step 5: Commit**
 
 ---
 
@@ -405,6 +416,34 @@ it('downloads as a karaoke bed, not as a master', async () => {
 **Files:** none — this is the acceptance test, run by hand.
 
 ⚠️ **The tests can all pass while the feature is wrong.** That happened twice in the week this was written: a control that rendered in no reachable place, and a tempo estimator off by a factor of two, both with green suites. Verification is running it on real audio.
+
+### Step 0 — the local ffmpeg proof (DONE 2026-09-18)
+
+The claim is arithmetic plus a filter chain; neither needs a Lambda. Running
+exactly what `buildPeakMeasureArgs` and `buildPeakArgs` emit, against the real
+bed on crowvault-ide-server:
+
+    source     pcm_s16le · 48 kHz · stereo · 5:03.72
+    measured   -20.2 LUFS · LRA 6.4 LU · true peak -1.0 dBFS
+    gain       planPeakGain(-1.0) = 0.00 dB   → `volume=0.00dB`
+    output     -20.2 LUFS · LRA 6.4 LU · true peak -1.0 dBFS   ← unchanged
+    mp3 320k   -20.2 LUFS · LRA 6.4 LU · true peak -1.0 dBFS   (320,028 bps)
+
+And the contrast, measured on `karaoke-14.wav` beside it — the same bed put
+through the loudness path at -14:
+
+    -14.0 LUFS · LRA **5.8** LU · true peak **-0.9** dBFS
+
+0.6 LU of range gone, and over the -1 dBTP ceiling. That is the defect the mode
+exists to prevent, on this exact file.
+
+No resample is involved: the source is already 48 kHz, so pass 2's only format
+change is 16- to 24-bit, which is lossless padding. "Unchanged" here is exact,
+not rounded.
+
+**What the deployed run still has to prove is plumbing, not physics:** that the
+Studio enqueues it, the worker branches, the key is right, and the report and
+the library row read correctly.
 
 - [ ] **Step 1: Deploy the worker** — `npm run deploy:master-worker`. It does NOT ride along with Amplify.
 - [ ] **Step 2: Master `~/albums/karaoke/sevvanthi/karaoke-clean.wav` in peak mode through the portal**
@@ -427,6 +466,16 @@ The bed was already built to −1.0 dBTP, so the gain is 0.00 dB and a correct i
 - [ ] **Step 4: Check the MP3 is 320 kbps** — `ffmpeg -i <output>.mp3` should report `320 kb/s`.
 - [ ] **Step 5: Check the report** reads peak-safe rather than a failed master, and that the row offers no video or short.
 - [ ] **Step 6: Commit** any fixes the real run surfaces.
+
+---
+
+## Follow-ups found while building this
+
+- **Delivery links have never been given a bed's key.** The new next-action line
+  sends the operator to Library → Delivery links, but Anton's files were staged
+  under `deliveries/`, not `audio/mastering/`. Whether that flow accepts a key in
+  the mastering workspace is unverified. Does not block Task 7; does block the
+  first sale delivered through the portal.
 
 ---
 

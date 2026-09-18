@@ -31,6 +31,8 @@ import { MasterJobRepository } from '@/infrastructure/database/MasterJobReposito
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { awsConfig } from '@/lib/aws-config';
 import { isValidTarget, isMasterKey, MIN_TARGET_LUFS, MAX_TARGET_LUFS } from '@/lib/loudness-measure';
+import { isKaraokeMasterKey } from '@/lib/master-peak';
+import { isValidNormalizationMode, type NormalizationMode } from '@/lib/master-peak';
 import { isMasteringKey, isReferenceKey } from '@/lib/mastering-storage';
 import { parseMasterEdit, isNoOpEdit } from '@/lib/master-edit';
 import { parseMasterJoin } from '@/lib/master-join';
@@ -62,7 +64,11 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-  if (isMasterKey(s3Key)) {
+  // ⚠️ TWO predicates, not one widened predicate. `isMasterKey` also answers
+  // "is this a valid source for a video, short or upload?", and a karaoke bed
+  // must never be eligible for those — so the re-master guard composes the two.
+  // The worker composes them the same way; this is the first lock.
+  if (isMasterKey(s3Key) || isKaraokeMasterKey(s3Key)) {
     return NextResponse.json(
       { success: false, error: 'That key is already a mastering output — master the original source instead.' },
       { status: 400 }
@@ -77,6 +83,19 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
+  // HOW the level is reached, which is a separate axis from WHERE. A karaoke
+  // bed keeps its own loudness and only its peak is moved; loudnorm cannot do
+  // that at any target — measured on the real bed it reports Dynamic at -14,
+  // -18 and -20 alike, even with linear=true requested.
+  const rawMode = body?.normalizationMode;
+  if (rawMode !== undefined && !isValidNormalizationMode(rawMode)) {
+    return NextResponse.json(
+      { success: false, error: `normalizationMode must be 'loudness' or 'peak'` },
+      { status: 400 }
+    );
+  }
+  const normalizationMode: NormalizationMode = rawMode ?? 'loudness';
+
   // Trim/fade is optional and absent from every pre-existing caller, so a
   // missing `edit` parses to the identity rather than failing. A malformed one
   // is rejected here instead of failing deep inside ffmpeg 30 seconds later.
@@ -96,7 +115,7 @@ export async function POST(request: NextRequest) {
   // Part B gets the SAME guards as Part A. Without this the join field would be
   // a second, unchecked route to running the worker against any object in the
   // bucket — the exact hole the s3Key check above exists to close.
-  if (join && (!isMasteringKey(join.partBKey) || isMasterKey(join.partBKey))) {
+  if (join && (!isMasteringKey(join.partBKey) || isMasterKey(join.partBKey) || isKaraokeMasterKey(join.partBKey))) {
     return NextResponse.json(
       { success: false, error: 'Part B must be an un-mastered file in the mastering workspace.' },
       { status: 400 }
@@ -116,6 +135,24 @@ export async function POST(request: NextRequest) {
   // flag is off any use of these fields is refused with 501 rather than
   // silently ignored, because a silent ignore would let the UI ship the
   // feature "quietly" without ever being wired through.
+  // ⚠️ REFUSED TOGETHER, not silently preferred. Matchering exists to move a
+  // track toward a reference's tonal and loudness profile — the one thing peak
+  // mode promises not to do. A silent preference is how someone ships a bed
+  // that was quietly reference-matched and cannot tell from the record.
+  if (
+    normalizationMode === 'peak' &&
+    (typeof body?.referenceKey === 'string' || typeof body?.referenceId === 'string' ||
+      body?.matchingMethod === 'matched' || body?.matchingMethod === 'both')
+  ) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'peak mode keeps the file’s own tone and level, so it cannot be reference-matched. Choose one.',
+      },
+      { status: 400 }
+    );
+  }
+
   const rawMethod = body?.matchingMethod;
   const rawRefKey = typeof body?.referenceKey === 'string' ? body.referenceKey.replace(/^\/+/, '') : undefined;
   const rawRefId = typeof body?.referenceId === 'string' ? body.referenceId : undefined;
@@ -174,6 +211,7 @@ export async function POST(request: NextRequest) {
       // create() call shape byte-identical for loudnorm-only jobs, and lets
       // the repository default-null-fill for absent fields.
       ...(referenceKey ? { referenceKey, referenceId: referenceId ?? null, matchingMethod: matchingMethod ?? null } : {}),
+      ...(normalizationMode === 'peak' ? { normalizationMode } : {}),
     });
     const lambda = new LambdaClient({
       region: awsConfig.region,
@@ -188,6 +226,9 @@ export async function POST(request: NextRequest) {
           // Only include reference-matching fields when actually requested —
           // keeps existing loudnorm-only payloads byte-identical to before.
           ...(referenceKey ? { referenceKey, referenceId, matchingMethod } : {}),
+          // Only when it is NOT the default: a field appearing in every
+          // existing caller's payload is a change to a path that was working.
+          ...(normalizationMode === 'peak' ? { normalizationMode } : {}),
         })),
       })
     );
