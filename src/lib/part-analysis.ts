@@ -65,7 +65,14 @@ export function onsetEnvelope(samples: ArrayLike<number>, fps = ANALYSIS_FPS, sr
       prev = samples[j];
       sum += d * d;
     }
-    energy[i] = Math.log1p(sum);
+    // ⚠️ log, NOT log1p. The flux below takes a DIFFERENCE of these, and
+    // log(a·x) − log(a·y) = log(x) − log(y) — so plain log makes the envelope
+    // scale-invariant and log1p does not. With samples normalised to ±1 the
+    // frame energies are tiny, log1p(x) ≈ x, and the envelope quietly becomes
+    // LINEAR energy: the same audio at a different scale then produces a
+    // different tempo. That is exactly what happened — 81 BPM against a true
+    // ~176 on Part A, reported with full confidence.
+    energy[i] = Math.log(sum + 1e-12);
   }
   const flux = new Array<number>(Math.max(0, n - 1));
   for (let i = 1; i < n; i++) flux[i - 1] = Math.max(0, energy[i] - energy[i - 1]);
@@ -414,7 +421,20 @@ export const MIN_SUGGESTED_OVERLAP = 1.5;
 export const PREFERRED_MIN_OVERLAP = 2.0;
 export const MAX_SUGGESTED_OVERLAP = 5.0;
 
-/** How much of each part gets analysed. Matches what the worker decodes. */
+/** How much of each part gets analysed for TEMPO. Matches what the worker decodes. */
 export function analysisWindowSec(durationSec: number): number {
   return Math.min(25, Math.max(5, durationSec));
 }
+
+/**
+ * How much of each part gets analysed for KEY and BRIGHTNESS.
+ *
+ * ⚠️ NOT the same window as tempo, and the difference matters. Tempo needs a
+ * long stretch to autocorrelate against; key and timbre must be measured on the
+ * few seconds that ACTUALLY OVERLAP, because that is the only music the
+ * listener hears on both sides of the join. Measuring them over the full 25s
+ * window described a different piece of music — Part A read 899 Hz over 25s and
+ * 327 Hz over the 6s that meet Part B, and only the second figure is about the
+ * seam.
+ */
+export const EDGE_WINDOW_SEC = 6;

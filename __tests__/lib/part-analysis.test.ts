@@ -60,6 +60,30 @@ describe('tempo, against a signal whose tempo is known', () => {
     expect(t === null || t.confidence < 0.5).toBe(true);
   });
 
+  /**
+   * ⚠️ THE REGRESSION THAT SHIPPED. The envelope used log1p on frame energy,
+   * which is not scale-invariant: on samples normalised to ±1 the energies are
+   * tiny, log1p(x) ≈ x, and the envelope silently became LINEAR energy. The
+   * same audio at a different amplitude then produced a different tempo — 81
+   * BPM against a true ~176, reported with full confidence.
+   *
+   * The flux takes a difference, so plain log cancels any scale factor.
+   */
+  it('reads the SAME tempo however loud the audio is', () => {
+    const quiet = clickTrain(20, 0.34);
+    const loud = Float32Array.from(quiet, (v) => v * 20000);
+    const a = estimateTempo(onsetEnvelope(quiet))!;
+    const b = estimateTempo(onsetEnvelope(loud))!;
+    expect(a.bpm).toBeCloseTo(b.bpm, 4);
+    expect(a.bpm).toBeCloseTo(176.5, 0);
+  });
+
+  it('finds the same first onset however loud the audio is', () => {
+    const quiet = clickTrain(20, 0.5, 2.0);
+    const loud = Float32Array.from(quiet, (v) => v * 20000);
+    expect(firstOnsetSec(onsetEnvelope(quiet))).toBeCloseTo(firstOnsetSec(onsetEnvelope(loud)), 3);
+  });
+
   it('returns null rather than guessing from too little audio', () => {
     expect(estimateTempo(onsetEnvelope(clickTrain(0.2, 0.5)))).toBeNull();
   });

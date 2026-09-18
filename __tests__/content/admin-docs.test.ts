@@ -380,13 +380,17 @@ describe('Mastering Tools A–Z', () => {
     expect(b).toMatch(/invalidation/i);                           // CloudFront caches survive a Deny
   });
 
-  it('says plainly that part analysis is not to be trusted yet', () => {
-    // Describing a broken tool as though it works is how a wrong number gets
-    // acted on. This must stay until the tool is actually fixed.
+  /**
+   * The tool was fixed, so the warning goes — but the CAUSE stays. A
+   * scale-dependent onset envelope is an easy thing to reintroduce, and the
+   * symptom (a confident, wrong tempo) does not announce itself.
+   */
+  it('keeps why part analysis was once wrong, now that it is right', () => {
     const b = doc!.body;
-    expect(b).toMatch(/CURRENTLY UNRELIABLE/);
-    expect(b).toMatch(/81 BPM/);         // the observed wrong value
-    expect(b).toMatch(/~176/);           // and the true one
+    expect(b).not.toMatch(/CURRENTLY UNRELIABLE/);
+    expect(b).toMatch(/not scale-invariant/i);
+    expect(b).toMatch(/81 BPM against a true ~176/);
+    expect(b).toMatch(/Two windows, deliberately/i);
   });
 
   it('records that reference matching was never validated', () => {

@@ -79,6 +79,7 @@ import {
   chroma,
   spectralCentroid,
   analysisWindowSec,
+  EDGE_WINDOW_SEC,
   ANALYSIS_SR,
   type PartMeasurement,
 } from '@/lib/part-analysis';
@@ -407,13 +408,24 @@ function measurePart(
   const start = atEnd ? Math.max(0, durationSec - win) : 0;
   const x = decodeForAnalysis(path, start, win, dir);
   const env = onsetEnvelope(x);
+
+  // ⚠️ TWO WINDOWS, ON PURPOSE. Tempo needs the long stretch to autocorrelate
+  // against; key and brightness must come from the few seconds that ACTUALLY
+  // OVERLAP, because that is the only music heard on both sides of the join.
+  // Measured over the full window they describe a different piece of the song —
+  // Part A read 899 Hz over 25s and 327 Hz over the 6s meeting Part B.
+  const edgeSamples = Math.min(x.length, Math.round(EDGE_WINDOW_SEC * ANALYSIS_SR));
+  const edge = atEnd ? x.subarray(x.length - edgeSamples) : x.subarray(0, edgeSamples);
+
   return {
     durationSec,
     edgeLufs,
     tempo: x.length ? estimateTempo(env) : null,
-    chroma: chroma(x),
-    centroidHz: spectralCentroid(x),
-    ...(atEnd ? {} : { firstOnsetSec: firstOnsetSec(env) }),
+    chroma: chroma(edge),
+    centroidHz: spectralCentroid(edge),
+    // Where B's music starts, measured from its head — the same region the
+    // trim will be applied to.
+    ...(atEnd ? {} : { firstOnsetSec: firstOnsetSec(onsetEnvelope(edge)) }),
   };
 }
 
