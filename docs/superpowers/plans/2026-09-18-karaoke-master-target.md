@@ -417,6 +417,34 @@ so the pipeline line and the buttons still cannot disagree.
 
 ⚠️ **The tests can all pass while the feature is wrong.** That happened twice in the week this was written: a control that rendered in no reachable place, and a tempo estimator off by a factor of two, both with green suites. Verification is running it on real audio.
 
+### Step 0 — the local ffmpeg proof (DONE 2026-09-18)
+
+The claim is arithmetic plus a filter chain; neither needs a Lambda. Running
+exactly what `buildPeakMeasureArgs` and `buildPeakArgs` emit, against the real
+bed on crowvault-ide-server:
+
+    source     pcm_s16le · 48 kHz · stereo · 5:03.72
+    measured   -20.2 LUFS · LRA 6.4 LU · true peak -1.0 dBFS
+    gain       planPeakGain(-1.0) = 0.00 dB   → `volume=0.00dB`
+    output     -20.2 LUFS · LRA 6.4 LU · true peak -1.0 dBFS   ← unchanged
+    mp3 320k   -20.2 LUFS · LRA 6.4 LU · true peak -1.0 dBFS   (320,028 bps)
+
+And the contrast, measured on `karaoke-14.wav` beside it — the same bed put
+through the loudness path at -14:
+
+    -14.0 LUFS · LRA **5.8** LU · true peak **-0.9** dBFS
+
+0.6 LU of range gone, and over the -1 dBTP ceiling. That is the defect the mode
+exists to prevent, on this exact file.
+
+No resample is involved: the source is already 48 kHz, so pass 2's only format
+change is 16- to 24-bit, which is lossless padding. "Unchanged" here is exact,
+not rounded.
+
+**What the deployed run still has to prove is plumbing, not physics:** that the
+Studio enqueues it, the worker branches, the key is right, and the report and
+the library row read correctly.
+
 - [ ] **Step 1: Deploy the worker** — `npm run deploy:master-worker`. It does NOT ride along with Amplify.
 - [ ] **Step 2: Master `~/albums/karaoke/sevvanthi/karaoke-clean.wav` in peak mode through the portal**
 - [ ] **Step 3: Measure the output**
@@ -438,6 +466,16 @@ The bed was already built to −1.0 dBTP, so the gain is 0.00 dB and a correct i
 - [ ] **Step 4: Check the MP3 is 320 kbps** — `ffmpeg -i <output>.mp3` should report `320 kb/s`.
 - [ ] **Step 5: Check the report** reads peak-safe rather than a failed master, and that the row offers no video or short.
 - [ ] **Step 6: Commit** any fixes the real run surfaces.
+
+---
+
+## Follow-ups found while building this
+
+- **Delivery links have never been given a bed's key.** The new next-action line
+  sends the operator to Library → Delivery links, but Anton's files were staged
+  under `deliveries/`, not `audio/mastering/`. Whether that flow accepts a key in
+  the mastering workspace is unverified. Does not block Task 7; does block the
+  first sale delivered through the portal.
 
 ---
 

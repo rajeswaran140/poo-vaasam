@@ -31,6 +31,7 @@ import { MasterJobRepository } from '@/infrastructure/database/MasterJobReposito
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { awsConfig } from '@/lib/aws-config';
 import { isValidTarget, isMasterKey, MIN_TARGET_LUFS, MAX_TARGET_LUFS } from '@/lib/loudness-measure';
+import { isKaraokeMasterKey } from '@/lib/master-peak';
 import { isValidNormalizationMode, type NormalizationMode } from '@/lib/master-peak';
 import { isMasteringKey, isReferenceKey } from '@/lib/mastering-storage';
 import { parseMasterEdit, isNoOpEdit } from '@/lib/master-edit';
@@ -63,7 +64,11 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-  if (isMasterKey(s3Key)) {
+  // ⚠️ TWO predicates, not one widened predicate. `isMasterKey` also answers
+  // "is this a valid source for a video, short or upload?", and a karaoke bed
+  // must never be eligible for those — so the re-master guard composes the two.
+  // The worker composes them the same way; this is the first lock.
+  if (isMasterKey(s3Key) || isKaraokeMasterKey(s3Key)) {
     return NextResponse.json(
       { success: false, error: 'That key is already a mastering output — master the original source instead.' },
       { status: 400 }
@@ -110,7 +115,7 @@ export async function POST(request: NextRequest) {
   // Part B gets the SAME guards as Part A. Without this the join field would be
   // a second, unchecked route to running the worker against any object in the
   // bucket — the exact hole the s3Key check above exists to close.
-  if (join && (!isMasteringKey(join.partBKey) || isMasterKey(join.partBKey))) {
+  if (join && (!isMasteringKey(join.partBKey) || isMasterKey(join.partBKey) || isKaraokeMasterKey(join.partBKey))) {
     return NextResponse.json(
       { success: false, error: 'Part B must be an un-mastered file in the mastering workspace.' },
       { status: 400 }

@@ -245,12 +245,26 @@ describe('master enqueue', () => {
     expect(MockInvoke).not.toHaveBeenCalled();
   });
 
+  it('400s on a karaoke bed as Part B of a join, for the same reason', async () => {
+    const res = await masterPOST(post('/api/admin/music-lab/master', {
+      s3Key: 'audio/mastering/1700000000000_ab12cd34_take.wav',
+      join: { partBKey: 'audio/mastering/1700000000000_ab12cd34_take-karaoke-1dBTP.wav', overlapSec: 3 },
+    }));
+    expect(res.status).toBe(400);
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(MockInvoke).not.toHaveBeenCalled();
+  });
+
   it('400s on re-mastering a mastering output', async () => {
     // Both are inside the workspace, so they clear the prefix check and must be
     // caught by the re-master guard itself.
     for (const s3Key of [
       'audio/mastering/1700000000000_ab12cd34_take-master-14LUFS.wav',
       'audio/mastering/1700000000000_ab12cd34_take.mp3-master.wav',
+      // A karaoke bed. Not matched by `isMasterKey` — deliberately, since that
+      // predicate also answers "is this a valid source for a video, short or
+      // upload?" — so the guard composes the two predicates instead.
+      'audio/mastering/1700000000000_ab12cd34_take-karaoke-1dBTP.wav',
     ]) {
       expect((await masterPOST(post('/api/admin/music-lab/master', { s3Key }))).status).toBe(400);
     }
