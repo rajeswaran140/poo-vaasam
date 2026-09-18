@@ -916,7 +916,7 @@ It is also a **0.68 LU change you cannot hear** — which is the honest headline
     slug: 'mastering-tools-a-z',
     title: 'Mastering Tools A–Z',
     category: 'Music Lab',
-    updatedAt: '2026-09-17T16:00:00Z',
+    updatedAt: '2026-09-18T09:00:00Z',
     body: `# Mastering Tools A–Z
 
 Every control in **Sound Engineering** (\`/admin/mastering\`), alphabetically, so it can be looked up while you are staring at it. Each entry says what it does, why it works that way, and the trap.
@@ -1017,7 +1017,11 @@ Check the **LRA before and after**: unchanged means nothing touched the dynamics
 
 Measures Part A against Part B — level, tempo, key, brightness — and suggests a crossfade. Rides along with **Hear the seam**.
 
-⚠️ **CURRENTLY UNRELIABLE. Do not act on its numbers.** Validated against the real files on 2026-09-17 it reported A at 81 BPM where the true figure is ~176, brightness roughly 3× the hand-measured value, and a first onset of 5.19s against a true 0.10s. Two known causes: it measures key and timbre over the whole 25-second analysis window instead of the few seconds that actually overlap, and the tempo estimate takes an octave error that its own confidence score rates 1.00. Being fixed. Until this entry says otherwise, use the method on the two-part-seam page by ear.
+**Two windows, deliberately.** Tempo is read over ~25 seconds, because autocorrelation needs a long stretch. Key and brightness are read over the **6 seconds that actually overlap**, because that is the only music heard on both sides of the join — measured over the full window they describe a different piece of the song.
+
+It shipped broken on 2026-09-17 and was fixed the next day; the cause is worth keeping. The onset envelope used \`log1p\` on frame energy, which is **not scale-invariant** — on samples normalised to ±1 the energies are tiny, \`log1p(x) ≈ x\`, and the envelope silently became *linear* energy. The same audio at a different amplitude produced a different tempo: **81 BPM against a true ~176, reported with full confidence.** Plain \`log\` fixes it, because the flux takes a difference and the scale factor cancels. If tempo readings ever look wrong again, check that first.
+
+⚠️ **It advises, it does not decide.** Beat detection on melodic material is genuinely uncertain — a reading below 0.4 confidence is marked with a \`?\`. Use it as a starting point for your ears.
 
 ## Pipeline status line
 
