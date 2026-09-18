@@ -6,7 +6,20 @@ import { adminFetch } from '@/lib/client-auth';
 interface Row {
   token: string; filename: string; label: string;
   downloadCount: number; maxDownloads: number; expiresAt: string; revokedAt: string | null;
+  /** Built by the API, so the browser never assembles a link itself. */
+  url: string;
 }
+
+/**
+ * The shape of each field, shown in the field. The S3 key is the one that gets
+ * typed wrong — a label saying "must be under deliveries/" does not show what
+ * a whole key looks like.
+ */
+const PLACEHOLDERS: Record<'s3Key' | 'filename' | 'label', string> = {
+  s3Key: 'deliveries/anton-2026-09-18/Eelathu-Manne-Karaoke-studio.mp3',
+  filename: 'Eelathu Manne - Karaoke (studio).mp3',
+  label: 'Anton — Eelathu Manne, studio',
+};
 
 export function DeliveryManager() {
   const [rows, setRows] = useState<Row[] | null>(null);
@@ -59,17 +72,22 @@ export function DeliveryManager() {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-3 rounded-lg border border-gray-200 p-4">
+      <div className="space-y-3 rounded-lg border border-gray-200 p-4 dark:border-gray-800">
         {(['s3Key', 'filename', 'label'] as const).map((f) => (
           <div key={f}>
-            <label htmlFor={`d-${f}`} className="block text-xs font-medium text-gray-600">
+            <label htmlFor={`d-${f}`} className="block text-xs font-medium text-gray-600 dark:text-gray-300">
               {f === 's3Key' ? 'S3 key (must be under deliveries/)' : f === 'filename' ? 'Filename the buyer sees' : 'Label for your reference'}
             </label>
             <input
               id={`d-${f}`}
               value={form[f]}
               onChange={(e) => setForm((p) => ({ ...p, [f]: e.target.value }))}
-              className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm"
+              placeholder={PLACEHOLDERS[f]}
+              // ⚠️ The placeholder colour is set EXPLICITLY. The browser default
+              // is near-invisible on a white field and worse on a dark one, and
+              // a hint nobody can read is not a hint. gray-500 clears 4.5:1 on
+              // both grounds.
+              className="mt-1 w-full rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900 placeholder:text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-400"
             />
           </div>
         ))}
@@ -81,28 +99,40 @@ export function DeliveryManager() {
         >
           Create link
         </button>
-        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+        {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
         {created && (
           <input readOnly value={created} onFocus={(e) => e.currentTarget.select()}
-            className="w-full rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-sm" />
+            className="w-full rounded border border-emerald-300 bg-emerald-50 px-2 py-1 font-mono text-sm text-gray-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100" />
         )}
       </div>
 
-      {loadError ? <p role="alert" className="text-sm text-red-600">{loadError}</p>
-        : rows === null ? <p className="text-sm text-gray-500">Loading…</p>
-        : rows.length === 0 ? <p className="text-sm text-gray-500">No delivery links yet.</p>
+      {loadError ? <p role="alert" className="text-sm text-red-600 dark:text-red-400">{loadError}</p>
+        : rows === null ? <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>
+        : rows.length === 0 ? <p className="text-sm text-gray-500 dark:text-gray-400">No delivery links yet.</p>
         : (
         <ul className="space-y-1">
           {rows.map((r) => (
-            <li key={r.token} className="flex flex-wrap items-center gap-3 rounded border border-gray-200 px-3 py-2 text-sm">
-              <span className="grow truncate">{r.label}</span>
-              <span className="text-xs text-gray-500">{r.filename}</span>
-              <span className="tabular-nums text-xs">{r.downloadCount} / {r.maxDownloads}</span>
-              <span className="text-xs text-gray-500">{r.expiresAt.slice(0, 10)}</span>
+            <li key={r.token} className="flex flex-wrap items-center gap-3 rounded border border-gray-200 px-3 py-2 text-sm dark:border-gray-800">
+              <span className="grow truncate text-gray-900 dark:text-gray-100">{r.label}</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">{r.filename}</span>
+              <span className="tabular-nums text-xs text-gray-700 dark:text-gray-200">{r.downloadCount} / {r.maxDownloads}</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">{r.expiresAt.slice(0, 10)}</span>
               {r.revokedAt
-                ? <span className="text-xs text-gray-400">revoked</span>
+                ? <span className="text-xs text-gray-400 dark:text-gray-500">revoked</span>
                 : <button type="button" onClick={() => void revoke(r.token)}
-                    className="text-xs font-medium text-red-600 hover:underline">Revoke</button>}
+                    className="text-xs font-medium text-red-600 hover:underline dark:text-red-400">Revoke</button>}
+              {/* The link itself, on every row. It used to appear once, in a box
+                  after creation — close the tab before emailing it and the only
+                  way back was minting a second link. */}
+              {!r.revokedAt && (
+                <input
+                  readOnly
+                  aria-label={`Delivery link for ${r.label}`}
+                  value={r.url}
+                  onFocus={(e) => e.currentTarget.select()}
+                  className="w-full rounded border border-gray-200 bg-gray-50 px-2 py-1 font-mono text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                />
+              )}
             </li>
           ))}
         </ul>

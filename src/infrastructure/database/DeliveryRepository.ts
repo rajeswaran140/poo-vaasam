@@ -7,9 +7,12 @@
  */
 import { DynamoDBOperations, handleDynamoDBError } from './dynamodb-client';
 import {
-  newDeliveryToken, DEFAULT_MAX_DOWNLOADS, DEFAULT_TTL_DAYS,
-  type Delivery, type CreateDeliveryInput,
+  newDeliveryToken, deliveryStatusOf, DEFAULT_MAX_DOWNLOADS, DEFAULT_TTL_DAYS,
+  type Delivery, type CreateDeliveryInput, type DeliveryStatus,
 } from '@/types/delivery';
+
+/** Why a claim was refused. 'exhausted' also covers a row that vanished. */
+export type ConsumeRefusal = Exclude<DeliveryStatus, 'active'>;
 
 /** Sparse GSI1 partition holding every delivery. Namespaced; cannot collide. */
 export const DELIVERY_INDEX_PK = 'DELIVERY';
@@ -103,35 +106,61 @@ export class DeliveryRepository {
     token: string,
     ip: string,
     maxDownloads: number
-  ): Promise<{ ok: true; delivery: Delivery } | { ok: false; reason: 'exhausted' }> {
-    const hit = { at: new Date().toISOString(), ip };
+  ): Promise<{ ok: true; delivery: Delivery } | { ok: false; reason: ConsumeRefusal }> {
+    const now = new Date().toISOString();
+    const hit = { at: now, ip };
     try {
       const updated = await DynamoDBOperations.update({
         key: { PK: pk(token), SK: 'METADATA' },
         updateExpression:
           'ADD downloadCount :one SET downloads = list_append(if_not_exists(downloads, :empty), :hit)',
-        conditionExpression: 'downloadCount < :max AND attribute_not_exists(revokedAt)',
+        // ⚠️ ALL THREE GUARDS BELONG HERE, not only the cap. Expiry used to be
+        // checked solely by the caller's status read, so the claim that "the
+        // database decides" was two-thirds true — and any future caller that
+        // skipped the read would have served an expired link. ISO-8601 UTC
+        // strings compare lexicographically, so a string compare is a date
+        // compare.
+        conditionExpression:
+          'downloadCount < :max AND attribute_not_exists(revokedAt) AND expiresAt > :now',
         expressionAttributeValues: {
-          ':one': 1, ':hit': [hit], ':empty': [], ':max': maxDownloads,
+          ':one': 1, ':hit': [hit], ':empty': [], ':max': maxDownloads, ':now': now,
         },
       });
       return { ok: true, delivery: toDelivery((updated ?? {}) as Record<string, unknown>) };
     } catch (error) {
       if ((error as { name?: string })?.name === 'ConditionalCheckFailedException') {
-        return { ok: false, reason: 'exhausted' };
+        // The condition cannot say WHICH clause failed, and telling a buyer
+        // "already used" when the link was revoked — or had expired — is a
+        // wrong answer to a question they will ask about. One extra read on a
+        // path that is already refusing costs nothing.
+        const current = await this.findByToken(token);
+        if (!current) return { ok: false, reason: 'exhausted' };
+        const status = deliveryStatusOf(current);
+        return { ok: false, reason: status === 'active' ? 'exhausted' : status };
       }
       handleDynamoDBError(error);
     }
   }
 
-  async revoke(token: string): Promise<void> {
+  /**
+   * Returns false when there was nothing to revoke.
+   *
+   * ⚠️ THE CONDITION IS NOT OPTIONAL. DynamoDB's UpdateItem UPSERTS, so
+   * revoking a mistyped token used to create a row: `revokedAt` set, no
+   * GSI1PK so it never appeared in the list, and no ttl so it never expired.
+   * Permanent invisible junk from a typo.
+   */
+  async revoke(token: string): Promise<boolean> {
     try {
       await DynamoDBOperations.update({
         key: { PK: pk(token), SK: 'METADATA' },
         updateExpression: 'SET revokedAt = :at',
+        conditionExpression: 'attribute_exists(PK)',
         expressionAttributeValues: { ':at': new Date().toISOString() },
       });
+      return true;
     } catch (error) {
+      if ((error as { name?: string })?.name === 'ConditionalCheckFailedException') return false;
       handleDynamoDBError(error);
     }
   }
