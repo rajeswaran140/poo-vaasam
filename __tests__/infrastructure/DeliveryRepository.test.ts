@@ -28,7 +28,7 @@ describe('create', () => {
     expect(item.SK).toBe('METADATA');
     expect(item.entityType).toBe('DELIVERY');
     expect(item.GSI1PK).toBe(DELIVERY_INDEX_PK);
-    expect(item.maxDownloads).toBe(3);
+    expect(item.maxDownloads).toBe(5);
     expect(item.downloadCount).toBe(0);
     const days = (Date.parse(item.expiresAt) - Date.parse(item.createdAt)) / 86_400_000;
     expect(Math.round(days)).toBe(7);
@@ -115,5 +115,99 @@ describe('list', () => {
     await new DeliveryRepository().list();
     expect(query.mock.calls[0][0].indexName).toBe('GSI1');
     expect(query.mock.calls[0][0].expressionAttributeValues[':pk']).toBe(DELIVERY_INDEX_PK);
+  });
+});
+
+/**
+ * The guards that must live in the DATABASE, not in the caller's read above it.
+ * The module's own comment says "the database is what actually decides" — these
+ * are what make that true rather than two-thirds true.
+ */
+describe('what the condition actually enforces', () => {
+  const claim = async () => {
+    update.mockClear();
+    update.mockResolvedValueOnce({});
+    await new DeliveryRepository().consume('a'.repeat(43), '1.2.3.4', 5);
+    return update.mock.calls[0][0];
+  };
+
+  it('refuses an EXPIRED link at the database, not only at the read', async () => {
+    // Expiry used to be checked solely by the caller. Any future caller that
+    // skipped that read would have served an expired link.
+    expect((await claim()).conditionExpression).toContain('expiresAt >');
+  });
+
+  it('still refuses a revoked link and an exhausted one', async () => {
+    const c = (await claim()).conditionExpression;
+    expect(c).toContain('attribute_not_exists(revokedAt)');
+    expect(c).toContain('downloadCount <');
+  });
+
+  it('compares dates as ISO strings, which is a date compare', async () => {
+    expect(String((await claim()).expressionAttributeValues[':now'])).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+});
+
+/**
+ * A refusal has to say WHICH guard refused. Telling a buyer "already used" when
+ * the link was revoked — or had expired — is a wrong answer to a question they
+ * will ask about.
+ */
+describe('why a claim was refused', () => {
+  const refuse = async (row: Record<string, unknown> | null) => {
+    update.mockClear();
+    update.mockRejectedValueOnce(Object.assign(new Error('no'), { name: 'ConditionalCheckFailedException' }));
+    (DynamoDBOperations.get as jest.Mock).mockResolvedValueOnce(row);
+    return new DeliveryRepository().consume('a'.repeat(43), '1.2.3.4', 5);
+  };
+  const base = {
+    token: 'a'.repeat(43), s3Key: 'deliveries/x.mp3', filename: 'x.mp3', label: 'l',
+    contentLength: 1, createdAt: '2026-01-01T00:00:00.000Z',
+    expiresAt: '2099-01-01T00:00:00.000Z', maxDownloads: 5, downloadCount: 0, downloads: [],
+  };
+
+  it('says revoked when the link was revoked', async () => {
+    expect(await refuse({ ...base, revokedAt: '2026-09-18T00:00:00.000Z' }))
+      .toEqual({ ok: false, reason: 'revoked' });
+  });
+
+  it('says expired when the link had expired', async () => {
+    expect(await refuse({ ...base, expiresAt: '2020-01-01T00:00:00.000Z' }))
+      .toEqual({ ok: false, reason: 'expired' });
+  });
+
+  it('says exhausted when the cap was reached', async () => {
+    expect(await refuse({ ...base, downloadCount: 5 }))
+      .toEqual({ ok: false, reason: 'exhausted' });
+  });
+
+  it('falls back to exhausted when the row has gone', async () => {
+    expect(await refuse(null)).toEqual({ ok: false, reason: 'exhausted' });
+  });
+});
+
+/**
+ * ⚠️ DynamoDB's UpdateItem UPSERTS. Revoking a mistyped token used to CREATE a
+ * row — revokedAt set, no GSI1PK so it never appeared in the list, no ttl so it
+ * never expired. Permanent invisible junk from a typo.
+ */
+describe('revoke', () => {
+  it('is conditional on the row existing', async () => {
+    update.mockClear();
+    update.mockResolvedValueOnce({});
+    await new DeliveryRepository().revoke('a'.repeat(43));
+    expect(update.mock.calls[0][0].conditionExpression).toBe('attribute_exists(PK)');
+  });
+
+  it('reports false rather than throwing when there was nothing to revoke', async () => {
+    update.mockClear();
+    update.mockRejectedValueOnce(Object.assign(new Error('nope'), { name: 'ConditionalCheckFailedException' }));
+    await expect(new DeliveryRepository().revoke('b'.repeat(43))).resolves.toBe(false);
+  });
+
+  it('reports true when it revoked something', async () => {
+    update.mockClear();
+    update.mockResolvedValueOnce({});
+    await expect(new DeliveryRepository().revoke('c'.repeat(43))).resolves.toBe(true);
   });
 });
