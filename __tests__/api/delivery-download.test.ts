@@ -115,3 +115,18 @@ it('enforces rate limit before any database work', async () => {
   expect(res.status).toBe(429);
   expect(findByToken).not.toHaveBeenCalled();
 });
+
+/**
+ * The route used to map every condition failure to 'exhausted'. If a revoke
+ * landed between the status read and the write, the buyer was told they had
+ * used the link up — a wrong answer to a question they will ask about.
+ */
+it('reports the reason the DATABASE gave, not a guess', async () => {
+  for (const reason of ['revoked', 'expired', 'exhausted'] as const) {
+    findByToken.mockResolvedValueOnce(live());
+    consume.mockResolvedValueOnce({ ok: false, reason });
+    const res = await GET(req(), ctx());
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toContain(`e=${reason}`);
+  }
+});

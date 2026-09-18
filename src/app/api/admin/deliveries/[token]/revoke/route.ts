@@ -17,6 +17,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ success: false, error: 'Bad token' }, { status: 400 });
   }
 
-  await new DeliveryRepository().revoke(token);
+  // A revoke that matched nothing is a typo, and saying so beats a silent
+  // success — which is what it was, while also creating a junk row.
+  const revoked = await new DeliveryRepository().revoke(token);
+  if (!revoked) {
+    return NextResponse.json({ success: false, error: 'No delivery with that token' }, { status: 404 });
+  }
   return NextResponse.json({ success: true });
 }

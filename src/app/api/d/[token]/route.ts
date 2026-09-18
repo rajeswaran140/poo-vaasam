@@ -43,7 +43,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   // attribute against another attribute of the same item, so it arrives as an
   // argument rather than being re-read inside the repository.
   const claimed = await repo.consume(token, clientIp(request), delivery.maxDownloads);
-  if (!claimed.ok) return back(request, token, 'exhausted');
+  // The database's reason, not a guess. Telling a buyer "already used" when the
+  // link was revoked between the read above and this write is a wrong answer to
+  // a question they will ask about.
+  if (!claimed.ok) return back(request, token, claimed.reason);
 
   const url = await S3Operations.getSignedUrl(
     delivery.s3Key, PRESIGN_TTL_SECONDS, delivery.filename

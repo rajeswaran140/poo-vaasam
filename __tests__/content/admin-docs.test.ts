@@ -397,3 +397,37 @@ describe('Mastering Tools A–Z', () => {
     expect(doc!.body).toMatch(/Never validated/i);
   });
 });
+
+/**
+ * The cadence doc states the 1-2/week and 3-4 day rules as absolutes, which
+ * made a correct festival release read as a breach — I reported it as one on
+ * 2026-09-18 and was wrong. The exception has to live where the rule does.
+ */
+describe('cadence doc — event-bound releases', () => {
+  const doc = getDoc('upload-cadence-timing');
+
+  it('says a dated song is published on its date, not on the cadence', () => {
+    const b = doc!.body;
+    expect(b).toMatch(/Event-bound releases sit outside this/i);
+    expect(b).toMatch(/published on its date, not on the cadence/i);
+    expect(b).toMatch(/no value the week after/i);
+  });
+
+  it('keeps the worked example, so the shape is recognisable next time', () => {
+    expect(doc!.body).toMatch(/கந்தனை போற்றுவோம்/);
+    expect(doc!.body).toMatch(/26 hours after/);
+  });
+
+  /** The exception must not become a loophole that dissolves the rule. */
+  it('says an event release does not license an extra ordinary one', () => {
+    const b = doc!.body;
+    expect(b).toMatch(/does not .?use up. a slot/i);
+    expect(b).toMatch(/Count the cadence on the songs that could have gone out any week/i);
+  });
+
+  it('still states the rule it is an exception to', () => {
+    const b = doc!.body;
+    expect(b).toMatch(/never less than 3.4 days between releases/i);
+    expect(b).toMatch(/minimum of one and a maximum of two songs per week/i);
+  });
+});

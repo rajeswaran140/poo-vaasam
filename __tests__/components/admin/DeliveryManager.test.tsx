@@ -106,3 +106,53 @@ it('shows an honest error instead of hanging on Loading… when the list fetch f
 
   expect(await screen.findByRole('alert')).toHaveTextContent(/Network error/);
 });
+
+/**
+ * The link used to appear once, in a box after creation — close the tab before
+ * emailing it and the only way back was minting a second link.
+ */
+it('shows the delivery link on every active row, ready to copy', async () => {
+  mockedFetch.mockResolvedValueOnce(json({
+    success: true,
+    deliveries: [{
+      token: 'a'.repeat(43), filename: 'Song.mp3', label: 'Anton — Sevvanthi',
+      downloadCount: 1, maxDownloads: 5, expiresAt: '2026-09-25T00:00:00.000Z',
+      revokedAt: null, url: 'https://tamilagaval.com/d/' + 'a'.repeat(43),
+    }],
+  }));
+  render(<DeliveryManager />);
+
+  const field = await screen.findByLabelText(/Delivery link for Anton — Sevvanthi/i);
+  expect(field).toHaveValue('https://tamilagaval.com/d/' + 'a'.repeat(43));
+  expect(field).toHaveAttribute('readonly');
+});
+
+it('does not offer a link for a revoked row', async () => {
+  mockedFetch.mockResolvedValueOnce(json({
+    success: true,
+    deliveries: [{
+      token: 'b'.repeat(43), filename: 'Song.mp3', label: 'Anton — old',
+      downloadCount: 1, maxDownloads: 5, expiresAt: '2026-09-25T00:00:00.000Z',
+      revokedAt: '2026-09-18T00:00:00.000Z', url: 'https://tamilagaval.com/d/' + 'b'.repeat(43),
+    }],
+  }));
+  render(<DeliveryManager />);
+
+  expect(await screen.findByText(/revoked/i)).toBeInTheDocument();
+  expect(screen.queryByLabelText(/Delivery link for/i)).not.toBeInTheDocument();
+});
+
+/**
+ * The S3 key is the field that gets typed wrong, and a label saying "must be
+ * under deliveries/" does not show what a whole key looks like. The colour is
+ * set explicitly because the browser default is near-invisible.
+ */
+it('shows a readable example in each field', async () => {
+  mockedFetch.mockResolvedValueOnce(json({ success: true, deliveries: [] }));
+  render(<DeliveryManager />);
+
+  const key = await screen.findByLabelText(/S3 key/i);
+  expect(key).toHaveAttribute('placeholder', expect.stringContaining('deliveries/'));
+  expect(key.className).toContain('placeholder:text-gray-500');
+  expect(key.className).toContain('dark:placeholder:text-gray-400');
+});

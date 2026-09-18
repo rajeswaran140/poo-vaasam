@@ -2,6 +2,7 @@
 import {
   newDeliveryToken, isDeliveryToken, deliveryStatusOf, createDeliverySchema,
   DEFAULT_MAX_DOWNLOADS, DEFAULT_TTL_DAYS, type Delivery,
+  publicDelivery,
 } from '@/types/delivery';
 
 const base = (over: Partial<Delivery> = {}): Delivery => ({
@@ -98,7 +99,54 @@ describe('createDeliverySchema', () => {
 
 describe('defaults', () => {
   it('are the locked values', () => {
-    expect(DEFAULT_MAX_DOWNLOADS).toBe(3);
+    // 5, not 3: a commission is usually several files, and a buyer moving
+    // between a phone and a laptop spends two before listening properly.
+    expect(DEFAULT_MAX_DOWNLOADS).toBe(5);
     expect(DEFAULT_TTL_DAYS).toBe(7);
+  });
+});
+
+/**
+ * `s3Key` carried a comment saying it is NEVER sent to a client, while both
+ * admin responses returned the whole row including it. Admin-only, and the
+ * admin already has S3 access — but an invariant that is merely asserted is
+ * worse than none, because the next reader builds on it.
+ */
+describe('publicDelivery', () => {
+  const row: Delivery = {
+    token: 'a'.repeat(43),
+    s3Key: 'deliveries/anton/secret-path.mp3',
+    filename: 'Song.mp3',
+    label: 'Anton',
+    contentLength: 123,
+    createdAt: '2026-09-18T00:00:00.000Z',
+    expiresAt: '2026-09-25T00:00:00.000Z',
+    maxDownloads: 5,
+    downloadCount: 0,
+    downloads: [],
+    revokedAt: null,
+  };
+
+  it('removes the one field that must not travel', () => {
+    const out = publicDelivery(row);
+    expect('s3Key' in out).toBe(false);
+    expect(JSON.stringify(out)).not.toContain('secret-path');
+  });
+
+  it('keeps everything the buyer page and the admin list need', () => {
+    const out = publicDelivery(row);
+    for (const k of ['token', 'filename', 'label', 'contentLength', 'createdAt',
+                     'expiresAt', 'maxDownloads', 'downloadCount', 'downloads', 'revokedAt'] as const) {
+      expect(k in out).toBe(true);
+    }
+  });
+
+  /**
+   * Destructured rather than deleted, so a field added to Delivery later is
+   * included by default and only a deliberate edit here can exclude it.
+   */
+  it('passes through a field added to Delivery without being updated', () => {
+    const extended = { ...row, somethingNew: 'x' } as Delivery & { somethingNew: string };
+    expect((publicDelivery(extended) as { somethingNew?: string }).somethingNew).toBe('x');
   });
 });

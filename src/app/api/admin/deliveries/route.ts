@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { DeliveryRepository } from '@/infrastructure/database/DeliveryRepository';
-import { createDeliverySchema } from '@/types/delivery';
+import { createDeliverySchema, publicDelivery } from '@/types/delivery';
 import { S3Operations } from '@/infrastructure/storage/s3-client';
 import { SITE_URL } from '@/lib/seo';
 
@@ -18,7 +18,13 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try { await requireAdmin(request); } catch (e) { return authErrorResponse(e); }
   const deliveries = await new DeliveryRepository().list();
-  return NextResponse.json({ success: true, deliveries });
+  // The URL is built HERE, not in the browser, so there is one place that knows
+  // how a delivery link is shaped — and so a link can be copied again after the
+  // tab that created it is gone.
+  return NextResponse.json({
+    success: true,
+    deliveries: deliveries.map((d) => ({ ...publicDelivery(d), url: `${SITE_URL}/d/${d.token}` })),
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -47,7 +53,7 @@ export async function POST(request: NextRequest) {
 
   const delivery = await new DeliveryRepository().create({ ...parsed.data, contentLength });
   return NextResponse.json(
-    { success: true, delivery, url: `${SITE_URL}/d/${delivery.token}` },
+    { success: true, delivery: publicDelivery(delivery), url: `${SITE_URL}/d/${delivery.token}` },
     { status: 201 }
   );
 }
