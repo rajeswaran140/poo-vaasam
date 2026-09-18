@@ -1917,6 +1917,27 @@ Input #0, wav, from '/tmp/master-test/in.wav':
     expect(patched()).toMatchObject({ status: 'error', error: { code: 'bad-mode' } });
   });
 
+  /**
+   * The OTHER half of the split, asserted end to end.
+   *
+   * The re-master guard composes two predicates so that `isMasterKey` can keep
+   * answering its second question — "is this a valid source for a video, short
+   * or YouTube upload?" — with a NO for a karaoke bed. The unit test pins that
+   * `isMasterKey` does not match a bed's key; these pin what that buys, which
+   * is the thing a future widening would actually break. A bed is a product
+   * someone bought, not a song for the channel.
+   */
+  it.each([
+    ['render', { render: { audioKey: BED_KEY, coverKey: 'audio/mastering/c.jpg' } }, 'videoError'],
+    ['short', { short: { audioKey: BED_KEY, coverKey: 'audio/mastering/c.jpg' } }, 'shortError'],
+  ])('refuses to %s a karaoke bed as if it were a master', async (_what, spec, field) => {
+    const res = await handler({ jobId: 'k1', ...spec } as never);
+    expect(res).toEqual({ ok: false });
+    expect(spawnSync).not.toHaveBeenCalled();
+    expect(s3Send).not.toHaveBeenCalled();
+    expect(String(patched()[field])).toContain('mastered WAV');
+  });
+
   it('clears its temp directory when it refuses mid-run', async () => {
     mockRmSync.mockClear();
     logs.src = EBU_QUIET;

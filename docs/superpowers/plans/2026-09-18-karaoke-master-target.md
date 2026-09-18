@@ -396,6 +396,17 @@ it('downloads as a karaoke bed, not as a master', async () => {
 - [ ] **Step 2: Run, watch it fail**
 - [ ] **Step 3: Implement**, including the deliverable note — *320 kbps MP3, no vocals, headroom for a live voice* — matching `KARAOKE_DELIVERABLE`.
 - [ ] **Step 4: Run — expect PASS**
+
+⚠️ **Found during Task 4 — the release pipeline will offer a dead-end button.**
+`planRender` (`src/lib/master-video.ts:125-128`) gates on `status === 'done'`,
+`savedAt` and `masterKey` — never on `isMasterKey` — so `pipelineFor` in
+`src/lib/release-pipeline.ts:83` will offer **Render video** on a finished
+karaoke job. The worker then refuses it (`isMasterKey(audioKey)` is false for a
+bed; a Task 4 test pins that refusal), so the button is a dead end rather than a
+hazard. Fix it here, in `planRender`/`planShort`, not in the component: refuse
+`no-master` — or a new reason — when the job's `normalizationMode` is `'peak'`,
+so the pipeline line and the buttons still cannot disagree.
+
 - [ ] **Step 5: Commit**
 
 ---
