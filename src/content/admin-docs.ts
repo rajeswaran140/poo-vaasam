@@ -1976,7 +1976,7 @@ On a failure it shows a message and never breaks the page — just try again. A 
     slug: 'upload-cadence-timing',
     title: 'Upload cadence & timing — when to publish',
     category: 'Publishing',
-    updatedAt: '2026-07-18',
+    updatedAt: '2026-09-18T16:30:00Z',
     body: `# When to upload — cadence, best days & times
 
 Data-backed publishing guide for the Tamilagaval channel. The **day/time** figures are from the trailing 12 weeks (pulled 2026-07-06) — re-check periodically. For the release *system* (queue, lane sequencing, playlist routing) see **Release calendar & queue**.
@@ -1988,6 +1988,17 @@ Data-backed publishing guide for the Tamilagaval channel. The **day/time** figur
 This **retires the 3–4/week themed-day experiment** that ran from 2026-07-20 (Mon Love · Wed Parent · Fri Nature). It was never completed. The August burst — five releases in the seven days to 2026-08-29 — coincided with HOZ3 underperforming on day 0, and with a maintenance load of 2–3 days per song that does not survive that pace.
 
 **The spacing rule: never less than 3–4 days between releases.** 1/week = a 7-day gap. 2/week ≈ 3–4 days. Never same-day, never more than two in a week.
+
+### ⚠️ Event-bound releases sit outside this
+
+**A devotional or festival song is published on its date, not on the cadence.** It has no value the week after the festival, so the spacing rule does not govern it.
+
+Confirmed 2026-09-18, when **கந்தனை போற்றுவோம்** went out 26 hours after **கண்ணழகின் பெட்டகமே** — four full songs in seven days, and correct. Read against the rule alone that looks like the August burst repeating; it is not the same thing.
+
+Two consequences worth knowing rather than worrying about:
+
+- **A dated song leans on search, not the subscriber feed.** People look for it around the occasion. So sharing a notification window with an ordinary release costs it much less than it would cost another love song.
+- **The ordinary stream still obeys the rule.** An event release does not "use up" a slot, and it does not license a second unscheduled one. Count the cadence on the songs that could have gone out any week.
 
 **Two-a-week pairs that satisfy it:**
 
