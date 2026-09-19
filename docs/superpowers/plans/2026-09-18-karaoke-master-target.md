@@ -20,6 +20,12 @@ Copy these values verbatim. They are the spec's, and each was measured.
 - Karaoke master key suffix: `-karaoke-1dBTP.wav`
 - Output format: `-ar 48000 -c:a pcm_s24le`, identical to the loudness path
 
+> ✅ **COMPLETE 2026-09-19.** All seven tasks shipped and verified end to end
+> from the browser — PRs #319 (the module, the record, the route, the worker,
+> the report, the Studio), #323 and #324 (what building it proved about Suno's
+> stems). Task 7's measurements are at the foot of this file. Kept as the record
+> of what was built and why.
+
 ## Global Constraints
 
 - **`'loudness'` output must stay byte-identical.** Any job that does not ask for `'peak'` runs exactly the code it runs today. The worker's existing ffmpeg call-sequence assertions must pass unchanged — never weaken one to accommodate a new branch.
@@ -67,7 +73,7 @@ export function buildPeakArgs(p: { inPath: string; outPath: string; gainDb: numb
 export function isValidNormalizationMode(v: unknown): v is NormalizationMode;
 ```
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import {
@@ -149,12 +155,12 @@ describe('the mode', () => {
 });
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 `npx jest __tests__/lib/master-peak.test.ts > /tmp/t.txt 2>&1; echo $?`
 Expected: FAIL — `Cannot find module '@/lib/master-peak'`.
 
-- [ ] **Step 3: Write `src/lib/master-peak.ts`**
+- [x] **Step 3: Write `src/lib/master-peak.ts`**
 
 Header comment must record WHY this exists: loudnorm reports `Normalization Type: Dynamic` on a karaoke bed at −14, −18 and −20 alike, even with `linear=true` requested, and misses the requested target by ~0.7 LU. Peak-only is the only option measured that leaves −20.2 LUFS / 6.4 LU untouched. Cite the spec.
 
@@ -179,8 +185,8 @@ export function buildPeakArgs(p: { inPath: string; outPath: string; gainDb: numb
 }
 ```
 
-- [ ] **Step 4: Run the tests — expect PASS**
-- [ ] **Step 5: Commit** — `feat(mastering): pure peak-normalisation layer for karaoke beds`
+- [x] **Step 4: Run the tests — expect PASS**
+- [x] **Step 5: Commit** — `feat(mastering): pure peak-normalisation layer for karaoke beds`
 
 ---
 
@@ -192,11 +198,11 @@ export function buildPeakArgs(p: { inPath: string; outPath: string; gainDb: numb
 
 **Interfaces — Consumes:** `NormalizationMode` from Task 1.
 
-- [ ] **Step 1: Write the failing test** — a row created without the fields hydrates them as `null`; a row carrying `normalizationMode: 'peak'` and `peakGainDb: 6.5` hydrates them through; a row carrying a nonsense mode hydrates as `null` rather than passing it on.
+- [x] **Step 1: Write the failing test** — a row created without the fields hydrates them as `null`; a row carrying `normalizationMode: 'peak'` and `peakGainDb: 6.5` hydrates them through; a row carrying a nonsense mode hydrates as `null` rather than passing it on.
 
-- [ ] **Step 2: Run it, watch it fail**
+- [x] **Step 2: Run it, watch it fail**
 
-- [ ] **Step 3: Add to `MasterJob`**
+- [x] **Step 3: Add to `MasterJob`**
 
 ```ts
 /** null ⇒ 'loudness' — every row written before this existed. */
@@ -214,8 +220,8 @@ normalizationMode:
 peakGainDb: typeof item.peakGainDb === 'number' ? item.peakGainDb : null,
 ```
 
-- [ ] **Step 4: Run — expect PASS. Run the FULL suite too:** adding required fields to `MasterJob` breaks every test fixture that builds one literally. Fix the fixtures; do not make the fields optional to avoid the work.
-- [ ] **Step 5: Commit**
+- [x] **Step 4: Run — expect PASS. Run the FULL suite too:** adding required fields to `MasterJob` breaks every test fixture that builds one literally. Fix the fixtures; do not make the fields optional to avoid the work.
+- [x] **Step 5: Commit**
 
 ---
 
@@ -225,7 +231,7 @@ peakGainDb: typeof item.peakGainDb === 'number' ? item.peakGainDb : null,
 - Modify: `src/app/api/admin/music-lab/master/route.ts`
 - Test: `__tests__/api/admin-music-lab.test.ts` (extend)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 it('defaults to loudness, and the payload is unchanged', async () => {
@@ -262,10 +268,10 @@ it('400s peak together with a reference', async () => {
 });
 ```
 
-- [ ] **Step 2: Run, watch it fail**
-- [ ] **Step 3: Implement.** Spread the field only when `'peak'`, so a loudness enqueue stays byte-identical.
-- [ ] **Step 4: Run — expect PASS**
-- [ ] **Step 5: Commit**
+- [x] **Step 2: Run, watch it fail**
+- [x] **Step 3: Implement.** Spread the field only when `'peak'`, so a loudness enqueue stays byte-identical.
+- [x] **Step 4: Run — expect PASS**
+- [x] **Step 5: Commit**
 
 ---
 
@@ -445,9 +451,35 @@ not rounded.
 Studio enqueues it, the worker branches, the key is right, and the report and
 the library row read correctly.
 
-- [ ] **Step 1: Deploy the worker** — `npm run deploy:master-worker`. It does NOT ride along with Amplify.
-- [ ] **Step 2: Master `~/albums/karaoke/sevvanthi/karaoke-clean.wav` in peak mode through the portal**
-- [ ] **Step 3: Measure the output**
+### ✅ DONE 2026-09-19 — verified end to end from the browser
+
+Worker deployed (`npm run deploy:master-worker`, 20:45 UTC 2026-09-18) and
+confirmed live by invoking it against a karaoke key: it refused with
+`already-mastered`, which only the new composed guard does.
+
+Then Raj ran the real thing from the Studio on the செவ்வந்தி பூவே bed — chosen
+because it is already at -1.0 dBTP, so the gain is 0.00 dB and a correct
+implementation must change nothing. Raj: *"that works, nice"*.
+
+Measured on the pipeline's own outputs:
+
+| | integrated | LRA | true peak | bitrate |
+|---|---|---|---|---|
+| source | -20.2 LUFS | 6.4 LU | -1.0 dBTP | — |
+| the WAV it wrote | -20.2 | **6.4** | -1.0 | — |
+| the MP3 it wrote | -20.2 | **6.4** | -1.0 | 320,028 bps |
+
+Unchanged throughout, which is the entire claim.
+
+**And it settles the encode question the delivery doc raised.** The 320k MP3 rose
+**0.00 dB** off a file sitting exactly on the ceiling — so the warning that a
+bed's MP3 would land near -0.6 was wrong, and the revised rule is right: the
+peak rise scales with LEVEL, and at bed loudness it is zero. Only the -14 LUFS
+files rose (+0.2 to +0.45).
+
+- [x] **Step 1: Deploy the worker** — `npm run deploy:master-worker`. It does NOT ride along with Amplify.
+- [x] **Step 2: Master `~/albums/karaoke/sevvanthi/karaoke-clean.wav` in peak mode through the portal**
+- [x] **Step 3: Measure the output**
 
 ```bash
 ffmpeg -hide_banner -nostats -i <output>.wav -af ebur128=peak=true -f null - 2>&1 | sed -n '/Summary:/,$p'
@@ -463,9 +495,9 @@ ffmpeg -hide_banner -nostats -i <output>.wav -af ebur128=peak=true -f null - 2>&
 
 The bed was already built to −1.0 dBTP, so the gain is 0.00 dB and a correct implementation returns it untouched. **Any movement in LRA means something compressed it and the feature is wrong.**
 
-- [ ] **Step 4: Check the MP3 is 320 kbps** — `ffmpeg -i <output>.mp3` should report `320 kb/s`.
-- [ ] **Step 5: Check the report** reads peak-safe rather than a failed master, and that the row offers no video or short.
-- [ ] **Step 6: Commit** any fixes the real run surfaces.
+- [x] **Step 4: Check the MP3 is 320 kbps** — `ffmpeg -i <output>.mp3` should report `320 kb/s`.
+- [x] **Step 5: Check the report** reads peak-safe rather than a failed master, and that the row offers no video or short.
+- [x] **Step 6: Commit** any fixes the real run surfaces.
 
 ---
 
