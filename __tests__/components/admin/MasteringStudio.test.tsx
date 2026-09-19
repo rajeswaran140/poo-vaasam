@@ -1762,6 +1762,60 @@ describe('rendering from the saved-masters library', () => {
     expect(renderBtn).toHaveTextContent('Make video or short');
   });
 
+  /**
+   * THE DEFECT: a row that already has a cover still demanded a fresh upload.
+   *
+   * Reported 2026-09-19 on இன்னுமொரு கருவறையில் — a master saved the previous
+   * evening, already rendered to 1440p FROM its recorded cover, whose short
+   * could not be made. `planShort` permitted it; the row's buttons were simply
+   * disabled, because opening the strip always set `cover: null` and both
+   * buttons gate on it. So the operator had to find the same image on disk and
+   * upload it a second time — and the only clue was a button that did nothing.
+   *
+   * The file input stays, for replacing the cover. It is no longer required to
+   * use one that is already on the job.
+   */
+  it('enables both buttons straight away when the row already has a cover', async () => {
+    await openLibrary(row({ coverKey: 'audio/mastering/1789769411040_70b8f088_Thopil.png' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Video or short for காதல் மழை/ }));
+    });
+    expect(screen.getByRole('button', { name: /Render video/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /vertical short/i })).toBeEnabled();
+  });
+
+  it('names the cover it is reusing, so it is not a silent assumption', async () => {
+    await openLibrary(row({ coverKey: 'audio/mastering/1789769411040_70b8f088_Thopil.png' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Video or short for காதல் மழை/ }));
+    });
+    expect(screen.getByText(/Thopil\.png/)).toBeInTheDocument();
+  });
+
+  it('still requires a cover when the row has none recorded', async () => {
+    await openLibrary(row({ coverKey: null }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Video or short for காதல் மழை/ }));
+    });
+    expect(screen.getByRole('button', { name: /Render video/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /vertical short/i })).toBeDisabled();
+  });
+
+  it('sends the recorded cover to the short, without a re-upload', async () => {
+    await openLibrary(row({ coverKey: 'audio/mastering/1789769411040_70b8f088_Thopil.png' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Video or short for காதல் மழை/ }));
+    });
+    mockedFetch.mockResolvedValueOnce(json({ success: true, jobId: 'saved-vid-1' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /vertical short/i }));
+    });
+    const call = mockedFetch.mock.calls.find((c) => String(c[0]).includes('/short'));
+    expect(call).toBeTruthy();
+    const body = JSON.parse((call![1] as { body: string }).body);
+    expect(body.coverKey).toBe('audio/mastering/1789769411040_70b8f088_Thopil.png');
+  });
+
   it('sends the row-s own job id and cover, not the active job-s', async () => {
     await openLibrary();
     await act(async () => {
