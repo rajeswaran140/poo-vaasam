@@ -55,7 +55,7 @@ export const ADMIN_DOCS: AdminDoc[] = [
     slug: 'start-here',
     title: 'Start here — what to read, in what order',
     category: 'Start here',
-    updatedAt: '2026-08-10',
+    updatedAt: '2026-09-19T00:30:00Z',
     body: `# Start here
 
 These guides accumulated one problem at a time, so reading them front to back is not the fastest way in. This is the order that builds on itself.
@@ -92,6 +92,17 @@ Read these three. Almost every wrong conclusion about the channel comes from not
 | 5 | **Publishing traps — things that fail silently** |
 
 Read the traps guide **before** your next upload, not after. Every entry in it cost real time, and none of them announce themselves.
+
+## Selling a song
+
+| order | guide |
+|---|---|
+| 1 | Music Lab — making a karaoke version from Suno stems |
+| 2 | **Delivering a paid order — expiring links, and the one way to copy them** |
+
+One line from that second guide is worth knowing before you ever need it: a
+delivery token is **43 case-sensitive characters** and cannot be retyped. Copy
+it from [Admin → Deliveries](/admin/deliveries), never from a terminal.
 
 ## Growing the audience
 
@@ -2975,6 +2986,124 @@ YouTube keeps generating ASR caption tracks in the wrong language on this channe
 **YouTube cannot swap the file on an existing video.** A re-render means a new upload and a new video ID, and every link to the old one dies.
 
 Upload the replacement and verify it **before** deleting the original — the old one is the only fallback if the new upload fails, and on premiere morning there is no time to build a third. Delete it only once the new ID reads back clean.
+`,
+  },
+  {
+    slug: 'delivering-a-paid-order',
+    title: 'Delivering a paid order — expiring links, and the one way to copy them',
+    category: 'Distribution',
+    updatedAt: '2026-09-19T00:30:00Z',
+    body: `# Delivering a paid order
+
+For a commission — a karaoke bed, a custom mix — the buyer gets an **expiring
+delivery link**, not an email attachment and not a public URL. One link per
+file, each with its own expiry and download budget, each revocable.
+
+## ⚠️ NEVER RETYPE A DELIVERY TOKEN. Copy it from Admin → Deliveries.
+
+This is the trap that actually costs time, and it cost an evening on
+**2026-09-19**: four correct, live links were reported as "not valid" one after
+another. Every one of them worked. The URLs being tested had been transcribed
+by hand from a terminal, and three characters had changed:
+
+\`\`\`
+issued  FW6JMpxe-giv6-j9srOaw0M7tqaHWaGjCaATmc-ZnsI
+typed   FW6JMpxe-giV6-j9sr0aw0M7tdaHWaGjCaATmc-ZnsI
+                    ^        ^      ^
+                 v → V    O → 0   q → d
+\`\`\`
+
+A token is **43 case-sensitive characters** of base64url. That alphabet
+contains \`O\` and \`0\`, \`l\` and \`1\`, \`v\` and \`V\` — pairs that are
+indistinguishable in most terminal fonts and in a photograph of a screen. The
+token IS the credential: one wrong character is not a near miss, it is a
+different link, and the page correctly says so.
+
+**So there is exactly one supported way to get a delivery link:**
+
+> **[Admin → Deliveries](/admin/deliveries)** lists every link, newest first,
+> with its label and download count. Each row holds the full URL in a box that
+> **selects its own contents the moment you click it** — click, copy, paste.
+
+That panel is also why a link never needs re-minting: it was built after a
+link appeared once in a box on creation, where closing the tab was enough to
+lose it permanently.
+
+Two corollaries:
+- **Do not read a token aloud, screenshot it, or paste it from a terminal.**
+- **A "not valid" report is a transcription error until proven otherwise.**
+  Check the panel first: if the row is there and reads \`active\`, the link is
+  fine and the URL in hand is not.
+
+## The order of operations
+
+1. **Payment lands first.** Nothing is delivered before it. This is not a
+   policy about trust, it is about there being no way to un-deliver a file.
+2. **Stage the files under \`deliveries/\`.** Only that prefix can be served by
+   a delivery link — the schema refuses anything else, and the prefix is
+   **Denied to CloudFront** (\`DenyCloudFrontOnMasteringWorkspaceAndReferences\`),
+   so an object there is reachable only through a presigned link this system
+   mints. One folder per order reads best: \`deliveries/<buyer>-<date>/\`.
+3. **Mint one link per file** in Admin → Deliveries, with a filename that names
+   the version. \`Sevvanthi Poove - Karaoke (Studio -20 LUFS).mp3\` is right;
+   the raw S3 key is not. The buyer receives several files at once and the
+   filename is the only thing stopping them mixing up two versions of the
+   same song.
+4. **Test by clicking Download**, not by loading the page. Opening a delivery
+   page costs nothing — verified: four pages loaded, all four still read
+   \`0 of 8\`. Only the download button consumes one.
+5. **Copy from the panel, send, keep the tab.**
+
+## The numbers, and why they are what they are
+
+| | value | why |
+|---|---|---|
+| Downloads | **5** by default | A commission is several files, and a buyer moving between a phone and a laptop spends two before listening properly. Three sends them back to ask, which costs more than a spare download. |
+| Expiry | **7 days** default | Long enough to be unhurried, short enough that an old link in an inbox is not a standing grant. |
+| Presign | **60 seconds** | Long enough to start a download, too short to be worth forwarding. |
+
+Raise both for a paid order — Anton's four links were minted at **8 downloads
+over 14 days**. The ceiling is 20 downloads and 90 days.
+
+⚠️ **The presign expires in 60 seconds, not the link.** If the buyer sits on the
+page a while and then clicks, the download can fail while the link is still
+perfectly valid. Reloading the page fixes it. Say this when sending, or it
+reads as a broken link.
+
+## Revoking
+
+A link can be revoked from its row, at any time, and revocation is reported to
+the buyer **ahead of expiry** — the operator killing a link is the more
+informative fact. Revoked is permanent for that token; a replacement is a new
+link.
+
+Use it when a link has been sent to the wrong person, or when a file turns out
+to be wrong after sending. Do not use it to "tidy up" a finished order — an
+expired link already says the right thing, and a revoked one reads to the buyer
+as though something went wrong.
+
+## Check the files before minting, not after
+
+The link points at an S3 key, so replacing the object later still works — but
+the delivery record stores the file's **size** at mint time, and the buyer's
+page shows it. Fix the audio first, then mint.
+
+Measured on Anton's order, 2026-09-19, before it went out: both *standard*
+versions were at **-0.7 dBTP**, above the -1 dBTP ceiling everything else in
+the catalogue is held to. Corrected with a single gain on the source WAV and a
+re-encode, so the buyer still receives only one lossy generation.
+
+⚠️ **And the reason they were over: a 320 kbps encode is NOT peak-neutral.**
+The mastering module records 192k as peak-neutral on this material (mean
+-0.06 dB, largest rise observed +0.22). At **320k**, measured on both files,
+the rise was **+0.4 dB** — nearly double that maximum. Both source WAVs read
+-0.9 and -1.0 dBTP and were compliant; the MP3s were not. A first correction
+of -0.3 dB still came out at -0.8 and -0.9. It took -0.55 and -0.45 dB to land
+the ceiling.
+
+**So measure the MP3, never the WAV, when the MP3 is what ships.** This applies
+to the karaoke bed the Studio produces too: its 320k export is encoded from a
+file sitting exactly on -1.0 dBTP, so expect it to land near -0.6.
 `,
   },
   {
