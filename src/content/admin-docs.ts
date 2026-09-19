@@ -3093,17 +3093,33 @@ versions were at **-0.7 dBTP**, above the -1 dBTP ceiling everything else in
 the catalogue is held to. Corrected with a single gain on the source WAV and a
 re-encode, so the buyer still receives only one lossy generation.
 
-⚠️ **And the reason they were over: a 320 kbps encode is NOT peak-neutral.**
-The mastering module records 192k as peak-neutral on this material (mean
--0.06 dB, largest rise observed +0.22). At **320k**, measured on both files,
-the rise was **+0.4 dB** — nearly double that maximum. Both source WAVs read
--0.9 and -1.0 dBTP and were compliant; the MP3s were not. A first correction
-of -0.3 dB still came out at -0.8 and -0.9. It took -0.55 and -0.45 dB to land
-the ceiling.
+⚠️ **The reason they were over: the peak rise of an MP3 encode grows with how
+LOUD the file is.** Measured across six 320k encodes of these same two songs:
 
-**So measure the MP3, never the WAV, when the MP3 is what ships.** This applies
-to the karaoke bed the Studio produces too: its 320k export is encoded from a
-file sitting exactly on -1.0 dBTP, so expect it to land near -0.6.
+| source | WAV | MP3 | rise |
+|---|---|---|---|
+| Sevvanthi studio (-20.2 LUFS) | -1.0 | -1.0 | **0.00** |
+| Eelathu studio (-17.3 LUFS) | -1.0 | -1.0 | **0.00** |
+| Sevvanthi standard (-14.0) | -0.9 | -0.7 | +0.2 |
+| Eelathu standard (-14.3) | -1.0 | -0.7 | +0.3 |
+| Sevvanthi standard, corrected | -1.45 | -1.0 | +0.45 |
+| Eelathu standard, corrected | -1.45 | -1.1 | +0.35 |
+
+The two **quiet** files encoded peak-neutrally. The four at -14 rose
+**+0.2 to +0.45 dB**. The mastering module's own figures — 192k, mean -0.06,
+largest rise +0.22 — were measured on songs at -14, so 320k is roughly double
+192k at the same level, and both are ~zero on a quiet bed.
+
+Practical consequences:
+
+- **A compliant WAV does not give you a compliant MP3 at -14.** Both standard
+  WAVs read -0.9 and -1.0 and were fine; both MP3s were not. A first correction
+  of -0.3 dB still landed at -0.8 and -0.9; it took -0.55 and -0.45.
+- **Measure the file that SHIPS.** Never infer an MP3's peak from its WAV.
+- **A karaoke bed is the easy case, not the hard one.** The Studio's peak mode
+  exports 320k from a file sitting exactly on -1.0 dBTP, and at bed loudness
+  (-17 to -20) the rise measured **zero** on both songs. Expect it to land on
+  -1.0. Check the report's MP3 figure rather than assuming either way.
 `,
   },
   {
