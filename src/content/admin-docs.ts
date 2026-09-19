@@ -55,7 +55,7 @@ export const ADMIN_DOCS: AdminDoc[] = [
     slug: 'start-here',
     title: 'Start here — what to read, in what order',
     category: 'Start here',
-    updatedAt: '2026-09-19T00:30:00Z',
+    updatedAt: '2026-09-19T04:00:00Z',
     body: `# Start here
 
 These guides accumulated one problem at a time, so reading them front to back is not the fastest way in. This is the order that builds on itself.
@@ -90,6 +90,7 @@ Read these three. Almost every wrong conclusion about the channel comes from not
 | 3 | YouTube credit block — the canonical policy |
 | 4 | Monetization — ad settings & ad-free songs |
 | 5 | **Publishing traps — things that fail silently** |
+| 6 | What TamilAgaval costs to run |
 
 Read the traps guide **before** your next upload, not after. Every entry in it cost real time, and none of them announce themselves.
 
@@ -3251,6 +3252,107 @@ Practical consequences:
   exports 320k from a file sitting exactly on -1.0 dBTP, and at bed loudness
   (-17 to -20) the rise measured **zero** on both songs. Expect it to land on
   -1.0. Check the report's MP3 figure rather than assuming either way.
+`,
+  },
+  {
+    slug: 'what-it-costs-to-run',
+    title: 'What TamilAgaval costs to run — and how to tell, in a shared account',
+    category: 'Publishing',
+    updatedAt: '2026-09-19T04:00:00Z',
+    body: `# What TamilAgaval costs to run
+
+**About \$6-7 a month**, measured 1-19 September 2026. The channel's whole
+runtime — the Lambdas that master audio, the table that stores every job, the
+CDN that serves the songs — comes to **under fifteen cents**. Everything else is
+Amplify rebuilding the site.
+
+## ⚠️ The account total is NOT the answer
+
+AWS account 975050319109 is shared across a dozen unrelated products: **85 S3
+buckets**, six Route 53 hosted zones, three Amplify apps. Its September total was
+**\$134.30**, of which TamilAgaval is about **5%**.
+
+Neither grouping in Cost Explorer separates it, and this is the trap:
+
+- **By service** — "Amazon S3 \$0.92" spans 85 buckets belonging to Talky,
+  Mobily, Techsynergy, CrowVault, WorkMail and others.
+- **By region** — ca-central-1 was \$66.24, but other products live there too.
+
+**So attribute bottom-up, from resources you can name.** There are no
+cost-allocation tags on this account, so that is the only honest method.
+
+## The month-to-date breakdown
+
+| item | basis | cost |
+|---|---|---|
+| **Amplify build minutes** | 49 builds, **480.7 min** at \$0.01/min | **\$4.81** |
+| Amplify hosting + storage | share of the app's \$7.12 across 3 apps | ~\$0.50-2 |
+| S3 storage | 19.4 GiB, almost all \`tamil-web-media\`, at \$0.023/GiB | \$0.44 |
+| Route 53 | one of six hosted zones | \$0.50 |
+| Lambda | account total \$0.06 across 5 \`tamilagaval-*\` functions | ≤\$0.06 |
+| DynamoDB | account total \$0.03 | ≤\$0.03 |
+| CloudFront | below \$0.005 account-wide | ~\$0 |
+
+**BUILD MINUTES ARE THE WHOLE COST.** A build averages **9.8 minutes**, so each
+merge to \`master\` costs about **10 cents**. Eight PRs merged on 2026-09-19
+accounted for roughly \$0.80 of that month's \$4.81 — i.e. the development
+cadence *is* the bill. Worth knowing; at this scale not worth optimising, and
+certainly not worth batching merges to save pennies.
+
+What this also means: **mastering a song is effectively free.** The
+master-worker Lambda runs 900s at 3 GB with an ffmpeg layer and still lands
+inside \$0.06 a month for every job the channel has ever run, because the work
+is measured in minutes per month, not hours per day.
+
+## What the other \$127 is, so nobody chases it
+
+EC2 compute and storage **\$71.61** · Tax \$15.45 · WorkMail \$9.40 ·
+SES \$9.00 · WAF \$6.49 · VPC \$4.23 · CloudWatch \$3.26 · then Secrets
+Manager, KMS, GuardDuty, RDS and ECR under \$2 each. All of it belongs to the
+Talky / Mobily / Techsynergy estate. **TamilAgaval runs no EC2 at all** — no
+instance, no load balancer, no database server.
+
+## How to re-measure it
+
+Cost Explorer gives the account picture:
+
+\`\`\`
+aws ce get-cost-and-usage --time-period Start=<YYYY-MM-01>,End=<today> \\
+  --granularity MONTHLY --metrics UnblendedCost \\
+  --group-by Type=DIMENSION,Key=SERVICE --region us-east-1
+\`\`\`
+
+Then the one number that matters — build minutes, summed from the job history
+rather than estimated:
+
+\`\`\`
+aws amplify list-jobs --app-id d3rkmepk4popv0 --branch-name master \\
+  --region ca-central-1 --max-results 50 \\
+  --query 'jobSummaries[?startTime>=\`<YYYY-MM-01>\`].[jobId,startTime,endTime]'
+\`\`\`
+
+Storage, per bucket, from CloudWatch rather than from the S3 console:
+
+\`\`\`
+aws cloudwatch get-metric-statistics --namespace AWS/S3 \\
+  --metric-name BucketSizeBytes \\
+  --dimensions Name=BucketName,Value=tamil-web-media \\
+               Name=StorageType,Value=StandardStorage \\
+  --start-time <3 days ago> --end-time <today> --period 86400 \\
+  --statistics Average --region us-east-1
+\`\`\`
+
+## Make it exact: activate a cost-allocation tag
+
+The estimate above is solid where it is large and approximate only in pennies —
+Amplify's bandwidth and S3's request costs genuinely cannot be split per product
+without tags. Tagging TamilAgaval's resources with a \`Product\` key and
+activating it in Billing → Cost allocation tags would turn every future version
+of this question into a single Cost Explorer query. Half an hour of tagging,
+and it pays off each time.
+
+⚠️ **Activated tags only apply from the day they are activated** — they do not
+backfill. So the earlier this is done, the more history it covers.
 `,
   },
   {
