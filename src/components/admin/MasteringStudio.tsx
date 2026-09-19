@@ -3440,7 +3440,23 @@ export function MasteringStudio() {
                     type="button"
                     disabled={rowBusy === m.id}
                     onClick={() =>
-                      setRowRender((prev) => (prev?.id === m.id ? null : { id: m.id, cover: null }))
+                      // SEEDED FROM THE JOB'S OWN COVER. Opening with `cover: null`
+                      // left both buttons disabled on a row that already had one —
+                      // so a master saved yesterday, already rendered from that very
+                      // image, could not make a short until the operator found the
+                      // file again and uploaded a second copy. The only symptom was a
+                      // button that did nothing. Reported on இன்னுமொரு கருவறையில்,
+                      // 2026-09-19.
+                      setRowRender((prev) =>
+                        prev?.id === m.id
+                          ? null
+                          : {
+                              id: m.id,
+                              cover: m.coverKey
+                                ? { key: m.coverKey, name: downloadFilename(m.coverKey) }
+                                : null,
+                            }
+                      )
                     }
                     aria-label={`Video or short for ${m.title ?? 'this master'}`}
                     className="text-xs font-medium text-orange-600 hover:underline disabled:opacity-50 dark:text-orange-400"
@@ -3473,6 +3489,15 @@ export function MasteringStudio() {
                     >
                       Cover for {m.title || 'this master'}
                     </label>
+                    {/* Named, not assumed. Reusing a cover silently would leave
+                        the operator unable to tell which image is about to be
+                        encoded — and the file input beside it is still the way
+                        to replace it. */}
+                    {rowRender.cover && (
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        using <span className="font-medium">{rowRender.cover.name}</span> — replace it here if you want a different one:
+                      </span>
+                    )}
                     <input
                       id={`${inputId}-rowcover-${m.id}`}
                       type="file"
