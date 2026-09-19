@@ -685,7 +685,7 @@ The sample is **three tracks, not five**, for the sourcing reason at the top of 
     slug: 'karaoke-from-stems',
     title: 'Music Lab — making a karaoke version from Suno stems',
     category: 'Music Lab',
-    updatedAt: '2026-09-14T01:26:26Z',
+    updatedAt: '2026-09-19T01:10:00Z',
     body: `# Make a karaoke version from Suno stems
 
 **Written 2026-09-14, from the first paid commission** — a buyer ordered two instrumental versions at CAD $40 each. This is the whole workflow, including the two decisions that are easy to get wrong.
@@ -696,7 +696,42 @@ A karaoke track is the song with the voice removed. There are two ways to get on
 
 **Separation software** (Demucs, Spleeter and the rest) *estimates* where the vocal sits in a finished stereo mix and subtracts it. What is left carries the evidence: smeared reverb tails, a ghost of the melody in the mid-range, and a hollow patch where the voice used to be.
 
-**Suno stems were never mixed together.** Summing everything except the vocal tracks gives a backing bed with **no separation artefacts at all**, because nothing was separated. Premier includes stem export, so this is already paid for.
+**Suno stems ARE separated. This page said otherwise for five days, and the
+claim was wrong.** It read: *"Suno stems were never mixed together… no
+separation artefacts at all, because nothing was separated."* That is the belief
+that produced the ஈழத்து மண்ணே bed, and Raj could hear the result was not the
+record. Measured 2026-09-19 against the actual source file, three ways:
+
+**They do not sum to the song.**
+
+| | pre-master (what the stems came from) | all 11 stems summed |
+|---|---|---|
+| integrated | -14.5 LUFS | -13.9 |
+| range (LRA) | 2.1 LU | **4.6** |
+| true peak | -3.7 dBFS | **+1.7** |
+
+Double the range and 5.4 dB more peak. A decomposition cannot do that.
+
+**They do not cancel against it.** Subtracting the stem sum from the pre-master
+— which for genuine stems leaves near-silence — gave a residual of **-10.8 LUFS
+against a -14.5 source** at the best matching gain. *Louder* than the song. A
+real cancellation sits below -40.
+
+**And it is audible.** Summing all 11 stems back together, vocals included, does
+not sound like the released song on an A/B against it.
+
+So the stems are **resynthesised approximations of each part**, not extractions.
+That also explains the melodic ghost found in two instrument stems on
+2026-09-18 (correlation +0.05 with the lead vocal) — on a true multitrack that
+is impossible.
+
+⚠️ **What this means for a quote.** A stem-summed bed is *good*, and it is what
+this workflow produces, but it is **not the record with the voice removed** and
+it will not survive a close A/B on headphones. Do not promise that it will. If
+a buyer needs the actual recording minus the vocal, the stems cannot deliver it
+and neither can subtraction — a different source is required.
+
+Premier includes stem export, so this is already paid for.
 
 Stems also **recover songs whose masters are lost.** செவ்வந்தி பூவே has no WAV in \`tamilagaval-audio-masters\` or the web bucket — but the original generation was still in the Suno library, so its stems were reachable when the mastered file was not.
 
@@ -786,6 +821,48 @@ A summed bed is **peaky**: the first build measured **-19.4 LUFS with a true pea
 - **studio** — quieter, full dynamic range, for someone recording and mixing their own vocal
 
 Always check \`normalization_type\` in loudnorm's JSON output. If it says \`dynamic\`, the file was compressed, and you should know that rather than discover it later.
+
+## ⚠️ Ask what the room is, before recommending a version
+
+The two versions are not "better and worse", and which one to point a buyer at
+depends entirely on where it will be played. Getting this backwards is easy:
+**Anton's order was for a Party Hall PA**, and the guidance sent with it —
+"studio is the one to sing over" — was right for a home recording and wrong for
+his room.
+
+| | home recording | hall PA |
+|---|---|---|
+| **studio** (quieter, full range) | ✓ headroom for the voice in a fixed digital mix | ✗ quiet passages disappear into crowd noise |
+| **standard** (louder) | fine | ✓ level and consistency against the room |
+
+**In a live PA, headroom inside the file buys nothing** — the desk sets levels
+and the operator adds gain regardless. What matters is level against room noise,
+so **standard wins in a hall**. On ஈழத்து மண்ணே it is 2.5 dB louder with the
+same LRA (6.6 vs 6.7) — strictly better there, no trade at all.
+
+**Mono compatibility: expect to lose about 4 dB, and it is not a defect.**
+Measured on both delivered beds:
+
+| | stereo | mono-summed | delta |
+|---|---|---|---|
+| ஈழத்து standard | -14.8 LUFS | -18.3 | **-3.5 dB** |
+| செவ்வந்தி standard | -14.5 LUFS | -18.4 | **-3.9 dB** |
+
+That is more than most music loses, and the cause is inherent to karaoke:
+**removing the lead vocal removes the centre content**, so what remains is wide
+and decorrelated. The loss is close to the theoretical 3 dB for uncorrelated
+channels, i.e. nothing is cancelling badly. Tell whoever runs a mono system to
+add the gain rather than conclude the file is quiet.
+
+**Gain structure for a hall:** both beds sit at -1.0 to -1.1 dBTP, so there is
+about 1 dB before digital clipping. Set the track fader first and bring the
+microphone up against it — never push the track channel into the red to get
+volume.
+
+**And the reassuring part.** Separation artefacts live in fine detail and in the
+stereo image. A hall PA, a reverberant room and a crowd mask both, so what is
+plainly audible on headphones is largely inaudible at a party. Judge the bed
+against the room it is for.
 
 ## 6. Deliver
 
