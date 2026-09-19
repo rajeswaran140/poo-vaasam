@@ -35,6 +35,81 @@ const good: VideoSnapshot = {
 
 const ids = (v: VideoSnapshot) => checkRelease(v).map((f) => f.id);
 
+/**
+ * A POEM is a third format, and the song rules do not all apply to it.
+ *
+ * Raj published his first — `3GJCkVQgRa8`, "✍️ இன்னுமொரு கருவறையில்... | தமிழ்
+ * கவிதை | Tamil Poetry", 2026-09-19 — and the checklist graded it as a song
+ * Short. Two of its findings were false: it demanded a link to a "full song"
+ * that does not exist, because a poem IS the whole work, and it reported no
+ * lyrics credit on a description crediting `கவிதை: Raj`.
+ *
+ * That matters beyond tidiness. A checklist that cries wolf on a format Raj
+ * intends to keep making teaches him to ignore it — which is the exact failure
+ * the release-pipeline docs warn about for a status line that disagrees with
+ * its own controls.
+ */
+describe('a poem is not a song', () => {
+  const poem = (over: Partial<VideoSnapshot> = {}): VideoSnapshot => ({
+    ...good,
+    title: '✍️ இன்னுமொரு கருவறையில்... | தமிழ் கவிதை | Tamil Poetry | Raj',
+    isShort: true,
+    playlistIds: [SHORTS_PLAYLIST_ID],
+    description: [
+      'ஒரு கவிதை எப்படி பிறக்கிறது...?',
+      '',
+      'கவிதை: Raj',
+      'Music: TamilAgaval.com',
+      '🔔 Subscribe: https://www.youtube.com/@Tamilagaval?sub_confirmation=1',
+      '🌐 https://tamilagaval.com/?utm_source=youtube&utm_medium=description',
+      `▶️ All Songs: https://www.youtube.com/playlist?list=${ALL_SONGS_PLAYLIST_ID}`,
+      '#தமிழ்க்கவிதை #TamilPoetry',
+    ].join('\n'),
+    ...over,
+  });
+
+  it('is not asked to link a full song it does not have', () => {
+    expect(ids(poem())).not.toContain('short-full-song-link');
+  });
+
+  it('accepts கவிதை as the authorship credit', () => {
+    expect(ids(poem())).not.toContain('credits');
+  });
+
+  it('accepts the romanized "Poem:" form too', () => {
+    expect(ids(poem({ description: poem().description.replace('கவிதை: Raj', 'Poem: Raj') })))
+      .not.toContain('credits');
+  });
+
+  it('still wants a credit when there is none at all', () => {
+    expect(ids(poem({ description: poem().description.replace('கவிதை: Raj', '') })))
+      .toContain('credits');
+  });
+
+  /** The rules that are about being a good upload still apply. */
+  it('is still held to the subscribe link, the tags and the caption language', () => {
+    expect(ids(poem({ description: 'கவிதை: Raj\n#கவிதை' }))).toContain('subscribe-link');
+    expect(ids(poem({ tags: ['one'] }))).toContain('tags');
+    expect(ids(poem({ captionTracks: [{ trackKind: 'asr', language: 'en' }] })))
+      .toContain('asr-wrong-language');
+  });
+
+  /**
+   * ⚠️ The guard that matters: a SONG Short must still be refused without its
+   * link. Detecting a poem by title must never let a real song through.
+   */
+  it('leaves a song Short exactly as strict as before', () => {
+    const songShort = { ...good, isShort: true, playlistIds: [SHORTS_PLAYLIST_ID], description: good.description };
+    expect(ids(songShort)).toContain('short-full-song-link');
+  });
+
+  it('does not mistake a song whose title merely mentions writing', () => {
+    // "எழுதாத வரியிலே" is a SONG. Nothing about it is a poem upload.
+    const s = { ...good, title: 'எழுதாத வரியிலே... ❤️ Ezhudhaadha Variyile', isShort: true, playlistIds: [SHORTS_PLAYLIST_ID] };
+    expect(ids(s)).toContain('short-full-song-link');
+  });
+});
+
 describe('a correct upload', () => {
   it('raises nothing mechanical', () => {
     const s = summariseRelease(good);

@@ -21,6 +21,25 @@
 import { COMPOSITION_CTA, hasCompositionCta } from '@/lib/commission';
 
 /** Everything the checklist needs to know about one upload. */
+/**
+ * Is this upload a POEM rather than a song?
+ *
+ * A third format, added after Raj published his first on 2026-09-19 and the
+ * song rules mis-graded it: it was told to link a "full song" that cannot exist,
+ * because a poem IS the complete work, and told it had no lyrics credit while
+ * crediting `கவிதை: Raj`.
+ *
+ * Detected from the TITLE, which on this channel always names the form —
+ * `தமிழ் கவிதை | Tamil Poetry`. Deliberately narrow: it must never match a song
+ * whose lyrics happen to be about writing (எழுதாத வரியிலே is a song), so it
+ * looks for the form word and not for themes. Everything else on the list —
+ * the subscribe link, the tags, the caption language — still applies, because
+ * those are about being a good upload rather than about being a song.
+ */
+export function isPoem(v: Pick<VideoSnapshot, 'title'>): boolean {
+  return /கவிதை|\bpoetry\b|\bpoem\b/i.test(v.title);
+}
+
 export interface VideoSnapshot {
   videoId: string;
   title: string;
@@ -270,18 +289,26 @@ export function checkRelease(v: VideoSnapshot): Finding[] {
       detail: 'Part of the standing per-upload checklist.',
     });
   }
-  if (!has(d, /Lyrics\s*:/i)) {
+  // A credit in ANY of the forms the channel uses. The purpose of this rule is
+  // the legal anchor, and a poem's `கவிதை:` anchors it exactly as `Lyrics:`
+  // does — reporting "no lyrics credit" on a credited poem is a false alarm,
+  // and false alarms are how an operator learns to stop reading the list.
+  if (!has(d, /Lyrics\s*:/i) && !has(d, /கவிதை\s*:/) && !has(d, /Poem\s*:/i)) {
     f.push({
       id: 'credits',
       severity: 'gap',
-      title: 'No lyrics credit',
-      detail: 'Raj wrote the lyrics; the credit line is also the legal anchor for the catalogue.',
-      fix: '✍️ Lyrics: Raj (original, all rights reserved)',
+      title: isPoem(v) ? 'No authorship credit' : 'No lyrics credit',
+      detail: 'Raj wrote it; the credit line is also the legal anchor for the catalogue.',
+      fix: isPoem(v) ? 'கவிதை: Raj (original, all rights reserved)' : '✍️ Lyrics: Raj (original, all rights reserved)',
     });
   }
   // A Short exists to send people to the full song. Without that link it is
   // just a clip — the teaser on 2026-07-28 named its premiere and never linked it.
-  if (v.isShort && !has(d, /youtu\.be\/|watch\?v=/)) {
+  //
+  // ⚠️ NOT for a poem. A poem is the whole work, so there is no fuller version
+  // to route to, and demanding one made this a BLOCKER on a correct upload
+  // (`3GJCkVQgRa8`, 2026-09-19). See isPoem.
+  if (v.isShort && !isPoem(v) && !has(d, /youtu\.be\/|watch\?v=/)) {
     f.push({
       id: 'short-full-song-link',
       severity: 'blocker',
