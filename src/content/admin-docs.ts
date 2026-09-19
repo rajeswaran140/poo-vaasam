@@ -3027,6 +3027,34 @@ PUT channels?part=brandingSettings
 
 There is no error to catch. **Always re-read after the write.**
 
+### ...and the FIRST re-read is not evidence either
+
+Measured 2026-09-18, on both endpoints in one session:
+
+| Write | HTTP | Immediate re-read | Second re-read |
+|---|---|---|---|
+| \`captions.delete\` on \`NHy7wEIkB0c\` | 204 | track **still listed** | gone |
+| \`videos.update\` on \`ROGOzLdpexM\` | 200 | old description, **0 chars added** | new description present |
+| \`videos.update\` on \`NHy7wEIkB0c\` | 200 | old description, **0 chars added** | new description present |
+
+Three writes, all successful, all of which read back as failures the first
+time. Both edits were in fact applied — publicly visible, and the release sweep
+cleared every blocker on the next run.
+
+This matters because the advice above ("always re-read") is what turns a lying
+status code into a verified outcome, and a single re-read inverts it: it turns a
+**successful** write into a reported failure. The obvious next move — write
+again — is the wrong one.
+
+⚠️ **Do not confuse this with the ASR restore below.** They look alike and are
+not the same thing, and the difference is the clock: propagation lag is
+**seconds to a minute** and resolves on its own, while a restored auto-caption
+track reappears **days** later with its original id. A track still listed one
+minute after a 204 is lag. The same track back on Monday is YouTube.
+
+**So: re-read, and if it disagrees with what you just wrote, re-read once more
+before believing it.** Only a second disagreement is a real failure.
+
 ## Deleting a video breaks every link pointing at it
 
 A Short's description link to its full song becomes a 404 the moment the song is deleted — and a Short without a working full-song link is a dead end, which is its whole job.
