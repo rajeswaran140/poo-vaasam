@@ -456,7 +456,7 @@ If yes, we have a workflow that rescues v6 output instead of discarding it. If n
 
 Independent of the v6 question, Premier's **downloadable stems** solved a paid commission on 2026-09-12 — a buyer ordered two **karaoke** (instrumental) versions at CAD $40 each.
 
-Karaoke from stems beats karaoke from separation software. Tools like Demucs *estimate* where the vocal sits and subtract it, leaving smeared reverb tails and a ghost of the melody. Suno's stems were never mixed together, so summing everything except the vocal tracks gives a backing bed with **no separation artefacts at all**.
+Karaoke from **separation of the master** beats karaoke from Suno's stems — measured 2026-09-19, reversing what this entry used to claim. Suno's stems are resynthesised approximations rather than extractions: summed, they cancel against their own source by only **5.7 dB**, where \`htdemucs\` on the master cancels by **33.6 dB**. A separated bed is the record with the voice removed; a stem-summed bed is eleven re-generated parts that merely resemble it.
 
 It also recovers songs whose masters are missing. **செவ்வந்தி பூவே has no WAV in \`tamilagaval-audio-masters\` or in the web bucket** — but the original generation is still in the Suno library, so its stems are reachable even though the mastered file is not.
 
@@ -685,7 +685,7 @@ The sample is **three tracks, not five**, for the sourcing reason at the top of 
     slug: 'karaoke-from-stems',
     title: 'Music Lab — making a karaoke version from Suno stems',
     category: 'Music Lab',
-    updatedAt: '2026-09-19T01:10:00Z',
+    updatedAt: '2026-09-19T02:20:00Z',
     body: `# Make a karaoke version from Suno stems
 
 **Written 2026-09-14, from the first paid commission** — a buyer ordered two instrumental versions at CAD $40 each. This is the whole workflow, including the two decisions that are easy to get wrong.
@@ -694,7 +694,45 @@ The sample is **three tracks, not five**, for the sourcing reason at the top of 
 
 A karaoke track is the song with the voice removed. There are two ways to get one, and they are not close in quality.
 
-**Separation software** (Demucs, Spleeter and the rest) *estimates* where the vocal sits in a finished stereo mix and subtracts it. What is left carries the evidence: smeared reverb tails, a ghost of the melody in the mid-range, and a hollow patch where the voice used to be.
+**Separation of the master is the BETTER route on this material — measured
+2026-09-19, reversing what this page used to say.** It claimed that separation
+"estimates where the vocal sits and subtracts it", leaving smeared tails and a
+ghost of the melody, and that stems were therefore the higher-quality path.
+Tested on ஈழத்து மண்ணே, the opposite holds, by a wide margin:
+
+| route | null test against its own source | what the bed is made of |
+|---|---|---|
+| Suno's 11 stems, summed | **5.7 dB** down | 11 resynthesised parts |
+| htdemucs on the master | **33.6 dB** down | the master itself |
+
+Thirty-three dB is a genuine decomposition — the instrumental plus the extracted
+vocal reconstruct the record. **So a separated bed IS the master with the voice
+removed**, carrying the actual recording's sound, which is the one thing a stem
+sum can never do because Suno's stems are resynthesised rather than extracted.
+
+Both beds measure almost identically (-17.0 vs -17.3 LUFS, LRA 6.6 vs 6.7, both
+losing 3.5 dB mono-summed). The difference is provenance, not numbers — and it
+is audible.
+
+**How to run it.** CPU-only is fine: seven minutes of audio took 7.5 minutes on
+crowvault-ide-server, in an isolated venv so nothing reaches the other products
+sharing that box.
+
+\`\`\`
+python3 -m venv ~/venv-demucs
+~/venv-demucs/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
+~/venv-demucs/bin/pip install demucs numpy soundfile
+~/venv-demucs/bin/python -m demucs --two-stems=vocals --float32 -o sep master.wav
+\`\`\`
+
+Feed it the **released master**, not the pre-master, so the bed carries the sound
+people actually hear. \`--float32\` keeps the null test from being limited by
+16-bit quantisation. Expect \`NNPACK\` to refuse to initialise on that hardware —
+it means the slower inference path, not a failure.
+
+⚠️ **Verify before trusting it.** Run the null test above, control included. A
+separator that does not sum back to its input has decomposed nothing, and its
+bed is no better than a stem sum.
 
 **Suno stems ARE separated. This page said otherwise for five days, and the
 claim was wrong.** It read: *"Suno stems were never mixed together… no
@@ -713,9 +751,25 @@ record. Measured 2026-09-19 against the actual source file, three ways:
 Double the range and 5.4 dB more peak. A decomposition cannot do that.
 
 **They do not cancel against it.** Subtracting the stem sum from the pre-master
-— which for genuine stems leaves near-silence — gave a residual of **-10.8 LUFS
-against a -14.5 source** at the best matching gain. *Louder* than the song. A
-real cancellation sits below -40.
+— which for genuine stems leaves near-silence — gives a residual of
+**-20.2 LUFS against a -14.5 source**: only **5.7 dB** of cancellation, where a
+true decomposition gives thirty or more. For the contrast, see the separation
+section below: on the same song, **33.6 dB**.
+
+⚠️ **The first version of this measurement was wrong, and the way it was wrong
+is worth knowing.** It claimed a residual *louder* than the source, and came
+from \`amix=inputs=2:weights=1 -1\`. **ffmpeg's \`amix\` ignores the SIGN of a
+weight**, so that graph adds the two inputs instead of subtracting. Invert with
+\`pan\` instead:
+
+\`\`\`
+[1]pan=stereo|c0=-1*c0|c1=-1*c1[inv];[0][inv]amix=inputs=2:normalize=0
+\`\`\`
+
+**And always run the control first: subtract a file from ITSELF.** It must read
+about -70 LUFS. The broken graph returned **-7.9** on that control — a +6 dB sum
+— which is exactly how a published measurement came to be backwards. A null test
+you have not validated against itself is not a measurement.
 
 **And it is audible.** Summing all 11 stems back together, vocals included, does
 not sound like the released song on an A/B against it.
@@ -1004,7 +1058,7 @@ It is also a **0.68 LU change you cannot hear** — which is the honest headline
     slug: 'mastering-tools-a-z',
     title: 'Mastering Tools A–Z',
     category: 'Music Lab',
-    updatedAt: '2026-09-18T09:00:00Z',
+    updatedAt: '2026-09-19T02:20:00Z',
     body: `# Mastering Tools A–Z
 
 Every control in **Sound Engineering** (\`/admin/mastering\`), alphabetically, so it can be looked up while you are staring at it. Each entry says what it does, why it works that way, and the trap.
