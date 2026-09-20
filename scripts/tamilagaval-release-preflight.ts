@@ -50,6 +50,9 @@ const api = async (tok: string, path: string) => {
   return r.json() as Promise<Record<string, any>>;
 };
 
+import { observe } from '@/lib/premiere-observation';
+import { PremiereObservationRepository } from '@/infrastructure/database/PremiereObservationRepository';
+
 async function main() {
   const args = process.argv.slice(2);
   const forceShort = args.includes('--short');
@@ -136,6 +139,31 @@ async function main() {
     const gapH = (Date.parse(scheduledStartTime) - Date.parse(sn.publishedAt)) / 3_600_000;
     console.log(`premiere   : ${scheduledStartTime}   ${isUpcoming ? `${gapH.toFixed(1)}h after upload` : '(aired)'}`);
   }
+
+  // RECORD THE GAP WHILE IT STILL EXISTS.
+  //
+  // Once this premiere airs, YouTube overwrites publishedAt with the premiere
+  // time and the upload moment is gone for good — so a release not observed
+  // here can never contribute to answering whether the gap matters. The
+  // checklist asserts "under 48h" on the strength of ONE case, and the most
+  // recent comparable release contradicts it, so the honest move is to collect
+  // rather than keep repeating. Passenger, never a blocker: a failure here is
+  // logged and the preflight carries on.
+  const obs = observe({
+    videoId,
+    title: snapshot.title,
+    publishedAt: sn.publishedAt,
+    scheduledStartTime,
+    liveBroadcastContent: sn.liveBroadcastContent ?? 'none',
+  });
+  if (obs) {
+    const fresh = await new PremiereObservationRepository().record(obs).catch(() => false);
+    console.log(
+      `recorded   : ${fresh ? 'gap observation stored' : 'already observed (first write wins)'}` +
+      `  ${obs.gapHours}h`
+    );
+  }
+
   console.log('');
   console.log(`findings   : ${bySev('blocker').length} blocker · ${bySev('gap').length} gap · ${bySev('note').length} note`);
   console.log('');
