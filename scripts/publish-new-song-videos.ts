@@ -18,6 +18,7 @@
  * runtime has no DynamoDB creds), so new songs only appear after a deploy.
  */
 
+import { youtubeApiKey } from './lib/amplify-env';
 import { S3Client, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { CategoryRepository } from '@/infrastructure/database/CategoryRepository';
@@ -58,7 +59,7 @@ interface YtVideo {
 
 /** Channel uploads (long-form only) with durations, via the Data API. [] without a key. */
 async function fetchUploads(channelId: string): Promise<YtVideo[]> {
-  const key = process.env.YOUTUBE_API_KEY;
+  const key = await youtubeApiKey();
   if (!key) return [];
   const uploads = channelId.startsWith('UC') ? `UU${channelId.slice(2)}` : channelId;
   const out: YtVideo[] = [];

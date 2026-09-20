@@ -27,6 +27,7 @@
  * Reads only. Needs YOUTUBE_OAUTH_CLIENT_ID/_SECRET + YOUTUBE_ANALYTICS_REFRESH_TOKEN
  * (Analytics) and YOUTUBE_API_KEY (public reads). Never writes creds to disk.
  */
+import { youtubeApiKey } from './lib/amplify-env';
 import { fitDecay, residuals, assessImpact, newViewerSubsPer1k, type DayPoint } from '../src/lib/release-impact';
 import { SITE } from '../src/config/site';
 
@@ -126,8 +127,7 @@ async function main() {
   const end = isoDay(LAG_DAYS);
   const from = arg('--from', isoDay(LAG_DAYS + 28));
   const cutoff = arg('--cutoff', '2026-07-01');
-  const key = process.env.YOUTUBE_API_KEY;
-  if (!key) throw new Error('YOUTUBE_API_KEY is required');
+  const key = await youtubeApiKey();
 
   const token = await analyticsToken();
   const uploads = await longFormUploads(key);

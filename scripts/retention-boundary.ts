@@ -25,6 +25,7 @@
  * Reads only. Needs YOUTUBE_OAUTH_CLIENT_ID/_SECRET + YOUTUBE_ANALYTICS_REFRESH_TOKEN
  * (Analytics) and YOUTUBE_API_KEY (duration). Never writes creds to disk.
  */
+import { youtubeApiKey } from './lib/amplify-env';
 import { fetchRetentionCurve, isYouTubeAnalyticsConfigured } from '../src/lib/youtube-analytics';
 import {
   parseRetentionRows,
@@ -43,7 +44,7 @@ function parseTimestamp(s: string): number {
 }
 
 async function fetchDurationSeconds(videoId: string): Promise<number | null> {
-  const key = process.env.YOUTUBE_API_KEY;
+  const key = await youtubeApiKey();
   if (!key) return null;
   const res = await fetch(
     `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${videoId}&key=${key}`

@@ -51,3 +51,22 @@ export async function amplifyEnv(
 
   return env;
 }
+
+/**
+ * The YouTube Data API key, from wherever it actually lives.
+ *
+ * ⚠️ `process.env.YOUTUBE_API_KEY` IS EMPTY ON THIS BOX. The key is an SSM
+ * SecureString that Amplify injects at build time, so a script reading only
+ * the process env dies with "YOUTUBE_API_KEY is required" — which is how
+ * `release-sweep` silently stopped running for weeks, and how five more
+ * scripts were found broken the same way on 2026-09-20.
+ *
+ * An explicit env var still wins, so a one-off run can override it.
+ */
+export async function youtubeApiKey(): Promise<string> {
+  const fromEnv = process.env.YOUTUBE_API_KEY;
+  if (fromEnv) return fromEnv;
+  const key = (await amplifyEnv()).YOUTUBE_API_KEY;
+  if (!key) throw new Error('YOUTUBE_API_KEY found in neither the environment nor SSM');
+  return key;
+}
