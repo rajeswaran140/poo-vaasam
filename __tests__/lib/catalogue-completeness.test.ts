@@ -124,45 +124,105 @@ describe('summary line', () => {
 });
 
 /**
- * ⚠️ Raj publishes improved lyrics as a NEW upload and never unlists the
- * original, so near-duplicate titles on the channel are DELIBERATE. Syncing one
- * blindly would create a second page for the same song and split its traffic —
- * so the gap flags them rather than hiding or auto-merging them.
+ * ⚠️ A SHARED HOOK IS NOT A DUPLICATE. Every one of the six shared hooks on the
+ * channel is a rendition pair — the same song issued as an instrumental, a
+ * duet, a female version, a male version. Reading the flag as "re-upload"
+ * repointed four song pages onto their instrumental on 2026-09-20.
+ *
+ * The fixtures below are those six real pairs, verbatim from YouTube.
  */
-describe('re-recordings are flagged, not silently synced', () => {
-  it('marks an unsynced song whose title already exists on the site', () => {
-    const ch = [channel('vNew', 2123)];
-    ch[0].title = 'செவ்வந்தி பூவே... சிரிக்கும் நிலவே... 🌺 | Sevvanthi';
-    const st: StoredSong[] = [
-      { id: 'c1', title: 'செவ்வந்தி பூவே... சிரிக்கும் நிலவே. . .❤️🌸', youtubeVideoId: 'vOld', status: 'PUBLISHED' },
-    ];
+describe('a shared Tamil hook means the same song, not the same recording', () => {
+  /** [hook, on-site title + views, on-YouTube title + views] — real, 2026-09-20. */
+  const PAIRS: Array<[string, string, number, string, number]> = [
+    [
+      'நீ சிரிச்ச நேரம்',
+      'நீ சிரிச்ச நேரம் தான். .❤️ | Nee Sirichcha Neram Thaan | Tamil Love Melody', 61924,
+      'நீ சிரிச்ச நேரம் தான் 🎋 Nee Sirichcha Neram Thaan | Soothing Tamil Bamboo Flute Instrumental', 1531,
+    ],
+    [
+      'செவ்வந்தி பூவே',
+      'செவ்வந்தி பூவே... சிரிக்கும் நிலவே. . .❤️🌸 | Sevvanthi Poove | Tamil Love Melody', 50098,
+      'செவ்வந்தி பூவே... சிரிக்கும் நிலவே... 🌺 | Sevvanthi Poove | Tamil Instrumental', 2242,
+    ],
+    [
+      'என் பொன்மணி',
+      'என் பொன்மணி என் கண்மணி ❤️ En Ponmani En Kanmani | Tamil Love Melody', 22425,
+      'என் பொன்மணி... என் கண்மணி... 🎶 En Ponmani En Kanmani | Tamil Bamboo Flute Instrumental', 2170,
+    ],
+    [
+      'எழுதாத வரியிலே',
+      'எழுதாத வரியிலே... என்ன பெயர் வந்ததோ ❤️ Ezhudhaadha Variyile | Tamil Love Melody', 12991,
+      'எழுதாத வரியிலே... என்ன பெயர் வந்ததோ ❤️ Ezhudhaadha Variyile | Romantic Tamil Duet Song', 13420,
+    ],
+    [
+      'ஈழத்து மண்ணே',
+      'ஈழத்து மண்ணே காலத்து பொன்னே | Eelathu Manne | Tamil Melody (பெண் குரல்)', 10659,
+      'ஈழத்து மண்ணே காலத்து பொன்னே | Eelathu Manne | Tamil Melody (ஆண் குரல்)', 8852,
+    ],
+    [
+      'பூபாளம் பாடும் நேரம்',
+      'பூபாளம் பாடும் நேரம் ☀️ | Joyful Tamil Folk Song | Female Version', 3352,
+      'பூபாளம் பாடும் நேரம்🎶 | ❤️ Tamil Romantic Duet Song | Poopaalam Paadum Neram', 2489,
+    ],
+  ];
 
-    const r = assessCatalogue(ch, st, [{ id: 'c1' }]);
+  const gapFor = (onSite: string, onYouTube: string, views: number) => {
+    const ch = [channel('vNew', views)];
+    ch[0].title = onYouTube;
+    const st: StoredSong[] = [{ id: 'c1', title: onSite, youtubeVideoId: 'vOld', status: 'PUBLISHED' }];
+    return assessCatalogue(ch, st, [{ id: 'c1' }]).ingestionGap[0];
+  };
 
-    expect(r.ingestionGap).toHaveLength(1);
-    expect(r.ingestionGap[0].likelyRevisionOf).toEqual({ id: 'c1', title: st[0].title });
+  it.each(PAIRS)('%s — matches its other rendition on the hook', (_hook, onSite, _v1, onYouTube, views) => {
+    expect(gapFor(onSite, onYouTube, views).sharesHookWith?.id).toBe('c1');
   });
 
-  it('leaves a genuinely new song unflagged', () => {
-    const ch = [channel('vNew', 100)];
-    ch[0].title = 'நல்லதோர் வீணை செய்தே | Bharathiyar';
-    const st: StoredSong[] = [
-      { id: 'c1', title: 'செவ்வந்தி பூவே', youtubeVideoId: 'vOld', status: 'PUBLISHED' },
-    ];
-
-    const r = assessCatalogue(ch, st, [{ id: 'c1' }]);
-    expect(r.ingestionGap[0].likelyRevisionOf).toBeUndefined();
+  /**
+   * The whole point of the fix: the report must hand back BOTH full titles.
+   * The hook is identical on either side, so the descriptor — "Tamil Love
+   * Melody" against "Bamboo Flute Instrumental" — is the only thing that can
+   * tell a reader these are different recordings.
+   */
+  it.each(PAIRS)('%s — keeps both full titles so the two can be told apart', (_hook, onSite, _v1, onYouTube, views) => {
+    const g = gapFor(onSite, onYouTube, views);
+    expect(g.sharesHookWith?.title).toBe(onSite);
+    expect(g.title).toBe(onYouTube);
+    expect(g.title).not.toBe(g.sharesHookWith?.title);
   });
 
-  /** A flag is advisory — it must not change the health verdict or the count. */
+  /**
+   * The id is the part that survives cleanSongTitle. A stored title has had its
+   * descriptor stripped, so only the two video ids can tell a reader which
+   * recording each side actually is.
+   */
+  it.each(PAIRS)('%s — names the video the site page already points at', (_hook, onSite, _v1, onYouTube, views) => {
+    expect(gapFor(onSite, onYouTube, views).sharesHookWith?.youtubeVideoId).toBe('vOld');
+  });
+
+  it('omits the video id when the matched record has none', () => {
+    const g = assessCatalogue(
+      [{ videoId: 'vNew', title: 'ஒரே பாடல்', views: 10 }],
+      [{ id: 'c1', title: 'ஒரே பாடல்', youtubeVideoId: '  ', status: 'PUBLISHED' }],
+      [{ id: 'c1' }]
+    ).ingestionGap[0];
+    expect(g.sharesHookWith?.id).toBe('c1');
+    expect(g.sharesHookWith?.youtubeVideoId).toBeUndefined();
+  });
+
+  it('leaves a genuinely different song unflagged', () => {
+    const g = gapFor('செவ்வந்தி பூவே', 'நல்லதோர் வீணை செய்தே | Bharathiyar', 100);
+    expect(g.sharesHookWith).toBeUndefined();
+  });
+
+  /** Advisory only — it must never change the count or the health verdict. */
   it('does not suppress the song from the gap or alter health', () => {
-    const ch = [channel('vNew', 10)];
-    ch[0].title = 'ஒரே பாடல்';
-    const st: StoredSong[] = [{ id: 'c1', title: 'ஒரே பாடல்', youtubeVideoId: 'vOld', status: 'PUBLISHED' }];
-
-    const r = assessCatalogue(ch, st, [{ id: 'c1' }]);
-    expect(r.ingestionGap).toHaveLength(1);
-    expect(r.healthy).toBe(true);
+    const g = assessCatalogue(
+      [{ videoId: 'vNew', title: 'ஒரே பாடல்', views: 10 }],
+      [{ id: 'c1', title: 'ஒரே பாடல்', youtubeVideoId: 'vOld', status: 'PUBLISHED' }],
+      [{ id: 'c1' }]
+    );
+    expect(g.ingestionGap).toHaveLength(1);
+    expect(g.healthy).toBe(true);
   });
 });
 
@@ -184,17 +244,17 @@ describe('bilingual title matching', () => {
       'நீ சிரிச்ச நேரம் தான் 🎋 Nee Sirichcha Neram Thaan',
       'நீ சிரிச்ச நேரம் தான். .❤️ | Nee Sirichcha Neram Thaan'
     );
-    expect(g.likelyRevisionOf?.id).toBe('c1');
+    expect(g.sharesHookWith?.id).toBe('c1');
   });
 
   it('still distinguishes two genuinely different Tamil hooks', () => {
     const g = gapFor('கண்ணே என் உயிர்த்தமிழே ❤️ Kanne', 'நீ சிரிச்ச நேரம் தான் | Nee');
-    expect(g.likelyRevisionOf).toBeUndefined();
+    expect(g.sharesHookWith).toBeUndefined();
   });
 
   /** An English-titled song has no Tamil prefix — it must not collapse to ''. */
   it('does not collapse English titles into one another', () => {
     const g = gapFor('Maple Breeze', 'Winter Lane');
-    expect(g.likelyRevisionOf).toBeUndefined();
+    expect(g.sharesHookWith).toBeUndefined();
   });
 });

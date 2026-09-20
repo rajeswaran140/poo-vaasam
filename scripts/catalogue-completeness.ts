@@ -144,10 +144,19 @@ async function main() {
           `${(report.ingestionGapShare * 100).toFixed(1)}% of the catalogue) ---`
       );
       for (const g of report.ingestionGap) {
-        const flag = g.likelyRevisionOf ? '  ⚠️ REVISION?' : '';
+        const flag = g.sharesHookWith ? '  ⚠️ SAME SONG, ALREADY ON SITE' : '';
         console.log(`  ${String(g.views ?? 0).padStart(7)}  ${g.videoId}  ${g.title.slice(0, 48)}${flag}`);
-        if (g.likelyRevisionOf) {
-          console.log(`           ↳ same title as ${g.likelyRevisionOf.id} — syncing would DUPLICATE it`);
+        if (g.sharesHookWith) {
+          // Two VIDEO IDS, one above the other — that is the comparison to make.
+          // Open both and listen before deciding anything; the stored title has
+          // been cleaned and no longer names its rendition.
+          const onSite = g.sharesHookWith.youtubeVideoId ?? '(no video)';
+          console.log(`           site page  ${g.sharesHookWith.id}  ->  ${onSite}`);
+          console.log(`           this video ${' '.repeat(g.sharesHookWith.id.length)}  ->  ${g.videoId}`);
+          console.log(`           ${g.title}`);
+          console.log('           ↳ same song, likely a DIFFERENT RECORDING (instrumental, duet,');
+          console.log('             other voice). A rendition wants its OWN page — it is not a');
+          console.log('             replacement for the one on the site. Raj decides.');
         }
       }
       console.log('\n  → /admin/content → "Sync songs from YouTube" (Raj drives the tick-list)');
