@@ -55,7 +55,7 @@ export const ADMIN_DOCS: AdminDoc[] = [
     slug: 'start-here',
     title: 'Start here — what to read, in what order',
     category: 'Start here',
-    updatedAt: '2026-09-19T04:00:00Z',
+    updatedAt: '2026-09-20T18:00:00Z',
     body: `# Start here
 
 These guides accumulated one problem at a time, so reading them front to back is not the fastest way in. This is the order that builds on itself.
@@ -114,6 +114,7 @@ it from [Admin → Deliveries](/admin/deliveries), never from a terminal.
 | 3 | End-screen routing | turning a watch into a subscriber |
 | 4 | YouTube "Promote" card | the free playbook |
 | 5 | Spotify & streaming | making the catalogue discoverable off YouTube |
+| 6 | **Turning views into subscribers** | the conversion plan — and the two obvious ideas it throws out |
 
 ## The four things worth remembering
 
@@ -3353,6 +3354,120 @@ and it pays off each time.
 
 ⚠️ **Activated tags only apply from the day they are activated** — they do not
 backfill. So the earlier this is done, the more history it covers.
+`,
+  },
+  {
+    slug: 'youtube-conversion-plan',
+    title: 'Turning views into subscribers — the conversion plan',
+    category: 'Growth',
+    updatedAt: '2026-09-20T18:00:00Z',
+    body: `# Turning views into subscribers
+
+**Measured 2026-09-20 across 78 songs with 200+ views.** This page is the plan
+for conversion, and the first thing it does is throw out the two ideas that
+sound most obvious.
+
+## Measure RATES, never totals
+
+Conversion is **subscribers and likes per 1,000 views**. A total just re-ranks
+songs by reach, which Studio already shows you. The rate answers the different
+and more useful question: *of the people who arrived, how many stayed?*
+
+    npx tsx scripts/tamilagaval-conversion-audit.ts
+
+## ⚠️ Reach does NOT improve conversion — it slightly hurts it
+
+Split the 78 songs at the median view count:
+
+| half | median views | subs / 1,000 | likes / 1,000 |
+|---|---|---|---|
+| smaller | 1,540 | **2.93** | **15.1** |
+| larger | 8,333 | **2.95** | **11.1** |
+
+**Subscriber conversion is flat.** 2.93 against 2.95 — a bigger song does not
+convert better, it converts *the same, more times*. **Like conversion is 26%
+WORSE on the bigger half.** A wider audience is a less committed one.
+
+So "get more views and the subscribers will follow" is not supported here. More
+views bring proportionally more subscribers and proportionally fewer likes.
+
+## ⚠️ And nothing measurable explains the spread
+
+Best and worst subscriber conversion among songs with real traffic:
+
+| subs/1k | likes/1k | views | avp | song |
+|---|---|---|---|---|
+| **8.77** | 21.9 | 456 | 26% | உறுமி மேளம் (instrumental) |
+| 5.77 | 24.1 | 1,039 | 23% | எங்கள் தேசம் என்றென்றும் ஒன்று |
+| 5.33 | 16.4 | 5,063 | 25% | அன்பை சுமந்து சுமந்து |
+| 5.29 | 12.3 | 4,728 | **48%** | காலை காற்றே |
+| … | | | | |
+| 0.42 | 5.9 | 2,357 | 18% | காதல் வந்து அரும்பியதே |
+| **0.00** | 9.3 | 968 | **48%** | எல்லார்க்கும் அவ ஒரு பேரு |
+| 0.00 | 27.6 | 290 | 29% | நல்லதோர் வீணை செய்தே |
+
+A twenty-fold spread, and **average view percentage does not separate them** —
+48% appears at the top AND at the bottom. Neither does length, nor reach, nor
+release month. One song earns 27.6 likes per 1,000 views and **zero**
+subscribers; people loved it and left.
+
+**Do not read a creative prescription out of this table.** The sample sizes at
+the top are small (456 and 1,039 views), and no measurable attribute in the data
+separates a 5.0 from a 0.0. Anyone claiming to know which lever moves this —
+including me — is guessing.
+
+## So the plan is the half we CAN control
+
+Every one of these is mechanical, checkable and fixable without touching a song.
+
+### 1. Close the subscribe-prompt gaps — the clearest leak
+
+**20 of 127 uploads carry no \`sub_confirmation=1\` link.** Without that
+parameter the subscribe prompt does not appear; the link is decoration. That is
+16% of the catalogue asking for nothing.
+
+| hook missing | uploads |
+|---|---|
+| \`sub_confirmation=1\` subscribe link | **20** |
+| playlist link | **31** |
+| UTM-tagged site link | 11 |
+| music-composition link | 14 |
+
+Fix order is that order. The subscribe link is the only one that asks for the
+conversion this page is about; playlist links are second because playlist
+traffic is the channel's largest source after suggested.
+
+### 2. Every Short points at its song
+
+Standing policy since 2026-09-19: a Short for every full song, and the Short
+links the song — the premiere page with a 🔔 Notify line when it has not aired
+yet. The release checklist treats a missing link as a **blocker**. Shorts earn
+**20.83 likes per 1,000 views** against the songs' 9.97, so they are the
+channel's best-liked format; they are also its worst subscribing one at 1.29
+against 2.96. They are a liking surface that routes, not a growth surface.
+
+### 3. Do not chase reach for conversion
+
+Follows directly from the table above. A hit is worth having for its own sake —
+June's 61,229-view song brought 1,077 subscribers that month — but reach is not
+a *conversion* strategy, because the rate does not improve with it.
+
+### 4. Re-measure before concluding anything
+
+Run the audit. If a change is made, run it again a month later and compare
+RATES. Month-to-month movement on this channel is mostly noise around whether a
+hit landed, so a single month proves nothing in either direction.
+
+## What is deliberately NOT in this plan
+
+**Thumbnail, title and concept redesigns off early signals.** Standing rule on
+this channel: report the numbers, do not push creative changes from them. The
+data above is exactly why — it cannot tell you which creative choice converts,
+so a redesign justified by it would be justified by nothing.
+
+**Anything that trades away the catalogue's honesty** — no engagement bait, no
+"subscribe" in the first line of a lyric description. The credit line and the
+lyrics are the page; the hooks sit underneath them.
 `,
   },
   {
