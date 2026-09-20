@@ -110,3 +110,20 @@ describe('Header — 4-item grouped structure', () => {
     expect(href('பற்றி')).toBe('/about');
   });
 });
+
+/**
+ * Shorts belongs in the படைப்புகள் dropdown, not the top bar.
+ *
+ * The header documents a deliberate limit on primary items so the bar stays
+ * uncluttered; /videos and /shorts are the same destination in two lengths, so
+ * they group. This pins the placement — a later "make it more visible" edit
+ * promoting it to the top bar should have to change a named test.
+ */
+describe('the Shorts link', () => {
+  it('is grouped with காணொளிகள், not added to the top bar', () => {
+    render(<Header />);
+    const shorts = screen.getAllByRole('link', { name: 'குறும் காணொளிகள்' });
+    expect(shorts.length).toBeGreaterThan(0);
+    expect(shorts[0]).toHaveAttribute('href', '/shorts');
+  });
+});
