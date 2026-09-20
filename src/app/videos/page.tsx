@@ -20,6 +20,7 @@ import { alternatesFor, breadcrumbJsonLd, SITE_URL } from '@/lib/seo';
 import { formatVideoDuration, relativeTimeTamil } from '@/lib/video-format';
 import { contentPath } from '@/config/vanity-paths';
 import Image from 'next/image';
+import Link from 'next/link';
 
 // Render per-request rather than as a build-time prerender. Amplify's SSR
 // compute does not run Next's time-based ISR revalidation reliably (the
@@ -236,7 +237,17 @@ export default async function VideosPage() {
 
           {shorts.length > 0 && (
             <section className="mt-12">
-              <h2 className="mb-5 font-kavivanar text-3xl text-white">Shorts</h2>
+              {/* The rail is a teaser: it shows three and hides the rest behind
+                  a swipe. The link is how the other 28 are reachable. */}
+              <div className="mb-5 flex flex-wrap items-baseline justify-between gap-3">
+                <h2 className="font-kavivanar text-3xl text-white">Shorts</h2>
+                <Link
+                  href="/shorts"
+                  className="font-tamil text-sm text-orange-400 underline-offset-4 hover:text-orange-300 hover:underline"
+                >
+                  எல்லாம் பார்க்க ({shorts.length}) →
+                </Link>
+              </div>
               <ShortsRow shorts={withTruncatedDescriptions(shorts)} now={now} />
             </section>
           )}

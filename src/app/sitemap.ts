@@ -45,6 +45,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const sectionPaths = ['', ...liveContentSections().map((s) => s.href), '/all', '/popular', '/music-composition', '/status'];
   if (videosEnabled) {
     sectionPaths.push('/videos');
+    // The Shorts catalogue rides the same switch: both are the channel feed,
+    // so if one is hidden the other has nothing to show either.
+    sectionPaths.push('/shorts');
   }
   const infoPaths = ['/about', '/contact', '/privacy', '/terms'];
 
@@ -132,6 +135,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     '/songs': 0.9,
     '/poems': 0.9,
     '/videos': 0.9,
+    '/shorts': 0.9,
   };
   const sectionRoutes: MetadataRoute.Sitemap = sectionPaths.map((p) => ({
     url: `${SITE_URL}${p}`,
