@@ -3457,12 +3457,44 @@ Identical metadata, different outcomes. YouTube detects the language from the au
 
 That matches the 16 wrong-language tracks found across the catalogue on 2026-07-29, including on top performers. It has been recurring for months and no API call prevents it.
 
-**What actually works** — both Studio-side:
+⚠️ **THIS PAGE USED TO CLAIM A CHANNEL-WIDE SWITCH. THERE IS NONE.** It said
+"turn automatic captions off, per video or channel-wide". Checked 2026-09-20:
+YouTube's only channel-level caption setting filters potentially inappropriate
+words — it does not control whether captions are generated. The channel resource
+carries no caption field at all (\`brandingSettings.channel\` holds title,
+description, keywords, unsubscribedTrailer, defaultLanguage, country; nothing
+else). That false claim was repeated to Raj seven times before anyone checked it.
 
-1. **Turn automatic captions off**, per video or channel-wide. Costs nothing: an English transcription of Tamil singing has no value to anyone.
-2. **Upload a real Tamil caption track.** Durable and genuinely useful, but needs timed captions per song.
+**So there is no fix. There is only maintenance.** What is actually true:
 
-**Do not "fix" this by deleting the track through the API.** It reports success, the track returns, and the checklist flags it again on the next run.
+| approach | what it does |
+|---|---|
+| channel-wide switch | **does not exist** |
+| language metadata | **does not control the ASR language** — see the five-video table above |
+| deleting the track | works, then it regenerates. Two of seven came back within hours |
+| uploading a real track | does NOT remove the machine one — it adds a correct option beside it |
+
+**The policy, set by Raj 2026-09-20:** *"we have to turn off all automatic
+captions unless we uploaded our lyrics."* Every \`asr\` track comes off,
+including one already in Tamil — that is still a machine's guess at sung Tamil.
+A track a person uploaded is never touched.
+
+Run it, rather than deleting by hand:
+
+\`\`\`
+npx tsx scripts/tamilagaval-caption-sweep.ts            # dry run, newest 20
+npx tsx scripts/tamilagaval-caption-sweep.ts --apply
+\`\`\`
+
+⚠️ **It is a holding action, and worth running anyway.** The tracks come back,
+so this repeats — but what it buys is that in the hours after a premiere, when
+the most people arrive, nobody is served a wrong-language transcript.
+
+**Its useful output is the other list:** the videos left with NO captions. Those
+are the songs that deserve a real lyric track, which is the only durable win
+here — \`scripts/upload-captions.ts\` builds one from the lyrics already stored
+for the song. The first sweep found **zero** videos in the newest twelve
+carrying a track we uploaded.
 
 ## A premiere has no duration until it airs
 
