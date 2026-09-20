@@ -56,3 +56,18 @@ describe('Footer', () => {
     expect(yt.getAttribute('href')).toMatch(/sub_confirmation=1/);
   });
 });
+
+/**
+ * Both video destinations, and both behind the same switch.
+ *
+ * /shorts calls notFound() when the channel is unconfigured, exactly as
+ * /videos does — so a footer that linked one without the other would offer a
+ * guaranteed 404 on a site with no channel configured.
+ */
+describe('the Shorts link', () => {
+  it('sits beside காணொளிகள் in the quick links', () => {
+    render(<Footer />);
+    expect(screen.getByRole('link', { name: 'குறும் காணொளிகள்' })).toHaveAttribute('href', '/shorts');
+    expect(screen.getByRole('link', { name: 'காணொளிகள்' })).toHaveAttribute('href', '/videos');
+  });
+});

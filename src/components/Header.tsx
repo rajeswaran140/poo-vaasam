@@ -39,7 +39,16 @@ export default function Header() {
       children: [
         ...CONTENT_SECTIONS.filter((s) => s.live).map((s) => ({ href: s.href, label: s.label })),
         { href: '/lyrics', label: 'பாடல் வரிகள்' },
-        ...(showVideos ? [{ href: '/videos', label: 'காணொளிகள்' }] : []),
+        // Shorts sits beside காணொளிகள் in the dropdown rather than in the top
+        // bar: the four-item rule above exists to keep that bar uncluttered,
+        // and these two are the same destination in two lengths. Both ride the
+        // video toggle, because /shorts 404s when the channel is unconfigured.
+        ...(showVideos
+          ? [
+              { href: '/videos', label: 'காணொளிகள்' },
+              { href: '/shorts', label: 'குறும் காணொளிகள்' },
+            ]
+          : []),
         { href: '/all', label: 'அனைத்தும்' },
       ],
     },

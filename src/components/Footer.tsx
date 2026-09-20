@@ -79,7 +79,10 @@ export function Footer() {
                 <li key={s.href}><Link href={s.href} className="hover:text-white font-tamil focus-visible:outline-none focus-visible:underline">{s.label}</Link></li>
               ))}
               {isYouTubeVideosConfigured() && (
-                <li><Link href="/videos" className="hover:text-white font-tamil focus-visible:outline-none focus-visible:underline">காணொளிகள்</Link></li>
+                <>
+                  <li><Link href="/videos" className="hover:text-white font-tamil focus-visible:outline-none focus-visible:underline">காணொளிகள்</Link></li>
+                  <li><Link href="/shorts" className="hover:text-white font-tamil focus-visible:outline-none focus-visible:underline">குறும் காணொளிகள்</Link></li>
+                </>
               )}
               <li><Link href="/music-composition" className="hover:text-white font-tamil focus-visible:outline-none focus-visible:underline">இசையமைப்பு சேவை</Link></li>
               <li><Link href="/karaoke" className="hover:text-white font-tamil focus-visible:outline-none focus-visible:underline">கராஓகே சேவை</Link></li>
