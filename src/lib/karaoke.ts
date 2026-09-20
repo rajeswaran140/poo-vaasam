@@ -63,8 +63,35 @@ export function buildKaraokeSummary(f: KaraokeFields): string {
  * say it is not karaoke.
  */
 export const KARAOKE_DELIVERABLE = [
-  '320 kbps MP3',
-  'No lead or backing vocals',
+  'Two versions — one to sing over, one to play',
+  '320 kbps MP3, no lead or backing vocals',
   'Mastered with headroom for your own voice',
-  'One-time private download link',
+  // ⚠️ 5 and 7 MUST equal DEFAULT_MAX_DOWNLOADS / DEFAULT_TTL_DAYS in
+  // src/types/delivery.ts. Not imported from there: this module is pulled into
+  // a client component, and delivery.ts reaches `node:crypto` for its token
+  // generator, which webpack cannot resolve in a browser bundle. A test asserts
+  // the two agree, so drift fails the suite rather than the page.
+  'Private link, 5 downloads over 7 days',
+] as const;
+
+/**
+ * The two versions every order ships, and which room each is for.
+ *
+ * ⚠️ ADDED 2026-09-20 BECAUSE THE PAGE WAS UNDERSELLING THE PRODUCT. Both
+ * versions have been delivered since the first order, and the page mentioned
+ * neither — a buyer had no way to know they were getting a choice at all, and
+ * Anton was told the wrong one for his room because the distinction lived only
+ * in an email.
+ */
+export const KARAOKE_VERSIONS = [
+  {
+    name: 'Studio',
+    forWhat: 'Recording at home',
+    why: 'Quieter, with the backing left at its full dynamic range — room for your voice to sit on top in a mix.',
+  },
+  {
+    name: 'Standard',
+    forWhat: 'A hall, a party, a speaker',
+    why: 'Louder and steadier, so the backing stays audible over a room instead of disappearing under it.',
+  },
 ] as const;

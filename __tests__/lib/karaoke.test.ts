@@ -5,7 +5,9 @@ import {
   KARAOKE_SUBJECT,
   KARAOKE_TURNAROUND_LABEL,
   KARAOKE_DELIVERABLE,
+  KARAOKE_VERSIONS,
 } from '@/lib/karaoke';
+import { DEFAULT_MAX_DOWNLOADS, DEFAULT_TTL_DAYS } from '@/types/delivery';
 
 describe('karaoke pricing is stated once', () => {
   it('derives the label from the number, so they cannot drift', () => {
@@ -48,8 +50,37 @@ describe('the deliverable is a promise, so it is stated in one place', () => {
     expect(KARAOKE_DELIVERABLE.join(' ')).toMatch(/no lead or backing vocals/i);
   });
 
-  it('promises a one-time private link, not a public URL', () => {
-    expect(KARAOKE_DELIVERABLE.join(' ')).toMatch(/one-time private download/i);
+  /**
+   * ⚠️ THIS TEST USED TO PIN A FALSE PROMISE. It asserted "one-time private
+   * download", which is not what the system does — a delivery link allows
+   * DEFAULT_MAX_DOWNLOADS over DEFAULT_TTL_DAYS, and Anton's were raised to 15
+   * over 90. A buyer reading "one-time" would think a second click had cost
+   * them the file.
+   *
+   * The promise is now DERIVED from the delivery defaults, so the page cannot
+   * drift from the code that implements it — the same rule the pricing already
+   * follows.
+   */
+  it('promises a private link on the delivery system-s real terms', () => {
+    const promise = KARAOKE_DELIVERABLE.join(' ');
+    expect(promise).toMatch(/private link/i);
+    expect(promise).toContain(String(DEFAULT_MAX_DOWNLOADS));
+    expect(promise).toContain(String(DEFAULT_TTL_DAYS));
+    expect(promise).not.toMatch(/one-time/i);
+  });
+
+  it('promises the two versions that actually ship', () => {
+    expect(KARAOKE_DELIVERABLE.join(' ')).toMatch(/two versions/i);
+    expect(KARAOKE_VERSIONS.map((v) => v.name)).toEqual(['Studio', 'Standard']);
+  });
+
+  /** Each version says which ROOM it is for — that is the whole point of two. */
+  it('says what each version is for, not just its name', () => {
+    for (const v of KARAOKE_VERSIONS) {
+      expect(v.forWhat.length).toBeGreaterThan(3);
+      expect(v.why.length).toBeGreaterThan(20);
+    }
+    expect(KARAOKE_VERSIONS.find((v) => v.name === 'Standard')!.why).toMatch(/louder|room/i);
   });
 });
 
