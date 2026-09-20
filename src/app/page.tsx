@@ -148,6 +148,29 @@ export default function HomePage() {
                     />
                   )}
                 </div>
+
+                {/*
+                  The Shorts entrance. Until now nothing on this page pointed at
+                  a Short at all — they lived in a rail inside /videos, which is
+                  itself unlinked from here. Shorts are the channel's best-liked
+                  format (20.83 likes per 1,000 views against the songs' 9.97),
+                  so a minute of someone's attention is the cheapest way in.
+                */}
+                {isYouTubeChannelConfigured() && (
+                  <div className="flex justify-center pt-5">
+                    <Link
+                      href="/shorts"
+                      aria-label="குறும் காணொளிகள் — ஷார்ட்ஸ் பக்கம்"
+                      className="group inline-flex items-center justify-center gap-2.5 rounded-full border border-white/40 bg-white/10 px-7 py-3.5 font-tamil text-base font-semibold text-white backdrop-blur-sm transition-all hover:bg-white/20 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/60"
+                    >
+                      <span className="text-xl" aria-hidden="true">⚡</span>
+                      <span>ஒரு நிமிடத்தில் — குறும் காணொளிகள்</span>
+                      <svg className="h-5 w-5 transition-transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5} aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                      </svg>
+                    </Link>
+                  </div>
+                )}
               </div>
             </div>
           </div>

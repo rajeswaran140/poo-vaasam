@@ -34,6 +34,15 @@ export const SITE = {
      * one in our own catalogue — never a third-party suggested channel.
      */
     allSongsPlaylistId: 'PLLsCQ9NH4rLSZU0Ycy6I-Xr8DMAbe4vjs',
+    /**
+     * The Shorts playlist, serving the same purpose for the portrait format.
+     *
+     * ⚠️ Shorts embeds used to pass NO playlist at all, so a finished Short
+     * handed the viewer back to YouTube's own suggestions. `rel=0` keeps those
+     * on this channel, but chaining into our own playlist is the stronger
+     * guarantee and the one the songs already had.
+     */
+    shortsPlaylistId: 'PLLsCQ9NH4rLQceNHkbO4_4FCerVT4oOKt',
     label: 'YouTube',
     channelLabel: 'YouTube', // icon + brand word only, no Tamil
   },
