@@ -35,6 +35,7 @@ import {
   KARAOKE_PRICE_LABEL,
   KARAOKE_TURNAROUND_LABEL,
   KARAOKE_DELIVERABLE,
+  KARAOKE_VERSIONS,
 } from '@/lib/karaoke';
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { ContentType, ContentStatus } from '@/types/content';
@@ -157,6 +158,57 @@ export default async function KaraokePage() {
           >
             கராஓகே கேளுங்கள் · Request a karaoke
           </Link>
+
+          {/*
+            The three facts a buyer needs before they will scroll: what it
+            costs, how long it takes, and whether their song is even eligible.
+            All three were below the fold, and the song count was invisible
+            until the form loaded — so the page asked for a request before
+            answering "can you even do mine?".
+          */}
+          <dl className="mx-auto mt-8 flex max-w-2xl flex-wrap items-center justify-center gap-x-8 gap-y-3 text-sm">
+            <div className="flex items-baseline gap-2">
+              <dt className="font-tamil text-gray-400">விலை</dt>
+              <dd className="font-semibold text-orange-400">{KARAOKE_PRICE_LABEL}</dd>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <dt className="font-tamil text-gray-400">நேரம்</dt>
+              <dd className="font-semibold text-gray-200">{KARAOKE_TURNAROUND_LABEL}</dd>
+            </div>
+            {songs.length > 0 && (
+              <div className="flex items-baseline gap-2">
+                <dt className="font-tamil text-gray-400">பாடல்கள்</dt>
+                <dd className="font-semibold text-gray-200">{songs.length} available</dd>
+              </div>
+            )}
+          </dl>
+        </section>
+
+        {/*
+          HOW IT WORKS. The single biggest source of hesitation on this page was
+          that it looks like a shop but is not one: stems are fetched per order,
+          so nothing downloads on click. Saying so in three steps is kinder than
+          leaving a buyer to discover it after pressing the button.
+        */}
+        <section className="mt-14">
+          <h2 className="mb-6 text-center font-tamil text-2xl font-bold text-white">
+            எப்படி வேலை செய்கிறது · How it works
+          </h2>
+          <ol className="grid gap-4 sm:grid-cols-3">
+            {[
+              { n: '1', ta: 'பாடலைத் தேர்வு செய்யுங்கள்', en: 'Tell us which song. No payment yet.' },
+              { n: '2', ta: 'நாங்கள் உறுதி செய்கிறோம்', en: 'We confirm the song can be made, then send a payment link.' },
+              { n: '3', ta: 'தனிப்பட்ட இணைப்பு', en: `Your private download link — both versions, ${KARAOKE_TURNAROUND_LABEL}.` },
+            ].map((step) => (
+              <li key={step.n} className="rounded-2xl border border-gray-700 bg-gray-800/60 p-5">
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-orange-600 font-bold text-white">
+                  {step.n}
+                </span>
+                <p className="mt-3 font-tamil font-semibold text-white">{step.ta}</p>
+                <p className="mt-1 text-sm text-gray-400">{step.en}</p>
+              </li>
+            ))}
+          </ol>
         </section>
 
         <section className="mt-14 grid gap-6 sm:grid-cols-2">
@@ -177,6 +229,29 @@ export default async function KaraokePage() {
               ))}
             </ul>
           </div>
+        </section>
+
+        {/*
+          THE TWO VERSIONS. Both have shipped with every order since the first
+          one, and this page mentioned neither — so a buyer could not know they
+          were getting a choice, and Anton was told the wrong one for his room
+          because the distinction lived only in an email.
+        */}
+        <section className="mt-6 grid gap-6 sm:grid-cols-2">
+          {KARAOKE_VERSIONS.map((v) => (
+            <div key={v.name} className="rounded-2xl border border-gray-700 bg-gray-800/40 p-6">
+              <div className="flex items-baseline justify-between gap-3">
+                <h3 className="text-xl font-bold text-white">{v.name}</h3>
+                <span className="rounded-full bg-orange-600/15 px-3 py-1 text-xs font-semibold text-orange-300">
+                  {v.forWhat}
+                </span>
+              </div>
+              <p className="mt-3 text-sm leading-relaxed text-gray-300">{v.why}</p>
+            </div>
+          ))}
+          <p className="sm:col-span-2 text-center text-sm text-gray-500">
+            Both are included in the same price — you do not choose at checkout.
+          </p>
         </section>
 
         <section id="request" className="mt-14 scroll-mt-20">
