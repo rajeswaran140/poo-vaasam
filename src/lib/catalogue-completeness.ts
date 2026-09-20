@@ -51,16 +51,30 @@ export interface CompletenessGap {
   title: string;
   views?: number;
   /**
-   * Set when an unsynced channel song's title matches a song ALREADY on the
-   * site — almost certainly a re-recording, not a missing song.
+   * Set when an unsynced channel song shares its TAMIL HOOK with a song already
+   * on the site. It says the two are the same *song*. It says nothing about
+   * whether they are the same *recording*.
    *
-   * ⚠️ Raj publishes improved lyrics as a NEW upload and never unlists the
-   * original, so the channel legitimately holds several near-duplicate titles
-   * (செவ்வந்தி பூவே appears twice, at 35,542 and 2,123 views). Syncing those
-   * blindly creates a second page for the same song and splits its traffic.
-   * This does not exclude them — it marks them for a human decision.
+   * ⚠️ THIS IS NOT A DUPLICATE FLAG. It used to be read as one, and on
+   * 2026-09-20 that reading repointed four song pages off the sung version onto
+   * its instrumental — நீ சிரிச்ச நேரம் went from 61,875 views to 1,529.
+   *
+   * Every one of the six shared hooks on the channel is a RENDITION pair, not a
+   * re-upload: the same song issued as a bamboo-flute instrumental, a duet, a
+   * female version, a male version. Not one is a replacement for the other, and
+   * the descriptor that tells them apart lives in the half of the title this
+   * key deliberately discards.
+   *
+   * So the flag carries both titles AND both video ids, and leaves the reading
+   * to a human. The video id matters more than the title here: a stored title
+   * has already been through cleanSongTitle, which drops the very descriptor
+   * that names the rendition — so the site's title alone cannot say which
+   * recording the page points at, but its video id always can.
+   *
+   * Do not add a rule here that decides which recording "wins" — a whitelist of
+   * descriptors goes stale the first time a new kind of rendition ships.
    */
-  likelyRevisionOf?: { id: string; title: string };
+  sharesHookWith?: { id: string; title: string; youtubeVideoId?: string };
 }
 
 /**
@@ -148,11 +162,22 @@ export function assessCatalogue(
     .sort((a, b) => b.views - a.views)
     .map((c) => {
       const match = storedByTitle.get(titleKey(c.title));
+      // `title` stays RAW on both sides. The hook is what matched; the rest of
+      // each title is the only thing that distinguishes one rendition from
+      // another, so it must survive into the report.
       return {
         videoId: c.videoId,
         title: c.title,
         views: c.views,
-        ...(match ? { likelyRevisionOf: { id: match.id, title: match.title } } : {}),
+        ...(match
+          ? {
+              sharesHookWith: {
+                id: match.id,
+                title: match.title,
+                ...(match.youtubeVideoId?.trim() ? { youtubeVideoId: match.youtubeVideoId.trim() } : {}),
+              },
+            }
+          : {}),
       };
     });
 
