@@ -3474,7 +3474,7 @@ lyrics are the page; the hooks sit underneath them.
     slug: 'publishing-traps',
     title: 'Publishing traps — things that fail silently',
     category: 'Publishing',
-    updatedAt: '2026-09-04T14:45:00Z',
+    updatedAt: '2026-09-20T22:10:00Z',
     body: `# Publishing traps — things that fail silently
 
 Each of these cost real time. None of them produce an error message.
@@ -3497,6 +3497,18 @@ Omitting the field returns HTTP 200 with a clean-looking response **and changes 
 YouTube renders a chapter bar only with **at least three** timestamps, the first at exactly \`0:00\`, and every segment **10 seconds or longer**.
 
 Two entries (\`0:00\` and \`5:36\`) render as plain clickable text: no chapter bar, no seekable segments. If the point of the chapters is to let someone jump to the second half, two entries **do not accomplish it**.
+
+## Two uploads sharing a title are NOT the same recording
+
+The channel publishes one song as several **renditions** — the sung version, a bamboo-flute instrumental, a duet, a male take, a female take. Their titles differ only in the descriptor after the pipe: \`Tamil Love Melody\` against \`Tamil Bamboo Flute Instrumental\`, \`(ஆண் குரல்)\` against \`(பெண் குரல்)\`.
+
+Anything that groups by the Tamil hook will call the second one a re-upload. On 2026-09-20 that reasoning repointed four song pages off the sung version onto its instrumental — **நீ சிரிச்ச நேரம் went from a 61,875-view recording to a 1,529-view one** before it was caught and reverted.
+
+**All six shared hooks on the channel are rendition pairs. Not one is a re-upload.** The category has zero instances.
+
+**Before treating two videos as the same recording**, compare the **descriptor**, the **duration** and the **view count** — not the base title, and not the publish date, because renditions can land the same day (ஈழத்து மண்ணே's two voices are eleven hours apart).
+
+A rendition is a separate work. It wants **its own page**, never a replacement link on an existing one. The catalogue report now flags this as \`sharesHookWith\` and prints both video ids side by side rather than reaching a verdict — see \`scripts/catalogue-completeness.ts\`.
 
 ## You cannot comment on a private video
 
@@ -3893,7 +3905,7 @@ The Data API returns \`contentDetails.licensedContent: true\` when YouTube's Con
     slug: 'reading-post-premiere-audit',
     title: 'Reading a post-premiere audit report — what the sections mean',
     category: 'Growth',
-    updatedAt: '2026-08-30T13:00:00Z',
+    updatedAt: '2026-09-20T22:10:00Z',
     body: `# Reading a post-premiere audit report
 
 Every video release now has a T+72h audit — a systemd oneshot fires 72 h after the premiere, calls YouTube Data + Analytics APIs, and writes a report to \`/home/devuser/reports/<VIDEO_ID>.post-premiere.md\` on the crowvault-ide-server. This guide is how to read the sections — what the numbers actually mean, and where the actionable signal is versus what's noise.
@@ -3933,11 +3945,28 @@ The traffic-sources table tells you WHERE the views came from. The single bigges
 
 - **RELATED_VIDEO high** = YouTube's suggestion engine is recommending the video alongside other content. Algorithm favor. This powers breakout launches.
 - **SUBSCRIBER high** = the existing audience carried the day, not the algorithm.
-- **YT_SEARCH high** = SEO is working (romanized title, good tags).
+- **YT_SEARCH high** = search sent the views. ⚠️ **It will not be high, and chasing it is a mistake on this channel** — see the measured baseline below.
 - **NOTIFICATION high** = the subscriber-bell base is active.
 - **BROWSE_FEATURES high** = homepage promotion. The thumbnail is doing the work.
 
 **09D example.** 76% of views came from RELATED_VIDEO. The algorithm actively chose the video — that's the mechanism behind the 10× lift over the prior four premieres.
+
+### ⚠️ Search is not a lever here. Measured, not assumed.
+
+This entry used to read "YT_SEARCH high = SEO is working (romanized title, good tags)", which invited work on titles and tags that cannot pay off. Measured on the **two most-viewed songs**, 2026-06-22 → 2026-09-19:
+
+| source | நீ சிரிச்ச நேரம் | செவ்வந்தி பூவே |
+|---|---|---|
+| PLAYLIST | 40.6% | 36.7% |
+| RELATED_VIDEO | 31.6% | 31.9% |
+| SUBSCRIBER | 19.9% | 25.2% |
+| **YT_SEARCH** | **0.3%** | **0.1%** |
+
+Channel-wide, the best search term over 90 days is "tamil songs" at **69 views**. Against ~8,400 views/day, search is a rounding error.
+
+**What this changes.** Playlists are the biggest single source of a hit's views, so playlist routing is the highest-leverage lever available — see [[release-calendar]]. Retitling for keywords is not: it risks the titles that already work in exchange for a source that delivers a fraction of a percent.
+
+**Scope of the claim.** Two videos, both breakout hits, one 90-day window. A tail video's mix may differ — re-measure before generalising further.
 
 **Corollary — when the algorithm is favouring a video, don't reset its signal.** Don't change the title, don't edit the thumbnail, don't rewrite the description, don't add/remove tags for at least 2-3 weeks. Every metadata edit re-classifies the video and can wipe the recommendation footprint. Small typo fixes are fine; anything semantic waits.
 
@@ -4146,6 +4175,70 @@ Phases 2 and 3 need none of that and can start whenever.
 ## Where the detail lives
 
 This page is the operator's view. The engineering interior — the database key layout, the provider interface in TypeScript, the API routes, error handling, and the test plan — is in the repo spec at \`docs/superpowers/specs/2026-09-11-visual-story-studio-design.md\`.
+`,
+  },
+  {
+    slug: 'promoting-karaoke-on-youtube',
+    title: 'Promoting the karaoke service on YouTube',
+    category: 'Growth',
+    updatedAt: '2026-09-20T22:10:00Z',
+    body: `# Promoting the karaoke service on YouTube
+
+The channel sells karaoke beds — a buyer in Norway paid **CAD $80** for two versions on 2026-09-19. This entry is how the channel is meant to feed that, and the two mistakes worth not making.
+
+## The funnel was missing entirely
+
+Measured 2026-09-20: **0 of 127 uploads linked tamilagaval.com/karaoke. 127 of 127 linked the site.**
+
+Someone who would happily pay watched a song, read the description, and was never told the service existed. That is not a strategy problem — it is a missing link, and it is the first thing to fix.
+
+## Do NOT do this with SEO
+
+The obvious move is to put "karaoke" in titles and tags. **It does not work on this channel**, and it risks titles that already do.
+
+Search delivers **0.1–0.3%** of the two biggest songs' views. The best channel-wide search term over 90 days is "tamil songs" at 69 views. Two instrumentals already carry \`Karaoke Tamil\` as a tag and have earned essentially nothing from it.
+
+Where the views actually come from — playlists, suggested video, subscribers — is in [[reading-post-premiere-audit]]. Promote karaoke through those, not through search.
+
+## The CTA, and why it is shaped this way
+
+The description template already ends with a service CTA for music composition. The karaoke line mirrors it exactly and sits **underneath** it — it does not replace it:
+
+\`\`\`
+🎤 இந்தப் பாடலை உங்கள் குரலில் பாட வேண்டுமா? | Want to sing this song in your own voice?
+https://tamilagaval.com/karaoke?utm_source=youtube&utm_medium=description&utm_campaign=karaoke&utm_content=<VIDEO_ID>
+\`\`\`
+
+**\`utm_content\` is the video id, and that matters.** There is no instrumentation between YouTube and an order — the funnel is currently unmeasurable. Tagging per song is what makes it measurable: which song sends buyers, not merely that YouTube did. Use \`utm_medium=pinned_comment\` for the pinned-comment variant so the two surfaces separate.
+
+Do not quote a conversion rate from this doc. There isn't one yet, and inventing a target would defeat the point of adding the tags.
+
+## Which songs
+
+The most-viewed songs, because reach is the only thing being tested. Batch one is the top five — together 240,082 lifetime views:
+
+| | song | video | views |
+|---|---|---|---|
+| 1 | நீ சிரிச்ச நேரம் தான் | GXLu3Y7FghU | 61,924 |
+| 2 | என் மன்னவனே.. என் தென்னவனே | eo3Mo--sgPY | 50,568 |
+| 3 | செவ்வந்தி பூவே | H5NcoS41fA4 | 50,168 |
+| 4 | உன்னை பார்த்தால் போதாதே | lWt5kvapFKs | 47,347 |
+| 5 | ஒத்த பனங்கீத்தே | I0F7xHxg7cI | 30,075 |
+
+Five, not eight, on purpose: if 240,000 views of reach does not move traffic to the karaoke page, three more songs will not rescue it. Learn cheap. கஞ்சிக் கலயம் (26,900), என் பொன்மணி (22,433) and சாயங்கால வானத்திலே (19,843) are the next three if it does work.
+
+## ⚠️ These are pasted BY HAND
+
+Descriptions and pinned comments are edited by Raj in YouTube Studio. Raj chose this explicitly on 2026-09-20 when offered the automated alternative.
+
+**The standing rule stands: no \`videos.update\` against existing videos, from the portal or the worker.** The API replaces the whole snippet — a careless read-modify-write does not add a line, it wipes the title, tags and category of whatever it touches. Nothing here justifies that risk on songs carrying a quarter of a million views.
+
+No titles. No thumbnails. Descriptions and pinned comments only.
+
+## What is still open
+
+- **Anton's testimonial.** He called the delivery "a world class achievement". Permission to quote him on /karaoke was being requested as of 2026-09-20 — do not publish it until he agrees.
+- **A karaoke playlist.** Playlists are the biggest single source of a hit's views, and the instrumentals draw only 9.5% of theirs from playlists. Untested.
 `,
   },
 ];
