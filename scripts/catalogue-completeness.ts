@@ -22,6 +22,7 @@
  * Quota: ~6 units (2× playlistItems, ~4× videos.list). Negligible against the
  * 10,000/day shared with the reporting crons.
  */
+import { youtubeApiKey } from './lib/amplify-env';
 import { SongCatalog } from '../src/application/use-cases/SongCatalog';
 import { ContentRepository } from '../src/infrastructure/database/ContentRepository';
 import { ContentType } from '../src/types/content';
@@ -91,8 +92,7 @@ async function fetchChannelSongs(key: string): Promise<ChannelSong[]> {
 
 async function main() {
   const json = process.argv.includes('--json');
-  const key = process.env.YOUTUBE_API_KEY;
-  if (!key) throw new Error('YOUTUBE_API_KEY is required');
+  const key = await youtubeApiKey();
 
   const channel = await fetchChannelSongs(key);
 

@@ -24,6 +24,7 @@
  * READ-ONLY on YouTube. The only write is `theme` on the song's METADATA item,
  * via the same setSongTheme() the admin UI uses.
  */
+import { youtubeApiKey } from './lib/amplify-env';
 import { setSongTheme } from '../src/lib/song-theme-write';
 import { ContentRepository } from '../src/infrastructure/database/ContentRepository';
 import { ContentType } from '../src/types/content';
@@ -74,8 +75,7 @@ async function main() {
     : undefined;
   const only = onlyArg ? new Set(onlyArg.split(',').map((s) => s.trim())) : undefined;
 
-  const key = process.env.YOUTUBE_API_KEY;
-  if (!key) throw new Error('YOUTUBE_API_KEY is required');
+  const key = await youtubeApiKey();
 
   // videoId -> theme, first (most specific) playlist wins
   const themeByVideo = new Map<string, { theme: SongTheme; label: string }>();

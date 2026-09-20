@@ -27,6 +27,7 @@
  * it). Never written to disk.
  */
 
+import { youtubeApiKey } from './lib/amplify-env';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -63,7 +64,7 @@ async function accessToken(): Promise<string> {
   return j.access_token;
 }
 
-const KEY = process.env.YOUTUBE_API_KEY!;
+let KEY = '';   // resolved in main() — see youtubeApiKey()
 const api = async (url: string, token?: string) => {
   const r = await fetch(url, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined);
   if (!r.ok) throw new Error(`${r.status} ${(await r.text()).slice(0, 160)}`);
@@ -77,6 +78,7 @@ function isoSeconds(iso: string): number {
 }
 
 async function main() {
+  KEY = await youtubeApiKey();
   const token = await accessToken();
 
   // --- catalogue ---
