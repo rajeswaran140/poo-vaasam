@@ -16,6 +16,7 @@ import { SubscribeButton } from '@/components/SubscribeButton';
 import { JsonLd } from '@/components/JsonLd';
 import { featuredSongsItemListJsonLd } from '@/config/featured-songs';
 import { SITE_URL, SITE_NAME, alternatesFor } from '@/lib/seo';
+import { KARAOKE_PRICE_LABEL } from '@/lib/karaoke';
 
 export const metadata: Metadata = {
   alternates: alternatesFor('/'),
@@ -346,6 +347,41 @@ export default function HomePage() {
               className="inline-flex items-center gap-2 px-8 py-4 bg-white text-purple-700 rounded-full font-bold hover:bg-purple-50 transition-all shadow-2xl transform hover:scale-105 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/60 font-tamil text-lg"
             >
               <span aria-hidden="true">🎵</span>
+              <span>மேலும் அறிய</span>
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/*
+        Karaoke Service — sibling of the composition section above, same shape,
+        teal because purple is taken.
+
+        ⚠️ It sits DOWN HERE on purpose. The hero promises முற்றிலும் இலவசம் and
+        இத்தளத்தில் விளம்பரம் இல்லை; a paid-service strip at the top of the page
+        reads against both. A service offered after the free work has been shown
+        does not. The composition section proved the placement.
+
+        Price comes from KARAOKE_PRICE_LABEL — see lib/karaoke.ts, which records
+        why a hand-typed fourth copy of that number is not acceptable.
+      */}
+      <section className="bg-gradient-to-r from-teal-600 to-teal-800 py-20">
+        <div className="container mx-auto px-4">
+          <div className="max-w-4xl mx-auto text-center text-white">
+            <div className="text-5xl mb-4" aria-hidden="true">🎤</div>
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4 font-tamil">கராஓகே சேவை</h2>
+            <p className="text-lg text-teal-100 font-tamil mb-3 max-w-2xl mx-auto leading-relaxed">
+              தமிழகவல் பாடல்களின் இசை மட்டும் பதிப்புகள் — நீங்களே பாடுங்கள்.
+            </p>
+            <p lang="en" className="text-base text-teal-100/90 mb-8 max-w-2xl mx-auto leading-relaxed">
+              Sing any song from this catalogue in your own voice — 320 kbps, no vocals,
+              mastered with headroom for you. {KARAOKE_PRICE_LABEL} per song.
+            </p>
+            <Link
+              href="/karaoke"
+              className="inline-flex items-center gap-2 px-8 py-4 bg-white text-teal-700 rounded-full font-bold hover:bg-teal-50 transition-all shadow-2xl transform hover:scale-105 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/60 font-tamil text-lg"
+            >
+              <span aria-hidden="true">🎙️</span>
               <span>மேலும் அறிய</span>
             </Link>
           </div>
