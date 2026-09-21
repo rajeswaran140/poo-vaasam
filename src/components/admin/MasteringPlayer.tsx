@@ -166,8 +166,22 @@ export function MasteringPlayer({
   // keyed on the master URL, so every switch mounts a fresh one — without
   // closing the old context, auditioning a handful of masters exhausts the
   // budget and the meter and equaliser stop working with no obvious cause.
+  //
+  // ⚠️ AND IT MUST PAUSE THE ELEMENT. Removing an <audio> from the DOM does not
+  // reliably stop it: a detached media element keeps playing until it is
+  // collected. Because this component is keyed on the master URL, switching
+  // rows unmounts one player and mounts the next — so the previous master went
+  // on playing UNDER the new one, which is heard as the library "moving to the
+  // next song on its own" and cannot be stopped by any control still on screen,
+  // since the element those controls talked to is gone.
+  //
+  // The node is snapshotted here, not read in the cleanup: React may detach the
+  // ref before a passive cleanup runs, and `audioRef.current` is then null
+  // exactly when it is needed. MasteringComparePlayer already does this.
   useEffect(() => {
+    const audio = audioRef.current;
     return () => {
+      audio?.pause();
       const ctx = ctxRef.current;
       ctxRef.current = null;
       analyserRef.current = null;

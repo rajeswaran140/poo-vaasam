@@ -531,7 +531,6 @@ export function MasteringStudio() {
   const failRow = useCallback((id: string, err: unknown) => {
     setRowError({ id, message: err instanceof Error ? err.message : String(err) });
   }, []);
-  const libraryAudio = useRef<HTMLAudioElement | null>(null);
 
   const mounted = useRef(true);
   const abort = useRef<AbortController | null>(null);
@@ -1740,8 +1739,10 @@ export function MasteringStudio() {
   const playSaved = useCallback(async (m: MasterJob) => {
     if (!m.masterKey) return;
     if (playing?.id === m.id) {
-      // Same row again = stop. Releasing the src also stops the network fetch.
-      libraryAudio.current?.pause();
+      // Same row again = stop. Clearing `playing` unmounts MasteringPlayer,
+      // whose cleanup pauses the element — this used to call pause() on a ref
+      // that was never attached to anything, so it stopped nothing and the
+      // master kept playing with its controls gone.
       setPlaying(null);
       return;
     }
