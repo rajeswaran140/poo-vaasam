@@ -514,6 +514,23 @@ export function MasteringStudio() {
   /** Which row is being renamed, and the draft text. */
   const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
   const [rowBusy, setRowBusy] = useState<string | null>(null);
+  /**
+   * A library row's failure, scoped to the row that caused it.
+   *
+   * ⚠️ WHY THIS EXISTS. Every row action used to call `setError`, which paints
+   * the banner under the page header — ~1,600 lines of JSX above the button
+   * that was clicked. The operator saw "Working…" appear, then nothing, and the
+   * app looked broken while it was in fact reporting the refusal off-screen.
+   * That is how the 2026-09-19 இன்னுமொரு கருவறையில் short was lost: the message
+   * was never read, so the real cause was never known.
+   *
+   * Keyed by job id so one row's failure can never be attributed to another.
+   */
+  const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
+  /** Report a row failure where the row can see it. Mirrors the shared catch. */
+  const failRow = useCallback((id: string, err: unknown) => {
+    setRowError({ id, message: err instanceof Error ? err.message : String(err) });
+  }, []);
   const libraryAudio = useRef<HTMLAudioElement | null>(null);
 
   const mounted = useRef(true);
@@ -1611,7 +1628,7 @@ export function MasteringStudio() {
   /** Cover for a library row's render. Same upload path as the inline panel. */
   const onPickRowCover = useCallback(
     async (id: string, file: File) => {
-      setError(null);
+      setRowError(null);
       setRowBusy(id);
       const controller = new AbortController();
       try {
@@ -1620,12 +1637,12 @@ export function MasteringStudio() {
         setRowRender({ id, cover: { key, name: file.name } });
         setAnnounce('Cover uploaded.');
       } catch (err) {
-        if (mounted.current && !isAbort(err)) setError(err instanceof Error ? err.message : String(err));
+        if (mounted.current && !isAbort(err)) failRow(id, err);
       } finally {
         if (mounted.current) setRowBusy(null);
       }
     },
-    []
+    [failRow]
   );
 
   /**
@@ -1637,7 +1654,7 @@ export function MasteringStudio() {
     if (!rowRender?.cover) return;
     const { id, cover: rowCover } = rowRender;
     setRowBusy(id);
-    setError(null);
+    setRowError(null);
     try {
       // Same discriminator as the inline panel: capture this row's CURRENT
       // videoRenderedAt/videoError from the loaded library before the POST.
@@ -1661,11 +1678,11 @@ export function MasteringStudio() {
       );
       setRowRender(null);
     } catch (err) {
-      if (mounted.current) setError(err instanceof Error ? err.message : String(err));
+      if (mounted.current) failRow(id, err);
     } finally {
       if (mounted.current) setRowBusy(null);
     }
-  }, [rowRender, videoHeight, library, startRender]);
+  }, [rowRender, videoHeight, library, startRender, failRow]);
 
   /**
    * Cut a short from the library, for the same reason renderRowVideo exists:
@@ -1678,7 +1695,7 @@ export function MasteringStudio() {
     if (!rowRender?.cover) return;
     const { id, cover: rowCover } = rowRender;
     setRowBusy(id);
-    setError(null);
+    setRowError(null);
     try {
       const row = library?.find((x) => x.id === id);
       const fresh = await startShort(id, rowCover.key, row?.shortRenderedAt ?? null, row?.shortError ?? null);
@@ -1701,11 +1718,11 @@ export function MasteringStudio() {
       );
       setRowRender(null);
     } catch (err) {
-      if (mounted.current) setError(err instanceof Error ? err.message : String(err));
+      if (mounted.current) failRow(id, err);
     } finally {
       if (mounted.current) setRowBusy(null);
     }
-  }, [rowRender, library, startShort]);
+  }, [rowRender, library, startShort, failRow]);
 
   /**
    * Deliberately NOT loaded on mount: listing scans the table, and most visits
@@ -1729,7 +1746,7 @@ export function MasteringStudio() {
       return;
     }
     setRowBusy(m.id);
-    setError(null);
+    setRowError(null);
     try {
       const res = await adminFetch(
         `/api/admin/mastering/download?key=${encodeURIComponent(m.masterKey)}&mode=play`
@@ -1752,11 +1769,11 @@ export function MasteringStudio() {
       }
       setPlaying({ id: m.id, url: body.url as string, sourceUrl });
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      failRow(m.id, err);
     } finally {
       setRowBusy(null);
     }
-  }, [playing]);
+  }, [playing, failRow]);
 
   /**
    * Commit a rename. The server sanitises the title (it also drives the
@@ -1779,7 +1796,7 @@ export function MasteringStudio() {
       return;
     }
     setRowBusy(id);
-    setError(null);
+    setRowError(null);
     try {
       const res = await adminFetch(`/api/admin/music-lab/master/${id}/rename`, {
         method: 'PATCH',
@@ -1793,11 +1810,11 @@ export function MasteringStudio() {
       );
       setRenaming(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      failRow(id, err);
     } finally {
       setRowBusy(null);
     }
-  }, [renaming, rowBusy, library]);
+  }, [renaming, rowBusy, library, failRow]);
 
   /**
    * Re-open a saved master for another pass.
@@ -3481,6 +3498,20 @@ export function MasteringStudio() {
                     download links happen to be present. */}
                 <ReleasePipelineRow job={m} />
 
+                {/* The refusal, in the row that refused. Placed here — not in
+                    the render panel below — because play and rename can fail
+                    with that panel closed, and an error nobody can see is the
+                    same as no error at all. */}
+                {rowError?.id === m.id && (
+                  <p
+                    role="alert"
+                    className="mt-2 flex w-full items-start gap-2 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-red-800 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300"
+                  >
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    <span>{rowError.message}</span>
+                  </p>
+                )}
+
                 {rowRender?.id === m.id && (
                   <div className="mt-2 flex w-full flex-wrap items-center gap-2 border-t border-gray-100 pt-2 dark:border-gray-800">
                     <label
@@ -3587,7 +3618,10 @@ export function MasteringStudio() {
               title={library?.find((x) => x.id === playing.id)?.title || 'Master'}
               afterTp={library?.find((x) => x.id === playing.id)?.afterTp ?? null}
               onExpired={() => {
-                setError('That playback link expired — press play again to get a fresh one.');
+                setRowError({
+                  id: playing.id,
+                  message: 'That playback link expired — press play again to get a fresh one.',
+                });
                 setPlaying(null);
               }}
               onPrev={neighbours.prev ? () => void playSaved(neighbours.prev!) : undefined}
