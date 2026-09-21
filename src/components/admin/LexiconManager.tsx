@@ -17,7 +17,7 @@
  * filtering 1,047 in-memory rows is instant and the two can never disagree.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { adminFetch } from '@/lib/client-auth';
 import { TransliterateField } from '@/components/admin/TransliterateField';
@@ -90,6 +90,13 @@ function download(filename: string, text: string, mime: string) {
 
 type Tool = 'none' | 'suggest' | 'enrich' | 'lyric' | 'audit';
 
+/**
+ * How long a Delete stays armed. Long enough to mean the second click is the
+ * same thought as the first, short enough that a button left reading "Delete
+ * for good?" cannot be walked into later.
+ */
+const ARM_MS = 5000;
+
 export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
   const [words, setWords] = useState<LexiconRow[]>(initial);
   const [fRegister, setFRegister] = useState('');
@@ -108,6 +115,31 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
   const [tool, setTool] = useState<Tool>('none');
   // Bulk selection, held by id so it survives re-sorting and re-filtering.
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  /**
+   * The row whose Delete is armed and waiting for a second click.
+   *
+   * ⚠️ WHY THIS EXISTS. Delete used to fire on the first click, from a plain
+   * text button sitting 8px from Archive in a 1,047-row table. The repository
+   * does a hard `DynamoDBOperations.delete`, so the word is gone: point-in-time
+   * recovery is on, but getting one headword back means restoring the whole
+   * table to a timestamp, which nobody is going to do for a single row.
+   *
+   * Archive — reversible, already built, immediately to its left — is what a
+   * mistaken Delete almost always meant. So Delete now costs a second,
+   * deliberate click, and disarms itself if that click does not come.
+   */
+  const [armedDelete, setArmedDelete] = useState<string | null>(null);
+  const disarmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** Arm for a few seconds only — a button left saying "Sure?" is a trap. */
+  useEffect(() => {
+    if (!armedDelete) return;
+    disarmTimer.current = setTimeout(() => setArmedDelete(null), ARM_MS);
+    return () => {
+      if (disarmTimer.current) clearTimeout(disarmTimer.current);
+      disarmTimer.current = null;
+    };
+  }, [armedDelete]);
 
   const counts = useMemo(() => lexiconCounts(words), [words]);
 
@@ -184,12 +216,29 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
     else toast.error('Failed');
   };
 
+  /**
+   * First click arms, second click deletes. `armedDelete` is checked here and
+   * not only in the button, so the guard holds however the call is reached.
+   */
   const remove = async (id: string) => {
+    if (armedDelete !== id) {
+      setArmedDelete(id);
+      return;
+    }
+    setArmedDelete(null);
     const res = await adminFetch(`/api/admin/lexicon/${id}`, { method: 'DELETE' });
     if (res.ok) {
       setWords((prev) => prev.filter((w) => w.id !== id));
       if (detailId === id) setDetailId(null);
-    } else toast.error('Delete failed');
+      return;
+    }
+    // The route says why — "Bad id", "Failed to delete word". Throwing that away
+    // for a flat "Delete failed" leaves the only explanation in a server log.
+    const reason = await res
+      .json()
+      .then((b) => (b && typeof b.error === 'string' ? b.error : ''))
+      .catch(() => '');
+    toast.error(reason || `Delete failed (${res.status})`);
   };
 
   const onEdited = (row: LexiconRow) => {
@@ -379,8 +428,26 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
                     </td>
                     <td className="px-3 py-2 text-right text-xs">
                       <button onClick={() => setEditingId(w.id)} className="mr-2 text-blue-600 hover:text-blue-800">Edit</button>
-                      <button onClick={() => toggleArchive(w)} className="mr-2 text-gray-500 hover:text-gray-800">{w.archived ? 'Restore' : 'Archive'}</button>
-                      <button onClick={() => remove(w.id)} className="text-red-500 hover:text-red-700">Delete</button>
+                      <button onClick={() => toggleArchive(w)} className="text-gray-500 hover:text-gray-800">{w.archived ? 'Restore' : 'Archive'}</button>
+                      {/* Ruled off from the reversible pair. 8px of margin was the
+                          only thing between Archive and a hard delete. */}
+                      <span className="ml-3 border-l border-gray-200 pl-3 dark:border-gray-700">
+                        <button
+                          onClick={() => remove(w.id)}
+                          aria-label={
+                            armedDelete === w.id
+                              ? `Confirm deleting ${w.word} — this cannot be undone`
+                              : `Delete ${w.word}`
+                          }
+                          className={
+                            armedDelete === w.id
+                              ? 'rounded bg-red-600 px-1.5 py-0.5 font-semibold text-white hover:bg-red-700'
+                              : 'text-red-500 hover:text-red-700'
+                          }
+                        >
+                          {armedDelete === w.id ? 'Delete for good?' : 'Delete'}
+                        </button>
+                      </span>
                     </td>
                   </tr>
                 )
