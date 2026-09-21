@@ -3342,246 +3342,275 @@ export function MasteringStudio() {
             </p>
           <ul className="divide-y divide-gray-200 rounded-lg border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
             {group.masters.map((m) => (
-              <li key={m.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-sm">
-                {m.masterKey && (
-                  <button
-                    type="button"
-                    onClick={() => void playSaved(m)}
-                    disabled={rowBusy === m.id}
-                    aria-label={playing?.id === m.id ? `Stop ${m.title ?? 'master'}` : `Play ${m.title ?? 'master'}`}
-                    className="shrink-0 rounded-full border border-gray-300 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-                  >
-                    {rowBusy === m.id ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                    ) : playing?.id === m.id ? (
-                      <Pause className="h-3.5 w-3.5" aria-hidden="true" />
-                    ) : (
-                      <Play className="h-3.5 w-3.5" aria-hidden="true" />
-                    )}
-                  </button>
-                )}
-                {renaming?.id === m.id ? (
-                  <input
-                    value={renaming.value}
-                    autoFocus
-                    aria-label="Master name"
-                    maxLength={120}
-                    onChange={(e) => setRenaming({ id: m.id, value: e.target.value })}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') void commitRename();
-                      if (e.key === 'Escape') setRenaming(null);
-                    }}
-                    onBlur={() => void commitRename()}
-                    className="min-w-0 grow rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-900"
-                  />
-                ) : (
-                  <span className="flex min-w-0 grow items-center gap-1.5">
-                    <span className="min-w-0 truncate font-medium text-gray-900 dark:text-gray-100">
-                      {m.title || <span className="text-gray-500 dark:text-gray-400">(untitled)</span>}
-                    </span>
+              <li key={m.id} className="flex items-start gap-3 px-4 py-3 text-sm">
+                {/* Transport gets its own fixed column so every title starts at
+                    the same x — with the button inline, a peak master (no play
+                    button) used to shift its whole row left of its neighbours. */}
+                <div className="flex w-7 shrink-0 justify-center pt-0.5">
+                  {m.masterKey && (
                     <button
                       type="button"
-                      onClick={() => setRenaming({ id: m.id, value: m.title ?? '' })}
-                      aria-label={`Rename ${m.title ?? 'master'}`}
-                      className="shrink-0 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                      onClick={() => void playSaved(m)}
+                      disabled={rowBusy === m.id}
+                      aria-label={playing?.id === m.id ? `Stop ${m.title ?? 'master'}` : `Play ${m.title ?? 'master'}`}
+                      className="shrink-0 rounded-full border border-gray-300 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
                     >
-                      <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                      {rowBusy === m.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                      ) : playing?.id === m.id ? (
+                        <Pause className="h-3.5 w-3.5" aria-hidden="true" />
+                      ) : (
+                        <Play className="h-3.5 w-3.5" aria-hidden="true" />
+                      )}
                     </button>
-                  </span>
-                )}
-                <span className="tabular-nums text-xs text-gray-500 dark:text-gray-400">
-                  {(m.savedAt ?? '').slice(0, 10)}
-                </span>
-                <span className="tabular-nums text-xs text-gray-600 dark:text-gray-300">
-                  {lufs(m.afterLufs)}
-                </span>
-                <span className="tabular-nums text-xs text-gray-600 dark:text-gray-300">
-                  LRA {lu(m.beforeLra)} → {lu(m.afterLra)}
-                  {dynamicsPreserved(m) && (
-                    <span className="ml-1 text-emerald-600 dark:text-emerald-400">unchanged</span>
                   )}
-                </span>
-                {m.publishedAt && (
-                  <span
-                    title={m.publishKey ?? undefined}
-                    className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300"
-                  >
-                    On site
-                  </span>
-                )}
-                {m.masterKey && (
-                  <button
-                    type="button"
-                    onClick={() => void downloadKey(m.masterKey!, m.title ?? '', m.target, isPeakMaster(m) ? bedLabel : undefined)}
-                    className="text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
-                  >
-                    WAV
-                  </button>
-                )}
-                {/* The MP3 was reachable only from the result panel of the run
-                    that produced it — so a master saved yesterday had a web
-                    file in S3 that nothing on this page could open. */}
-                {m.mp3Key && (
-                  <button
-                    type="button"
-                    onClick={() => void downloadKey(m.mp3Key!, m.title ?? '', m.target, isPeakMaster(m) ? bedLabel : undefined)}
-                    className="text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
-                  >
-                    MP3
-                  </button>
-                )}
-                {/* Same fix as the MP3 button above, for the video: a render
-                    that finished in an earlier session had no route back. */}
-                {m.videoKey && (
-                  <button
-                    type="button"
-                    onClick={() => void downloadKey(m.videoKey!, m.title ?? '', m.target)}
-                    className="text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
-                  >
-                    Video
-                  </button>
-                )}
-                {m.shortKey && (
-                  <button
-                    type="button"
-                    onClick={() => void downloadKey(m.shortKey!, m.title ?? '', m.target, 'Short')}
-                    className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
-                  >
-                    Short
-                  </button>
-                )}
-                {/* And a way to MAKE one. The inline panel is gated on savedAt,
-                    which only this session's Save sets, so without this a master
-                    saved yesterday could never be rendered at all. */}
-                {m.masterKey && !isPeakMaster(m) && (
-                  <button
-                    type="button"
-                    disabled={rowBusy === m.id}
-                    onClick={() =>
-                      // SEEDED FROM THE JOB'S OWN COVER. Opening with `cover: null`
-                      // left both buttons disabled on a row that already had one —
-                      // so a master saved yesterday, already rendered from that very
-                      // image, could not make a short until the operator found the
-                      // file again and uploaded a second copy. The only symptom was a
-                      // button that did nothing. Reported on இன்னுமொரு கருவறையில்,
-                      // 2026-09-19.
-                      setRowRender((prev) =>
-                        prev?.id === m.id
-                          ? null
-                          : {
-                              id: m.id,
-                              cover: m.coverKey
-                                ? { key: m.coverKey, name: downloadFilename(m.coverKey) }
-                                : null,
-                            }
-                      )
-                    }
-                    aria-label={`Video or short for ${m.title ?? 'this master'}`}
-                    className="text-xs font-medium text-orange-600 hover:underline disabled:opacity-50 dark:text-orange-400"
-                  >
-                    {m.videoKey || m.shortKey ? 'Video / short' : 'Make video or short'}
-                  </button>
-                )}
-                {/* The source is never modified, so re-opening costs nothing and
-                    loses nothing — it restores the recipe and hands back
-                    control at the "ready" stage. */}
-                {m.s3Key && (
-                  <button
-                    type="button"
-                    onClick={() => reopenMaster(m)}
-                    className="text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
-                  >
-                    Edit &amp; re-master
-                  </button>
-                )}
-                {/* Where this song has got to, and the one thing to do next —
-                    so the state is read rather than inferred from which
-                    download links happen to be present. */}
-                <ReleasePipelineRow job={m} />
+                </div>
 
-                {/* The refusal, in the row that refused. Placed here — not in
-                    the render panel below — because play and rename can fail
-                    with that panel closed, and an error nobody can see is the
-                    same as no error at all. */}
-                {rowError?.id === m.id && (
-                  <p
-                    role="alert"
-                    className="mt-2 flex w-full items-start gap-2 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-red-800 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300"
-                  >
-                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                    <span>{rowError.message}</span>
-                  </p>
-                )}
-
-                {rowRender?.id === m.id && (
-                  <div className="mt-2 flex w-full flex-wrap items-center gap-2 border-t border-gray-100 pt-2 dark:border-gray-800">
-                    <label
-                      htmlFor={`${inputId}-rowcover-${m.id}`}
-                      className="text-xs font-medium text-gray-600 dark:text-gray-300"
-                    >
-                      Cover for {m.title || 'this master'}
-                    </label>
-                    {/* Named, not assumed. Reusing a cover silently would leave
-                        the operator unable to tell which image is about to be
-                        encoded — and the file input beside it is still the way
-                        to replace it. */}
-                    {rowRender.cover && (
-                      <span className="text-xs text-gray-500 dark:text-gray-400">
-                        using <span className="font-medium">{rowRender.cover.name}</span> — replace it here if you want a different one:
+                <div className="min-w-0 grow space-y-1.5">
+                  {/* 1 — WHICH master this is. Alone on its line: it is the one
+                      thing being looked for when scanning 81 of them. */}
+                  <div className="flex min-w-0 items-center gap-2">
+                    {renaming?.id === m.id ? (
+                      <input
+                        value={renaming.value}
+                        autoFocus
+                        aria-label="Master name"
+                        maxLength={120}
+                        onChange={(e) => setRenaming({ id: m.id, value: e.target.value })}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') void commitRename();
+                          if (e.key === 'Escape') setRenaming(null);
+                        }}
+                        onBlur={() => void commitRename()}
+                        className="min-w-0 grow rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-900"
+                      />
+                    ) : (
+                      <span className="flex min-w-0 grow items-center gap-1.5">
+                        <span className="min-w-0 truncate font-medium text-gray-900 dark:text-gray-100">
+                          {m.title || <span className="text-gray-500 dark:text-gray-400">(untitled)</span>}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setRenaming({ id: m.id, value: m.title ?? '' })}
+                          aria-label={`Rename ${m.title ?? 'master'}`}
+                          className="shrink-0 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                        >
+                          <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                        </button>
                       </span>
                     )}
-                    <input
-                      id={`${inputId}-rowcover-${m.id}`}
-                      type="file"
-                      accept="image/*"
-                      disabled={rowBusy === m.id}
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) void onPickRowCover(m.id, f);
-                      }}
-                      className="text-xs"
-                    />
-                    {/* "Render" alone did not say WHAT it rendered, and it sat
-                        first in a strip opened by a button reading "Render
-                        video" — so the whole panel read as being about video
-                        and the short button was easy to miss. Both now name
-                        their output. */}
-                    <button
-                      type="button"
-                      disabled={!rowRender.cover || rowBusy === m.id}
-                      onClick={() => void renderRowVideo()}
-                      className="rounded bg-orange-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
-                    >
-                      Render video ({videoHeight}p)
-                    </button>
-                    {/* The same cover feeds both. A short is not a step on the
-                        way to the video and does not need one to exist. */}
-                    <button
-                      type="button"
-                      disabled={!rowRender.cover || rowBusy === m.id}
-                      onClick={() => void makeRowShort()}
-                      className="rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
-                    >
-                      {m.shortKey ? 'Re-cut vertical short' : 'Make vertical short'}
-                    </button>
-                    {rowBusy === m.id && (
-                      <span className="text-xs text-gray-500 dark:text-gray-400">Working…</span>
+                    {m.publishedAt && (
+                      <span
+                        title={m.publishKey ?? undefined}
+                        className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300"
+                      >
+                        On site
+                      </span>
                     )}
-                    {/* The window, EDITABLE here — not a read-only echo of it.
-                        This is where the songs that want a short actually live:
-                        the inline panel is gated on savedAt, so from the library
-                        the only way to set a window used to be the player's
-                        "Use for the short" button, and a timestamp read off a
-                        lyric sheet could not be typed at all. */}
-                    <ShortWindowFields
-                      compact
-                      value={windowFor(m.id)}
-                      onChange={(w) => setShortWindow(w ? { jobId: m.id, ...w } : null)}
-                      disabled={rowBusy === m.id}
-                      idPrefix={`${inputId}-rowshort-${m.id}`}
-                    />
                   </div>
-                )}
+
+                  {/* 2 — what it MEASURES. Deliberately quiet and secondary:
+                      read when asked for, never competing with the title. */}
+                  <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    <span className="tabular-nums text-xs text-gray-600 dark:text-gray-300">
+                      {lufs(m.afterLufs)}
+                    </span>
+                    <span className="tabular-nums text-xs text-gray-600 dark:text-gray-300">
+                      LRA {lu(m.beforeLra)} → {lu(m.afterLra)}
+                      {dynamicsPreserved(m) && (
+                        <span className="ml-1 text-emerald-600 dark:text-emerald-400">unchanged</span>
+                      )}
+                    </span>
+                    <span className="tabular-nums text-xs text-gray-500 dark:text-gray-400">
+                      {(m.savedAt ?? '').slice(0, 10)}
+                    </span>
+                  </p>
+
+                  {/* 3 — where it has GOT TO, and the one thing to do next,
+                      so the state is read rather than inferred from which
+                      download links happen to be present. */}
+                  <ReleasePipelineRow job={m} />
+
+                  {/* 4 — what can be DONE with it, ruled off from the facts
+                      above so a download link is never mistaken for a number.
+                      Files on the left, the two actions that change something
+                      pushed right, because those are the ones worth a pause. */}
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-gray-100 pt-1.5 dark:border-gray-800">
+                    {m.masterKey && (
+                      <button
+                        type="button"
+                        onClick={() => void downloadKey(m.masterKey!, m.title ?? '', m.target, isPeakMaster(m) ? bedLabel : undefined)}
+                        className="text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
+                      >
+                        WAV
+                      </button>
+                    )}
+                    {/* The MP3 was reachable only from the result panel of the run
+                        that produced it — so a master saved yesterday had a web
+                        file in S3 that nothing on this page could open. */}
+                    {m.mp3Key && (
+                      <button
+                        type="button"
+                        onClick={() => void downloadKey(m.mp3Key!, m.title ?? '', m.target, isPeakMaster(m) ? bedLabel : undefined)}
+                        className="text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
+                      >
+                        MP3
+                      </button>
+                    )}
+                    {/* Same fix as the MP3 button above, for the video: a render
+                        that finished in an earlier session had no route back. */}
+                    {m.videoKey && (
+                      <button
+                        type="button"
+                        onClick={() => void downloadKey(m.videoKey!, m.title ?? '', m.target)}
+                        className="text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
+                      >
+                        Video
+                      </button>
+                    )}
+                    {m.shortKey && (
+                      <button
+                        type="button"
+                        onClick={() => void downloadKey(m.shortKey!, m.title ?? '', m.target, 'Short')}
+                        className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+                      >
+                        Short
+                      </button>
+                    )}
+                    <span className="ml-auto flex flex-wrap items-center gap-x-3">
+                      {/* And a way to MAKE one. The inline panel is gated on savedAt,
+                          which only this session's Save sets, so without this a master
+                          saved yesterday could never be rendered at all. */}
+                      {m.masterKey && !isPeakMaster(m) && (
+                        <button
+                          type="button"
+                          disabled={rowBusy === m.id}
+                          onClick={() =>
+                            // SEEDED FROM THE JOB'S OWN COVER. Opening with `cover: null`
+                            // left both buttons disabled on a row that already had one —
+                            // so a master saved yesterday, already rendered from that very
+                            // image, could not make a short until the operator found the
+                            // file again and uploaded a second copy. The only symptom was a
+                            // button that did nothing. Reported on இன்னுமொரு கருவறையில்,
+                            // 2026-09-19.
+                            setRowRender((prev) =>
+                              prev?.id === m.id
+                                ? null
+                                : {
+                                    id: m.id,
+                                    cover: m.coverKey
+                                      ? { key: m.coverKey, name: downloadFilename(m.coverKey) }
+                                      : null,
+                                  }
+                            )
+                          }
+                          aria-label={`Video or short for ${m.title ?? 'this master'}`}
+                          className="text-xs font-medium text-orange-600 hover:underline disabled:opacity-50 dark:text-orange-400"
+                        >
+                          {m.videoKey || m.shortKey ? 'Video / short' : 'Make video or short'}
+                        </button>
+                      )}
+                      {/* The source is never modified, so re-opening costs nothing and
+                          loses nothing — it restores the recipe and hands back
+                          control at the "ready" stage. */}
+                      {m.s3Key && (
+                        <button
+                          type="button"
+                          onClick={() => reopenMaster(m)}
+                          className="text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
+                        >
+                          Edit &amp; re-master
+                        </button>
+                      )}
+                    </span>
+                  </div>
+
+
+                  {/* The refusal, in the row that refused. Placed here — not in
+                      the render panel below — because play and rename can fail
+                      with that panel closed, and an error nobody can see is the
+                      same as no error at all. */}
+                  {rowError?.id === m.id && (
+                    <p
+                      role="alert"
+                      className="mt-2 flex w-full items-start gap-2 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-red-800 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300"
+                    >
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                      <span>{rowError.message}</span>
+                    </p>
+                  )}
+
+
+                  {rowRender?.id === m.id && (
+                    <div className="mt-2 flex w-full flex-wrap items-center gap-2 border-t border-gray-100 pt-2 dark:border-gray-800">
+                      <label
+                        htmlFor={`${inputId}-rowcover-${m.id}`}
+                        className="text-xs font-medium text-gray-600 dark:text-gray-300"
+                      >
+                        Cover for {m.title || 'this master'}
+                      </label>
+                      {/* Named, not assumed. Reusing a cover silently would leave
+                          the operator unable to tell which image is about to be
+                          encoded — and the file input beside it is still the way
+                          to replace it. */}
+                      {rowRender.cover && (
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          using <span className="font-medium">{rowRender.cover.name}</span> — replace it here if you want a different one:
+                        </span>
+                      )}
+                      <input
+                        id={`${inputId}-rowcover-${m.id}`}
+                        type="file"
+                        accept="image/*"
+                        disabled={rowBusy === m.id}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) void onPickRowCover(m.id, f);
+                        }}
+                        className="text-xs"
+                      />
+                      {/* "Render" alone did not say WHAT it rendered, and it sat
+                          first in a strip opened by a button reading "Render
+                          video" — so the whole panel read as being about video
+                          and the short button was easy to miss. Both now name
+                          their output. */}
+                      <button
+                        type="button"
+                        disabled={!rowRender.cover || rowBusy === m.id}
+                        onClick={() => void renderRowVideo()}
+                        className="rounded bg-orange-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
+                      >
+                        Render video ({videoHeight}p)
+                      </button>
+                      {/* The same cover feeds both. A short is not a step on the
+                          way to the video and does not need one to exist. */}
+                      <button
+                        type="button"
+                        disabled={!rowRender.cover || rowBusy === m.id}
+                        onClick={() => void makeRowShort()}
+                        className="rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
+                      >
+                        {m.shortKey ? 'Re-cut vertical short' : 'Make vertical short'}
+                      </button>
+                      {rowBusy === m.id && (
+                        <span className="text-xs text-gray-500 dark:text-gray-400">Working…</span>
+                      )}
+                      {/* The window, EDITABLE here — not a read-only echo of it.
+                          This is where the songs that want a short actually live:
+                          the inline panel is gated on savedAt, so from the library
+                          the only way to set a window used to be the player's
+                          "Use for the short" button, and a timestamp read off a
+                          lyric sheet could not be typed at all. */}
+                      <ShortWindowFields
+                        compact
+                        value={windowFor(m.id)}
+                        onChange={(w) => setShortWindow(w ? { jobId: m.id, ...w } : null)}
+                        disabled={rowBusy === m.id}
+                        idPrefix={`${inputId}-rowshort-${m.id}`}
+                      />
+                    </div>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
