@@ -3259,7 +3259,7 @@ Practical consequences:
     slug: 'what-it-costs-to-run',
     title: 'What TamilAgaval costs to run — and how to tell, in a shared account',
     category: 'Publishing',
-    updatedAt: '2026-09-22T17:00:00Z',
+    updatedAt: '2026-09-22T18:30:00Z',
     body: `# What TamilAgaval costs to run
 
 **About \$6-7 a month**, measured 1-19 September 2026. The channel's whole
@@ -3360,6 +3360,81 @@ untagged \$26.19.
    isolation, not cost: alone on AWS, TamilAgaval cannot be collateral again.
    ⚠️ Moving a workload between clouds does not make it cheaper — read this page
    before the migration, not after.
+
+## Who owns which dollar — the per-product attribution
+
+Measured 2026-09-22 against the August 2026 bill (\$228.74), by matching every
+billed resource to a DNS record, a web ACL or a hosted zone. Not estimated.
+
+⚠️ **THERE ARE NO UNITEMISED CHARGES.** Every dollar below traces to a named
+resource — an instance id, a volume id, a web ACL, a zone. What is missing is
+**tagging**, not itemisation: only \`raj-portfolio-montreal\` carries
+\`Project\`/\`CostCenter\`. So Cost Explorer can group by service and by region
+but never by *product*, which makes a shared account look opaque when it is
+merely unlabelled. That is bookkeeping, fixable without moving anything.
+
+### The two EC2 instances are the two products leaving
+
+The decisive evidence — Route 53 A records pointing at each instance's IP:
+
+| instance | type | IP | serves |
+|---|---|---|---|
+| \`montreal-ubuntu-server\` | t3a.large | 16.54.82.168 | \`link\`, \`origin\`, \`url\`.mobily.ca |
+| \`raj-portfolio-montreal\` | t3a.micro | 3.97.131.176 | raj.it.com, www, php, api.php |
+
+Together they are **\$68 of the \$69.85 EC2 compute line** — essentially all of
+it. TamilAgaval runs no EC2.
+
+### Per-product, per month
+
+| product | monthly | made of |
+|---|---|---|
+| **Mobily** | **~\$84** | t3a.large \$60.74 · 120 GB EBS \$10.56 · Elastic IP \$3.65 · \`mobily-signup-waf\` ~\$5.50 · zone \$0.50 · snapshots ~\$2.70 |
+| **Raj IT** | **~\$17** | t3a.micro \$7.59 · 50 GB EBS \$4.40 · Elastic IP \$3.65 · zone \$0.50 |
+| **Orphaned volumes** | **\$32** | 4 × 100 GB unattached in us-east-1 — belongs to nothing |
+| Talky / Techsynergy / rest | ~\$69 | WorkMail \$16 · SES \$15 · Amplify \$14.88 across 5 apps · CloudWatch, Secrets Manager, KMS, S3, Route 53, GuardDuty, RDS |
+| **TamilAgaval** | **~\$13-15** | mostly Amplify build minutes; Lambda + DynamoDB + CloudFront are pennies |
+| Tax | ~\$26 | |
+
+The estate is **Talky- and Techsynergy-dominated**, not Mobily-dominated: 6
+CloudFront distributions serve talky.ca alone, WorkMail's only active
+mail domain is talky.ca, and techsynergy.ca's zone holds 86 records against
+TamilAgaval's 8.
+
+### If Mobily and Raj IT move off
+
+**AWS drops to roughly \$78/month with tax** (~\$69 pre-tax), *provided the four
+orphaned volumes go too* — they are \$32/month tied to neither product and
+should be removed regardless of any migration.
+
+### ⚠️ Migrating is not a saving
+
+**Mobily costs ~\$84/month — a little over \$1,000/year.** A t3a.large-equivalent
+VM plus 120 GB of disk costs broadly the same on Azure, so a migration moves
+that bill rather than shrinking it.
+
+The only decision that removes \$1,000/year is **switching Mobily off**, and
+that is a business call about mobily.ca's future, not a technical one. Raj noted
+2026-09-22 that Mobily is not generating meaningful sales.
+
+If Mobily is worth keeping, migrating it for **isolation** is still sound — see
+the suspension above, where it took TamilAgaval down with it. Just go in knowing
+the saving is close to zero.
+
+### How this was attributed, to redo it
+
+\`\`\`
+# which domains point at an instance
+aws route53 list-resource-record-sets --hosted-zone-id <id> \\
+  --query "ResourceRecordSets[?ResourceRecords[?Value=='<ip>']].[Name,Type]"
+
+# what is actually running, and where
+aws ec2 describe-instances --region ca-central-1 \\
+  --query 'Reservations[].Instances[].{id:InstanceId,type:InstanceType,ip:PublicIpAddress,name:Tags[?Key==\`Name\`]|[0].Value}'
+
+# volumes attached to nothing
+aws ec2 describe-volumes --region us-east-1 --filters Name=status,Values=available
+\`\`\`
 
 ## ⚠️ The account total is NOT the answer
 
