@@ -54,7 +54,10 @@ const { handler } = require('../../worker/master-worker') as typeof import('../.
 // Taken from the library rather than spelled out: the frame's format is a
 // measured performance decision that has already changed once, and a test that
 // hardcodes the extension fails for the wrong reason when it changes again.
-const { FRAME_EXTENSION } = require('../../src/lib/master-video') as typeof import('../../src/lib/master-video');
+//
+// A plain import, unlike the worker above: that one is require()d so it loads
+// after the jest.mock calls, and master-video is mocked by nothing.
+import { FRAME_EXTENSION } from '@/lib/master-video';
 
 /**
  * The fields the worker wrote onto the job item, across all its patches, with

@@ -335,16 +335,8 @@ describe('planRender', () => {
  * that got killed at 900 seconds.
  */
 describe('a slideshow must not become a per-frame render', () => {
-  const A = 'audio/mastering/1_cd_a.jpg';
-  const B = 'audio/mastering/1_cd_b.jpg';
-  const C = 'audio/mastering/1_cd_c.jpg';
-  const covers = [
-    { coverKey: A, startSec: 0 },
-    { coverKey: B, startSec: 130 },
-    { coverKey: C, startSec: 240 },
-  ];
-  const DURATION = 332; // the real 5:32 master
-
+  // No cover fixtures here on purpose: every test in this block is about the
+  // ARGUMENTS, which never see an S3 key. The planner's tests below own the keys.
   it('adds no filter to the segment encode — this is the whole architecture', () => {
     // The pin on buildVideoArgs cannot see this path. Without its own
     // assertion, the new builder is a way around the protection: re-adding a
