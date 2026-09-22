@@ -29,7 +29,12 @@
     "build:master-worker": "esbuild worker/master-worker.ts --bundle --platform=node --target=node20 --format=cjs --outfile=master-worker-dist/index.js --external:@aws-sdk/client-s3 --external:@aws-sdk/client-dynamodb --external:@aws-sdk/lib-dynamodb --external:@aws-sdk/client-lambda --tsconfig=tsconfig.json",
     "deploy:master-worker": "npm run build:master-worker && cd master-worker-dist && zip -q -r ../master-worker.zip index.js && cd .. && aws lambda update-function-code --function-name tamilagaval-master-worker --zip-file fileb://master-worker.zip --region ca-central-1",
     "deploy:matchering-worker": "bash scripts/deploy-matchering-worker.sh",
-    "bench:slideshow": "tsx scripts/bench-slideshow.ts"
+    "bench:slideshow": "tsx scripts/bench-slideshow.ts",
+    "bench:motion": "tsx scripts/bench-motion.ts",
+    "bench:lyrics": "tsx scripts/bench-lyrics.ts",
+    "bench:frames": "tsx scripts/bench-frameformat.ts",
+    "verify:audio-check": "tsx scripts/bench-render-deltas.ts",
+    "verify:frame-format": "tsx scripts/verify-frame-format.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.91.1",

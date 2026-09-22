@@ -253,7 +253,10 @@ describe('video render', () => {
   it('composes the frame once, THEN encodes against it', async () => {
     await handler({ jobId: 'j1', render: render() } as never);
 
-    expect(spawnSync).toHaveBeenCalledTimes(3);
+    // Five passes now: probe, compose, encode, then one measurement of the
+    // master and one of the MP4. What this test guards is that exactly ONE of
+    // them filters and it is not the encode — see below.
+    expect(spawnSync).toHaveBeenCalledTimes(5);
     const [probe, compose, encode] = ffArgs();
 
     // Pass 0: reads the cover's header only — no filter, no frame output.
@@ -2589,8 +2592,10 @@ describe('slideshow render', () => {
     expect(res).toMatchObject({ ok: true });
     expect(ffArgs().some((a) => a.includes('concat'))).toBe(false);
     expect(ffArgs().some((a) => a.includes('-an'))).toBe(false);
-    // probe, compose, encode — exactly the three it has always made.
-    expect(spawnSync).toHaveBeenCalledTimes(3);
+    // probe, compose, encode, and the two verification measurements — no
+    // segment encode and no join.
+    expect(spawnSync).toHaveBeenCalledTimes(5);
+    expect(ffArgs().filter((a) => a.includes('libx264'))).toHaveLength(1);
   });
 });
 
@@ -2655,5 +2660,135 @@ describe('composed frames use the library\'s format', () => {
     const [composed] = composedFrames();
     const encode = ffArgs().find((a) => a.includes('libx264'))!;
     expect(encode).toContain(composed);
+  });
+});
+
+/**
+ * Verifying the rendered audio against its master.
+ *
+ * Until this existed the render wrote an MP4 and nothing measured it, so a
+ * video stage that resampled or truncated the song produced a file that looked
+ * finished and was uploaded by hand. The first evidence would have been a
+ * listener.
+ *
+ * The behaviour worth pinning hardest is the negative one: this check must
+ * never be able to break a render. A safety net that drops good work is one the
+ * operator learns to cut away.
+ */
+describe('rendered audio is checked against the master', () => {
+  const AUDIO = 'audio/mastering/1_a_song-master-14LUFS.wav';
+  const COVER = 'audio/mastering/1_c_cover.jpg';
+  const ffArgs = () => spawnSync.mock.calls.map((c) => c[1] as string[]);
+
+  /**
+   * ffmpeg's measurement output for one file. The verifier reads duration,
+   * sample rate and channels from the input header and the loudness figures
+   * from the ebur128 summary, so a realistic log carries both.
+   */
+  const measureLog = (o: { dur?: string; rate?: number; ch?: string; lufs?: number; tp?: number; lra?: number } = {}) =>
+    `Input #0, wav, from '/tmp/x':\n` +
+    `  Duration: ${o.dur ?? '00:05:32.00'}, bitrate: 2304 kb/s\n` +
+    `  Stream #0:0: Audio: pcm_s24le, ${o.rate ?? 48000} Hz, ${o.ch ?? 'stereo'}, s32 (24 bit), 2304 kb/s\n` +
+    `[Parsed_ebur128_0 @ 0x0] Summary:\n\n` +
+    `  Integrated loudness:\n` +
+    `    I:         ${o.lufs ?? -14.0} LUFS\n` +
+    `    Threshold: -24.5 LUFS\n\n` +
+    `  Loudness range:\n` +
+    `    LRA:       ${o.lra ?? 7.2} LU\n` +
+    `    Threshold: -34.5 LUFS\n` +
+    `    LRA low:   -20.0 LUFS\n` +
+    `    LRA high:  -12.8 LUFS\n\n` +
+    `  True peak:\n` +
+    `    Peak:      ${o.tp ?? -1.5} dBFS\n`;
+
+  /** Only the two measurement passes return logs; everything else succeeds plainly. */
+  const wireMeasure = (masterLog: string, outputLog: string) => {
+    spawnSync.mockImplementation((_cmd: string, args: string[]) => {
+      if (args.includes('ebur128=peak=true,astats=metadata=1:measure_perchannel=0')) {
+        const target = args[args.indexOf('-i') + 1];
+        return { status: 0, stdout: '', stderr: target.includes('.mp4') ? outputLog : masterLog };
+      }
+      return { status: 0, stdout: '', stderr: '' };
+    });
+  };
+
+  beforeEach(() => {
+    spawnSync.mockReset();
+    wireMeasure(measureLog(), measureLog());
+    s3Send.mockReset();
+    s3Send.mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'Body' in cmd.input
+        ? Promise.resolve({})
+        : Promise.resolve({ Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) } })
+    );
+  });
+
+  const render = () => handler({
+    jobId: 'j1', render: { audioKey: AUDIO, coverKey: COVER, height: 1440 },
+  } as never);
+
+  it('measures both files and records that they match', async () => {
+    const res = await render();
+
+    expect(res).toMatchObject({ ok: true, audioCheck: 'passed' });
+    expect(patched().videoAudioCheck).toBe('passed');
+    expect(patched().videoAudioFindings).toEqual([]);
+    // Two measurement passes: the master and the MP4. Comparing a measured
+    // figure against a stored one would be comparing two different things.
+    const measures = ffArgs().filter((a) => a.join(' ').includes('ebur128'));
+    expect(measures).toHaveLength(2);
+    expect(measures.map((a) => a[a.indexOf('-i') + 1]).some((p) => p.endsWith('.wav'))).toBe(true);
+    expect(measures.map((a) => a[a.indexOf('-i') + 1]).some((p) => p.endsWith('.mp4'))).toBe(true);
+  });
+
+  it('records a failure when the render truncated the song', async () => {
+    // The likeliest real fault, and the one a human would never catch by
+    // looking at the library.
+    wireMeasure(measureLog(), measureLog({ dur: '00:05:10.00' }));
+    const res = await render();
+
+    expect(res).toMatchObject({ ok: true });
+    expect(patched().videoAudioCheck).toBe('failed');
+    expect((patched().videoAudioFindings as string[])[0]).toMatch(/cut off/);
+  });
+
+  it('records a failure when the audio was re-levelled', async () => {
+    wireMeasure(measureLog(), measureLog({ lufs: -11.2 }));
+    await render();
+    expect(patched().videoAudioCheck).toBe('failed');
+    expect((patched().videoAudioFindings as string[])[0]).toMatch(/re-levelled/);
+  });
+
+  it('still uploads the MP4 when the check fails — the operator has to see it', async () => {
+    wireMeasure(measureLog(), measureLog({ dur: '00:05:10.00' }));
+    await render();
+
+    // A failed check means LOOK at the file. Deleting it, or refusing to store
+    // it, makes that impossible and turns a diagnosis into a mystery.
+    const puts = s3Send.mock.calls.filter((c) => 'Body' in (c[0] as { input: object }).input);
+    expect(puts).toHaveLength(1);
+    expect(patched().videoKey).toContain('-1440p.mp4');
+    expect(patched().videoError).toBeNull();
+  });
+
+  it('never fails the render when the check itself cannot run', async () => {
+    // ⚠️ The property that matters most. A verification step able to break a
+    // good render is worse than none: the operator routes around it, and then
+    // it defends nothing.
+    spawnSync.mockImplementation((_cmd: string, args: string[]) => {
+      if (args.join(' ').includes('ebur128')) throw new Error('ffmpeg exploded');
+      return { status: 0, stdout: '', stderr: '' };
+    });
+    const res = await render();
+
+    expect(res).toMatchObject({ ok: true });
+    expect(patched().videoAudioCheck).toBe('unknown');
+    expect(patched().videoKey).toContain('-1440p.mp4');
+  });
+
+  it('records unknown, not failed, when ffmpeg reports nothing useful', async () => {
+    wireMeasure('', '');
+    await render();
+    expect(patched().videoAudioCheck).toBe('unknown');
   });
 });
