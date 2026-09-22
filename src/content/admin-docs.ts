@@ -3259,13 +3259,107 @@ Practical consequences:
     slug: 'what-it-costs-to-run',
     title: 'What TamilAgaval costs to run — and how to tell, in a shared account',
     category: 'Publishing',
-    updatedAt: '2026-09-19T04:00:00Z',
+    updatedAt: '2026-09-22T17:00:00Z',
     body: `# What TamilAgaval costs to run
 
 **About \$6-7 a month**, measured 1-19 September 2026. The channel's whole
 runtime — the Lambdas that master audio, the table that stores every job, the
 CDN that serves the songs — comes to **under fifteen cents**. Everything else is
 Amplify rebuilding the site.
+
+## ⚠️ The bill that stopped the site — read this first
+
+**2026-09-22 the whole account was suspended for late payment**, and
+tamilagaval.com went dark with it: Route 53 stopped answering, the Amplify
+default domain stopped resolving, and every IAM key returned
+\`InvalidClientTokenId\`. Nothing was lost — DynamoDB came back with all 16,962
+items and the hosted zone with all 8 records — but the site was down for a day
+over a bill TamilAgaval barely contributes to.
+
+**That is the real risk this page exists to describe.** TamilAgaval is ~7% of
+the spend and 100% of the casualty. The rest of this page is how to tell those
+apart.
+
+### What actually happened to the money
+
+Full-month account totals, Cost Explorer, \`UnblendedCost\`:
+
+| month | total |
+|---|---|
+| Sep 2025 | \$35.39 |
+| Oct 2025 – Apr 2026 | **~\$0** |
+| **May 2026** | **\$240.76** |
+| Jun 2026 | \$243.44 |
+| Jul 2026 | \$246.29 |
+| Aug 2026 | \$228.74 |
+| Sep 2026 (to the 22nd) | \$163.55 |
+
+⚠️ **The bill did not creep up. It stepped up once, in May 2026, and has been
+flat ever since.** What was owed at suspension (~\$473) is roughly two months of
+a steady \$240 — a missed-payment problem, not a runaway-usage problem. Anyone
+looking for a recent spike will not find one.
+
+**The step has a cause with a date on it.** \`montreal-ubuntu-server\`, a
+**t3a.large** in ca-central-1, was launched **2026-04-30** — the day before the
+bill went from nothing to \$240. It carries **only a \`Name\` tag**: no
+\`Project\`, no \`CostCenter\`, unlike \`raj-portfolio-montreal\` beside it
+(\`Project: raj.it.com\`, \`CostCenter: portfolio\`). The most expensive thing
+in the account is the one nothing identifies.
+
+### ⚠️ \$32 a month is being spent on nothing
+
+**Four 100 GB gp3 volumes sit in us-east-1, all \`available\` — attached to no
+instance.** There are no EC2 instances in us-east-1 at all.
+
+\`\`\`
+vol-0035455eb6ee382fb  vol-0ac4f8b5789cc9302
+vol-095032378e49d0ed7  vol-01784accc2e39baaa
+\`\`\`
+
+400 GB at \$0.08/GB-month = **\$32/month**, running since **2026-04-24**. That
+is about **\$160 already spent** and **\$384/year** ongoing, for storage holding
+nothing that runs.
+
+This is the single clearest saving in the account. Verify they are not wanted
+before deleting — a detached volume can still be a backup somebody made
+deliberately — and snapshot anything uncertain first.
+
+### Where the August \$228.74 went
+
+| service | cost | whose |
+|---|---|---|
+| EC2 Compute | \$69.85 | not TamilAgaval |
+| EC2 – Other (EBS, snapshots) | \$50.81 | \$32 of it the orphans above |
+| Tax | \$26.31 | — |
+| WorkMail | \$16.00 | not TamilAgaval |
+| SES | \$15.00 | not TamilAgaval |
+| **Amplify** | **\$14.88** | **mostly TamilAgaval** |
+| WAF | \$11.09 | not TamilAgaval |
+| VPC | \$7.44 | not TamilAgaval |
+| CloudWatch | \$6.07 | not TamilAgaval |
+| Secrets Manager | \$3.20 | mixed |
+| Route 53 | \$3.14 | one zone of several |
+| KMS / S3 / GuardDuty / RDS | under \$2 each | S3 mostly TamilAgaval |
+
+**EC2 is \$120.66 of it — more than half.** TamilAgaval runs no EC2 at all, so
+more than half the bill that took the site down had nothing to do with the site.
+
+By region: ca-central-1 \$114.20 · us-east-1 \$74.12 · global \$14.23 ·
+untagged \$26.19.
+
+### What to do about it
+
+1. **A Budgets alert.** There is none. An email at \$100 would have arrived
+   months before a suspension did. This is the fix that matters most and it is
+   a billing change, so it is Raj's to make.
+2. **The four orphaned volumes** — \$384/year for nothing.
+3. **Tag \`montreal-ubuntu-server\`**, or decide it is not needed. Right now
+   nobody can say what the most expensive resource in the account is for.
+4. Raj decided on **2026-09-22** to move Mobily and the other services to Azure
+   and keep AWS for TamilAgaval alone. The reason that makes that right is
+   isolation, not cost: alone on AWS, TamilAgaval cannot be collateral again.
+   ⚠️ Moving a workload between clouds does not make it cheaper — read this page
+   before the migration, not after.
 
 ## ⚠️ The account total is NOT the answer
 
