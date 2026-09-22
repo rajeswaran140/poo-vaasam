@@ -198,3 +198,87 @@ describe('a row failure belongs to ONE row', () => {
     });
   });
 });
+
+/**
+ * The audio verdict is reachable from the LIBRARY ROW.
+ *
+ * ⚠️ THIS IS THE SAME DEFECT THIS FILE WAS WRITTEN FOR, REPEATED. Output
+ * verification shipped on 2026-09-22 rendering only inside the inline panel,
+ * which is gated on the CURRENT job — so for an operator working from the
+ * saved-masters library, where masters are actually worked from, the check
+ * rendered in a view they never open. It was deployed, correct, and invisible.
+ *
+ * So these tests do not assert "the verdict appears somewhere". That was
+ * already true while the defect was live. They assert it is a DESCENDANT OF
+ * THE ROW, which is the only thing that failed.
+ */
+describe('the rendered audio verdict reaches the library row', () => {
+  const withCheck = (over: Record<string, unknown>) =>
+    masterFixture({ videoKey: 'audio/mastering/out-master-14LUFS-1440p.mp4', ...over });
+
+  it('a MISMATCH is in the row, with the panel closed', async () => {
+    // The whole point. A failure the operator has to open a panel to discover
+    // is a failure they upload past.
+    routeFetch({}, [withCheck({
+      videoAudioCheck: 'failed',
+      videoAudioFindings: ['The video is 22 s SHORTER than the master (310 s against 332 s) — the song is cut off.'],
+    })]);
+    await openLibrary();
+
+    const row = rowFor(SONG);
+    const alert = within(row).getByRole('alert');
+    expect(alert).toHaveTextContent(/does not match its master/i);
+    expect(alert).toHaveTextContent(/do not upload/i);
+    // The specific difference, not just "mismatch" — the operator has to know
+    // WHAT changed to judge whether a re-render fixed it.
+    expect(alert).toHaveTextContent(/22 s SHORTER/);
+  });
+
+  it('names every difference it was given', async () => {
+    routeFetch({}, [withCheck({
+      videoAudioCheck: 'failed',
+      videoAudioFindings: [
+        'Sample rate changed: master 48000 Hz, video 44100 Hz. The render resampled the audio.',
+        'Loudness shifted +2.80 LU (master -14, video -11.2 LUFS). Something re-levelled the audio.',
+      ],
+    })]);
+    await openLibrary();
+
+    const alert = within(rowFor(SONG)).getByRole('alert');
+    expect(alert).toHaveTextContent(/resampled the audio/);
+    expect(alert).toHaveTextContent(/re-levelled the audio/);
+  });
+
+  it('a PASSING check does not shout — it sits by the render button, not in the list', async () => {
+    // A green line on every row in a library of 70 songs is noise, and noise is
+    // what made the failure above easy to miss in the first place.
+    routeFetch({}, [withCheck({ videoAudioCheck: 'passed', videoAudioFindings: [] })]);
+    await openLibrary();
+
+    expect(within(rowFor(SONG)).queryByRole('alert')).toBeNull();
+    expect(screen.queryByText(/all match/i)).toBeNull();
+
+    openRenderPanel(SONG);
+    expect(within(rowFor(SONG)).getByText(/duration, sample rate, channels/i)).toBeInTheDocument();
+  });
+
+  it('a video from before the check says so, rather than looking approved', async () => {
+    // Silence here would read as "checked and fine" for the whole back
+    // catalogue, which is the opposite of true.
+    routeFetch({}, [withCheck({ videoAudioCheck: null })]);
+    await openLibrary();
+    openRenderPanel(SONG);
+
+    expect(within(rowFor(SONG)).getByText(/rendered before the audio check existed/i))
+      .toBeInTheDocument();
+  });
+
+  it('says nothing at all when there is no video to have checked', async () => {
+    routeFetch({}, [masterFixture({ videoKey: null, videoAudioCheck: null })]);
+    await openLibrary();
+    openRenderPanel(SONG);
+
+    expect(screen.queryByText(/rendered before the audio check existed/i)).toBeNull();
+    expect(within(rowFor(SONG)).queryByRole('alert')).toBeNull();
+  });
+});

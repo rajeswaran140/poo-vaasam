@@ -3594,6 +3594,39 @@ export function MasteringStudio() {
                     </p>
                   )}
 
+                  {/* The audio verdict, in the ROW, for exactly the reason the
+                      refusal above sits here: the render panel is closed most
+                      of the time, and this is the one finding the operator
+                      cannot reach by looking at the file. A mismatch means the
+                      video's audio is not the master's — nothing about the
+                      picture, the title or the library says so.
+
+                      ⚠️ THIS SHIPPED IN THE INLINE PANEL FIRST AND THAT WAS THE
+                      BUG. The inline panel is gated on the CURRENT job; the
+                      library rows are where masters are actually worked from,
+                      so the check rendered in a view the operator never opens.
+                      Only a failure renders here — a passing one belongs beside
+                      the render button, not in a list of songs. */}
+                  {m.videoKey && m.videoAudioCheck === 'failed' && (
+                    <div
+                      role="alert"
+                      className="mt-2 w-full rounded-md border border-red-300 bg-red-50 px-2 py-1.5 dark:border-red-900/40 dark:bg-red-900/10"
+                    >
+                      <p className="flex items-start gap-2 text-xs font-semibold text-red-800 dark:text-red-300">
+                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                        <span>This video&rsquo;s audio does not match its master — do not upload it.</span>
+                      </p>
+                      <ul className="mt-1 list-disc space-y-0.5 pl-7 text-xs text-red-700 dark:text-red-300">
+                        {(m.videoAudioFindings ?? []).map((f) => (
+                          <li key={f}>{f}</li>
+                        ))}
+                      </ul>
+                      <p className="mt-1 pl-7 text-xs text-red-700 dark:text-red-400">
+                        Re-render it. The upload is blocked until the audio matches.
+                      </p>
+                    </div>
+                  )}
+
 
                   {rowRender?.id === m.id && (
                     <div className="mt-2 flex w-full flex-wrap items-center gap-2 border-t border-gray-100 pt-2 dark:border-gray-800">
@@ -3662,6 +3695,38 @@ export function MasteringStudio() {
                         disabled={rowBusy === m.id}
                         idPrefix={`${inputId}-rowshort-${m.id}`}
                       />
+                      {/* What the last render's audio measured, beside the
+                          button that produced it. A failure is NOT shown here —
+                          it renders in the row above, where it cannot be missed
+                          with this panel closed. */}
+                      {m.videoKey && m.videoAudioCheck !== 'failed' && (
+                        <p className="flex w-full items-start gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                          {m.videoAudioCheck === 'passed' && (
+                            <>
+                              <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-600 dark:text-green-400" aria-hidden="true" />
+                              <span className="text-green-700 dark:text-green-400">
+                                Audio checked against the master: duration, sample rate, channels,
+                                loudness, true peak and dynamics all match.
+                              </span>
+                            </>
+                          )}
+                          {m.videoAudioCheck === 'unknown' && (
+                            <>
+                              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                              <span className="text-amber-700 dark:text-amber-400">
+                                The audio could not be fully checked against the master — a figure
+                                would not read. Not a fault, and the upload is not blocked.
+                              </span>
+                            </>
+                          )}
+                          {!m.videoAudioCheck && (
+                            <span>
+                              This video was rendered before the audio check existed. Re-render it to
+                              have its audio compared against the master.
+                            </span>
+                          )}
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
