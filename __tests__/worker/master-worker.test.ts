@@ -51,6 +51,10 @@ process.env.TAKES_BUCKET = 'tamil-web-media';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { handler } = require('../../worker/master-worker') as typeof import('../../worker/master-worker');
+// Taken from the library rather than spelled out: the frame's format is a
+// measured performance decision that has already changed once, and a test that
+// hardcodes the extension fails for the wrong reason when it changes again.
+const { FRAME_EXTENSION } = require('../../src/lib/master-video') as typeof import('../../src/lib/master-video');
 
 /**
  * The fields the worker wrote onto the job item, across all its patches, with
@@ -265,7 +269,7 @@ describe('video render', () => {
     expect(encode).not.toContain('-filter_complex');
     expect(encode.join(' ')).not.toContain('boxblur');
     // It must consume the frame pass 1 produced, not the raw cover.
-    expect(encode.join(' ')).toContain('frame.png');
+    expect(encode.join(' ')).toContain(`frame${FRAME_EXTENSION}`);
     expect(encode.join(' ')).not.toContain('cover.jpg');
   });
 
@@ -510,7 +514,7 @@ describe('short render', () => {
     // Pass 2: no -filter_complex at all — that absence IS what keeps it cheap.
     expect(encode).not.toContain('-filter_complex');
     expect(encode.join(' ')).not.toContain('boxblur');
-    expect(encode.join(' ')).toContain('frame.png');
+    expect(encode.join(' ')).toContain(`frame${FRAME_EXTENSION}`);
     expect(encode.join(' ')).not.toContain('cover.jpg');
   });
 
@@ -2587,5 +2591,69 @@ describe('slideshow render', () => {
     expect(ffArgs().some((a) => a.includes('-an'))).toBe(false);
     // probe, compose, encode — exactly the three it has always made.
     expect(spawnSync).toHaveBeenCalledTimes(3);
+  });
+});
+
+/**
+ * The worker writes its intermediate frames in the format the library names —
+ * all three of them. The Short composes one, the single-image render composes
+ * one, and the slideshow composes one per image; a site left on `.png` would
+ * silently keep paying the 2.5x on that path alone.
+ */
+describe('composed frames use the library\'s format', () => {
+  const AUDIO = 'audio/mastering/1_a_song-master-14LUFS.wav';
+  const COVER = 'audio/mastering/1_c_cover.jpg';
+  const ffArgs = () => spawnSync.mock.calls.map((c) => c[1] as string[]);
+  /** Whatever a compose pass wrote — it is the last argument, after -y. */
+  const composedFrames = () => ffArgs()
+    .filter((a) => a.includes('-frames:v'))
+    .map((a) => a[a.length - 1]);
+
+  beforeEach(() => {
+    spawnSync.mockReset();
+    spawnSync.mockImplementation((_cmd: string, args: string[]) =>
+      args.length === 3 && args[2].includes('master.wav')
+        ? { status: 1, stdout: '', stderr: 'Input #0, wav, from \'/tmp/x.wav\':\n  Duration: 00:05:32.00, bitrate: 2304 kb/s\n  Stream #0:0: Audio: pcm_s24le, 48000 Hz, stereo, s32 (24 bit), 2304 kb/s\n' }
+        : { status: 0, stdout: '', stderr: '' }
+    );
+    s3Send.mockReset();
+    s3Send.mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'Body' in cmd.input
+        ? Promise.resolve({})
+        : Promise.resolve({ Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) } })
+    );
+  });
+
+  it('the single-image render composes to .ppm', async () => {
+    await handler({ jobId: 'j1', render: { audioKey: AUDIO, coverKey: COVER, height: 1440 } } as never);
+    const frames = composedFrames();
+    expect(frames).toHaveLength(1);
+    expect(frames[0]).toMatch(/\.ppm$/);
+  });
+
+  it('every slideshow frame is .ppm, not just the first', async () => {
+    await handler({
+      jobId: 'j1',
+      render: {
+        audioKey: AUDIO, coverKey: COVER, height: 1440,
+        covers: [
+          { coverKey: COVER, startSec: 0 },
+          { coverKey: 'audio/mastering/1_c_b.jpg', startSec: 130 },
+          { coverKey: 'audio/mastering/1_c_c.png', startSec: 240 },
+        ],
+      },
+    } as never);
+    const frames = composedFrames();
+    expect(frames).toHaveLength(3);
+    for (const f of frames) expect(f).toMatch(/\.ppm$/);
+  });
+
+  it('the encode reads back the frame that was composed', async () => {
+    // The format is two edits in two places; getting one and not the other
+    // means ffmpeg is handed a path that does not exist.
+    await handler({ jobId: 'j1', render: { audioKey: AUDIO, coverKey: COVER, height: 1440 } } as never);
+    const [composed] = composedFrames();
+    const encode = ffArgs().find((a) => a.includes('libx264'))!;
+    expect(encode).toContain(composed);
   });
 });

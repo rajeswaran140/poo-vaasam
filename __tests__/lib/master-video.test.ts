@@ -32,6 +32,7 @@ import {
   buildJoinArgs,
   MIN_SEGMENT_SECONDS,
   MAX_SLIDESHOW_COVERS,
+  FRAME_EXTENSION,
 } from '@/lib/master-video';
 import type { MasterJob } from '@/types/masterJob';
 
@@ -545,5 +546,36 @@ describe('the concat list', () => {
     // Worker paths never contain one — which is exactly why an unescaped quote
     // would go unnoticed until the day one did.
     expect(buildConcatList(["/tmp/it's.mp4"])).toBe("file '/tmp/it'\\''s.mp4'\n");
+  });
+});
+
+/**
+ * The intermediate frame's format.
+ *
+ * This looks like a filename detail and is worth ~1.9x on every render we
+ * produce. `-loop 1` decodes the still again for every frame it emits, so
+ * compressing a file we read thousands of times and delete minutes later is
+ * exactly the wrong trade. Nothing about the output changes — which is the
+ * other half of why the specific format matters.
+ */
+describe('the composed frame is uncompressed, and RGB-ordered', () => {
+  it('is PPM', () => {
+    expect(FRAME_EXTENSION).toBe('.ppm');
+  });
+
+  it('is not PNG — the compression is decoded per frame, not per render', () => {
+    // Measured 2026-09-22 on 332 s of video from one looped still, interleaved,
+    // two passes each: PNG 256.3 s against PPM 136.1 s.
+    expect(FRAME_EXTENSION).not.toBe('.png');
+  });
+
+  it('is not BMP, which is uncompressed but stores BGR', () => {
+    // ⚠️ The trap. BMP is the obvious reach for "uncompressed" and is FASTER
+    // than PPM (93-95 s against 136 s), which is what makes it tempting. But
+    // its bottom-up BGR layout sends swscale down a different path to yuv420p,
+    // so the bytes reaching x264 differ from today's — measured at 43.96 dB
+    // PSNR. Invisible, but a change to the output, and this is supposed to be
+    // a free optimisation rather than a new picture.
+    expect(FRAME_EXTENSION).not.toBe('.bmp');
   });
 });

@@ -67,6 +67,7 @@ import {
   buildSegmentArgs,
   buildConcatList,
   buildJoinArgs,
+  FRAME_EXTENSION,
   planSegments,
   slideshowRefusalMessage,
   videoKeyFor,
@@ -648,7 +649,7 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
   const dir = mkdtempSync(join(tmpdir(), 'short-'));
   const audioPath = join(dir, 'master.wav');
   const coverPath = join(dir, `cover${coverKey.match(/\.[a-z0-9]+$/i)?.[0] ?? '.jpg'}`);
-  const framePath = join(dir, 'frame.png');
+  const framePath = join(dir, `frame${FRAME_EXTENSION}`);
   const outPath = join(dir, 'short.mp4');
   try {
     const audio = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: audioKey }));
@@ -818,7 +819,7 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
      */
     if (!slideshow) {
       const coverPath = coverPathFor(coverKey, 0);
-      const framePath = join(dir, 'frame.png');
+      const framePath = join(dir, `frame${FRAME_EXTENSION}`);
       const cover = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: coverKey }));
       writeFileSync(coverPath, Buffer.from(await cover.Body!.transformToByteArray()));
 
@@ -866,7 +867,7 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
           const coverPath = coverPathFor(seg.coverKey, i);
           const cover = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: seg.coverKey }));
           writeFileSync(coverPath, Buffer.from(await cover.Body!.transformToByteArray()));
-          framePath = join(dir, `frame${i}.png`);
+          framePath = join(dir, `frame${i}${FRAME_EXTENSION}`);
           const coverAspect = probeCoverAspect(coverPath);
           const composed = ff(buildComposeArgs({ coverPath, framePath, height, coverAspect }));
           if (composed.status !== 0) {

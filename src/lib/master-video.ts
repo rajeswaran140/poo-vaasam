@@ -83,6 +83,40 @@ export const VIDEO_GOP = 100;
  */
 export const FRAME_FILL_ASPECT_TOLERANCE = 0.02;
 
+/**
+ * Extension for the composed intermediate frame.
+ *
+ * ⚠️ THIS IS NOT COSMETIC. IT IS WORTH ~1.9x ON EVERY RENDER WE PRODUCE.
+ *
+ * The frame is a temporary, handed straight to the encoder and deleted minutes
+ * later — but the encode LOOPS it, and `-loop 1` decodes the file again for
+ * every frame it emits. Written as PNG, a 5:32 song at 10 fps costs 3,320
+ * decompressions of a 2560x1440 image to reproduce a picture that never
+ * changes. Compressing a file we read thousands of times and keep for seconds
+ * is exactly the wrong trade.
+ *
+ * Measured 2026-09-22, interleaved, two passes each, 332 s of video from one
+ * looped still on an idle dev box:
+ *
+ *     PNG   253.8 s / 258.7 s    mean 256.3 s
+ *     PPM   119.5 s / 152.7 s    mean 136.1 s     1.88x, ~120 s back
+ *
+ * ⚠️ PPM, AND SPECIFICALLY NOT BMP. BMP is faster still — 93-95 s, because its
+ * layout converts to yuv420p more cheaply — and that is exactly the trap. BMP
+ * stores pixels bottom-up in BGR, which sends swscale down a different path and
+ * lands on different values: measured at 43.96 dB PSNR against the PNG render,
+ * invisible but real. PPM stores RGB in the order PNG decodes to, so the bytes
+ * reaching x264 are BIT-IDENTICAL to what we ship today:
+ *
+ *     decoded rgb24   png b36a5e13  bmp b36a5e13  ppm b36a5e13   (same picture)
+ *     as yuv420p      png 1141f6a3  bmp fc943bc0  ppm 1141f6a3   (what x264 eats)
+ *
+ * Trading a provably identical output for 40 s of the saving is the right way
+ * round: this is meant to be a free optimisation, not a new picture.
+ * `scripts/verify-frame-format.ts` re-proves both halves.
+ */
+export const FRAME_EXTENSION = '.ppm';
+
 /** 16:9 for every offered height. */
 export function videoWidthFor(height: VideoHeight): number {
   return Math.round((height * 16) / 9 / 2) * 2; // even width — yuv420p requires it
