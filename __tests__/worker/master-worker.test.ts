@@ -2424,3 +2424,168 @@ describe('youtube upload', () => {
     });
   });
 });
+
+/**
+ * The slideshow render.
+ *
+ * The property under test is never "the cut lands at 2:10" — the planner owns
+ * that and has its own tests. It is that the worker's execution keeps the
+ * compose-once architecture: one filter run per IMAGE, none per frame, and a
+ * join that copies the picture rather than re-encoding it. A regression here
+ * does not throw. The Lambda is killed at 900 s and the row says nothing.
+ */
+describe('slideshow render', () => {
+  const AUDIO = 'audio/mastering/1_a_song-master-14LUFS.wav';
+  const A = 'audio/mastering/1_c_a.jpg';
+  const B = 'audio/mastering/1_c_b.jpg';
+  const C = 'audio/mastering/1_c_c.png';
+  const ffArgs = () => spawnSync.mock.calls.map((c) => c[1] as string[]);
+  /** A 5:32 master, as the WAV header prints it. */
+  const HEADER = 'Input #0, wav, from \'/tmp/master-test/master.wav\':\n' +
+    '  Duration: 00:05:32.00, bitrate: 2304 kb/s\n' +
+    '  Stream #0:0: Audio: pcm_s24le, 48000 Hz, stereo, s32 (24 bit), 2304 kb/s\n';
+
+  const slideshow = (over: Record<string, unknown> = {}) => ({
+    audioKey: AUDIO,
+    coverKey: A,
+    height: 1440,
+    covers: [
+      { coverKey: A, startSec: 0 },
+      { coverKey: B, startSec: 130 },
+      { coverKey: C, startSec: 240 },
+    ],
+    ...over,
+  });
+
+  beforeEach(() => {
+    spawnSync.mockReset();
+    // Only the audio-header probe returns a duration; every other call is a
+    // plain success. The duration probe and the cover probe share a shape
+    // (`-hide_banner -i PATH`), so they are told apart by the path.
+    spawnSync.mockImplementation((_cmd: string, args: string[]) =>
+      args.length === 3 && args[2].includes('master.wav')
+        ? { status: 1, stdout: '', stderr: HEADER }
+        : { status: 0, stdout: '', stderr: '' }
+    );
+    s3Send.mockReset();
+    s3Send.mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'Body' in cmd.input
+        ? Promise.resolve({})
+        : Promise.resolve({ Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) } })
+    );
+  });
+
+  it('composes once per image and never filters an encode', async () => {
+    const res = await handler({ jobId: 'j1', render: slideshow() } as never);
+    expect(res).toMatchObject({ ok: true });
+
+    const filtered = ffArgs().filter((a) => a.includes('-filter_complex'));
+    // Three images, three filter runs. Not 3,320 — which is what a filter in
+    // any encode step would silently cost.
+    expect(filtered).toHaveLength(3);
+    for (const a of filtered) expect(a).toContain('-frames:v');
+
+    const encodes = ffArgs().filter((a) => a.includes('libx264'));
+    expect(encodes).toHaveLength(3);
+    for (const a of encodes) {
+      expect(a).not.toContain('-filter_complex');
+      expect(a).not.toContain('-vf');
+    }
+  });
+
+  it('bounds each segment by the planned length, with the last from the song', async () => {
+    await handler({ jobId: 'j1', render: slideshow() } as never);
+    const lengths = ffArgs()
+      .filter((a) => a.includes('libx264'))
+      .map((a) => Number(a[a.indexOf('-t') + 1]));
+    // 5:32 is 332 s: 0-130, 130-240, and the tail nobody supplied.
+    expect(lengths).toEqual([130, 110, 92]);
+  });
+
+  it('joins with a stream copy and encodes the song exactly once', async () => {
+    await handler({ jobId: 'j1', render: slideshow() } as never);
+    const join = ffArgs().find((a) => a.includes('concat'))!;
+
+    expect(join[join.indexOf('-c:v') + 1]).toBe('copy');
+    expect(join[join.lastIndexOf('-i') + 1]).toContain('master.wav');
+    // One AAC encode for the whole song. Per-segment audio would put a codec
+    // seam at every cut, mid-song.
+    expect(ffArgs().filter((a) => a.includes('aac'))).toHaveLength(1);
+  });
+
+  it('derives the duration from the WAV, never from the event', async () => {
+    // An event that got the duration wrong would freeze on a still or truncate
+    // the song, with no error to point at.
+    await handler({
+      jobId: 'j1',
+      render: slideshow({ durationSec: 9999, covers: [{ coverKey: A, startSec: 0 }, { coverKey: B, startSec: 130 }] }),
+    } as never);
+    const lengths = ffArgs()
+      .filter((a) => a.includes('libx264'))
+      .map((a) => Number(a[a.indexOf('-t') + 1]));
+    expect(lengths).toEqual([130, 202]);
+  });
+
+  it('refuses when the header will not say how long the song is', async () => {
+    spawnSync.mockImplementation(() => ({ status: 0, stdout: '', stderr: '' }));
+    const res = await handler({ jobId: 'j1', render: slideshow() } as never);
+
+    expect(res).toEqual({ ok: false });
+    expect(patched().videoError).toMatch(/length|unknown/i);
+    expect(ffArgs().some((a) => a.includes('libx264'))).toBe(false);
+  });
+
+  it('guards every cover key, and downloads nothing when one fails', async () => {
+    const res = await handler({
+      jobId: 'j1',
+      render: slideshow({ covers: [{ coverKey: A, startSec: 0 }, { coverKey: 'deliveries/theirs.jpg', startSec: 130 }] }),
+    } as never);
+
+    expect(res).toEqual({ ok: false });
+    expect(patched().videoError).toContain('mastering workspace');
+    expect(s3Send).not.toHaveBeenCalled();
+  });
+
+  it('refuses a cut past the end of the song rather than rendering a gap', async () => {
+    const res = await handler({
+      jobId: 'j1',
+      render: slideshow({ covers: [{ coverKey: A, startSec: 0 }, { coverKey: B, startSec: 400 }] }),
+    } as never);
+    expect(res).toEqual({ ok: false });
+    expect(patched().videoError).toMatch(/after the song ends/i);
+  });
+
+  it('records the FIRST image as the cover — it becomes the thumbnail', async () => {
+    await handler({ jobId: 'j1', render: slideshow() } as never);
+    // The thumbnail should be the frame the video opens on, not an image from
+    // the middle of it.
+    expect(patched().coverKey).toBe(A);
+    expect(patched().videoKey).toContain('-1440p.mp4');
+  });
+
+  it('composes a repeated image once, not once per appearance', async () => {
+    // An image that returns later in the song is a real edit, and downloading
+    // and re-composing it is pure waste inside a 900 s budget.
+    await handler({
+      jobId: 'j1',
+      render: slideshow({
+        covers: [{ coverKey: A, startSec: 0 }, { coverKey: B, startSec: 100 }, { coverKey: A, startSec: 200 }],
+      }),
+    } as never);
+
+    expect(ffArgs().filter((a) => a.includes('-filter_complex'))).toHaveLength(2);
+    expect(ffArgs().filter((a) => a.includes('libx264'))).toHaveLength(3);
+  });
+
+  it('a render with no covers takes the single-image path, untouched', async () => {
+    // The regression guard for the whole feature: the old event shape must not
+    // gain a segment encode or a concat.
+    const res = await handler({ jobId: 'j1', render: { audioKey: AUDIO, coverKey: A, height: 1440 } } as never);
+
+    expect(res).toMatchObject({ ok: true });
+    expect(ffArgs().some((a) => a.includes('concat'))).toBe(false);
+    expect(ffArgs().some((a) => a.includes('-an'))).toBe(false);
+    // probe, compose, encode — exactly the three it has always made.
+    expect(spawnSync).toHaveBeenCalledTimes(3);
+  });
+});

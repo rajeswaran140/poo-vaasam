@@ -277,3 +277,303 @@ export function buildVideoArgs(params: {
     '-y', params.outPath,
   ];
 }
+
+/* ---------------------------------------------------------------------------
+ * SLIDESHOW — several covers, hard cuts, one composed frame each.
+ *
+ * WHY THIS IS SHAPED THE WAY IT IS. Everything above rests on one fact: every
+ * frame of the video is the same picture, so the filter graph runs ONCE and the
+ * encoder is charged for identical frames it compresses to nearly nothing. A
+ * slideshow is the largest feature that does not break that. Three covers means
+ * three composed frames and three runs of identical frames — the frame COUNT is
+ * unchanged, only the number of scene changes goes from zero to two.
+ *
+ * ⚠️ WHAT WOULD BREAK IT, and is therefore deliberately absent: Ken Burns
+ * (zoompan), crossfades (xfade), waveform visualisers, animated overlays. Each
+ * makes every frame different, which puts the filter back in the per-frame path
+ * — the exact cost the compose/encode split exists to remove. The render would
+ * not error; it would be killed at 900 s.
+ *
+ * ⚠️ NO TEXT IS RENDERED HERE. A title card or end card is an IMAGE the
+ * operator uploads, exactly like a cover, and goes through buildComposeArgs
+ * unchanged. ffmpeg's drawtext does no complex-script shaping and libass
+ * mis-spaces Tamil on this build — see the same warning in master-short.ts.
+ * Burning a Tamil end card with drawtext renders broken clusters.
+ *
+ * THREE STEPS, none of which may gain a -filter_complex:
+ *   1. compose each frame once          buildComposeArgs   (unchanged, reused)
+ *   2. encode each segment, video only  buildSegmentArgs
+ *   3. join the segments AND lay the    buildJoinArgs
+ *      master audio over them, one pass
+ *
+ * Audio is encoded once, at step 3, rather than per segment — so there is no
+ * AAC seam in the middle of a song.
+ *
+ * WHAT THIS COSTS, measured 2026-09-22 against a 5:32 fixture: 424 s against
+ * the single-image render's 356 s on the same box. The +68 s is NOT the cuts.
+ * Attributed on a 60 s fixture: concatenating is 0.65 s, `+faststart` is
+ * 0.04 s, and the AAC encode is 12.8 s — essentially the whole of it.
+ *
+ * ⚠️ THE OVERHEAD IS THE AUDIO ENCODE LOSING MOST OF ITS OVERLAP. The
+ * single-image render encodes picture and sound in ONE ffmpeg process, where
+ * the AAC pass runs alongside x264 and much of it is absorbed — 356 s total
+ * against 288-308 s of video-only segments puts the overlapped audio near a
+ * minute rather than at zero. Split into segments, that pass stands alone and
+ * is charged in full.
+ *
+ * The price is therefore FLAT, not per-image: it does not grow with the number
+ * of covers. A fourth and fifth image cost about a second each; the first cut
+ * is what costs.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Shortest stretch an image may hold the screen.
+ *
+ * Not an aesthetic limit — a cut costs a keyframe, and at 10 fps a segment
+ * shorter than this is a handful of frames wrapped in a container. Two seconds
+ * is also about the floor at which a hard cut reads as deliberate rather than
+ * as a glitch.
+ */
+export const MIN_SEGMENT_SECONDS = 2;
+
+/**
+ * Ceiling on images per video. Not a technical limit: each cover is one more
+ * download, probe and compose in a Lambda that also has to encode the song.
+ * Eight is past anything a cover-art release needs.
+ */
+export const MAX_SLIDESHOW_COVERS = 8;
+
+/**
+ * Container for the intermediate segments. They are concatenated with a stream
+ * copy, so this only has to hold H.264 and round-trip its timestamps.
+ */
+export const SEGMENT_EXTENSION = '.mp4';
+
+export type SlideshowRefusal =
+  | RenderRefusal
+  | 'no-duration'
+  | 'too-many-covers'
+  | 'cuts-out-of-order'
+  | 'cut-past-end'
+  | 'segment-too-short';
+
+/** An image and the moment it takes over. The first must start at 0. */
+export interface SlideshowCover {
+  coverKey: string;
+  startSec: number;
+}
+
+/** A cover with its stretch resolved. The last one's length comes from the song. */
+export interface PlannedSegment extends SlideshowCover {
+  seconds: number;
+}
+
+export type SlideshowPlan =
+  | {
+      ok: true;
+      audioKey: string;
+      height: VideoHeight;
+      videoKey: string;
+      segments: PlannedSegment[];
+    }
+  | { ok: false; reason: SlideshowRefusal };
+
+/**
+ * Decide whether this job can be rendered as a slideshow, and with what.
+ *
+ * Refusal order mirrors planRender deliberately, karaoke bed first, so the
+ * pipeline's next-action line and its buttons cannot disagree.
+ *
+ * A single cover is not a special case here: it plans one segment spanning the
+ * whole song, which is exactly what the existing single-image path renders.
+ */
+export function planSlideshow(
+  job: MasterJob,
+  covers: readonly SlideshowCover[] | null | undefined,
+  durationSec: number | null | undefined,
+  height: number = DEFAULT_VIDEO_HEIGHT,
+): SlideshowPlan {
+  if (isPeakMaster(job)) return { ok: false, reason: 'karaoke-bed' };
+  if (job.status !== 'done') return { ok: false, reason: 'not-done' };
+  if (!job.savedAt) return { ok: false, reason: 'not-saved' };
+  if (!job.masterKey) return { ok: false, reason: 'no-master' };
+  if (!VIDEO_HEIGHTS.includes(height as VideoHeight)) return { ok: false, reason: 'bad-height' };
+
+  const timed = planSegments(covers, durationSec);
+  if (!timed.ok) return timed;
+
+  const h = height as VideoHeight;
+  return {
+    ok: true,
+    audioKey: job.masterKey,
+    height: h,
+    // ⚠️ The same key shape as a single-image render. isRenderedVideoKey and the
+    // library's Video button both match on it; a `-slideshow-` variant would be
+    // invisible to them.
+    videoKey: videoKeyFor(job.masterKey, h),
+    segments: timed.segments,
+  };
+}
+
+export type SegmentPlan =
+  | { ok: true; segments: PlannedSegment[] }
+  | { ok: false; reason: SlideshowRefusal };
+
+/**
+ * The timing half of planSlideshow, without the job.
+ *
+ * Split out because the WORKER re-derives the segments itself rather than
+ * trusting the event — its role can read and write the whole bucket, and the
+ * route is not the only thing that can invoke it — but it has no MasterJob
+ * entity to hand, only the keys and the duration it probed from the WAV. Two
+ * copies of this arithmetic is how a cut ends up in a different place in the
+ * preview than in the render.
+ *
+ * ⚠️ THE DURATION IS REQUIRED and is what makes the last segment possible: the
+ * operator supplies cut POINTS, never the final stretch's length. Without it the
+ * join's `-shortest` would decide the ending by accident — truncating the song
+ * or freezing on the last image.
+ */
+export function planSegments(
+  covers: readonly SlideshowCover[] | null | undefined,
+  durationSec: number | null | undefined,
+): SegmentPlan {
+  if (!covers || covers.length === 0) return { ok: false, reason: 'no-cover' };
+  if (covers.length > MAX_SLIDESHOW_COVERS) return { ok: false, reason: 'too-many-covers' };
+  for (const c of covers) {
+    if (!c?.coverKey) return { ok: false, reason: 'no-cover' };
+    // The worker's role can reach the entire bucket, so every key in the list
+    // gets the same workspace guard — not just the first.
+    if (!isMasteringKey(c.coverKey)) return { ok: false, reason: 'bad-cover' };
+  }
+  if (typeof durationSec !== 'number' || !Number.isFinite(durationSec) || durationSec <= 0) {
+    return { ok: false, reason: 'no-duration' };
+  }
+
+  // The first image opens the video. Anything else leaves the opening seconds
+  // with nothing to show.
+  if (covers[0].startSec !== 0) return { ok: false, reason: 'cuts-out-of-order' };
+  for (let i = 1; i < covers.length; i += 1) {
+    const at = covers[i].startSec;
+    if (!Number.isFinite(at) || at <= covers[i - 1].startSec) {
+      return { ok: false, reason: 'cuts-out-of-order' };
+    }
+  }
+  if (covers[covers.length - 1].startSec >= durationSec) return { ok: false, reason: 'cut-past-end' };
+
+  const segments: PlannedSegment[] = covers.map((c, i) => ({
+    coverKey: c.coverKey,
+    startSec: c.startSec,
+    // The final stretch runs to the end of the song — computed, never supplied.
+    seconds: (i + 1 < covers.length ? covers[i + 1].startSec : durationSec) - c.startSec,
+  }));
+  if (segments.some((s) => s.seconds < MIN_SEGMENT_SECONDS)) {
+    return { ok: false, reason: 'segment-too-short' };
+  }
+  return { ok: true, segments };
+}
+
+/** Operator-facing wording. Says what to DO wherever there is something. */
+export function slideshowRefusalMessage(reason: SlideshowRefusal): string {
+  switch (reason) {
+    case 'no-duration':
+      return 'The length of this master is unknown, so the last image has no end.';
+    case 'too-many-covers':
+      return `Use at most ${MAX_SLIDESHOW_COVERS} images.`;
+    case 'cuts-out-of-order':
+      return 'Image times must start at 0:00 and increase.';
+    case 'cut-past-end':
+      return 'An image starts after the song ends.';
+    case 'segment-too-short':
+      return `Every image needs at least ${MIN_SEGMENT_SECONDS} seconds on screen.`;
+    default:
+      return renderRefusalMessage(reason);
+  }
+}
+
+/**
+ * STEP 2 of 4 — encode ONE segment from its already-composed frame. Video only.
+ *
+ * ⚠️ THERE MUST BE NO `-filter_complex` HERE either. The warning on
+ * buildVideoArgs applies to this builder identically — it is the same encode,
+ * split by time — and it has its own test pinning the absence, because the test
+ * on buildVideoArgs cannot see this path.
+ *
+ * Encoder flags are the single-image flags verbatim. They have to be: the
+ * segments are concatenated with a stream copy at step 3, which is only valid
+ * while every segment shares its codec parameters.
+ *
+ * `-t` rather than `-shortest`: there is no audio here to end the video, so the
+ * looped frame would otherwise run forever.
+ */
+export function buildSegmentArgs(params: {
+  framePath: string;
+  seconds: number;
+  outPath: string;
+}): string[] {
+  return [
+    '-hide_banner', '-nostats',
+    '-loop', '1', '-framerate', String(VIDEO_FPS), '-t', String(params.seconds), '-i', params.framePath,
+    '-map', '0:v',
+    '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'stillimage',
+    '-crf', String(VIDEO_CRF), '-g', String(VIDEO_GOP), '-keyint_min', String(VIDEO_FPS),
+    '-pix_fmt', 'yuv420p', '-r', String(VIDEO_FPS),
+    // No audio in a segment: it is muxed once, whole, at step 4.
+    '-an',
+    '-y', params.outPath,
+  ];
+}
+
+/**
+ * The concat demuxer's list file.
+ *
+ * ffmpeg's own escaping: a single quote inside a quoted path closes it, so it
+ * is written as '\'' — quote, escaped quote, quote. Worker paths never contain
+ * one, which is exactly why it would go unnoticed if they ever did.
+ */
+export function buildConcatList(segmentPaths: readonly string[]): string {
+  return segmentPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n') + '\n';
+}
+
+/**
+ * STEP 3 of 3 — join the segments and lay the full-length master audio over
+ * them, in ONE pass.
+ *
+ * ONE pass rather than a concat followed by a mux: the concat demuxer is an
+ * input like any other, so the audio comes in beside it. That saves an
+ * intermediate file the size of the finished video and a second read of it —
+ * worth having, but measured at only 1.4 s. The step's real cost is the audio.
+ *
+ * ⚠️ THERE MUST BE NO `-filter_complex` HERE either, and `-c:v copy` is what
+ * keeps the PICTURE free: it was finished at step 2 and is never touched
+ * again — 0.65 s to concatenate 60 s of video, against 132 s to encode it. Each segment already opens on a keyframe (x264 always starts
+ * with an IDR), so the cuts land exactly where the plan put them with no
+ * re-encode at the seams.
+ *
+ * `+genpts` rebuilds presentation timestamps across the joins rather than
+ * trusting each segment's own, which restart at zero. It is an INPUT option and
+ * belongs to the concat input, not the audio.
+ *
+ * The audio is encoded here, once, in one continuous pass — never per segment,
+ * which would put a codec seam at every cut, mid-song.
+ */
+export function buildJoinArgs(params: {
+  listPath: string;
+  audioPath: string;
+  outPath: string;
+}): string[] {
+  return [
+    '-hide_banner', '-nostats',
+    '-fflags', '+genpts',
+    '-f', 'concat', '-safe', '0', '-i', params.listPath,
+    '-i', params.audioPath,
+    '-map', '0:v', '-map', '1:a',
+    '-c:v', 'copy',
+    '-c:a', 'aac', '-b:a', VIDEO_AUDIO_BITRATE, '-ar', String(VIDEO_SAMPLE_RATE),
+    '-movflags', '+faststart',
+    // The segments already total the song's length, so this only guards against
+    // a rounding difference at the very end.
+    '-shortest',
+    '-y', params.outPath,
+  ];
+}
