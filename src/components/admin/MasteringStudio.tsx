@@ -2918,6 +2918,60 @@ export function MasteringStudio() {
                 </p>
               </div>
 
+              {/* 1b — THE SOUND. The picture above is checked by eye; this is
+                  the half nobody could check by eye. The worker measures the
+                  finished MP4 against the master it was built from, so a render
+                  that resampled, re-levelled or truncated the song says so here
+                  instead of on YouTube. See src/lib/master-verify.ts. */}
+              {job.videoKey && (
+                <div className="mt-4">
+                  <p className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                    The sound that will be published
+                  </p>
+                  {job.videoAudioCheck === 'passed' && (
+                    <p className="mt-2 flex items-start gap-1.5 text-xs text-green-700 dark:text-green-400">
+                      <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                      <span>
+                        Checked against the master: duration, sample rate, channels, loudness, true
+                        peak and dynamics all match. The render did not touch the audio.
+                      </span>
+                    </p>
+                  )}
+                  {job.videoAudioCheck === 'failed' && (
+                    <div className="mt-2 rounded-lg border border-red-300 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950/40">
+                      <p className="flex items-start gap-1.5 text-xs font-semibold text-red-800 dark:text-red-300">
+                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                        <span>This video&rsquo;s audio does not match its master. Do not upload it.</span>
+                      </p>
+                      <ul className="mt-2 list-disc space-y-1 pl-7 text-xs text-red-700 dark:text-red-300">
+                        {(job.videoAudioFindings ?? []).map((f) => (
+                          <li key={f}>{f}</li>
+                        ))}
+                      </ul>
+                      <p className="mt-2 pl-7 text-xs text-red-700 dark:text-red-400">
+                        Re-render above. The upload is blocked until the audio matches.
+                      </p>
+                    </div>
+                  )}
+                  {job.videoAudioCheck === 'unknown' && (
+                    <p className="mt-2 flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+                      <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                      <span>
+                        The audio could not be fully checked against the master — some figure would
+                        not read. Not a fault, and the upload is not blocked, but nothing has
+                        confirmed the audio either.
+                      </span>
+                    </p>
+                  )}
+                  {!job.videoAudioCheck && (
+                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                      This video was rendered before the audio check existed, so it has not been
+                      compared against its master. Re-render to have it checked.
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* 2 — METADATA. The operator owns the title, the tags and the
                   body text; the description's tail is assembled, not typed. */}
               <div className="mt-4 space-y-3">

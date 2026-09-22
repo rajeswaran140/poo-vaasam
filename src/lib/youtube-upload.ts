@@ -17,6 +17,7 @@ export type UploadStatus = 'idle' | 'queued' | 'uploading' | 'uploaded' | 'faile
 
 export type UploadRefusal =
   | 'no-video'
+  | 'audio-mismatch'
   | 'not-saved'
   | 'no-title'
   | 'no-description'
@@ -141,6 +142,20 @@ export function planUpload(
     if (!isStale) return { ok: false, reason: 'in-flight' };
   }
   if (!job.videoKey) return { ok: false, reason: 'no-video' };
+  // ⚠️ ONLY THE LITERAL 'failed' BLOCKS, and that is the whole design.
+  //
+  // `null` means the render predates this check — the entire back catalogue —
+  // and `'unknown'` means a figure could not be read. Treating either as a
+  // failure would refuse every existing job and every render where ffmpeg
+  // declined to report a number, which is how a safety check earns a reputation
+  // for crying wolf and stops being trusted.
+  //
+  // `undefined` lands here too, from a job object built before the field
+  // existed. It is not 'failed' either, deliberately.
+  //
+  // What this DOES stop is uploading a video whose audio was measured against
+  // its own master and found to differ — see src/lib/master-verify.ts.
+  if (job.videoAudioCheck === 'failed') return { ok: false, reason: 'audio-mismatch' };
   if (!job.savedAt) return { ok: false, reason: 'not-saved' };
   if (!input.title?.trim()) return { ok: false, reason: 'no-title' };
   if (!input.description?.trim()) return { ok: false, reason: 'no-description' };
@@ -166,6 +181,8 @@ export function uploadRefusalMessage(reason: UploadRefusal): string {
   switch (reason) {
     case 'no-video':
       return 'Render the video before uploading it.';
+    case 'audio-mismatch':
+      return "This video's audio does not match its master — re-render it before uploading.";
     case 'not-saved':
       return 'Save this master before uploading its video.';
     case 'no-title':

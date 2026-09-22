@@ -119,6 +119,8 @@ export class MasterJobRepository {
         videoKey: null,
         videoRenderedAt: null,
         videoError: null,
+        videoAudioCheck: null,
+        videoAudioFindings: null,
         shortKey: null,
         shortRenderedAt: null,
         shortStartSec: null,
@@ -224,6 +226,16 @@ export class MasterJobRepository {
       videoKey: typeof item.videoKey === 'string' ? item.videoKey : null,
       videoRenderedAt: typeof item.videoRenderedAt === 'string' ? item.videoRenderedAt : null,
       videoError: typeof item.videoError === 'string' ? item.videoError : null,
+      // Unrecognised values hydrate as null — "not checked" — rather than as
+      // themselves. A stray string must not be able to look like a verdict.
+      videoAudioCheck:
+        item.videoAudioCheck === 'passed' || item.videoAudioCheck === 'failed' || item.videoAudioCheck === 'unknown'
+          ? item.videoAudioCheck
+          : null,
+      videoAudioFindings:
+        Array.isArray(item.videoAudioFindings)
+          ? item.videoAudioFindings.filter((f): f is string => typeof f === 'string')
+          : null,
       shortKey: typeof item.shortKey === 'string' ? item.shortKey : null,
       shortRenderedAt: typeof item.shortRenderedAt === 'string' ? item.shortRenderedAt : null,
       shortStartSec: typeof item.shortStartSec === 'number' ? item.shortStartSec : null,

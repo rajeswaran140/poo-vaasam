@@ -29,8 +29,10 @@ import {
   isMasterKey,
   parseSourceInfo,
   parseNormalizationType,
+  measureArgs,
   type SourceInfo,
 } from '@/lib/loudness-measure';
+import { verifyRenderedAudio, type AudioSnapshot, type AudioCheck } from '@/lib/master-verify';
 import { isMasteringKey, isReferenceKey, matchedMasterKeyFor } from '@/lib/mastering-storage';
 import { buildMp3Args, mp3KeyFor } from '@/lib/master-mp3';
 import {
@@ -67,6 +69,7 @@ import {
   buildSegmentArgs,
   buildConcatList,
   buildJoinArgs,
+  FRAME_EXTENSION,
   planSegments,
   slideshowRefusalMessage,
   videoKeyFor,
@@ -648,7 +651,7 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
   const dir = mkdtempSync(join(tmpdir(), 'short-'));
   const audioPath = join(dir, 'master.wav');
   const coverPath = join(dir, `cover${coverKey.match(/\.[a-z0-9]+$/i)?.[0] ?? '.jpg'}`);
-  const framePath = join(dir, 'frame.png');
+  const framePath = join(dir, `frame${FRAME_EXTENSION}`);
   const outPath = join(dir, 'short.mp4');
   try {
     const audio = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: audioKey }));
@@ -762,6 +765,57 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
  * A failure records `videoError` and leaves the master untouched — the WAV was
  * already delivered, and losing it to a failed picture render would be absurd.
  */
+/**
+ * Measure one file the way the verifier expects to receive it.
+ *
+ * Both the master WAV and the rendered MP4 go through this, so any quirk of
+ * the measurement applies equally to both sides and cancels out of the
+ * comparison. That symmetry is the point — a verifier fed one figure from a
+ * header and the other from a stored database column is comparing two
+ * different things and will eventually disagree with itself.
+ */
+function measureForVerification(path: string): AudioSnapshot {
+  const m = ff(measureArgs(path));
+  const log = `${m.stdout ?? ''}${m.stderr ?? ''}`;
+  const info = parseSourceInfo(log);
+  const metrics = parseMeasurement(log).metrics;
+  const finite = (n: number | null | undefined) =>
+    typeof n === 'number' && Number.isFinite(n) ? n : null;
+  return {
+    durationSec: finite(info?.durationSec),
+    sampleRate: finite(info?.sampleRate),
+    channels: finite(info?.channels),
+    lufs: finite(metrics.lufs),
+    truePeak: finite(metrics.truePeak),
+    lra: finite(metrics.lra),
+  };
+}
+
+/**
+ * Compare the finished MP4's audio against the master it was built from.
+ *
+ * ⚠️ NEVER THROWS, AND NEVER FAILS THE RENDER. A verification step that can
+ * break a good render is worse than no verification: the operator would learn
+ * to distrust it, and the first thing anyone does with a check that blocks
+ * their work is find a way past it. If measuring goes wrong the render still
+ * succeeds and the job records `unknown`, which does not block an upload.
+ *
+ * The MP4 is kept either way. A failed check means the operator needs to LOOK
+ * at the file, which is impossible if the worker deleted it.
+ */
+function checkRenderedAudio(masterPath: string, outPath: string): AudioCheck {
+  try {
+    return verifyRenderedAudio(measureForVerification(masterPath), measureForVerification(outPath));
+  } catch (err) {
+    console.error('[master-worker] audio verification could not run:',
+      err instanceof Error ? err.message : String(err));
+    return {
+      status: 'unknown',
+      findings: [{ field: 'duration', violation: false, message: 'Could not compare the video against its master.' }],
+    };
+  }
+}
+
 async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render']>, bucket: string) {
   const audioKey = spec.audioKey ?? '';
   const height = (spec.height ?? 1440) as VideoHeight;
@@ -818,7 +872,7 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
      */
     if (!slideshow) {
       const coverPath = coverPathFor(coverKey, 0);
-      const framePath = join(dir, 'frame.png');
+      const framePath = join(dir, `frame${FRAME_EXTENSION}`);
       const cover = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: coverKey }));
       writeFileSync(coverPath, Buffer.from(await cover.Body!.transformToByteArray()));
 
@@ -866,7 +920,7 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
           const coverPath = coverPathFor(seg.coverKey, i);
           const cover = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: seg.coverKey }));
           writeFileSync(coverPath, Buffer.from(await cover.Body!.transformToByteArray()));
-          framePath = join(dir, `frame${i}.png`);
+          framePath = join(dir, `frame${i}${FRAME_EXTENSION}`);
           const coverAspect = probeCoverAspect(coverPath);
           const composed = ff(buildComposeArgs({ coverPath, framePath, height, coverAspect }));
           if (composed.status !== 0) {
@@ -896,6 +950,11 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
       }
     }
 
+    // Measured before the job is marked done, so a render never reaches the
+    // library without a verdict attached. Both files are on local disk here,
+    // so this costs one ebur128 pass each and no downloads.
+    const audioCheck = checkRenderedAudio(audioPath, outPath);
+
     const videoKey = videoKeyFor(audioKey, height);
     await s3.send(new PutObjectCommand({
       Bucket: bucket, Key: videoKey, Body: readFileSync(outPath), ContentType: 'video/mp4',
@@ -905,8 +964,10 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
       videoRenderedAt: new Date().toISOString(),
       videoError: null,
       coverKey,
+      videoAudioCheck: audioCheck.status,
+      videoAudioFindings: audioCheck.findings.map((f) => f.message),
     });
-    return { ok: true, videoKey };
+    return { ok: true, videoKey, audioCheck: audioCheck.status };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[master-worker] render failed:', message);

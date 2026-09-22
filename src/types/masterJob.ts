@@ -179,6 +179,22 @@ export interface MasterJob {
   videoRenderedAt: string | null;
   videoError: string | null;
   /**
+   * What the rendered MP4's audio measured against the master it was built
+   * from. Written by the worker immediately after a render, before the job is
+   * marked done.
+   *
+   * ⚠️ NULL MEANS "NOT CHECKED", NOT "FINE". Every job rendered before this
+   * existed carries null, so nothing may treat null as a failure — that would
+   * retroactively condemn the whole back catalogue. Only `'failed'` blocks an
+   * upload; `'unknown'` means a figure could not be read and is not a fault.
+   *
+   * See src/lib/master-verify.ts for what is compared and why the tolerances
+   * are what they are.
+   */
+  videoAudioCheck: 'passed' | 'failed' | 'unknown' | null;
+  /** Operator-facing lines from that check. Empty or null when there is nothing to say. */
+  videoAudioFindings: string[] | null;
+  /**
    * The vertical hook clip for Reels / Instagram / Shorts — 1080x1920, cut from
    * the loudest window of the SAME mastered audio. Null until one is asked for,
    * and on every job written before shorts existed.
