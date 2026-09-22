@@ -2688,7 +2688,7 @@ describe('rendered audio is checked against the master', () => {
    * sample rate and channels from the input header and the loudness figures
    * from the ebur128 summary, so a realistic log carries both.
    */
-  const measureLog = (o: { dur?: string; rate?: number; ch?: string; lufs?: number; tp?: number; lra?: number } = {}) =>
+  const measureLog = (o: { dur?: string; rate?: number; ch?: string; lufs?: number; tp?: number; lra?: number; samples?: number } = {}) =>
     `Input #0, wav, from '/tmp/x':\n` +
     `  Duration: ${o.dur ?? '00:05:32.00'}, bitrate: 2304 kb/s\n` +
     `  Stream #0:0: Audio: pcm_s24le, ${o.rate ?? 48000} Hz, ${o.ch ?? 'stereo'}, s32 (24 bit), 2304 kb/s\n` +
@@ -2702,7 +2702,10 @@ describe('rendered audio is checked against the master', () => {
     `    LRA low:   -20.0 LUFS\n` +
     `    LRA high:  -12.8 LUFS\n\n` +
     `  True peak:\n` +
-    `    Peak:      ${o.tp ?? -1.5} dBFS\n`;
+    `    Peak:      ${o.tp ?? -1.5} dBFS\n` +
+    // astats' sample count is where the AUDIO length comes from — the header
+    // Duration above is the container's, which for an MP4 is the picture.
+    `[Parsed_astats_1 @ 0x0] Number of samples: ${o.samples ?? 15960960}\n`;
 
   /** Only the two measurement passes return logs; everything else succeeds plainly. */
   const wireMeasure = (masterLog: string, outputLog: string) => {
@@ -2747,7 +2750,9 @@ describe('rendered audio is checked against the master', () => {
   it('records a failure when the render truncated the song', async () => {
     // The likeliest real fault, and the one a human would never catch by
     // looking at the library.
-    wireMeasure(measureLog(), measureLog({ dur: '00:05:10.00' }));
+    // 310 s of audio against the master's 332 s — expressed in samples,
+    // because the sample count is what the length is read from now.
+    wireMeasure(measureLog(), measureLog({ dur: '00:05:10.00', samples: 310 * 48000 }));
     const res = await render();
 
     expect(res).toMatchObject({ ok: true });
@@ -2763,7 +2768,7 @@ describe('rendered audio is checked against the master', () => {
   });
 
   it('still uploads the MP4 when the check fails — the operator has to see it', async () => {
-    wireMeasure(measureLog(), measureLog({ dur: '00:05:10.00' }));
+    wireMeasure(measureLog(), measureLog({ dur: '00:05:10.00', samples: 310 * 48000 }));
     await render();
 
     // A failed check means LOOK at the file. Deleting it, or refusing to store
@@ -2793,5 +2798,72 @@ describe('rendered audio is checked against the master', () => {
     wireMeasure('', '');
     await render();
     expect(patched().videoAudioCheck).toBe('unknown');
+  });
+});
+
+/**
+ * The regression that blocked அன்னக் கிளியே.
+ *
+ * ⚠️ A REAL FALSE POSITIVE, 2026-09-22. The render was correct — its audio
+ * matched the master exactly — but the MP4's container duration is its LONGEST
+ * stream, and the picture ran 2.4 s past the sound. The check compared that
+ * against the WAV's header and refused the upload of a good file.
+ *
+ * These numbers are the real ones from that render.
+ */
+describe('a video whose picture outruns its sound still passes', () => {
+  const AUDIO = 'audio/mastering/1_a_song-master-14LUFS.wav';
+  const COVER = 'audio/mastering/1_c_cover.jpg';
+
+  /** 221.92 s of audio. The MP4 additionally claims 224.30 s in its header. */
+  const MASTER_LOG =
+    "Input #0, wav, from '/tmp/master.wav':\n" +
+    '  Duration: 00:03:41.92, bitrate: 2304 kb/s\n' +
+    '  Stream #0:0: Audio: pcm_s24le, 48000 Hz, stereo, s32 (24 bit), 2304 kb/s\n' +
+    '[Parsed_ebur128_0 @ 0x0] Summary:\n\n  Integrated loudness:\n    I:         -14.0 LUFS\n' +
+    '\n  Loudness range:\n    LRA:       3.7 LU\n\n  True peak:\n    Peak:      -1.5 dBFS\n' +
+    '[Parsed_astats_1 @ 0x0] Number of samples: 10652160\n';
+
+  const VIDEO_LOG =
+    "Input #0, mov,mp4,m4a,3gp,3g2,mj2, from '/tmp/out.mp4':\n" +
+    // ⚠️ The container says 224.30 — that is the PICTURE.
+    '  Duration: 00:03:44.30, bitrate: 1457 kb/s\n' +
+    '  Stream #0:1: Audio: aac (LC), 48000 Hz, stereo, fltp, 384 kb/s\n' +
+    '[Parsed_ebur128_0 @ 0x0] Summary:\n\n  Integrated loudness:\n    I:         -14.0 LUFS\n' +
+    '\n  Loudness range:\n    LRA:       3.7 LU\n\n  True peak:\n    Peak:      -1.5 dBFS\n' +
+    // …while the audio is 10652672 samples = 221.93 s. 512 samples of AAC
+    // padding above the master, and nothing else.
+    '[Parsed_astats_1 @ 0x0] Number of samples: 10652672\n';
+
+  beforeEach(() => {
+    spawnSync.mockReset();
+    spawnSync.mockImplementation((_cmd: string, args: string[]) => {
+      if (args.includes('ebur128=peak=true,astats=metadata=1:measure_perchannel=0')) {
+        const target = args[args.indexOf('-i') + 1];
+        return { status: 0, stdout: '', stderr: target.includes('.mp4') ? VIDEO_LOG : MASTER_LOG };
+      }
+      return { status: 0, stdout: '', stderr: '' };
+    });
+    s3Send.mockReset();
+    s3Send.mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'Body' in cmd.input
+        ? Promise.resolve({})
+        : Promise.resolve({ Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) } })
+    );
+  });
+
+  it('passes, because the AUDIO matches even though the container does not', async () => {
+    const res = await handler({
+      jobId: 'j1', render: { audioKey: AUDIO, coverKey: COVER, height: 1440 },
+    } as never);
+
+    expect(res).toMatchObject({ ok: true, audioCheck: 'passed' });
+    expect(patched().videoAudioCheck).toBe('passed');
+    expect(patched().videoAudioFindings).toEqual([]);
+  });
+
+  it('does not report a duration difference of any kind', async () => {
+    await handler({ jobId: 'j1', render: { audioKey: AUDIO, coverKey: COVER, height: 1440 } } as never);
+    expect((patched().videoAudioFindings as string[]).join(' ')).not.toMatch(/longer|SHORTER|cut off/);
   });
 });

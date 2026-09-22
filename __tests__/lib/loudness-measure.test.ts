@@ -399,3 +399,51 @@ describe('badgeAndVerdict and takeAdvice must never contradict each other', () =
     expect(a.issues.find((i) => i.label === 'Peak above ceiling')?.fix).toBe('mastering');
   });
 });
+
+/**
+ * Audio length from the sample count, not from the container header.
+ *
+ * ⚠️ WRITTEN AFTER A REAL FALSE POSITIVE. On 2026-09-22 the output check
+ * refused an upload of அன்னக் கிளியே because "the video runs 2.4 s longer than
+ * the master". The audio was exact — 221.92 s on both sides. What differed was
+ * the VIDEO stream, 224.30 s, and an MP4's container duration is its longest
+ * stream. Comparing that against a WAV's header compares a picture's length
+ * against a sound's.
+ */
+import { parseAudioSampleCount, audioDurationSec } from '@/lib/loudness-measure';
+
+describe('audio length comes from the audio, not the container', () => {
+  /** The real log from that render, trimmed to the two lines that matter. */
+  const REAL_MP4_LOG =
+    "Input #0, mov,mp4,m4a,3gp,3g2,mj2, from '/tmp/out.mp4':\n" +
+    '  Duration: 00:03:44.30, start: 0.000000, bitrate: 1457 kb/s\n' +
+    '  Stream #0:1: Audio: aac (LC), 48000 Hz, stereo, fltp, 384 kb/s\n' +
+    '[Parsed_astats_1 @ 0x6007051d5c80] Number of samples: 10652672\n';
+
+  it('reads the sample count astats reports', () => {
+    expect(parseAudioSampleCount(REAL_MP4_LOG)).toBe(10652672);
+  });
+
+  it('gives the AUDIO length, not the 224.3 s the container claims', () => {
+    // 10652672 / 48000 = 221.93 s. The container says 224.30 — that is the
+    // picture, and believing it is what blocked a good upload.
+    expect(audioDurationSec(REAL_MP4_LOG, 48000)).toBe(221.93);
+  });
+
+  it('lands within tolerance of the master it came from', () => {
+    // The master was 221.92 s. The 0.01 s gap is AAC padding — 512 samples —
+    // and must stay far inside the verifier's 0.5 s tolerance.
+    expect(Math.abs(audioDurationSec(REAL_MP4_LOG, 48000)! - 221.92)).toBeLessThan(0.05);
+  });
+
+  it('returns null rather than guessing when astats said nothing', () => {
+    expect(parseAudioSampleCount('Duration: 00:03:44.30')).toBeNull();
+    expect(audioDurationSec('Duration: 00:03:44.30', 48000)).toBeNull();
+  });
+
+  it('returns null without a usable sample rate, instead of dividing by zero', () => {
+    for (const rate of [null, undefined, 0, Number.NaN]) {
+      expect(audioDurationSec(REAL_MP4_LOG, rate as number)).toBeNull();
+    }
+  });
+});
