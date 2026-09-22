@@ -60,6 +60,37 @@ describe('planUpload', () => {
     expect(planUpload(job({ savedAt: null }), input)).toEqual({ ok: false, reason: 'not-saved' });
   });
 
+  /**
+   * The upload gate for output verification.
+   *
+   * ⚠️ ONLY the literal 'failed' may block. Getting this wrong in the safe-
+   * looking direction — treating anything non-'passed' as suspect — would
+   * refuse the entire back catalogue, since every job rendered before the check
+   * existed carries null.
+   */
+  it('refuses a video whose audio was measured and did not match its master', () => {
+    expect(planUpload(job({ videoAudioCheck: 'failed' }), input))
+      .toEqual({ ok: false, reason: 'audio-mismatch' });
+    expect(uploadRefusalMessage('audio-mismatch')).toMatch(/re-render/);
+  });
+
+  it('allows every other verdict, including the ones that mean "we do not know"', () => {
+    // null      — rendered before the check existed. The whole back catalogue.
+    // undefined — a job object built before the field existed.
+    // 'unknown' — a figure could not be read. Not a fault.
+    // 'passed'  — measured and matching.
+    for (const v of [null, undefined, 'unknown' as const, 'passed' as const]) {
+      expect(planUpload(job({ videoAudioCheck: v }), input).ok).toBe(true);
+    }
+  });
+
+  it('lets already-uploaded still win, so a mismatch cannot reopen a finished job', () => {
+    // Ordering matters: a job that already produced a public video must never
+    // reach the insert path, whatever else is wrong with it.
+    expect(planUpload(job({ videoAudioCheck: 'failed', youtubeVideoId: 'abc123' }), input))
+      .toEqual({ ok: false, reason: 'already-uploaded' });
+  });
+
   it('REFUSES A SECOND INSERT — this is what stops duplicate public videos', () => {
     const p = planUpload(job({ youtubeVideoId: 'abc123' }), input);
     expect(p).toEqual({ ok: false, reason: 'already-uploaded' });
@@ -88,7 +119,7 @@ describe('planUpload', () => {
   });
 
   it('every refusal has actionable wording', () => {
-    const all: UploadRefusal[] = ['no-video', 'not-saved', 'no-title', 'no-description', 'already-uploaded', 'in-flight'];
+    const all: UploadRefusal[] = ['no-video', 'audio-mismatch', 'not-saved', 'no-title', 'no-description', 'already-uploaded', 'in-flight'];
     for (const r of all) expect(uploadRefusalMessage(r).length).toBeGreaterThan(10);
   });
 });
