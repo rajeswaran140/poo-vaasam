@@ -426,6 +426,38 @@ export function parseSourceInfo(stderr: string): SourceInfo | null {
 }
 
 /** The single measurement-pass ffmpeg args (used by measure-fn). */
+/**
+ * Exact audio length, from the sample count astats reports.
+ *
+ * ⚠️ WHY NOT THE `Duration:` HEADER. That is the CONTAINER's duration, and an
+ * MP4's container duration is its LONGEST stream. For a rendered video that is
+ * the picture, not the sound — so comparing a video's header duration against a
+ * WAV's compares two different things and reports a difference that is not
+ * there.
+ *
+ * That produced a real false positive on 2026-09-22: அன்னக் கிளியே's audio
+ * matched its master exactly (221.92 s both sides) while the video stream ran
+ * 224.30 s, and the check refused an upload of a perfectly good file. The
+ * sample count is stream-specific and exact, which is what the comparison
+ * actually needs.
+ *
+ * Returns null when astats did not report — the caller falls back.
+ */
+export function parseAudioSampleCount(log: string): number | null {
+  // "[Parsed_astats_1 @ 0x…] Number of samples: 10652672"
+  const m = log.match(/Number of samples:\s*(\d+)/i);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** Seconds of AUDIO in a measured file, from its own sample count. */
+export function audioDurationSec(log: string, sampleRate: number | null | undefined): number | null {
+  const samples = parseAudioSampleCount(log);
+  if (samples === null || !sampleRate || !Number.isFinite(sampleRate) || sampleRate <= 0) return null;
+  return Math.round((samples / sampleRate) * 100) / 100;
+}
+
 export function measureArgs(input: string): string[] {
   return [
     '-hide_banner', '-nostats', '-i', input,

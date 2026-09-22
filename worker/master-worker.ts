@@ -30,6 +30,7 @@ import {
   parseSourceInfo,
   parseNormalizationType,
   measureArgs,
+  audioDurationSec,
   type SourceInfo,
 } from '@/lib/loudness-measure';
 import { verifyRenderedAudio, type AudioSnapshot, type AudioCheck } from '@/lib/master-verify';
@@ -781,9 +782,15 @@ function measureForVerification(path: string): AudioSnapshot {
   const metrics = parseMeasurement(log).metrics;
   const finite = (n: number | null | undefined) =>
     typeof n === 'number' && Number.isFinite(n) ? n : null;
+  const rate = finite(info?.sampleRate);
   return {
-    durationSec: finite(info?.durationSec),
-    sampleRate: finite(info?.sampleRate),
+    // ⚠️ THE AUDIO STREAM'S OWN LENGTH, not the container's. An MP4's container
+    // duration is its LONGEST stream — the picture — so the header figure would
+    // compare a video's length against a WAV's and report a difference that is
+    // not in the audio at all. It did exactly that on 2026-09-22 and blocked a
+    // good upload. The header is the fallback only.
+    durationSec: audioDurationSec(log, rate) ?? finite(info?.durationSec),
+    sampleRate: rate,
     channels: finite(info?.channels),
     lufs: finite(metrics.lufs),
     truePeak: finite(metrics.truePeak),
