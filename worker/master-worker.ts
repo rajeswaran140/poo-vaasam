@@ -64,8 +64,14 @@ import {
 import {
   buildComposeArgs,
   buildVideoArgs,
+  buildSegmentArgs,
+  buildConcatList,
+  buildJoinArgs,
+  planSegments,
+  slideshowRefusalMessage,
   videoKeyFor,
   VIDEO_HEIGHTS,
+  MAX_SLIDESHOW_COVERS,
   type VideoHeight,
 } from '@/lib/master-video';
 import {
@@ -188,7 +194,20 @@ interface MasterEvent {
    * mastered WAV. Handled before anything else, so a render can never re-master
    * (and so re-measure) a file that is already finished.
    */
-  render?: { audioKey?: string; coverKey?: string; height?: number };
+  render?: {
+    audioKey?: string;
+    coverKey?: string;
+    height?: number;
+    /**
+     * A slideshow: several covers with hard cuts. `coverKey` remains the single
+     * image, and remains the ONLY thing an older event carries — a render with
+     * no `covers` takes the original two-step path untouched.
+     *
+     * Times are cut POINTS, seconds from the start of the song. The last image
+     * runs to the end, which the worker computes from the WAV it downloaded.
+     */
+    covers?: Array<{ coverKey?: string; startSec?: number }>;
+  };
   /**
    * A pre-master ANALYSIS — measure a source before anything is decided about
    * it. Handled before the mastering guards, like a render: it carries no
@@ -745,8 +764,18 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
  */
 async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render']>, bucket: string) {
   const audioKey = spec.audioKey ?? '';
-  const coverKey = spec.coverKey ?? '';
   const height = (spec.height ?? 1440) as VideoHeight;
+
+  // One list either way. A render with no `covers` is the single-image render
+  // this function has always done, expressed as a list of one — so the old path
+  // is not a special case here, it is the ordinary case with nothing to cut to.
+  const requested = spec.covers?.length
+    ? spec.covers.map((c) => ({ coverKey: c?.coverKey ?? '', startSec: Number(c?.startSec ?? Number.NaN) }))
+    : [{ coverKey: spec.coverKey ?? '', startSec: 0 }];
+  const slideshow = requested.length > 1;
+  // The first image is what the job records, and therefore what becomes the
+  // YouTube thumbnail. That is the right one: it is the frame the video opens on.
+  const coverKey = requested[0].coverKey;
 
   // Re-validated here, not trusted from the event: this role can read and write
   // the whole bucket, and the route is not the only thing that can invoke it.
@@ -754,9 +783,18 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
     await patch(jobId, { videoError: 'render source must be a mastered WAV in the mastering workspace' });
     return { ok: false };
   }
-  if (!isMasteringKey(coverKey)) {
-    await patch(jobId, { videoError: 'cover must be in the mastering workspace' });
+  if (requested.length > MAX_SLIDESHOW_COVERS) {
+    await patch(jobId, { videoError: slideshowRefusalMessage('too-many-covers') });
     return { ok: false };
+  }
+  // Every key in the list, not just the first — an unguarded key later in the
+  // list is the same hole as an unguarded first one. Checked before anything is
+  // downloaded, so a bad list costs nothing.
+  for (const c of requested) {
+    if (!isMasteringKey(c.coverKey)) {
+      await patch(jobId, { videoError: 'cover must be in the mastering workspace' });
+      return { ok: false };
+    }
   }
   if (!VIDEO_HEIGHTS.includes(height)) {
     await patch(jobId, { videoError: `height must be one of ${VIDEO_HEIGHTS.join(', ')}` });
@@ -765,30 +803,97 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
 
   const dir = mkdtempSync(join(tmpdir(), 'render-'));
   const audioPath = join(dir, 'master.wav');
-  const coverPath = join(dir, `cover${coverKey.match(/\.[a-z0-9]+$/i)?.[0] ?? '.jpg'}`);
-  const framePath = join(dir, 'frame.png');
   const outPath = join(dir, 'out.mp4');
+  const coverPathFor = (key: string, i: number) =>
+    join(dir, `cover${i}${key.match(/\.[a-z0-9]+$/i)?.[0] ?? '.jpg'}`);
   try {
     const audio = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: audioKey }));
     writeFileSync(audioPath, Buffer.from(await audio.Body!.transformToByteArray()));
-    const cover = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: coverKey }));
-    writeFileSync(coverPath, Buffer.from(await cover.Body!.transformToByteArray()));
 
-    // TWO passes, deliberately. Composing the frame once and looping THAT is
-    // what brings the render inside the 900 s timeout — see buildComposeArgs.
-    // Reported separately so a failure says which half broke; they fail for
-    // different reasons (an unreadable cover vs an encode problem).
-    const coverAspect = probeCoverAspect(coverPath);
-    const composed = ff(buildComposeArgs({ coverPath, framePath, height, coverAspect }));
-    if (composed.status !== 0) {
-      await patch(jobId, { videoError: 'the cover could not be composed into a frame' });
-      return { ok: false };
-    }
+    /* ---- the single-image render, unchanged --------------------------------
+     * TWO passes, deliberately. Composing the frame once and looping THAT is
+     * what brings the render inside the 900 s timeout — see buildComposeArgs.
+     * Reported separately so a failure says which half broke; they fail for
+     * different reasons (an unreadable cover vs an encode problem).
+     */
+    if (!slideshow) {
+      const coverPath = coverPathFor(coverKey, 0);
+      const framePath = join(dir, 'frame.png');
+      const cover = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: coverKey }));
+      writeFileSync(coverPath, Buffer.from(await cover.Body!.transformToByteArray()));
 
-    const r = ff(buildVideoArgs({ framePath, audioPath, outPath }));
-    if (r.status !== 0) {
-      await patch(jobId, { videoError: 'the video render failed' });
-      return { ok: false };
+      const coverAspect = probeCoverAspect(coverPath);
+      const composed = ff(buildComposeArgs({ coverPath, framePath, height, coverAspect }));
+      if (composed.status !== 0) {
+        await patch(jobId, { videoError: 'the cover could not be composed into a frame' });
+        return { ok: false };
+      }
+      const r = ff(buildVideoArgs({ framePath, audioPath, outPath }));
+      if (r.status !== 0) {
+        await patch(jobId, { videoError: 'the video render failed' });
+        return { ok: false };
+      }
+    } else {
+      /* ---- the slideshow ---------------------------------------------------
+       * Same architecture, cut into stretches: each image is composed ONCE and
+       * its stretch is a run of identical frames, so the frame count and the
+       * per-frame cost are exactly what the single-image render pays. Only the
+       * number of scene changes goes from zero to one per cut.
+       *
+       * ⚠️ NOTHING HERE MAY GAIN A -filter_complex. See buildSegmentArgs.
+       */
+
+      // The duration is DERIVED, never taken from the event: it decides where
+      // the last image ends, and an event that got it wrong would freeze on a
+      // still or truncate the song with no error to point at. Read from the WAV
+      // header the same way renderShort does — deliberately not ffprobe, which
+      // the Lambda's ffmpeg layer is not guaranteed to ship.
+      const header = ff(['-hide_banner', '-i', audioPath]);
+      const info = parseSourceInfo(`${header.stdout ?? ''}${header.stderr ?? ''}`);
+      const timed = planSegments(requested, info?.durationSec ?? null);
+      if (!timed.ok) {
+        await patch(jobId, { videoError: slideshowRefusalMessage(timed.reason) });
+        return { ok: false };
+      }
+
+      const segmentPaths: string[] = [];
+      // A cover may legitimately appear twice (an image that returns), so the
+      // download and the compose are keyed, not indexed.
+      const frames = new Map<string, string>();
+      for (const [i, seg] of timed.segments.entries()) {
+        let framePath = frames.get(seg.coverKey);
+        if (!framePath) {
+          const coverPath = coverPathFor(seg.coverKey, i);
+          const cover = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: seg.coverKey }));
+          writeFileSync(coverPath, Buffer.from(await cover.Body!.transformToByteArray()));
+          framePath = join(dir, `frame${i}.png`);
+          const coverAspect = probeCoverAspect(coverPath);
+          const composed = ff(buildComposeArgs({ coverPath, framePath, height, coverAspect }));
+          if (composed.status !== 0) {
+            await patch(jobId, { videoError: `image ${i + 1} could not be composed into a frame` });
+            return { ok: false };
+          }
+          frames.set(seg.coverKey, framePath);
+        }
+        const segPath = join(dir, `seg${i}.mp4`);
+        const enc = ff(buildSegmentArgs({ framePath, seconds: seg.seconds, outPath: segPath }));
+        if (enc.status !== 0) {
+          await patch(jobId, { videoError: `the render failed encoding image ${i + 1}` });
+          return { ok: false };
+        }
+        segmentPaths.push(segPath);
+      }
+
+      // ONE pass: the concat demuxer is an input beside the audio, so there is
+      // no intermediate copy of the finished video. The step's cost is the AAC
+      // encode, not the join — see buildJoinArgs.
+      const listPath = join(dir, 'segments.txt');
+      writeFileSync(listPath, buildConcatList(segmentPaths));
+      const joined = ff(buildJoinArgs({ listPath, audioPath, outPath }));
+      if (joined.status !== 0) {
+        await patch(jobId, { videoError: 'the video render failed joining the images' });
+        return { ok: false };
+      }
     }
 
     const videoKey = videoKeyFor(audioKey, height);

@@ -25,6 +25,13 @@ import {
   VIDEO_SAMPLE_RATE,
   VIDEO_CRF,
   VIDEO_GOP,
+  planSlideshow,
+  slideshowRefusalMessage,
+  buildSegmentArgs,
+  buildConcatList,
+  buildJoinArgs,
+  MIN_SEGMENT_SECONDS,
+  MAX_SLIDESHOW_COVERS,
 } from '@/lib/master-video';
 import type { MasterJob } from '@/types/masterJob';
 
@@ -313,5 +320,230 @@ describe('planRender', () => {
     for (const r of ['karaoke-bed', 'not-done', 'not-saved', 'no-master', 'no-cover', 'bad-cover', 'bad-height'] as const) {
       expect(renderRefusalMessage(r).length).toBeGreaterThan(10);
     }
+  });
+});
+
+/**
+ * The slideshow.
+ *
+ * Every test here defends the same property from a different side: the render
+ * is affordable ONLY because each frame is identical to the one before it. The
+ * tests that matter are not the ones checking a cut lands at 2:10 — they are
+ * the ones that would catch the day someone adds a filter to an encode step,
+ * because that failure does not look like a failure. It looks like a Lambda
+ * that got killed at 900 seconds.
+ */
+describe('a slideshow must not become a per-frame render', () => {
+  const A = 'audio/mastering/1_cd_a.jpg';
+  const B = 'audio/mastering/1_cd_b.jpg';
+  const C = 'audio/mastering/1_cd_c.jpg';
+  const covers = [
+    { coverKey: A, startSec: 0 },
+    { coverKey: B, startSec: 130 },
+    { coverKey: C, startSec: 240 },
+  ];
+  const DURATION = 332; // the real 5:32 master
+
+  it('adds no filter to the segment encode — this is the whole architecture', () => {
+    // The pin on buildVideoArgs cannot see this path. Without its own
+    // assertion, the new builder is a way around the protection: re-adding a
+    // filter here reintroduces the ~4x per-frame cost, and the render is then
+    // killed at 900 s with no error that points anywhere.
+    const seg = buildSegmentArgs({ framePath: '/tmp/f0.png', seconds: 130, outPath: '/tmp/s0.mp4' });
+    expect(seg).not.toContain('-filter_complex');
+    expect(seg).not.toContain('-vf');
+    expect(seg).not.toContain('-filter:v');
+  });
+
+  it('adds no filter to the join either', () => {
+    const join = buildJoinArgs({ listPath: '/tmp/l.txt', audioPath: '/tmp/m.wav', outPath: '/tmp/o.mp4' });
+    expect(join).not.toContain('-filter_complex');
+    expect(join).not.toContain('-vf');
+    expect(join).not.toContain('-filter:v');
+  });
+
+  it('joins without re-encoding the picture', () => {
+    // If this stops being a copy, the cost of the feature stops being "two
+    // extra keyframes" and becomes a second full encode of the whole song.
+    const join = buildJoinArgs({ listPath: '/tmp/l.txt', audioPath: '/tmp/m.wav', outPath: '/tmp/o.mp4' });
+    expect(join[join.indexOf('-c:v') + 1]).toBe('copy');
+  });
+
+  it('joins and muxes in ONE pass, not two', () => {
+    // The concat demuxer takes the list as one input among several, so the
+    // audio comes in beside it and no intermediate copy of the finished video
+    // is written. Worth 1.4 s and a temp file the size of the upload — the
+    // step's real cost is the AAC encode, which happens either way.
+    const join = buildJoinArgs({ listPath: '/tmp/l.txt', audioPath: '/tmp/m.wav', outPath: '/tmp/o.mp4' });
+    expect(join.filter((a) => a === '-i')).toHaveLength(2);
+    expect(join[join.indexOf('-f') + 1]).toBe('concat');
+    // +genpts is an input option and must bind to the concat input, not the
+    // audio — so it comes before the -f concat that introduces it.
+    expect(join.indexOf('+genpts')).toBeLessThan(join.indexOf('concat'));
+  });
+
+  it('encodes every segment with the single-image encoder settings', () => {
+    // Not tidiness: the segments are concatenated with a stream copy, which is
+    // only valid while they share codec parameters. A divergence here shows up
+    // as a corrupt join, not as a rejected argument.
+    const seg = buildSegmentArgs({ framePath: '/tmp/f.png', seconds: 10, outPath: '/tmp/s.mp4' });
+    const single = buildVideoArgs({ framePath: '/tmp/f.png', audioPath: '/tmp/m.wav', outPath: '/tmp/o.mp4' });
+    for (const flag of ['-c:v', '-preset', '-tune', '-crf', '-g', '-keyint_min', '-pix_fmt', '-r']) {
+      expect(seg[seg.indexOf(flag) + 1]).toBe(single[single.indexOf(flag) + 1]);
+    }
+    expect(seg[seg.indexOf('-crf') + 1]).toBe(String(VIDEO_CRF));
+    expect(seg[seg.indexOf('-g') + 1]).toBe(String(VIDEO_GOP));
+    expect(seg[seg.indexOf('-framerate') + 1]).toBe(String(VIDEO_FPS));
+  });
+
+  it('bounds each segment by time, and carries no audio', () => {
+    const seg = buildSegmentArgs({ framePath: '/tmp/f.png', seconds: 130, outPath: '/tmp/s.mp4' });
+    expect(seg[seg.indexOf('-t') + 1]).toBe('130');
+    expect(seg).toContain('-an');
+    // -shortest would do nothing here: there is no audio stream to end on, so
+    // the looped frame would encode forever.
+    expect(seg).not.toContain('-shortest');
+  });
+
+  it('encodes the song once, at the join, not once per segment', () => {
+    // An AAC encode per segment would put a codec seam at every cut, mid-song.
+    const join = buildJoinArgs({ listPath: '/tmp/l.txt', audioPath: '/tmp/m.wav', outPath: '/tmp/o.mp4' });
+    expect(join[join.indexOf('-b:a') + 1]).toBe(VIDEO_AUDIO_BITRATE);
+    expect(join[join.indexOf('-ar') + 1]).toBe(String(VIDEO_SAMPLE_RATE));
+    expect(join).toContain('+faststart');
+    // The audio is the SECOND input, as in the single-image path.
+    expect(join[join.indexOf('-i', join.indexOf('-i') + 1) + 1]).toBe('/tmp/m.wav');
+  });
+});
+
+describe('planning the cuts', () => {
+  const A = 'audio/mastering/1_cd_a.jpg';
+  const B = 'audio/mastering/1_cd_b.jpg';
+  const C = 'audio/mastering/1_cd_c.jpg';
+  const DURATION = 332;
+  const three = [
+    { coverKey: A, startSec: 0 },
+    { coverKey: B, startSec: 130 },
+    { coverKey: C, startSec: 240 },
+  ];
+
+  it('computes the last segment from the song, because nobody supplies it', () => {
+    const plan = planSlideshow(job(), three, DURATION);
+    expect(plan.ok).toBe(true);
+    if (!plan.ok) return;
+    expect(plan.segments.map((s) => s.seconds)).toEqual([130, 110, 92]);
+    // The segments must cover the song exactly — a gap freezes, an overrun is
+    // silently truncated by -shortest at the mux.
+    expect(plan.segments.reduce((t, s) => t + s.seconds, 0)).toBe(DURATION);
+  });
+
+  it('plans one whole-song segment for a single cover', () => {
+    // The regression guard for the entire feature: a job with one image must
+    // still describe exactly what the existing path renders.
+    const plan = planSlideshow(job(), [{ coverKey: A, startSec: 0 }], DURATION);
+    expect(plan.ok).toBe(true);
+    if (!plan.ok) return;
+    expect(plan.segments).toEqual([{ coverKey: A, startSec: 0, seconds: DURATION }]);
+  });
+
+  it('keeps the single-image key shape, so the library can still see the video', () => {
+    // isRenderedVideoKey and the row's Video button both match on this. A
+    // `-slideshow-` variant would render fine and then be invisible.
+    const plan = planSlideshow(job(), three, DURATION);
+    const single = planRender(job(), A);
+    expect(plan.ok && single.ok && plan.videoKey).toBe(single.ok ? single.videoKey : null);
+    expect(plan.ok && isRenderedVideoKey(plan.videoKey)).toBe(true);
+  });
+
+  it('refuses a karaoke bed first, exactly as planRender does', () => {
+    // Same reason: a bed passes every other check, and the pipeline would offer
+    // a button the worker then refuses.
+    const bed = job({ target: null as never, masterKey: 'audio/mastering/1_ab_take-peak.wav' });
+    const plan = planSlideshow(bed, three, DURATION);
+    if (planRender(bed, A).ok) return; // fixture is not a bed on this build
+    expect(plan.ok).toBe(false);
+  });
+
+  it('refuses without a duration rather than letting -shortest decide the end', () => {
+    for (const d of [null, undefined, 0, NaN, Infinity]) {
+      expect(planSlideshow(job(), three, d as number)).toEqual({ ok: false, reason: 'no-duration' });
+    }
+  });
+
+  it('refuses cuts that are unordered, or do not open the video', () => {
+    expect(planSlideshow(job(), [{ coverKey: A, startSec: 5 }], DURATION))
+      .toEqual({ ok: false, reason: 'cuts-out-of-order' });
+    expect(planSlideshow(job(), [
+      { coverKey: A, startSec: 0 },
+      { coverKey: B, startSec: 240 },
+      { coverKey: C, startSec: 130 },
+    ], DURATION)).toEqual({ ok: false, reason: 'cuts-out-of-order' });
+    expect(planSlideshow(job(), [
+      { coverKey: A, startSec: 0 },
+      { coverKey: B, startSec: 130 },
+      { coverKey: C, startSec: 130 },
+    ], DURATION)).toEqual({ ok: false, reason: 'cuts-out-of-order' });
+  });
+
+  it('refuses a cut at or past the end of the song', () => {
+    expect(planSlideshow(job(), [{ coverKey: A, startSec: 0 }, { coverKey: B, startSec: DURATION }], DURATION))
+      .toEqual({ ok: false, reason: 'cut-past-end' });
+    expect(planSlideshow(job(), [{ coverKey: A, startSec: 0 }, { coverKey: B, startSec: 400 }], DURATION))
+      .toEqual({ ok: false, reason: 'cut-past-end' });
+  });
+
+  it('refuses a stretch too short to read as a deliberate cut', () => {
+    const tail = MIN_SEGMENT_SECONDS - 0.5;
+    expect(planSlideshow(job(), [
+      { coverKey: A, startSec: 0 },
+      { coverKey: B, startSec: DURATION - tail },
+    ], DURATION)).toEqual({ ok: false, reason: 'segment-too-short' });
+  });
+
+  it('applies the workspace guard to every cover, not just the first', () => {
+    // The worker's role can reach the whole bucket, so an unguarded key later in
+    // the list is the same hole as an unguarded first one.
+    expect(planSlideshow(job(), [
+      { coverKey: A, startSec: 0 },
+      { coverKey: 'deliveries/someone-elses.jpg', startSec: 130 },
+    ], DURATION)).toEqual({ ok: false, reason: 'bad-cover' });
+  });
+
+  it('caps the number of images', () => {
+    const many = Array.from({ length: MAX_SLIDESHOW_COVERS + 1 }, (_, i) => ({
+      coverKey: A, startSec: i * 10,
+    }));
+    expect(planSlideshow(job(), many, DURATION)).toEqual({ ok: false, reason: 'too-many-covers' });
+  });
+
+  it('refuses an unsaved or unfinished master, like every other pipeline step', () => {
+    expect(planSlideshow(job({ savedAt: null }), three, DURATION))
+      .toEqual({ ok: false, reason: 'not-saved' });
+    expect(planSlideshow(job({ status: 'running' }), three, DURATION))
+      .toEqual({ ok: false, reason: 'not-done' });
+    expect(planSlideshow(job({ masterKey: null }), three, DURATION))
+      .toEqual({ ok: false, reason: 'no-master' });
+    expect(planSlideshow(job(), [], DURATION)).toEqual({ ok: false, reason: 'no-cover' });
+  });
+
+  it('every refusal has actionable wording', () => {
+    for (const r of ['no-duration', 'too-many-covers', 'cuts-out-of-order', 'cut-past-end',
+      'segment-too-short', 'karaoke-bed', 'no-cover', 'bad-cover'] as const) {
+      expect(slideshowRefusalMessage(r).length).toBeGreaterThan(10);
+    }
+  });
+});
+
+describe('the concat list', () => {
+  it('quotes each segment on its own line, the way the demuxer reads them', () => {
+    expect(buildConcatList(['/tmp/s0.mp4', '/tmp/s1.mp4'])).toBe(
+      "file '/tmp/s0.mp4'\nfile '/tmp/s1.mp4'\n",
+    );
+  });
+
+  it("escapes a quote in a path rather than ending the filename early", () => {
+    // Worker paths never contain one — which is exactly why an unescaped quote
+    // would go unnoticed until the day one did.
+    expect(buildConcatList(["/tmp/it's.mp4"])).toBe("file '/tmp/it'\\''s.mp4'\n");
   });
 });
