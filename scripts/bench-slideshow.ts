@@ -28,13 +28,21 @@ import {
   buildJoinArgs,
 } from '../src/lib/master-video';
 
+// Production runs a DIFFERENT ffmpeg from this box (layer
+// `tamilagaval-ffmpeg:1` is 7.0.2; the dev box is 6.1.1) and they do not
+// behave identically — a `-shortest` difference between them hid a 2.4 s
+// overrun on every render for months. A measurement taken here describes
+// production only if it RAN the production binary, so this honours
+// FFMPEG_PATH the way the worker and verify-fixtures.ts do.
+const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg';
+
 const DURATION = 332; // the real 5:32 master the file's other numbers came from
 const CUTS = [0, 130, 240];
 const dir = mkdtempSync(join(tmpdir(), 'slideshow-'));
 
 function ff(label: string, args: string[]): number {
   const t = Date.now();
-  execFileSync('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+  execFileSync(FFMPEG, args, { stdio: ['ignore', 'ignore', 'pipe'] });
   const s = (Date.now() - t) / 1000;
   console.log(`  ${label.padEnd(28)} ${s.toFixed(2)}s`);
   return s;
@@ -48,10 +56,10 @@ console.log(`workspace ${dir}\n`);
 // compose takes its fill branch rather than the blurred-backdrop one.
 console.log('fixtures');
 for (const [i, c] of ['red', 'green', 'blue'].entries()) {
-  execFileSync('ffmpeg', ['-hide_banner', '-nostats', '-f', 'lavfi', '-i',
+  execFileSync(FFMPEG, ['-hide_banner', '-nostats', '-f', 'lavfi', '-i',
     `color=c=${c}:s=1672x941,noise=alls=40:allf=t`, '-frames:v', '1', '-y', join(dir, `cover${i}.png`)]);
 }
-execFileSync('ffmpeg', ['-hide_banner', '-nostats', '-f', 'lavfi', '-i',
+execFileSync(FFMPEG, ['-hide_banner', '-nostats', '-f', 'lavfi', '-i',
   `sine=frequency=220:sample_rate=48000:duration=${DURATION}`, '-ac', '2',
   '-c:a', 'pcm_s24le', '-y', join(dir, 'master.wav')]);
 console.log(`  master.wav ${mb(join(dir, 'master.wav'))}\n`);

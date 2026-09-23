@@ -29,22 +29,30 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildComposeArgs, VIDEO_CRF, VIDEO_GOP } from '../src/lib/master-video';
 
+// Production runs a DIFFERENT ffmpeg from this box (layer
+// `tamilagaval-ffmpeg:1` is 7.0.2; the dev box is 6.1.1) and they do not
+// behave identically — a `-shortest` difference between them hid a 2.4 s
+// overrun on every render for months. A measurement taken here describes
+// production only if it RAN the production binary, so this honours
+// FFMPEG_PATH the way the worker and verify-fixtures.ts do.
+const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg';
+
 const DURATION = 332;      // the 5:32 master every other measurement uses
 const BUDGET = 900;
 const W = 2560, H = 1440;
 const dir = mkdtempSync(join(tmpdir(), 'motion-'));
 
-execFileSync('ffmpeg', ['-hide_banner', '-nostats', '-f', 'lavfi', '-i',
+execFileSync(FFMPEG, ['-hide_banner', '-nostats', '-f', 'lavfi', '-i',
   'color=c=teal:s=1672x941,noise=alls=40:allf=t', '-frames:v', '1', '-y', join(dir, 'cover.png')]);
 
 // The frame every case loops. BMP, so the decode tax is not in these numbers.
-execFileSync('ffmpeg', buildComposeArgs({
+execFileSync(FFMPEG, buildComposeArgs({
   coverPath: join(dir, 'cover.png'), framePath: join(dir, 'frame.bmp'), coverAspect: 1672 / 941,
 }));
 
 // An OVERSIZED frame for the crop case: pan selects a window from it, so the
 // enlargement happens once here rather than on every frame.
-execFileSync('ffmpeg', ['-hide_banner', '-nostats', '-i', join(dir, 'cover.png'),
+execFileSync(FFMPEG, ['-hide_banner', '-nostats', '-i', join(dir, 'cover.png'),
   '-filter_complex', `[0:v]scale=${Math.round(W * 1.25)}:${Math.round(H * 1.25)}:force_original_aspect_ratio=increase:flags=lanczos,crop=${Math.round(W * 1.25)}:${Math.round(H * 1.25)}[v]`,
   '-map', '[v]', '-frames:v', '1', '-y', join(dir, 'frame-big.bmp')]);
 
@@ -94,7 +102,7 @@ console.log('  ' + '-'.repeat(76));
 const results: Record<string, number> = {};
 for (const c of cases) {
   const t = Date.now();
-  execFileSync('ffmpeg', c.args(), { stdio: ['ignore', 'ignore', 'pipe'] });
+  execFileSync(FFMPEG, c.args(), { stdio: ['ignore', 'ignore', 'pipe'] });
   const s = (Date.now() - t) / 1000;
   results[c.key] = s;
   const rel = results['static-10'] ? (s / results['static-10']).toFixed(2) + 'x' : '—';

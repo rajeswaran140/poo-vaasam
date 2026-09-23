@@ -194,6 +194,78 @@ export function verifyRenderedAudio(master: AudioSnapshot, output: AudioSnapshot
   return { status, findings };
 }
 
+/**
+ * How far a clip's length may sit from the window that was asked for.
+ *
+ * One AAC frame is 1024 samples — 21 ms at 48 kHz — and the encoder pads to a
+ * frame boundary, so a correct clip always runs a few ms long. 0.25 s is far
+ * above that and far below the smallest mistake worth catching (a window that
+ * ran past the end of the track loses whole seconds).
+ */
+export const CLIP_DURATION_TOLERANCE_SEC = 0.25;
+
+/**
+ * Check a vertical short against the WINDOW IT WAS CUT FROM — not against the
+ * master.
+ *
+ * ⚠️ LOUDNESS IS DELIBERATELY NOT COMPARED, and this is the whole reason this
+ * function exists instead of verifyRenderedAudio. A short is an excerpt with
+ * `afade` 0.6 s in and 3 s out applied, so its integrated loudness, true peak
+ * and LRA all legitimately differ from the master's. Running the full
+ * comparison would fail every correctly cut clip, and a check that cries wolf
+ * is one the operator learns to click past — which is how the real one stops
+ * working too.
+ *
+ * What is honestly knowable about a clip is its SHAPE: as long as the window
+ * that was requested, at the master's sample rate, with the master's channels.
+ * That catches a truncated clip, a window that slid, a resample and a mono
+ * collapse — everything the encode can get wrong about audio it was handed.
+ */
+export function verifyRenderedClip(
+  expected: { seconds: number; sampleRate: number | null; channels: number | null },
+  output: AudioSnapshot,
+): AudioCheck {
+  const findings: AudioFinding[] = [];
+  const unmeasurable = (field: AudioField, what: string) =>
+    findings.push({ field, violation: false, message: `Could not compare ${what}.` });
+
+  const sr = pair(expected.sampleRate, output.sampleRate);
+  if (!sr) unmeasurable('sampleRate', 'sample rate');
+  else if (sr[0] !== sr[1]) {
+    findings.push({
+      field: 'sampleRate', violation: true,
+      message: `Sample rate changed: master ${sr[0]} Hz, short ${sr[1]} Hz. The clip resampled the audio.`,
+    });
+  }
+
+  const ch = pair(expected.channels, output.channels);
+  if (!ch) unmeasurable('channels', 'channel count');
+  else if (ch[0] !== ch[1]) {
+    findings.push({
+      field: 'channels', violation: true,
+      message: `Channel count changed: master ${ch[0]}, short ${ch[1]}. The clip remixed the audio.`,
+    });
+  }
+
+  const dur = pair(expected.seconds, output.durationSec);
+  if (!dur) unmeasurable('duration', 'length');
+  else if (Math.abs(dur[1] - dur[0]) > CLIP_DURATION_TOLERANCE_SEC) {
+    findings.push({
+      field: 'duration', violation: true,
+      message: `The clip is ${dur[1].toFixed(2)} s, not the ${dur[0].toFixed(2)} s that was asked for.`,
+    });
+  }
+
+  // Same precedence as the full check: a definite violation outranks a figure
+  // that would not read.
+  const status: AudioCheckStatus = findings.some((f) => f.violation)
+    ? 'failed'
+    : findings.length > 0
+      ? 'unknown'
+      : 'passed';
+  return { status, findings };
+}
+
 /** One line for the row. The findings carry the detail. */
 export function audioCheckSummary(check: AudioCheck): string {
   switch (check.status) {

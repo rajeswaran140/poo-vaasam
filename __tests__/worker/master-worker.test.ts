@@ -362,6 +362,51 @@ describe('video render', () => {
   });
 
   /**
+   * AN UNREADABLE COVER ASPECT MUST LEAVE A TRACE.
+   *
+   * probeCoverAspect returns undefined when it cannot read the header, and
+   * buildVideoFilter then takes the blurred-backdrop branch on purpose — a
+   * guessed 16:9 would crop the operator's artwork. But the RESULT is a cover
+   * sitting at 82% on a blur, which is pixel-for-pixel what the square-box
+   * defect looked like, and that defect has shipped TWICE. Nothing recorded
+   * which of the two had happened, so the only way to tell was to re-probe the
+   * cover by hand.
+   */
+  it('says so in the log when the cover aspect could not be read', async () => {
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      // Every call succeeds with an empty log: the cover probe finds no
+      // "Video: WxH" line, so the aspect is unknown.
+      spawnSync.mockImplementation(() => ({ status: 0, stdout: '', stderr: '' }));
+
+      const res = await handler({ jobId: 'j1', render: render() } as never);
+      expect(res).toMatchObject({ ok: true });
+
+      const said = err.mock.calls.map((c) => c.join(' ')).join('\n');
+      expect(said).toContain('cover aspect');
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  it('stays quiet when the aspect reads fine', async () => {
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      spawnSync.mockImplementation((_cmd: string, args: string[]) =>
+        args.length === 3 && args[0] === '-hide_banner' && !args[2].includes('master.wav')
+          ? { status: 1, stdout: '', stderr: 'Stream #0:0: Video: png, rgb24, 1672x941 [SAR 1:1 DAR 1672:941]' }
+          : { status: 0, stdout: '', stderr: '' }
+      );
+
+      await handler({ jobId: 'j1', render: render() } as never);
+      const said = err.mock.calls.map((c) => c.join(' ')).join('\n');
+      expect(said).not.toContain('cover aspect');
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  /**
    * THE SINGLE-COVER RENDER MUST BOUND ITS PICTURE BY THE AUDIO.
    *
    * Production runs ffmpeg 7.0.2, the dev box 6.1.1; `-shortest` overshoots on
@@ -578,8 +623,11 @@ describe('short render', () => {
   it('measures, THEN composes the frame once, THEN encodes against it', async () => {
     await handler({ jobId: 'j1', short: short() } as never);
 
-    // measure, probe the cover, compose, encode.
-    expect(spawnSync).toHaveBeenCalledTimes(4);
+    // measure, probe the cover, compose, encode, then the two verification
+    // passes over the finished clip — the master's header and the clip's own
+    // astats. See checkRenderedClip: NEITHER runs ebur128.
+    expect(spawnSync).toHaveBeenCalledTimes(6);
+    expect(ffArgs().filter((a) => a.join(' ').includes('ebur128'))).toHaveLength(1);
     const measure = ffArgs()[0];
     const compose = composePass();
     const encode = encodePass();
@@ -858,6 +906,80 @@ Input #0, wav, from '/tmp/master.wav':
  * crossfades the real master would, and that what it renders is the real join
  * graph rather than a lookalike.
  */
+describe('the short is verified, and a bad one says so in the log', () => {
+  const AUDIO = 'audio/mastering/1_a_song-master-14LUFS.wav';
+  const COVER = 'audio/mastering/1_c_cover.jpg';
+  const short = (over: Record<string, unknown> = {}) =>
+    ({ audioKey: AUDIO, coverKey: COVER, startSec: 30, seconds: 30, ...over });
+  /** A 4:00 master, so a 30 s window at 0:30 sits well inside it. */
+  const HEADER = "Input #0, wav, from '/tmp/master-test/master.wav':\n" +
+    '  Duration: 00:04:00.00, bitrate: 1536 kb/s\n' +
+    '  Stream #0:0: Audio: pcm_s24le, 48000 Hz, stereo, s32 (24 bit), 1536 kb/s\n';
+  /** What the finished clip measures as — 30 s, 48 kHz, stereo. */
+  const CLIP_OK = "Input #0, mov,mp4, from '/tmp/master-test/short.mp4':\n" +
+    '  Duration: 00:00:30.01, bitrate: 200 kb/s\n' +
+    '  Stream #0:1: Audio: aac, 48000 Hz, stereo, fltp, 192 kb/s\n' +
+    '[Parsed_astats_0 @ 0x1] Number of samples: 1440512\n';
+  /** A clip cut short — the window ran past the end of the track. */
+  const CLIP_SHORT = "Input #0, mov,mp4, from '/tmp/master-test/short.mp4':\n" +
+    '  Duration: 00:00:24.50, bitrate: 200 kb/s\n' +
+    '  Stream #0:1: Audio: aac, 48000 Hz, stereo, fltp, 192 kb/s\n' +
+    '[Parsed_astats_0 @ 0x1] Number of samples: 1176000\n';
+
+  const mockShort = (clipLog: string) => {
+    spawnSync.mockImplementation((_cmd: string, args: string[]) => {
+      const joined = args.join(' ');
+      // the measurement pass over the finished clip
+      if (joined.includes('astats')) return { status: 0, stdout: '', stderr: clipLog };
+      // the window check against the master's own header
+      if (args.length === 3 && args[2].includes('master.wav')) {
+        return { status: 1, stdout: '', stderr: HEADER };
+      }
+      return { status: 0, stdout: '', stderr: '' };
+    });
+    s3Send.mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'Body' in cmd.input
+        ? Promise.resolve({})
+        : Promise.resolve({ Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) } })
+    );
+  };
+
+  it('says nothing when the clip is the length that was asked for', async () => {
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      mockShort(CLIP_OK);
+      const res = await handler({ jobId: 'j1', short: short() } as never);
+      expect(res).toMatchObject({ ok: true });
+      expect(err.mock.calls.map((c) => c.join(' ')).join('\n')).not.toContain('short verification');
+    } finally { err.mockRestore(); }
+  });
+
+  /**
+   * ⚠️ A SUSPECT CLIP IS STILL UPLOADED, ON PURPOSE. It goes in the log, not on
+   * the job: `shortError` is what the UI THROWS on (MasteringStudio polls it and
+   * treats any value as a failed render), so putting a verdict there would tell
+   * the operator the short did not happen when the file is sitting in S3. That
+   * is the confusion #348 existed to remove; this must not reintroduce it.
+   */
+  it('logs a clip that came out short, and still stores it', async () => {
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      mockShort(CLIP_SHORT);
+      const res = await handler({ jobId: 'j1', short: short() } as never);
+
+      expect(res).toMatchObject({ ok: true });
+      expect(err.mock.calls.map((c) => c.join(' ')).join('\n')).toContain('short verification');
+
+      // The clip was still written, and the job was NOT marked failed.
+      const put = s3Send.mock.calls
+        .map((c) => c[0] as { input: Record<string, unknown> })
+        .find((c) => 'Body' in c.input);
+      expect(put).toBeDefined();
+      expect(patched().shortError).toBeNull();
+    } finally { err.mockRestore(); }
+  });
+});
+
 describe('seam preview', () => {
   const A = 'audio/mastering/1700000000000_ab12_part-a.wav';
   const B = 'audio/mastering/1700000000000_cd34_part-b.wav';

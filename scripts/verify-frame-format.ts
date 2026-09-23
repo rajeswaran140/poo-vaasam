@@ -24,9 +24,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildComposeArgs, buildSegmentArgs } from '../src/lib/master-video';
 
+// Production runs a DIFFERENT ffmpeg from this box (layer
+// `tamilagaval-ffmpeg:1` is 7.0.2; the dev box is 6.1.1) and they do not
+// behave identically — a `-shortest` difference between them hid a 2.4 s
+// overrun on every render for months. A measurement taken here describes
+// production only if it RAN the production binary, so this honours
+// FFMPEG_PATH the way the worker and verify-fixtures.ts do.
+const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg';
+
 const SECONDS = 20; // pixel equality does not depend on duration
 const dir = mkdtempSync(join(tmpdir(), 'verify-'));
-const ff = (args: string[]) => execFileSync('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+const ff = (args: string[]) => execFileSync(FFMPEG, args, { stdio: ['ignore', 'ignore', 'pipe'] });
 
 // A cover with real detail in it — a flat colour would pass any comparison.
 ff(['-hide_banner', '-nostats', '-f', 'lavfi', '-i',

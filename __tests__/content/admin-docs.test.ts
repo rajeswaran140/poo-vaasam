@@ -372,7 +372,7 @@ describe('Mastering Tools A–Z', () => {
   it('keeps the warnings that cost something to learn', () => {
     const b = doc!.body;
     expect(b).toMatch(/no .?videos\.update.? anywhere/i);         // the standing rule, structural
-    expect(b).toMatch(/composed ONCE to a PNG and looped/i);      // the 43-minute render
+    expect(b).toMatch(/composed ONCE, to an uncompressed PPM, and looped/i);      // the 43-minute render
     expect(b).toMatch(/Removing the animation and raising the image quality are the same change/i);
     expect(b).toMatch(/Deploys are MANUAL/i);                     // the worker
     expect(b).toMatch(/Never crop the artwork/i);

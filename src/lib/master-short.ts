@@ -240,7 +240,10 @@ export function buildLoudnessArgs(audioPath: string): string[] {
 }
 
 /**
- * STEP 1 of 2 — compose the vertical frame ONCE, to a PNG.
+ * STEP 1 of 2 — compose the vertical frame ONCE, to FRAME_EXTENSION.
+ *
+ * PPM, not PNG — the long render and this one share the format and the
+ * reason. See FRAME_EXTENSION in master-video.ts.
  *
  * The same split as the long-form render, for the same reason: a blurred
  * backdrop recomputed on every frame is what pushed the old pipeline past the
