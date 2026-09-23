@@ -1227,7 +1227,7 @@ Cost: **1600 quota units** per upload, from 10,000 a day.
 
 A still cover over the mastered audio, encoded once. **1440p by default** — YouTube gives 1440p and above VP9 instead of AVC, which holds fine detail far better through the transcode.
 
-⚠️ **The frame is composed ONCE to a PNG and looped.** A filter recomputed per frame took ~43 minutes for a 5:32 song and was killed by the Lambda timeout. The encode pass carries no \`-filter_complex\` at all, and a test pins that absence.
+⚠️ **The frame is composed ONCE, to an uncompressed PPM, and looped.** A filter recomputed per frame took ~43 minutes for a 5:32 song and was killed by the Lambda timeout. The encode pass carries no \`-filter_complex\` at all, and a test pins that absence.
 
 No waveform overlay: a moving overlay means every frame differs, so the picture is re-described 25 times a second out of one bitrate budget. Removing it raised video bitrate 5.2×. **Removing the animation and raising the image quality are the same change.**
 

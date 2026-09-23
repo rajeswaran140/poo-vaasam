@@ -15,6 +15,7 @@
  */
 import {
   verifyRenderedAudio,
+  verifyRenderedClip,
   audioCheckSummary,
   DURATION_TOLERANCE_SEC,
   LUFS_TOLERANCE_LU,
@@ -193,5 +194,62 @@ describe('the summary tells the operator what to do', () => {
     const summary = audioCheckSummary(verifyRenderedAudio(MASTER, out({ lufs: null })));
     expect(summary).not.toMatch(/Do not upload/);
     expect(summary).toMatch(/could not be fully checked/);
+  });
+});
+
+/**
+ * A SHORT CANNOT BE CHECKED THE WAY A FULL RENDER IS.
+ *
+ * verifyRenderedAudio compares a whole output against a whole master. A short
+ * is a 30-90 s excerpt with `afade` 0.6 s in and 3 s out applied, so its
+ * integrated loudness, true peak and LRA ALL legitimately differ from the
+ * master's — comparing them would fail every clip that was cut correctly, and a
+ * check that cries wolf is one the operator learns to ignore.
+ *
+ * What IS knowable: the clip should be as long as the window that was asked
+ * for, at the master's sample rate, with the master's channel count. Those
+ * catch a truncated clip, a window that silently slid, a resample and a mono
+ * collapse — which is everything the encode can get wrong about the audio it
+ * was handed.
+ */
+describe('verifyRenderedClip — what a 30s excerpt can honestly be checked for', () => {
+  const clip = (over: Partial<AudioSnapshot> = {}): AudioSnapshot => ({
+    durationSec: 30, sampleRate: 48000, channels: 2,
+    lufs: -9.2, truePeak: -0.8, lra: 3.1, ...over,
+  });
+  const want = { seconds: 30, sampleRate: 48000, channels: 2 };
+
+  it('passes a clip that is the length that was asked for', () => {
+    expect(verifyRenderedClip(want, clip()).status).toBe('passed');
+  });
+
+  it('IGNORES loudness, true peak and LRA — the fades move all three', () => {
+    const faded = clip({ lufs: -16.4, truePeak: -6.2, lra: 9.9 });
+    const check = verifyRenderedClip(want, faded);
+    expect(check.status).toBe('passed');
+    expect(check.findings.map((f) => f.field)).not.toContain('lufs');
+    expect(check.findings.map((f) => f.field)).not.toContain('lra');
+  });
+
+  it('fails a clip cut short — the window ran past the end of the track', () => {
+    const check = verifyRenderedClip(want, clip({ durationSec: 24.5 }));
+    expect(check.status).toBe('failed');
+    expect(check.findings.some((f) => f.field === 'duration' && f.violation)).toBe(true);
+  });
+
+  it('absorbs AAC padding rather than failing on it', () => {
+    // A real clip runs a few ms long: the encoder pads to a frame boundary.
+    expect(verifyRenderedClip(want, clip({ durationSec: 30.011 })).status).toBe('passed');
+  });
+
+  it('fails a resample and a mono collapse', () => {
+    expect(verifyRenderedClip(want, clip({ sampleRate: 44100 })).status).toBe('failed');
+    expect(verifyRenderedClip(want, clip({ channels: 1 })).status).toBe('failed');
+  });
+
+  it('reports unknown — never failed — when a figure would not read', () => {
+    // Same rule as the full render: missing data is not a fault, and a check
+    // that blocks on it stops being trusted.
+    expect(verifyRenderedClip(want, clip({ durationSec: null })).status).toBe('unknown');
   });
 });

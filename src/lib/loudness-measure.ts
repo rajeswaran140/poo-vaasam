@@ -458,6 +458,27 @@ export function audioDurationSec(log: string, sampleRate: number | null | undefi
   return Math.round((samples / sampleRate) * 100) / 100;
 }
 
+/**
+ * Measure only the SHAPE of an audio stream — its length, rate and channels.
+ *
+ * ⚠️ NO `ebur128`, and that is the point. Loudness costs a full-file analysis
+ * and, for a short, means nothing: the clip carries `afade` in and out, so its
+ * integrated loudness legitimately differs from the master's. A picked window
+ * is also pinned by test to run no ebur128 pass at all — measuring one here
+ * would break the property that makes an operator-chosen window cheap.
+ *
+ * `astats` is still needed rather than the header: an MP4's `Duration:` is its
+ * LONGEST stream, so for a clip whose audio was truncated the header would
+ * report the picture's length and hide the very fault this measures.
+ */
+export function clipShapeArgs(input: string): string[] {
+  return [
+    '-hide_banner', '-nostats', '-i', input,
+    '-af', 'astats=metadata=1:measure_perchannel=0',
+    '-f', 'null', '-',
+  ];
+}
+
 export function measureArgs(input: string): string[] {
   return [
     '-hide_banner', '-nostats', '-i', input,

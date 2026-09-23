@@ -247,7 +247,11 @@ export function buildVideoFilter(height: VideoHeight, coverAspect?: number): str
 }
 
 /**
- * STEP 1 of 2 — compose the finished frame ONCE, to a PNG.
+ * STEP 1 of 2 — compose the finished frame ONCE, to FRAME_EXTENSION.
+ *
+ * That format is PPM, not PNG, and the difference is worth ~1.9x on every
+ * render — see FRAME_EXTENSION for the measurement and for why it must never
+ * become BMP.
  *
  * ⚠️ THIS SPLIT IS WHY THE RENDER FITS IN THE LAMBDA AT ALL. The filter graph
  * used to sit inside the encode, so `boxblur=24:4` at 2560x1440 plus the scale

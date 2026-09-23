@@ -32,8 +32,9 @@ import {
   measureArgs,
   audioDurationSec,
   type SourceInfo,
+  clipShapeArgs,
 } from '@/lib/loudness-measure';
-import { verifyRenderedAudio, type AudioSnapshot, type AudioCheck } from '@/lib/master-verify';
+import { verifyRenderedAudio, verifyRenderedClip, type AudioSnapshot, type AudioCheck } from '@/lib/master-verify';
 import { isMasteringKey, isReferenceKey, matchedMasterKeyFor } from '@/lib/mastering-storage';
 import { buildMp3Args, mp3KeyFor } from '@/lib/master-mp3';
 import {
@@ -392,11 +393,27 @@ function probeCoverAspect(coverPath: string): number | undefined {
       const area = w * h;
       if (!best || area > best.area) best = { w, h, area };
     }
-    if (!best) return undefined;
+    if (!best) return unreadableAspect(coverPath, 'no "Video: WxH" line in the header');
     return best.w / best.h;
-  } catch {
-    return undefined;
+  } catch (err) {
+    return unreadableAspect(coverPath, err instanceof Error ? err.message : String(err));
   }
+}
+
+/**
+ * An unknown aspect is a DECISION, not a failure — buildVideoFilter falls back
+ * to the blurred backdrop rather than guess 16:9 and crop the artwork. But the
+ * result is a cover at 82% on a blur, which is pixel-for-pixel what the
+ * square-box defect looked like, and that defect has shipped TWICE. Without
+ * this line the only way to tell the deliberate fallback from the bug is to
+ * re-probe the cover by hand.
+ *
+ * Logged, not persisted: the render is correct and must not be marked
+ * otherwise, and a field the operator cannot act on is noise on the screen.
+ */
+function unreadableAspect(coverPath: string, why: string): undefined {
+  console.error(`[master-worker] cover aspect unreadable, using the blurred backdrop: ${coverPath} (${why})`);
+  return undefined;
 }
 
 /**
@@ -733,6 +750,21 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
       return { ok: false };
     }
 
+    /**
+     * Check the clip against the WINDOW THAT WAS ASKED FOR — see
+     * verifyRenderedClip for why the master's loudness is not part of it.
+     *
+     * ⚠️ THE RESULT GOES TO THE LOG, NOT TO THE JOB, and a suspect clip is
+     * still stored. `shortError` is what the UI throws on — MasteringStudio
+     * polls it and treats ANY value as a failed render — so a verdict there
+     * would tell the operator the short did not happen while the file sits in
+     * S3. That is exactly the confusion #348 existed to remove.
+     *
+     * The clip is kept for the same reason a failed video render is: a verdict
+     * the operator cannot look at is not worth having.
+     */
+    checkRenderedClip(audioPath, outPath, seconds);
+
     const shortKey = shortKeyFor(audioKey);
     await s3.send(new PutObjectCommand({
       Bucket: bucket, Key: shortKey, Body: readFileSync(outPath), ContentType: 'video/mp4',
@@ -820,6 +852,47 @@ function checkRenderedAudio(masterPath: string, outPath: string): AudioCheck {
       status: 'unknown',
       findings: [{ field: 'duration', violation: false, message: 'Could not compare the video against its master.' }],
     };
+  }
+}
+
+/**
+ * Measure the finished clip and compare it with the window it was cut from.
+ *
+ * Never throws and never blocks: a measurement that will not run is not a
+ * reason to withhold a clip that rendered. One ebur128 pass over each file,
+ * both already on local disk.
+ */
+function checkRenderedClip(masterPath: string, clipPath: string, seconds: number): void {
+  try {
+    // The master's rate and channels come from its HEADER — nothing else about
+    // it is needed, so nothing else is measured.
+    const mh = ff(['-hide_banner', '-i', masterPath]);
+    const master = parseSourceInfo(`${mh.stdout ?? ''}${mh.stderr ?? ''}`);
+
+    // The clip gets an astats pass, NOT measureArgs: no ebur128. See
+    // clipShapeArgs for why both halves of that matter.
+    const cl = ff(clipShapeArgs(clipPath));
+    const clipLog = `${cl.stdout ?? ''}${cl.stderr ?? ''}`;
+    const clipInfo = parseSourceInfo(clipLog);
+    const rate = clipInfo?.sampleRate ?? null;
+
+    const check = verifyRenderedClip(
+      { seconds, sampleRate: master?.sampleRate ?? null, channels: master?.channels ?? null },
+      {
+        durationSec: audioDurationSec(clipLog, rate) ?? clipInfo?.durationSec ?? null,
+        sampleRate: rate,
+        channels: clipInfo?.channels ?? null,
+        lufs: null, truePeak: null, lra: null,
+      },
+    );
+    if (check.status === 'passed') return;
+    console.error(
+      `[master-worker] short verification ${check.status}: ` +
+      check.findings.map((f) => f.message).join(' '),
+    );
+  } catch (err) {
+    console.error('[master-worker] short verification could not run:',
+      err instanceof Error ? err.message : String(err));
   }
 }
 
