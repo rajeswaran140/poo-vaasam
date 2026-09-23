@@ -871,6 +871,27 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
     const audio = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: audioKey }));
     writeFileSync(audioPath, Buffer.from(await audio.Body!.transformToByteArray()));
 
+    /**
+     * THE AUDIO'S OWN LENGTH, probed ONCE for both branches.
+     *
+     * Read from the WAV header — deliberately NOT ffprobe, which the Lambda's
+     * ffmpeg layer is not guaranteed to ship. One spawn, no decoding.
+     *
+     * Both branches need it and neither can be trusted to an event:
+     *   - single cover: it BOUNDS THE PICTURE. Production runs ffmpeg 7.0.2,
+     *     where `-shortest` overshoots by a variable 1.0-2.4 s — see
+     *     buildVideoArgs for the measurement and for why `-shortest` is then
+     *     dropped rather than kept alongside.
+     *   - slideshow: it decides where the LAST image ends.
+     *
+     * Null means the header would not say. Neither branch refuses on that —
+     * each has its own fallback — because missing data is not a bad job, and
+     * refusing here would block every render the moment the format shifted.
+     */
+    const header = ff(['-hide_banner', '-i', audioPath]);
+    const audioInfo = parseSourceInfo(`${header.stdout ?? ''}${header.stderr ?? ''}`);
+    const audioSeconds = audioInfo?.durationSec ?? null;
+
     /* ---- the single-image render, unchanged --------------------------------
      * TWO passes, deliberately. Composing the frame once and looping THAT is
      * what brings the render inside the 900 s timeout — see buildComposeArgs.
@@ -889,7 +910,7 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
         await patch(jobId, { videoError: 'the cover could not be composed into a frame' });
         return { ok: false };
       }
-      const r = ff(buildVideoArgs({ framePath, audioPath, outPath }));
+      const r = ff(buildVideoArgs({ framePath, audioPath, outPath, audioSeconds }));
       if (r.status !== 0) {
         await patch(jobId, { videoError: 'the video render failed' });
         return { ok: false };
@@ -906,12 +927,9 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
 
       // The duration is DERIVED, never taken from the event: it decides where
       // the last image ends, and an event that got it wrong would freeze on a
-      // still or truncate the song with no error to point at. Read from the WAV
-      // header the same way renderShort does — deliberately not ffprobe, which
-      // the Lambda's ffmpeg layer is not guaranteed to ship.
-      const header = ff(['-hide_banner', '-i', audioPath]);
-      const info = parseSourceInfo(`${header.stdout ?? ''}${header.stderr ?? ''}`);
-      const timed = planSegments(requested, info?.durationSec ?? null);
+      // still or truncate the song with no error to point at. Probed above,
+      // once, because the single-cover branch now needs the same figure.
+      const timed = planSegments(requested, audioSeconds);
       if (!timed.ok) {
         await patch(jobId, { videoError: slideshowRefusalMessage(timed.reason) });
         return { ok: false };
