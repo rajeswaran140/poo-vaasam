@@ -115,6 +115,69 @@ describe('the encode settings are the whole point', () => {
 });
 
 /**
+ * THE PICTURE MUST NOT OUTLIVE THE SONG — and the obvious fix truncates it.
+ *
+ * Production runs ffmpeg 7.0.2 (Lambda layer `tamilagaval-ffmpeg:1`); the dev
+ * box runs 6.1.1. Measured 2026-09-23 by running the layer's own binary here:
+ * 6.1.1 honours `-shortest`, 7.0.2 overshoots it by a VARIABLE 1.0-2.4 s. Every
+ * upload for months has carried that much held cover and silence.
+ *
+ * ⚠️ `-t` ALONE IS NOT THE FIX. At 10 fps the picture can only end on a 0.1 s
+ * boundary, so bounding it makes the VIDEO the shorter stream — and `-shortest`
+ * then trims the AUDIO instead. Measured: -31.3 ms on a 91.53 s master, -35.0 ms
+ * on a 210.019 s one, i.e. the end of the song. master-verify's 0.5 s duration
+ * tolerance cannot see a loss that size.
+ *
+ * So the two halves below are ONE change and neither works alone. This is the
+ * same shape buildShortArgs has always had: bounded by -t, no -shortest.
+ */
+describe('the picture is bounded by the audio, not by -shortest', () => {
+  const bounded = buildVideoArgs({
+    framePath: '/tmp/frame.ppm', audioPath: '/tmp/master.wav', outPath: '/tmp/o.mp4',
+    audioSeconds: 91.53,
+  });
+
+  it('bounds the IMAGE INPUT with -t, so the looped still stops on its own', () => {
+    // Before the frame's own -i, or it would bound the wrong input.
+    expect(bounded).toContain('-t');
+    expect(bounded.indexOf('-t')).toBeLessThan(bounded.indexOf('-i'));
+    expect(bounded[bounded.indexOf('-t') + 1]).toBe('91.53');
+  });
+
+  it('DROPS -shortest once the picture is bounded — it would trim the song', () => {
+    expect(bounded).not.toContain('-shortest');
+  });
+
+  it('keeps -shortest when the duration could not be probed', () => {
+    // Without -t AND without -shortest a looped still never ends: the render
+    // would burn to the 900 s timeout instead of failing.
+    const unbounded = buildVideoArgs({
+      framePath: '/tmp/frame.ppm', audioPath: '/tmp/master.wav', outPath: '/tmp/o.mp4',
+      audioSeconds: null,
+    });
+    expect(unbounded).toContain('-shortest');
+    expect(unbounded).not.toContain('-t');
+  });
+
+  it('treats an unusable duration as unknown rather than bounding on nonsense', () => {
+    for (const bad of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const a = buildVideoArgs({
+        framePath: '/tmp/frame.ppm', audioPath: '/tmp/master.wav', outPath: '/tmp/o.mp4',
+        audioSeconds: bad,
+      });
+      expect(a).toContain('-shortest');
+      expect(a).not.toContain('-t');
+    }
+  });
+
+  it('changes nothing else about the encode', () => {
+    expect(bounded).not.toContain('-filter_complex');
+    expect(bounded[bounded.indexOf('-b:a') + 1]).toBe('384k');
+    expect(bounded[bounded.length - 1]).toBe('/tmp/o.mp4');
+  });
+});
+
+/**
  * THE RENDER MUST FIT IN A 900 s LAMBDA.
  *
  * Measured 2026-08-12 on the real 5:32 master: the original single-pass form

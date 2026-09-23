@@ -287,17 +287,54 @@ export function buildComposeArgs(params: {
  * timing out again with no error to point at — it would simply be killed at
  * 900 s. A test pins this.
  *
- * `-shortest` ends the video with the audio: the frame is looped indefinitely,
- * so without it the encode never terminates.
+ * ⚠️ HOW THE VIDEO IS ENDED, AND WHY IT IS NOT `-shortest`.
+ *
+ * Production runs ffmpeg 7.0.2 (Lambda layer `tamilagaval-ffmpeg:1`); the dev
+ * box runs 6.1.1. Measured 2026-09-23 by running the layer's own binary here,
+ * on this recipe: 6.1.1 honours `-shortest`, 7.0.2 OVERSHOOTS it by a variable
+ * 1.0-2.4 s. Every upload for months has carried that much held cover and
+ * silence, unnoticed, because nothing compared the two stream lengths.
+ *
+ * So the picture is bounded by `-t` on its OWN input instead, and `-shortest`
+ * is then REMOVED. Both halves, or neither:
+ *
+ *   - `-t` alone is worse than the bug. At 10 fps the picture can only end on
+ *     a 0.1 s boundary, so bounding it makes the VIDEO the shorter stream and
+ *     `-shortest` trims the AUDIO — the end of the song. Measured -31.3 ms on
+ *     a 91.53 s master, -35.0 ms on a 210.019 s one. master-verify's 0.5 s
+ *     duration tolerance cannot see a loss that size, so it would ship.
+ *   - `-shortest` alone is today's 2.4 s tail.
+ *   - Neither, with no duration to bound by, NEVER ENDS: a looped still has no
+ *     last frame and the render burns to the 900 s timeout. That is why an
+ *     unknown duration keeps `-shortest` rather than dropping both.
+ *
+ * Bounded, the picture ends 0.019-0.03 s BEFORE the audio — one frame, and
+ * exactly what 6.1.1 produces unfixed. The audio is untouched either way.
+ *
+ * This is not a new recipe: `buildShortArgs` has always had this shape.
  */
 export function buildVideoArgs(params: {
   framePath: string;
   audioPath: string;
   outPath: string;
+  /**
+   * The AUDIO stream's length in seconds, probed by the worker. Undefined or
+   * unusable means the probe could not say — see the `-shortest` fallback above.
+   */
+  audioSeconds?: number | null;
 }): string[] {
+  const bound =
+    typeof params.audioSeconds === 'number' &&
+    Number.isFinite(params.audioSeconds) &&
+    params.audioSeconds > 0
+      ? params.audioSeconds
+      : null;
   return [
     '-hide_banner', '-nostats',
-    '-loop', '1', '-framerate', String(VIDEO_FPS), '-i', params.framePath,
+    '-loop', '1', '-framerate', String(VIDEO_FPS),
+    // Bounds THIS input — the looped still — and nothing else.
+    ...(bound !== null ? ['-t', String(bound)] : []),
+    '-i', params.framePath,
     '-i', params.audioPath,
     '-map', '0:v', '-map', '1:a',
     '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'stillimage',
@@ -307,7 +344,9 @@ export function buildVideoArgs(params: {
     // faststart moves the index to the front so YouTube can begin processing
     // without reading the whole file first.
     '-movflags', '+faststart',
-    '-shortest',
+    // Only when the picture has no other end. See the block above: with `-t`
+    // present this would trim the AUDIO, not the picture.
+    ...(bound === null ? ['-shortest'] : []),
     '-y', params.outPath,
   ];
 }

@@ -241,7 +241,7 @@ describe('video render', () => {
     expect(res).toMatchObject({ ok: true });
     // [0] probes the cover, [1] composes the frame, [2] encodes — the audio
     // only enters the last.
-    const args = ffArgs()[2];
+    const args = ffArgs().find((a) => a.includes('libx264')) as string[];
     expect(args[args.lastIndexOf('-i') + 1]).toContain('master.wav');
     expect(args.join(' ')).not.toContain('.mp3');
     expect(args[args.indexOf('-b:a') + 1]).toBe('384k');
@@ -256,22 +256,27 @@ describe('video render', () => {
   it('composes the frame once, THEN encodes against it', async () => {
     await handler({ jobId: 'j1', render: render() } as never);
 
-    // Five passes now: probe, compose, encode, then one measurement of the
-    // master and one of the MP4. What this test guards is that exactly ONE of
-    // them filters and it is not the encode — see below.
-    expect(spawnSync).toHaveBeenCalledTimes(5);
-    const [probe, compose, encode] = ffArgs();
+    // Six passes now: the audio-duration probe, the cover probe, compose,
+    // encode, then one measurement of the master and one of the MP4. What this
+    // test guards is that exactly ONE of them filters and it is not the encode.
+    //
+    // Selected by SHAPE, not by index: two probes share a signature now, and a
+    // positional read silently tests the wrong pass when an order changes.
+    expect(spawnSync).toHaveBeenCalledTimes(6);
+    const compose = ffArgs().find((a) => a.includes('-filter_complex')) as string[];
+    const encode = ffArgs().find((a) => a.includes('libx264')) as string[];
+    const probes = ffArgs().filter((a) => a.length === 3 && a[0] === '-hide_banner');
 
-    // Pass 0: reads the cover's header only — no filter, no frame output.
-    expect(probe).toContain('-i');
-    expect(probe).not.toContain('-filter_complex');
+    // Two header reads, neither filtering nor producing a file.
+    expect(probes).toHaveLength(2);
+    for (const probe of probes) expect(probe).not.toContain('-filter_complex');
 
-    // Pass 1: filters the cover, emits exactly one frame, touches no audio.
+    // Compose: filters the cover, emits exactly one frame, touches no audio.
     expect(compose).toContain('-filter_complex');
     expect(compose[compose.indexOf('-frames:v') + 1]).toBe('1');
     expect(compose.join(' ')).not.toContain('master.wav');
 
-    // Pass 2: no filter at all — that absence IS the fix.
+    // Encode: no filter at all — that absence IS the fix.
     expect(encode).not.toContain('-filter_complex');
     expect(encode.join(' ')).not.toContain('boxblur');
     // It must consume the frame pass 1 produced, not the raw cover.
@@ -357,31 +362,103 @@ describe('video render', () => {
   });
 
   /**
+   * THE SINGLE-COVER RENDER MUST BOUND ITS PICTURE BY THE AUDIO.
+   *
+   * Production runs ffmpeg 7.0.2, the dev box 6.1.1; `-shortest` overshoots on
+   * 7.0.2 by a variable 1.0-2.4 s, so every upload has carried a held cover and
+   * silence at the end. Measured 2026-09-23 with the layer's own binary.
+   *
+   * The slideshow branch has always probed the WAV header for its duration.
+   * This pins that the SINGLE-cover branch does too, and that the figure
+   * actually reaches the encode — a probe whose result is dropped would look
+   * identical from the outside and leave the bug in place.
+   */
+  describe('the audio duration reaches the encode', () => {
+    /** A 1:31.53 master, as the WAV header prints it. */
+    const HEADER = "Input #0, wav, from '/tmp/master-test/master.wav':\n" +
+      '  Duration: 00:01:31.53, bitrate: 2304 kb/s\n' +
+      '  Stream #0:0: Audio: pcm_s24le, 48000 Hz, stereo, s32 (24 bit), 2304 kb/s\n';
+    const encodeCall = () => ffArgs().find((a) => a.includes('libx264')) as string[];
+
+    it('bounds the looped frame with -t and drops -shortest', async () => {
+      // Only the audio-header probe answers; the cover probe shares its shape
+      // and is told apart by the path, as the slideshow suite does.
+      spawnSync.mockImplementation((_cmd: string, args: string[]) =>
+        args.length === 3 && args[2].includes('master.wav')
+          ? { status: 1, stdout: '', stderr: HEADER }
+          : { status: 0, stdout: '', stderr: '' }
+      );
+
+      const res = await handler({ jobId: 'j1', render: render() } as never);
+      expect(res).toMatchObject({ ok: true });
+
+      const enc = encodeCall();
+      // 91.5, not 91.53: parseSourceInfo rounds the header to 0.1 s. That is
+      // fine here — with -shortest gone nothing trims the audio, so the worst
+      // case either way is the picture missing or outliving the sound by 0.05 s
+      // against the 1.0-2.4 s this replaces.
+      expect(enc[enc.indexOf('-t') + 1]).toBe('91.5');
+      expect(enc.indexOf('-t')).toBeLessThan(enc.indexOf('-i'));
+      expect(enc).not.toContain('-shortest');
+    });
+
+    it('falls back to -shortest when the header will not say', async () => {
+      // Every call succeeds with an empty log, so parseSourceInfo finds no
+      // duration. The render must still END — see buildVideoArgs.
+      spawnSync.mockImplementation(() => ({ status: 0, stdout: '', stderr: '' }));
+
+      const res = await handler({ jobId: 'j1', render: render() } as never);
+      expect(res).toMatchObject({ ok: true });
+
+      const enc = encodeCall();
+      expect(enc).toContain('-shortest');
+      expect(enc).not.toContain('-t');
+    });
+
+    it('does not refuse the render when the probe fails outright', async () => {
+      // A failed probe is missing data, not a bad job. Refusing here would
+      // block every render the moment the header format shifted.
+      spawnSync.mockImplementation((_cmd: string, args: string[]) =>
+        args.length === 3 && args[2].includes('master.wav')
+          ? { status: 1, stdout: '', stderr: 'could not read' }
+          : { status: 0, stdout: '', stderr: '' }
+      );
+
+      const res = await handler({ jobId: 'j1', render: render() } as never);
+      expect(res).toMatchObject({ ok: true });
+      expect(encodeCall()).toContain('-shortest');
+    });
+  });
+
+  /**
    * probeCoverAspect() feeds buildVideoFilter() — this is the whole point of
    * Task 1 + Task 2, and until now nothing pinned that the wiring actually
    * fires the fill branch on a real 16:9 probe result. Every other test in
    * this suite mocks spawnSync unconditionally, so the probe call always saw
    * an empty log and buildVideoFilter always took the backdrop branch.
    *
-   * The probe call is distinguished from compose/encode by shape: it is
-   * exactly `['-hide_banner', '-i', coverPath]` — nothing else in renderVideo
-   * calls ffmpeg with that signature.
+   * ⚠️ The cover probe NO LONGER has a unique signature. renderVideo probes
+   * the AUDIO header first, with the identical
+   * `['-hide_banner', '-i', PATH]` shape, so these are told apart by the PATH
+   * — the same way the slideshow suite does it.
    */
   describe('the cover probe result reaches buildVideoFilter', () => {
-    const isProbeCall = (args: string[]) =>
-      args.length === 3 && args[0] === '-hide_banner' && args[1] === '-i';
+    const isCoverProbe = (args: string[]) =>
+      args.length === 3 && args[0] === '-hide_banner' && args[1] === '-i' &&
+      !args[2].includes('master.wav');
 
     /** Only the probe call returns `header`; compose and encode still succeed. */
     const mockProbeHeader = (header: string) => {
       spawnSync.mockImplementation((_cmd: string, args: string[]) =>
-        isProbeCall(args)
+        isCoverProbe(args)
           ? { status: 1, stdout: '', stderr: header }
           : { status: 0, stdout: '', stderr: '' }
       );
     };
 
+    // By shape, not by index — the audio probe now runs ahead of this one.
     const composeFilter = () => {
-      const [, compose] = ffArgs();
+      const compose = ffArgs().find((a) => a.includes('-filter_complex')) as string[];
       return compose[compose.indexOf('-filter_complex') + 1];
     };
 
@@ -2595,9 +2672,9 @@ describe('slideshow render', () => {
     expect(res).toMatchObject({ ok: true });
     expect(ffArgs().some((a) => a.includes('concat'))).toBe(false);
     expect(ffArgs().some((a) => a.includes('-an'))).toBe(false);
-    // probe, compose, encode, and the two verification measurements — no
-    // segment encode and no join.
-    expect(spawnSync).toHaveBeenCalledTimes(5);
+    // the audio-duration probe, the cover probe, compose, encode, and the two
+    // verification measurements — no segment encode and no join.
+    expect(spawnSync).toHaveBeenCalledTimes(6);
     expect(ffArgs().filter((a) => a.includes('libx264'))).toHaveLength(1);
   });
 });
