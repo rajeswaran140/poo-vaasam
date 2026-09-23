@@ -171,3 +171,71 @@ describe('a karaoke bed', () => {
     expect(nextAction(j)!.label).toMatch(/vertical short/i);
   });
 });
+
+/**
+ * The next-action line names the REAL reason an upload cannot proceed.
+ *
+ * ⚠️ IT NEVER DID. `planUpload` was called with an empty description, so it
+ * refused `no-description` on every job and this line always took its fallback
+ * branch — and the fallback said "add a title first", which `title ?? 'x'` had
+ * already made impossible for the call to produce. The line printed a reason
+ * that could not be true, on every song, for as long as it existed.
+ *
+ * It became actively misleading on 2026-09-22 when `planUpload` gained
+ * `audio-mismatch`: a video whose audio does not match its master was announced
+ * as a missing title. That is the drift the module's own header warns about — a
+ * status line disagreeing with the control beside it.
+ */
+describe('the upload line says what is actually wrong', () => {
+  const READY = { ...FULL, youtubeVideoId: null, shortKey: null };
+
+  it('says plainly "Upload to YouTube" when nothing is in the way', () => {
+    // The regression that matters most: a good job must not carry a caveat.
+    // Before this, EVERY job did.
+    const a = nextAction(job(READY))!;
+    expect(a.label).toBe('Upload to YouTube');
+    expect(a.stage).toBe('youtube');
+  });
+
+  it('does not blame a missing title when the job has one', () => {
+    expect(nextAction(job({ ...READY, title: 'ஆத்தோர மண் வாசம்' }))!.label)
+      .not.toMatch(/add a title/i);
+  });
+
+  it('still asks for a title when the job genuinely has none', () => {
+    for (const title of [null, '', '   ']) {
+      expect(nextAction(job({ ...READY, title: title as string }))!.label)
+        .toMatch(/add a title first/i);
+    }
+  });
+
+  it('names an audio mismatch as an audio mismatch', () => {
+    const a = nextAction(job({ ...READY, videoAudioCheck: 'failed' }))!;
+    expect(a.label).toMatch(/audio does not match the master/i);
+    expect(a.label).not.toMatch(/add a title/i);
+  });
+
+  it('points an audio mismatch at the VIDEO control, not the upload button', () => {
+    // ⚠️ The fix is a RE-RENDER. Pointing the operator at an upload button that
+    // can only refuse is how the short's refusal went unread for a day.
+    expect(nextAction(job({ ...READY, videoAudioCheck: 'failed' }))!.stage).toBe('video');
+  });
+
+  it('reports a mismatch even on a job with no title — the audio outranks it', () => {
+    const a = nextAction(job({ ...READY, title: null as unknown as string, videoAudioCheck: 'failed' }))!;
+    expect(a.label).toMatch(/audio does not match/i);
+  });
+
+  it('treats the other verdicts as no obstacle at all', () => {
+    // null is the whole back catalogue and 'unknown' means a figure would not
+    // read. Neither blocks an upload, so neither may appear on this line.
+    for (const v of [null, undefined, 'unknown' as const, 'passed' as const]) {
+      expect(nextAction(job({ ...READY, videoAudioCheck: v }))!.label).toBe('Upload to YouTube');
+    }
+  });
+
+  it('says an upload is already running rather than inventing a reason', () => {
+    const a = nextAction(job({ ...READY, uploadStatus: 'uploading', updatedAt: new Date().toISOString() }))!;
+    expect(a.label).toMatch(/already running/i);
+  });
+});

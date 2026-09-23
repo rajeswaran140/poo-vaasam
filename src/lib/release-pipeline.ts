@@ -20,7 +20,7 @@
 import type { MasterJob } from '@/types/masterJob';
 import { planRender } from '@/lib/master-video';
 import { planShort } from '@/lib/master-short';
-import { planUpload } from '@/lib/youtube-upload';
+import { planUpload, uploadRefusalMessage, type UploadRefusal } from '@/lib/youtube-upload';
 import { isPeakMaster, KARAOKE_MP3_BITRATE } from '@/lib/master-peak';
 
 export type StageId = 'master' | 'mp3' | 'video' | 'short' | 'youtube';
@@ -108,6 +108,31 @@ function bedNextAction(job: MasterJob): NextAction {
   };
 }
 
+/**
+ * A job-level reason the upload cannot proceed, as a next action.
+ *
+ * ⚠️ THE STAGE IS NOT ALWAYS 'youtube'. An audio mismatch is fixed by
+ * RE-RENDERING, so the line points at the video control rather than at an
+ * upload button that would only refuse. Pointing an operator at a control that
+ * cannot help is how the short's refusal went unread for a day.
+ *
+ * `no-video`, `not-saved`, `no-title` and `no-description` cannot reach here —
+ * the first two are refused earlier in nextAction and the last two are stubbed
+ * at the call site. The default branch exists so that a refusal added to
+ * planUpload later surfaces its own message rather than silently inheriting
+ * someone else's.
+ */
+function uploadBlocked(reason: UploadRefusal): NextAction {
+  switch (reason) {
+    case 'audio-mismatch':
+      return { label: 'Re-render the video — its audio does not match the master', stage: 'video' };
+    case 'in-flight':
+      return { label: 'An upload is already running for this master', stage: 'youtube' };
+    default:
+      return { label: `Upload to YouTube — ${uploadRefusalMessage(reason)}`, stage: 'youtube' };
+  }
+}
+
 export function nextAction(job: MasterJob): NextAction | null {
   if (isPeakMaster(job)) return bedNextAction(job);
 
@@ -129,9 +154,32 @@ export function nextAction(job: MasterJob): NextAction | null {
       : { label: 'Add a cover image, then render the video', stage: 'video' };
   }
 
-  const upload = planUpload(job, { title: job.title ?? 'x', description: '', tags: [], playlistIds: [] });
+  // ⚠️ THE TITLE AND DESCRIPTION ARE STUBBED HERE, DELIBERATELY. Neither is
+  // stored on the job — both are typed in the upload panel — so their absence is
+  // not a property of the JOB and must not be reported as its next action.
+  //
+  // What was here refused on every job and named the wrong reason for it. The
+  // empty `description` meant `planUpload` always returned `no-description`, so
+  // this line always took its fallback branch; and `title: job.title ?? 'x'`
+  // meant `no-title` could never fire, so the fallback's "add a title first"
+  // was a reason the call could not produce. The line therefore never named
+  // anything true.
+  //
+  // That became actively misleading when `planUpload` gained `audio-mismatch`
+  // on 2026-09-22: a video whose audio does not match its master was announced
+  // as a missing title. Exactly the drift the header warns about — a status line
+  // disagreeing with the control beside it.
+  const upload = planUpload(job, {
+    title: job.title?.trim() || 'untitled',
+    description: 'pending',
+    tags: [],
+    playlistIds: [],
+  });
   if (!job.youtubeVideoId) {
-    return upload.ok
+    if (!upload.ok) return uploadBlocked(upload.reason);
+    // Asked of the JOB, not of the planner, because the planner was handed a
+    // stub. This is the one upload-panel field the job can actually answer for.
+    return job.title?.trim()
       ? { label: 'Upload to YouTube', stage: 'youtube' }
       : { label: 'Upload to YouTube — add a title first', stage: 'youtube' };
   }
