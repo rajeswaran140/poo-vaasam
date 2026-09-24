@@ -83,3 +83,17 @@ it('deletes a tag via adminFetch DELETE with the tag id', async () => {
     expect(String(del![0])).toContain('id=t1');
   });
 });
+
+/**
+ * ⚠️ A VISIBLE LABEL IS NOT AN ASSOCIATED LABEL — see the same test on the
+ * categories page. The label had no `htmlFor` and the input no `id`, so the
+ * field was announced as unlabelled.
+ */
+it('associates the tag name label with its input', async () => {
+  mockAdminFetch.mockResolvedValueOnce(jsonRes({ success: true, data: [] }));
+  render(<TagsPage />);
+
+  fireEvent.click(await screen.findByRole('button', { name: /new tag/i }));
+
+  expect(screen.getByLabelText(/tag name/i)).toBeRequired();
+});

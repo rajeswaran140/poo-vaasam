@@ -1,5 +1,14 @@
 import { test, expect } from '@playwright/test';
 
+/**
+ * ⚠️ THE PAGE'S <h1> IS NOT INSIDE <header>.
+ *
+ * `<header>` is the site's navigation bar and carries no heading at all; the
+ * page title ("கவிதைகள்") lives in the content below it. Three tests here asked
+ * for `header h1`, which resolves to nothing, so `evaluate()` waited out the
+ * full 30 s timeout — they failed even when run alone, unlike the rest of this
+ * suite's dev-server flakiness. They now take the page's own heading.
+ */
 test.describe('Poem Page Typography and Layout Audit', () => {
 
   test.beforeEach(async ({ page }) => {
@@ -11,12 +20,11 @@ test.describe('Poem Page Typography and Layout Audit', () => {
   test('audit poems listing page header typography', async ({ page }) => {
     console.log('\n=== POEMS LISTING PAGE HEADER AUDIT ===\n');
 
-    // Find the header section
-    const header = page.locator('header').first();
-    await expect(header).toBeVisible();
+    // The site's nav bar, which is what <header> is here.
+    await expect(page.locator('header').first()).toBeVisible();
 
-    // Check main heading
-    const heading = header.locator('h1');
+    // The page's own heading, which sits below the nav rather than inside it.
+    const heading = page.locator('h1').first();
     const headingStyles = await heading.evaluate((el) => {
       const styles = window.getComputedStyle(el);
       return {
@@ -31,8 +39,8 @@ test.describe('Poem Page Typography and Layout Audit', () => {
 
     console.log('Header H1 Styles:', headingStyles);
 
-    // Check subtitle/description
-    const subtitle = header.locator('p').first();
+    // The line directly under the heading.
+    const subtitle = page.locator('h1').first().locator('xpath=following::p[1]');
     const subtitleStyles = await subtitle.evaluate((el) => {
       const styles = window.getComputedStyle(el);
       return {
@@ -259,7 +267,7 @@ test.describe('Poem Page Typography and Layout Audit', () => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       await page.waitForTimeout(500); // Allow layout to settle
 
-      const heading = page.locator('header h1').first();
+      const heading = page.locator('h1').first();
       const styles = await heading.evaluate((el) => {
         const styles = window.getComputedStyle(el);
         return {
@@ -290,7 +298,7 @@ test.describe('Poem Page Typography and Layout Audit', () => {
     console.log('='.repeat(80) + '\n');
 
     // Collect all data
-    const header = page.locator('header h1').first();
+    const header = page.locator('h1').first();
     const headerData = await header.evaluate((el) => {
       const styles = window.getComputedStyle(el);
       return {

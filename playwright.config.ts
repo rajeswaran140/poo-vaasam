@@ -6,6 +6,20 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
+  /**
+   * ⚠️ 60 s, NOT Playwright's 30 s default, and the reason is the web server
+   * below: `next dev` COMPILES EACH ROUTE ON FIRST REQUEST. With five browser
+   * projects running fully parallel against one dev server, an admin route's
+   * first visit regularly costs more than 30 s — and it failed as a timeout on
+   * an assertion, which reads exactly like a broken selector and sent a whole
+   * afternoon chasing locators that were already correct.
+   *
+   * This is NOT a way to let slow product code pass: every one of those tests
+   * passes in about a second once the route is compiled. The durable fix is to
+   * serve a production BUILD here instead of `next dev`, at which point this
+   * can go back to the default.
+   */
+  timeout: 60_000,
   reporter: 'html',
   use: {
     baseURL: process.env.BASE_URL || 'http://localhost:3000',

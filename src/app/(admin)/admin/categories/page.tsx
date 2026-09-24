@@ -141,10 +141,17 @@ export default function CategoriesPage() {
           </h2>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
+            {/* htmlFor/id: a label that only SITS above an input is not
+                associated with it — a screen reader announces the field as
+                unlabelled, and getByLabel cannot find it. */}
+            <label
+              htmlFor="category-name"
+              className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300"
+            >
               Category Name (வகை பெயர்) *
             </label>
             <input
+              id="category-name"
               type="text"
               value={formData.name}
               onChange={(e) =>
@@ -157,10 +164,14 @@ export default function CategoriesPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
+            <label
+              htmlFor="category-description"
+              className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300"
+            >
               Description (விளக்கம்)
             </label>
             <textarea
+              id="category-description"
               value={formData.description}
               onChange={(e) =>
                 setFormData((prev) => ({ ...prev, description: e.target.value }))
