@@ -82,3 +82,23 @@ it('deletes a category via adminFetch DELETE with the id', async () => {
     expect(String(del![0])).toContain('id=c1');
   });
 });
+
+/**
+ * ⚠️ A VISIBLE LABEL IS NOT AN ASSOCIATED LABEL.
+ *
+ * These fields had a <label> sitting above them and no `htmlFor`, and inputs
+ * with no `id` — so nothing tied the two together. The form LOOKED labelled and
+ * was not: a screen reader announces the control as unlabelled, and
+ * `getByLabelText` / Playwright's `getByLabel` cannot find it at all. Found
+ * 2026-09-24 while repairing the E2E suite, where the admin spec had been
+ * quietly working around it.
+ */
+it('associates every field label with its control, so a screen reader can announce it', async () => {
+  mockAdminFetch.mockResolvedValueOnce(jsonRes({ success: true, data: [] }));
+  render(<CategoriesPage />);
+
+  fireEvent.click(await screen.findByRole('button', { name: /new category/i }));
+
+  expect(screen.getByLabelText(/category name/i)).toBeRequired();
+  expect(screen.getByLabelText(/description/i)).toBeInTheDocument();
+});

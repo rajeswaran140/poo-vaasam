@@ -135,10 +135,16 @@ export default function TagsPage() {
           </h2>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            {/* See the categories form: without htmlFor/id the field is
+                announced as unlabelled. */}
+            <label
+              htmlFor="tag-name"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+            >
               Tag Name (குறிச்சொல் பெயர்) *
             </label>
             <input
+              id="tag-name"
               type="text"
               value={tagName}
               onChange={(e) => setTagName(e.target.value)}

@@ -44,15 +44,12 @@ test.describe('Admin Portal - Critical Flows', () => {
       // Check form is visible
       await expect(page.getByText(/create new category/i)).toBeVisible();
 
-      // ⚠️ NOT getByLabel. The modal's <label>s carry no `for`, and its inputs
-      // have neither `id` nor `name`, so nothing associates the two and
-      // getByLabel cannot find them — it reports "element(s) not found" for a
-      // field that is plainly on screen. That is an accessibility gap in the
-      // form, not a test problem: a screen reader cannot announce these fields
-      // either. Until the form associates them, the field is located the way
-      // the accessibility tree actually exposes it.
-      await expect(page.getByText(/category name/i)).toBeVisible();
-      await expect(page.getByRole('textbox').first()).toBeVisible();
+      // getByLabel works because the form now associates its labels. It did
+      // not until 2026-09-24: the <label>s carried no `for` and the inputs no
+      // `id`, so the fields were announced as unlabelled and this query found
+      // nothing. Keeping the query in this form is what keeps that fixed.
+      await expect(page.getByLabel(/category name/i)).toBeVisible();
+      await expect(page.getByLabel(/description/i)).toBeVisible();
     });
 
     test('should validate required fields', async ({ page }) => {
@@ -66,7 +63,7 @@ test.describe('Admin Portal - Critical Flows', () => {
 
       // Form should not submit — the name field is required, so HTML5
       // validation blocks it and the modal stays open.
-      await expect(page.getByRole('textbox').first()).toHaveAttribute('required', '');
+      await expect(page.getByLabel(/category name/i)).toHaveAttribute('required', '');
       await expect(page.getByText(/create new category/i)).toBeVisible();
     });
   });
@@ -90,9 +87,7 @@ test.describe('Admin Portal - Critical Flows', () => {
 
       // Check form is visible
       await expect(page.getByText(/create new tag/i)).toBeVisible();
-      // See the note on the category form: the label is not associated with
-      // the input, so getByLabel cannot reach it.
-      await expect(page.getByText(/tag name/i)).toBeVisible();
+      await expect(page.getByLabel(/tag name/i)).toBeVisible();
     });
 
     test('should show delete confirmation modal', async ({ page }) => {
@@ -229,14 +224,20 @@ test.describe('Admin Portal - Critical Flows', () => {
 
       // ⚠️ EXACT NAMES. The sidebar carries both "Content" and "New Content",
       // so a loose /content/i resolves to two links and strict mode fails.
-      await page.getByRole('link', { name: 'Categories', exact: true }).click();
-      await expect(page).toHaveURL(/\/admin\/categories/);
-
-      await page.getByRole('link', { name: 'Tags', exact: true }).click();
-      await expect(page).toHaveURL(/\/admin\/tags/);
-
-      await page.getByRole('link', { name: 'Content', exact: true }).click();
-      await expect(page).toHaveURL(/\/admin\/content/);
+      // Each wait is armed BEFORE its click. Asserting afterwards races the
+      // navigation, and these admin routes are compiled on demand — the click
+      // lands, the assertion starts, and its own 5 s window expires before the
+      // route has finished building.
+      for (const [name, url] of [
+        ['Categories', /\/admin\/categories/],
+        ['Tags', /\/admin\/tags/],
+        ['Content', /\/admin\/content/],
+      ] as ReadonlyArray<readonly [string, RegExp]>) {
+        const arrived = page.waitForURL(url, { timeout: 30000 });
+        await page.getByRole('link', { name, exact: true }).click();
+        await arrived;
+        await expect(page).toHaveURL(url);
+      }
     });
 
     test('should display admin header with logo', async ({ page }) => {
