@@ -34,6 +34,14 @@ import { dirname } from 'node:path';
 import { ADMIN_STORAGE_STATE, adminCredentials, NO_CREDS_REASON } from './admin-credentials';
 
 setup('authenticate as admin', async ({ page, context, baseURL }) => {
+  // ⚠️ LONGER THAN THE 30 s DEFAULT, deliberately. This is a real Cognito round
+  // trip against a route the dev server is usually compiling for the first
+  // time, while the five browser projects hammer it in parallel — and when it
+  // times out the whole `admin` project SKIPS (29 tests) rather than failing,
+  // so the run goes quietly green-ish with a third of it not exercised. That is
+  // the worst possible failure mode, which is why this is generous.
+  setup.setTimeout(150000);
+
   const creds = adminCredentials();
   setup.skip(!creds, NO_CREDS_REASON);
   if (!creds) return;

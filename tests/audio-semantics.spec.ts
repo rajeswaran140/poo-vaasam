@@ -80,10 +80,18 @@ test('an AudioContext is really released by close(), freeing the budget', async 
   expect(states.after).toBe('closed');
 });
 
-test('createMediaElementSource may only be called once per element', async ({ page }) => {
+test('createMediaElementSource may only be called once per element', async ({ page, browserName }) => {
   // The player builds ONE graph and hangs the EQ and meter off it precisely
   // because a second call throws. If this ever stopped throwing, the comment
   // explaining the architecture would be stale.
+  //
+  // ⚠️ FIREFOX DOES NOT THROW. Measured 2026-09-24: Chromium and WebKit both
+  // raise on the second call, Gecko returns a node instead. So this invariant
+  // is enforced by the platform on two engines out of three — which is the
+  // reason to keep building one graph deliberately rather than relying on the
+  // browser to catch a double call, and the reason a double-call bug would go
+  // unnoticed if it were only ever exercised in Firefox.
+  test.skip(browserName === 'firefox', 'Gecko permits a second call; Chromium and WebKit do not.');
   const threw = await page.evaluate(() => {
     const ctx = new AudioContext();
     const a = document.createElement('audio');

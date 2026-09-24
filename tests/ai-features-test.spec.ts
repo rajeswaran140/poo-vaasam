@@ -6,8 +6,10 @@ test.describe('AI Features Testing', () => {
     await page.goto('/ai-search');
     await page.waitForLoadState('networkidle');
 
-    // Check page title
-    await expect(page.locator('h1')).toContainText('AI தேடல்');
+    // The page is "ஸ்மார்ட் தேடல்" now — it was renamed from "AI தேடல்" and this
+    // assertion was never updated. Matched on the words alone, so the leading
+    // emoji in the heading is not load-bearing.
+    await expect(page.locator('h1')).toContainText('ஸ்மார்ட் தேடல்');
 
     // Check search input exists
     const searchInput = page.locator('input[type="text"]').first();
