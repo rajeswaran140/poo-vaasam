@@ -45,7 +45,11 @@ const META_DESCRIPTION =
   'தமிழகவல் பாடல்களின் கராஓகே (இசை மட்டும்) பதிப்புகள். Instrumental versions of Tamilagaval songs — sing them yourself.';
 
 export const metadata: Metadata = {
-  title: `${META_TITLE} | ${SITE_NAME}`,
+  // The brand is appended by the ROOT layout's `title.template`. Baking it in
+  // here too produced "… | Tamilagaval | Tamilagaval" on the live page — the
+  // openGraph/twitter copies below DO need it spelled out, as no template
+  // applies to them. Same split as /music-composition.
+  title: META_TITLE,
   description: META_DESCRIPTION,
   alternates: alternatesFor('/karaoke'),
   openGraph: {

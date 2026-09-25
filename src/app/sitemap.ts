@@ -41,8 +41,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const videosEnabled = isYouTubeVideosConfigured();
 
   // Section/landing pages: home, the live content sections (empty ones are
-  // excluded via the shared registry), the aggregate, and the service page.
-  const sectionPaths = ['', ...liveContentSections().map((s) => s.href), '/all', '/popular', '/music-composition', '/status'];
+  // excluded via the shared registry), the aggregate, and BOTH paid service
+  // pages. /karaoke was missing here until 2026-09-25 — it takes real orders
+  // and was linked only from the homepage and footer, so search never saw it.
+  const sectionPaths = ['', ...liveContentSections().map((s) => s.href), '/all', '/popular', '/music-composition', '/karaoke', '/status'];
   if (videosEnabled) {
     sectionPaths.push('/videos');
     // The Shorts catalogue rides the same switch: both are the channel feed,
