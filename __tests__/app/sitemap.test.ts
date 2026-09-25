@@ -52,6 +52,11 @@ it('includes /videos and the core static routes', async () => {
   expect(urls.some((u) => u.endsWith('/contact'))).toBe(true);
   expect(urls.some((u) => u.endsWith('/privacy'))).toBe(true);
   expect(urls.some((u) => u.endsWith('/terms'))).toBe(true);
+  // ⚠️ AUDIT 2026-09-25: /karaoke — a page that takes paid orders — was absent
+  // from all 94 sitemap URLs while its sibling /music-composition was listed.
+  // It is linked from the homepage and footer, so only SEARCH discovery was lost.
+  expect(urls.some((u) => u.endsWith('/karaoke'))).toBe(true);
+  expect(urls.some((u) => u.endsWith('/music-composition'))).toBe(true);
   expect(urls.some((u) => u.endsWith('.com') || u.endsWith('.com/'))).toBe(true); // home
   // Stories went live 2026-09-16 with the channel's first YouTube story.
   expect(urls.some((u) => u.endsWith('/stories'))).toBe(true);

@@ -4,6 +4,9 @@ import { metadata } from '@/app/karaoke/page';
 import KaraokePage from '@/app/karaoke/page';
 import { adsAllowedOn } from '@/lib/adsense';
 import { KARAOKE_PRICE_LABEL } from '@/lib/karaoke';
+import { SITE_NAME } from '@/lib/seo';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 beforeEach(() => {
   (window as unknown as { gtag?: () => void }).gtag = jest.fn();
@@ -17,6 +20,35 @@ describe('Karaoke page — metadata', () => {
 
   it('is indexable — this page is meant to be found', () => {
     expect(metadata.robots).toBeUndefined();
+  });
+
+  /**
+   * ⚠️ AUDIT 2026-09-25: the live tab read
+   * "கராஓகே சேவை · Tamil Karaoke Tracks | Tamilagaval | Tamilagaval" — the only
+   * page on the site doing that. The ROOT layout already appends the brand via
+   * `title: { template: '%s | Tamilagaval' }`, so a page that bakes the brand
+   * into its own top-level title gets a second one. /music-composition is the
+   * worked example: bare at the top level, brand only inside openGraph/twitter,
+   * where no template applies.
+   */
+  it('leaves the brand to the root template instead of baking in a second copy', () => {
+    expect(typeof metadata.title).toBe('string');
+    const occurrences = String(metadata.title).split(SITE_NAME).length - 1;
+    expect(occurrences).toBe(0);
+  });
+
+  /**
+   * ⚠️ AUDIT 2026-09-25: /karaoke was the ONLY route on the site serving no
+   * og:image at all. Declaring an `openGraph` block REPLACES the root's
+   * wholesale, and this one carries no `images` — /contact keeps the site card
+   * precisely because it declares no openGraph. The repo's fix everywhere else
+   * is a co-located opengraph-image.tsx, and content-metadata.test.ts records
+   * why it matters: WhatsApp's scraper is the consumer, and this is the page
+   * that gets sold over WhatsApp.
+   */
+  it('ships a co-located share card, since its openGraph block overrides the root one', () => {
+    expect(metadata.openGraph?.images).toBeUndefined();
+    expect(existsSync(join(process.cwd(), 'src/app/karaoke/opengraph-image.tsx'))).toBe(true);
   });
 });
 
