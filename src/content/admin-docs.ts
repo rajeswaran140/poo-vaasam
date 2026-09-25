@@ -52,6 +52,221 @@ export function formatDocUpdatedAt(iso: string): string {
 
 export const ADMIN_DOCS: AdminDoc[] = [
   {
+    slug: 'storefront-design',
+    title: 'Storefront — design for review (not built)',
+    category: 'Distribution',
+    updatedAt: '2026-09-25T13:51:32Z',
+    body: `# Storefront — design for review
+
+> STATUS: DESIGN ONLY. Nothing here is built. Raj is reviewing this before any
+> code is written. If you are reading this and the storefront exists, this doc
+> is stale — replace it with how it actually works.
+
+Written 2026-09-25, out of the question "can Tamilagaval become a SaaS that
+gives creators a second revenue stream, because YouTube at ~$150/month does not
+cover costs".
+
+## The decisions already taken
+
+These were settled before designing, and everything below follows from them.
+Reopening any one of them invalidates the design.
+
+| Question | Decision |
+| --- | --- |
+| Whose money reaches us | The creator's **audience** pays; we take a cut |
+| Do we make the goods or just move them | We **manufacture** from the creator's master |
+| How we know the upload is theirs to sell | **Invite-only**, vetted creators |
+| How money moves, v1 | We collect, ledger it, **pay out by hand** |
+| What gets built first | **Single-tenant** — prove it on our own catalogue |
+
+The reasoning on the first one matters most. A creator earning $150/month cannot
+fund a software subscription, so selling them tooling taxes the income they
+already have. Taking a share of **new** income they would not otherwise earn has
+no such ceiling. That is why this is a storefront and not a SaaS subscription.
+
+## Why single-tenant first
+
+The whole business rests on one untested assumption: **that a creator's audience
+will pay for a manufactured artifact.** We have proof that a *buyer* pays — one
+karaoke order, CAD $40, accepted enthusiastically — but that was a person who
+asked us directly, not an audience buying unattended from a page.
+
+We can test that assumption with no multi-tenancy at all, because we are already
+a creator with a catalogue, an audience and a pipeline. Everything built to test
+it — checkout, purchase-triggered delivery, a product page — is needed in the
+multi-tenant version unchanged. Nothing is throwaway. What we skip is exactly
+the part that is both expensive and unproven: tenancy, ledger, payouts, creator
+onboarding.
+
+## The discovery that shaped the design
+
+Karaoke manufacture is **not** in the cloud pipeline. It is \`scripts/karaoke-bed.sh\`,
+a local script needing \`~/venv-demucs\` with torch, running CPU inference on the
+dev box. It cannot run in the render Lambda: there is no torch layer, and demucs
+on CPU would exceed the 900-second ceiling on a long song.
+
+So the store does **not** manufacture on demand. We batch ahead:
+
+1. Run \`karaoke-bed.sh\` locally over the top 15–20 songs — not all 74.
+2. Upload each bed to S3 under the \`deliveries/\` prefix.
+3. The store sells **instant delivery of an artifact that already exists**.
+
+This removes every hard piece at once: no job queue, no per-tenant compute, no
+GPU infrastructure, no "your file is being prepared" state, no timeout risk.
+
+It also upgrades the offer. The page promises 3–5 working days today because a
+human does the work. Pre-manufactured means **instant**, at the same price.
+
+The cost is a smaller catalogue — the picker goes from 74 songs to the batched
+ones. A small catalogue that delivers instantly beats a large one that takes a
+week, but it is a visible reduction and it is Raj's call.
+
+**The existing request form stays.** It becomes the path for songs not in the
+batch, and for anything custom. The store is added beside it, not instead of it.
+
+## Architecture
+
+\`\`\`
+Fan on /karaoke  ->  picks a batched song  ->  POST /api/checkout
+                                                    |
+                                            Stripe Checkout (hosted)
+                                                    |
+                                          POST /api/stripe/webhook
+                                                    |
+                          DeliveryRepository.create({ s3Key: the bed })
+                                                    |
+                        success page shows /d/<token>  +  email as backup
+                                                    |
+                    existing /d/[token] page -> consume() -> presigned URL
+\`\`\`
+
+### Reused without modification
+
+The entire delivery system: \`create\`, \`consume\` and its atomic download
+counting, \`revoke\`, \`publicDelivery\` stripping \`s3Key\`, the 43-char base64url
+token, the CloudFront Deny on \`deliveries/\`, and the \`/d/[token]\` page. This is
+the hardest and most security-sensitive part of selling a digital good, and it
+is already built, already tested, and already serving real commissions.
+
+### Genuinely new
+
+Four things, and that is the whole build:
+
+1. A \`Product\` record — song, price, S3 key, active flag.
+2. \`POST /api/checkout\` — creates a Stripe Checkout session.
+3. \`POST /api/stripe/webhook\` — creates the delivery, records the order, emails.
+4. A buy button and price on the existing \`/karaoke\` page.
+
+## Data model
+
+Two new entity types in the existing single-table design. No new table.
+
+**Product** — \`PK: PRODUCT#<id>\`, \`SK: METADATA\`
+
+| Field | Why |
+| --- | --- |
+| \`title\` | The song, as shown to the buyer |
+| \`priceCents\`, \`currency\` | Integer cents. Never a float, never a string |
+| \`s3Key\` | The pre-made bed under \`deliveries/\` |
+| \`filename\`, \`contentLength\` | Passed to the delivery on fulfilment |
+| \`active\` | Take a song off sale without a deploy |
+
+Price lives here rather than in \`lib/karaoke.ts\` because it must be editable
+without shipping code. \`KARAOKE_PRICE\` stays the source of truth for the
+marketing copy and the schema Offer; the product row is the source of truth for
+what is actually charged. **A test must assert the two agree**, or we recreate
+the drift that \`lib/karaoke.ts\` warns about at length.
+
+**Order** — \`PK: ORDER#<id>\`, \`SK: METADATA\`
+
+| Field | Why |
+| --- | --- |
+| \`stripeSessionId\` | The idempotency key. Stripe retries webhooks |
+| \`productId\`, \`amountCents\`, \`currency\` | What was actually charged |
+| \`buyerEmail\` | From the Stripe session, not from a form |
+| \`deliveryToken\` | Links the payment to the delivered file |
+| \`status\` | \`paid\` / \`fulfilled\` / \`fulfilment_failed\` |
+
+\`Delivery\` is reused **unchanged**. It already carries everything fulfilment
+needs.
+
+## Payment and fulfilment
+
+**Checkout.** \`POST /api/checkout\` takes a \`productId\` and nothing else. It
+looks the price up server-side and puts \`productId\` in the session metadata. It
+must never accept a price from the client — that is the single most common way
+a storefront gets robbed.
+
+**Webhook.** \`POST /api/stripe/webhook\` handles \`checkout.session.completed\`:
+
+1. Verify the Stripe signature. Reject anything unsigned — this endpoint is
+   public and anyone can POST to it.
+2. Look for an existing order with that \`stripeSessionId\`. If one exists, stop
+   and return 200. Stripe retries, and without this a buyer gets two links.
+3. Create the delivery, write the order, then email the link.
+
+**Do not make email the only way the buyer gets their file.** The success page
+must show the \`/d/<token>\` link directly. Email is a convenience, not the
+delivery mechanism.
+
+That is good design regardless, but right now it is also a hard requirement:
+**the SES notification path is currently broken** (see the karaoke audit, F0 —
+the app writes to DynamoDB but sends no mail, most likely an execution role
+missing \`ses:SendEmail\`). A store whose only delivery channel is email cannot
+ship until that is fixed. With the link on the success page, the store can ship
+first and email becomes an enhancement.
+
+## When things go wrong
+
+| Failure | What happens |
+| --- | --- |
+| Webhook signature invalid | 400, nothing written. Logged loudly |
+| Webhook arrives twice | Second is a no-op via \`stripeSessionId\` |
+| Payment succeeds, delivery creation fails | Order written as \`fulfilment_failed\`. **Never lose a paid order** — it must be visible in admin and recoverable by hand |
+| Buyer loses the link | Admin re-issues from the order row |
+| Refund | \`revoke()\` already exists. Revoked reads ahead of expired |
+| Buyer exhausts 5 downloads | Existing behaviour. Admin can issue a fresh delivery |
+
+The rule underneath all of these: **money taken and nothing delivered is the
+only truly unacceptable outcome.** Every failure path must end with either a
+delivered file or a visible, recoverable order.
+
+## Testing
+
+TDD throughout, as everywhere else in this repo.
+
+- Checkout rejects a client-supplied price, and resolves price server-side.
+- Checkout refuses an \`active: false\` product.
+- Webhook rejects an unsigned or wrongly-signed payload.
+- Webhook run twice over the same session creates exactly one delivery.
+- Fulfilment failure after payment leaves a recoverable order, not a silent loss.
+- Product price and \`KARAOKE_PRICE\` agree.
+
+The delivery system's own tests already cover consume, expiry, exhaustion and
+revocation. Do not duplicate them.
+
+## Explicitly NOT in this build
+
+Named so they are deferred deliberately rather than forgotten: tenancy, creator
+accounts, the revenue ledger, payouts, Stripe Connect, creator onboarding,
+on-demand manufacture, and any GPU or queue infrastructure. Every one of these
+waits until a fan has actually paid.
+
+## Open questions for Raj
+
+1. **How many songs in the first batch?** 15–20 is the suggestion. Each needs a
+   local \`karaoke-bed.sh\` run.
+2. **Same price self-serve?** CAD $40 instant is a stronger offer than CAD $40
+   in 3–5 days. It could also justify more.
+3. **Sales tax.** Digital goods sold from Canada have GST/HST implications that
+   depend on registration status and where the buyer is. Not solved here, and it
+   should be settled before taking money — Stripe Tax can do it if we want.
+4. **Refund policy at point of sale.** The drafted \`/karaoke/terms\` says a
+   downloaded file is not refundable. Unattended checkout makes showing that
+   before payment much more important than it is today.
+`,
+  },
+  {
     slug: 'start-here',
     title: 'Start here — what to read, in what order',
     category: 'Start here',
