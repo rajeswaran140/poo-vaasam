@@ -4,7 +4,7 @@
  * matters most is negative — `'unsafe-eval'` must never reach production — so
  * it is asserted directly rather than left to a header snapshot.
  */
-import { buildContentSecurityPolicy } from '@/config/csp';
+import { buildContentSecurityPolicy, buildStrictTransportSecurity } from '@/config/csp';
 
 /** Pull one directive out of the policy string. */
 const directive = (policy: string, name: string): string =>
@@ -43,7 +43,8 @@ describe('Content Security Policy', () => {
       ["object-src 'none'"],
       ["frame-ancestors 'self'"],
       ["form-action 'self'"],
-      ['upgrade-insecure-requests'],
+      // NOTE: `upgrade-insecure-requests` is deliberately NOT in this list any
+      // more — it is production-only. See its own describe block below.
     ])('includes %s', (expected) => {
       expect(prod).toContain(expected);
       expect(dev).toContain(expected);
@@ -93,7 +94,75 @@ describe('Content Security Policy', () => {
     });
   });
 
-  it('differs between prod and dev only by the eval directive', () => {
-    expect(dev.replace(" 'unsafe-eval'", '')).toBe(prod);
+  /**
+   * The two environments differ by EXACTLY two directives and nothing else.
+   * Spelled out as a round trip so that any third divergence — a stray host, a
+   * relaxed source list — fails here rather than shipping unnoticed.
+   */
+  it('differs between prod and dev by exactly the eval and upgrade directives', () => {
+    expect(dev.replace(" 'unsafe-eval'", '') + '; upgrade-insecure-requests').toBe(prod);
   });
+});
+
+/**
+ * ⚠️ `upgrade-insecure-requests` MUST NOT BE SENT IN DEVELOPMENT.
+ *
+ * It tells the browser to rewrite every http:// request on the page to
+ * https://. In production that is exactly right — the site is HTTPS and the
+ * directive is a safety net. On http://localhost it is a trap:
+ *
+ *   - WebKit HONOURS it for localhost. Clicking any internal link on the dev
+ *     server issued `GET https://localhost:3000/...`, the plain-HTTP dev server
+ *     failed the TLS handshake, and the navigation silently died — the URL just
+ *     never changed. Measured 2026-09-24; it cost most of a day in the E2E
+ *     suite, where it looked like a broken selector.
+ *   - Chromium does NOT, because it treats localhost as a trustworthy origin.
+ *     So the bug is invisible in the browser most people develop in.
+ *
+ * Production keeps the directive. Nothing about the deployed site changes.
+ */
+describe('upgrade-insecure-requests is production-only', () => {
+  const prod = buildContentSecurityPolicy('production');
+  const dev = buildContentSecurityPolicy('development');
+  const test = buildContentSecurityPolicy('test');
+
+  it('is present in production, where the site really is HTTPS', () => {
+    expect(prod).toContain('upgrade-insecure-requests');
+  });
+
+  it.each([
+    ['development', dev],
+    ['test', test],
+  ])('is ABSENT in %s, where it breaks navigation on http://localhost', (_env, policy) => {
+    expect(policy).not.toContain('upgrade-insecure-requests');
+  });
+});
+
+/**
+ * ⚠️ HSTS MUST NOT BE SENT FROM THE DEV SERVER EITHER, and this one is worse
+ * than the CSP directive because it PERSISTS.
+ *
+ * `Strict-Transport-Security` tells the browser to use HTTPS for this host from
+ * now on, and browsers cache that. Sent from http://localhost it poisons the
+ * HSTS cache for `localhost` itself — which then forces HTTPS on every OTHER
+ * project served from localhost on that machine, long after this server is
+ * gone, and survives a restart. Clearing it means a trip through the browser's
+ * internals.
+ *
+ * Same family as the upgrade-insecure-requests bug above: a production security
+ * header applied to a plain-HTTP dev origin.
+ */
+describe('Strict-Transport-Security is production-only', () => {
+  it('is sent in production', () => {
+    expect(buildStrictTransportSecurity('production')).toBe(
+      'max-age=63072000; includeSubDomains; preload'
+    );
+  });
+
+  it.each([['development'], ['test']])(
+    'is NOT sent in %s, where it would poison the HSTS cache for localhost',
+    (env) => {
+      expect(buildStrictTransportSecurity(env)).toBeNull();
+    }
+  );
 });

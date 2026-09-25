@@ -4,7 +4,7 @@ import type { NextConfig } from "next";
 // tested without booting Next. Relative import: the `@/` alias is not available
 // this early (same reason the vanity-path map below is mirrored rather than
 // imported).
-import { contentSecurityPolicy } from "./src/config/csp";
+import { contentSecurityPolicy, strictTransportSecurity } from "./src/config/csp";
 
 // Vanity URLs: serve a content item at a pretty path, and 301 its /content/<id>
 // URL to the pretty one. Keep in sync with src/config/vanity-paths.ts (next.config
@@ -188,10 +188,12 @@ const nextConfig: NextConfig = {
             key: 'X-DNS-Prefetch-Control',
             value: 'on'
           },
-          {
-            key: 'Strict-Transport-Security',
-            value: 'max-age=63072000; includeSubDomains; preload'
-          },
+          // Production only — see buildStrictTransportSecurity. Sending HSTS
+          // from the http://localhost dev server poisons the browser's HSTS
+          // cache for localhost itself, for every other project on the machine.
+          ...(strictTransportSecurity
+            ? [{ key: 'Strict-Transport-Security', value: strictTransportSecurity }]
+            : []),
           {
             key: 'X-Frame-Options',
             value: 'SAMEORIGIN'

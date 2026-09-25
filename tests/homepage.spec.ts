@@ -73,23 +73,20 @@ test.describe('தமிழகவல் Homepage', () => {
     expect(await poems.count()).toBeGreaterThan(0);
   });
 
-  test('navigates to the poems page from the footer nav', async ({ page, browserName }) => {
+  test('navigates to the poems page from the footer nav', async ({ page }) => {
     /**
-     * ⚠️ MARKED fixme ON WEBKIT — THIS LOOKS LIKE A REAL BUG, NOT A TEST ONE.
+     * ⚠️ THIS TEST FAILED ON WEBKIT FOR A REASON WORTH REMEMBERING.
      *
-     * Measured 2026-09-24: the footer's poems link is clicked successfully on
-     * every engine, and on WebKit the URL simply never changes. Chromium goes
-     * to /poems from the identical click; WebKit stays on "/". It is not
-     * slowness — the wait is armed before the click and fails in seconds, not
-     * at the timeout.
-     *
-     * `fixme` rather than `skip` on purpose: skip says "not applicable here",
-     * and this is a defect waiting to be fixed. Worth confirming on a real
-     * iPhone before chasing it, since a large part of this audience reads on
-     * one, and if it reproduces there the footer nav is dead on iOS.
+     * The click landed on every engine, and on WebKit the URL simply never
+     * changed. The cause was not the link, the selector, or Safari: the app
+     * sent `upgrade-insecure-requests` in its CSP in DEVELOPMENT too, WebKit
+     * honours it on localhost, and every internal navigation was rewritten to
+     * `https://localhost:3000/...` — which the plain-HTTP dev server answered
+     * with a failed TLS handshake. Chromium exempts localhost, so it looked
+     * engine-specific. Fixed in src/config/csp.ts: the directive is production
+     * only. Production was never affected — it is HTTPS, where the directive
+     * is correct.
      */
-    test.fixme(browserName === 'webkit', 'Footer link does not navigate in WebKit — suspected product bug.');
-
     await page.goto('/');
 
     // ⚠️ THE FOOTER'S LINK, and it took four wrong answers to get here. The
