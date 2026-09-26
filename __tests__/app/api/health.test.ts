@@ -22,6 +22,12 @@
  * behaviour it is reporting on. A boolean only: never the addresses.
  */
 import { GET } from '@/app/api/health/route';
+// Static, not require(): each helper reads process.env when CALLED, not at
+// module load, so importing them up front still sees the per-test env.
+import { isGA4Configured } from '@/lib/ga4-api';
+import { isBigQueryConfigured } from '@/lib/bigquery-api';
+import { isVapidConfigured } from '@/lib/push-broadcast';
+import { isYouTubeApiConfigured } from '@/lib/youtube-api';
 
 const ORIGINAL = process.env.CONTACT_NOTIFY_FROM;
 afterEach(() => {
@@ -55,3 +61,61 @@ it('never leaks the addresses themselves', async () => {
   process.env.CONTACT_NOTIFY_FROM = 'secret-sender@example.com';
   expect(JSON.stringify(await body())).not.toContain('secret-sender');
 });
+
+/**
+ * ⚠️ THE OTHER FIVE. CONTACT_NOTIFY_FROM was not special — it was just the
+ * first one anybody noticed. Cross-referencing every `process.env` read in
+ * src/ against Amplify's plain env vars found five more that are read at
+ * runtime with NO fallback, so each fails the same silent way:
+ *
+ *   GA4_PROPERTY_ID          admin GA4 dashboard
+ *   BIGQUERY_PROJECT_ID      BigQuery analytics
+ *   VAPID_PUBLIC_KEY/SUBJECT web push (the PRIVATE key is in SSM, so it works)
+ *   YOUTUBE_OAUTH_CLIENT_ID  YouTube ops (the SECRET is in SSM, so it works)
+ *
+ * NEXT_PUBLIC_* are exempt: Next inlines them into the bundle at build, so
+ * they genuinely are present at runtime.
+ *
+ * The route reads env directly rather than importing each feature's
+ * isXConfigured() — those live in modules that pull the BigQuery, GA4 and
+ * web-push SDKs, which has no business in a health endpoint. The tests below
+ * import the REAL helpers and assert the route agrees with every one of them,
+ * so the cheap copy cannot drift from the guard it stands for.
+ */
+describe('config readiness reflects each feature\'s own guard', () => {
+  const cases: [string, () => boolean, string[]][] = [
+    ['ga4', isGA4Configured, ['GA4_PROPERTY_ID', 'GA4_SERVICE_ACCOUNT_KEY']],
+    ['bigquery', isBigQueryConfigured, ['BIGQUERY_PROJECT_ID', 'GA4_PROPERTY_ID', 'BIGQUERY_SERVICE_ACCOUNT_KEY']],
+    ['webPush', isVapidConfigured, ['VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'VAPID_SUBJECT']],
+    ['youtubeApi', isYouTubeApiConfigured, ['YOUTUBE_API_KEY']],
+  ];
+
+  it.each(cases)('%s — agrees when everything is set', async (flag, helper, vars) => {
+    for (const v of vars) process.env[v] = 'set-for-test';
+    const { config } = await body();
+    expect({ flag, route: config[flag] }).toEqual({ flag, route: helper() });
+    expect(config[flag]).toBe(true);
+    for (const v of vars) delete process.env[v];
+  });
+
+  it.each(cases)('%s — agrees when one piece is missing', async (flag, helper, vars) => {
+    for (const v of vars) process.env[v] = 'set-for-test';
+    delete process.env[vars[0]];
+    const { config } = await body();
+    expect({ flag, route: config[flag] }).toEqual({ flag, route: helper() });
+    expect(config[flag]).toBe(false);
+    for (const v of vars) delete process.env[v];
+  });
+});
+
+it('reports config as booleans only — never a value', async () => {
+  process.env.GA4_PROPERTY_ID = 'properties/secret-id-12345';
+  process.env.YOUTUBE_OAUTH_CLIENT_ID = 'secret-client-id';
+  const res = await body();
+  for (const v of Object.values(res.config as Record<string, unknown>)) {
+    expect(typeof v).toBe('boolean');
+  }
+  expect(JSON.stringify(res)).not.toContain('secret-id-12345');
+  expect(JSON.stringify(res)).not.toContain('secret-client-id');
+});
+
