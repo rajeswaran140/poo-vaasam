@@ -72,12 +72,20 @@ export interface HarvestPlan {
   reason?: string;
 }
 
-export function planHarvest(videoCount: number, pages = 2): HarvestPlan {
+/**
+ * @param willDownload whether this pass may actually call captions.download.
+ *   A DRY RUN cannot, and charging it 200 units per video for calls it will
+ *   never make priced an 82-song catalogue at 20,505 against a 6,000 ceiling
+ *   and refused to start — which made the listing the dry run exists to
+ *   produce impossible to obtain. Defaults to `true`, so a caller that does
+ *   not think about it still gets the downloading worst case.
+ */
+export function planHarvest(videoCount: number, pages = 2, willDownload = true): HarvestPlan {
   const maxUnits =
     pages * COST_PLAYLIST_PAGE +
     Math.ceil(videoCount / 50) * COST_VIDEOS_LIST +
     videoCount * COST_CAPTIONS_LIST +
-    videoCount * COST_CAPTIONS_DOWNLOAD;
+    (willDownload ? videoCount * COST_CAPTIONS_DOWNLOAD : 0);
   const affordable = maxUnits <= HARVEST_UNIT_CEILING;
   return {
     videos: videoCount,

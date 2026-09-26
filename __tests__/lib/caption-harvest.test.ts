@@ -162,6 +162,31 @@ describe('quota is checked before anything runs', () => {
     expect(plan.maxUnits).toBeLessThanOrEqual(HARVEST_UNIT_CEILING);
   });
 
+  /**
+   * ⚠️ 2026-09-26: the dry run could not run. Its whole stated purpose is to
+   * list which songs carry a human-uploaded track, but the plan charged 200
+   * units per video for downloads a dry run cannot perform, so an 82-song
+   * catalogue priced at 20,505 against a 6,000 ceiling and refused to start.
+   * Conservative pricing is right — misreading captions.list as 1 unit burned
+   * a whole day on 2026-07-29 — but charging for calls that provably cannot
+   * happen is a false refusal, not caution.
+   */
+  it('a listing-only pass is not charged for downloads it cannot make', () => {
+    const plan = planHarvest(82, 2, false);
+    expect(plan.maxUnits).toBe(2 + Math.ceil(82 / 50) + 82 * COST_CAPTIONS_LIST);
+    expect(plan.affordable).toBe(true);
+  });
+
+  it('still prices downloads for a pass that will download', () => {
+    const plan = planHarvest(82, 2, true);
+    expect(plan.maxUnits).toBeGreaterThan(HARVEST_UNIT_CEILING);
+    expect(plan.affordable).toBe(false);
+  });
+
+  it('defaults to the downloading worst case, so an unflagged caller is never under-priced', () => {
+    expect(planHarvest(82, 2).maxUnits).toBe(planHarvest(82, 2, true).maxUnits);
+  });
+
   it('prices the worst case, not the hoped-for one', () => {
     // Every video listed AND downloaded — the plan must not assume only 25%
     // have a track just because a sample suggested it.
