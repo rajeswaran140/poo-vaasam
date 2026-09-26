@@ -1,7 +1,12 @@
 /**
  * tamilagaval-caption-sweep — enforce the caption policy across the catalogue.
  *
- *   npx tsx scripts/tamilagaval-caption-sweep.ts [--limit 20] [--all] [--apply]
+ *   npx tsx scripts/tamilagaval-caption-sweep.ts [--limit 20] [--all] [--ids a,b,c] [--apply]
+ *
+ * `--ids` sweeps exactly those videos and skips the playlist walk — the way
+ * to act on what harvest-caption-lyrics reports as still carrying ASR,
+ * whatever their age. Recency was the only selector before, which is how
+ * eight older songs kept English transcripts of sung Tamil.
  *
  * **The policy (Raj, 2026-09-20):** *"we have to turn off all automatic captions
  * unless we uploaded our lyrics."* Every `asr` track is removed. A track a
@@ -42,6 +47,26 @@ const DEFAULT_LIMIT = 20;
 /** Well under the 10,000 daily budget: the snapshot cron and ad-hoc work share it. */
 const UNITS_AVAILABLE = 8_000;
 
+/**
+ * Comma-separated video ids, or null when not given.
+ *
+ * ⚠️ WHY THIS EXISTS. The sweep could only ever address videos by RECENCY,
+ * and that is exactly how eight songs came to sit serving English transcripts
+ * of sung Tamil indefinitely: they were older than whatever --limit anyone
+ * last ran, and reaching position ~90 of 129 uploads costs ~5,000 quota units
+ * and trips the affordability guard. harvest-caption-lyrics reports precisely
+ * which videos still carry ASR; without this flag that report was not
+ * actionable. Eight targeted videos cost 800 units instead of 5,000.
+ */
+const idsArg = (): string[] | null => {
+  const i = process.argv.indexOf('--ids');
+  if (i < 0) return null;
+  const raw = process.argv[i + 1];
+  if (!raw || raw.startsWith('--')) return null;
+  const ids = raw.split(',').map((x) => x.trim()).filter(Boolean);
+  return ids.length > 0 ? ids : null;
+};
+
 const arg = (flag: string, fallback: number): number => {
   const i = process.argv.indexOf(flag);
   if (i < 0) return fallback;
@@ -52,7 +77,8 @@ const arg = (flag: string, fallback: number): number => {
 async function main() {
   const apply = process.argv.includes('--apply');
   const all = process.argv.includes('--all');
-  const limit = all ? Number.POSITIVE_INFINITY : arg('--limit', DEFAULT_LIMIT);
+  const ids = idsArg();
+  const limit = ids ? ids.length : all ? Number.POSITIVE_INFINITY : arg('--limit', DEFAULT_LIMIT);
 
   const env = await amplifyEnv();
   const key = env.YOUTUBE_API_KEY;
@@ -75,7 +101,30 @@ async function main() {
   const videos: Array<{ id: string; title: string }> = [];
   let page = '';
   let pages = 0;
-  do {
+
+  // --ids skips the playlist walk entirely: we already know which videos to
+  // touch, so paging the whole uploads list to rediscover them is waste.
+  // videos.list resolves titles for the output at 1 unit per 50 ids.
+  if (ids) {
+    const r = await (await fetch(
+      `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${ids.join(',')}&key=${key}`
+    )).json();
+    pages = 1;
+    const titleOf = new Map<string, string>(
+      ((r.items ?? []) as Array<{ id: string; snippet: { title: string } }>)
+        .map((i) => [i.id, i.snippet.title])
+    );
+    const missing = ids.filter((id) => !titleOf.has(id));
+    if (missing.length > 0) {
+      // Loudly, rather than silently sweeping fewer videos than asked for.
+      console.error(`WARNING: not found on this channel, skipping: ${missing.join(', ')}`);
+    }
+    for (const id of ids) {
+      if (titleOf.has(id)) videos.push({ id, title: titleOf.get(id)! });
+    }
+  }
+
+  while (!ids) {
     const r = await (await fetch(
       `https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails,snippet&playlistId=${UPLOADS_PLAYLIST}&maxResults=50&key=${key}${page ? `&pageToken=${page}` : ''}`
     )).json();
@@ -84,7 +133,8 @@ async function main() {
       videos.push({ id: i.contentDetails.videoId, title: i.snippet.title });
     }
     page = r.nextPageToken ?? '';
-  } while (page && videos.length < limit);
+    if (!page || videos.length >= limit) break;
+  }
 
   const scope = videos.slice(0, Number.isFinite(limit) ? limit : videos.length);
   const worst = sweepCost(scope.length, scope.length, pages);
