@@ -42,7 +42,12 @@ export default function PopularPage() {
       <JsonLd data={itemListJsonLd} />
       <Header />
 
-      <section className="bg-orange-600 pt-24 pb-12 text-white">
+      {/* The header is `fixed` at h-20 (80px), so the top padding here is
+           clearance, not decoration: pt-24 left only 16px between the header's
+           border and the heading, and pt-20 left none at all. pt-28 = 80px of
+           header + 32px of air, matching /karaoke, /contact, /music-composition
+           and /privacy. */}
+      <section className="bg-orange-600 pt-28 pb-12 text-white">
         <div className="container mx-auto px-4 text-center">
           <h1 className="font-tamil text-4xl font-extrabold leading-tight sm:text-5xl">மிகவும் விரும்பப்பட்ட பாடல்கள்</h1>
           <p className="mt-3 font-poem text-lg text-white/90">Most-loved Tamil songs — always free</p>

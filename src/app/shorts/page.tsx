@@ -66,7 +66,12 @@ export default async function ShortsPage() {
       {shorts.length > 0 && <JsonLd data={videosItemListJsonLd(shorts)} />}
       <Header />
       <main id="main" className="flex min-h-screen flex-col bg-gray-900">
-        <section className="border-b border-gray-800 bg-gray-900 pt-24 pb-8">
+        {/* The header is `fixed` at h-20 (80px), so the top padding here is
+           clearance, not decoration: pt-24 left only 16px between the header's
+           border and the heading, and pt-20 left none at all. pt-28 = 80px of
+           header + 32px of air, matching /karaoke, /contact, /music-composition
+           and /privacy. */}
+        <section className="border-b border-gray-800 bg-gray-900 pt-28 pb-8">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <h1 className="font-tamil text-3xl font-bold text-white sm:text-4xl">
               குறும் காணொளிகள்

@@ -22,7 +22,12 @@ export default function SharePage() {
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
-      <main id="main" className="flex-1 pt-20">
+      {/* The header is `fixed` at h-20 (80px), so the top padding here is
+           clearance, not decoration: pt-24 left only 16px between the header's
+           border and the heading, and pt-20 left none at all. pt-28 = 80px of
+           header + 32px of air, matching /karaoke, /contact, /music-composition
+           and /privacy. */}
+      <main id="main" className="flex-1 pt-28">
         {/* Hero — matches the site's dark/orange brand */}
         <section className="relative bg-gray-900 text-white py-16">
           <div aria-hidden className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-orange-500/70 to-transparent" />
