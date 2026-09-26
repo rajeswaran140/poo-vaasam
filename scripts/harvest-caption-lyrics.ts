@@ -27,7 +27,7 @@
  * it). Never written to disk.
  */
 
-import { youtubeApiKey } from './lib/amplify-env';
+import { amplifyEnv, youtubeApiKey } from './lib/amplify-env';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -51,16 +51,44 @@ const APPLY = args.includes('--apply');
 const LIMIT = Number(flag('limit', '100'));
 const OUT = flag('out', './lyrics-harvest')!;
 
+/**
+ * ⚠️ THE OAUTH TRIO LIVES IN SSM, NOT THE PROCESS ENV. This function read
+ * `process.env` until 2026-09-26 while the rest of the file had already moved
+ * to `amplify-env` for the API key — a half-finished migration. On this box
+ * none of the three variables is set, so it sent an empty refresh token and
+ * died before listing anything, `--apply` or not.
+ *
+ * Its error blamed the scope, which sent the next reader looking at OAuth
+ * consent screens for a problem that was simply a missing credential. The
+ * message now distinguishes the two, because captions.list DOES require
+ * force-ssl and a real scope failure here is possible.
+ *
+ * `scripts/lib/amplify-env.ts` exists precisely to stop this: its own header
+ * documents the identical bug with YOUTUBE_API_KEY. Use it for every secret.
+ */
 async function accessToken(): Promise<string> {
+  const env = await amplifyEnv();
+  const missing = (
+    ['YOUTUBE_OAUTH_CLIENT_ID', 'YOUTUBE_OAUTH_CLIENT_SECRET', 'YOUTUBE_DATA_REFRESH_TOKEN'] as const
+  ).filter((k) => !env[k]);
+  if (missing.length > 0) {
+    throw new Error(`missing from the Amplify env and SSM: ${missing.join(', ')}`);
+  }
+
   const body = new URLSearchParams({
-    client_id: process.env.YOUTUBE_OAUTH_CLIENT_ID!,
-    client_secret: process.env.YOUTUBE_OAUTH_CLIENT_SECRET!,
-    refresh_token: process.env.YOUTUBE_DATA_REFRESH_TOKEN!,
+    client_id: env.YOUTUBE_OAUTH_CLIENT_ID!,
+    client_secret: env.YOUTUBE_OAUTH_CLIENT_SECRET!,
+    refresh_token: env.YOUTUBE_DATA_REFRESH_TOKEN!,
     grant_type: 'refresh_token',
   });
   const r = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', body });
   const j = (await r.json()) as { access_token?: string };
-  if (!j.access_token) throw new Error('could not mint a write token (force-ssl scope required)');
+  if (!j.access_token) {
+    throw new Error(
+      'the credentials are present but Google refused them — an expired refresh token, ' +
+        'or a token minted without the youtube.force-ssl scope that captions.list needs'
+    );
+  }
   return j.access_token;
 }
 
@@ -111,7 +139,8 @@ async function main() {
   // Long-form only: a Short's caption track is a fragment of a song, not a song.
   const songs = ids.filter((v) => (meta.get(v)?.seconds ?? 0) > SHORT_MAX_SECONDS).slice(0, LIMIT);
 
-  const plan = planHarvest(songs.length, pages);
+  // APPLY decides the price: a dry run cannot download, so it is not charged for it.
+  const plan = planHarvest(songs.length, pages, APPLY);
   console.log(`catalogue: ${ids.length} uploads, ${songs.length} long-form songs in scope`);
   console.log(`quota: worst case ${plan.maxUnits} units — ${plan.affordable ? 'OK' : 'TOO MUCH'}`);
   if (!plan.affordable) {
