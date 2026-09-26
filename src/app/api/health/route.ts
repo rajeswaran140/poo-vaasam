@@ -32,11 +32,49 @@ import { isContactNotifyConfigured } from '@/lib/contact-notify';
 // precisely the thing under investigation.
 export const dynamic = 'force-dynamic';
 
+/**
+ * Which server-side features actually have their configuration at runtime.
+ *
+ * ⚠️ CONTACT_NOTIFY_FROM WAS NOT SPECIAL — it was the first one anyone noticed.
+ * Every var below is a plain Amplify environment variable read at runtime with
+ * no fallback, so each fails exactly the same silent way. NEXT_PUBLIC_* are
+ * exempt: Next inlines those into the bundle at build.
+ *
+ * ⚠️ READ FROM env DIRECTLY, not via each feature's isXConfigured(). Those
+ * helpers live in modules that import the BigQuery, GA4 and web-push SDKs, and
+ * a health endpoint has no business dragging those in. The duplication is
+ * deliberate and is held honest by a test that imports the REAL helpers and
+ * asserts this map agrees with every one of them.
+ *
+ * BOOLEANS ONLY — this endpoint is public, so no value may ever appear here.
+ */
+function configReadiness(): Record<string, boolean> {
+  const env = process.env;
+  return {
+    contactNotify: isContactNotifyConfigured(),
+    ga4: Boolean(env.GA4_PROPERTY_ID && env.GA4_SERVICE_ACCOUNT_KEY),
+    // Mirrors isBigQueryConfigured: it needs GA4_PROPERTY_ID too, and accepts
+    // either service-account key.
+    bigquery: Boolean(
+      env.BIGQUERY_PROJECT_ID &&
+        env.GA4_PROPERTY_ID &&
+        (env.BIGQUERY_SERVICE_ACCOUNT_KEY || env.GA4_SERVICE_ACCOUNT_KEY)
+    ),
+    webPush: Boolean(env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY && env.VAPID_SUBJECT),
+    youtubeApi: Boolean(env.YOUTUBE_API_KEY),
+    youtubeOAuth: Boolean(env.YOUTUBE_OAUTH_CLIENT_ID && env.YOUTUBE_OAUTH_CLIENT_SECRET),
+  };
+}
+
 export async function GET() {
+  const config = configReadiness();
   return NextResponse.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     message: 'API is working',
-    contactNotify: isContactNotifyConfigured(),
+    // Kept at the top level as well: it shipped in #361 and something may
+    // already read it.
+    contactNotify: config.contactNotify,
+    config,
   });
 }
