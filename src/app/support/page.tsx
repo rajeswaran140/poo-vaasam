@@ -12,7 +12,10 @@ import { SupportCTA } from '@/components/SupportCTA';
 import { alternatesFor } from '@/lib/seo';
 
 export const metadata: Metadata = {
-  title: 'ஆதரவு · Support Tamilagaval',
+  // `absolute` opts out of the root's `%s | Tamilagaval` template. Here the
+  // brand is part of the sentence — "Support Tamilagaval" is the ask, not a
+  // suffix — so the template would render "… Support Tamilagaval | Tamilagaval".
+  title: { absolute: 'ஆதரவு · Support Tamilagaval' },
   description:
     'தமிழகவலை ஆதரிக்கும் வழிகள் — Subscribe, Super Thanks, மற்றும் பாடல்களைப் பகிர்தல். Ways to support original Tamil songs, poems and stories on Tamilagaval.',
   alternates: alternatesFor('/support'),

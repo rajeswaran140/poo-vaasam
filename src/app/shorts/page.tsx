@@ -34,7 +34,10 @@ export const dynamic = 'force-dynamic';
 /** The whole catalogue, not a page of it — the point is that nothing is hidden. */
 const FEED_LIMIT = 200;
 
-const META_TITLE = 'Tamil Shorts by Raj — TamilAgaval';
+// No brand here: the ROOT layout appends it via `title.template`. With it
+// baked in as well, the live tab read "Tamil Shorts by Raj — TamilAgaval |
+// Tamilagaval" — twice, in two different spellings.
+const META_TITLE = 'Tamil Shorts by Raj';
 const META_DESCRIPTION =
   'Every short from the Tamilagaval channel by Raj — original Tamil songs and poetry in under three minutes. Always free.';
 
