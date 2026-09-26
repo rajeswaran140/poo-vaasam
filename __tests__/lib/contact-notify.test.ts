@@ -52,6 +52,59 @@ describe('env-gate', () => {
   });
 });
 
+/**
+ * ⚠️ WHY A BUILT-IN PRODUCTION SENDER EXISTS.
+ *
+ * Order notifications had NEVER sent. /api/health reported
+ * `contactNotify: false` against the deployed site: plain Amplify environment
+ * variables do not reach the SSR runtime, so `CONTACT_NOTIFY_FROM` was empty
+ * there and this module returned false at its first line — silently, since
+ * nothing throws and the caller's catch never fires.
+ *
+ * The site survived because every other load-bearing value has a hardcoded
+ * fallback (`'TamilWebContent'`, `'tamil-web-media'`). This one fell back to
+ * `''`, which the code reads as "not configured".
+ *
+ * So production now falls back to a built-in sender, exactly as the recipient
+ * already did. NOT unconditionally: the dev/preview no-op is a deliberate
+ * safety property — a preview build must not send real mail — so the fallback
+ * is gated on NODE_ENV, which Next sets itself and which therefore does reach
+ * the runtime.
+ */
+describe('production sender fallback', () => {
+  const NODE_ENV = process.env.NODE_ENV;
+  afterEach(() => {
+    Object.defineProperty(process.env, 'NODE_ENV', { value: NODE_ENV, configurable: true });
+  });
+  const setEnv = (v: string) =>
+    Object.defineProperty(process.env, 'NODE_ENV', { value: v, configurable: true });
+
+  it('sends in production even with no CONTACT_NOTIFY_FROM, since the env var never arrives', async () => {
+    delete process.env.CONTACT_NOTIFY_FROM;
+    setEnv('production');
+    expect(isContactNotifyConfigured()).toBe(true);
+    expect(await sendContactNotification(msg)).toBe(true);
+    const input = (SendEmailCommand as unknown as jest.Mock).mock.calls[0][0];
+    expect(input.FromEmailAddress).toBe('rajeswaran.t@techsynergy.ca');
+  });
+
+  it('STILL no-ops outside production, so previews and local dev never send real mail', async () => {
+    delete process.env.CONTACT_NOTIFY_FROM;
+    setEnv('development');
+    expect(isContactNotifyConfigured()).toBe(false);
+    expect(await sendContactNotification(msg)).toBe(false);
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  it('an explicit sender still wins over the built-in one', async () => {
+    process.env.CONTACT_NOTIFY_FROM = 'override@example.com';
+    setEnv('production');
+    await sendContactNotification(msg);
+    const input = (SendEmailCommand as unknown as jest.Mock).mock.calls[0][0];
+    expect(input.FromEmailAddress).toBe('override@example.com');
+  });
+});
+
 describe('sending', () => {
   beforeEach(() => {
     process.env.CONTACT_NOTIFY_FROM = 'noreply@tamilagaval.com';
@@ -64,7 +117,7 @@ describe('sending', () => {
     expect(mockSend).toHaveBeenCalledTimes(1);
     const input = (SendEmailCommand as unknown as jest.Mock).mock.calls[0][0];
     expect(input.FromEmailAddress).toBe('noreply@tamilagaval.com');
-    expect(input.Destination.ToAddresses).toEqual(['rajeswaran.pro@gmail.com']);
+    expect(input.Destination.ToAddresses).toEqual(['rajeswaran.t@techsynergy.ca']);
     expect(input.ReplyToAddresses).toEqual(['priya@example.com']);
   });
 

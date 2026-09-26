@@ -16,15 +16,46 @@
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import { awsConfig } from '@/lib/aws-config';
 
-const DEFAULT_TO = 'rajeswaran.pro@gmail.com';
+/**
+ * ⚠️ THESE ARE BUILT IN BECAUSE THE ENV VARS NEVER ARRIVE.
+ *
+ * Order notifications had never sent — not once. /api/health, probed against
+ * the deployed site on 2026-09-26, reported `contactNotify: false`: **plain
+ * Amplify environment variables do not reach the SSR runtime.** So
+ * `CONTACT_NOTIFY_FROM` was empty in production and `sendContactNotification`
+ * returned at its first line. Silently — nothing throws, so the caller's catch
+ * never logged, and no signal reached anyone.
+ *
+ * The rest of the app survived this because every other load-bearing value
+ * carries a hardcoded fallback (`'TamilWebContent'`, `'tamil-web-media'`).
+ * This one fell back to `''`, which the code correctly reads as "unconfigured".
+ *
+ * ⚠️ SETTING THESE IN THE AMPLIFY CONSOLE DOES NOTHING AT RUNTIME. Raj changed
+ * CONTACT_NOTIFY_TO there on 2026-09-26 and it had no effect — the recipient
+ * kept falling back to the constant below. Change the constants here instead,
+ * and redeploy.
+ *
+ * Not a secret: an SES sender must be a verified identity and the recipient is
+ * the site owner, so both are ordinary configuration. The recipient was always
+ * a constant; the sender is now one too.
+ */
+const DEFAULT_FROM = 'rajeswaran.t@techsynergy.ca';
+const DEFAULT_TO = 'rajeswaran.t@techsynergy.ca';
 const ADMIN_URL = 'https://tamilagaval.com/admin/messages';
 
 // Read at call-time (not module load) so the env-gate reflects the current
 // environment and tests can toggle configuration without module-cache games.
 function config() {
   return {
-    from: process.env.CONTACT_NOTIFY_FROM?.trim() || '',
-    to: (process.env.CONTACT_NOTIFY_TO?.trim() || DEFAULT_TO),
+    // ⚠️ The production fallback is GATED, not unconditional. "No sender => no
+    // send" is a deliberate safety property: a preview build or a local dev
+    // server must never deliver real mail to the owner's inbox. NODE_ENV is
+    // set by Next itself rather than by the Amplify console, so unlike
+    // CONTACT_NOTIFY_FROM it genuinely is present at runtime.
+    from:
+      process.env.CONTACT_NOTIFY_FROM?.trim() ||
+      (process.env.NODE_ENV === 'production' ? DEFAULT_FROM : ''),
+    to: process.env.CONTACT_NOTIFY_TO?.trim() || DEFAULT_TO,
   };
 }
 
