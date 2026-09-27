@@ -25,14 +25,14 @@ export default function AdminError({ error, reset }: ErrorProps) {
   }, [error]);
 
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 dark:bg-gray-800">
       <div className="max-w-2xl w-full">
         {/* Error Card */}
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
+        <div className="bg-white rounded-2xl shadow-xl overflow-hidden dark:bg-gray-900">
           {/* Error Header */}
           <div className="bg-gradient-to-r from-red-500 to-red-600 p-8 text-white">
             <div className="flex items-center gap-4">
-              <div className="bg-white/20 p-4 rounded-full">
+              <div className="bg-white/20 p-4 rounded-full dark:bg-gray-900">
                 <AlertTriangle className="w-12 h-12" />
               </div>
               <div>
@@ -46,7 +46,7 @@ export default function AdminError({ error, reset }: ErrorProps) {
 
           {/* Error Details */}
           <div className="p-8">
-            <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded-lg mb-6">
+            <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded-lg mb-6 dark:bg-red-900/20">
               <h3 className="font-semibold text-red-800 mb-2 dark:text-red-200">Error Details:</h3>
               <p className="text-red-700 font-mono text-sm break-all dark:text-red-300">
                 {error.message || 'Unknown error occurred'}
@@ -70,7 +70,7 @@ export default function AdminError({ error, reset }: ErrorProps) {
 
               <Link
                 href="/admin"
-                className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-semibold dark:text-gray-300"
+                className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-semibold dark:text-gray-300 dark:bg-gray-800"
               >
                 <Home className="w-5 h-5" />
                 Go to Dashboard
@@ -78,7 +78,7 @@ export default function AdminError({ error, reset }: ErrorProps) {
             </div>
 
             {/* Help Section */}
-            <div className="mt-8 p-4 bg-gray-50 rounded-lg">
+            <div className="mt-8 p-4 bg-gray-50 rounded-lg dark:bg-gray-800/60">
               <h3 className="font-semibold text-gray-900 mb-2 dark:text-gray-100">What can you do?</h3>
               <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
                 <li className="flex items-start gap-2">
@@ -114,7 +114,7 @@ export default function AdminError({ error, reset }: ErrorProps) {
           </div>
 
           {/* Footer */}
-          <div className="bg-gray-50 px-8 py-4 border-t border-gray-200">
+          <div className="bg-gray-50 px-8 py-4 border-t border-gray-200 dark:bg-gray-800/60">
             <p className="text-sm text-gray-600 text-center dark:text-gray-400">
               This error has been logged. Our team will investigate if it continues to occur.
             </p>

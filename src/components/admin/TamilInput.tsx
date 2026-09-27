@@ -119,9 +119,9 @@ export function TamilInput({
           <span className="text-base">💡</span>
           <div>
             <strong>How it works:</strong> Type in English — a list of Tamil suggestions appears. Use{' '}
-            <kbd className="px-1 py-0.5 bg-white border border-purple-300 rounded text-xs">↑</kbd>{' '}
-            <kbd className="px-1 py-0.5 bg-white border border-purple-300 rounded text-xs">↓</kbd> then{' '}
-            <kbd className="px-1 py-0.5 bg-white border border-purple-300 rounded text-xs">Enter</kbd> (or click) to choose; <kbd className="px-1 py-0.5 bg-white border border-purple-300 rounded text-xs">Space</kbd> accepts the highlighted word.
+            <kbd className="px-1 py-0.5 bg-white border border-purple-300 rounded text-xs dark:bg-gray-900">↑</kbd>{' '}
+            <kbd className="px-1 py-0.5 bg-white border border-purple-300 rounded text-xs dark:bg-gray-900">↓</kbd> then{' '}
+            <kbd className="px-1 py-0.5 bg-white border border-purple-300 rounded text-xs dark:bg-gray-900">Enter</kbd> (or click) to choose; <kbd className="px-1 py-0.5 bg-white border border-purple-300 rounded text-xs dark:bg-gray-900">Space</kbd> accepts the highlighted word.
             <br />
             <span className="text-purple-600 dark:text-purple-400">Some words have several spellings — e.g. <strong>malai</strong> → மலை / மாலை / மழை. Pick the one you mean.</span>
           </div>

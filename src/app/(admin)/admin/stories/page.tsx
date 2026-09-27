@@ -123,7 +123,7 @@ export default function StoriesPage() {
       )}
 
       {/* Filter */}
-      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white p-4">
+      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white p-4 dark:bg-gray-900">
         <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Status</span>
           <select value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm">
@@ -135,20 +135,20 @@ export default function StoriesPage() {
         </label>
       </div>
 
-      {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:text-red-300">{error}</div>}
+      {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:text-red-300 dark:bg-red-900/20">{error}</div>}
 
       {/* Table */}
       {loading ? (
         <p className="text-gray-500 dark:text-gray-400">Loading…</p>
       ) : !rows.length ? (
-        <div className="rounded-xl border border-gray-200 bg-white p-10 text-center">
+        <div className="rounded-xl border border-gray-200 bg-white p-10 text-center dark:bg-gray-900">
           <MessageSquareHeart className="mx-auto mb-3 h-12 w-12 text-gray-300" />
           <p className="text-gray-500 dark:text-gray-400">No stories for this filter.</p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white dark:bg-gray-900">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-left text-gray-500 dark:text-gray-400">
+            <thead className="bg-gray-50 text-left text-gray-500 dark:text-gray-400 dark:bg-gray-800/60">
               <tr>
                 <th className="px-4 py-3 font-medium">Theme</th>
                 <th className="px-4 py-3 font-medium">Name</th>
@@ -215,7 +215,7 @@ export default function StoriesPage() {
 function Stat({ label, value, tone }: { label: string; value: number; tone: 'blue' | 'gray' | 'amber' }) {
   const tones = { blue: 'text-blue-700', gray: 'text-gray-700', amber: 'text-amber-700' };
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4">
+    <div className="rounded-xl border border-gray-200 bg-white p-4 dark:bg-gray-900">
       <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</p>
       <p className={`mt-1 text-2xl font-bold ${tones[tone]}`}>{value}</p>
     </div>

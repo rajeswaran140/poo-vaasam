@@ -164,7 +164,7 @@ export function Keyboard({ octaves = 2, startOctave = 4 }: { octaves?: number; s
               }}
               aria-label={`${noteName(k.midi)}${showSwara ? ` ${swaraName(k.midi)}` : ''}`}
               className={`absolute top-0 flex h-40 w-10 flex-col items-center justify-end rounded-b border pb-2 text-[11px] ${
-                held === k.midi ? 'bg-orange-200 dark:bg-orange-800' : 'bg-white dark:bg-gray-100'
+                held === k.midi ? 'bg-orange-200 dark:bg-orange-800' : 'bg-white dark:bg-gray-900'
               } ${isTonic ? 'border-orange-500 border-2' : 'border-gray-300'} ${
                 scale && !inScale ? 'opacity-40' : ''
               }`}

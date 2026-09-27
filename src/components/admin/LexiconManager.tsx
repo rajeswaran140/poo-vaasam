@@ -416,7 +416,7 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
                     </td>
                     <td className="px-3 py-2">
                       <div className="flex flex-wrap gap-1">
-                        {w.themes.map((t) => <span key={t} className="rounded-full bg-orange-50 px-2 py-0.5 text-xs text-orange-700 dark:text-orange-300">{t}</span>)}
+                        {w.themes.map((t) => <span key={t} className="rounded-full bg-orange-50 px-2 py-0.5 text-xs text-orange-700 dark:text-orange-300 dark:bg-orange-900/20">{t}</span>)}
                       </div>
                     </td>
                     <td className="px-3 py-2">
@@ -927,7 +927,7 @@ function SuggestPanel({ onAccepted }: { onAccepted: () => void }) {
                 <span className="text-[10px] text-gray-400">{(s.registers ?? [s.register]).join('/')}</span>
                 {/* Say when the model itself calls it a coinage. */}
                 {(s.lexicalStatus === 'creative-poetic' || s.lexicalStatus === 'modern-compound') && (
-                  <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-800 dark:text-amber-200">coined</span>
+                  <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-800 dark:text-amber-200 dark:bg-amber-900/30">coined</span>
                 )}
               </li>
             ))}

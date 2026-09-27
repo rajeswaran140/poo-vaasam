@@ -240,7 +240,7 @@ export default function EditContentPage({ params }: PageProps) {
         <DraftBanner draft={draft.draftAvailable} onRestore={draft.restore} onDismiss={draft.dismiss} />
 
         {/* Content Type */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 dark:bg-gray-900">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 dark:text-gray-100">Content Type</h2>
           <div className="grid grid-cols-5 gap-3">
             {['SONGS', 'POEMS', 'LYRICS', 'STORIES', 'ESSAYS'].map((type) => (
@@ -252,7 +252,7 @@ export default function EditContentPage({ params }: PageProps) {
                   formData.type === type
                     ? 'border-purple-600 bg-purple-50'
                     : 'border-gray-200 hover:border-gray-300'
-                }`}
+                } dark:bg-purple-900/20`}
               >
                 <div className="text-2xl mb-1">
                   {type === 'SONGS' && '🎵'}
@@ -268,7 +268,7 @@ export default function EditContentPage({ params }: PageProps) {
         </div>
 
         {/* Basic Information */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4 dark:bg-gray-900">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 dark:text-gray-100">Basic Information</h2>
 
           <div>
@@ -348,7 +348,7 @@ export default function EditContentPage({ params }: PageProps) {
         </div>
 
         {/* Categories */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 dark:bg-gray-900">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 dark:text-gray-100">Categories</h2>
           <div className="flex flex-wrap gap-2">
             {categories.map((category) => (
@@ -360,7 +360,7 @@ export default function EditContentPage({ params }: PageProps) {
                   formData.categoryIds.includes(category.id)
                     ? 'border-purple-600 bg-purple-50 text-purple-700'
                     : 'border-gray-200 hover:border-gray-300'
-                } dark:text-purple-300`}
+                } dark:text-purple-300 dark:bg-purple-900/20`}
               >
                 {category.name}
               </button>
@@ -369,7 +369,7 @@ export default function EditContentPage({ params }: PageProps) {
         </div>
 
         {/* Tags */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 dark:bg-gray-900">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 dark:text-gray-100">Tags</h2>
           <div className="flex flex-wrap gap-2">
             {tags.map((tag) => (
@@ -390,7 +390,7 @@ export default function EditContentPage({ params }: PageProps) {
         </div>
 
         {/* Media */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4 dark:bg-gray-900">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 dark:text-gray-100">Media (ஊடகம்)</h2>
 
           <MediaUploadField
@@ -498,7 +498,7 @@ export default function EditContentPage({ params }: PageProps) {
 
         {/* SEO - Only shown if feature is enabled */}
         {FEATURES.ADMIN.SEO_FIELDS && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4">
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4 dark:bg-gray-900">
             <h2 className="text-lg font-semibold text-gray-900 mb-4 dark:text-gray-100">SEO Settings</h2>
             <TamilInput
               label="SEO Title"
@@ -526,7 +526,7 @@ export default function EditContentPage({ params }: PageProps) {
         )}
 
         {/* Submit Buttons */}
-        <div className="flex items-center justify-between bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center justify-between bg-white rounded-lg shadow-sm border border-gray-200 p-6 dark:bg-gray-900">
           <button
             type="button"
             onClick={() => router.back()}

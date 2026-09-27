@@ -20,6 +20,14 @@
  * places, which LOOKS correct and is 3.67:1: still a fail. Presence is not
  * contrast.
  *
+ * ⚠️ AND IT CHECKS BACKGROUNDS, because text alone was not enough. The first
+ * version of this guard assumed every element sat on the dark shell. It did
+ * not: `bg-white` with no `dark:` variant stays WHITE when the theme flips, so
+ * lightening the text for dark mode put near-white text on a white box. That
+ * regression shipped, and Raj found it — "some text is unreadable because the
+ * background remains light." A light surface with no dark variant is therefore
+ * a failure in its own right, independent of any ratio.
+ *
  * STATIC ANALYSIS, ON PURPOSE. Importing every admin page would drag in
  * ContentRepository, the AWS SDK and a mock per route; the property is visible
  * in the text.
@@ -87,6 +95,9 @@ function tsxFiles(dir: string, out: string[] = []): string[] {
   return out;
 }
 
+const LIGHT_SURFACE =
+  /(?:^|[\s"`])bg-(?:white|(?:gray|slate|zinc|neutral|stone|red|green|blue|amber|orange|purple|emerald|rose|yellow|indigo|sky|teal)-(?:50|100|200))\b/;
+
 interface Offence {
   cls: string;
   fg: string;
@@ -105,6 +116,15 @@ function offences(src: string): Offence[] {
     const fg = hexFor(token[1]);
     if (!fg) continue;
 
+    // A light surface with no dark: variant is reported by the dedicated test
+    // below; scoring it here against the dark card would measure a ground it
+    // never actually has.
+    if (LIGHT_SURFACE.test(cls) && !/dark:bg-/.test(cls)) continue;
+
+    // Effective dark-mode ground: the dark: variant when present, else the
+    // inherited card. A plain SOLID background (a brand button, say) renders
+    // identically in both themes — its contrast is a general accessibility
+    // question, not a dark-mode one, and is deliberately out of scope here.
     const bgMatch = /dark:bg-([a-z]+-\d+|white|black)(?:\/(\d+))?\b/.exec(cls);
     let bg = CARD;
     if (bgMatch) {
@@ -138,6 +158,21 @@ describe('every admin surface stays readable in dark mode', () => {
   );
 });
 
+describe('no admin surface stays light when the theme goes dark', () => {
+  const files = ROOTS.flatMap((r) => tsxFiles(r)).sort();
+
+  it.each(files.map((f) => [relative(process.cwd(), f), f]))(
+    '%s pairs every light background with a dark: variant',
+    (_name, file) => {
+      const src = readFileSync(file, 'utf8');
+      const stranded = (src.match(/className=(?:"[^"]*"|\{`[^`]*`\})/g) ?? [])
+        .filter((cls) => LIGHT_SURFACE.test(cls) && !/dark:bg-/.test(cls))
+        .map((cls) => cls.slice(0, 90));
+      expect(stranded).toEqual([]);
+    }
+  );
+});
+
 describe('the contrast maths itself', () => {
   it('matches known WCAG pairs', () => {
     expect(contrast('#ffffff', '#000000')).toBeCloseTo(21, 1);
@@ -152,5 +187,11 @@ describe('the contrast maths itself', () => {
   it('rates gray-500 on a dark card as below AA, which presence checks miss', () => {
     expect(contrast('#6b7280', CARD)).toBeLessThan(AA);
     expect(contrast('#9ca3af', CARD)).toBeGreaterThan(AA);
+  });
+
+  it('rates the regression this guard missed: light text left on a white box', () => {
+    // gray-100 on white — what `dark:text-gray-100` did to a `bg-white` card
+    // that had no dark: variant.
+    expect(contrast('#f3f4f6', '#ffffff')).toBeLessThan(1.2);
   });
 });

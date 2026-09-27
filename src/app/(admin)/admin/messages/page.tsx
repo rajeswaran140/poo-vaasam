@@ -61,7 +61,7 @@ export default function MessagesPage() {
         </div>
         <button
           onClick={load}
-          className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2 text-sm dark:text-gray-300"
+          className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2 text-sm dark:text-gray-300 dark:bg-gray-900"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
         </button>
@@ -70,16 +70,16 @@ export default function MessagesPage() {
       {loading ? (
         <p className="text-gray-500 dark:text-gray-400">Loading messages…</p>
       ) : error ? (
-        <div className="rounded-lg bg-red-50 border border-red-200 text-red-800 px-4 py-3 dark:text-red-200">{error}</div>
+        <div className="rounded-lg bg-red-50 border border-red-200 text-red-800 px-4 py-3 dark:text-red-200 dark:bg-red-900/20">{error}</div>
       ) : messages.length === 0 ? (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center dark:bg-gray-900">
           <Mail className="w-16 h-16 text-gray-300 mx-auto mb-4" />
           <p className="text-gray-600 dark:text-gray-400">No messages yet.</p>
         </div>
       ) : (
         <div className="space-y-4">
           {messages.map((m) => (
-            <div key={m.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div key={m.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 dark:bg-gray-900">
               <div className="flex items-start justify-between gap-4 mb-2">
                 <div>
                   <h3 className="font-semibold text-gray-900 dark:text-gray-100">{m.subject}</h3>

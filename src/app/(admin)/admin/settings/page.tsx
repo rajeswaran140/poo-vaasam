@@ -14,7 +14,7 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white rounded-lg shadow-sm p-6">
+      <div className="bg-white rounded-lg shadow-sm p-6 dark:bg-gray-900">
         <div className="flex items-center gap-3 mb-2">
           <SettingsIcon className="w-8 h-8 text-purple-600 dark:text-purple-400" />
           <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Settings</h1>
@@ -25,7 +25,7 @@ export default function SettingsPage() {
       {/* Settings Categories */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* General Settings */}
-        <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-purple-500">
+        <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-purple-500 dark:bg-gray-900">
           <div className="flex items-center gap-3 mb-4">
             <Globe className="w-6 h-6 text-purple-600 dark:text-purple-400" />
             <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">General Settings</h2>
@@ -38,13 +38,13 @@ export default function SettingsPage() {
             <div>• Default Language: Tamil (ta)</div>
             <div>• Time Zone: Asia/Kolkata</div>
           </div>
-          <button className="mt-4 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors dark:text-gray-300">
+          <button className="mt-4 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors dark:text-gray-300 dark:bg-gray-800">
             Coming Soon
           </button>
         </div>
 
         {/* Database Settings */}
-        <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-blue-500">
+        <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-blue-500 dark:bg-gray-900">
           <div className="flex items-center gap-3 mb-4">
             <Database className="w-6 h-6 text-blue-600 dark:text-blue-400" />
             <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Database</h2>
@@ -57,13 +57,13 @@ export default function SettingsPage() {
             <div>• Region: ca-central-1</div>
             <div>• Read Capacity: On-demand</div>
           </div>
-          <button className="mt-4 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors dark:text-gray-300">
+          <button className="mt-4 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors dark:text-gray-300 dark:bg-gray-800">
             Coming Soon
           </button>
         </div>
 
         {/* Security Settings */}
-        <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-red-500">
+        <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-red-500 dark:bg-gray-900">
           <div className="flex items-center gap-3 mb-4">
             <Shield className="w-6 h-6 text-red-600 dark:text-red-400" />
             <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Security</h2>
@@ -76,13 +76,13 @@ export default function SettingsPage() {
             <div>• User Pool: ca-central-1_JPXdswqHE</div>
             <div>• MFA: Disabled</div>
           </div>
-          <button className="mt-4 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors dark:text-gray-300">
+          <button className="mt-4 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors dark:text-gray-300 dark:bg-gray-800">
             Coming Soon
           </button>
         </div>
 
         {/* Notifications */}
-        <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-green-500">
+        <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-green-500 dark:bg-gray-900">
           <div className="flex items-center gap-3 mb-4">
             <Bell className="w-6 h-6 text-green-600 dark:text-green-400" />
             <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Notifications</h2>
@@ -95,7 +95,7 @@ export default function SettingsPage() {
             <div>• New Content Alerts: Enabled</div>
             <div>• Comment Moderation: Enabled</div>
           </div>
-          <button className="mt-4 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors dark:text-gray-300">
+          <button className="mt-4 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors dark:text-gray-300 dark:bg-gray-800">
             Coming Soon
           </button>
         </div>
@@ -105,7 +105,7 @@ export default function SettingsPage() {
       <FontsReference />
 
       {/* Development Notice */}
-      <div className="bg-yellow-50 border-l-4 border-yellow-400 p-6 rounded-lg">
+      <div className="bg-yellow-50 border-l-4 border-yellow-400 p-6 rounded-lg dark:bg-yellow-900/20">
         <div className="flex items-start gap-3">
           <div className="flex-shrink-0">
             <svg className="w-6 h-6 text-yellow-600 dark:text-yellow-400" fill="currentColor" viewBox="0 0 20 20">

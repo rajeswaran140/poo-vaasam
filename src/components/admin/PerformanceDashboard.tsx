@@ -87,7 +87,7 @@ export function PerformanceDashboard() {
 
   if (loading) {
     return (
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 dark:bg-gray-900">
         <div className="flex items-center justify-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
           <span className="ml-3 text-gray-600 dark:text-gray-400">Loading performance data...</span>
@@ -98,7 +98,7 @@ export function PerformanceDashboard() {
 
   if (error) {
     return (
-      <div className="bg-red-50 rounded-xl border border-red-200 p-8">
+      <div className="bg-red-50 rounded-xl border border-red-200 p-8 dark:bg-red-900/20">
         <p className="text-red-800 font-semibold dark:text-red-200">Error loading performance data</p>
         <p className="text-red-600 text-sm mt-2 dark:text-red-400">{error}</p>
         <button
@@ -132,13 +132,13 @@ export function PerformanceDashboard() {
         <div className="flex gap-3">
           <button
             onClick={fetchStats}
-            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium dark:text-gray-300"
+            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium dark:text-gray-300 dark:bg-gray-800"
           >
             Refresh
           </button>
           <button
             onClick={clearCache}
-            className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors font-medium dark:text-red-300"
+            className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors font-medium dark:text-red-300 dark:bg-red-900/30"
           >
             Clear Cache
           </button>
@@ -179,7 +179,7 @@ export function PerformanceDashboard() {
       </div>
 
       {/* Cache Details */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 dark:bg-gray-900">
         <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2 dark:text-gray-100">
           <Database className="w-5 h-5 text-purple-600 dark:text-purple-400" />
           Embedding Cache Status
@@ -208,7 +208,7 @@ export function PerformanceDashboard() {
             <span>Cache utilization</span>
             <span>{((data.cache.size / 1000) * 100).toFixed(1)}%</span>
           </div>
-          <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+          <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden dark:bg-gray-700">
             <div
               className="h-full bg-gradient-to-r from-purple-500 to-purple-700 transition-all duration-500"
               style={{ width: `${(data.cache.size / 1000) * 100}%` }}
@@ -219,7 +219,7 @@ export function PerformanceDashboard() {
 
       {/* Performance Insights */}
       {data.recommendations && data.recommendations.length > 0 && (
-        <div className="bg-purple-50 rounded-xl border border-purple-200 p-6">
+        <div className="bg-purple-50 rounded-xl border border-purple-200 p-6 dark:bg-purple-900/20">
           <h3 className="text-lg font-semibold text-purple-900 mb-3 dark:text-purple-100">
             💡 Performance Insights
           </h3>
@@ -276,7 +276,7 @@ function MetricCard({ title, value, subtitle, icon, color, trend }: MetricCardPr
     <div
       className={`bg-white rounded-xl shadow-sm border-2 p-6 ${
         trend ? trendColors[trend] : 'border-gray-200'
-      }`}
+      } dark:bg-gray-900`}
     >
       <div className="flex items-center justify-between mb-4">
         <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>

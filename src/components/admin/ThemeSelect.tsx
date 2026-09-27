@@ -85,7 +85,7 @@ export function ThemeSelect({ songId, initialTheme, hasOverride: hasOverrideInit
         aria-describedby={statusId}
         className={`rounded border px-2 py-1 text-xs font-tamil ${
           hasOverride ? 'border-orange-300 bg-orange-50' : 'border-gray-300 bg-white'
-        } disabled:opacity-60`}
+        } disabled:opacity-60 dark:bg-orange-900/20`}
         title={hasOverride ? 'DB override active — pick "Default" to clear' : 'Default from config'}
       >
         <option value={RESET_VALUE}>

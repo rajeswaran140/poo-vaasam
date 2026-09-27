@@ -230,7 +230,7 @@ function Tile({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
+    <div className="rounded-lg border border-gray-200 bg-white p-4 dark:bg-gray-900">
       <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</p>
       <p className="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100" title={exact}>
         {value}
@@ -417,18 +417,18 @@ export function YouTubeLivePanel() {
       </div>
 
       {health?.notes && (
-        <p className="mb-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
+        <p className="mb-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:text-amber-100 dark:bg-amber-900/20">
           {health.notes}
         </p>
       )}
 
       {loading && !overview && <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>}
       {error && (
-        <p className="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:text-rose-200">{error}</p>
+        <p className="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:text-rose-200 dark:bg-rose-900/20">{error}</p>
       )}
 
       {overview?.insufficientHistory && (
-        <p className="mb-3 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 dark:text-gray-300">
+        <p className="mb-3 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 dark:bg-gray-800/60">
           Not enough history for a {overview.range.days}-day comparison — it needs {overview.range.days * 2} days
           and the series starts {overview.dataStart}.
           {overview.availableFrom && <> Available from <strong>{overview.availableFrom}</strong>.</>}
@@ -476,7 +476,7 @@ export function YouTubeLivePanel() {
       )}
 
       {series.length >= 2 && (
-        <div className="mt-3 rounded-lg border border-gray-200 bg-white p-4">
+        <div className="mt-3 rounded-lg border border-gray-200 bg-white p-4 dark:bg-gray-900">
           <div className="flex flex-wrap gap-1" role="group" aria-label="Chart metric">
             {METRICS.map((m) => (
               <button
@@ -510,7 +510,7 @@ export function YouTubeLivePanel() {
       )}
 
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <div className="rounded-lg border border-gray-200 bg-white p-4 dark:bg-gray-900">
           <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
             Subscribers {realtime?.subscribersRounded ? '(≈)' : ''}
           </p>
@@ -530,7 +530,7 @@ export function YouTubeLivePanel() {
             </p>
           )}
         </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <div className="rounded-lg border border-gray-200 bg-white p-4 dark:bg-gray-900">
           <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
             Views · last {realtime?.windowHours && !realtime.windowExact ? `${realtime.windowHours}h` : '48h'}
           </p>

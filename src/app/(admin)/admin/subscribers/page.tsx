@@ -137,7 +137,7 @@ export default function SubscribersPage() {
       )}
 
       {/* Filters */}
-      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white p-4">
+      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white p-4 dark:bg-gray-900">
         <Field label="From (join date)">
           <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
         </Field>
@@ -158,20 +158,20 @@ export default function SubscribersPage() {
         )}
       </div>
 
-      {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:text-red-300">{error}</div>}
+      {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:text-red-300 dark:bg-red-900/20">{error}</div>}
 
       {/* Table */}
       {loading ? (
         <p className="text-gray-500 dark:text-gray-400">Loading…</p>
       ) : !payload?.data.length ? (
-        <div className="rounded-xl border border-gray-200 bg-white p-10 text-center">
+        <div className="rounded-xl border border-gray-200 bg-white p-10 text-center dark:bg-gray-900">
           <Users className="mx-auto mb-3 h-12 w-12 text-gray-300" />
           <p className="text-gray-500 dark:text-gray-400">No subscribers for this filter.</p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white dark:bg-gray-900">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-left text-gray-500 dark:text-gray-400">
+            <thead className="bg-gray-50 text-left text-gray-500 dark:text-gray-400 dark:bg-gray-800/60">
               <tr>
                 <th className="px-4 py-3 font-medium">Email</th>
                 <th className="px-4 py-3 font-medium">Source</th>
@@ -217,7 +217,7 @@ function Stat({ label, value, tone }: { label: string; value: number; tone: 'gre
     green: 'text-green-700', red: 'text-red-700', purple: 'text-purple-700', amber: 'text-amber-700',
   };
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4">
+    <div className="rounded-xl border border-gray-200 bg-white p-4 dark:bg-gray-900">
       <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</p>
       <p className={`mt-1 text-2xl font-bold ${tones[tone]}`}>{value}</p>
     </div>

@@ -60,10 +60,10 @@ export function WordPalette({ lyrics, onInsertWord }: { lyrics: string; onInsert
         <span>🎨 Word palette</span>
         <span className="flex items-center gap-2 text-xs font-normal text-gray-500 dark:text-gray-400">
           {loaded && draft.overused.length > 0 && (
-            <span className="rounded-full bg-red-100 px-2 py-0.5 text-red-700 dark:text-red-300">{draft.overused.length} overused</span>
+            <span className="rounded-full bg-red-100 px-2 py-0.5 text-red-700 dark:text-red-300 dark:bg-red-900/30">{draft.overused.length} overused</span>
           )}
           {loaded && draft.freshUsed.length > 0 && (
-            <span className="rounded-full bg-green-100 px-2 py-0.5 text-green-700 dark:text-green-300">{draft.freshUsed.length} fresh used</span>
+            <span className="rounded-full bg-green-100 px-2 py-0.5 text-green-700 dark:text-green-300 dark:bg-green-900/30">{draft.freshUsed.length} fresh used</span>
           )}
           <span aria-hidden>{open ? '▲' : '▼'}</span>
         </span>
