@@ -332,3 +332,102 @@ export function buildShortArgs(params: {
     '-y', params.outPath,
   ];
 }
+
+/**
+ * ============================================================================
+ * FULL-LENGTH VERTICAL — the whole song at 1080×1920.
+ * ============================================================================
+ *
+ * Added 2026-09-27. A clip is for Reels and Shorts; this is for a Facebook
+ * video or an Instagram feed post, where vertical is welcome but the 3-minute
+ * ceiling does not apply. It sits ALONGSIDE the clip, not instead of it.
+ *
+ * It reuses `buildShortComposeArgs` unchanged — same vertical frame, same
+ * blurred backdrop. Only the assembly differs, and it differs in exactly one
+ * way that matters.
+ */
+
+/**
+ * A ceiling to protect the worker, NOT an opinion about song length.
+ *
+ * The Lambda times out at 900s and existing full-length 16:9 renders take
+ * 79-195s, so ten minutes of audio is comfortable headroom. This exists so a
+ * corrupt or mis-probed duration cannot wedge the worker.
+ */
+export const FULL_VERTICAL_MAX_SECONDS = 600;
+
+export type FullVerticalPlan =
+  | { ok: true; seconds: number }
+  | { ok: false; message: string };
+
+/** Whether this master can be rendered full-length vertical, and why not. */
+export function planFullVertical(audioSeconds: number | null | undefined): FullVerticalPlan {
+  if (typeof audioSeconds !== 'number' || !Number.isFinite(audioSeconds) || audioSeconds <= 0) {
+    return {
+      ok: false,
+      message:
+        'The audio duration could not be read, and a full-length render is bounded by it. ' +
+        'Re-run the analysis for this master.',
+    };
+  }
+  if (audioSeconds > FULL_VERTICAL_MAX_SECONDS) {
+    return {
+      ok: false,
+      message: `That audio is ${Math.round(audioSeconds / 60)} minutes. The limit is ${
+        FULL_VERTICAL_MAX_SECONDS / 60
+      } minutes, to keep the render inside the worker's timeout.`,
+    };
+  }
+  return { ok: true, seconds: audioSeconds };
+}
+
+/**
+ * Encode the whole song as a vertical video.
+ *
+ * ⚠️ READ THIS BEFORE CHANGING THE DURATION FLAGS. This does NOT bound the way
+ * `buildShortArgs` does, and the difference is deliberate and hard-won.
+ *
+ * A clip wants a fixed excerpt, so `-t` on the audio input plus `-t` on the
+ * output is correct there. Applying that to a full render reproduces the bug
+ * the video engine took days to find: on the Lambda's ffmpeg 7.0.2 (the dev
+ * box runs 6.1.1, where it behaves differently) the output runs 1.0-2.4s past
+ * the audio, and the obvious remedy — `-t` on the output with `-shortest` —
+ * TRUNCATES the song by ~31ms instead. That was measured with astats sample
+ * counts; the container's own `Duration:` header reports the LONGEST stream
+ * and will happily tell you it is fine.
+ *
+ * So, exactly as `buildVideoArgs` in master-video.ts:
+ *   - `-t` bounds the LOOPED STILL, and nothing else;
+ *   - the audio input is never trimmed and never seeked;
+ *   - `-shortest` is never passed.
+ *
+ * The video then ends when the looped image does, and the audio plays whole.
+ */
+export function buildFullVerticalArgs(params: {
+  framePath: string;
+  audioPath: string;
+  outPath: string;
+  /** Probed duration of the audio, in seconds. Bounds the looped still. */
+  audioSeconds: number;
+}): string[] {
+  const secs = params.audioSeconds;
+  const fadeIn = SHORT_FADE_IN_SEC;
+  const fadeOut = shortFadeOutFor(secs);
+  return [
+    '-hide_banner', '-nostats',
+    '-loop', '1', '-framerate', String(SHORT_FPS),
+    // Bounds THIS input — the looped still — and nothing else.
+    '-t', String(secs),
+    '-i', params.framePath,
+    // No -ss and no -t: the audio plays from zero, whole.
+    '-i', params.audioPath,
+    '-map', '0:v', '-map', '1:a',
+    '-af', `afade=t=in:st=0:d=${fadeIn},afade=t=out:st=${(secs - fadeOut).toFixed(3)}:d=${fadeOut}`,
+    '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'stillimage',
+    '-crf', '20', '-pix_fmt', 'yuv420p', '-r', String(SHORT_FPS),
+    '-c:a', 'aac', '-b:a', '192k', '-ar', '48000',
+    '-movflags', '+faststart',
+    '-y', params.outPath,
+  ];
+}
+

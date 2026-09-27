@@ -83,6 +83,8 @@ import {
   buildLoudnessArgs,
   buildShortComposeArgs,
   buildShortArgs,
+  buildFullVerticalArgs,
+  planFullVertical,
   shortKeyFor,
   SHORT_SECONDS,
   SHORT_MIN_START_SEC,
@@ -240,7 +242,14 @@ interface MasterEvent {
    * Handled before the mastering guards, like `render`, so it can never
    * re-master.
    */
-  short?: { audioKey?: string; coverKey?: string; startSec?: number; seconds?: number };
+  short?: {
+    audioKey?: string;
+    coverKey?: string;
+    startSec?: number;
+    seconds?: number;
+    /** Whole song at 1080x1920 instead of a clip — Facebook video / IG feed. */
+    full?: boolean;
+  };
   /**
    * Render ~20s around a two-part crossfade so it can be judged without
    * mastering the whole song. Handled before the mastering guards: it must
@@ -687,8 +696,25 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
     // can be null, and because the file is the thing being cut.
     let startSec: number;
     let seconds: number;
+    /** Non-null ⇒ render the WHOLE song vertically; the window logic is skipped. */
+    let fullSeconds: number | null = null;
 
-    if (spec.startSec !== undefined || spec.seconds !== undefined) {
+    if (spec.full) {
+      // The whole song. No window to choose and no hook to find, so this
+      // measures the file once and hands the duration to the arg builder,
+      // which bounds the looped still with it — see buildFullVerticalArgs for
+      // why that is the only correct way to bound this render.
+      const header = ff(['-hide_banner', '-i', audioPath]);
+      const info = parseSourceInfo(`${header.stdout ?? ''}${header.stderr ?? ''}`);
+      const plan = planFullVertical(info?.durationSec ?? null);
+      if (!plan.ok) {
+        await patch(jobId, { shortError: plan.message });
+        return { ok: false };
+      }
+      fullSeconds = plan.seconds;
+      startSec = 0;
+      seconds = Math.round(plan.seconds);
+    } else if (spec.startSec !== undefined || spec.seconds !== undefined) {
       const picked = readPickedWindow(spec);
       if (!picked) {
         await patch(jobId, { shortError: shortRefusalMessage('bad-window') });
@@ -744,7 +770,11 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
       return { ok: false };
     }
 
-    const r = ff(buildShortArgs({ framePath, audioPath, startSec, outPath, seconds }));
+    const r = ff(
+      fullSeconds !== null
+        ? buildFullVerticalArgs({ framePath, audioPath, outPath, audioSeconds: fullSeconds })
+        : buildShortArgs({ framePath, audioPath, startSec, outPath, seconds })
+    );
     if (r.status !== 0) {
       await patch(jobId, { shortError: 'the short render failed' });
       return { ok: false };

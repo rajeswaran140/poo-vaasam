@@ -333,3 +333,100 @@ describe('fading', () => {
     expect(af[af.indexOf('-af') + 1]).toContain('afade=t=out:st=7.500:d=2.5');
   });
 });
+
+/**
+ * FULL-LENGTH VERTICAL — the whole song at 1080×1920, for Facebook video and
+ * Instagram feed. Added 2026-09-27 at Raj's request, alongside the clip rather
+ * than replacing it.
+ *
+ * ⚠️ THE DURATION BOUNDING IS THE WHOLE RISK HERE, and it has bitten this
+ * codebase before. The clip bounds with `-t` on the audio input AND the
+ * output, which is right for a fixed excerpt. Doing that for a full render
+ * reproduces the video-engine bug: on the Lambda's ffmpeg 7.0.2 the output
+ * runs 1-2.4s past the audio, and the obvious fix (`-t` on the output plus
+ * `-shortest`) TRUNCATES the song instead — verified by sample count, not by
+ * the container header. The correct pattern, from master-video, is `-t` on the
+ * LOOPED IMAGE INPUT only, bounded by the probed audio duration, with no
+ * `-shortest` at all.
+ */
+import {
+  buildFullVerticalArgs,
+  planFullVertical,
+  FULL_VERTICAL_MAX_SECONDS,
+  SHORT_WIDTH,
+  SHORT_HEIGHT,
+} from '@/lib/master-short';
+
+describe('full-length vertical — duration bounding', () => {
+  const args = (audioSeconds: number) =>
+    buildFullVerticalArgs({
+      framePath: '/tmp/f.ppm',
+      audioPath: '/tmp/a.wav',
+      outPath: '/tmp/o.mp4',
+      audioSeconds,
+    });
+
+  it('bounds the LOOPED IMAGE, not the output — the thing that overshot before', () => {
+    const a = args(292);
+    const loopIdx = a.indexOf('-loop');
+    const frameIdx = a.indexOf('/tmp/f.ppm');
+    const t = a.indexOf('-t');
+    // -t must sit between `-loop` and the frame input, i.e. it bounds input 0.
+    expect(t).toBeGreaterThan(loopIdx);
+    expect(t).toBeLessThan(frameIdx);
+    expect(a[t + 1]).toBe('292');
+  });
+
+  it('never passes -shortest — that is what truncated the song', () => {
+    expect(args(292)).not.toContain('-shortest');
+  });
+
+  it('applies -t exactly once, so the output is not bounded a second time', () => {
+    expect(args(292).filter((x) => x === '-t')).toHaveLength(1);
+  });
+
+  it('does not seek the audio — a full render starts at zero', () => {
+    expect(args(292)).not.toContain('-ss');
+  });
+
+  it('still renders vertical at the short dimensions', () => {
+    const a = args(292).join(' ');
+    expect(a).toContain('libx264');
+    expect(a).toContain('yuv420p');
+    expect(a).toContain('+faststart');
+    expect(SHORT_WIDTH).toBe(1080);
+    expect(SHORT_HEIGHT).toBe(1920);
+  });
+
+  it('fades out at the end of the song, not at some fixed offset', () => {
+    const af = args(292)[args(292).indexOf('-af') + 1];
+    expect(af).toMatch(/afade=t=out:st=289\.000/);
+  });
+});
+
+describe('full-length vertical — what it will and will not accept', () => {
+  it('accepts a normal song', () => {
+    expect(planFullVertical(292).ok).toBe(true);
+  });
+
+  it('refuses audio it cannot measure', () => {
+    expect(planFullVertical(null).ok).toBe(false);
+    expect(planFullVertical(0).ok).toBe(false);
+  });
+
+  /**
+   * Not a view about song length — a guard so a bad input cannot wedge the
+   * 900s Lambda. Existing full 16:9 renders take 79-195s, so ten minutes is
+   * comfortable headroom.
+   */
+  it('refuses something absurd, to protect the worker', () => {
+    expect(planFullVertical(FULL_VERTICAL_MAX_SECONDS + 1).ok).toBe(false);
+    expect(planFullVertical(FULL_VERTICAL_MAX_SECONDS).ok).toBe(true);
+  });
+
+  it('explains itself when it refuses', () => {
+    const p = planFullVertical(null);
+    expect(p.ok).toBe(false);
+    if (!p.ok) expect(p.message).toMatch(/duration/i);
+  });
+});

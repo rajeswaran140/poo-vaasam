@@ -32,6 +32,13 @@ const MASTER_WORKER_FUNCTION = process.env.MASTER_WORKER_FUNCTION || 'tamilagava
 const bodySchema = z.object({
   coverKey: z.string().min(1),
   /**
+   * Render the WHOLE song at 1080x1920 instead of a clip — a Facebook video or
+   * an Instagram feed post, where vertical is welcome but the 3-minute Reels
+   * ceiling does not apply. Mutually exclusive with a window: there is nothing
+   * to pick when the answer is "all of it".
+   */
+  full: z.boolean().optional(),
+  /**
    * The window the operator picked on the waveform, or typed. Both or neither:
    * `planShort` treats a half-given window as a caller that does not mean what
    * this route would have to decide for it. Omit both to let the worker find
@@ -63,10 +70,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     // Every eligibility rule lives in the planner, so the route and the worker
     // cannot disagree about what can produce a short.
-    const plan = planShort(job, parsed.data.coverKey, {
-      startSec: parsed.data.startSec,
-      seconds: parsed.data.seconds,
-    });
+    // A full-length render has no window to validate — `planShort`'s window
+    // rules are about clip length, which does not apply when the answer is the
+    // whole song. Its ELIGIBILITY rules (is this a mastered WAV, is the cover
+    // in the workspace) still do, so it is still consulted, just without one.
+    const plan = planShort(
+      job,
+      parsed.data.coverKey,
+      parsed.data.full ? {} : { startSec: parsed.data.startSec, seconds: parsed.data.seconds }
+    );
     if (!plan.ok) {
       return NextResponse.json(
         { success: false, error: shortRefusalMessage(plan.reason) },
@@ -91,6 +103,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             short: {
               audioKey: plan.audioKey,
               coverKey: plan.coverKey,
+              // Absent unless asked for, so the worker's `spec.full` branch is
+              // never entered by accident.
+              ...(parsed.data.full ? { full: true } : {}),
               // Spread, not `...plan.window`-with-nulls: an absent window must
               // stay ABSENT in the payload, because the worker branches on
               // `!== undefined` to decide whether to measure at all.
