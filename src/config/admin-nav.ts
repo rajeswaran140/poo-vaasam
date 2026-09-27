@@ -39,6 +39,7 @@ import {
   Settings,
   Globe,
   Send,
+  Wallet,
 } from 'lucide-react';
 import { FEATURES } from '@/config/features';
 
@@ -342,6 +343,14 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     section: 'Insights',
     icon: BarChart3,
     keywords: ['ga4', 'traffic'],
+  },
+  {
+    href: '/admin/budget',
+    title: 'Budget',
+    subtitle: 'What Tamilagaval costs to run',
+    section: 'Insights',
+    icon: Wallet,
+    keywords: ['cost', 'aws', 'spend', 'bill'],
   },
 
   // System
