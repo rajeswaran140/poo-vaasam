@@ -55,7 +55,7 @@ export const ADMIN_DOCS: AdminDoc[] = [
     slug: 'revenue-and-cost',
     title: 'What Tamilagaval costs, and what $500 would take',
     category: 'Growth',
-    updatedAt: '2026-09-27T01:45:40Z',
+    updatedAt: '2026-09-27T21:20:00Z',
     body: `# What Tamilagaval costs, and what $500 would take
 
 > Measured 2026-09-27 from the AWS Cost Explorer, YouTube Analytics and the GA4
@@ -87,6 +87,20 @@ four apps had zero builds — verified from build minutes, not assumed.
 
 **The channel earns $98.43/month. So Tamilagaval nets about +$86, and always
 has.**
+
+### Added since this was measured: ~$0.40/month for backups
+
+On 2026-09-27 Tamilagaval had no backup that would survive its own resources
+being deleted. Closing that added a daily DynamoDB backup plan and Deep Archive
+mirrors of both media buckets in a second region — **about $0.40/month**, plus
+~$0.55 once to seed them. The table above is left as measured; this is the
+first known change to it. See **Backups & recovery**.
+
+⚠️ The \`S3 + CloudFront\` line is also now suspect. It was estimated as a
+bucket-count share while CloudWatch reported \`tamilagaval-audio-masters\` at
+0.2 GB — an object listing gives **6.17 GB**. The real delta is only around
+$0.15/month, but recompute the S3 line before quoting **$12.47** as exact
+again; treat it as **roughly $12–13** until then.
 
 ## Serving the site is nearly free; CI is the cost
 
@@ -219,6 +233,140 @@ number in the plan.
   customers; option 3 is a product. The numbers cannot choose between them.
 - What reads BigQuery, or whether it matters that it is broken —
   see [[tamilagaval-ses-broken]].
+`,
+  },
+  {
+    slug: 'backups-and-recovery',
+    title: 'Backups & recovery — what protects Tamilagaval',
+    category: 'Operations',
+    updatedAt: '2026-09-27T21:20:00Z',
+    body: `# Backups & recovery
+
+> Audited and rebuilt 2026-09-27. Everything below was confirmed by re-reading
+> the resource after the change, not by assuming the command worked. Re-check
+> before relying on it — an untested backup is a belief, not a backup.
+
+## The distinction that matters
+
+Tamilagaval already had point-in-time recovery and bucket versioning, and both
+looked like backups. Neither is.
+
+**PITR is a property of the table. Versioning is a property of the bucket.**
+They protect you from a bad write. They do not survive the resource itself
+being deleted, because they are deleted along with it. Before this work there
+was no copy of anything that outlived the thing it was copying.
+
+## What exists now
+
+| Layer | Protection | Where |
+| --- | --- | --- |
+| \`TamilWebContent\` | Deletion protection ON | ca-central-1 |
+| \`TamilWebContent\` | PITR, ~35 days | ca-central-1 |
+| \`TamilWebContent\` | \`tamilagaval-daily-backup\` → \`tamilagaval-backup-vault\`, 04:00 UTC, 35-day retention | ca-central-1 |
+| \`tamil-web-media\` | Versioning + replication → \`tamilagaval-dr-tamil-web-media\` | us-east-1, Deep Archive |
+| \`tamilagaval-audio-masters\` | Versioning + replication → \`tamilagaval-dr-audio-masters\` | us-east-1, Deep Archive |
+| 13 runtime secrets | **Not yet exported — see below** | SSM only |
+
+Replication runs as the IAM role \`tamilagaval-s3-replication\`. The backup plan
+runs at **04:00 UTC** because the unrelated \`montreal-ec2-daily-backup\` already
+holds 03:00.
+
+## ⚠️ Delete-marker replication is OFF, deliberately
+
+In the S3 console this looks like a misconfiguration. It is not. **Do not turn
+it on.**
+
+If delete markers replicated, deleting an object in \`tamil-web-media\` would
+delete it in the DR bucket too — which is precisely the accident the DR bucket
+exists to survive. A backup that faithfully reproduces your mistakes is not a
+backup. With it off, a deletion in the source leaves the DR copy standing.
+
+## ⚠️ Why the database backup stays in Canada and the audio does not
+
+The S3 mirrors are in **us-east-1**. \`ca-west-1\` (Calgary) is not enabled on
+this account, so there is no second Canadian region available without an
+account-level opt-in.
+
+That is fine for audio: those buckets hold Raj's own masters and cover art.
+It is **not** automatically fine for \`TamilWebContent\`, which holds **orders and
+contact messages** — other people's personal data. So the DynamoDB vault was
+deliberately left in **ca-central-1**. It protects against the realistic risk
+(the table being deleted) without moving customer data across a border.
+
+Making the database survive a region loss too means either enabling \`ca-west-1\`
+and copying there, or accepting a US copy. **That is a decision for Raj, not a
+default.**
+
+## What is actually irreplaceable
+
+**16.4 GB**, not the ~27 GB the buckets total.
+
+| Set | Size | Note |
+| --- | --- | --- |
+| Source audio in \`tamil-web-media\` | 10.27 GB | uploads, karaoke, references, covers |
+| \`tamilagaval-audio-masters\` | 6.17 GB | per-song master sets |
+| \`TamilWebContent\` | 3.13 MB | all content, orders, settings |
+| Derived | 10.41 GB | 104 mastered WAVs, 25 mp4, 152 thumbs |
+
+The derived half is regenerable: every one of the 104 \`-master-14LUFS.wav\`
+files was verified to still have its paired source, so **nothing irreplaceable
+is hiding in that column**. Everything is replicated regardless — at Deep
+Archive prices the distinction is worth about twenty cents a month, which is
+not worth the risk of my classification being wrong.
+
+⚠️ **CloudWatch reports \`tamilagaval-audio-masters\` as 0.2 GB. That is wrong.**
+An object listing gives **6.17 GB** across 155 objects. Trust the listing.
+
+## 🟡 Still open — the secrets export
+
+Thirteen SSM parameters under \`/amplify/d3rkmepk4popv0/master/\` hold the
+runtime credentials: AWS keys, YouTube OAuth refresh tokens, and the Anthropic,
+OpenAI, Google TTS, VAPID, cron and lyrics-gate secrets.
+
+All are re-issuable, so this is a **recovery-time** problem, not data loss — but
+rebuilding them means re-authorising several third-party accounts, and the
+YouTube refresh tokens need an interactive OAuth round-trip.
+
+Run this in the Claude Code prompt:
+
+\`\`\`
+! ~/export-tamilagaval-secrets.sh
+\`\`\`
+
+It pipes SSM straight into \`openssl aes-256-cbc\`, so the plaintext never
+touches the filesystem. It prompts for a passphrase — store that in the
+password manager, and keep the \`.enc\` file somewhere off the dev box.
+
+**The secrets were deliberately not dumped to disk automatically.** Only 2 of
+the 13 were already on that machine, and it is shared with other projects, so a
+plaintext export would have widened exposure to solve a recovery-time problem.
+
+## How to verify this is still true
+
+\`\`\`
+aws dynamodb describe-table --table-name TamilWebContent --region ca-central-1 \\
+  --query 'Table.DeletionProtectionEnabled'
+
+aws backup list-recovery-points-by-backup-vault --region ca-central-1 \\
+  --backup-vault-name tamilagaval-backup-vault --query 'RecoveryPoints[0].[Status,CreationDate]'
+
+aws s3api get-bucket-replication --bucket tamil-web-media \\
+  --query 'ReplicationConfiguration.Rules[0].[Status,DeleteMarkerReplication.Status]'
+\`\`\`
+
+A recovery point older than about a day means the plan has stopped firing.
+
+**Config present is not behaviour working.** Replication was proved with a
+probe object, which reached the DR bucket in ~30 seconds as a \`REPLICA\` in
+\`DEEP_ARCHIVE\` and was then purged from both sides. That habit comes from the
+contact-notification bug, which sat broken for two weeks behind configuration
+that read as correct — see [[tamilagaval-ses-broken]].
+
+## Cost
+
+About **$0.40/month**, plus a one-time ~$0.55 to seed the mirrors. The DynamoDB
+backup is a rounding error at 3 MB; nearly all of it is Deep Archive storage
+and the cross-region transfer. See **What Tamilagaval costs**.
 `,
   },
   {
