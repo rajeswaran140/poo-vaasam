@@ -109,9 +109,15 @@ Waste found while attributing, none of it Tamilagaval's:
 - **Four 100 GB gp3 volumes in us-east-1, unattached since 24 April.** Untagged,
   attached to nothing, ~$32/month, roughly $160 burned. Snapshot first if the
   data might matter.
-- **Two EC2 instances** — \`raj-portfolio-montreal\`, \`montreal-ubuntu-server\` —
-  about $58/month. ⚠️ Not a recommendation to delete: an idle-looking box is
-  not an unused one. A decision either way is worth $58.
+- ⚠️ **The two EC2 instances are NOT waste — checked 2026-09-27 and both are
+  load-bearing.** \`montreal-ubuntu-server\` (16.54.82.168) is
+  \`origin.mobily.ca\`, which is **the CloudFront origin for www.mobily.ca and
+  mobily.ca** — deleting it takes Mobily down as soon as the cache expires.
+  \`raj-portfolio-montreal\` (3.97.131.176) serves raj.it.com and
+  www.raj.it.com, both live. **That $58/month is required infrastructure. Do
+  not propose removing it.** This is exactly the trap
+  [[dev-boxes-vs-servers]] describes: neither box looked like Tamilagaval, and
+  judging by idleness would have recommended deleting Mobily's origin server.
 - **SES at $13/month** with no dedicated IPs and almost no sending. Unexplained.
 - **WorkMail $13.67 is IN USE** — Raj confirmed it. Four mailboxes:
   payments@raj.it.com, hello@mobily.ca, info@talky.ca, and
@@ -151,17 +157,20 @@ link from the video. What the design never stated was how a buyer reaches it.
 | Step | Per month | Running |
 | --- | --- | --- |
 | Tamilagaval today — $98.43 earned, $12.47 spent | +$86 | $86 |
-| Delete the 400 GB of unattached disks | +$32 | $118 |
-| *If* the two EC2 instances can go | +$58 | $176 |
-| *If* the SES charge is removable | +$13 | $189 |
-| **Eight karaoke sales a month at CAD $40** | +$320 | **$509** |
+| 400 GB of unattached disks — DONE 2026-09-27 | +$28 | $114 |
+| ~~If the two EC2 instances can go~~ — **they cannot, see above** | $0 | $118 |
+| *If* the SES charge is removable | +$13 | $131 |
+| **Ten karaoke sales a month at CAD $40** | +$400 | **$531** |
 
-Roughly half is housekeeping. The other half is eight orders a month of a
-product one customer has already happily bought.
+⚠️ **Revised 2026-09-27.** The disks are deleted and saved $28/mo net (79 GB
+of real data turned out to be on them, so four snapshots are kept at $3.96/mo
+— see [[tamilagaval-economics]]). The EC2 line is gone entirely: both
+instances are load-bearing. So housekeeping contributes far less than first
+thought and **the target now needs ten sales a month, not eight.**
 
-Eight sales against ~10,000 payment-capable monthly views is a **0.08%**
-conversion rate. A low bar — and the single genuinely unproven number in the
-plan.
+Ten sales against ~10,000 payment-capable monthly views is a **0.1%**
+conversion rate. Still a low bar — and still the single genuinely unproven
+number in the plan.
 
 ## What to sell, ranked by evidence
 
