@@ -431,3 +431,49 @@ describe('cadence doc — event-bound releases', () => {
     expect(b).toMatch(/minimum of one and a maximum of two songs per week/i);
   });
 });
+
+describe('backup & recovery doc stays true to what is actually deployed', () => {
+  const doc = getDoc('backups-and-recovery');
+
+  it('the doc exists and is filed under Operations', () => {
+    expect(doc).toBeTruthy();
+    expect(doc!.category).toBe('Operations');
+  });
+
+  it('names the real resources, so the doc can be checked against the account', () => {
+    for (const id of [
+      'TamilWebContent',
+      'tamilagaval-daily-backup',
+      'tamilagaval-backup-vault',
+      'tamilagaval-dr-tamil-web-media',
+      'tamilagaval-dr-audio-masters',
+      'tamilagaval-s3-replication',
+    ]) {
+      expect(doc!.body).toContain(id);
+    }
+  });
+
+  it('records that delete-marker replication is OFF on purpose', () => {
+    // The trap: this looks like a misconfiguration to anyone reading the
+    // console, and "fixing" it would let a deletion propagate and destroy the
+    // backup copy. The doc has to say why before someone helpfully turns it on.
+    expect(doc!.body).toMatch(/delete[- ]marker/i);
+    expect(doc!.body).toMatch(/disabled|off/i);
+  });
+
+  it('explains why the DynamoDB vault stays in ca-central-1 while S3 goes to us-east-1', () => {
+    expect(doc!.body).toContain('ca-central-1');
+    expect(doc!.body).toContain('us-east-1');
+    expect(doc!.body).toMatch(/orders|contact messages|personal data/i);
+  });
+
+  it('does not claim the secrets export is finished — it needs Raj to run it', () => {
+    expect(doc!.body).toContain('export-tamilagaval-secrets.sh');
+    expect(doc!.body).not.toMatch(/secrets (are )?(now )?exported\b/i);
+  });
+
+  it('keeps the corrected masters-bucket size, not the wrong CloudWatch figure', () => {
+    expect(doc!.body).toContain('6.17 GB');
+    expect(doc!.body).not.toContain('0.20 GB');
+  });
+});
