@@ -1297,7 +1297,19 @@ describe('render for YouTube', () => {
         await act(async () => {
           fireEvent.change(screen.getByLabelText(/End at/i), { target: { value: '2:10' } });
         });
-        expect(screen.getByText(/Facebook Reels will not/i)).toBeInTheDocument();
+        /**
+         * ⚠️ Matched on textContent, because "Facebook Reels" is wrapped in
+         * <strong> and getByText will not cross element boundaries.
+         *
+         * The wording changed on 2026-09-27. It used to say only that Facebook
+         * Reels would not take it, which Raj read as "Facebook will not take
+         * it" — and that is false: a 3-minute 1080x1920 video uploads fine as
+         * an ordinary Facebook video and plays vertically in feed. The warning
+         * must distinguish the two claims, so BOTH halves are asserted.
+         */
+        const note = screen.getByText(/Cutting/i).closest('p')!;
+        expect(note.textContent).toMatch(/Facebook Reels.*will not/i);
+        expect(note.textContent).toMatch(/ordinary video post/i);
         // A warning, not a refusal — the window is still sent.
         expect(screen.getByLabelText(/End at/i)).not.toHaveAttribute('aria-invalid');
       });

@@ -175,7 +175,12 @@ export function ShortWindowFields({ value, onChange, disabled = false, idPrefix,
           <Scissors className="mr-1 inline h-3 w-3" aria-hidden="true" />
           Cutting <strong>{formatClock(start!)}&ndash;{formatClock(end!)}</strong> — {formatClock(span)}.
           {longForFacebook && (
-            <> Past {SHORT_FB_REELS_MAX_SECONDS}s, so YouTube Shorts and Instagram will take it but Facebook Reels will not.</>
+            <>
+              {' '}
+              Past {SHORT_FB_REELS_MAX_SECONDS}s, so YouTube Shorts and Instagram Reels will take
+              it but <strong>Facebook Reels</strong> will not. Facebook still accepts it as an
+              ordinary video post, where it plays vertically in feed.
+            </>
           )}
         </p>
       ) : (
