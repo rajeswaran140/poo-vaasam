@@ -88,6 +88,29 @@ four apps had zero builds — verified from build minutes, not assumed.
 **The channel earns $98.43/month. So Tamilagaval nets about +$86, and always
 has.**
 
+## Serving the site is nearly free; CI is the cost
+
+⚠️ **$86 is PROFIT, not a charge.** You pay $12.47 and earn $98.43. Stated
+because the first version of this table was read as an $86 bill.
+
+Amplify's $12.33 in September, by usage type:
+
+| Component | Cost | What it is |
+| --- | --- | --- |
+| \`BuildDuration\` — 1,025 min | $10.25 | CI: building and deploying |
+| \`HostingComputeRequestDuration\` | $1.64 | the serverless SSR compute |
+| \`DataTransferOut\` | $0.28 | bytes to visitors |
+| request counts, us-east-1 edge | $0.14 | |
+
+**Serving the site costs $1.77/month** — 135,000 compute requests, 29,554
+compute-seconds. Add Lambda $0.10, DynamoDB $0.05, S3 and CloudFront ~$0.50 and
+the running of Tamilagaval is nearly free, as it should be on this
+architecture. **You pay roughly six times more to deploy the site than to serve
+it.**
+
+Live figures are on **/admin/budget**, which attributes this automatically
+rather than by hand — every line there shows the basis it was derived from.
+
 ## 95% of that cost is deploys
 
 989 build minutes at roughly a cent a minute — about **10¢ per deploy**. Builds
