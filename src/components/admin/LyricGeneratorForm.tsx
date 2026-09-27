@@ -142,7 +142,7 @@ export function LyricGeneratorForm() {
 
         <div className="space-y-2">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-            Emotions <span className="text-red-500">*</span>
+            Emotions <span className="text-red-500 dark:text-red-400">*</span>
             <span className="ml-1 text-xs font-normal text-gray-400">(ranked most → least)</span>
           </label>
           {emotions.map((emo, i) => (
@@ -190,7 +190,7 @@ export function LyricGeneratorForm() {
             <input id="lyric-charanams" type="number" min={1} max={5} value={charanams} onChange={(e) => setCharanams(Math.max(1, Math.min(5, Number(e.target.value) || 1)))} className={`mt-1 ${inputCls}`} />
           </div>
           <label className="flex items-center gap-2 pb-2 text-sm text-gray-700 dark:text-gray-300">
-            <input type="checkbox" checked={anupallavi} onChange={(e) => setAnupallavi(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-purple-600" />
+            <input type="checkbox" checked={anupallavi} onChange={(e) => setAnupallavi(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-purple-600 dark:text-purple-400" />
             Include anupallavi
           </label>
         </div>
@@ -226,7 +226,7 @@ export function LyricGeneratorForm() {
             <div className="flex items-start justify-between gap-3">
               <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">{result.title}</h3>
               <button type="button" onClick={copyLyric} className="flex shrink-0 items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
-                {copied ? <Check className="h-3.5 w-3.5 text-green-600" aria-hidden /> : <Copy className="h-3.5 w-3.5" aria-hidden />} {copied ? 'Copied' : 'Copy'}
+                {copied ? <Check className="h-3.5 w-3.5 text-green-600 dark:text-green-400" aria-hidden /> : <Copy className="h-3.5 w-3.5" aria-hidden />} {copied ? 'Copied' : 'Copy'}
               </button>
             </div>
             {result.charanams.length < charanams && (

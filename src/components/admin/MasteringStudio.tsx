@@ -1970,7 +1970,7 @@ export function MasteringStudio() {
     <div className="space-y-6">
       <header>
         <h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900 dark:text-gray-100">
-          <SlidersHorizontal className="h-6 w-6 text-orange-600" aria-hidden="true" />
+          <SlidersHorizontal className="h-6 w-6 text-orange-600 dark:text-orange-400" aria-hidden="true" />
           Sound Engineering &amp; Mastering
         </h1>
         <p className="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
@@ -2303,10 +2303,10 @@ export function MasteringStudio() {
               </fieldset>
             )}
             {referencesLoading && (
-              <span className="text-xs text-gray-500">Loading references…</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">Loading references…</span>
             )}
             {referencesRequested.current && !referencesLoading && references.length === 0 && !referencesError && (
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-gray-500 dark:text-gray-400">
                 No references yet. Seed via <code>aws s3 cp &lt;file.wav&gt; s3://tamil-web-media/audio/references/</code>.
               </span>
             )}
@@ -2375,7 +2375,7 @@ export function MasteringStudio() {
         <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
           <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
             3 · Result
-            {readiness.ok && <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-hidden="true" />}
+            {readiness.ok && <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />}
           </h2>
 
           {/* One glanceable verdict, driven by the SAME rules as the saved .txt
@@ -3390,7 +3390,7 @@ export function MasteringStudio() {
           <div key={group.song || group.masters[0].id} className="mt-3">
             <p className="flex items-baseline gap-2 px-1 pb-1 text-xs">
               <span className="font-semibold text-gray-800 dark:text-gray-100">
-                {group.song || <span className="font-normal text-gray-500">(untitled)</span>}
+                {group.song || <span className="font-normal text-gray-500 dark:text-gray-400">(untitled)</span>}
               </span>
               <span className="text-gray-500 dark:text-gray-400">{describeGroup(group)}</span>
             </p>

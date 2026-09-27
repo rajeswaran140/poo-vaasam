@@ -160,7 +160,7 @@ export function SearchScorecardPanel() {
         </p>
       )}
 
-      {loading && <p className="text-sm text-gray-500">Loading…</p>}
+      {loading && <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>}
 
       {rows && (
         <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-800">

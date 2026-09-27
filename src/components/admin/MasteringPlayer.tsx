@@ -549,7 +549,7 @@ export function MasteringPlayer({
         )}
 
         <span className="tabular-nums text-sm text-gray-600 dark:text-gray-300">
-          {formatTime(position)} <span className="text-gray-400 dark:text-gray-500">/ {formatTime(duration)}</span>
+          {formatTime(position)} <span className="text-gray-400 dark:text-gray-400">/ {formatTime(duration)}</span>
         </span>
 
         {/* Volume reveals on demand rather than permanently occupying the row. */}
@@ -753,7 +753,7 @@ export function MasteringPlayer({
         )}
       </div>
 
-      <p className="mt-2 text-[11px] text-gray-400 dark:text-gray-500">
+      <p className="mt-2 text-[11px] text-gray-400 dark:text-gray-400">
         Space play/pause · ← → seek 5s · 0–9 jump · M mark · L clear loop · drag the waveform to loop
       </p>
     </div>

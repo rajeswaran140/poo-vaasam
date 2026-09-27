@@ -196,7 +196,7 @@ export function ImpressionsLogPanel() {
       </form>
 
       {error && <p className="mt-3 text-sm text-red-600 dark:text-red-400">⚠️ {error}</p>}
-      {loading && <p className="mt-3 text-sm text-gray-500">Loading…</p>}
+      {loading && <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">Loading…</p>}
 
       {!loading && rows.length === 0 && (
         <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">

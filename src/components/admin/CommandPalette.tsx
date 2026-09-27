@@ -196,7 +196,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               <div key={section} className="pb-1">
                 <div
                   data-testid={`palette-section-${section}`}
-                  className="px-4 py-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500"
+                  className="px-4 py-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-400"
                 >
                   {section}
                 </div>
@@ -285,7 +285,7 @@ function PaletteRow({ item, index, isActive, onHover, onSelect }: PaletteRowProp
           {item.subtitle}
         </span>
       </span>
-      <span className="hidden sm:inline text-[10px] text-gray-400 dark:text-gray-500 font-mono">
+      <span className="hidden sm:inline text-[10px] text-gray-400 dark:text-gray-400 font-mono">
         {item.href}
       </span>
     </button>

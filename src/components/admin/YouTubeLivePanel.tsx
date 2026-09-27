@@ -133,7 +133,7 @@ function compact(n: number): string {
 function DeltaLine({ delta, days }: { delta: number | null; days: number }) {
   if (delta === null) {
     return (
-      <p className="mt-1 text-xs text-gray-500">
+      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
         — no comparison (previous {days} days had none)
       </p>
     );
@@ -172,8 +172,8 @@ function Sparkline({ points, label }: { points: SeriesPoint[]; label: string }) 
   return (
     <div className="mt-3">
       <div className="flex items-baseline justify-between">
-        <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
-        <p className="text-xs text-gray-500" aria-hidden="true">
+        <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400" aria-hidden="true">
           {hoveredPoint
             ? `${hoveredPoint.date} — ${nf.format(Math.round(hoveredPoint.value))}`
             : `${Math.round(scale.min)}–${Math.round(scale.max)}`}
@@ -210,7 +210,7 @@ function Sparkline({ points, label }: { points: SeriesPoint[]; label: string }) 
         )}
       </svg>
       {split >= 0 && (
-        <p className="mt-1 text-xs text-gray-500">
+        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
           Dashed = last {points.length - split - 1} day(s) still settling; YouTube revises these.
         </p>
       )}
@@ -231,8 +231,8 @@ function Tile({
 }) {
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-4">
-      <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
-      <p className="mt-1 text-2xl font-semibold text-gray-900" title={exact}>
+      <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</p>
+      <p className="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100" title={exact}>
         {value}
       </p>
       {children}
@@ -388,10 +388,10 @@ export function YouTubeLivePanel() {
   return (
     <section className="mb-8" aria-labelledby="yt-live-heading">
       <div className="mb-3 flex flex-wrap items-center gap-3">
-        <h2 id="yt-live-heading" className="text-lg font-semibold text-gray-900">
+        <h2 id="yt-live-heading" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
           YouTube · Live analytics
         </h2>
-        <span className="flex items-center gap-1.5 text-xs text-gray-600">
+        <span className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-400">
           <span className={`inline-block h-2 w-2 rounded-full ${dot}`} aria-hidden="true" />
           {healthLabel}
         </span>
@@ -417,18 +417,18 @@ export function YouTubeLivePanel() {
       </div>
 
       {health?.notes && (
-        <p className="mb-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <p className="mb-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
           {health.notes}
         </p>
       )}
 
-      {loading && !overview && <p className="text-sm text-gray-500">Loading…</p>}
+      {loading && !overview && <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>}
       {error && (
-        <p className="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{error}</p>
+        <p className="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:text-rose-200">{error}</p>
       )}
 
       {overview?.insufficientHistory && (
-        <p className="mb-3 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+        <p className="mb-3 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 dark:text-gray-300">
           Not enough history for a {overview.range.days}-day comparison — it needs {overview.range.days * 2} days
           and the series starts {overview.dataStart}.
           {overview.availableFrom && <> Available from <strong>{overview.availableFrom}</strong>.</>}
@@ -467,7 +467,7 @@ export function YouTubeLivePanel() {
             }
           >
             {!overview.metrics.estimatedRevenue && (
-              <p className="mt-1 text-xs text-gray-500">
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                 {overview.metrics.revenueUnavailableReason ?? 'unavailable'}
               </p>
             )}
@@ -488,7 +488,7 @@ export function YouTubeLivePanel() {
                   metric === m.key
                     ? 'bg-purple-600 text-white'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                } dark:text-gray-300`}
               >
                 {m.label}
               </button>
@@ -499,7 +499,7 @@ export function YouTubeLivePanel() {
             label={`Daily ${METRICS.find((m) => m.key === metric)?.label.toLowerCase() ?? 'views'}`}
           />
           {metric === 'netSubscribers' && overview && (
-            <p className="mt-1 text-xs text-gray-600">
+            <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
               Net per day (gained − lost). Over this window:{' '}
               <strong>+{nf.format(overview.metrics.subscribersNet.gained)}</strong> gained,{' '}
               <strong>−{nf.format(overview.metrics.subscribersNet.lost)}</strong> lost. YouTube does not
@@ -511,11 +511,11 @@ export function YouTubeLivePanel() {
 
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="rounded-lg border border-gray-200 bg-white p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
             Subscribers {realtime?.subscribersRounded ? '(≈)' : ''}
           </p>
           <p
-            className="mt-1 text-2xl font-semibold text-gray-900"
+            className="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100"
             title={
               realtime?.subscribersRounded
                 ? 'YouTube rounds this to 3 significant figures above 1,000'
@@ -525,20 +525,20 @@ export function YouTubeLivePanel() {
             {realtime?.subscribersApprox != null ? nf.format(realtime.subscribersApprox) : '—'}
           </p>
           {overview?.subscribers && (
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
               exact {nf.format(overview.subscribers.count)} as of {overview.subscribers.asOf}
             </p>
           )}
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
             Views · last {realtime?.windowHours && !realtime.windowExact ? `${realtime.windowHours}h` : '48h'}
           </p>
-          <p className="mt-1 text-2xl font-semibold text-gray-900">
+          <p className="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">
             {realtime?.views48hAvailable && realtime.views48h != null ? nf.format(realtime.views48h) : '—'}
           </p>
           {!realtime?.views48hAvailable && (
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
               needs ~48h of snapshots before this can be computed
             </p>
           )}
@@ -546,7 +546,7 @@ export function YouTubeLivePanel() {
       </div>
 
       {overview && (
-        <p className="mt-3 text-xs text-gray-500">
+        <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
           Data through <strong>{overview.dataThroughDate}</strong>
           {overview.isPartial && ' · estimates, subject to revision (YouTube finalises 2–3 days late)'}
         </p>

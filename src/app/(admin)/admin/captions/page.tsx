@@ -127,7 +127,7 @@ export default function CaptionsPage() {
                 <li key={s.id} className="flex items-center justify-between gap-3 px-4 py-3">
                   <div className="min-w-0">
                     <p className="truncate font-tamil text-sm text-gray-900 dark:text-gray-100" title={s.title}>{s.title}</p>
-                    <p className="text-xs text-gray-400 dark:text-gray-500">
+                    <p className="text-xs text-gray-400 dark:text-gray-400">
                       {s.hasBody ? `${s.cardCount} cards` : 'no lyrics stored'}
                       {s.youtubeVideoId ? ` · ${s.youtubeVideoId}` : ' · no linked video'}
                     </p>
@@ -142,13 +142,13 @@ export default function CaptionsPage() {
                 </li>
               );
             })}
-            {!loading && !songs.length && <li className="px-4 py-6 text-sm text-gray-400 dark:text-gray-500">No songs found.</li>}
+            {!loading && !songs.length && <li className="px-4 py-6 text-sm text-gray-400 dark:text-gray-400">No songs found.</li>}
           </ul>
         </div>
 
         <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
           {!preview ? (
-            <p className="flex items-center gap-2 text-sm text-gray-400 dark:text-gray-500">
+            <p className="flex items-center gap-2 text-sm text-gray-400 dark:text-gray-400">
               <Captions className="h-4 w-4" /> Pick a song to see where each card would land.
             </p>
           ) : (
@@ -179,7 +179,7 @@ export default function CaptionsPage() {
               <ul className="mt-4 space-y-1">
                 {preview.cues.map((c, i) => (
                   <li key={i} className="flex items-baseline gap-3 text-sm">
-                    <span className="w-12 shrink-0 tabular-nums text-gray-400 dark:text-gray-500">{mmss(c.startMs)}</span>
+                    <span className="w-12 shrink-0 tabular-nums text-gray-400 dark:text-gray-400">{mmss(c.startMs)}</span>
                     <span
                       className={`w-16 shrink-0 text-[10px] uppercase tracking-wide ${
                         c.anchored ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'

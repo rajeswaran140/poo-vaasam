@@ -58,12 +58,12 @@ export function WordPalette({ lyrics, onInsertWord }: { lyrics: string; onInsert
         className="flex w-full items-center justify-between px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200"
       >
         <span>🎨 Word palette</span>
-        <span className="flex items-center gap-2 text-xs font-normal text-gray-500">
+        <span className="flex items-center gap-2 text-xs font-normal text-gray-500 dark:text-gray-400">
           {loaded && draft.overused.length > 0 && (
-            <span className="rounded-full bg-red-100 px-2 py-0.5 text-red-700">{draft.overused.length} overused</span>
+            <span className="rounded-full bg-red-100 px-2 py-0.5 text-red-700 dark:text-red-300">{draft.overused.length} overused</span>
           )}
           {loaded && draft.freshUsed.length > 0 && (
-            <span className="rounded-full bg-green-100 px-2 py-0.5 text-green-700">{draft.freshUsed.length} fresh used</span>
+            <span className="rounded-full bg-green-100 px-2 py-0.5 text-green-700 dark:text-green-300">{draft.freshUsed.length} fresh used</span>
           )}
           <span aria-hidden>{open ? '▲' : '▼'}</span>
         </span>
@@ -71,7 +71,7 @@ export function WordPalette({ lyrics, onInsertWord }: { lyrics: string; onInsert
 
       {open && (
         <div className="space-y-3 border-t border-orange-200 px-3 py-3 dark:border-gray-700">
-          {loading && <p className="text-xs text-gray-500">Loading lexicon…</p>}
+          {loading && <p className="text-xs text-gray-500 dark:text-gray-400">Loading lexicon…</p>}
 
           {loaded && (
             <>
@@ -87,7 +87,7 @@ export function WordPalette({ lyrics, onInsertWord }: { lyrics: string; onInsert
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <Select value={register} onChange={setRegister} placeholder="All registers" options={LEXICON_REGISTERS} />
                 <Select value={theme} onChange={setTheme} placeholder="All themes" options={LEXICON_THEMES} />
-                <label className="flex items-center gap-1 text-xs text-gray-500">
+                <label className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
                   <input type="checkbox" checked={includeNeutral} onChange={(e) => setIncludeNeutral(e.target.checked)} /> include neutral
                 </label>
                 <a href="/admin/lexicon" className="ml-auto text-xs text-orange-700 hover:underline dark:text-orange-400">Manage →</a>

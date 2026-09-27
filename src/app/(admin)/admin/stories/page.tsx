@@ -101,10 +101,10 @@ export default function StoriesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <MessageSquareHeart className="w-7 h-7 text-purple-600" />
-          <h1 className="text-2xl font-bold text-gray-900">
+          <MessageSquareHeart className="w-7 h-7 text-purple-600 dark:text-purple-400" />
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
             Shared Stories
-            {payload && <span className="ml-2 text-sm font-normal text-gray-500">({rows.length} shown)</span>}
+            {payload && <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">({rows.length} shown)</span>}
           </h1>
         </div>
         <button onClick={load} className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-3 py-2 text-sm font-medium text-white hover:bg-purple-700">
@@ -125,7 +125,7 @@ export default function StoriesPage() {
       {/* Filter */}
       <div className="flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white p-4">
         <label className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-gray-500">Status</span>
+          <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Status</span>
           <select value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm">
             <option value="all">All</option>
             {STORY_STATUSES.map((s) => (
@@ -135,20 +135,20 @@ export default function StoriesPage() {
         </label>
       </div>
 
-      {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+      {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:text-red-300">{error}</div>}
 
       {/* Table */}
       {loading ? (
-        <p className="text-gray-500">Loading…</p>
+        <p className="text-gray-500 dark:text-gray-400">Loading…</p>
       ) : !rows.length ? (
         <div className="rounded-xl border border-gray-200 bg-white p-10 text-center">
           <MessageSquareHeart className="mx-auto mb-3 h-12 w-12 text-gray-300" />
-          <p className="text-gray-500">No stories for this filter.</p>
+          <p className="text-gray-500 dark:text-gray-400">No stories for this filter.</p>
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-left text-gray-500">
+            <thead className="bg-gray-50 text-left text-gray-500 dark:text-gray-400">
               <tr>
                 <th className="px-4 py-3 font-medium">Theme</th>
                 <th className="px-4 py-3 font-medium">Name</th>
@@ -163,41 +163,41 @@ export default function StoriesPage() {
             <tbody className="divide-y divide-gray-100">
               {rows.map((s) => (
                 <tr key={s.id} className="align-top hover:bg-gray-50">
-                  <td className="px-4 py-3 font-tamil text-gray-700 whitespace-nowrap">
+                  <td className="px-4 py-3 font-tamil text-gray-700 whitespace-nowrap dark:text-gray-300">
                     {STORY_THEME_LABELS[s.theme as StoryTheme] ?? s.theme}
                   </td>
-                  <td className="px-4 py-3 text-gray-800 whitespace-nowrap">{s.name}</td>
-                  <td className="px-4 py-3 text-gray-600 max-w-md">
+                  <td className="px-4 py-3 text-gray-800 whitespace-nowrap dark:text-gray-200">{s.name}</td>
+                  <td className="px-4 py-3 text-gray-600 max-w-md dark:text-gray-400">
                     <p className="whitespace-pre-wrap font-tamil">{s.story}</p>
                   </td>
                   <td className="px-4 py-3">
                     {s.email ? (
-                      <a href={`mailto:${s.email}`} className="text-purple-600 hover:underline">{s.email}</a>
+                      <a href={`mailto:${s.email}`} className="text-purple-600 hover:underline dark:text-purple-400">{s.email}</a>
                     ) : (
                       <span className="text-gray-300">—</span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-center">
-                    {s.featureConsent ? <span className="text-green-600" title="Consented">✓</span> : <span className="text-gray-300">—</span>}
+                    {s.featureConsent ? <span className="text-green-600 dark:text-green-400" title="Consented">✓</span> : <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[s.status]}`}>
                       {s.status.charAt(0) + s.status.slice(1).toLowerCase()}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{s.createdAt ? new Date(s.createdAt).toLocaleDateString() : '—'}</td>
+                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap dark:text-gray-400">{s.createdAt ? new Date(s.createdAt).toLocaleDateString() : '—'}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1.5">
-                      <button onClick={() => setStoryStatus(s.id, 'REVIEWED')} disabled={busy === s.id} title="Mark reviewed" className="rounded-lg border border-gray-200 p-1.5 text-gray-600 hover:bg-gray-50 disabled:opacity-40">
+                      <button onClick={() => setStoryStatus(s.id, 'REVIEWED')} disabled={busy === s.id} title="Mark reviewed" className="rounded-lg border border-gray-200 p-1.5 text-gray-600 hover:bg-gray-50 disabled:opacity-40 dark:text-gray-400">
                         <Eye className="h-3.5 w-3.5" />
                       </button>
-                      <button onClick={() => setStoryStatus(s.id, 'FEATURED')} disabled={busy === s.id} title="Feature" className="rounded-lg border border-amber-200 p-1.5 text-amber-600 hover:bg-amber-50 disabled:opacity-40">
+                      <button onClick={() => setStoryStatus(s.id, 'FEATURED')} disabled={busy === s.id} title="Feature" className="rounded-lg border border-amber-200 p-1.5 text-amber-600 hover:bg-amber-50 disabled:opacity-40 dark:text-amber-400">
                         <Star className="h-3.5 w-3.5" />
                       </button>
-                      <button onClick={() => setStoryStatus(s.id, 'ARCHIVED')} disabled={busy === s.id} title="Archive" className="rounded-lg border border-gray-200 p-1.5 text-gray-500 hover:bg-gray-50 disabled:opacity-40">
+                      <button onClick={() => setStoryStatus(s.id, 'ARCHIVED')} disabled={busy === s.id} title="Archive" className="rounded-lg border border-gray-200 p-1.5 text-gray-500 hover:bg-gray-50 disabled:opacity-40 dark:text-gray-400">
                         <Archive className="h-3.5 w-3.5" />
                       </button>
-                      <button onClick={() => remove(s.id)} disabled={busy === s.id} title="Delete" className="rounded-lg border border-red-200 p-1.5 text-red-600 hover:bg-red-50 disabled:opacity-40">
+                      <button onClick={() => remove(s.id)} disabled={busy === s.id} title="Delete" className="rounded-lg border border-red-200 p-1.5 text-red-600 hover:bg-red-50 disabled:opacity-40 dark:text-red-400">
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
@@ -216,7 +216,7 @@ function Stat({ label, value, tone }: { label: string; value: number; tone: 'blu
   const tones = { blue: 'text-blue-700', gray: 'text-gray-700', amber: 'text-amber-700' };
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4">
-      <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
+      <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</p>
       <p className={`mt-1 text-2xl font-bold ${tones[tone]}`}>{value}</p>
     </div>
   );

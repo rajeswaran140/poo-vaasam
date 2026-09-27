@@ -561,7 +561,7 @@ export default function NewContentPage() {
           </button>
           <div className="flex items-center gap-4">
             {draft.savedAt && (
-              <span className="text-xs text-gray-400 dark:text-gray-500" aria-live="polite">
+              <span className="text-xs text-gray-400 dark:text-gray-400" aria-live="polite">
                 Draft saved ✓
               </span>
             )}

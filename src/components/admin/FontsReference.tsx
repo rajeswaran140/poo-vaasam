@@ -62,7 +62,7 @@ export function FontsReference() {
                 selectedFont === idx
                   ? 'bg-purple-600 text-white shadow-md'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
+              } dark:text-gray-300`}
             >
               {font.name}
             </button>
@@ -73,7 +73,7 @@ export function FontsReference() {
         <div className="space-y-6">
           {/* Font Preview */}
           <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-8 border-2 border-gray-200">
-            <div className="text-sm text-gray-500 mb-3">Preview:</div>
+            <div className="text-sm text-gray-500 mb-3 dark:text-gray-400">Preview:</div>
             <div className={`${fonts[selectedFont].className} text-3xl sm:text-4xl font-tamil leading-relaxed`}>
               {fonts[selectedFont].example}
             </div>
@@ -84,23 +84,23 @@ export function FontsReference() {
             {/* Details */}
             <div className="space-y-4">
               <div>
-                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2 dark:text-gray-400">
                   Font Details
                 </h3>
                 <div className="space-y-2 bg-gray-50 rounded-lg p-4">
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Type:</span>
-                    <span className="font-medium text-gray-900">{fonts[selectedFont].type}</span>
+                    <span className="text-gray-600 dark:text-gray-400">Type:</span>
+                    <span className="font-medium text-gray-900 dark:text-gray-100">{fonts[selectedFont].type}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">CSS Class:</span>
-                    <code className="px-2 py-1 bg-purple-100 text-purple-700 rounded text-sm font-mono">
+                    <span className="text-gray-600 dark:text-gray-400">CSS Class:</span>
+                    <code className="px-2 py-1 bg-purple-100 text-purple-700 rounded text-sm font-mono dark:text-purple-300">
                       {fonts[selectedFont].className}
                     </code>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">CSS Variable:</span>
-                    <code className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-sm font-mono">
+                    <span className="text-gray-600 dark:text-gray-400">CSS Variable:</span>
+                    <code className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-sm font-mono dark:text-blue-300">
                       {fonts[selectedFont].variable}
                     </code>
                   </div>
@@ -109,14 +109,14 @@ export function FontsReference() {
 
               {/* Available Weights */}
               <div>
-                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2 dark:text-gray-400">
                   Available Weights
                 </h3>
                 <div className="flex flex-wrap gap-2">
                   {fonts[selectedFont].weights.map((weight) => (
                     <span
                       key={weight}
-                      className="px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-sm font-medium"
+                      className="px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-sm font-medium dark:text-orange-300"
                     >
                       {weight}
                     </span>
@@ -128,14 +128,14 @@ export function FontsReference() {
             {/* Best For */}
             <div className="space-y-4">
               <div>
-                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2 dark:text-gray-400">
                   Best For
                 </h3>
                 <div className="space-y-2">
                   {fonts[selectedFont].bestFor.map((use, idx) => (
                     <div key={idx} className="flex items-center gap-2">
                       <svg
-                        className="w-5 h-5 text-green-500 flex-shrink-0"
+                        className="w-5 h-5 text-green-500 flex-shrink-0 dark:text-green-400"
                         fill="currentColor"
                         viewBox="0 0 20 20"
                       >
@@ -145,7 +145,7 @@ export function FontsReference() {
                           clipRule="evenodd"
                         />
                       </svg>
-                      <span className="text-gray-700">{use}</span>
+                      <span className="text-gray-700 dark:text-gray-300">{use}</span>
                     </div>
                   ))}
                 </div>
@@ -153,10 +153,10 @@ export function FontsReference() {
 
               {/* Description */}
               <div>
-                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2 dark:text-gray-400">
                   Description
                 </h3>
-                <p className="text-gray-700 leading-relaxed">
+                <p className="text-gray-700 leading-relaxed dark:text-gray-300">
                   {fonts[selectedFont].description}
                 </p>
               </div>
@@ -165,7 +165,7 @@ export function FontsReference() {
 
           {/* Code Example */}
           <div>
-            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2 dark:text-gray-400">
               Usage Example
             </h3>
             <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto">
@@ -180,7 +180,7 @@ export function FontsReference() {
           {/* Weight Examples */}
           {fonts[selectedFont].weights.length > 1 && (
             <div>
-              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3 dark:text-gray-400">
                 Weight Examples
               </h3>
               <div className="space-y-3">
@@ -197,7 +197,7 @@ export function FontsReference() {
                       key={weight}
                       className="flex items-center gap-4 bg-gray-50 rounded-lg p-3"
                     >
-                      <span className="text-sm text-gray-500 w-32">{weight}</span>
+                      <span className="text-sm text-gray-500 w-32 dark:text-gray-400">{weight}</span>
                       <span className={`${fonts[selectedFont].className} ${weightClass} text-xl flex-1`}>
                         தமிழகவல் - தமிழ் இலக்கிய தளம்
                       </span>
@@ -213,16 +213,16 @@ export function FontsReference() {
       {/* Footer Note */}
       <div className="bg-blue-50 border-t border-blue-100 p-4">
         <div className="flex items-start gap-3">
-          <svg className="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+          <svg className="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0 dark:text-blue-400" fill="currentColor" viewBox="0 0 20 20">
             <path
               fillRule="evenodd"
               d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
               clipRule="evenodd"
             />
           </svg>
-          <div className="text-sm text-blue-800">
+          <div className="text-sm text-blue-800 dark:text-blue-200">
             <p className="font-medium mb-1">Font Loading Strategy</p>
-            <p className="text-blue-700">
+            <p className="text-blue-700 dark:text-blue-300">
               All fonts are loaded from Google Fonts CDN with <code className="px-1 bg-blue-100 rounded">display: &apos;swap&apos;</code> for optimal performance.
               Tamil characters are prioritized for fast rendering.
             </p>

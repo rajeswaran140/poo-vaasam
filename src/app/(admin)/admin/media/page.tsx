@@ -19,19 +19,19 @@ export default function MediaLibraryPage() {
       <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <div className="mb-3 flex items-center gap-3">
           <Folder className="h-7 w-7 text-gray-400" aria-hidden="true" />
-          <h1 className="text-2xl font-bold text-gray-900">Media Library</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Media Library</h1>
         </div>
-        <p className="text-gray-600">
+        <p className="text-gray-600 dark:text-gray-400">
           Not built yet. Nothing on this page uploads, lists or deletes a file.
         </p>
       </div>
 
       <div className="rounded-lg border border-orange-200 bg-orange-50 p-6">
         <div className="mb-2 flex items-center gap-2">
-          <UploadCloud className="h-5 w-5 text-orange-600" aria-hidden="true" />
-          <h2 className="font-semibold text-gray-900">To upload audio now</h2>
+          <UploadCloud className="h-5 w-5 text-orange-600 dark:text-orange-400" aria-hidden="true" />
+          <h2 className="font-semibold text-gray-900 dark:text-gray-100">To upload audio now</h2>
         </div>
-        <p className="mb-4 text-sm text-gray-700">
+        <p className="mb-4 text-sm text-gray-700 dark:text-gray-300">
           <strong>Sound Engineering → Bulk upload</strong> takes a whole batch of WAVs into the
           mastering workspace, one at a time, with per-file progress and retry. WAV only, 500 MB each.
         </p>
@@ -41,22 +41,22 @@ export default function MediaLibraryPage() {
         >
           Go to Bulk upload <ArrowRight className="h-4 w-4" aria-hidden="true" />
         </Link>
-        <p className="mt-4 text-sm text-gray-600">
+        <p className="mt-4 text-sm text-gray-600 dark:text-gray-400">
           For a single image or audio file attached to a piece of content, use the upload field on
           the content form itself — that one works.
         </p>
       </div>
 
       <div className="rounded-lg border border-gray-200 p-6">
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
           If this gets built
         </h2>
-        <ul className="list-inside list-disc space-y-1 text-sm text-gray-600">
+        <ul className="list-inside list-disc space-y-1 text-sm text-gray-600 dark:text-gray-400">
           <li>Gallery of what is already in S3, with thumbnails</li>
           <li>Search and filter by file type</li>
           <li>Bulk delete — needs a check that no content record still points at the key</li>
         </ul>
-        <p className="mt-3 text-xs text-gray-500">
+        <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
           Hidden from the sidebar by <code>FEATURES.ADMIN.MEDIA_LIBRARY</code>. Flip that to{' '}
           <code>true</code> only once the page does something.
         </p>

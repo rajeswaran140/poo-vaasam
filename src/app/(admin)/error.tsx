@@ -47,12 +47,12 @@ export default function AdminError({ error, reset }: ErrorProps) {
           {/* Error Details */}
           <div className="p-8">
             <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded-lg mb-6">
-              <h3 className="font-semibold text-red-800 mb-2">Error Details:</h3>
-              <p className="text-red-700 font-mono text-sm break-all">
+              <h3 className="font-semibold text-red-800 mb-2 dark:text-red-200">Error Details:</h3>
+              <p className="text-red-700 font-mono text-sm break-all dark:text-red-300">
                 {error.message || 'Unknown error occurred'}
               </p>
               {error.digest && (
-                <p className="text-red-600 text-xs mt-2">
+                <p className="text-red-600 text-xs mt-2 dark:text-red-400">
                   Error ID: {error.digest}
                 </p>
               )}
@@ -70,7 +70,7 @@ export default function AdminError({ error, reset }: ErrorProps) {
 
               <Link
                 href="/admin"
-                className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-semibold"
+                className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-semibold dark:text-gray-300"
               >
                 <Home className="w-5 h-5" />
                 Go to Dashboard
@@ -79,22 +79,22 @@ export default function AdminError({ error, reset }: ErrorProps) {
 
             {/* Help Section */}
             <div className="mt-8 p-4 bg-gray-50 rounded-lg">
-              <h3 className="font-semibold text-gray-900 mb-2">What can you do?</h3>
-              <ul className="space-y-2 text-sm text-gray-600">
+              <h3 className="font-semibold text-gray-900 mb-2 dark:text-gray-100">What can you do?</h3>
+              <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
                 <li className="flex items-start gap-2">
-                  <span className="text-purple-600 font-bold">•</span>
+                  <span className="text-purple-600 font-bold dark:text-purple-400">•</span>
                   <span>Click <strong>Try Again</strong> to retry the action</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="text-purple-600 font-bold">•</span>
+                  <span className="text-purple-600 font-bold dark:text-purple-400">•</span>
                   <span>Go back to <strong>Dashboard</strong> and try a different action</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="text-purple-600 font-bold">•</span>
+                  <span className="text-purple-600 font-bold dark:text-purple-400">•</span>
                   <span>If the problem persists, refresh the page</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="text-purple-600 font-bold">•</span>
+                  <span className="text-purple-600 font-bold dark:text-purple-400">•</span>
                   <span>Check your internet connection</span>
                 </li>
               </ul>
@@ -103,7 +103,7 @@ export default function AdminError({ error, reset }: ErrorProps) {
             {/* Debug Info (Development Only) */}
             {process.env.NODE_ENV === 'development' && (
               <details className="mt-6">
-                <summary className="cursor-pointer text-sm text-gray-500 hover:text-gray-700">
+                <summary className="cursor-pointer text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400">
                   Show Stack Trace (Development Only)
                 </summary>
                 <pre className="mt-2 p-4 bg-gray-900 text-gray-100 rounded-lg overflow-x-auto text-xs">
@@ -115,7 +115,7 @@ export default function AdminError({ error, reset }: ErrorProps) {
 
           {/* Footer */}
           <div className="bg-gray-50 px-8 py-4 border-t border-gray-200">
-            <p className="text-sm text-gray-600 text-center">
+            <p className="text-sm text-gray-600 text-center dark:text-gray-400">
               This error has been logged. Our team will investigate if it continues to occur.
             </p>
           </div>
@@ -123,7 +123,7 @@ export default function AdminError({ error, reset }: ErrorProps) {
 
         {/* Tamil Branding */}
         <div className="text-center mt-6">
-          <p className="text-gray-500 font-tamil">
+          <p className="text-gray-500 font-tamil dark:text-gray-400">
             © 2026 தமிழகவல் - Admin Dashboard
           </p>
         </div>

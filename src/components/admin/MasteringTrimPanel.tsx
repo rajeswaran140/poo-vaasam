@@ -201,7 +201,7 @@ export function MasteringTrimPanel({
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
           <Scissors className="h-4 w-4" aria-hidden="true" />
-          Trim &amp; fade <span className="font-normal text-gray-500">(optional)</span>
+          Trim &amp; fade <span className="font-normal text-gray-500 dark:text-gray-400">(optional)</span>
         </h3>
         {!isNoOpEdit(edit) && (
           <button
@@ -260,7 +260,7 @@ export function MasteringTrimPanel({
         </div>
         <div>
           <label htmlFor={endId} className="block text-xs font-medium text-gray-700 dark:text-gray-300">
-            Keep until (seconds) <span className="font-normal text-gray-500">— blank = end of file</span>
+            Keep until (seconds) <span className="font-normal text-gray-500 dark:text-gray-400">— blank = end of file</span>
           </label>
           <input
             id={endId}

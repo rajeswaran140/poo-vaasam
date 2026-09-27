@@ -165,7 +165,7 @@ export function WorkflowKanban({ items }: Props) {
                   </header>
                   <div className="space-y-2 p-2">
                     {cards.length === 0 ? (
-                      <p className="rounded-md bg-white p-3 text-center text-[11px] text-gray-400 dark:bg-gray-900 dark:text-gray-600">
+                      <p className="rounded-md bg-white p-3 text-center text-[11px] text-gray-400 dark:bg-gray-900 dark:text-gray-400">
                         —
                       </p>
                     ) : (
@@ -186,7 +186,7 @@ export function WorkflowKanban({ items }: Props) {
                                 <span aria-hidden>{icon}</span>{c.type}
                                 {!explicit && <span className="opacity-70">· auto</span>}
                               </span>
-                              <span className="text-[10px] text-gray-400 dark:text-gray-500" title={c.updatedAt ?? c.createdAt}>
+                              <span className="text-[10px] text-gray-400 dark:text-gray-400" title={c.updatedAt ?? c.createdAt}>
                                 {relativeTime(c.updatedAt ?? c.createdAt)}
                               </span>
                             </div>

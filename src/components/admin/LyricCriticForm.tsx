@@ -618,7 +618,7 @@ export function LyricCriticForm() {
             </div>
           )}
           <label htmlFor="critic-lyrics" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-            Your draft <span className="text-red-500">*</span>
+            Your draft <span className="text-red-500 dark:text-red-400">*</span>
             <span className="ml-1 text-xs font-normal text-gray-400">(paste your own lyric — feedback only, never rewritten)</span>
           </label>
           <LyricDraftEditor
@@ -714,7 +714,7 @@ export function LyricCriticForm() {
                 onClick={copyMarkdown}
                 className="flex items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
               >
-                {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
+                {copied ? <Check className="h-3.5 w-3.5 text-green-600 dark:text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
                 {copied ? 'Copied' : 'Copy Markdown'}
               </button>
               <button
@@ -773,7 +773,7 @@ export function LyricCriticForm() {
                         <p className="font-tamil text-gray-900 dark:text-gray-100">{l.line}</p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
                           {l.issue}{' '}
-                          <span className="whitespace-nowrap text-gray-400 dark:text-gray-500">
+                          <span className="whitespace-nowrap text-gray-400 dark:text-gray-400">
                             ({confidenceWord(l.confidence)} confidence)
                           </span>
                         </p>
@@ -817,7 +817,7 @@ export function LyricCriticForm() {
                                 disabled={added || addingWord === c.trim()}
                                 aria-label={added ? `${c} is in your lexicon` : `Add ${c} to your lexicon`}
                                 title={added ? 'In your lexicon' : 'Add to your lexicon'}
-                                className="rounded p-0.5 text-purple-500 hover:bg-purple-100 disabled:cursor-default dark:hover:bg-purple-800/40"
+                                className="rounded p-0.5 text-purple-500 hover:bg-purple-100 disabled:cursor-default dark:hover:bg-purple-800/40 dark:text-purple-400"
                               >
                                 {added ? <Check className="h-3 w-3 text-green-600 dark:text-green-400" /> : <Plus className="h-3 w-3" />}
                               </button>
@@ -843,7 +843,7 @@ export function LyricCriticForm() {
                 <ul className="space-y-1.5">
                   {result.questions.map((q, i) => (
                     <li key={i} className="flex gap-2 text-sm text-gray-700 dark:text-gray-300">
-                      <MessageCircleQuestion className="mt-0.5 h-4 w-4 shrink-0 text-purple-500" /> {q}
+                      <MessageCircleQuestion className="mt-0.5 h-4 w-4 shrink-0 text-purple-500 dark:text-purple-400" /> {q}
                     </li>
                   ))}
                 </ul>

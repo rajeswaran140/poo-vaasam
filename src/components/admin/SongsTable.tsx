@@ -45,12 +45,19 @@ interface Props {
   /** Map of song_id → 28-day play count from GA4 (empty when dim not registered). */
   playsBySongId: Record<string, number>;
   ga4PlaysWorking: boolean;
+  /**
+   * The server hit its page size and there are more songs than it fetched.
+   * Rendering a partial catalogue in silence is the danger — the filters below
+   * run over what the server already cut, so search cannot find the missing
+   * songs either.
+   */
+  truncated?: boolean;
 }
 
 type StatusFilter = 'all' | 'PUBLISHED' | 'DRAFT';
 type ThemeFilter = 'all' | SongTheme;
 
-export function SongsTable({ songs, playsBySongId, ga4PlaysWorking }: Props) {
+export function SongsTable({ songs, playsBySongId, ga4PlaysWorking, truncated = false }: Props) {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<StatusFilter>('all');
   const [theme, setTheme] = useState<ThemeFilter>('all');
@@ -73,10 +80,24 @@ export function SongsTable({ songs, playsBySongId, ga4PlaysWorking }: Props) {
 
   return (
     <>
+      {truncated && (
+        <div
+          role="status"
+          aria-label="Song list truncated"
+          className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
+        >
+          <strong className="font-semibold">This list is not showing every song.</strong> The page
+          fetches a fixed number and the catalogue has outgrown it, so the filters and counts below
+          cover only what was loaded. Raise the limit in{' '}
+          <code className="rounded bg-amber-100 px-1 dark:bg-amber-900/60">admin/songs/page.tsx</code>{' '}
+          or add pagination.
+        </div>
+      )}
+
       {/* Filter row */}
-      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <div className="flex-1 min-w-[200px]">
-          <label htmlFor={searchId} className="mb-1 block text-xs font-medium text-gray-500">
+          <label htmlFor={searchId} className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">
             Search
           </label>
           <input
@@ -85,15 +106,15 @@ export function SongsTable({ songs, playsBySongId, ga4PlaysWorking }: Props) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Title or id…"
-            className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+            className="w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">Status</label>
+          <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Status</label>
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value as StatusFilter)}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
             aria-label="Status filter"
           >
             <option value="all">All</option>
@@ -102,11 +123,11 @@ export function SongsTable({ songs, playsBySongId, ga4PlaysWorking }: Props) {
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">Theme</label>
+          <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Theme</label>
           <select
             value={theme}
             onChange={(e) => setTheme(e.target.value as ThemeFilter)}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-tamil focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-tamil text-gray-900 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
             aria-label="Theme filter"
           >
             <option value="all">All</option>
@@ -115,15 +136,15 @@ export function SongsTable({ songs, playsBySongId, ga4PlaysWorking }: Props) {
             ))}
           </select>
         </div>
-        <p className="ml-auto text-xs text-gray-500">
+        <p className="ml-auto text-xs text-gray-500 dark:text-gray-400">
           {filtered.length} of {songs.length}
         </p>
       </div>
 
       {/* Table — wrapped in overflow-x-auto so phones can scroll the wide grid */}
-      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <table className="w-full min-w-[720px] text-left text-sm">
-          <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+          <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500 dark:bg-gray-950/60 dark:text-gray-400">
             <tr>
               <th className="px-4 py-3">Title</th>
               <th className="px-4 py-3">Theme</th>
@@ -135,10 +156,10 @@ export function SongsTable({ songs, playsBySongId, ga4PlaysWorking }: Props) {
               <th className="px-4 py-3 text-right">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={totalCols} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={totalCols} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                   No songs match the current filters.
                 </td>
               </tr>
@@ -148,10 +169,10 @@ export function SongsTable({ songs, playsBySongId, ga4PlaysWorking }: Props) {
                 const effectiveTheme = themeForSongWithOverride(s.id, s.theme);
                 const hasOverride = typeof s.theme === 'string' && s.theme.length > 0;
                 return (
-                  <tr key={s.id} className="hover:bg-gray-50">
+                  <tr key={s.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                     <td className="px-4 py-3">
-                      <div className="font-tamil font-medium text-gray-900">{s.title}</div>
-                      <div className="text-[11px] text-gray-400">{s.id}</div>
+                      <div className="font-tamil font-medium text-gray-900 dark:text-gray-100">{s.title}</div>
+                      <div className="text-[11px] text-gray-400 dark:text-gray-400">{s.id}</div>
                     </td>
                     <td className="px-4 py-3">
                       <ThemeSelect
@@ -160,8 +181,14 @@ export function SongsTable({ songs, playsBySongId, ga4PlaysWorking }: Props) {
                         hasOverride={hasOverride}
                       />
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums text-gray-600">{formatDuration(s.audioDuration)}</td>
-                    <td className="px-4 py-3 text-center">{s.audioUrl ? '✓' : '—'}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-gray-600 dark:text-gray-300">{formatDuration(s.audioDuration)}</td>
+                    <td className="px-4 py-3 text-center">
+                      {/* The YouTube column beside this one labels both of its
+                          states; a bare glyph reads as "check mark" or nothing. */}
+                      <span aria-label={s.audioUrl ? 'Has an audio file' : 'No audio file'}>
+                        {s.audioUrl ? '✓' : '—'}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-center">
                       {ytId ? (
                         <a
@@ -169,34 +196,34 @@ export function SongsTable({ songs, playsBySongId, ga4PlaysWorking }: Props) {
                           target="_blank"
                           rel="noopener noreferrer"
                           aria-label={`Open YouTube video ${ytId} in new tab`}
-                          className="text-orange-600 hover:underline"
+                          className="text-orange-600 hover:underline dark:text-orange-400"
                           title={ytId}
                         >
                           ↗
                         </a>
                       ) : (
-                        <span className="text-gray-400" aria-label="No YouTube video linked">—</span>
+                        <span className="text-gray-400 dark:text-gray-400" aria-label="No YouTube video linked">—</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-center">
                       <span
                         className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
                           s.status === 'PUBLISHED'
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-amber-100 text-amber-800'
+                            ? 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300'
+                            : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
                         }`}
                       >
                         {s.status}
                       </span>
                     </td>
                     {ga4PlaysWorking && (
-                      <td className="px-4 py-3 text-right tabular-nums text-gray-600">
+                      <td className="px-4 py-3 text-right tabular-nums text-gray-600 dark:text-gray-300">
                         {playsBySongId[s.id] != null ? numberFmt.format(playsBySongId[s.id]) : '—'}
                       </td>
                     )}
                     <td className="px-4 py-3 text-right">
                       <div className="flex justify-end gap-2 text-xs">
-                        <Link href={`/admin/content/${s.id}/edit`} className="text-orange-600 hover:underline">
+                        <Link href={`/admin/content/${s.id}/edit`} className="text-orange-600 hover:underline dark:text-orange-400">
                           Edit
                         </Link>
                         <GenerateCoverButton songId={s.id} hasCover={!!s.featuredImage} />
@@ -204,7 +231,7 @@ export function SongsTable({ songs, playsBySongId, ga4PlaysWorking }: Props) {
                           href={`/content/${s.id}`}
                           target="_blank"
                           aria-label={`View ${s.title} on the public site (new tab)`}
-                          className="text-gray-500 hover:text-gray-700"
+                          className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                         >
                           View
                         </Link>

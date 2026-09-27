@@ -202,22 +202,22 @@ export default function TwitchAdminPage() {
     <div className="space-y-6">
       <div className="bg-white rounded-lg shadow-sm p-6">
         <div className="flex items-center gap-3 mb-2">
-          <Radio className="w-8 h-8 text-purple-600" />
-          <h1 className="text-3xl font-bold text-gray-900">Twitch</h1>
+          <Radio className="w-8 h-8 text-purple-600 dark:text-purple-400" />
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Twitch</h1>
         </div>
-        <p className="text-gray-600">
+        <p className="text-gray-600 dark:text-gray-400">
           Connect your Twitch channel so TamilAgaval can react to your live streams. Phase 1: connection + identity. Phase 2 adds LIVE/OFFLINE status and event feed.
         </p>
       </div>
 
       {errorMessage && (
-        <div role="alert" className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <div role="alert" className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:text-red-200">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           <span>{errorMessage}</span>
         </div>
       )}
       {successMessage && (
-        <div role="status" className="flex items-start gap-2 rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+        <div role="status" className="flex items-start gap-2 rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800 dark:text-green-200">
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           <span>{successMessage}</span>
         </div>
@@ -225,7 +225,7 @@ export default function TwitchAdminPage() {
 
       <div className="bg-white rounded-lg shadow-sm p-6">
         {loading ? (
-          <div className="flex items-center gap-2 text-sm text-gray-500">
+          <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
             Reading connection status…
           </div>
@@ -241,14 +241,14 @@ export default function TwitchAdminPage() {
                 />
               ) : (
                 <div className="h-12 w-12 rounded-full bg-purple-100 flex items-center justify-center">
-                  <Radio className="h-6 w-6 text-purple-600" aria-hidden="true" />
+                  <Radio className="h-6 w-6 text-purple-600 dark:text-purple-400" aria-hidden="true" />
                 </div>
               )}
               <div>
-                <div className="font-semibold text-gray-900">{status.connection.displayName}</div>
-                <div className="text-sm text-gray-500">@{status.connection.twitchLogin}</div>
+                <div className="font-semibold text-gray-900 dark:text-gray-100">{status.connection.displayName}</div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">@{status.connection.twitchLogin}</div>
               </div>
-              <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+              <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:text-green-200">
                 <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
                 Connected
               </span>
@@ -256,20 +256,20 @@ export default function TwitchAdminPage() {
 
             <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
               <div>
-                <dt className="text-gray-500">Broadcaster ID</dt>
-                <dd className="font-mono text-gray-900">{status.connection.broadcasterId}</dd>
+                <dt className="text-gray-500 dark:text-gray-400">Broadcaster ID</dt>
+                <dd className="font-mono text-gray-900 dark:text-gray-100">{status.connection.broadcasterId}</dd>
               </div>
               <div>
-                <dt className="text-gray-500">Scopes granted</dt>
-                <dd className="text-gray-900">{status.connection.scopes.length === 0 ? '(none — Phase 1 baseline)' : status.connection.scopes.join(', ')}</dd>
+                <dt className="text-gray-500 dark:text-gray-400">Scopes granted</dt>
+                <dd className="text-gray-900 dark:text-gray-100">{status.connection.scopes.length === 0 ? '(none — Phase 1 baseline)' : status.connection.scopes.join(', ')}</dd>
               </div>
               <div>
-                <dt className="text-gray-500">Connected</dt>
-                <dd className="text-gray-900">{formatIso(status.connection.connectedAt)}</dd>
+                <dt className="text-gray-500 dark:text-gray-400">Connected</dt>
+                <dd className="text-gray-900 dark:text-gray-100">{formatIso(status.connection.connectedAt)}</dd>
               </div>
               <div>
-                <dt className="text-gray-500">Last updated</dt>
-                <dd className="text-gray-900">{formatIso(status.connection.updatedAt)}</dd>
+                <dt className="text-gray-500 dark:text-gray-400">Last updated</dt>
+                <dd className="text-gray-900 dark:text-gray-100">{formatIso(status.connection.updatedAt)}</dd>
               </div>
             </dl>
 
@@ -278,7 +278,7 @@ export default function TwitchAdminPage() {
                 type="button"
                 onClick={onConnect}
                 disabled={actionInFlight !== null}
-                className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:text-gray-300"
               >
                 <RefreshCcw className="h-4 w-4" aria-hidden="true" />
                 Reconnect
@@ -287,7 +287,7 @@ export default function TwitchAdminPage() {
                 type="button"
                 onClick={onDisconnect}
                 disabled={actionInFlight !== null}
-                className="inline-flex items-center gap-2 rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:text-red-300"
               >
                 <LogOut className="h-4 w-4" aria-hidden="true" />
                 Disconnect
@@ -296,7 +296,7 @@ export default function TwitchAdminPage() {
           </div>
         ) : status?.status === 'revoked' ? (
           <div className="space-y-4">
-            <div className="flex items-center gap-2 text-sm text-amber-800">
+            <div className="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-200">
               <AlertTriangle className="h-4 w-4" aria-hidden="true" />
               Previously revoked — reconnect to restore
             </div>
@@ -312,7 +312,7 @@ export default function TwitchAdminPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="flex items-center gap-2 text-sm text-gray-600">
+            <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
               <span className="inline-flex h-2 w-2 rounded-full bg-gray-300" aria-hidden="true" />
               Not connected
             </div>
@@ -329,7 +329,7 @@ export default function TwitchAdminPage() {
               )}
               Connect Twitch
             </button>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-gray-500 dark:text-gray-400">
               You&apos;ll be redirected to Twitch, sign in, and approve the connection. TamilAgaval requests <strong>no scopes</strong> in Phase 1 — only your channel identity.
             </p>
           </div>
@@ -341,16 +341,16 @@ export default function TwitchAdminPage() {
         <div className="bg-white rounded-lg shadow-sm p-6 space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <Zap className="h-5 w-5 text-purple-600" aria-hidden="true" />
-              <h2 className="text-lg font-semibold text-gray-900">EventSub</h2>
+              <Zap className="h-5 w-5 text-purple-600 dark:text-purple-400" aria-hidden="true" />
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">EventSub</h2>
             </div>
             {eventsubActive ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+              <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:text-green-200">
                 <Bell className="h-3 w-3" aria-hidden="true" />
                 Active
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
+              <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:text-gray-300">
                 <BellOff className="h-3 w-3" aria-hidden="true" />
                 Inactive
               </span>
@@ -358,7 +358,7 @@ export default function TwitchAdminPage() {
           </div>
 
           {(status?.eventsub?.subscriptions ?? []).length === 0 ? (
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
               No EventSub subscriptions yet. Enable to receive <code>stream.online</code> and <code>stream.offline</code> events, which drive the LIVE/OFFLINE panel below.
             </p>
           ) : (
@@ -366,8 +366,8 @@ export default function TwitchAdminPage() {
               {status?.eventsub?.subscriptions.map((s) => (
                 <li key={s.type} className="flex items-center justify-between gap-2 rounded border border-gray-200 px-3 py-2">
                   <div className="flex-1">
-                    <div className="font-mono text-gray-900">{s.type}</div>
-                    {s.reason && <div className="text-xs text-amber-700">{s.reason}</div>}
+                    <div className="font-mono text-gray-900 dark:text-gray-100">{s.type}</div>
+                    {s.reason && <div className="text-xs text-amber-700 dark:text-amber-300">{s.reason}</div>}
                   </div>
                   <span
                     className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${
@@ -376,7 +376,7 @@ export default function TwitchAdminPage() {
                         : s.status === 'pending'
                           ? 'bg-amber-100 text-amber-800'
                           : 'bg-red-100 text-red-800'
-                    }`}
+                    } dark:text-green-200`}
                   >
                     {s.status}
                   </span>
@@ -404,7 +404,7 @@ export default function TwitchAdminPage() {
                 type="button"
                 onClick={onDisableEventSub}
                 disabled={actionInFlight !== null}
-                className="inline-flex items-center gap-2 rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:text-red-300"
               >
                 <BellOff className="h-4 w-4" aria-hidden="true" />
                 Disable
@@ -418,14 +418,14 @@ export default function TwitchAdminPage() {
       {connected && (
         <div className="bg-white rounded-lg shadow-sm p-6 space-y-2">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold text-gray-900">Stream</h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Stream</h2>
             {stream?.isLive ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-red-800">
+              <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-red-800 dark:text-red-200">
                 <span className="inline-flex h-2 w-2 rounded-full bg-red-600 animate-pulse" aria-hidden="true" />
                 LIVE
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-gray-700">
+              <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
                 Offline
               </span>
             )}
@@ -434,31 +434,31 @@ export default function TwitchAdminPage() {
             <dl className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
               {stream.title && (
                 <>
-                  <dt className="text-gray-500">Title</dt>
-                  <dd className="text-gray-900">{stream.title}</dd>
+                  <dt className="text-gray-500 dark:text-gray-400">Title</dt>
+                  <dd className="text-gray-900 dark:text-gray-100">{stream.title}</dd>
                 </>
               )}
               {stream.categoryName && (
                 <>
-                  <dt className="text-gray-500">Category</dt>
-                  <dd className="text-gray-900">{stream.categoryName}</dd>
+                  <dt className="text-gray-500 dark:text-gray-400">Category</dt>
+                  <dd className="text-gray-900 dark:text-gray-100">{stream.categoryName}</dd>
                 </>
               )}
               {stream.startedAt && (
                 <>
-                  <dt className="text-gray-500">Started</dt>
-                  <dd className="text-gray-900">{formatIso(stream.startedAt)}</dd>
+                  <dt className="text-gray-500 dark:text-gray-400">Started</dt>
+                  <dd className="text-gray-900 dark:text-gray-100">{formatIso(stream.startedAt)}</dd>
                 </>
               )}
               {stream.streamId && (
                 <>
-                  <dt className="text-gray-500">Stream ID</dt>
-                  <dd className="font-mono text-gray-900">{stream.streamId}</dd>
+                  <dt className="text-gray-500 dark:text-gray-400">Stream ID</dt>
+                  <dd className="font-mono text-gray-900 dark:text-gray-100">{stream.streamId}</dd>
                 </>
               )}
             </dl>
           ) : (
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
               {stream?.updatedAt
                 ? <>Last state change: {formatIso(stream.updatedAt)}</>
                 : eventsubActive

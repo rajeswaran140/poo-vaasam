@@ -225,7 +225,7 @@ export function BulkWavUpload() {
             <p className="text-xs tabular-nums text-gray-500 dark:text-gray-400" role="status">
               {done} of {items.length} uploaded
               {failed > 0 && <span className="text-red-600 dark:text-red-400"> · {failed} failed</span>}
-              <span className="text-gray-400 dark:text-gray-500"> · {mb(totalBytes)}</span>
+              <span className="text-gray-400 dark:text-gray-400"> · {mb(totalBytes)}</span>
             </p>
             {busy ? (
               <button
@@ -268,7 +268,7 @@ export function BulkWavUpload() {
                         style={{ width: `${i.pct}%` }}
                       />
                     </span>
-                    <span className="w-9 text-right text-xs tabular-nums text-gray-500">{i.pct}%</span>
+                    <span className="w-9 text-right text-xs tabular-nums text-gray-500 dark:text-gray-400">{i.pct}%</span>
                   </span>
                 )}
                 {i.state === 'queued' && <span className="shrink-0 text-xs text-gray-400">Queued</span>}

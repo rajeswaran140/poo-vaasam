@@ -323,7 +323,7 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
         <Select value={fWordType} onChange={setFWordType} placeholder="All types" options={LEXICON_WORD_TYPES} />
         <Select value={fStatus} onChange={setFStatus} placeholder="All status" options={LEXICAL_STATUSES} />
         <Select value={fConfidence} onChange={setFConfidence} placeholder="All confidence" options={LEXICON_CONFIDENCE} />
-        <label className="flex items-center gap-1 text-gray-500">
+        <label className="flex items-center gap-1 text-gray-500 dark:text-gray-400">
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> archived
         </label>
         {fNeedsReview && (
@@ -336,8 +336,8 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
         )}
         <div className="ml-auto flex items-center gap-2 text-gray-400">
           <span>{total} shown</span>
-          <button onClick={exportCsv} className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 dark:border-gray-600">Export CSV</button>
-          <button onClick={exportJson} className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 dark:border-gray-600">JSON</button>
+          <button onClick={exportCsv} className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-400">Export CSV</button>
+          <button onClick={exportJson} className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-400">JSON</button>
         </div>
       </div>
 
@@ -400,10 +400,10 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
                       {w.romanization && <div className="text-xs text-gray-400">{w.romanization}</div>}
                     </td>
                     <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{w.gloss}</td>
-                    <td className="px-3 py-2 text-xs text-gray-500">
+                    <td className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
                       {(w.registers?.length ? w.registers : [w.register]).join(', ')}
                     </td>
-                    <td className="px-3 py-2 text-xs text-gray-500">{w.wordType ?? '—'}</td>
+                    <td className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">{w.wordType ?? '—'}</td>
                     <td className="px-3 py-2">
                       <select
                         value={w.usage}
@@ -416,7 +416,7 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
                     </td>
                     <td className="px-3 py-2">
                       <div className="flex flex-wrap gap-1">
-                        {w.themes.map((t) => <span key={t} className="rounded-full bg-orange-50 px-2 py-0.5 text-xs text-orange-700">{t}</span>)}
+                        {w.themes.map((t) => <span key={t} className="rounded-full bg-orange-50 px-2 py-0.5 text-xs text-orange-700 dark:text-orange-300">{t}</span>)}
                       </div>
                     </td>
                     <td className="px-3 py-2">
@@ -427,8 +427,8 @@ export function LexiconManager({ initial }: { initial: LexiconRow[] }) {
                       )}
                     </td>
                     <td className="px-3 py-2 text-right text-xs">
-                      <button onClick={() => setEditingId(w.id)} className="mr-2 text-blue-600 hover:text-blue-800">Edit</button>
-                      <button onClick={() => toggleArchive(w)} className="text-gray-500 hover:text-gray-800">{w.archived ? 'Restore' : 'Archive'}</button>
+                      <button onClick={() => setEditingId(w.id)} className="mr-2 text-blue-600 hover:text-blue-800 dark:text-blue-400">Edit</button>
+                      <button onClick={() => toggleArchive(w)} className="text-gray-500 hover:text-gray-800 dark:text-gray-400">{w.archived ? 'Restore' : 'Archive'}</button>
                       {/* Ruled off from the reversible pair. 8px of margin was the
                           only thing between Archive and a hard delete. */}
                       <span className="ml-3 border-l border-gray-200 pl-3 dark:border-gray-700">
@@ -799,7 +799,7 @@ function PasteImport({ onImported }: { onImported: () => void }) {
   }
   return (
     <div className="w-full space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-      <div className="text-xs text-gray-500">
+      <div className="text-xs text-gray-500 dark:text-gray-400">
         <strong>Type or paste.</strong> Separate words by new lines <em>or</em> commas —{' '}
         <code>பொற்கதிர், இளங்கதிர்</code> adds two. Optional meaning after a dash/pipe:{' '}
         <code>நிலா — moon</code>; a whole line of words shares that meaning. Register/usage/themes
@@ -911,7 +911,7 @@ function SuggestPanel({ onAccepted }: { onAccepted: () => void }) {
       {/* "Related to" asks for a semantic field, not a substring: மழை should
           bring back சாரல் and மண்வாசம், which share no letters with it. */}
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        <label className="text-xs text-gray-500">Related to word</label>
+        <label className="text-xs text-gray-500 dark:text-gray-400">Related to word</label>
         <TransliterateField value={relatedTo} onChange={setRelatedTo} placeholder="மழை" />
       </div>
 
@@ -927,7 +927,7 @@ function SuggestPanel({ onAccepted }: { onAccepted: () => void }) {
                 <span className="text-[10px] text-gray-400">{(s.registers ?? [s.register]).join('/')}</span>
                 {/* Say when the model itself calls it a coinage. */}
                 {(s.lexicalStatus === 'creative-poetic' || s.lexicalStatus === 'modern-compound') && (
-                  <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-800">coined</span>
+                  <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-800 dark:text-amber-200">coined</span>
                 )}
               </li>
             ))}

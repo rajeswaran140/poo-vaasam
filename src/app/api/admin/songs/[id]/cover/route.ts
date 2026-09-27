@@ -25,6 +25,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
 
   const { id } = await params;
+  // Same shape check the sibling theme route applies. A bogus id is harmless
+  // downstream — DynamoDB has no injection surface and findById just misses —
+  // but two routes over the same input disagreeing is how drift starts, and
+  // rejecting early keeps a typo from looking like a missing song.
+  if (!id || !/^cnt_[a-z0-9_]+$/i.test(id)) {
+    return NextResponse.json({ success: false, error: 'Bad content id' }, { status: 400 });
+  }
+
   const body = await request.json().catch(() => ({}));
   const parsed = schema.safeParse(body ?? {});
   if (!parsed.success) {

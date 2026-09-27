@@ -90,10 +90,10 @@ export default function PublishSongPage() {
   return (
     <div className="mx-auto max-w-2xl px-4 py-8">
       <div className="mb-6">
-        <h1 className="flex items-center gap-2 font-tamil text-2xl font-bold text-gray-900">
-          <Music className="h-6 w-6 text-orange-600" /> பாடல் வெளியிடு
+        <h1 className="flex items-center gap-2 font-tamil text-2xl font-bold text-gray-900 dark:text-gray-100">
+          <Music className="h-6 w-6 text-orange-600 dark:text-orange-400" /> பாடல் வெளியிடு
         </h1>
-        <p className="mt-1 text-sm text-gray-500">
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
           Upload audio + title → one click creates, links the YouTube video, derives the
           duration, generates a cover, and deploys.
         </p>
@@ -117,12 +117,12 @@ export default function PublishSongPage() {
         />
 
         <div>
-          <span className="mb-2 block text-sm font-medium text-gray-700">Theme (வகை)</span>
+          <span className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Theme (வகை)</span>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => setTheme('')}
-              className={`rounded-full px-3 py-1.5 font-tamil text-sm transition ${theme === '' ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+              className={`rounded-full px-3 py-1.5 font-tamil text-sm transition ${theme === '' ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'} dark:text-gray-300`}
             >
               காதல் (default)
             </button>
@@ -131,7 +131,7 @@ export default function PublishSongPage() {
                 key={t}
                 type="button"
                 onClick={() => setTheme(t)}
-                className={`rounded-full px-3 py-1.5 font-tamil text-sm transition ${theme === t ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                className={`rounded-full px-3 py-1.5 font-tamil text-sm transition ${theme === t ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'} dark:text-gray-300`}
               >
                 {SONG_THEME_LABELS[t]}
               </button>
@@ -140,7 +140,7 @@ export default function PublishSongPage() {
         </div>
 
         <details className="text-sm">
-          <summary className="cursor-pointer text-gray-500 hover:text-gray-700">
+          <summary className="cursor-pointer text-gray-500 hover:text-gray-700 dark:text-gray-300">
             YouTube link (optional — auto-matched by title)
           </summary>
           <input
@@ -153,12 +153,12 @@ export default function PublishSongPage() {
         </details>
 
         <div className="flex flex-wrap gap-5 border-t border-gray-100 pt-4">
-          <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-            <input type="checkbox" checked={generateCover} onChange={(e) => setGenerateCover(e.target.checked)} className="rounded border-gray-300 text-orange-600 focus:ring-orange-500" />
+          <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <input type="checkbox" checked={generateCover} onChange={(e) => setGenerateCover(e.target.checked)} className="rounded border-gray-300 text-orange-600 focus:ring-orange-500 dark:text-orange-400" />
             <Wand2 className="h-4 w-4 text-gray-400" /> Generate cover art
           </label>
-          <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-            <input type="checkbox" checked={deploy} onChange={(e) => setDeploy(e.target.checked)} className="rounded border-gray-300 text-orange-600 focus:ring-orange-500" />
+          <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <input type="checkbox" checked={deploy} onChange={(e) => setDeploy(e.target.checked)} className="rounded border-gray-300 text-orange-600 focus:ring-orange-500 dark:text-orange-400" />
             <Rocket className="h-4 w-4 text-gray-400" /> Deploy (go live, ~5 min)
           </label>
         </div>
@@ -176,11 +176,11 @@ export default function PublishSongPage() {
 
       {result && (
         <div className="mt-6 rounded-xl border border-green-200 bg-green-50 p-5 text-sm">
-          <p className="mb-3 flex items-center gap-2 font-semibold text-green-800">
+          <p className="mb-3 flex items-center gap-2 font-semibold text-green-800 dark:text-green-200">
             <Check className="h-5 w-5" />{' '}
             {result.alreadyPublished ? 'Already published' : 'Published'} — {fmtDuration(result.audioDuration)}
           </p>
-          <ul className="space-y-1 text-gray-700">
+          <ul className="space-y-1 text-gray-700 dark:text-gray-300">
             <li>YouTube: {result.youtubeVideoId ? `${result.youtubeVideoId}${result.matched ? ' (auto-matched)' : ''}` : 'no link'}</li>
             <li>Theme: {result.theme ?? 'love (default)'}</li>
             <li>
@@ -190,7 +190,7 @@ export default function PublishSongPage() {
             <li className="flex items-center gap-1">
               Deploy:{' '}
               {result.deploy ? `job ${result.deploy.jobId} (live in ~5 min)` : result.deployError ? (
-                <span className="inline-flex items-center gap-1 text-amber-700">
+                <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-300">
                   <AlertTriangle className="h-4 w-4" /> {result.deployError} — redeploy manually
                 </span>
               ) : 'skipped'}
@@ -203,7 +203,7 @@ export default function PublishSongPage() {
             <button
               type="button"
               onClick={() => { setTitle(''); setAudioUrl(''); setTheme(''); setYoutubeVideoId(''); setResult(null); }}
-              className="rounded-lg border border-gray-300 px-4 py-2 text-gray-700"
+              className="rounded-lg border border-gray-300 px-4 py-2 text-gray-700 dark:text-gray-300"
             >
               Publish another
             </button>

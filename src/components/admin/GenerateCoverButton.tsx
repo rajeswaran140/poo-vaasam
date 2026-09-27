@@ -43,7 +43,7 @@ export function GenerateCoverButton({ songId, hasCover }: { songId: string; hasC
       onClick={generate}
       disabled={state === 'generating'}
       title={error || (state === 'done' ? 'Cover set — click to regenerate' : 'Generate an AI cover image')}
-      className="text-purple-600 hover:underline disabled:opacity-50"
+      className="text-purple-600 hover:underline disabled:opacity-50 dark:text-purple-400"
     >
       {label}
     </button>

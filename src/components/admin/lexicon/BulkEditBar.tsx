@@ -101,7 +101,7 @@ export function BulkEditBar({
     <div className="sticky top-0 z-20 space-y-2 rounded-lg border border-orange-400 bg-orange-50 p-3 shadow-sm dark:border-orange-800 dark:bg-gray-800">
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <strong className="text-gray-800 dark:text-gray-100">{count} selected</strong>
-        <button onClick={onClear} className="text-xs text-gray-500 hover:text-gray-800 dark:hover:text-gray-200">clear</button>
+        <button onClick={onClear} className="text-xs text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 dark:text-gray-400">clear</button>
         {overCap && (
           <span className="text-xs text-amber-700 dark:text-amber-400">
             only the first {BULK_UPDATE_MAX_IDS} will be changed — narrow the filter or work in pages
@@ -111,7 +111,7 @@ export function BulkEditBar({
 
       {/* Register: the reason this bar exists. */}
       <div className="flex flex-wrap items-center gap-1">
-        <span className="w-20 shrink-0 text-[11px] uppercase tracking-wide text-gray-500">Register</span>
+        <span className="w-20 shrink-0 text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">Register</span>
         {LEXICON_REGISTERS.map((r) => (
           <button
             key={r}
@@ -143,7 +143,7 @@ export function BulkEditBar({
         >
           {busy ? 'Applying…' : `Apply to ${Math.min(count, BULK_UPDATE_MAX_IDS)}`}
         </button>
-        <span className="text-[11px] text-gray-500">
+        <span className="text-[11px] text-gray-500 dark:text-gray-400">
           Themes are <strong>added</strong> to what each word already has, never replaced.
         </span>
       </div>
@@ -156,7 +156,7 @@ function Pick({
 }: { label: string; value: string; onChange: (v: string) => void; options: readonly string[] }) {
   return (
     <label className="flex items-center gap-1">
-      <span className="text-gray-500">{label}</span>
+      <span className="text-gray-500 dark:text-gray-400">{label}</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}

@@ -16,10 +16,10 @@ export default function SettingsPage() {
       {/* Header */}
       <div className="bg-white rounded-lg shadow-sm p-6">
         <div className="flex items-center gap-3 mb-2">
-          <SettingsIcon className="w-8 h-8 text-purple-600" />
-          <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
+          <SettingsIcon className="w-8 h-8 text-purple-600 dark:text-purple-400" />
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Settings</h1>
         </div>
-        <p className="text-gray-600">Manage your Tamil content platform settings</p>
+        <p className="text-gray-600 dark:text-gray-400">Manage your Tamil content platform settings</p>
       </div>
 
       {/* Settings Categories */}
@@ -27,18 +27,18 @@ export default function SettingsPage() {
         {/* General Settings */}
         <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-purple-500">
           <div className="flex items-center gap-3 mb-4">
-            <Globe className="w-6 h-6 text-purple-600" />
-            <h2 className="text-xl font-semibold text-gray-900">General Settings</h2>
+            <Globe className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">General Settings</h2>
           </div>
-          <p className="text-gray-600 mb-4">
+          <p className="text-gray-600 mb-4 dark:text-gray-400">
             Configure site name, logo, and basic information
           </p>
-          <div className="space-y-3 text-sm text-gray-500">
+          <div className="space-y-3 text-sm text-gray-500 dark:text-gray-400">
             <div>• Site Title: <span className="font-tamil">தமிழகவல்</span></div>
             <div>• Default Language: Tamil (ta)</div>
             <div>• Time Zone: Asia/Kolkata</div>
           </div>
-          <button className="mt-4 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors">
+          <button className="mt-4 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors dark:text-gray-300">
             Coming Soon
           </button>
         </div>
@@ -46,18 +46,18 @@ export default function SettingsPage() {
         {/* Database Settings */}
         <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-blue-500">
           <div className="flex items-center gap-3 mb-4">
-            <Database className="w-6 h-6 text-blue-600" />
-            <h2 className="text-xl font-semibold text-gray-900">Database</h2>
+            <Database className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Database</h2>
           </div>
-          <p className="text-gray-600 mb-4">
+          <p className="text-gray-600 mb-4 dark:text-gray-400">
             DynamoDB configuration and backup settings
           </p>
-          <div className="space-y-3 text-sm text-gray-500">
+          <div className="space-y-3 text-sm text-gray-500 dark:text-gray-400">
             <div>• Table: TamilWebContent</div>
             <div>• Region: ca-central-1</div>
             <div>• Read Capacity: On-demand</div>
           </div>
-          <button className="mt-4 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors">
+          <button className="mt-4 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors dark:text-gray-300">
             Coming Soon
           </button>
         </div>
@@ -65,18 +65,18 @@ export default function SettingsPage() {
         {/* Security Settings */}
         <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-red-500">
           <div className="flex items-center gap-3 mb-4">
-            <Shield className="w-6 h-6 text-red-600" />
-            <h2 className="text-xl font-semibold text-gray-900">Security</h2>
+            <Shield className="w-6 h-6 text-red-600 dark:text-red-400" />
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Security</h2>
           </div>
-          <p className="text-gray-600 mb-4">
+          <p className="text-gray-600 mb-4 dark:text-gray-400">
             Authentication and authorization settings
           </p>
-          <div className="space-y-3 text-sm text-gray-500">
+          <div className="space-y-3 text-sm text-gray-500 dark:text-gray-400">
             <div>• Auth Provider: AWS Cognito</div>
             <div>• User Pool: ca-central-1_JPXdswqHE</div>
             <div>• MFA: Disabled</div>
           </div>
-          <button className="mt-4 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors">
+          <button className="mt-4 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors dark:text-gray-300">
             Coming Soon
           </button>
         </div>
@@ -84,18 +84,18 @@ export default function SettingsPage() {
         {/* Notifications */}
         <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-green-500">
           <div className="flex items-center gap-3 mb-4">
-            <Bell className="w-6 h-6 text-green-600" />
-            <h2 className="text-xl font-semibold text-gray-900">Notifications</h2>
+            <Bell className="w-6 h-6 text-green-600 dark:text-green-400" />
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Notifications</h2>
           </div>
-          <p className="text-gray-600 mb-4">
+          <p className="text-gray-600 mb-4 dark:text-gray-400">
             Email and system notification preferences
           </p>
-          <div className="space-y-3 text-sm text-gray-500">
+          <div className="space-y-3 text-sm text-gray-500 dark:text-gray-400">
             <div>• Email Notifications: Enabled</div>
             <div>• New Content Alerts: Enabled</div>
             <div>• Comment Moderation: Enabled</div>
           </div>
-          <button className="mt-4 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors">
+          <button className="mt-4 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors dark:text-gray-300">
             Coming Soon
           </button>
         </div>
@@ -108,13 +108,13 @@ export default function SettingsPage() {
       <div className="bg-yellow-50 border-l-4 border-yellow-400 p-6 rounded-lg">
         <div className="flex items-start gap-3">
           <div className="flex-shrink-0">
-            <svg className="w-6 h-6 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
+            <svg className="w-6 h-6 text-yellow-600 dark:text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
             </svg>
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-yellow-800 mb-1">Under Development</h3>
-            <p className="text-yellow-700">
+            <h3 className="text-lg font-semibold text-yellow-800 mb-1 dark:text-yellow-200">Under Development</h3>
+            <p className="text-yellow-700 dark:text-yellow-300">
               Settings functionality is currently under development. You can view current configuration
               but cannot modify settings yet. Check back soon for updates!
             </p>

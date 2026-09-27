@@ -57,7 +57,7 @@ export function LyricContextPanel() {
   return (
     <div className="space-y-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
       <div className="text-sm font-medium text-gray-700 dark:text-gray-200">📝 Lyric context</div>
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-gray-500 dark:text-gray-400">
         Paste a line to see the concepts in it and related Tamil imagery to explore.
         <strong> Your line is never rewritten</strong> — these are words to consider, not a replacement.
       </p>
@@ -108,9 +108,9 @@ export function LyricContextPanel() {
                   <li key={s.word} className="rounded-md border border-gray-100 px-2 py-1 text-sm dark:border-gray-800">
                     <div className="flex flex-wrap items-baseline gap-2">
                       <span className="font-tamil font-medium text-gray-900 dark:text-gray-100">{s.word}</span>
-                      {s.gloss && <span className="text-xs text-gray-500">{s.gloss}</span>}
+                      {s.gloss && <span className="text-xs text-gray-500 dark:text-gray-400">{s.gloss}</span>}
                       {s.register && <span className="text-[10px] text-gray-400">{s.register}</span>}
-                      {s.known && <span className="text-[10px] text-green-600">already yours</span>}
+                      {s.known && <span className="text-[10px] text-green-600 dark:text-green-400">already yours</span>}
                     </div>
                     {s.note && <p className="text-xs text-gray-600 dark:text-gray-300">{s.note}</p>}
                   </li>

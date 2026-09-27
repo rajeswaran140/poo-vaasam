@@ -96,7 +96,7 @@ export function CompositionNotebook() {
       <header className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Composition Notebook</h1>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
             One record per song — the decisions, not just the result. Versions keep earlier choices.
           </p>
         </div>
@@ -120,7 +120,7 @@ export function CompositionNotebook() {
               }`}
             >
               <div className="font-tamil font-medium text-gray-900 dark:text-gray-100">{c.title}</div>
-              <div className="text-[11px] text-gray-500">
+              <div className="text-[11px] text-gray-500 dark:text-gray-400">
                 {c.status}
                 {c.versionCount > 0 && ` · ${c.versionCount} version${c.versionCount > 1 ? 's' : ''}`}
                 {c.bpm ? ` · ${c.bpm} BPM` : ''}
@@ -248,7 +248,7 @@ function CompositionEditor({
           className="rounded-md border border-orange-500 px-3 py-2 text-sm font-medium text-orange-700 hover:bg-orange-50 disabled:opacity-60 dark:text-orange-400 dark:hover:bg-gray-800">
           Save version
         </button>
-        <button onClick={remove} className="rounded-md px-2 py-2 text-sm text-red-600 hover:text-red-800">Delete</button>
+        <button onClick={remove} className="rounded-md px-2 py-2 text-sm text-red-600 hover:text-red-800 dark:text-red-400">Delete</button>
       </div>
 
       {/* ---- musical decisions, each with its provenance ---------------- */}
@@ -298,7 +298,7 @@ function CompositionEditor({
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {PROVENANCED_FIELDS.map((field) => (
               <label key={field} className="flex items-center gap-2 text-xs">
-                <span className="w-24 shrink-0 text-gray-500">{FIELD_LABELS[field]}</span>
+                <span className="w-24 shrink-0 text-gray-500 dark:text-gray-400">{FIELD_LABELS[field]}</span>
                 <select
                   value={spec.sources?.[field] ?? ''}
                   onChange={(e) => setSource(field, e.target.value as Provenance | '')}
@@ -412,14 +412,14 @@ function CompositionEditor({
               <span className="text-xs text-gray-400">
                 {v.spec.bpm ? `${v.spec.bpm} BPM` : ''} {v.spec.meter ?? ''} {v.spec.tonic ?? ''}
               </span>
-              {v.note && <span className="text-xs text-gray-500">— {v.note}</span>}
+              {v.note && <span className="text-xs text-gray-500 dark:text-gray-400">— {v.note}</span>}
             </li>
           ))}
         </ul>
 
         {composition.versions.length >= 2 && (
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="text-gray-500">Compare</span>
+            <span className="text-gray-500 dark:text-gray-400">Compare</span>
             <select aria-label="compare from" onChange={(e) => setCompare([Number(e.target.value), compare?.[1] ?? composition.versions.length])}
               className="rounded border border-gray-300 px-1 py-0.5 dark:border-gray-600 dark:bg-gray-900">
               {composition.versions.map((v) => <option key={v.version} value={v.version}>{v.label}</option>)}
@@ -435,13 +435,13 @@ function CompositionEditor({
         {diff && (
           <div className="rounded-md bg-gray-50 p-3 text-xs dark:bg-gray-800/60">
             {diff.length === 0 ? (
-              <span className="text-gray-500">No differences in the decision fields.</span>
+              <span className="text-gray-500 dark:text-gray-400">No differences in the decision fields.</span>
             ) : (
               <ul className="space-y-0.5">
                 {diff.map((d) => (
                   <li key={d.field}>
-                    <span className="text-gray-500">{FIELD_LABELS[d.field] ?? d.field}:</span>{' '}
-                    <span className="text-red-600 line-through">{d.before}</span>{' '}
+                    <span className="text-gray-500 dark:text-gray-400">{FIELD_LABELS[d.field] ?? d.field}:</span>{' '}
+                    <span className="text-red-600 line-through dark:text-red-400">{d.before}</span>{' '}
                     <span className="text-gray-400">→</span>{' '}
                     <span className="text-green-700 dark:text-green-400">{d.after}</span>
                   </li>

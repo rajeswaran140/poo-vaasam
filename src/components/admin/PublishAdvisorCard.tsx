@@ -123,7 +123,7 @@ export function PublishAdvisorCard({
       {error && (
         <p role="alert" className="rounded-lg border border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-900/20 px-3 py-2 text-xs text-red-800 dark:text-red-200">{error}</p>
       )}
-      {loading && !data && <p className="text-sm text-gray-500">Reading the signals…</p>}
+      {loading && !data && <p className="text-sm text-gray-500 dark:text-gray-400">Reading the signals…</p>}
 
       {data && v && (
         <>

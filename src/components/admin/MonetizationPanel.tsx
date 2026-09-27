@@ -83,7 +83,7 @@ export function MonetizationPanel() {
         Monetization &amp; YPP gates
       </h2>
 
-      {loading && <p className="mt-3 text-sm text-gray-500">Loading…</p>}
+      {loading && <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">Loading…</p>}
       {error && (
         <div
           role="alert"

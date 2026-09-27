@@ -101,13 +101,13 @@ export function ReferralCoefficientPanel({ ytaConfigured }: { ytaConfigured: boo
       {error && (
         <p role="alert" className="rounded-lg border border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-900/20 px-3 py-2 text-xs text-red-800 dark:text-red-200">{error}</p>
       )}
-      {loading && <p className="text-sm text-gray-500">Loading…</p>}
+      {loading && <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>}
 
       {data && (
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div className="rounded-xl border border-gray-200 dark:border-gray-800 p-3">
-              <div className="text-2xl font-semibold tabular-nums text-orange-600">{data.whatsappPer1k}</div>
+              <div className="text-2xl font-semibold tabular-nums text-orange-600 dark:text-orange-400">{data.whatsappPer1k}</div>
               <div className="text-xs text-gray-500 dark:text-gray-400">WhatsApp views / 1k</div>
             </div>
             <div className="rounded-xl border border-gray-200 dark:border-gray-800 p-3">
@@ -156,7 +156,7 @@ export function ReferralCoefficientPanel({ ytaConfigured }: { ytaConfigured: boo
               </table>
             </div>
           ) : (
-            <p className="text-sm text-gray-500">No external referrals recorded in this window.</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">No external referrals recorded in this window.</p>
           )}
           <p className="text-xs text-gray-400">
             WhatsApp is counted across all the labels YouTube reports it under (WhatsApp, whatsapp.com,

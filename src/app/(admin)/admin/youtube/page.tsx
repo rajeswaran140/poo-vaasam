@@ -227,7 +227,7 @@ export default async function YouTubeAdminPage() {
               href={SITE.youtube.channelUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-orange-600 hover:underline"
+              className="text-orange-600 hover:underline dark:text-orange-400"
             >
               Open channel <span aria-hidden>↗</span>
             </a>
@@ -455,7 +455,7 @@ export default async function YouTubeAdminPage() {
             <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
               Playback-based CPM by content · last 28 days
             </p>
-            <p className="text-[10px] text-gray-400 dark:text-gray-500">
+            <p className="text-[10px] text-gray-400 dark:text-gray-400">
               Do not average across rows — playbacks differ. Blended figure = Σrevenue / Σviews.
             </p>
           </div>
@@ -499,7 +499,7 @@ export default async function YouTubeAdminPage() {
                         </td>
                         <td className="py-2 pr-3 text-right tabular-nums font-medium text-gray-900 dark:text-gray-100">
                           {r.pending ? (
-                            <span className="text-xs font-normal italic text-gray-400 dark:text-gray-500">pending</span>
+                            <span className="text-xs font-normal italic text-gray-400 dark:text-gray-400">pending</span>
                           ) : (
                             `$${r.playbackBasedCpm.toFixed(2)}`
                           )}
@@ -533,7 +533,7 @@ export default async function YouTubeAdminPage() {
             <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
               Site engagement by day of week · last 28 days
             </p>
-            <p className="text-[10px] text-gray-400 dark:text-gray-500">
+            <p className="text-[10px] text-gray-400 dark:text-gray-400">
               Source: GA4 native export → BigQuery
             </p>
           </div>

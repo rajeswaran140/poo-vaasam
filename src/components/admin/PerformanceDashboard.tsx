@@ -90,7 +90,7 @@ export function PerformanceDashboard() {
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
         <div className="flex items-center justify-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
-          <span className="ml-3 text-gray-600">Loading performance data...</span>
+          <span className="ml-3 text-gray-600 dark:text-gray-400">Loading performance data...</span>
         </div>
       </div>
     );
@@ -99,8 +99,8 @@ export function PerformanceDashboard() {
   if (error) {
     return (
       <div className="bg-red-50 rounded-xl border border-red-200 p-8">
-        <p className="text-red-800 font-semibold">Error loading performance data</p>
-        <p className="text-red-600 text-sm mt-2">{error}</p>
+        <p className="text-red-800 font-semibold dark:text-red-200">Error loading performance data</p>
+        <p className="text-red-600 text-sm mt-2 dark:text-red-400">{error}</p>
         <button
           onClick={fetchStats}
           className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
@@ -121,24 +121,24 @@ export function PerformanceDashboard() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <Activity className="w-7 h-7 text-purple-600" />
+          <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2 dark:text-gray-100">
+            <Activity className="w-7 h-7 text-purple-600 dark:text-purple-400" />
             Performance Metrics
           </h2>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
             Last updated: {lastUpdated.toLocaleTimeString()}
           </p>
         </div>
         <div className="flex gap-3">
           <button
             onClick={fetchStats}
-            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium dark:text-gray-300"
           >
             Refresh
           </button>
           <button
             onClick={clearCache}
-            className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors font-medium"
+            className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors font-medium dark:text-red-300"
           >
             Clear Cache
           </button>
@@ -180,31 +180,31 @@ export function PerformanceDashboard() {
 
       {/* Cache Details */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-          <Database className="w-5 h-5 text-purple-600" />
+        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2 dark:text-gray-100">
+          <Database className="w-5 h-5 text-purple-600 dark:text-purple-400" />
           Embedding Cache Status
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div>
-            <p className="text-sm text-gray-500 mb-1">Cache Size</p>
-            <p className="text-2xl font-bold text-gray-900">{data.cache.size}</p>
+            <p className="text-sm text-gray-500 mb-1 dark:text-gray-400">Cache Size</p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{data.cache.size}</p>
             <p className="text-xs text-gray-400 mt-1">entries (max 1000)</p>
           </div>
           <div>
-            <p className="text-sm text-gray-500 mb-1">Cache Hits</p>
-            <p className="text-2xl font-bold text-green-600">{data.cache.hits}</p>
+            <p className="text-sm text-gray-500 mb-1 dark:text-gray-400">Cache Hits</p>
+            <p className="text-2xl font-bold text-green-600 dark:text-green-400">{data.cache.hits}</p>
             <p className="text-xs text-gray-400 mt-1">served from cache</p>
           </div>
           <div>
-            <p className="text-sm text-gray-500 mb-1">Cache Misses</p>
-            <p className="text-2xl font-bold text-orange-600">{data.cache.misses}</p>
+            <p className="text-sm text-gray-500 mb-1 dark:text-gray-400">Cache Misses</p>
+            <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">{data.cache.misses}</p>
             <p className="text-xs text-gray-400 mt-1">required API call</p>
           </div>
         </div>
 
         {/* Progress Bar */}
         <div className="mt-6">
-          <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
+          <div className="flex items-center justify-between text-sm text-gray-600 mb-2 dark:text-gray-400">
             <span>Cache utilization</span>
             <span>{((data.cache.size / 1000) * 100).toFixed(1)}%</span>
           </div>
@@ -220,13 +220,13 @@ export function PerformanceDashboard() {
       {/* Performance Insights */}
       {data.recommendations && data.recommendations.length > 0 && (
         <div className="bg-purple-50 rounded-xl border border-purple-200 p-6">
-          <h3 className="text-lg font-semibold text-purple-900 mb-3">
+          <h3 className="text-lg font-semibold text-purple-900 mb-3 dark:text-purple-100">
             💡 Performance Insights
           </h3>
           <ul className="space-y-2">
             {data.recommendations.map((rec, index) => (
-              <li key={index} className="flex items-start gap-2 text-purple-800">
-                <span className="text-purple-600 mt-0.5">•</span>
+              <li key={index} className="flex items-start gap-2 text-purple-800 dark:text-purple-200">
+                <span className="text-purple-600 mt-0.5 dark:text-purple-400">•</span>
                 <span className="text-sm">{rec}</span>
               </li>
             ))}
@@ -279,13 +279,13 @@ function MetricCard({ title, value, subtitle, icon, color, trend }: MetricCardPr
       }`}
     >
       <div className="flex items-center justify-between mb-4">
-        <p className="text-sm font-medium text-gray-600">{title}</p>
+        <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
         <div className={`${color} w-10 h-10 rounded-lg flex items-center justify-center text-white`}>
           {icon}
         </div>
       </div>
-      <p className="text-3xl font-bold text-gray-900 mb-1">{value}</p>
-      <p className="text-xs text-gray-500">{subtitle}</p>
+      <p className="text-3xl font-bold text-gray-900 mb-1 dark:text-gray-100">{value}</p>
+      <p className="text-xs text-gray-500 dark:text-gray-400">{subtitle}</p>
     </div>
   );
 }

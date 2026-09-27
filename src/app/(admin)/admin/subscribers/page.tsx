@@ -110,14 +110,14 @@ export default function SubscribersPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Users className="w-7 h-7 text-purple-600" />
-          <h1 className="text-2xl font-bold text-gray-900">
+          <Users className="w-7 h-7 text-purple-600 dark:text-purple-400" />
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
             Email Subscribers
-            {payload && <span className="ml-2 text-sm font-normal text-gray-500">({payload.total} shown)</span>}
+            {payload && <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">({payload.total} shown)</span>}
           </h1>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={exportCsv} disabled={!payload?.data.length} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40">
+          <button onClick={exportCsv} disabled={!payload?.data.length} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:text-gray-300">
             <Download className="w-4 h-4" /> CSV
           </button>
           <button onClick={load} className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-3 py-2 text-sm font-medium text-white hover:bg-purple-700">
@@ -152,26 +152,26 @@ export default function SubscribersPage() {
           </select>
         </Field>
         {(from || to) && (
-          <button onClick={() => { setFrom(''); setTo(''); }} className="rounded-lg px-3 py-2 text-sm text-gray-500 hover:text-gray-800">
+          <button onClick={() => { setFrom(''); setTo(''); }} className="rounded-lg px-3 py-2 text-sm text-gray-500 hover:text-gray-800 dark:text-gray-200">
             Clear dates
           </button>
         )}
       </div>
 
-      {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+      {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:text-red-300">{error}</div>}
 
       {/* Table */}
       {loading ? (
-        <p className="text-gray-500">Loading…</p>
+        <p className="text-gray-500 dark:text-gray-400">Loading…</p>
       ) : !payload?.data.length ? (
         <div className="rounded-xl border border-gray-200 bg-white p-10 text-center">
           <Users className="mx-auto mb-3 h-12 w-12 text-gray-300" />
-          <p className="text-gray-500">No subscribers for this filter.</p>
+          <p className="text-gray-500 dark:text-gray-400">No subscribers for this filter.</p>
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-left text-gray-500">
+            <thead className="bg-gray-50 text-left text-gray-500 dark:text-gray-400">
               <tr>
                 <th className="px-4 py-3 font-medium">Email</th>
                 <th className="px-4 py-3 font-medium">Source</th>
@@ -183,21 +183,21 @@ export default function SubscribersPage() {
             <tbody className="divide-y divide-gray-100">
               {payload.data.map((s) => (
                 <tr key={s.email} className="hover:bg-gray-50">
-                  <td className="px-4 py-3"><a href={`mailto:${s.email}`} className="text-purple-600 hover:underline">{s.email}</a></td>
-                  <td className="px-4 py-3 text-gray-600">{s.source}</td>
+                  <td className="px-4 py-3"><a href={`mailto:${s.email}`} className="text-purple-600 hover:underline dark:text-purple-400">{s.email}</a></td>
+                  <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{s.source}</td>
                   <td className="px-4 py-3">
-                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${s.status === 'SUBSCRIBED' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${s.status === 'SUBSCRIBED' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'} dark:text-green-300`}>
                       {s.status === 'SUBSCRIBED' ? 'Subscribed' : 'Unsubscribed'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-gray-600">{s.createdAt ? new Date(s.createdAt).toLocaleDateString() : '—'}</td>
+                  <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{s.createdAt ? new Date(s.createdAt).toLocaleDateString() : '—'}</td>
                   <td className="px-4 py-3 text-right">
                     {s.status === 'SUBSCRIBED' ? (
-                      <button onClick={() => mutate(s.email, 'unsubscribe')} disabled={busy === s.email} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-40">
+                      <button onClick={() => mutate(s.email, 'unsubscribe')} disabled={busy === s.email} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-40 dark:text-red-300">
                         <UserMinus className="h-3.5 w-3.5" /> Unsubscribe
                       </button>
                     ) : (
-                      <button onClick={() => mutate(s.email, 'resubscribe')} disabled={busy === s.email} className="inline-flex items-center gap-1.5 rounded-lg border border-green-200 px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-50 disabled:opacity-40">
+                      <button onClick={() => mutate(s.email, 'resubscribe')} disabled={busy === s.email} className="inline-flex items-center gap-1.5 rounded-lg border border-green-200 px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-50 disabled:opacity-40 dark:text-green-300">
                         <UserCheck className="h-3.5 w-3.5" /> Re-subscribe
                       </button>
                     )}
@@ -218,7 +218,7 @@ function Stat({ label, value, tone }: { label: string; value: number; tone: 'gre
   };
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4">
-      <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
+      <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</p>
       <p className={`mt-1 text-2xl font-bold ${tones[tone]}`}>{value}</p>
     </div>
   );
@@ -227,7 +227,7 @@ function Stat({ label, value, tone }: { label: string; value: number; tone: 'gre
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-xs font-medium text-gray-500">{label}</span>
+      <span className="text-xs font-medium text-gray-500 dark:text-gray-400">{label}</span>
       {children}
     </label>
   );

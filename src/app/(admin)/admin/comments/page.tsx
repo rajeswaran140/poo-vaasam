@@ -155,7 +155,7 @@ export default function CommentsPage() {
               type="checkbox"
               checked={hideMine}
               onChange={(e) => setHideMine(e.target.checked)}
-              className="h-3.5 w-3.5 rounded border-gray-300 text-orange-600 dark:border-gray-600"
+              className="h-3.5 w-3.5 rounded border-gray-300 text-orange-600 dark:border-gray-600 dark:text-orange-400"
             />
             Hide my own comments{mineCount > 0 && ` (${mineCount})`}
           </label>
@@ -177,7 +177,7 @@ export default function CommentsPage() {
           {err}
         </p>
       )}
-      {loading && !payload && <p className="text-gray-500">Loading…</p>}
+      {loading && !payload && <p className="text-gray-500 dark:text-gray-400">Loading…</p>}
 
       <div id={panelId} role="tabpanel" aria-labelledby={`${baseId}-tab-${filter}`} tabIndex={0}>
         {payload && visible.length === 0 && !loading && (

@@ -172,7 +172,7 @@ export function LyricReadView({ lyrics, title, onClose }: LyricReadViewProps) {
                     onClick={() => copy(line, i)}
                     aria-label={`Copy line ${i + 1}`}
                     title="Copy this line"
-                    className="ml-auto flex-shrink-0 self-center pl-3 text-gray-400 opacity-0 transition-opacity hover:text-gray-700 focus:opacity-100 group-hover:opacity-100 dark:text-gray-500 dark:hover:text-gray-200 print:hidden"
+                    className="ml-auto flex-shrink-0 self-center pl-3 text-gray-400 opacity-0 transition-opacity hover:text-gray-700 focus:opacity-100 group-hover:opacity-100 dark:text-gray-400 dark:hover:text-gray-200 print:hidden"
                   >
                     {copied === i ? (
                       <Check className="h-4 w-4 text-green-600 dark:text-green-400" aria-hidden="true" />

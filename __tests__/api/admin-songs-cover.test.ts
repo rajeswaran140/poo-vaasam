@@ -102,3 +102,18 @@ it('maps a not-configured failure to 503', async () => {
   const res = await POST(req(), ctx());
   expect(res.status).toBe(503);
 });
+
+/**
+ * The sibling theme route validates the id shape before touching the database;
+ * this one passed whatever arrived straight through to findById. Not a
+ * vulnerability — DynamoDB has no injection surface and a bogus id simply
+ * finds nothing — but two routes over the same input disagreeing is the kind
+ * of thing that decays.
+ */
+it('rejects a malformed content id before reaching the database', async () => {
+  // A VALID body, so the only thing under test is the id. Passing a bad body
+  // here would trip the existing schema check and pass for the wrong reason.
+  const res = await POST(req({}), ctx('not-a-content-id'));
+  expect(res.status).toBe(400);
+  expect(mockFindById).not.toHaveBeenCalled();
+});

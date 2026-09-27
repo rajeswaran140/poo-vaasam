@@ -193,7 +193,7 @@ export function ChannelRevenueByCountryPanel({ days }: { days: number }) {
             })}
           </ul>
 
-          <p className="text-[11px] text-gray-400 dark:text-gray-500">
+          <p className="text-[11px] text-gray-400 dark:text-gray-400">
             Small markets can show revenue with no attributed views (they fall under
             YouTube&apos;s geo threshold) — their revenue counts toward the total but their
             RPM reads &ldquo;—&rdquo;.

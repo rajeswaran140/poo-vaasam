@@ -95,8 +95,8 @@ export function ReleaseChecker() {
 
   return (
     <div className="mx-auto max-w-3xl p-4">
-      <h1 className="text-xl font-semibold text-gray-900">Release check</h1>
-      <p className="mt-1 text-sm text-gray-600">
+      <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Release check</h1>
+      <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
         Paste a video id or any YouTube URL. Grades the upload against the per-release checklist —
         audio language, captions, title, description links, tags, playlists.
       </p>
@@ -123,7 +123,7 @@ export function ReleaseChecker() {
       </div>
 
       {error && (
-        <p className="mt-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+        <p className="mt-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:text-rose-200">
           {error}
         </p>
       )}
@@ -131,25 +131,25 @@ export function ReleaseChecker() {
       {result && (
         <section className="mt-5" aria-live="polite">
           <div className="rounded-lg border border-gray-200 bg-white p-4">
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
               {result.isShort ? 'Short' : 'Song'}
               {result.isUpcoming && ' · unaired premiere'}
               {result.durationSeconds > 0 &&
                 ` · ${Math.floor(result.durationSeconds / 60)}:${String(result.durationSeconds % 60).padStart(2, '0')}`}
             </p>
-            <p className="mt-0.5 font-medium text-gray-900">{result.title}</p>
+            <p className="mt-0.5 font-medium text-gray-900 dark:text-gray-100">{result.title}</p>
             <p className="mt-2 text-lg font-semibold">
               {result.ready ? (
-                <span className="text-emerald-700">✅ Ready</span>
+                <span className="text-emerald-700 dark:text-emerald-300">✅ Ready</span>
               ) : (
-                <span className="text-amber-800">
+                <span className="text-amber-800 dark:text-amber-200">
                   ⚠️ {result.blockers} blocker{result.blockers === 1 ? '' : 's'}, {result.gaps} gap
                   {result.gaps === 1 ? '' : 's'}
                 </span>
               )}
             </p>
             {!result.captionsChecked && (
-              <p className="mt-1 text-xs text-gray-500">
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                 Caption tracks could not be read (the write token is missing the force-ssl scope) —
                 caption findings are absent, not clear.
               </p>
@@ -166,7 +166,7 @@ export function ReleaseChecker() {
 
           {notes.length > 0 && (
             <details className="mt-3">
-              <summary className="cursor-pointer text-sm text-gray-600">
+              <summary className="cursor-pointer text-sm text-gray-600 dark:text-gray-400">
                 {notes.length} note{notes.length === 1 ? '' : 's'} — nothing to fix, but worth knowing
               </summary>
               <ul className="mt-2 space-y-2">
@@ -191,7 +191,7 @@ export function ReleaseChecker() {
           )}
 
           {result.quota && (
-            <p className="mt-3 text-xs text-gray-500">
+            <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
               Quota: {result.quota.spent} units for this check · {result.quota.used}/
               {result.quota.limit} used today (resets midnight Pacific)
             </p>

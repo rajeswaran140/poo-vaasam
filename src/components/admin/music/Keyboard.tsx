@@ -170,7 +170,7 @@ export function Keyboard({ octaves = 2, startOctave = 4 }: { octaves?: number; s
               }`}
               style={{ left: `${k.whiteIndex * 2.5}rem` }}
             >
-              <span className="font-medium text-gray-700">{label(k.midi)}</span>
+              <span className="font-medium text-gray-700 dark:text-gray-300">{label(k.midi)}</span>
             </button>
           );
         })}

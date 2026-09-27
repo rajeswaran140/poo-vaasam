@@ -150,7 +150,7 @@ export function OutlierFinderPanel({ ytaConfigured }: { ytaConfigured: boolean }
           {error}
         </p>
       )}
-      {loading && <p className="text-sm text-gray-500">Loading…</p>}
+      {loading && <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>}
 
       {data && (
         <>
@@ -177,7 +177,7 @@ export function OutlierFinderPanel({ ytaConfigured }: { ytaConfigured: boolean }
                       className={`cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/40 ${o.isOutlier ? 'bg-orange-50/60 dark:bg-orange-900/10' : ''}`}
                     >
                       <td className="px-3 py-2 tabular-nums text-gray-400">
-                        <span className="mr-1 text-gray-300 dark:text-gray-600" aria-hidden>{expanded === o.videoId ? '▾' : '▸'}</span>
+                        <span className="mr-1 text-gray-300 dark:text-gray-400" aria-hidden>{expanded === o.videoId ? '▾' : '▸'}</span>
                         {o.rank}
                       </td>
                       <td className="px-3 py-2 font-tamil text-gray-900 dark:text-gray-100">
