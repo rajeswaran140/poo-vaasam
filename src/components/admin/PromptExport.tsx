@@ -143,7 +143,7 @@ export function PromptExport({
         </select>
         <div className="ml-auto flex items-center gap-2">
           <button type="button" onClick={copy} className="inline-flex items-center gap-1.5 rounded-lg border border-purple-300 bg-white px-2.5 py-1 text-xs font-medium text-purple-700 hover:bg-purple-100 dark:border-purple-700 dark:bg-gray-800 dark:text-purple-300">
-            {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
+            {copied ? <Check className="h-3.5 w-3.5 text-green-600 dark:text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
             {copied ? 'Copied' : 'Copy .md'}
           </button>
           <button type="button" onClick={downloadMd} className="inline-flex items-center gap-1.5 rounded-lg border border-purple-300 bg-white px-2.5 py-1 text-xs font-medium text-purple-700 hover:bg-purple-100 dark:border-purple-700 dark:bg-gray-800 dark:text-purple-300">

@@ -19,8 +19,8 @@ export default function DocsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <BookOpen className="h-7 w-7 text-purple-600" />
-        <h1 className="text-2xl font-bold text-gray-900">Docs</h1>
+        <BookOpen className="h-7 w-7 text-purple-600 dark:text-purple-400" />
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Docs</h1>
       </div>
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-[14rem_1fr]">
@@ -46,7 +46,7 @@ export default function DocsPage() {
                         className={`mt-0.5 block text-[11px] tabular-nums ${
                           d.slug === active?.slug
                             ? 'text-purple-600 dark:text-purple-300'
-                            : 'text-gray-400 dark:text-gray-500'
+                            : 'text-gray-400 dark:text-gray-400'
                         }`}
                         title={`Last updated ${d.updatedAt}`}
                       >
@@ -74,7 +74,7 @@ export default function DocsPage() {
               <MarkdownView md={active.body} />
             </>
           ) : (
-            <p className="text-gray-500">Select a document.</p>
+            <p className="text-gray-500 dark:text-gray-400">Select a document.</p>
           )}
         </article>
       </div>

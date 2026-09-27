@@ -96,11 +96,11 @@ export default function AdminLyricsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <ScrollText className="h-7 w-7 text-purple-600" />
+          <ScrollText className="h-7 w-7 text-purple-600 dark:text-purple-400" />
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
             Lyrics · பாடல் வரிகள்
             {rows.length > 0 && (
-              <span className="ml-2 text-sm font-normal text-gray-500">({rows.length} songs)</span>
+              <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">({rows.length} songs)</span>
             )}
           </h1>
         </div>
@@ -119,22 +119,22 @@ export default function AdminLyricsPage() {
       </p>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:text-red-300">
           {error}
         </div>
       )}
 
       {loading ? (
-        <p className="text-gray-500">Loading…</p>
+        <p className="text-gray-500 dark:text-gray-400">Loading…</p>
       ) : rows.length === 0 ? (
         <div className="rounded-xl border border-gray-200 bg-white p-10 text-center dark:border-gray-800 dark:bg-gray-900">
           <ScrollText className="mx-auto mb-3 h-12 w-12 text-gray-300" />
-          <p className="text-gray-500">No songs found.</p>
+          <p className="text-gray-500 dark:text-gray-400">No songs found.</p>
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-left text-gray-500 dark:bg-gray-800/50">
+            <thead className="bg-gray-50 text-left text-gray-500 dark:bg-gray-800/50 dark:text-gray-400">
               <tr>
                 <th className="px-4 py-3 font-medium">Song</th>
                 <th className="px-4 py-3 font-medium">Status</th>
@@ -181,7 +181,7 @@ export default function AdminLyricsPage() {
                     <span
                       className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
                         s.hasBody ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-                      }`}
+                      } dark:text-green-300`}
                     >
                       {s.hasBody ? 'Has lyrics' : 'No lyrics'}
                     </span>

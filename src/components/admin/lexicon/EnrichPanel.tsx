@@ -122,9 +122,9 @@ export function EnrichPanel({ words, onApplied }: { words: LexiconRow[]; onAppli
         >
           {busy ? 'Working…' : 'Propose metadata'}
         </button>
-        <span className="text-xs text-gray-500">{bare.length} words are missing meaning, themes or type</span>
+        <span className="text-xs text-gray-500 dark:text-gray-400">{bare.length} words are missing meaning, themes or type</span>
       </div>
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-gray-500 dark:text-gray-400">
         Proposals only — review each one and apply it. Nothing is saved until you click <em>Apply</em>.
       </p>
 

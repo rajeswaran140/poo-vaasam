@@ -154,7 +154,7 @@ export function MusicLab() {
     <div className="space-y-6">
       <header>
         <h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900 dark:text-gray-100">
-          <FlaskConical className="h-6 w-6 text-orange-600" aria-hidden /> Music Lab
+          <FlaskConical className="h-6 w-6 text-orange-600 dark:text-orange-400" aria-hidden /> Music Lab
         </h1>
         <p className="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
           Log every generation against its brief — keepers <em>and</em> failures — with audio, engine settings, 0–10
@@ -178,7 +178,7 @@ export function MusicLab() {
           Brief
         </label>
         {loadingBriefs ? (
-          <p className="flex items-center gap-2 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Loading briefs…</p>
+          <p className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400"><Loader2 className="h-4 w-4 animate-spin" /> Loading briefs…</p>
         ) : briefs.length === 0 ? (
           <p className="text-sm text-gray-500 dark:text-gray-400">
             No saved briefs yet. Create one in the <strong>Music Director</strong>, save it, then log generations here.
@@ -215,7 +215,7 @@ export function MusicLab() {
               Attempts {loadingGens ? '' : `(${generations.length})`}
             </h2>
             {loadingGens ? (
-              <p className="flex items-center gap-2 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</p>
+              <p className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</p>
             ) : generations.length === 0 ? (
               <p className="text-sm text-gray-500 dark:text-gray-400">No generations logged for this brief yet.</p>
             ) : (
@@ -256,7 +256,7 @@ function InsightsPanel({ report: r }: { report: InsightsReport }) {
       <ul className="space-y-1.5">
         {r.recommendations.map((rec, i) => (
           <li key={i} className="flex gap-2 text-sm text-gray-800 dark:text-gray-200">
-            <span aria-hidden className="text-amber-500">▸</span>
+            <span aria-hidden className="text-amber-500 dark:text-amber-400">▸</span>
             <span>{rec}</span>
           </li>
         ))}

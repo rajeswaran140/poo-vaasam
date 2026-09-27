@@ -112,7 +112,7 @@ export function LyricMeterLab() {
     <div className="space-y-5">
       <header className="space-y-1">
         <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Lyric Meter Lab</h1>
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-gray-500 dark:text-gray-400">
           Paste a lyric to see each line&apos;s syllables, phrases and sustain points, and work out the rhythm
           against a metronome. <strong>Your lyric is never rewritten.</strong>
         </p>
@@ -157,7 +157,7 @@ export function LyricMeterLab() {
                   The syllable count cannot choose a meter here
                 </div>
                 <p className="text-gray-600 dark:text-gray-300">{suggestion.undecidable}</p>
-                <pre className="mt-2 overflow-x-auto font-mono text-[11px] leading-tight text-gray-500">{`3/4   ONE-and TWO-and THREE-and
+                <pre className="mt-2 overflow-x-auto font-mono text-[11px] leading-tight text-gray-500 dark:text-gray-400">{`3/4   ONE-and TWO-and THREE-and
       >       >       >
 
 6/8   ONE-two-three FOUR-five-six
@@ -234,14 +234,14 @@ function LineCard({
   const { plan, density, phrases, index } = line;
   return (
     <section className="space-y-2 rounded-lg border border-gray-200 p-4 dark:border-gray-700">
-      <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
+      <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
         <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] dark:bg-gray-800">line {index + 1}</span>
         <span><strong className="text-gray-800 dark:text-gray-100">{plan.syllableCount}</strong> syllables</span>
         <span className={`rounded-full px-2 py-0.5 ${DENSITY_STYLE[density.band]}`}>
           {density.label} · {density.syllablesPerSecond.toFixed(1)}/sec
         </span>
       </div>
-      <p className="text-[11px] text-gray-500">{density.message}</p>
+      <p className="text-[11px] text-gray-500 dark:text-gray-400">{density.message}</p>
 
       <div className="flex flex-wrap items-center gap-1 font-tamil text-lg">
         {plan.words.map((w) => (
@@ -254,11 +254,11 @@ function LineCard({
               } ${w.sustainable ? 'underline decoration-orange-500 decoration-2 underline-offset-4' : ''}`}
             >
               {w.text}
-              <sub className={`ml-0.5 text-[10px] ${w.overridden ? 'font-bold text-orange-600' : 'text-gray-400'}`}>
+              <sub className={`ml-0.5 text-[10px] ${w.overridden ? 'font-bold text-orange-600' : 'text-gray-400'} dark:text-orange-400`}>
                 {w.syllableCount}
                 {w.overridden && '*'}
               </sub>
-              {w.sustainable && <span className="ml-0.5 text-orange-600">—</span>}
+              {w.sustainable && <span className="ml-0.5 text-orange-600 dark:text-orange-400">—</span>}
             </button>
             {w.index < plan.words.length - 1 && <span className="text-gray-300">|</span>}
           </span>
@@ -288,7 +288,7 @@ function LineCard({
       </div>
 
       {plan.sustainCandidates.length > 0 && (
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-gray-500 dark:text-gray-400">
           Can be held: <span className="font-tamil">{plan.sustainCandidates.map((w) => `${w.text} —`).join('  ')}</span>
         </p>
       )}
@@ -393,8 +393,8 @@ function WordLookup({
           <span className="font-tamil text-gray-700 dark:text-gray-200">
             {word.syllables.map((s) => `${s.text}${s.vowel === 'long' ? ' (நெடில்)' : ' (குறில்)'}`).join(' · ')}
           </span>
-          <span className="text-gray-500">{word.automaticSyllableCount} syllables</span>
-          <span className="text-gray-500">
+          <span className="text-gray-500 dark:text-gray-400">{word.automaticSyllableCount} syllables</span>
+          <span className="text-gray-500 dark:text-gray-400">
             {word.sustainable ? '· can be sustained' : '· closed ending, clips the note'}
           </span>
         </div>
@@ -413,7 +413,7 @@ function WordLookup({
             }}
             className="w-16 rounded border border-gray-300 px-1 py-0.5 dark:border-gray-600 dark:bg-gray-900"
           />
-          <span className="text-gray-500">notes this word is sung across</span>
+          <span className="text-gray-500 dark:text-gray-400">notes this word is sung across</span>
           {word.overridden && (
             <button
               onClick={() => onSetOverride(lineIndex, word.index, null)}
@@ -445,7 +445,7 @@ function WordLookup({
         <div className="rounded-md bg-gray-50 p-3 text-xs dark:bg-gray-800">
           <div className="font-tamil text-sm text-gray-800 dark:text-gray-100">{entry.tamilMeaning}</div>
           <div className="text-gray-600 dark:text-gray-300">{entry.gloss}</div>
-          <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-gray-500">
+          <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-gray-500 dark:text-gray-400">
             {entry.registers?.length && <span>register: {entry.registers.join('/')}</span>}
             {entry.wordType && <span>type: {entry.wordType}</span>}
             {entry.usage && <span>usage: {entry.usage}</span>}
@@ -456,7 +456,7 @@ function WordLookup({
         </div>
       )}
       {loaded && !entry && (
-        <p className="text-xs text-gray-500">Not in your Lexicon yet — you could add it.</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">Not in your Lexicon yet — you could add it.</p>
       )}
 
       {related.length > 0 && (
@@ -477,8 +477,8 @@ function WordLookup({
                   <button onClick={() => copy(a.word)} className="font-tamil text-sm font-medium text-blue-700 hover:underline dark:text-blue-400">
                     {a.word}
                   </button>
-                  <span className="text-gray-500">{a.gloss}</span>
-                  {a.known && <span className="text-[10px] text-green-600">already yours</span>}
+                  <span className="text-gray-500 dark:text-gray-400">{a.gloss}</span>
+                  {a.known && <span className="text-[10px] text-green-600 dark:text-green-400">already yours</span>}
                 </div>
                 <p className="text-gray-600 dark:text-gray-300">{a.nuance}</p>
               </li>

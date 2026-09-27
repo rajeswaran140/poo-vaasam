@@ -51,30 +51,30 @@ export default function MessagesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Mail className="w-7 h-7 text-purple-600" />
-          <h1 className="text-2xl font-bold text-gray-900">
+          <Mail className="w-7 h-7 text-purple-600 dark:text-purple-400" />
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
             Contact Messages
             {!loading && (
-              <span className="ml-2 text-sm font-normal text-gray-500">({messages.length})</span>
+              <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">({messages.length})</span>
             )}
           </h1>
         </div>
         <button
           onClick={load}
-          className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2 text-sm"
+          className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2 text-sm dark:text-gray-300"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
         </button>
       </div>
 
       {loading ? (
-        <p className="text-gray-500">Loading messages…</p>
+        <p className="text-gray-500 dark:text-gray-400">Loading messages…</p>
       ) : error ? (
-        <div className="rounded-lg bg-red-50 border border-red-200 text-red-800 px-4 py-3">{error}</div>
+        <div className="rounded-lg bg-red-50 border border-red-200 text-red-800 px-4 py-3 dark:text-red-200">{error}</div>
       ) : messages.length === 0 ? (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
           <Mail className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-600">No messages yet.</p>
+          <p className="text-gray-600 dark:text-gray-400">No messages yet.</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -82,10 +82,10 @@ export default function MessagesPage() {
             <div key={m.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
               <div className="flex items-start justify-between gap-4 mb-2">
                 <div>
-                  <h3 className="font-semibold text-gray-900">{m.subject}</h3>
-                  <p className="text-sm text-gray-600">
+                  <h3 className="font-semibold text-gray-900 dark:text-gray-100">{m.subject}</h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
                     {m.name} &lt;
-                    <a href={`mailto:${m.email}`} className="text-purple-600 hover:underline">
+                    <a href={`mailto:${m.email}`} className="text-purple-600 hover:underline dark:text-purple-400">
                       {m.email}
                     </a>
                     &gt;
@@ -95,7 +95,7 @@ export default function MessagesPage() {
                   {new Date(m.createdAt).toLocaleString()}
                 </time>
               </div>
-              <p className="text-gray-700 whitespace-pre-wrap border-t border-gray-100 pt-3 mt-2">
+              <p className="text-gray-700 whitespace-pre-wrap border-t border-gray-100 pt-3 mt-2 dark:text-gray-300">
                 {m.message}
               </p>
               <div className="mt-3">

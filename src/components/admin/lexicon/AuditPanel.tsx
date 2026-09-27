@@ -100,10 +100,10 @@ export function AuditPanel({ onApplied }: { onApplied: () => void }) {
           {busy ? 'Checking…' : 'Run audit'}
         </button>
         {report && (
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-gray-500 dark:text-gray-400">
             {report.totalFindings} findings across {report.total} words ·{' '}
-            <span className="text-red-600">{report.countsBySeverity.high ?? 0} high</span>,{' '}
-            <span className="text-amber-600">{report.countsBySeverity.medium ?? 0} medium</span>,{' '}
+            <span className="text-red-600 dark:text-red-400">{report.countsBySeverity.high ?? 0} high</span>,{' '}
+            <span className="text-amber-600 dark:text-amber-400">{report.countsBySeverity.medium ?? 0} medium</span>,{' '}
             {report.countsBySeverity.low ?? 0} low
           </span>
         )}

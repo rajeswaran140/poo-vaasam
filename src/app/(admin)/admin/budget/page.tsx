@@ -119,7 +119,7 @@ export default function BudgetPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-700 text-left text-xs uppercase tracking-wide text-gray-500">
+                <tr className="border-b border-gray-700 text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
                   <th className="py-2 pr-4">Service</th>
                   <th className="py-2 pr-4 text-right">Ours</th>
                   <th className="py-2 pr-4 text-right">Line total</th>
@@ -147,13 +147,13 @@ export default function BudgetPage() {
           </div>
 
           {!s.allExact && (
-            <p className="mt-4 text-xs text-gray-500">
+            <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
               At least one line is a share rather than a measured figure, so the total is an
               estimate. The basis column says which.
             </p>
           )}
 
-          <p className="mt-6 text-xs text-gray-600">
+          <p className="mt-6 text-xs text-gray-600 dark:text-gray-400">
             {payload?.cached ? 'Served from cache (refreshes every 12h).' : 'Freshly queried.'} Cost
             Explorer bills $0.01 per query, so this page is cached rather than live.
           </p>
@@ -166,7 +166,7 @@ export default function BudgetPage() {
 function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div className="rounded-xl border border-gray-700 bg-gray-800/60 p-4">
-      <div className="text-xs uppercase tracking-wide text-gray-500">{label}</div>
+      <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</div>
       <div className={`mt-1 text-2xl font-bold tabular-nums ${accent ? 'text-orange-400' : 'text-white'}`}>
         {value}
       </div>

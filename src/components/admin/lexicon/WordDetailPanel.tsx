@@ -129,7 +129,7 @@ export function WordDetailPanel({
           {word.romanization && <div className="text-xs text-gray-400">{word.romanization}</div>}
         </div>
         <div className="flex gap-2 text-xs">
-          <button onClick={onEdit} className="text-blue-600 hover:text-blue-800">Edit</button>
+          <button onClick={onEdit} className="text-blue-600 hover:text-blue-800 dark:text-blue-400">Edit</button>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600" aria-label="Close detail">✕</button>
         </div>
       </div>
@@ -196,7 +196,7 @@ export function WordDetailPanel({
 
       {/* ---- Word family ---------------------------------------------- */}
       <section className="border-t border-gray-100 pt-3 dark:border-gray-800">
-        <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
           Word family <span className="font-normal normal-case text-gray-400">· stem {family.stem}</span>
         </h4>
         {family.members.length === 0 ? (
@@ -215,9 +215,9 @@ export function WordDetailPanel({
                     {m.word}
                   </button>
                 ) : (
-                  <span className="font-tamil font-medium text-gray-500">{m.word}</span>
+                  <span className="font-tamil font-medium text-gray-500 dark:text-gray-400">{m.word}</span>
                 )}
-                {m.gloss && <span className="text-xs text-gray-500">{m.gloss}</span>}
+                {m.gloss && <span className="text-xs text-gray-500 dark:text-gray-400">{m.gloss}</span>}
                 {/* Established vs constructed, stated per member — the
                     distinction Raj asked to be able to see at a glance. */}
                 {m.constructed ? (
@@ -240,7 +240,7 @@ export function WordDetailPanel({
       {/* ---- Find alternatives ---------------------------------------- */}
       <section className="border-t border-gray-100 pt-3 dark:border-gray-800">
         <div className="mb-2 flex items-center justify-between">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Alternatives</h4>
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Alternatives</h4>
           <button
             onClick={loadAlternatives}
             disabled={busy}
@@ -256,9 +256,9 @@ export function WordDetailPanel({
               <li key={a.word} className="rounded-md border border-gray-100 p-2 dark:border-gray-800">
                 <div className="flex flex-wrap items-baseline gap-2">
                   <span className="font-tamil font-medium text-gray-900 dark:text-gray-100">{a.word}</span>
-                  <span className="text-xs text-gray-500">{a.gloss}</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">{a.gloss}</span>
                   {a.register && <span className="text-[10px] text-gray-400">{a.register}</span>}
-                  {a.known && <span className="text-[10px] text-green-600">already yours</span>}
+                  {a.known && <span className="text-[10px] text-green-600 dark:text-green-400">already yours</span>}
                 </div>
                 {/* The nuance is the reason this feature exists — never render a
                     bare synonym list that implies free substitution. */}

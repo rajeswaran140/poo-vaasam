@@ -33,7 +33,7 @@ export function OpportunitiesCard({ opportunities }: { opportunities: Opportunit
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{o.title}</p>
-                  <span className="text-[10px] tracking-tight text-amber-500" aria-label={`priority ${o.priority} of 5`}>{stars(o.priority)}</span>
+                  <span className="text-[10px] tracking-tight text-amber-500 dark:text-amber-400" aria-label={`priority ${o.priority} of 5`}>{stars(o.priority)}</span>
                 </div>
                 <p className="text-xs text-gray-500 dark:text-gray-400">{o.detail}</p>
               </div>

@@ -51,7 +51,7 @@ export function TamilProsodyPanel({ lyrics }: { lyrics: string }) {
         aria-expanded={open}
         className="flex w-full items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200"
       >
-        <Music2 className="h-4 w-4 text-purple-500" aria-hidden /> Prosody — meter &amp; rhyme
+        <Music2 className="h-4 w-4 text-purple-500 dark:text-purple-400" aria-hidden /> Prosody — meter &amp; rhyme
         <span className="ml-auto text-xs font-normal text-gray-400">
           {report.dominantSyllables ? `~${report.dominantSyllables.count} syllables · ${report.lyricLineCount} lines` : `${report.lyricLineCount} lines`}
           {outliers.size > 0 && ` · ${outliers.size} off-meter`}
@@ -76,7 +76,7 @@ export function TamilProsodyPanel({ lyrics }: { lyrics: string }) {
                   <span className="flex-1 truncate font-tamil text-gray-800 dark:text-gray-200">{l.text}</span>
                   {off && <span className="shrink-0 text-xs text-amber-600 dark:text-amber-400">⚠ off-meter</span>}
                   <span
-                    className={`shrink-0 text-xs tabular-nums ${l.endsOpen ? 'text-emerald-500' : 'text-gray-300 dark:text-gray-600'}`}
+                    className={`shrink-0 text-xs tabular-nums ${l.endsOpen ? 'text-emerald-500' : 'text-gray-300 dark:text-gray-400'}`}
                     title={`Gamaka ${l.gamakaScore}/100 · ${l.endsOpen ? 'open ending (sustainable)' : 'clipped ending'}`}
                   >
                     {gamakaStars(l.gamakaScore)}

@@ -165,7 +165,7 @@ export function ArrangementEditor({ lyrics, instruments, onArranged }: Props) {
                       className={`${selCls} w-56`}
                     />
                     <button type="button" onClick={() => removeBreak(i)} aria-label={`remove break before section ${i + 1}`}>
-                      <X className="h-3.5 w-3.5 text-gray-500" />
+                      <X className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
                     </button>
                   </div>
                 )}
@@ -228,7 +228,7 @@ export function ArrangementEditor({ lyrics, instruments, onArranged }: Props) {
                         ))}
                       </select>
                       <button type="button" onClick={() => removeLayer(i, li)} aria-label={`remove layer ${li + 1} from section ${i + 1}`}>
-                        <X className="h-3.5 w-3.5 text-gray-500" />
+                        <X className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
                       </button>
                     </div>
                   ))}
@@ -270,7 +270,7 @@ export function ArrangementEditor({ lyrics, instruments, onArranged }: Props) {
               }}
               className="inline-flex items-center gap-1.5 rounded border border-gray-300 px-2.5 py-1 text-xs dark:border-gray-600 dark:text-gray-200"
             >
-              {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
+              {copied ? <Check className="h-3.5 w-3.5 text-green-600 dark:text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
               {copied ? 'Copied' : 'Copy arrangement'}
             </button>
           </div>

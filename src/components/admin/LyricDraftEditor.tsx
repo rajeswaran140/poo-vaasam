@@ -56,7 +56,7 @@ interface Props {
 }
 
 const STATUS_TONE: Record<AutosaveStatus, string> = {
-  clean: 'text-gray-400 dark:text-gray-500',
+  clean: 'text-gray-400 dark:text-gray-400',
   dirty: 'text-amber-600 dark:text-amber-400',
   saving: 'text-gray-500 dark:text-gray-400',
   saved: 'text-green-600 dark:text-green-400',

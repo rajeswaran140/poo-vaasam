@@ -118,7 +118,7 @@ export function DeliveryManager() {
               <span className="tabular-nums text-xs text-gray-700 dark:text-gray-200">{r.downloadCount} / {r.maxDownloads}</span>
               <span className="text-xs text-gray-500 dark:text-gray-400">{r.expiresAt.slice(0, 10)}</span>
               {r.revokedAt
-                ? <span className="text-xs text-gray-400 dark:text-gray-500">revoked</span>
+                ? <span className="text-xs text-gray-400 dark:text-gray-400">revoked</span>
                 : <button type="button" onClick={() => void revoke(r.token)}
                     className="text-xs font-medium text-red-600 hover:underline dark:text-red-400">Revoke</button>}
               {/* The link itself, on every row. It used to appear once, in a box

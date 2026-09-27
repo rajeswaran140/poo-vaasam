@@ -107,7 +107,7 @@ export function LyricAssistPanel({ lyrics, selectedWord, lexicon, theme, registe
                           {c.word}
                         </button>
                         <span className="text-gray-600 dark:text-gray-400">{c.gloss}</span>
-                        <span className="text-xs text-gray-400 dark:text-gray-500">{c.because}</span>
+                        <span className="text-xs text-gray-400 dark:text-gray-400">{c.because}</span>
                       </li>
                     ))}
                   </ul>
@@ -116,7 +116,7 @@ export function LyricAssistPanel({ lyrics, selectedWord, lexicon, theme, registe
                     Nothing in your lexicon shares this word&apos;s theme, register or meter.
                   </p>
                 )}
-                <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
+                <p className="mt-2 text-xs text-gray-400 dark:text-gray-400">
                   Your own words, offered — not corrections. Nothing changes until you click.
                 </p>
               </>
@@ -138,7 +138,7 @@ export function LyricAssistPanel({ lyrics, selectedWord, lexicon, theme, registe
                   <li key={`${s.line ?? 'all'}-${i}`} className="text-sm">
                     <div className="flex flex-wrap items-baseline gap-2">
                       {s.line != null && (
-                        <span className="text-xs text-gray-400 dark:text-gray-500">line {s.line + 1}</span>
+                        <span className="text-xs text-gray-400 dark:text-gray-400">line {s.line + 1}</span>
                       )}
                       {s.quote && (
                         <span className="font-tamil text-gray-700 dark:text-gray-300">{s.quote}</span>

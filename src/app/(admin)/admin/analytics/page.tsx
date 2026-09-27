@@ -142,7 +142,7 @@ export default function AnalyticsPage() {
           RevenueGeographyPanel that lives inside PerSongDeepDive on /admin/youtube. */}
       <ChannelRevenueByCountryPanel days={days} />
 
-      {loading && <p className="text-gray-500">Loading…</p>}
+      {loading && <p className="text-gray-500 dark:text-gray-400">Loading…</p>}
       {err && <Banner tone="error">{err}</Banner>}
       {payload && !payload.ga4Configured && (
         <Banner tone="warn">GA4 isn’t configured (GA4_PROPERTY_ID / GA4_SERVICE_ACCOUNT_KEY) — showing on-site view counts only.</Banner>
@@ -316,7 +316,7 @@ function Card({ title, error, children }: { title: string; error?: string; child
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
       <h3 className="mb-3 text-sm font-semibold text-gray-900 dark:text-white">{title}</h3>
-      {error ? <p className="text-xs text-red-500">{error}</p> : children}
+      {error ? <p className="text-xs text-red-500 dark:text-red-400">{error}</p> : children}
     </div>
   );
 }

@@ -80,7 +80,7 @@ export function PartComparisonPanel({
 
       {suggestion && (
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-2 dark:border-gray-800">
-          <Scissors className="h-3 w-3 text-gray-500" aria-hidden="true" />
+          <Scissors className="h-3 w-3 text-gray-500 dark:text-gray-400" aria-hidden="true" />
           <span className="text-xs text-gray-700 dark:text-gray-200">
             Try <strong>Part B starts at {suggestion.partBStartSec}</strong> and{' '}
             <strong>crossfade {suggestion.overlapSec}</strong> — {suggestion.reason}.

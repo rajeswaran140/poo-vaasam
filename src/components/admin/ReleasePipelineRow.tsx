@@ -31,7 +31,7 @@ export function ReleasePipelineRow({ job }: { job: MasterJob }) {
             className={
               s.done
                 ? 'inline-flex items-center gap-1 font-medium text-emerald-700 dark:text-emerald-400'
-                : 'inline-flex items-center gap-1 text-gray-400 dark:text-gray-600'
+                : 'inline-flex items-center gap-1 text-gray-400 dark:text-gray-400'
             }
           >
             {s.done

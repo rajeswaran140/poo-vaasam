@@ -11,7 +11,7 @@ export function CharCount({ value, max }: { value: string; max: number }) {
       ? 'text-red-600 dark:text-red-400 font-semibold'
       : state === 'warn'
         ? 'text-amber-600 dark:text-amber-400'
-        : 'text-gray-400 dark:text-gray-500';
+        : 'text-gray-400 dark:text-gray-400';
   return (
     <span className={`text-xs tabular-nums ${color}`} aria-live="polite">
       {len}/{max}

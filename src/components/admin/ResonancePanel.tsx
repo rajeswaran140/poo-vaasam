@@ -88,7 +88,7 @@ export function ResonancePanel({ ytaConfigured }: { ytaConfigured: boolean }) {
         lane) show their real worth: a song can reach few but be shared by a large share of those it reaches.
       </p>
       {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-900/20 px-3 py-2 text-xs text-red-800 dark:text-red-200">{error}</p>}
-      {loading && !data && <p className="text-sm text-gray-500">Loading…</p>}
+      {loading && !data && <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>}
 
       {data && (
         <>

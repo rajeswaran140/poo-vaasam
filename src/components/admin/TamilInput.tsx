@@ -47,7 +47,7 @@ export function TamilInput({
         <div className="flex items-center justify-between gap-2">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
             {label}
-            {required && <span className="text-red-500 ml-1">*</span>}
+            {required && <span className="text-red-500 ml-1 dark:text-red-400">*</span>}
           </label>
           <div className="flex items-center gap-2">
           {counterMax != null && <CharCount value={value} max={counterMax} />}
@@ -123,7 +123,7 @@ export function TamilInput({
             <kbd className="px-1 py-0.5 bg-white border border-purple-300 rounded text-xs">↓</kbd> then{' '}
             <kbd className="px-1 py-0.5 bg-white border border-purple-300 rounded text-xs">Enter</kbd> (or click) to choose; <kbd className="px-1 py-0.5 bg-white border border-purple-300 rounded text-xs">Space</kbd> accepts the highlighted word.
             <br />
-            <span className="text-purple-600">Some words have several spellings — e.g. <strong>malai</strong> → மலை / மாலை / மழை. Pick the one you mean.</span>
+            <span className="text-purple-600 dark:text-purple-400">Some words have several spellings — e.g. <strong>malai</strong> → மலை / மாலை / மழை. Pick the one you mean.</span>
           </div>
         </div>
       )}

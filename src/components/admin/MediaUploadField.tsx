@@ -154,7 +154,7 @@ export function MediaUploadField({ kind, label, value, onChange, helpText }: Med
       />
 
       <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">{helpText || cfg.hint}</p>
-      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+      {error && <p className="text-xs text-red-600 mt-1 dark:text-red-400">{error}</p>}
 
       {/* Preview */}
       {value && !error && (

@@ -24,11 +24,20 @@ function formatDuration(secs?: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-async function getAllSongs(): Promise<SongRow[]> {
+/**
+ * How many songs the page will fetch in one go. The catalogue was 77 at the
+ * time of writing and grows 1-2 a week, so this is years of headroom — but
+ * `hasMore` is returned alongside and surfaced in the table, because the
+ * failure mode otherwise is SILENT: the client filters an array the server
+ * already truncated, so search cannot find the missing songs either.
+ */
+const SONG_PAGE_LIMIT = 200;
+
+async function getAllSongs(): Promise<{ songs: SongRow[]; truncated: boolean }> {
   try {
     const repo = new ContentRepository();
-    const res = await repo.findByType(ContentType.SONGS, { limit: 200 });
-    return res.items.map((entity) => {
+    const res = await repo.findByType(ContentType.SONGS, { limit: SONG_PAGE_LIMIT });
+    const songs = res.items.map((entity) => {
       const o = entity.toObject() as Record<string, unknown>;
       // Normalise createdAt to a string so the client component (which can't
       // hydrate Date instances safely) gets a plain JSON-compatible payload.
@@ -48,15 +57,16 @@ async function getAllSongs(): Promise<SongRow[]> {
         createdAt,
       };
     });
+    return { songs, truncated: !!res.hasMore };
   } catch (err) {
     console.error('[admin/songs] failed to load songs:', err);
-    return [];
+    return { songs: [], truncated: false };
   }
 }
 
 export default async function AdminSongsPage() {
   const ga4On = isGA4Configured();
-  const [songs, audioRes] = await Promise.all([
+  const [{ songs, truncated }, audioRes] = await Promise.all([
     getAllSongs(),
     ga4On ? fetchAudioPlaysBySongId(28) : Promise.resolve(null),
   ]);
@@ -81,8 +91,8 @@ export default async function AdminSongsPage() {
     <div className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Songs</h1>
-          <p className="text-sm text-gray-500">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Songs</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
             {publishedCount} published{draftCount > 0 ? ` · ${draftCount} draft` : ''} · {formatDuration(totalDuration)} total
           </p>
         </div>
@@ -95,15 +105,15 @@ export default async function AdminSongsPage() {
           </Link>
           <Link
             href="/admin/content/new"
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:text-gray-300"
           >
             + New (manual)
           </Link>
         </div>
       </header>
 
-      <details className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
-        <summary className="cursor-pointer text-gray-700">How this page works</summary>
+      <details className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:text-gray-400">
+        <summary className="cursor-pointer text-gray-700 dark:text-gray-300">How this page works</summary>
         <div className="mt-2 space-y-1">
           <p>
             Theme changes save instantly (DB override beats the static map in <code>src/config/song-themes.ts</code>; pick &ldquo;Default&rdquo; in the dropdown to clear an override).
@@ -118,7 +128,12 @@ export default async function AdminSongsPage() {
         </div>
       </details>
 
-      <SongsTable songs={sorted} playsBySongId={playsBySongId} ga4PlaysWorking={ga4PlaysWorking} />
+      <SongsTable
+        songs={sorted}
+        playsBySongId={playsBySongId}
+        ga4PlaysWorking={ga4PlaysWorking}
+        truncated={truncated}
+      />
     </div>
   );
 }

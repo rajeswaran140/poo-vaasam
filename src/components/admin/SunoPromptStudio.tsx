@@ -262,7 +262,7 @@ export function SunoPromptStudio({ initial, loaded }: Props) {
           </button>
         </div>
 
-        {error && <p className="text-xs text-red-600">{error}</p>}
+        {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
 
         <CopyBlock title="style box" value={styleBox} />
         <CopyBlock title="exclude" value={exclude.join(', ')} />
@@ -288,7 +288,7 @@ export function SunoPromptStudio({ initial, loaded }: Props) {
               This prompt uses an audio upload
             </label>
           </div>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
             Suno only offers the Audio Influence slider when you use an audio upload, so it stays
             hidden until you tick that.
           </p>
@@ -306,7 +306,7 @@ export function SunoPromptStudio({ initial, loaded }: Props) {
       <aside className="space-y-2">
         <h2 className="text-sm font-medium text-gray-700 dark:text-gray-200">Saved prompts</h2>
         {saved.length === 0 ? (
-          <p className="text-xs text-gray-500">No saved prompts yet.</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">No saved prompts yet.</p>
         ) : (
           <ul className="space-y-1">
             {saved.map((p) => (
@@ -315,7 +315,7 @@ export function SunoPromptStudio({ initial, loaded }: Props) {
                 className="rounded-md border border-gray-200 p-2 text-xs dark:border-gray-700"
               >
                 <div className="font-medium text-gray-900 dark:text-gray-100">{p.title}</div>
-                <div className="text-gray-500">{p.style}</div>
+                <div className="text-gray-500 dark:text-gray-400">{p.style}</div>
               </li>
             ))}
           </ul>

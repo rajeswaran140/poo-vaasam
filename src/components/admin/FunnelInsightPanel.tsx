@@ -78,7 +78,7 @@ export function FunnelInsightPanel({ ytaConfigured }: { ytaConfigured: boolean }
         </div>
       </div>
 
-      {loading && <p className="text-sm text-gray-500">Loading funnel…</p>}
+      {loading && <p className="text-sm text-gray-500 dark:text-gray-400">Loading funnel…</p>}
       {error && (
         <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-200">
           {error}
@@ -99,7 +99,7 @@ export function FunnelInsightPanel({ ytaConfigured }: { ytaConfigured: boolean }
                       {s.proxy && <span className="ml-1 text-[10px] uppercase text-amber-600 dark:text-amber-400" title={s.note}>proxy</span>}
                     </span>
                     <span className="text-sm font-bold tabular-nums text-gray-900 dark:text-gray-100">
-                      {numberFmt.format(s.value)} <span className="text-xs font-normal text-gray-500">{s.unit}</span>
+                      {numberFmt.format(s.value)} <span className="text-xs font-normal text-gray-500 dark:text-gray-400">{s.unit}</span>
                     </span>
                   </div>
                   <p className="mt-0.5 text-[11px] leading-snug text-gray-500 dark:text-gray-400">{s.note}</p>
@@ -135,7 +135,7 @@ export function FunnelInsightPanel({ ytaConfigured }: { ytaConfigured: boolean }
                 {report.topConverters.map((v) => (
                   <li key={v.videoId} className="flex items-center justify-between gap-2 text-gray-700 dark:text-gray-300">
                     <span className="truncate font-mono text-xs">{v.videoId}</span>
-                    <span className="tabular-nums text-gray-500">
+                    <span className="tabular-nums text-gray-500 dark:text-gray-400">
                       {numberFmt.format(v.views)} views · <strong className="text-gray-800 dark:text-gray-200">{v.subsPer1000Views}</strong> subs/1k
                     </span>
                   </li>
@@ -154,7 +154,7 @@ export function FunnelInsightPanel({ ytaConfigured }: { ytaConfigured: boolean }
                 {report.discoveryEngines.map((v) => (
                   <li key={v.videoId} className="flex items-center justify-between gap-2 text-gray-700 dark:text-gray-300">
                     <span className="truncate font-mono text-xs">{v.videoId}</span>
-                    <span className="tabular-nums text-gray-500">
+                    <span className="tabular-nums text-gray-500 dark:text-gray-400">
                       {numberFmt.format(v.views)} feeds · <strong className="text-gray-800 dark:text-gray-200">{v.sharePct}%</strong>
                     </span>
                   </li>
@@ -170,7 +170,7 @@ export function FunnelInsightPanel({ ytaConfigured }: { ytaConfigured: boolean }
           <ul className="space-y-1 border-t border-gray-100 pt-3 dark:border-gray-800">
             {report.recommendations.map((rec, i) => (
               <li key={i} className="flex gap-2 text-sm text-gray-700 dark:text-gray-300">
-                <span aria-hidden className="text-orange-500">▸</span>
+                <span aria-hidden className="text-orange-500 dark:text-orange-400">▸</span>
                 <span>{rec}</span>
               </li>
             ))}

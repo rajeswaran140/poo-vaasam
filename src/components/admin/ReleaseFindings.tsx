@@ -74,17 +74,17 @@ export function FindingRow({ f }: { f: Finding }) {
         <span className={`rounded border px-1.5 py-0.5 text-[11px] font-semibold ${tone.badge}`}>
           {tone.label}
         </span>
-        <span className="font-medium text-gray-900">{f.title}</span>
+        <span className="font-medium text-gray-900 dark:text-gray-100">{f.title}</span>
         {f.manual && (
-          <span className="rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[11px] text-gray-600">
+          <span className="rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[11px] text-gray-600 dark:text-gray-400">
             Studio only
           </span>
         )}
       </div>
-      <p className="mt-1 text-sm text-gray-600">{f.detail}</p>
+      <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{f.detail}</p>
       {f.fix && (
         <div className="mt-2 flex items-start gap-2">
-          <code className="flex-1 overflow-x-auto rounded bg-gray-50 px-2 py-1 text-xs text-gray-800">
+          <code className="flex-1 overflow-x-auto rounded bg-gray-50 px-2 py-1 text-xs text-gray-800 dark:text-gray-200">
             {f.fix}
           </code>
           <button

@@ -106,7 +106,7 @@ export function ThemeSelect({ songId, initialTheme, hasOverride: hasOverrideInit
       </span>
       {saving && <span aria-hidden className="text-[10px] text-gray-400">…</span>}
       {!saving && status?.startsWith('Save failed') && (
-        <span aria-hidden className="text-[10px] text-red-600" title={status}>!</span>
+        <span aria-hidden className="text-[10px] text-red-600 dark:text-red-400" title={status}>!</span>
       )}
     </div>
   );

@@ -66,16 +66,16 @@ export function DuetTagger({ lyrics }: { lyrics: string }) {
         className="flex w-full items-center justify-between px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200"
       >
         <span>⚭ Duet mode — tag voices for SUNO</span>
-        <span aria-hidden className="text-xs font-normal text-gray-500">{open ? '▲' : '▼'}</span>
+        <span aria-hidden className="text-xs font-normal text-gray-500 dark:text-gray-400">{open ? '▲' : '▼'}</span>
       </button>
 
       {open && (
         <div className="space-y-3 border-t border-purple-200 px-3 py-3 dark:border-gray-700">
           {!hasLyrics ? (
-            <p className="text-xs text-gray-500">Paste your lyrics in the box above (blank line between each verse/chorus), then assign a voice to each section.</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Paste your lyrics in the box above (blank line between each verse/chorus), then assign a voice to each section.</p>
           ) : (
             <>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
                 SUNO follows voices <strong>per section</strong>, not a global instruction. Assign who sings each block — repeated blocks are detected as the chorus.
               </p>
 

@@ -64,7 +64,7 @@ function CopyField({ label, value, hint }: { label: string; value: string; hint?
           {label}
         </span>
         <div className="flex items-center gap-2">
-          {hint && <span className="text-xs text-gray-400 dark:text-gray-500">{hint}</span>}
+          {hint && <span className="text-xs text-gray-400 dark:text-gray-400">{hint}</span>}
           <button
             type="button"
             onClick={async () => {
@@ -79,7 +79,7 @@ function CopyField({ label, value, hint }: { label: string; value: string; hint?
             aria-label={`Copy ${label}`}
             className="inline-flex items-center gap-1 rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-700 dark:border-gray-600 dark:text-gray-300"
           >
-            {copied ? <Check className="h-3 w-3 text-green-600" /> : <Copy className="h-3 w-3" />}
+            {copied ? <Check className="h-3 w-3 text-green-600 dark:text-green-400" /> : <Copy className="h-3 w-3" />}
             {copied ? 'Copied' : 'Copy'}
           </button>
         </div>

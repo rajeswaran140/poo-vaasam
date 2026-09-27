@@ -23,7 +23,7 @@ function EditAssetInput({ name, label, placeholder, value, onChange }: {
 }) {
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
+      <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">{label}</label>
       <input
         type="url"
         name={name}
@@ -223,7 +223,7 @@ export default function EditContentPage({ params }: PageProps) {
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="text-6xl mb-4">⏳</div>
-          <p className="text-xl text-gray-600">Loading content...</p>
+          <p className="text-xl text-gray-600 dark:text-gray-400">Loading content...</p>
         </div>
       </div>
     );
@@ -232,8 +232,8 @@ export default function EditContentPage({ params }: PageProps) {
   return (
     <div className="max-w-4xl">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">Edit Content</h1>
-        <p className="text-gray-500 mt-1">Update Tamil content</p>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Edit Content</h1>
+        <p className="text-gray-500 mt-1 dark:text-gray-400">Update Tamil content</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -241,7 +241,7 @@ export default function EditContentPage({ params }: PageProps) {
 
         {/* Content Type */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Content Type</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4 dark:text-gray-100">Content Type</h2>
           <div className="grid grid-cols-5 gap-3">
             {['SONGS', 'POEMS', 'LYRICS', 'STORIES', 'ESSAYS'].map((type) => (
               <button
@@ -269,7 +269,7 @@ export default function EditContentPage({ params }: PageProps) {
 
         {/* Basic Information */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Basic Information</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4 dark:text-gray-100">Basic Information</h2>
 
           <div>
             <TamilInput
@@ -331,7 +331,7 @@ export default function EditContentPage({ params }: PageProps) {
             />
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
                 Status *
               </label>
               <select
@@ -349,7 +349,7 @@ export default function EditContentPage({ params }: PageProps) {
 
         {/* Categories */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Categories</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4 dark:text-gray-100">Categories</h2>
           <div className="flex flex-wrap gap-2">
             {categories.map((category) => (
               <button
@@ -360,7 +360,7 @@ export default function EditContentPage({ params }: PageProps) {
                   formData.categoryIds.includes(category.id)
                     ? 'border-purple-600 bg-purple-50 text-purple-700'
                     : 'border-gray-200 hover:border-gray-300'
-                }`}
+                } dark:text-purple-300`}
               >
                 {category.name}
               </button>
@@ -370,7 +370,7 @@ export default function EditContentPage({ params }: PageProps) {
 
         {/* Tags */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Tags</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4 dark:text-gray-100">Tags</h2>
           <div className="flex flex-wrap gap-2">
             {tags.map((tag) => (
               <button
@@ -381,7 +381,7 @@ export default function EditContentPage({ params }: PageProps) {
                   formData.tagIds.includes(tag.id)
                     ? 'bg-purple-600 text-white'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                } dark:text-gray-300`}
               >
                 #{tag.name}
               </button>
@@ -391,7 +391,7 @@ export default function EditContentPage({ params }: PageProps) {
 
         {/* Media */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Media (ஊடகம்)</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4 dark:text-gray-100">Media (ஊடகம்)</h2>
 
           <MediaUploadField
             kind="audio"
@@ -401,7 +401,7 @@ export default function EditContentPage({ params }: PageProps) {
           />
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
               Audio Duration (seconds)
             </label>
             <input
@@ -423,7 +423,7 @@ export default function EditContentPage({ params }: PageProps) {
           />
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
               Full Video — YouTube link (முழு காணொளி)
             </label>
             <input
@@ -443,13 +443,13 @@ export default function EditContentPage({ params }: PageProps) {
               placeholder="https://www.youtube.com/watch?v=..."
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
               Viewers watching the preview are sent here for the full video — promoting the website and your YouTube channel.
             </p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
               YouTube Video ID
             </label>
             <input
@@ -462,7 +462,7 @@ export default function EditContentPage({ params }: PageProps) {
               maxLength={11}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
               The 11-char ID from the YouTube URL (auto-filled when you paste a link above). Used by{' '}
               <code>/admin/youtube</code> to match channel uploads to this content with zero ambiguity.
             </p>
@@ -477,7 +477,7 @@ export default function EditContentPage({ params }: PageProps) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Workflow state</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">Workflow state</label>
             <select
               name="workflowState"
               value={formData.workflowState}
@@ -489,7 +489,7 @@ export default function EditContentPage({ params }: PageProps) {
                 <option key={s} value={s}>{WORKFLOW_LABELS[s]}</option>
               ))}
             </select>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
               Optional. Tracks where this item sits in the Studio production pipeline. Visible at{' '}
               <code>/admin/workflow</code>.
             </p>
@@ -499,7 +499,7 @@ export default function EditContentPage({ params }: PageProps) {
         {/* SEO - Only shown if feature is enabled */}
         {FEATURES.ADMIN.SEO_FIELDS && (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-4">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">SEO Settings</h2>
+            <h2 className="text-lg font-semibold text-gray-900 mb-4 dark:text-gray-100">SEO Settings</h2>
             <TamilInput
               label="SEO Title"
               value={formData.seoTitle}
@@ -530,7 +530,7 @@ export default function EditContentPage({ params }: PageProps) {
           <button
             type="button"
             onClick={() => router.back()}
-            className="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+            className="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors dark:text-gray-300"
           >
             Cancel
           </button>
