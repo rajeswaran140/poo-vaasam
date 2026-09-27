@@ -52,6 +52,176 @@ export function formatDocUpdatedAt(iso: string): string {
 
 export const ADMIN_DOCS: AdminDoc[] = [
   {
+    slug: 'revenue-and-cost',
+    title: 'What Tamilagaval costs, and what $500 would take',
+    category: 'Growth',
+    updatedAt: '2026-09-27T01:45:40Z',
+    body: `# What Tamilagaval costs, and what $500 would take
+
+> Measured 2026-09-27 from the AWS Cost Explorer, YouTube Analytics and the GA4
+> Data API. Figures are the 30 days to 26 September. Re-measure before relying
+> on them — none of this is a standing truth.
+
+Raj's target is **$500/month**, his time is not a constraint, and AWS cost is.
+Both sides were measured rather than estimated, and the result inverts the
+usual assumption.
+
+## Tamilagaval costs $12.47 a month
+
+Attributed resource by resource, not by service name — the distinction matters,
+because most services on this bill are shared with unrelated projects.
+
+| Line | Cost | Basis |
+| --- | --- | --- |
+| Amplify — 100 builds, 989 minutes | $11.80 | 100%: the other four Amplify apps built nothing all month |
+| Route 53 — tamilagaval.com | $0.52 | 1 of 6 hosted zones |
+| Lambda — five \`tamilagaval-*\` functions | $0.10 | 100%: no other functions in ca-central-1 |
+| DynamoDB — \`TamilWebContent\` | $0.05 | 1 of 19 tables; the whole service bills $0.05 |
+| S3 + CloudFront | ~$0.50 | 4 of 88 buckets, 1 of 30 distributions |
+| **Total** | **$12.47** | of a $198.13 bill — **6.3%** |
+
+⚠️ An earlier pass put this at $16.49 by assuming Amplify and Route 53 were
+entirely ours. They are not: there are **five Amplify apps and six hosted
+zones**. Amplify does resolve to 100% Tamilagaval, but only because the other
+four apps had zero builds — verified from build minutes, not assumed.
+
+**The channel earns $98.43/month. So Tamilagaval nets about +$86, and always
+has.**
+
+## Serving the site is nearly free; CI is the cost
+
+⚠️ **$86 is PROFIT, not a charge.** You pay $12.47 and earn $98.43. Stated
+because the first version of this table was read as an $86 bill.
+
+Amplify's $12.33 in September, by usage type:
+
+| Component | Cost | What it is |
+| --- | --- | --- |
+| \`BuildDuration\` — 1,025 min | $10.25 | CI: building and deploying |
+| \`HostingComputeRequestDuration\` | $1.64 | the serverless SSR compute |
+| \`DataTransferOut\` | $0.28 | bytes to visitors |
+| request counts, us-east-1 edge | $0.14 | |
+
+**Serving the site costs $1.77/month** — 135,000 compute requests, 29,554
+compute-seconds. Add Lambda $0.10, DynamoDB $0.05, S3 and CloudFront ~$0.50 and
+the running of Tamilagaval is nearly free, as it should be on this
+architecture. **You pay roughly six times more to deploy the site than to serve
+it.**
+
+Live figures are on **/admin/budget**, which attributes this automatically
+rather than by hand — every line there shows the basis it was derived from.
+
+## 95% of that cost is deploys
+
+989 build minutes at roughly a cent a minute — about **10¢ per deploy**. Builds
+take ~10 minutes because \`amplify.yml\` runs the full 6,438-test suite as a
+deploy gate before shipping.
+
+**Keep the gate.** It is what stops a broken build reaching the site. But
+deploy frequency IS this app's cost, so batching work into fewer merges is the
+only real lever. Seven builds were triggered on 2026-09-26 alone.
+
+## 94% of the AWS bill is other projects
+
+The account carries 88 S3 buckets, 30 CloudFront distributions, 19 DynamoDB
+tables and 5 Amplify apps — talky.ca, techsynergy, crowvault, mobily, guardjr,
+scenesteer. Tamilagaval is a rounding error on its own invoice.
+
+Waste found while attributing, none of it Tamilagaval's:
+
+- **Four 100 GB gp3 volumes in us-east-1, unattached since 24 April.** Untagged,
+  attached to nothing, ~$32/month, roughly $160 burned. Snapshot first if the
+  data might matter.
+- ⚠️ **The two EC2 instances are NOT waste — checked 2026-09-27 and both are
+  load-bearing.** \`montreal-ubuntu-server\` (16.54.82.168) is
+  \`origin.mobily.ca\`, which is **the CloudFront origin for www.mobily.ca and
+  mobily.ca** — deleting it takes Mobily down as soon as the cache expires.
+  \`raj-portfolio-montreal\` (3.97.131.176) serves raj.it.com and
+  www.raj.it.com, both live. **That $58/month is required infrastructure. Do
+  not propose removing it.** This is exactly the trap
+  [[dev-boxes-vs-servers]] describes: neither box looked like Tamilagaval, and
+  judging by idleness would have recommended deleting Mobily's origin server.
+- **SES at $13/month** with no dedicated IPs and almost no sending. Unexplained.
+- **WorkMail $13.67 is IN USE** — Raj confirmed it. Four mailboxes:
+  payments@raj.it.com, hello@mobily.ca, info@talky.ca, and
+  rajit-payments@workmail-saas.awsapps.com. Only the last is questionable; it
+  sits on the default awsapps.com domain.
+
+## Why ad revenue cannot reach $500
+
+233,246 views last month produced $98.43. The reason is geography, not effort:
+
+| Country | Views | Share | RPM |
+| --- | --- | --- | --- |
+| India | 181,273 | 84.3% | $0.19 |
+| Sri Lanka | 15,254 | 7.1% | $0.04 |
+| Canada | 3,357 | 1.6% | $2.95 |
+| United Kingdom | 2,029 | 0.9% | $4.87 |
+| France | 1,963 | 0.9% | $3.80 |
+
+**4.4% of views produce 35.5% of revenue.** Doubling $98 through ads means
+doubling 233,000 views, and 84% of any new views arrive at $0.19 per thousand.
+That is a treadmill. The way off it is to sell something to the ~10,000 monthly
+views that can pay properly.
+
+## ⚠️ The website is not a sales channel
+
+In the same 30 days **tamilagaval.com had 120 unique visitors** — 0.24% of the
+channel's reach.
+
+This is a correction to the storefront design in [[storefront-design]], which
+assumes fans arrive at the site and buy. At 120 people a month even a
+spectacular 5% conversion is six sales. **It does not kill the storefront — it
+relocates it.** The checkout page does not need traffic of its own; it needs a
+link from the video. What the design never stated was how a buyer reaches it.
+
+## The path to $500
+
+| Step | Per month | Running |
+| --- | --- | --- |
+| Tamilagaval today — $98.43 earned, $12.47 spent | +$86 | $86 |
+| 400 GB of unattached disks — DONE 2026-09-27 | +$28 | $114 |
+| ~~If the two EC2 instances can go~~ — **they cannot, see above** | $0 | $118 |
+| *If* the SES charge is removable | +$13 | $131 |
+| **Ten karaoke sales a month at CAD $40** | +$400 | **$531** |
+
+⚠️ **Revised 2026-09-27.** The disks are deleted and saved $28/mo net (79 GB
+of real data turned out to be on them, so four snapshots are kept at $3.96/mo
+— see [[tamilagaval-economics]]). The EC2 line is gone entirely: both
+instances are load-bearing. So housekeeping contributes far less than first
+thought and **the target now needs ten sales a month, not eight.**
+
+Ten sales against ~10,000 payment-capable monthly views is a **0.1%**
+conversion rate. Still a low bar — and still the single genuinely unproven
+number in the plan.
+
+## What to sell, ranked by evidence
+
+1. **Karaoke — nothing to invent, just move the shopfront.** CAD $40, one
+   delighted buyer. Ads earn $0.42 per thousand views; a $40 sale to one viewer
+   in ten thousand is worth $4 per thousand. Ten times the ad rate. It is
+   advertised on a site 120 people visit while 233,000 watch the songs.
+2. **Commissioned occasion songs.** \`/music-composition\` already exists.
+   Weddings, memorials, milestone birthdays give the diaspora a deadline and a
+   budget. Higher ticket — two or three orders closes the same gap. ⚠️ Ranked
+   second only because it costs hours per order; **with Raj's time not a
+   constraint it is arguably first.**
+3. **Licensing the catalogue.** The only option that costs no time per sale, and
+   it uses the clean IP position \`karaoke/page.tsx\` deliberately protects. No
+   evidence of demand, and the buyers are not the audience.
+4. **Memberships / Super Thanks.** Free to switch on. Expect it to track the
+   4.4%, not the whole.
+
+## What is not known
+
+- Whether diaspora viewers convert at all. One sale is desire, not a market.
+- Whether Raj wants a services business. Options 1 and 2 are jobs with
+  customers; option 3 is a product. The numbers cannot choose between them.
+- What reads BigQuery, or whether it matters that it is broken —
+  see [[tamilagaval-ses-broken]].
+`,
+  },
+  {
     slug: 'storefront-design',
     title: 'Storefront — design for review (not built)',
     category: 'Distribution',
