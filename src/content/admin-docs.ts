@@ -1220,7 +1220,7 @@ The sample is **three tracks, not five**, for the sourcing reason at the top of 
     slug: 'karaoke-from-stems',
     title: 'Music Lab — making a karaoke version from Suno stems',
     category: 'Music Lab',
-    updatedAt: '2026-09-19T02:20:00Z',
+    updatedAt: '2026-09-27T22:05:00Z',
     body: `# Make a karaoke version from Suno stems
 
 **Written 2026-09-14, from the first paid commission** — a buyer ordered two instrumental versions at CAD $40 each. This is the whole workflow, including the two decisions that are easy to get wrong.
@@ -1346,6 +1346,31 @@ Also check the **length**. A song with several generations (ஈழத்து �
 **Suno exports a ZIP, and no admin route accepts archives.** Both upload routes validate content type against an allow-list; neither includes \`application/zip\`, and nothing in the codebase extracts untrusted input. That is deliberate — path traversal and zip bombs are not worth taking on for an occasional upload.
 
 So: **unzip on your own machine first**, then drag the WAVs into **Sound Engineering → Bulk upload** (\`/admin/mastering/bulk\`). It takes the whole batch and uploads them one at a time. They land in \`audio/mastering/\` keeping their original names at the end of the key.
+
+### Then pull them down onto the box
+
+⚠️ **Bulk upload puts the stems in S3, not on the box.** Step 3 below runs
+\`ffmpeg -i 2_Drums.wav\` against plain local filenames, and those only exist once
+you have copied them down. This step used to be missing, which left the
+workflow unfollowable between here and there.
+
+Every key starts with a millisecond timestamp, so one upload burst is
+contiguous and sorts together. List the tail to find the batch you just sent,
+then copy that prefix:
+
+\`\`\`bash
+# the most recent uploads, oldest-to-newest
+aws s3 ls s3://tamil-web-media/audio/mastering/ | sort | tail -12
+
+# pull just that batch down, using the shared timestamp prefix
+mkdir -p ~/albums/karaoke/<song>
+aws s3 cp s3://tamil-web-media/audio/mastering/ ~/albums/karaoke/<song>/ \\
+  --recursive --exclude '*' --include '17893474*'
+\`\`\`
+
+The copied files keep the \`<timestamp>_<nonce>_\` prefix on their names. Strip it
+before step 3, or pass the full names to ffmpeg — the stem number and part name
+survive either way, which is what the commands below match on.
 
 ## 3. Sum the non-vocal stems
 
@@ -1593,7 +1618,7 @@ It is also a **0.68 LU change you cannot hear** — which is the honest headline
     slug: 'mastering-tools-a-z',
     title: 'Mastering Tools A–Z',
     category: 'Music Lab',
-    updatedAt: '2026-09-19T02:20:00Z',
+    updatedAt: '2026-09-27T22:05:00Z',
     body: `# Mastering Tools A–Z
 
 Every control in **Sound Engineering** (\`/admin/mastering\`), alphabetically, so it can be looked up while you are staring at it. Each entry says what it does, why it works that way, and the trap.
@@ -1610,7 +1635,9 @@ The app can write there and **cannot delete**: an archive is write-once by IAM, 
 
 ## Bulk upload
 
-\`/admin/mastering/bulk\` takes a batch of WAVs and uploads them one at a time into \`audio/mastering/\`, keeping their original names at the end of the key. **Unzip on your own machine first** — it takes files, not archives.
+\`/admin/mastering/bulk\` takes a batch of WAVs and uploads them one at a time into \`audio/mastering/\`, keeping their original names at the end of the key. **Unzip on your own machine first** — it takes files, not archives. Drag the whole folder in, or use the file picker. A running batch can be stopped with **Cancel**.
+
+They land in S3, not on this box — see **Making a karaoke version from Suno stems → Then pull them down onto the box** for the \`aws s3 cp\` that completes the transfer.
 
 ## Compare player (A/B/C)
 

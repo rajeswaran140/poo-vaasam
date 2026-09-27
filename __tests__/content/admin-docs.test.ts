@@ -477,3 +477,18 @@ describe('backup & recovery doc stays true to what is actually deployed', () => 
     expect(doc!.body).not.toContain('0.20 GB');
   });
 });
+
+describe('the karaoke workflow does not strand the reader between steps 2 and 3', () => {
+  const doc = getDoc('karaoke-from-stems');
+
+  it('the doc exists', () => {
+    expect(doc).toBeTruthy();
+  });
+
+  it('step 2 says how to get the stems from S3 onto the box, not just into S3', () => {
+    // The gap this guards: step 2 was titled "Get them onto the box" and ended
+    // with the files in S3, while step 3 opens with `ffmpeg -i 2_Drums.wav` —
+    // bare local filenames that only exist if you separately pulled them down.
+    expect(doc!.body).toMatch(/aws s3 cp/);
+    expect(doc!.body).toContain('audio/mastering/');  });
+});
