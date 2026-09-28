@@ -123,14 +123,14 @@ export function ReleaseChecker() {
       </div>
 
       {error && (
-        <p className="mt-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:text-rose-200">
+        <p className="mt-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:text-rose-200 dark:bg-rose-900/20">
           {error}
         </p>
       )}
 
       {result && (
         <section className="mt-5" aria-live="polite">
-          <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <div className="rounded-lg border border-gray-200 bg-white p-4 dark:bg-gray-900">
             <p className="text-sm text-gray-500 dark:text-gray-400">
               {result.isShort ? 'Short' : 'Song'}
               {result.isUpcoming && ' · unaired premiere'}

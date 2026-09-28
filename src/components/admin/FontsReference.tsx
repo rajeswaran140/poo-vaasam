@@ -45,7 +45,7 @@ export function FontsReference() {
   const [selectedFont, setSelectedFont] = useState(0);
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden dark:bg-gray-900">
       <div className="bg-gradient-to-r from-purple-600 to-purple-700 p-6">
         <h2 className="text-2xl font-bold text-white mb-2">Tamil Fonts Reference</h2>
         <p className="text-purple-100">Available Google Fonts for your content</p>
@@ -87,20 +87,20 @@ export function FontsReference() {
                 <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2 dark:text-gray-400">
                   Font Details
                 </h3>
-                <div className="space-y-2 bg-gray-50 rounded-lg p-4">
+                <div className="space-y-2 bg-gray-50 rounded-lg p-4 dark:bg-gray-800/60">
                   <div className="flex justify-between">
                     <span className="text-gray-600 dark:text-gray-400">Type:</span>
                     <span className="font-medium text-gray-900 dark:text-gray-100">{fonts[selectedFont].type}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600 dark:text-gray-400">CSS Class:</span>
-                    <code className="px-2 py-1 bg-purple-100 text-purple-700 rounded text-sm font-mono dark:text-purple-300">
+                    <code className="px-2 py-1 bg-purple-100 text-purple-700 rounded text-sm font-mono dark:text-purple-300 dark:bg-purple-900/30">
                       {fonts[selectedFont].className}
                     </code>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600 dark:text-gray-400">CSS Variable:</span>
-                    <code className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-sm font-mono dark:text-blue-300">
+                    <code className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-sm font-mono dark:text-blue-300 dark:bg-blue-900/30">
                       {fonts[selectedFont].variable}
                     </code>
                   </div>
@@ -116,7 +116,7 @@ export function FontsReference() {
                   {fonts[selectedFont].weights.map((weight) => (
                     <span
                       key={weight}
-                      className="px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-sm font-medium dark:text-orange-300"
+                      className="px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-sm font-medium dark:text-orange-300 dark:bg-orange-900/30"
                     >
                       {weight}
                     </span>
@@ -195,7 +195,7 @@ export function FontsReference() {
                   return (
                     <div
                       key={weight}
-                      className="flex items-center gap-4 bg-gray-50 rounded-lg p-3"
+                      className="flex items-center gap-4 bg-gray-50 rounded-lg p-3 dark:bg-gray-800/60"
                     >
                       <span className="text-sm text-gray-500 w-32 dark:text-gray-400">{weight}</span>
                       <span className={`${fonts[selectedFont].className} ${weightClass} text-xl flex-1`}>
@@ -211,7 +211,7 @@ export function FontsReference() {
       </div>
 
       {/* Footer Note */}
-      <div className="bg-blue-50 border-t border-blue-100 p-4">
+      <div className="bg-blue-50 border-t border-blue-100 p-4 dark:bg-blue-900/20">
         <div className="flex items-start gap-3">
           <svg className="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0 dark:text-blue-400" fill="currentColor" viewBox="0 0 20 20">
             <path
@@ -223,7 +223,7 @@ export function FontsReference() {
           <div className="text-sm text-blue-800 dark:text-blue-200">
             <p className="font-medium mb-1">Font Loading Strategy</p>
             <p className="text-blue-700 dark:text-blue-300">
-              All fonts are loaded from Google Fonts CDN with <code className="px-1 bg-blue-100 rounded">display: &apos;swap&apos;</code> for optimal performance.
+              All fonts are loaded from Google Fonts CDN with <code className="px-1 bg-blue-100 rounded dark:bg-blue-900/30">display: &apos;swap&apos;</code> for optimal performance.
               Tamil characters are prioritized for fast rendering.
             </p>
           </div>

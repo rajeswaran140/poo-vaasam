@@ -16,7 +16,7 @@ import { Folder, UploadCloud, ArrowRight } from 'lucide-react';
 export default function MediaLibraryPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:bg-gray-900">
         <div className="mb-3 flex items-center gap-3">
           <Folder className="h-7 w-7 text-gray-400" aria-hidden="true" />
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Media Library</h1>
@@ -26,7 +26,7 @@ export default function MediaLibraryPage() {
         </p>
       </div>
 
-      <div className="rounded-lg border border-orange-200 bg-orange-50 p-6">
+      <div className="rounded-lg border border-orange-200 bg-orange-50 p-6 dark:bg-orange-900/20">
         <div className="mb-2 flex items-center gap-2">
           <UploadCloud className="h-5 w-5 text-orange-600 dark:text-orange-400" aria-hidden="true" />
           <h2 className="font-semibold text-gray-900 dark:text-gray-100">To upload audio now</h2>

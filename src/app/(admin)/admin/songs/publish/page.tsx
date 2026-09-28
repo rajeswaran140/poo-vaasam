@@ -99,7 +99,7 @@ export default function PublishSongPage() {
         </p>
       </div>
 
-      <div className="space-y-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+      <div className="space-y-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:bg-gray-900">
         <TamilInput
           label="Title (தலைப்பு)"
           value={title}
@@ -175,7 +175,7 @@ export default function PublishSongPage() {
       </div>
 
       {result && (
-        <div className="mt-6 rounded-xl border border-green-200 bg-green-50 p-5 text-sm">
+        <div className="mt-6 rounded-xl border border-green-200 bg-green-50 p-5 text-sm dark:bg-green-900/20">
           <p className="mb-3 flex items-center gap-2 font-semibold text-green-800 dark:text-green-200">
             <Check className="h-5 w-5" />{' '}
             {result.alreadyPublished ? 'Already published' : 'Published'} — {fmtDuration(result.audioDuration)}

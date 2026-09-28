@@ -200,7 +200,7 @@ export default function TwitchAdminPage() {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow-sm p-6">
+      <div className="bg-white rounded-lg shadow-sm p-6 dark:bg-gray-900">
         <div className="flex items-center gap-3 mb-2">
           <Radio className="w-8 h-8 text-purple-600 dark:text-purple-400" />
           <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Twitch</h1>
@@ -211,19 +211,19 @@ export default function TwitchAdminPage() {
       </div>
 
       {errorMessage && (
-        <div role="alert" className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:text-red-200">
+        <div role="alert" className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:text-red-200 dark:bg-red-900/20">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           <span>{errorMessage}</span>
         </div>
       )}
       {successMessage && (
-        <div role="status" className="flex items-start gap-2 rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800 dark:text-green-200">
+        <div role="status" className="flex items-start gap-2 rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800 dark:text-green-200 dark:bg-green-900/20">
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           <span>{successMessage}</span>
         </div>
       )}
 
-      <div className="bg-white rounded-lg shadow-sm p-6">
+      <div className="bg-white rounded-lg shadow-sm p-6 dark:bg-gray-900">
         {loading ? (
           <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -240,7 +240,7 @@ export default function TwitchAdminPage() {
                   className="h-12 w-12 rounded-full"
                 />
               ) : (
-                <div className="h-12 w-12 rounded-full bg-purple-100 flex items-center justify-center">
+                <div className="h-12 w-12 rounded-full bg-purple-100 flex items-center justify-center dark:bg-purple-900/30">
                   <Radio className="h-6 w-6 text-purple-600 dark:text-purple-400" aria-hidden="true" />
                 </div>
               )}
@@ -248,7 +248,7 @@ export default function TwitchAdminPage() {
                 <div className="font-semibold text-gray-900 dark:text-gray-100">{status.connection.displayName}</div>
                 <div className="text-sm text-gray-500 dark:text-gray-400">@{status.connection.twitchLogin}</div>
               </div>
-              <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:text-green-200">
+              <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:text-green-200 dark:bg-green-900/30">
                 <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
                 Connected
               </span>
@@ -338,19 +338,19 @@ export default function TwitchAdminPage() {
 
       {/* EventSub panel — only shown when a connection exists. */}
       {connected && (
-        <div className="bg-white rounded-lg shadow-sm p-6 space-y-4">
+        <div className="bg-white rounded-lg shadow-sm p-6 space-y-4 dark:bg-gray-900">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Zap className="h-5 w-5 text-purple-600 dark:text-purple-400" aria-hidden="true" />
               <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">EventSub</h2>
             </div>
             {eventsubActive ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:text-green-200">
+              <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:text-green-200 dark:bg-green-900/30">
                 <Bell className="h-3 w-3" aria-hidden="true" />
                 Active
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:text-gray-300">
+              <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:text-gray-300 dark:bg-gray-800">
                 <BellOff className="h-3 w-3" aria-hidden="true" />
                 Inactive
               </span>
@@ -416,16 +416,16 @@ export default function TwitchAdminPage() {
 
       {/* Stream state — only shown when a connection exists. */}
       {connected && (
-        <div className="bg-white rounded-lg shadow-sm p-6 space-y-2">
+        <div className="bg-white rounded-lg shadow-sm p-6 space-y-2 dark:bg-gray-900">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Stream</h2>
             {stream?.isLive ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-red-800 dark:text-red-200">
+              <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-red-800 dark:text-red-200 dark:bg-red-900/30">
                 <span className="inline-flex h-2 w-2 rounded-full bg-red-600 animate-pulse" aria-hidden="true" />
                 LIVE
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
+              <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300 dark:bg-gray-800">
                 Offline
               </span>
             )}
