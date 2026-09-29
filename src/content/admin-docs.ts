@@ -370,6 +370,117 @@ and the cross-region transfer. See **What Tamilagaval costs**.
 `,
   },
   {
+    slug: 'dev-server-audit-and-disk-resize',
+    title: 'Dev server — audit findings, and growing its disk',
+    category: 'Operations',
+    updatedAt: '2026-09-29T20:30:00Z',
+    body: `# Dev server — audit findings, and growing its disk
+
+> Audited read-only on 2026-09-29. Nothing was changed during the audit. Re-check
+> before acting on any line — this is a snapshot, not a live view.
+
+## Which machine this is
+
+\`crowvault-ide-server\` is the Azure VM where Tamilagaval is **developed** —
+not where it runs. The public site lives on AWS. This box holds the working
+copies, the mastering and karaoke tooling (\`venv-demucs\`), the Playwright
+browsers for the E2E suite, and the scheduled post-premiere audit timers.
+
+It is shared: crowvault.ca, the browser IDE and the \`ai-dev-ide\` API run here
+too. **A restart of this VM takes all of them offline at once.**
+
+## What the audit found
+
+| # | Finding | Severity |
+| --- | --- | --- |
+| 1 | Disk \`/\` at **96%** — 1.2 GB free of 29 GB | Urgent |
+| 2 | Reboot pending since **11 Sep** (libc6, apparmor); up 155 days | Soon |
+| 3 | Unrecognised SSH key \`root@webserver-prod-192.53.123.81\` in \`authorized_keys\` — no logins with it in about a month of logs | Ask Raj |
+| 4 | goform.ca certificate renewal fails every night — the domain has lapsed but its nginx site is still enabled | Tidy |
+| 5 | \`ai-dev-ide\`, \`ide-frontend\`, \`SaaS\`, \`micro\` are not in git | Tidy |
+| 6 | 20 spent one-shot \`tamilagaval-*\` timers still installed (dV3B 2 Oct and 5ynY 5 Oct still pending) | Tidy |
+
+**Healthy:** SSH is key-only, no root login, reachable only over Tailscale;
+fail2ban has 4 jails and no failures; databases and caches accept local
+connections only; crowvault.ca TLS is valid to 22 Nov; the crowvault database
+is backed up to S3 nightly and today's copy was confirmed.
+
+## ⚠️ What must not be deleted to free space
+
+These look like clutter and are not:
+
+- \`venv-demucs\` — the karaoke tooling
+- \`~/.cache/ms-playwright\` — the E2E suite needs it
+- the Docker images — ecommporter's integration tests need them
+- \`~/albums\` and \`/tmp/lyrics-*\` — Raj's files
+- \`poo-vaasam-audit\` — a Next.js server has been running from it on port 3002 since 25 Sep
+
+Safe to clear (about 2–3 GB): old Claude Code versions (1.1 GB), the system
+journal (430 MB, with no size cap), npm and pnpm caches, and \`/tmp\` files
+older than mid-September.
+
+## Growing the disk: 30 GB → 64 GB
+
+Decided 2026-09-29. The disk moves from the **P4** tier to **P6** — roughly
+$5/month more. **One-way: Azure disks grow but never shrink.**
+
+Checked before starting, so none of these is a surprise:
+
+- Only the VM's guest state is encrypted, not the disk, so resizing is allowed.
+- The public IP \`172.173.240.99\` is **Static** — it survives the stop, so DNS
+  does not change.
+- The root partition is the last one on the disk, so it can grow in place.
+- The VM's startup (cloud-init \`growpart\` + \`resizefs\`) grows the filesystem
+  automatically on boot.
+- PM2's process list was re-saved, so \`ai-dev-ide\` comes back on its own.
+
+**Downtime: about 5–10 minutes.** Avoid 03:00–03:15 UTC — the nightly database
+backup runs then. Any Claude session running on this VM ends when it stops;
+nothing is lost.
+
+### Steps — Azure Portal, from any browser
+
+1. **Stop the VM.** Virtual machines → **crowvault-ide-server** → **Stop** →
+   confirm. Wait for **Stopped (deallocated)** — about 1–2 minutes. If it asks
+   about keeping the public IP, ignore it: the IP is already reserved.
+2. **Resize the disk.** In the VM's menu: Settings → **Disks** → click the OS
+   disk (\`crowvault-ide-server_OsDisk_1_…\`) → Settings → **Size + performance**
+   → pick **64 GiB (P6)** → **Save**.
+3. **Start the VM.** Back on crowvault-ide-server → **Start**. Wait about
+   2 minutes.
+4. **Reconnect** and resume Claude:
+   \`cd ~/projects/ecommporter && claude --continue\` — then say
+   **"disk resized"**.
+
+### Checks after it starts
+
+- \`df -h /\` shows about **62 GB** with ~35 GB free. If it still shows 29 GB,
+  grow it by hand — no second restart needed:
+  \`sudo growpart /dev/sda 1 && sudo resize2fs /dev/sda1\`
+- \`/var/run/reboot-required\` is gone and uptime has reset.
+- \`pm2 list\` shows \`ai-dev-ide\` online; nginx, postgresql, redis-server and
+  code-server are active; \`systemctl --failed\` is empty.
+- crowvault.ca and ide.crowvault.ca load over HTTPS.
+
+### If the VM does not come back
+
+- The VM's page in the Portal should read **Running**.
+- Running but unreachable: VM menu → Help → **Serial console** gives a login
+  prompt that works without SSH or the IDE. Help → **Boot diagnostics** shows
+  the startup screen.
+- The disk only grows — data is not touched. The realistic worst case is a slow
+  boot, not data loss.
+
+## Still open after the resize
+
+1. The safe cleanup above, plus a size cap on the system journal.
+2. Does Raj recognise the \`webserver-prod\` SSH key? If not, remove it.
+3. Disable the goform nginx site, or re-register the domain.
+4. Put \`ai-dev-ide\` — the live crowvault.ca API — into git.
+5. Remove the spent one-shot audit timers.
+`,
+  },
+  {
     slug: 'storefront-design',
     title: 'Storefront — design for review (not built)',
     category: 'Distribution',
