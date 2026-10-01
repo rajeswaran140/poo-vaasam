@@ -22,7 +22,7 @@ import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helpe
 import { MasterJobRepository } from '@/infrastructure/database/MasterJobRepository';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { awsConfig } from '@/lib/aws-config';
-import { planShort, shortRefusalMessage, SHORT_FPS } from '@/lib/master-short';
+import { planShort, shortRefusalMessage, SHORT_FPS, SHORT_MOTIONS } from '@/lib/master-short';
 import { planSegments, slideshowRefusalMessage } from '@/lib/master-video';
 
 export const runtime = 'nodejs';
@@ -52,6 +52,8 @@ const bodySchema = z.object({
    * into the SONG. The worker decides which of them the clip's window shows.
    */
   covers: z.array(z.object({ coverKey: z.string().min(1), startSec: z.number() })).optional(),
+  /** A slow zoom or pan across each image. The clip only — see SHORT_MOTIONS. */
+  motion: z.enum(SHORT_MOTIONS).optional(),
 });
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ jobId: string }> }) {
@@ -141,6 +143,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
               // `!== undefined` to decide whether to measure at all.
               ...(plan.window ?? {}),
               ...(covers ? { covers } : {}),
+              // Absent for a still, and never sent with the whole song: the
+              // event keeps its original shape unless something will move.
+              ...(parsed.data.motion && parsed.data.motion !== 'none' && !parsed.data.full
+                ? { motion: parsed.data.motion }
+                : {}),
             },
           })
         ),

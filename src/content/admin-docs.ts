@@ -3632,7 +3632,7 @@ A control to compare against: முத்தமிழின் (\`J2tc_aUNOPA\`
     slug: 'song-video-render',
     title: 'Rendering a song video for YouTube',
     category: 'Publishing',
-    updatedAt: '2026-10-01T19:00:00Z',
+    updatedAt: '2026-10-01T20:00:00Z',
     body: `# Rendering a song video for YouTube
 
 A Tamilagaval song video is one still image held over a mastered audio track. That sounds trivial and is not: four separate renders of காதல் வந்து அரும்பியதே were rejected before one was accepted, and every flag below is the scar of one of them. Read the reasons before you change the recipe.
@@ -3763,6 +3763,18 @@ In a saved master's row panel **and** in the render panel under a song you have 
 - **Times are always into the song, never into the clip.** A short shows whichever images fall inside its window: a clip from 2:00 to 3:00 of a song whose second image starts at 2:30 opens on the first and cuts to the second halfway through. An image that starts after the clip ends is simply not shown, and one that would only flash for under 2 seconds at the clip's edge is skipped rather than refused.
 - **A short that sits inside one image's stretch is an ordinary single-image short** — of *that* image, not necessarily the cover.
 - **The vertical slideshow needs the worker deployed after 2026-10-01 (second deploy).** Before that the short and the whole-song vertical quietly use the cover alone.
+
+## Slow zoom and pan — a short that moves
+
+Beside **Make vertical short** (and **Make a short**): a **Motion** choice. **None (still)** is the default, so a short is unchanged unless you pick a move.
+
+- **Six moves:** slow zoom in, slow zoom out, pan left, right, up, down. The move runs once across the whole clip.
+- **In a slideshow short, every image gets its own complete move** over the time it is on screen.
+- ⚠️ **A move crops the artwork slightly.** It travels 8% of the frame: a zoom ends 8% in, and a pan holds 8% in throughout — about 4% off each side. A title that runs right to the edge of the cover can be clipped. Check the first one you make; if it clips, use **None** or leave more margin on the cover.
+- **It takes longer than a still short** — roughly the clip's own length (a 3-minute moving short measured 2 minutes 23 seconds, against under a minute for a still one). The row says *Working…* meanwhile.
+- **Shorts only.** The whole-song vertical and the 16:9 video stay still: every frame of a moving render has to be drawn, and a ten-minute song would be most of the worker's time limit.
+- The audio is untouched — a moving short is cut from the same window of the same master, and comes out the same length.
+- **Needs the worker deployed after 2026-10-01 (third deploy).** Before that a chosen move is ignored and the short is still.
 
 ## The whole song, vertical
 

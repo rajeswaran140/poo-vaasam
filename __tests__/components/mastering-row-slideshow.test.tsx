@@ -259,3 +259,47 @@ describe('the image list also drives the vertical renders', () => {
     expect(screen.getByRole('button', { name: /whole song, vertical/i })).toBeDisabled();
   });
 });
+
+/** Slow zoom and pan — a choice for the vertical SHORT, and only the short. */
+describe('a move can be chosen for the vertical short', () => {
+  const shortPosts = () =>
+    mockedFetch.mock.calls.filter(([url, init]) => String(url).endsWith('/short') && init?.method === 'POST');
+  const body = (i = 0) => JSON.parse(shortPosts()[i][1].body as string);
+
+  it('is still by default — the request is exactly what it was', async () => {
+    routeFetch();
+    await openLibrary();
+    openRenderPanel(SONG);
+
+    expect(screen.getByLabelText(/Motion/)).toHaveValue('none');
+    fireEvent.click(screen.getByRole('button', { name: /vertical short/i }));
+
+    await waitFor(() => expect(shortPosts()).toHaveLength(1));
+    expect(body()).toEqual({ coverKey: COVER });
+  });
+
+  it('sends the chosen move with the short', async () => {
+    routeFetch();
+    await openLibrary();
+    openRenderPanel(SONG);
+
+    fireEvent.change(screen.getByLabelText(/Motion/), { target: { value: 'zoom-in' } });
+    fireEvent.click(screen.getByRole('button', { name: /vertical short/i }));
+
+    await waitFor(() => expect(shortPosts()).toHaveLength(1));
+    expect(body()).toEqual({ coverKey: COVER, motion: 'zoom-in' });
+  });
+
+  it('does not send it with the whole-song vertical, which stays still', async () => {
+    routeFetch();
+    await openLibrary();
+    openRenderPanel(SONG);
+
+    fireEvent.change(screen.getByLabelText(/Motion/), { target: { value: 'pan-left' } });
+    fireEvent.click(screen.getByRole('button', { name: /whole song, vertical/i }));
+
+    await waitFor(() => expect(shortPosts()).toHaveLength(1));
+    expect(body()).toEqual({ coverKey: COVER, full: true });
+  });
+});
+

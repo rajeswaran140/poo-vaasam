@@ -540,3 +540,84 @@ describe('the vertical slideshow encode', () => {
     expect(j.join(' ')).toMatch(/afade=t=out:st=218\.900/);
   });
 });
+
+import {
+  SHORT_MOTIONS,
+  isShortMotion,
+  MOTION_SOURCE_SCALE,
+  buildMotionSegmentArgs,
+} from '@/lib/master-short';
+
+/**
+ * Slow zoom and pan. The first vertical render where every frame differs, so
+ * the cost and the smoothness were measured before a line was written
+ * (Lambda's ffmpeg 7.0.2, 2026-10-01, 30 s at 25 fps):
+ *
+ *   still (today)      12 s
+ *   zoom, 4x source    26 s    0% repeated frames
+ *   pan,  2x source    13 s   59% repeated frames  <- visibly stutters
+ *   pan,  4x source    25 s   15% repeated frames, in quarter-pixel steps
+ *
+ * zoompan positions its window in WHOLE source pixels, so a slow move on a
+ * 1x frame advances a pixel at a time. The frame is enlarged first so those
+ * steps are a quarter of an output pixel.
+ */
+describe('slow zoom and pan on a short', () => {
+  const seg = (motion: string, seconds = 30) =>
+    buildMotionSegmentArgs({ framePath: '/tmp/f.ppm', seconds, outPath: '/tmp/s.mp4', motion: motion as never });
+  const vf = (motion: string, seconds = 30) => { const a = seg(motion, seconds); return a[a.indexOf('-vf') + 1]; };
+
+  it('offers none first, then the six moves', () => {
+    expect(SHORT_MOTIONS).toEqual(['none', 'zoom-in', 'zoom-out', 'pan-left', 'pan-right', 'pan-up', 'pan-down']);
+    expect(isShortMotion('zoom-in')).toBe(true);
+    expect(isShortMotion('spin')).toBe(false);
+    expect(isShortMotion(undefined)).toBe(false);
+  });
+
+  it('enlarges the composed frame four times, because 2x stutters', () => {
+    expect(MOTION_SOURCE_SCALE).toBe(4);
+    const compose = buildShortComposeArgs({ coverPath: '/tmp/c.jpg', framePath: '/tmp/f.ppm', coverAspect: 9 / 16, sourceScale: MOTION_SOURCE_SCALE });
+    const filter = compose[compose.indexOf('-filter_complex') + 1];
+    expect(filter).toContain(`scale=${SHORT_WIDTH * 4}:${SHORT_HEIGHT * 4}`);
+    expect(filter.trim().endsWith('[v]')).toBe(true);
+  });
+
+  it('leaves the ordinary compose byte-for-byte alone when no enlargement is asked for', () => {
+    const plain = buildShortComposeArgs({ coverPath: '/tmp/c.jpg', framePath: '/tmp/f.ppm', coverAspect: 1 });
+    const one = buildShortComposeArgs({ coverPath: '/tmp/c.jpg', framePath: '/tmp/f.ppm', coverAspect: 1, sourceScale: 1 });
+    expect(one).toEqual(plain);
+    expect(plain[plain.indexOf('-filter_complex') + 1]).not.toContain(`${SHORT_WIDTH * 4}`);
+  });
+
+  it('renders exactly the frames the stretch is long, at the short\'s size and rate', () => {
+    const a = seg('zoom-in', 12.52);
+    expect(a[a.indexOf('-frames:v') + 1]).toBe('313'); // 12.52 s x 25 fps
+    expect(vf('zoom-in', 12.52)).toContain(`d=313:s=${SHORT_WIDTH}x${SHORT_HEIGHT}:fps=${SHORT_FPS}`);
+    expect(a).toContain('-an');
+    // A moving picture is not a still: that tuning would smear it.
+    expect(a).not.toContain('stillimage');
+  });
+
+  it('zooms about the centre, in or out, by the same small amount', () => {
+    expect(vf('zoom-in')).toContain("z='1+0.08*on/749'");
+    expect(vf('zoom-out')).toContain("z='1.08-0.08*on/749'");
+    for (const m of ['zoom-in', 'zoom-out']) {
+      expect(vf(m)).toContain("x='iw/2-(iw/zoom/2)'");
+      expect(vf(m)).toContain("y='ih/2-(ih/zoom/2)'");
+    }
+  });
+
+  it('pans along one axis only, holding the other centred', () => {
+    expect(vf('pan-right')).toContain("x='(iw-iw/zoom)*on/749'");
+    expect(vf('pan-left')).toContain("x='(iw-iw/zoom)*(1-on/749)'");
+    expect(vf('pan-down')).toContain("y='(ih-ih/zoom)*on/749'");
+    expect(vf('pan-up')).toContain("y='(ih-ih/zoom)*(1-on/749)'");
+    expect(vf('pan-left')).toContain("y='ih/2-(ih/zoom/2)'");
+    expect(vf('pan-up')).toContain("x='iw/2-(iw/zoom/2)'");
+    expect(vf('pan-left')).toContain("z='1.08'");
+  });
+
+  it('refuses to build a "none" move — that is the still path\'s job', () => {
+    expect(() => seg('none')).toThrow();
+  });
+});

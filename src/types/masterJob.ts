@@ -210,6 +210,8 @@ export interface MasterJob {
   shortSeconds: number | null;
   /** True when the operator chose the window; false when the loudness pass did. */
   shortPicked: boolean | null;
+  /** The slow zoom or pan the last clip was rendered with; `none` or null for a still. */
+  shortMotion: string | null;
   /**
    * How this master reached its level.
    *
