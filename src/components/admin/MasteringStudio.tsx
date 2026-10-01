@@ -1360,7 +1360,9 @@ export function MasteringStudio() {
       targetId: string,
       coverKey: string,
       priorShortRenderedAt: string | null,
-      priorShortError: string | null
+      priorShortError: string | null,
+      /** The slideshow list, in SONG time. Omitted ⇒ the body is what it always was. */
+      covers?: Array<{ coverKey: string; startSec: number }> | null
     ): Promise<MasterJob | null> => {
       const res = await adminFetch(`/api/admin/music-lab/master/${targetId}/short`, {
         method: 'POST',
@@ -1368,7 +1370,7 @@ export function MasteringStudio() {
         // A window is sent only when one was chosen, and only ever the one
         // belonging to THIS master. Sending zeroes would read as "start at
         // 0:00 for 0s" rather than "you decide".
-        body: JSON.stringify({ coverKey, ...(windowFor(targetId) ?? {}) }),
+        body: JSON.stringify({ coverKey, ...(windowFor(targetId) ?? {}), ...(covers ? { covers } : {}) }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.success) throw new Error(body.error || 'Could not start the short.');
@@ -1411,12 +1413,14 @@ export function MasteringStudio() {
       targetId: string,
       coverKey: string,
       priorVerticalRenderedAt: string | null,
-      priorVerticalError: string | null
+      priorVerticalError: string | null,
+      /** The slideshow list, in SONG time. Omitted ⇒ the cover alone. */
+      covers?: Array<{ coverKey: string; startSec: number }> | null
     ): Promise<MasterJob | null> => {
       const res = await adminFetch(`/api/admin/music-lab/master/${targetId}/short`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ coverKey, full: true }),
+        body: JSON.stringify({ coverKey, full: true, ...(covers ? { covers } : {}) }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.success) throw new Error(body.error || 'Could not start the vertical render.');
@@ -1446,14 +1450,18 @@ export function MasteringStudio() {
     setShorting(true);
     setError(null);
     try {
-      const fresh = await startShort(jobId, cover.key, job?.shortRenderedAt ?? null, job?.shortError ?? null);
+      const slides = panelSlides?.id === jobId ? panelSlides.slides : [];
+      const fresh = await startShort(
+        jobId, cover.key, job?.shortRenderedAt ?? null, job?.shortError ?? null,
+        slides.length > 0 ? slidesToCovers(cover.key, slides) : null
+      );
       if (fresh) setJob(fresh);
     } catch (err) {
       if (mounted.current) setError(err instanceof Error ? err.message : String(err));
     } finally {
       if (mounted.current) setShorting(false);
     }
-  }, [jobId, cover, job, startShort]);
+  }, [jobId, cover, job, panelSlides, startShort]);
 
   /** The whole song, vertical, for the CURRENT job. The clip is left alone. */
   const makeVertical = useCallback(async () => {
@@ -1461,14 +1469,18 @@ export function MasteringStudio() {
     setVerticaling(true);
     setPanelError(null);
     try {
-      const fresh = await startVertical(jobId, cover.key, job?.verticalRenderedAt ?? null, job?.verticalError ?? null);
+      const slides = panelSlides?.id === jobId ? panelSlides.slides : [];
+      const fresh = await startVertical(
+        jobId, cover.key, job?.verticalRenderedAt ?? null, job?.verticalError ?? null,
+        slides.length > 0 ? slidesToCovers(cover.key, slides) : null
+      );
       if (fresh) setJob(fresh);
     } catch (err) {
       if (mounted.current) setPanelError(err instanceof Error ? err.message : String(err));
     } finally {
       if (mounted.current) setVerticaling(false);
     }
-  }, [jobId, cover, job, startVertical]);
+  }, [jobId, cover, job, panelSlides, startVertical]);
 
   /**
    * Render ~20 seconds around the crossfade and play it.
@@ -1864,7 +1876,11 @@ export function MasteringStudio() {
     setRowError(null);
     try {
       const row = library?.find((x) => x.id === id);
-      const fresh = await startShort(id, rowCover.key, row?.shortRenderedAt ?? null, row?.shortError ?? null);
+      const slides = rowSlides?.id === id ? rowSlides.slides : [];
+      const fresh = await startShort(
+        id, rowCover.key, row?.shortRenderedAt ?? null, row?.shortError ?? null,
+        slides.length > 0 ? slidesToCovers(rowCover.key, slides) : null
+      );
       if (!fresh) return;
       setLibrary((prev) =>
         prev
@@ -1888,7 +1904,7 @@ export function MasteringStudio() {
     } finally {
       if (mounted.current) setRowBusy(null);
     }
-  }, [rowRender, library, startShort, failRow]);
+  }, [rowRender, rowSlides, library, startShort, failRow]);
 
   /**
    * Render the whole song vertically from the library — beside "Make vertical
@@ -1902,7 +1918,11 @@ export function MasteringStudio() {
     setRowError(null);
     try {
       const row = library?.find((x) => x.id === id);
-      const fresh = await startVertical(id, rowCover.key, row?.verticalRenderedAt ?? null, row?.verticalError ?? null);
+      const slides = rowSlides?.id === id ? rowSlides.slides : [];
+      const fresh = await startVertical(
+        id, rowCover.key, row?.verticalRenderedAt ?? null, row?.verticalError ?? null,
+        slides.length > 0 ? slidesToCovers(rowCover.key, slides) : null
+      );
       if (!fresh) return;
       setLibrary((prev) =>
         prev
@@ -1925,7 +1945,7 @@ export function MasteringStudio() {
     } finally {
       if (mounted.current) setRowBusy(null);
     }
-  }, [rowRender, library, startVertical, failRow]);
+  }, [rowRender, rowSlides, library, startVertical, failRow]);
 
   /**
    * Deliberately NOT loaded on mount: listing scans the table, and most visits
@@ -3011,8 +3031,9 @@ export function MasteringStudio() {
                 )}
               </div>
 
-              {/* MORE IMAGES = A SLIDESHOW. For "Render video" only — the short
-                  and the whole-song vertical use the cover alone. */}
+              {/* MORE IMAGES = A SLIDESHOW, for all three renders. Times are
+                  seconds into the SONG; a short shows whichever images fall
+                  inside its window — the worker works that out. */}
               {jobId && (
                 <div className="mt-3">
                   <SlideshowFields
@@ -3043,7 +3064,7 @@ export function MasteringStudio() {
                 <button
                   type="button"
                   onClick={() => void makeShort()}
-                  disabled={!cover || shorting || rendering || coverUploading}
+                  disabled={!cover || shorting || rendering || coverUploading || (panelSlidesNow.length > 0 && slidesToCovers(cover.key, panelSlidesNow) === null)}
                   className="inline-flex items-center gap-2 rounded-lg border border-indigo-300 px-4 py-2 text-sm font-medium text-indigo-700 transition hover:bg-indigo-50 disabled:opacity-60 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-900/20"
                 >
                   {shorting
@@ -3066,7 +3087,7 @@ export function MasteringStudio() {
                 <button
                   type="button"
                   onClick={() => void makeVertical()}
-                  disabled={!cover || verticaling || shorting || rendering || coverUploading}
+                  disabled={!cover || verticaling || shorting || rendering || coverUploading || (panelSlidesNow.length > 0 && slidesToCovers(cover.key, panelSlidesNow) === null)}
                   className="inline-flex items-center gap-2 rounded-lg border border-indigo-300 px-4 py-2 text-sm font-medium text-indigo-700 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-900/20"
                 >
                   {verticaling
@@ -3950,7 +3971,7 @@ export function MasteringStudio() {
                           way to the video and does not need one to exist. */}
                       <button
                         type="button"
-                        disabled={!rowRender.cover || rowBusy === m.id}
+                        disabled={!rowRender.cover || rowBusy === m.id || (slidesFor(m.id).length > 0 && slidesToCovers(rowRender.cover.key, slidesFor(m.id)) === null)}
                         onClick={() => void makeRowShort()}
                         className="rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
                       >
@@ -3962,7 +3983,7 @@ export function MasteringStudio() {
                           fields below do not apply to it. */}
                       <button
                         type="button"
-                        disabled={!rowRender.cover || rowBusy === m.id}
+                        disabled={!rowRender.cover || rowBusy === m.id || (slidesFor(m.id).length > 0 && slidesToCovers(rowRender.cover.key, slidesFor(m.id)) === null)}
                         onClick={() => void makeRowVertical()}
                         className="rounded border border-indigo-600 px-2 py-1 text-xs font-medium text-indigo-700 disabled:opacity-50 dark:border-indigo-400 dark:text-indigo-300"
                       >
@@ -3977,8 +3998,9 @@ export function MasteringStudio() {
                           the only way to set a window used to be the player's
                           "Use for the short" button, and a timestamp read off a
                           lyric sheet could not be typed at all. */}
-                      {/* MORE IMAGES = A SLIDESHOW. Belongs to "Render video" only —
-                          the short and the whole-song vertical use the cover alone. */}
+                      {/* MORE IMAGES = A SLIDESHOW, for all three renders. Times are
+                          seconds into the SONG; a short shows whichever images fall
+                          inside its window — the worker works that out. */}
                       <SlideshowFields
                         slides={slidesFor(m.id)}
                         onChange={(slides) => setRowSlides({ id: m.id, slides })}

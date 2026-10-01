@@ -27,7 +27,7 @@
 
 import type { MasterJob } from '@/types/masterJob';
 import { isMasteringKey } from '@/lib/mastering-storage';
-import { FRAME_FILL_ASPECT_TOLERANCE } from '@/lib/master-video';
+import { FRAME_FILL_ASPECT_TOLERANCE, MIN_SEGMENT_SECONDS, type SlideshowCover } from '@/lib/master-video';
 import { isPeakMaster } from '@/lib/master-peak';
 
 /** Vertical, the only shape Reels and Shorts serve. */
@@ -447,3 +447,127 @@ export function buildFullVerticalArgs(params: {
   ];
 }
 
+
+/**
+ * ============================================================================
+ * THE VERTICAL SLIDESHOW — several images in a clip, or in the whole song.
+ * ============================================================================
+ *
+ * Added 2026-10-01. The 16:9 video has had a slideshow since #346; the vertical
+ * renders used the cover alone, so a song with three images could not put them
+ * in its own short.
+ *
+ * ONE LIST, ONE MEANING. The image list is the same one the video uses and its
+ * times are seconds into the SONG. A clip is a window onto that timeline: it
+ * shows whatever the slideshow would be showing during those seconds. The
+ * operator never re-times images for a clip, and a clip whose window is picked
+ * by loudness — where nobody knows the start until the worker has measured —
+ * still gets the right images, because the worker does this mapping.
+ *
+ * Same architecture as the long-form slideshow, for the same reason: each
+ * image is composed ONCE and its stretch is a run of identical frames, so
+ * nothing here filters per frame.
+ */
+
+/**
+ * The images a window shows, re-timed to seconds into the CLIP.
+ *
+ * Never refuses. A cut that would leave an image on screen for under
+ * MIN_SEGMENT_SECONDS at either edge of the window is absorbed rather than
+ * reported: at the start the clip opens on the NEXT image, at the end the cut
+ * is dropped. The operator timed these images against the song, not against
+ * this window — a half-second flash at the edge is an accident of where the
+ * clip fell, not a decision of theirs to be refused.
+ */
+export function windowCovers(
+  covers: readonly SlideshowCover[],
+  startSec: number,
+  seconds: number,
+): SlideshowCover[] {
+  if (covers.length === 0) return [];
+  const end = startSec + seconds;
+  // The image the song is showing at the moment the clip starts.
+  let open = 0;
+  for (let i = 0; i < covers.length; i += 1) {
+    if (covers[i].startSec <= startSec) open = i;
+  }
+  const out: SlideshowCover[] = [{ coverKey: covers[open].coverKey, startSec: 0 }];
+  for (let i = open + 1; i < covers.length; i += 1) {
+    const at = covers[i].startSec - startSec;
+    if (covers[i].startSec >= end) break;
+    // Too close to the end to read — and every later cut is closer still.
+    if (seconds - at < MIN_SEGMENT_SECONDS) break;
+    const last = out[out.length - 1];
+    if (at - last.startSec < MIN_SEGMENT_SECONDS) {
+      // The previous image would only flash: this one takes its place.
+      out[out.length - 1] = { coverKey: covers[i].coverKey, startSec: last.startSec };
+      continue;
+    }
+    out.push({ coverKey: covers[i].coverKey, startSec: Math.round(at * 1000) / 1000 });
+  }
+  return out;
+}
+
+/**
+ * Encode ONE stretch of a vertical slideshow from its composed frame.
+ *
+ * ⚠️ NO `-filter_complex` AND NO AUDIO, exactly as `buildSegmentArgs`: the
+ * frame was finished by `buildShortComposeArgs`, and the audio is laid over
+ * the joined picture once, in one continuous pass. `seconds` must come from
+ * `planSegments(..., SHORT_FPS)` so it is a whole number of frames.
+ */
+export function buildShortSegmentArgs(params: {
+  framePath: string;
+  seconds: number;
+  outPath: string;
+}): string[] {
+  return [
+    '-hide_banner', '-nostats',
+    '-loop', '1', '-framerate', String(SHORT_FPS), '-t', String(params.seconds), '-i', params.framePath,
+    '-map', '0:v',
+    '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'stillimage',
+    '-crf', '20', '-pix_fmt', 'yuv420p', '-r', String(SHORT_FPS),
+    '-an',
+    '-y', params.outPath,
+  ];
+}
+
+/**
+ * Join the stretches and lay the audio over them, in one pass.
+ *
+ * The AUDIO half is deliberately identical to the single-image renders —
+ * `buildShortArgs` for a clip, `buildFullVerticalArgs` for the whole song —
+ * so a slideshow changes the picture and nothing about the sound:
+ *   - a CLIP seeks and bounds the audio input and bounds the output;
+ *   - the WHOLE SONG never seeks or trims the audio.
+ * ⚠️ `-shortest` is never passed in either. The picture is finite, and that
+ * flag can only ever trim the song — see buildJoinArgs in master-video.ts.
+ */
+export function buildShortJoinArgs(params: {
+  listPath: string;
+  audioPath: string;
+  outPath: string;
+  /** A clip: where it starts in the song and how long it runs. */
+  startSec?: number;
+  seconds?: number;
+  /** The whole song: its probed length. Set ⇒ no seek, no trim. */
+  fullSeconds?: number;
+}): string[] {
+  const full = typeof params.fullSeconds === 'number';
+  const secs = full ? params.fullSeconds! : params.seconds ?? SHORT_SECONDS;
+  const fadeOut = shortFadeOutFor(secs);
+  return [
+    '-hide_banner', '-nostats',
+    '-fflags', '+genpts',
+    '-f', 'concat', '-safe', '0', '-i', params.listPath,
+    ...(full ? [] : ['-ss', (params.startSec ?? 0).toFixed(3), '-t', String(secs)]),
+    '-i', params.audioPath,
+    '-map', '0:v', '-map', '1:a',
+    '-af', `afade=t=in:st=0:d=${SHORT_FADE_IN_SEC},afade=t=out:st=${(secs - fadeOut).toFixed(3)}:d=${fadeOut}`,
+    '-c:v', 'copy',
+    '-c:a', 'aac', '-b:a', '192k', '-ar', '48000',
+    '-movflags', '+faststart',
+    ...(full ? [] : ['-t', String(secs)]),
+    '-y', params.outPath,
+  ];
+}

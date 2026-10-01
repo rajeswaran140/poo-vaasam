@@ -729,6 +729,84 @@ describe('short render', () => {
     });
   });
 
+  /**
+   * Several images in a vertical render. The list arrives in SONG time, the
+   * same list the 16:9 video uses; the worker decides which of them the window
+   * shows, because for an auto-picked clip only the worker knows the window.
+   */
+  describe('a vertical slideshow', () => {
+    const B = 'audio/mastering/1_c_b.jpg';
+    const C = 'audio/mastering/1_c_c.jpg';
+    const LIST = [
+      { coverKey: COVER, startSec: 0 },
+      { coverKey: B, startSec: 90 },
+      { coverKey: C, startSec: 150 },
+    ];
+    const HEADER = `Input #0, wav, from '/tmp/master.wav':
+  Duration: 00:04:00.00, bitrate: 2304 kb/s
+  Stream #0:0: Audio: pcm_s24le ([1][0][0][0] / 0x0001), 48000 Hz, stereo, s32 (24 bit), 2304 kb/s
+`;
+    beforeEach(() => {
+      spawnSync.mockImplementation((_cmd: unknown, args: string[]) =>
+        args.length === 3 && args[0] === '-hide_banner' && args[1] === '-i'
+          ? { status: 0, stdout: '', stderr: HEADER }
+          : { status: 0, stdout: '', stderr: '' }
+      );
+    });
+    const segmentPasses = () => ffArgs().filter((a) => a.includes('-an') && a.includes('-loop'));
+    const joinPass = () => ffArgs().find((a) => a.includes('concat'));
+
+    it('cuts a clip across the images its window covers, re-timed to the clip', async () => {
+      // 2:00-3:00 of the song: image B until 2:30, then C.
+      const res = await handler({ jobId: 'j1', short: short({ startSec: 120, seconds: 60, covers: LIST }) } as never);
+
+      expect(res).toMatchObject({ ok: true });
+      const segs = segmentPasses();
+      expect(segs).toHaveLength(2);
+      expect(segs.map((a) => a[a.indexOf('-t') + 1])).toEqual(['30', '30']);
+      const join = joinPass()!;
+      expect(join[join.indexOf('-ss') + 1]).toBe('120.000');
+      expect(join).not.toContain('-shortest');
+      expect(patched()).toMatchObject({
+        shortKey: 'audio/mastering/1_a_song-master-14LUFS-short-1920.mp4',
+        shortSeconds: 60,
+      });
+    });
+
+    it('renders the whole song across every image, into the vertical\'s own file', async () => {
+      const res = await handler({ jobId: 'j1', short: short({ full: true, covers: LIST }) } as never);
+
+      expect(res).toMatchObject({ ok: true });
+      expect(segmentPasses().map((a) => a[a.indexOf('-t') + 1])).toEqual(['90', '60', '90']);
+      const join = joinPass()!;
+      expect(join).not.toContain('-ss');
+      expect(patched()).toMatchObject({
+        verticalKey: 'audio/mastering/1_a_song-master-14LUFS-vertical-1920.mp4',
+      });
+    });
+
+    it('takes the ordinary single-image path when the window shows only one image', async () => {
+      // 1:36-2:06 is wholly inside image B: one image, so no segments and no join.
+      await handler({ jobId: 'j1', short: short({ startSec: 96, seconds: 30, covers: LIST }) } as never);
+
+      expect(segmentPasses()).toHaveLength(0);
+      expect(joinPass()).toBeUndefined();
+      // ...and the frame is composed from B, the image the song shows then.
+      const gets = s3Send.mock.calls.map((c) => (c[0] as { input: { Key?: string } }).input.Key);
+      expect(gets).toContain(B);
+    });
+
+    it('refuses an image outside the mastering workspace, wherever it is in the list', async () => {
+      const res = await handler({
+        jobId: 'j1',
+        short: short({ startSec: 120, seconds: 60, covers: [LIST[0], { coverKey: 'private/x.jpg', startSec: 90 }] }),
+      } as never);
+
+      expect(res).toMatchObject({ ok: false });
+      expect(String(patched().shortError)).toMatch(/mastering workspace/);
+    });
+  });
+
   it('stores the MP4 beside the master under its own key', async () => {
     await handler({ jobId: 'j1', short: short() } as never);
 

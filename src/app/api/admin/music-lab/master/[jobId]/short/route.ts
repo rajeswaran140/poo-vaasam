@@ -22,7 +22,8 @@ import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helpe
 import { MasterJobRepository } from '@/infrastructure/database/MasterJobRepository';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { awsConfig } from '@/lib/aws-config';
-import { planShort, shortRefusalMessage } from '@/lib/master-short';
+import { planShort, shortRefusalMessage, SHORT_FPS } from '@/lib/master-short';
+import { planSegments, slideshowRefusalMessage } from '@/lib/master-video';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -46,6 +47,11 @@ const bodySchema = z.object({
    */
   startSec: z.number().optional(),
   seconds: z.number().optional(),
+  /**
+   * A vertical slideshow — the SAME list the 16:9 render takes, in seconds
+   * into the SONG. The worker decides which of them the clip's window shows.
+   */
+  covers: z.array(z.object({ coverKey: z.string().min(1), startSec: z.number() })).optional(),
 });
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ jobId: string }> }) {
@@ -86,6 +92,30 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       );
     }
 
+    const covers = parsed.data.covers?.length ? parsed.data.covers : null;
+    if (covers) {
+      // The worker records the request's cover as the job's cover, so the list
+      // must open on it — same rule, same wording, as the 16:9 slideshow.
+      if (covers[0].coverKey !== parsed.data.coverKey) {
+        return NextResponse.json(
+          { success: false, error: 'The cover must be the first image in the slideshow.' },
+          { status: 400 }
+        );
+      }
+      // ORDER, COUNT AND KEYS ONLY. The list is timed against the song, so an
+      // image that starts after this clip ends is not an error — it is simply
+      // not shown — and one that would only flash at the clip's edge is
+      // absorbed by the worker. Hence the generous length and the one reason
+      // that is let through.
+      const timed = planSegments(covers, 1e7, SHORT_FPS);
+      if (!timed.ok && timed.reason !== 'segment-too-short') {
+        return NextResponse.json(
+          { success: false, error: slideshowRefusalMessage(timed.reason) },
+          { status: 409 }
+        );
+      }
+    }
+
     const lambda = new LambdaClient({
       region: awsConfig.region,
       ...(awsConfig.credentials ? { credentials: awsConfig.credentials } : {}),
@@ -110,6 +140,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
               // stay ABSENT in the payload, because the worker branches on
               // `!== undefined` to decide whether to measure at all.
               ...(plan.window ?? {}),
+              ...(covers ? { covers } : {}),
             },
           })
         ),

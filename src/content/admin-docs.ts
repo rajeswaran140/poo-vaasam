@@ -3632,7 +3632,7 @@ A control to compare against: முத்தமிழின் (\`J2tc_aUNOPA\`
     slug: 'song-video-render',
     title: 'Rendering a song video for YouTube',
     category: 'Publishing',
-    updatedAt: '2026-10-01T18:00:00Z',
+    updatedAt: '2026-10-01T19:00:00Z',
     body: `# Rendering a song video for YouTube
 
 A Tamilagaval song video is one still image held over a mastered audio track. That sounds trivial and is not: four separate renders of காதல் வந்து அரும்பியதே were rejected before one was accepted, and every flag below is the scar of one of them. Read the reasons before you change the recipe.
@@ -3759,7 +3759,10 @@ In a saved master's row panel **and** in the render panel under a song you have 
 - **The button stays disabled while an added image is unfinished** — no file yet, or a time it cannot read (the field turns red). Remove the image with the × to go back to a plain render.
 - **A refusal appears in the row** — for example an image that starts after the song ends.
 - **The song is never shortened.** An earlier build could trim up to a quarter of a second off the end when cut times were not on a tenth of a second; fixed 2026-10-01.
-- It is for **Render video** only. The short and the whole-song vertical use the cover alone.
+- **The same list drives all three renders** — the 16:9 video, the vertical short and the whole-song vertical. You fill it in once.
+- **Times are always into the song, never into the clip.** A short shows whichever images fall inside its window: a clip from 2:00 to 3:00 of a song whose second image starts at 2:30 opens on the first and cuts to the second halfway through. An image that starts after the clip ends is simply not shown, and one that would only flash for under 2 seconds at the clip's edge is skipped rather than refused.
+- **A short that sits inside one image's stretch is an ordinary single-image short** — of *that* image, not necessarily the cover.
+- **The vertical slideshow needs the worker deployed after 2026-10-01 (second deploy).** Before that the short and the whole-song vertical quietly use the cover alone.
 
 ## The whole song, vertical
 
