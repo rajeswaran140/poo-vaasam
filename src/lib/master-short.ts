@@ -391,7 +391,11 @@ export type FullVerticalPlan =
   | { ok: false; message: string };
 
 /** Whether this master can be rendered full-length vertical, and why not. */
-export function planFullVertical(audioSeconds: number | null | undefined): FullVerticalPlan {
+export function planFullVertical(
+  audioSeconds: number | null | undefined,
+  /** The move it will be rendered with; omitted or `none` ⇒ still. */
+  motion?: string | null,
+): FullVerticalPlan {
   if (typeof audioSeconds !== 'number' || !Number.isFinite(audioSeconds) || audioSeconds <= 0) {
     return {
       ok: false,
@@ -406,6 +410,16 @@ export function planFullVertical(audioSeconds: number | null | undefined): FullV
       message: `That audio is ${Math.round(audioSeconds / 60)} minutes. The limit is ${
         FULL_VERTICAL_MAX_SECONDS / 60
       } minutes, to keep the render inside the worker's timeout.`,
+    };
+  }
+  // 480, written out: FULL_VERTICAL_MOTION_MAX_SECONDS is declared further
+  // down this file and this must not depend on declaration order.
+  if (motion && motion !== 'none' && audioSeconds > 480) {
+    return {
+      ok: false,
+      message:
+        'With motion, the whole-song vertical is limited to 8 minutes — every frame has to be drawn, ' +
+        'and a longer song would not finish in the worker\'s time. Set Motion to None for this one.',
     };
   }
   return { ok: true, seconds: audioSeconds };
@@ -592,12 +606,29 @@ export function buildShortJoinArgs(params: {
  * ============================================================================
  *
  * Added 2026-10-01. The first vertical render where every frame differs, so it
- * is the one place in this file that filters per frame — deliberately, and
- * only for the CLIP: 30 s to 3 minutes. Measured on the Lambda's ffmpeg 7.0.2,
+ * is the one place in this file that filters per frame — deliberately, for
+ * the vertical renders only. A clip is 30 s to 3 minutes. Measured on the Lambda's ffmpeg 7.0.2,
  * 30 s at 25 fps: still 12 s, zoom 26 s, pan 25 s. A 3-minute short is about
- * 2.5 minutes of a 15-minute ceiling. The whole-song vertical is NOT offered
- * motion: ten minutes of it would be most of the ceiling.
+ * 2.5 minutes of a 15-minute ceiling. The whole-song vertical may move too,
+ * up to FULL_VERTICAL_MOTION_MAX_SECONDS, in out-and-back legs.
  */
+
+/**
+ * A long stretch moves out and back in legs of about this long.
+ *
+ * One 8% move spread over a five-minute song is a third of a pixel a second —
+ * invisible. Half a minute a leg is the speed a 30 s clip already moves at.
+ */
+export const MOTION_LEG_SECONDS = 30;
+
+/**
+ * The longest whole song that may MOVE. Tighter than FULL_VERTICAL_MAX_SECONDS
+ * because every frame is drawn: a moving 5:32 render measured 294 s on the
+ * Lambda's ffmpeg 7.0.2 — 0.88x the song's length — so eight minutes is about
+ * 7 of the worker's 15, with the rest for download, verification and upload.
+ * The 7:52 joined master fits.
+ */
+export const FULL_VERTICAL_MOTION_MAX_SECONDS = 480;
 
 /** `none` is first and is the default: a short is still unless a move is chosen. */
 export const SHORT_MOTIONS = ['none', 'zoom-in', 'zoom-out', 'pan-left', 'pan-right', 'pan-up', 'pan-down'] as const;
@@ -642,6 +673,12 @@ export function buildMotionSegmentArgs(params: {
   seconds: number;
   outPath: string;
   motion: Exclude<ShortMotion, 'none'>;
+  /**
+   * Go out and back in legs of about this long — the WHOLE SONG passes
+   * MOTION_LEG_SECONDS. Omitted ⇒ one pass across the stretch, which is what a
+   * clip has always done and must keep doing.
+   */
+  legSeconds?: number;
 }): string[] {
   const frames = Math.max(1, Math.round(params.seconds * SHORT_FPS));
   // `on` runs 0..frames-1, so dividing by frames-1 lands the last frame on the end.
@@ -650,13 +687,20 @@ export function buildMotionSegmentArgs(params: {
   const held = (1 + T).toFixed(2);
   const centreX = "x='iw/2-(iw/zoom/2)'";
   const centreY = "y='ih/2-(ih/zoom/2)'";
+  // HOW FAR ALONG THE MOVE, 0..1. One pass is a ramp. A long stretch is a
+  // triangle wave: out over one leg, back over the next, so the picture keeps
+  // moving at a speed the eye can see and never jumps back to the start.
+  const legs =
+    params.legSeconds && params.legSeconds > 0 ? Math.max(1, Math.round(params.seconds / params.legSeconds)) : 1;
+  const leg = Number((frames / legs).toFixed(3));
+  const along = legs > 1 ? `(1-abs(mod(on,${Number((leg * 2).toFixed(3))})-${leg})/${leg})` : `on/${span}`;
   const move: Record<Exclude<ShortMotion, 'none'>, string> = {
-    'zoom-in': `z='1+${T}*on/${span}':${centreX}:${centreY}`,
-    'zoom-out': `z='${held}-${T}*on/${span}':${centreX}:${centreY}`,
-    'pan-right': `z='${held}':x='(iw-iw/zoom)*on/${span}':${centreY}`,
-    'pan-left': `z='${held}':x='(iw-iw/zoom)*(1-on/${span})':${centreY}`,
-    'pan-down': `z='${held}':${centreX}:y='(ih-ih/zoom)*on/${span}'`,
-    'pan-up': `z='${held}':${centreX}:y='(ih-ih/zoom)*(1-on/${span})'`,
+    'zoom-in': `z='1+${T}*${along}':${centreX}:${centreY}`,
+    'zoom-out': `z='${held}-${T}*${along}':${centreX}:${centreY}`,
+    'pan-right': `z='${held}':x='(iw-iw/zoom)*${along}':${centreY}`,
+    'pan-left': `z='${held}':x='(iw-iw/zoom)*(1-${along})':${centreY}`,
+    'pan-down': `z='${held}':${centreX}:y='(ih-ih/zoom)*${along}'`,
+    'pan-up': `z='${held}':${centreX}:y='(ih-ih/zoom)*(1-${along})'`,
   };
   const expr = move[params.motion];
   if (!expr) throw new Error(`not a move: ${String(params.motion)}`);

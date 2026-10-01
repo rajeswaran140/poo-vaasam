@@ -417,11 +417,11 @@ export function MasteringStudio() {
   /** The vertical hook clip for Reels/Shorts — a separate render from the video. */
   const [shorting, setShorting] = useState(false);
   /**
-   * The slow zoom or pan for the next vertical SHORT. `none` by default, so a
-   * short is still unless a move is chosen. One setting for the page rather
-   * than per song: it is how the operator wants shorts made today, not a fact
-   * about one master. Never sent with the whole-song vertical — see
-   * SHORT_MOTIONS in master-short.ts for why that one stays still.
+   * The slow zoom or pan for the next VERTICAL render — the short and the
+   * whole-song vertical both. `none` by default, so both are still unless a
+   * move is chosen. One setting for the page rather than per song: it is how
+   * the operator wants verticals made today, not a fact about one master.
+   * The 16:9 video never moves.
    */
   const [shortMotion, setShortMotion] = useState<ShortMotion>('none');
   /** The whole-song vertical is rendering for the CURRENT job. */
@@ -1443,18 +1443,27 @@ export function MasteringStudio() {
       priorVerticalRenderedAt: string | null,
       priorVerticalError: string | null,
       /** The slideshow list, in SONG time. Omitted ⇒ the cover alone. */
-      covers?: Array<{ coverKey: string; startSec: number }> | null
+      covers?: Array<{ coverKey: string; startSec: number }> | null,
+      /** A slow zoom or pan, out and back. `none` or omitted ⇒ no field is sent. */
+      motion: ShortMotion = 'none'
     ): Promise<MasterJob | null> => {
       const res = await adminFetch(`/api/admin/music-lab/master/${targetId}/short`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ coverKey, full: true, ...(covers ? { covers } : {}) }),
+        body: JSON.stringify({
+          coverKey,
+          full: true,
+          ...(covers ? { covers } : {}),
+          ...(motion !== 'none' ? { motion } : {}),
+        }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.success) throw new Error(body.error || 'Could not start the vertical render.');
       setAnnounce('Rendering the whole song, vertical.');
 
-      const deadline = Date.now() + 10 * 60 * 1000;
+      // A moving whole song takes most of its own length to draw (5:32 measured
+      // 294 s), and the worker has 15 minutes — so wait nearly that long.
+      const deadline = Date.now() + (motion !== 'none' ? 14 : 10) * 60 * 1000;
       for (let attempt = 0; ; attempt++) {
         if (attempt > 0) await new Promise((r) => setTimeout(r, 4000));
         if (!mounted.current) return null;
@@ -1501,7 +1510,8 @@ export function MasteringStudio() {
       const slides = panelSlides?.id === jobId ? panelSlides.slides : [];
       const fresh = await startVertical(
         jobId, cover.key, job?.verticalRenderedAt ?? null, job?.verticalError ?? null,
-        slides.length > 0 ? slidesToCovers(cover.key, slides) : null
+        slides.length > 0 ? slidesToCovers(cover.key, slides) : null,
+        shortMotion
       );
       if (fresh) setJob(fresh);
     } catch (err) {
@@ -1509,7 +1519,7 @@ export function MasteringStudio() {
     } finally {
       if (mounted.current) setVerticaling(false);
     }
-  }, [jobId, cover, job, panelSlides, startVertical]);
+  }, [jobId, cover, job, panelSlides, shortMotion, startVertical]);
 
   /**
    * Render ~20 seconds around the crossfade and play it.
@@ -1951,7 +1961,8 @@ export function MasteringStudio() {
       const slides = rowSlides?.id === id ? rowSlides.slides : [];
       const fresh = await startVertical(
         id, rowCover.key, row?.verticalRenderedAt ?? null, row?.verticalError ?? null,
-        slides.length > 0 ? slidesToCovers(rowCover.key, slides) : null
+        slides.length > 0 ? slidesToCovers(rowCover.key, slides) : null,
+        shortMotion
       );
       if (!fresh) return;
       setLibrary((prev) =>
@@ -1975,7 +1986,7 @@ export function MasteringStudio() {
     } finally {
       if (mounted.current) setRowBusy(null);
     }
-  }, [rowRender, rowSlides, library, startVertical, failRow]);
+  }, [rowRender, rowSlides, shortMotion, library, startVertical, failRow]);
 
   /**
    * Deliberately NOT loaded on mount: listing scans the table, and most visits
@@ -4020,8 +4031,8 @@ export function MasteringStudio() {
                       >
                         {m.shortKey ? 'Re-cut vertical short' : 'Make vertical short'}
                       </button>
-                      {/* A slow move across each image of the SHORT. Still by
-                          default; the whole-song vertical ignores it. */}
+                      {/* A slow move across each image, for BOTH vertical renders.
+                          Still by default. The 16:9 video ignores it. */}
                       <label className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-300">
                         Motion
                         <select

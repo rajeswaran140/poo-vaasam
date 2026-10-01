@@ -290,7 +290,7 @@ describe('a move can be chosen for the vertical short', () => {
     expect(body()).toEqual({ coverKey: COVER, motion: 'zoom-in' });
   });
 
-  it('does not send it with the whole-song vertical, which stays still', async () => {
+  it('sends it with the whole-song vertical too', async () => {
     routeFetch();
     await openLibrary();
     openRenderPanel(SONG);
@@ -299,7 +299,7 @@ describe('a move can be chosen for the vertical short', () => {
     fireEvent.click(screen.getByRole('button', { name: /whole song, vertical/i }));
 
     await waitFor(() => expect(shortPosts()).toHaveLength(1));
-    expect(body()).toEqual({ coverKey: COVER, full: true });
+    expect(body()).toEqual({ coverKey: COVER, full: true, motion: 'pan-left' });
   });
 });
 

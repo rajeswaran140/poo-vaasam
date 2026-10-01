@@ -860,10 +860,40 @@ describe('short render', () => {
       expect(patched()).toMatchObject({ shortMotion: 'none' });
     });
 
-    it('never moves the whole-song vertical — it would not fit the worker\'s time', async () => {
-      await handler({ jobId: 'j1', short: short({ full: true, motion: 'zoom-in' }) } as never);
+    it('moves the whole-song vertical out and back, into its own file', async () => {
+      // The header says 4:00 = 6000 frames = 8 legs of 750.
+      const res = await handler({ jobId: 'j1', short: short({ full: true, motion: 'zoom-in' }) } as never);
 
+      expect(res).toMatchObject({ ok: true });
+      const moving = movingPasses();
+      expect(moving).toHaveLength(1);
+      expect(moving[0][moving[0].indexOf('-frames:v') + 1]).toBe('6000');
+      expect(moving[0][moving[0].indexOf('-vf') + 1]).toContain('mod(on,1500)');
+      // The audio is never seeked or trimmed for the whole song.
+      expect(joinPass()).not.toContain('-ss');
+      expect(patched()).toMatchObject({
+        verticalKey: 'audio/mastering/1_a_song-master-14LUFS-vertical-1920.mp4',
+      });
+      expect(patched()).not.toHaveProperty('shortKey');
+    });
+
+    it('refuses to move a song too long to finish, and says what to do', async () => {
+      const LONG = HEADER.replace('00:04:00.00', '00:08:30.00');
+      spawnSync.mockImplementation((_cmd: unknown, args: string[]) =>
+        args.length === 3 && args[1] === '-i' ? { status: 0, stdout: '', stderr: LONG } : { status: 0, stdout: '', stderr: '' }
+      );
+      const res = await handler({ jobId: 'j1', short: short({ full: true, motion: 'zoom-in' }) } as never);
+
+      expect(res).toMatchObject({ ok: false });
+      expect(String(patched().verticalError)).toMatch(/8 minutes/);
       expect(movingPasses()).toHaveLength(0);
+    });
+
+    it('keeps a clip to one pass — no legs', async () => {
+      await handler({ jobId: 'j1', short: short({ startSec: 30, seconds: 180, motion: 'zoom-in' }) } as never);
+
+      const moving = movingPasses();
+      expect(moving[0][moving[0].indexOf('-vf') + 1]).not.toContain('mod(');
     });
 
     it('refuses a move it does not know, rather than quietly rendering a still', async () => {
