@@ -3083,6 +3083,7 @@ export function MasteringStudio() {
                     onPickImage={(i, f) => void onPickSlide(jobId, i, f)}
                     disabled={!cover || rendering || coverUploading}
                     idPrefix={`${inputId}-slide`}
+                    durationSec={job.editedDurationSec}
                   />
                 </div>
               )}
@@ -4076,6 +4077,7 @@ export function MasteringStudio() {
                         onPickImage={(i, f) => void onPickRowSlide(m.id, i, f)}
                         disabled={rowBusy === m.id || !rowRender.cover}
                         idPrefix={`${inputId}-rowslide-${m.id}`}
+                        durationSec={m.editedDurationSec}
                       />
                       <ShortWindowFields
                         compact
