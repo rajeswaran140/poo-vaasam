@@ -538,11 +538,28 @@ export function planSegments(
   }
   if (covers[covers.length - 1].startSec >= durationSec) return { ok: false, reason: 'cut-past-end' };
 
+  /**
+   * ⚠️ EVERY SEGMENT IS A WHOLE NUMBER OF FRAMES, AND THE LAST ONE ROUNDS UP.
+   *
+   * A segment's `-t` is rounded by ffmpeg to the NEAREST frame, so cuts off the
+   * 0.1 s grid used to add up to a picture shorter than the song — and
+   * `-shortest` at the join then trimmed the AUDIO to match. Measured on the
+   * Lambda's 7.0.2, 2026-10-01: 35, 71 and 241 ms off the end of the song, all
+   * inside master-verify's 0.5 s tolerance, so nothing reported it.
+   *
+   * Planning in frames takes the rounding out of ffmpeg's hands: each cut
+   * snaps to its nearest frame and the END rounds UP, so the picture is never
+   * the shorter stream and overshoots by less than one frame.
+   */
+  const frameAt = (sec: number) => Math.round(sec * VIDEO_FPS);
+  const endFrame = Math.ceil(durationSec * VIDEO_FPS - 1e-6);
   const segments: PlannedSegment[] = covers.map((c, i) => ({
     coverKey: c.coverKey,
     startSec: c.startSec,
     // The final stretch runs to the end of the song — computed, never supplied.
-    seconds: (i + 1 < covers.length ? covers[i + 1].startSec : durationSec) - c.startSec,
+    seconds:
+      ((i + 1 < covers.length ? frameAt(covers[i + 1].startSec) : endFrame) - frameAt(c.startSec)) /
+      VIDEO_FPS,
   }));
   if (segments.some((s) => s.seconds < MIN_SEGMENT_SECONDS)) {
     return { ok: false, reason: 'segment-too-short' };
@@ -648,9 +665,11 @@ export function buildJoinArgs(params: {
     '-c:v', 'copy',
     '-c:a', 'aac', '-b:a', VIDEO_AUDIO_BITRATE, '-ar', String(VIDEO_SAMPLE_RATE),
     '-movflags', '+faststart',
-    // The segments already total the song's length, so this only guards against
-    // a rounding difference at the very end.
-    '-shortest',
+    // ⚠️ NO `-shortest`. The segments are finite, so nothing needs it to end
+    // the file — and it can only ever trim the SONG. The probed duration is
+    // rounded to 0.1 s and can round down, so the picture may end a few
+    // hundredths before the audio; with `-shortest` that cost 32-49 ms of the
+    // song on 7.0.2 (2026-10-01). Same rule as buildVideoArgs.
     '-y', params.outPath,
   ];
 }

@@ -356,6 +356,22 @@ export function buildShortArgs(params: {
  */
 export const FULL_VERTICAL_MAX_SECONDS = 600;
 
+/**
+ * S3 key for the whole-song vertical, beside the master it came from.
+ *
+ * ⚠️ NOT `shortKeyFor`. The first build stored this under the clip's key and
+ * in the clip's fields, so rendering one silently replaced the other — the
+ * opposite of "alongside". They are two files and two sets of fields.
+ */
+export function fullVerticalKeyFor(masterKey: string): string {
+  return masterKey.replace(/\.wav$/i, `-vertical-${SHORT_HEIGHT}.mp4`);
+}
+
+/** True if the key is a whole-song vertical this module produced. */
+export function isFullVerticalKey(key: string): boolean {
+  return new RegExp(`-vertical-${SHORT_HEIGHT}\\.mp4$`, 'i').test(key);
+}
+
 export type FullVerticalPlan =
   | { ok: true; seconds: number }
   | { ok: false; message: string };

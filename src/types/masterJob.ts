@@ -222,6 +222,18 @@ export interface MasterJob {
   /** The single gain applied in 'peak' mode. Null in 'loudness' mode. */
   peakGainDb: number | null;
   shortError: string | null;
+  /**
+   * The WHOLE song as a 1080×1920 video — for a Facebook video or an Instagram
+   * feed post, where vertical is welcome and the Reels ceiling does not apply.
+   *
+   * Separate from the `short*` fields on purpose: it sits alongside the clip,
+   * and sharing the clip's key meant each render replaced the other. Null on
+   * every job that has not had one rendered.
+   */
+  verticalKey: string | null;
+  verticalRenderedAt: string | null;
+  verticalSeconds: number | null;
+  verticalError: string | null;
   /** The cover the video was built from, kept so a re-render is reproducible. */
   coverKey: string | null;
   error: { code: string; message: string } | null;

@@ -493,6 +493,55 @@ describe('planning the cuts', () => {
     expect(plan.segments.reduce((t, s) => t + s.seconds, 0)).toBe(DURATION);
   });
 
+  /**
+   * Measured on the Lambda's ffmpeg 7.0.2, 2026-10-01: a segment's `-t` rounds
+   * to the NEAREST frame, so cuts off the 0.1 s grid made the picture shorter
+   * than the song and `-shortest` at the join trimmed the AUDIO to match —
+   * 35, 71 and 241 ms lost in three runs, all under master-verify's 0.5 s
+   * tolerance. The picture must never be the shorter stream.
+   */
+  /**
+   * The probed duration is rounded to 0.1 s and can round DOWN (210.019 reads
+   * as 210), so even a frame-exact picture can end before the song does. With
+   * `-shortest` at the join that cost 32-49 ms of audio on 7.0.2 after the
+   * segments were already frame-snapped. The segments are finite — nothing
+   * needs `-shortest` to end the file, and it can only ever trim the song.
+   */
+  it('never lets the join trim the song to the picture', () => {
+    const join = buildJoinArgs({ listPath: '/tmp/l.txt', audioPath: '/tmp/m.wav', outPath: '/tmp/o.mp4' });
+    expect(join).not.toContain('-shortest');
+  });
+
+  it('lands every segment on a whole frame, so rounding cannot shorten the picture', () => {
+    const plan = planSlideshow(job(), [
+      { coverKey: A, startSec: 0 },
+      { coverKey: B, startSec: 3.33 },
+      { coverKey: C, startSec: 6.66 },
+      { coverKey: A, startSec: 9.99 },
+    ], 185.03);
+    expect(plan.ok).toBe(true);
+    if (!plan.ok) return;
+    for (const s of plan.segments) {
+      const frames = s.seconds * VIDEO_FPS;
+      expect(Math.abs(frames - Math.round(frames))).toBeLessThan(1e-6);
+    }
+  });
+
+  it('never plans a picture shorter than the song, and never a whole frame longer', () => {
+    for (const duration of [185.03, 91.57, 210.019, 221.92, 332]) {
+      const plan = planSlideshow(job(), [
+        { coverKey: A, startSec: 0 },
+        { coverKey: B, startSec: 10.33 },
+        { coverKey: C, startSec: 25.47 },
+      ], duration);
+      expect(plan.ok).toBe(true);
+      if (!plan.ok) return;
+      const picture = plan.segments.reduce((t, s) => t + s.seconds, 0);
+      expect(picture).toBeGreaterThanOrEqual(duration - 1e-9);
+      expect(picture).toBeLessThan(duration + 1 / VIDEO_FPS);
+    }
+  });
+
   it('plans one whole-song segment for a single cover', () => {
     // The regression guard for the entire feature: a job with one image must
     // still describe exactly what the existing path renders.

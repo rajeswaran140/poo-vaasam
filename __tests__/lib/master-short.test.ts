@@ -430,3 +430,24 @@ describe('full-length vertical — what it will and will not accept', () => {
     if (!p.ok) expect(p.message).toMatch(/duration/i);
   });
 });
+
+import { fullVerticalKeyFor, isFullVerticalKey } from '@/lib/master-short';
+
+/**
+ * The whole-song vertical sits ALONGSIDE the clip. It shipped writing to the
+ * clip's own key, so each render silently replaced the other.
+ */
+describe('the whole-song vertical has its own file', () => {
+  const MASTER = 'audio/mastering/x-master-14LUFS.wav';
+
+  it('is stored beside the master under a key the clip does not use', () => {
+    expect(fullVerticalKeyFor(MASTER)).toBe('audio/mastering/x-master-14LUFS-vertical-1920.mp4');
+    expect(fullVerticalKeyFor(MASTER)).not.toBe(shortKeyFor(MASTER));
+  });
+
+  it('is told apart from a clip by its key alone', () => {
+    expect(isFullVerticalKey(fullVerticalKeyFor(MASTER))).toBe(true);
+    expect(isFullVerticalKey(shortKeyFor(MASTER))).toBe(false);
+    expect(isShortKey(fullVerticalKeyFor(MASTER))).toBe(false);
+  });
+});
