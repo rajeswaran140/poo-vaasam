@@ -514,6 +514,8 @@ export type SegmentPlan =
 export function planSegments(
   covers: readonly SlideshowCover[] | null | undefined,
   durationSec: number | null | undefined,
+  /** Frames per second the segments will be ENCODED at — the vertical renders use 25. */
+  fps: number = VIDEO_FPS,
 ): SegmentPlan {
   if (!covers || covers.length === 0) return { ok: false, reason: 'no-cover' };
   if (covers.length > MAX_SLIDESHOW_COVERS) return { ok: false, reason: 'too-many-covers' };
@@ -551,15 +553,15 @@ export function planSegments(
    * snaps to its nearest frame and the END rounds UP, so the picture is never
    * the shorter stream and overshoots by less than one frame.
    */
-  const frameAt = (sec: number) => Math.round(sec * VIDEO_FPS);
-  const endFrame = Math.ceil(durationSec * VIDEO_FPS - 1e-6);
+  const frameAt = (sec: number) => Math.round(sec * fps);
+  const endFrame = Math.ceil(durationSec * fps - 1e-6);
   const segments: PlannedSegment[] = covers.map((c, i) => ({
     coverKey: c.coverKey,
     startSec: c.startSec,
     // The final stretch runs to the end of the song — computed, never supplied.
     seconds:
       ((i + 1 < covers.length ? frameAt(covers[i + 1].startSec) : endFrame) - frameAt(c.startSec)) /
-      VIDEO_FPS,
+      fps,
   }));
   if (segments.some((s) => s.seconds < MIN_SEGMENT_SECONDS)) {
     return { ok: false, reason: 'segment-too-short' };

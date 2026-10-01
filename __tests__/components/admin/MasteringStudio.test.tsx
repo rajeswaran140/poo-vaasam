@@ -1105,6 +1105,28 @@ describe('render for YouTube', () => {
       });
     });
 
+    it('sends the image list with the short and the whole-song vertical', async () => {
+      await masterAndSave();
+      await addCover();
+      await addSecondImage('1:30');
+      const LIST = [
+        { coverKey: COVER, startSec: 0 },
+        { coverKey: 'audio/mastering/1_c_second.jpg', startSec: 90 },
+      ];
+
+      mockedFetch.mockResolvedValueOnce(json({ success: true, status: 'queued' }));
+      mockedFetch.mockResolvedValue(json(savedDoneJob({ shortKey: 's', shortRenderedAt: '2026-10-01T00:00:00.000Z' })));
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Make a short/ })); });
+      expect(JSON.parse(posted('/short')[0][1].body)).toEqual({ coverKey: COVER, covers: LIST });
+
+      mockedFetch.mockResolvedValueOnce(json({ success: true, status: 'queued' }));
+      mockedFetch.mockResolvedValue(
+        json(savedDoneJob({ verticalKey: VERTICAL, verticalRenderedAt: '2026-10-01T00:00:01.000Z' }))
+      );
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Whole song, vertical/ })); });
+      expect(JSON.parse(posted('/short')[1][1].body)).toEqual({ coverKey: COVER, full: true, covers: LIST });
+    });
+
     it('will not render a slideshow while an added image is unfinished', async () => {
       await masterAndSave();
       await addCover();

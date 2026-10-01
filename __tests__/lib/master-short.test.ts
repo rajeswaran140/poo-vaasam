@@ -451,3 +451,92 @@ describe('the whole-song vertical has its own file', () => {
     expect(isShortKey(fullVerticalKeyFor(MASTER))).toBe(false);
   });
 });
+
+import {
+  windowCovers,
+  buildShortSegmentArgs,
+  buildShortJoinArgs,
+} from '@/lib/master-short';
+import { planSegments, MIN_SEGMENT_SECONDS } from '@/lib/master-video';
+
+/**
+ * A vertical slideshow. The image list is the SAME one the 16:9 video uses and
+ * its times mean the same thing — seconds into the SONG. A clip shows whatever
+ * the slideshow would be showing during its window, so the operator fills in
+ * one list and never re-times it for the clip.
+ */
+describe('which images a clip shows', () => {
+  const A = 'audio/mastering/a.jpg';
+  const B = 'audio/mastering/b.jpg';
+  const C = 'audio/mastering/c.jpg';
+  const LIST = [
+    { coverKey: A, startSec: 0 },
+    { coverKey: B, startSec: 90 },
+    { coverKey: C, startSec: 150 },
+  ];
+
+  it('opens on the image the song is showing when the clip starts', () => {
+    // 1:36-2:06 sits wholly inside image B's stretch.
+    expect(windowCovers(LIST, 96, 30)).toEqual([{ coverKey: B, startSec: 0 }]);
+  });
+
+  it('re-times a cut inside the window to seconds into the CLIP', () => {
+    // 2:00-3:00: B until 2:30, then C — which is 30s into the clip.
+    expect(windowCovers(LIST, 120, 60)).toEqual([
+      { coverKey: B, startSec: 0 },
+      { coverKey: C, startSec: 30 },
+    ]);
+  });
+
+  it('keeps the whole list, unchanged, for the whole song', () => {
+    expect(windowCovers(LIST, 0, 221.9)).toEqual(LIST);
+  });
+
+  it('drops a cut too close to the end to read, instead of refusing the clip', () => {
+    // C would get under MIN_SEGMENT_SECONDS before the clip ends.
+    const out = windowCovers(LIST, 120, 30 + MIN_SEGMENT_SECONDS / 2);
+    expect(out).toEqual([{ coverKey: B, startSec: 0 }]);
+  });
+
+  it('opens on the NEXT image when the cut lands just after the clip starts', () => {
+    // B would flash for half a second and then cut — start on C instead.
+    expect(windowCovers(LIST, 149.5, 30)).toEqual([{ coverKey: C, startSec: 0 }]);
+  });
+
+  it('always yields a list the planner accepts', () => {
+    for (const [start, secs] of [[96, 30], [120, 60], [149.5, 30], [88.7, 45.3], [0, 221.9]] as const) {
+      const plan = planSegments(windowCovers(LIST, start, secs), secs, SHORT_FPS);
+      expect(plan.ok).toBe(true);
+    }
+  });
+});
+
+describe('the vertical slideshow encode', () => {
+  it('encodes each stretch at the short\'s frame rate, with no filter and no audio', () => {
+    const seg = buildShortSegmentArgs({ framePath: '/tmp/f.ppm', seconds: 12.52, outPath: '/tmp/s.mp4' });
+    expect(seg).not.toContain('-filter_complex');
+    expect(seg).toContain('-an');
+    expect(seg[seg.indexOf('-framerate') + 1]).toBe(String(SHORT_FPS));
+    expect(seg[seg.indexOf('-t') + 1]).toBe('12.52');
+    // -t bounds the looped still: it sits between -loop and the frame input.
+    expect(seg.indexOf('-t')).toBeGreaterThan(seg.indexOf('-loop'));
+    expect(seg.indexOf('-t')).toBeLessThan(seg.indexOf('-i'));
+  });
+
+  it('joins a CLIP against the same window of audio the single-image clip uses', () => {
+    const j = buildShortJoinArgs({ listPath: '/tmp/l.txt', audioPath: '/tmp/m.wav', outPath: '/tmp/o.mp4', startSec: 96, seconds: 30 });
+    expect(j).toContain('-ss');
+    expect(j[j.indexOf('-ss') + 1]).toBe('96.000');
+    expect(j).toEqual(expect.arrayContaining(['-c:v', 'copy']));
+    expect(j.join(' ')).toContain('afade=t=in:st=0:d=0.6');
+    expect(j).not.toContain('-shortest');
+  });
+
+  it('joins the WHOLE song without seeking, trimming or -shortest', () => {
+    const j = buildShortJoinArgs({ listPath: '/tmp/l.txt', audioPath: '/tmp/m.wav', outPath: '/tmp/o.mp4', fullSeconds: 221.9 });
+    expect(j).not.toContain('-ss');
+    expect(j).not.toContain('-t');
+    expect(j).not.toContain('-shortest');
+    expect(j.join(' ')).toMatch(/afade=t=out:st=218\.900/);
+  });
+});

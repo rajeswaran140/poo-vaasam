@@ -87,6 +87,10 @@ import {
   planFullVertical,
   shortKeyFor,
   fullVerticalKeyFor,
+  windowCovers,
+  buildShortSegmentArgs,
+  buildShortJoinArgs,
+  SHORT_FPS,
   SHORT_SECONDS,
   SHORT_MIN_START_SEC,
   SHORT_FLOOR_SECONDS,
@@ -250,6 +254,12 @@ interface MasterEvent {
     seconds?: number;
     /** Whole song at 1080x1920 instead of a clip — Facebook video / IG feed. */
     full?: boolean;
+    /**
+     * A vertical slideshow: the SAME list the 16:9 render takes, in seconds
+     * into the SONG. The worker works out which of them a clip's window shows
+     * — see windowCovers. Absent or one entry ⇒ the single-image render.
+     */
+    covers?: Array<{ coverKey?: string; startSec?: number }>;
   };
   /**
    * Render ~20s around a two-part crossfade so it can be judged without
@@ -678,17 +688,39 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
     await patch(jobId, { [errorField]: 'cover must be in the mastering workspace' });
     return { ok: false };
   }
+  // The slideshow list, in SONG time. Every key is checked, not just the first
+  // — and before anything is downloaded, so a bad list costs nothing.
+  const slideList = (spec.covers ?? []).map((c) => ({
+    coverKey: c?.coverKey ?? '',
+    startSec: Number(c?.startSec ?? Number.NaN),
+  }));
+  if (slideList.length > 1) {
+    if (slideList.length > MAX_SLIDESHOW_COVERS) {
+      await patch(jobId, { [errorField]: slideshowRefusalMessage('too-many-covers') });
+      return { ok: false };
+    }
+    if (slideList.some((c) => !isMasteringKey(c.coverKey))) {
+      await patch(jobId, { [errorField]: 'cover must be in the mastering workspace' });
+      return { ok: false };
+    }
+    // Order only — the length is the window's, decided below. A generous bound
+    // keeps `cut-past-end` out of it: a cut after the clip is simply not shown.
+    const ordered = planSegments(slideList, 1e7, SHORT_FPS);
+    if (!ordered.ok && ordered.reason !== 'segment-too-short') {
+      await patch(jobId, { [errorField]: slideshowRefusalMessage(ordered.reason) });
+      return { ok: false };
+    }
+  }
 
   const dir = mkdtempSync(join(tmpdir(), 'short-'));
   const audioPath = join(dir, 'master.wav');
-  const coverPath = join(dir, `cover${coverKey.match(/\.[a-z0-9]+$/i)?.[0] ?? '.jpg'}`);
+  const coverPathFor = (key: string, i: number) =>
+    join(dir, `cover${i}${key.match(/\.[a-z0-9]+$/i)?.[0] ?? '.jpg'}`);
   const framePath = join(dir, `frame${FRAME_EXTENSION}`);
   const outPath = join(dir, 'short.mp4');
   try {
     const audio = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: audioKey }));
     writeFileSync(audioPath, Buffer.from(await audio.Body!.transformToByteArray()));
-    const cover = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: coverKey }));
-    writeFileSync(coverPath, Buffer.from(await cover.Body!.transformToByteArray()));
 
     // 1. WHERE TO CUT. Two paths, and only one of them measures.
     //
@@ -764,24 +796,90 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
       }
     }
 
-    // Probe the cover so a vertical one FILLS the frame instead of being
-    // dropped into a box on a blurred copy of itself — the same wiring the
-    // long-form render has had since the small-thumbnail fix.
-    const coverAspect = probeCoverAspect(coverPath);
-    const composed = ff(buildShortComposeArgs({ coverPath, framePath, coverAspect }));
-    if (composed.status !== 0) {
-      await patch(jobId, { [errorField]: 'the cover could not be composed into a vertical frame' });
-      return { ok: false };
-    }
+    /**
+     * WHICH IMAGES THIS RENDER SHOWS. Decided here, after the window is known,
+     * because for an auto-picked clip nobody knew the window until the
+     * measurement above. One image — the usual case, and every job without a
+     * slideshow — takes the original two-pass path untouched.
+     */
+    const shown =
+      slideList.length > 1
+        ? windowCovers(slideList, fullSeconds !== null ? 0 : startSec, fullSeconds ?? seconds)
+        : [];
+    const fetchCover = async (key: string, i: number) => {
+      const path = coverPathFor(key, i);
+      const obj = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+      writeFileSync(path, Buffer.from(await obj.Body!.transformToByteArray()));
+      return path;
+    };
 
-    const r = ff(
-      fullSeconds !== null
-        ? buildFullVerticalArgs({ framePath, audioPath, outPath, audioSeconds: fullSeconds })
-        : buildShortArgs({ framePath, audioPath, startSec, outPath, seconds })
-    );
-    if (r.status !== 0) {
-      await patch(jobId, { [errorField]: 'the short render failed' });
-      return { ok: false };
+    if (shown.length <= 1) {
+      // The image the song is showing during this window — the job's cover
+      // unless a slideshow says otherwise.
+      const coverPath = await fetchCover(shown[0]?.coverKey ?? coverKey, 0);
+      // Probe the cover so a vertical one FILLS the frame instead of being
+      // dropped into a box on a blurred copy of itself — the same wiring the
+      // long-form render has had since the small-thumbnail fix.
+      const coverAspect = probeCoverAspect(coverPath);
+      const composed = ff(buildShortComposeArgs({ coverPath, framePath, coverAspect }));
+      if (composed.status !== 0) {
+        await patch(jobId, { [errorField]: 'the cover could not be composed into a vertical frame' });
+        return { ok: false };
+      }
+
+      const r = ff(
+        fullSeconds !== null
+          ? buildFullVerticalArgs({ framePath, audioPath, outPath, audioSeconds: fullSeconds })
+          : buildShortArgs({ framePath, audioPath, startSec, outPath, seconds })
+      );
+      if (r.status !== 0) {
+        await patch(jobId, { [errorField]: 'the short render failed' });
+        return { ok: false };
+      }
+    } else {
+      /* ---- the vertical slideshow ------------------------------------------
+       * Same architecture as the long-form one: each image composed ONCE, its
+       * stretch a run of identical frames, the audio laid over the joined
+       * picture in one pass. ⚠️ Nothing here may gain a -filter_complex.
+       */
+      const timed = planSegments(shown, fullSeconds ?? seconds, SHORT_FPS);
+      if (!timed.ok) {
+        await patch(jobId, { [errorField]: slideshowRefusalMessage(timed.reason) });
+        return { ok: false };
+      }
+      const segmentPaths: string[] = [];
+      const frames = new Map<string, string>();
+      for (const [i, seg] of timed.segments.entries()) {
+        let frame = frames.get(seg.coverKey);
+        if (!frame) {
+          const coverPath = await fetchCover(seg.coverKey, i);
+          frame = join(dir, `frame${i}${FRAME_EXTENSION}`);
+          const composed = ff(buildShortComposeArgs({ coverPath, framePath: frame, coverAspect: probeCoverAspect(coverPath) }));
+          if (composed.status !== 0) {
+            await patch(jobId, { [errorField]: `image ${i + 1} could not be composed into a vertical frame` });
+            return { ok: false };
+          }
+          frames.set(seg.coverKey, frame);
+        }
+        const segPath = join(dir, `seg${i}.mp4`);
+        const enc = ff(buildShortSegmentArgs({ framePath: frame, seconds: seg.seconds, outPath: segPath }));
+        if (enc.status !== 0) {
+          await patch(jobId, { [errorField]: `the render failed encoding image ${i + 1}` });
+          return { ok: false };
+        }
+        segmentPaths.push(segPath);
+      }
+      const listPath = join(dir, 'segments.txt');
+      writeFileSync(listPath, buildConcatList(segmentPaths));
+      const joined = ff(
+        fullSeconds !== null
+          ? buildShortJoinArgs({ listPath, audioPath, outPath, fullSeconds })
+          : buildShortJoinArgs({ listPath, audioPath, outPath, startSec, seconds })
+      );
+      if (joined.status !== 0) {
+        await patch(jobId, { [errorField]: 'the short render failed joining the images' });
+        return { ok: false };
+      }
     }
 
     /**

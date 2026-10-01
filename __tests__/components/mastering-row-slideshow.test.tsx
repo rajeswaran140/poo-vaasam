@@ -211,3 +211,51 @@ describe('a slideshow can be rendered from a library row', () => {
     expect(screen.getByRole('button', { name: /^Render video/ })).toBeInTheDocument();
   });
 });
+
+/**
+ * The same image list feeds the vertical renders. Its times stay SONG times;
+ * the worker works out which images a clip's window shows.
+ */
+describe('the image list also drives the vertical renders', () => {
+  const shortPosts = () =>
+    mockedFetch.mock.calls.filter(([url, init]) => String(url).endsWith('/short') && init?.method === 'POST');
+  const LIST = [
+    { coverKey: COVER, startSec: 0 },
+    { coverKey: 'audio/mastering/second.png', startSec: 90 },
+  ];
+
+  it('sends the list with the vertical short', async () => {
+    routeFetch();
+    await openLibrary();
+    openRenderPanel(SONG);
+    await addSecondImage('1:30');
+
+    fireEvent.click(screen.getByRole('button', { name: /vertical short/i }));
+
+    await waitFor(() => expect(shortPosts()).toHaveLength(1));
+    expect(JSON.parse(shortPosts()[0][1].body as string)).toEqual({ coverKey: COVER, covers: LIST });
+  });
+
+  it('sends the list with the whole-song vertical', async () => {
+    routeFetch();
+    await openLibrary();
+    openRenderPanel(SONG);
+    await addSecondImage('1:30');
+
+    fireEvent.click(screen.getByRole('button', { name: /whole song, vertical/i }));
+
+    await waitFor(() => expect(shortPosts()).toHaveLength(1));
+    expect(JSON.parse(shortPosts()[0][1].body as string)).toEqual({ coverKey: COVER, full: true, covers: LIST });
+  });
+
+  it('holds the vertical buttons too while an added image is unfinished', async () => {
+    routeFetch();
+    await openLibrary();
+    openRenderPanel(SONG);
+
+    fireEvent.click(screen.getByRole('button', { name: /add image/i }));
+
+    expect(screen.getByRole('button', { name: /vertical short/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /whole song, vertical/i })).toBeDisabled();
+  });
+});

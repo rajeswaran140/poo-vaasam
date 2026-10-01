@@ -123,8 +123,8 @@ export function SlideshowFields({ slides, onChange, onPickImage, disabled = fals
         </button>
         <span className="text-xs text-gray-500 dark:text-gray-400">
           {slides.length === 0
-            ? 'Optional — more images make the video a slideshow. The cover stays first, from 0:00.'
-            : `The cover shows from 0:00. Times as 1:30 or seconds, in order; each image stays at least ${MIN_SEGMENT_SECONDS}s. Up to ${MAX_SLIDESHOW_COVERS} images.`}
+            ? 'Optional — more images make a slideshow, in the video, the short and the whole-song vertical. The cover stays first, from 0:00.'
+            : `The cover shows from 0:00. Times are into the SONG, as 1:30 or seconds, in order; each image stays at least ${MIN_SEGMENT_SECONDS}s. Up to ${MAX_SLIDESHOW_COVERS} images. A short shows whichever of them fall inside its window.`}
         </span>
       </div>
     </div>
