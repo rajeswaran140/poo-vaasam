@@ -93,6 +93,7 @@ import {
   buildMotionSegmentArgs,
   isShortMotion,
   MOTION_SOURCE_SCALE,
+  MOTION_LEG_SECONDS,
   SHORT_FPS,
   SHORT_SECONDS,
   SHORT_MIN_START_SEC,
@@ -264,7 +265,7 @@ interface MasterEvent {
      */
     covers?: Array<{ coverKey?: string; startSec?: number }>;
     /**
-     * A slow zoom or pan across each image — the CLIP only. Typed `unknown`
+     * A slow zoom or pan across each image. Typed `unknown`
      * and validated here: the Lambda is Event-invoked. See SHORT_MOTIONS.
      */
     motion?: unknown;
@@ -702,9 +703,10 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
     await patch(jobId, { [errorField]: 'that motion is not one this renderer knows' });
     return { ok: false };
   }
-  // ⚠️ THE CLIP ONLY. A move filters every frame; ten minutes of whole song
-  // would be most of the 900 s ceiling. The whole-song vertical stays still.
-  const motion = !spec.full && isShortMotion(spec.motion) ? spec.motion : 'none';
+  // A move filters every frame. The clip is short enough that it always fits;
+  // the WHOLE SONG is bounded by planFullVertical below, which allows less of
+  // it when it moves.
+  const motion = isShortMotion(spec.motion) ? spec.motion : 'none';
 
   // The slideshow list, in SONG time. Every key is checked, not just the first
   // — and before anything is downloaded, so a bad list costs nothing.
@@ -760,7 +762,7 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
       // why that is the only correct way to bound this render.
       const header = ff(['-hide_banner', '-i', audioPath]);
       const info = parseSourceInfo(`${header.stdout ?? ''}${header.stderr ?? ''}`);
-      const plan = planFullVertical(info?.durationSec ?? null);
+      const plan = planFullVertical(info?.durationSec ?? null, motion);
       if (!plan.ok) {
         await patch(jobId, { [errorField]: plan.message });
         return { ok: false };
@@ -889,7 +891,12 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
         const segPath = join(dir, `seg${i}.mp4`);
         const enc = ff(
           motion !== 'none'
-            ? buildMotionSegmentArgs({ framePath: frame, seconds: seg.seconds, outPath: segPath, motion })
+            ? buildMotionSegmentArgs({
+                framePath: frame, seconds: seg.seconds, outPath: segPath, motion,
+                // The whole song goes out and back in legs, so the move stays
+                // visible; a clip keeps its single pass.
+                ...(fullSeconds !== null ? { legSeconds: MOTION_LEG_SECONDS } : {}),
+              })
             : buildShortSegmentArgs({ framePath: frame, seconds: seg.seconds, outPath: segPath })
         );
         if (enc.status !== 0) {

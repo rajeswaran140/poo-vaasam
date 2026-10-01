@@ -151,9 +151,23 @@ describe('a short that moves', () => {
     expect(sentEvent()).toEqual({ audioKey: AUDIO, coverKey: A });
   });
 
-  it('never sends a move with the whole-song vertical', async () => {
+  it('forwards a move with the whole-song vertical too', async () => {
     await post({ coverKey: A, full: true, motion: 'zoom-in' });
-    expect(sentEvent()).toEqual({ audioKey: AUDIO, coverKey: A, full: true });
+    expect(sentEvent()).toEqual({ audioKey: AUDIO, coverKey: A, full: true, motion: 'zoom-in' });
+  });
+
+  it('refuses to move a song it already knows is too long, before queueing anything', async () => {
+    getMock.mockResolvedValue({ ...baseJob, editedDurationSec: 510 });
+    const res = await post({ coverKey: A, full: true, motion: 'zoom-in' });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: expect.stringContaining('8 minutes') });
+    expect(lambdaSend).not.toHaveBeenCalled();
+  });
+
+  it('still queues a long song when it will not move', async () => {
+    getMock.mockResolvedValue({ ...baseJob, editedDurationSec: 510 });
+    const res = await post({ coverKey: A, full: true });
+    expect(res.status).toBe(202);
   });
 
   it('refuses a move it does not know', async () => {

@@ -621,3 +621,62 @@ describe('slow zoom and pan on a short', () => {
     expect(() => seg('none')).toThrow();
   });
 });
+
+import {
+  MOTION_LEG_SECONDS,
+  FULL_VERTICAL_MOTION_MAX_SECONDS,
+} from '@/lib/master-short';
+
+/**
+ * Motion on the WHOLE song. One 8% move spread over five minutes is a third of
+ * a pixel a second — nobody would see it. So a long stretch goes out and back
+ * in legs of about half a minute, and a clip (which passes no leg length) is
+ * left exactly as it shipped.
+ */
+describe('a move across a whole song goes out and back', () => {
+  const seg = (motion: string, seconds: number, legSeconds?: number) =>
+    buildMotionSegmentArgs({
+      framePath: '/tmp/f.ppm', seconds, outPath: '/tmp/s.mp4', motion: motion as never,
+      ...(legSeconds ? { legSeconds } : {}),
+    });
+  const vf = (motion: string, seconds: number, legSeconds?: number) => {
+    const a = seg(motion, seconds, legSeconds);
+    return a[a.indexOf('-vf') + 1];
+  };
+
+  it('uses legs of about half a minute', () => {
+    expect(MOTION_LEG_SECONDS).toBe(30);
+  });
+
+  it('leaves a clip — no leg length given — exactly as it was', () => {
+    expect(vf('zoom-in', 180)).toContain("z='1+0.08*on/4499'");
+  });
+
+  it('keeps a single pass when the stretch is no longer than about one leg', () => {
+    expect(vf('zoom-in', 30, MOTION_LEG_SECONDS)).toContain("z='1+0.08*on/749'");
+    expect(vf('zoom-in', 40, MOTION_LEG_SECONDS)).toContain("z='1+0.08*on/999'");
+  });
+
+  it('splits a long stretch into equal legs that end where the song ends', () => {
+    // 300 s = 7500 frames = 10 legs of 750 frames: out, back, out, back…
+    const f = vf('zoom-in', 300, MOTION_LEG_SECONDS);
+    expect(f).toContain("z='1+0.08*(1-abs(mod(on,1500)-750)/750)'");
+    expect(f).toContain('d=7500');
+  });
+
+  it('starts a reversed move from its far end, and comes back to it', () => {
+    expect(vf('zoom-out', 300, MOTION_LEG_SECONDS)).toContain("z='1.08-0.08*(1-abs(mod(on,1500)-750)/750)'");
+    expect(vf('pan-left', 300, MOTION_LEG_SECONDS)).toContain("x='(iw-iw/zoom)*(1-(1-abs(mod(on,1500)-750)/750))'");
+    expect(vf('pan-down', 300, MOTION_LEG_SECONDS)).toContain("y='(ih-ih/zoom)*(1-abs(mod(on,1500)-750)/750)'");
+  });
+
+  it('allows less song when it moves, because every frame has to be drawn', () => {
+    expect(FULL_VERTICAL_MOTION_MAX_SECONDS).toBe(480);
+    expect(planFullVertical(472, 'zoom-in').ok).toBe(true);   // the 7:52 joined master
+    expect(planFullVertical(481, 'zoom-in').ok).toBe(false);
+    expect(planFullVertical(481).ok).toBe(true);              // still: the 10-minute limit stands
+    expect(planFullVertical(481, 'none').ok).toBe(true);
+    const p = planFullVertical(500, 'pan-left');
+    expect(!p.ok && p.message).toMatch(/8 minutes/);
+  });
+});

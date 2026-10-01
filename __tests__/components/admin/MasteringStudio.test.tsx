@@ -1127,7 +1127,7 @@ describe('render for YouTube', () => {
       expect(JSON.parse(posted('/short')[1][1].body)).toEqual({ coverKey: COVER, full: true, covers: LIST });
     });
 
-    it('sends a chosen move with the short, and never with the whole song', async () => {
+    it('sends a chosen move with the short and with the whole song', async () => {
       await masterAndSave();
       await addCover();
       await act(async () => {
@@ -1144,7 +1144,7 @@ describe('render for YouTube', () => {
         json(savedDoneJob({ verticalKey: VERTICAL, verticalRenderedAt: '2026-10-01T00:00:01.000Z' }))
       );
       await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Whole song, vertical/ })); });
-      expect(JSON.parse(posted('/short')[1][1].body)).toEqual({ coverKey: COVER, full: true });
+      expect(JSON.parse(posted('/short')[1][1].body)).toEqual({ coverKey: COVER, full: true, motion: 'zoom-out' });
     });
 
     it('will not render a slideshow while an added image is unfinished', async () => {
