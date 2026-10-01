@@ -3632,7 +3632,7 @@ A control to compare against: முத்தமிழின் (\`J2tc_aUNOPA\`
     slug: 'song-video-render',
     title: 'Rendering a song video for YouTube',
     category: 'Publishing',
-    updatedAt: '2026-10-01T17:00:00Z',
+    updatedAt: '2026-10-01T18:00:00Z',
     body: `# Rendering a song video for YouTube
 
 A Tamilagaval song video is one still image held over a mastered audio track. That sounds trivial and is not: four separate renders of காதல் வந்து அரும்பியதே were rejected before one was accepted, and every flag below is the scar of one of them. Read the reasons before you change the recipe.
@@ -3751,7 +3751,7 @@ It is there because the channel posts **2-3 songs a week to YouTube** by design,
 
 ## A slideshow — several images in one video
 
-In the same row panel, under the buttons: **Add image**. Each image you add gets a file and a **starts at** time, and **Render video** becomes **Render slideshow (N images)**.
+In a saved master's row panel **and** in the render panel under a song you have just mastered and saved, under the buttons: **Add image**. Each image you add gets a file and a **starts at** time, and **Render video** becomes **Render slideshow (N images)**.
 
 - **The cover is image 1 and always starts at 0:00.** It is also what YouTube takes as the thumbnail. You only add image 2 onward.
 - **Times are \`1:30\` or plain seconds, in order.** Each image stays on screen until the next one starts; the last runs to the end of the song. Every image needs at least 2 seconds, and there can be up to 8.
@@ -3763,7 +3763,7 @@ In the same row panel, under the buttons: **Add image**. Each image you add gets
 
 ## The whole song, vertical
 
-In the same row panel, beside **Make vertical short**: **Whole song, vertical**. It renders the **entire song at 1080×1920** — for a Facebook video or an Instagram feed post, where vertical is welcome and the three-minute Reels limit does not apply.
+Beside **Make vertical short** in a saved master's row panel, and beside **Make a short** in the render panel under a song you have just mastered and saved: **Whole song, vertical**. It renders the **entire song at 1080×1920** — for a Facebook video or an Instagram feed post, where vertical is welcome and the three-minute Reels limit does not apply.
 
 - **It sits beside the clip, not in its place.** The row shows two links, **Short** and **Vertical**, and each is its own file. An earlier build stored both in one slot, so making one silently replaced the other.
 - **The window fields do not apply.** There is nothing to choose: it is the whole song. The same cover and the same vertical-fill rule as the clip are used.
