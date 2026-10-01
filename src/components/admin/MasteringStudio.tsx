@@ -405,6 +405,21 @@ export function MasteringStudio() {
   const [rendering, setRendering] = useState(false);
   /** The vertical hook clip for Reels/Shorts — a separate render from the video. */
   const [shorting, setShorting] = useState(false);
+  /** The whole-song vertical is rendering for the CURRENT job. */
+  const [verticaling, setVerticaling] = useState(false);
+  /**
+   * The current job's extra slideshow images. Keyed by job id like `rowSlides`,
+   * and separate from it: the two panels can be open at once, and a single
+   * shared slot would let one silently empty the other.
+   */
+  const [panelSlides, setPanelSlides] = useState<{ id: string; slides: Slide[] } | null>(null);
+  const panelSlidesNow: Slide[] = jobId && panelSlides?.id === jobId ? panelSlides.slides : [];
+  /**
+   * A refusal from the whole-song vertical or the slideshow, shown IN the
+   * render panel. The page banner (`error`) is far above this panel — an error
+   * there, for a button here, reads as a button that did nothing.
+   */
+  const [panelError, setPanelError] = useState<string | null>(null);
   /**
    * The window for the short, when the operator chose one.
    *
@@ -1187,6 +1202,28 @@ export function MasteringStudio() {
     }
   }, []);
 
+  /** An extra slideshow image for the current job. Same upload path as the cover. */
+  const onPickSlide = useCallback(async (id: string, index: number, file: File) => {
+    setPanelError(null);
+    setCoverUploading(true);
+    const controller = new AbortController();
+    try {
+      const key = await uploadToWorkspace(file, () => {}, controller.signal, 'cover');
+      if (!mounted.current) return;
+      setPanelSlides((prev) =>
+        prev?.id === id
+          ? { id, slides: prev.slides.map((sl, j) => (j === index ? { ...sl, key, name: file.name } : sl)) }
+          : prev
+      );
+      setAnnounce(`Image ${index + 2} uploaded.`);
+    } catch (err) {
+      if (!mounted.current) return;
+      if (!isAbort(err)) setPanelError(err instanceof Error ? err.message : String(err));
+    } finally {
+      if (mounted.current) setCoverUploading(false);
+    }
+  }, []);
+
   /**
    * Render the upload-ready MP4 and wait for it.
    *
@@ -1272,8 +1309,13 @@ export function MasteringStudio() {
 
   const renderVideo = useCallback(async () => {
     if (!jobId || !cover) return;
+    // Extra images make it a slideshow. The button is disabled while any of
+    // them is unfinished, so a null from slidesToCovers means there are none.
+    const slides = panelSlides?.id === jobId ? panelSlides.slides : [];
+    const covers = slides.length > 0 ? slidesToCovers(cover.key, slides) : null;
     setRendering(true);
     setError(null);
+    setPanelError(null);
     try {
       // Capture the job's CURRENT videoRenderedAt/videoError before the POST,
       // so a re-render can tell its own completion apart from the leftovers
@@ -1283,15 +1325,21 @@ export function MasteringStudio() {
         cover.key,
         videoHeight,
         job?.videoRenderedAt ?? null,
-        job?.videoError ?? null
+        job?.videoError ?? null,
+        covers ? { covers, durationSec: job?.editedDurationSec ?? null } : undefined
       );
       if (fresh) setJob(fresh);
     } catch (err) {
-      if (mounted.current) setError(err instanceof Error ? err.message : String(err));
+      if (!mounted.current) return;
+      const message = err instanceof Error ? err.message : String(err);
+      // A slideshow's refusal is about the images just typed in this panel, so
+      // it is shown here. A plain render keeps the page banner it always used.
+      if (covers) setPanelError(message);
+      else setError(message);
     } finally {
       if (mounted.current) setRendering(false);
     }
-  }, [jobId, cover, videoHeight, job, startRender]);
+  }, [jobId, cover, videoHeight, job, panelSlides, startRender]);
 
   /**
    * POST the short and poll until the clip lands.
@@ -1406,6 +1454,21 @@ export function MasteringStudio() {
       if (mounted.current) setShorting(false);
     }
   }, [jobId, cover, job, startShort]);
+
+  /** The whole song, vertical, for the CURRENT job. The clip is left alone. */
+  const makeVertical = useCallback(async () => {
+    if (!jobId || !cover) return;
+    setVerticaling(true);
+    setPanelError(null);
+    try {
+      const fresh = await startVertical(jobId, cover.key, job?.verticalRenderedAt ?? null, job?.verticalError ?? null);
+      if (fresh) setJob(fresh);
+    } catch (err) {
+      if (mounted.current) setPanelError(err instanceof Error ? err.message : String(err));
+    } finally {
+      if (mounted.current) setVerticaling(false);
+    }
+  }, [jobId, cover, job, startVertical]);
 
   /**
    * Render ~20 seconds around the crossfade and play it.
@@ -2920,13 +2983,22 @@ export function MasteringStudio() {
                 <button
                   type="button"
                   onClick={() => void renderVideo()}
-                  disabled={!cover || rendering || coverUploading}
+                  disabled={
+                    !cover || rendering || coverUploading ||
+                    // An added image with no file or no readable time is
+                    // unfinished — rendering would silently drop it.
+                    (panelSlidesNow.length > 0 && slidesToCovers(cover.key, panelSlidesNow) === null)
+                  }
                   className="inline-flex items-center gap-2 rounded-lg border border-orange-300 px-4 py-2 text-sm font-medium text-orange-700 transition hover:bg-orange-50 disabled:opacity-60 dark:border-orange-800 dark:text-orange-300 dark:hover:bg-orange-900/20"
                 >
                   {rendering
                     ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                     : <Film className="h-4 w-4" aria-hidden="true" />}
-                  {rendering ? 'Rendering…' : 'Render video'}
+                  {rendering
+                    ? 'Rendering…'
+                    : panelSlidesNow.length > 0
+                      ? `Render slideshow (${panelSlidesNow.length + 1} images)`
+                      : 'Render video'}
                 </button>
                 {job.videoKey && (
                   <button
@@ -2938,6 +3010,29 @@ export function MasteringStudio() {
                   </button>
                 )}
               </div>
+
+              {/* MORE IMAGES = A SLIDESHOW. For "Render video" only — the short
+                  and the whole-song vertical use the cover alone. */}
+              {jobId && (
+                <div className="mt-3">
+                  <SlideshowFields
+                    slides={panelSlidesNow}
+                    onChange={(slides) => setPanelSlides({ id: jobId, slides })}
+                    onPickImage={(i, f) => void onPickSlide(jobId, i, f)}
+                    disabled={!cover || rendering || coverUploading}
+                    idPrefix={`${inputId}-slide`}
+                  />
+                </div>
+              )}
+              {panelError && (
+                <p
+                  role="alert"
+                  className="mt-3 flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300"
+                >
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span>{panelError}</span>
+                </p>
+              )}
 
               {/* THE VERTICAL CLIP. A second, independent render from the same
                   cover and the same mastered WAV — not a crop of the video, and
@@ -2963,6 +3058,29 @@ export function MasteringStudio() {
                     className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900"
                   >
                     <Download className="h-4 w-4" aria-hidden="true" /> Download short
+                  </button>
+                )}
+                {/* The WHOLE song at 1080x1920 — a Facebook video or an Instagram
+                    feed post. Its own file, beside the clip; the window fields
+                    do not apply to it. */}
+                <button
+                  type="button"
+                  onClick={() => void makeVertical()}
+                  disabled={!cover || verticaling || shorting || rendering || coverUploading}
+                  className="inline-flex items-center gap-2 rounded-lg border border-indigo-300 px-4 py-2 text-sm font-medium text-indigo-700 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-900/20"
+                >
+                  {verticaling
+                    ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    : <Smartphone className="h-4 w-4" aria-hidden="true" />}
+                  {verticaling ? 'Rendering…' : 'Whole song, vertical'}
+                </button>
+                {job.verticalKey && (
+                  <button
+                    type="button"
+                    onClick={() => void downloadKey(job.verticalKey!, masterName.trim(), job.target, 'Vertical')}
+                    className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
+                  >
+                    <Download className="h-4 w-4" aria-hidden="true" /> Download vertical
                   </button>
                 )}
                 <ShortWindowFields

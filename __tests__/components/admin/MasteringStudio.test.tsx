@@ -1038,6 +1038,82 @@ describe('render for YouTube', () => {
     await act(async () => { fireEvent.change(input, { target: { files: [f] } }); });
   }
 
+  /**
+   * The whole-song vertical and the slideshow reached the library rows first
+   * (#373, #374). Raj asked for them here too: this panel is where a song is
+   * finished in the session that mastered it.
+   */
+  describe('the newer renders, in this panel too', () => {
+    const COVER = 'audio/mastering/1_c_cover.jpg';
+    const VERTICAL = 'audio/mastering/1_a_song-master-14LUFS-vertical-1920.mp4';
+    const posted = (suffix: string) =>
+      mockedFetch.mock.calls.filter((c) => String(c[0]).endsWith(suffix) && c[1]?.method === 'POST');
+
+    async function addSecondImage(at: string) {
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /add image/i })); });
+      mockedFetch.mockResolvedValueOnce(
+        json({ success: true, uploadUrl: 'https://s3/u', fields: { key: 'k' }, key: 'audio/mastering/1_c_second.jpg' })
+      );
+      const f = new File(['x'], 'second.jpg', { type: 'image/jpeg' });
+      await act(async () => { fireEvent.change(screen.getByLabelText(/^Image 2$/), { target: { files: [f] } }); });
+      await screen.findByText(/second\.jpg/);
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText(/Image 2 starts at/i), { target: { value: at } });
+      });
+    }
+
+    it('renders the whole song vertically, and offers it beside the clip', async () => {
+      await masterAndSave();
+      await addCover();
+
+      mockedFetch.mockResolvedValueOnce(json({ success: true, status: 'queued' }));
+      mockedFetch.mockResolvedValue(
+        json(savedDoneJob({ verticalKey: VERTICAL, verticalRenderedAt: '2026-10-01T00:00:00.000Z', verticalSeconds: 221.9 }))
+      );
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Whole song, vertical/ })); });
+
+      expect(JSON.parse(posted('/short')[0][1].body)).toEqual({ coverKey: COVER, full: true });
+      expect(await screen.findByRole('button', { name: /Download vertical/ })).toBeInTheDocument();
+    });
+
+    it('says why the whole-song vertical was refused', async () => {
+      await masterAndSave();
+      await addCover();
+
+      mockedFetch.mockResolvedValueOnce(json({ success: false, error: 'Save this master before making a short.' }, false, 409));
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Whole song, vertical/ })); });
+
+      expect(await screen.findByText(/Save this master before making a short/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Whole song, vertical/ })).toBeEnabled();
+    });
+
+    it('renders a slideshow — the cover first, then the added image at its time', async () => {
+      await masterAndSave();
+      await addCover();
+      await addSecondImage('1:30');
+
+      mockedFetch.mockResolvedValueOnce(json({ success: true, status: 'queued' }));
+      mockedFetch.mockResolvedValue(json(savedDoneJob({ videoKey: 'v', videoRenderedAt: '2026-10-01T00:00:00.000Z' })));
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Render slideshow \(2 images\)/ })); });
+
+      expect(JSON.parse(posted('/render')[0][1].body)).toMatchObject({
+        coverKey: COVER,
+        covers: [
+          { coverKey: COVER, startSec: 0 },
+          { coverKey: 'audio/mastering/1_c_second.jpg', startSec: 90 },
+        ],
+      });
+    });
+
+    it('will not render a slideshow while an added image is unfinished', async () => {
+      await masterAndSave();
+      await addCover();
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /add image/i })); });
+
+      expect(screen.getByRole('button', { name: /Render slideshow/ })).toBeDisabled();
+    });
+  });
+
   it('does not offer a render until the master is saved', async () => {
     // The title becomes the download name, and an unsaved job expires in 24h.
     primeHappyPath(savedDoneJob());
