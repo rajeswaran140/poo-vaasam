@@ -254,11 +254,25 @@ export function buildShortComposeArgs(params: {
   framePath: string;
   /** width/height of the cover, from probeCoverAspect. Omit ⇒ assume it cannot fill. */
   coverAspect?: number;
+  /**
+   * Enlarge the FINISHED frame this many times, for a render that moves across
+   * it — see MOTION_SOURCE_SCALE. Omit or 1 ⇒ the frame exactly as it has
+   * always been composed.
+   */
+  sourceScale?: number;
 }): string[] {
+  const base = buildShortFrameFilter(params.coverAspect);
+  const scale = params.sourceScale && params.sourceScale > 1 ? params.sourceScale : 1;
+  // Composed at 1x FIRST and enlarged after, so a moving short looks exactly
+  // like a still one at rest — same fill rule, same backdrop, same sharpening.
+  const filter =
+    scale === 1
+      ? base
+      : base.replace(/\[v\]$/, `[v1];[v1]scale=${SHORT_WIDTH * scale}:${SHORT_HEIGHT * scale}:flags=lanczos[v]`);
   return [
     '-hide_banner', '-nostats',
     '-i', params.coverPath,
-    '-filter_complex', buildShortFrameFilter(params.coverAspect),
+    '-filter_complex', filter,
     '-map', '[v]', '-frames:v', '1', '-y', params.framePath,
   ];
 }
@@ -568,6 +582,92 @@ export function buildShortJoinArgs(params: {
     '-c:a', 'aac', '-b:a', '192k', '-ar', '48000',
     '-movflags', '+faststart',
     ...(full ? [] : ['-t', String(secs)]),
+    '-y', params.outPath,
+  ];
+}
+
+/**
+ * ============================================================================
+ * SLOW ZOOM AND PAN — a short whose picture moves.
+ * ============================================================================
+ *
+ * Added 2026-10-01. The first vertical render where every frame differs, so it
+ * is the one place in this file that filters per frame — deliberately, and
+ * only for the CLIP: 30 s to 3 minutes. Measured on the Lambda's ffmpeg 7.0.2,
+ * 30 s at 25 fps: still 12 s, zoom 26 s, pan 25 s. A 3-minute short is about
+ * 2.5 minutes of a 15-minute ceiling. The whole-song vertical is NOT offered
+ * motion: ten minutes of it would be most of the ceiling.
+ */
+
+/** `none` is first and is the default: a short is still unless a move is chosen. */
+export const SHORT_MOTIONS = ['none', 'zoom-in', 'zoom-out', 'pan-left', 'pan-right', 'pan-up', 'pan-down'] as const;
+export type ShortMotion = (typeof SHORT_MOTIONS)[number];
+
+export function isShortMotion(value: unknown): value is ShortMotion {
+  return typeof value === 'string' && (SHORT_MOTIONS as readonly string[]).includes(value);
+}
+
+/**
+ * ⚠️ FOUR, NOT TWO. zoompan positions its window in WHOLE source pixels, so on
+ * a 1x frame a slow move advances one output pixel at a time, and at 2x a pan
+ * repeated 59% of its frames — it visibly stutters. At 4x the steps are a
+ * quarter of an output pixel (15% repeats, none perceptible). 4x costs about
+ * twice a still render; 2x would save 10 s and show.
+ */
+export const MOTION_SOURCE_SCALE = 4;
+
+/**
+ * How far a move travels: 8% of the frame, over the whole stretch.
+ *
+ * Small on purpose. The artwork is the release's identity and a move crops it:
+ * a zoom ends 8% in, a pan holds 8% in throughout. Enough to read as alive,
+ * not enough to lose a face at the edge.
+ */
+export const MOTION_TRAVEL = 0.08;
+
+/**
+ * Encode ONE stretch with a slow move, from a frame composed at
+ * MOTION_SOURCE_SCALE.
+ *
+ * The move runs once across the stretch — first frame at the start position,
+ * last frame at the end — so in a slideshow each image gets its own complete
+ * move. `-frames:v` bounds it rather than `-t`: the count is exact, and
+ * `seconds` comes from `planSegments(…, SHORT_FPS)`, already whole frames.
+ *
+ * No `-tune stillimage` — that tuning assumes nothing moves. No audio: the
+ * join lays it over, exactly as for a still slideshow.
+ */
+export function buildMotionSegmentArgs(params: {
+  framePath: string;
+  seconds: number;
+  outPath: string;
+  motion: Exclude<ShortMotion, 'none'>;
+}): string[] {
+  const frames = Math.max(1, Math.round(params.seconds * SHORT_FPS));
+  // `on` runs 0..frames-1, so dividing by frames-1 lands the last frame on the end.
+  const span = Math.max(1, frames - 1);
+  const T = MOTION_TRAVEL;
+  const held = (1 + T).toFixed(2);
+  const centreX = "x='iw/2-(iw/zoom/2)'";
+  const centreY = "y='ih/2-(ih/zoom/2)'";
+  const move: Record<Exclude<ShortMotion, 'none'>, string> = {
+    'zoom-in': `z='1+${T}*on/${span}':${centreX}:${centreY}`,
+    'zoom-out': `z='${held}-${T}*on/${span}':${centreX}:${centreY}`,
+    'pan-right': `z='${held}':x='(iw-iw/zoom)*on/${span}':${centreY}`,
+    'pan-left': `z='${held}':x='(iw-iw/zoom)*(1-on/${span})':${centreY}`,
+    'pan-down': `z='${held}':${centreX}:y='(ih-ih/zoom)*on/${span}'`,
+    'pan-up': `z='${held}':${centreX}:y='(ih-ih/zoom)*(1-on/${span})'`,
+  };
+  const expr = move[params.motion];
+  if (!expr) throw new Error(`not a move: ${String(params.motion)}`);
+  return [
+    '-hide_banner', '-nostats',
+    '-i', params.framePath,
+    '-vf', `zoompan=${expr}:d=${frames}:s=${SHORT_WIDTH}x${SHORT_HEIGHT}:fps=${SHORT_FPS}`,
+    '-frames:v', String(frames),
+    '-c:v', 'libx264', '-preset', 'veryfast',
+    '-crf', '20', '-pix_fmt', 'yuv420p', '-r', String(SHORT_FPS),
+    '-an',
     '-y', params.outPath,
   ];
 }

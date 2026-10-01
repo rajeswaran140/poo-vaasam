@@ -138,3 +138,28 @@ describe('a vertical slideshow', () => {
     expect(lambdaSend).not.toHaveBeenCalled();
   });
 });
+
+describe('a short that moves', () => {
+  it('forwards a chosen move', async () => {
+    const res = await post({ coverKey: A, startSec: 96, seconds: 30, motion: 'zoom-in' });
+    expect(res.status).toBe(202);
+    expect(sentEvent()).toEqual({ audioKey: AUDIO, coverKey: A, startSec: 96, seconds: 30, motion: 'zoom-in' });
+  });
+
+  it('sends no `motion` field for none — the event keeps its original shape', async () => {
+    await post({ coverKey: A, motion: 'none' });
+    expect(sentEvent()).toEqual({ audioKey: AUDIO, coverKey: A });
+  });
+
+  it('never sends a move with the whole-song vertical', async () => {
+    await post({ coverKey: A, full: true, motion: 'zoom-in' });
+    expect(sentEvent()).toEqual({ audioKey: AUDIO, coverKey: A, full: true });
+  });
+
+  it('refuses a move it does not know', async () => {
+    const res = await post({ coverKey: A, motion: 'spin' });
+    expect(res.status).toBe(400);
+    expect(lambdaSend).not.toHaveBeenCalled();
+  });
+});
+

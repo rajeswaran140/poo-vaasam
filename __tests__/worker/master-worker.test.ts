@@ -807,6 +807,73 @@ describe('short render', () => {
     });
   });
 
+  /**
+   * Slow zoom and pan. A moving short goes through the segment-and-join path
+   * even with ONE image, because the move is a property of the stretch.
+   */
+  describe('a short that moves', () => {
+    const HEADER = `Input #0, wav, from '/tmp/master.wav':
+  Duration: 00:04:00.00, bitrate: 2304 kb/s
+  Stream #0:0: Audio: pcm_s24le ([1][0][0][0] / 0x0001), 48000 Hz, stereo, s32 (24 bit), 2304 kb/s
+`;
+    beforeEach(() => {
+      spawnSync.mockImplementation((_cmd: unknown, args: string[]) =>
+        args.length === 3 && args[0] === '-hide_banner' && args[1] === '-i'
+          ? { status: 0, stdout: '', stderr: HEADER }
+          : { status: 0, stdout: '', stderr: '' }
+      );
+    });
+    const movingPasses = () => ffArgs().filter((a) => a.some((x) => x.startsWith('zoompan=')));
+    const joinPass = () => ffArgs().find((a) => a.includes('concat'));
+
+    it('moves across the one image for the whole clip, then lays the audio over it', async () => {
+      const res = await handler({ jobId: 'j1', short: short({ startSec: 96, seconds: 30, motion: 'zoom-in' }) } as never);
+
+      expect(res).toMatchObject({ ok: true });
+      const moving = movingPasses();
+      expect(moving).toHaveLength(1);
+      expect(moving[0][moving[0].indexOf('-frames:v') + 1]).toBe('750');
+      // The frame it moves across was composed enlarged.
+      expect(composePass()[composePass().indexOf('-filter_complex') + 1]).toContain('scale=4320:7680');
+      const join = joinPass()!;
+      expect(join[join.indexOf('-ss') + 1]).toBe('96.000');
+      expect(patched()).toMatchObject({ shortMotion: 'zoom-in', shortSeconds: 30 });
+    });
+
+    it('gives every image of a slideshow its own complete move', async () => {
+      const LIST = [
+        { coverKey: COVER, startSec: 0 },
+        { coverKey: 'audio/mastering/1_c_b.jpg', startSec: 150 },
+      ];
+      await handler({ jobId: 'j1', short: short({ startSec: 120, seconds: 60, motion: 'pan-left', covers: LIST }) } as never);
+
+      const moving = movingPasses();
+      expect(moving.map((a) => a[a.indexOf('-frames:v') + 1])).toEqual(['750', '750']);
+    });
+
+    it('leaves a short with no move on the original still path, recording none', async () => {
+      await handler({ jobId: 'j1', short: short({ startSec: 96, seconds: 30 }) } as never);
+
+      expect(movingPasses()).toHaveLength(0);
+      expect(joinPass()).toBeUndefined();
+      expect(composePass()[composePass().indexOf('-filter_complex') + 1]).not.toContain('4320');
+      expect(patched()).toMatchObject({ shortMotion: 'none' });
+    });
+
+    it('never moves the whole-song vertical — it would not fit the worker\'s time', async () => {
+      await handler({ jobId: 'j1', short: short({ full: true, motion: 'zoom-in' }) } as never);
+
+      expect(movingPasses()).toHaveLength(0);
+    });
+
+    it('refuses a move it does not know, rather than quietly rendering a still', async () => {
+      const res = await handler({ jobId: 'j1', short: short({ startSec: 96, seconds: 30, motion: 'spin' }) } as never);
+
+      expect(res).toMatchObject({ ok: false });
+      expect(String(patched().shortError)).toMatch(/motion/i);
+    });
+  });
+
   it('stores the MP4 beside the master under its own key', async () => {
     await handler({ jobId: 'j1', short: short() } as never);
 

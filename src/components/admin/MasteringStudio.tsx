@@ -38,7 +38,7 @@ import { ShortWindowFields } from '@/components/admin/ShortWindowFields';
 import { SlideshowFields, slidesToCovers, type Slide } from '@/components/admin/SlideshowFields';
 import { ReleasePipelineRow } from '@/components/admin/ReleasePipelineRow';
 import type { PartComparison } from '@/lib/part-analysis';
-import { SHORT_PICK_MIN_SECONDS, SHORT_PICK_MAX_SECONDS } from '@/lib/master-short';
+import { SHORT_PICK_MIN_SECONDS, SHORT_PICK_MAX_SECONDS, SHORT_MOTIONS, type ShortMotion } from '@/lib/master-short';
 import { formatTime } from '@/lib/waveform';
 import { MasteringTrimPanel } from '@/components/admin/MasteringTrimPanel';
 import { MasteringJoinPanel } from '@/components/admin/MasteringJoinPanel';
@@ -325,6 +325,17 @@ export function parseHashtags(input: string): string[] {
 /** Seconds → m:ss, for the read-back duration. */
 const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 
+/** What the operator reads for each move. `none` says what it does, not what it is. */
+const MOTION_LABELS: Record<ShortMotion, string> = {
+  none: 'None (still)',
+  'zoom-in': 'Slow zoom in',
+  'zoom-out': 'Slow zoom out',
+  'pan-left': 'Pan left',
+  'pan-right': 'Pan right',
+  'pan-up': 'Pan up',
+  'pan-down': 'Pan down',
+};
+
 export function MasteringStudio() {
   const inputId = useId();
   const [stage, setStage] = useState<Stage>('idle');
@@ -405,6 +416,14 @@ export function MasteringStudio() {
   const [rendering, setRendering] = useState(false);
   /** The vertical hook clip for Reels/Shorts — a separate render from the video. */
   const [shorting, setShorting] = useState(false);
+  /**
+   * The slow zoom or pan for the next vertical SHORT. `none` by default, so a
+   * short is still unless a move is chosen. One setting for the page rather
+   * than per song: it is how the operator wants shorts made today, not a fact
+   * about one master. Never sent with the whole-song vertical — see
+   * SHORT_MOTIONS in master-short.ts for why that one stays still.
+   */
+  const [shortMotion, setShortMotion] = useState<ShortMotion>('none');
   /** The whole-song vertical is rendering for the CURRENT job. */
   const [verticaling, setVerticaling] = useState(false);
   /**
@@ -1362,7 +1381,9 @@ export function MasteringStudio() {
       priorShortRenderedAt: string | null,
       priorShortError: string | null,
       /** The slideshow list, in SONG time. Omitted ⇒ the body is what it always was. */
-      covers?: Array<{ coverKey: string; startSec: number }> | null
+      covers?: Array<{ coverKey: string; startSec: number }> | null,
+      /** A slow zoom or pan. `none` or omitted ⇒ no field is sent at all. */
+      motion: ShortMotion = 'none'
     ): Promise<MasterJob | null> => {
       const res = await adminFetch(`/api/admin/music-lab/master/${targetId}/short`, {
         method: 'POST',
@@ -1370,13 +1391,20 @@ export function MasteringStudio() {
         // A window is sent only when one was chosen, and only ever the one
         // belonging to THIS master. Sending zeroes would read as "start at
         // 0:00 for 0s" rather than "you decide".
-        body: JSON.stringify({ coverKey, ...(windowFor(targetId) ?? {}), ...(covers ? { covers } : {}) }),
+        body: JSON.stringify({
+          coverKey,
+          ...(windowFor(targetId) ?? {}),
+          ...(covers ? { covers } : {}),
+          ...(motion !== 'none' ? { motion } : {}),
+        }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.success) throw new Error(body.error || 'Could not start the short.');
       setAnnounce('Cutting the short.');
 
-      const deadline = Date.now() + 3 * 60 * 1000;
+      // A still clip is under a minute of work. A MOVING one filters every
+      // frame — a 3-minute short measured 143 s — so it gets the video's budget.
+      const deadline = Date.now() + (motion !== 'none' ? 10 : 3) * 60 * 1000;
       for (let attempt = 0; ; attempt++) {
         if (attempt > 0) await new Promise((r) => setTimeout(r, 4000));
         if (!mounted.current) return null;
@@ -1453,7 +1481,8 @@ export function MasteringStudio() {
       const slides = panelSlides?.id === jobId ? panelSlides.slides : [];
       const fresh = await startShort(
         jobId, cover.key, job?.shortRenderedAt ?? null, job?.shortError ?? null,
-        slides.length > 0 ? slidesToCovers(cover.key, slides) : null
+        slides.length > 0 ? slidesToCovers(cover.key, slides) : null,
+        shortMotion
       );
       if (fresh) setJob(fresh);
     } catch (err) {
@@ -1461,7 +1490,7 @@ export function MasteringStudio() {
     } finally {
       if (mounted.current) setShorting(false);
     }
-  }, [jobId, cover, job, panelSlides, startShort]);
+  }, [jobId, cover, job, panelSlides, shortMotion, startShort]);
 
   /** The whole song, vertical, for the CURRENT job. The clip is left alone. */
   const makeVertical = useCallback(async () => {
@@ -1879,7 +1908,8 @@ export function MasteringStudio() {
       const slides = rowSlides?.id === id ? rowSlides.slides : [];
       const fresh = await startShort(
         id, rowCover.key, row?.shortRenderedAt ?? null, row?.shortError ?? null,
-        slides.length > 0 ? slidesToCovers(rowCover.key, slides) : null
+        slides.length > 0 ? slidesToCovers(rowCover.key, slides) : null,
+        shortMotion
       );
       if (!fresh) return;
       setLibrary((prev) =>
@@ -1904,7 +1934,7 @@ export function MasteringStudio() {
     } finally {
       if (mounted.current) setRowBusy(null);
     }
-  }, [rowRender, rowSlides, library, startShort, failRow]);
+  }, [rowRender, rowSlides, shortMotion, library, startShort, failRow]);
 
   /**
    * Render the whole song vertically from the library — beside "Make vertical
@@ -3081,6 +3111,19 @@ export function MasteringStudio() {
                     <Download className="h-4 w-4" aria-hidden="true" /> Download short
                   </button>
                 )}
+                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  Motion
+                  <select
+                    value={shortMotion}
+                    disabled={shorting}
+                    onChange={(e) => setShortMotion(e.target.value as ShortMotion)}
+                    className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                  >
+                    {SHORT_MOTIONS.map((mo) => (
+                      <option key={mo} value={mo}>{MOTION_LABELS[mo]}</option>
+                    ))}
+                  </select>
+                </label>
                 {/* The WHOLE song at 1080x1920 — a Facebook video or an Instagram
                     feed post. Its own file, beside the clip; the window fields
                     do not apply to it. */}
@@ -3977,6 +4020,21 @@ export function MasteringStudio() {
                       >
                         {m.shortKey ? 'Re-cut vertical short' : 'Make vertical short'}
                       </button>
+                      {/* A slow move across each image of the SHORT. Still by
+                          default; the whole-song vertical ignores it. */}
+                      <label className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-300">
+                        Motion
+                        <select
+                          value={shortMotion}
+                          disabled={rowBusy === m.id}
+                          onChange={(e) => setShortMotion(e.target.value as ShortMotion)}
+                          className="rounded border border-gray-300 bg-white px-1 py-0.5 text-xs text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                        >
+                          {SHORT_MOTIONS.map((mo) => (
+                            <option key={mo} value={mo}>{MOTION_LABELS[mo]}</option>
+                          ))}
+                        </select>
+                      </label>
                       {/* The WHOLE song at 1080x1920 — for a Facebook video or an
                           Instagram feed post. Its own button and its own file: it
                           sits beside the clip and never replaces it. The window

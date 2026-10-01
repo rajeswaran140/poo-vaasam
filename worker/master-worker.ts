@@ -90,6 +90,9 @@ import {
   windowCovers,
   buildShortSegmentArgs,
   buildShortJoinArgs,
+  buildMotionSegmentArgs,
+  isShortMotion,
+  MOTION_SOURCE_SCALE,
   SHORT_FPS,
   SHORT_SECONDS,
   SHORT_MIN_START_SEC,
@@ -260,6 +263,11 @@ interface MasterEvent {
      * — see windowCovers. Absent or one entry ⇒ the single-image render.
      */
     covers?: Array<{ coverKey?: string; startSec?: number }>;
+    /**
+     * A slow zoom or pan across each image — the CLIP only. Typed `unknown`
+     * and validated here: the Lambda is Event-invoked. See SHORT_MOTIONS.
+     */
+    motion?: unknown;
   };
   /**
    * Render ~20s around a two-part crossfade so it can be judged without
@@ -688,6 +696,16 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
     await patch(jobId, { [errorField]: 'cover must be in the mastering workspace' });
     return { ok: false };
   }
+  // A move is refused if it is not one we know: quietly rendering a still
+  // instead would look like the feature not working.
+  if (spec.motion !== undefined && !isShortMotion(spec.motion)) {
+    await patch(jobId, { [errorField]: 'that motion is not one this renderer knows' });
+    return { ok: false };
+  }
+  // ⚠️ THE CLIP ONLY. A move filters every frame; ten minutes of whole song
+  // would be most of the 900 s ceiling. The whole-song vertical stays still.
+  const motion = !spec.full && isShortMotion(spec.motion) ? spec.motion : 'none';
+
   // The slideshow list, in SONG time. Every key is checked, not just the first
   // — and before anything is downloaded, so a bad list costs nothing.
   const slideList = (spec.covers ?? []).map((c) => ({
@@ -813,7 +831,7 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
       return path;
     };
 
-    if (shown.length <= 1) {
+    if (shown.length <= 1 && motion === 'none') {
       // The image the song is showing during this window — the job's cover
       // unless a slideshow says otherwise.
       const coverPath = await fetchCover(shown[0]?.coverKey ?? coverKey, 0);
@@ -842,7 +860,10 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
        * stretch a run of identical frames, the audio laid over the joined
        * picture in one pass. ⚠️ Nothing here may gain a -filter_complex.
        */
-      const timed = planSegments(shown, fullSeconds ?? seconds, SHORT_FPS);
+      // A moving short with one image is a slideshow of one: the move belongs
+      // to the stretch, so it takes this path too.
+      const stretches = shown.length > 0 ? shown : [{ coverKey, startSec: 0 }];
+      const timed = planSegments(stretches, fullSeconds ?? seconds, SHORT_FPS);
       if (!timed.ok) {
         await patch(jobId, { [errorField]: slideshowRefusalMessage(timed.reason) });
         return { ok: false };
@@ -854,7 +875,11 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
         if (!frame) {
           const coverPath = await fetchCover(seg.coverKey, i);
           frame = join(dir, `frame${i}${FRAME_EXTENSION}`);
-          const composed = ff(buildShortComposeArgs({ coverPath, framePath: frame, coverAspect: probeCoverAspect(coverPath) }));
+          const composed = ff(buildShortComposeArgs({
+            coverPath, framePath: frame, coverAspect: probeCoverAspect(coverPath),
+            // Enlarged only when something will move across it.
+            ...(motion !== 'none' ? { sourceScale: MOTION_SOURCE_SCALE } : {}),
+          }));
           if (composed.status !== 0) {
             await patch(jobId, { [errorField]: `image ${i + 1} could not be composed into a vertical frame` });
             return { ok: false };
@@ -862,7 +887,11 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
           frames.set(seg.coverKey, frame);
         }
         const segPath = join(dir, `seg${i}.mp4`);
-        const enc = ff(buildShortSegmentArgs({ framePath: frame, seconds: seg.seconds, outPath: segPath }));
+        const enc = ff(
+          motion !== 'none'
+            ? buildMotionSegmentArgs({ framePath: frame, seconds: seg.seconds, outPath: segPath, motion })
+            : buildShortSegmentArgs({ framePath: frame, seconds: seg.seconds, outPath: segPath })
+        );
         if (enc.status !== 0) {
           await patch(jobId, { [errorField]: `the render failed encoding image ${i + 1}` });
           return { ok: false };
@@ -924,6 +953,7 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
       shortStartSec: Number(startSec.toFixed(2)),
       shortSeconds: seconds,
       shortPicked: spec.startSec !== undefined || spec.seconds !== undefined,
+      shortMotion: motion,
       shortError: null,
       coverKey,
     });
