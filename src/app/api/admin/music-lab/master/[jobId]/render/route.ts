@@ -110,7 +110,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           { status: 400 }
         );
       }
-      const timed = planSlideshow(job, covers, parsed.data.durationSec, height);
+      // The length is only needed to refuse an impossible cut EARLY. The worker
+      // probes the file and plans the last image's end itself, so a master with
+      // no recorded length (19 of 91 saved, 2026-10-01) is still checked for
+      // order, count and keys here and left to the worker for its end —
+      // refusing it outright made the slideshow unavailable for those songs.
+      const knownLength = parsed.data.durationSec ?? job.editedDurationSec ?? null;
+      const timed = planSlideshow(job, covers, knownLength ?? Number.MAX_SAFE_INTEGER, height);
       if (!timed.ok) {
         return NextResponse.json(
           { success: false, error: slideshowRefusalMessage(timed.reason) },

@@ -19,6 +19,7 @@ jest.mock('lucide-react', () => ({
   FileAudio: () => <svg data-testid="i-file" />,
   RotateCcw: () => <svg data-testid="i-reset" />,
   X: () => <svg data-testid="i-x" />,
+  Plus: () => <svg data-testid="i-plus" />,
   Info: () => <svg data-testid="i-info" />,
   Save: () => <svg data-testid="i-save" />,
   Library: () => <svg data-testid="i-library" />,

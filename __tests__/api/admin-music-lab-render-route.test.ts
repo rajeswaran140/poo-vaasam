@@ -151,10 +151,33 @@ describe('the slideshow reaches the worker intact', () => {
     expect(await res.json()).toMatchObject({ error: expect.stringContaining('at most') });
   });
 
-  it('refuses a slideshow with no duration to end the last image on', async () => {
-    const res = await render({ coverKey: A, covers: THREE });
+  /**
+   * The route used to REFUSE a slideshow unless the client sent `durationSec`.
+   * Nothing sends it reliably: 19 of 91 saved masters have no recorded length
+   * at all (2026-10-01), and for those the slideshow was simply unavailable.
+   * The worker probes the file and plans the end itself, so the route only
+   * needs a length to refuse an impossible cut EARLY — it is not the authority.
+   */
+  it('checks the cuts against the job\'s own measured length when the client sends none', async () => {
+    getMock.mockResolvedValue({ ...baseJob, editedDurationSec: 200 });
+    const res = await render({ coverKey: A, covers: THREE }); // third image starts at 240
     expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ error: expect.stringContaining('length') });
+    expect(await res.json()).toMatchObject({ error: expect.stringContaining('after the song ends') });
+    expect(lambdaSend).not.toHaveBeenCalled();
+  });
+
+  it('with no length known anywhere, queues the slideshow and leaves the end to the worker', async () => {
+    const res = await render({ coverKey: A, covers: THREE });
+    expect(res.status).toBe(202);
+    expect(sentEvent().covers).toEqual(THREE);
+  });
+
+  it('still refuses cuts that are out of order when no length is known', async () => {
+    const res = await render({
+      coverKey: A,
+      covers: [{ coverKey: A, startSec: 0 }, { coverKey: B, startSec: 240 }, { coverKey: C, startSec: 130 }],
+    });
+    expect(res.status).toBe(409);
     expect(lambdaSend).not.toHaveBeenCalled();
   });
 

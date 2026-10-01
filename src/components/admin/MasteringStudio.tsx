@@ -35,6 +35,7 @@ import { buildMasterReport, reportFilename, sourceInfoLine, dynamicsPreserved, s
 import { MasteringComparePlayer } from '@/components/admin/MasteringComparePlayer';
 import { MasteringPlayer } from '@/components/admin/MasteringPlayer';
 import { ShortWindowFields } from '@/components/admin/ShortWindowFields';
+import { SlideshowFields, slidesToCovers, type Slide } from '@/components/admin/SlideshowFields';
 import { ReleasePipelineRow } from '@/components/admin/ReleasePipelineRow';
 import type { PartComparison } from '@/lib/part-analysis';
 import { SHORT_PICK_MIN_SECONDS, SHORT_PICK_MAX_SECONDS } from '@/lib/master-short';
@@ -466,6 +467,15 @@ export function MasteringStudio() {
    * same defect the MP3 row button already fixed for the web file.
    */
   const [rowRender, setRowRender] = useState<{ id: string; cover: { key: string; name: string } | null } | null>(null);
+  /**
+   * The extra images of a row's slideshow — image 2 onward; the cover is image 1.
+   *
+   * ⚠️ KEYED BY THE MASTER'S ID, for the reason `shortWindow` is: a bare list
+   * shared by every row would send one song's images with another song's
+   * render. Only ever read through `slidesFor`.
+   */
+  const [rowSlides, setRowSlides] = useState<{ id: string; slides: Slide[] } | null>(null);
+  const slidesFor = (id: string): Slide[] => (rowSlides?.id === id ? rowSlides.slides : []);
   /**
    * Bumped whenever a saved recipe is loaded. Used as a `key` on the edit
    * panels so they remount and re-seed: they hold their own state, so without a
@@ -1207,12 +1217,29 @@ export function MasteringStudio() {
       coverKey: string,
       height: number,
       priorVideoRenderedAt: string | null,
-      priorVideoError: string | null
+      priorVideoError: string | null,
+      /**
+       * A slideshow's cut list, cover first. Omitted for a single image — and
+       * then the body is EXACTLY what it has always been, because that is the
+       * render every release depends on.
+       */
+      slideshow?: { covers: Array<{ coverKey: string; startSec: number }>; durationSec: number | null }
     ): Promise<MasterJob | null> => {
       const res = await adminFetch(`/api/admin/music-lab/master/${targetId}/render`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ coverKey, height }),
+        body: JSON.stringify({
+          coverKey,
+          height,
+          ...(slideshow
+            ? {
+                covers: slideshow.covers,
+                // Only when known. The route falls back to the job's own
+                // length, and the worker probes the file regardless.
+                ...(slideshow.durationSec !== null ? { durationSec: slideshow.durationSec } : {}),
+              }
+            : {}),
+        }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.success) throw new Error(body.error || 'Could not start the render.');
@@ -1692,6 +1719,30 @@ export function MasteringStudio() {
     [failRow]
   );
 
+  /** An extra image for a row's slideshow. Same upload path as the cover. */
+  const onPickRowSlide = useCallback(
+    async (id: string, index: number, file: File) => {
+      setRowError(null);
+      setRowBusy(id);
+      const controller = new AbortController();
+      try {
+        const key = await uploadToWorkspace(file, () => {}, controller.signal, 'cover');
+        if (!mounted.current) return;
+        setRowSlides((prev) =>
+          prev?.id === id
+            ? { id, slides: prev.slides.map((s, j) => (j === index ? { ...s, key, name: file.name } : s)) }
+            : prev
+        );
+        setAnnounce(`Image ${index + 2} uploaded.`);
+      } catch (err) {
+        if (mounted.current && !isAbort(err)) failRow(id, err);
+      } finally {
+        if (mounted.current) setRowBusy(null);
+      }
+    },
+    [failRow]
+  );
+
   /**
    * Render from the library. On success the row is patched in place rather than
    * the whole list reloaded — the only thing that changed is this master's
@@ -1706,12 +1757,17 @@ export function MasteringStudio() {
       // Same discriminator as the inline panel: capture this row's CURRENT
       // videoRenderedAt/videoError from the loaded library before the POST.
       const row = library?.find((x) => x.id === id);
+      // Extra images make it a slideshow. The button is disabled while any of
+      // them is unfinished, so a null here means there are none.
+      const slides = rowSlides?.id === id ? rowSlides.slides : [];
+      const covers = slides.length > 0 ? slidesToCovers(rowCover.key, slides) : null;
       const fresh = await startRender(
         id,
         rowCover.key,
         videoHeight,
         row?.videoRenderedAt ?? null,
-        row?.videoError ?? null
+        row?.videoError ?? null,
+        covers ? { covers, durationSec: row?.editedDurationSec ?? null } : undefined
       );
       if (!fresh) return;
       setLibrary((prev) =>
@@ -1729,7 +1785,7 @@ export function MasteringStudio() {
     } finally {
       if (mounted.current) setRowBusy(null);
     }
-  }, [rowRender, videoHeight, library, startRender, failRow]);
+  }, [rowRender, rowSlides, videoHeight, library, startRender, failRow]);
 
   /**
    * Cut a short from the library, for the same reason renderRowVideo exists:
@@ -3757,11 +3813,20 @@ export function MasteringStudio() {
                           their output. */}
                       <button
                         type="button"
-                        disabled={!rowRender.cover || rowBusy === m.id}
+                        disabled={
+                          !rowRender.cover ||
+                          rowBusy === m.id ||
+                          // An added image with no file or no readable time is
+                          // unfinished — rendering would silently drop it.
+                          (slidesFor(m.id).length > 0 &&
+                            slidesToCovers(rowRender.cover.key, slidesFor(m.id)) === null)
+                        }
                         onClick={() => void renderRowVideo()}
                         className="rounded bg-orange-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
                       >
-                        Render video ({videoHeight}p)
+                        {slidesFor(m.id).length > 0
+                          ? `Render slideshow (${slidesFor(m.id).length + 1} images)`
+                          : `Render video (${videoHeight}p)`}
                       </button>
                       {/* The same cover feeds both. A short is not a step on the
                           way to the video and does not need one to exist. */}
@@ -3794,6 +3859,15 @@ export function MasteringStudio() {
                           the only way to set a window used to be the player's
                           "Use for the short" button, and a timestamp read off a
                           lyric sheet could not be typed at all. */}
+                      {/* MORE IMAGES = A SLIDESHOW. Belongs to "Render video" only —
+                          the short and the whole-song vertical use the cover alone. */}
+                      <SlideshowFields
+                        slides={slidesFor(m.id)}
+                        onChange={(slides) => setRowSlides({ id: m.id, slides })}
+                        onPickImage={(i, f) => void onPickRowSlide(m.id, i, f)}
+                        disabled={rowBusy === m.id || !rowRender.cover}
+                        idPrefix={`${inputId}-rowslide-${m.id}`}
+                      />
                       <ShortWindowFields
                         compact
                         value={windowFor(m.id)}

@@ -83,19 +83,6 @@ function rowFor(title: string): HTMLElement {
   throw new Error(`no row <li> found for ${title}`);
 }
 
-/**
- * The <li> the alert actually lives in. Used where the row cannot be found by
- * its title — while renaming, the title is replaced by an input, so it is no
- * longer text on the page. This asserts the same property from the other end:
- * the alert sits inside a ROW rather than up in the page header.
- */
-function rowHoldingTheAlert(): HTMLElement {
-  const alert = screen.getByRole('alert');
-  const li = alert.closest('li');
-  if (!li) throw new Error('the alert is not inside a row — it rendered at page level');
-  return li as HTMLElement;
-}
-
 /** Open a row's "Video or short" panel, which holds the render/short buttons. */
 function openRenderPanel(title: string) {
   fireEvent.click(screen.getByRole('button', { name: new RegExp(`Video or short for ${title}`) }));
