@@ -679,6 +679,56 @@ describe('short render', () => {
     }
   });
 
+  /**
+   * The whole song, vertical. It shipped writing to the CLIP's key and the
+   * clip's fields, so making one silently destroyed the other — and nothing on
+   * the job said which of the two the file now was.
+   */
+  describe('the whole-song vertical', () => {
+    const HEADER = `Input #0, wav, from '/tmp/master.wav':
+  Duration: 00:03:41.50, bitrate: 2304 kb/s
+  Stream #0:0: Audio: pcm_s24le ([1][0][0][0] / 0x0001), 48000 Hz, stereo, s32 (24 bit), 2304 kb/s
+`;
+    beforeEach(() => {
+      spawnSync.mockImplementation((_cmd: unknown, args: string[]) =>
+        args.length === 3 && args[0] === '-hide_banner' && args[1] === '-i'
+          ? { status: 0, stdout: '', stderr: HEADER }
+          : { status: 0, stdout: '', stderr: '' }
+      );
+    });
+
+    it('is stored under its own key and its own fields, leaving the clip alone', async () => {
+      const res = await handler({ jobId: 'j1', short: short({ full: true }) } as never);
+
+      expect(res).toMatchObject({ ok: true });
+      const put = s3Send.mock.calls
+        .map((c) => c[0] as { input: Record<string, unknown> })
+        .find((c) => 'Body' in c.input);
+      expect(put?.input).toMatchObject({
+        Key: 'audio/mastering/1_a_song-master-14LUFS-vertical-1920.mp4',
+        ContentType: 'video/mp4',
+      });
+      const p = patched();
+      expect(p).toMatchObject({
+        verticalKey: 'audio/mastering/1_a_song-master-14LUFS-vertical-1920.mp4',
+        verticalError: null,
+      });
+      expect(typeof p.verticalRenderedAt).toBe('string');
+      for (const field of ['shortKey', 'shortRenderedAt', 'shortStartSec', 'shortSeconds', 'shortPicked', 'shortError']) {
+        expect(p).not.toHaveProperty(field);
+      }
+    });
+
+    it('reports a refusal on the vertical, not on the clip', async () => {
+      spawnSync.mockImplementation(() => ({ status: 0, stdout: '', stderr: '' })); // no Duration: line
+      const res = await handler({ jobId: 'j1', short: short({ full: true }) } as never);
+
+      expect(res).toMatchObject({ ok: false });
+      expect(typeof patched().verticalError).toBe('string');
+      expect(patched()).not.toHaveProperty('shortError');
+    });
+  });
+
   it('stores the MP4 beside the master under its own key', async () => {
     await handler({ jobId: 'j1', short: short() } as never);
 

@@ -86,6 +86,7 @@ import {
   buildFullVerticalArgs,
   planFullVertical,
   shortKeyFor,
+  fullVerticalKeyFor,
   SHORT_SECONDS,
   SHORT_MIN_START_SEC,
   SHORT_FLOOR_SECONDS,
@@ -663,15 +664,18 @@ function readPickedWindow(spec: NonNullable<MasterEvent['short']>): { startSec: 
 async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']>, bucket: string) {
   const audioKey = spec.audioKey ?? '';
   const coverKey = spec.coverKey ?? '';
+  // The whole-song vertical reports into its OWN field. A refusal written to
+  // `shortError` would surface on the clip, which was never asked for.
+  const errorField = spec.full ? 'verticalError' : 'shortError';
 
   // Re-validated here, not trusted from the event: this role can read and write
   // the whole bucket, and the route is not the only thing that can invoke it.
   if (!isMasteringKey(audioKey) || !isMasterKey(audioKey)) {
-    await patch(jobId, { shortError: 'short source must be a mastered WAV in the mastering workspace' });
+    await patch(jobId, { [errorField]: 'short source must be a mastered WAV in the mastering workspace' });
     return { ok: false };
   }
   if (!isMasteringKey(coverKey)) {
-    await patch(jobId, { shortError: 'cover must be in the mastering workspace' });
+    await patch(jobId, { [errorField]: 'cover must be in the mastering workspace' });
     return { ok: false };
   }
 
@@ -708,7 +712,7 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
       const info = parseSourceInfo(`${header.stdout ?? ''}${header.stderr ?? ''}`);
       const plan = planFullVertical(info?.durationSec ?? null);
       if (!plan.ok) {
-        await patch(jobId, { shortError: plan.message });
+        await patch(jobId, { [errorField]: plan.message });
         return { ok: false };
       }
       fullSeconds = plan.seconds;
@@ -717,7 +721,7 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
     } else if (spec.startSec !== undefined || spec.seconds !== undefined) {
       const picked = readPickedWindow(spec);
       if (!picked) {
-        await patch(jobId, { shortError: shortRefusalMessage('bad-window') });
+        await patch(jobId, { [errorField]: shortRefusalMessage('bad-window') });
         return { ok: false };
       }
       const header = ff(['-hide_banner', '-i', audioPath]);
@@ -726,7 +730,7 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
       // Null means the header would not say. Trust the pick rather than refuse
       // on missing data — the operator heard these seconds play.
       if (total !== null && picked.startSec + picked.seconds > total) {
-        await patch(jobId, { shortError: shortRefusalMessage('window-past-end') });
+        await patch(jobId, { [errorField]: shortRefusalMessage('window-past-end') });
         return { ok: false };
       }
       ({ startSec, seconds } = picked);
@@ -742,7 +746,7 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
         leadInSec: SHORT_LEAD_IN_SEC,
       });
       if (!hook) {
-        await patch(jobId, { shortError: 'could not measure the track to find its hook' });
+        await patch(jobId, { [errorField]: 'could not measure the track to find its hook' });
         return { ok: false };
       }
       startSec = Math.max(0, hook.start);
@@ -755,7 +759,7 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
       const measuredEnd = samples[samples.length - 1]?.t ?? 0;
       seconds = Math.min(SHORT_SECONDS, Math.floor(measuredEnd - startSec));
       if (seconds < SHORT_FLOOR_SECONDS) {
-        await patch(jobId, { shortError: shortRefusalMessage('too-short') });
+        await patch(jobId, { [errorField]: shortRefusalMessage('too-short') });
         return { ok: false };
       }
     }
@@ -766,7 +770,7 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
     const coverAspect = probeCoverAspect(coverPath);
     const composed = ff(buildShortComposeArgs({ coverPath, framePath, coverAspect }));
     if (composed.status !== 0) {
-      await patch(jobId, { shortError: 'the cover could not be composed into a vertical frame' });
+      await patch(jobId, { [errorField]: 'the cover could not be composed into a vertical frame' });
       return { ok: false };
     }
 
@@ -776,7 +780,7 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
         : buildShortArgs({ framePath, audioPath, startSec, outPath, seconds })
     );
     if (r.status !== 0) {
-      await patch(jobId, { shortError: 'the short render failed' });
+      await patch(jobId, { [errorField]: 'the short render failed' });
       return { ok: false };
     }
 
@@ -793,7 +797,24 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
      * The clip is kept for the same reason a failed video render is: a verdict
      * the operator cannot look at is not worth having.
      */
-    checkRenderedClip(audioPath, outPath, seconds);
+    // The whole song is checked against its PROBED length, not the rounded
+    // one — rounding 221.5 to 222 is a 0.5 s "fault" that is not in the file.
+    checkRenderedClip(audioPath, outPath, fullSeconds ?? seconds);
+
+    if (fullSeconds !== null) {
+      const verticalKey = fullVerticalKeyFor(audioKey);
+      await s3.send(new PutObjectCommand({
+        Bucket: bucket, Key: verticalKey, Body: readFileSync(outPath), ContentType: 'video/mp4',
+      }));
+      await patch(jobId, {
+        verticalKey,
+        verticalRenderedAt: new Date().toISOString(),
+        verticalSeconds: Number(fullSeconds.toFixed(2)),
+        verticalError: null,
+        coverKey,
+      });
+      return { ok: true, verticalKey };
+    }
 
     const shortKey = shortKeyFor(audioKey);
     await s3.send(new PutObjectCommand({
@@ -812,7 +833,7 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[master-worker] short render failed:', message);
-    await patch(jobId, { shortError: message }).catch(() => {});
+    await patch(jobId, { [errorField]: message }).catch(() => {});
     return { ok: false };
   } finally {
     rmSync(dir, { recursive: true, force: true });

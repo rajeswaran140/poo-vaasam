@@ -1318,6 +1318,54 @@ export function MasteringStudio() {
     [windowFor]
   );
 
+  /**
+   * POST the WHOLE song as a vertical video and poll until it lands.
+   *
+   * ⚠️ THIS IS THE CALL THAT WAS MISSING. PR #367 built the whole-song vertical
+   * in the route and the worker, and nothing in this file ever sent
+   * `full: true` — so it could not be started from the portal at all.
+   *
+   * Same completion rule as `startShort`, on the vertical's OWN fields: it is
+   * stored beside the clip, not in its place, so the clip's `shortRenderedAt`
+   * says nothing about it. No window is sent — the whole song has none.
+   *
+   * The deadline is the video's, not the clip's: this encodes the full length.
+   */
+  const startVertical = useCallback(
+    async (
+      targetId: string,
+      coverKey: string,
+      priorVerticalRenderedAt: string | null,
+      priorVerticalError: string | null
+    ): Promise<MasterJob | null> => {
+      const res = await adminFetch(`/api/admin/music-lab/master/${targetId}/short`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ coverKey, full: true }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.success) throw new Error(body.error || 'Could not start the vertical render.');
+      setAnnounce('Rendering the whole song, vertical.');
+
+      const deadline = Date.now() + 10 * 60 * 1000;
+      for (let attempt = 0; ; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 4000));
+        if (!mounted.current) return null;
+        const s = await adminFetch(`/api/admin/music-lab/master/${targetId}`);
+        const fresh = (await s.json()) as MasterJob;
+        if (fresh.verticalRenderedAt && fresh.verticalRenderedAt !== priorVerticalRenderedAt) {
+          setAnnounce('Vertical video ready.');
+          return fresh;
+        }
+        if (fresh.verticalError && fresh.verticalError !== priorVerticalError) throw new Error(fresh.verticalError);
+        if (Date.now() > deadline) {
+          throw new Error('The vertical render is taking longer than expected — reload to check on it.');
+        }
+      }
+    },
+    []
+  );
+
   const makeShort = useCallback(async () => {
     if (!jobId || !cover) return;
     setShorting(true);
@@ -1722,6 +1770,43 @@ export function MasteringStudio() {
       if (mounted.current) setRowBusy(null);
     }
   }, [rowRender, library, startShort, failRow]);
+
+  /**
+   * Render the whole song vertically from the library — beside "Make vertical
+   * short", because the library is where saved masters are actually worked from.
+   * The clip's fields are left alone: the two files sit side by side.
+   */
+  const makeRowVertical = useCallback(async () => {
+    if (!rowRender?.cover) return;
+    const { id, cover: rowCover } = rowRender;
+    setRowBusy(id);
+    setRowError(null);
+    try {
+      const row = library?.find((x) => x.id === id);
+      const fresh = await startVertical(id, rowCover.key, row?.verticalRenderedAt ?? null, row?.verticalError ?? null);
+      if (!fresh) return;
+      setLibrary((prev) =>
+        prev
+          ? prev.map((x) =>
+              x.id === id
+                ? {
+                    ...x,
+                    verticalKey: fresh.verticalKey,
+                    verticalRenderedAt: fresh.verticalRenderedAt,
+                    verticalSeconds: fresh.verticalSeconds,
+                    verticalError: fresh.verticalError,
+                  }
+                : x
+            )
+          : prev
+      );
+      setRowRender(null);
+    } catch (err) {
+      if (mounted.current) failRow(id, err);
+    } finally {
+      if (mounted.current) setRowBusy(null);
+    }
+  }, [rowRender, library, startVertical, failRow]);
 
   /**
    * Deliberately NOT loaded on mount: listing scans the table, and most visits
@@ -3531,6 +3616,15 @@ export function MasteringStudio() {
                         Short
                       </button>
                     )}
+                    {m.verticalKey && (
+                      <button
+                        type="button"
+                        onClick={() => void downloadKey(m.verticalKey!, m.title ?? '', m.target, 'Vertical')}
+                        className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+                      >
+                        Vertical
+                      </button>
+                    )}
                     <span className="ml-auto flex flex-wrap items-center gap-x-3">
                       {/* And a way to MAKE one. The inline panel is gated on savedAt,
                           which only this session's Save sets, so without this a master
@@ -3678,6 +3772,18 @@ export function MasteringStudio() {
                         className="rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
                       >
                         {m.shortKey ? 'Re-cut vertical short' : 'Make vertical short'}
+                      </button>
+                      {/* The WHOLE song at 1080x1920 — for a Facebook video or an
+                          Instagram feed post. Its own button and its own file: it
+                          sits beside the clip and never replaces it. The window
+                          fields below do not apply to it. */}
+                      <button
+                        type="button"
+                        disabled={!rowRender.cover || rowBusy === m.id}
+                        onClick={() => void makeRowVertical()}
+                        className="rounded border border-indigo-600 px-2 py-1 text-xs font-medium text-indigo-700 disabled:opacity-50 dark:border-indigo-400 dark:text-indigo-300"
+                      >
+                        {m.verticalKey ? 'Re-render whole song, vertical' : 'Whole song, vertical'}
                       </button>
                       {rowBusy === m.id && (
                         <span className="text-xs text-gray-500 dark:text-gray-400">Working…</span>

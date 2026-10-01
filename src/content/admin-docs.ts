@@ -3632,7 +3632,7 @@ A control to compare against: முத்தமிழின் (\`J2tc_aUNOPA\`
     slug: 'song-video-render',
     title: 'Rendering a song video for YouTube',
     category: 'Publishing',
-    updatedAt: '2026-09-17T00:45:00Z',
+    updatedAt: '2026-10-01T16:00:00Z',
     body: `# Rendering a song video for YouTube
 
 A Tamilagaval song video is one still image held over a mastered audio track. That sounds trivial and is not: four separate renders of காதல் வந்து அரும்பியதே were rejected before one was accepted, and every flag below is the scar of one of them. Read the reasons before you change the recipe.
@@ -3748,6 +3748,17 @@ Beside **Render video** on a saved master. It cuts a **1080×1920, 30-second** c
 **Why the picker exists.** The machine can only find *energy*. Picking by lyric is a judgement about meaning, and no measurement substitutes for hearing the line. The waveform + loop is how you find it by ear; the fields are how you state it.
 
 It is there because the channel posts **2-3 songs a week to YouTube** by design, and the surplus goes to Tamilagaval, Facebook Reels and Instagram rather than to a fourth upload.
+
+## The whole song, vertical
+
+In the same row panel, beside **Make vertical short**: **Whole song, vertical**. It renders the **entire song at 1080×1920** — for a Facebook video or an Instagram feed post, where vertical is welcome and the three-minute Reels limit does not apply.
+
+- **It sits beside the clip, not in its place.** The row shows two links, **Short** and **Vertical**, and each is its own file. An earlier build stored both in one slot, so making one silently replaced the other.
+- **The window fields do not apply.** There is nothing to choose: it is the whole song. The same cover and the same vertical-fill rule as the clip are used.
+- **It takes as long as the main video**, not the minute a clip takes. The row says *Working…* until it lands; a refusal appears in the row.
+- **Up to 10 minutes of audio.** That limit protects the worker, it is not a view about song length.
+- ⚠️ **It fades in over 0.6 s and out over 3 s, like the clip, and its audio is 192k AAC** where the main video is 384k. That is how it was built. If a full song should start and end exactly as the master does, say so and it will be changed.
+- **Needs the worker deployed after 2026-10-01.** Before that the button renders, but the file lands in the clip's slot.
 
 ## Posting the short — what the portal does NOT do
 

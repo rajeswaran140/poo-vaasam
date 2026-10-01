@@ -129,6 +129,10 @@ export class MasterJobRepository {
         normalizationMode: input.normalizationMode ?? null,
         peakGainDb: null,
         shortError: null,
+        verticalKey: null,
+        verticalRenderedAt: null,
+        verticalSeconds: null,
+        verticalError: null,
         coverKey: null,
         error: null,
         referenceId: input.referenceId ?? null,
@@ -251,6 +255,10 @@ export class MasterJobRepository {
       peakGainDb: typeof item.peakGainDb === 'number' && Number.isFinite(item.peakGainDb)
         ? item.peakGainDb : null,
       shortError: typeof item.shortError === 'string' ? item.shortError : null,
+      verticalKey: typeof item.verticalKey === 'string' ? item.verticalKey : null,
+      verticalRenderedAt: typeof item.verticalRenderedAt === 'string' ? item.verticalRenderedAt : null,
+      verticalSeconds: typeof item.verticalSeconds === 'number' ? item.verticalSeconds : null,
+      verticalError: typeof item.verticalError === 'string' ? item.verticalError : null,
       coverKey: typeof item.coverKey === 'string' ? item.coverKey : null,
       error: item.error ?? null,
       // Reference-matching fields (Phase 1B). All degrade to null for pre-feature rows.
