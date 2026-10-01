@@ -3632,7 +3632,7 @@ A control to compare against: முத்தமிழின் (\`J2tc_aUNOPA\`
     slug: 'song-video-render',
     title: 'Rendering a song video for YouTube',
     category: 'Publishing',
-    updatedAt: '2026-10-01T16:00:00Z',
+    updatedAt: '2026-10-01T17:00:00Z',
     body: `# Rendering a song video for YouTube
 
 A Tamilagaval song video is one still image held over a mastered audio track. That sounds trivial and is not: four separate renders of காதல் வந்து அரும்பியதே were rejected before one was accepted, and every flag below is the scar of one of them. Read the reasons before you change the recipe.
@@ -3748,6 +3748,18 @@ Beside **Render video** on a saved master. It cuts a **1080×1920, 30-second** c
 **Why the picker exists.** The machine can only find *energy*. Picking by lyric is a judgement about meaning, and no measurement substitutes for hearing the line. The waveform + loop is how you find it by ear; the fields are how you state it.
 
 It is there because the channel posts **2-3 songs a week to YouTube** by design, and the surplus goes to Tamilagaval, Facebook Reels and Instagram rather than to a fourth upload.
+
+## A slideshow — several images in one video
+
+In the same row panel, under the buttons: **Add image**. Each image you add gets a file and a **starts at** time, and **Render video** becomes **Render slideshow (N images)**.
+
+- **The cover is image 1 and always starts at 0:00.** It is also what YouTube takes as the thumbnail. You only add image 2 onward.
+- **Times are \`1:30\` or plain seconds, in order.** Each image stays on screen until the next one starts; the last runs to the end of the song. Every image needs at least 2 seconds, and there can be up to 8.
+- **Hard cuts, no fades between images.** That is what keeps the render as fast as a single-cover one.
+- **The button stays disabled while an added image is unfinished** — no file yet, or a time it cannot read (the field turns red). Remove the image with the × to go back to a plain render.
+- **A refusal appears in the row** — for example an image that starts after the song ends.
+- **The song is never shortened.** An earlier build could trim up to a quarter of a second off the end when cut times were not on a tenth of a second; fixed 2026-10-01.
+- It is for **Render video** only. The short and the whole-song vertical use the cover alone.
 
 ## The whole song, vertical
 
