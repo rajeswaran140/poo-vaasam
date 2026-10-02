@@ -71,6 +71,14 @@ import {
   buildSegmentArgs,
   buildConcatList,
   buildJoinArgs,
+  buildFadeArgs,
+  buildFirstFrameArgs,
+  buildLastFrameArgs,
+  planCrossfades,
+  isSlideTransition,
+  VIDEO_SEGMENT_CODEC_ARGS,
+  VIDEO_FPS,
+  type PlannedSegment,
   FRAME_EXTENSION,
   planSegments,
   slideshowRefusalMessage,
@@ -94,6 +102,8 @@ import {
   isShortMotion,
   MOTION_SOURCE_SCALE,
   MOTION_LEG_SECONDS,
+  SHORT_STILL_CODEC_ARGS,
+  SHORT_MOTION_CODEC_ARGS,
   SHORT_FPS,
   SHORT_SECONDS,
   SHORT_MIN_START_SEC,
@@ -223,6 +233,8 @@ interface MasterEvent {
      * runs to the end, which the worker computes from the WAV it downloaded.
      */
     covers?: Array<{ coverKey?: string; startSec?: number }>;
+    /** `crossfade` blends a second around each cut. Absent or `cut` ⇒ hard cuts. */
+    transition?: unknown;
   };
   /**
    * A pre-master ANALYSIS — measure a source before anything is decided about
@@ -269,6 +281,8 @@ interface MasterEvent {
      * and validated here: the Lambda is Event-invoked. See SHORT_MOTIONS.
      */
     motion?: unknown;
+    /** `crossfade` blends a second around each cut. Absent or `cut` ⇒ hard cuts. */
+    transition?: unknown;
   };
   /**
    * Render ~20s around a two-part crossfade so it can be judged without
@@ -656,6 +670,64 @@ function integratedLufs(log: string): number | null {
  * thing that can invoke this Lambda. `planShort` applies the identical rule on
  * the way in; this is the copy that actually guards the ffmpeg call.
  */
+/**
+ * Encode a CROSSFADED slideshow's pieces — holds, with a one-second blend
+ * between each pair — and return them in the order they are joined.
+ *
+ * Shared by the 16:9 render and both vertical ones; what differs is passed in.
+ * The holds are encoded FIRST, all of them, because a fade between moving
+ * images has to read the frames its neighbours actually end and begin on, and
+ * those exist only once the neighbours are encoded.
+ *
+ * ⚠️ `fadeCodec` MUST be the holds' own encoder settings. The pieces are joined
+ * by stream copy; a fade with different parameter sets breaks at the seam.
+ */
+function encodeCrossfadedPieces(opts: {
+  dir: string;
+  segments: readonly PlannedSegment[];
+  fps: number;
+  /** The composed frame for segment i — what a STILL fade blends between. */
+  frameFor: (i: number) => string;
+  /** Encode segment i's hold at this length. Returns the spawn result. */
+  encodeHold: (i: number, seconds: number, outPath: string) => { status: number | null };
+  fadeCodec: readonly string[];
+  /** True ⇒ the holds move, so fades read their real first/last frames. */
+  moving: boolean;
+}): { ok: true; paths: string[] } | { ok: false; message: string } {
+  const pieces = planCrossfades(opts.segments, opts.fps);
+  const holdPath = (i: number) => join(opts.dir, `hold${i}.mp4`);
+  for (const p of pieces) {
+    if (p.kind !== 'hold') continue;
+    const enc = opts.encodeHold(p.index, p.frames / opts.fps, holdPath(p.index));
+    if (enc.status !== 0) return { ok: false, message: `the render failed encoding image ${p.index + 1}` };
+  }
+  const paths: string[] = [];
+  for (const p of pieces) {
+    if (p.kind === 'hold') {
+      paths.push(holdPath(p.index));
+      continue;
+    }
+    let fromPath = opts.frameFor(p.from);
+    let toPath = opts.frameFor(p.to);
+    if (opts.moving) {
+      fromPath = join(opts.dir, `last${p.from}${FRAME_EXTENSION}`);
+      toPath = join(opts.dir, `first${p.to}${FRAME_EXTENSION}`);
+      const last = ff(buildLastFrameArgs(holdPath(p.from), fromPath));
+      const first = ff(buildFirstFrameArgs(holdPath(p.to), toPath));
+      if (last.status !== 0 || first.status !== 0) {
+        return { ok: false, message: `the crossfade into image ${p.to + 1} could not read its frames` };
+      }
+    }
+    const fadePath = join(opts.dir, `fade${p.from}.mp4`);
+    const fade = ff(buildFadeArgs({
+      fromPath, toPath, frames: p.frames, fps: opts.fps, outPath: fadePath, codecArgs: opts.fadeCodec,
+    }));
+    if (fade.status !== 0) return { ok: false, message: `the crossfade into image ${p.to + 1} failed` };
+    paths.push(fadePath);
+  }
+  return { ok: true, paths };
+}
+
 function readPickedWindow(spec: NonNullable<MasterEvent['short']>): { startSec: number; seconds: number } | null {
   const { startSec, seconds } = spec;
   if (typeof startSec !== 'number' || typeof seconds !== 'number') return null;
@@ -703,6 +775,12 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
     await patch(jobId, { [errorField]: 'that motion is not one this renderer knows' });
     return { ok: false };
   }
+  if (spec.transition !== undefined && !isSlideTransition(spec.transition)) {
+    await patch(jobId, { [errorField]: 'that transition is not one this renderer knows' });
+    return { ok: false };
+  }
+  const crossfade = spec.transition === 'crossfade';
+
   // A move filters every frame. The clip is short enough that it always fits;
   // the WHOLE SONG is bounded by planFullVertical below, which allows less of
   // it when it moves.
@@ -870,8 +948,9 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
         await patch(jobId, { [errorField]: slideshowRefusalMessage(timed.reason) });
         return { ok: false };
       }
-      const segmentPaths: string[] = [];
+      // Compose every image's frame first — once each, even if it returns.
       const frames = new Map<string, string>();
+      const framePaths: string[] = [];
       for (const [i, seg] of timed.segments.entries()) {
         let frame = frames.get(seg.coverKey);
         if (!frame) {
@@ -888,22 +967,43 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
           }
           frames.set(seg.coverKey, frame);
         }
-        const segPath = join(dir, `seg${i}.mp4`);
-        const enc = ff(
+        framePaths.push(frame);
+      }
+      const encodeStretch = (i: number, secs: number, outPath: string) =>
+        ff(
           motion !== 'none'
             ? buildMotionSegmentArgs({
-                framePath: frame, seconds: seg.seconds, outPath: segPath, motion,
+                framePath: framePaths[i], seconds: secs, outPath, motion,
                 // The whole song goes out and back in legs, so the move stays
                 // visible; a clip keeps its single pass.
                 ...(fullSeconds !== null ? { legSeconds: MOTION_LEG_SECONDS } : {}),
               })
-            : buildShortSegmentArgs({ framePath: frame, seconds: seg.seconds, outPath: segPath })
+            : buildShortSegmentArgs({ framePath: framePaths[i], seconds: secs, outPath })
         );
-        if (enc.status !== 0) {
-          await patch(jobId, { [errorField]: `the render failed encoding image ${i + 1}` });
+
+      let segmentPaths: string[] = [];
+      if (crossfade && timed.segments.length > 1) {
+        const faded = encodeCrossfadedPieces({
+          dir, segments: timed.segments, fps: SHORT_FPS,
+          frameFor: (i) => framePaths[i],
+          encodeHold: encodeStretch,
+          fadeCodec: motion !== 'none' ? SHORT_MOTION_CODEC_ARGS : SHORT_STILL_CODEC_ARGS,
+          moving: motion !== 'none',
+        });
+        if (!faded.ok) {
+          await patch(jobId, { [errorField]: faded.message });
           return { ok: false };
         }
-        segmentPaths.push(segPath);
+        segmentPaths = faded.paths;
+      } else {
+        for (const [i, seg] of timed.segments.entries()) {
+          const segPath = join(dir, `seg${i}.mp4`);
+          if (encodeStretch(i, seg.seconds, segPath).status !== 0) {
+            await patch(jobId, { [errorField]: `the render failed encoding image ${i + 1}` });
+            return { ok: false };
+          }
+          segmentPaths.push(segPath);
+        }
       }
       const listPath = join(dir, 'segments.txt');
       writeFileSync(listPath, buildConcatList(segmentPaths));
@@ -1116,6 +1216,11 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
       return { ok: false };
     }
   }
+  if (spec.transition !== undefined && !isSlideTransition(spec.transition)) {
+    await patch(jobId, { videoError: 'that transition is not one this renderer knows' });
+    return { ok: false };
+  }
+  const crossfade = spec.transition === 'crossfade';
   if (!VIDEO_HEIGHTS.includes(height)) {
     await patch(jobId, { videoError: `height must be one of ${VIDEO_HEIGHTS.join(', ')}` });
     return { ok: false };
@@ -1194,10 +1299,10 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
         return { ok: false };
       }
 
-      const segmentPaths: string[] = [];
       // A cover may legitimately appear twice (an image that returns), so the
       // download and the compose are keyed, not indexed.
       const frames = new Map<string, string>();
+      const framePaths: string[] = [];
       for (const [i, seg] of timed.segments.entries()) {
         let framePath = frames.get(seg.coverKey);
         if (!framePath) {
@@ -1213,13 +1318,35 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
           }
           frames.set(seg.coverKey, framePath);
         }
-        const segPath = join(dir, `seg${i}.mp4`);
-        const enc = ff(buildSegmentArgs({ framePath, seconds: seg.seconds, outPath: segPath }));
-        if (enc.status !== 0) {
-          await patch(jobId, { videoError: `the render failed encoding image ${i + 1}` });
+        framePaths.push(framePath);
+      }
+
+      let segmentPaths: string[] = [];
+      if (crossfade && timed.segments.length > 1) {
+        // A one-second blend around each cut, as its own piece; the stills
+        // either side stay stills. See planCrossfades.
+        const faded = encodeCrossfadedPieces({
+          dir, segments: timed.segments, fps: VIDEO_FPS,
+          frameFor: (i) => framePaths[i],
+          encodeHold: (i, secs, outPath) => ff(buildSegmentArgs({ framePath: framePaths[i], seconds: secs, outPath })),
+          fadeCodec: VIDEO_SEGMENT_CODEC_ARGS,
+          moving: false,
+        });
+        if (!faded.ok) {
+          await patch(jobId, { videoError: faded.message });
           return { ok: false };
         }
-        segmentPaths.push(segPath);
+        segmentPaths = faded.paths;
+      } else {
+        for (const [i, seg] of timed.segments.entries()) {
+          const segPath = join(dir, `seg${i}.mp4`);
+          const enc = ff(buildSegmentArgs({ framePath: framePaths[i], seconds: seg.seconds, outPath: segPath }));
+          if (enc.status !== 0) {
+            await patch(jobId, { videoError: `the render failed encoding image ${i + 1}` });
+            return { ok: false };
+          }
+          segmentPaths.push(segPath);
+        }
       }
 
       // ONE pass: the concat demuxer is an input beside the audio, so there is

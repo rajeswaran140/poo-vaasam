@@ -498,6 +498,26 @@ export function buildFullVerticalArgs(params: {
  */
 
 /**
+ * How a STILL vertical stretch is encoded — and any fade between two of them.
+ *
+ * ⚠️ Shared on purpose: pieces are joined by stream copy and must carry
+ * identical parameter sets. See VIDEO_SEGMENT_CODEC_ARGS in master-video.ts.
+ */
+export const SHORT_STILL_CODEC_ARGS: readonly string[] = [
+  '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'stillimage',
+  '-crf', '20', '-pix_fmt', 'yuv420p', '-r', String(SHORT_FPS),
+];
+
+/**
+ * How a MOVING vertical stretch is encoded — and any fade between two of them.
+ * No `-tune stillimage`: that tuning assumes nothing moves.
+ */
+export const SHORT_MOTION_CODEC_ARGS: readonly string[] = [
+  '-c:v', 'libx264', '-preset', 'veryfast',
+  '-crf', '20', '-pix_fmt', 'yuv420p', '-r', String(SHORT_FPS),
+];
+
+/**
  * The images a window shows, re-timed to seconds into the CLIP.
  *
  * Never refuses. A cut that would leave an image on screen for under
@@ -553,8 +573,7 @@ export function buildShortSegmentArgs(params: {
     '-hide_banner', '-nostats',
     '-loop', '1', '-framerate', String(SHORT_FPS), '-t', String(params.seconds), '-i', params.framePath,
     '-map', '0:v',
-    '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'stillimage',
-    '-crf', '20', '-pix_fmt', 'yuv420p', '-r', String(SHORT_FPS),
+    ...SHORT_STILL_CODEC_ARGS,
     '-an',
     '-y', params.outPath,
   ];
@@ -709,8 +728,7 @@ export function buildMotionSegmentArgs(params: {
     '-i', params.framePath,
     '-vf', `zoompan=${expr}:d=${frames}:s=${SHORT_WIDTH}x${SHORT_HEIGHT}:fps=${SHORT_FPS}`,
     '-frames:v', String(frames),
-    '-c:v', 'libx264', '-preset', 'veryfast',
-    '-crf', '20', '-pix_fmt', 'yuv420p', '-r', String(SHORT_FPS),
+    ...SHORT_MOTION_CODEC_ARGS,
     '-an',
     '-y', params.outPath,
   ];

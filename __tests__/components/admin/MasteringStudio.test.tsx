@@ -1157,6 +1157,21 @@ describe('render for YouTube', () => {
       expect(screen.getByRole('button', { name: /Render slideshow \(2 images\)/ })).toBeEnabled();
     });
 
+    it('sends a chosen crossfade with the slideshow', async () => {
+      await masterAndSave();
+      await addCover();
+      await addSecondImage('1:30');
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText(/Between images/), { target: { value: 'crossfade' } });
+      });
+
+      mockedFetch.mockResolvedValueOnce(json({ success: true, status: 'queued' }));
+      mockedFetch.mockResolvedValue(json(savedDoneJob({ videoKey: 'v', videoRenderedAt: '2026-10-02T00:00:00.000Z' })));
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Render slideshow/ })); });
+
+      expect(JSON.parse(posted('/render')[0][1].body).transition).toBe('crossfade');
+    });
+
     it('will not render a slideshow while an added image is unfinished', async () => {
       await masterAndSave();
       await addCover();

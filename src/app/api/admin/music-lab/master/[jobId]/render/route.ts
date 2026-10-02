@@ -29,6 +29,7 @@ import {
   renderRefusalMessage,
   slideshowRefusalMessage,
   DEFAULT_VIDEO_HEIGHT,
+  SLIDE_TRANSITIONS,
 } from '@/lib/master-video';
 
 export const runtime = 'nodejs';
@@ -60,6 +61,8 @@ const bodySchema = z.object({
    * last image absorbs it.
    */
   durationSec: z.number().positive().optional(),
+  /** `crossfade` blends a second around each cut; absent or `cut` ⇒ hard cuts. */
+  transition: z.enum(SLIDE_TRANSITIONS).optional(),
 });
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ jobId: string }> }) {
@@ -146,6 +149,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
               // Omitted entirely for a single image, so the worker's old path
               // is reached by the old event shape.
               ...(covers ? { covers } : {}),
+              // Only with a slideshow, and only when it is not the default:
+              // the event keeps its original shape otherwise.
+              ...(covers && parsed.data.transition === 'crossfade' ? { transition: 'crossfade' } : {}),
             },
           })
         ),

@@ -683,3 +683,109 @@ describe('the composed frame is uncompressed, and RGB-ordered', () => {
     expect(FRAME_EXTENSION).not.toBe('.bmp');
   });
 });
+
+import {
+  SLIDE_TRANSITIONS,
+  isSlideTransition,
+  CROSSFADE_SECONDS,
+  planCrossfades,
+  buildFadeArgs,
+  buildFirstFrameArgs,
+  buildLastFrameArgs,
+  VIDEO_SEGMENT_CODEC_ARGS,
+} from '@/lib/master-video';
+
+/**
+ * A crossfade between slideshow images.
+ *
+ * The slideshow is fast because every stretch is one still, repeated. A
+ * crossfade is the one place frames differ — so ONLY the second around each
+ * cut is blended, as its own short piece, and the stills either side stay
+ * stills. Prototyped on the Lambda's ffmpeg 7.0.2 (2026-10-02): the blended
+ * piece joins by stream copy with no decode errors, frame counts exact, and
+ * costs 6-8 s per cut.
+ */
+describe('crossfading between images', () => {
+  const A = 'audio/mastering/a.jpg';
+  const B = 'audio/mastering/b.jpg';
+  const C = 'audio/mastering/c.jpg';
+  const SEGS = [
+    { coverKey: A, startSec: 0, seconds: 9.5 },
+    { coverKey: B, startSec: 9.5, seconds: 5 },
+    { coverKey: C, startSec: 14.5, seconds: 6 },
+  ];
+
+  it('offers a hard cut first — the default — and a crossfade', () => {
+    expect(SLIDE_TRANSITIONS).toEqual(['cut', 'crossfade']);
+    expect(isSlideTransition('crossfade')).toBe(true);
+    expect(isSlideTransition('wipe')).toBe(false);
+    expect(CROSSFADE_SECONDS).toBe(1);
+  });
+
+  it('puts one fade, centred on each cut, between shortened holds', () => {
+    // 10 fps: a 1 s fade is 10 frames, 5 taken from each side of the cut.
+    expect(planCrossfades(SEGS, 10)).toEqual([
+      { kind: 'hold', index: 0, frames: 90 },
+      { kind: 'fade', from: 0, to: 1, frames: 10 },
+      { kind: 'hold', index: 1, frames: 40 },
+      { kind: 'fade', from: 1, to: 2, frames: 10 },
+      { kind: 'hold', index: 2, frames: 55 },
+    ]);
+  });
+
+  it('never changes the total number of frames — the song\'s length is untouched', () => {
+    for (const fps of [10, 25]) {
+      const total = planCrossfades(SEGS, fps).reduce((t, p) => t + p.frames, 0);
+      expect(total).toBe(Math.round(20.5 * fps));
+    }
+  });
+
+  it('splits an odd fade without losing a frame', () => {
+    // 25 fps: 25 frames = 12 before the cut + 13 after.
+    const pieces = planCrossfades(SEGS.slice(0, 2), 25);
+    expect(pieces).toEqual([
+      { kind: 'hold', index: 0, frames: 238 - 12 + 0 }, // 9.5 s = 237.5 → 238 frames
+      { kind: 'fade', from: 0, to: 1, frames: 25 },
+      { kind: 'hold', index: 1, frames: 125 - 13 },
+    ]);
+  });
+
+  it('is just the one hold for a single image', () => {
+    expect(planCrossfades(SEGS.slice(0, 1), 10)).toEqual([{ kind: 'hold', index: 0, frames: 95 }]);
+  });
+
+  it('blends between two frames with no pure copy of either, in the neighbours\' codec', () => {
+    const a = buildFadeArgs({
+      fromPath: '/tmp/a.ppm', toPath: '/tmp/b.ppm', frames: 10, fps: 10, outPath: '/tmp/f.mp4',
+      codecArgs: VIDEO_SEGMENT_CODEC_ARGS,
+    });
+    const fc = a[a.indexOf('-filter_complex') + 1];
+    // Frame N of 10 is (N+1)/11 of the way: 1/11 … 10/11, never 0 or 1.
+    expect(fc).toContain("blend=all_expr='A*(1-(N+1)/11)+B*((N+1)/11)'");
+    expect(a[a.indexOf('-frames:v') + 1]).toBe('10');
+    expect(a).toContain('-an');
+    // ⚠️ The SAME encoder settings as the holds either side, or the pieces
+    // carry different parameter sets and the stream-copy join breaks.
+    for (const arg of VIDEO_SEGMENT_CODEC_ARGS) expect(a).toContain(arg);
+    expect(a).not.toContain('-shortest');
+  });
+
+  it('keeps the still segment on exactly the codec arguments it has always had', () => {
+    const seg = buildSegmentArgs({ framePath: '/tmp/f.ppm', seconds: 9, outPath: '/tmp/s.mp4' });
+    const at = seg.indexOf('-c:v');
+    expect(seg.slice(at, at + VIDEO_SEGMENT_CODEC_ARGS.length)).toEqual([...VIDEO_SEGMENT_CODEC_ARGS]);
+    expect(VIDEO_SEGMENT_CODEC_ARGS).toEqual([
+      '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'stillimage',
+      '-crf', '16', '-g', '100', '-keyint_min', '10', '-pix_fmt', 'yuv420p', '-r', '10',
+    ]);
+  });
+
+  it('can read the first and the last frame of a finished piece', () => {
+    expect(buildFirstFrameArgs('/tmp/s.mp4', '/tmp/first.ppm')).toEqual(
+      ['-hide_banner', '-nostats', '-i', '/tmp/s.mp4', '-frames:v', '1', '-update', '1', '-y', '/tmp/first.ppm']);
+    const last = buildLastFrameArgs('/tmp/s.mp4', '/tmp/last.ppm');
+    // Seek from the END, then keep overwriting: what is left is the last frame.
+    expect(last.slice(0, 6)).toEqual(['-hide_banner', '-nostats', '-sseof', '-1', '-i', '/tmp/s.mp4']);
+    expect(last).toEqual(expect.arrayContaining(['-update', '1', '-y', '/tmp/last.ppm']));
+  });
+});

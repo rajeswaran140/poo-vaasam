@@ -3632,7 +3632,7 @@ A control to compare against: முத்தமிழின் (\`J2tc_aUNOPA\`
     slug: 'song-video-render',
     title: 'Rendering a song video for YouTube',
     category: 'Publishing',
-    updatedAt: '2026-10-02T02:30:00Z',
+    updatedAt: '2026-10-02T15:30:00Z',
     body: `# Rendering a song video for YouTube
 
 A Tamilagaval song video is one still image held over a mastered audio track. That sounds trivial and is not: four separate renders of காதல் வந்து அரும்பியதே were rejected before one was accepted, and every flag below is the scar of one of them. Read the reasons before you change the recipe.
@@ -3755,7 +3755,11 @@ In a saved master's row panel **and** in the render panel under a song you have 
 
 - **The cover is image 1 and always starts at 0:00.** It is also what YouTube takes as the thumbnail. You only add image 2 onward.
 - **Times are \`1:30\` or plain seconds, in order.** Each image stays on screen until the next one starts; the last runs to the end of the song. Every image needs at least 2 seconds, and there can be up to 8.
-- **Hard cuts, no fades between images.** That is what keeps the render as fast as a single-cover one.
+- **Cut or crossfade.** Once there is a second image, a **Between images** choice appears: **Cut** (the default — a hard cut) or **Crossfade (1 second)**. One choice, used by all three renders.
+- **A crossfade is centred on the start time.** An image that starts at 2:00 begins to appear at 1:59.5 and is fully there at 2:00.5. The video is exactly as long as it was with cuts, and the audio is untouched.
+- **It adds a few seconds of render per cut** — about 6 to 8 — because only the second around each cut is blended; the rest of every image is still one picture, repeated.
+- **With Motion on, the move pauses for the second of the fade**: each image finishes its move, the two blend, and the next starts its own.
+- **Crossfades need the worker deployed after 2026-10-02.** Before that the choice is ignored and the images cut.
 - **The list is saved with the master.** Every change — an image uploaded, a time edited, an image removed — is written to the master a moment later, and the panel shows the saved list whenever you open it. Reloading the page, or coming back tomorrow, no longer empties it. An image row that has no file yet is not saved. If a save fails, the panel says so. Earlier, the list lived only in the open page and every reload lost it.
 - **Start times fill themselves in.** Added images are spread evenly across the song — two added images on a six-minute song start at 2:00 and 4:00 — so you can render as soon as the files are uploaded. Change any time you like; one you have typed is never moved again.
 - **The buttons stay off while an added image is unfinished, and the panel says which and why** — "Image 2 has no file yet", or a time it cannot read (the field turns red). Remove the image with the × to go back to a plain render. An earlier build required every start time to be typed and gave no reason for the greyed-out button.

@@ -205,3 +205,28 @@ describe('job eligibility is decided once, by the planner', () => {
     expect((await render({ coverKey: A })).status).toBe(404);
   });
 });
+
+describe('a crossfade between images', () => {
+  it('forwards a crossfade beside the cut list', async () => {
+    const res = await render({ coverKey: A, covers: THREE, durationSec: DURATION, transition: 'crossfade' });
+    expect(res.status).toBe(202);
+    expect(sentEvent().transition).toBe('crossfade');
+  });
+
+  it('sends no `transition` field for hard cuts — the event keeps its shape', async () => {
+    await render({ coverKey: A, covers: THREE, durationSec: DURATION, transition: 'cut' });
+    expect(sentEvent()).not.toHaveProperty('transition');
+  });
+
+  it('sends none with a single image, where there is nothing to fade between', async () => {
+    await render({ coverKey: A, transition: 'crossfade' });
+    expect(sentEvent()).not.toHaveProperty('transition');
+  });
+
+  it('refuses a transition it does not know', async () => {
+    const res = await render({ coverKey: A, covers: THREE, durationSec: DURATION, transition: 'wipe' });
+    expect(res.status).toBe(400);
+    expect(lambdaSend).not.toHaveBeenCalled();
+  });
+});
+

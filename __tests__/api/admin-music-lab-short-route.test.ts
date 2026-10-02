@@ -177,3 +177,26 @@ describe('a short that moves', () => {
   });
 });
 
+describe('a crossfade between images', () => {
+  it('forwards a crossfade with a vertical slideshow', async () => {
+    await post({ coverKey: A, startSec: 120, seconds: 60, covers: LIST, transition: 'crossfade' });
+    expect(sentEvent()).toEqual({
+      audioKey: AUDIO, coverKey: A, startSec: 120, seconds: 60, covers: LIST, transition: 'crossfade',
+    });
+  });
+
+  it('sends no `transition` field for hard cuts, or with no slideshow', async () => {
+    await post({ coverKey: A, covers: LIST, transition: 'cut' });
+    expect(sentEvent()).not.toHaveProperty('transition');
+    lambdaSend.mockClear();
+    await post({ coverKey: A, transition: 'crossfade' });
+    expect(sentEvent()).not.toHaveProperty('transition');
+  });
+
+  it('refuses a transition it does not know', async () => {
+    const res = await post({ coverKey: A, covers: LIST, transition: 'wipe' });
+    expect(res.status).toBe(400);
+    expect(lambdaSend).not.toHaveBeenCalled();
+  });
+});
+
