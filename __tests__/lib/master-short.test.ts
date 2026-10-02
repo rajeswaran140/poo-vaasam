@@ -680,3 +680,31 @@ describe('a move across a whole song goes out and back', () => {
     expect(!p.ok && p.message).toMatch(/8 minutes/);
   });
 });
+
+import { SHORT_STILL_CODEC_ARGS, SHORT_MOTION_CODEC_ARGS } from '@/lib/master-short';
+
+/**
+ * A crossfade is its own piece, joined to the holds by stream copy — so it has
+ * to be encoded exactly as they are. Each kind of vertical piece therefore
+ * names its encoder settings once, and the fade borrows them.
+ */
+describe('the vertical pieces name their encoder settings once', () => {
+  it('a still stretch uses the still settings, unchanged', () => {
+    const seg = buildShortSegmentArgs({ framePath: '/tmp/f.ppm', seconds: 12, outPath: '/tmp/s.mp4' });
+    const at = seg.indexOf('-c:v');
+    expect(seg.slice(at, at + SHORT_STILL_CODEC_ARGS.length)).toEqual([...SHORT_STILL_CODEC_ARGS]);
+    expect(SHORT_STILL_CODEC_ARGS).toEqual([
+      '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'stillimage',
+      '-crf', '20', '-pix_fmt', 'yuv420p', '-r', '25',
+    ]);
+  });
+
+  it('a moving stretch uses the moving settings, unchanged', () => {
+    const seg = buildMotionSegmentArgs({ framePath: '/tmp/f.ppm', seconds: 12, outPath: '/tmp/s.mp4', motion: 'zoom-in' });
+    const at = seg.indexOf('-c:v');
+    expect(seg.slice(at, at + SHORT_MOTION_CODEC_ARGS.length)).toEqual([...SHORT_MOTION_CODEC_ARGS]);
+    expect(SHORT_MOTION_CODEC_ARGS).toEqual([
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', '-r', '25',
+    ]);
+  });
+});

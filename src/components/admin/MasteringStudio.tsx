@@ -36,6 +36,7 @@ import { MasteringComparePlayer } from '@/components/admin/MasteringComparePlaye
 import { MasteringPlayer } from '@/components/admin/MasteringPlayer';
 import { ShortWindowFields } from '@/components/admin/ShortWindowFields';
 import { SlideshowFields, slidesToCovers, type Slide } from '@/components/admin/SlideshowFields';
+import type { SlideTransition } from '@/lib/master-video';
 import { ReleasePipelineRow } from '@/components/admin/ReleasePipelineRow';
 import type { PartComparison } from '@/lib/part-analysis';
 import { SHORT_PICK_MIN_SECONDS, SHORT_PICK_MAX_SECONDS, SHORT_MOTIONS, type ShortMotion } from '@/lib/master-short';
@@ -442,6 +443,12 @@ export function MasteringStudio() {
    * The 16:9 video never moves.
    */
   const [shortMotion, setShortMotion] = useState<ShortMotion>('none');
+  /**
+   * How one slideshow image gives way to the next, for all three renders.
+   * `cut` by default, so a slideshow is unchanged unless a crossfade is chosen.
+   * A page setting like `shortMotion`, for the same reason.
+   */
+  const [slideTransition, setSlideTransition] = useState<SlideTransition>('cut');
   /** The whole-song vertical is rendering for the CURRENT job. */
   const [verticaling, setVerticaling] = useState(false);
   /**
@@ -1362,7 +1369,11 @@ export function MasteringStudio() {
        * then the body is EXACTLY what it has always been, because that is the
        * render every release depends on.
        */
-      slideshow?: { covers: Array<{ coverKey: string; startSec: number }>; durationSec: number | null }
+      slideshow?: {
+        covers: Array<{ coverKey: string; startSec: number }>;
+        durationSec: number | null;
+        transition?: SlideTransition;
+      }
     ): Promise<MasterJob | null> => {
       const res = await adminFetch(`/api/admin/music-lab/master/${targetId}/render`, {
         method: 'POST',
@@ -1373,6 +1384,7 @@ export function MasteringStudio() {
           ...(slideshow
             ? {
                 covers: slideshow.covers,
+                ...(slideshow.transition === 'crossfade' ? { transition: 'crossfade' } : {}),
                 // Only when known. The route falls back to the job's own
                 // length, and the worker probes the file regardless.
                 ...(slideshow.durationSec !== null ? { durationSec: slideshow.durationSec } : {}),
@@ -1428,7 +1440,7 @@ export function MasteringStudio() {
         videoHeight,
         job?.videoRenderedAt ?? null,
         job?.videoError ?? null,
-        covers ? { covers, durationSec: job?.editedDurationSec ?? null } : undefined
+        covers ? { covers, durationSec: job?.editedDurationSec ?? null, transition: slideTransition } : undefined
       );
       if (fresh) setJob(fresh);
     } catch (err) {
@@ -1441,7 +1453,7 @@ export function MasteringStudio() {
     } finally {
       if (mounted.current) setRendering(false);
     }
-  }, [jobId, cover, videoHeight, job, panelSlides, startRender]);
+  }, [jobId, cover, videoHeight, job, panelSlides, slideTransition, startRender]);
 
   /**
    * POST the short and poll until the clip lands.
@@ -1466,7 +1478,9 @@ export function MasteringStudio() {
       /** The slideshow list, in SONG time. Omitted ⇒ the body is what it always was. */
       covers?: Array<{ coverKey: string; startSec: number }> | null,
       /** A slow zoom or pan. `none` or omitted ⇒ no field is sent at all. */
-      motion: ShortMotion = 'none'
+      motion: ShortMotion = 'none',
+      /** Sent only with a slideshow, and only when it is a crossfade. */
+      transition: SlideTransition = 'cut'
     ): Promise<MasterJob | null> => {
       const res = await adminFetch(`/api/admin/music-lab/master/${targetId}/short`, {
         method: 'POST',
@@ -1478,6 +1492,7 @@ export function MasteringStudio() {
           coverKey,
           ...(windowFor(targetId) ?? {}),
           ...(covers ? { covers } : {}),
+          ...(covers && transition === 'crossfade' ? { transition } : {}),
           ...(motion !== 'none' ? { motion } : {}),
         }),
       });
@@ -1528,7 +1543,9 @@ export function MasteringStudio() {
       /** The slideshow list, in SONG time. Omitted ⇒ the cover alone. */
       covers?: Array<{ coverKey: string; startSec: number }> | null,
       /** A slow zoom or pan, out and back. `none` or omitted ⇒ no field is sent. */
-      motion: ShortMotion = 'none'
+      motion: ShortMotion = 'none',
+      /** Sent only with a slideshow, and only when it is a crossfade. */
+      transition: SlideTransition = 'cut'
     ): Promise<MasterJob | null> => {
       const res = await adminFetch(`/api/admin/music-lab/master/${targetId}/short`, {
         method: 'POST',
@@ -1537,6 +1554,7 @@ export function MasteringStudio() {
           coverKey,
           full: true,
           ...(covers ? { covers } : {}),
+          ...(covers && transition === 'crossfade' ? { transition } : {}),
           ...(motion !== 'none' ? { motion } : {}),
         }),
       });
@@ -1574,7 +1592,8 @@ export function MasteringStudio() {
       const fresh = await startShort(
         jobId, cover.key, job?.shortRenderedAt ?? null, job?.shortError ?? null,
         slides.length > 0 ? slidesToCovers(cover.key, slides) : null,
-        shortMotion
+        shortMotion,
+        slideTransition
       );
       if (fresh) setJob(fresh);
     } catch (err) {
@@ -1582,7 +1601,7 @@ export function MasteringStudio() {
     } finally {
       if (mounted.current) setShorting(false);
     }
-  }, [jobId, cover, job, panelSlides, shortMotion, startShort]);
+  }, [jobId, cover, job, panelSlides, shortMotion, slideTransition, startShort]);
 
   /** The whole song, vertical, for the CURRENT job. The clip is left alone. */
   const makeVertical = useCallback(async () => {
@@ -1594,7 +1613,8 @@ export function MasteringStudio() {
       const fresh = await startVertical(
         jobId, cover.key, job?.verticalRenderedAt ?? null, job?.verticalError ?? null,
         slides.length > 0 ? slidesToCovers(cover.key, slides) : null,
-        shortMotion
+        shortMotion,
+        slideTransition
       );
       if (fresh) setJob(fresh);
     } catch (err) {
@@ -1602,7 +1622,7 @@ export function MasteringStudio() {
     } finally {
       if (mounted.current) setVerticaling(false);
     }
-  }, [jobId, cover, job, panelSlides, shortMotion, startVertical]);
+  }, [jobId, cover, job, panelSlides, shortMotion, slideTransition, startVertical]);
 
   /**
    * Render ~20 seconds around the crossfade and play it.
@@ -1965,7 +1985,7 @@ export function MasteringStudio() {
         videoHeight,
         row?.videoRenderedAt ?? null,
         row?.videoError ?? null,
-        covers ? { covers, durationSec: row?.editedDurationSec ?? null } : undefined
+        covers ? { covers, durationSec: row?.editedDurationSec ?? null, transition: slideTransition } : undefined
       );
       if (!fresh) return;
       setLibrary((prev) =>
@@ -1983,7 +2003,7 @@ export function MasteringStudio() {
     } finally {
       if (mounted.current) setRowBusy(null);
     }
-  }, [rowRender, rowSlides, videoHeight, library, startRender, failRow]);
+  }, [rowRender, rowSlides, slideTransition, videoHeight, library, startRender, failRow]);
 
   /**
    * Cut a short from the library, for the same reason renderRowVideo exists:
@@ -2003,7 +2023,8 @@ export function MasteringStudio() {
       const fresh = await startShort(
         id, rowCover.key, row?.shortRenderedAt ?? null, row?.shortError ?? null,
         slides.length > 0 ? slidesToCovers(rowCover.key, slides) : null,
-        shortMotion
+        shortMotion,
+        slideTransition
       );
       if (!fresh) return;
       setLibrary((prev) =>
@@ -2028,7 +2049,7 @@ export function MasteringStudio() {
     } finally {
       if (mounted.current) setRowBusy(null);
     }
-  }, [rowRender, rowSlides, shortMotion, library, startShort, failRow]);
+  }, [rowRender, rowSlides, shortMotion, slideTransition, library, startShort, failRow]);
 
   /**
    * Render the whole song vertically from the library — beside "Make vertical
@@ -2046,7 +2067,8 @@ export function MasteringStudio() {
       const fresh = await startVertical(
         id, rowCover.key, row?.verticalRenderedAt ?? null, row?.verticalError ?? null,
         slides.length > 0 ? slidesToCovers(rowCover.key, slides) : null,
-        shortMotion
+        shortMotion,
+        slideTransition
       );
       if (!fresh) return;
       setLibrary((prev) =>
@@ -2070,7 +2092,7 @@ export function MasteringStudio() {
     } finally {
       if (mounted.current) setRowBusy(null);
     }
-  }, [rowRender, rowSlides, shortMotion, library, startVertical, failRow]);
+  }, [rowRender, rowSlides, shortMotion, slideTransition, library, startVertical, failRow]);
 
   /**
    * Deliberately NOT loaded on mount: listing scans the table, and most visits
@@ -3168,6 +3190,8 @@ export function MasteringStudio() {
                     disabled={!cover || rendering || coverUploading}
                     idPrefix={`${inputId}-slide`}
                     durationSec={job.editedDurationSec}
+                    transition={slideTransition}
+                    onTransitionChange={setSlideTransition}
                   />
                 </div>
               )}
@@ -4162,6 +4186,8 @@ export function MasteringStudio() {
                         disabled={rowBusy === m.id || !rowRender.cover}
                         idPrefix={`${inputId}-rowslide-${m.id}`}
                         durationSec={m.editedDurationSec}
+                        transition={slideTransition}
+                        onTransitionChange={setSlideTransition}
                       />
                       <ShortWindowFields
                         compact

@@ -17,7 +17,13 @@
  */
 
 import { Plus, X } from 'lucide-react';
-import { MAX_SLIDESHOW_COVERS, MIN_SEGMENT_SECONDS } from '@/lib/master-video';
+import {
+  MAX_SLIDESHOW_COVERS,
+  MIN_SEGMENT_SECONDS,
+  SLIDE_TRANSITIONS,
+  CROSSFADE_SECONDS,
+  type SlideTransition,
+} from '@/lib/master-video';
 import { parseClock, formatClock } from '@/components/admin/ShortWindowFields';
 
 export interface Slide {
@@ -96,9 +102,19 @@ interface Props {
   idPrefix: string;
   /** The song's length, when known — start times are spread across it. */
   durationSec?: number | null;
+  /** How one image gives way to the next. Omit both to hide the choice. */
+  transition?: SlideTransition;
+  onTransitionChange?: (transition: SlideTransition) => void;
 }
 
-export function SlideshowFields({ slides, onChange, onPickImage, disabled = false, idPrefix, durationSec }: Props) {
+const TRANSITION_LABELS: Record<SlideTransition, string> = {
+  cut: 'Cut',
+  crossfade: `Crossfade (${CROSSFADE_SECONDS} second)`,
+};
+
+export function SlideshowFields({
+  slides, onChange, onPickImage, disabled = false, idPrefix, durationSec, transition, onTransitionChange,
+}: Props) {
   const canAdd = slides.length + 1 < MAX_SLIDESHOW_COVERS;
   const patch = (i: number, over: Partial<Slide>) =>
     onChange(slides.map((s, j) => (j === i ? { ...s, ...over } : s)));
@@ -169,6 +185,23 @@ export function SlideshowFields({ slides, onChange, onPickImage, disabled = fals
           <Plus className="h-3.5 w-3.5" aria-hidden="true" />
           Add image
         </button>
+        {/* Offered only once there is a second image: with the cover alone
+            there is nothing to cut or fade to. */}
+        {slides.length > 0 && transition && onTransitionChange && (
+          <label className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-300">
+            Between images
+            <select
+              value={transition}
+              disabled={disabled}
+              onChange={(e) => onTransitionChange(e.target.value as SlideTransition)}
+              className="rounded border border-gray-300 bg-white px-1 py-0.5 text-xs text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+            >
+              {SLIDE_TRANSITIONS.map((t) => (
+                <option key={t} value={t}>{TRANSITION_LABELS[t]}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <span className="text-xs text-gray-500 dark:text-gray-400">
           {slides.length === 0
             ? 'Optional — more images make a slideshow, in the video, the short and the whole-song vertical. The cover stays first, from 0:00.'

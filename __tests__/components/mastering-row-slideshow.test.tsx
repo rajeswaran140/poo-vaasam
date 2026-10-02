@@ -443,3 +443,56 @@ describe('the image list is saved with the master', () => {
   });
 });
 
+/** Cut or crossfade — one choice for the list, used by all three renders. */
+describe('a crossfade can be chosen between images', () => {
+  const shortPosts = () =>
+    mockedFetch.mock.calls.filter(([url, init]) => String(url).endsWith('/short') && init?.method === 'POST');
+
+  it('is not offered until there is a second image to fade to', async () => {
+    routeFetch();
+    await openLibrary();
+    openRenderPanel(SONG);
+
+    expect(screen.queryByLabelText(/Between images/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /add image/i }));
+    expect(screen.getByLabelText(/Between images/)).toHaveValue('cut');
+  });
+
+  it('cuts by default — the request carries no transition at all', async () => {
+    routeFetch();
+    await openLibrary();
+    openRenderPanel(SONG);
+    await addSecondImage('1:30');
+
+    fireEvent.click(screen.getByRole('button', { name: /Render slideshow/ }));
+
+    await waitFor(() => expect(renderPosts()).toHaveLength(1));
+    expect(lastBody()).not.toHaveProperty('transition');
+  });
+
+  it('sends the crossfade with the video', async () => {
+    routeFetch();
+    await openLibrary();
+    openRenderPanel(SONG);
+    await addSecondImage('1:30');
+    fireEvent.change(screen.getByLabelText(/Between images/), { target: { value: 'crossfade' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /Render slideshow/ }));
+
+    await waitFor(() => expect(renderPosts()).toHaveLength(1));
+    expect(lastBody().transition).toBe('crossfade');
+  });
+
+  it('sends the crossfade with the short and the whole-song vertical', async () => {
+    routeFetch();
+    await openLibrary();
+    openRenderPanel(SONG);
+    await addSecondImage('1:30');
+    fireEvent.change(screen.getByLabelText(/Between images/), { target: { value: 'crossfade' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /vertical short/i }));
+    await waitFor(() => expect(shortPosts()).toHaveLength(1));
+    expect(JSON.parse(shortPosts()[0][1].body as string).transition).toBe('crossfade');
+  });
+});
+

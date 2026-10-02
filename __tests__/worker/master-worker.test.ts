@@ -785,6 +785,39 @@ describe('short render', () => {
       });
     });
 
+    it('crossfades between still images in a clip', async () => {
+      await handler({
+        jobId: 'j1',
+        short: short({ startSec: 120, seconds: 60, covers: LIST, transition: 'crossfade' }),
+      } as never);
+
+      const fades = ffArgs().filter((a) => a.some((x) => x.includes('blend=')));
+      expect(fades).toHaveLength(1);
+      expect(fades[0][fades[0].indexOf('-frames:v') + 1]).toBe('25'); // 1 s at 25 fps
+      expect(fades[0]).toEqual(expect.arrayContaining(['-tune', 'stillimage']));
+      // 30 s each side of the cut, less 12 and 13 frames.
+      const stillHolds = segmentPasses().filter((a) => !a.some((x) => x.includes('blend=')));
+      expect(stillHolds.map((a) => Number(a[a.indexOf('-t') + 1]))).toEqual([29.52, 29.48]);
+    });
+
+    it('crossfades between MOVING images from the frames they actually end and begin on', async () => {
+      await handler({
+        jobId: 'j1',
+        short: short({ startSec: 120, seconds: 60, covers: LIST, transition: 'crossfade', motion: 'zoom-in' }),
+      } as never);
+
+      const all = ffArgs();
+      const fade = all.find((a) => a.some((x) => x.includes('blend=')))!;
+      // The move ends somewhere the composed frame is not, so the fade reads
+      // the last frame of the outgoing piece and the first of the incoming one.
+      expect(all.some((a) => a.includes('-sseof'))).toBe(true);
+      const inputs = fade.filter((_, i) => fade[i - 1] === '-i');
+      expect(inputs[0]).toMatch(/last0\.ppm$/);
+      expect(inputs[1]).toMatch(/first1\.ppm$/);
+      // A moving piece is not tuned as a still, and the fade must match it.
+      expect(fade).not.toContain('stillimage');
+    });
+
     it('takes the ordinary single-image path when the window shows only one image', async () => {
       // 1:36-2:06 is wholly inside image B: one image, so no segments and no join.
       await handler({ jobId: 'j1', short: short({ startSec: 96, seconds: 30, covers: LIST }) } as never);
@@ -2907,6 +2940,59 @@ describe('slideshow render', () => {
         ? Promise.resolve({})
         : Promise.resolve({ Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) } })
     );
+  });
+
+  /**
+   * A crossfade is its own one-second piece between two holds. Nothing else
+   * about the render changes — and without `transition` nothing changes at all.
+   */
+  describe('with a crossfade between images', () => {
+    const fades = () => ffArgs().filter((a) => a.some((x) => x.includes('blend=')));
+    const holds = () => ffArgs().filter((a) => a.includes('libx264') && !a.some((x) => x.includes('blend=')));
+
+    it('blends one second around each cut and shortens the holds to make room', async () => {
+      const res = await handler({ jobId: 'j1', render: slideshow({ transition: 'crossfade' }) } as never);
+      expect(res).toMatchObject({ ok: true });
+
+      // Two cuts, two fades of 10 frames (1 s at 10 fps).
+      expect(fades()).toHaveLength(2);
+      for (const f of fades()) expect(f[f.indexOf('-frames:v') + 1]).toBe('10');
+      // 130 / 110 / 92 s with hard cuts; each cut takes 0.5 s from either side.
+      expect(holds().map((a) => Number(a[a.indexOf('-t') + 1]))).toEqual([129.5, 109, 91.5]);
+    });
+
+    it('joins the pieces in order: hold, fade, hold, fade, hold', async () => {
+      await handler({ jobId: 'j1', render: slideshow({ transition: 'crossfade' }) } as never);
+
+      // The LAST list written — the mock is shared, and earlier tests wrote theirs.
+      const list = mockWriteFileSync.mock.calls
+        .filter((c: unknown[]) => String(c[0]).endsWith('segments.txt'))
+        .pop();
+      const names = String(list?.[1]).split('\n').filter(Boolean).map((l) => l.replace(/.*\/([^/']+)'$/, '$1'));
+      expect(names).toEqual(['hold0.mp4', 'fade0.mp4', 'hold1.mp4', 'fade1.mp4', 'hold2.mp4']);
+    });
+
+    it('fades from each image\'s own composed frame, in the holds\' codec', async () => {
+      await handler({ jobId: 'j1', render: slideshow({ transition: 'crossfade' }) } as never);
+
+      const [first] = fades();
+      const inputs = first.filter((_, i) => first[i - 1] === '-i');
+      expect(inputs[0]).toMatch(/frame0\.ppm$/);
+      expect(inputs[1]).toMatch(/frame1\.ppm$/);
+      expect(first).toEqual(expect.arrayContaining(['-tune', 'stillimage', '-crf', '16']));
+    });
+
+    it('takes none of this path with hard cuts', async () => {
+      await handler({ jobId: 'j1', render: slideshow({ transition: 'cut' }) } as never);
+      expect(fades()).toHaveLength(0);
+      expect(holds().map((a) => Number(a[a.indexOf('-t') + 1]))).toEqual([130, 110, 92]);
+    });
+
+    it('refuses a transition it does not know', async () => {
+      const res = await handler({ jobId: 'j1', render: slideshow({ transition: 'wipe' }) } as never);
+      expect(res).toMatchObject({ ok: false });
+      expect(String(patched().videoError)).toMatch(/transition/i);
+    });
   });
 
   it('composes once per image and never filters an encode', async () => {

@@ -587,6 +587,21 @@ export function slideshowRefusalMessage(reason: SlideshowRefusal): string {
   }
 }
 
+
+/**
+ * How every piece of a 16:9 slideshow is encoded — the holds AND the fades.
+ *
+ * ⚠️ ONE LIST, SHARED, ON PURPOSE. The pieces are joined by stream copy, so
+ * they must carry identical parameter sets; a fade encoded with different
+ * settings from the stills either side would join into a file that breaks at
+ * the seam. Change this in one place or not at all.
+ */
+export const VIDEO_SEGMENT_CODEC_ARGS: readonly string[] = [
+  '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'stillimage',
+  '-crf', String(VIDEO_CRF), '-g', String(VIDEO_GOP), '-keyint_min', String(VIDEO_FPS),
+  '-pix_fmt', 'yuv420p', '-r', String(VIDEO_FPS),
+];
+
 /**
  * STEP 2 of 4 — encode ONE segment from its already-composed frame. Video only.
  *
@@ -611,9 +626,7 @@ export function buildSegmentArgs(params: {
     '-hide_banner', '-nostats',
     '-loop', '1', '-framerate', String(VIDEO_FPS), '-t', String(params.seconds), '-i', params.framePath,
     '-map', '0:v',
-    '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'stillimage',
-    '-crf', String(VIDEO_CRF), '-g', String(VIDEO_GOP), '-keyint_min', String(VIDEO_FPS),
-    '-pix_fmt', 'yuv420p', '-r', String(VIDEO_FPS),
+    ...VIDEO_SEGMENT_CODEC_ARGS,
     // No audio in a segment: it is muxed once, whole, at step 4.
     '-an',
     '-y', params.outPath,
@@ -674,4 +687,111 @@ export function buildJoinArgs(params: {
     // song on 7.0.2 (2026-10-01). Same rule as buildVideoArgs.
     '-y', params.outPath,
   ];
+}
+
+/**
+ * ============================================================================
+ * CROSSFADES — a one-second blend between slideshow images.
+ * ============================================================================
+ *
+ * Added 2026-10-02. The slideshow is fast because each stretch is ONE still,
+ * repeated; a crossfade is the one place frames differ. So only the second
+ * around each cut is blended, as its own short piece, and the stills either
+ * side stay stills. Prototyped on the Lambda's ffmpeg 7.0.2: the blended piece
+ * joins by stream copy with no decode errors and exact frame counts, at 6-8 s
+ * of render per cut.
+ *
+ * A hard cut stays the default and takes none of this code.
+ */
+
+export const SLIDE_TRANSITIONS = ['cut', 'crossfade'] as const;
+export type SlideTransition = (typeof SLIDE_TRANSITIONS)[number];
+
+export function isSlideTransition(value: unknown): value is SlideTransition {
+  return typeof value === 'string' && (SLIDE_TRANSITIONS as readonly string[]).includes(value);
+}
+
+/** How long a crossfade lasts. MIN_SEGMENT_SECONDS is 2, so a hold always survives it. */
+export const CROSSFADE_SECONDS = 1;
+
+/** One piece of a crossfaded slideshow, in the order it is joined. */
+export type SlidePiece =
+  | { kind: 'hold'; index: number; frames: number }
+  | { kind: 'fade'; from: number; to: number; frames: number };
+
+/**
+ * Turn planned segments into holds with a fade CENTRED on each cut.
+ *
+ * ⚠️ THE TOTAL NUMBER OF FRAMES NEVER CHANGES. Each fade's frames are taken
+ * from the two holds it sits between — half from the end of one, half from the
+ * start of the next — so the picture is exactly as long as it was with hard
+ * cuts and the audio lines up as before. An odd fade gives the extra frame to
+ * the incoming image.
+ */
+export function planCrossfades(
+  segments: readonly PlannedSegment[],
+  fps: number,
+  fadeSeconds: number = CROSSFADE_SECONDS,
+): SlidePiece[] {
+  const fade = Math.max(1, Math.round(fadeSeconds * fps));
+  const before = Math.floor(fade / 2);
+  const after = fade - before;
+  const pieces: SlidePiece[] = [];
+  segments.forEach((seg, i) => {
+    const frames = Math.round(seg.seconds * fps);
+    const hold = frames - (i > 0 ? after : 0) - (i + 1 < segments.length ? before : 0);
+    pieces.push({ kind: 'hold', index: i, frames: hold });
+    if (i + 1 < segments.length) pieces.push({ kind: 'fade', from: i, to: i + 1, frames: fade });
+  });
+  return pieces;
+}
+
+/**
+ * Encode ONE fade: a linear blend from one frame to another.
+ *
+ * Frame N of F is (N+1)/(F+1) of the way across, so the piece never contains a
+ * pure copy of either image — those belong to the holds, and a duplicate at
+ * the seam would read as a stutter.
+ *
+ * `codecArgs` MUST be the holds' own (see VIDEO_SEGMENT_CODEC_ARGS): the join
+ * is a stream copy.
+ */
+export function buildFadeArgs(params: {
+  fromPath: string;
+  toPath: string;
+  frames: number;
+  fps: number;
+  outPath: string;
+  codecArgs: readonly string[];
+}): string[] {
+  const { frames, fps } = params;
+  const seconds = String(frames / fps);
+  return [
+    '-hide_banner', '-nostats',
+    '-loop', '1', '-framerate', String(fps), '-t', seconds, '-i', params.fromPath,
+    '-loop', '1', '-framerate', String(fps), '-t', seconds, '-i', params.toPath,
+    '-filter_complex',
+    `[0:v][1:v]blend=all_expr='A*(1-(N+1)/${frames + 1})+B*((N+1)/${frames + 1})'[v]`,
+    '-map', '[v]',
+    '-frames:v', String(frames),
+    ...params.codecArgs,
+    '-an',
+    '-y', params.outPath,
+  ];
+}
+
+/** The first frame of a finished piece, as a still — the image a fade arrives at. */
+export function buildFirstFrameArgs(piecePath: string, framePath: string): string[] {
+  return ['-hide_banner', '-nostats', '-i', piecePath, '-frames:v', '1', '-update', '1', '-y', framePath];
+}
+
+/**
+ * The LAST frame of a finished piece — the image a fade leaves from.
+ *
+ * Seeks to one second before the end and writes every remaining frame to the
+ * same file; what is left on disk is the last one. Verified bit-identical to
+ * selecting the final frame by number (7.0.2), without needing the count.
+ */
+export function buildLastFrameArgs(piecePath: string, framePath: string): string[] {
+  return ['-hide_banner', '-nostats', '-sseof', '-1', '-i', piecePath, '-update', '1', '-y', framePath];
 }

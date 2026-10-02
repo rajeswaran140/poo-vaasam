@@ -23,7 +23,7 @@ import { MasterJobRepository } from '@/infrastructure/database/MasterJobReposito
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { awsConfig } from '@/lib/aws-config';
 import { planShort, planFullVertical, shortRefusalMessage, SHORT_FPS, SHORT_MOTIONS } from '@/lib/master-short';
-import { planSegments, slideshowRefusalMessage } from '@/lib/master-video';
+import { planSegments, slideshowRefusalMessage, SLIDE_TRANSITIONS } from '@/lib/master-video';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -54,6 +54,8 @@ const bodySchema = z.object({
   covers: z.array(z.object({ coverKey: z.string().min(1), startSec: z.number() })).optional(),
   /** A slow zoom or pan across each image — the clip or the whole song. See SHORT_MOTIONS. */
   motion: z.enum(SHORT_MOTIONS).optional(),
+  /** `crossfade` blends a second around each cut; absent or `cut` ⇒ hard cuts. */
+  transition: z.enum(SLIDE_TRANSITIONS).optional(),
 });
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ jobId: string }> }) {
@@ -154,6 +156,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
               // `!== undefined` to decide whether to measure at all.
               ...(plan.window ?? {}),
               ...(covers ? { covers } : {}),
+              ...(covers && parsed.data.transition === 'crossfade' ? { transition: 'crossfade' } : {}),
               // Absent for a still: the event keeps its original shape unless
               // something will move.
               ...(moves ? { motion: parsed.data.motion } : {}),
