@@ -325,6 +325,24 @@ export function parseHashtags(input: string): string[] {
 /** Seconds → m:ss, for the read-back duration. */
 const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 
+/** A saved list, as the fields hold it. Null or absent ⇒ no images. */
+function toSlides(saved: MasterJob['slides']): Slide[] {
+  return (saved ?? []).map((x) => ({ key: x.coverKey, name: x.name, at: x.at, auto: x.auto }));
+}
+
+/**
+ * The list as it is SAVED: only images that have a file. One still waiting for
+ * its file is a row on the screen, not a fact about the master.
+ */
+function toSaved(slides: readonly Slide[]): NonNullable<MasterJob['slides']> {
+  return slides.flatMap((x) =>
+    x.key ? [{ coverKey: x.key, name: x.name ?? '', at: x.at, auto: x.auto !== false }] : []
+  );
+}
+
+/** Typing a time saves once the typing pauses, not on every keystroke. */
+const SLIDES_SAVE_DELAY_MS = 400;
+
 /** What the operator reads for each move. `none` says what it does, not what it is. */
 const MOTION_LABELS: Record<ShortMotion, string> = {
   none: 'None (still)',
@@ -432,7 +450,6 @@ export function MasteringStudio() {
    * shared slot would let one silently empty the other.
    */
   const [panelSlides, setPanelSlides] = useState<{ id: string; slides: Slide[] } | null>(null);
-  const panelSlidesNow: Slide[] = jobId && panelSlides?.id === jobId ? panelSlides.slides : [];
   /**
    * A refusal from the whole-song vertical or the slideshow, shown IN the
    * render panel. The page banner (`error`) is far above this panel — an error
@@ -509,7 +526,6 @@ export function MasteringStudio() {
    * render. Only ever read through `slidesFor`.
    */
   const [rowSlides, setRowSlides] = useState<{ id: string; slides: Slide[] } | null>(null);
-  const slidesFor = (id: string): Slide[] => (rowSlides?.id === id ? rowSlides.slides : []);
   /**
    * Bumped whenever a saved recipe is loaded. Used as a `key` on the edit
    * panels so they remount and re-seed: they hold their own state, so without a
@@ -577,6 +593,72 @@ export function MasteringStudio() {
   }, []);
 
   const mounted = useRef(true);
+
+  /**
+   * THE SLIDESHOW LIST IS SAVED ON THE MASTER.
+   *
+   * It used to live only in this page, so a reload — and every deploy asks for
+   * one — emptied it and each image had to be uploaded again. Now every change
+   * is written to the master, and a panel with no local edits shows what the
+   * master has saved.
+   *
+   * Both readers fall back to the saved list; both writers go through
+   * `saveSlides`, which debounces per master so typing a time is one write.
+   */
+  const slidesFor = (id: string): Slide[] =>
+    rowSlides?.id === id ? rowSlides.slides : toSlides(library?.find((x) => x.id === id)?.slides);
+  const panelSlidesNow: Slide[] = !jobId
+    ? []
+    : panelSlides?.id === jobId
+      ? panelSlides.slides
+      : toSlides(job?.slides);
+
+  const slideSaveTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const saveSlides = useCallback((id: string, slides: readonly Slide[], onError: (message: string) => void) => {
+    const saved = toSaved(slides);
+    const pending = slideSaveTimers.current.get(id);
+    if (pending) clearTimeout(pending);
+    slideSaveTimers.current.set(
+      id,
+      setTimeout(() => {
+        slideSaveTimers.current.delete(id);
+        void (async () => {
+          try {
+            const res = await adminFetch(`/api/admin/music-lab/master/${id}/slides`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ slides: saved }),
+            });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok || body.success === false) throw new Error(body.error || 'Could not save the image list.');
+            if (!mounted.current) return;
+            // Mirror what was saved, so a panel reopened later starts from it.
+            setLibrary((prev) => (prev ? prev.map((x) => (x.id === id ? { ...x, slides: saved } : x)) : prev));
+            setJob((prev) => (prev && prev.id === id ? { ...prev, slides: saved } : prev));
+          } catch (err) {
+            // Said out loud: a list that silently failed to save is the very
+            // loss this exists to prevent.
+            if (mounted.current) onError(err instanceof Error ? err.message : String(err));
+          }
+        })();
+      }, SLIDES_SAVE_DELAY_MS)
+    );
+  }, []);
+
+  const commitRowSlides = useCallback(
+    (id: string, slides: Slide[]) => {
+      setRowSlides({ id, slides });
+      saveSlides(id, slides, (message) => failRow(id, new Error(message)));
+    },
+    [saveSlides, failRow]
+  );
+  const commitPanelSlides = useCallback(
+    (id: string, slides: Slide[]) => {
+      setPanelSlides({ id, slides });
+      saveSlides(id, slides, setPanelError);
+    },
+    [saveSlides]
+  );
   const abort = useRef<AbortController | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -1229,10 +1311,11 @@ export function MasteringStudio() {
     try {
       const key = await uploadToWorkspace(file, () => {}, controller.signal, 'cover');
       if (!mounted.current) return;
-      setPanelSlides((prev) =>
-        prev?.id === id
-          ? { id, slides: prev.slides.map((sl, j) => (j === index ? { ...sl, key, name: file.name } : sl)) }
-          : prev
+      commitPanelSlides(
+        id,
+        (panelSlides?.id === id ? panelSlides.slides : toSlides(job?.slides)).map((sl, j) =>
+          j === index ? { ...sl, key, name: file.name } : sl
+        )
       );
       setAnnounce(`Image ${index + 2} uploaded.`);
     } catch (err) {
@@ -1241,7 +1324,7 @@ export function MasteringStudio() {
     } finally {
       if (mounted.current) setCoverUploading(false);
     }
-  }, []);
+  }, [panelSlides, job, commitPanelSlides]);
 
   /**
    * Render the upload-ready MP4 and wait for it.
@@ -1330,7 +1413,7 @@ export function MasteringStudio() {
     if (!jobId || !cover) return;
     // Extra images make it a slideshow. The button is disabled while any of
     // them is unfinished, so a null from slidesToCovers means there are none.
-    const slides = panelSlides?.id === jobId ? panelSlides.slides : [];
+    const slides = panelSlides?.id === jobId ? panelSlides.slides : toSlides(job?.slides);
     const covers = slides.length > 0 ? slidesToCovers(cover.key, slides) : null;
     setRendering(true);
     setError(null);
@@ -1487,7 +1570,7 @@ export function MasteringStudio() {
     setShorting(true);
     setError(null);
     try {
-      const slides = panelSlides?.id === jobId ? panelSlides.slides : [];
+      const slides = panelSlides?.id === jobId ? panelSlides.slides : toSlides(job?.slides);
       const fresh = await startShort(
         jobId, cover.key, job?.shortRenderedAt ?? null, job?.shortError ?? null,
         slides.length > 0 ? slidesToCovers(cover.key, slides) : null,
@@ -1507,7 +1590,7 @@ export function MasteringStudio() {
     setVerticaling(true);
     setPanelError(null);
     try {
-      const slides = panelSlides?.id === jobId ? panelSlides.slides : [];
+      const slides = panelSlides?.id === jobId ? panelSlides.slides : toSlides(job?.slides);
       const fresh = await startVertical(
         jobId, cover.key, job?.verticalRenderedAt ?? null, job?.verticalError ?? null,
         slides.length > 0 ? slidesToCovers(cover.key, slides) : null,
@@ -1842,10 +1925,11 @@ export function MasteringStudio() {
       try {
         const key = await uploadToWorkspace(file, () => {}, controller.signal, 'cover');
         if (!mounted.current) return;
-        setRowSlides((prev) =>
-          prev?.id === id
-            ? { id, slides: prev.slides.map((s, j) => (j === index ? { ...s, key, name: file.name } : s)) }
-            : prev
+        commitRowSlides(
+          id,
+          (rowSlides?.id === id ? rowSlides.slides : toSlides(library?.find((x) => x.id === id)?.slides)).map(
+            (sl, j) => (j === index ? { ...sl, key, name: file.name } : sl)
+          )
         );
         setAnnounce(`Image ${index + 2} uploaded.`);
       } catch (err) {
@@ -1854,7 +1938,7 @@ export function MasteringStudio() {
         if (mounted.current) setRowBusy(null);
       }
     },
-    [failRow]
+    [failRow, rowSlides, library, commitRowSlides]
   );
 
   /**
@@ -1873,7 +1957,7 @@ export function MasteringStudio() {
       const row = library?.find((x) => x.id === id);
       // Extra images make it a slideshow. The button is disabled while any of
       // them is unfinished, so a null here means there are none.
-      const slides = rowSlides?.id === id ? rowSlides.slides : [];
+      const slides = rowSlides?.id === id ? rowSlides.slides : toSlides(row?.slides);
       const covers = slides.length > 0 ? slidesToCovers(rowCover.key, slides) : null;
       const fresh = await startRender(
         id,
@@ -1915,7 +1999,7 @@ export function MasteringStudio() {
     setRowError(null);
     try {
       const row = library?.find((x) => x.id === id);
-      const slides = rowSlides?.id === id ? rowSlides.slides : [];
+      const slides = rowSlides?.id === id ? rowSlides.slides : toSlides(row?.slides);
       const fresh = await startShort(
         id, rowCover.key, row?.shortRenderedAt ?? null, row?.shortError ?? null,
         slides.length > 0 ? slidesToCovers(rowCover.key, slides) : null,
@@ -1958,7 +2042,7 @@ export function MasteringStudio() {
     setRowError(null);
     try {
       const row = library?.find((x) => x.id === id);
-      const slides = rowSlides?.id === id ? rowSlides.slides : [];
+      const slides = rowSlides?.id === id ? rowSlides.slides : toSlides(row?.slides);
       const fresh = await startVertical(
         id, rowCover.key, row?.verticalRenderedAt ?? null, row?.verticalError ?? null,
         slides.length > 0 ? slidesToCovers(rowCover.key, slides) : null,
@@ -3079,7 +3163,7 @@ export function MasteringStudio() {
                 <div className="mt-3">
                   <SlideshowFields
                     slides={panelSlidesNow}
-                    onChange={(slides) => setPanelSlides({ id: jobId, slides })}
+                    onChange={(slides) => commitPanelSlides(jobId, slides)}
                     onPickImage={(i, f) => void onPickSlide(jobId, i, f)}
                     disabled={!cover || rendering || coverUploading}
                     idPrefix={`${inputId}-slide`}
@@ -4073,7 +4157,7 @@ export function MasteringStudio() {
                           inside its window — the worker works that out. */}
                       <SlideshowFields
                         slides={slidesFor(m.id)}
-                        onChange={(slides) => setRowSlides({ id: m.id, slides })}
+                        onChange={(slides) => commitRowSlides(m.id, slides)}
                         onPickImage={(i, f) => void onPickRowSlide(m.id, i, f)}
                         disabled={rowBusy === m.id || !rowRender.cover}
                         idPrefix={`${inputId}-rowslide-${m.id}`}

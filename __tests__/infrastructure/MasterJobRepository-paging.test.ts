@@ -146,3 +146,40 @@ describe('save writes the index keys', () => {
     expect(v[':gsk'].startsWith(v[':savedAt'])).toBe(true);
   });
 });
+
+/**
+ * The slideshow's image list, saved on the master so a reload keeps it.
+ */
+describe('the saved slideshow list', () => {
+  const SLIDE = { coverKey: 'audio/mastering/1_c_two.png', name: 'two.png', at: '2:00', auto: true };
+
+  it('replaces the list without touching updatedAt, and never creates a job', async () => {
+    mockUpdate.mockResolvedValueOnce({});
+    await repo.setSlides('j1', [SLIDE]);
+
+    const call = mockUpdate.mock.calls[mockUpdate.mock.calls.length - 1][0];
+    expect(call.key).toEqual({ PK: 'MASTERJOB#j1', SK: 'METADATA' });
+    expect(call.updateExpression).toBe('SET #slides = :slides');
+    expect(call.updateExpression).not.toMatch(/updatedAt/);
+    expect(call.conditionExpression).toMatch(/attribute_exists/);
+    expect(call.expressionAttributeValues[':slides']).toEqual([SLIDE]);
+  });
+
+  it('hands the list back with the job, dropping an entry that is not an image', async () => {
+    mockQuery.mockResolvedValueOnce({
+      Items: [{ ...row('a', '2026-09-01T00:00:00.000Z'), slides: [SLIDE, { name: 'no key' }, null, { coverKey: 'audio/mastering/x.png', at: '4:00' }] }],
+    });
+    const page = await repo.listSavedPage(25);
+
+    expect(page.masters[0].slides).toEqual([
+      SLIDE,
+      { coverKey: 'audio/mastering/x.png', name: '', at: '4:00', auto: false },
+    ]);
+  });
+
+  it('reads a job with no list as having none', async () => {
+    mockQuery.mockResolvedValueOnce({ Items: [row('a', '2026-09-01T00:00:00.000Z')] });
+    const page = await repo.listSavedPage(25);
+    expect(page.masters[0].slides).toBeNull();
+  });
+});

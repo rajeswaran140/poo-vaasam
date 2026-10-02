@@ -236,6 +236,14 @@ export interface MasterJob {
   verticalRenderedAt: string | null;
   verticalSeconds: number | null;
   verticalError: string | null;
+  /**
+   * The slideshow's extra images — image 2 onward; the cover is image 1.
+   *
+   * Saved so a page reload does not empty the list. `at` is the start time as
+   * TEXT, exactly as shown in the field, and `auto` says it was filled in for
+   * the operator rather than typed. Null or absent ⇒ no slideshow.
+   */
+  slides?: MasterSlide[] | null;
   /** The cover the video was built from, kept so a re-render is reproducible. */
   coverKey: string | null;
   error: { code: string; message: string } | null;
@@ -303,4 +311,12 @@ export interface MasterJob {
   youtubeVideoId: string | null;
   uploadedToYoutubeAt: string | null;
   uploadError: string | null;
+}
+
+/** One saved slideshow image. See `MasterJob.slides`. */
+export interface MasterSlide {
+  coverKey: string;
+  name: string;
+  at: string;
+  auto: boolean;
 }

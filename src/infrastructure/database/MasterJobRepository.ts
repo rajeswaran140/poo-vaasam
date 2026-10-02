@@ -261,6 +261,21 @@ export class MasterJobRepository {
       verticalRenderedAt: typeof item.verticalRenderedAt === 'string' ? item.verticalRenderedAt : null,
       verticalSeconds: typeof item.verticalSeconds === 'number' ? item.verticalSeconds : null,
       verticalError: typeof item.verticalError === 'string' ? item.verticalError : null,
+      // Each entry is re-checked rather than trusted: a malformed one would
+      // otherwise reach the render panel as an image with no key.
+      slides: Array.isArray(item.slides)
+        ? (item.slides as unknown[]).flatMap((x) => {
+            const v = x as Record<string, unknown> | null;
+            return v && typeof v.coverKey === 'string' && typeof v.at === 'string'
+              ? [{
+                  coverKey: v.coverKey,
+                  name: typeof v.name === 'string' ? v.name : '',
+                  at: v.at,
+                  auto: v.auto === true,
+                }]
+              : [];
+          })
+        : null,
       coverKey: typeof item.coverKey === 'string' ? item.coverKey : null,
       error: item.error ?? null,
       // Reference-matching fields (Phase 1B). All degrade to null for pre-feature rows.
@@ -339,6 +354,28 @@ export class MasterJobRepository {
    * unsaved job would leave a 24h-expiring record wearing a permanent-looking
    * name, which is worse than refusing.
    */
+  /**
+   * Replace the slideshow's image list. Deliberately does NOT set `updatedAt`
+   * — the upload guard reads it to judge whether an upload is in flight.
+   */
+  async setSlides(
+    id: string,
+    slides: Array<{ coverKey: string; name: string; at: string; auto: boolean }>
+  ): Promise<void> {
+    try {
+      await DynamoDBOperations.update({
+        key: { PK: `MASTERJOB#${id}`, SK: 'METADATA' },
+        updateExpression: 'SET #slides = :slides',
+        // Never create a job by saving a list for one that does not exist.
+        conditionExpression: 'attribute_exists(PK)',
+        expressionAttributeNames: { '#slides': 'slides' },
+        expressionAttributeValues: { ':slides': slides },
+      });
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
   async rename(id: string, title: string | null): Promise<void> {
     try {
       await DynamoDBOperations.update({
