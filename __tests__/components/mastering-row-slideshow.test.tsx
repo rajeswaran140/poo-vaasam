@@ -332,3 +332,106 @@ describe('a move can be chosen for the vertical short', () => {
   });
 });
 
+/**
+ * The list is saved on the master. It used to live only in the open page, so
+ * every reload — and every deploy asks for one — emptied it.
+ */
+describe('the image list is saved with the master', () => {
+  const SAVED = [{ coverKey: 'audio/mastering/saved-two.png', name: 'saved-two.png', at: '2:00', auto: true }];
+  const slidePuts = () =>
+    mockedFetch.mock.calls.filter(([url, init]) => String(url).endsWith('/slides') && init?.method === 'PUT');
+  const lastPut = () => JSON.parse(slidePuts()[slidePuts().length - 1][1].body as string);
+
+  it('shows a saved list when the panel opens, ready to render', async () => {
+    routeFetch({}, [masterFixture({ slides: SAVED })]);
+    await openLibrary();
+    openRenderPanel(SONG);
+
+    expect(screen.getByText(/saved-two\.png/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Image 2 starts at/i)).toHaveValue('2:00');
+    expect(screen.getByRole('button', { name: /Render slideshow \(2 images\)/ })).toBeEnabled();
+  });
+
+  it('renders from a saved list without anything being re-uploaded', async () => {
+    routeFetch({}, [masterFixture({ slides: SAVED })]);
+    await openLibrary();
+    openRenderPanel(SONG);
+
+    fireEvent.click(screen.getByRole('button', { name: /Render slideshow/ }));
+
+    await waitFor(() => expect(renderPosts()).toHaveLength(1));
+    expect(lastBody().covers).toEqual([
+      { coverKey: COVER, startSec: 0 },
+      { coverKey: 'audio/mastering/saved-two.png', startSec: 120 },
+    ]);
+    expect(uploadMock).not.toHaveBeenCalled();
+  });
+
+  it('saves the list when an image is uploaded', async () => {
+    routeFetch({}, [masterFixture({ editedDurationSec: 360 })]);
+    await openLibrary();
+    openRenderPanel(SONG);
+
+    fireEvent.click(screen.getByRole('button', { name: /add image/i }));
+    fireEvent.change(screen.getByLabelText(/^Image 2$/), { target: { files: [image('second.png')] } });
+
+    await waitFor(() => expect(slidePuts().length).toBeGreaterThan(0));
+    expect(String(slidePuts()[0][0])).toContain('/master/job1/slides');
+    expect(lastPut()).toEqual({
+      slides: [{ coverKey: 'audio/mastering/second.png', name: 'second.png', at: '3:00', auto: true }],
+    });
+  });
+
+  it('saves a typed time, as typed', async () => {
+    routeFetch({}, [masterFixture({ slides: SAVED })]);
+    await openLibrary();
+    openRenderPanel(SONG);
+
+    fireEvent.change(screen.getByLabelText(/Image 2 starts at/i), { target: { value: '0:45' } });
+
+    await waitFor(() => expect(slidePuts().length).toBeGreaterThan(0), { timeout: 3000 });
+    expect(lastPut()).toEqual({ slides: [{ ...SAVED[0], at: '0:45', auto: false }] });
+  });
+
+  it('saves an empty list when the last image is removed', async () => {
+    routeFetch({}, [masterFixture({ slides: SAVED })]);
+    await openLibrary();
+    openRenderPanel(SONG);
+
+    fireEvent.click(screen.getByRole('button', { name: /Remove image 2/i }));
+
+    await waitFor(() => expect(slidePuts().length).toBeGreaterThan(0), { timeout: 3000 });
+    expect(lastPut()).toEqual({ slides: [] });
+  });
+
+  it('never saves an image that has no file yet', async () => {
+    routeFetch({}, [masterFixture({ slides: SAVED })]);
+    await openLibrary();
+    openRenderPanel(SONG);
+
+    fireEvent.click(screen.getByRole('button', { name: /add image/i }));
+
+    await waitFor(() => expect(slidePuts().length).toBeGreaterThan(0), { timeout: 3000 });
+    // Adding re-spread the saved image's time; the empty one is not in the list.
+    expect(lastPut().slides).toHaveLength(1);
+    expect(lastPut().slides[0].coverKey).toBe('audio/mastering/saved-two.png');
+  });
+
+  it('says so in the row when the list could not be saved', async () => {
+    mockedFetch.mockImplementation((url: string, init?: { method?: string }) => {
+      if (url.includes('/masters')) return Promise.resolve(ok({ success: true, masters: [masterFixture({ slides: SAVED })] }));
+      if (url.endsWith('/slides') && init?.method === 'PUT') return Promise.resolve(refuse('Could not save the image list.'));
+      return Promise.resolve(ok({}));
+    });
+    await openLibrary();
+    openRenderPanel(SONG);
+
+    fireEvent.click(screen.getByRole('button', { name: /Remove image 2/i }));
+
+    await waitFor(
+      () => expect(within(rowFor(SONG)).getByRole('alert')).toHaveTextContent(/Could not save the image list/),
+      { timeout: 3000 }
+    );
+  });
+});
+

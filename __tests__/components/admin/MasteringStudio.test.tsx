@@ -1147,6 +1147,16 @@ describe('render for YouTube', () => {
       expect(JSON.parse(posted('/short')[1][1].body)).toEqual({ coverKey: COVER, full: true, motion: 'zoom-out' });
     });
 
+    it('shows the list saved on the master, without re-uploading', async () => {
+      await masterAndSave(savedDoneJob({
+        slides: [{ coverKey: 'audio/mastering/1_c_saved.jpg', name: 'saved.jpg', at: '2:00', auto: true }],
+      }));
+      await addCover();
+
+      expect(screen.getByText(/saved\.jpg/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Render slideshow \(2 images\)/ })).toBeEnabled();
+    });
+
     it('will not render a slideshow while an added image is unfinished', async () => {
       await masterAndSave();
       await addCover();
