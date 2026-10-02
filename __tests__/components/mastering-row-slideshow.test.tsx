@@ -340,7 +340,16 @@ describe('the image list is saved with the master', () => {
   const SAVED = [{ coverKey: 'audio/mastering/saved-two.png', name: 'saved-two.png', at: '2:00', auto: true }];
   const slidePuts = () =>
     mockedFetch.mock.calls.filter(([url, init]) => String(url).endsWith('/slides') && init?.method === 'PUT');
-  const lastPut = () => JSON.parse(slidePuts()[slidePuts().length - 1][1].body as string);
+  /**
+   * Every list saved so far, for THIS master. Saving is debounced, so a save
+   * left pending by one test can land during the next, and "Add image" saves
+   * the list before the upload does. So these tests wait for the save they
+   * expect to APPEAR — never for "the first PUT" or "the last PUT", which is a
+   * race the slower CI machine loses (it did: run 36952246920).
+   */
+  const saved = () => slidePuts().map(([, init]) => JSON.parse(init.body as string));
+  const waitForSave = (expected: unknown) =>
+    waitFor(() => expect(saved()).toContainEqual(expected), { timeout: 4000 });
 
   it('shows a saved list when the panel opens, ready to render', async () => {
     routeFetch({}, [masterFixture({ slides: SAVED })]);
@@ -375,11 +384,10 @@ describe('the image list is saved with the master', () => {
     fireEvent.click(screen.getByRole('button', { name: /add image/i }));
     fireEvent.change(screen.getByLabelText(/^Image 2$/), { target: { files: [image('second.png')] } });
 
-    await waitFor(() => expect(slidePuts().length).toBeGreaterThan(0));
-    expect(String(slidePuts()[0][0])).toContain('/master/job1/slides');
-    expect(lastPut()).toEqual({
+    await waitForSave({
       slides: [{ coverKey: 'audio/mastering/second.png', name: 'second.png', at: '3:00', auto: true }],
     });
+    expect(String(slidePuts()[0][0])).toContain('/master/job1/slides');
   });
 
   it('saves a typed time, as typed', async () => {
@@ -389,8 +397,7 @@ describe('the image list is saved with the master', () => {
 
     fireEvent.change(screen.getByLabelText(/Image 2 starts at/i), { target: { value: '0:45' } });
 
-    await waitFor(() => expect(slidePuts().length).toBeGreaterThan(0), { timeout: 3000 });
-    expect(lastPut()).toEqual({ slides: [{ ...SAVED[0], at: '0:45', auto: false }] });
+    await waitForSave({ slides: [{ ...SAVED[0], at: '0:45', auto: false }] });
   });
 
   it('saves an empty list when the last image is removed', async () => {
@@ -400,8 +407,7 @@ describe('the image list is saved with the master', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Remove image 2/i }));
 
-    await waitFor(() => expect(slidePuts().length).toBeGreaterThan(0), { timeout: 3000 });
-    expect(lastPut()).toEqual({ slides: [] });
+    await waitForSave({ slides: [] });
   });
 
   it('never saves an image that has no file yet', async () => {
@@ -411,10 +417,12 @@ describe('the image list is saved with the master', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /add image/i }));
 
-    await waitFor(() => expect(slidePuts().length).toBeGreaterThan(0), { timeout: 3000 });
-    // Adding re-spread the saved image's time; the empty one is not in the list.
-    expect(lastPut().slides).toHaveLength(1);
-    expect(lastPut().slides[0].coverKey).toBe('audio/mastering/saved-two.png');
+    // Adding re-spread the saved image's time (0:30 — this master's length is
+    // not recorded); the empty row is not in the list.
+    await waitForSave({ slides: [{ ...SAVED[0], at: '0:30', auto: true }] });
+    for (const body of saved()) {
+      for (const slide of body.slides) expect(slide.coverKey).toBeTruthy();
+    }
   });
 
   it('says so in the row when the list could not be saved', async () => {
