@@ -3632,7 +3632,7 @@ A control to compare against: முத்தமிழின் (\`J2tc_aUNOPA\`
     slug: 'song-video-render',
     title: 'Rendering a song video for YouTube',
     category: 'Publishing',
-    updatedAt: '2026-10-01T21:00:00Z',
+    updatedAt: '2026-10-01T23:45:00Z',
     body: `# Rendering a song video for YouTube
 
 A Tamilagaval song video is one still image held over a mastered audio track. That sounds trivial and is not: four separate renders of காதல் வந்து அரும்பியதே were rejected before one was accepted, and every flag below is the scar of one of them. Read the reasons before you change the recipe.
@@ -3756,7 +3756,8 @@ In a saved master's row panel **and** in the render panel under a song you have 
 - **The cover is image 1 and always starts at 0:00.** It is also what YouTube takes as the thumbnail. You only add image 2 onward.
 - **Times are \`1:30\` or plain seconds, in order.** Each image stays on screen until the next one starts; the last runs to the end of the song. Every image needs at least 2 seconds, and there can be up to 8.
 - **Hard cuts, no fades between images.** That is what keeps the render as fast as a single-cover one.
-- **The button stays disabled while an added image is unfinished** — no file yet, or a time it cannot read (the field turns red). Remove the image with the × to go back to a plain render.
+- **Start times fill themselves in.** Added images are spread evenly across the song — two added images on a six-minute song start at 2:00 and 4:00 — so you can render as soon as the files are uploaded. Change any time you like; one you have typed is never moved again.
+- **The buttons stay off while an added image is unfinished, and the panel says which and why** — "Image 2 has no file yet", or a time it cannot read (the field turns red). Remove the image with the × to go back to a plain render. An earlier build required every start time to be typed and gave no reason for the greyed-out button.
 - **A refusal appears in the row** — for example an image that starts after the song ends.
 - **The song is never shortened.** An earlier build could trim up to a quarter of a second off the end when cut times were not on a tenth of a second; fixed 2026-10-01.
 - **The same list drives all three renders** — the 16:9 video, the vertical short and the whole-song vertical. You fill it in once.

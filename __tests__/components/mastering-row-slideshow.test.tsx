@@ -173,6 +173,35 @@ describe('a slideshow can be rendered from a library row', () => {
     expect(screen.getByRole('button', { name: /Render slideshow/ })).toBeEnabled();
   });
 
+  it('can render straight after an image is uploaded — its time fills itself in', async () => {
+    // The defect Raj reported: upload an image, and the button stayed greyed out.
+    routeFetch({}, [masterFixture({ editedDurationSec: 360 })]);
+    await openLibrary();
+    openRenderPanel(SONG);
+
+    fireEvent.click(screen.getByRole('button', { name: /add image/i }));
+    fireEvent.change(screen.getByLabelText(/^Image 2$/), { target: { files: [image('second.png')] } });
+    await screen.findByText(/second\.png/);
+
+    expect(screen.getByLabelText(/Image 2 starts at/i)).toHaveValue('3:00');
+    const button = screen.getByRole('button', { name: /Render slideshow \(2 images\)/ });
+    expect(button).toBeEnabled();
+    fireEvent.click(button);
+
+    await waitFor(() => expect(renderPosts()).toHaveLength(1));
+    expect(lastBody().covers[1]).toEqual({ coverKey: 'audio/mastering/second.png', startSec: 180 });
+  });
+
+  it('says WHY the button is blocked, beside the images', async () => {
+    routeFetch();
+    await openLibrary();
+    openRenderPanel(SONG);
+
+    fireEvent.click(screen.getByRole('button', { name: /add image/i }));
+
+    expect(within(rowFor(SONG)).getByText(/Image 2 has no file/)).toBeInTheDocument();
+  });
+
   it('goes back to a plain single-cover render when the added image is removed', async () => {
     routeFetch();
     await openLibrary();
