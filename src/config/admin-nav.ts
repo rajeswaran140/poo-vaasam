@@ -214,12 +214,13 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     keywords: ['compose', 'write'],
   },
   {
-    href: '/admin/suno-prompts',
-    title: 'Suno Prompts',
+    href: '/admin/music-prompts',
+    title: 'TamilAgaval Music Prompts',
     subtitle: 'Lyrics → style box, exclude list and sliders, saved for reuse',
     section: 'Compose',
     icon: SlidersHorizontal,
-    keywords: ['suno', 'prompt', 'style', 'exclude', 'weirdness'],
+    // 'suno' kept: search should still find it by the old habit.
+    keywords: ['tamilagaval', 'music', 'suno', 'prompt', 'style', 'exclude', 'weirdness'],
   },
   {
     href: '/admin/compose/critique',
@@ -267,7 +268,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   {
     href: '/admin/mastering',
     title: 'Sound Engineering',
-    subtitle: 'Master a SUNO WAV to a streaming target',
+    subtitle: 'Master a TamilAgaval Music WAV to a streaming target',
     section: 'Sound',
     icon: SlidersHorizontal,
     keywords: ['mastering', 'loudness', 'lufs'],

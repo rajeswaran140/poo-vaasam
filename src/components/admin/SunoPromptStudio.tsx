@@ -75,7 +75,7 @@ function CopyBlock({ title, value }: { title: string; value: string }) {
       </div>
       <textarea
         readOnly
-        aria-label={`Suno ${title}`}
+        aria-label={`TamilAgaval Music ${title}`}
         value={value}
         rows={title === 'lyrics box' ? 8 : 3}
         className="w-full rounded-md border border-gray-300 bg-gray-50 p-2 font-mono text-xs dark:border-gray-600 dark:bg-gray-900"
@@ -289,7 +289,7 @@ export function SunoPromptStudio({ initial, loaded }: Props) {
             </label>
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            Suno only offers the Audio Influence slider when you use an audio upload, so it stays
+            TamilAgaval Music only offers the Audio Influence slider when you use an audio upload, so it stays
             hidden until you tick that.
           </p>
           {usesAudioUpload && (

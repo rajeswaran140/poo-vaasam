@@ -120,7 +120,7 @@ describe('provenance', () => {
 describe('AI prompt export', () => {
   it('copies the musical decisions but never the lyrics', async () => {
     await openComposition();
-    fireEvent.click(screen.getByRole('button', { name: /copy for suno/i }));
+    fireEvent.click(screen.getByRole('button', { name: /copy for tamilagaval music/i }));
 
     const copied = (navigator.clipboard.writeText as jest.Mock).mock.calls[0][0] as string;
     expect(copied).toContain('warm acoustic ballad');

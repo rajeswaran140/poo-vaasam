@@ -366,11 +366,11 @@ export function parseBriefFile(text: string): ParsedBriefFile {
 
 /** A safe, lowercase, dash-joined filename stem from a (possibly Tamil) title. */
 export function exportFilename(title: string, ext: string): string {
-  const ascii = (title || 'suno-pack')
+  const ascii = (title || 'tamilagaval-music-pack')
     .normalize('NFKD')
     .replace(/[^\w\s-]/g, '')
     .trim()
     .replace(/\s+/g, '-')
     .toLowerCase();
-  return `${ascii || 'suno-pack'}.${ext}`;
+  return `${ascii || 'tamilagaval-music-pack'}.${ext}`;
 }

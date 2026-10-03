@@ -255,7 +255,7 @@ export function LyricDraftEditor({
             aria-label="Copy all lyrics"
             aria-live="polite"
             className="flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
-            title="Copy the whole lyric to the clipboard — paste into Suno, ChatGPT, etc."
+            title="Copy the whole lyric to the clipboard — paste into TamilAgaval Music, ChatGPT, etc."
           >
             {copied ? (
               <>

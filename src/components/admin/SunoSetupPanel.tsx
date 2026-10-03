@@ -177,7 +177,7 @@ export function SunoSetupPanel({
     <section className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900/40">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100">SUNO setup</h4>
+          <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100">TamilAgaval Music setup</h4>
           <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
             Breaks the lyric at musical points and fills all four boxes. Your Tamil lines are reproduced
             exactly.
@@ -190,7 +190,7 @@ export function SunoSetupPanel({
           className="inline-flex items-center gap-1.5 rounded-lg bg-purple-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
         >
           <Wand2 className="h-4 w-4" aria-hidden="true" />
-          {loading ? 'Building…' : setup ? 'Rebuild' : 'Build SUNO setup'}
+          {loading ? 'Building…' : setup ? 'Rebuild' : 'Build TamilAgaval Music setup'}
         </button>
       </div>
 

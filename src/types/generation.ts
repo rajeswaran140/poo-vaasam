@@ -21,6 +21,15 @@ import { z } from 'zod';
  */
 export const GENERATION_ENGINES = ['suno', 'lyria', 'udio', 'elevenlabs', 'mureka', 'other'] as const;
 
+/**
+ * How an engine is SHOWN. 'suno' stays the stored value — renaming stored data
+ * would need a migration and gain nothing — but the admin calls it TamilAgaval
+ * Music, Raj's label for the songs he makes with it (2026-10-03).
+ */
+export function engineLabel(engine: string): string {
+  return engine === 'suno' ? 'TamilAgaval Music' : engine;
+}
+
 /** Overall human verdict for the attempt. */
 export const GENERATION_VERDICTS = ['success', 'partial', 'failed'] as const;
 

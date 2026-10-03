@@ -115,3 +115,14 @@ describe('saving', () => {
     expect(body.styleBox).toBe(ROW.styleBox);
   });
 });
+
+describe('naming', () => {
+  it('shows no SUNO anywhere on the page', async () => {
+    render(<SunoPromptStudio initial={[ROW]} />);
+    expect(document.body.textContent).not.toMatch(/suno/i);
+    for (const el of Array.from(document.querySelectorAll('[aria-label],[title],[placeholder]'))) {
+      const visible = ['aria-label', 'title', 'placeholder'].map((a) => el.getAttribute(a) ?? '').join(' ');
+      expect(visible).not.toMatch(/suno/i);
+    }
+  });
+});
