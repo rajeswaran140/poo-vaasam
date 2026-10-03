@@ -1236,7 +1236,7 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
     return { ok: false };
   }
   const motion = isShortMotion(spec.motion) ? spec.motion : 'none';
-  const moving = motion !== 'none';
+  let moving = motion !== 'none';
   // ⚠️ A moving video is ALWAYS 1080p at 25 fps: at 1440p a move takes 1.74x
   // the song's length and only short songs would finish. See VIDEO_MOTION_HEIGHT.
   const renderHeight: VideoHeight = moving ? VIDEO_MOTION_HEIGHT : height;
@@ -1275,6 +1275,13 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
     const header = ff(['-hide_banner', '-i', audioPath]);
     const audioInfo = parseSourceInfo(`${header.stdout ?? ''}${header.stderr ?? ''}`);
     const audioSeconds = audioInfo?.durationSec ?? null;
+
+    // A SINGLE cover whose length cannot be read is rendered STILL rather than
+    // refused. A still render has always succeeded here (-shortest ends it) —
+    // "missing data is not a bad job", see above — but a move cannot be planned
+    // without a length. It is recorded as still (`videoMotion: 'none'`), and the
+    // screen labels it that way, so the operator can see it did not move.
+    if (moving && !slideshow && audioSeconds === null) moving = false;
 
     if (moving) {
       const fits = planVideoMotion(audioSeconds, motion);
@@ -1356,7 +1363,9 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
 
       const encodeHold = (i: number, secs: number, piecePath: string) =>
         ff(
-          moving
+          // `motion !== 'none'` restated so the type narrows: `moving` is a
+          // `let` (a single cover with no readable length falls back to still).
+          moving && motion !== 'none'
             ? buildMotionSegmentArgs({
                 framePath: framePaths[i], seconds: secs, outPath: piecePath, motion,
                 // Out and back in legs, so a long stretch still visibly moves.
@@ -1424,6 +1433,9 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
       coverKey,
       videoAudioCheck: audioCheck.status,
       videoAudioFindings: audioCheck.findings.map((f) => f.message),
+      // Whether THIS file moves. A still 1080p render and a moving one share
+      // the 1080p key, so the key alone cannot say which is stored.
+      videoMotion: moving ? motion : 'none',
     });
     return { ok: true, videoKey, audioCheck: audioCheck.status };
   } catch (err) {

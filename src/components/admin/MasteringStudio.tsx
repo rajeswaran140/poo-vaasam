@@ -1454,9 +1454,11 @@ export function MasteringStudio() {
     } catch (err) {
       if (!mounted.current) return;
       const message = err instanceof Error ? err.message : String(err);
-      // A slideshow's refusal is about the images just typed in this panel, so
-      // it is shown here. A plain render keeps the page banner it always used.
-      if (covers) setPanelError(message);
+      // A refusal about something chosen IN this panel — the images, or a
+      // move — is shown here, next to the button. Only a plain still render
+      // keeps the page banner it always used. (A motion refusal used to land
+      // in the banner, ~1,000 lines above: the button looked dead.)
+      if (covers || shortMotion !== 'none') setPanelError(message);
       else setError(message);
     } finally {
       if (mounted.current) setRendering(false);
@@ -3185,6 +3187,7 @@ export function MasteringStudio() {
                     className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900"
                   >
                     <Download className="h-4 w-4" aria-hidden="true" /> Download MP4
+                    {job.videoMotion && job.videoMotion !== 'none' ? ' (moving)' : ''}
                   </button>
                 )}
               </div>
@@ -3973,7 +3976,7 @@ export function MasteringStudio() {
                         onClick={() => void downloadKey(m.videoKey!, m.title ?? '', m.target)}
                         className="text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
                       >
-                        Video
+                        Video{m.videoMotion && m.videoMotion !== 'none' ? ' (moving)' : ''}
                       </button>
                     )}
                     {m.shortKey && (

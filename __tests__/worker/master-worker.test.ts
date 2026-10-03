@@ -2990,6 +2990,30 @@ describe('slideshow render', () => {
       expect(moving()).toHaveLength(0);
     });
 
+    it('records on the job that the video moves, so the screen can say so', async () => {
+      await handler({ jobId: 'j1', render: single({ motion: 'zoom-in' }) } as never);
+      expect(patched()).toMatchObject({ videoMotion: 'zoom-in' });
+    });
+
+    it('records a still video as still', async () => {
+      await handler({ jobId: 'j1', render: single({ height: 1440 }) } as never);
+      expect(patched()).toMatchObject({ videoMotion: 'none' });
+    });
+
+    it('renders a single cover still when the song\'s length cannot be read, instead of refusing', async () => {
+      // The header will not say: a still render has always succeeded here
+      // (-shortest ends it), and "missing data is not a bad job". A move
+      // cannot be planned without a length, so the video is made still —
+      // and recorded as still, which the screen shows.
+      spawnSync.mockImplementation(() => ({ status: 0, stdout: '', stderr: '' }));
+      const res = await handler({ jobId: 'j1', render: single({ motion: 'zoom-in' }) } as never);
+
+      expect(res).toMatchObject({ ok: true });
+      expect(moving()).toHaveLength(0);
+      expect(patched()).toMatchObject({ videoMotion: 'none' });
+      expect(patched().videoError).toBeNull();
+    });
+
     it('refuses a move it does not know', async () => {
       const res = await handler({ jobId: 'j1', render: single({ motion: 'spin' }) } as never);
       expect(res).toMatchObject({ ok: false });

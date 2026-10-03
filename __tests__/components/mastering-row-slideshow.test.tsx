@@ -523,3 +523,17 @@ describe('the video can move', () => {
   });
 });
 
+describe('a moving video is labelled in its row', () => {
+  it('says "moving" on the row\'s video link', async () => {
+    routeFetch({}, [masterFixture({ videoKey: 'audio/mastering/out-master-14LUFS-1080p.mp4', videoMotion: 'pan-left' })]);
+    await openLibrary();
+    expect(within(rowFor(SONG)).getByRole('button', { name: /^Video \(moving\)$/ })).toBeInTheDocument();
+  });
+
+  it('says nothing extra for a still one', async () => {
+    routeFetch({}, [masterFixture({ videoKey: 'audio/mastering/out-master-14LUFS-1440p.mp4', videoMotion: 'none' })]);
+    await openLibrary();
+    expect(within(rowFor(SONG)).getByRole('button', { name: /^Video$/ })).toBeInTheDocument();
+  });
+});
+
