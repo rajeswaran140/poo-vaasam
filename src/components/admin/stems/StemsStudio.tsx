@@ -19,7 +19,8 @@ import { Pencil, Trash2, Download, Play, RotateCw } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 import { formatClock } from '@/components/admin/ShortWindowFields';
 import { StemUpload } from '@/components/admin/stems/StemUpload';
-import type { StemEntry, StemSet } from '@/types/stemSet';
+import { StemMixer } from '@/components/admin/stems/StemMixer';
+import type { StemEntry, StemMixEntry, StemSet } from '@/types/stemSet';
 
 interface MasterInfo {
   id: string;
@@ -190,6 +191,10 @@ export function StemsStudio({ masterJobId }: Props) {
     },
     [load, scheduleIfPending]
   );
+
+  const handleMixChange = useCallback((mix: Record<string, StemMixEntry>) => {
+    setSet((prev) => (prev ? { ...prev, mix } : prev));
+  }, []);
 
   const startRename = useCallback((id: string, current: string) => {
     setRenaming(id);
@@ -495,6 +500,10 @@ export function StemsStudio({ masterJobId }: Props) {
           </ul>
         )}
       </section>
+
+      {set && set.order.length > 0 && (
+        <StemMixer set={set} masterJobId={masterJobId} onMixChange={handleMixChange} />
+      )}
     </div>
   );
 }
