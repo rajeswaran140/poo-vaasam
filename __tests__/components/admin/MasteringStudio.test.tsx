@@ -2942,3 +2942,31 @@ describe('the karaoke bed', () => {
     expect(screen.getByRole('radio', { name: /-14 LUFS/ })).toHaveAttribute('aria-checked', 'false');
   });
 });
+
+/**
+ * The page names where songs come from as TamilAgaval Music, Raj's own label —
+ * not the tool behind it (2026-10-03). And the intro no longer sends the
+ * mastered WAV "into Adobe": render, short and upload all happen on this page.
+ */
+describe('the page names the source as TamilAgaval Music', () => {
+  it('in the step heading and the intro, with no SUNO and no Adobe', async () => {
+    primeHappyPath();
+    render(<MasteringStudio />);
+
+    expect(screen.getByText(/1 · Source WAV from TamilAgaval Music/)).toBeInTheDocument();
+    expect(screen.getByText(/Export the WAV from TamilAgaval Music/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/SUNO/);
+    expect(document.body.textContent).not.toMatch(/Adobe/);
+  });
+
+  it('in the refusal for a file that is not a WAV', async () => {
+    primeHappyPath();
+    render(<MasteringStudio />);
+    const input = screen.getByLabelText(/WAV/i, { selector: 'input[type="file"]' }) as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [new File(['x'], 'take.mp3', { type: 'audio/mpeg' })] } });
+    });
+
+    expect(await screen.findByText(/Export the lossless WAV from TamilAgaval Music/)).toBeInTheDocument();
+  });
+});

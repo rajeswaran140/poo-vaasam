@@ -968,7 +968,7 @@ export function MasteringStudio() {
     const extOk = /\.wave?$/i.test(picked.name);
     const typeOk = (ACCEPTED_UPLOAD_TYPES as readonly string[]).includes(picked.type);
     if (!typeOk && !extOk) {
-      setError('That is not a WAV. Export the lossless WAV from SUNO — mastering an MP3 only re-levels a file that has already lost detail.');
+      setError('That is not a WAV. Export the lossless WAV from TamilAgaval Music — mastering an MP3 only re-levels a file that has already lost detail.');
       return;
     }
     if (picked.size > MAX_UPLOAD_BYTES) {
@@ -2356,7 +2356,8 @@ export function MasteringStudio() {
           Sound Engineering &amp; Mastering
         </h1>
         <p className="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
-          Export the WAV from SUNO, master it to a streaming target here, then take the mastered WAV into Adobe.
+          Export the WAV from TamilAgaval Music, master it to a streaming target here, then make the video,
+          the short and the vertical and upload to YouTube — all on this page.
           This is <strong>loudness</strong> mastering — level and true-peak only, never EQ, compression or tone.
         </p>
       </header>
@@ -2377,7 +2378,7 @@ export function MasteringStudio() {
       {/* 1 — source */}
       <section aria-busy={stage === 'uploading'} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-          1 · Source WAV from SUNO
+          1 · Source WAV from TamilAgaval Music
         </h2>
 
         {stage === 'idle' && (
