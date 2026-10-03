@@ -30,7 +30,10 @@ import {
   slideshowRefusalMessage,
   DEFAULT_VIDEO_HEIGHT,
   SLIDE_TRANSITIONS,
+  VIDEO_MOTION_HEIGHT,
+  planVideoMotion,
 } from '@/lib/master-video';
+import { SHORT_MOTIONS } from '@/lib/master-short';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -63,6 +66,11 @@ const bodySchema = z.object({
   durationSec: z.number().positive().optional(),
   /** `crossfade` blends a second around each cut; absent or `cut` ⇒ hard cuts. */
   transition: z.enum(SLIDE_TRANSITIONS).optional(),
+  /**
+   * A slow zoom or pan. A moving video always renders at VIDEO_MOTION_HEIGHT
+   * (1080p) — at 1440p only short songs would finish in the worker's time.
+   */
+  motion: z.enum(SHORT_MOTIONS).optional(),
 });
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ jobId: string }> }) {
@@ -80,7 +88,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!parsed.success) {
     return NextResponse.json({ success: false, error: 'A cover image is required.' }, { status: 400 });
   }
-  const height = parsed.data.height ?? DEFAULT_VIDEO_HEIGHT;
+  const moves = Boolean(parsed.data.motion && parsed.data.motion !== 'none');
+  const height = moves ? VIDEO_MOTION_HEIGHT : parsed.data.height ?? DEFAULT_VIDEO_HEIGHT;
 
   try {
     const job = await new MasterJobRepository().get(jobId);
@@ -88,6 +97,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     // Every eligibility rule lives in the planner, so the route and the worker
     // cannot disagree about what is renderable.
+    // Refused NOW when the length is already known, rather than after a queued
+    // render comes back; the worker re-checks against the file itself.
+    if (moves) {
+      const fits = planVideoMotion(job.editedDurationSec, parsed.data.motion);
+      if (!fits.ok) return NextResponse.json({ success: false, error: fits.message }, { status: 409 });
+    }
+
     const plan = planRender(job, parsed.data.coverKey, height);
     if (!plan.ok) {
       return NextResponse.json(
@@ -152,6 +168,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
               // Only with a slideshow, and only when it is not the default:
               // the event keeps its original shape otherwise.
               ...(covers && parsed.data.transition === 'crossfade' ? { transition: 'crossfade' } : {}),
+              // Absent for a still video: the event keeps its original shape.
+              ...(moves ? { motion: parsed.data.motion } : {}),
             },
           })
         ),

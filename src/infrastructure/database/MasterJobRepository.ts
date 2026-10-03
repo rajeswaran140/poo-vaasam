@@ -257,6 +257,7 @@ export class MasterJobRepository {
       peakGainDb: typeof item.peakGainDb === 'number' && Number.isFinite(item.peakGainDb)
         ? item.peakGainDb : null,
       shortError: typeof item.shortError === 'string' ? item.shortError : null,
+      videoMotion: typeof item.videoMotion === 'string' ? item.videoMotion : null,
       verticalKey: typeof item.verticalKey === 'string' ? item.verticalKey : null,
       verticalRenderedAt: typeof item.verticalRenderedAt === 'string' ? item.verticalRenderedAt : null,
       verticalSeconds: typeof item.verticalSeconds === 'number' ? item.verticalSeconds : null,

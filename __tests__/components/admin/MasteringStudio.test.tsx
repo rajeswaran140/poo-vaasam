@@ -1172,6 +1172,61 @@ describe('render for YouTube', () => {
       expect(JSON.parse(posted('/render')[0][1].body).transition).toBe('crossfade');
     });
 
+    it('sends the chosen move with the video, and says it will be 1080p', async () => {
+      await masterAndSave();
+      await addCover();
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText(/Motion/), { target: { value: 'pan-right' } });
+      });
+
+      mockedFetch.mockResolvedValueOnce(json({ success: true, status: 'queued' }));
+      mockedFetch.mockResolvedValue(json(savedDoneJob({ videoKey: 'v', videoRenderedAt: '2026-10-03T00:00:00.000Z' })));
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Render video \(1080p, moving\)/ }));
+      });
+
+      expect(JSON.parse(posted('/render')[0][1].body)).toMatchObject({ motion: 'pan-right' });
+    });
+
+    it('shows a refused MOVING video in the render panel, not the page banner far above', async () => {
+      await masterAndSave();
+      await addCover();
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText(/Motion/), { target: { value: 'zoom-in' } });
+      });
+
+      mockedFetch.mockResolvedValueOnce(json({
+        success: false,
+        error: 'With motion, the video is limited to songs of 8 minutes — set Motion to None for this one.',
+      }, false, 409));
+      const button = screen.getByRole('button', { name: /Render video \(1080p, moving\)/ });
+      await act(async () => { fireEvent.click(button); });
+
+      const alert = (await screen.findAllByRole('alert')).find((a) => /8 minutes/.test(a.textContent ?? ''))!;
+      expect(alert).toBeDefined();
+      // The panel's own alert sits AFTER its render button; the page banner
+      // sits before the whole studio. Which one it is, is the defect.
+      expect(button.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('labels a finished video as moving when it moves', async () => {
+      await masterAndSave();
+      await addCover();
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText(/Motion/), { target: { value: 'zoom-in' } });
+      });
+
+      mockedFetch.mockResolvedValueOnce(json({ success: true, status: 'queued' }));
+      mockedFetch.mockResolvedValue(json(savedDoneJob({
+        videoKey: 'audio/mastering/1_a_song-master-14LUFS-1080p.mp4',
+        videoRenderedAt: '2026-10-03T00:00:00.000Z',
+        videoMotion: 'zoom-in',
+      })));
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Render video \(1080p, moving\)/ })); });
+
+      expect(await screen.findByRole('button', { name: /Download MP4 \(moving\)/ })).toBeInTheDocument();
+    });
+
     it('will not render a slideshow while an added image is unfinished', async () => {
       await masterAndSave();
       await addCover();

@@ -436,11 +436,11 @@ export function MasteringStudio() {
   /** The vertical hook clip for Reels/Shorts — a separate render from the video. */
   const [shorting, setShorting] = useState(false);
   /**
-   * The slow zoom or pan for the next VERTICAL render — the short and the
-   * whole-song vertical both. `none` by default, so both are still unless a
-   * move is chosen. One setting for the page rather than per song: it is how
-   * the operator wants verticals made today, not a fact about one master.
-   * The 16:9 video never moves.
+   * The slow zoom or pan for the next render — the 16:9 video, the short and
+   * the whole-song vertical alike. `none` by default, so everything is still
+   * unless a move is chosen. One setting for the page rather than per song: it
+   * is how the operator wants videos made today, not a fact about one master.
+   * A moving 16:9 video renders at 1080p — see VIDEO_MOTION_HEIGHT.
    */
   const [shortMotion, setShortMotion] = useState<ShortMotion>('none');
   /**
@@ -1373,7 +1373,12 @@ export function MasteringStudio() {
         covers: Array<{ coverKey: string; startSec: number }>;
         durationSec: number | null;
         transition?: SlideTransition;
-      }
+      },
+      /**
+       * A slow zoom or pan. The route renders a moving video at 1080p whatever
+       * `height` says. `none` or omitted ⇒ no field is sent at all.
+       */
+      motion: ShortMotion = 'none'
     ): Promise<MasterJob | null> => {
       const res = await adminFetch(`/api/admin/music-lab/master/${targetId}/render`, {
         method: 'POST',
@@ -1381,6 +1386,7 @@ export function MasteringStudio() {
         body: JSON.stringify({
           coverKey,
           height,
+          ...(motion !== 'none' ? { motion } : {}),
           ...(slideshow
             ? {
                 covers: slideshow.covers,
@@ -1399,7 +1405,8 @@ export function MasteringStudio() {
       // Check IMMEDIATELY, then settle into an interval. A short render can be
       // finished before the first tick would have elapsed, and waiting anyway
       // would show a spinner for a file that already exists.
-      const deadline = Date.now() + 10 * 60 * 1000;
+      // A moving video draws every frame — about the song's own length again.
+      const deadline = Date.now() + (motion !== 'none' ? 14 : 10) * 60 * 1000;
       for (let attempt = 0; ; attempt++) {
         if (attempt > 0) await new Promise((r) => setTimeout(r, 4000));
         if (!mounted.current) return null;
@@ -1440,20 +1447,23 @@ export function MasteringStudio() {
         videoHeight,
         job?.videoRenderedAt ?? null,
         job?.videoError ?? null,
-        covers ? { covers, durationSec: job?.editedDurationSec ?? null, transition: slideTransition } : undefined
+        covers ? { covers, durationSec: job?.editedDurationSec ?? null, transition: slideTransition } : undefined,
+        shortMotion
       );
       if (fresh) setJob(fresh);
     } catch (err) {
       if (!mounted.current) return;
       const message = err instanceof Error ? err.message : String(err);
-      // A slideshow's refusal is about the images just typed in this panel, so
-      // it is shown here. A plain render keeps the page banner it always used.
-      if (covers) setPanelError(message);
+      // A refusal about something chosen IN this panel — the images, or a
+      // move — is shown here, next to the button. Only a plain still render
+      // keeps the page banner it always used. (A motion refusal used to land
+      // in the banner, ~1,000 lines above: the button looked dead.)
+      if (covers || shortMotion !== 'none') setPanelError(message);
       else setError(message);
     } finally {
       if (mounted.current) setRendering(false);
     }
-  }, [jobId, cover, videoHeight, job, panelSlides, slideTransition, startRender]);
+  }, [jobId, cover, videoHeight, job, panelSlides, slideTransition, shortMotion, startRender]);
 
   /**
    * POST the short and poll until the clip lands.
@@ -1985,7 +1995,8 @@ export function MasteringStudio() {
         videoHeight,
         row?.videoRenderedAt ?? null,
         row?.videoError ?? null,
-        covers ? { covers, durationSec: row?.editedDurationSec ?? null, transition: slideTransition } : undefined
+        covers ? { covers, durationSec: row?.editedDurationSec ?? null, transition: slideTransition } : undefined,
+        shortMotion
       );
       if (!fresh) return;
       setLibrary((prev) =>
@@ -2003,7 +2014,7 @@ export function MasteringStudio() {
     } finally {
       if (mounted.current) setRowBusy(null);
     }
-  }, [rowRender, rowSlides, slideTransition, videoHeight, library, startRender, failRow]);
+  }, [rowRender, rowSlides, slideTransition, shortMotion, videoHeight, library, startRender, failRow]);
 
   /**
    * Cut a short from the library, for the same reason renderRowVideo exists:
@@ -3164,8 +3175,10 @@ export function MasteringStudio() {
                   {rendering
                     ? 'Rendering…'
                     : panelSlidesNow.length > 0
-                      ? `Render slideshow (${panelSlidesNow.length + 1} images)`
-                      : 'Render video'}
+                      ? `Render slideshow (${panelSlidesNow.length + 1} images${shortMotion !== 'none' ? ', 1080p, moving' : ''})`
+                      : shortMotion !== 'none'
+                        ? 'Render video (1080p, moving)'
+                        : 'Render video'}
                 </button>
                 {job.videoKey && (
                   <button
@@ -3174,6 +3187,7 @@ export function MasteringStudio() {
                     className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900"
                   >
                     <Download className="h-4 w-4" aria-hidden="true" /> Download MP4
+                    {job.videoMotion && job.videoMotion !== 'none' ? ' (moving)' : ''}
                   </button>
                 )}
               </div>
@@ -3962,7 +3976,7 @@ export function MasteringStudio() {
                         onClick={() => void downloadKey(m.videoKey!, m.title ?? '', m.target)}
                         className="text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
                       >
-                        Video
+                        Video{m.videoMotion && m.videoMotion !== 'none' ? ' (moving)' : ''}
                       </button>
                     )}
                     {m.shortKey && (
@@ -4127,8 +4141,10 @@ export function MasteringStudio() {
                         className="rounded bg-orange-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
                       >
                         {slidesFor(m.id).length > 0
-                          ? `Render slideshow (${slidesFor(m.id).length + 1} images)`
-                          : `Render video (${videoHeight}p)`}
+                          ? `Render slideshow (${slidesFor(m.id).length + 1} images${shortMotion !== 'none' ? ', 1080p, moving' : ''})`
+                          : shortMotion !== 'none'
+                            ? 'Render video (1080p, moving)'
+                            : `Render video (${videoHeight}p)`}
                       </button>
                       {/* The same cover feeds both. A short is not a step on the
                           way to the video and does not need one to exist. */}
@@ -4140,8 +4156,8 @@ export function MasteringStudio() {
                       >
                         {m.shortKey ? 'Re-cut vertical short' : 'Make vertical short'}
                       </button>
-                      {/* A slow move across each image, for BOTH vertical renders.
-                          Still by default. The 16:9 video ignores it. */}
+                      {/* A slow move across each image, for ALL three renders.
+                          Still by default. A moving 16:9 video is 1080p. */}
                       <label className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-300">
                         Motion
                         <select

@@ -698,8 +698,17 @@ export function buildMotionSegmentArgs(params: {
    * clip has always done and must keep doing.
    */
   legSeconds?: number;
+  /**
+   * The 16:9 video passes its own size, rate and encoder settings; omitted,
+   * the piece is the vertical one it has always been.
+   */
+  size?: { width: number; height: number };
+  fps?: number;
+  codecArgs?: readonly string[];
 }): string[] {
-  const frames = Math.max(1, Math.round(params.seconds * SHORT_FPS));
+  const fps = params.fps ?? SHORT_FPS;
+  const size = params.size ?? { width: SHORT_WIDTH, height: SHORT_HEIGHT };
+  const frames = Math.max(1, Math.round(params.seconds * fps));
   // `on` runs 0..frames-1, so dividing by frames-1 lands the last frame on the end.
   const span = Math.max(1, frames - 1);
   const T = MOTION_TRAVEL;
@@ -726,9 +735,9 @@ export function buildMotionSegmentArgs(params: {
   return [
     '-hide_banner', '-nostats',
     '-i', params.framePath,
-    '-vf', `zoompan=${expr}:d=${frames}:s=${SHORT_WIDTH}x${SHORT_HEIGHT}:fps=${SHORT_FPS}`,
+    '-vf', `zoompan=${expr}:d=${frames}:s=${size.width}x${size.height}:fps=${fps}`,
     '-frames:v', String(frames),
-    ...SHORT_MOTION_CODEC_ARGS,
+    ...(params.codecArgs ?? SHORT_MOTION_CODEC_ARGS),
     '-an',
     '-y', params.outPath,
   ];

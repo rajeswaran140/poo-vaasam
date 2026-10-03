@@ -3632,7 +3632,7 @@ A control to compare against: முத்தமிழின் (\`J2tc_aUNOPA\`
     slug: 'song-video-render',
     title: 'Rendering a song video for YouTube',
     category: 'Publishing',
-    updatedAt: '2026-10-02T15:30:00Z',
+    updatedAt: '2026-10-03T15:30:00Z',
     body: `# Rendering a song video for YouTube
 
 A Tamilagaval song video is one still image held over a mastered audio track. That sounds trivial and is not: four separate renders of காதல் வந்து அரும்பியதே were rejected before one was accepted, and every flag below is the scar of one of them. Read the reasons before you change the recipe.
@@ -3770,7 +3770,7 @@ In a saved master's row panel **and** in the render panel under a song you have 
 - **A short that sits inside one image's stretch is an ordinary single-image short** — of *that* image, not necessarily the cover.
 - **The vertical slideshow needs the worker deployed after 2026-10-01 (second deploy).** Before that the short and the whole-song vertical quietly use the cover alone.
 
-## Slow zoom and pan — a vertical that moves
+## Slow zoom and pan — a video that moves
 
 Beside **Make vertical short** (and **Make a short**): a **Motion** choice. **None (still)** is the default, so a short is unchanged unless you pick a move.
 
@@ -3778,7 +3778,11 @@ Beside **Make vertical short** (and **Make a short**): a **Motion** choice. **No
 - **In a slideshow short, every image gets its own complete move** over the time it is on screen.
 - ⚠️ **A move crops the artwork slightly.** It travels 8% of the frame: a zoom ends 8% in, and a pan holds 8% in throughout — about 4% off each side. A title that runs right to the edge of the cover can be clipped. Check the first one you make; if it clips, use **None** or leave more margin on the cover.
 - **It takes longer than a still short** — roughly the clip's own length (a 3-minute moving short measured 2 minutes 23 seconds, against under a minute for a still one). The row says *Working…* meanwhile.
-- **It applies to both vertical renders** — the short and **Whole song, vertical**. The 16:9 video stays still.
+- **It applies to all three renders** — the 16:9 video, the short and **Whole song, vertical**. One choice.
+- ⚠️ **A moving 16:9 video is always 1080p**, whatever height is chosen for a still one, at 25 frames a second (a still video stays at its height and 10 fps). At 1440p a moving video took 1.7 times the song's length to draw, so only songs under about 5½ minutes would have finished; at 1080p it is about the song's own length. The button says so: **Render video (1080p, moving)**.
+- **A moving 16:9 video is limited to songs of 8 minutes**, refused with a message past that — set **Motion** to **None** for a longer song. A still video has no limit.
+- **A finished video says whether it moves**: the link reads **Video (moving)** in the row and **Download MP4 (moving)** in the panel. Worth a glance, because a still 1080p video and a moving one are stored as the same file — the newer one replaces the older.
+- **If a song's length cannot be read, a single-image video is made still** rather than refused, and is labelled still. A refusal about motion appears in the render panel, next to the button.
 - **Across a whole song the move goes out and back**, in legs of about half a minute: zoom in, back out, in again. One 8% move stretched over five minutes would be too slow to see. A short keeps its single pass.
 - **A moving whole song is limited to 8 minutes** (a still one keeps its 10). Every frame has to be drawn — a 5:32 song measured 4 minutes 54 seconds to render — and the worker has 15 minutes. Past 8 minutes it is refused with a message; set **Motion** to **None** for that song.
 - The audio is untouched — a moving short is cut from the same window of the same master, and comes out the same length.

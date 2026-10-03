@@ -271,12 +271,26 @@ export function buildComposeArgs(params: {
   height?: VideoHeight;
   /** width/height of the cover, probed by the worker. Undefined = unknown. */
   coverAspect?: number;
+  /**
+   * Enlarge the FINISHED frame this many times, for a render that moves across
+   * it (MOTION_SOURCE_SCALE in master-short.ts). Omit or 1 ⇒ the frame exactly
+   * as it has always been composed.
+   */
+  sourceScale?: number;
 }): string[] {
   const height = params.height ?? DEFAULT_VIDEO_HEIGHT;
+  const base = buildVideoFilter(height, params.coverAspect);
+  const scale = params.sourceScale && params.sourceScale > 1 ? params.sourceScale : 1;
+  // Composed at 1x first and enlarged after, so a moving video at rest looks
+  // exactly like a still one — same fill rule, backdrop and sharpening.
+  const filter =
+    scale === 1
+      ? base
+      : base.replace(/\[v\]$/, `[v1];[v1]scale=${videoWidthFor(height) * scale}:${height * scale}:flags=lanczos[v]`);
   return [
     '-hide_banner', '-nostats',
     '-i', params.coverPath,
-    '-filter_complex', buildVideoFilter(height, params.coverAspect),
+    '-filter_complex', filter,
     '-map', '[v]',
     '-frames:v', '1',
     '-y', params.framePath,
@@ -794,4 +808,52 @@ export function buildFirstFrameArgs(piecePath: string, framePath: string): strin
  */
 export function buildLastFrameArgs(piecePath: string, framePath: string): string[] {
   return ['-hide_banner', '-nostats', '-sseof', '-1', '-i', piecePath, '-update', '1', '-y', framePath];
+}
+
+/**
+ * ============================================================================
+ * A 16:9 VIDEO THAT MOVES — slow zoom and pan on the YouTube render.
+ * ============================================================================
+ *
+ * Added 2026-10-03, on Raj's choice between measured options. Measured on the
+ * Lambda's ffmpeg 7.0.2, 60 s at 25 fps from a 4x source:
+ *
+ *     1440p  zoom 1.74x the song's length  -> only ~5.5-minute songs fit
+ *     1080p  zoom 0.97x, pan 0.88x         -> an 8-minute song ~9.5 of 15 min
+ *
+ * So a MOVING video renders at 1080p whatever height is chosen for a still one,
+ * at 25 fps (10 fps — fine for a still — makes motion visibly choppy), and only
+ * for songs up to VIDEO_MOTION_MAX_SECONDS. A still video is untouched by all
+ * of this: same heights, same 10 fps, no length limit.
+ */
+export const VIDEO_MOTION_HEIGHT: VideoHeight = 1080;
+export const VIDEO_MOTION_FPS = 25;
+export const VIDEO_MOTION_MAX_SECONDS = 480;
+
+/**
+ * How a MOVING 16:9 piece is encoded — the moves and any fade between them.
+ * The still video's quality (crf 16), without the still-image tuning.
+ */
+export const VIDEO_MOTION_CODEC_ARGS: readonly string[] = [
+  '-c:v', 'libx264', '-preset', 'veryfast',
+  '-crf', String(VIDEO_CRF), '-pix_fmt', 'yuv420p', '-r', String(VIDEO_MOTION_FPS),
+];
+
+/** Whether a 16:9 render of this length may move, and why not. */
+export function planVideoMotion(
+  audioSeconds: number | null | undefined,
+  motion: string | null | undefined,
+): { ok: true } | { ok: false; message: string } {
+  if (!motion || motion === 'none') return { ok: true };
+  // Unknown length: not refused here. The worker probes the file and asks again.
+  if (typeof audioSeconds !== 'number' || !Number.isFinite(audioSeconds)) return { ok: true };
+  if (audioSeconds > VIDEO_MOTION_MAX_SECONDS) {
+    return {
+      ok: false,
+      message:
+        'With motion, the video is limited to songs of 8 minutes — every frame has to be drawn, ' +
+        "and a longer song would not finish in the worker's time. Set Motion to None for this one.",
+    };
+  }
+  return { ok: true };
 }

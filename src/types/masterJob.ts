@@ -232,6 +232,12 @@ export interface MasterJob {
    * and sharing the clip's key meant each render replaced the other. Null on
    * every job that has not had one rendered.
    */
+  /**
+   * The move the stored 16:9 video was rendered with — `none` for a still one,
+   * null on every video made before motion existed. Needed because a still
+   * 1080p render and a moving one share the same `-1080p.mp4` key.
+   */
+  videoMotion?: string | null;
   verticalKey: string | null;
   verticalRenderedAt: string | null;
   verticalSeconds: number | null;

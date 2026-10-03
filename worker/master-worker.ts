@@ -78,6 +78,11 @@ import {
   isSlideTransition,
   VIDEO_SEGMENT_CODEC_ARGS,
   VIDEO_FPS,
+  VIDEO_MOTION_HEIGHT,
+  VIDEO_MOTION_FPS,
+  VIDEO_MOTION_CODEC_ARGS,
+  planVideoMotion,
+  videoWidthFor,
   type PlannedSegment,
   FRAME_EXTENSION,
   planSegments,
@@ -235,6 +240,11 @@ interface MasterEvent {
     covers?: Array<{ coverKey?: string; startSec?: number }>;
     /** `crossfade` blends a second around each cut. Absent or `cut` ⇒ hard cuts. */
     transition?: unknown;
+    /**
+     * A slow zoom or pan. A moving video renders at VIDEO_MOTION_HEIGHT and
+     * VIDEO_MOTION_FPS whatever `height` says. Validated here: Event-invoked.
+     */
+    motion?: unknown;
   };
   /**
    * A pre-master ANALYSIS — measure a source before anything is decided about
@@ -1221,6 +1231,16 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
     return { ok: false };
   }
   const crossfade = spec.transition === 'crossfade';
+  if (spec.motion !== undefined && !isShortMotion(spec.motion)) {
+    await patch(jobId, { videoError: 'that motion is not one this renderer knows' });
+    return { ok: false };
+  }
+  const motion = isShortMotion(spec.motion) ? spec.motion : 'none';
+  let moving = motion !== 'none';
+  // ⚠️ A moving video is ALWAYS 1080p at 25 fps: at 1440p a move takes 1.74x
+  // the song's length and only short songs would finish. See VIDEO_MOTION_HEIGHT.
+  const renderHeight: VideoHeight = moving ? VIDEO_MOTION_HEIGHT : height;
+  const fps = moving ? VIDEO_MOTION_FPS : VIDEO_FPS;
   if (!VIDEO_HEIGHTS.includes(height)) {
     await patch(jobId, { videoError: `height must be one of ${VIDEO_HEIGHTS.join(', ')}` });
     return { ok: false };
@@ -1256,13 +1276,29 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
     const audioInfo = parseSourceInfo(`${header.stdout ?? ''}${header.stderr ?? ''}`);
     const audioSeconds = audioInfo?.durationSec ?? null;
 
+    // A SINGLE cover whose length cannot be read is rendered STILL rather than
+    // refused. A still render has always succeeded here (-shortest ends it) —
+    // "missing data is not a bad job", see above — but a move cannot be planned
+    // without a length. It is recorded as still (`videoMotion: 'none'`), and the
+    // screen labels it that way, so the operator can see it did not move.
+    if (moving && !slideshow && audioSeconds === null) moving = false;
+
+    if (moving) {
+      const fits = planVideoMotion(audioSeconds, motion);
+      if (!fits.ok) {
+        await patch(jobId, { videoError: fits.message });
+        return { ok: false };
+      }
+    }
+
     /* ---- the single-image render, unchanged --------------------------------
      * TWO passes, deliberately. Composing the frame once and looping THAT is
      * what brings the render inside the 900 s timeout — see buildComposeArgs.
      * Reported separately so a failure says which half broke; they fail for
      * different reasons (an unreadable cover vs an encode problem).
      */
-    if (!slideshow) {
+    // A moving video is a slideshow of one: the move belongs to the stretch.
+    if (!slideshow && !moving) {
       const coverPath = coverPathFor(coverKey, 0);
       const framePath = join(dir, `frame${FRAME_EXTENSION}`);
       const cover = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: coverKey }));
@@ -1293,7 +1329,7 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
       // the last image ends, and an event that got it wrong would freeze on a
       // still or truncate the song with no error to point at. Probed above,
       // once, because the single-cover branch now needs the same figure.
-      const timed = planSegments(requested, audioSeconds);
+      const timed = planSegments(requested, audioSeconds, fps);
       if (!timed.ok) {
         await patch(jobId, { videoError: slideshowRefusalMessage(timed.reason) });
         return { ok: false };
@@ -1311,7 +1347,11 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
           writeFileSync(coverPath, Buffer.from(await cover.Body!.transformToByteArray()));
           framePath = join(dir, `frame${i}${FRAME_EXTENSION}`);
           const coverAspect = probeCoverAspect(coverPath);
-          const composed = ff(buildComposeArgs({ coverPath, framePath, height, coverAspect }));
+          const composed = ff(buildComposeArgs({
+            coverPath, framePath, height: renderHeight, coverAspect,
+            // Enlarged only when something will move across it.
+            ...(moving ? { sourceScale: MOTION_SOURCE_SCALE } : {}),
+          }));
           if (composed.status !== 0) {
             await patch(jobId, { videoError: `image ${i + 1} could not be composed into a frame` });
             return { ok: false };
@@ -1321,16 +1361,32 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
         framePaths.push(framePath);
       }
 
+      const encodeHold = (i: number, secs: number, piecePath: string) =>
+        ff(
+          // `motion !== 'none'` restated so the type narrows: `moving` is a
+          // `let` (a single cover with no readable length falls back to still).
+          moving && motion !== 'none'
+            ? buildMotionSegmentArgs({
+                framePath: framePaths[i], seconds: secs, outPath: piecePath, motion,
+                // Out and back in legs, so a long stretch still visibly moves.
+                legSeconds: MOTION_LEG_SECONDS,
+                size: { width: videoWidthFor(renderHeight), height: renderHeight },
+                fps: VIDEO_MOTION_FPS,
+                codecArgs: VIDEO_MOTION_CODEC_ARGS,
+              })
+            : buildSegmentArgs({ framePath: framePaths[i], seconds: secs, outPath: piecePath })
+        );
+
       let segmentPaths: string[] = [];
       if (crossfade && timed.segments.length > 1) {
         // A one-second blend around each cut, as its own piece; the stills
         // either side stay stills. See planCrossfades.
         const faded = encodeCrossfadedPieces({
-          dir, segments: timed.segments, fps: VIDEO_FPS,
+          dir, segments: timed.segments, fps,
           frameFor: (i) => framePaths[i],
-          encodeHold: (i, secs, outPath) => ff(buildSegmentArgs({ framePath: framePaths[i], seconds: secs, outPath })),
-          fadeCodec: VIDEO_SEGMENT_CODEC_ARGS,
-          moving: false,
+          encodeHold,
+          fadeCodec: moving ? VIDEO_MOTION_CODEC_ARGS : VIDEO_SEGMENT_CODEC_ARGS,
+          moving,
         });
         if (!faded.ok) {
           await patch(jobId, { videoError: faded.message });
@@ -1340,7 +1396,7 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
       } else {
         for (const [i, seg] of timed.segments.entries()) {
           const segPath = join(dir, `seg${i}.mp4`);
-          const enc = ff(buildSegmentArgs({ framePath: framePaths[i], seconds: seg.seconds, outPath: segPath }));
+          const enc = encodeHold(i, seg.seconds, segPath);
           if (enc.status !== 0) {
             await patch(jobId, { videoError: `the render failed encoding image ${i + 1}` });
             return { ok: false };
@@ -1366,7 +1422,7 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
     // so this costs one ebur128 pass each and no downloads.
     const audioCheck = checkRenderedAudio(audioPath, outPath);
 
-    const videoKey = videoKeyFor(audioKey, height);
+    const videoKey = videoKeyFor(audioKey, renderHeight);
     await s3.send(new PutObjectCommand({
       Bucket: bucket, Key: videoKey, Body: readFileSync(outPath), ContentType: 'video/mp4',
     }));
@@ -1377,6 +1433,9 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
       coverKey,
       videoAudioCheck: audioCheck.status,
       videoAudioFindings: audioCheck.findings.map((f) => f.message),
+      // Whether THIS file moves. A still 1080p render and a moving one share
+      // the 1080p key, so the key alone cannot say which is stored.
+      videoMotion: moving ? motion : 'none',
     });
     return { ok: true, videoKey, audioCheck: audioCheck.status };
   } catch (err) {
