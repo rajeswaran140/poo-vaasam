@@ -131,6 +131,34 @@ export class StemSetRepository {
     }
   }
 
+  /**
+   * Record (or clear, with `null`) a stem's preview error — the same field
+   * the worker itself writes from `makeStemPreview`, but reachable from the
+   * route layer too: a worker invoke that never fires (Lambda throws before
+   * the function runs) needs the SAME durable signal a failed render leaves,
+   * or the row is stuck showing "Preparing listening copy…" forever with no
+   * way to tell it apart from one that is genuinely still in progress.
+   *
+   * Conditional on the stem still existing, and — like the worker's own
+   * write — a lost race against a concurrent removeStem is not an error
+   * here: there is nothing left to annotate, so it is swallowed rather than
+   * surfaced to the caller.
+   */
+  async setPreviewError(masterJobId: string, stemId: string, message: string | null): Promise<void> {
+    try {
+      await DynamoDBOperations.update({
+        key: keyFor(masterJobId),
+        updateExpression: 'SET #stems.#sid.#previewError = :err',
+        conditionExpression: 'attribute_exists(#stems.#sid)',
+        expressionAttributeNames: { '#stems': 'stems', '#sid': stemId, '#previewError': 'previewError' },
+        expressionAttributeValues: { ':err': message },
+      });
+    } catch (error) {
+      if ((error as Record<string, unknown>).name === 'ConditionalCheckFailedException') return;
+      handleDynamoDBError(error);
+    }
+  }
+
   async renameStem(masterJobId: string, stemId: string, name: string): Promise<void> {
     try {
       await DynamoDBOperations.update({

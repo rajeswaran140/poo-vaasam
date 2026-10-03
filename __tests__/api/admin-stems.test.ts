@@ -9,8 +9,9 @@ jest.mock('@/infrastructure/database/MasterJobRepository', () => ({
   MasterJobRepository: jest.fn().mockImplementation(() => ({ get: masterGet })),
 }));
 const setGet = jest.fn(); const addStem = jest.fn(); const renameStem = jest.fn(); const removeStem = jest.fn();
+const setPreviewError = jest.fn();
 jest.mock('@/infrastructure/database/StemSetRepository', () => ({
-  StemSetRepository: jest.fn().mockImplementation(() => ({ get: setGet, addStem, renameStem, removeStem })),
+  StemSetRepository: jest.fn().mockImplementation(() => ({ get: setGet, addStem, renameStem, removeStem, setPreviewError })),
 }));
 const lambdaSend = jest.fn().mockResolvedValue({});
 jest.mock('@aws-sdk/client-lambda', () => ({
@@ -31,11 +32,18 @@ const req = (method: string, body?: unknown) =>
   new Request('http://x', { method, ...(body ? { body: JSON.stringify(body) } : {}) }) as never;
 const p = (extra: Record<string, string> = {}) => ({ params: Promise.resolve({ masterJobId: JOB, ...extra }) });
 
+const SID = '1696000000000_ab12cd34_2_Drums';
+
 beforeEach(() => {
   jest.clearAllMocks();
   masterGet.mockResolvedValue(SAVED);
   setGet.mockResolvedValue(null);
-  addStem.mockResolvedValue({ masterJobId: JOB, order: ['1696000000000_ab12cd34_2_Drums'], stems: {}, mix: {}, remix: null });
+  addStem.mockResolvedValue({
+    masterJobId: JOB, order: [SID],
+    stems: { [SID]: { key: KEY, name: 'Drums', previewKey: null, previewError: null } },
+    mix: {}, remix: null,
+  });
+  setPreviewError.mockResolvedValue(undefined);
 });
 
 it('is admin-only, everywhere', async () => {
@@ -90,6 +98,37 @@ it('still saves the stem and returns 201 when the worker invoke fails, flagging 
   expect(await res.json()).toMatchObject({ success: true, previewQueued: false });
   expect(addStem).toHaveBeenCalledWith(JOB, KEY, '2_Drums.wav');
   errSpy.mockRestore();
+});
+
+it("records the stem's previewError when the worker invoke fails, so a reload still shows it", async () => {
+  const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+  lambdaSend.mockRejectedValueOnce(new Error('throttled'));
+  const res = await POST(req('POST', { key: KEY, filename: '2_Drums.wav' }), p());
+  const body = await res.json();
+  expect(res.status).toBe(201);
+  expect(body.previewQueued).toBe(false);
+  // Written to the database, not just held in the Lambda response — a GET
+  // after a reload must see the same thing.
+  expect(setPreviewError).toHaveBeenCalledWith(JOB, SID, expect.stringMatching(/could not be started/i));
+  // And reflected in THIS response's set, so the page doesn't need a second
+  // round trip to show it.
+  expect(body.set.stems[SID].previewError).toMatch(/could not be started/i);
+  errSpy.mockRestore();
+});
+
+it('clears any old previewError before asking the worker again, on a successful re-POST', async () => {
+  addStem.mockResolvedValueOnce({
+    masterJobId: JOB, order: [SID],
+    stems: { [SID]: { key: KEY, name: 'Drums', previewKey: null, previewError: 'a previous failure' } },
+    mix: {}, remix: null,
+  });
+  const res = await POST(req('POST', { key: KEY, filename: '2_Drums.wav' }), p());
+  const body = await res.json();
+  expect(res.status).toBe(201);
+  expect(setPreviewError).toHaveBeenCalledWith(JOB, SID, null);
+  expect(body.set.stems[SID].previewError).toBeNull();
+  // Cleared BEFORE the worker is asked to try again, not after.
+  expect(setPreviewError.mock.invocationCallOrder[0]).toBeLessThan(lambdaSend.mock.invocationCallOrder[0]);
 });
 
 it('maps a gone stem on rename to 404', async () => {

@@ -117,30 +117,68 @@ it('never says SUNO', async () => {
   expect(document.body.textContent).not.toMatch(/suno/i);
 });
 
-// Not in the brief's Step 1 fixture, but the Task 4 interface says the add
-// route "may include previewQueued: false" — left unhandled, that stem would
-// sit at previewKey: null forever with no visible error and no way to
-// recover. This covers the recovery path: a row error with a Retry that
-// re-registers the already-uploaded key rather than re-uploading the file.
-it('flags a stem whose preview render could not be queued, and retries by re-registering only', async () => {
-  route({ add: ok({ success: true, set: SET, previewQueued: false }) }, null);
+// The add route persists an invoke failure onto the STEM itself now
+// (previewError, written server-side — see admin-stems.test.ts), so the
+// uploaded stem's row owns the one alert and the one Retry. StemUpload's
+// queue row just says "Added": the worker invoke is a 201, after all, and
+// showing a second, differently-worded alert there would be two sources of
+// truth for the same failure.
+it('persists a worker-invoke failure onto the stem itself, with one alert and one Retry', async () => {
+  const MESSAGE = 'The listening copy could not be started — press Retry.';
+  const failedSet = { ...SET, stems: { [ID]: { ...SET.stems[ID], previewKey: null, previewError: MESSAGE } } };
+  route({ add: ok({ success: true, set: failedSet, previewQueued: false }) }, null);
   render(<StemsStudio masterJobId={JOB} />);
   await screen.findByText('பாடல்');
   const input = screen.getByLabelText(/Add stem WAVs/i);
   fireEvent.change(input, { target: { files: [new File(['x'], '2_Drums.wav', { type: 'audio/wav' })] } });
   await waitFor(() => expect(uploadMock).toHaveBeenCalledTimes(1));
 
-  const alert = await screen.findByRole('alert');
-  expect(alert).toHaveTextContent(/didn't start/);
+  const row = await screen.findByRole('listitem', { name: /Drums/ });
+  // Exactly one alert in the whole page, and it lives in the stem's own row.
+  expect(screen.getAllByRole('alert')).toHaveLength(1);
+  expect(within(row).getByRole('alert')).toHaveTextContent(MESSAGE);
 
-  fireEvent.click(screen.getByRole('button', { name: /Retry/i }));
+  fireEvent.click(within(row).getByRole('button', { name: /Retry Drums/ }));
   await waitFor(() => {
     const posts = mockedFetch.mock.calls.filter(
       (c) => c[0] === `/api/admin/stems/${JOB}/stems` && c[1]?.method === 'POST'
     );
     expect(posts.length).toBe(2);
   });
-  // Still exactly one upload — the retry re-posted the same key, it did not
-  // send the file to S3 a second time.
+  // The retry re-POSTs the stem's key directly — it never re-uploads.
   expect(uploadMock).toHaveBeenCalledTimes(1);
+});
+
+// A worker-invoke failure is now PERSISTED on the stem (previewError in the
+// loaded set), not just held in StemUpload's own local, reload-losing state.
+// A stem loaded straight off GET with previewError set must show the same
+// alert + a way to retry — otherwise a reload loses the Retry entirely and
+// the row is stuck looking exactly like one still rendering.
+it("shows a loaded stem's previewError with a Retry that re-POSTs the same key", async () => {
+  const MESSAGE = 'The listening copy could not be started — press Retry.';
+  // The retry succeeds server-side (the route clears the error and the
+  // worker invoke goes through this time) — SET itself, unmodified, is a
+  // realistic "cleared" response.
+  route(
+    { add: ok({ success: true, set: SET }) },
+    { ...SET, stems: { [ID]: { ...SET.stems[ID], previewKey: null, previewError: MESSAGE } } }
+  );
+  render(<StemsStudio masterJobId={JOB} />);
+  const row = await screen.findByRole('listitem', { name: /Drums/ });
+  expect(within(row).getByRole('alert')).toHaveTextContent(MESSAGE);
+
+  fireEvent.click(within(row).getByRole('button', { name: /Retry Drums/ }));
+  await waitFor(() => {
+    const call = mockedFetch.mock.calls.find(
+      (c) => c[0] === `/api/admin/stems/${JOB}/stems` && c[1]?.method === 'POST'
+    );
+    expect(call).toBeDefined();
+    const body = JSON.parse(call![1].body);
+    expect(body.key).toBe(KEY);
+    expect(typeof body.filename).toBe('string');
+    expect(body.filename.length).toBeGreaterThan(0);
+  });
+  // The set refreshes from the retry's own response — the row stops
+  // showing the alert without a separate reload or poll tick.
+  await waitFor(() => expect(within(row).queryByRole('alert')).toBeNull());
 });

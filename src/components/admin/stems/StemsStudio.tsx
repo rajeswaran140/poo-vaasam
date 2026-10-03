@@ -15,7 +15,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Pencil, Trash2, Download, Play } from 'lucide-react';
+import { Pencil, Trash2, Download, Play, RotateCw } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 import { formatClock } from '@/components/admin/ShortWindowFields';
 import { StemUpload } from '@/components/admin/stems/StemUpload';
@@ -236,6 +236,36 @@ export function StemsStudio({ masterJobId }: Props) {
     }
   }, []);
 
+  /**
+   * Re-POST a stem that already failed to get its listening copy started
+   * (`previewError` set, persisted by the server — see the POST route).
+   * Same endpoint as the initial add; `addStem` is idempotent on key, so
+   * this re-registers rather than duplicating the stem, and the route
+   * clears the old error and asks the worker again before replying.
+   */
+  const retryPreview = useCallback(
+    async (id: string, stem: StemEntry) => {
+      try {
+        const filename = stem.key.split('/').pop() || stem.name;
+        const res = await adminFetch(`/api/admin/stems/${masterJobId}/stems`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: stem.key, filename }),
+        });
+        const body = await res.json();
+        if (!res.ok || !body.success) {
+          setRowError({ stemId: id, message: body.error || "Could not retry that stem's listening copy." });
+          return;
+        }
+        setRowError((prev) => (prev?.stemId === id ? null : prev));
+        handleAdded(body.set as StemSet);
+      } catch (err) {
+        setRowError({ stemId: id, message: err instanceof Error ? err.message : String(err) });
+      }
+    },
+    [masterJobId, handleAdded]
+  );
+
   const majorityRate = set ? majoritySampleRate(set) : null;
   const longest = set ? longestDuration(set) : null;
 
@@ -342,9 +372,19 @@ export function StemsStudio({ masterJobId }: Props) {
                   )}
 
                   {stem.previewError ? (
-                    <p role="alert" className="w-full text-xs text-red-600 dark:text-red-400">
-                      {stem.previewError}
-                    </p>
+                    <>
+                      <p role="alert" className="w-full text-xs text-red-600 dark:text-red-400">
+                        {stem.previewError}
+                      </p>
+                      <button
+                        type="button"
+                        aria-label={`Retry ${stem.name}`}
+                        onClick={() => void retryPreview(id, stem)}
+                        className="flex shrink-0 items-center gap-1 text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
+                      >
+                        <RotateCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
+                      </button>
+                    </>
                   ) : stem.previewKey === null ? (
                     <span className="shrink-0 text-xs text-gray-400">Preparing listening copy…</span>
                   ) : playUrls[id] ? (

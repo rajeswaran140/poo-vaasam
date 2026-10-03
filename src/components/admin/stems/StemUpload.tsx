@@ -56,16 +56,17 @@ export function StemUpload({ masterJobId, onAdded }: Props) {
   /**
    * Register an already-uploaded key against the stem set (the POST that
    * also kicks off the worker's preview render). Split out from `runOne` so
-   * a Retry after `previewQueued: false` can re-POST the same key without
+   * a Retry after a registration failure can re-POST the same key without
    * re-uploading the file — `addStem` on the server is idempotent on key, so
    * this is a safe no-op append if nothing actually failed.
    *
-   * `previewQueued: false` means the stem itself was saved (worth keeping,
-   * worth calling `onAdded` for) but the worker invoke that renders its
-   * listening copy never fired — left alone, that stem would sit at
-   * `previewKey: null` forever with no visible error and no way to recover,
-   * so it is surfaced here as a row error with a Retry rather than a silent
-   * "Added".
+   * A `previewQueued: false` 201 is NOT treated as a failure here: the stem
+   * itself was saved, and the route now persists the worker-invoke failure
+   * onto the stem's own `previewError` (see admin-stems route), which flows
+   * back through `onAdded`'s set and is StemsStudio's job to show — on that
+   * stem's own row, with its own Retry. Showing a second, differently-worded
+   * alert in this upload queue for the exact same failure would be two
+   * sources of truth for one problem.
    */
   const register = useCallback(
     async (item: Item, key: string, signal: AbortSignal) => {
@@ -82,13 +83,6 @@ export function StemUpload({ masterJobId, onAdded }: Props) {
           throw new Error(body.error || 'Could not add that stem.');
         }
         onAdded(body.set as StemSet);
-        if (body.previewQueued === false) {
-          patch(item.uid, {
-            state: 'error',
-            error: "Saved, but its listening copy didn't start — Retry to try again.",
-          });
-          return;
-        }
         patch(item.uid, { state: 'done' });
       } catch (err) {
         if (signal.aborted) {
