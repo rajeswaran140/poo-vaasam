@@ -147,6 +147,7 @@ import {
   JOIN_OUTPUT_LABEL,
 } from '@/lib/master-join';
 import { planUpload, uploadRefusalMessage } from '@/lib/youtube-upload';
+import { isValidMasterJobId, isStemKeyFor, stemIdFromKey, stemPreviewKey } from '@/lib/stems';
 import type { MasterJob } from '@/types/masterJob';
 
 const FFMPEG = process.env.FFMPEG_PATH || '/opt/bin/ffmpeg';
@@ -309,6 +310,13 @@ interface MasterEvent {
    * validated here rather than trusted from the route.
    */
   normalizationMode?: unknown;
+  /**
+   * A stem's LISTENING COPY — a small AAC encode of one uploaded stem WAV, so
+   * the live mixer can load every stem of a song without a 1 GB download.
+   * Handled before the mastering guards, like a render: it carries no target
+   * and masters nothing.
+   */
+  stemPreview?: { masterJobId?: string; stemKey?: string };
 }
 
 /**
@@ -1882,6 +1890,80 @@ function probeSource(path: string): SourceInfo | null {
   return parseSourceInfo(`${probe.stdout ?? ''}${probe.stderr ?? ''}`);
 }
 
+/**
+ * A stem's LISTENING COPY: AAC 128k stereo, ~5 MB for five minutes, so the
+ * page can load every stem of a song for the live mixer without a 1 GB
+ * download. The full WAV stays the source of every render.
+ *
+ * ⚠️ Writes ONE stem's fields by nested path, conditional on the stem still
+ * existing: several copies finish at once, and a stem may be removed while
+ * its copy is being made — neither may clobber or resurrect anything.
+ */
+async function makeStemPreview(spec: NonNullable<MasterEvent['stemPreview']>, bucket: string) {
+  const masterJobId = spec.masterJobId ?? '';
+  const stemKey = spec.stemKey ?? '';
+  if (!isValidMasterJobId(masterJobId) || !isStemKeyFor(masterJobId, stemKey)) {
+    console.error('[master-worker] bad stemPreview event');
+    return { ok: false };
+  }
+  const sid = stemIdFromKey(stemKey);
+  const write = async (sets: Record<string, [string, unknown]>) => {
+    const names: Record<string, string> = { '#stems': 'stems', '#sid': sid };
+    const values: Record<string, unknown> = {};
+    const parts: string[] = [];
+    for (const [field, [ph, v]] of Object.entries(sets)) {
+      names[`#${field}`] = field;
+      values[ph] = v;
+      parts.push(`#stems.#sid.#${field} = ${ph}`);
+    }
+    try {
+      await ddb.send(new UpdateCommand({
+        TableName: TABLE,
+        Key: { PK: `STEMSET#${masterJobId}`, SK: 'METADATA' },
+        UpdateExpression: `SET ${parts.join(', ')}`,
+        ConditionExpression: 'attribute_exists(#stems.#sid)',
+        ExpressionAttributeNames: names,
+        ExpressionAttributeValues: values,
+      }));
+      return 'ok' as const;
+    } catch (err) {
+      if ((err as { name?: string }).name === 'ConditionalCheckFailedException') return 'removed' as const;
+      throw err;
+    }
+  };
+
+  const dir = mkdtempSync(join(tmpdir(), 'stem-'));
+  const wav = join(dir, 'stem.wav');
+  const out = join(dir, 'preview.m4a');
+  try {
+    const obj = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: stemKey }));
+    writeFileSync(wav, Buffer.from(await obj.Body!.transformToByteArray()));
+    const info = probeSource(wav);
+    const enc = ff(['-hide_banner', '-nostats', '-i', wav, '-vn', '-c:a', 'aac', '-b:a', '128k', '-ac', '2', '-movflags', '+faststart', '-y', out]);
+    if (enc.status !== 0) {
+      await write({ previewError: [':err', 'the listening copy could not be made'] });
+      return { ok: false };
+    }
+    const previewKey = stemPreviewKey(stemKey);
+    await s3.send(new PutObjectCommand({ Bucket: bucket, Key: previewKey, Body: readFileSync(out), ContentType: 'audio/mp4' }));
+    const r = await write({
+      previewKey: [':pk', previewKey],
+      previewError: [':noerr', null],
+      durationSec: [':dur', info?.durationSec ?? null],
+      sampleRate: [':rate', info?.sampleRate ?? null],
+      channels: [':ch', info?.channels ?? null],
+    });
+    return r === 'removed' ? { ok: true, removed: true } : { ok: true, previewKey };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[master-worker] stem preview failed:', message);
+    await write({ previewError: [':err', message] }).catch(() => {});
+    return { ok: false };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 export const handler = async (event: MasterEvent) => {
   const jobId = event?.jobId;
   const s3Key = event?.s3Key;
@@ -1931,6 +2013,16 @@ export const handler = async (event: MasterEvent) => {
       return { ok: false, error: 'jobId and TAKES_BUCKET are required' };
     }
     return await renderShort(jobId, event.short, TAKES_BUCKET);
+  }
+
+  // A stem's listening copy, likewise — before the mastering guards, and with
+  // no jobId: it belongs to a STEMSET record, not a MASTERJOB.
+  if (event?.stemPreview) {
+    if (!TAKES_BUCKET) {
+      console.error('[master-worker] bad stemPreview event');
+      return { ok: false, error: 'TAKES_BUCKET is required' };
+    }
+    return await makeStemPreview(event.stemPreview, TAKES_BUCKET);
   }
 
   // The bucket is NOT taken from the event. The worker's IAM role can read and
