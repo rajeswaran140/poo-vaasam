@@ -19,7 +19,7 @@ import { Pencil, Trash2, Download, Play, RotateCw } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 import { formatClock } from '@/components/admin/ShortWindowFields';
 import { StemUpload } from '@/components/admin/stems/StemUpload';
-import { StemMixer } from '@/components/admin/stems/StemMixer';
+import { StemMixer, type StemMixerHandle } from '@/components/admin/stems/StemMixer';
 import { targetIdFor } from '@/lib/master-peak';
 import type { NormalizationMode } from '@/lib/master-peak';
 import type { StemEntry, StemMixEntry, StemRemix, StemSet } from '@/types/stemSet';
@@ -75,6 +75,25 @@ const RENDER_POLL_MS = 4000;
 const RENDER_TIMEOUT_MS = 10 * 60 * 1000;
 const RENDER_TIMEOUT_MESSAGE =
   'The remix is taking longer than expected — reload to check on it.';
+/** Shown in the Remix section when Render found the mixer's latest save failed. */
+const UNSAVED_MIX_MESSAGE = "Your latest levels weren't saved — fix that before rendering.";
+
+/**
+ * A render requested before this page loaded (a reload mid-render) that is
+ * still worth watching: requested after the last finished render, not
+ * already failed, and inside the same 10-minute window a fresh render gets.
+ * Returns the watch to resume, or null.
+ */
+function resumableRenderWatch(
+  remix: StemRemix | null | undefined,
+  now: number
+): { priorRenderedAt: string | null; deadline: number } | null {
+  if (!remix?.requestedAt || remix.error) return null;
+  if (!(remix.requestedAt > (remix.renderedAt ?? ''))) return null;
+  const requested = Date.parse(remix.requestedAt);
+  if (Number.isNaN(requested) || now - requested >= RENDER_TIMEOUT_MS) return null;
+  return { priorRenderedAt: remix.renderedAt, deadline: requested + RENDER_TIMEOUT_MS };
+}
 
 /** What a render ends up at, given the latest poll's `remix` (undefined on a
  * failed poll tick, where there is no fresh set to read) against the watch
@@ -149,6 +168,9 @@ export function StemsStudio({ masterJobId }: Props) {
   const [renderError, setRenderError] = useState<string | null>(null);
   const [remixPlayUrl, setRemixPlayUrl] = useState<string | null>(null);
   const [remixPlayError, setRemixPlayError] = useState<string | null>(null);
+  // The mixer's last save failed: Render stays off until a save succeeds.
+  const [mixSaveError, setMixSaveError] = useState<string | null>(null);
+  const mixerRef = useRef<StemMixerHandle>(null);
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The render poll's OWN timer — kept separate from `timerRef` (the preview
@@ -250,6 +272,13 @@ export function StemsStudio({ masterJobId }: Props) {
       if (!initialLoadRef.current) {
         initialLoadRef.current = true;
         if (nextSet?.remix?.error) setRenderError(nextSet.remix.error);
+        // A reload mid-render: pick the watch back up (the call just below
+        // schedules its first poll) rather than offering Render again.
+        const resumed = resumableRenderWatch(nextSet?.remix, Date.now());
+        if (resumed) {
+          renderWatchRef.current = resumed;
+          setRenderBusy(true);
+        }
       }
       continueRenderWatch(nextSet?.remix ?? null);
     } catch (err) {
@@ -287,6 +316,12 @@ export function StemsStudio({ masterJobId }: Props) {
 
   const handleMixChange = useCallback((mix: Record<string, StemMixEntry>) => {
     setSet((prev) => (prev ? { ...prev, mix } : prev));
+  }, []);
+
+  const handleMixSaveError = useCallback((error: string | null) => {
+    setMixSaveError(error);
+    // A save that succeeds again clears the "not saved" refusal it caused.
+    if (error === null) setRenderError((prev) => (prev === UNSAVED_MIX_MESSAGE ? null : prev));
   }, []);
 
   const startRename = useCallback((id: string, current: string) => {
@@ -414,11 +449,20 @@ export function StemsStudio({ masterJobId }: Props) {
   /**
    * Queue a render of the saved mix. The body carries nothing — the server
    * always renders from the stored mix, never anything this page sends — so
-   * there is nothing to build here but the request itself.
+   * the mixer's latest levels must be SAVED first: a fader moved inside the
+   * autosave delay is flushed now, and the POST waits for that PUT (and any
+   * already in flight). A failed save means no render.
    */
   const handleRender = useCallback(async () => {
     setRenderError(null);
     setRenderBusy(true);
+    const saved = mixerRef.current ? await mixerRef.current.flush() : true;
+    if (!mountedRef.current) return;
+    if (!saved) {
+      setRenderBusy(false);
+      setRenderError(UNSAVED_MIX_MESSAGE);
+      return;
+    }
     // Captured BEFORE the POST: the poll below ends on the first renderedAt
     // that differs from this, never on the one already sitting there from a
     // previous render.
@@ -666,7 +710,13 @@ export function StemsStudio({ masterJobId }: Props) {
       </section>
 
       {set && set.order.length > 0 && (
-        <StemMixer set={set} masterJobId={masterJobId} onMixChange={handleMixChange} />
+        <StemMixer
+          ref={mixerRef}
+          set={set}
+          masterJobId={masterJobId}
+          onMixChange={handleMixChange}
+          onSaveErrorChange={handleMixSaveError}
+        />
       )}
 
       {set && set.order.length > 0 && (
@@ -674,11 +724,16 @@ export function StemsStudio({ masterJobId }: Props) {
           aria-label="Remix"
           className="space-y-3 rounded-lg border border-gray-200 p-4 dark:border-gray-800"
         >
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Remix</h2>
+            {mixSaveError && !renderBusy && (
+              <span className="text-xs text-amber-600 dark:text-amber-400">
+                Render is off until the mixer&apos;s levels are saved.
+              </span>
+            )}
             <button
               type="button"
-              disabled={renderBusy}
+              disabled={renderBusy || mixSaveError !== null}
               onClick={() => void handleRender()}
               className="rounded-md border border-orange-300 px-3 py-1.5 text-xs font-medium text-orange-700 hover:bg-orange-50 disabled:opacity-50 dark:border-orange-700 dark:text-orange-300 dark:hover:bg-orange-950/30"
             >

@@ -564,6 +564,13 @@ describe('the stems doc matches what the Stems page actually does', () => {
     expect(doc!.body).toMatch(/padded with silence/i);
   });
 
+  it('a waiting stem can still be muted, Render saves first, and a reload mid-render resumes', () => {
+    expect(doc!.body).toMatch(/waiting for its listening copy.*\*\*mute\*\* button/is);
+    expect(doc!.body).toMatch(/render first saves any fader/i);
+    expect(doc!.body).toMatch(/if a save fails, nothing is rendered/i);
+    expect(doc!.body).toMatch(/reloading the page mid-render is safe/i);
+  });
+
   it('the Master this remix section exists and names Sound Engineering, not "mastering Studio"', () => {
     expect(doc!.body).toMatch(/## master this remix/i);
     expect(doc!.body).toMatch(/\*\*master this remix\*\*/i);

@@ -354,3 +354,145 @@ it('loads each listening copy exactly once across separate ticks, and keeps a pl
   fireEvent.change(vocalsFader, { target: { value: '-6' } });
   await waitFor(() => expect(sources[0].connectedTo!.gain.value).toBeCloseTo(0.501, 2));
 });
+
+// Final-review fix wave (F3): a stem still waiting for its listening copy
+// can't be auditioned, but it can be left out of the render — Mute and the
+// level readout are there, and the mute is saved like any other.
+it('a stem with no listening copy can still be muted, and the mute is saved', async () => {
+  route();
+  render(<StemMixer set={SET} masterJobId={JOB} />);
+  await screen.findByRole('slider', { name: 'Vocals level' });
+
+  expect(screen.getByText(/Bass is waiting for its listening copy/)).toBeInTheDocument();
+  expect(screen.queryByRole('slider', { name: 'Bass level' })).toBeNull();
+  const mute = screen.getByRole('button', { name: 'Mute Bass' });
+  expect(screen.getByTestId(`level-${B}`)).toHaveTextContent('0.0 dB');
+
+  fireEvent.click(mute);
+  expect(mute).toHaveAttribute('aria-pressed', 'true');
+  await waitFor(
+    () => {
+      const put = mockedFetch.mock.calls.find((c) => c[0] === `/api/admin/stems/${JOB}/mix` && c[1]?.method === 'PUT');
+      expect(put).toBeDefined();
+      expect(JSON.parse(put![1].body).mix[B]).toEqual({ gainDb: 0, muted: true });
+    },
+    { timeout: 2000 }
+  );
+});
+
+describe('the transport while a stem is still loading', () => {
+  const TWO: StemSet = {
+    masterJobId: JOB,
+    order: [V, K],
+    stems: { [V]: stem({ name: 'Vocals' }), [K]: stem({ name: 'Keys' }) },
+    mix: {},
+    remix: null,
+    createdAt: 't',
+    updatedAt: 't',
+  };
+
+  // Keys' presigned URL and Keys' audio bytes are each released by hand, so
+  // the test can hold the mixer in "playing, but a new stem is still loading".
+  function gateKeys() {
+    let releaseUrl: () => void = () => {};
+    const urlGate = new Promise<void>((r) => { releaseUrl = r; });
+    let releaseBytes: () => void = () => {};
+    const bytesGate = new Promise<void>((r) => { releaseBytes = r; });
+    mockedFetch.mockImplementation((url: string, init?: { method?: string }) => {
+      const m = init?.method ?? 'GET';
+      if (url.startsWith('/api/admin/mastering/download') && m === 'GET') {
+        const key = new URL(url, 'https://x').searchParams.get('key') ?? '';
+        const body = ok({ success: true, url: `https://s3/${key}` });
+        return key.includes('Keys') ? urlGate.then(() => body) : Promise.resolve(body);
+      }
+      return Promise.resolve(ok({}));
+    });
+    const bytesCalls: string[] = [];
+    global.fetch = jest.fn(async (url: string) => {
+      bytesCalls.push(url);
+      if (url.includes('Keys')) await bytesGate;
+      return { ok: true, arrayBuffer: async () => new ArrayBuffer(8) };
+    }) as never;
+    return { releaseUrl, releaseBytes, bytesCalls };
+  }
+
+  it('keeps Pause and the seek bar usable while a newly added stem loads (F4)', async () => {
+    const gate = gateKeys();
+    render(<StemMixer set={TWO} masterJobId={JOB} />);
+    await waitFor(() => expect(gains.length).toBe(1)); // Vocals loaded
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Play' })).not.toBeDisabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+    await waitFor(() => expect(sources.length).toBe(1));
+    await screen.findByRole('button', { name: 'Pause' });
+
+    // Keys' URL lands, its bytes don't: the mixer is no longer `ready`.
+    gate.releaseUrl();
+    await waitFor(() => expect(gate.bytesCalls.some((u) => u.includes('Keys'))).toBe(true));
+
+    expect(screen.getByRole('button', { name: 'Pause' })).not.toBeDisabled();
+    const seekBar = screen.getByRole('slider', { name: 'Playback position' });
+    expect(seekBar).not.toBeDisabled();
+
+    // A seek mid-load keeps playing, from the new position.
+    fireEvent.change(seekBar, { target: { value: '10' } });
+    await waitFor(() => expect(sources.length).toBe(2));
+    expect(sources[1].start).toHaveBeenCalledWith(expect.any(Number), 10);
+    expect(screen.getByRole('button', { name: 'Pause' })).not.toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+    expect(await screen.findByRole('button', { name: 'Play' })).toBeInTheDocument();
+    gate.releaseBytes();
+    await waitFor(() => expect(gains.length).toBe(2));
+  });
+
+  it('never re-fetches a listening copy that failed to load when another stem joins (F6)', async () => {
+    let releaseKeysUrl: () => void = () => {};
+    const keysUrlGate = new Promise<void>((r) => { releaseKeysUrl = r; });
+    mockedFetch.mockImplementation((url: string, init?: { method?: string }) => {
+      const m = init?.method ?? 'GET';
+      if (url.startsWith('/api/admin/mastering/download') && m === 'GET') {
+        const key = new URL(url, 'https://x').searchParams.get('key') ?? '';
+        const body = ok({ success: true, url: `https://s3/${key}` });
+        return key.includes('Keys') ? keysUrlGate.then(() => body) : Promise.resolve(body);
+      }
+      return Promise.resolve(ok({}));
+    });
+    const bytesCalls: string[] = [];
+    global.fetch = jest.fn(async (url: string) => {
+      bytesCalls.push(url);
+      if (url.includes('Vocals')) throw new Error('network down');
+      return { ok: true, arrayBuffer: async () => new ArrayBuffer(8) };
+    }) as never;
+
+    render(<StemMixer set={TWO} masterJobId={JOB} />);
+    await waitFor(() => expect(bytesCalls.filter((u) => u.includes('Vocals'))).toHaveLength(1));
+    // Let the failure settle, then a second stem joins: stemsKey changes.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Play' })).not.toBeDisabled());
+    releaseKeysUrl();
+    await waitFor(() => expect(gains.length).toBe(1)); // Keys loaded
+    expect(bytesCalls.filter((u) => u.includes('Vocals'))).toHaveLength(1);
+  });
+});
+
+it('Play after reaching the end starts again from the top (F7)', async () => {
+  const ONE: StemSet = {
+    masterJobId: JOB,
+    order: [V],
+    stems: { [V]: stem({ name: 'Vocals' }) },
+    mix: {},
+    remix: null,
+    createdAt: 't',
+    updatedAt: 't',
+  };
+  route();
+  render(<StemMixer set={ONE} masterJobId={JOB} />);
+  await waitFor(() => expect(gains.length).toBe(1));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Play' })).not.toBeDisabled());
+
+  // At the very end, paused — where a finished playback leaves the transport.
+  fireEvent.change(screen.getByRole('slider', { name: 'Playback position' }), { target: { value: '221.9' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+
+  await waitFor(() => expect(sources.length).toBe(1));
+  expect(sources[0].start).toHaveBeenCalledWith(expect.any(Number), 0);
+});

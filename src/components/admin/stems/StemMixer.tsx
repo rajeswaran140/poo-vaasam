@@ -10,11 +10,16 @@
  * real edit; soloing is just how you listen while deciding.
  *
  * A stem without a listening copy yet (no `previewKey`) gets no fader — the
- * operator can't preview a level change with nothing to play — but every
- * other stem's mixer keeps working.
+ * operator can't preview a level change with nothing to play — but it keeps
+ * its Mute button and level readout, so it can still be left out of a
+ * render, and every other stem's mixer keeps working.
+ *
+ * Saves are serialised (each PUT waits for the one before it) and exposed
+ * through `ref.flush()`, so the page can make sure the levels the operator
+ * last set are on the server before it asks for a render.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react';
 import { Pause, Play } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 import { formatClock } from '@/components/admin/ShortWindowFields';
@@ -41,14 +46,26 @@ function formatGainDb(gainDb: number): string {
   return '0.0 dB';
 }
 
+export interface StemMixerHandle {
+  /**
+   * Send any change still waiting out the autosave delay now, and wait for
+   * every save already sent. Resolves true only if the latest levels are
+   * saved; false if that save failed (the mixer shows why).
+   */
+  flush: () => Promise<boolean>;
+}
+
 interface Props {
   set: StemSet;
   masterJobId: string;
   /** Fired with the full mix right after it's successfully saved. */
   onMixChange?: (mix: Record<string, StemMixEntry>) => void;
+  /** Fired whenever the last save's error appears or clears (null = saved). */
+  onSaveErrorChange?: (error: string | null) => void;
+  ref?: Ref<StemMixerHandle>;
 }
 
-export function StemMixer({ set, masterJobId, onMixChange }: Props) {
+export function StemMixer({ set, masterJobId, onMixChange, onSaveErrorChange, ref }: Props) {
   const [mix, setMix] = useState<Record<string, StemMixEntry>>(() => initialMix(set));
   const [solo, setSolo] = useState<ReadonlySet<string>>(() => new Set());
   const [playUrls, setPlayUrls] = useState<Record<string, string>>({});
@@ -122,31 +139,67 @@ export function StemMixer({ set, masterJobId, onMixChange }: Props) {
     }
   }, [mixer.supported, set.order, set.stems, playUrls]);
 
+  useEffect(() => {
+    onSaveErrorChange?.(saveError);
+  }, [saveError, onSaveErrorChange]);
+
+  // The most recent save's outcome. Each save chains onto the one before it,
+  // so PUTs reach the server in the order the operator made the changes and
+  // awaiting this one promise means every earlier save has settled too.
+  const lastSaveRef = useRef<Promise<boolean>>(Promise.resolve(true));
+
+  const saveNow = useCallback(
+    (next: Record<string, StemMixEntry>): Promise<boolean> => {
+      const run = async (): Promise<boolean> => {
+        try {
+          const res = await adminFetch(`/api/admin/stems/${masterJobId}/mix`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mix: next }),
+          });
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok || body.success === false) throw new Error(body.error || 'Could not save the mix.');
+          if (mountedRef.current) {
+            setSaveError(null);
+            onMixChange?.(next);
+          }
+          return true;
+        } catch (err) {
+          if (mountedRef.current) setSaveError(err instanceof Error ? err.message : String(err));
+          return false;
+        }
+      };
+      const saved = lastSaveRef.current.then(run);
+      lastSaveRef.current = saved;
+      return saved;
+    },
+    [masterJobId, onMixChange]
+  );
+
   const scheduleSave = useCallback(
     (next: Record<string, StemMixEntry>) => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
         saveTimerRef.current = null;
-        void (async () => {
-          try {
-            const res = await adminFetch(`/api/admin/stems/${masterJobId}/mix`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ mix: next }),
-            });
-            const body = await res.json().catch(() => ({}));
-            if (!res.ok || body.success === false) throw new Error(body.error || 'Could not save the mix.');
-            if (!mountedRef.current) return;
-            setSaveError(null);
-            onMixChange?.(next);
-          } catch (err) {
-            if (!mountedRef.current) return;
-            setSaveError(err instanceof Error ? err.message : String(err));
-          }
-        })();
+        void saveNow(next);
       }, MIX_SAVE_DELAY_MS);
     },
-    [masterJobId, onMixChange]
+    [saveNow]
+  );
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      flush: () => {
+        if (saveTimerRef.current) {
+          clearTimeout(saveTimerRef.current);
+          saveTimerRef.current = null;
+          return saveNow(mixRef.current);
+        }
+        return lastSaveRef.current;
+      },
+    }),
+    [saveNow]
   );
 
   const commit = useCallback(
@@ -211,7 +264,7 @@ export function StemMixer({ set, masterJobId, onMixChange }: Props) {
           <button
             type="button"
             aria-label={mixer.playing ? 'Pause' : 'Play'}
-            disabled={!mixer.ready}
+            disabled={!mixer.ready && !mixer.playing}
             onClick={() => (mixer.playing ? mixer.pause() : mixer.play())}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-orange-600 text-white transition hover:bg-orange-700 disabled:opacity-40"
           >
@@ -224,7 +277,7 @@ export function StemMixer({ set, masterJobId, onMixChange }: Props) {
             max={mixer.duration || 0}
             step={0.1}
             value={mixer.position}
-            disabled={!mixer.ready}
+            disabled={!mixer.ready && !mixer.playing}
             onChange={(e) => mixer.seek(Number(e.target.value))}
             className="min-w-[8rem] grow"
           />
@@ -240,15 +293,44 @@ export function StemMixer({ set, masterJobId, onMixChange }: Props) {
         {set.order.map((id) => {
           const stemEntry = set.stems[id];
           if (!stemEntry) return null;
-          if (!stemEntry.previewKey) {
-            return (
-              <p key={id} className="text-xs text-gray-400">
-                {stemEntry.name} is waiting for its listening copy.
-              </p>
-            );
-          }
           const level = mix[id] ?? NEUTRAL_LEVEL;
           const silent = level.muted || level.gainDb <= MIN_GAIN_DB;
+          const muteButton = (
+            <button
+              type="button"
+              aria-label={`Mute ${stemEntry.name}`}
+              aria-pressed={level.muted}
+              onClick={() => toggleMute(id)}
+              className={`rounded-md border px-2 py-0.5 text-xs font-medium ${
+                level.muted
+                  ? 'border-red-400 bg-red-50 text-red-700 dark:border-red-700 dark:bg-red-950/40 dark:text-red-300'
+                  : 'border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'
+              }`}
+            >
+              Mute
+            </button>
+          );
+          const readout = (
+            <span
+              data-testid={`level-${id}`}
+              className="w-14 shrink-0 text-right text-xs tabular-nums text-gray-500 dark:text-gray-400"
+            >
+              {formatGainDb(level.gainDb)}
+            </span>
+          );
+          if (!stemEntry.previewKey) {
+            // Nothing to play yet, so no fader and no Solo — but it can
+            // still be muted out of the render.
+            return (
+              <div key={id} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <p className="min-w-[8rem] grow text-xs text-gray-400">
+                  {stemEntry.name} is waiting for its listening copy.
+                </p>
+                {readout}
+                {muteButton}
+              </div>
+            );
+          }
           return (
             <div key={id} className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <span
@@ -268,22 +350,8 @@ export function StemMixer({ set, masterJobId, onMixChange }: Props) {
                 onChange={(e) => setGainDb(id, Number(e.target.value))}
                 className="min-w-[8rem] grow"
               />
-              <span className="w-14 shrink-0 text-right text-xs tabular-nums text-gray-500 dark:text-gray-400">
-                {formatGainDb(level.gainDb)}
-              </span>
-              <button
-                type="button"
-                aria-label={`Mute ${stemEntry.name}`}
-                aria-pressed={level.muted}
-                onClick={() => toggleMute(id)}
-                className={`rounded-md border px-2 py-0.5 text-xs font-medium ${
-                  level.muted
-                    ? 'border-red-400 bg-red-50 text-red-700 dark:border-red-700 dark:bg-red-950/40 dark:text-red-300'
-                    : 'border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'
-                }`}
-              >
-                Mute
-              </button>
+              {readout}
+              {muteButton}
               <button
                 type="button"
                 aria-label={`Solo ${stemEntry.name}`}

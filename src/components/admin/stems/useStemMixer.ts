@@ -160,8 +160,9 @@ export function useStemMixer({ stems, gains, solo }: UseStemMixerArgs): UseStemM
   // GainNode a currently-playing AudioBufferSourceNode is connected to,
   // silently detaching fader/mute/solo from whatever's already playing
   // until the next pause/play. So: skip any id already in `buffersRef`
-  // (loaded) or `loadingRef` (in flight); only load ids this hook has never
-  // seen. A stem that finishes loading mid-playback does NOT join the
+  // (loaded), `loadingRef` (in flight) or `failedRef` (failed — retried
+  // only after it leaves and rejoins `stems`); only load ids this hook has
+  // never seen. A stem that finishes loading mid-playback does NOT join the
   // sources already running — it has no source yet, only a buffer and a
   // gain node (so mute/solo/fader already reach it) — it starts playing the
   // next time `play()` runs, same as any other stopped stem.
@@ -211,7 +212,10 @@ export function useStemMixer({ stems, gains, solo }: UseStemMixerArgs): UseStemM
     };
 
     for (const track of stems) {
-      if (buffersRef.current.has(track.id) || loadingRef.current.has(track.id)) continue;
+      // A stem that already failed stays failed until it leaves `stems`
+      // (the cleanup above forgets it then) — never re-fetched just because
+      // some other stem joined and changed `stemsKey`.
+      if (buffersRef.current.has(track.id) || loadingRef.current.has(track.id) || failedRef.current.has(track.id)) continue;
       loadingRef.current.add(track.id);
       void (async () => {
         try {
@@ -268,9 +272,15 @@ export function useStemMixer({ stems, gains, solo }: UseStemMixerArgs): UseStemM
     rafRef.current = requestAnimationFrame(tick);
   }, [stopSources]);
 
-  const play = useCallback(() => {
+  /**
+   * Start every loaded stem from the current position. No `ready` check —
+   * `play` (below) adds that; `seek` calls this directly, so a seek while a
+   * newly added stem is still loading keeps playing what is already loaded
+   * instead of silently stopping.
+   */
+  const startPlayback = useCallback(() => {
     const ctx = ctxRef.current;
-    if (!ctx || !ready || playingRef.current) return;
+    if (!ctx || playingRef.current) return;
     void (async () => {
       if (ctx.state !== 'running') {
         try {
@@ -282,7 +292,14 @@ export function useStemMixer({ stems, gains, solo }: UseStemMixerArgs): UseStemM
       }
       if (!mountedRef.current) return;
       const when = ctx.currentTime + START_LATENCY_SEC;
-      const offset = positionRef.current;
+      // Play after the end (where a finished playback leaves the transport)
+      // starts again from the top, rather than starting nothing at all.
+      let offset = positionRef.current;
+      if (durationRef.current > 0 && offset >= durationRef.current) {
+        offset = 0;
+        positionRef.current = 0;
+        setPosition(0);
+      }
       stopSources();
       for (const [id, buffer] of buffersRef.current) {
         if (buffer.duration <= offset) continue; // Already past this stem's end.
@@ -300,7 +317,12 @@ export function useStemMixer({ stems, gains, solo }: UseStemMixerArgs): UseStemM
       setPlaying(true);
       rafRef.current = requestAnimationFrame(tick);
     })();
-  }, [ready, stopSources, tick]);
+  }, [stopSources, tick]);
+
+  const play = useCallback(() => {
+    if (!ready) return;
+    startPlayback();
+  }, [ready, startPlayback]);
 
   const pause = useCallback(() => {
     const ctx = ctxRef.current;
@@ -325,9 +347,9 @@ export function useStemMixer({ stems, gains, solo }: UseStemMixerArgs): UseStemM
       if (wasPlaying) pause();
       positionRef.current = clamped;
       setPosition(clamped);
-      if (wasPlaying) play();
+      if (wasPlaying) startPlayback();
     },
-    [pause, play]
+    [pause, startPlayback]
   );
 
   return { supported, ready, playing, position, duration, play, pause, seek };
