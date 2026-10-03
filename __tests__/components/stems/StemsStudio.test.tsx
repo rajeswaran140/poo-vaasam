@@ -19,10 +19,14 @@ const SET = {
   stems: { [ID]: { key: KEY, name: 'Drums', previewKey: `audio/mastering/stems/${JOB}/preview/${ID}.m4a`, previewError: null, durationSec: 221.9, sampleRate: 48000, channels: 2 } },
   mix: {}, remix: null, createdAt: 't', updatedAt: 't',
 };
-function route(over: Partial<Record<'get' | 'add' | 'patch' | 'del' | 'play' | 'remix', Response>> = {}, set: unknown = SET) {
+function route(
+  over: Partial<Record<'get' | 'add' | 'patch' | 'del' | 'play' | 'remix', Response>> = {},
+  set: unknown = SET,
+  master: unknown = { id: JOB, title: 'பாடல்', target: -14 }
+) {
   mockedFetch.mockImplementation((url: string, init?: { method?: string }) => {
     const m = init?.method ?? 'GET';
-    if (url === `/api/admin/stems/${JOB}` && m === 'GET') return Promise.resolve(over.get ?? ok({ success: true, set, master: { id: JOB, title: 'பாடல்', target: -14 } }));
+    if (url === `/api/admin/stems/${JOB}` && m === 'GET') return Promise.resolve(over.get ?? ok({ success: true, set, master }));
     if (url === `/api/admin/stems/${JOB}/stems` && m === 'POST') return Promise.resolve(over.add ?? ok({ success: true, set }));
     if (url.startsWith(`/api/admin/stems/${JOB}/stems/`) && m === 'PATCH') return Promise.resolve(over.patch ?? ok({ success: true }));
     if (url.startsWith(`/api/admin/stems/${JOB}/stems/`) && m === 'DELETE') return Promise.resolve(over.del ?? ok({ success: true }));
@@ -346,6 +350,37 @@ describe('rendering a remix', () => {
     }
   });
 
+  it('shows a remix rendered earlier as ready on a fresh mount, with no render action taken', async () => {
+    route({}, renderedSet);
+    const { container } = render(<StemsStudio masterJobId={JOB} />);
+    await screen.findByText('பாடல்');
+    const region = screen.getByRole('region', { name: 'Remix' });
+
+    expect(within(region).getByText('Remix ready')).toBeInTheDocument();
+    expect(within(region).getByText('Drums resampled from 44.1 kHz to 48 kHz')).toBeInTheDocument();
+    await waitFor(() => expect(container.querySelector('audio')).toHaveAttribute('src', 'https://s3/p'));
+
+    const link = within(region).getByRole('link', { name: /Master this remix/ });
+    const expectedHref = `/admin/mastering?source=${encodeURIComponent(REMIX_KEY)}&title=${encodeURIComponent('பாடல் — remix')}&target=-14`;
+    expect(link).toHaveAttribute('href', expectedHref);
+
+    // Nothing was clicked: no POST to /remix, and the button is in its plain,
+    // enabled, non-"Rendering…" state.
+    expect(within(region).getByRole('button', { name: 'Render remix' })).toBeEnabled();
+    expect(mockedFetch.mock.calls.some((c) => c[0] === `/api/admin/stems/${JOB}/remix`)).toBe(false);
+  });
+
+  it('links "Master this remix" with target=karaoke when the underlying master is a karaoke bed', async () => {
+    route({}, renderedSet, { id: JOB, title: 'பாடல்', target: -14, normalizationMode: 'peak' });
+    render(<StemsStudio masterJobId={JOB} />);
+    await screen.findByText('பாடல்');
+    const region = screen.getByRole('region', { name: 'Remix' });
+
+    const link = await within(region).findByRole('link', { name: /Master this remix/ });
+    const expectedHref = `/admin/mastering?source=${encodeURIComponent(REMIX_KEY)}&title=${encodeURIComponent('பாடல் — remix')}&target=karaoke`;
+    expect(link).toHaveAttribute('href', expectedHref);
+  });
+
   it('stops playing the previous remix once a new one replaces it', async () => {
     // Regression for a real bug caught in review: the play-URL effect only
     // cleared remixPlayUrl when the key went to null, so a SECOND remix's
@@ -406,6 +441,13 @@ describe('rendering a remix', () => {
         )
       ).toBe(true));
       expect(container.querySelector('audio')).toBeNull();
+
+      // The failure is surfaced, not swallowed — and "Remix ready" (with the
+      // new remix's own notes/link) stays on screen; only playback is down.
+      await waitFor(() => expect(within(region).getByRole('alert')).toHaveTextContent(
+        "The remix couldn't be loaded for playback — reload to try again."
+      ));
+      expect(within(region).getByText('Remix ready')).toBeInTheDocument();
     } finally {
       jest.useRealTimers();
     }
@@ -477,6 +519,38 @@ describe('rendering a remix', () => {
       await waitFor(() => expect(within(region).getByRole('alert')).toHaveTextContent(MESSAGE));
       expect(within(region).getByRole('button', { name: /Render remix/ })).toBeEnabled();
       expect(within(region).queryByText('Remix ready')).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('gives up after 10 minutes with no renderedAt or error, and re-enables the button', async () => {
+    jest.useFakeTimers();
+    try {
+      // Every GET answers with the same unchanged SET forever (remix stays
+      // null) — the worker never reports back, success or failure.
+      route({});
+      render(<StemsStudio masterJobId={JOB} />);
+      await screen.findByText('பாடல்');
+      const region = screen.getByRole('region', { name: 'Remix' });
+
+      await act(async () => {
+        fireEvent.click(within(region).getByRole('button', { name: /Render remix/ }));
+      });
+      expect(within(region).getByRole('button', { name: /Rendering…/ })).toBeDisabled();
+
+      // Past the 10-minute deadline, in one jump: advanceTimersByTimeAsync
+      // flushes the microtasks between each chained poll tick, so the
+      // render-watch's recursive setTimeout(() => void load(), 4000) chain
+      // actually runs all the way through rather than firing once and stopping.
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(10 * 60 * 1000 + 4000);
+      });
+
+      expect(within(region).getByRole('alert')).toHaveTextContent(
+        'The remix is taking longer than expected — reload to check on it.'
+      );
+      expect(within(region).getByRole('button', { name: /Render remix/ })).toBeEnabled();
     } finally {
       jest.useRealTimers();
     }

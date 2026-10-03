@@ -20,12 +20,15 @@ import { adminFetch } from '@/lib/client-auth';
 import { formatClock } from '@/components/admin/ShortWindowFields';
 import { StemUpload } from '@/components/admin/stems/StemUpload';
 import { StemMixer } from '@/components/admin/stems/StemMixer';
+import { targetIdFor } from '@/lib/master-peak';
+import type { NormalizationMode } from '@/lib/master-peak';
 import type { StemEntry, StemMixEntry, StemRemix, StemSet } from '@/types/stemSet';
 
 interface MasterInfo {
   id: string;
   title: string | null;
   target: number;
+  normalizationMode: NormalizationMode | null;
 }
 
 interface RowError {
@@ -145,6 +148,7 @@ export function StemsStudio({ masterJobId }: Props) {
   const [renderBusy, setRenderBusy] = useState(false);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [remixPlayUrl, setRemixPlayUrl] = useState<string | null>(null);
+  const [remixPlayError, setRemixPlayError] = useState<string | null>(null);
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The render poll's OWN timer — kept separate from `timerRef` (the preview
@@ -160,6 +164,14 @@ export function StemsStudio({ masterJobId }: Props) {
   // the remix route's own invoke-failure path writes it for exactly this —
   // without a later, unrelated background poll able to overwrite it.
   const initialLoadRef = useRef(false);
+  // Always the CURRENT `load`, kept in sync by the effect right after its
+  // declaration below. `continueRenderWatch` reads through this rather than
+  // closing over `load` directly — every one of `load`'s own deps happens to
+  // be stable today, so `load`'s identity never actually changes, but that's
+  // an accident of today's deps list, not a guarantee; reading through the
+  // ref means a poll scheduled from `continueRenderWatch` can never fire a
+  // stale closure even if that stops being true.
+  const loadRef = useRef<() => Promise<void>>(async () => {});
   const mountedRef = useRef(true);
   // The last set this page actually saw, kept outside React state so a
   // failed poll tick can decide whether to keep polling without `load`
@@ -196,7 +208,7 @@ export function StemsStudio({ masterJobId }: Props) {
       const outcome = renderWatchOutcome(remix, watch, Date.now());
       if (outcome === 'continue') {
         if (renderTimerRef.current) clearTimeout(renderTimerRef.current);
-        renderTimerRef.current = setTimeout(() => void load(), RENDER_POLL_MS);
+        renderTimerRef.current = setTimeout(() => void loadRef.current(), RENDER_POLL_MS);
         return;
       }
       renderWatchRef.current = null;
@@ -209,9 +221,6 @@ export function StemsStudio({ masterJobId }: Props) {
       else if (outcome === 'done') setRenderError(null);
       else setRenderError(outcome.error);
     },
-    // `load` is stable in identity only across THIS render — referenced here
-    // the same way the preview poll already references itself recursively.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
 
@@ -253,6 +262,10 @@ export function StemsStudio({ masterJobId }: Props) {
       continueRenderWatch(undefined);
     }
   }, [masterJobId, scheduleIfPending, continueRenderWatch]);
+
+  useEffect(() => {
+    loadRef.current = load;
+  }, [load]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -436,15 +449,21 @@ export function StemsStudio({ masterJobId }: Props) {
     // old remix's URL must not linger under it — playing the old mix while
     // "Remix ready" already shows the new one's notes would be silently wrong.
     setRemixPlayUrl(null);
+    setRemixPlayError(null);
     if (!remixKey) return;
     let active = true;
     void (async () => {
       try {
         const res = await adminFetch(`/api/admin/mastering/download?key=${encodeURIComponent(remixKey)}&mode=play`);
         const body = await res.json();
-        if (active && res.ok && body.success) setRemixPlayUrl(body.url);
+        if (!active) return;
+        if (res.ok && body.success) setRemixPlayUrl(body.url);
+        // "Remix ready", its notes and the Master-this-remix link all stay —
+        // only playback is down, and only until a retry (a reload, or a
+        // fresh render replacing this key).
+        else setRemixPlayError("The remix couldn't be loaded for playback — reload to try again.");
       } catch {
-        // "Remix ready" still shows; just without playback until a retry.
+        if (active) setRemixPlayError("The remix couldn't be loaded for playback — reload to try again.");
       }
     })();
     return () => {
@@ -452,14 +471,15 @@ export function StemsStudio({ masterJobId }: Props) {
     };
   }, [remixKey]);
 
-  // "Master this remix" — same target id MasteringStudio's own `targetIdOf`
-  // would derive from this master's `target` (the GET route hands back no
-  // `normalizationMode`, so that derivation always lands on the plain number).
+  // "Master this remix" — the SAME target id MasteringStudio's own
+  // `targetIdOf` would derive from this master's target/normalizationMode
+  // (shared via `targetIdFor`, so the two can never disagree): 'karaoke' for
+  // a peak master, otherwise the plain target number.
   const remixMasterHref =
     remixKey && master
       ? `/admin/mastering?source=${encodeURIComponent(remixKey)}&title=${encodeURIComponent(
           `${master.title || 'Untitled'} — remix`
-        )}&target=${encodeURIComponent(String(master.target))}`
+        )}&target=${encodeURIComponent(targetIdFor(master))}`
       : null;
 
   const majorityRate = set ? majoritySampleRate(set) : null;
@@ -683,6 +703,11 @@ export function StemsStudio({ masterJobId }: Props) {
                 </ul>
               )}
               {remixPlayUrl && <audio controls src={remixPlayUrl} className="h-8" />}
+              {remixPlayError && (
+                <p role="alert" className="text-xs text-red-600 dark:text-red-400">
+                  {remixPlayError}
+                </p>
+              )}
               {remixMasterHref && (
                 <Link
                   href={remixMasterHref}

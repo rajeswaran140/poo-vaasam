@@ -83,7 +83,7 @@ interface AnalysisResult {
   trim: { trimStartSec: number; trimEndSec: number | null } | null;
 }
 import { mp3PeakVerdict } from '@/lib/master-mp3';
-import { isPeakMaster, PEAK_CEILING_DBTP, KARAOKE_MP3_BITRATE, isKaraokeMasterKey } from '@/lib/master-peak';
+import { isPeakMaster, PEAK_CEILING_DBTP, KARAOKE_MP3_BITRATE, isKaraokeMasterKey, targetIdFor } from '@/lib/master-peak';
 import type { MasterEdit } from '@/lib/master-edit';
 import type { MasterJob, MatchingMethod } from '@/types/masterJob';
 import { FEATURES } from '@/config/features';
@@ -132,7 +132,7 @@ const targetById = (id: string): (typeof TARGETS)[number] =>
  * second field that could disagree with `normalizationMode`.
  */
 const targetIdOf = (job: { target: number; normalizationMode?: MasterJob['normalizationMode'] }): TargetId =>
-  isPeakMaster(job) ? 'karaoke' : ((String(job.target) as TargetId));
+  targetIdFor(job) as TargetId;
 
 type Stage = 'idle' | 'uploading' | 'ready' | 'mastering' | 'done';
 
@@ -999,6 +999,10 @@ export function MasteringStudio() {
     if (!picked) return;
     setError(null);
     setJob(null);
+    // A fresh pick replaces whatever a `?source=` link left behind — a
+    // refusal note from an earlier, different source would otherwise sit
+    // under this one, now-accepted, file.
+    setSourceLinkNote(null);
     // Allow re-picking the same path after a rejection (no change event otherwise).
     if (fileInput.current) fileInput.current.value = '';
 
@@ -2254,6 +2258,9 @@ export function MasteringStudio() {
     setError(null);
     setJob(null);
     setJobId(null);
+    // Same reasoning as onPick: a library re-open replaces whatever a
+    // `?source=` link's refusal note left on screen.
+    setSourceLinkNote(null);
     // A re-opened master is a NEW job: it has not been saved or published, and
     // showing yesterday's state against it would offer to publish a file this
     // run has not produced.

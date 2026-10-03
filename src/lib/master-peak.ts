@@ -102,6 +102,19 @@ export function isPeakMaster(job: { normalizationMode?: NormalizationMode | null
   return job.normalizationMode === 'peak';
 }
 
+/**
+ * The master-target picker's id for a job: `'karaoke'` for a peak master,
+ * otherwise the plain target number as a string (e.g. `'-14'`).
+ *
+ * The ONE place this is computed. MasteringStudio's own `targetIdOf` and
+ * any other reader of a job/master — the stems page's "Master this remix"
+ * link, for one — call this rather than re-deriving it, so a peak master
+ * always lands on the same radio wherever its target id is opened from.
+ */
+export function targetIdFor(job: { target: number; normalizationMode?: NormalizationMode | null }): string {
+  return isPeakMaster(job) ? 'karaoke' : String(job.target);
+}
+
 export type PeakRefusal = 'unreadable-peak' | 'needs-too-much-gain';
 
 export type PeakGainPlan =

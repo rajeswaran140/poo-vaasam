@@ -59,6 +59,17 @@ it('reads a master\'s set, null when it has none yet', async () => {
   expect(await res.json()).toMatchObject({ success: true, set: null, master: { id: JOB, title: 'பாடல்', target: -14 } });
 });
 
+it("includes the master's normalizationMode, null when it isn't a karaoke bed", async () => {
+  const res = await GET(req('GET'), p());
+  expect((await res.json()).master.normalizationMode).toBeNull();
+});
+
+it("includes 'peak' for a karaoke bed, so the stems page can link its remix to the right target", async () => {
+  masterGet.mockResolvedValueOnce({ ...SAVED, normalizationMode: 'peak' });
+  const res = await GET(req('GET'), p());
+  expect((await res.json()).master).toMatchObject({ id: JOB, normalizationMode: 'peak' });
+});
+
 it('404s an unknown or unsaved master', async () => {
   masterGet.mockResolvedValueOnce(null);
   expect((await GET(req('GET'), p())).status).toBe(404);

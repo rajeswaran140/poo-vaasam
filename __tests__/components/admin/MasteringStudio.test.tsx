@@ -3041,4 +3041,33 @@ describe('opening a source from a link (e.g. "Master this remix")', () => {
       "That link's source can't be mastered — choose a file instead."
     );
   });
+
+  it('clears the refused-link note once a valid file is picked afterward', async () => {
+    const masterOutputKey = 'audio/mastering/1_a_song-master-14LUFS.wav';
+    window.history.pushState({}, '', `/admin/mastering?source=${encodeURIComponent(masterOutputKey)}`);
+    primeHappyPath();
+    render(<MasteringStudio />);
+
+    const sourceSection = screen.getByText(/1 · Source WAV from TamilAgaval Music/).closest('section')!;
+    expect(await within(sourceSection).findByRole('status')).toHaveTextContent(
+      "That link's source can't be mastered — choose a file instead."
+    );
+
+    await uploadA();
+
+    await waitFor(() => expect(within(sourceSection).queryByRole('status')).toBeNull());
+  });
+
+  it('refuses a karaoke bed as the source, with the same note', async () => {
+    const karaokeKey = 'audio/mastering/1_a_song-karaoke-1dBTP.wav';
+    window.history.pushState({}, '', `/admin/mastering?source=${encodeURIComponent(karaokeKey)}`);
+    primeHappyPath();
+    render(<MasteringStudio />);
+
+    const sourceSection = screen.getByText(/1 · Source WAV from TamilAgaval Music/).closest('section')!;
+    expect(await within(sourceSection).findByRole('status')).toHaveTextContent(
+      "That link's source can't be mastered — choose a file instead."
+    );
+    expect(within(sourceSection).getByText(/Drop a WAV here/i)).toBeInTheDocument();
+  });
 });

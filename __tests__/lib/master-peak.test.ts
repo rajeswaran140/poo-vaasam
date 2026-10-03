@@ -14,7 +14,7 @@
 import {
   karaokeMasterKeyFor, isKaraokeMasterKey, planPeakGain, buildPeakArgs,
   isValidNormalizationMode, peakRefusalMessage, buildPeakMeasureArgs,
-  PEAK_CEILING_DBTP, MAX_PEAK_GAIN_DB, KARAOKE_MP3_BITRATE,
+  PEAK_CEILING_DBTP, MAX_PEAK_GAIN_DB, KARAOKE_MP3_BITRATE, targetIdFor,
 } from '@/lib/master-peak';
 import { isMasterKey } from '@/lib/loudness-measure';
 
@@ -131,6 +131,19 @@ describe('the mode', () => {
 
   it('promises buyers the bitrate the karaoke page advertises', () => {
     expect(KARAOKE_MP3_BITRATE).toBe('320k');
+  });
+});
+
+describe('targetIdFor', () => {
+  it("is 'karaoke' for a peak master, regardless of its target number", () => {
+    expect(targetIdFor({ target: -14, normalizationMode: 'peak' })).toBe('karaoke');
+    expect(targetIdFor({ target: -20, normalizationMode: 'peak' })).toBe('karaoke');
+  });
+
+  it('is the plain target number, as a string, for anything else', () => {
+    expect(targetIdFor({ target: -14, normalizationMode: 'loudness' })).toBe('-14');
+    expect(targetIdFor({ target: -16, normalizationMode: null })).toBe('-16');
+    expect(targetIdFor({ target: -14 })).toBe('-14');
   });
 });
 
