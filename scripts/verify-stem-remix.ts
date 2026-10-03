@@ -31,10 +31,10 @@
  *                         stems renders at 48 kHz with no ffmpeg error.
  *
  * A null-residual detector (two files summed with opposite polarity via
- * `amix weights=1 -1`, then measured with astats) is self-tested once
- * against a known match and a known 0.1 dB mismatch before any of (a)/(b)
- * trust it — an untested null detector that always reports "match" would
- * make every check pass for the wrong reason.
+ * `volume=-1` then a plain `amix normalize=0`, then measured with astats)
+ * is self-tested once against a known match and a known 0.1 dB mismatch
+ * before any of (a)/(b) trust it — an untested null detector that always
+ * reports "match" would make every check pass for the wrong reason.
  *
  * Usage:
  *   npx tsx scripts/verify-stem-remix.ts --dir <folder of stem WAVs> \
@@ -102,13 +102,15 @@ function measureFile(path: string) {
 /**
  * RMS of (a − b), computed entirely in the filter graph (no file written).
  *
- * ⚠️ amix's own `weights` option does NOT invert on this build — measured
- * directly: `weights=1 -1` and `weights=1 1` produced the identical RMS, so
- * a negative weight is silently a no-op rather than an error. `volume=-1`
- * (negative linear gain, a genuine polarity flip) before a plain
- * `normalize=0` sum is what actually cancels: a file against itself this
- * way measures −inf, which the self-test below checks before anything
- * trusts it.
+ * ⚠️ amix's own `weights` option did NOT invert on this build — measured
+ * directly, with `normalize=0`: `weights=1 -1` and `weights=1 1` produced
+ * the identical RMS, so a negative weight was not applied as a polarity
+ * flip here (it may well be taken as |weight| rather than ignored; this
+ * only rules out inversion, not every other use of the option).
+ * `volume=-1` (negative linear gain, a genuine polarity flip) before a
+ * plain `normalize=0` sum is what actually cancels: a file against itself
+ * this way measures −inf, which the self-test below checks before
+ * anything trusts it.
  */
 function nullResidualRmsDb(a: string, b: string): number {
   const text = logOf(ff([
@@ -267,10 +269,18 @@ async function main() {
     // -----------------------------------------------------------------
     // (a) Sum check
     // -----------------------------------------------------------------
-    console.log('\n(a) sum check — all 9 stems at 0 dB vs. a hand-built amix=normalize=0 reference');
+    console.log(`\n(a) sum check — all ${files.length} stems at 0 dB vs. a hand-built amix=normalize=0 reference`);
     const aOut = join(scratch, 'a-full.wav');
     const aRender = renderMix(files, {}, aOut);
     if (aRender.status !== 0) fail('(a) buildRemixArgs render failed');
+
+    // The global constraint: 32-bit float WAV at 48 kHz. buildRemixArgs sets
+    // this unconditionally; check it against a real render, not just the args.
+    const aOutInfo = probe(aOut);
+    console.log(`  output format: ${aOutInfo?.codec} @ ${aOutInfo?.sampleRate} Hz`);
+    if (aOutInfo?.codec !== 'pcm_f32le' || aOutInfo?.sampleRate !== 48000) {
+      fail(`(a) output format: expected pcm_f32le @ 48000 Hz, got ${aOutInfo?.codec} @ ${aOutInfo?.sampleRate} Hz`);
+    }
 
     const aRef = join(scratch, 'a-ref.wav');
     const refArgs = [
@@ -311,7 +321,7 @@ async function main() {
     // -----------------------------------------------------------------
     // (b) Mute check
     // -----------------------------------------------------------------
-    console.log('\n(b) mute check — one stem muted via planRemix vs. a hand-built sum of the other 8');
+    console.log(`\n(b) mute check — one stem muted via planRemix vs. a hand-built sum of the other ${files.length - 1}`);
     const muteId = files[0].id;
     const bOut = join(scratch, 'b-muted.wav');
     const bRender = renderMix(files, { [muteId]: { muted: true } }, bOut);
@@ -337,7 +347,7 @@ async function main() {
     const bDiff = Math.abs(bMuted.rmsDb - bRefM.rmsDb);
     const bNull = nullResidualRmsDb(bOut, bRef);
     console.log(`  muted ("${muteId}" out)  RMS ${bMuted.rmsDb.toFixed(3)} dB   samples ${bMuted.samples}`);
-    console.log(`  sum of the other 8       RMS ${bRefM.rmsDb.toFixed(3)} dB   samples ${bRefM.samples}`);
+    console.log(`  sum of the other ${others.length}       RMS ${bRefM.rmsDb.toFixed(3)} dB   samples ${bRefM.samples}`);
     console.log(`  |RMS diff| ${bDiff.toFixed(4)} dB   null-residual RMS ${bNull === -Infinity ? '-inf' : bNull.toFixed(2)} dB`);
     if (!(bDiff < 0.01)) fail(`(b) mute check: RMS differs by ${bDiff.toFixed(4)} dB (limit 0.01 dB)`);
 
@@ -358,7 +368,7 @@ async function main() {
     const c2Render = renderMix(trimmedFiles, {}, c2Out);
     if (c2Render.status !== 0) fail('(c2) padded render failed');
     const c2Out_m = measureFile(c2Out);
-    const fullLengthSamples = longestStemSamples; // the other 8 are unchanged
+    const fullLengthSamples = longestStemSamples; // the other stems are unchanged
     const c2Delta = fullLengthSamples !== null && c2Out_m.samples !== null ? c2Out_m.samples - fullLengthSamples : null;
     const padNote = c2Render.notes.find((n) => n.includes('padded by'));
     console.log(`  trimmed "${trimId}" to ${trimTo} s; longestSec used: ${c2Render.longestSec}`);
@@ -399,7 +409,7 @@ async function main() {
     console.log('\n--- summary ---');
     console.log(`elapsed: ${(elapsedMs / 1000).toFixed(1)} s`);
     console.log(`peak scratch size (this run's work dir): ${fmtBytes(maxScratchBytes)}`);
-    console.log(`render time, 9-stem buildRemixArgs call (dev box, ffmpeg 7.0.2): ${aRender.ms} ms`);
+    console.log(`render time, ${files.length}-stem buildRemixArgs call (dev box, ffmpeg 7.0.2): ${aRender.ms} ms`);
     if (failures.length) {
       console.log(`\n${failures.length} check(s) FAILED:`);
       for (const f of failures) console.log(`  - ${f}`);

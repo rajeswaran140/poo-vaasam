@@ -1678,14 +1678,14 @@ Click **Render remix** to render your saved mix into a single full-quality file,
 
 Once it finishes, **Remix ready** appears with a player for the result. Below it, any **notes** list what the render had to do to combine stems that didn't already match:
 
-- a stem at a different sample rate than the rest, resampled to 48 kHz;
+- any stem not already at 48 kHz, resampled to 48 kHz (so an all-44.1 kHz set notes every stem, not just the odd one out);
 - a stem shorter than the others, padded with silence to match the longest one.
 
 These are the same situations the Technical notes above call out per stem — the render handles them the same way, automatically.
 
 ## Master this remix
 
-Once a remix is ready, click **Master this remix** to open it in the mastering Studio as the source file, ready to bring to loudness like any other take.
+Once a remix is ready, click **Master this remix** to open it in **Sound Engineering** as the source file, ready to bring to loudness like any other take.
 `,
   },
   {
