@@ -109,7 +109,7 @@ export function LyricReadView({ lyrics, title, onClose }: LyricReadViewProps) {
           className="flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
           aria-label="Copy all lyrics"
           aria-live="polite"
-          title="Copy the whole lyric — good for a Suno prompt"
+          title="Copy the whole lyric — good for a TamilAgaval Music prompt"
         >
           {copied === 'all' ? (
             <>

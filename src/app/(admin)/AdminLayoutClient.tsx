@@ -133,8 +133,8 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
     subtitle:
       "Your own draft → honest feedback; coaches your craft, never rewrites",
   },
-  "/admin/suno-prompts": {
-    title: "Suno Prompts",
+  "/admin/music-prompts": {
+    title: "TamilAgaval Music Prompts",
     subtitle:
       "Lyrics \u2192 style box, exclude list and sliders \u2014 saved so a pack can be reopened and reused",
   },
@@ -155,7 +155,7 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   "/admin/mastering": {
     title: "Sound Engineering",
     subtitle:
-      "Master a SUNO WAV to a streaming target, then hand it to Adobe — loudness only, never tone",
+      "Master a TamilAgaval Music WAV to a streaming target, then make the video and upload it — loudness only, never tone",
   },
   "/admin/workflow": {
     title: "Workflow",

@@ -49,7 +49,7 @@ export function DuetTagger({ lyrics }: { lyrics: string }) {
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(output);
-      toast.success('Copied — paste into SUNO');
+      toast.success('Copied — paste into TamilAgaval Music');
     } catch {
       toast.error('Copy failed');
     }
@@ -65,7 +65,7 @@ export function DuetTagger({ lyrics }: { lyrics: string }) {
         aria-expanded={open}
         className="flex w-full items-center justify-between px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200"
       >
-        <span>⚭ Duet mode — tag voices for SUNO</span>
+        <span>⚭ Duet mode — tag voices for TamilAgaval Music</span>
         <span aria-hidden className="text-xs font-normal text-gray-500 dark:text-gray-400">{open ? '▲' : '▼'}</span>
       </button>
 
@@ -76,7 +76,7 @@ export function DuetTagger({ lyrics }: { lyrics: string }) {
           ) : (
             <>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                SUNO follows voices <strong>per section</strong>, not a global instruction. Assign who sings each block — repeated blocks are detected as the chorus.
+                TamilAgaval Music follows voices <strong>per section</strong>, not a global instruction. Assign who sings each block — repeated blocks are detected as the chorus.
               </p>
 
               {warnings.length > 0 && (
@@ -108,17 +108,17 @@ export function DuetTagger({ lyrics }: { lyrics: string }) {
 
               <div>
                 <div className="mb-1 flex items-center justify-between">
-                  <span className="text-xs font-medium text-gray-600 dark:text-gray-300">SUNO-ready lyrics</span>
-                  <button type="button" onClick={copy} className="rounded-md bg-purple-600 px-3 py-1 text-xs font-medium text-white hover:bg-purple-700">Copy for SUNO</button>
+                  <span className="text-xs font-medium text-gray-600 dark:text-gray-300">TamilAgaval Music-ready lyrics</span>
+                  <button type="button" onClick={copy} className="rounded-md bg-purple-600 px-3 py-1 text-xs font-medium text-white hover:bg-purple-700">Copy for TamilAgaval Music</button>
                 </div>
                 <textarea
                   readOnly
                   value={output}
                   rows={Math.min(12, sections.length * 3 + 2)}
-                  aria-label="SUNO-ready duet lyrics"
+                  aria-label="TamilAgaval Music-ready duet lyrics"
                   className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 font-mono text-xs text-gray-800 dark:border-gray-600 dark:bg-gray-950 dark:text-gray-100"
                 />
-                <p className="mt-1 text-[11px] text-gray-400">Keep the <code>[Male/Female/Duet …]</code> tags in English even with Tamil lyrics — SUNO recognizes them more reliably.</p>
+                <p className="mt-1 text-[11px] text-gray-400">Keep the <code>[Male/Female/Duet …]</code> tags in English even with Tamil lyrics — TamilAgaval Music recognizes them more reliably.</p>
               </div>
             </>
           )}

@@ -11,7 +11,7 @@ async function openPanel() {
 
 it('is collapsed by default', () => {
   render(<DuetTagger lyrics={LYRICS} />);
-  expect(screen.queryByLabelText('SUNO-ready duet lyrics')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('TamilAgaval Music-ready duet lyrics')).not.toBeInTheDocument();
 });
 
 it('prompts to paste lyrics when there are none', async () => {
@@ -23,7 +23,7 @@ it('prompts to paste lyrics when there are none', async () => {
 it('builds SUNO-ready tagged lyrics with a default duet assignment', async () => {
   render(<DuetTagger lyrics={LYRICS} />);
   await openPanel();
-  const out = screen.getByLabelText('SUNO-ready duet lyrics') as HTMLTextAreaElement;
+  const out = screen.getByLabelText('TamilAgaval Music-ready duet lyrics') as HTMLTextAreaElement;
   // Kind-first grammar, matching what Raj actually pastes and what the SUNO
   // setup generator emits — one page, one format.
   expect(out.value).toContain('[Chorus - Male and Female Together]');
@@ -37,7 +37,7 @@ it('re-tags when a section voice is changed', async () => {
   await user.click(screen.getByRole('button', { name: /duet mode/i }));
   // Section 1 is the first verse (male by default) → switch it to Female.
   await user.selectOptions(screen.getByLabelText('voice for section 2'), 'female');
-  const out = screen.getByLabelText('SUNO-ready duet lyrics') as HTMLTextAreaElement;
+  const out = screen.getByLabelText('TamilAgaval Music-ready duet lyrics') as HTMLTextAreaElement;
   expect(out.value).not.toContain('[Verse - Male Lead]'); // both verses now female
 });
 
@@ -48,4 +48,13 @@ it('warns when the assignment is a solo, not a duet', async () => {
   await user.click(screen.getByRole('button', { name: /duet mode/i }));
   await user.selectOptions(screen.getByLabelText('voice for section 2'), 'male'); // both male now
   expect(screen.getByText(/solo, not a duet/i)).toBeInTheDocument();
+});
+
+it('names the source as TamilAgaval Music, never SUNO', async () => {
+  const user = userEvent.setup();
+  render(<DuetTagger lyrics={LYRICS} />);
+  await user.click(screen.getByText(/Duet mode/));
+  expect(document.body.textContent).not.toMatch(/suno/i);
+  expect(screen.getByText(/tag voices for TamilAgaval Music/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /Copy for TamilAgaval Music/ })).toBeInTheDocument();
 });

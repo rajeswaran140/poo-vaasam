@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
     // that was already known here.
     await new SunoSetupJobRepository().delete(jobId).catch(() => {});
     return NextResponse.json(
-      { success: false, error: 'Could not start the SUNO setup job. Please try again.' },
+      { success: false, error: 'Could not start the TamilAgaval Music setup job. Please try again.' },
       { status: 502 }
     );
   }

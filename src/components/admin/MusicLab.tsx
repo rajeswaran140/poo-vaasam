@@ -16,6 +16,7 @@ import { adminFetch } from '@/lib/client-auth';
 import { MediaUploadField } from '@/components/admin/MediaUploadField';
 import {
   GENERATION_ENGINES,
+  engineLabel,
   GENERATION_VERDICTS,
   FAILURE_REASONS,
   loudnessSchema,
@@ -325,7 +326,7 @@ function GenerationCard({ g, onDelete }: { g: Generation; onDelete: (g: Generati
     <li className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
       <div className="flex flex-wrap items-center gap-2">
         <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${VERDICT_BADGE[g.verdict]}`}>{g.verdict}</span>
-        <span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{g.engine}</span>
+        <span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{engineLabel(g.engine)}</span>
         {g.chosenStyle && <span className="text-xs text-gray-500 dark:text-gray-400">· {g.chosenStyle}</span>}
         {g.failureReason && (
           <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300">
@@ -624,7 +625,7 @@ function LogGenerationForm({ brief, onSaved }: { brief: SavedBrief; onSaved: (g:
         <label className="flex flex-col gap-1 text-sm font-medium text-gray-700 dark:text-gray-200">
           Engine
           <select value={engine} onChange={(e) => setEngine(e.target.value)} className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
-            {GENERATION_ENGINES.map((en) => <option key={en} value={en}>{en}</option>)}
+            {GENERATION_ENGINES.map((en) => <option key={en} value={en}>{engineLabel(en)}</option>)}
           </select>
         </label>
 
@@ -800,7 +801,7 @@ function LogGenerationForm({ brief, onSaved }: { brief: SavedBrief; onSaved: (g:
               </label>
               <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-300">
                 Engine version
-                <input value={engineModel} onChange={(e) => setEngineModel(e.target.value)} placeholder="engine version, e.g. suno v5.5" className="rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" />
+                <input value={engineModel} onChange={(e) => setEngineModel(e.target.value)} placeholder="engine version, e.g. v5.5" className="rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" />
               </label>
               <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-300">
                 Voice

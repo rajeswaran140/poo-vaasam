@@ -262,6 +262,6 @@ describe('exportFilename', () => {
     expect(exportFilename('My Song!! ❤️', 'md')).toBe('my-song.md');
   });
   it('falls back when the title has no ascii (e.g. pure Tamil)', () => {
-    expect(exportFilename('அம்மா', 'md')).toBe('suno-pack.md');
+    expect(exportFilename('அம்மா', 'md')).toBe('tamilagaval-music-pack.md');
   });
 });

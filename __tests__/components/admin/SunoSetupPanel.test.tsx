@@ -42,7 +42,7 @@ function wireEnqueueAndPoll(jobBody: unknown, enqueueStatus = 202) {
       return Promise.resolve(
         json(enqueueStatus, enqueueStatus < 400
           ? { success: true, jobId: 'suno_1786000000000_abc123xyz', status: 'processing' }
-          : { success: false, error: 'Could not start the SUNO setup job. Please try again.' })
+          : { success: false, error: 'Could not start the TamilAgaval Music setup job. Please try again.' })
       );
     }
     return Promise.resolve(json(200, jobBody));
@@ -76,14 +76,14 @@ describe('SunoSetupPanel', () => {
   it('fetches nothing until the button is pressed', () => {
     renderPanel();
     expect(adminFetch).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: /build suno setup/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /build tamilagaval music setup/i })).toBeInTheDocument();
   });
 
   it('sends the chosen variant and its instruments so breaks cannot invent one', async () => {
     const user = userEvent.setup();
     wireEnqueueAndPoll(DONE);
     renderPanel();
-    await user.click(screen.getByRole('button', { name: /build suno setup/i }));
+    await user.click(screen.getByRole('button', { name: /build tamilagaval music setup/i }));
     await waitFor(() => expect(adminFetch).toHaveBeenCalled());
     const enqueue = adminFetch.mock.calls.find(([, i]: [string, { method?: string }]) => i?.method === 'POST');
     const [url, init] = enqueue!;
@@ -97,7 +97,7 @@ describe('SunoSetupPanel', () => {
     const user = userEvent.setup();
     wireEnqueueAndPoll(DONE);
     renderPanel();
-    await user.click(screen.getByRole('button', { name: /build suno setup/i }));
+    await user.click(screen.getByRole('button', { name: /build tamilagaval music setup/i }));
     expect(await screen.findByText(/\[Chorus - Male Lead\]/)).toBeInTheDocument();
     expect(screen.getByText(new RegExp(`${SETUP.style.length} / 1000`))).toBeInTheDocument();
     expect(screen.getByText('40%')).toBeInTheDocument();
@@ -111,7 +111,7 @@ describe('SunoSetupPanel', () => {
     const user = userEvent.setup();
     wireEnqueueAndPoll(DONE);
     const { onArranged } = renderPanel();
-    await user.click(screen.getByRole('button', { name: /build suno setup/i }));
+    await user.click(screen.getByRole('button', { name: /build tamilagaval music setup/i }));
     await waitFor(() => expect(onArranged).toHaveBeenCalledWith(SETUP.lyrics_block, ['heavy metal']));
   });
 
@@ -128,7 +128,7 @@ describe('SunoSetupPanel', () => {
       error: null,
     });
     renderPanel();
-    await user.click(screen.getByRole('button', { name: /build suno setup/i }));
+    await user.click(screen.getByRole('button', { name: /build tamilagaval music setup/i }));
     expect(await screen.findByTestId('setup-findings')).toHaveTextContent(/contradicts the style/);
     expect(screen.getByText(/remove one/)).toBeInTheDocument();
     expect(screen.getByText(/\[Chorus - Male Lead\]/)).toBeInTheDocument(); // output preserved
@@ -140,7 +140,7 @@ describe('SunoSetupPanel', () => {
     // spy is both bypassed and impossible to re-attach afterwards.
     wireEnqueueAndPoll(DONE);
     renderPanel();
-    fireEvent.click(screen.getByRole('button', { name: /build suno setup/i }));
+    fireEvent.click(screen.getByRole('button', { name: /build tamilagaval music setup/i }));
     await screen.findByText(/\[Chorus - Male Lead\]/);
     fireEvent.click(screen.getByRole('button', { name: /copy lyrics box/i }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(SETUP.lyrics_block));
@@ -150,21 +150,21 @@ describe('SunoSetupPanel', () => {
     const user = userEvent.setup();
     wireEnqueueAndPoll(DONE, 502);
     renderPanel();
-    await user.click(screen.getByRole('button', { name: /build suno setup/i }));
-    expect(await screen.findByText(/could not start the suno setup job/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /build suno setup/i })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: /build tamilagaval music setup/i }));
+    expect(await screen.findByText(/could not start the tamilagaval music setup job/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /build tamilagaval music setup/i })).toBeEnabled();
   });
 
   it('cannot be pressed with no lyrics', () => {
     renderPanel({ lyrics: '   ' });
-    expect(screen.getByRole('button', { name: /build suno setup/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /build tamilagaval music setup/i })).toBeDisabled();
   });
 
   it('flags a style outside the useful band', async () => {
     const user = userEvent.setup();
     wireEnqueueAndPoll({ success: true, status: 'done', result: { setup: { ...SETUP, style: 'short' }, findings: [], ready: true }, error: null });
     renderPanel();
-    await user.click(screen.getByRole('button', { name: /build suno setup/i }));
+    await user.click(screen.getByRole('button', { name: /build tamilagaval music setup/i }));
     expect(await screen.findByText(/outside the useful band/i)).toBeInTheDocument();
   });
 });
@@ -177,7 +177,7 @@ describe('SunoSetupPanel — runs on the worker, not inline', () => {
     const user = userEvent.setup();
     wireEnqueueAndPoll(DONE);
     renderPanel();
-    await user.click(screen.getByRole('button', { name: /build suno setup/i }));
+    await user.click(screen.getByRole('button', { name: /build tamilagaval music setup/i }));
     await screen.findByText(/\[Chorus - Male Lead\]/);
     const urls = adminFetch.mock.calls.map(([u]: [string]) => String(u));
     expect(urls.some((u) => u === '/api/admin/compose/suno-setup')).toBe(true);
@@ -193,7 +193,15 @@ describe('SunoSetupPanel — runs on the worker, not inline', () => {
       error: { code: 'upstream', message: 'The AI service failed. Please try again.' },
     });
     renderPanel();
-    await user.click(screen.getByRole('button', { name: /build suno setup/i }));
+    await user.click(screen.getByRole('button', { name: /build tamilagaval music setup/i }));
     expect(await screen.findByText(/the ai service failed/i)).toBeInTheDocument();
+  });
+});
+
+describe('naming', () => {
+  it('calls it the TamilAgaval Music setup, never SUNO', () => {
+    renderPanel();
+    expect(document.body.textContent).not.toMatch(/suno/i);
+    expect(screen.getByRole('button', { name: /Build TamilAgaval Music setup/ })).toBeInTheDocument();
   });
 });

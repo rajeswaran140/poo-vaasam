@@ -380,7 +380,7 @@ function CompositionEditor({
           <h2 className="text-sm font-medium text-gray-700 dark:text-gray-200">AI music prompt</h2>
           <button onClick={copyForSuno}
             className="rounded-md border border-gray-300 px-3 py-1 text-xs hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800">
-            Copy for Suno
+            Copy for TamilAgaval Music
           </button>
         </div>
         <textarea
@@ -392,7 +392,7 @@ function CompositionEditor({
           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900"
         />
         <p className="text-[11px] text-gray-400">
-          Stored provider-neutral. &ldquo;Copy for Suno&rdquo; formats it on the way out and{' '}
+          Stored provider-neutral. &ldquo;Copy for TamilAgaval Music&rdquo; formats it on the way out and{' '}
           <strong>never includes your lyrics</strong>.
         </p>
       </section>

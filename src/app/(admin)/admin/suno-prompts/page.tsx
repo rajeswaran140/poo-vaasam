@@ -1,44 +1,13 @@
 /**
- * /admin/suno-prompts — build a SUNO prompt pack from a lyric and keep it.
+ * /admin/suno-prompts — the OLD address of the prompts page.
  *
- * The compose flow already generates this pack, but only inside a job result
- * that is handed to the export pack and then lost. This page is the durable
- * home: server-rendered initial list (runtime DynamoDB via APP_AWS_* creds,
- * like /admin/lexicon), then the client studio handles generate and save.
+ * The admin names the song source as TamilAgaval Music (2026-10-03), so the
+ * page moved to /admin/music-prompts. This keeps bookmarks and old links
+ * working rather than leaving them on a 404.
  */
 
-import { SunoPromptRepository } from '@/infrastructure/database/SunoPromptRepository';
-import { SunoPromptStudio, type SunoPromptRow } from '@/components/admin/SunoPromptStudio';
+import { redirect } from 'next/navigation';
 
-export const dynamic = 'force-dynamic';
-
-async function getPrompts(): Promise<SunoPromptRow[]> {
-  try {
-    const prompts = await new SunoPromptRepository().findAll();
-    // Everything except the Dates, so the row stays a plain serialisable object
-    // across the server/client boundary. Listed explicitly rather than spread so
-    // a field added to the domain type has to be considered before it reaches
-    // the browser.
-    return prompts.map((p) => ({
-      id: p.id,
-      title: p.title,
-      lyrics: p.lyrics,
-      style: p.style,
-      styleBox: p.styleBox,
-      exclude: p.exclude,
-      lyricsBlock: p.lyricsBlock,
-      weirdness: p.weirdness,
-      styleInfluence: p.styleInfluence,
-      usesAudioUpload: p.usesAudioUpload,
-      ...(p.audioInfluence !== undefined ? { audioInfluence: p.audioInfluence } : {}),
-    }));
-  } catch (e) {
-    console.error('[admin/suno-prompts] load failed', e);
-    return [];
-  }
-}
-
-export default async function AdminSunoPromptsPage() {
-  const initial = await getPrompts();
-  return <SunoPromptStudio initial={initial} />;
+export default function OldSunoPromptsPage() {
+  redirect('/admin/music-prompts');
 }
