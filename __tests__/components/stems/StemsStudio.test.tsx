@@ -331,6 +331,12 @@ describe('rendering a remix', () => {
       expect(within(region).getByText('Drums resampled from 44.1 kHz to 48 kHz')).toBeInTheDocument();
 
       await waitFor(() => expect(container.querySelector('audio')).toHaveAttribute('src', 'https://s3/remix-play'));
+      // The URL above is only proof of SOMETHING resolving — every /download
+      // call in this test answers the same way. Confirm the request that
+      // produced it actually asked for the remix's own key.
+      const playCall = mockedFetch.mock.calls.find((c) => String(c[0]).startsWith('/api/admin/mastering/download'))!;
+      expect(String(playCall[0])).toContain(`key=${encodeURIComponent(REMIX_KEY)}`);
+      expect(String(playCall[0])).toContain('mode=play');
 
       const link = within(region).getByRole('link', { name: /Master this remix/ });
       const expectedHref = `/admin/mastering?source=${encodeURIComponent(REMIX_KEY)}&title=${encodeURIComponent('பாடல் — remix')}&target=-14`;
@@ -351,6 +357,21 @@ describe('rendering a remix', () => {
     });
 
     expect(within(region).getByRole('alert')).toHaveTextContent('Every stem is muted — unmute at least one to render a remix.');
+    expect(within(region).getByRole('button', { name: /Render remix/ })).toBeEnabled();
+    expect(within(region).queryByText('Remix ready')).toBeNull();
+  });
+
+  it('shows a remix.error already on the set on arrival — a failure persisted from an earlier session', async () => {
+    const MESSAGE = 'The remix could not be started — press Render remix again.';
+    route({}, {
+      ...SET,
+      remix: { key: null, renderedAt: null, mixUsed: null, notes: [], error: MESSAGE, requestedAt: '2026-10-02T23:59:00.000Z' },
+    });
+    render(<StemsStudio masterJobId={JOB} />);
+    await screen.findByText('பாடல்');
+    const region = screen.getByRole('region', { name: 'Remix' });
+
+    expect(within(region).getByRole('alert')).toHaveTextContent(MESSAGE);
     expect(within(region).getByRole('button', { name: /Render remix/ })).toBeEnabled();
     expect(within(region).queryByText('Remix ready')).toBeNull();
   });

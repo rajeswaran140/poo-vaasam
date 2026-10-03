@@ -432,10 +432,11 @@ export function StemsStudio({ masterJobId }: Props) {
   // gated on `renderBusy`: an older remix stays playable while a new one renders.
   const remixKey = set?.remix?.key ?? null;
   useEffect(() => {
-    if (!remixKey) {
-      setRemixPlayUrl(null);
-      return;
-    }
+    // Unconditional: a NEW key's own URL has not been fetched yet, so the
+    // old remix's URL must not linger under it — playing the old mix while
+    // "Remix ready" already shows the new one's notes would be silently wrong.
+    setRemixPlayUrl(null);
+    if (!remixKey) return;
     let active = true;
     void (async () => {
       try {
