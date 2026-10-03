@@ -254,12 +254,18 @@ export default function AdminLayoutClient({
   };
 
   const isEditPage = pathname.includes("/edit");
+  const isStemsPage = pathname.startsWith("/admin/mastering/stems/");
   const pageInfo = isEditPage
     ? { title: "Edit Content", subtitle: "Update existing content" }
-    : PAGE_TITLES[pathname] || {
-        title: "Admin",
-        subtitle: "Manage your platform",
-      };
+    : isStemsPage
+      ? {
+          title: "Stems",
+          subtitle: "A song's separate parts — store, hear and remix them",
+        }
+      : PAGE_TITLES[pathname] || {
+          title: "Admin",
+          subtitle: "Manage your platform",
+        };
 
   const handleLogout = async () => {
     try {
