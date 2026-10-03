@@ -147,7 +147,16 @@ import {
   JOIN_OUTPUT_LABEL,
 } from '@/lib/master-join';
 import { planUpload, uploadRefusalMessage } from '@/lib/youtube-upload';
-import { isValidMasterJobId, isStemKeyFor, stemIdFromKey, stemPreviewKey } from '@/lib/stems';
+import {
+  isValidMasterJobId,
+  isStemKeyFor,
+  stemIdFromKey,
+  stemPreviewKey,
+  planRemix,
+  buildRemixArgs,
+  stemRemixKey,
+} from '@/lib/stems';
+import { stemSetFromItem } from '@/infrastructure/database/StemSetRepository';
 import type { MasterJob } from '@/types/masterJob';
 
 const FFMPEG = process.env.FFMPEG_PATH || '/opt/bin/ffmpeg';
@@ -317,6 +326,13 @@ interface MasterEvent {
    * and masters nothing.
    */
   stemPreview?: { masterJobId?: string; stemKey?: string };
+  /**
+   * Render a REMIX from a song's stems: mix the FULL-QUALITY WAVs at the
+   * levels saved on the set. Handled before the mastering guards, like
+   * stemPreview: it belongs to a STEMSET record, not a MASTERJOB, and carries
+   * no target.
+   */
+  stemMix?: { masterJobId?: string };
 }
 
 /**
@@ -1965,6 +1981,92 @@ async function makeStemPreview(spec: NonNullable<MasterEvent['stemPreview']>, bu
   }
 }
 
+/** "44100" → "44.1 kHz" — matches planRemix's own note wording exactly. */
+const khz = (hz: number) => `${Number((hz / 1000).toFixed(1))} kHz`;
+
+/**
+ * Render a REMIX from a song's stems: the FULL-QUALITY WAVs at the levels
+ * saved on the set — never levels from the event, which only names the set.
+ *
+ * ⚠️ THE FILE IS THE AUTHORITY, NOT THE STORED RECORD. A stem whose listening
+ * copy failed may have durationSec/sampleRate recorded as null even though
+ * the WAV itself is fine, and a stem's record can simply be stale. Each
+ * downloaded WAV is re-probed here with probeSource, and that probed value —
+ * never the record's — is what decides resampling, padding and the render's
+ * length: the probed sample rate (falling back to the plan's only when the
+ * probe itself fails), and `durationSec` as the longest PROBED duration
+ * (falling back to the plan's `longestSec` only when no stem could be probed
+ * at all). The resample/pad notes are rebuilt from those same probed values,
+ * the same way planRemix builds its own — see buildRemixArgs for normalize=0
+ * and the float output.
+ */
+async function renderStemMix(spec: NonNullable<MasterEvent['stemMix']>, bucket: string) {
+  const masterJobId = spec.masterJobId ?? '';
+  if (!isValidMasterJobId(masterJobId)) return { ok: false };
+  const key = { PK: `STEMSET#${masterJobId}`, SK: 'METADATA' };
+  const fail = async (message: string) => {
+    await ddb.send(new UpdateCommand({
+      TableName: TABLE, Key: key,
+      UpdateExpression: 'SET #remix.#error = :err',
+      ExpressionAttributeNames: { '#remix': 'remix', '#error': 'error' },
+      ExpressionAttributeValues: { ':err': message },
+    })).catch((e) =>
+      console.error('[master-worker] could not record the remix error:', e instanceof Error ? e.message : String(e)));
+    return { ok: false };
+  };
+  const got = await ddb.send(new GetCommand({ TableName: TABLE, Key: key }));
+  if (!got.Item) return { ok: false };
+  const set = stemSetFromItem(got.Item as Record<string, unknown>);
+  const plan = planRemix(set);
+  if (!plan.ok) return fail(plan.message);
+  if (plan.inputs.some((i) => !isStemKeyFor(masterJobId, i.key))) return fail('a stem is not in this song’s stem folder');
+
+  const dir = mkdtempSync(join(tmpdir(), 'remix-'));
+  try {
+    const inputs: Array<{ path: string; gainDb: number; sampleRate: number | null }> = [];
+    const probed: Array<{ name: string; sampleRate: number | null; durationSec: number | null }> = [];
+    for (const [n, i] of plan.inputs.entries()) {
+      const path = join(dir, `${n}.wav`);
+      const obj = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: i.key }));
+      writeFileSync(path, Buffer.from(await obj.Body!.transformToByteArray()));
+      const info = probeSource(path);
+      const sampleRate = info?.sampleRate ?? i.sampleRate;
+      inputs.push({ path, gainDb: i.gainDb, sampleRate });
+      probed.push({ name: i.name, sampleRate, durationSec: info?.durationSec ?? i.durationSec });
+    }
+
+    const probedLengths = probed.map((p) => p.durationSec).filter((d): d is number => typeof d === 'number');
+    const longestSec = probedLengths.length ? Math.max(...probedLengths) : plan.longestSec;
+
+    const notes: string[] = [];
+    for (const p of probed) {
+      if (p.sampleRate && p.sampleRate !== 48000) notes.push(`${p.name} resampled from ${khz(p.sampleRate)} to 48 kHz`);
+      if (longestSec !== null && p.durationSec !== null && longestSec - p.durationSec > 0.1) {
+        notes.push(`${p.name} padded by ${(longestSec - p.durationSec).toFixed(1)} s to match the longest stem`);
+      }
+    }
+
+    const outPath = join(dir, 'remix.wav');
+    const r = ff(buildRemixArgs({ inputs, outPath, durationSec: longestSec }));
+    if (r.status !== 0) return fail('the remix could not be rendered');
+    const remixKey = stemRemixKey(masterJobId, Date.now());
+    await s3.send(new PutObjectCommand({ Bucket: bucket, Key: remixKey, Body: readFileSync(outPath), ContentType: 'audio/wav' }));
+    await ddb.send(new UpdateCommand({
+      TableName: TABLE, Key: key,
+      UpdateExpression: 'SET #remix.#key = :k, #remix.#renderedAt = :at, #remix.#mixUsed = :mixUsed, #remix.#notes = :notes, #remix.#error = :null',
+      ExpressionAttributeNames: { '#remix': 'remix', '#key': 'key', '#renderedAt': 'renderedAt', '#mixUsed': 'mixUsed', '#notes': 'notes', '#error': 'error' },
+      ExpressionAttributeValues: { ':k': remixKey, ':at': new Date().toISOString(), ':mixUsed': set.mix, ':notes': notes, ':null': null },
+    }));
+    return { ok: true, remixKey };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[master-worker] stem remix failed:', message);
+    return fail(message);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 export const handler = async (event: MasterEvent) => {
   const jobId = event?.jobId;
   const s3Key = event?.s3Key;
@@ -2024,6 +2126,16 @@ export const handler = async (event: MasterEvent) => {
       return { ok: false, error: 'TAKES_BUCKET is required' };
     }
     return await makeStemPreview(event.stemPreview, TAKES_BUCKET);
+  }
+
+  // A remix render, likewise — before the mastering guards, and with no
+  // jobId: it belongs to a STEMSET record, not a MASTERJOB.
+  if (event?.stemMix) {
+    if (!TAKES_BUCKET) {
+      console.error('[master-worker] bad stemMix event');
+      return { ok: false, error: 'TAKES_BUCKET is required' };
+    }
+    return await renderStemMix(event.stemMix, TAKES_BUCKET);
   }
 
   // The bucket is NOT taken from the event. The worker's IAM role can read and
