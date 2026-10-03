@@ -30,7 +30,8 @@ import { putToS3, uploadToWorkspace } from '@/lib/mastering-upload-client';
 import { pollJob } from '@/lib/poll-job';
 import { statusFor, platformLanding } from '@/lib/loudness-targets';
 import { nextRadioIndex, radioTabIndex } from '@/lib/radiogroup-keys';
-import { MAX_UPLOAD_BYTES, ACCEPTED_UPLOAD_TYPES, downloadFilename } from '@/lib/mastering-storage';
+import { MAX_UPLOAD_BYTES, ACCEPTED_UPLOAD_TYPES, downloadFilename, isMasteringKey } from '@/lib/mastering-storage';
+import { isMasterKey } from '@/lib/loudness-measure';
 import { buildMasterReport, reportFilename, sourceInfoLine, dynamicsPreserved, streamingReadiness, joinLine } from '@/lib/master-report';
 import { MasteringComparePlayer } from '@/components/admin/MasteringComparePlayer';
 import { MasteringPlayer } from '@/components/admin/MasteringPlayer';
@@ -82,7 +83,7 @@ interface AnalysisResult {
   trim: { trimStartSec: number; trimEndSec: number | null } | null;
 }
 import { mp3PeakVerdict } from '@/lib/master-mp3';
-import { isPeakMaster, PEAK_CEILING_DBTP, KARAOKE_MP3_BITRATE } from '@/lib/master-peak';
+import { isPeakMaster, PEAK_CEILING_DBTP, KARAOKE_MP3_BITRATE, isKaraokeMasterKey } from '@/lib/master-peak';
 import type { MasterEdit } from '@/lib/master-edit';
 import type { MasterJob, MatchingMethod } from '@/types/masterJob';
 import { FEATURES } from '@/config/features';
@@ -361,6 +362,10 @@ export function MasteringStudio() {
   /** Name/size only — survives a remount, unlike a File handle. */
   const [source, setSource] = useState<{ name: string; size: number } | null>(null);
   const [sourceKey, setSourceKey] = useState<string | null>(null);
+  /** Set when a `?source=` link (e.g. "Master this remix") points at a file
+   * this page refuses to open — a mastering output, a karaoke bed, or
+   * anything outside the mastering workspace. Rendered in the source section. */
+  const [sourceLinkNote, setSourceLinkNote] = useState<string | null>(null);
   const [sent, setSent] = useState({ loaded: 0, total: 0 });
   /**
    * The SELECTED radio, which is the single source of truth: `target` and the
@@ -754,6 +759,37 @@ export function MasteringStudio() {
   }, []);
 
   /**
+   * "Master this remix" (and any link like it) opens a source by URL. Same
+   * setters as `reopenMaster`, plus the stage flip that un-hides them — a
+   * link is a fresh job, never a re-attach to one already running, so a job
+   * recovered from sessionStorage (just above) takes priority over it.
+   *
+   * Refused unless the key is an un-mastered file inside the mastering
+   * workspace: re-opening a mastering OUTPUT (a `-master...LUFS.wav` or a
+   * karaoke bed) as a SOURCE would re-master an already-corrected file.
+   */
+  useEffect(() => {
+    if (readStored()) return;
+    const q = new URLSearchParams(window.location.search);
+    const linkedSource = q.get('source');
+    if (!linkedSource) return;
+    if (!isMasteringKey(linkedSource) || isMasterKey(linkedSource) || isKaraokeMasterKey(linkedSource)) {
+      setSourceLinkNote("That link's source can't be mastered — choose a file instead.");
+      return;
+    }
+    setSourceKey(linkedSource);
+    setSource({ name: downloadFilename(linkedSource), size: 0 });
+    setMasterName(q.get('title') ?? '');
+    const t = q.get('target');
+    if (t && TARGETS.some((x) => x.id === t)) setTargetId(t as TargetId);
+    setStage('ready');
+    // Mount-only: re-running this on a later URL change (e.g. Save updating
+    // the address bar) would re-open the link and clobber a job in progress.
+    // (No exhaustive-deps violation here — every reference is a stable
+    // setState function or the module-level TARGETS constant.)
+  }, []);
+
+  /**
    * Lazy fetch of the reference bank (Phase 1C UI). Fires the first time the
    * admin focuses / clicks the reference-picker dropdown — NOT on mount.
    * A mount-time fetch adds an adminFetch call before any user action, which
@@ -819,6 +855,7 @@ export function MasteringStudio() {
     setStage('idle');
     setSource(null);
     setSourceKey(null);
+    setSourceLinkNote(null);
     setSent({ loaded: 0, total: 0 });
     setJob(null);
     setJobId(null);
@@ -2380,6 +2417,12 @@ export function MasteringStudio() {
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
           1 · Source WAV from TamilAgaval Music
         </h2>
+
+        {sourceLinkNote && (
+          <p role="status" className="mb-3 text-sm text-amber-700 dark:text-amber-400">
+            {sourceLinkNote}
+          </p>
+        )}
 
         {stage === 'idle' && (
           <div

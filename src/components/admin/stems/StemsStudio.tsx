@@ -20,7 +20,7 @@ import { adminFetch } from '@/lib/client-auth';
 import { formatClock } from '@/components/admin/ShortWindowFields';
 import { StemUpload } from '@/components/admin/stems/StemUpload';
 import { StemMixer } from '@/components/admin/stems/StemMixer';
-import type { StemEntry, StemMixEntry, StemSet } from '@/types/stemSet';
+import type { StemEntry, StemMixEntry, StemRemix, StemSet } from '@/types/stemSet';
 
 interface MasterInfo {
   id: string;
@@ -64,6 +64,29 @@ function hasPendingPreview(set: StemSet | null, now: number): boolean {
     const stem = set.stems[id];
     return !!stem && isPendingPreview(stem) && !isStalePending(stem, now);
   });
+}
+
+/** How often the render section re-polls the set while a remix is in flight. */
+const RENDER_POLL_MS = 4000;
+/** 10 minutes: past this the worker is presumed stuck rather than still rendering. */
+const RENDER_TIMEOUT_MS = 10 * 60 * 1000;
+const RENDER_TIMEOUT_MESSAGE =
+  'The remix is taking longer than expected — reload to check on it.';
+
+/** What a render ends up at, given the latest poll's `remix` (undefined on a
+ * failed poll tick, where there is no fresh set to read) against the watch
+ * started right after the POST. */
+type RenderOutcome = 'continue' | 'done' | 'timeout' | { error: string };
+
+function renderWatchOutcome(
+  remix: StemRemix | null | undefined,
+  watch: { priorRenderedAt: string | null; deadline: number },
+  now: number
+): RenderOutcome {
+  if (remix?.renderedAt && remix.renderedAt !== watch.priorRenderedAt) return 'done';
+  if (remix?.error) return { error: remix.error };
+  if (now > watch.deadline) return 'timeout';
+  return 'continue';
 }
 
 /** 48000 -> "48 kHz", 44100 -> "44.1 kHz". */
@@ -119,8 +142,24 @@ export function StemsStudio({ masterJobId }: Props) {
   const [renameValue, setRenameValue] = useState('');
   const [playUrls, setPlayUrls] = useState<Record<string, string>>({});
   const [playLoading, setPlayLoading] = useState<string | null>(null);
+  const [renderBusy, setRenderBusy] = useState(false);
+  const [renderError, setRenderError] = useState<string | null>(null);
+  const [remixPlayUrl, setRemixPlayUrl] = useState<string | null>(null);
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The render poll's OWN timer — kept separate from `timerRef` (the preview
+  // poll's), so a preview tick clearing its timer can never cancel an
+  // in-flight remix poll, or the other way round.
+  const renderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Set right after a successful POST to /remix; null whenever no render is
+  // being watched. `priorRenderedAt` is what `set.remix.renderedAt` was
+  // BEFORE this render, so a poll can tell "finished" from "still the old one".
+  const renderWatchRef = useRef<{ priorRenderedAt: string | null; deadline: number } | null>(null);
+  // Set once the first load completes, so a remix.error already on the set
+  // (persisted by the server from an earlier session) is shown on arrival —
+  // the remix route's own invoke-failure path writes it for exactly this —
+  // without a later, unrelated background poll able to overwrite it.
+  const initialLoadRef = useRef(false);
   const mountedRef = useRef(true);
   // The last set this page actually saw, kept outside React state so a
   // failed poll tick can decide whether to keep polling without `load`
@@ -144,6 +183,38 @@ export function StemsStudio({ masterJobId }: Props) {
     []
   );
 
+  /**
+   * Advance (or end) the render watch against whatever `remix` this poll
+   * tick actually saw — `undefined` on a failed tick, which only the
+   * deadline can end. Mirrors the preview poll's own resilience: a transient
+   * GET failure must not strand the button disabled forever.
+   */
+  const continueRenderWatch = useCallback(
+    (remix: StemRemix | null | undefined) => {
+      const watch = renderWatchRef.current;
+      if (!watch) return;
+      const outcome = renderWatchOutcome(remix, watch, Date.now());
+      if (outcome === 'continue') {
+        if (renderTimerRef.current) clearTimeout(renderTimerRef.current);
+        renderTimerRef.current = setTimeout(() => void load(), RENDER_POLL_MS);
+        return;
+      }
+      renderWatchRef.current = null;
+      if (renderTimerRef.current) {
+        clearTimeout(renderTimerRef.current);
+        renderTimerRef.current = null;
+      }
+      setRenderBusy(false);
+      if (outcome === 'timeout') setRenderError(RENDER_TIMEOUT_MESSAGE);
+      else if (outcome === 'done') setRenderError(null);
+      else setRenderError(outcome.error);
+    },
+    // `load` is stable in identity only across THIS render — referenced here
+    // the same way the preview poll already references itself recursively.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
   const load = useCallback(async () => {
     try {
       const res = await adminFetch(`/api/admin/stems/${masterJobId}`);
@@ -159,12 +230,19 @@ export function StemsStudio({ masterJobId }: Props) {
           if (timerRef.current) clearTimeout(timerRef.current);
           timerRef.current = setTimeout(() => void load(), 4000);
         }
+        continueRenderWatch(undefined);
         return;
       }
       setLoadError(null);
-      setSet(body.set as StemSet | null);
+      const nextSet = body.set as StemSet | null;
+      setSet(nextSet);
       setMaster(body.master as MasterInfo);
-      scheduleIfPending(body.set as StemSet | null, () => void load());
+      scheduleIfPending(nextSet, () => void load());
+      if (!initialLoadRef.current) {
+        initialLoadRef.current = true;
+        if (nextSet?.remix?.error) setRenderError(nextSet.remix.error);
+      }
+      continueRenderWatch(nextSet?.remix ?? null);
     } catch (err) {
       if (!mountedRef.current) return;
       setLoadError(err instanceof Error ? err.message : String(err));
@@ -172,8 +250,9 @@ export function StemsStudio({ masterJobId }: Props) {
         if (timerRef.current) clearTimeout(timerRef.current);
         timerRef.current = setTimeout(() => void load(), 4000);
       }
+      continueRenderWatch(undefined);
     }
-  }, [masterJobId, scheduleIfPending]);
+  }, [masterJobId, scheduleIfPending, continueRenderWatch]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -181,6 +260,7 @@ export function StemsStudio({ masterJobId }: Props) {
     return () => {
       mountedRef.current = false;
       if (timerRef.current) clearTimeout(timerRef.current);
+      if (renderTimerRef.current) clearTimeout(renderTimerRef.current);
     };
   }, [load]);
 
@@ -317,6 +397,69 @@ export function StemsStudio({ masterJobId }: Props) {
     },
     [masterJobId, handleAdded]
   );
+
+  /**
+   * Queue a render of the saved mix. The body carries nothing — the server
+   * always renders from the stored mix, never anything this page sends — so
+   * there is nothing to build here but the request itself.
+   */
+  const handleRender = useCallback(async () => {
+    setRenderError(null);
+    setRenderBusy(true);
+    // Captured BEFORE the POST: the poll below ends on the first renderedAt
+    // that differs from this, never on the one already sitting there from a
+    // previous render.
+    const priorRenderedAt = set?.remix?.renderedAt ?? null;
+    try {
+      const res = await adminFetch(`/api/admin/stems/${masterJobId}/remix`, { method: 'POST' });
+      const body = await res.json();
+      if (!res.ok || !body.success) {
+        setRenderBusy(false);
+        setRenderError(body.error || 'Could not start the remix.');
+        return;
+      }
+      renderWatchRef.current = { priorRenderedAt, deadline: Date.now() + RENDER_TIMEOUT_MS };
+      if (renderTimerRef.current) clearTimeout(renderTimerRef.current);
+      renderTimerRef.current = setTimeout(() => void load(), RENDER_POLL_MS);
+    } catch (err) {
+      setRenderBusy(false);
+      setRenderError(err instanceof Error ? err.message : String(err));
+    }
+  }, [masterJobId, set, load]);
+
+  // The remix's play URL, resolved whenever its key changes — including the
+  // very first load, when a remix rendered earlier already has one. Never
+  // gated on `renderBusy`: an older remix stays playable while a new one renders.
+  const remixKey = set?.remix?.key ?? null;
+  useEffect(() => {
+    if (!remixKey) {
+      setRemixPlayUrl(null);
+      return;
+    }
+    let active = true;
+    void (async () => {
+      try {
+        const res = await adminFetch(`/api/admin/mastering/download?key=${encodeURIComponent(remixKey)}&mode=play`);
+        const body = await res.json();
+        if (active && res.ok && body.success) setRemixPlayUrl(body.url);
+      } catch {
+        // "Remix ready" still shows; just without playback until a retry.
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [remixKey]);
+
+  // "Master this remix" — same target id MasteringStudio's own `targetIdOf`
+  // would derive from this master's `target` (the GET route hands back no
+  // `normalizationMode`, so that derivation always lands on the plain number).
+  const remixMasterHref =
+    remixKey && master
+      ? `/admin/mastering?source=${encodeURIComponent(remixKey)}&title=${encodeURIComponent(
+          `${master.title || 'Untitled'} — remix`
+        )}&target=${encodeURIComponent(String(master.target))}`
+      : null;
 
   const majorityRate = set ? majoritySampleRate(set) : null;
   const longest = set ? longestDuration(set) : null;
@@ -503,6 +646,53 @@ export function StemsStudio({ masterJobId }: Props) {
 
       {set && set.order.length > 0 && (
         <StemMixer set={set} masterJobId={masterJobId} onMixChange={handleMixChange} />
+      )}
+
+      {set && set.order.length > 0 && (
+        <section
+          aria-label="Remix"
+          className="space-y-3 rounded-lg border border-gray-200 p-4 dark:border-gray-800"
+        >
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Remix</h2>
+            <button
+              type="button"
+              disabled={renderBusy}
+              onClick={() => void handleRender()}
+              className="rounded-md border border-orange-300 px-3 py-1.5 text-xs font-medium text-orange-700 hover:bg-orange-50 disabled:opacity-50 dark:border-orange-700 dark:text-orange-300 dark:hover:bg-orange-950/30"
+            >
+              {renderBusy ? 'Rendering…' : 'Render remix'}
+            </button>
+          </div>
+
+          {renderError && (
+            <p role="alert" className="text-xs text-red-600 dark:text-red-400">
+              {renderError}
+            </p>
+          )}
+
+          {set.remix?.key && (
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-gray-800 dark:text-gray-100">Remix ready</p>
+              {set.remix.notes.length > 0 && (
+                <ul className="list-disc space-y-0.5 pl-5 text-xs text-gray-500 dark:text-gray-400">
+                  {set.remix.notes.map((note, i) => (
+                    <li key={i}>{note}</li>
+                  ))}
+                </ul>
+              )}
+              {remixPlayUrl && <audio controls src={remixPlayUrl} className="h-8" />}
+              {remixMasterHref && (
+                <Link
+                  href={remixMasterHref}
+                  className="block text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
+                >
+                  Master this remix
+                </Link>
+              )}
+            </div>
+          )}
+        </section>
       )}
     </div>
   );
