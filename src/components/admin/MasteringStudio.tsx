@@ -769,9 +769,18 @@ export function MasteringStudio() {
    * karaoke bed) as a SOURCE would re-master an already-corrected file.
    */
   useEffect(() => {
-    if (readStored()) return;
     const q = new URLSearchParams(window.location.search);
     const linkedSource = q.get('source');
+    if (readStored()) {
+      // The recovered job wins, but the operator followed a link expecting
+      // its file — say why it isn't the one on screen.
+      if (linkedSource) {
+        setSourceLinkNote(
+          'A job already in progress was reopened instead of the link — finish or clear it, then follow the link again.'
+        );
+      }
+      return;
+    }
     if (!linkedSource) return;
     if (!isMasteringKey(linkedSource) || isMasterKey(linkedSource) || isKaraokeMasterKey(linkedSource)) {
       setSourceLinkNote("That link's source can't be mastered — choose a file instead.");

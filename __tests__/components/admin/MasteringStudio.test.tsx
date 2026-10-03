@@ -3058,6 +3058,24 @@ describe('opening a source from a link (e.g. "Master this remix")', () => {
     await waitFor(() => expect(within(sourceSection).queryByRole('status')).toBeNull());
   });
 
+  it('says so when a job already in progress was reopened instead of the link', async () => {
+    sessionStorage.setItem('mastering-studio-job', JSON.stringify({
+      jobId: 'job-1', sourceKey: 'audio/mastering/1_a_song.wav',
+      name: 'song.wav', size: 1024, target: -14, targetId: '-14',
+    }));
+    window.history.pushState({}, '', `/admin/mastering?source=${encodeURIComponent(REMIX_KEY)}&title=x&target=-16`);
+    primeHappyPath(doneJob());
+    render(<MasteringStudio />);
+
+    const sourceSection = screen.getByText(/1 · Source WAV from TamilAgaval Music/).closest('section')!;
+    expect(await within(sourceSection).findByRole('status')).toHaveTextContent(
+      'A job already in progress was reopened instead of the link — finish or clear it, then follow the link again.'
+    );
+    // The recovered job, not the link's source, is what's on screen.
+    expect(screen.queryByText(downloadFilename(REMIX_KEY))).not.toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /-14 LUFS/ })).toHaveAttribute('aria-checked', 'true');
+  });
+
   it('refuses a karaoke bed as the source, with the same note', async () => {
     const karaokeKey = 'audio/mastering/1_a_song-karaoke-1dBTP.wav';
     window.history.pushState({}, '', `/admin/mastering?source=${encodeURIComponent(karaokeKey)}`);
