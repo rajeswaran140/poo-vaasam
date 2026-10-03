@@ -3623,6 +3623,12 @@ describe('stem remix', () => {
     expect(res).toMatchObject({ ok: true });
     const mix = spawnSync.mock.calls.map((c) => c[1] as string[]).find((a) => a.includes('-filter_complex'))!;
     expect(mix).toEqual(expect.arrayContaining(['-t', '300.5']));
+    // The plan alone (from the record: v=221.9, b=null → longestSec 221.9)
+    // would produce no pad note at all. Only the probed 300.5 bound explains
+    // this one — proof the notes were rebuilt from probed values, not reused
+    // from the planner's.
+    const done = ddbInputs().find((i) => String(i.UpdateExpression).includes('renderedAt'))!;
+    expect(done.ExpressionAttributeValues![':notes']).toEqual(['Vocals padded by 78.6 s to match the longest stem']);
   });
 
   it('resamples a stem whose PROBED rate is 44100 even though the record says the rate is null', async () => {
@@ -3649,5 +3655,11 @@ describe('stem remix', () => {
     const mix = spawnSync.mock.calls.map((c) => c[1] as string[]).find((a) => a.includes('-filter_complex'))!;
     const fc = mix[mix.indexOf('-filter_complex') + 1];
     expect(fc).toContain('aresample=48000');
+    // The plan alone (from the record: v=221.9, b=221.6, b.sampleRate=null)
+    // would produce only a pad note. Both stems probe at the SAME 221.6s
+    // here, so the pad note is gone and only the resample note — which only
+    // the probe could know about — remains.
+    const done = ddbInputs().find((i) => String(i.UpdateExpression).includes('renderedAt'))!;
+    expect(done.ExpressionAttributeValues![':notes']).toEqual(['Bass resampled from 44.1 kHz to 48 kHz']);
   });
 });
