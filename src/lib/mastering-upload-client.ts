@@ -9,7 +9,7 @@
 import { adminFetch } from '@/lib/client-auth';
 import { ACCEPTED_UPLOAD_TYPES } from '@/lib/mastering-storage';
 
-export type UploadKind = 'audio' | 'cover';
+export type UploadKind = 'audio' | 'cover' | 'stem';
 
 /**
  * POST a file straight to S3 under a presigned policy.
@@ -52,7 +52,8 @@ export async function uploadToWorkspace(
   file: File,
   onProgress: (loaded: number, total: number) => void,
   signal: AbortSignal,
-  kind: UploadKind = 'audio'
+  kind: UploadKind = 'audio',
+  opts: { masterJobId?: string } = {}
 ): Promise<string> {
   const typeOk = (ACCEPTED_UPLOAD_TYPES as readonly string[]).includes(file.type);
   const res = await adminFetch('/api/admin/mastering/upload', {
@@ -64,7 +65,8 @@ export async function uploadToWorkspace(
       // policy, so an image cannot masquerade as audio/wav.
       contentType: kind === 'cover' ? file.type : typeOk ? file.type : 'audio/wav',
       size: file.size,
-      ...(kind === 'cover' ? { kind } : {}),
+      ...(kind !== 'audio' ? { kind } : {}),
+      ...(kind === 'stem' ? { masterJobId: opts.masterJobId } : {}),
     }),
     signal,
   });

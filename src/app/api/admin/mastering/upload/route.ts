@@ -25,6 +25,7 @@ import {
   masteringUploadKey,
   masteringCoverKey,
 } from '@/lib/mastering-storage';
+import { stemUploadKey, isValidMasterJobId } from '@/lib/stems';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -41,7 +42,8 @@ const uploadSchema = z.object({
    * workspace, same guards, different allow-list and a much smaller cap — an
    * image has no business being 500 MB.
    */
-  kind: z.enum(['audio', 'cover']).optional(),
+  kind: z.enum(['audio', 'cover', 'stem']).optional(),
+  masterJobId: z.string().optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -62,8 +64,15 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-  const { filename, contentType, size, kind } = parsed.data;
+  const { filename, contentType, size, kind, masterJobId } = parsed.data;
   const isCover = kind === 'cover';
+  const isStem = kind === 'stem';
+  if (isStem && !isValidMasterJobId(masterJobId)) {
+    return NextResponse.json(
+      { success: false, error: 'A stem must belong to a saved master.' },
+      { status: 400 }
+    );
+  }
 
   const allowed = isCover ? ACCEPTED_COVER_TYPES : ACCEPTED_UPLOAD_TYPES;
   if (!(allowed as readonly string[]).includes(contentType)) {
@@ -91,7 +100,9 @@ export async function POST(request: NextRequest) {
   const nonce = randomUUID().slice(0, 8);
   const key = isCover
     ? masteringCoverKey(filename, contentType, Date.now(), nonce)
-    : masteringUploadKey(filename, Date.now(), nonce);
+    : isStem
+      ? stemUploadKey(masterJobId!, filename, Date.now(), nonce)
+      : masteringUploadKey(filename, Date.now(), nonce);
   if (!key) {
     return NextResponse.json({ success: false, error: 'Unsupported cover type.' }, { status: 400 });
   }
