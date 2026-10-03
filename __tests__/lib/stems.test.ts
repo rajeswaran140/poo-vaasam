@@ -39,6 +39,24 @@ describe('stem keys', () => {
     expect(isStemKeyFor(JOB, `audio/mastering/stems/${JOB}/preview/x.m4a`)).toBe(false);
   });
 
+  it('accepts every key stemUploadKey mints, even from a filename full of odd characters', () => {
+    const k = stemUploadKey(JOB, '2 Drums (final) — v2.wav', 1696000000000, 'ab12cd34');
+    expect(isStemKeyFor(JOB, k)).toBe(true);
+  });
+
+  it('accepts the worst case: an 8-char nonce (the upload route\'s randomUUID().slice(0, 8)) with the longest filename safeBase allows', () => {
+    const longName = `${'a'.repeat(200)}.wav`; // safeBase caps the base at 80
+    const k = stemUploadKey(JOB, longName, 1696000000000, 'ab12cd34');
+    expect(k.length - `${STEMS_PREFIX}${JOB}/`.length).toBeLessThanOrEqual(124); // 120 + ".wav"
+    expect(isStemKeyFor(JOB, k)).toBe(true);
+  });
+
+  it('refuses a crafted key with a space or an extra dot in the base, even though it still ends .wav', () => {
+    const folder = stemFolderFor(JOB);
+    expect(isStemKeyFor(JOB, `${folder}has space.wav`)).toBe(false);
+    expect(isStemKeyFor(JOB, `${folder}has.dot.wav`)).toBe(false);
+  });
+
   it('derives a stable id, a preview key and a remix key', () => {
     const k = stemUploadKey(JOB, '2_Drums.wav', 1696000000000, 'ab12cd34');
     expect(stemIdFromKey(k)).toBe('1696000000000_ab12cd34_2_Drums');

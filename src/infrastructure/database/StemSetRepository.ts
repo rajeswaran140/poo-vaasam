@@ -30,6 +30,7 @@ export function stemSetFromItem(i: Record<string, unknown>): StemSet {
       name: typeof s.name === 'string' ? s.name : 'Stem',
       previewKey: typeof s.previewKey === 'string' ? s.previewKey : null,
       previewError: typeof s.previewError === 'string' ? s.previewError : null,
+      previewRequestedAt: typeof s.previewRequestedAt === 'string' ? s.previewRequestedAt : null,
       durationSec: num(s.durationSec),
       sampleRate: num(s.sampleRate),
       channels: num(s.channels),
@@ -89,7 +90,7 @@ export class StemSetRepository {
 
       const now = new Date().toISOString();
       const stem: StemEntry = {
-        key, name: guessStemName(filename), previewKey: null, previewError: null,
+        key, name: guessStemName(filename), previewKey: null, previewError: null, previewRequestedAt: null,
         durationSec: null, sampleRate: null, channels: null,
       };
       // `order` already has the id (a previous call's first write landed but
@@ -152,6 +153,31 @@ export class StemSetRepository {
         conditionExpression: 'attribute_exists(#stems.#sid)',
         expressionAttributeNames: { '#stems': 'stems', '#sid': stemId, '#previewError': 'previewError' },
         expressionAttributeValues: { ':err': message },
+      });
+    } catch (error) {
+      if ((error as Record<string, unknown>).name === 'ConditionalCheckFailedException') return;
+      handleDynamoDBError(error);
+    }
+  }
+
+  /**
+   * Stamp `previewRequestedAt` on a stem whenever the route asks the worker
+   * for its listening copy — first add or a Retry re-POST. Without this, a
+   * worker that never writes previewKey/previewError back (old worker
+   * without a stemPreview branch, a timeout, an OOM, a crash) leaves the row
+   * stuck on "Preparing listening copy…" forever, indistinguishable from one
+   * genuinely still rendering. Conditional + swallowed the same way as
+   * setPreviewError: a lost race against a concurrent removeStem leaves
+   * nothing to stamp.
+   */
+  async markPreviewRequested(masterJobId: string, stemId: string, nowIso: string): Promise<void> {
+    try {
+      await DynamoDBOperations.update({
+        key: keyFor(masterJobId),
+        updateExpression: 'SET #stems.#sid.#previewRequestedAt = :now',
+        conditionExpression: 'attribute_exists(#stems.#sid)',
+        expressionAttributeNames: { '#stems': 'stems', '#sid': stemId, '#previewRequestedAt': 'previewRequestedAt' },
+        expressionAttributeValues: { ':now': nowIso },
       });
     } catch (error) {
       if ((error as Record<string, unknown>).name === 'ConditionalCheckFailedException') return;

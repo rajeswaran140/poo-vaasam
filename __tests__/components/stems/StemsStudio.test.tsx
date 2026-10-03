@@ -57,10 +57,77 @@ it('uploads dropped stems as stems of THIS master, then registers each', async (
 });
 
 it('shows "Preparing listening copy…" until the copy exists', async () => {
-  route({}, { ...SET, stems: { [ID]: { ...SET.stems[ID], previewKey: null } } });
+  route({}, { ...SET, stems: { [ID]: { ...SET.stems[ID], previewKey: null, previewRequestedAt: new Date().toISOString() } } });
   render(<StemsStudio masterJobId={JOB} />);
   const row = await screen.findByRole('listitem', { name: /Drums/ });
   expect(within(row).getByText(/Preparing listening copy/)).toBeInTheDocument();
+});
+
+it('still shows "Preparing listening copy…" (no alert) for a stem requested under 5 minutes ago', async () => {
+  const fresh = new Date(Date.now() - 60 * 1000).toISOString();
+  route({}, { ...SET, stems: { [ID]: { ...SET.stems[ID], previewKey: null, previewRequestedAt: fresh } } });
+  render(<StemsStudio masterJobId={JOB} />);
+  const row = await screen.findByRole('listitem', { name: /Drums/ });
+  expect(within(row).getByText(/Preparing listening copy/)).toBeInTheDocument();
+  expect(within(row).queryByRole('alert')).toBeNull();
+});
+
+it('shows "Taking longer than expected" and a Retry for a stem stuck more than 5 minutes, and stops polling it', async () => {
+  jest.useFakeTimers();
+  try {
+    const stale = new Date(Date.now() - 6 * 60 * 1000).toISOString();
+    route({}, { ...SET, stems: { [ID]: { ...SET.stems[ID], previewKey: null, previewRequestedAt: stale } } });
+    render(<StemsStudio masterJobId={JOB} />);
+    const row = await screen.findByRole('listitem', { name: /Drums/ });
+    expect(within(row).getByRole('alert')).toHaveTextContent(/Taking longer than expected/);
+    expect(within(row).getByRole('button', { name: /Retry Drums/ })).toBeInTheDocument();
+
+    const getCallsBefore = mockedFetch.mock.calls.filter((c) => c[0] === `/api/admin/stems/${JOB}`).length;
+    fireEvent.click(document.body); // no-op interaction, just lets effects settle
+    jest.advanceTimersByTime(10000);
+    await Promise.resolve();
+    await Promise.resolve();
+    const getCallsAfter = mockedFetch.mock.calls.filter((c) => c[0] === `/api/admin/stems/${JOB}`).length;
+    expect(getCallsAfter).toBe(getCallsBefore);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+it('treats a stem with no previewRequestedAt (added before the field existed) as stale immediately', async () => {
+  route({}, { ...SET, stems: { [ID]: { ...SET.stems[ID], previewKey: null, previewRequestedAt: null } } });
+  render(<StemsStudio masterJobId={JOB} />);
+  const row = await screen.findByRole('listitem', { name: /Drums/ });
+  expect(within(row).getByRole('alert')).toHaveTextContent(/Taking longer than expected/);
+});
+
+it('keeps polling after a failed GET mid-poll, and still shows the load error at the top', async () => {
+  jest.useFakeTimers();
+  try {
+    const pendingSet = { ...SET, stems: { [ID]: { ...SET.stems[ID], previewKey: null, previewRequestedAt: new Date().toISOString() } } };
+    let getCalls = 0;
+    mockedFetch.mockImplementation((url: string, init?: { method?: string }) => {
+      const m = init?.method ?? 'GET';
+      if (url === `/api/admin/stems/${JOB}` && m === 'GET') {
+        getCalls++;
+        if (getCalls === 2) return Promise.resolve(refuse('Could not load the stems.', 502));
+        return Promise.resolve(ok({ success: true, set: pendingSet, master: { id: JOB, title: 'பாடல்', target: -14 } }));
+      }
+      return Promise.resolve(ok({}));
+    });
+    render(<StemsStudio masterJobId={JOB} />);
+    await screen.findByText(/Preparing listening copy/);
+    expect(getCalls).toBe(1);
+
+    jest.advanceTimersByTime(4000);
+    await waitFor(() => expect(getCalls).toBe(2));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/Could not load the stems/));
+
+    jest.advanceTimersByTime(4000);
+    await waitFor(() => expect(getCalls).toBe(3));
+  } finally {
+    jest.useRealTimers();
+  }
 });
 
 it('renames a stem inline', async () => {
@@ -69,6 +136,7 @@ it('renames a stem inline', async () => {
   const row = await screen.findByRole('listitem', { name: /Drums/ });
   fireEvent.click(within(row).getByRole('button', { name: /Rename Drums/ }));
   const box = within(row).getByLabelText(/Stem name/);
+  expect(box).toHaveAttribute('maxLength', '80');
   fireEvent.change(box, { target: { value: 'Kick and snare' } });
   fireEvent.keyDown(box, { key: 'Enter' });
   await waitFor(() => {
@@ -77,12 +145,43 @@ it('renames a stem inline', async () => {
   });
 });
 
+it('asks to confirm before removing a stem, and does not DELETE when declined', async () => {
+  route();
+  const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(false);
+  render(<StemsStudio masterJobId={JOB} />);
+  const row = await screen.findByRole('listitem', { name: /Drums/ });
+  fireEvent.click(within(row).getByRole('button', { name: /Remove Drums/ }));
+  expect(confirmSpy).toHaveBeenCalledWith(expect.stringMatching(/Remove Drums\?.*upload it again/));
+  await Promise.resolve();
+  expect(mockedFetch.mock.calls.some((c) => c[1]?.method === 'DELETE')).toBe(false);
+  confirmSpy.mockRestore();
+});
+
+it('removes the stem once the confirmation is accepted', async () => {
+  route();
+  const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
+  render(<StemsStudio masterJobId={JOB} />);
+  const row = await screen.findByRole('listitem', { name: /Drums/ });
+  fireEvent.click(within(row).getByRole('button', { name: /Remove Drums/ }));
+  await waitFor(() => expect(mockedFetch.mock.calls.some((c) => c[1]?.method === 'DELETE')).toBe(true));
+  confirmSpy.mockRestore();
+});
+
+it('does not render the upload area when the master cannot be loaded (e.g. a 404)', async () => {
+  route({ get: refuse('No saved master with that id.', 404) });
+  render(<StemsStudio masterJobId={JOB} />);
+  await screen.findByRole('alert');
+  expect(screen.queryByLabelText(/Add stem WAVs/i)).toBeNull();
+});
+
 it('reports a refused removal inside that stem\'s row', async () => {
   route({ del: refuse('That stem is no longer in the set.', 404) });
+  const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
   render(<StemsStudio masterJobId={JOB} />);
   const row = await screen.findByRole('listitem', { name: /Drums/ });
   fireEvent.click(within(row).getByRole('button', { name: /Remove Drums/ }));
   await waitFor(() => expect(within(row).getByRole('alert')).toHaveTextContent(/no longer in the set/));
+  confirmSpy.mockRestore();
 });
 
 it('flags a stem whose rate differs from the rest', async () => {

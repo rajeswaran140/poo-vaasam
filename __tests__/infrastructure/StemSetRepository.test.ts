@@ -32,7 +32,17 @@ describe('reading a set', () => {
     });
     const set = await repo.get(JOB);
     expect(set!.order).toEqual([ID]);
-    expect(set!.stems[ID]).toMatchObject({ key: KEY, name: 'Drums', previewKey: null, durationSec: null });
+    expect(set!.stems[ID]).toMatchObject({ key: KEY, name: 'Drums', previewKey: null, durationSec: null, previewRequestedAt: null });
+  });
+
+  it('reads previewRequestedAt when present, defaults null when absent', async () => {
+    mockGet.mockResolvedValue({
+      masterJobId: JOB, order: [ID],
+      stems: { [ID]: { key: KEY, name: 'Drums', previewRequestedAt: '2026-10-03T12:00:00.000Z' } },
+      mix: {}, remix: null, createdAt: 't', updatedAt: 't',
+    });
+    const set = await repo.get(JOB);
+    expect(set!.stems[ID].previewRequestedAt).toBe('2026-10-03T12:00:00.000Z');
   });
 });
 
@@ -48,7 +58,7 @@ describe('adding a stem', () => {
     expect(append.updateExpression).toMatch(/list_append\(if_not_exists\(#order, :empty\), :id\)/);
     const entry = calls.find((c) => /#stems\.#sid = :stem/.test(c.updateExpression))!;
     expect(entry.expressionAttributeNames['#sid']).toBe(ID);
-    expect(entry.expressionAttributeValues[':stem']).toMatchObject({ key: KEY, name: 'Drums', previewKey: null });
+    expect(entry.expressionAttributeValues[':stem']).toMatchObject({ key: KEY, name: 'Drums', previewKey: null, previewRequestedAt: null });
   });
 
   it('keeps the master row\'s stem count in step, without touching its updatedAt', async () => {
@@ -114,6 +124,30 @@ describe('recording a preview error', () => {
   it('still throws a non-conditional failure', async () => {
     mockUpdate.mockRejectedValueOnce(new Error('ProvisionedThroughputExceededException'));
     await expect(repo.setPreviewError(JOB, ID, 'boom')).rejects.toThrow('ProvisionedThroughputExceededException');
+  });
+});
+
+describe('marking a preview requested', () => {
+  it('stamps previewRequestedAt onto that stem only, conditional on it still existing', async () => {
+    await repo.markPreviewRequested(JOB, ID, '2026-10-03T12:00:00.000Z');
+    const call = mockUpdate.mock.calls[0][0];
+    expect(call.key).toEqual({ PK: `STEMSET#${JOB}`, SK: 'METADATA' });
+    expect(call.updateExpression).toBe('SET #stems.#sid.#previewRequestedAt = :now');
+    expect(call.conditionExpression).toBe('attribute_exists(#stems.#sid)');
+    expect(call.expressionAttributeNames['#sid']).toBe(ID);
+    expect(call.expressionAttributeValues[':now']).toBe('2026-10-03T12:00:00.000Z');
+  });
+
+  it('swallows a lost race against a concurrent removeStem rather than throwing', async () => {
+    const error = new Error('The conditional request failed');
+    (error as Record<string, string>).name = 'ConditionalCheckFailedException';
+    mockUpdate.mockRejectedValueOnce(error);
+    await expect(repo.markPreviewRequested(JOB, ID, '2026-10-03T12:00:00.000Z')).resolves.toBeUndefined();
+  });
+
+  it('still throws a non-conditional failure', async () => {
+    mockUpdate.mockRejectedValueOnce(new Error('ProvisionedThroughputExceededException'));
+    await expect(repo.markPreviewRequested(JOB, ID, '2026-10-03T12:00:00.000Z')).rejects.toThrow('ProvisionedThroughputExceededException');
   });
 });
 

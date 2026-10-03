@@ -47,7 +47,7 @@ export function isStemKeyFor(masterJobId: string, key: string): boolean {
   const folder = stemFolderFor(masterJobId);
   if (!key.startsWith(folder)) return false;
   const rest = key.slice(folder.length);
-  return /^[^/]+\.wav$/i.test(rest);
+  return /^[A-Za-z0-9_-]{1,120}\.wav$/i.test(rest);
 }
 
 export function stemPreviewKey(stemKey: string): string {

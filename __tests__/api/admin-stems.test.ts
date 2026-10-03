@@ -9,9 +9,11 @@ jest.mock('@/infrastructure/database/MasterJobRepository', () => ({
   MasterJobRepository: jest.fn().mockImplementation(() => ({ get: masterGet })),
 }));
 const setGet = jest.fn(); const addStem = jest.fn(); const renameStem = jest.fn(); const removeStem = jest.fn();
-const setPreviewError = jest.fn();
+const setPreviewError = jest.fn(); const markPreviewRequested = jest.fn();
 jest.mock('@/infrastructure/database/StemSetRepository', () => ({
-  StemSetRepository: jest.fn().mockImplementation(() => ({ get: setGet, addStem, renameStem, removeStem, setPreviewError })),
+  StemSetRepository: jest.fn().mockImplementation(() => ({
+    get: setGet, addStem, renameStem, removeStem, setPreviewError, markPreviewRequested,
+  })),
 }));
 const lambdaSend = jest.fn().mockResolvedValue({});
 jest.mock('@aws-sdk/client-lambda', () => ({
@@ -44,6 +46,7 @@ beforeEach(() => {
     mix: {}, remix: null,
   });
   setPreviewError.mockResolvedValue(undefined);
+  markPreviewRequested.mockResolvedValue(undefined);
 });
 
 it('is admin-only, everywhere', async () => {
@@ -129,6 +132,27 @@ it('clears any old previewError before asking the worker again, on a successful 
   expect(body.set.stems[SID].previewError).toBeNull();
   // Cleared BEFORE the worker is asked to try again, not after.
   expect(setPreviewError.mock.invocationCallOrder[0]).toBeLessThan(lambdaSend.mock.invocationCallOrder[0]);
+});
+
+it('stamps previewRequestedAt on the stem whenever it invokes the worker (first add)', async () => {
+  const res = await POST(req('POST', { key: KEY, filename: '2_Drums.wav' }), p());
+  expect(res.status).toBe(201);
+  expect(markPreviewRequested).toHaveBeenCalledWith(JOB, SID, expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/));
+  const body = await res.json();
+  expect(body.set.stems[SID].previewRequestedAt).toEqual(expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/));
+});
+
+it('stamps previewRequestedAt again on a re-POST (Retry), even after the first attempt failed', async () => {
+  const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+  lambdaSend.mockRejectedValueOnce(new Error('throttled'));
+  await POST(req('POST', { key: KEY, filename: '2_Drums.wav' }), p());
+  markPreviewRequested.mockClear();
+
+  const res2 = await POST(req('POST', { key: KEY, filename: '2_Drums.wav' }), p());
+  expect(res2.status).toBe(201);
+  expect(markPreviewRequested).toHaveBeenCalledTimes(1);
+  expect(markPreviewRequested).toHaveBeenCalledWith(JOB, SID, expect.any(String));
+  errSpy.mockRestore();
 });
 
 it('maps a gone stem on rename to 404', async () => {

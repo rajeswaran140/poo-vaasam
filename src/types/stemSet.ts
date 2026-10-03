@@ -14,6 +14,14 @@ export interface StemEntry {
   name: string;
   previewKey: string | null;
   previewError: string | null;
+  /**
+   * When the POST .../stems route last asked the worker for this stem's
+   * listening copy (first add, or a Retry re-POST). Null for a stem added
+   * before this field existed. StemsStudio treats a pending stem (no
+   * previewKey, no previewError) whose previewRequestedAt is null, or more
+   * than 5 minutes old, as stuck rather than still rendering.
+   */
+  previewRequestedAt: string | null;
   durationSec: number | null;
   sampleRate: number | null;
   channels: number | null;

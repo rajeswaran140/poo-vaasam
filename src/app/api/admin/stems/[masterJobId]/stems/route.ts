@@ -23,6 +23,11 @@
  * `setPreviewError` is cleared before every invoke attempt (so a retry that
  * succeeds doesn't leave a stale message behind) and set if that attempt's
  * invoke throws.
+ *
+ * `previewRequestedAt` is stamped on every invoke attempt too (success or
+ * failure, first add or Retry) — it's what lets StemsStudio tell "still
+ * rendering" apart from "the invoke apparently succeeded but the worker
+ * never came back" after more than 5 minutes.
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -36,11 +41,11 @@ import { awsConfig } from '@/lib/aws-config';
 
 const PREVIEW_INVOKE_FAILED_MESSAGE = 'The listening copy could not be started — press Retry.';
 
-/** A shallow copy of `set` with one stem's `previewError` replaced. */
-function withPreviewError(set: StemSet, stemId: string, message: string | null): StemSet {
+/** A shallow copy of `set` with one stem's fields patched. */
+function withStemPatch(set: StemSet, stemId: string, patch: Partial<StemSet['stems'][string]>): StemSet {
   const stem = set.stems[stemId];
   if (!stem) return set;
-  return { ...set, stems: { ...set.stems, [stemId]: { ...stem, previewError: message } } };
+  return { ...set, stems: { ...set.stems, [stemId]: { ...stem, ...patch } } };
 }
 
 export const runtime = 'nodejs';
@@ -108,7 +113,19 @@ export async function POST(
     await repo.setPreviewError(masterJobId, stemId, null).catch((e) =>
       console.error('[api/admin/stems] could not clear the stem preview error:', e instanceof Error ? e.message : String(e))
     );
-    set = withPreviewError(set, stemId, null);
+    set = withStemPatch(set, stemId, { previewError: null });
+
+    // Stamp when THIS attempt asked the worker, whether it's the first add
+    // or a Retry re-POST — the one durable signal StemsStudio has for "this
+    // is stuck", since an Event invoke that never writes previewKey or
+    // previewError back (old worker, timeout, OOM, crash) would otherwise
+    // leave the row on "Preparing listening copy…" forever. Best-effort for
+    // the same reason as setPreviewError above.
+    const requestedAt = new Date().toISOString();
+    await repo.markPreviewRequested(masterJobId, stemId, requestedAt).catch((e) =>
+      console.error('[api/admin/stems] could not stamp previewRequestedAt:', e instanceof Error ? e.message : String(e))
+    );
+    set = withStemPatch(set, stemId, { previewRequestedAt: requestedAt });
 
     try {
       const lambda = new LambdaClient({
@@ -130,7 +147,7 @@ export async function POST(
       await repo.setPreviewError(masterJobId, stemId, PREVIEW_INVOKE_FAILED_MESSAGE).catch((e) =>
         console.error('[api/admin/stems] could not record the stem preview error:', e instanceof Error ? e.message : String(e))
       );
-      set = withPreviewError(set, stemId, PREVIEW_INVOKE_FAILED_MESSAGE);
+      set = withStemPatch(set, stemId, { previewError: PREVIEW_INVOKE_FAILED_MESSAGE });
       return NextResponse.json({ success: true, set, previewQueued: false }, { status: 201 });
     }
 

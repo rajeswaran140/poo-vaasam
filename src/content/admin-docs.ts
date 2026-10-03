@@ -1612,14 +1612,14 @@ If karaoke becomes a regular product, the right fix is a "keep current loudness"
     slug: 'stems',
     title: 'Stems — store and hear a song\'s parts',
     category: 'Music Lab',
-    updatedAt: '2026-10-03T17:24:16Z',
+    updatedAt: '2026-10-03T17:58:55Z',
     body: `# Stems — store and hear a song's parts
 
 Stems are the individual parts of a song — drums, bass, vocals, strings, and others. TamilAgaval Music provides stems when a song is generated. This page shows how to upload them, listen to each part, rename or remove them, and understand the technical notes the page shows.
 
 ## Where the Stems link is
 
-In **Sound Engineering**, each saved master row has a **Stems (N)** link showing how many stems are stored, and an **Add stems** link to upload more. Click either to open the Stems page.
+In **Sound Engineering**, each saved master row has one link to this page: **Add stems** while it has none yet, or **Stems (N)** once at least one is stored. Click it to open the Stems page.
 
 ## Upload stems
 
@@ -1629,21 +1629,21 @@ The upload accepts WAV files only, up to 500 MB each. To cancel an upload in pro
 
 ## Listening copies
 
-Each stem gets a **listening copy** — a low-bitrate AAC file for preview. The page shows **"Preparing listening copy…"** while it is being made. Once ready, click **Play** to hear it in the browser, or **Download** to save the AAC file.
+Each stem gets a **listening copy** — a low-bitrate AAC file for preview. The page shows **"Preparing listening copy…"** while it is being made. Once ready, click **Play** to hear it in the browser.
 
-If a listening copy fails to start, a red error message appears next to that stem. Click **Retry** to try again.
+If a listening copy fails to start, a red error message appears next to that stem. The same happens if one is still not ready after **5 minutes** — the message reads **"Taking longer than expected — press Retry."**, since the render is stuck rather than genuinely still in progress. Either way, click **Retry** to try again.
 
 ## Rename, remove, download
 
-**Click the stem name to edit it** — change it to something more descriptive if you want. The original filename is shown for reference.
+Click **Rename** next to a stem to edit its name — change it to something more descriptive if you want.
 
-**Click Download** to download the listening copy (AAC).
+**Click Download** to download the stem's **full-quality WAV** — not the AAC listening copy, which is only for playback in the browser.
 
-**Click Remove** to delete a stem. This is final — you cannot undo it.
+**Click Remove** to delete a stem. You'll be asked to confirm, because this is final — you cannot undo it.
 
 ## Technical notes — sample rate and length
 
-Each stem shows its length (in seconds) and sample rate (in kHz). The page checks whether they match the expected settings for mixing:
+Each stem shows its length (as m:ss) and sample rate (in kHz). The page checks whether they match the expected settings for mixing:
 
 - **Sample rate mismatch:** If a stem is at 44.1 kHz, the note reads "44.1 kHz — will be resampled to 48 kHz". It will be converted automatically when mixed.
 - **Length mismatch:** If a stem is shorter than others, the note reads "shorter by Xs — padded with silence when mixed". Shorter stems are padded to match the longest one.
@@ -1654,7 +1654,7 @@ These are not errors — they are handled automatically. A stem at any length or
 
 **A mix of the stems is a new version — it will not sound exactly like the original release.** Stems are regenerated approximations of each part, not extractions from the master. Adding them together does not reproduce the released song, because they come from a different source. Remix and mastery will come in the next update.
 
-Measured 2026-09-19, Suno's 11 stems summed show only 5.7 dB of cancellation against the original pre-master — far less than a true decomposition (which would show 30+ dB). So any mix of them is a new arrangement.
+Measured 2026-09-19, the 11 stems summed show only 5.7 dB of cancellation against the original pre-master — far less than a true decomposition (which would show 30+ dB). So any mix of them is a new arrangement.
 `,
   },
   {

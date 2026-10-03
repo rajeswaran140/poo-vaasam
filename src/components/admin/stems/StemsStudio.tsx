@@ -32,11 +32,36 @@ interface RowError {
   message: string;
 }
 
-function hasPendingPreview(set: StemSet | null): boolean {
+/** 5 minutes: how long a stem can sit with no previewKey and no previewError
+ * before StemsStudio stops treating it as "still rendering" and offers a
+ * Retry instead. Guards against an Event invoke that "succeeded" (Lambda
+ * accepted it) but whose worker never wrote previewKey/previewError back —
+ * an old worker without a stemPreview branch, a timeout, an OOM, a crash. */
+const STALE_PREVIEW_MS = 5 * 60 * 1000;
+
+function isPendingPreview(stem: StemEntry): boolean {
+  return stem.previewKey === null && stem.previewError === null;
+}
+
+/**
+ * A pending stem counts as stale once more than 5 minutes have passed since
+ * `previewRequestedAt` — or immediately, if it has none (a stem added before
+ * this field existed; every new add stamps it, so null here can only mean
+ * "from before").
+ */
+function isStalePending(stem: StemEntry, now: number): boolean {
+  if (!isPendingPreview(stem)) return false;
+  if (stem.previewRequestedAt == null) return true;
+  const requested = Date.parse(stem.previewRequestedAt);
+  if (Number.isNaN(requested)) return true;
+  return now - requested > STALE_PREVIEW_MS;
+}
+
+function hasPendingPreview(set: StemSet | null, now: number): boolean {
   if (!set) return false;
   return set.order.some((id) => {
     const stem = set.stems[id];
-    return !!stem && stem.previewKey === null && stem.previewError === null;
+    return !!stem && isPendingPreview(stem) && !isStalePending(stem, now);
   });
 }
 
@@ -96,6 +121,14 @@ export function StemsStudio({ masterJobId }: Props) {
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
+  // The last set this page actually saw, kept outside React state so a
+  // failed poll tick can decide whether to keep polling without `load`
+  // itself depending on `set` (which would recreate `load` on every
+  // render and retrigger the mount effect below).
+  const setRef = useRef<StemSet | null>(null);
+  useEffect(() => {
+    setRef.current = set;
+  }, [set]);
 
   const scheduleIfPending = useCallback(
     (next: StemSet | null, poll: () => void) => {
@@ -103,7 +136,7 @@ export function StemsStudio({ masterJobId }: Props) {
         clearTimeout(timerRef.current);
         timerRef.current = null;
       }
-      if (hasPendingPreview(next)) {
+      if (hasPendingPreview(next, Date.now())) {
         timerRef.current = setTimeout(poll, 4000);
       }
     },
@@ -117,6 +150,14 @@ export function StemsStudio({ masterJobId }: Props) {
       if (!mountedRef.current) return;
       if (!res.ok || !body.success) {
         setLoadError(body.error || 'Could not load the stems.');
+        // A failed poll tick must not end the poll for good — the set we
+        // last loaded successfully may still have pending stems waiting on
+        // their listening copy, and this failure is as likely to be a
+        // transient blip as a real outage.
+        if (hasPendingPreview(setRef.current, Date.now())) {
+          if (timerRef.current) clearTimeout(timerRef.current);
+          timerRef.current = setTimeout(() => void load(), 4000);
+        }
         return;
       }
       setLoadError(null);
@@ -124,7 +165,12 @@ export function StemsStudio({ masterJobId }: Props) {
       setMaster(body.master as MasterInfo);
       scheduleIfPending(body.set as StemSet | null, () => void load());
     } catch (err) {
-      if (mountedRef.current) setLoadError(err instanceof Error ? err.message : String(err));
+      if (!mountedRef.current) return;
+      setLoadError(err instanceof Error ? err.message : String(err));
+      if (hasPendingPreview(setRef.current, Date.now())) {
+        if (timerRef.current) clearTimeout(timerRef.current);
+        timerRef.current = setTimeout(() => void load(), 4000);
+      }
     }
   }, [masterJobId, scheduleIfPending]);
 
@@ -185,7 +231,8 @@ export function StemsStudio({ masterJobId }: Props) {
   );
 
   const removeStem = useCallback(
-    async (id: string) => {
+    async (id: string, name: string) => {
+      if (!window.confirm(`Remove ${name}? You would have to upload it again.`)) return;
       try {
         const res = await adminFetch(`/api/admin/stems/${masterJobId}/stems/${id}`, { method: 'DELETE' });
         const body = await res.json();
@@ -268,6 +315,7 @@ export function StemsStudio({ masterJobId }: Props) {
 
   const majorityRate = set ? majoritySampleRate(set) : null;
   const longest = set ? longestDuration(set) : null;
+  const now = Date.now();
 
   return (
     <div className="space-y-6">
@@ -291,7 +339,10 @@ export function StemsStudio({ masterJobId }: Props) {
 
       <section>
         <h2 className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-200">Add stems</h2>
-        <StemUpload masterJobId={masterJobId} onAdded={handleAdded} />
+        {/* Only once we actually have a master to attach stems to — a 404
+            or other load failure must not offer an upload area that would
+            orphan whatever gets dropped into it. */}
+        {master && <StemUpload masterJobId={masterJobId} onAdded={handleAdded} />}
       </section>
 
       <section>
@@ -324,6 +375,7 @@ export function StemsStudio({ masterJobId }: Props) {
                     <input
                       aria-label="Stem name"
                       autoFocus
+                      maxLength={80}
                       value={renameValue}
                       onChange={(e) => setRenameValue(e.target.value)}
                       onKeyDown={(e) => {
@@ -385,6 +437,20 @@ export function StemsStudio({ masterJobId }: Props) {
                         <RotateCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
                       </button>
                     </>
+                  ) : stem.previewKey === null && isStalePending(stem, now) ? (
+                    <>
+                      <p role="alert" className="w-full text-xs text-red-600 dark:text-red-400">
+                        Taking longer than expected — press Retry.
+                      </p>
+                      <button
+                        type="button"
+                        aria-label={`Retry ${stem.name}`}
+                        onClick={() => void retryPreview(id, stem)}
+                        className="flex shrink-0 items-center gap-1 text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
+                      >
+                        <RotateCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
+                      </button>
+                    </>
                   ) : stem.previewKey === null ? (
                     <span className="shrink-0 text-xs text-gray-400">Preparing listening copy…</span>
                   ) : playUrls[id] ? (
@@ -412,7 +478,7 @@ export function StemsStudio({ masterJobId }: Props) {
                   <button
                     type="button"
                     aria-label={`Remove ${stem.name}`}
-                    onClick={() => void removeStem(id)}
+                    onClick={() => void removeStem(id, stem.name)}
                     className="flex shrink-0 items-center gap-1 text-xs font-medium text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
                   >
                     <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Remove
