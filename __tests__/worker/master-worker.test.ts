@@ -3578,6 +3578,41 @@ describe('stem remix', () => {
     });
   });
 
+  it('bounds the render at the longest stem plus 0.06 s of headroom, never the bare rounded length', async () => {
+    // No probe header here (spawnSync answers empty), so the record's 221.9 is the longest.
+    await handler({ stemMix: { masterJobId: JOB } } as never);
+    const mix = spawnSync.mock.calls.map((c) => c[1] as string[]).find((a) => a.includes('-filter_complex'))!;
+    expect(mix[mix.indexOf('-t') + 1]).toBe('221.96');
+    // The notes still measure padding against the unbounded longest stem.
+    const done = ddbInputs().find((i) => String(i.UpdateExpression).includes('renderedAt'))!;
+    expect(done.ExpressionAttributeValues![':notes']).toContain('Bass padded by 0.3 s to match the longest stem');
+  });
+
+  it('logs the tail of ffmpeg\'s stderr when the remix render fails', async () => {
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    spawnSync.mockImplementation((_c: unknown, args: string[]) =>
+      args.includes('-filter_complex')
+        ? { status: 1, stdout: '', stderr: `${'x'.repeat(1000)}Invalid filter graph` }
+        : { status: 0, stdout: '', stderr: '' });
+    const res = await handler({ stemMix: { masterJobId: JOB } } as never);
+    expect(res).toMatchObject({ ok: false });
+    const logged = errSpy.mock.calls.find((c) => String(c[0]).includes('stem remix render failed'));
+    expect(logged).toBeDefined();
+    expect(String(logged![1])).toHaveLength(400);
+    expect(String(logged![1])).toMatch(/Invalid filter graph$/);
+    errSpy.mockRestore();
+  });
+
+  it('logs, rather than silently returns, when the stem set is missing', async () => {
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    send.mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'UpdateExpression' in cmd.input ? Promise.resolve({}) : Promise.resolve({}));
+    const res = await handler({ stemMix: { masterJobId: JOB } } as never);
+    expect(res).toMatchObject({ ok: false });
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('no stem set'), JOB);
+    errSpy.mockRestore();
+  });
+
   it('records the planner\'s refusal on the set when every stem is muted', async () => {
     send.mockImplementation((cmd: { input: Record<string, unknown> }) =>
       'UpdateExpression' in cmd.input ? Promise.resolve({}) : Promise.resolve({ Item: { ...ITEM, mix: { v: { gainDb: 0, muted: true }, d: { gainDb: 0, muted: true }, b: { gainDb: 0, muted: true } } } }));
@@ -3622,7 +3657,9 @@ describe('stem remix', () => {
     const res = await handler({ stemMix: { masterJobId: JOB } } as never);
     expect(res).toMatchObject({ ok: true });
     const mix = spawnSync.mock.calls.map((c) => c[1] as string[]).find((a) => a.includes('-filter_complex'))!;
-    expect(mix).toEqual(expect.arrayContaining(['-t', '300.5']));
+    // The probed 300.5 plus the 0.06 s headroom (remixBoundSec): the probe
+    // rounds to 0.1 s, so a bare 300.5 could cut up to 0.055 s of the tail.
+    expect(mix).toEqual(expect.arrayContaining(['-t', '300.56']));
     // The plan alone (from the record: v=221.9, b=null → longestSec 221.9)
     // would produce no pad note at all. Only the probed 300.5 bound explains
     // this one — proof the notes were rebuilt from probed values, not reused

@@ -23,10 +23,18 @@
  *                         not dropped from the array by hand, vs. a
  *                         hand-built sum of the other 8. Same 0.01 dB bar.
  *   (c) length check   — (c1) the full set's output length against the
- *                         longest stem's own length, within one 1024-sample
- *                         frame; (c2) one stem trimmed short, to actually
- *                         exercise apad/`-t` rather than finding two equal
- *                         lengths and calling it proven.
+ *                         longest stem's own length; (c2) one stem trimmed
+ *                         short, to actually exercise apad/`-t` rather than
+ *                         finding two equal lengths and calling it proven.
+ *                         Both gated as 0 <= delta <= LENGTH_GATE_SAMPLES,
+ *                         delta = output − longest stem, at 48 kHz. Never
+ *                         negative: a render shorter than the longest stem
+ *                         has cut its tail. The upper bound is the worker's
+ *                         own `-t` headroom (REMIX_BOUND_HEADROOM_SEC, 0.06 s)
+ *                         plus the worst a probe can under-read a length
+ *                         (0.055 s: ffmpeg's Duration is rounded to 0.01 s,
+ *                         then parseSourceInfo rounds to 0.1 s) — the padded
+ *                         silence `-t` may legitimately keep past the end.
  *   (d) resample check — a stem copied to 44.1 kHz among otherwise-48 kHz
  *                         stems renders at 48 kHz with no ffmpeg error.
  *
@@ -58,7 +66,7 @@ import { spawnSync, execSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildRemixArgs, planRemix, remixNotes } from '@/lib/stems';
+import { buildRemixArgs, planRemix, remixNotes, remixBoundSec, REMIX_BOUND_HEADROOM_SEC } from '@/lib/stems';
 import { parseSourceInfo, parseAudioSampleCount } from '@/lib/loudness-measure';
 import type { StemSet, StemMixEntry } from '@/types/stemSet';
 
@@ -114,6 +122,12 @@ const logOf = (r: { stdout?: string; stderr?: string }) => `${r.stdout ?? ''}${r
 const NULL_RESIDUAL_GATE_DB = -80;
 const isNullResidual = (db: number) => db === -Infinity || db < NULL_RESIDUAL_GATE_DB;
 
+/** (c1)/(c2)'s upper bound, in 48 kHz samples — see the docblock: the
+ *  `-t` headroom plus the worst probe under-read (≈5520). */
+const PROBE_WORST_UNDERREAD_SEC = 0.055;
+const LENGTH_GATE_SAMPLES = Math.round((REMIX_BOUND_HEADROOM_SEC + PROBE_WORST_UNDERREAD_SEC) * 48000);
+const lengthOk = (delta: number | null): delta is number => delta !== null && delta >= 0 && delta <= LENGTH_GATE_SAMPLES;
+
 function parseDbToken(tok: string): number {
   if (/^-inf$/i.test(tok)) return -Infinity;
   if (/^inf$/i.test(tok)) return Infinity;
@@ -142,7 +156,7 @@ function measureFile(path: string) {
  * output when the source isn't already 48 kHz. (This is also why (c1)
  * doesn't compare against `round(probedDurationSec * 48000)`: that would
  * just re-derive the target from the same one-decimal-rounded duration
- * `buildRemixArgs` itself was bounded by, making the check circular rather
+ * the render's `-t` bound is itself derived from, making the check circular rather
  * than an independent ground truth.)
  */
 function measure48kSampleCount(path: string): number | null {
@@ -237,7 +251,8 @@ interface RenderResult {
 /**
  * planRemix → re-probe each surviving input (the file is the authority, not
  * the record — exactly what renderStemMix does) → longest PROBED duration →
- * remixNotes → the real buildRemixArgs.
+ * remixNotes (against that length) → the real buildRemixArgs, bounded at
+ * `remixBoundSec` of it, as the worker is.
  */
 function renderMix(files: StemFile[], mixOverride: Record<string, Partial<StemMixEntry>>, outPath: string): RenderResult {
   const set = buildSet(files, mixOverride);
@@ -256,7 +271,8 @@ function renderMix(files: StemFile[], mixOverride: Record<string, Partial<StemMi
   const longestSec = probedLengths.length ? Math.max(...probedLengths) : plan.longestSec;
   const notes = remixNotes(probed, longestSec);
 
-  const args = buildRemixArgs({ inputs, outPath, durationSec: longestSec });
+  const durationSec = longestSec === null ? null : remixBoundSec(longestSec);
+  const args = buildRemixArgs({ inputs, outPath, durationSec });
   const t0 = Date.now();
   const r = ff(args);
   const ms = Date.now() - t0;
@@ -376,8 +392,8 @@ async function main() {
     const c1DeltaSamples = longestStemSamples !== null && aFull.samples !== null ? aFull.samples - longestStemSamples : null;
     console.log(`  longest stem (${longestStem.f.name}) samples, forced to 48kHz: ${longestStemSamples}`);
     console.log(`  full-mix output samples @48kHz:                           ${aFull.samples}`);
-    console.log(`  delta: ${c1DeltaSamples} samples (limit ±1024)`);
-    if (c1DeltaSamples === null || Math.abs(c1DeltaSamples) > 1024) fail(`(c1) length check: output differs from the longest stem by ${c1DeltaSamples} samples (limit 1024)`);
+    console.log(`  delta: ${c1DeltaSamples} samples (gate 0..${LENGTH_GATE_SAMPLES})`);
+    if (!lengthOk(c1DeltaSamples)) fail(`(c1) length check: output minus the longest stem is ${c1DeltaSamples} samples (gate 0..${LENGTH_GATE_SAMPLES})`);
 
     cleanup(aOut, aRef);
     duBytes(scratch);
@@ -436,10 +452,10 @@ async function main() {
     const fullLengthSamples = longestStemSamples; // the other stems are unchanged
     const c2Delta = fullLengthSamples !== null && c2Out_m.samples !== null ? c2Out_m.samples - fullLengthSamples : null;
     const padNote = c2Render.notes.find((n) => n.includes('padded by'));
-    console.log(`  trimmed "${trimId}" to ${trimTo} s; longestSec used: ${c2Render.longestSec}`);
+    console.log(`  trimmed "${trimId}" to ${trimTo} s; longestSec used: ${c2Render.longestSec} (-t ${c2Render.longestSec === null ? 'none' : remixBoundSec(c2Render.longestSec)})`);
     console.log(`  notes: ${JSON.stringify(c2Render.notes)}`);
-    console.log(`  output samples ${c2Out_m.samples} vs. full-length ${fullLengthSamples} — delta ${c2Delta} (limit ±1024)`);
-    if (c2Delta === null || Math.abs(c2Delta) > 1024) fail(`(c2) padding check: padded output differs from full length by ${c2Delta} samples (limit 1024)`);
+    console.log(`  output samples ${c2Out_m.samples} vs. full-length ${fullLengthSamples} — delta ${c2Delta} (gate 0..${LENGTH_GATE_SAMPLES})`);
+    if (!lengthOk(c2Delta)) fail(`(c2) padding check: padded output minus full length is ${c2Delta} samples (gate 0..${LENGTH_GATE_SAMPLES})`);
     if (!padNote) fail('(c2) padding check: no "padded by" note was produced for the trimmed stem');
     cleanup(trimmed, c2Out);
     duBytes(scratch);

@@ -155,9 +155,10 @@ import {
   planRemix,
   buildRemixArgs,
   stemRemixKey,
+  remixBoundSec,
   remixNotes,
 } from '@/lib/stems';
-import { stemSetFromItem } from '@/infrastructure/database/StemSetRepository';
+import { stemSetFromItem } from '@/lib/stemSetHydrate';
 import type { MasterJob } from '@/types/masterJob';
 
 const FFMPEG = process.env.FFMPEG_PATH || '/opt/bin/ffmpeg';
@@ -1992,9 +1993,11 @@ async function makeStemPreview(spec: NonNullable<MasterEvent['stemPreview']>, bu
  * downloaded WAV is re-probed here with probeSource, and that probed value —
  * never the record's — is what decides resampling, padding and the render's
  * length: the probed sample rate (falling back to the plan's only when the
- * probe itself fails), and `durationSec` as the longest PROBED duration
- * (falling back to the plan's `longestSec` only when no stem has any usable
- * duration at all, probed or recorded). The resample/pad notes are rebuilt
+ * probe itself fails), and the longest PROBED duration (falling back to the
+ * plan's `longestSec` only when no stem has any usable duration at all,
+ * probed or recorded). The render is bounded at `remixBoundSec` of that
+ * length — a little past it, because the probe can under-read the length by
+ * up to 0.055 s and a bare bound would cut the tail. The resample/pad notes are rebuilt
  * from those same probed values via the shared `remixNotes` — the exact
  * builder `planRemix` itself uses, so the wording can never drift between
  * the two — see buildRemixArgs for normalize=0 and the float output.
@@ -2014,7 +2017,10 @@ async function renderStemMix(spec: NonNullable<MasterEvent['stemMix']>, bucket: 
     return { ok: false };
   };
   const got = await ddb.send(new GetCommand({ TableName: TABLE, Key: key }));
-  if (!got.Item) return { ok: false };
+  if (!got.Item) {
+    console.error('[master-worker] stemMix: no stem set for', masterJobId);
+    return { ok: false };
+  }
   const set = stemSetFromItem(got.Item as Record<string, unknown>);
   const plan = planRemix(set);
   if (!plan.ok) return fail(plan.message);
@@ -2040,8 +2046,14 @@ async function renderStemMix(spec: NonNullable<MasterEvent['stemMix']>, bucket: 
     const notes = remixNotes(probed, longestSec);
 
     const outPath = join(dir, 'remix.wav');
-    const r = ff(buildRemixArgs({ inputs, outPath, durationSec: longestSec }));
-    if (r.status !== 0) return fail('the remix could not be rendered');
+    // The notes above measure padding against the longest stem itself; only
+    // the render's `-t` gets the headroom (see REMIX_BOUND_HEADROOM_SEC).
+    const durationSec = longestSec === null ? null : remixBoundSec(longestSec);
+    const r = ff(buildRemixArgs({ inputs, outPath, durationSec }));
+    if (r.status !== 0) {
+      console.error('[master-worker] stem remix render failed:', r.stderr?.slice(-400));
+      return fail('the remix could not be rendered');
+    }
     const remixKey = stemRemixKey(masterJobId, Date.now());
     await s3.send(new PutObjectCommand({ Bucket: bucket, Key: remixKey, Body: readFileSync(outPath), ContentType: 'audio/wav' }));
     await ddb.send(new UpdateCommand({

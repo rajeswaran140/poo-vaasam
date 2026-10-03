@@ -2,6 +2,7 @@ import {
   STEMS_PREFIX, isValidMasterJobId, stemFolderFor, stemUploadKey, stemIdFromKey,
   isStemKeyFor, stemPreviewKey, stemRemixKey, guessStemName,
   planRemix, buildRemixArgs, remixNotes, MIN_GAIN_DB, MAX_GAIN_DB,
+  REMIX_BOUND_HEADROOM_SEC, remixBoundSec,
 } from '@/lib/stems';
 import { isMasteringKey } from '@/lib/mastering-storage';
 import { isMasterKey } from '@/lib/loudness-measure';
@@ -193,5 +194,22 @@ describe('the remix encode', () => {
     expect(afc).not.toContain('apad');
     expect(afc).toContain('[0:a]anull[s0]');
     expect(a).not.toContain('-t');
+  });
+});
+
+describe('the remix length bound', () => {
+  it('is the longest stem plus 0.06 s of headroom, rounded to the millisecond', () => {
+    expect(REMIX_BOUND_HEADROOM_SEC).toBe(0.06);
+    expect(remixBoundSec(221.9)).toBe(221.96);
+    expect(remixBoundSec(300.5)).toBe(300.56);
+    // 0.3 + 0.06 is 0.36000000000000004 in floating point — never a -t value.
+    expect(remixBoundSec(0.3)).toBe(0.36);
+    expect(String(remixBoundSec(0.3))).toBe('0.36');
+  });
+
+  it('covers the worst shortfall of a 0.1 s-rounded probe of a 0.01 s-rounded Duration (0.055 s)', () => {
+    // A stem really 221.949 s long prints as Duration 00:03:41.95 and is
+    // probed as 221.9 — 0.049 s (just under 0.055) more than the probe says.
+    expect(remixBoundSec(221.9)).toBeGreaterThanOrEqual(221.949);
   });
 });

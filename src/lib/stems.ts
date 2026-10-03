@@ -133,6 +133,22 @@ export function planRemix(set: StemSet): RemixPlan {
 }
 
 /**
+ * How far past the longest stem's PROBED length a remix render is allowed to
+ * run before `-t` stops it. The probe can only under-read the real length:
+ * ffmpeg prints `Duration:` rounded to 0.01 s, and parseSourceInfo then
+ * rounds that to 0.1 s, so a stem can be up to 0.005 + 0.05 = 0.055 s longer
+ * than the number we hold. A bare `-t longestSec` would cut that much of the
+ * tail off. 0.06 s covers the worst case; anything past the real end of the
+ * longest stem is only `apad`'s silence.
+ */
+export const REMIX_BOUND_HEADROOM_SEC = 0.06;
+
+/** The `-t` bound for a remix whose longest stem probes at `longestSec` — rounded to the millisecond so float noise never reaches the args. */
+export function remixBoundSec(longestSec: number): number {
+  return Math.round((longestSec + REMIX_BOUND_HEADROOM_SEC) * 1000) / 1000;
+}
+
+/**
  * ⚠️ normalize=0 — amix's default divides each input by the input count, so
  * eleven stems at 0 dB would come out ~21 dB down. Float output keeps a sum
  * above full scale for mastering to bring down. No -shortest: nothing but
@@ -140,8 +156,9 @@ export function planRemix(set: StemSet): RemixPlan {
  *
  * `durationSec` controls padding and the output bound together, because the
  * two must agree: `apad` pads forever, so a padded chain needs `-t` on the
- * output or the render never ends. Pass a number (the plan's `longestSec`)
- * to pad every chain to that length and stop the render there. Pass
+ * output or the render never ends. Pass a number — `remixBoundSec` of the
+ * longest stem, never the bare rounded length (see REMIX_BOUND_HEADROOM_SEC)
+ * — to pad every chain and stop the render there. Pass
  * null/undefined to omit `apad` from every chain entirely — an unpadded
  * `amix duration=longest` already ends on its own, with the longest input.
  */
