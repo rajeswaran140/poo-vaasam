@@ -4,8 +4,13 @@
 // Web Audio is faked per the task brief: these fakes only implement what the
 // mixer is allowed to touch (gain.value, gain.setTargetAtTime, connect,
 // buffer, start, stop, onended, decodeAudioData, resume, close). Reaching for
-// anything else (disconnect, cancelScheduledValues, res.status…) is a bug in
-// the component, not a gap in the fake.
+// anything else (cancelScheduledValues, res.status…) is a bug in the
+// component, not a gap in the fake.
+//
+// `disconnect` on FakeGain and `connectedTo` on FakeSource were added for the
+// additive-loading regression test below (fix round 1): the fix disconnects
+// a removed stem's gain node, and the test needs to see which FakeGain a
+// FakeSource.connect() call actually wired up.
 
 jest.mock('@/lib/client-auth', () => ({ adminFetch: jest.fn() }));
 
@@ -24,15 +29,20 @@ class FakeGain {
     }),
   };
   connect = jest.fn();
+  disconnect = jest.fn();
 }
 class FakeSource {
   buffer: unknown = null;
-  connect = jest.fn();
+  connectedTo: FakeGain | null = null;
+  connect = jest.fn((dest: FakeGain) => {
+    this.connectedTo = dest;
+  });
   start = jest.fn();
   stop = jest.fn();
   onended: (() => void) | null = null;
 }
 let gains: FakeGain[] = [];
+let sources: FakeSource[] = [];
 class FakeContext {
   currentTime = 0;
   state = 'running';
@@ -42,7 +52,11 @@ class FakeContext {
     gains.push(g);
     return g;
   };
-  createBufferSource = () => new FakeSource();
+  createBufferSource = () => {
+    const s = new FakeSource();
+    sources.push(s);
+    return s;
+  };
   decodeAudioData = jest.fn(async () => ({ duration: 221.9 }));
   resume = jest.fn(async () => {});
   close = jest.fn(async () => {});
@@ -103,6 +117,7 @@ function route(putResponse?: Response) {
 beforeEach(() => {
   mockedFetch.mockReset();
   gains = [];
+  sources = [];
   (globalThis as unknown as { AudioContext: unknown }).AudioContext = FakeContext;
   global.fetch = jest.fn(async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) })) as never;
 });
@@ -259,4 +274,83 @@ it('degrades quietly with no AudioContext: renders faders, shows the no-playback
     expect.anything()
   );
   expect(screen.queryAllByRole('alert')).toHaveLength(0);
+});
+
+// Fix round 1 regression test: StemMixer resolves each stem's presigned
+// play-URL with its own adminFetch round-trip, so `stems` passed into
+// useStemMixer grows ONE ID AT A TIME in production — Vocals' URL can
+// resolve, get loaded and start playing, and only THEN does Keys' URL
+// resolve. The buggy version cleared and re-fetched/re-decoded every stem
+// on every such change, which (a) re-downloaded already-loaded stems and
+// (b) replaced Vocals' GainNode out from under its already-playing source,
+// so the fader stopped reaching the sound actually coming out of the
+// speakers. This test forces the two URLs to resolve in separate ticks and
+// checks both halves of the bug are fixed.
+it('loads each listening copy exactly once across separate ticks, and keeps a playing stem wired to its own gain node', async () => {
+  const ID1 = 'vocals-id';
+  const ID2 = 'keys-id';
+  const TWO: StemSet = {
+    masterJobId: JOB,
+    order: [ID1, ID2],
+    stems: {
+      [ID1]: stem({ name: 'Vocals' }),
+      [ID2]: stem({ name: 'Keys' }),
+    },
+    mix: {},
+    remix: null,
+    createdAt: 't',
+    updatedAt: 't',
+  };
+
+  // Keys' presigned-URL round-trip only resolves once `releaseKeys()` is
+  // called — a separate tick from Vocals', which resolves immediately.
+  let releaseKeys: (() => void) | null = null;
+  const keysUrlGate = new Promise<void>((resolve) => {
+    releaseKeys = resolve;
+  });
+  mockedFetch.mockImplementation((url: string, init?: { method?: string }) => {
+    const m = init?.method ?? 'GET';
+    if (url.startsWith('/api/admin/mastering/download') && m === 'GET') {
+      const key = new URL(url, 'https://x').searchParams.get('key') ?? '';
+      const body = ok({ success: true, url: `https://s3/${key}` });
+      return key.includes('Keys') ? keysUrlGate.then(() => body) : Promise.resolve(body);
+    }
+    return Promise.resolve(ok({}));
+  });
+
+  const bytesFetchCalls: string[] = [];
+  global.fetch = jest.fn(async (url: string) => {
+    bytesFetchCalls.push(url);
+    return { ok: true, arrayBuffer: async () => new ArrayBuffer(8) };
+  }) as never;
+
+  render(<StemMixer set={TWO} masterJobId={JOB} />);
+
+  // Vocals loads alone — Keys' URL is still gated.
+  await waitFor(() => expect(gains.length).toBe(1));
+  const vocalsFader = await screen.findByRole('slider', { name: 'Vocals level' });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Play' })).not.toBeDisabled());
+
+  fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+  await waitFor(() => expect(sources.length).toBe(1));
+  const vocalsGainAtPlay = gains[0];
+  expect(sources[0].connectedTo).toBe(vocalsGainAtPlay);
+
+  // Now let Keys' URL resolve, in its own tick.
+  releaseKeys!();
+  await waitFor(() => expect(gains.length).toBe(2));
+
+  // Vocals' gain node was never replaced — same object — and the source
+  // already playing through it is still connected to that exact object.
+  expect(gains[0]).toBe(vocalsGainAtPlay);
+  expect(sources[0].connectedTo).toBe(gains[0]);
+
+  // Exactly one audio-bytes fetch per stem: no re-fetch of Vocals triggered
+  // by Keys joining.
+  expect(bytesFetchCalls.length).toBe(2);
+  expect(new Set(bytesFetchCalls).size).toBe(2);
+
+  // The fader still reaches the GainNode the playing source is wired to.
+  fireEvent.change(vocalsFader, { target: { value: '-6' } });
+  await waitFor(() => expect(sources[0].connectedTo!.gain.value).toBeCloseTo(0.501, 2));
 });

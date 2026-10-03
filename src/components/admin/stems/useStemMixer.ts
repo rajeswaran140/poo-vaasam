@@ -2,8 +2,8 @@
 
 /**
  * A Web Audio transport for a stem set's listening copies: fetch + decode
- * once, one GainNode per stem into `destination`, and a play/pause/seek
- * surface that drives them all in lockstep.
+ * once per stem, one GainNode per stem into `destination`, and a
+ * play/pause/seek surface that drives them all in lockstep.
  *
  * Deliberately NOT responsible for what level each stem plays at — that's
  * `gains`/`solo`, owned by the caller (StemMixer), because solo is a
@@ -13,6 +13,15 @@
  * jsdom (and some real browsers) have no `AudioContext` at all. `supported`
  * is false in that case and every method is a no-op — StemMixer uses it to
  * swap the transport for a plain message instead of crashing.
+ *
+ * ⚠️ LOADING IS ADDITIVE, NOT A RESET-AND-RELOAD. `stems` grows one id at a
+ * time in production (StemMixer resolves each stem's presigned URL in its
+ * own round-trip), so re-fetching everything on every change would
+ * re-download/re-decode N stems up to N times, and would swap out the
+ * GainNode a currently-playing source is connected to — silently detaching
+ * fader/mute/solo from whatever's already playing. See the loading effect
+ * below for the fix and what happens to a stem that finishes loading
+ * mid-playback.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -132,43 +141,100 @@ export function useStemMixer({ stems, gains, solo }: UseStemMixerArgs): UseStemM
   // changed is treated as the same stem — not a reason to re-fetch.
   const stemsKey = stems.map((s) => `${s.id}:${s.url}`).join('|');
 
-  // Fetch + decode every stem's listening copy once the context exists.
+  // Which ids we're currently fetching (so a stemsKey change mid-fetch never
+  // starts a second, duplicate fetch for the same id), which ids failed to
+  // decode (so readiness doesn't wait on them forever), and which ids the
+  // MOST RECENT effect run actually wants — read inside a fetch's `.then`,
+  // which may complete after a later effect run has already dropped that id.
+  const loadingRef = useRef<Set<string>>(new Set());
+  const failedRef = useRef<Set<string>>(new Set());
+  const wantedRef = useRef<Set<string>>(new Set());
+
+  // Fetch + decode each stem's listening copy EXACTLY ONCE, ADDITIVELY.
+  //
+  // StemMixer resolves each stem's presigned URL independently (one
+  // `setPlayUrls` per stem, as each adminFetch round-trip lands), so
+  // `stems`/`stemsKey` grows one id at a time in production. Clearing and
+  // re-fetching everything on every change would re-download/re-decode
+  // already-loaded stems 1+2+…+N times, and — worse — would swap out the
+  // GainNode a currently-playing AudioBufferSourceNode is connected to,
+  // silently detaching fader/mute/solo from whatever's already playing
+  // until the next pause/play. So: skip any id already in `buffersRef`
+  // (loaded) or `loadingRef` (in flight); only load ids this hook has never
+  // seen. A stem that finishes loading mid-playback does NOT join the
+  // sources already running — it has no source yet, only a buffer and a
+  // gain node (so mute/solo/fader already reach it) — it starts playing the
+  // next time `play()` runs, same as any other stopped stem.
   useEffect(() => {
     const ctx = ctxRef.current;
     if (!supported || !ctx) return;
-    let cancelled = false;
-    setReady(false);
-    gainNodesRef.current.clear();
-    buffersRef.current.clear();
 
-    void (async () => {
-      let longest = 0;
-      for (const track of stems) {
+    const wanted = new Set(stems.map((s) => s.id));
+    wantedRef.current = wanted;
+
+    // Drop resources for ids no longer requested — stop any source still
+    // attached (a removed stem must not keep sounding), disconnect its gain
+    // node, and forget its buffer/failure so a future re-add starts clean.
+    for (const id of Array.from(gainNodesRef.current.keys())) {
+      if (wanted.has(id)) continue;
+      const src = sourcesRef.current.get(id);
+      if (src) {
+        src.onended = null;
+        try {
+          src.stop();
+        } catch {
+          // Already stopped.
+        }
+        sourcesRef.current.delete(id);
+      }
+      const node = gainNodesRef.current.get(id);
+      try {
+        node?.disconnect();
+      } catch {
+        // Best effort — some environments' GainNode has no disconnect().
+      }
+      gainNodesRef.current.delete(id);
+      buffersRef.current.delete(id);
+    }
+    for (const id of Array.from(failedRef.current)) {
+      if (!wanted.has(id)) failedRef.current.delete(id);
+    }
+
+    const recomputeReadiness = () => {
+      if (!mountedRef.current) return;
+      const longest = Math.max(0, ...Array.from(buffersRef.current.values()).map((b) => b.duration));
+      durationRef.current = longest;
+      setDuration(longest);
+      setReady(
+        Array.from(wantedRef.current).every((id) => buffersRef.current.has(id) || failedRef.current.has(id))
+      );
+    };
+
+    for (const track of stems) {
+      if (buffersRef.current.has(track.id) || loadingRef.current.has(track.id)) continue;
+      loadingRef.current.add(track.id);
+      void (async () => {
         try {
           const res = await fetch(track.url);
           const bytes = await res.arrayBuffer();
           const buffer = (await ctx.decodeAudioData(bytes)) as AudioBuffer;
-          if (cancelled) return;
+          if (!mountedRef.current || !wantedRef.current.has(track.id)) return;
           buffersRef.current.set(track.id, buffer);
           const node = ctx.createGain();
           node.connect(ctx.destination);
           gainNodesRef.current.set(track.id, node);
-          longest = Math.max(longest, buffer.duration);
         } catch {
-          // This one stem just doesn't play; the rest of the mix still works.
+          failedRef.current.add(track.id);
+        } finally {
+          loadingRef.current.delete(track.id);
+          recomputeReadiness();
         }
-      }
-      if (cancelled || !mountedRef.current) return;
-      durationRef.current = longest;
-      setDuration(longest);
-      setReady(true);
-    })();
+      })();
+    }
 
-    return () => {
-      cancelled = true;
-    };
-    // `stems` is represented by `stemsKey` below — re-running on the array's
-    // own identity would re-fetch every stem on every render.
+    recomputeReadiness();
+    // `stems` is represented by `stemsKey` — re-running on the array's own
+    // identity would re-scan on every render even when nothing changed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supported, stemsKey]);
 
