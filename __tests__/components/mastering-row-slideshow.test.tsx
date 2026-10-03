@@ -496,3 +496,30 @@ describe('a crossfade can be chosen between images', () => {
   });
 });
 
+/** The same Motion choice moves the 16:9 video too — at 1080p. */
+describe('the video can move', () => {
+  it('says so on the button, and sends the move', async () => {
+    routeFetch();
+    await openLibrary();
+    openRenderPanel(SONG);
+
+    fireEvent.change(screen.getByLabelText(/Motion/), { target: { value: 'zoom-in' } });
+    const button = screen.getByRole('button', { name: /^Render video \(1080p, moving\)/ });
+    fireEvent.click(button);
+
+    await waitFor(() => expect(renderPosts()).toHaveLength(1));
+    expect(lastBody()).toMatchObject({ coverKey: COVER, motion: 'zoom-in' });
+  });
+
+  it('sends no move for a still video, at the height chosen', async () => {
+    routeFetch();
+    await openLibrary();
+    openRenderPanel(SONG);
+
+    fireEvent.click(screen.getByRole('button', { name: /^Render video \(1440p\)/ }));
+
+    await waitFor(() => expect(renderPosts()).toHaveLength(1));
+    expect(lastBody()).toEqual({ coverKey: COVER, height: 1440 });
+  });
+});
+

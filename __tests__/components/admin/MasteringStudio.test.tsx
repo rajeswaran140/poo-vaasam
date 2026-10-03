@@ -1172,6 +1172,22 @@ describe('render for YouTube', () => {
       expect(JSON.parse(posted('/render')[0][1].body).transition).toBe('crossfade');
     });
 
+    it('sends the chosen move with the video, and says it will be 1080p', async () => {
+      await masterAndSave();
+      await addCover();
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText(/Motion/), { target: { value: 'pan-right' } });
+      });
+
+      mockedFetch.mockResolvedValueOnce(json({ success: true, status: 'queued' }));
+      mockedFetch.mockResolvedValue(json(savedDoneJob({ videoKey: 'v', videoRenderedAt: '2026-10-03T00:00:00.000Z' })));
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Render video \(1080p, moving\)/ }));
+      });
+
+      expect(JSON.parse(posted('/render')[0][1].body)).toMatchObject({ motion: 'pan-right' });
+    });
+
     it('will not render a slideshow while an added image is unfinished', async () => {
       await masterAndSave();
       await addCover();

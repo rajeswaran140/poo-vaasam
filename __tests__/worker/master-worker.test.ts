@@ -2943,6 +2943,67 @@ describe('slideshow render', () => {
   });
 
   /**
+   * Motion on the 16:9 video: 1080p at 25 fps, whatever height a still one
+   * would use, out and back in legs across the song, up to 8 minutes.
+   */
+  describe('a video that moves', () => {
+    const moving = () => ffArgs().filter((a) => a.some((x) => x.startsWith('zoompan=')));
+    const single = (over: Record<string, unknown> = {}) => slideshow({ covers: undefined, ...over });
+
+    it('moves across a single cover at 1080p and 25 fps, out and back across the song', async () => {
+      const res = await handler({ jobId: 'j1', render: single({ height: 1440, motion: 'zoom-in' }) } as never);
+      expect(res).toMatchObject({ ok: true });
+
+      const [m] = moving();
+      const vf = m[m.indexOf('-vf') + 1];
+      expect(vf).toContain('s=1920x1080:fps=25');
+      expect(vf).toContain('d=8300'); // 5:32 at 25 fps
+      expect(vf).toContain('mod(on,'); // legs, not one imperceptible pass
+      expect(m).toEqual(expect.arrayContaining(['-crf', '16']));
+      const compose = ffArgs().find((a) => a.includes('-filter_complex') && a.includes('-frames:v') && !a.some((x) => x.includes('blend=')))!;
+      expect(compose[compose.indexOf('-filter_complex') + 1]).toContain('scale=7680:4320');
+      // Stored as the 1080p file, because that is what it is.
+      expect(patched()).toMatchObject({ videoKey: 'audio/mastering/1_a_song-master-14LUFS-1080p.mp4' });
+    });
+
+    it('gives each image of a slideshow its own move, and crossfades from the real frames', async () => {
+      await handler({ jobId: 'j1', render: slideshow({ motion: 'pan-left', transition: 'crossfade' }) } as never);
+
+      expect(moving()).toHaveLength(3);
+      expect(ffArgs().some((a) => a.includes('-sseof'))).toBe(true);
+      const fade = ffArgs().find((a) => a.some((x) => x.includes('blend=')))!;
+      expect(fade).not.toContain('stillimage');
+      expect(fade).toEqual(expect.arrayContaining(['-r', '25']));
+    });
+
+    it('refuses to move a song over 8 minutes, and says what to do', async () => {
+      const LONG = HEADER.replace('00:05:32.00', '00:08:10.00');
+      spawnSync.mockImplementation((_cmd: string, args: string[]) =>
+        args.length === 3 && args[2].includes('master.wav')
+          ? { status: 1, stdout: '', stderr: LONG }
+          : { status: 0, stdout: '', stderr: '' }
+      );
+      const res = await handler({ jobId: 'j1', render: single({ motion: 'zoom-in' }) } as never);
+
+      expect(res).toMatchObject({ ok: false });
+      expect(String(patched().videoError)).toMatch(/8 minutes/);
+      expect(moving()).toHaveLength(0);
+    });
+
+    it('refuses a move it does not know', async () => {
+      const res = await handler({ jobId: 'j1', render: single({ motion: 'spin' }) } as never);
+      expect(res).toMatchObject({ ok: false });
+      expect(String(patched().videoError)).toMatch(/motion/i);
+    });
+
+    it('leaves a still video exactly as it was — its height, 10 fps, no moves', async () => {
+      await handler({ jobId: 'j1', render: single({ height: 1440 }) } as never);
+      expect(moving()).toHaveLength(0);
+      expect(patched()).toMatchObject({ videoKey: 'audio/mastering/1_a_song-master-14LUFS-1440p.mp4' });
+    });
+  });
+
+  /**
    * A crossfade is its own one-second piece between two holds. Nothing else
    * about the render changes — and without `transition` nothing changes at all.
    */

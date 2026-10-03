@@ -789,3 +789,63 @@ describe('crossfading between images', () => {
     expect(last).toEqual(expect.arrayContaining(['-update', '1', '-y', '/tmp/last.ppm']));
   });
 });
+
+import {
+  VIDEO_MOTION_HEIGHT,
+  VIDEO_MOTION_FPS,
+  VIDEO_MOTION_MAX_SECONDS,
+  VIDEO_MOTION_CODEC_ARGS,
+  planVideoMotion,
+} from '@/lib/master-video';
+import { buildMotionSegmentArgs, MOTION_SOURCE_SCALE } from '@/lib/master-short';
+
+/**
+ * Motion on the 16:9 video — Raj's choice of the options measured 2026-10-03:
+ * all six moves, at 1080p, for songs up to about 8 minutes.
+ *
+ * Measured on the Lambda's ffmpeg 7.0.2, 60 s at 25 fps from a 4x source:
+ *   1440p  zoom 1.74x realtime   -> only ~5.5 min songs fit the worker
+ *   1080p  zoom 0.97x, pan 0.88x -> an 8-minute song is ~9.5 of 15 minutes
+ */
+describe('a 16:9 video that moves', () => {
+  it('renders at 1080p and 25 fps, with its own encoder settings', () => {
+    expect(VIDEO_MOTION_HEIGHT).toBe(1080);
+    expect(VIDEO_MOTION_FPS).toBe(25);
+    expect(VIDEO_MOTION_CODEC_ARGS).toEqual([
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', '-pix_fmt', 'yuv420p', '-r', '25',
+    ]);
+  });
+
+  it('allows songs up to 8 minutes when it moves, and any length when still', () => {
+    expect(VIDEO_MOTION_MAX_SECONDS).toBe(480);
+    expect(planVideoMotion(472, 'zoom-in').ok).toBe(true);
+    const long = planVideoMotion(481, 'pan-left');
+    expect(long.ok).toBe(false);
+    expect(!long.ok && long.message).toMatch(/8 minutes/);
+    expect(planVideoMotion(900, 'none').ok).toBe(true);
+    expect(planVideoMotion(900, undefined).ok).toBe(true);
+    // A length nobody could read is not refused here — the worker probes it.
+    expect(planVideoMotion(null, 'zoom-in').ok).toBe(true);
+  });
+
+  it('composes the 16:9 frame enlarged when something will move across it', () => {
+    const a = buildComposeArgs({ coverPath: '/tmp/c.jpg', framePath: '/tmp/f.ppm', height: 1080, coverAspect: 16 / 9, sourceScale: MOTION_SOURCE_SCALE });
+    const f = a[a.indexOf('-filter_complex') + 1];
+    expect(f).toContain('scale=7680:4320:flags=lanczos[v]');
+    // ...and leaves the ordinary compose byte-for-byte alone otherwise.
+    const plain = buildComposeArgs({ coverPath: '/tmp/c.jpg', framePath: '/tmp/f.ppm', height: 1080, coverAspect: 16 / 9 });
+    expect(buildComposeArgs({ coverPath: '/tmp/c.jpg', framePath: '/tmp/f.ppm', height: 1080, coverAspect: 16 / 9, sourceScale: 1 })).toEqual(plain);
+  });
+
+  it('moves at the 16:9 size and rate when told to, keeping the vertical as the default', () => {
+    const wide = buildMotionSegmentArgs({
+      framePath: '/tmp/f.ppm', seconds: 10, outPath: '/tmp/s.mp4', motion: 'pan-right',
+      size: { width: 1920, height: 1080 }, fps: VIDEO_MOTION_FPS, codecArgs: VIDEO_MOTION_CODEC_ARGS,
+    });
+    expect(wide[wide.indexOf('-vf') + 1]).toContain('d=250:s=1920x1080:fps=25');
+    expect(wide).toEqual(expect.arrayContaining(['-crf', '16']));
+    const tall = buildMotionSegmentArgs({ framePath: '/tmp/f.ppm', seconds: 10, outPath: '/tmp/s.mp4', motion: 'pan-right' });
+    expect(tall[tall.indexOf('-vf') + 1]).toContain('d=250:s=1080x1920:fps=25');
+    expect(tall).toEqual(expect.arrayContaining(['-crf', '20']));
+  });
+});

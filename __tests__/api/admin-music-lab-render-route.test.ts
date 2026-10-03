@@ -230,3 +230,34 @@ describe('a crossfade between images', () => {
   });
 });
 
+describe('a video that moves', () => {
+  it('forwards the move and renders at 1080p, whatever height was asked for', async () => {
+    const res = await render({ coverKey: A, height: 1440, motion: 'zoom-in' });
+    expect(res.status).toBe(202);
+    const body = await res.json();
+    expect(body.height).toBe(1080);
+    expect(body.videoKey).toMatch(/-1080p\.mp4$/);
+    expect(sentEvent()).toMatchObject({ height: 1080, motion: 'zoom-in' });
+  });
+
+  it('sends no `motion` field for a still video — the event keeps its shape', async () => {
+    await render({ coverKey: A, height: 1440, motion: 'none' });
+    expect(sentEvent()).not.toHaveProperty('motion');
+    expect(sentEvent().height).toBe(1440);
+  });
+
+  it('refuses to move a song it already knows is over 8 minutes', async () => {
+    getMock.mockResolvedValue({ ...baseJob, editedDurationSec: 510 });
+    const res = await render({ coverKey: A, motion: 'pan-left' });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: expect.stringContaining('8 minutes') });
+    expect(lambdaSend).not.toHaveBeenCalled();
+  });
+
+  it('refuses a move it does not know', async () => {
+    const res = await render({ coverKey: A, motion: 'spin' });
+    expect(res.status).toBe(400);
+    expect(lambdaSend).not.toHaveBeenCalled();
+  });
+});
+
