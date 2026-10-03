@@ -116,3 +116,31 @@ it('never says SUNO', async () => {
   await screen.findByText('பாடல்');
   expect(document.body.textContent).not.toMatch(/suno/i);
 });
+
+// Not in the brief's Step 1 fixture, but the Task 4 interface says the add
+// route "may include previewQueued: false" — left unhandled, that stem would
+// sit at previewKey: null forever with no visible error and no way to
+// recover. This covers the recovery path: a row error with a Retry that
+// re-registers the already-uploaded key rather than re-uploading the file.
+it('flags a stem whose preview render could not be queued, and retries by re-registering only', async () => {
+  route({ add: ok({ success: true, set: SET, previewQueued: false }) }, null);
+  render(<StemsStudio masterJobId={JOB} />);
+  await screen.findByText('பாடல்');
+  const input = screen.getByLabelText(/Add stem WAVs/i);
+  fireEvent.change(input, { target: { files: [new File(['x'], '2_Drums.wav', { type: 'audio/wav' })] } });
+  await waitFor(() => expect(uploadMock).toHaveBeenCalledTimes(1));
+
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent(/didn't start/);
+
+  fireEvent.click(screen.getByRole('button', { name: /Retry/i }));
+  await waitFor(() => {
+    const posts = mockedFetch.mock.calls.filter(
+      (c) => c[0] === `/api/admin/stems/${JOB}/stems` && c[1]?.method === 'POST'
+    );
+    expect(posts.length).toBe(2);
+  });
+  // Still exactly one upload — the retry re-posted the same key, it did not
+  // send the file to S3 a second time.
+  expect(uploadMock).toHaveBeenCalledTimes(1);
+});

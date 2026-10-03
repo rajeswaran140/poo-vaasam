@@ -27,6 +27,8 @@ interface Item {
   state: ItemState;
   pct: number;
   error?: string;
+  /** Set once the upload itself lands, so a preview-register retry can skip re-uploading. */
+  key?: string;
 }
 
 function looksLikeWav(file: File): boolean {
@@ -51,6 +53,54 @@ export function StemUpload({ masterJobId, onAdded }: Props) {
     setItems((prev) => prev.map((i) => (i.uid === uid ? { ...i, ...next } : i)));
   }, []);
 
+  /**
+   * Register an already-uploaded key against the stem set (the POST that
+   * also kicks off the worker's preview render). Split out from `runOne` so
+   * a Retry after `previewQueued: false` can re-POST the same key without
+   * re-uploading the file — `addStem` on the server is idempotent on key, so
+   * this is a safe no-op append if nothing actually failed.
+   *
+   * `previewQueued: false` means the stem itself was saved (worth keeping,
+   * worth calling `onAdded` for) but the worker invoke that renders its
+   * listening copy never fired — left alone, that stem would sit at
+   * `previewKey: null` forever with no visible error and no way to recover,
+   * so it is surfaced here as a row error with a Retry rather than a silent
+   * "Added".
+   */
+  const register = useCallback(
+    async (item: Item, key: string, signal: AbortSignal) => {
+      patch(item.uid, { state: 'registering', pct: 100, key, error: undefined });
+      try {
+        const res = await adminFetch(`/api/admin/stems/${masterJobId}/stems`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key, filename: item.file.name }),
+          signal,
+        });
+        const body = await res.json();
+        if (!res.ok || !body.success) {
+          throw new Error(body.error || 'Could not add that stem.');
+        }
+        onAdded(body.set as StemSet);
+        if (body.previewQueued === false) {
+          patch(item.uid, {
+            state: 'error',
+            error: "Saved, but its listening copy didn't start — Retry to try again.",
+          });
+          return;
+        }
+        patch(item.uid, { state: 'done' });
+      } catch (err) {
+        if (signal.aborted) {
+          patch(item.uid, { state: 'cancelled', error: 'Cancelled.' });
+          return;
+        }
+        patch(item.uid, { state: 'error', error: err instanceof Error ? err.message : String(err) });
+      }
+    },
+    [masterJobId, onAdded, patch]
+  );
+
   const runOne = useCallback(
     async (item: Item, signal: AbortSignal) => {
       patch(item.uid, { state: 'uploading', pct: 0, error: undefined });
@@ -62,19 +112,7 @@ export function StemUpload({ masterJobId, onAdded }: Props) {
           'stem',
           { masterJobId }
         );
-        patch(item.uid, { state: 'registering', pct: 100 });
-        const res = await adminFetch(`/api/admin/stems/${masterJobId}/stems`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ key, filename: item.file.name }),
-          signal,
-        });
-        const body = await res.json();
-        if (!res.ok || !body.success) {
-          throw new Error(body.error || 'Could not add that stem.');
-        }
-        patch(item.uid, { state: 'done' });
-        onAdded(body.set as StemSet);
+        await register(item, key, signal);
       } catch (err) {
         if (signal.aborted) {
           patch(item.uid, { state: 'cancelled', error: 'Cancelled.' });
@@ -83,7 +121,7 @@ export function StemUpload({ masterJobId, onAdded }: Props) {
         patch(item.uid, { state: 'error', error: err instanceof Error ? err.message : String(err) });
       }
     },
-    [masterJobId, onAdded, patch]
+    [masterJobId, patch, register]
   );
 
   const start = useCallback(
@@ -137,11 +175,17 @@ export function StemUpload({ masterJobId, onAdded }: Props) {
       const controller = new AbortController();
       abort.current = controller;
       setBusy(true);
-      await runOne(item, controller.signal);
+      // Already uploaded (a previewQueued: false row) — re-register only,
+      // don't send the same WAV to S3 a second time.
+      if (item.key) {
+        await register(item, item.key, controller.signal);
+      } else {
+        await runOne(item, controller.signal);
+      }
       setBusy(false);
       abort.current = null;
     },
-    [items, runOne]
+    [items, register, runOne]
   );
 
   const clear = useCallback(() => setItems([]), []);
