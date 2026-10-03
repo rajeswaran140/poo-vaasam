@@ -1957,7 +1957,8 @@ async function makeStemPreview(spec: NonNullable<MasterEvent['stemPreview']>, bu
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[master-worker] stem preview failed:', message);
-    await write({ previewError: [':err', message] }).catch(() => {});
+    await write({ previewError: [':err', message] }).catch((e) =>
+      console.error('[master-worker] could not record the stem preview error:', e instanceof Error ? e.message : String(e)));
     return { ok: false };
   } finally {
     rmSync(dir, { recursive: true, force: true });

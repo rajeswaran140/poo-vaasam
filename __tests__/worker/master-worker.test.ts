@@ -3518,4 +3518,17 @@ describe('stem listening copy', () => {
     expect(res).toMatchObject({ ok: false });
     expect(s3Send).not.toHaveBeenCalled();
   });
+
+  it('logs when even the failure cannot be recorded, so the trail is not silent', async () => {
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    s3Send.mockImplementation(() => Promise.reject(new Error('network down')));
+    send.mockImplementationOnce(() => Promise.reject(new Error('ddb down')));
+    const res = await handler({ stemPreview: { masterJobId: JOB, stemKey: KEY } } as never);
+    expect(res).toMatchObject({ ok: false });
+    expect(errSpy).toHaveBeenCalledWith(
+      '[master-worker] could not record the stem preview error:',
+      expect.stringContaining('ddb down')
+    );
+    errSpy.mockRestore();
+  });
 });
