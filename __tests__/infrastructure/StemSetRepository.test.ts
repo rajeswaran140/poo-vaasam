@@ -78,4 +78,47 @@ describe('renaming and removing', () => {
     expect(call.updateExpression).toMatch(/SET #order = :order/);
     expect(call.expressionAttributeValues[':order']).toEqual(['a', 'c']);
   });
+
+  it('uses a conditional write with the order that was read to prevent race conditions', async () => {
+    const prevOrder = ['a', ID, 'c'];
+    mockGet.mockResolvedValue({ masterJobId: JOB, order: prevOrder, stems: { a: { key: 'k' }, [ID]: { key: KEY }, c: { key: 'k2' } }, mix: {} });
+    await repo.removeStem(JOB, ID);
+    const call = mockUpdate.mock.calls[0][0];
+    expect(call.conditionExpression).toBe('#order = :prev');
+    expect(call.expressionAttributeValues[':prev']).toEqual(prevOrder);
+    expect(call.expressionAttributeValues[':order']).toEqual(['a', 'c']);
+  });
+
+  it('retries when a concurrent addStem lands and keeps the newly added id', async () => {
+    const prevOrder = ['a', ID];
+    const newOrder = ['a', ID, 'newid'];
+    let getCall = 0;
+    mockGet.mockImplementation(() => {
+      getCall++;
+      if (getCall === 1) return Promise.resolve({ order: prevOrder, stems: { a: { key: 'k' }, [ID]: { key: KEY } }, mix: {} });
+      return Promise.resolve({ order: newOrder, stems: { a: { key: 'k' }, [ID]: { key: KEY }, newid: { key: 'k3' } }, mix: {} });
+    });
+    const error = new Error('The conditional request failed');
+    (error as Record<string, string>).name = 'ConditionalCheckFailedException';
+    mockUpdate.mockRejectedValueOnce(error);
+    mockUpdate.mockResolvedValueOnce({});
+    await repo.removeStem(JOB, ID);
+    const calls = mockUpdate.mock.calls.map((c) => c[0]);
+    expect(calls[1].expressionAttributeValues[':prev']).toEqual(newOrder);
+    expect(calls[1].expressionAttributeValues[':order']).toEqual(['a', 'newid']);
+  });
+
+  it('rethrows after 3 conditional failures', async () => {
+    mockGet.mockResolvedValue({ order: ['a', ID], stems: { a: { key: 'k' }, [ID]: { key: KEY } }, mix: {} });
+    const error = new Error('The conditional request failed');
+    (error as Record<string, string>).name = 'ConditionalCheckFailedException';
+    mockUpdate.mockRejectedValue(error);
+    try {
+      await repo.removeStem(JOB, ID);
+      throw new Error('Expected removeStem to throw');
+    } catch (e) {
+      expect((e as Record<string, string>).name).toBe('ConditionalCheckFailedException');
+    }
+    expect(mockUpdate.mock.calls).toHaveLength(3);
+  });
 });

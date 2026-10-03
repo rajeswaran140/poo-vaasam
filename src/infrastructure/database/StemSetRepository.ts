@@ -125,19 +125,40 @@ export class StemSetRepository {
 
   async removeStem(masterJobId: string, stemId: string): Promise<void> {
     try {
-      const current = await this.get(masterJobId);
-      if (!current) return;
-      const order = current.order.filter((id) => id !== stemId);
-      await DynamoDBOperations.update({
-        key: keyFor(masterJobId),
-        updateExpression: 'REMOVE #stems.#sid, #mix.#sid SET #order = :order, #updatedAt = :now',
-        expressionAttributeNames: { '#stems': 'stems', '#mix': 'mix', '#sid': stemId, '#order': 'order', '#updatedAt': 'updatedAt' },
-        expressionAttributeValues: { ':order': order, ':now': new Date().toISOString() },
-      });
-      await this.writeCount(masterJobId, order.length);
+      let attempt = 0;
+      const maxAttempts = 3;
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const rawItem = await this.getRawItem(masterJobId);
+        if (!rawItem) return;
+        const prevOrder = Array.isArray(rawItem.order) ? rawItem.order : [];
+        const newOrder = prevOrder.filter((id): id is string => typeof id === 'string' && id !== stemId);
+        try {
+          await DynamoDBOperations.update({
+            key: keyFor(masterJobId),
+            updateExpression: 'REMOVE #stems.#sid, #mix.#sid SET #order = :order, #updatedAt = :now',
+            conditionExpression: '#order = :prev',
+            expressionAttributeNames: { '#stems': 'stems', '#mix': 'mix', '#sid': stemId, '#order': 'order', '#updatedAt': 'updatedAt' },
+            expressionAttributeValues: { ':order': newOrder, ':prev': prevOrder, ':now': new Date().toISOString() },
+          });
+          await this.writeCount(masterJobId, newOrder.length);
+          return;
+        } catch (error) {
+          attempt++;
+          if (attempt >= maxAttempts || (error as Record<string, unknown>).name !== 'ConditionalCheckFailedException') {
+            throw error;
+          }
+        }
+      }
     } catch (error) {
       handleDynamoDBError(error);
     }
+  }
+
+  /** Read the raw DynamoDB item without hydration/filtering. */
+  private async getRawItem(masterJobId: string): Promise<Record<string, unknown> | null> {
+    const item = await DynamoDBOperations.get(keyFor(masterJobId));
+    return item ? (item as Record<string, unknown>) : null;
   }
 
   /** `stemCount` on the master — and nothing else; never its updatedAt. */
