@@ -72,33 +72,55 @@ export class StemSetRepository {
   async addStem(masterJobId: string, key: string, filename: string): Promise<StemSet> {
     try {
       const id = stemIdFromKey(key);
+      // A re-POST of the same key (e.g. the page's Retry button after a
+      // worker invoke failed) must not re-append: `order` would gain a
+      // second copy of the same id. Checked against a fresh read, not the
+      // result of a write below, so a retry can never stomp a preview or a
+      // rename something else already wrote to the stem's entry.
+      const existing = await this.getRawItem(masterJobId);
+      const existingOrder = Array.isArray(existing?.order) ? (existing!.order as unknown[]) : [];
+      const alreadyOrdered = existingOrder.includes(id);
+      const existingStems = (existing?.stems ?? {}) as Record<string, unknown>;
+      const hasEntry = Object.prototype.hasOwnProperty.call(existingStems, id);
+
+      if (alreadyOrdered && hasEntry) {
+        return stemSetFromItem(existing as Record<string, unknown>);
+      }
+
       const now = new Date().toISOString();
       const stem: StemEntry = {
         key, name: guessStemName(filename), previewKey: null, previewError: null,
         durationSec: null, sampleRate: null, channels: null,
       };
-      const attrs = await DynamoDBOperations.update({
-        key: keyFor(masterJobId),
-        updateExpression:
-          'SET #order = list_append(if_not_exists(#order, :empty), :id), #stems = if_not_exists(#stems, :emptyMap), ' +
-          '#mix = if_not_exists(#mix, :emptyMap), #masterJobId = :job, #type = :type, ' +
-          '#createdAt = if_not_exists(#createdAt, :now), #updatedAt = :now',
-        expressionAttributeNames: {
-          '#order': 'order', '#stems': 'stems', '#mix': 'mix', '#masterJobId': 'masterJobId',
-          '#type': 'Type', '#createdAt': 'createdAt', '#updatedAt': 'updatedAt',
-        },
-        expressionAttributeValues: {
-          ':empty': [], ':id': [id], ':emptyMap': {}, ':job': masterJobId, ':type': 'STEMSET', ':now': now,
-        },
-      });
+      // `order` already has the id (a previous call's first write landed but
+      // its second write didn't) — skip the append, go straight to writing
+      // the entry below, so a retry can finish the job without duplicating it.
+      const attrs = alreadyOrdered
+        ? existing
+        : await DynamoDBOperations.update({
+            key: keyFor(masterJobId),
+            updateExpression:
+              'SET #order = list_append(if_not_exists(#order, :empty), :id), #stems = if_not_exists(#stems, :emptyMap), ' +
+              '#mix = if_not_exists(#mix, :emptyMap), #masterJobId = :job, #type = :type, ' +
+              '#createdAt = if_not_exists(#createdAt, :now), #updatedAt = :now',
+            expressionAttributeNames: {
+              '#order': 'order', '#stems': 'stems', '#mix': 'mix', '#masterJobId': 'masterJobId',
+              '#type': 'Type', '#createdAt': 'createdAt', '#updatedAt': 'updatedAt',
+            },
+            expressionAttributeValues: {
+              ':empty': [], ':id': [id], ':emptyMap': {}, ':job': masterJobId, ':type': 'STEMSET', ':now': now,
+            },
+          });
       // A second, separate update: a map entry cannot be SET in the same
       // expression that might be creating the map with if_not_exists.
-      const after = await DynamoDBOperations.update({
-        key: keyFor(masterJobId),
-        updateExpression: 'SET #stems.#sid = :stem',
-        expressionAttributeNames: { '#stems': 'stems', '#sid': id },
-        expressionAttributeValues: { ':stem': stem },
-      });
+      const after = hasEntry
+        ? attrs
+        : await DynamoDBOperations.update({
+            key: keyFor(masterJobId),
+            updateExpression: 'SET #stems.#sid = :stem',
+            expressionAttributeNames: { '#stems': 'stems', '#sid': id },
+            expressionAttributeValues: { ':stem': stem },
+          });
       const source = (after && Array.isArray((after as Record<string, unknown>).order)) ? after : attrs;
       const set = stemSetFromItem((source ?? {}) as Record<string, unknown>);
       const stemCount = Array.isArray((source ?? {}).order) ? ((source ?? {}).order as unknown[]).length : set.order.length;
@@ -127,7 +149,6 @@ export class StemSetRepository {
     try {
       let attempt = 0;
       const maxAttempts = 3;
-      // eslint-disable-next-line no-constant-condition
       while (true) {
         const rawItem = await this.getRawItem(masterJobId);
         if (!rawItem) return;

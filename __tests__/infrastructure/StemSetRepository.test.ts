@@ -59,6 +59,32 @@ describe('adding a stem', () => {
     expect(masterCall.expressionAttributeValues[':n']).toBe(2);
     expect(JSON.stringify(masterCall)).not.toMatch(/updatedAt/);
   });
+
+  it('is a no-op re-POST of the same key: no writes, no duplicate in order', async () => {
+    mockGet.mockResolvedValue({
+      masterJobId: JOB, order: [ID], stems: { [ID]: { key: KEY, name: 'Kick', previewKey: 's3://preview' } },
+      mix: {}, remix: null, createdAt: 't', updatedAt: 't',
+    });
+    const set = await repo.addStem(JOB, KEY, '2_Drums.wav');
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(set.order).toEqual([ID]);
+    // The existing name (renamed since the first add) and previewKey survive —
+    // a retry must not reset either.
+    expect(set.stems[ID]).toMatchObject({ name: 'Kick', previewKey: 's3://preview' });
+  });
+
+  it('finishes a half-written add (order has the id, the entry write never landed) without re-appending', async () => {
+    mockGet.mockResolvedValue({ masterJobId: JOB, order: [ID], stems: {}, mix: {}, remix: null, createdAt: 't', updatedAt: 't' });
+    mockUpdate.mockResolvedValueOnce({
+      masterJobId: JOB, order: [ID], stems: { [ID]: { key: KEY, name: 'Drums' } }, mix: {}, createdAt: 't', updatedAt: 't',
+    });
+    await repo.addStem(JOB, KEY, '2_Drums.wav');
+    const calls = mockUpdate.mock.calls.map((c) => c[0]);
+    expect(calls.some((c) => /list_append/.test(c.updateExpression))).toBe(false);
+    const entry = calls.find((c) => /#stems\.#sid = :stem/.test(c.updateExpression))!;
+    expect(entry.expressionAttributeNames['#sid']).toBe(ID);
+    expect(entry.expressionAttributeValues[':stem']).toMatchObject({ key: KEY, name: 'Drums' });
+  });
 });
 
 describe('renaming and removing', () => {
