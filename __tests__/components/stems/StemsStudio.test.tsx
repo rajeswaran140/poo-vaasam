@@ -346,6 +346,71 @@ describe('rendering a remix', () => {
     }
   });
 
+  it('stops playing the previous remix once a new one replaces it', async () => {
+    // Regression for a real bug caught in review: the play-URL effect only
+    // cleared remixPlayUrl when the key went to null, so a SECOND remix's
+    // key arriving (replacing the first) could leave <audio> pointing at
+    // the old file — forever, if the new key's own fetch then failed.
+    jest.useFakeTimers();
+    try {
+      const OLD_KEY = `audio/mastering/stems/${JOB}/remix/old-remix.wav`;
+      const NEW_KEY = `audio/mastering/stems/${JOB}/remix/new-remix.wav`;
+      const withOldRemix = {
+        ...SET,
+        remix: { key: OLD_KEY, renderedAt: 't1', mixUsed: {}, notes: [], error: null, requestedAt: 't0' },
+      };
+      const withNewRemix = {
+        ...SET,
+        remix: { key: NEW_KEY, renderedAt: 't2', mixUsed: {}, notes: [], error: null, requestedAt: 't1' },
+      };
+      let getCalls = 0;
+      mockedFetch.mockImplementation((url: string, init?: { method?: string }) => {
+        const m = init?.method ?? 'GET';
+        if (url === `/api/admin/stems/${JOB}` && m === 'GET') {
+          getCalls++;
+          return Promise.resolve(ok({
+            success: true,
+            set: getCalls === 1 ? withOldRemix : withNewRemix,
+            master: { id: JOB, title: 'பாடல்', target: -14 },
+          }));
+        }
+        if (url === `/api/admin/stems/${JOB}/remix` && m === 'POST') return Promise.resolve(ok({ success: true, status: 'queued' }));
+        if (url.startsWith('/api/admin/mastering/download')) {
+          if (String(url).includes(encodeURIComponent(OLD_KEY))) return Promise.resolve(ok({ success: true, url: 'https://s3/old' }));
+          // The NEW key's play URL fails to resolve — a refusal, not a hang,
+          // so nothing is left pending. The old URL must not survive this.
+          return Promise.resolve(refuse('Could not load that preview.', 502));
+        }
+        return Promise.resolve(ok({}));
+      });
+
+      const { container } = render(<StemsStudio masterJobId={JOB} />);
+      await screen.findByText('பாடல்');
+      await waitFor(() => expect(container.querySelector('audio')).toHaveAttribute('src', 'https://s3/old'));
+
+      const region = screen.getByRole('region', { name: 'Remix' });
+      await act(async () => {
+        fireEvent.click(within(region).getByRole('button', { name: /Render remix/ }));
+      });
+      // Wrapped in act (unlike the plain `renders a remix…` test above): by
+      // this point Link is already mounted (the OLD remix made it mount on
+      // the very first render), so this tick is the one that flushes ITS
+      // own internal effect — an unwrapped advance here warns.
+      act(() => {
+        jest.advanceTimersByTime(4000);
+      });
+
+      await waitFor(() => expect(
+        mockedFetch.mock.calls.some(
+          (c) => String(c[0]).startsWith('/api/admin/mastering/download') && String(c[0]).includes(encodeURIComponent(NEW_KEY))
+        )
+      ).toBe(true));
+      expect(container.querySelector('audio')).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('shows a 409 refusal inside the render section, without offering Remix ready', async () => {
     route({ remix: refuse('Every stem is muted — unmute at least one to render a remix.', 409) });
     render(<StemsStudio masterJobId={JOB} />);
