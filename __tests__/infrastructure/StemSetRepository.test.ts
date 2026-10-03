@@ -242,3 +242,19 @@ describe('requesting a remix', () => {
     expect(typeof patch.expressionAttributeValues[':now']).toBe('string');
   });
 });
+
+describe('recording a remix error', () => {
+  it('writes the message onto #remix.#error', async () => {
+    await repo.setRemixError(JOB, 'The remix could not be started — press Render remix again.');
+    const call = mockUpdate.mock.calls[0][0];
+    expect(call.key).toEqual({ PK: `STEMSET#${JOB}`, SK: 'METADATA' });
+    expect(call.updateExpression).toBe('SET #remix.#error = :err');
+    expect(call.expressionAttributeValues[':err']).toBe('The remix could not be started — press Render remix again.');
+  });
+
+  it('clears the error with null, the same way it was set', async () => {
+    await repo.setRemixError(JOB, null);
+    const call = mockUpdate.mock.calls[0][0];
+    expect(call.expressionAttributeValues[':err']).toBeNull();
+  });
+});

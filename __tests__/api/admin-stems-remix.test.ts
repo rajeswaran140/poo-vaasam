@@ -8,9 +8,9 @@ const masterGet = jest.fn();
 jest.mock('@/infrastructure/database/MasterJobRepository', () => ({
   MasterJobRepository: jest.fn().mockImplementation(() => ({ get: masterGet })),
 }));
-const setGet = jest.fn(); const saveMix = jest.fn(); const markRemixRequested = jest.fn();
+const setGet = jest.fn(); const saveMix = jest.fn(); const markRemixRequested = jest.fn(); const setRemixError = jest.fn();
 jest.mock('@/infrastructure/database/StemSetRepository', () => ({
-  StemSetRepository: jest.fn().mockImplementation(() => ({ get: setGet, saveMix, markRemixRequested })),
+  StemSetRepository: jest.fn().mockImplementation(() => ({ get: setGet, saveMix, markRemixRequested, setRemixError })),
 }));
 const lambdaSend = jest.fn().mockResolvedValue({});
 jest.mock('@aws-sdk/client-lambda', () => ({
@@ -48,6 +48,7 @@ beforeEach(() => {
   setGet.mockResolvedValue(null);
   saveMix.mockResolvedValue(undefined);
   markRemixRequested.mockResolvedValue(undefined);
+  setRemixError.mockResolvedValue(undefined);
 });
 
 describe('PUT /mix', () => {
@@ -125,19 +126,31 @@ describe('POST /remix', () => {
     expect(markRemixRequested).not.toHaveBeenCalled();
   });
 
-  it('refuses a remix when the master has no stem set at all', async () => {
+  it('refuses a remix when the master has no stem set at all, with its own message', async () => {
     setGet.mockResolvedValue(null);
     const res = await REMIX(req('POST'), p());
     expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: 'No stems yet — add the song’s stems before rendering a remix.' });
     expect(lambdaSend).not.toHaveBeenCalled();
+    expect(markRemixRequested).not.toHaveBeenCalled();
   });
 
-  it('502s when the worker invoke throws', async () => {
+  it('502s and records a durable error when the worker invoke throws', async () => {
     const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     setGet.mockResolvedValue(SET_WITH(['a']));
     lambdaSend.mockRejectedValueOnce(new Error('throttled'));
     const res = await REMIX(req('POST'), p());
     expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.error).toMatch(/could not be started/i);
+    expect(setRemixError).toHaveBeenCalledWith(JOB, body.error);
     errSpy.mockRestore();
+  });
+
+  it('does not record a remix error on a successful invoke', async () => {
+    setGet.mockResolvedValue(SET_WITH(['a']));
+    const res = await REMIX(req('POST'), p());
+    expect(res.status).toBe(202);
+    expect(setRemixError).not.toHaveBeenCalled();
   });
 });

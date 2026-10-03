@@ -277,6 +277,26 @@ export class StemSetRepository {
     }
   }
 
+  /**
+   * Record (or clear, with `null`) a remix render's error — written from the
+   * route when the worker invoke itself throws, the same durable-signal
+   * reasoning as `setPreviewError`. Unconditional: by the time this is
+   * called, `markRemixRequested` has already run and created `#remix`, so
+   * the nested path is guaranteed to exist.
+   */
+  async setRemixError(masterJobId: string, message: string | null): Promise<void> {
+    try {
+      await DynamoDBOperations.update({
+        key: keyFor(masterJobId),
+        updateExpression: 'SET #remix.#error = :err',
+        expressionAttributeNames: { '#remix': 'remix', '#error': 'error' },
+        expressionAttributeValues: { ':err': message },
+      });
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
   /** Read the raw DynamoDB item without hydration/filtering. */
   private async getRawItem(masterJobId: string): Promise<Record<string, unknown> | null> {
     const item = await DynamoDBOperations.get(keyFor(masterJobId));

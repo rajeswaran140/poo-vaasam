@@ -20,7 +20,6 @@ import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helpe
 import { MasterJobRepository } from '@/infrastructure/database/MasterJobRepository';
 import { StemSetRepository } from '@/infrastructure/database/StemSetRepository';
 import { isValidMasterJobId, planRemix } from '@/lib/stems';
-import type { StemSet } from '@/types/stemSet';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { awsConfig } from '@/lib/aws-config';
 
@@ -28,15 +27,12 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const MASTER_WORKER_FUNCTION = process.env.MASTER_WORKER_FUNCTION || 'tamilagaval-master-worker';
+const NO_STEMS_MESSAGE = 'No stems yet — add the song’s stems before rendering a remix.';
+const INVOKE_FAILED_MESSAGE = 'The remix could not be started — press Render remix again.';
 
 async function savedMaster(masterJobId: string) {
   const job = await new MasterJobRepository().get(masterJobId);
   return job && job.savedAt ? job : null;
-}
-
-/** A stem set with nothing in it — planRemix on this always refuses, in its own words. */
-function emptySet(masterJobId: string): StemSet {
-  return { masterJobId, order: [], stems: {}, mix: {}, remix: null, createdAt: '', updatedAt: '' };
 }
 
 export async function POST(
@@ -66,24 +62,41 @@ export async function POST(
 
     const repo = new StemSetRepository();
     const set = await repo.get(masterJobId);
-    const plan = planRemix(set ?? emptySet(masterJobId));
+    if (!set) {
+      return NextResponse.json({ success: false, error: NO_STEMS_MESSAGE }, { status: 409 });
+    }
+    const plan = planRemix(set);
     if (!plan.ok) {
       return NextResponse.json({ success: false, error: plan.message }, { status: 409 });
     }
 
     await repo.markRemixRequested(masterJobId);
 
-    const lambda = new LambdaClient({
-      region: awsConfig.region,
-      ...(awsConfig.credentials ? { credentials: awsConfig.credentials } : {}),
-    });
-    await lambda.send(
-      new InvokeCommand({
-        FunctionName: MASTER_WORKER_FUNCTION,
-        InvocationType: 'Event',
-        Payload: Buffer.from(JSON.stringify({ stemMix: { masterJobId } })),
-      })
-    );
+    try {
+      const lambda = new LambdaClient({
+        region: awsConfig.region,
+        ...(awsConfig.credentials ? { credentials: awsConfig.credentials } : {}),
+      });
+      await lambda.send(
+        new InvokeCommand({
+          FunctionName: MASTER_WORKER_FUNCTION,
+          InvocationType: 'Event',
+          Payload: Buffer.from(JSON.stringify({ stemMix: { masterJobId } })),
+        })
+      );
+    } catch (invokeErr) {
+      console.error(
+        '[api/admin/stems] remix worker invoke failed:',
+        invokeErr instanceof Error ? invokeErr.message : String(invokeErr)
+      );
+      // Best-effort, like the stem-preview route's setPreviewError: the
+      // response below is the authoritative 502, but a reload must see the
+      // same failure, not a remix stuck forever on "requested".
+      await repo.setRemixError(masterJobId, INVOKE_FAILED_MESSAGE).catch((e) =>
+        console.error('[api/admin/stems] could not record the remix error:', e instanceof Error ? e.message : String(e))
+      );
+      return NextResponse.json({ success: false, error: INVOKE_FAILED_MESSAGE }, { status: 502 });
+    }
 
     return NextResponse.json({ success: true, status: 'queued' }, { status: 202 });
   } catch (err) {
