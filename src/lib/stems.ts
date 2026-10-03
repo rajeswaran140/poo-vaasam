@@ -91,6 +91,27 @@ export type RemixPlan =
 
 const khz = (hz: number) => `${Number((hz / 1000).toFixed(1))} kHz`;
 
+/**
+ * The resample/pad notes a remix shows the operator, built from whatever
+ * values the caller hands in — the SAVED record (planRemix, below) or the
+ * PROBED header (the worker, which treats the file as the authority over a
+ * possibly-stale or null record). One builder, so the wording can never
+ * drift between the two call sites.
+ */
+export function remixNotes(
+  inputs: ReadonlyArray<{ name: string; sampleRate: number | null; durationSec: number | null }>,
+  longestSec: number | null
+): string[] {
+  const notes: string[] = [];
+  for (const i of inputs) {
+    if (i.sampleRate && i.sampleRate !== 48000) notes.push(`${i.name} resampled from ${khz(i.sampleRate)} to 48 kHz`);
+    if (longestSec !== null && i.durationSec !== null && longestSec - i.durationSec > 0.1) {
+      notes.push(`${i.name} padded by ${(longestSec - i.durationSec).toFixed(1)} s to match the longest stem`);
+    }
+  }
+  return notes;
+}
+
 /** Turns a saved stem set's mix (levels, mutes) into the ordered, clamped list of inputs a remix render will use. */
 export function planRemix(set: StemSet): RemixPlan {
   const inputs: RemixInput[] = [];
@@ -107,13 +128,7 @@ export function planRemix(set: StemSet): RemixPlan {
   const lengths = inputs.map((i) => i.durationSec).filter((d): d is number => typeof d === 'number');
   const longestSec = lengths.length ? Math.max(...lengths) : null;
 
-  const notes: string[] = [];
-  for (const i of inputs) {
-    if (i.sampleRate && i.sampleRate !== 48000) notes.push(`${i.name} resampled from ${khz(i.sampleRate)} to 48 kHz`);
-    if (longestSec !== null && i.durationSec !== null && longestSec - i.durationSec > 0.1) {
-      notes.push(`${i.name} padded by ${(longestSec - i.durationSec).toFixed(1)} s to match the longest stem`);
-    }
-  }
+  const notes = remixNotes(inputs, longestSec);
   return { ok: true, inputs, longestSec, notes };
 }
 

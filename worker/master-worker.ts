@@ -155,6 +155,7 @@ import {
   planRemix,
   buildRemixArgs,
   stemRemixKey,
+  remixNotes,
 } from '@/lib/stems';
 import { stemSetFromItem } from '@/infrastructure/database/StemSetRepository';
 import type { MasterJob } from '@/types/masterJob';
@@ -1981,9 +1982,6 @@ async function makeStemPreview(spec: NonNullable<MasterEvent['stemPreview']>, bu
   }
 }
 
-/** "44100" → "44.1 kHz" — matches planRemix's own note wording exactly. */
-const khz = (hz: number) => `${Number((hz / 1000).toFixed(1))} kHz`;
-
 /**
  * Render a REMIX from a song's stems: the FULL-QUALITY WAVs at the levels
  * saved on the set — never levels from the event, which only names the set.
@@ -1995,10 +1993,11 @@ const khz = (hz: number) => `${Number((hz / 1000).toFixed(1))} kHz`;
  * never the record's — is what decides resampling, padding and the render's
  * length: the probed sample rate (falling back to the plan's only when the
  * probe itself fails), and `durationSec` as the longest PROBED duration
- * (falling back to the plan's `longestSec` only when no stem could be probed
- * at all). The resample/pad notes are rebuilt from those same probed values,
- * the same way planRemix builds its own — see buildRemixArgs for normalize=0
- * and the float output.
+ * (falling back to the plan's `longestSec` only when no stem has any usable
+ * duration at all, probed or recorded). The resample/pad notes are rebuilt
+ * from those same probed values via the shared `remixNotes` — the exact
+ * builder `planRemix` itself uses, so the wording can never drift between
+ * the two — see buildRemixArgs for normalize=0 and the float output.
  */
 async function renderStemMix(spec: NonNullable<MasterEvent['stemMix']>, bucket: string) {
   const masterJobId = spec.masterJobId ?? '';
@@ -2038,13 +2037,7 @@ async function renderStemMix(spec: NonNullable<MasterEvent['stemMix']>, bucket: 
     const probedLengths = probed.map((p) => p.durationSec).filter((d): d is number => typeof d === 'number');
     const longestSec = probedLengths.length ? Math.max(...probedLengths) : plan.longestSec;
 
-    const notes: string[] = [];
-    for (const p of probed) {
-      if (p.sampleRate && p.sampleRate !== 48000) notes.push(`${p.name} resampled from ${khz(p.sampleRate)} to 48 kHz`);
-      if (longestSec !== null && p.durationSec !== null && longestSec - p.durationSec > 0.1) {
-        notes.push(`${p.name} padded by ${(longestSec - p.durationSec).toFixed(1)} s to match the longest stem`);
-      }
-    }
+    const notes = remixNotes(probed, longestSec);
 
     const outPath = join(dir, 'remix.wav');
     const r = ff(buildRemixArgs({ inputs, outPath, durationSec: longestSec }));

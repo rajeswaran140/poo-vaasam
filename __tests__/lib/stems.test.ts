@@ -1,7 +1,7 @@
 import {
   STEMS_PREFIX, isValidMasterJobId, stemFolderFor, stemUploadKey, stemIdFromKey,
   isStemKeyFor, stemPreviewKey, stemRemixKey, guessStemName,
-  planRemix, buildRemixArgs, MIN_GAIN_DB, MAX_GAIN_DB,
+  planRemix, buildRemixArgs, remixNotes, MIN_GAIN_DB, MAX_GAIN_DB,
 } from '@/lib/stems';
 import { isMasteringKey } from '@/lib/mastering-storage';
 import { isMasterKey } from '@/lib/loudness-measure';
@@ -124,6 +124,28 @@ describe('planning a remix', () => {
   it('clamps a level outside the fader range', () => {
     const p = planRemix(set({ a: stem('a') }, { a: { gainDb: 40, muted: false } }));
     expect(p.ok && p.inputs[0].gainDb).toBe(MAX_GAIN_DB);
+  });
+});
+
+// The one builder planRemix and the worker's probed-values pass both call,
+// so the wording can never drift between a saved-record remix and a
+// probed-header one. Direct coverage, independent of planRemix, since the
+// worker calls this with values that never went through planRemix at all.
+describe('remixNotes', () => {
+  it('notes resampling and padding, by name — the exact wording planRemix uses', () => {
+    expect(remixNotes(
+      [{ name: 'Vox', sampleRate: 48000, durationSec: 200 }, { name: 'Bass', sampleRate: 44100, durationSec: 199.7 }],
+      200
+    )).toEqual(['Bass resampled from 44.1 kHz to 48 kHz', 'Bass padded by 0.3 s to match the longest stem']);
+  });
+
+  it('notes nothing when every stem is already at 48 kHz and the longest length', () => {
+    expect(remixNotes([{ name: 'a', sampleRate: 48000, durationSec: 200 }], 200)).toEqual([]);
+  });
+
+  it('skips the pad note for a sub-threshold difference, and skips both when the values are null', () => {
+    expect(remixNotes([{ name: 'a', sampleRate: 48000, durationSec: 199.95 }], 200)).toEqual([]);
+    expect(remixNotes([{ name: 'a', sampleRate: null, durationSec: null }], null)).toEqual([]);
   });
 });
 
