@@ -85,12 +85,25 @@ if (!DIR_ARG) {
 }
 const DIR: string = DIR_ARG;
 
-/** Self-protecting: a missing/unspawnable binary fails loudly, once, with a
- *  message that names the path — rather than every probe/measure silently
- *  parsing an empty log and reporting nonsense numbers down the line. */
+/**
+ * Self-protecting: a missing/unspawnable binary fails loudly, once, with a
+ * message that names the path — rather than every probe/measure silently
+ * parsing an empty log and reporting nonsense numbers down the line.
+ *
+ * `spawnSync`'s `.error` isn't only "binary not found": it's also set on a
+ * timeout (`ETIMEDOUT`, from the 10-minute cap below — the exact case this
+ * script exists to catch, an `apad`/`amix duration=longest` render that
+ * never ends) and on exceeding `maxBuffer`. Those must NOT be reported as
+ * "not found" — only ENOENT/EACCES, an actually-missing-or-unexecutable
+ * binary, get that message; anything else names its own error code.
+ */
 const ff = (args: string[]) => {
   const r = spawnSync(FFMPEG, args, { encoding: 'utf8', maxBuffer: 512 * 1024 * 1024, timeout: 10 * 60 * 1000 });
-  if (r.error) throw new Error(`ffmpeg binary not found at ${FFMPEG}`);
+  if (r.error) {
+    const code = (r.error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'EACCES') throw new Error(`ffmpeg binary not found at ${FFMPEG}`);
+    throw new Error(`ffmpeg failed (${code ?? r.error.message})`);
+  }
   return r;
 };
 const logOf = (r: { stdout?: string; stderr?: string }) => `${r.stdout ?? ''}${r.stderr ?? ''}`;
@@ -475,4 +488,7 @@ async function main() {
   }
 }
 
-main();
+main().catch((err) => {
+  console.error(err instanceof Error ? err.message : String(err));
+  process.exit(1);
+});
