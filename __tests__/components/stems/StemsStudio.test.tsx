@@ -600,6 +600,29 @@ describe('rendering waits for the mix to be saved', () => {
     expect(calls(`/api/admin/stems/${JOB}/mix`, 'PUT')).toHaveLength(1);
   });
 
+  it('waits for an autosave already in flight (fader moved > 400 ms earlier) before posting the render', async () => {
+    let releasePut: () => void = () => {};
+    const putGate = new Promise<void>((r) => { releasePut = r; });
+    routeWithPut(() => putGate.then(() => ok({ success: true })));
+    render(<StemsStudio masterJobId={JOB} />);
+    const fader = await screen.findByRole('slider', { name: 'Drums level' });
+    const region = screen.getByRole('region', { name: 'Remix' });
+
+    fireEvent.change(fader, { target: { value: '-6' } });
+    // The debounced PUT goes out on its own and stays unresolved.
+    await waitFor(() => expect(calls(`/api/admin/stems/${JOB}/mix`, 'PUT')).toHaveLength(1), { timeout: 2000 });
+    await act(async () => {
+      fireEvent.click(within(region).getByRole('button', { name: /Render remix/ }));
+    });
+    expect(calls(`/api/admin/stems/${JOB}/remix`, 'POST')).toHaveLength(0);
+
+    await act(async () => {
+      releasePut();
+    });
+    await waitFor(() => expect(calls(`/api/admin/stems/${JOB}/remix`, 'POST')).toHaveLength(1));
+    expect(calls(`/api/admin/stems/${JOB}/mix`, 'PUT')).toHaveLength(1);
+  });
+
   it('does not render when that save fails: says so in the Remix section and disables Render with a reason', async () => {
     routeWithPut(() => Promise.resolve(refuse('Could not save the mix.', 502)));
     render(<StemsStudio masterJobId={JOB} />);
