@@ -1,0 +1,152 @@
+/**
+ * A saved master's stem set: PK=STEMSET#<masterJobId>, SK=METADATA.
+ *
+ * ⚠️ STEMS ARE A MAP KEYED BY stemId, NOT A LIST. The worker records each
+ * stem's listening copy as it finishes, and several finish at once; a list
+ * would need read-modify-write and the second writer would erase the first.
+ * A nested-map SET is atomic per stem. `order` carries display order.
+ *
+ * Writing a set also writes `stemCount` on the master, so the library row can
+ * show "Stems (N)" without loading sets — and never touches the master's
+ * `updatedAt`, which the YouTube upload guard reads.
+ */
+import { DynamoDBOperations, handleDynamoDBError } from './dynamodb-client';
+import type { StemSet, StemEntry, StemMixEntry, StemRemix } from '@/types/stemSet';
+import { stemIdFromKey, guessStemName } from '@/lib/stems';
+
+const keyFor = (masterJobId: string) => ({ PK: `STEMSET#${masterJobId}`, SK: 'METADATA' });
+
+function num(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+export function stemSetFromItem(i: Record<string, unknown>): StemSet {
+  const rawStems = (i.stems ?? {}) as Record<string, Record<string, unknown>>;
+  const stems: Record<string, StemEntry> = {};
+  for (const [id, s] of Object.entries(rawStems)) {
+    if (!s || typeof s.key !== 'string') continue;
+    stems[id] = {
+      key: s.key,
+      name: typeof s.name === 'string' ? s.name : 'Stem',
+      previewKey: typeof s.previewKey === 'string' ? s.previewKey : null,
+      previewError: typeof s.previewError === 'string' ? s.previewError : null,
+      durationSec: num(s.durationSec),
+      sampleRate: num(s.sampleRate),
+      channels: num(s.channels),
+    };
+  }
+  const order = (Array.isArray(i.order) ? i.order : []).filter((id): id is string => typeof id === 'string' && id in stems);
+  const mix: Record<string, StemMixEntry> = {};
+  for (const [id, m] of Object.entries((i.mix ?? {}) as Record<string, Record<string, unknown>>)) {
+    if (id in stems && m && typeof m.gainDb === 'number') mix[id] = { gainDb: m.gainDb, muted: m.muted === true };
+  }
+  const r = i.remix as Record<string, unknown> | null | undefined;
+  const remix: StemRemix | null = r
+    ? {
+        key: typeof r.key === 'string' ? r.key : null,
+        renderedAt: typeof r.renderedAt === 'string' ? r.renderedAt : null,
+        mixUsed: (r.mixUsed as StemRemix['mixUsed']) ?? null,
+        notes: Array.isArray(r.notes) ? (r.notes as unknown[]).filter((n): n is string => typeof n === 'string') : [],
+        error: typeof r.error === 'string' ? r.error : null,
+        requestedAt: typeof r.requestedAt === 'string' ? r.requestedAt : null,
+      }
+    : null;
+  return {
+    masterJobId: String(i.masterJobId ?? ''),
+    order, stems, mix, remix,
+    createdAt: String(i.createdAt ?? ''),
+    updatedAt: String(i.updatedAt ?? ''),
+  };
+}
+
+export class StemSetRepository {
+  async get(masterJobId: string): Promise<StemSet | null> {
+    try {
+      const item = await DynamoDBOperations.get(keyFor(masterJobId));
+      return item ? stemSetFromItem(item as Record<string, unknown>) : null;
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  async addStem(masterJobId: string, key: string, filename: string): Promise<StemSet> {
+    try {
+      const id = stemIdFromKey(key);
+      const now = new Date().toISOString();
+      const stem: StemEntry = {
+        key, name: guessStemName(filename), previewKey: null, previewError: null,
+        durationSec: null, sampleRate: null, channels: null,
+      };
+      const attrs = await DynamoDBOperations.update({
+        key: keyFor(masterJobId),
+        updateExpression:
+          'SET #order = list_append(if_not_exists(#order, :empty), :id), #stems = if_not_exists(#stems, :emptyMap), ' +
+          '#mix = if_not_exists(#mix, :emptyMap), #masterJobId = :job, #type = :type, ' +
+          '#createdAt = if_not_exists(#createdAt, :now), #updatedAt = :now',
+        expressionAttributeNames: {
+          '#order': 'order', '#stems': 'stems', '#mix': 'mix', '#masterJobId': 'masterJobId',
+          '#type': 'Type', '#createdAt': 'createdAt', '#updatedAt': 'updatedAt',
+        },
+        expressionAttributeValues: {
+          ':empty': [], ':id': [id], ':emptyMap': {}, ':job': masterJobId, ':type': 'STEMSET', ':now': now,
+        },
+      });
+      // A second, separate update: a map entry cannot be SET in the same
+      // expression that might be creating the map with if_not_exists.
+      const after = await DynamoDBOperations.update({
+        key: keyFor(masterJobId),
+        updateExpression: 'SET #stems.#sid = :stem',
+        expressionAttributeNames: { '#stems': 'stems', '#sid': id },
+        expressionAttributeValues: { ':stem': stem },
+      });
+      const source = (after && Array.isArray((after as Record<string, unknown>).order)) ? after : attrs;
+      const set = stemSetFromItem((source ?? {}) as Record<string, unknown>);
+      const stemCount = Array.isArray((source ?? {}).order) ? ((source ?? {}).order as unknown[]).length : set.order.length;
+      await this.writeCount(masterJobId, stemCount);
+      return set;
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  async renameStem(masterJobId: string, stemId: string, name: string): Promise<void> {
+    try {
+      await DynamoDBOperations.update({
+        key: keyFor(masterJobId),
+        updateExpression: 'SET #stems.#sid.#name = :name, #updatedAt = :now',
+        conditionExpression: 'attribute_exists(#stems.#sid)',
+        expressionAttributeNames: { '#stems': 'stems', '#sid': stemId, '#name': 'name', '#updatedAt': 'updatedAt' },
+        expressionAttributeValues: { ':name': name.trim().slice(0, 80) || 'Stem', ':now': new Date().toISOString() },
+      });
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  async removeStem(masterJobId: string, stemId: string): Promise<void> {
+    try {
+      const current = await this.get(masterJobId);
+      if (!current) return;
+      const order = current.order.filter((id) => id !== stemId);
+      await DynamoDBOperations.update({
+        key: keyFor(masterJobId),
+        updateExpression: 'REMOVE #stems.#sid, #mix.#sid SET #order = :order, #updatedAt = :now',
+        expressionAttributeNames: { '#stems': 'stems', '#mix': 'mix', '#sid': stemId, '#order': 'order', '#updatedAt': 'updatedAt' },
+        expressionAttributeValues: { ':order': order, ':now': new Date().toISOString() },
+      });
+      await this.writeCount(masterJobId, order.length);
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  /** `stemCount` on the master — and nothing else; never its updatedAt. */
+  private async writeCount(masterJobId: string, n: number): Promise<void> {
+    await DynamoDBOperations.update({
+      key: { PK: `MASTERJOB#${masterJobId}`, SK: 'METADATA' },
+      updateExpression: 'SET #stemCount = :n',
+      expressionAttributeNames: { '#stemCount': 'stemCount' },
+      expressionAttributeValues: { ':n': n },
+    });
+  }
+}

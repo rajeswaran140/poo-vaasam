@@ -1,0 +1,81 @@
+const mockGet = jest.fn();
+const mockUpdate = jest.fn();
+jest.mock('@/infrastructure/database/dynamodb-client', () => ({
+  DynamoDBOperations: {
+    get: (...a: unknown[]) => mockGet(...a),
+    update: (...a: unknown[]) => mockUpdate(...a),
+  },
+  handleDynamoDBError: (e: unknown) => { throw e; },
+}));
+
+import { StemSetRepository } from '@/infrastructure/database/StemSetRepository';
+
+const JOB = '0b5e2c1a-1111-4222-8333-444455556666';
+const KEY = `audio/mastering/stems/${JOB}/1696000000000_ab12cd34_2_Drums.wav`;
+const ID = '1696000000000_ab12cd34_2_Drums';
+const repo = new StemSetRepository();
+
+beforeEach(() => { mockGet.mockReset(); mockUpdate.mockReset().mockResolvedValue({}); });
+
+describe('reading a set', () => {
+  it('returns null when the master has no stems yet', async () => {
+    mockGet.mockResolvedValue(null);
+    expect(await repo.get(JOB)).toBeNull();
+    expect(mockGet).toHaveBeenCalledWith({ PK: `STEMSET#${JOB}`, SK: 'METADATA' });
+  });
+
+  it('drops a malformed stem rather than handing the page an image with no key', async () => {
+    mockGet.mockResolvedValue({
+      PK: `STEMSET#${JOB}`, SK: 'METADATA', masterJobId: JOB,
+      order: [ID, 'ghost'], stems: { [ID]: { key: KEY, name: 'Drums' }, ghost: { name: 'no key' } },
+      mix: {}, remix: null, createdAt: 't', updatedAt: 't',
+    });
+    const set = await repo.get(JOB);
+    expect(set!.order).toEqual([ID]);
+    expect(set!.stems[ID]).toMatchObject({ key: KEY, name: 'Drums', previewKey: null, durationSec: null });
+  });
+});
+
+describe('adding a stem', () => {
+  it('creates the set on first use and appends in order, with a name guessed from the file', async () => {
+    mockUpdate.mockResolvedValueOnce({
+      masterJobId: JOB, order: [ID], stems: { [ID]: { key: KEY, name: 'Drums' } }, mix: {}, createdAt: 't', updatedAt: 't',
+    });
+    await repo.addStem(JOB, KEY, '2_Drums.wav');
+    const calls = mockUpdate.mock.calls.map((c) => c[0]);
+    const append = calls.find((c) => /list_append/.test(c.updateExpression))!;
+    expect(append.key).toEqual({ PK: `STEMSET#${JOB}`, SK: 'METADATA' });
+    expect(append.updateExpression).toMatch(/list_append\(if_not_exists\(#order, :empty\), :id\)/);
+    const entry = calls.find((c) => /#stems\.#sid = :stem/.test(c.updateExpression))!;
+    expect(entry.expressionAttributeNames['#sid']).toBe(ID);
+    expect(entry.expressionAttributeValues[':stem']).toMatchObject({ key: KEY, name: 'Drums', previewKey: null });
+  });
+
+  it('keeps the master row\'s stem count in step, without touching its updatedAt', async () => {
+    mockUpdate.mockResolvedValueOnce({ masterJobId: JOB, order: [ID, 'b'], stems: {}, mix: {}, createdAt: 't', updatedAt: 't' });
+    await repo.addStem(JOB, KEY, '2_Drums.wav');
+    const masterCall = mockUpdate.mock.calls.find((c) => c[0].key.PK === `MASTERJOB#${JOB}`)![0];
+    expect(masterCall.updateExpression).toBe('SET #stemCount = :n');
+    expect(masterCall.expressionAttributeValues[':n']).toBe(2);
+    expect(JSON.stringify(masterCall)).not.toMatch(/updatedAt/);
+  });
+});
+
+describe('renaming and removing', () => {
+  it('renames one stem only if it still exists', async () => {
+    await repo.renameStem(JOB, ID, '  Lead drums  ');
+    const call = mockUpdate.mock.calls[0][0];
+    expect(call.updateExpression).toBe('SET #stems.#sid.#name = :name, #updatedAt = :now');
+    expect(call.conditionExpression).toBe('attribute_exists(#stems.#sid)');
+    expect(call.expressionAttributeValues[':name']).toBe('Lead drums');
+  });
+
+  it('removes the stem, its mix entry and its place in the order', async () => {
+    mockGet.mockResolvedValue({ masterJobId: JOB, order: ['a', ID, 'c'], stems: { a: { key: 'k' }, [ID]: { key: KEY }, c: { key: 'k2' } }, mix: {} });
+    await repo.removeStem(JOB, ID);
+    const call = mockUpdate.mock.calls[0][0];
+    expect(call.updateExpression).toMatch(/REMOVE #stems\.#sid, #mix\.#sid/);
+    expect(call.updateExpression).toMatch(/SET #order = :order/);
+    expect(call.expressionAttributeValues[':order']).toEqual(['a', 'c']);
+  });
+});
