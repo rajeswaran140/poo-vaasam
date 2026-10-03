@@ -7,7 +7,7 @@
  * implementer brief) is: admin-only, then a valid id, then a saved master.
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
+import { requireAdmin, authErrorResponse } from '@/lib/auth-helper';
 import { MasterJobRepository } from '@/infrastructure/database/MasterJobRepository';
 import { StemSetRepository } from '@/infrastructure/database/StemSetRepository';
 import { isValidMasterJobId } from '@/lib/stems';
@@ -26,7 +26,6 @@ export async function GET(
 ) {
   try {
     await requireAdmin(request);
-    requireBearer(request);
   } catch (err) {
     return authErrorResponse(err);
   }
