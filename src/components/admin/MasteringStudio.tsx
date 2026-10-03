@@ -3998,6 +3998,14 @@ export function MasteringStudio() {
                         Vertical
                       </button>
                     )}
+                    {/* The song's stems live on their own page — the library
+                        row only says whether there are any. */}
+                    <a
+                      href={`/admin/mastering/stems/${m.id}`}
+                      className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+                    >
+                      {m.stemCount ? `Stems (${m.stemCount})` : 'Add stems'}
+                    </a>
                     <span className="ml-auto flex flex-wrap items-center gap-x-3">
                       {/* And a way to MAKE one. The inline panel is gated on savedAt,
                           which only this session's Save sets, so without this a master

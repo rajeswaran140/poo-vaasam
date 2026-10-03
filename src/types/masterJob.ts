@@ -238,6 +238,8 @@ export interface MasterJob {
    * 1080p render and a moving one share the same `-1080p.mp4` key.
    */
   videoMotion?: string | null;
+  /** How many stems this master's stem set holds; null/absent ⇒ none. Written by StemSetRepository. */
+  stemCount?: number | null;
   verticalKey: string | null;
   verticalRenderedAt: string | null;
   verticalSeconds: number | null;

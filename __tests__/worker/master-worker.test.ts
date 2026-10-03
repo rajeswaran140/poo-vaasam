@@ -3462,3 +3462,73 @@ describe('a video whose picture outruns its sound still passes', () => {
     expect((patched().videoAudioFindings as string[]).join(' ')).not.toMatch(/longer|SHORTER|cut off/);
   });
 });
+
+describe('stem listening copy', () => {
+  const JOB = '0b5e2c1a-1111-4222-8333-444455556666';
+  const KEY = `audio/mastering/stems/${JOB}/1696000000000_ab12cd34_2_Drums.wav`;
+  const HEADER = `Input #0, wav, from '/tmp/stem.wav':
+  Duration: 00:03:41.92, bitrate: 2304 kb/s
+  Stream #0:0: Audio: pcm_s24le ([1][0][0][0] / 0x0001), 44100 Hz, stereo, s32 (24 bit), 2304 kb/s
+`;
+  const updates = () => send.mock.calls.map((c) => (c[0] as { input: Record<string, unknown> }).input);
+
+  beforeEach(() => {
+    spawnSync.mockReset();
+    spawnSync.mockImplementation((_c: unknown, args: string[]) =>
+      args.length === 3 && args[1] === '-i' ? { status: 0, stdout: '', stderr: HEADER } : { status: 0, stdout: '', stderr: '' });
+    s3Send.mockReset();
+    s3Send.mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'Body' in cmd.input ? Promise.resolve({}) : Promise.resolve({ Body: { transformToByteArray: async () => new Uint8Array([1]) } }));
+    send.mockClear();
+  });
+
+  it('encodes a small AAC copy, uploads it beside the stem, and records it on that stem only', async () => {
+    const res = await handler({ stemPreview: { masterJobId: JOB, stemKey: KEY } } as never);
+    expect(res).toMatchObject({ ok: true });
+    const enc = spawnSync.mock.calls.map((c) => c[1] as string[]).find((a) => a.includes('aac'))!;
+    expect(enc).toEqual(expect.arrayContaining(['-c:a', 'aac', '-b:a', '128k', '-ac', '2']));
+    const put = s3Send.mock.calls.map((c) => c[0].input).find((i) => 'Body' in i);
+    expect(put).toMatchObject({ Key: `audio/mastering/stems/${JOB}/preview/1696000000000_ab12cd34_2_Drums.m4a`, ContentType: 'audio/mp4' });
+    const u = updates().find((i) => String(i.UpdateExpression).includes('previewKey'))!;
+    expect(u.Key).toEqual({ PK: `STEMSET#${JOB}`, SK: 'METADATA' });
+    // ONE stem's fields, by nested path — two finishing at once cannot erase each other.
+    expect(u.UpdateExpression).toMatch(/#stems\.#sid\.#previewKey = :pk/);
+    expect(u.ExpressionAttributeNames).toMatchObject({ '#sid': '1696000000000_ab12cd34_2_Drums' });
+    expect(u.ExpressionAttributeValues).toMatchObject({ ':dur': 221.9, ':rate': 44100, ':ch': 2 });
+    expect(u.ConditionExpression).toBe('attribute_exists(#stems.#sid)');
+  });
+
+  it('does not recreate a stem that was removed while its copy was being made', async () => {
+    send.mockImplementationOnce(() => Promise.reject(Object.assign(new Error('gone'), { name: 'ConditionalCheckFailedException' })));
+    const res = await handler({ stemPreview: { masterJobId: JOB, stemKey: KEY } } as never);
+    expect(res).toMatchObject({ ok: true, removed: true });
+  });
+
+  it('records why, on the stem, when the encode fails', async () => {
+    spawnSync.mockImplementation((_c: unknown, args: string[]) =>
+      args.includes('aac') ? { status: 1, stdout: '', stderr: 'boom' } : { status: 0, stdout: '', stderr: HEADER });
+    const res = await handler({ stemPreview: { masterJobId: JOB, stemKey: KEY } } as never);
+    expect(res).toMatchObject({ ok: false });
+    const u = updates().find((i) => String(i.UpdateExpression).includes('previewError'))!;
+    expect(u.ExpressionAttributeValues).toMatchObject({ ':err': 'the listening copy could not be made' });
+  });
+
+  it('refuses a key outside that master\'s stem folder without reading S3', async () => {
+    const res = await handler({ stemPreview: { masterJobId: JOB, stemKey: 'audio/poem-music/x.wav' } } as never);
+    expect(res).toMatchObject({ ok: false });
+    expect(s3Send).not.toHaveBeenCalled();
+  });
+
+  it('logs when even the failure cannot be recorded, so the trail is not silent', async () => {
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    s3Send.mockImplementation(() => Promise.reject(new Error('network down')));
+    send.mockImplementationOnce(() => Promise.reject(new Error('ddb down')));
+    const res = await handler({ stemPreview: { masterJobId: JOB, stemKey: KEY } } as never);
+    expect(res).toMatchObject({ ok: false });
+    expect(errSpy).toHaveBeenCalledWith(
+      '[master-worker] could not record the stem preview error:',
+      expect.stringContaining('ddb down')
+    );
+    errSpy.mockRestore();
+  });
+});

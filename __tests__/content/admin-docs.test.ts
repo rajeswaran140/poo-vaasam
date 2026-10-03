@@ -492,3 +492,48 @@ describe('the karaoke workflow does not strand the reader between steps 2 and 3'
     expect(doc!.body).toMatch(/aws s3 cp/);
     expect(doc!.body).toContain('audio/mastering/');  });
 });
+
+describe('the stems doc matches what the Stems page actually does', () => {
+  const doc = getDoc('stems');
+
+  it('the doc exists', () => {
+    expect(doc).toBeTruthy();
+  });
+
+  it('never says Suno in visible text', () => {
+    expect(doc!.body).not.toMatch(/suno/i);
+  });
+
+  it('Download gives the full-quality WAV, not the AAC listening copy', () => {
+    expect(doc!.body).toMatch(/full-quality WAV/i);
+    expect(doc!.body).not.toMatch(/download the listening copy \(AAC\)/i);
+  });
+
+  it('rename is via a Rename button, not a clickable stem name', () => {
+    expect(doc!.body).toMatch(/click \*\*rename\*\*/i);
+    expect(doc!.body).not.toMatch(/click the stem name/i);
+  });
+
+  it('does not claim the original filename is shown', () => {
+    expect(doc!.body).not.toMatch(/original filename is shown/i);
+  });
+
+  it('describes the Add stems / Stems (N) link as conditional, not both always present', () => {
+    expect(doc!.body).toMatch(/\*\*add stems\*\*.*none/i);
+    expect(doc!.body).toMatch(/\*\*stems \(n\)\*\*/i);
+  });
+
+  it('shows length as m:ss, not seconds', () => {
+    expect(doc!.body).toMatch(/length \(as m:ss\)/i);
+    expect(doc!.body).not.toMatch(/length \(in seconds\)/i);
+  });
+
+  it('mentions the 5-minute stall and Retry', () => {
+    expect(doc!.body).toMatch(/5 minutes/);
+    expect(doc!.body).toMatch(/taking longer than expected/i);
+  });
+
+  it('mentions Remove asks to confirm', () => {
+    expect(doc!.body).toMatch(/remove.*ask.*confirm|confirm.*before.*remov/is);
+  });
+});
