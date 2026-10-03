@@ -230,6 +230,53 @@ export class StemSetRepository {
     }
   }
 
+  /**
+   * Replace the whole `#mix` map. The route has already filtered the
+   * incoming entries down to ids still in `order` — this just writes
+   * whatever it's handed. Touches this set's own `updatedAt`, never the
+   * master's (see the module doc).
+   */
+  async saveMix(masterJobId: string, mix: Record<string, StemMixEntry>): Promise<void> {
+    try {
+      await DynamoDBOperations.update({
+        key: keyFor(masterJobId),
+        updateExpression: 'SET #mix = :mix, #updatedAt = :now',
+        expressionAttributeNames: { '#mix': 'mix', '#updatedAt': 'updatedAt' },
+        expressionAttributeValues: { ':mix': mix, ':now': new Date().toISOString() },
+      });
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  /**
+   * Stamp a remix request, clearing any old error — same two-step reasoning
+   * as `addStem`: a nested map field cannot be SET in the same expression
+   * that might be creating the map with `if_not_exists`, so `#remix` is
+   * created blank first (if absent) and then patched.
+   */
+  async markRemixRequested(masterJobId: string): Promise<void> {
+    try {
+      const now = new Date().toISOString();
+      await DynamoDBOperations.update({
+        key: keyFor(masterJobId),
+        updateExpression: 'SET #remix = if_not_exists(#remix, :blank)',
+        expressionAttributeNames: { '#remix': 'remix' },
+        expressionAttributeValues: {
+          ':blank': { key: null, renderedAt: null, mixUsed: null, notes: [], error: null, requestedAt: null },
+        },
+      });
+      await DynamoDBOperations.update({
+        key: keyFor(masterJobId),
+        updateExpression: 'SET #remix.#requestedAt = :now, #remix.#error = :null',
+        expressionAttributeNames: { '#remix': 'remix', '#requestedAt': 'requestedAt', '#error': 'error' },
+        expressionAttributeValues: { ':now': now, ':null': null },
+      });
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
   /** Read the raw DynamoDB item without hydration/filtering. */
   private async getRawItem(masterJobId: string): Promise<Record<string, unknown> | null> {
     const item = await DynamoDBOperations.get(keyFor(masterJobId));
