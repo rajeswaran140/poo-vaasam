@@ -536,4 +536,45 @@ describe('the stems doc matches what the Stems page actually does', () => {
   it('mentions Remove asks to confirm', () => {
     expect(doc!.body).toMatch(/remove.*ask.*confirm|confirm.*before.*remov/is);
   });
+
+  it('the Mixer section gives the fader range and the required mixer note verbatim', () => {
+    expect(doc!.body).toMatch(/## the mixer/i);
+    expect(doc!.body).toMatch(/−∞ to \+6 dB/);
+    expect(doc!.body).toContain(
+      'A mix of the stems is a new version — it will not sound exactly like the original release.'
+    );
+  });
+
+  it('Mute is a real saved edit; Solo is listening-only and never saved', () => {
+    expect(doc!.body).toMatch(/\*\*mute\*\*.*real edit/i);
+    expect(doc!.body).toMatch(/\*\*solo\*\*.*never saved/i);
+    expect(doc!.body).toMatch(/never sent to the server/i);
+  });
+
+  it('Reset and autosave are both described', () => {
+    expect(doc!.body).toMatch(/\*\*reset\*\*/i);
+    expect(doc!.body).toMatch(/\*\*autosave[sd]?\*\*/i);
+  });
+
+  it('the Render remix section exists and explains the resample/pad notes', () => {
+    expect(doc!.body).toMatch(/## render remix/i);
+    expect(doc!.body).toMatch(/\*\*render remix\*\*/i);
+    expect(doc!.body).toMatch(/\*\*remix ready\*\*/i);
+    expect(doc!.body).toMatch(/resampled to 48 kHz/i);
+    expect(doc!.body).toMatch(/padded with silence/i);
+  });
+
+  it('a waiting stem can still be muted, Render saves first, and a reload mid-render resumes', () => {
+    expect(doc!.body).toMatch(/waiting for its listening copy.*\*\*mute\*\* button/is);
+    expect(doc!.body).toMatch(/render first saves any fader/i);
+    expect(doc!.body).toMatch(/if a save fails, nothing is rendered/i);
+    expect(doc!.body).toMatch(/reloading the page mid-render is safe/i);
+  });
+
+  it('the Master this remix section exists and names Sound Engineering, not "mastering Studio"', () => {
+    expect(doc!.body).toMatch(/## master this remix/i);
+    expect(doc!.body).toMatch(/\*\*master this remix\*\*/i);
+    expect(doc!.body).toMatch(/sound engineering/i);
+    expect(doc!.body).not.toMatch(/mastering studio/i);
+  });
 });

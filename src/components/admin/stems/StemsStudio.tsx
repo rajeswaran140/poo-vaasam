@@ -19,12 +19,16 @@ import { Pencil, Trash2, Download, Play, RotateCw } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 import { formatClock } from '@/components/admin/ShortWindowFields';
 import { StemUpload } from '@/components/admin/stems/StemUpload';
-import type { StemEntry, StemSet } from '@/types/stemSet';
+import { StemMixer, type StemMixerHandle } from '@/components/admin/stems/StemMixer';
+import { targetIdFor } from '@/lib/master-peak';
+import type { NormalizationMode } from '@/lib/master-peak';
+import type { StemEntry, StemMixEntry, StemRemix, StemSet } from '@/types/stemSet';
 
 interface MasterInfo {
   id: string;
   title: string | null;
   target: number;
+  normalizationMode: NormalizationMode | null;
 }
 
 interface RowError {
@@ -63,6 +67,48 @@ function hasPendingPreview(set: StemSet | null, now: number): boolean {
     const stem = set.stems[id];
     return !!stem && isPendingPreview(stem) && !isStalePending(stem, now);
   });
+}
+
+/** How often the render section re-polls the set while a remix is in flight. */
+const RENDER_POLL_MS = 4000;
+/** 10 minutes: past this the worker is presumed stuck rather than still rendering. */
+const RENDER_TIMEOUT_MS = 10 * 60 * 1000;
+const RENDER_TIMEOUT_MESSAGE =
+  'The remix is taking longer than expected — reload to check on it.';
+/** Shown in the Remix section when Render found the mixer's latest save failed. */
+const UNSAVED_MIX_MESSAGE = "Your latest levels weren't saved — fix that before rendering.";
+
+/**
+ * A render requested before this page loaded (a reload mid-render) that is
+ * still worth watching: requested after the last finished render, not
+ * already failed, and inside the same 10-minute window a fresh render gets.
+ * Returns the watch to resume, or null.
+ */
+function resumableRenderWatch(
+  remix: StemRemix | null | undefined,
+  now: number
+): { priorRenderedAt: string | null; deadline: number } | null {
+  if (!remix?.requestedAt || remix.error) return null;
+  if (!(remix.requestedAt > (remix.renderedAt ?? ''))) return null;
+  const requested = Date.parse(remix.requestedAt);
+  if (Number.isNaN(requested) || now - requested >= RENDER_TIMEOUT_MS) return null;
+  return { priorRenderedAt: remix.renderedAt, deadline: requested + RENDER_TIMEOUT_MS };
+}
+
+/** What a render ends up at, given the latest poll's `remix` (undefined on a
+ * failed poll tick, where there is no fresh set to read) against the watch
+ * started right after the POST. */
+type RenderOutcome = 'continue' | 'done' | 'timeout' | { error: string };
+
+function renderWatchOutcome(
+  remix: StemRemix | null | undefined,
+  watch: { priorRenderedAt: string | null; deadline: number },
+  now: number
+): RenderOutcome {
+  if (remix?.renderedAt && remix.renderedAt !== watch.priorRenderedAt) return 'done';
+  if (remix?.error) return { error: remix.error };
+  if (now > watch.deadline) return 'timeout';
+  return 'continue';
 }
 
 /** 48000 -> "48 kHz", 44100 -> "44.1 kHz". */
@@ -118,8 +164,36 @@ export function StemsStudio({ masterJobId }: Props) {
   const [renameValue, setRenameValue] = useState('');
   const [playUrls, setPlayUrls] = useState<Record<string, string>>({});
   const [playLoading, setPlayLoading] = useState<string | null>(null);
+  const [renderBusy, setRenderBusy] = useState(false);
+  const [renderError, setRenderError] = useState<string | null>(null);
+  const [remixPlayUrl, setRemixPlayUrl] = useState<string | null>(null);
+  const [remixPlayError, setRemixPlayError] = useState<string | null>(null);
+  // The mixer's last save failed: Render stays off until a save succeeds.
+  const [mixSaveError, setMixSaveError] = useState<string | null>(null);
+  const mixerRef = useRef<StemMixerHandle>(null);
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The render poll's OWN timer — kept separate from `timerRef` (the preview
+  // poll's), so a preview tick clearing its timer can never cancel an
+  // in-flight remix poll, or the other way round.
+  const renderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Set right after a successful POST to /remix; null whenever no render is
+  // being watched. `priorRenderedAt` is what `set.remix.renderedAt` was
+  // BEFORE this render, so a poll can tell "finished" from "still the old one".
+  const renderWatchRef = useRef<{ priorRenderedAt: string | null; deadline: number } | null>(null);
+  // Set once the first load completes, so a remix.error already on the set
+  // (persisted by the server from an earlier session) is shown on arrival —
+  // the remix route's own invoke-failure path writes it for exactly this —
+  // without a later, unrelated background poll able to overwrite it.
+  const initialLoadRef = useRef(false);
+  // Always the CURRENT `load`, kept in sync by the effect right after its
+  // declaration below. `continueRenderWatch` reads through this rather than
+  // closing over `load` directly — every one of `load`'s own deps happens to
+  // be stable today, so `load`'s identity never actually changes, but that's
+  // an accident of today's deps list, not a guarantee; reading through the
+  // ref means a poll scheduled from `continueRenderWatch` can never fire a
+  // stale closure even if that stops being true.
+  const loadRef = useRef<() => Promise<void>>(async () => {});
   const mountedRef = useRef(true);
   // The last set this page actually saw, kept outside React state so a
   // failed poll tick can decide whether to keep polling without `load`
@@ -143,6 +217,35 @@ export function StemsStudio({ masterJobId }: Props) {
     []
   );
 
+  /**
+   * Advance (or end) the render watch against whatever `remix` this poll
+   * tick actually saw — `undefined` on a failed tick, which only the
+   * deadline can end. Mirrors the preview poll's own resilience: a transient
+   * GET failure must not strand the button disabled forever.
+   */
+  const continueRenderWatch = useCallback(
+    (remix: StemRemix | null | undefined) => {
+      const watch = renderWatchRef.current;
+      if (!watch) return;
+      const outcome = renderWatchOutcome(remix, watch, Date.now());
+      if (outcome === 'continue') {
+        if (renderTimerRef.current) clearTimeout(renderTimerRef.current);
+        renderTimerRef.current = setTimeout(() => void loadRef.current(), RENDER_POLL_MS);
+        return;
+      }
+      renderWatchRef.current = null;
+      if (renderTimerRef.current) {
+        clearTimeout(renderTimerRef.current);
+        renderTimerRef.current = null;
+      }
+      setRenderBusy(false);
+      if (outcome === 'timeout') setRenderError(RENDER_TIMEOUT_MESSAGE);
+      else if (outcome === 'done') setRenderError(null);
+      else setRenderError(outcome.error);
+    },
+    []
+  );
+
   const load = useCallback(async () => {
     try {
       const res = await adminFetch(`/api/admin/stems/${masterJobId}`);
@@ -158,12 +261,26 @@ export function StemsStudio({ masterJobId }: Props) {
           if (timerRef.current) clearTimeout(timerRef.current);
           timerRef.current = setTimeout(() => void load(), 4000);
         }
+        continueRenderWatch(undefined);
         return;
       }
       setLoadError(null);
-      setSet(body.set as StemSet | null);
+      const nextSet = body.set as StemSet | null;
+      setSet(nextSet);
       setMaster(body.master as MasterInfo);
-      scheduleIfPending(body.set as StemSet | null, () => void load());
+      scheduleIfPending(nextSet, () => void load());
+      if (!initialLoadRef.current) {
+        initialLoadRef.current = true;
+        if (nextSet?.remix?.error) setRenderError(nextSet.remix.error);
+        // A reload mid-render: pick the watch back up (the call just below
+        // schedules its first poll) rather than offering Render again.
+        const resumed = resumableRenderWatch(nextSet?.remix, Date.now());
+        if (resumed) {
+          renderWatchRef.current = resumed;
+          setRenderBusy(true);
+        }
+      }
+      continueRenderWatch(nextSet?.remix ?? null);
     } catch (err) {
       if (!mountedRef.current) return;
       setLoadError(err instanceof Error ? err.message : String(err));
@@ -171,8 +288,13 @@ export function StemsStudio({ masterJobId }: Props) {
         if (timerRef.current) clearTimeout(timerRef.current);
         timerRef.current = setTimeout(() => void load(), 4000);
       }
+      continueRenderWatch(undefined);
     }
-  }, [masterJobId, scheduleIfPending]);
+  }, [masterJobId, scheduleIfPending, continueRenderWatch]);
+
+  useEffect(() => {
+    loadRef.current = load;
+  }, [load]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -180,6 +302,7 @@ export function StemsStudio({ masterJobId }: Props) {
     return () => {
       mountedRef.current = false;
       if (timerRef.current) clearTimeout(timerRef.current);
+      if (renderTimerRef.current) clearTimeout(renderTimerRef.current);
     };
   }, [load]);
 
@@ -190,6 +313,16 @@ export function StemsStudio({ masterJobId }: Props) {
     },
     [load, scheduleIfPending]
   );
+
+  const handleMixChange = useCallback((mix: Record<string, StemMixEntry>) => {
+    setSet((prev) => (prev ? { ...prev, mix } : prev));
+  }, []);
+
+  const handleMixSaveError = useCallback((error: string | null) => {
+    setMixSaveError(error);
+    // A save that succeeds again clears the "not saved" refusal it caused.
+    if (error === null) setRenderError((prev) => (prev === UNSAVED_MIX_MESSAGE ? null : prev));
+  }, []);
 
   const startRename = useCallback((id: string, current: string) => {
     setRenaming(id);
@@ -312,6 +445,86 @@ export function StemsStudio({ masterJobId }: Props) {
     },
     [masterJobId, handleAdded]
   );
+
+  /**
+   * Queue a render of the saved mix. The body carries nothing — the server
+   * always renders from the stored mix, never anything this page sends — so
+   * the mixer's latest levels must be SAVED first: a fader moved inside the
+   * autosave delay is flushed now, and the POST waits for that PUT (and any
+   * already in flight). A failed save means no render.
+   */
+  const handleRender = useCallback(async () => {
+    setRenderError(null);
+    setRenderBusy(true);
+    const saved = mixerRef.current ? await mixerRef.current.flush() : true;
+    if (!mountedRef.current) return;
+    if (!saved) {
+      setRenderBusy(false);
+      setRenderError(UNSAVED_MIX_MESSAGE);
+      return;
+    }
+    // Captured BEFORE the POST: the poll below ends on the first renderedAt
+    // that differs from this, never on the one already sitting there from a
+    // previous render.
+    const priorRenderedAt = set?.remix?.renderedAt ?? null;
+    try {
+      const res = await adminFetch(`/api/admin/stems/${masterJobId}/remix`, { method: 'POST' });
+      const body = await res.json();
+      if (!res.ok || !body.success) {
+        setRenderBusy(false);
+        setRenderError(body.error || 'Could not start the remix.');
+        return;
+      }
+      renderWatchRef.current = { priorRenderedAt, deadline: Date.now() + RENDER_TIMEOUT_MS };
+      if (renderTimerRef.current) clearTimeout(renderTimerRef.current);
+      renderTimerRef.current = setTimeout(() => void load(), RENDER_POLL_MS);
+    } catch (err) {
+      setRenderBusy(false);
+      setRenderError(err instanceof Error ? err.message : String(err));
+    }
+  }, [masterJobId, set, load]);
+
+  // The remix's play URL, resolved whenever its key changes — including the
+  // very first load, when a remix rendered earlier already has one. Never
+  // gated on `renderBusy`: an older remix stays playable while a new one renders.
+  const remixKey = set?.remix?.key ?? null;
+  useEffect(() => {
+    // Unconditional: a NEW key's own URL has not been fetched yet, so the
+    // old remix's URL must not linger under it — playing the old mix while
+    // "Remix ready" already shows the new one's notes would be silently wrong.
+    setRemixPlayUrl(null);
+    setRemixPlayError(null);
+    if (!remixKey) return;
+    let active = true;
+    void (async () => {
+      try {
+        const res = await adminFetch(`/api/admin/mastering/download?key=${encodeURIComponent(remixKey)}&mode=play`);
+        const body = await res.json();
+        if (!active) return;
+        if (res.ok && body.success) setRemixPlayUrl(body.url);
+        // "Remix ready", its notes and the Master-this-remix link all stay —
+        // only playback is down, and only until a retry (a reload, or a
+        // fresh render replacing this key).
+        else setRemixPlayError("The remix couldn't be loaded for playback — reload to try again.");
+      } catch {
+        if (active) setRemixPlayError("The remix couldn't be loaded for playback — reload to try again.");
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [remixKey]);
+
+  // "Master this remix" — the SAME target id MasteringStudio's own
+  // `targetIdOf` would derive from this master's target/normalizationMode
+  // (shared via `targetIdFor`, so the two can never disagree): 'karaoke' for
+  // a peak master, otherwise the plain target number.
+  const remixMasterHref =
+    remixKey && master
+      ? `/admin/mastering?source=${encodeURIComponent(remixKey)}&title=${encodeURIComponent(
+          `${master.title || 'Untitled'} — remix`
+        )}&target=${encodeURIComponent(targetIdFor(master))}`
+      : null;
 
   const majorityRate = set ? majoritySampleRate(set) : null;
   const longest = set ? longestDuration(set) : null;
@@ -495,6 +708,73 @@ export function StemsStudio({ masterJobId }: Props) {
           </ul>
         )}
       </section>
+
+      {set && set.order.length > 0 && (
+        <StemMixer
+          ref={mixerRef}
+          set={set}
+          masterJobId={masterJobId}
+          onMixChange={handleMixChange}
+          onSaveErrorChange={handleMixSaveError}
+        />
+      )}
+
+      {set && set.order.length > 0 && (
+        <section
+          aria-label="Remix"
+          className="space-y-3 rounded-lg border border-gray-200 p-4 dark:border-gray-800"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Remix</h2>
+            {mixSaveError && !renderBusy && (
+              <span className="text-xs text-amber-600 dark:text-amber-400">
+                Render is off until the mixer&apos;s levels are saved.
+              </span>
+            )}
+            <button
+              type="button"
+              disabled={renderBusy || mixSaveError !== null}
+              onClick={() => void handleRender()}
+              className="rounded-md border border-orange-300 px-3 py-1.5 text-xs font-medium text-orange-700 hover:bg-orange-50 disabled:opacity-50 dark:border-orange-700 dark:text-orange-300 dark:hover:bg-orange-950/30"
+            >
+              {renderBusy ? 'Rendering…' : 'Render remix'}
+            </button>
+          </div>
+
+          {renderError && (
+            <p role="alert" className="text-xs text-red-600 dark:text-red-400">
+              {renderError}
+            </p>
+          )}
+
+          {set.remix?.key && (
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-gray-800 dark:text-gray-100">Remix ready</p>
+              {set.remix.notes.length > 0 && (
+                <ul className="list-disc space-y-0.5 pl-5 text-xs text-gray-500 dark:text-gray-400">
+                  {set.remix.notes.map((note, i) => (
+                    <li key={i}>{note}</li>
+                  ))}
+                </ul>
+              )}
+              {remixPlayUrl && <audio controls src={remixPlayUrl} className="h-8" />}
+              {remixPlayError && (
+                <p role="alert" className="text-xs text-red-600 dark:text-red-400">
+                  {remixPlayError}
+                </p>
+              )}
+              {remixMasterHref && (
+                <Link
+                  href={remixMasterHref}
+                  className="block text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
+                >
+                  Master this remix
+                </Link>
+              )}
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }

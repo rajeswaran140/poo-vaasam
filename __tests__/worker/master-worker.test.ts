@@ -3532,3 +3532,171 @@ describe('stem listening copy', () => {
     errSpy.mockRestore();
   });
 });
+
+describe('stem remix', () => {
+  const JOB = '0b5e2c1a-1111-4222-8333-444455556666';
+  const k = (id: string) => `audio/mastering/stems/${JOB}/${id}.wav`;
+  const ITEM = {
+    PK: `STEMSET#${JOB}`, SK: 'METADATA', masterJobId: JOB, order: ['v', 'd', 'b'],
+    stems: {
+      v: { key: k('v'), name: 'Vocals', durationSec: 221.9, sampleRate: 48000 },
+      d: { key: k('d'), name: 'Drums', durationSec: 221.9, sampleRate: 48000 },
+      b: { key: k('b'), name: 'Bass', durationSec: 221.6, sampleRate: 44100 },
+    },
+    mix: { v: { gainDb: -2, muted: false }, d: { gainDb: 0, muted: true } },
+    remix: { requestedAt: '2026-10-03T12:00:00.000Z' }, createdAt: 't', updatedAt: 't',
+  };
+  const ddbInputs = () => send.mock.calls.map((c) => (c[0] as { input: Record<string, unknown> }).input);
+
+  beforeEach(() => {
+    spawnSync.mockReset().mockReturnValue({ status: 0, stdout: '', stderr: '' });
+    s3Send.mockReset().mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'Body' in cmd.input ? Promise.resolve({}) : Promise.resolve({ Body: { transformToByteArray: async () => new Uint8Array([1]) } }));
+    send.mockReset().mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'UpdateExpression' in cmd.input ? Promise.resolve({}) : Promise.resolve({ Item: ITEM }));
+  });
+
+  it('reads the set itself, mixes the unmuted stems at their saved levels, and stores a float WAV', async () => {
+    const res = await handler({ stemMix: { masterJobId: JOB } } as never);
+    expect(res).toMatchObject({ ok: true });
+    // Drums are muted: never even downloaded.
+    const gets = s3Send.mock.calls.map((c) => c[0].input.Key).filter(Boolean);
+    expect(gets).toEqual(expect.arrayContaining([k('v'), k('b')]));
+    expect(gets).not.toContain(k('d'));
+    const mix = spawnSync.mock.calls.map((c) => c[1] as string[]).find((a) => a.includes('-filter_complex'))!;
+    const fc = mix[mix.indexOf('-filter_complex') + 1];
+    expect(fc).toContain('volume=-2dB');
+    expect(fc).toContain('aresample=48000');
+    expect(fc).toContain('normalize=0');
+    expect(mix).toEqual(expect.arrayContaining(['-c:a', 'pcm_f32le']));
+    const put = s3Send.mock.calls.map((c) => c[0].input).find((i) => 'Body' in i);
+    expect(put.Key).toMatch(new RegExp(`^audio/mastering/stems/${JOB}/remix/\\d+-remix\\.wav$`));
+    const done = ddbInputs().find((i) => String(i.UpdateExpression).includes('renderedAt'))!;
+    expect(done.ExpressionAttributeValues).toMatchObject({
+      ':notes': ['Bass resampled from 44.1 kHz to 48 kHz', 'Bass padded by 0.3 s to match the longest stem'],
+      ':mixUsed': { v: { gainDb: -2, muted: false }, d: { gainDb: 0, muted: true } },
+    });
+  });
+
+  it('bounds the render at the longest stem plus 0.06 s of headroom, never the bare rounded length', async () => {
+    // No probe header here (spawnSync answers empty), so the record's 221.9 is the longest.
+    await handler({ stemMix: { masterJobId: JOB } } as never);
+    const mix = spawnSync.mock.calls.map((c) => c[1] as string[]).find((a) => a.includes('-filter_complex'))!;
+    expect(mix[mix.indexOf('-t') + 1]).toBe('221.96');
+    // The notes still measure padding against the unbounded longest stem.
+    const done = ddbInputs().find((i) => String(i.UpdateExpression).includes('renderedAt'))!;
+    expect(done.ExpressionAttributeValues![':notes']).toContain('Bass padded by 0.3 s to match the longest stem');
+  });
+
+  it('logs the tail of ffmpeg\'s stderr when the remix render fails', async () => {
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    spawnSync.mockImplementation((_c: unknown, args: string[]) =>
+      args.includes('-filter_complex')
+        ? { status: 1, stdout: '', stderr: `${'x'.repeat(1000)}Invalid filter graph` }
+        : { status: 0, stdout: '', stderr: '' });
+    const res = await handler({ stemMix: { masterJobId: JOB } } as never);
+    expect(res).toMatchObject({ ok: false });
+    const logged = errSpy.mock.calls.find((c) => String(c[0]).includes('stem remix render failed'));
+    expect(logged).toBeDefined();
+    expect(String(logged![1])).toHaveLength(400);
+    expect(String(logged![1])).toMatch(/Invalid filter graph$/);
+    errSpy.mockRestore();
+  });
+
+  it('logs, rather than silently returns, when the stem set is missing', async () => {
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    send.mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'UpdateExpression' in cmd.input ? Promise.resolve({}) : Promise.resolve({}));
+    const res = await handler({ stemMix: { masterJobId: JOB } } as never);
+    expect(res).toMatchObject({ ok: false });
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('no stem set'), JOB);
+    errSpy.mockRestore();
+  });
+
+  it('records the planner\'s refusal on the set when every stem is muted', async () => {
+    send.mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'UpdateExpression' in cmd.input ? Promise.resolve({}) : Promise.resolve({ Item: { ...ITEM, mix: { v: { gainDb: 0, muted: true }, d: { gainDb: 0, muted: true }, b: { gainDb: 0, muted: true } } } }));
+    const res = await handler({ stemMix: { masterJobId: JOB } } as never);
+    expect(res).toMatchObject({ ok: false });
+    const err = ddbInputs().find((i) => String(i.UpdateExpression).includes('#error'))!;
+    expect(String(err.ExpressionAttributeValues![':err'])).toMatch(/Every stem is muted/);
+    expect(s3Send).not.toHaveBeenCalled();
+  });
+
+  it('refuses a stem key that is not in this master\'s folder, before downloading anything', async () => {
+    send.mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'UpdateExpression' in cmd.input ? Promise.resolve({}) : Promise.resolve({ Item: { ...ITEM, stems: { ...ITEM.stems, v: { ...ITEM.stems.v, key: 'audio/poem-music/x.wav' } } } }));
+    const res = await handler({ stemMix: { masterJobId: JOB } } as never);
+    expect(res).toMatchObject({ ok: false });
+    expect(s3Send).not.toHaveBeenCalled();
+  });
+
+  // The FILE is the authority for length and rate, never the stored record —
+  // a stem whose listening copy failed can have durationSec/sampleRate
+  // recorded as null even though the WAV itself is fine.
+  it('bounds the render by a PROBED duration when the record\'s is null but the file is longer', async () => {
+    const headerFor = (durationSec: string) => `Input #0, wav, from '/tmp':
+  Duration: ${durationSec}, bitrate: 1536 kb/s
+  Stream #0:0: Audio: pcm_s24le, 48000 Hz, stereo, s32 (24 bit), 1536 kb/s
+`;
+    // Probed in download order: v first (221.9s, matching its record), then
+    // b (300.5s — far longer than anything on the record, whose b.durationSec
+    // is null here).
+    const headers = [headerFor('00:03:41.90'), headerFor('00:05:00.50')];
+    let probeCall = 0;
+    spawnSync.mockReset().mockImplementation((_c: unknown, args: string[]) => {
+      if (args.length === 3 && args[1] === '-i') {
+        return { status: 0, stdout: '', stderr: headers[probeCall++] ?? headers[headers.length - 1] };
+      }
+      return { status: 0, stdout: '', stderr: '' };
+    });
+    send.mockReset().mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'UpdateExpression' in cmd.input
+        ? Promise.resolve({})
+        : Promise.resolve({ Item: { ...ITEM, stems: { ...ITEM.stems, b: { ...ITEM.stems.b, durationSec: null, sampleRate: 48000 } } } }));
+    const res = await handler({ stemMix: { masterJobId: JOB } } as never);
+    expect(res).toMatchObject({ ok: true });
+    const mix = spawnSync.mock.calls.map((c) => c[1] as string[]).find((a) => a.includes('-filter_complex'))!;
+    // The probed 300.5 plus the 0.06 s headroom (remixBoundSec): the probe
+    // rounds to 0.1 s, so a bare 300.5 could cut up to 0.055 s of the tail.
+    expect(mix).toEqual(expect.arrayContaining(['-t', '300.56']));
+    // The plan alone (from the record: v=221.9, b=null → longestSec 221.9)
+    // would produce no pad note at all. Only the probed 300.5 bound explains
+    // this one — proof the notes were rebuilt from probed values, not reused
+    // from the planner's.
+    const done = ddbInputs().find((i) => String(i.UpdateExpression).includes('renderedAt'))!;
+    expect(done.ExpressionAttributeValues![':notes']).toEqual(['Vocals padded by 78.6 s to match the longest stem']);
+  });
+
+  it('resamples a stem whose PROBED rate is 44100 even though the record says the rate is null', async () => {
+    const headerAt = (hz: number) => `Input #0, wav, from '/tmp':
+  Duration: 00:03:41.60, bitrate: 1536 kb/s
+  Stream #0:0: Audio: pcm_s24le, ${hz} Hz, stereo, s32 (24 bit), 1536 kb/s
+`;
+    // v probes at 48000 (no resample), b probes at 44100 (the record's rate
+    // for b is null here, so only the probe can know it needs resampling).
+    const headers = [headerAt(48000), headerAt(44100)];
+    let probeCall = 0;
+    spawnSync.mockReset().mockImplementation((_c: unknown, args: string[]) => {
+      if (args.length === 3 && args[1] === '-i') {
+        return { status: 0, stdout: '', stderr: headers[probeCall++] ?? headers[headers.length - 1] };
+      }
+      return { status: 0, stdout: '', stderr: '' };
+    });
+    send.mockReset().mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'UpdateExpression' in cmd.input
+        ? Promise.resolve({})
+        : Promise.resolve({ Item: { ...ITEM, stems: { ...ITEM.stems, b: { ...ITEM.stems.b, sampleRate: null } } } }));
+    const res = await handler({ stemMix: { masterJobId: JOB } } as never);
+    expect(res).toMatchObject({ ok: true });
+    const mix = spawnSync.mock.calls.map((c) => c[1] as string[]).find((a) => a.includes('-filter_complex'))!;
+    const fc = mix[mix.indexOf('-filter_complex') + 1];
+    expect(fc).toContain('aresample=48000');
+    // The plan alone (from the record: v=221.9, b=221.6, b.sampleRate=null)
+    // would produce only a pad note. Both stems probe at the SAME 221.6s
+    // here, so the pad note is gone and only the resample note — which only
+    // the probe could know about — remains.
+    const done = ddbInputs().find((i) => String(i.UpdateExpression).includes('renderedAt'))!;
+    expect(done.ExpressionAttributeValues![':notes']).toEqual(['Bass resampled from 44.1 kHz to 48 kHz']);
+  });
+});

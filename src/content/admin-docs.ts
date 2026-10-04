@@ -1612,7 +1612,7 @@ If karaoke becomes a regular product, the right fix is a "keep current loudness"
     slug: 'stems',
     title: 'Stems — store and hear a song\'s parts',
     category: 'Music Lab',
-    updatedAt: '2026-10-03T17:58:55Z',
+    updatedAt: '2026-10-03T23:45:00Z',
     body: `# Stems — store and hear a song's parts
 
 Stems are the individual parts of a song — drums, bass, vocals, strings, and others. TamilAgaval Music provides stems when a song is generated. This page shows how to upload them, listen to each part, rename or remove them, and understand the technical notes the page shows.
@@ -1652,9 +1652,42 @@ These are not errors — they are handled automatically. A stem at any length or
 
 ## ⚠️ Stems from TamilAgaval Music are resynthesised approximations
 
-**A mix of the stems is a new version — it will not sound exactly like the original release.** Stems are regenerated approximations of each part, not extractions from the master. Adding them together does not reproduce the released song, because they come from a different source. Remix and mastery will come in the next update.
+**A mix of the stems is a new version — it will not sound exactly like the original release.** Stems are regenerated approximations of each part, not extractions from the master. Adding them together does not reproduce the released song, because they come from a different source.
 
 Measured 2026-09-19, the 11 stems summed show only 5.7 dB of cancellation against the original pre-master — far less than a true decomposition (which would show 30+ dB). So any mix of them is a new arrangement.
+
+## The Mixer
+
+Below the stem list, the **Mixer** lets you hear your own balance of the parts before rendering anything.
+
+Each stem with a listening copy gets a **fader**, running from **−∞ to +6 dB**. Drag it to change that stem's level; **−∞** (the bottom of the fader) plays as silence and renders as a muted stem. A stem still waiting on its listening copy has no fader yet — it shows as "waiting for its listening copy" until one is ready — but it already has its **Mute** button, so you can leave it out of a render without waiting.
+
+- **Mute** turns a stem off. It's a real edit — it's saved, and it's what renders.
+- **Solo** is for listening only. Soloing one or more stems while you decide is never saved, and never sent to the server — it resets the moment you leave the page.
+- **Reset** returns every fader to 0 dB, clears every mute, and clears any solo.
+
+Every fader move, mute and Reset **autosaves** — a moment after you stop adjusting, the mix is written to the stem set, with no separate save step.
+
+The player above the faders lets you hear the current mix live, through the browser, against the listening copies — not the full-quality WAVs.
+
+A mix of the stems is a new version — it will not sound exactly like the original release.
+
+## Render remix
+
+Click **Render remix** to render your saved mix into a single full-quality file, from the full-quality stem WAVs at the levels you set — not from the listening copies. This runs in the background; the button reads **"Rendering…"** while it's in progress. Reloading the page mid-render is safe: it picks the render back up and keeps showing **"Rendering…"** until it finishes.
+
+The render always uses the **saved** mix, so Render first saves any fader you have only just moved and waits for that save to finish. If a save fails, nothing is rendered: the Remix section says your latest levels weren't saved, and Render stays off until a save goes through (move the fader again to retry).
+
+Once it finishes, **Remix ready** appears with a player for the result. Below it, any **notes** list what the render had to do to combine stems that didn't already match:
+
+- any stem not already at 48 kHz, resampled to 48 kHz (so an all-44.1 kHz set notes every stem, not just the odd one out);
+- a stem shorter than the others, padded with silence to match the longest one.
+
+These are the same situations the Technical notes above call out per stem — the render handles them the same way, automatically.
+
+## Master this remix
+
+Once a remix is ready, click **Master this remix** to open it in **Sound Engineering** as the source file, ready to bring to loudness like any other take.
 `,
   },
   {

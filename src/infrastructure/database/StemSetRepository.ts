@@ -11,54 +11,11 @@
  * `updatedAt`, which the YouTube upload guard reads.
  */
 import { DynamoDBOperations, handleDynamoDBError } from './dynamodb-client';
-import type { StemSet, StemEntry, StemMixEntry, StemRemix } from '@/types/stemSet';
+import type { StemSet, StemEntry, StemMixEntry } from '@/types/stemSet';
 import { stemIdFromKey, guessStemName } from '@/lib/stems';
+import { stemSetFromItem } from '@/lib/stemSetHydrate';
 
 const keyFor = (masterJobId: string) => ({ PK: `STEMSET#${masterJobId}`, SK: 'METADATA' });
-
-function num(v: unknown): number | null {
-  return typeof v === 'number' && Number.isFinite(v) ? v : null;
-}
-
-export function stemSetFromItem(i: Record<string, unknown>): StemSet {
-  const rawStems = (i.stems ?? {}) as Record<string, Record<string, unknown>>;
-  const stems: Record<string, StemEntry> = {};
-  for (const [id, s] of Object.entries(rawStems)) {
-    if (!s || typeof s.key !== 'string') continue;
-    stems[id] = {
-      key: s.key,
-      name: typeof s.name === 'string' ? s.name : 'Stem',
-      previewKey: typeof s.previewKey === 'string' ? s.previewKey : null,
-      previewError: typeof s.previewError === 'string' ? s.previewError : null,
-      previewRequestedAt: typeof s.previewRequestedAt === 'string' ? s.previewRequestedAt : null,
-      durationSec: num(s.durationSec),
-      sampleRate: num(s.sampleRate),
-      channels: num(s.channels),
-    };
-  }
-  const order = (Array.isArray(i.order) ? i.order : []).filter((id): id is string => typeof id === 'string' && id in stems);
-  const mix: Record<string, StemMixEntry> = {};
-  for (const [id, m] of Object.entries((i.mix ?? {}) as Record<string, Record<string, unknown>>)) {
-    if (id in stems && m && typeof m.gainDb === 'number') mix[id] = { gainDb: m.gainDb, muted: m.muted === true };
-  }
-  const r = i.remix as Record<string, unknown> | null | undefined;
-  const remix: StemRemix | null = r
-    ? {
-        key: typeof r.key === 'string' ? r.key : null,
-        renderedAt: typeof r.renderedAt === 'string' ? r.renderedAt : null,
-        mixUsed: (r.mixUsed as StemRemix['mixUsed']) ?? null,
-        notes: Array.isArray(r.notes) ? (r.notes as unknown[]).filter((n): n is string => typeof n === 'string') : [],
-        error: typeof r.error === 'string' ? r.error : null,
-        requestedAt: typeof r.requestedAt === 'string' ? r.requestedAt : null,
-      }
-    : null;
-  return {
-    masterJobId: String(i.masterJobId ?? ''),
-    order, stems, mix, remix,
-    createdAt: String(i.createdAt ?? ''),
-    updatedAt: String(i.updatedAt ?? ''),
-  };
-}
 
 export class StemSetRepository {
   async get(masterJobId: string): Promise<StemSet | null> {
@@ -225,6 +182,73 @@ export class StemSetRepository {
           }
         }
       }
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  /**
+   * Replace the whole `#mix` map. The route has already filtered the
+   * incoming entries down to ids still in `order` — this just writes
+   * whatever it's handed. Touches this set's own `updatedAt`, never the
+   * master's (see the module doc).
+   */
+  async saveMix(masterJobId: string, mix: Record<string, StemMixEntry>): Promise<void> {
+    try {
+      await DynamoDBOperations.update({
+        key: keyFor(masterJobId),
+        updateExpression: 'SET #mix = :mix, #updatedAt = :now',
+        expressionAttributeNames: { '#mix': 'mix', '#updatedAt': 'updatedAt' },
+        expressionAttributeValues: { ':mix': mix, ':now': new Date().toISOString() },
+      });
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  /**
+   * Stamp a remix request, clearing any old error — same two-step reasoning
+   * as `addStem`: a nested map field cannot be SET in the same expression
+   * that might be creating the map with `if_not_exists`, so `#remix` is
+   * created blank first (if absent) and then patched.
+   */
+  async markRemixRequested(masterJobId: string): Promise<void> {
+    try {
+      const now = new Date().toISOString();
+      await DynamoDBOperations.update({
+        key: keyFor(masterJobId),
+        updateExpression: 'SET #remix = if_not_exists(#remix, :blank)',
+        expressionAttributeNames: { '#remix': 'remix' },
+        expressionAttributeValues: {
+          ':blank': { key: null, renderedAt: null, mixUsed: null, notes: [], error: null, requestedAt: null },
+        },
+      });
+      await DynamoDBOperations.update({
+        key: keyFor(masterJobId),
+        updateExpression: 'SET #remix.#requestedAt = :now, #remix.#error = :null',
+        expressionAttributeNames: { '#remix': 'remix', '#requestedAt': 'requestedAt', '#error': 'error' },
+        expressionAttributeValues: { ':now': now, ':null': null },
+      });
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  /**
+   * Record (or clear, with `null`) a remix render's error — written from the
+   * route when the worker invoke itself throws, the same durable-signal
+   * reasoning as `setPreviewError`. Unconditional: by the time this is
+   * called, `markRemixRequested` has already run and created `#remix`, so
+   * the nested path is guaranteed to exist.
+   */
+  async setRemixError(masterJobId: string, message: string | null): Promise<void> {
+    try {
+      await DynamoDBOperations.update({
+        key: keyFor(masterJobId),
+        updateExpression: 'SET #remix.#error = :err',
+        expressionAttributeNames: { '#remix': 'remix', '#error': 'error' },
+        expressionAttributeValues: { ':err': message },
+      });
     } catch (error) {
       handleDynamoDBError(error);
     }

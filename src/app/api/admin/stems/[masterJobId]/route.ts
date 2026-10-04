@@ -47,7 +47,15 @@ export async function GET(
     return NextResponse.json({
       success: true,
       set,
-      master: { id: job.id, title: job.title ?? null, target: job.target },
+      master: {
+        id: job.id,
+        title: job.title ?? null,
+        target: job.target,
+        // So the stems page can link a remix's "Master this remix" to the
+        // SAME target id MasteringStudio's own targetIdOf would pick —
+        // 'karaoke' for a peak master, never derivable from `target` alone.
+        normalizationMode: job.normalizationMode ?? null,
+      },
     });
   } catch (err) {
     console.error('[api/admin/stems] read failed:', err instanceof Error ? err.message : String(err));

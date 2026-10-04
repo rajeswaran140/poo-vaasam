@@ -212,3 +212,49 @@ describe('renaming and removing', () => {
     expect(mockUpdate.mock.calls).toHaveLength(3);
   });
 });
+
+describe('saving a mix', () => {
+  it('replaces the whole mix map, without touching the master', async () => {
+    await repo.saveMix(JOB, { [ID]: { gainDb: -3, muted: false } });
+    const call = mockUpdate.mock.calls[0][0];
+    expect(call.updateExpression).toBe('SET #mix = :mix, #updatedAt = :now');
+    expect(call.expressionAttributeValues[':mix']).toEqual({ [ID]: { gainDb: -3, muted: false } });
+    expect(mockUpdate.mock.calls.some((c) => c[0].key.PK.startsWith('MASTERJOB#'))).toBe(false);
+  });
+});
+
+describe('requesting a remix', () => {
+  it('marks a remix as requested, clearing any old error', async () => {
+    await repo.markRemixRequested(JOB);
+    const call = mockUpdate.mock.calls[0][0];
+    expect(call.updateExpression).toMatch(/#remix = if_not_exists\(#remix, :blank\)/);
+  });
+
+  it('creates a blank #remix before patching it, then stamps requestedAt and clears error', async () => {
+    await repo.markRemixRequested(JOB);
+    expect(mockUpdate.mock.calls).toHaveLength(2);
+    const [create, patch] = mockUpdate.mock.calls.map((c) => c[0]);
+    expect(create.expressionAttributeValues[':blank']).toEqual({
+      key: null, renderedAt: null, mixUsed: null, notes: [], error: null, requestedAt: null,
+    });
+    expect(patch.updateExpression).toBe('SET #remix.#requestedAt = :now, #remix.#error = :null');
+    expect(patch.expressionAttributeValues[':null']).toBeNull();
+    expect(typeof patch.expressionAttributeValues[':now']).toBe('string');
+  });
+});
+
+describe('recording a remix error', () => {
+  it('writes the message onto #remix.#error', async () => {
+    await repo.setRemixError(JOB, 'The remix could not be started — press Render remix again.');
+    const call = mockUpdate.mock.calls[0][0];
+    expect(call.key).toEqual({ PK: `STEMSET#${JOB}`, SK: 'METADATA' });
+    expect(call.updateExpression).toBe('SET #remix.#error = :err');
+    expect(call.expressionAttributeValues[':err']).toBe('The remix could not be started — press Render remix again.');
+  });
+
+  it('clears the error with null, the same way it was set', async () => {
+    await repo.setRemixError(JOB, null);
+    const call = mockUpdate.mock.calls[0][0];
+    expect(call.expressionAttributeValues[':err']).toBeNull();
+  });
+});

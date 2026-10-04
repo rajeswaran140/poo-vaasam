@@ -55,9 +55,10 @@ jest.mock('@/components/admin/MasteringComparePlayer', () => ({
   ),
 }));
 
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { MasteringStudio, buildJoinPayload, parseTagList, parseHashtags } from '@/components/admin/MasteringStudio';
 import { adminFetch } from '@/lib/client-auth';
+import { downloadFilename } from '@/lib/mastering-storage';
 
 const mockedFetch = adminFetch as jest.Mock;
 const json = (body: unknown, ok = true, status = 200) =>
@@ -188,6 +189,11 @@ beforeEach(() => {
   // first call it makes.
   mockedFetch.mockReset();
   sessionStorage.clear();
+  // A test that opens the page via `?source=…` (see "opening a source from a
+  // link" below) leaves that on the URL otherwise — jsdom's location persists
+  // across tests in the same file, so every later `render` would re-run that
+  // mount effect against a stale query string.
+  window.history.pushState({}, '', '/');
   (global as unknown as { XMLHttpRequest: unknown }).XMLHttpRequest = FakeXHR;
   window.open = jest.fn();
 });
@@ -2968,5 +2974,118 @@ describe('the page names the source as TamilAgaval Music', () => {
     });
 
     expect(await screen.findByText(/Export the lossless WAV from TamilAgaval Music/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * "Master this remix" (Stems Task 13) opens a source by URL rather than an
+ * upload or the library — a remix rendered on the Stems page, handed to
+ * Sound Engineering to master. Same mount-time path serves any future link
+ * shaped the same way.
+ */
+describe('opening a source from a link (e.g. "Master this remix")', () => {
+  const REMIX_KEY = 'audio/mastering/stems/job-1/remix/1696000000000-remix.wav';
+
+  it('loads a valid remix key as the source, selects the given target, and the title survives through to mastering', async () => {
+    window.history.pushState(
+      {},
+      '',
+      `/admin/mastering?source=${encodeURIComponent(REMIX_KEY)}&title=${encodeURIComponent('பாடல் — remix')}&target=-16`
+    );
+    primeHappyPath(doneJob({ target: -16, afterLufs: -16 }));
+    render(<MasteringStudio />);
+
+    expect(await screen.findByText(downloadFilename(REMIX_KEY))).toBeInTheDocument();
+    expect(screen.queryByText(/Drop a WAV here/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /-16 LUFS/ })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: /-14 LUFS/ })).toHaveAttribute('aria-checked', 'false');
+
+    mockedFetch.mockResolvedValueOnce(json({ success: true, jobId: 'job-9', status: 'queued' }));
+    mockedFetch.mockResolvedValue(json(doneJob({ id: 'job-9', target: -16, afterLufs: -16 })));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -16/ })); });
+    await screen.findByText(/3 · Result/);
+
+    // "the name field is pre-filled with the title": only on screen once a
+    // job exists, same as every other re-opened-master test in this file.
+    expect((screen.getByLabelText(/Name this master/i) as HTMLInputElement).value).toBe('பாடல் — remix');
+
+    const enqueue = mockedFetch.mock.calls.find(
+      (c) => c[0] === '/api/admin/music-lab/master' && c[1]?.method === 'POST'
+    )!;
+    expect(JSON.parse(enqueue[1].body).s3Key).toBe(REMIX_KEY);
+    expect(JSON.parse(enqueue[1].body).target).toBe(-16);
+  });
+
+  it("refuses a mastering OUTPUT as the source, with a note in the source section — the dropzone still shows", async () => {
+    const masterOutputKey = 'audio/mastering/1_a_song-master-14LUFS.wav';
+    window.history.pushState({}, '', `/admin/mastering?source=${encodeURIComponent(masterOutputKey)}`);
+    primeHappyPath();
+    render(<MasteringStudio />);
+
+    const sourceSection = screen.getByText(/1 · Source WAV from TamilAgaval Music/).closest('section')!;
+    expect(await within(sourceSection).findByRole('status')).toHaveTextContent(
+      "That link's source can't be mastered — choose a file instead."
+    );
+    expect(within(sourceSection).getByText(/Drop a WAV here/i)).toBeInTheDocument();
+    expect(mockedFetch).not.toHaveBeenCalled();
+  });
+
+  it('refuses a source outside the mastering workspace, with the same note', async () => {
+    const outsideKey = 'images/covers/cover.jpg';
+    window.history.pushState({}, '', `/admin/mastering?source=${encodeURIComponent(outsideKey)}`);
+    primeHappyPath();
+    render(<MasteringStudio />);
+
+    const sourceSection = screen.getByText(/1 · Source WAV from TamilAgaval Music/).closest('section')!;
+    expect(await within(sourceSection).findByRole('status')).toHaveTextContent(
+      "That link's source can't be mastered — choose a file instead."
+    );
+  });
+
+  it('clears the refused-link note once a valid file is picked afterward', async () => {
+    const masterOutputKey = 'audio/mastering/1_a_song-master-14LUFS.wav';
+    window.history.pushState({}, '', `/admin/mastering?source=${encodeURIComponent(masterOutputKey)}`);
+    primeHappyPath();
+    render(<MasteringStudio />);
+
+    const sourceSection = screen.getByText(/1 · Source WAV from TamilAgaval Music/).closest('section')!;
+    expect(await within(sourceSection).findByRole('status')).toHaveTextContent(
+      "That link's source can't be mastered — choose a file instead."
+    );
+
+    await uploadA();
+
+    await waitFor(() => expect(within(sourceSection).queryByRole('status')).toBeNull());
+  });
+
+  it('says so when a job already in progress was reopened instead of the link', async () => {
+    sessionStorage.setItem('mastering-studio-job', JSON.stringify({
+      jobId: 'job-1', sourceKey: 'audio/mastering/1_a_song.wav',
+      name: 'song.wav', size: 1024, target: -14, targetId: '-14',
+    }));
+    window.history.pushState({}, '', `/admin/mastering?source=${encodeURIComponent(REMIX_KEY)}&title=x&target=-16`);
+    primeHappyPath(doneJob());
+    render(<MasteringStudio />);
+
+    const sourceSection = screen.getByText(/1 · Source WAV from TamilAgaval Music/).closest('section')!;
+    expect(await within(sourceSection).findByRole('status')).toHaveTextContent(
+      'A job already in progress was reopened instead of the link — finish or clear it, then follow the link again.'
+    );
+    // The recovered job, not the link's source, is what's on screen.
+    expect(screen.queryByText(downloadFilename(REMIX_KEY))).not.toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /-14 LUFS/ })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('refuses a karaoke bed as the source, with the same note', async () => {
+    const karaokeKey = 'audio/mastering/1_a_song-karaoke-1dBTP.wav';
+    window.history.pushState({}, '', `/admin/mastering?source=${encodeURIComponent(karaokeKey)}`);
+    primeHappyPath();
+    render(<MasteringStudio />);
+
+    const sourceSection = screen.getByText(/1 · Source WAV from TamilAgaval Music/).closest('section')!;
+    expect(await within(sourceSection).findByRole('status')).toHaveTextContent(
+      "That link's source can't be mastered — choose a file instead."
+    );
+    expect(within(sourceSection).getByText(/Drop a WAV here/i)).toBeInTheDocument();
   });
 });
