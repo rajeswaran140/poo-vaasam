@@ -1,5 +1,6 @@
 import type { MetadataRoute } from 'next';
 import { SITE_URL } from '@/lib/seo';
+import { AI_TRAINING_CRAWLERS } from '@/lib/scraper-block';
 
 // Non-public areas kept out of every crawler.
 const DISALLOWED_PATHS = ['/admin', '/api/', '/login', '/debug', '/debug-auth', '/ai-search'];
@@ -8,23 +9,8 @@ const DISALLOWED_PATHS = ['/admin', '/api/', '/login', '/debug', '/debug-auth', 
 // and songs out of training corpora. Deliberately does NOT include the AI
 // *answer* engines (PerplexityBot, OAI-SearchBot, ChatGPT-User), which cite and
 // drive referral traffic, nor the search crawlers (Googlebot, Bingbot) — so
-// discovery and SEO are entirely unaffected.
-const AI_TRAINING_CRAWLERS = [
-  'GPTBot',
-  'Google-Extended',
-  'Applebot-Extended',
-  'CCBot',
-  'ClaudeBot',
-  'anthropic-ai',
-  'Claude-Web',
-  'cohere-ai',
-  'Bytespider',
-  'meta-externalagent',
-  'FacebookBot',
-  'Amazonbot',
-  'Diffbot',
-  'PetalBot',
-];
+// discovery and SEO are entirely unaffected. The list lives in scraper-block so
+// the middleware's 403 enforces exactly what this file asks.
 
 export default function robots(): MetadataRoute.Robots {
   return {
