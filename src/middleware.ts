@@ -5,10 +5,13 @@
  *    indexable host (fixes duplicate-host issues in Search Console).
  * 2. Protects admin routes with an authentication check.
  * 3. Forces browser revalidation of content list pages (see below).
+ * 4. Refuses known scrapers and AI-training crawlers with a 403 (see
+ *    src/lib/scraper-block.ts for what is and is NOT blocked).
  */
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { isBlockedScraper } from '@/lib/scraper-block';
 
 // Content list pages are regenerated each deploy. Next's ISR Cache-Control ships
 // a ~1-year `stale-while-revalidate`, so a RETURNING visitor is served their
@@ -36,6 +39,16 @@ export function middleware(request: NextRequest) {
   }
 
   const { pathname } = request.nextUrl;
+
+  // 4. Refuse self-identified scrapers. robots.txt stays readable so a blocked
+  // crawler can still see the rule it is breaking. `no-store` keeps CloudFront
+  // from caching the 403 and serving it to a real listener on the same URL.
+  if (pathname !== '/robots.txt' && isBlockedScraper(request.headers?.get('user-agent'))) {
+    return new NextResponse('Automated access is not permitted.', {
+      status: 403,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'private, no-store' },
+    });
+  }
 
   // 2. Only protect /admin routes (login is at /login, not /admin/login)
   if (pathname.startsWith('/admin')) {
