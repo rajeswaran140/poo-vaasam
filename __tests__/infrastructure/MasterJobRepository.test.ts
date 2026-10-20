@@ -100,3 +100,24 @@ describe('hydrate', () => {
     expect((await read({ normalizationMode: 'peak', peakGainDb: -1.8 })).peakGainDb).toBe(-1.8);
   });
 });
+
+describe('lineage', () => {
+  const lastPut = () => mockPut.mock.calls[mockPut.mock.calls.length - 1][0] as Record<string, unknown>;
+  beforeEach(() => { mockPut.mockReset().mockResolvedValue({}); mockGet.mockReset(); });
+
+  it('stores derivedFrom only when given, so ordinary jobs are unchanged', async () => {
+    await repo.create('j1', { s3Key: 'audio/mastering/a.wav', target: -14 });
+    expect(lastPut()).not.toHaveProperty('derivedFrom');
+    await repo.create('j2', { s3Key: 'audio/mastering/a.wav', target: -14, derivedFrom: { jobId: 'p1', via: 're-master' } });
+    expect(lastPut().derivedFrom).toEqual({ jobId: 'p1', via: 're-master' });
+  });
+
+  it('hydrates derivedFrom, null on an old row', async () => {
+    mockGet.mockResolvedValueOnce({ id: 'j1', status: 'done', s3Key: 'audio/mastering/a.wav', target: -14 });
+    expect((await repo.get('j1'))!.derivedFrom).toBeNull();
+    mockGet.mockResolvedValueOnce({
+      id: 'j2', status: 'done', s3Key: 'audio/mastering/a.wav', target: -14, derivedFrom: { jobId: 'p1', via: 'stem-remix' },
+    });
+    expect((await repo.get('j2'))!.derivedFrom).toEqual({ jobId: 'p1', via: 'stem-remix' });
+  });
+});

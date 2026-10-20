@@ -7,7 +7,8 @@
 
 import { DynamoDBOperations, handleDynamoDBError } from './dynamodb-client';
 import type { NormalizationMode } from '@/lib/master-peak';
-import type { MasterJob } from '@/types/masterJob';
+import type { MasterJob, MasterLineage } from '@/types/masterJob';
+import { parseDerivedFrom } from '@/lib/master-lineage';
 import { parseMasterEdit, isNoOpEdit, type MasterEdit } from '@/lib/master-edit';
 import { parseMasterJoin, type MasterJoin } from '@/lib/master-join';
 
@@ -79,6 +80,8 @@ export class MasterJobRepository {
       matchingMethod?: MasterJob['matchingMethod'];
       /** Absent → 'loudness', which is what every pre-existing caller means. */
       normalizationMode?: NormalizationMode;
+      /** Verified by the master route before it gets here. Absent → no lineage (every pre-2026-10-20 caller). */
+      derivedFrom?: MasterLineage;
     }
   ): Promise<MasterJob> {
     try {
@@ -157,8 +160,10 @@ export class MasterJobRepository {
         Type: 'MASTERJOB',
         ttl: Math.floor(Date.now() / 1000) + TTL_SECONDS,
         ...job,
+        // Only when given: an ordinary job's item stays exactly as before.
+        ...(input.derivedFrom ? { derivedFrom: input.derivedFrom } : {}),
       });
-      return job;
+      return input.derivedFrom ? { ...job, derivedFrom: input.derivedFrom } : job;
     } catch (error) {
       handleDynamoDBError(error);
     }
@@ -319,6 +324,7 @@ export class MasterJobRepository {
       uploadedToYoutubeAt:
         typeof item.uploadedToYoutubeAt === 'string' ? item.uploadedToYoutubeAt : null,
       uploadError: typeof item.uploadError === 'string' ? item.uploadError : null,
+      derivedFrom: parseDerivedFrom(item.derivedFrom),
     };
   }
 
