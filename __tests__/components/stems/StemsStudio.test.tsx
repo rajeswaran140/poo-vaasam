@@ -343,7 +343,7 @@ describe('rendering a remix', () => {
       expect(String(playCall[0])).toContain('mode=play');
 
       const link = within(region).getByRole('link', { name: /Master this remix/ });
-      const expectedHref = `/admin/mastering?source=${encodeURIComponent(REMIX_KEY)}&title=${encodeURIComponent('பாடல் — remix')}&target=-14`;
+      const expectedHref = `/admin/mastering?source=${encodeURIComponent(REMIX_KEY)}&title=${encodeURIComponent('பாடல் — remix')}&target=-14&parent=${encodeURIComponent(JOB)}`;
       expect(link).toHaveAttribute('href', expectedHref);
     } finally {
       jest.useRealTimers();
@@ -361,7 +361,7 @@ describe('rendering a remix', () => {
     await waitFor(() => expect(container.querySelector('audio')).toHaveAttribute('src', 'https://s3/p'));
 
     const link = within(region).getByRole('link', { name: /Master this remix/ });
-    const expectedHref = `/admin/mastering?source=${encodeURIComponent(REMIX_KEY)}&title=${encodeURIComponent('பாடல் — remix')}&target=-14`;
+    const expectedHref = `/admin/mastering?source=${encodeURIComponent(REMIX_KEY)}&title=${encodeURIComponent('பாடல் — remix')}&target=-14&parent=${encodeURIComponent(JOB)}`;
     expect(link).toHaveAttribute('href', expectedHref);
 
     // Nothing was clicked: no POST to /remix, and the button is in its plain,
@@ -377,7 +377,7 @@ describe('rendering a remix', () => {
     const region = screen.getByRole('region', { name: 'Remix' });
 
     const link = await within(region).findByRole('link', { name: /Master this remix/ });
-    const expectedHref = `/admin/mastering?source=${encodeURIComponent(REMIX_KEY)}&title=${encodeURIComponent('பாடல் — remix')}&target=karaoke`;
+    const expectedHref = `/admin/mastering?source=${encodeURIComponent(REMIX_KEY)}&title=${encodeURIComponent('பாடல் — remix')}&target=karaoke&parent=${encodeURIComponent(JOB)}`;
     expect(link).toHaveAttribute('href', expectedHref);
   });
 

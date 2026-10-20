@@ -32,6 +32,8 @@ import { statusFor, platformLanding } from '@/lib/loudness-targets';
 import { nextRadioIndex, radioTabIndex } from '@/lib/radiogroup-keys';
 import { MAX_UPLOAD_BYTES, ACCEPTED_UPLOAD_TYPES, downloadFilename, isMasteringKey } from '@/lib/mastering-storage';
 import { isMasterKey } from '@/lib/loudness-measure';
+import { lineageLabel } from '@/lib/master-lineage';
+import { isValidMasterJobId } from '@/lib/stems';
 import { buildMasterReport, reportFilename, sourceInfoLine, dynamicsPreserved, streamingReadiness, joinLine } from '@/lib/master-report';
 import { MasteringComparePlayer } from '@/components/admin/MasteringComparePlayer';
 import { MasteringPlayer } from '@/components/admin/MasteringPlayer';
@@ -362,6 +364,12 @@ export function MasteringStudio() {
   /** Name/size only — survives a remount, unlike a File handle. */
   const [source, setSource] = useState<{ name: string; size: number } | null>(null);
   const [sourceKey, setSourceKey] = useState<string | null>(null);
+  /**
+   * The saved master the next job is made from, if any — set by a library
+   * re-open or a Master-this-remix link, cleared by picking a file or reset.
+   * The server verifies it before recording lineage.
+   */
+  const [pendingParent, setPendingParent] = useState<string | null>(null);
   /** Set when a `?source=` link (e.g. "Master this remix") points at a file
    * this page refuses to open — a mastering output, a karaoke bed, or
    * anything outside the mastering workspace. Rendered in the source section. */
@@ -792,6 +800,8 @@ export function MasteringStudio() {
     const t = q.get('target');
     if (t && TARGETS.some((x) => x.id === t)) setTargetId(t as TargetId);
     setStage('ready');
+    const parent = q.get('parent');
+    if (parent && isValidMasterJobId(parent)) setPendingParent(parent);
     // Mount-only: re-running this on a later URL change (e.g. Save updating
     // the address bar) would re-open the link and clobber a job in progress.
     // (No exhaustive-deps violation here — every reference is a stable
@@ -864,6 +874,7 @@ export function MasteringStudio() {
     setStage('idle');
     setSource(null);
     setSourceKey(null);
+    setPendingParent(null);
     setSourceLinkNote(null);
     setSent({ loaded: 0, total: 0 });
     setJob(null);
@@ -1006,6 +1017,7 @@ export function MasteringStudio() {
 
   const onPick = useCallback(async (picked: File | null) => {
     if (!picked) return;
+    setPendingParent(null);
     setError(null);
     setJob(null);
     // A fresh pick replaces whatever a `?source=` link left behind — a
@@ -1117,6 +1129,8 @@ export function MasteringStudio() {
           // changed for ordinary masters" checkable rather than asserted.
           ...(isBed ? { normalizationMode: 'peak' as const } : {}),
           ...(edit ? { edit } : {}),
+          // Only after a re-open or a remix link; a plain run sends the exact body it always did.
+          ...(pendingParent ? { derivedFrom: { jobId: pendingParent } } : {}),
           ...(partB
             ? {
                 join: buildJoinPayload({
@@ -1161,7 +1175,7 @@ export function MasteringStudio() {
       setError(err instanceof Error ? err.message : String(err));
       setStage('ready');
     }
-  }, [sourceKey, source, target, targetId, isBed, edit, partB, overlapSec, partBStartSec, seedJoin, watch, selectedReferenceKey, matchingMethod]);
+  }, [sourceKey, source, target, targetId, isBed, edit, partB, overlapSec, partBStartSec, seedJoin, watch, selectedReferenceKey, matchingMethod, pendingParent]);
 
   /**
    * Presign + open one workspace WAV. Shared by the result panel and the saved
@@ -2279,6 +2293,7 @@ export function MasteringStudio() {
     clearUploadDraft();
 
     setSourceKey(m.s3Key);
+    setPendingParent(m.id);
     // Name only — the File itself cannot survive, so the trim panel falls back
     // to numeric entry, which is exactly what it does after any remount.
     setSource({ name: downloadFilename(m.s3Key), size: 0 });
@@ -3960,6 +3975,11 @@ export function MasteringStudio() {
                         <span className="min-w-0 truncate font-medium text-gray-900 dark:text-gray-100">
                           {m.title || <span className="text-gray-500 dark:text-gray-400">(untitled)</span>}
                         </span>
+                        {m.derivedFrom && (
+                          <span className="shrink-0 text-[11px] text-gray-500 dark:text-gray-400">
+                            {lineageLabel(m.derivedFrom, library?.find((x) => x.id === m.derivedFrom!.jobId)?.title ?? null)}
+                          </span>
+                        )}
                         <button
                           type="button"
                           onClick={() => setRenaming({ id: m.id, value: m.title ?? '' })}
