@@ -123,6 +123,10 @@ export function MasteringPlayer({
   const [markReason, setMarkReason] = useState<MarkReason>('pronunciation');
   const repair = useRepairMarks(masterJobId ?? null);
   const createMark = repair.create;
+  const savedDominant = useMemo(
+    () => dominantReasons((repair.marks ?? []).map((m) => ({ id: m.markId, time: m.start, reason: m.reason, note: m.note }))),
+    [repair.marks]
+  );
   const [copied, setCopied] = useState(false);
 
   // ---- graph -------------------------------------------------------------
@@ -753,6 +757,12 @@ export function MasteringPlayer({
         {masterJobId ? (
           <>
             <RepairMarksPanel hook={repair} onSeek={seekTo} />
+            {savedDominant.length > 0 && (
+              <p className="mt-1 text-[11px] text-gray-600 dark:text-gray-300">
+                Mostly <strong>{reasonLabel(savedDominant[0].reason)}</strong> ({savedDominant[0].count} of{' '}
+                {repair.marks?.length}) — that is the take&rsquo;s failureReason.
+              </p>
+            )}
             {parent && (
               <ParentMarksPanel parent={parent} masterJobId={masterJobId} onStillThere={(input) => void repair.create(input)} />
             )}

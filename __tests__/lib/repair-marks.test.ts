@@ -44,6 +44,11 @@ describe('parseNewMark', () => {
 });
 
 describe('parseMarkPatch', () => {
+  it('clears a stale fixedIn when a Fixed mark goes back to Open', () => {
+    const r = parseMarkPatch({ version: 2, status: 'open' }, mark({ status: 'fixed', fixedIn: 'c1' }), 300);
+    expect(r).toMatchObject({ ok: true, patch: { status: 'open', fixedIn: null } });
+    if (r.ok) expect(r.patch).toEqual({ status: 'open', fixedIn: null });
+  });
   it('needs the version the client last saw', () => {
     expect(parseMarkPatch({ status: 'fixed' }, mark(), 300).ok).toBe(false);
   });

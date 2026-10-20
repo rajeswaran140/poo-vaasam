@@ -1163,6 +1163,11 @@ export function MasteringStudio() {
         }),
       });
       const body = await res.json();
+      if (res.status === 400 && (body.code === 'parent-mismatch' || body.code === 'bad-parent')) {
+        // The link can never succeed for this file; drop it so a retry is not doomed.
+        setPendingParent(null);
+        throw new Error('This file no longer matches the master it came from — press Master again to master it without the link, or open Master this remix again.');
+      }
       if (!res.ok || !body.success) throw new Error(body.error || `Could not start mastering (HTTP ${res.status}).`);
       const stored: StoredJob = {
         jobId: body.jobId, sourceKey, name: source.name, size: source.size, target, targetId,

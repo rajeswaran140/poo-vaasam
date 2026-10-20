@@ -95,3 +95,26 @@ it('re-opening another master replaces the pending parent', async () => {
     expect(JSON.parse(post![1].body).derivedFrom).toEqual({ jobId: 'c1' });
   });
 });
+
+it('a parent-mismatch refusal drops the link, says so, and the next press sends no derivedFrom', async () => {
+  routeFetch();
+  window.history.replaceState({}, '', `/admin/mastering?source=${encodeURIComponent('audio/mastering/stems/p1/remix.wav')}&title=x&target=-14&parent=p1`);
+  render(<MasteringStudio />);
+  const posts = () => mockedFetch.mock.calls.filter(([u, i]) => u === '/api/admin/music-lab/master' && i?.method === 'POST');
+  const impl = mockedFetch.getMockImplementation()!;
+  mockedFetch.mockReset();
+  let refused = false;
+  mockedFetch.mockImplementation((url: string, init?: RequestInit) => {
+    if (url === '/api/admin/music-lab/master' && init?.method === 'POST' && !refused) {
+      refused = true;
+      return Promise.resolve({ ok: false, status: 400, json: async () => ({ success: false, code: 'parent-mismatch', error: 'x' }) } as Response);
+    }
+    return impl(url, init);
+  });
+  fireEvent.click(await screen.findByRole('button', { name: /Master to -14 LUFS/ }));
+  expect(await screen.findByText(/no longer matches the master it came from/)).toBeTruthy();
+  expect(JSON.parse(posts()[0][1].body).derivedFrom).toEqual({ jobId: 'p1' });
+  fireEvent.click(await screen.findByRole('button', { name: /Master to -14 LUFS/ }));
+  await waitFor(() => expect(posts()).toHaveLength(2));
+  expect(JSON.parse(posts()[1][1].body).derivedFrom).toBeUndefined();
+});

@@ -117,6 +117,7 @@ export function parseMarkPatch(
   if (b.status !== undefined) {
     if (!isStatus(b.status)) return fail('unknown status');
     patch.status = b.status;
+    if (b.status !== 'fixed' && b.fixedIn === undefined) patch.fixedIn = null;
   }
   if (b.fixedIn !== undefined) {
     if (b.fixedIn !== null && !isId(b.fixedIn)) return fail('fixedIn must be a master id');

@@ -49,6 +49,7 @@ export function RepairMarksPanel({ hook, onSeek }: { hook: RepairMarksState; onS
                     {MARK_STATUSES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
                   </select>
                   <input
+                    key={`${m.markId}:${m.version}`}
                     aria-label={`Note for ${label}`}
                     defaultValue={m.note}
                     maxLength={500}

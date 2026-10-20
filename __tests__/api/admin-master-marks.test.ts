@@ -74,7 +74,7 @@ it('refuses the 501st mark', async () => {
 it('updates with the version the client saw', async () => {
   const res = await PATCH(req('PATCH', { version: 1, status: 'wont-fix' }), p('m1'));
   expect(res.status).toBe(200);
-  expect(update).toHaveBeenCalledWith(JOB, 'm1', 1, { status: 'wont-fix' });
+  expect(update).toHaveBeenCalledWith(JOB, 'm1', 1, { status: 'wont-fix', fixedIn: null });
 });
 
 it('409s a stale edit, and of two edits on the same version one wins', async () => {

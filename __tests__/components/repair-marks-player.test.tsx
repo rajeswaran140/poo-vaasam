@@ -125,3 +125,23 @@ it('a failed reload keeps the saved rows and shows an error banner', async () =>
   expect(await screen.findByText('Could not load the marks.')).toBeTruthy();
   expect(screen.getByText('keep me')).toBeTruthy();
 });
+
+it('after a stale reload the note input shows the other tab\'s note, not the refused text', async () => {
+  setup([mark({ note: 'old note' })]);
+  const input = (await screen.findByLabelText(/Note for 1:42/)) as HTMLInputElement;
+  mockedFetch.mockImplementationOnce(() => json(409, { success: false, code: 'stale', error: 'x' }));
+  mockedFetch.mockImplementationOnce(() => json(200, { success: true, marks: [mark({ note: 'other tab note', version: 2 })] }));
+  fireEvent.change(input, { target: { value: 'my refused text' } });
+  fireEvent.blur(input);
+  await waitFor(() => expect((screen.getByLabelText(/Note for 1:42/) as HTMLInputElement).value).toBe('other tab note'));
+});
+
+it('saved masters show the dominant failure reason line', async () => {
+  setup([
+    mark({ markId: 'a', start: 10, reason: 'pronunciation' }),
+    mark({ markId: 'b', start: 20, reason: 'pronunciation' }),
+    mark({ markId: 'c', start: 30, reason: 'melody' }),
+  ]);
+  expect(await screen.findByText(/pronunciation/, { selector: 'strong' })).toBeTruthy();
+  expect(document.body.textContent).toMatch(/Mostly\s*pronunciation\s*\(2 of 3\)/);
+});
