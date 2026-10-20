@@ -11,10 +11,10 @@ export function RepairMarksPanel({ hook, onSeek }: { hook: RepairMarksState; onS
   const empty = (marks?.length ?? 0) === 0 && pending.length === 0;
   return (
     <>
-      {loadError && <p className="mt-1 text-[11px] text-rose-600">{loadError}</p>}
+      {loadError && <p className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">{loadError}</p>}
       {notice && <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-300">{notice}</p>}
       {marks === null && !loadError && pending.length === 0 ? (
-        <p className="mt-1 text-[11px] text-gray-500">Loading marks…</p>
+        <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Loading marks…</p>
       ) : empty && marks !== null ? (
         <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
           Press <kbd>M</kbd> to mark a moment, or drag the waveform and press Save span. Marks are saved with this master.
@@ -22,7 +22,7 @@ export function RepairMarksPanel({ hook, onSeek }: { hook: RepairMarksState; onS
       ) : (
         <ul className="mt-2 divide-y divide-gray-100 dark:divide-gray-800">
           {marks === null && !loadError && (
-            <li className="py-1 text-[11px] text-gray-500">Loading marks…</li>
+            <li className="py-1 text-[11px] text-gray-500 dark:text-gray-400">Loading marks…</li>
           )}
           {(marks ?? []).map((m) => {
             const label = markTimeLabel(m);
@@ -61,18 +61,18 @@ export function RepairMarksPanel({ hook, onSeek }: { hook: RepairMarksState; onS
                     <X className="h-3 w-3" aria-hidden="true" />
                   </button>
                 </div>
-                {rowErrors[m.markId] && <p className="mt-0.5 text-[11px] text-rose-600">{rowErrors[m.markId]}</p>}
+                {rowErrors[m.markId] && <p className="mt-0.5 text-[11px] text-rose-600 dark:text-rose-400">{rowErrors[m.markId]}</p>}
               </li>
             );
           })}
           {pending.map((p) => (
             <li key={p.tempId} className="py-1 text-xs">
-              <div className="flex items-center gap-2 text-gray-500">
+              <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
                 <span className="tabular-nums">{markTimeLabel(p.input)}</span>
                 <span>{reasonLabel(p.input.reason)}</span>
                 {p.error ? (
                   <>
-                    <span className="text-rose-600">{p.error}</span>
+                    <span className="text-rose-600 dark:text-rose-400">{p.error}</span>
                     <button type="button" onClick={() => discardPending(p.tempId)} className="ml-auto underline">Discard</button>
                   </>
                 ) : (

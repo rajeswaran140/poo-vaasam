@@ -20,11 +20,11 @@ export function ParentMarksPanel({
   const hook = useRepairMarks(parent.jobId);
   const heading = lineageLabel({ jobId: parent.jobId, via: parent.via }, parent.title);
   return (
-    <div className="mt-2 rounded-lg border border-dashed border-gray-300 p-2 text-gray-500 dark:border-gray-700">
+    <div className="mt-2 rounded-lg border border-dashed border-gray-300 p-2 text-gray-500 dark:border-gray-700 dark:text-gray-400">
       <p className="text-[11px] font-medium">From the previous version — {heading}</p>
       <p className="text-[11px]">Times are the previous version&rsquo;s; a different trim or a remix moves them.</p>
-      {hook.loadError && <p className="text-[11px] text-rose-600">{hook.loadError}</p>}
-      {hook.notice && <p className="text-[11px] text-amber-700">{hook.notice}</p>}
+      {hook.loadError && <p className="text-[11px] text-rose-600 dark:text-rose-400">{hook.loadError}</p>}
+      {hook.notice && <p className="text-[11px] text-amber-700 dark:text-amber-300">{hook.notice}</p>}
       {hook.marks && hook.marks.length === 0 && <p className="text-[11px]">No marks on the previous version.</p>}
       {hook.marks && hook.marks.length > 0 && (
         <ul className="mt-1 divide-y divide-gray-100 dark:divide-gray-800">
@@ -42,7 +42,7 @@ export function ParentMarksPanel({
                         type="button"
                         aria-label={`Fixed here — ${label}`}
                         onClick={() => void hook.update(m.markId, { status: 'fixed', fixedIn: masterJobId })}
-                        className="rounded border border-emerald-400 px-1.5 py-0.5 text-emerald-700"
+                        className="rounded border border-emerald-400 px-1.5 py-0.5 text-emerald-700 dark:text-emerald-300"
                       >
                         Fixed here
                       </button>
@@ -59,7 +59,7 @@ export function ParentMarksPanel({
                     <span className="ml-auto">{statusLabel(m.status)}</span>
                   )}
                 </div>
-                {hook.rowErrors[m.markId] && <p className="text-[11px] text-rose-600">{hook.rowErrors[m.markId]}</p>}
+                {hook.rowErrors[m.markId] && <p className="text-[11px] text-rose-600 dark:text-rose-400">{hook.rowErrors[m.markId]}</p>}
               </li>
             );
           })}
