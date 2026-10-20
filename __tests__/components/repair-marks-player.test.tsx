@@ -97,3 +97,31 @@ it('without masterJobId, marks stay in the page as before (no API calls)', async
   fireEvent.click(screen.getByRole('button', { name: /Mark here/ }));
   expect(mockedFetch).not.toHaveBeenCalled();
 });
+
+it('two quick edits of one row both save, the second with the new version', async () => {
+  setup([mark()]);
+  const sel = await screen.findByRole('combobox', { name: /Status for 1:42/ });
+  mockedFetch.mockImplementation((url: string, init?: RequestInit) => {
+    if (init?.method === 'PATCH') {
+      const b = JSON.parse(String(init.body));
+      return json(200, { success: true, mark: mark({ status: b.status, version: b.version + 1 }) });
+    }
+    return json(200, { success: true, marks: [mark()] });
+  });
+  fireEvent.change(sel, { target: { value: 'fixed' } });
+  fireEvent.change(sel, { target: { value: 'wont-fix' } });
+  await waitFor(() => expect(mockedFetch.mock.calls.filter(([, i]) => i?.method === 'PATCH')).toHaveLength(2));
+  const patches = mockedFetch.mock.calls.filter(([, i]) => i?.method === 'PATCH').map(([, i]) => JSON.parse(i.body));
+  expect(patches.map((p) => p.version)).toEqual([1, 2]);
+  expect(screen.queryByText(/Changed in another tab/)).toBeNull();
+});
+
+it('a failed reload keeps the saved rows and shows an error banner', async () => {
+  setup([mark({ note: 'keep me' })]);
+  await screen.findByText('keep me');
+  mockedFetch.mockImplementationOnce(() => json(409, { success: false, code: 'stale', error: 'x' }));
+  mockedFetch.mockImplementationOnce(() => json(500, { success: false, error: 'Could not load the marks.' }));
+  fireEvent.change(screen.getByRole('combobox', { name: /Status for 1:42/ }), { target: { value: 'fixed' } });
+  expect(await screen.findByText('Could not load the marks.')).toBeTruthy();
+  expect(screen.getByText('keep me')).toBeTruthy();
+});

@@ -26,6 +26,14 @@ export function useRepairMarks(masterJobId: string | null) {
   const [notice, setNotice] = useState<string | null>(null);
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
   const seq = useRef(0);
+  // The CURRENT list, updated on every create/update/reload, so an edit queued
+  // behind another edit of the same row carries the version that edit produced.
+  const marksRef = useRef<RepairMark[] | null>(null);
+  const chains = useRef<Map<string, Promise<unknown>>>(new Map());
+  const commit = useCallback((next: RepairMark[] | null) => {
+    marksRef.current = next;
+    setMarks(next);
+  }, []);
   const base = masterJobId ? `/api/admin/music-lab/master/${encodeURIComponent(masterJobId)}/marks` : null;
 
   const reload = useCallback(async () => {
@@ -34,20 +42,21 @@ export function useRepairMarks(masterJobId: string | null) {
       const res = await adminFetch(base);
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.success) throw new Error(body.error || 'Could not load the marks.');
-      setMarks(sortMarks(body.marks as RepairMark[]));
+      commit(sortMarks(body.marks as RepairMark[]));
       setLoadError(null);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : 'Could not load the marks.');
     }
-  }, [base]);
+  }, [base, commit]);
 
   useEffect(() => {
-    setMarks(null);
+    chains.current.clear();
+    commit(null);
     setPending([]);
     setRowErrors({});
     setNotice(null);
     void reload();
-  }, [reload]);
+  }, [reload, commit]);
 
   const create = useCallback(async (input: NewMarkInput) => {
     if (!base) return;
@@ -62,16 +71,21 @@ export function useRepairMarks(masterJobId: string | null) {
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.success) throw new Error(body.error || 'Could not save the mark.');
       setPending((p) => p.filter((x) => x.tempId !== tempId));
-      setMarks((m) => sortMarks([...(m ?? []), body.mark as RepairMark]));
+      if (marksRef.current === null) {
+        // The list never loaded: a one-item list would look complete. Reload it.
+        await reload();
+      } else {
+        commit(sortMarks([...marksRef.current, body.mark as RepairMark]));
+      }
     } catch (e) {
       const error = e instanceof Error ? e.message : 'Could not save the mark.';
       setPending((p) => p.map((x) => (x.tempId === tempId ? { ...x, error } : x)));
     }
-  }, [base]);
+  }, [base, commit, reload]);
 
-  const update = useCallback(async (markId: string, patch: MarkPatch): Promise<boolean> => {
+  const runUpdate = useCallback(async (markId: string, patch: MarkPatch): Promise<boolean> => {
     if (!base) return false;
-    const current = marks?.find((m) => m.markId === markId);
+    const current = marksRef.current?.find((m) => m.markId === markId);
     if (!current) return false;
     setRowErrors((r) => { const { [markId]: _gone, ...rest } = r; return rest; });
     try {
@@ -87,13 +101,21 @@ export function useRepairMarks(masterJobId: string | null) {
         return false;
       }
       if (!res.ok || !body.success) throw new Error(body.error || 'Could not save the mark.');
-      setMarks((m) => sortMarks((m ?? []).map((x) => (x.markId === markId ? (body.mark as RepairMark) : x))));
+      commit(sortMarks((marksRef.current ?? []).map((x) => (x.markId === markId ? (body.mark as RepairMark) : x))));
       return true;
     } catch (e) {
       setRowErrors((r) => ({ ...r, [markId]: e instanceof Error ? e.message : 'Could not save the mark.' }));
       return false;
     }
-  }, [base, marks, reload]);
+  }, [base, commit, reload]);
+
+  /** Edits to one row run one after another, never side by side. */
+  const update = useCallback((markId: string, patch: MarkPatch): Promise<boolean> => {
+    const prev = chains.current.get(markId) ?? Promise.resolve();
+    const next = prev.then(() => runUpdate(markId, patch));
+    chains.current.set(markId, next.catch(() => undefined));
+    return next;
+  }, [runUpdate]);
 
   const remove = useCallback(async (markId: string) => {
     if (!base) return;
@@ -101,11 +123,11 @@ export function useRepairMarks(masterJobId: string | null) {
       const res = await adminFetch(`${base}/${encodeURIComponent(markId)}`, { method: 'DELETE' });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.success) throw new Error(body.error || 'Could not delete the mark.');
-      setMarks((m) => (m ?? []).filter((x) => x.markId !== markId));
+      commit((marksRef.current ?? []).filter((x) => x.markId !== markId));
     } catch (e) {
       setRowErrors((r) => ({ ...r, [markId]: e instanceof Error ? e.message : 'Could not delete the mark.' }));
     }
-  }, [base]);
+  }, [base, commit]);
 
   const discardPending = useCallback((tempId: string) => {
     setPending((p) => p.filter((x) => x.tempId !== tempId));

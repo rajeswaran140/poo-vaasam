@@ -8,19 +8,23 @@ import type { RepairMarksState } from './useRepairMarks';
 
 export function RepairMarksPanel({ hook, onSeek }: { hook: RepairMarksState; onSeek: (t: number) => void }) {
   const { marks, pending, loadError, notice, rowErrors, update, remove, discardPending } = hook;
-  if (loadError) return <p className="mt-1 text-[11px] text-rose-600">{loadError}</p>;
-  if (marks === null) return <p className="mt-1 text-[11px] text-gray-500">Loading marks…</p>;
-  const empty = marks.length === 0 && pending.length === 0;
+  const empty = (marks?.length ?? 0) === 0 && pending.length === 0;
   return (
     <>
+      {loadError && <p className="mt-1 text-[11px] text-rose-600">{loadError}</p>}
       {notice && <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-300">{notice}</p>}
-      {empty ? (
+      {marks === null && !loadError && pending.length === 0 ? (
+        <p className="mt-1 text-[11px] text-gray-500">Loading marks…</p>
+      ) : empty && marks !== null ? (
         <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
           Press <kbd>M</kbd> to mark a moment, or drag the waveform and press Save span. Marks are saved with this master.
         </p>
       ) : (
         <ul className="mt-2 divide-y divide-gray-100 dark:divide-gray-800">
-          {marks.map((m) => {
+          {marks === null && !loadError && (
+            <li className="py-1 text-[11px] text-gray-500">Loading marks…</li>
+          )}
+          {(marks ?? []).map((m) => {
             const label = markTimeLabel(m);
             return (
               <li key={m.markId} className="py-1 text-xs">
