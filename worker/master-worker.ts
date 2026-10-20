@@ -2367,7 +2367,7 @@ export const handler = async (event: MasterEvent) => {
       const m2 = ff(buildPeakMeasureArgs(outPath));
       const after = parseMeasurement(`${m2.stdout ?? ''}${m2.stderr ?? ''}`, target).metrics;
 
-      const bedKey = karaokeMasterKeyFor(s3Key);
+      const bedKey = karaokeMasterKeyFor(s3Key, jobId);
       await s3.send(new PutObjectCommand({ Bucket: bucket, Key: bedKey, Body: readFileSync(outPath), ContentType: 'audio/wav' }));
 
       // The buyer's file. 320k, not the module's 192k default — that is what
@@ -2462,7 +2462,7 @@ export const handler = async (event: MasterEvent) => {
     const p3 = ff(['-hide_banner', '-nostats', '-i', outPath, '-af', `loudnorm=I=${target}:TP=-1:LRA=11:print_format=json`, '-f', 'null', '-']);
     const after = parseLoudnormStats(`${p3.stdout ?? ''}${p3.stderr ?? ''}`);
 
-    const masterKey = masterKeyFor(s3Key, target);
+    const masterKey = masterKeyFor(s3Key, target, jobId);
     await s3.send(new PutObjectCommand({ Bucket: bucket, Key: masterKey, Body: readFileSync(outPath), ContentType: 'audio/wav' }));
 
     // Pass 4 — the web MP3, encoded FROM the mastered WAV and then measured.
@@ -2552,7 +2552,7 @@ export const handler = async (event: MasterEvent) => {
           },
         }).catch(() => {});
       } else {
-        const matchedKey = matchedMasterKeyFor(s3Key, referenceId);
+        const matchedKey = matchedMasterKeyFor(s3Key, referenceId, jobId);
         try {
           await lambdaClient.send(new InvokeCommand({
             FunctionName: MATCHERING_WORKER_FUNCTION,

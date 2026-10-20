@@ -20,12 +20,22 @@ import { isMasterKey } from '@/lib/loudness-measure';
 
 describe('karaoke keys', () => {
   it('names the bed beside its source', () => {
-    expect(karaokeMasterKeyFor('audio/mastering/1_a_song.wav'))
-      .toBe('audio/mastering/1_a_song-karaoke-1dBTP.wav');
+    expect(karaokeMasterKeyFor('audio/mastering/1_a_song.wav', 'j1'))
+      .toBe('audio/mastering/1_a_song_j1-karaoke-1dBTP.wav');
   });
 
   it('replaces the extension rather than appending to it', () => {
-    expect(karaokeMasterKeyFor('audio/mastering/x.WAV')).toBe('audio/mastering/x-karaoke-1dBTP.wav');
+    expect(karaokeMasterKeyFor('audio/mastering/x.WAV', 'j1')).toBe('audio/mastering/x_j1-karaoke-1dBTP.wav');
+  });
+
+  it('gives two jobs on the same source two different beds', () => {
+    expect(karaokeMasterKeyFor('audio/mastering/x.wav', 'job-a'))
+      .not.toBe(karaokeMasterKeyFor('audio/mastering/x.wav', 'job-b'));
+    expect(isKaraokeMasterKey(karaokeMasterKeyFor('audio/mastering/x.wav', 'job-a'))).toBe(true);
+  });
+
+  it('refuses a missing job id', () => {
+    expect(() => karaokeMasterKeyFor('audio/mastering/x.wav', '')).toThrow();
   });
 
   it('recognises its own output and nothing else', () => {
@@ -43,7 +53,7 @@ describe('karaoke keys', () => {
    * instead; this test is what stops someone widening the shared one.
    */
   it('is NOT matched by isMasterKey', () => {
-    expect(isMasterKey(karaokeMasterKeyFor('audio/mastering/x.wav'))).toBe(false);
+    expect(isMasterKey(karaokeMasterKeyFor('audio/mastering/x.wav', 'j1'))).toBe(false);
   });
 
   it('and a loudness master is not mistaken for a bed', () => {

@@ -2180,7 +2180,7 @@ Real Lambda invocation with a source WAV + seeded reference \`audio/references/t
 - matchering.process alone: **5.8 s**
 - Peak memory: 1.7 GB (of 4096 MB allocated)
 - Loudnorm hit target: **-14.0 LUFS exact**
-- Matched output landed at \`audio/mastering/<stem>-matched-<referenceId>.wav\`
+- Matched output landed at \`audio/mastering/<stem>_<jobId>-matched-<referenceId>.wav\` (before 2026-10-20: \`<stem>-matched-<referenceId>.wav\`)
 - MASTERJOB shows \`status=done\` + \`matchingStage=completed\` + \`matchingStats\` populated
 
 ## Two corrections from the original proposal draft (still important)

@@ -28,6 +28,8 @@
  * Spec: docs/superpowers/specs/2026-09-16-karaoke-master-target-design.md
  */
 
+import { jobKeyToken } from '@/lib/mastering-storage';
+
 /**
  * How a master reaches its level.
  *
@@ -64,10 +66,10 @@ export const MAX_PEAK_GAIN_DB = 12;
 /** Buyers are promised this — see KARAOKE_DELIVERABLE in src/lib/karaoke.ts. */
 export const KARAOKE_MP3_BITRATE = '320k';
 
-/** S3 key for a karaoke bed, beside the source it came from. */
-export function karaokeMasterKeyFor(s3Key: string): string {
+/** S3 key for a karaoke bed, beside the source it came from; one per job (see jobKeyToken). */
+export function karaokeMasterKeyFor(s3Key: string, jobId: string): string {
   const stem = s3Key.replace(/\.[a-z0-9]+$/i, '');
-  return `${stem}-karaoke-1dBTP.wav`;
+  return `${stem}_${jobKeyToken(jobId)}-karaoke-1dBTP.wav`;
 }
 
 /**

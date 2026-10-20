@@ -1637,13 +1637,13 @@ Output #0, null, to 'pipe:':
   it('masters a source end to end and writes the output beside it', async () => {
     const res = await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14 });
 
-    expect(res).toEqual({ ok: true, masterKey: 'audio/mastering/1_a_song-master-14LUFS.wav' });
+    expect(res).toEqual({ ok: true, masterKey: 'audio/mastering/1_a_song_j1-master-14LUFS.wav' });
     // measure · master · re-measure · encode MP3 · measure MP3
     expect(spawnSync).toHaveBeenCalledTimes(5);
     const put = putCall();
     expect(put?.input).toMatchObject({
       Bucket: 'tamil-web-media',
-      Key: 'audio/mastering/1_a_song-master-14LUFS.wav',
+      Key: 'audio/mastering/1_a_song_j1-master-14LUFS.wav',
       ContentType: 'audio/wav',
     });
     expect(patched()).toMatchObject({ status: 'done', target: -14 });
@@ -1707,7 +1707,7 @@ Output #0, null, to 'pipe:':
 
   it('names the output for its target so -14 and -16 cannot overwrite each other', async () => {
     const res = await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -16 });
-    expect(res).toMatchObject({ masterKey: 'audio/mastering/1_a_song-master-16LUFS.wav' });
+    expect(res).toMatchObject({ masterKey: 'audio/mastering/1_a_song_j1-master-16LUFS.wav' });
     expect(argsOf(0).join(' ')).toContain('I=-16');
   });
 
@@ -1942,10 +1942,10 @@ Output #0, null, to 'pipe:':
       await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14 });
       expect(mp3Put()?.input).toMatchObject({
         Bucket: 'tamil-web-media',
-        Key: 'audio/mastering/1_a_song-master-14LUFS.mp3',
+        Key: 'audio/mastering/1_a_song_j1-master-14LUFS.mp3',
         ContentType: 'audio/mpeg',
       });
-      expect(patched().mp3Key).toBe('audio/mastering/1_a_song-master-14LUFS.mp3');
+      expect(patched().mp3Key).toBe('audio/mastering/1_a_song_j1-master-14LUFS.mp3');
     });
 
     it('records the MP3\'s OWN measurement, not the master\'s and not the source\'s', async () => {
@@ -1965,7 +1965,7 @@ Output #0, null, to 'pipe:':
       logs.encodeStatus = 1;
       const res = await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14 });
 
-      expect(res).toMatchObject({ ok: true, masterKey: 'audio/mastering/1_a_song-master-14LUFS.wav' });
+      expect(res).toMatchObject({ ok: true, masterKey: 'audio/mastering/1_a_song_j1-master-14LUFS.wav' });
       expect(putCall()).toBeDefined();      // the WAV still shipped
       expect(mp3Put()).toBeUndefined();     // nothing half-written
       expect(spawnSync).toHaveBeenCalledTimes(4); // no point measuring a file that failed to encode
@@ -2010,7 +2010,7 @@ Output #0, null, to 'pipe:':
 
       expect(mp3Put()).toBeDefined();
       const p = patched();
-      expect(p.mp3Key).toBe('audio/mastering/1_a_song-master-14LUFS.mp3');
+      expect(p.mp3Key).toBe('audio/mastering/1_a_song_j1-master-14LUFS.mp3');
       expect(p.mp3Lufs).toBeNull();
       expect(p.mp3Tp).toBeNull();
     });
@@ -2086,6 +2086,25 @@ Output #0, null, to 'pipe:':
     expect(patched().normalizationMode).toBeUndefined();
   });
 
+  it('two jobs mastering the same source at the same target at once write two files', async () => {
+    // The 2026-10-20 audit: both jobs used to write <source>-master-14LUFS.wav,
+    // so whichever finished second silently replaced the first job's master.
+    const [a, b] = await Promise.all([
+      handler({ jobId: 'job-a', s3Key: SRC_KEY, target: -14 }),
+      handler({ jobId: 'job-b', s3Key: SRC_KEY, target: -14, edit: { trimStartSec: 12, trimEndSec: 200, fadeInSec: 0, fadeOutSec: 4, curve: 'qsin' } } as never),
+    ]);
+    expect(a).toMatchObject({ ok: true, masterKey: 'audio/mastering/1_a_song_job-a-master-14LUFS.wav' });
+    expect(b).toMatchObject({ ok: true, masterKey: 'audio/mastering/1_a_song_job-b-master-14LUFS.wav' });
+    const wavKeys = putCalls().map((c) => String(c.input.Key)).filter((k) => k.endsWith('.wav'));
+    expect(new Set(wavKeys)).toEqual(new Set([
+      'audio/mastering/1_a_song_job-a-master-14LUFS.wav',
+      'audio/mastering/1_a_song_job-b-master-14LUFS.wav',
+    ]));
+    // Nothing either job wrote shares a key with the other.
+    const keys = putCalls().map((c) => String(c.input.Key));
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
   it('clears its temp directory on success and on failure', async () => {
     await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14 });
     expect(mockRmSync).toHaveBeenCalledWith('/tmp/master-test', { recursive: true, force: true });
@@ -2118,7 +2137,7 @@ Output #0, null, to 'pipe:':
  */
 describe('peak mode — a karaoke bed', () => {
   const SRC_KEY = 'audio/mastering/2_a_bed.wav';
-  const BED_KEY = 'audio/mastering/2_a_bed-karaoke-1dBTP.wav';
+  const BED_KEY = 'audio/mastering/2_a_bed_k1-karaoke-1dBTP.wav';
 
   /**
    * The bed as built: -2.80 dBTP, so it needs +1.80 dB to reach the -1 ceiling.
@@ -2273,7 +2292,7 @@ Input #0, wav, from '/tmp/master-test/in.wav':
     // The module default is 192k; KARAOKE_DELIVERABLE promises 320.
     expect(mp3[mp3.indexOf('-b:a') + 1]).toBe('320k');
     const put = putCalls().find((c) => String(c.input.Key).endsWith('.mp3'))!;
-    expect(String(put.input.Key)).toBe('audio/mastering/2_a_bed-karaoke-1dBTP.mp3');
+    expect(String(put.input.Key)).toBe('audio/mastering/2_a_bed_k1-karaoke-1dBTP.mp3');
   });
 
   it('records the mode, and no loudnorm verdict it has no right to', async () => {
