@@ -52,6 +52,110 @@ export function formatDocUpdatedAt(iso: string): string {
 
 export const ADMIN_DOCS: AdminDoc[] = [
   {
+    slug: 'amplify-build-outage-2026-10-20',
+    title: 'Website builds failing — Amplify cannot assume its IAM role (open)',
+    category: 'Operations',
+    updatedAt: '2026-10-20T15:30:00Z',
+    body: `# Website builds failing — "Unable to assume specified IAM Role"
+
+> **Open since 2026-10-20 12:06 UTC.** Every Amplify build of this site fails
+> about one second in, before the code is even fetched. The live site is still
+> the **4 Oct** build (job 782), so nothing merged since then is on the website:
+> the scraper block is unmerged anyway, and **repair marks and version lineage
+> (PR #393) is merged but not live**. Worker changes are unaffected, because the
+> worker deploys separately.
+
+## What fails
+
+Every build since 4 Oct (jobs 783–788) stops at:
+
+    [ERROR]: !!! Unable to assume specified IAM Role. Please ensure the selected
+    IAM Role has sufficient permissions and the Trust Relationship is configured correctly.
+
+## What was ruled out (2026-10-20)
+
+- The app's service role, **AmplifySSRLoggingRole-94c57639-023c-47c1-8b48-53caca70af8c**,
+  still exists. Its trust policy allows amplify.amazonaws.com to assume it, and
+  nobody changed it this month.
+- AWS's activity log (CloudTrail) shows **no refused role request** in our
+  account. The refusal happens inside AWS before it reaches us.
+- Same role and same build machine as the last good build (782, 4 Oct).
+- A plain retry (787) and re-selecting the same role in the console (788) both
+  failed the same way.
+
+## The fix to try: give the app a fresh copy of the role
+
+⚠️ **Don't use the console's plain "create new service role" button on its own.**
+The current role does two jobs: it writes build logs, **and** it lets the build
+read the site's secrets from the parameter store. The build refuses to ship
+without those secrets (the check in amplify.yml). A bare new role only has the
+logging part, so the build would get past today's error and fail at the
+secrets check instead.
+
+1. **IAM → Roles → Create role → AWS service → Amplify.** Name it
+   **AmplifyPooVaasamBuildRole** and create it.
+2. Open the new role → **Add permissions → Attach policies** → tick
+   **AmplifySSRLoggingPolicy-94c57639-023c-47c1-8b48-53caca70af8c** → Add.
+3. Same role → **Add permissions → Create inline policy → JSON**, paste the
+   policy below, and name it **P24SsmSecureStringRead**.
+4. **Amplify → poo-vaasam → App settings → IAM roles** → edit the service role
+   → choose **AmplifyPooVaasamBuildRole** → Save → **Redeploy this version**.
+
+The secrets-read policy (step 3) only allows this app's own parameters:
+
+\`\`\`json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AmplifyBuildReadSsmSecureString",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter",
+        "ssm:GetParameters"
+      ],
+      "Resource": "arn:aws:ssm:ca-central-1:975050319109:parameter/amplify/d3rkmepk4popv0/master/*"
+    },
+    {
+      "Sid": "AmplifyBuildDecryptSsmSecureString",
+      "Effect": "Allow",
+      "Action": "kms:Decrypt",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "kms:ViaService": "ssm.ca-central-1.amazonaws.com"
+        }
+      }
+    }
+  ]
+}
+\`\`\`
+
+**Undo:** set the service role back to AmplifySSRLoggingRole-94c57639-… in the
+same Amplify screen. The old role is untouched. Its settings were backed up on
+the dev server in ~/iam-backups/ (timestamp 20261020-151334).
+
+**Faster alternative:** let Claude do steps 1–4. It needs permission to make
+IAM changes. Type /permissions, allow Bash(aws iam:*) and
+Bash(aws --region ca-central-1 amplify:*), then say "go". You can remove the
+rules afterwards.
+
+## If the fresh role also fails
+
+Open an AWS Support case. The text is ready on the dev server in
+~/reports/aws-support-amplify-role.txt. It names the app, role, region, the
+failed job numbers, and everything above that was ruled out.
+
+## Once a build succeeds
+
+- Confirm the new code is live. GET /api/admin/music-lab/master/<any-id>/marks
+  without signing in should return **401** (route exists), not **404**.
+- Then test repair marks: play a saved master, press M, Save a span, set one
+  mark to Fixed, and reload; the marks stay. Then Edit & re-master, save, and
+  the new row says "Re-master of …" and lists the previous version's marks.
+`,
+  },
+  {
     slug: 'revenue-and-cost',
     title: 'What Tamilagaval costs, and what $500 would take',
     category: 'Growth',
