@@ -12,6 +12,8 @@
  * final ones — not the first per-frame sample.
  */
 
+import { jobKeyToken } from '@/lib/mastering-storage';
+
 export type MeasureStatus = 'ok' | 'hot' | 'quiet';
 export type MeasureVerdict = MeasureStatus | 'clip-risk' | 'squashed';
 
@@ -318,12 +320,17 @@ export const isValidTarget = (t: unknown): t is number =>
  * S3 key for a mastering output. The target is part of the name so the same
  * source mastered for Spotify (-14) and Apple (-16) yields two files instead of
  * the second silently overwriting the first, and the source extension is
- * replaced rather than appended (`song.wav` → `song-master-14LUFS.wav`, not
- * `song.wav-master.wav`).
+ * replaced rather than appended (`song.wav` → `song_<jobId>-master-14LUFS.wav`,
+ * not `song.wav-master.wav`).
+ *
+ * The job id makes the name unique per job — see jobKeyToken. It sits IN FRONT
+ * of `-master-NNLUFS`, never inside it, so isMasterKey and every derived
+ * predicate (MP3, video, short, vertical) match new and old keys alike. Jobs
+ * written before 2026-10-20 keep their stored `<stem>-master-NNLUFS.wav` keys.
  */
-export function masterKeyFor(s3Key: string, target: number): string {
+export function masterKeyFor(s3Key: string, target: number, jobId: string): string {
   const stem = s3Key.replace(/\.[a-z0-9]+$/i, '');
-  return `${stem}-master-${String(Math.abs(target)).replace('.', '_')}LUFS.wav`;
+  return `${stem}_${jobKeyToken(jobId)}-master-${String(Math.abs(target)).replace('.', '_')}LUFS.wav`;
 }
 
 /**

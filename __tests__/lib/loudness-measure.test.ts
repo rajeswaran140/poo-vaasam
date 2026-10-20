@@ -232,22 +232,48 @@ describe('parseSourceInfo', () => {
 });
 
 describe('master output naming + guards', () => {
+  const J = '11111111-1111-4111-8111-111111111111';
+
   it('replaces the source extension instead of appending to it', () => {
-    expect(masterKeyFor('audio/poem-music/song.wav', -14)).toBe('audio/poem-music/song-master-14LUFS.wav');
-    expect(masterKeyFor('audio/poem-music/song.mp3', -14)).toBe('audio/poem-music/song-master-14LUFS.wav');
-    expect(masterKeyFor('audio/no-extension', -14)).toBe('audio/no-extension-master-14LUFS.wav');
+    expect(masterKeyFor('audio/poem-music/song.wav', -14, J)).toBe(`audio/poem-music/song_${J}-master-14LUFS.wav`);
+    expect(masterKeyFor('audio/poem-music/song.mp3', -14, J)).toBe(`audio/poem-music/song_${J}-master-14LUFS.wav`);
+    expect(masterKeyFor('audio/no-extension', -14, J)).toBe(`audio/no-extension_${J}-master-14LUFS.wav`);
   });
 
   it('keeps -14 and -16 masters of one source distinct', () => {
     // Without the target in the name the Apple master silently overwrote the
     // Spotify one — same source, same key.
-    expect(masterKeyFor('a/song.wav', -14)).not.toBe(masterKeyFor('a/song.wav', -16));
-    expect(masterKeyFor('a/song.wav', -16)).toBe('a/song-master-16LUFS.wav');
-    expect(masterKeyFor('a/song.wav', -14.5)).toBe('a/song-master-14_5LUFS.wav');
+    expect(masterKeyFor('a/song.wav', -14, J)).not.toBe(masterKeyFor('a/song.wav', -16, J));
+    expect(masterKeyFor('a/song.wav', -16, J)).toBe(`a/song_${J}-master-16LUFS.wav`);
+    expect(masterKeyFor('a/song.wav', -14.5, J)).toBe(`a/song_${J}-master-14_5LUFS.wav`);
   });
 
-  it('recognises its own outputs, including the legacy shape', () => {
-    expect(isMasterKey(masterKeyFor('a/song.wav', -14))).toBe(true);
+  it('gives two jobs on the same source and target two different files', () => {
+    // The 2026-10-20 audit: the key was built from (source, target) alone, so a
+    // second job re-mastering the same upload with a different edit replaced
+    // the first job's master in place.
+    const a = masterKeyFor('audio/mastering/1_a_song.wav', -14, 'job-a');
+    const b = masterKeyFor('audio/mastering/1_a_song.wav', -14, 'job-b');
+    expect(a).not.toBe(b);
+  });
+
+  it('is stable for one job, so a Lambda retry rewrites only its own file', () => {
+    expect(masterKeyFor('a/song.wav', -14, J)).toBe(masterKeyFor('a/song.wav', -14, J));
+  });
+
+  it('refuses a missing or unusable job id rather than fall back to a shared name', () => {
+    for (const bad of ['', '../..', '!!!', undefined as unknown as string]) {
+      expect(() => masterKeyFor('a/song.wav', -14, bad)).toThrow();
+    }
+  });
+
+  it('keeps path characters out of the job id', () => {
+    expect(masterKeyFor('a/song.wav', -14, 'x/../y')).toBe('a/song_xy-master-14LUFS.wav');
+  });
+
+  it('recognises its own outputs, including the legacy shapes', () => {
+    expect(isMasterKey(masterKeyFor('a/song.wav', -14, J))).toBe(true);
+    expect(isMasterKey('a/song-master-14LUFS.wav')).toBe(true); // before job ids
     expect(isMasterKey('a/song.wav-master.wav')).toBe(true); // pre-target naming
     expect(isMasterKey('a/song.wav')).toBe(false);
     expect(isMasterKey('a/master-song.wav')).toBe(false);

@@ -149,36 +149,47 @@ describe('isReferenceKey', () => {
 
 describe('matchedMasterKeyFor', () => {
   it('lands the matched output alongside the loudnorm master in the workspace', () => {
-    const k = matchedMasterKeyFor(`${MASTERING_PREFIX}song.wav`, 'raj-emo-01');
-    expect(k).toBe(`${MASTERING_PREFIX}song-matched-raj-emo-01.wav`);
+    const k = matchedMasterKeyFor(`${MASTERING_PREFIX}song.wav`, 'raj-emo-01', 'j1');
+    expect(k).toBe(`${MASTERING_PREFIX}song_j1-matched-raj-emo-01.wav`);
     expect(isMasteringKey(k)).toBe(true);
   });
 
   it('sanitises the referenceId so a malformed value cannot escape the prefix', () => {
     // The Python worker validates outputKey too, but the caller must not be
-    // able to construct a key like `audio/mastering/song-matched-../../etc.wav`.
+    // able to construct a key like `audio/mastering/song_j1-matched-../../etc.wav`.
     expect(
-      matchedMasterKeyFor(`${MASTERING_PREFIX}song.wav`, '../../evil-id'),
-    ).toBe(`${MASTERING_PREFIX}song-matched-evil-id.wav`);
+      matchedMasterKeyFor(`${MASTERING_PREFIX}song.wav`, '../../evil-id', 'j1'),
+    ).toBe(`${MASTERING_PREFIX}song_j1-matched-evil-id.wav`);
     expect(
-      matchedMasterKeyFor(`${MASTERING_PREFIX}song.wav`, 'has spaces and !@#'),
-    ).toBe(`${MASTERING_PREFIX}song-matched-hasspacesand.wav`);
+      matchedMasterKeyFor(`${MASTERING_PREFIX}song.wav`, 'has spaces and !@#', 'j1'),
+    ).toBe(`${MASTERING_PREFIX}song_j1-matched-hasspacesand.wav`);
   });
 
   it('falls back to "unknown" rather than yielding a bare -matched-.wav', () => {
-    expect(matchedMasterKeyFor(`${MASTERING_PREFIX}song.wav`, '')).toBe(
-      `${MASTERING_PREFIX}song-matched-unknown.wav`,
+    expect(matchedMasterKeyFor(`${MASTERING_PREFIX}song.wav`, '', 'j1')).toBe(
+      `${MASTERING_PREFIX}song_j1-matched-unknown.wav`,
     );
-    expect(matchedMasterKeyFor(`${MASTERING_PREFIX}song.wav`, '@@@')).toBe(
-      `${MASTERING_PREFIX}song-matched-unknown.wav`,
+    expect(matchedMasterKeyFor(`${MASTERING_PREFIX}song.wav`, '@@@', 'j1')).toBe(
+      `${MASTERING_PREFIX}song_j1-matched-unknown.wav`,
     );
   });
 
   it('caps the referenceId length so a runaway string cannot bloat the key', () => {
-    const k = matchedMasterKeyFor(`${MASTERING_PREFIX}song.wav`, 'a'.repeat(200));
+    const k = matchedMasterKeyFor(`${MASTERING_PREFIX}song.wav`, 'a'.repeat(200), 'j1');
     // 64-char cap on the sanitised referenceId.
-    expect(k.length).toBeLessThan(MASTERING_PREFIX.length + 'song-matched-'.length + 65 + '.wav'.length);
+    expect(k.length).toBeLessThan(MASTERING_PREFIX.length + 'song_j1-matched-'.length + 65 + '.wav'.length);
     expect(isMasteringKey(k)).toBe(true);
+  });
+});
+
+describe('matchedMasterKeyFor — one file per job', () => {
+  it('gives two jobs matching the same source to the same reference two different files', () => {
+    expect(matchedMasterKeyFor(`${MASTERING_PREFIX}song.wav`, 'ref', 'job-a'))
+      .not.toBe(matchedMasterKeyFor(`${MASTERING_PREFIX}song.wav`, 'ref', 'job-b'));
+  });
+
+  it('refuses a missing job id', () => {
+    expect(() => matchedMasterKeyFor(`${MASTERING_PREFIX}song.wav`, 'ref', '')).toThrow();
   });
 });
 

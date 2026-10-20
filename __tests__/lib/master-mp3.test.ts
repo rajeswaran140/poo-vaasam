@@ -17,18 +17,20 @@ import {
   MAX_OBSERVED_ENCODE_RISE_DB,
 } from '@/lib/master-mp3';
 import { masterKeyFor, isMasterKey } from '@/lib/loudness-measure';
+import { videoKeyFor, isRenderedVideoKey } from '@/lib/master-video';
+import { shortKeyFor, isShortKey, fullVerticalKeyFor, isFullVerticalKey } from '@/lib/master-short';
 import { extensionFor, downloadFilename, sanitizeMasterFilename } from '@/lib/mastering-storage';
 
 describe('mp3KeyFor', () => {
   it('sits beside the master it came from, differing only in extension', () => {
-    const master = masterKeyFor('audio/mastering/1700_ab_take.wav', -14);
+    const master = masterKeyFor('audio/mastering/1700_ab_take.wav', -14, 'j1');
     expect(master).toMatch(/\.wav$/);
     expect(mp3KeyFor(master)).toBe(master.replace(/\.wav$/, '.mp3'));
   });
 
   it('keeps the target in the name, so -14 and -16 do not overwrite each other', () => {
-    const a = mp3KeyFor(masterKeyFor('audio/mastering/x_take.wav', -14));
-    const b = mp3KeyFor(masterKeyFor('audio/mastering/x_take.wav', -16));
+    const a = mp3KeyFor(masterKeyFor('audio/mastering/x_take.wav', -14, 'j1'));
+    const b = mp3KeyFor(masterKeyFor('audio/mastering/x_take.wav', -16, 'j1'));
     expect(a).not.toBe(b);
     expect(a).toContain('14LUFS');
     expect(b).toContain('16LUFS');
@@ -36,6 +38,19 @@ describe('mp3KeyFor', () => {
 
   it('is case-insensitive about the source extension', () => {
     expect(mp3KeyFor('a/b-master-14LUFS.WAV')).toBe('a/b-master-14LUFS.mp3');
+  });
+});
+
+describe('derived outputs of a job-named master', () => {
+  it('stay recognisable as MP3, video, short and vertical outputs', () => {
+    // Every derived key is built from the master's key, so the job id rides
+    // along — and each derived predicate anchors on the -master-NNLUFS suffix,
+    // which the job id sits in front of, not inside.
+    const master = masterKeyFor('audio/mastering/1_a_song.wav', -14, '11111111-1111-4111-8111-111111111111');
+    expect(isMasterMp3Key(mp3KeyFor(master))).toBe(true);
+    expect(isRenderedVideoKey(videoKeyFor(master, 1440))).toBe(true);
+    expect(isShortKey(shortKeyFor(master))).toBe(true);
+    expect(isFullVerticalKey(fullVerticalKeyFor(master))).toBe(true);
   });
 });
 
@@ -51,7 +66,7 @@ describe('isMasterMp3Key', () => {
   });
 
   it('never overlaps with isMasterKey — the re-master guard must not catch the MP3', () => {
-    const mp3 = mp3KeyFor(masterKeyFor('audio/mastering/x_take.wav', -14));
+    const mp3 = mp3KeyFor(masterKeyFor('audio/mastering/x_take.wav', -14, 'j1'));
     expect(isMasterMp3Key(mp3)).toBe(true);
     expect(isMasterKey(mp3)).toBe(false);
   });

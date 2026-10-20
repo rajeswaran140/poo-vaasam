@@ -76,20 +76,40 @@ export function isReferenceKey(key: string): boolean {
 }
 
 /**
+ * The job's own id, made safe to sit inside an S3 key. Every mastering output
+ * (loudness master, karaoke bed, matched master) carries it, so two jobs on the
+ * same source can never write the same file.
+ *
+ * WHY (audit 2026-10-20): output keys were built from (source, target) alone,
+ * so a second job re-mastering the same upload with a different edit replaced
+ * the first job's master in place — and every MP3, video and short derived
+ * from it. The id is the JOB's, not a random value, so an async Lambda retry
+ * of one job rewrites only that job's own file.
+ *
+ * Throws rather than fall back to a shared name: a missing id is exactly the
+ * case that would reintroduce the overwrite.
+ */
+export function jobKeyToken(jobId: string): string {
+  const token = String(jobId ?? '').replace(/[^a-zA-Z0-9-]/g, '').slice(0, 64);
+  if (!/[a-zA-Z0-9]/.test(token)) throw new Error('a mastering output key needs the job id');
+  return token;
+}
+
+/**
  * S3 key for the reference-matched output of a mastering job. Mirrors the
  * naming of masterKeyFor() so the two outputs sit alongside each other in
  * the mastering workspace and the download route recognises both.
  *
- * Example: given s3Key `audio/mastering/song.wav` and referenceId `raj-emo-01`
- * → `audio/mastering/song-matched-raj-emo-01.wav`.
+ * Example: given s3Key `audio/mastering/song.wav`, referenceId `raj-emo-01`
+ * and jobId `j1` → `audio/mastering/song_j1-matched-raj-emo-01.wav`.
  *
  * referenceId is sanitised down to `[a-zA-Z0-9_-]` so a malformed value can't
  * push the key outside the workspace prefix or collide with an existing file.
  */
-export function matchedMasterKeyFor(s3Key: string, referenceId: string): string {
+export function matchedMasterKeyFor(s3Key: string, referenceId: string, jobId: string): string {
   const stem = s3Key.replace(/\.[a-z0-9]+$/i, '');
   const safeRef = String(referenceId).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || 'unknown';
-  return `${stem}-matched-${safeRef}.wav`;
+  return `${stem}_${jobKeyToken(jobId)}-matched-${safeRef}.wav`;
 }
 
 /**
