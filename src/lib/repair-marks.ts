@@ -99,7 +99,11 @@ export function parseMarkPatch(
   const b = body as Record<string, unknown>;
   if (typeof b.version !== 'number' || !Number.isInteger(b.version)) return fail('version is required');
   const patch: MarkPatch = {};
-  if (b.start !== undefined) patch.start = b.start as number;
+  if (b.start !== undefined) {
+    const startError = checkSpan(b.start, null, null);
+    if (startError) return fail(startError);
+    patch.start = b.start as number;
+  }
   if (b.end !== undefined) patch.end = b.end as number | null;
   if (b.reason !== undefined) {
     if (!isReason(b.reason)) return fail('unknown reason');
@@ -119,7 +123,7 @@ export function parseMarkPatch(
     patch.fixedIn = b.fixedIn as string | null;
   }
   if (Object.keys(patch).length === 0) return fail('nothing to change');
-  const start = patch.start ?? current.start;
+  const start = b.start !== undefined ? (b.start as number) : current.start;
   const end = patch.end !== undefined ? patch.end : current.end;
   const spanError = checkSpan(start, end, durationSec);
   if (spanError) return fail(spanError);

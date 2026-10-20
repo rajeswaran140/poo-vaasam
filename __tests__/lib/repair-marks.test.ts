@@ -60,6 +60,9 @@ describe('parseMarkPatch', () => {
     expect(parseMarkPatch({ version: 1, status: 'done' }, mark(), 300).ok).toBe(false);
     expect(parseMarkPatch({ version: 1, fixedIn: '../x' }, mark(), 300).ok).toBe(false);
   });
+  it('refuses a null start (it would persist as a non-number)', () => {
+    expect(parseMarkPatch({ version: 1, start: null }, mark(), 300).ok).toBe(false);
+  });
   it('refuses an empty patch', () => {
     expect(parseMarkPatch({ version: 1 }, mark(), 300).ok).toBe(false);
   });
