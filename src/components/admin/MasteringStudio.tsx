@@ -4367,6 +4367,11 @@ export function MasteringStudio() {
                 leaving the previous song's buffer playing. */}
             <MasteringPlayer
               key={playing.url}
+              masterJobId={playing.id}
+              parent={(() => {
+                const d = library?.find((x) => x.id === playing.id)?.derivedFrom;
+                return d ? { jobId: d.jobId, via: d.via, title: library?.find((x) => x.id === d.jobId)?.title ?? null } : null;
+              })()}
               masterUrl={playing.url}
               sourceUrl={playing.sourceUrl}
               title={library?.find((x) => x.id === playing.id)?.title || 'Master'}

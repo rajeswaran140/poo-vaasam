@@ -30,6 +30,8 @@ import { MasteringEqualizer } from '@/components/admin/MasteringEqualizer';
 import { MasteringWaveform } from '@/components/admin/MasteringWaveform';
 import { useRepairMarks } from '@/components/admin/useRepairMarks';
 import { RepairMarksPanel } from '@/components/admin/RepairMarksPanel';
+import { ParentMarksPanel } from '@/components/admin/ParentMarksPanel';
+import type { LineageVia } from '@/types/masterJob';
 import { repairMarksToText } from '@/lib/repair-marks';
 import { EQ_BANDS, flatGains, clampGain, isFlat, type EqGains } from '@/lib/audio-eq';
 import { measureBlock, barFraction, decayPeak, METER_FLOOR_DB, TRUE_PEAK_CEILING_DB } from '@/lib/audio-meter';
@@ -69,6 +71,8 @@ interface Props {
    * (repair marks); when absent, marks stay in the page as before.
    */
   masterJobId?: string;
+  /** The version this master was made from, when known; shows its marks to tick off. */
+  parent?: { jobId: string; via: LineageVia; title: string | null } | null;
   /**
    * Hand the current loop region to whoever wants a clip of it.
    *
@@ -87,7 +91,7 @@ interface Props {
 const WAVEFORM_BINS = 1200;
 
 export function MasteringPlayer({
-  masterUrl, sourceUrl, title, afterTp, onExpired, onPrev, onNext, masterJobId,
+  masterUrl, sourceUrl, title, afterTp, onExpired, onPrev, onNext, masterJobId, parent,
   onUseRegion, useRegionLabel = 'Use this region',
 }: Props) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -747,7 +751,12 @@ export function MasteringPlayer({
         </div>
 
         {masterJobId ? (
-          <RepairMarksPanel hook={repair} onSeek={seekTo} />
+          <>
+            <RepairMarksPanel hook={repair} onSeek={seekTo} />
+            {parent && (
+              <ParentMarksPanel parent={parent} masterJobId={masterJobId} onStillThere={(input) => void repair.create(input)} />
+            )}
+          </>
         ) : marks.length === 0 ? (
           <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
             Press <kbd>M</kbd> while listening to mark a moment. Reasons match the Music Lab
