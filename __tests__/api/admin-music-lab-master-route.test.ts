@@ -13,8 +13,14 @@ jest.mock('@/lib/auth-helper', () => ({
 }));
 
 const createMock = jest.fn().mockResolvedValue({});
+const parentGet = jest.fn();
 jest.mock('@/infrastructure/database/MasterJobRepository', () => ({
-  MasterJobRepository: jest.fn().mockImplementation(() => ({ create: createMock })),
+  MasterJobRepository: jest.fn().mockImplementation(() => ({ create: createMock, get: parentGet })),
+}));
+
+const setGet = jest.fn().mockResolvedValue(null);
+jest.mock('@/infrastructure/database/StemSetRepository', () => ({
+  StemSetRepository: jest.fn().mockImplementation(() => ({ get: setGet })),
 }));
 
 const lambdaSend = jest.fn().mockResolvedValue({});
@@ -142,5 +148,58 @@ describe('validation when the flag is on', () => {
     expect(payload.referenceKey).toBe('audio/references/raj-emo-01.wav');
     expect(payload.referenceId).toBe('raj-emo-01');
     expect(payload.matchingMethod).toBe('both');
+  });
+});
+
+describe('lineage', () => {
+  const PARENT = { id: 'p1', savedAt: '2026-10-01T00:00:00.000Z', s3Key: 'audio/mastering/song.wav' };
+  beforeEach(() => { parentGet.mockReset(); setGet.mockReset().mockResolvedValue(null); });
+
+  it('sends nothing new when no parent is claimed', async () => {
+    await invoke({ s3Key: 'audio/mastering/song.wav' });
+    expect(createMock.mock.calls[0][1]).not.toHaveProperty('derivedFrom');
+    expect(parentGet).not.toHaveBeenCalled();
+  });
+
+  it('records a verified re-master', async () => {
+    parentGet.mockResolvedValue(PARENT);
+    const res = await invoke({ s3Key: 'audio/mastering/song.wav', derivedFrom: { jobId: 'p1' } });
+    expect(res.status).toBe(202);
+    expect(createMock.mock.calls[0][1].derivedFrom).toEqual({ jobId: 'p1', via: 're-master' });
+    // The worker never sees it.
+    const payload = JSON.parse(Buffer.from(lambdaSend.mock.calls[0][0].args.Payload).toString());
+    expect(payload).not.toHaveProperty('derivedFrom');
+  });
+
+  it('records a stem remix with the mix it was made from', async () => {
+    const REMIX = 'audio/mastering/stems/p1/remix.wav';
+    parentGet.mockResolvedValue(PARENT);
+    setGet.mockResolvedValue({ remix: { key: REMIX, mixUsed: { s1: { gainDb: -2, muted: false } } } });
+    await invoke({ s3Key: REMIX, derivedFrom: { jobId: 'p1' } });
+    expect(createMock.mock.calls[0][1].derivedFrom)
+      .toEqual({ jobId: 'p1', via: 'stem-remix', mixUsed: { s1: { gainDb: -2, muted: false } } });
+  });
+
+  it('refuses a claim it cannot verify, and creates no job', async () => {
+    parentGet.mockResolvedValue(PARENT);
+    const res = await invoke({ s3Key: 'audio/mastering/other.wav', derivedFrom: { jobId: 'p1' } });
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe('parent-mismatch');
+    parentGet.mockResolvedValue(null);
+    const res2 = await invoke({ s3Key: 'audio/mastering/song.wav', derivedFrom: { jobId: 'p1' } });
+    expect((await res2.json()).code).toBe('bad-parent');
+    expect(createMock).not.toHaveBeenCalled();
+    expect(lambdaSend).not.toHaveBeenCalled();
+  });
+
+  it('two re-masters of one parent at once are two jobs with the same parent', async () => {
+    parentGet.mockResolvedValue(PARENT);
+    await Promise.all([
+      invoke({ s3Key: 'audio/mastering/song.wav', derivedFrom: { jobId: 'p1' } }),
+      invoke({ s3Key: 'audio/mastering/song.wav', derivedFrom: { jobId: 'p1' } }),
+    ]);
+    const [a, b] = createMock.mock.calls;
+    expect(a[0]).not.toBe(b[0]);
+    expect(a[1].derivedFrom).toEqual(b[1].derivedFrom);
   });
 });
