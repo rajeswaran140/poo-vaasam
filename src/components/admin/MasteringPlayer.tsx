@@ -28,6 +28,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Repeat, X, Flag, Copy, Play, Pause, Volume2, VolumeX, SkipBack, SkipForward, Smartphone } from 'lucide-react';
 import { MasteringEqualizer } from '@/components/admin/MasteringEqualizer';
 import { MasteringWaveform } from '@/components/admin/MasteringWaveform';
+import { useRepairMarks } from '@/components/admin/useRepairMarks';
+import { RepairMarksPanel } from '@/components/admin/RepairMarksPanel';
+import { repairMarksToText } from '@/lib/repair-marks';
 import { EQ_BANDS, flatGains, clampGain, isFlat, type EqGains } from '@/lib/audio-eq';
 import { measureBlock, barFraction, decayPeak, METER_FLOOR_DB, TRUE_PEAK_CEILING_DB } from '@/lib/audio-meter';
 import {
@@ -62,6 +65,11 @@ interface Props {
   onPrev?: () => void;
   onNext?: () => void;
   /**
+   * The saved master being played. When present, marks are saved with it
+   * (repair marks); when absent, marks stay in the page as before.
+   */
+  masterJobId?: string;
+  /**
    * Hand the current loop region to whoever wants a clip of it.
    *
    * The region is the gesture the operator already makes to find a phrase —
@@ -79,7 +87,7 @@ interface Props {
 const WAVEFORM_BINS = 1200;
 
 export function MasteringPlayer({
-  masterUrl, sourceUrl, title, afterTp, onExpired, onPrev, onNext,
+  masterUrl, sourceUrl, title, afterTp, onExpired, onPrev, onNext, masterJobId,
   onUseRegion, useRegionLabel = 'Use this region',
 }: Props) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -109,6 +117,8 @@ export function MasteringPlayer({
   const [pitchShifts, setPitchShifts] = useState(false);
   const [marks, setMarks] = useState<AuditionMark[]>([]);
   const [markReason, setMarkReason] = useState<MarkReason>('pronunciation');
+  const repair = useRepairMarks(masterJobId ?? null);
+  const createMark = repair.create;
   const [copied, setCopied] = useState(false);
 
   // ---- graph -------------------------------------------------------------
@@ -335,13 +345,24 @@ export function MasteringPlayer({
    * A fresh array every render makes the child's paint callback new every
    * render too, which defeats its dependency checks.
    */
-  const markTimes = useMemo(() => marks.map((m) => m.time), [marks]);
+  const markTimes = useMemo(
+    () => (masterJobId ? (repair.marks ?? []).filter((m) => m.end === null).map((m) => m.start) : marks.map((m) => m.time)),
+    [masterJobId, repair.marks, marks]
+  );
+  const spanRegions = useMemo(
+    () => (masterJobId ? (repair.marks ?? []).filter((m) => m.end !== null).map((m) => ({ start: m.start, end: m.end as number })) : []),
+    [masterJobId, repair.marks]
+  );
 
   /** Drop a mark at the current position. */
   const markSeq = useRef(0);
   const dropMark = useCallback(() => {
     const a = audioRef.current;
     if (!a) return;
+    if (masterJobId) {
+      void createMark({ start: a.currentTime, end: null, reason: markReason, note: '' });
+      return;
+    }
     setMarks((m) =>
       addMark(m, {
         // A monotonic counter, NOT list length: marking t, removing an earlier
@@ -353,7 +374,7 @@ export function MasteringPlayer({
         note: '',
       })
     );
-  }, [markReason]);
+  }, [markReason, masterJobId, createMark]);
 
   // ---- keyboard ----------------------------------------------------------
   const onKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -494,6 +515,7 @@ export function MasteringPlayer({
           position={position}
           loop={loop}
           marks={markTimes}
+          spans={spanRegions}
           onSeek={seekTo}
           onLoopDrag={(from, to) => {
             const region = normaliseLoop(from, to, duration);
@@ -695,12 +717,21 @@ export function MasteringPlayer({
               ))}
             </select>
           </label>
-          {marks.length > 0 && (
+          {masterJobId && loop && (
+            <button
+              type="button"
+              onClick={() => void repair.create({ start: loop.start, end: loop.end, reason: markReason, note: '' })}
+              className="rounded border border-purple-300 px-2 py-1 text-xs text-purple-700 dark:border-purple-700 dark:text-purple-300"
+            >
+              Save span
+            </button>
+          )}
+          {(masterJobId ? (repair.marks?.length ?? 0) > 0 : marks.length > 0) && (
             <button
               type="button"
               onClick={async () => {
                 try {
-                  await navigator.clipboard.writeText(marksToText(marks, title));
+                  await navigator.clipboard.writeText(masterJobId ? repairMarksToText(repair.marks ?? [], title) : marksToText(marks, title));
                   setCopied(true);
                   setTimeout(() => setCopied(false), 1500);
                 } catch {
@@ -715,7 +746,9 @@ export function MasteringPlayer({
           )}
         </div>
 
-        {marks.length === 0 ? (
+        {masterJobId ? (
+          <RepairMarksPanel hook={repair} onSeek={seekTo} />
+        ) : marks.length === 0 ? (
           <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
             Press <kbd>M</kbd> while listening to mark a moment. Reasons match the Music Lab
             vocabulary, so the list pastes straight into a take&rsquo;s notes.
