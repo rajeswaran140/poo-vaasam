@@ -1893,6 +1893,10 @@ Splices two generations before mastering. See its own page. The panel makes the 
 
 Master to -14 and YouTube leaves your track alone instead of turning it down and flattening it. Master for a controlled multi-platform source, not to chase one platform.
 
+## Marks and versions
+
+Marks made in a saved master's player are saved with that master: **M** marks a moment, **Save span** keeps the looped region. Each has a reason, a note and a status (Open, Fixed, Won't fix). A master made by re-opening a saved one, or by **Master this remix**, records where it came from ("Re-master of …", "Remix of …") and lists the previous version's marks so each can be ticked **Fixed here** or carried over with **Still there**. Times belong to each version: a different trim or a remix moves them. Nothing here changes any audio.
+
 ## MP3
 
 A measured **192 kbps** export of the master — what the site serves. Master the lossless source, never the MP3: mastering a lossy file fixes its level while baking the artefacts in.

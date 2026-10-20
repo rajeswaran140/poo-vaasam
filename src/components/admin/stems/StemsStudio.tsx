@@ -523,7 +523,7 @@ export function StemsStudio({ masterJobId }: Props) {
     remixKey && master
       ? `/admin/mastering?source=${encodeURIComponent(remixKey)}&title=${encodeURIComponent(
           `${master.title || 'Untitled'} — remix`
-        )}&target=${encodeURIComponent(targetIdFor(master))}`
+        )}&target=${encodeURIComponent(targetIdFor(master))}&parent=${encodeURIComponent(master.id)}`
       : null;
 
   const majorityRate = set ? majoritySampleRate(set) : null;

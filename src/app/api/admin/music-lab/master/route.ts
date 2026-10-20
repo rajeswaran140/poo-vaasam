@@ -38,6 +38,10 @@ import { parseMasterEdit, isNoOpEdit } from '@/lib/master-edit';
 import { parseMasterJoin } from '@/lib/master-join';
 import { FEATURES } from '@/config/features';
 import type { MatchingMethod } from '@/types/masterJob';
+import { StemSetRepository } from '@/infrastructure/database/StemSetRepository';
+import { isValidMasterJobId } from '@/lib/stems';
+import { resolveLineage } from '@/lib/master-lineage';
+import type { MasterLineage } from '@/types/masterJob';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -202,6 +206,35 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Lineage: the client claims a parent; the route verifies it against the
+  // parent's own source and its stem set's remix before storing anything. A
+  // claim it cannot verify is a client bug — refuse it loudly, because a
+  // master recorded against the wrong parent shows the wrong marks forever.
+  let derivedFrom: MasterLineage | null = null;
+  if (body?.derivedFrom !== undefined && body?.derivedFrom !== null) {
+    const parentId = body.derivedFrom?.jobId;
+    if (!isValidMasterJobId(parentId)) {
+      return NextResponse.json(
+        { success: false, code: 'bad-parent', error: 'The master this came from is not a saved master.' },
+        { status: 400 }
+      );
+    }
+    try {
+      const [parent, set] = await Promise.all([
+        new MasterJobRepository().get(parentId),
+        new StemSetRepository().get(parentId),
+      ]);
+      const lineage = resolveLineage(parent, set, s3Key);
+      if (!lineage.ok) {
+        return NextResponse.json({ success: false, code: lineage.code, error: lineage.error }, { status: 400 });
+      }
+      derivedFrom = lineage.derivedFrom;
+    } catch (err) {
+      console.error('[api/music-lab/master] lineage check failed:', err instanceof Error ? err.message : String(err));
+      return NextResponse.json({ success: false, error: 'Could not check the master this came from.' }, { status: 502 });
+    }
+  }
+
   const jobId = randomUUID();
 
   try {
@@ -212,6 +245,8 @@ export async function POST(request: NextRequest) {
       // the repository default-null-fill for absent fields.
       ...(referenceKey ? { referenceKey, referenceId: referenceId ?? null, matchingMethod: matchingMethod ?? null } : {}),
       ...(normalizationMode === 'peak' ? { normalizationMode } : {}),
+      // Only when verified above: an ordinary job's create() input is unchanged.
+      ...(derivedFrom ? { derivedFrom } : {}),
     });
     const lambda = new LambdaClient({
       region: awsConfig.region,

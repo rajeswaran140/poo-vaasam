@@ -9,6 +9,18 @@ import type { SourceInfo } from '@/lib/loudness-measure';
 import type { NormalizationMode } from '@/lib/master-peak';
 import type { MasterEdit } from '@/lib/master-edit';
 import type { MasterJoin } from '@/lib/master-join';
+import type { StemMixEntry } from '@/types/stemSet';
+
+/** How a master came from another. See the 2026-10-20 repair-marks spec. */
+export type LineageVia = 're-master' | 'stem-remix';
+
+export interface MasterLineage {
+  /** The parent saved master. */
+  jobId: string;
+  via: LineageVia;
+  /** stem-remix only: the stem volumes the remix was rendered with, copied at job creation. */
+  mixUsed?: Record<string, StemMixEntry>;
+}
 
 export type MasterJobStatus = 'processing' | 'done' | 'error';
 
@@ -319,6 +331,12 @@ export interface MasterJob {
   youtubeVideoId: string | null;
   uploadedToYoutubeAt: string | null;
   uploadError: string | null;
+  /**
+   * Which saved master this one was made from, written once at creation and
+   * verified by the master route. Absent/null on every job written before
+   * 2026-10-20, so every reader treats it as optional.
+   */
+  derivedFrom?: MasterLineage | null;
 }
 
 /** One saved slideshow image. See `MasterJob.slides`. */

@@ -44,6 +44,8 @@ interface Props {
    * marks clustered in one phrase is a different problem from three scattered.
    */
   marks?: readonly number[];
+  /** Saved spans (repair marks with an end), drawn as faint bands under the marks. */
+  spans?: readonly LoopRegion[];
   /**
    * False when this waveform is not a transport.
    *
@@ -67,6 +69,8 @@ const LOOP_FILL = 'rgba(16, 185, 129, 0.22)';
 const PLAYHEAD = '#F2F4F8';
 /** A marked problem point. Amber so it never reads as the emerald loop region. */
 const MARK_LINE = '#FFC453';
+/** A saved span: a faint band, quieter than the emerald loop region. */
+const SPAN_FILL = 'rgba(147, 51, 234, 0.15)';
 
 /**
  * The waveform is the visual centre: it is the only element that says WHERE
@@ -84,6 +88,7 @@ export function MasteringWaveform({
   onLoopDrag,
   height = DEFAULT_WAVEFORM_HEIGHT,
   marks = [],
+  spans = [],
   interactive = true,
   ariaLabel,
 }: Props) {
@@ -158,6 +163,15 @@ export function MasteringWaveform({
       g.restore();
     }
 
+    if (duration > 0 && spans.length) {
+      g.fillStyle = SPAN_FILL;
+      for (const s of spans) {
+        const x0 = Math.round((Math.min(Math.max(s.start, 0), duration) / duration) * w);
+        const x1 = Math.round((Math.min(Math.max(s.end, 0), duration) / duration) * w);
+        g.fillRect(x0, 0, Math.max(2, x1 - x0), h);
+      }
+    }
+
     // Marks first, so the playhead stays readable when it sits on one.
     if (duration > 0 && marks.length) {
       g.fillStyle = MARK_LINE;
@@ -178,7 +192,7 @@ export function MasteringWaveform({
       g.fillStyle = PLAYHEAD;
       g.fillRect(x - 0.5, 0, 1.5, h);
     }
-  }, [loop, duration, position, marks]);
+  }, [loop, duration, position, marks, spans]);
 
   // ⚠️ THIS EFFECT MUST NOT DEPEND ON `paint`. `paint` closes over `position`,
   // so it is a new function on every playhead tick — listing it here made the
