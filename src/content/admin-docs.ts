@@ -53,10 +53,23 @@ export function formatDocUpdatedAt(iso: string): string {
 export const ADMIN_DOCS: AdminDoc[] = [
   {
     slug: 'amplify-build-outage-2026-10-20',
-    title: 'Website builds failing — Amplify cannot assume its IAM role (open)',
+    title: 'Website builds failing — Amplify cannot assume its IAM role (resolved 2026-10-21)',
     category: 'Operations',
-    updatedAt: '2026-10-20T15:30:00Z',
+    updatedAt: '2026-10-21T03:30:00Z',
     body: `# Website builds failing — "Unable to assume specified IAM Role"
+
+> ✅ **Resolved 2026-10-21 02:44 UTC.** Build **793** succeeded and deployed at
+> 02:52; repair marks and version lineage (PR #393) went live with it. The app now
+> uses **AmplifyPooVasamBuildRole** (one "a" — IAM can't rename a role). What Raj
+> changed in the console just before build 793 is **to be recorded here**.
+>
+> **What did NOT fix it, so don't repeat it:** a brand-new copy role (job 790),
+> paying the October invoice (791), a 12-hour max session plus \`sts:TagSession\`
+> in the trust policy (792), and a test branch on the same app. In every failed
+> build Amplify never even called AssumeRole in our account; build 793 asked for
+> exactly what the 4 Oct build did (session BuildSession, 1800 s, no tags).
+>
+> The original write-up follows, kept for the record.
 
 > **Open since 2026-10-20 12:06 UTC.** Every Amplify build of this site fails
 > about one second in, before the code is even fetched. The live site is still
@@ -1999,7 +2012,9 @@ Master to -14 and YouTube leaves your track alone instead of turning it down and
 
 ## Marks and versions
 
-Marks made in a saved master's player are saved with that master: **M** marks a moment, **Save span** keeps the looped region. Each has a reason, a note and a status (Open, Fixed, Won't fix). A master made by re-opening a saved one, or by **Master this remix**, records where it came from ("Re-master of …", "Remix of …") and lists the previous version's marks so each can be ticked **Fixed here** or carried over with **Still there**. Times belong to each version: a different trim or a remix moves them. Nothing here changes any audio.
+Marks made in a saved master's player are saved with that master: **M** (or the purple **Mark here** button) marks a moment, and **Save span** keeps the looped region — drag across the waveform first and the button appears.
+
+**Where the player is:** press the round ▶ on a library row, then scroll **below the whole saved-masters list** (past "Show more"). The player opens there, not beside the row; **Mark here** sits under the waveform and EQ sliders. Each has a reason, a note and a status (Open, Fixed, Won't fix). A master made by re-opening a saved one, or by **Master this remix**, records where it came from ("Re-master of …", "Remix of …") and lists the previous version's marks so each can be ticked **Fixed here** or carried over with **Still there**. Times belong to each version: a different trim or a remix moves them. Nothing here changes any audio.
 
 ## MP3
 
