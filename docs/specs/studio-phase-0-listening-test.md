@@ -1,7 +1,7 @@
 # Composition Studio Phase 0: listening test (design)
 
 **Date:** 2026-10-25
-**Status:** draft for review. Three choices are open (see *Decisions for Raj*). Nothing is built until this spec is merged.
+**Status:** Raj made the three choices on 2026-10-25: **candidate A**, the **basic-pitch draft** input, and **three instruments**. Awaiting review of this written spec. Nothing is built until it is merged.
 **Scope:** Phase 0 of the Composition Studio only. It answers one question: *do shippable, freely licensed samples, played in the browser, sound good enough to be worth building Phases 1–3?* The Phase 1 data model, API and UI are out of scope.
 
 ## Purpose
@@ -337,6 +337,13 @@ The S3 folders (`studio-samples/`, `studio/phase0/`) stay. They are small, and P
 - Publishing anything. No Phase 0 audio leaves the private workspace.
 
 ## Decisions for Raj
+
+**Answered 2026-10-25:**
+1. Candidate A.
+2. Option 2, the basic-pitch draft.
+3. No fourth instrument.
+
+The questions as they were asked:
 
 1. **Melody.**
    - **A** (recommended);
