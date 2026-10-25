@@ -166,3 +166,29 @@ describe('Strict-Transport-Security is production-only', () => {
     }
   );
 });
+
+/**
+ * Composition Studio Phase 0: Tone.js builds its clock as a `blob:` Worker,
+ * which needs `worker-src blob:`. That is granted on /admin only. The public
+ * policy is pinned byte for byte so the change can never leak to visitors.
+ */
+const PUBLIC_PROD_CSP =
+  "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://www.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com https://*.amazonaws.com https://d2cdoh43143xxa.cloudfront.net https://i.ytimg.com https://inputtools.google.com; media-src 'self' blob: https:; frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com; upgrade-insecure-requests";
+
+describe('admin scope (Composition Studio Phase 0)', () => {
+  it('leaves the public production policy byte-identical', () => {
+    expect(buildContentSecurityPolicy('production')).toBe(PUBLIC_PROD_CSP);
+    expect(buildContentSecurityPolicy('production', { scope: 'public' })).toBe(PUBLIC_PROD_CSP);
+  });
+
+  it('adds exactly one directive for /admin', () => {
+    expect(buildContentSecurityPolicy('production', { scope: 'admin' })).toBe(
+      `${PUBLIC_PROD_CSP}; worker-src 'self' blob:`
+    );
+  });
+
+  it('never adds blob: or wasm-unsafe-eval to script-src', () => {
+    const admin = buildContentSecurityPolicy('production', { scope: 'admin' });
+    expect(directive(admin, 'script-src')).not.toMatch(/blob:|wasm-unsafe-eval/);
+  });
+});

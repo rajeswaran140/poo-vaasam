@@ -4,7 +4,11 @@ import type { NextConfig } from "next";
 // tested without booting Next. Relative import: the `@/` alias is not available
 // this early (same reason the vanity-path map below is mirrored rather than
 // imported).
-import { contentSecurityPolicy, strictTransportSecurity } from "./src/config/csp";
+import {
+  adminContentSecurityPolicy,
+  contentSecurityPolicy,
+  strictTransportSecurity,
+} from "./src/config/csp";
 
 // Vanity URLs: serve a content item at a pretty path, and 301 its /content/<id>
 // URL to the pretty one. Keep in sync with src/config/vanity-paths.ts (next.config
@@ -215,6 +219,14 @@ const nextConfig: NextConfig = {
             value: 'camera=(), microphone=(), geolocation=()'
           }
         ],
+      },
+      {
+        // ⚠️ ORDER MATTERS: this must stay AFTER '/:path*'. For the same header
+        // key, Next uses the LATER matching entry, so /admin gets its own CSP
+        // (the public one plus `worker-src 'self' blob:`, see csp.ts) while
+        // every other header still comes from the entry above.
+        source: '/admin/:path*',
+        headers: [{ key: 'Content-Security-Policy', value: adminContentSecurityPolicy }],
       },
     ];
   },
