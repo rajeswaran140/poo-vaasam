@@ -143,6 +143,10 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
     subtitle:
       "Lyric word-family dictionary — register × usage, to diversify song vocabulary",
   },
+  "/admin/music-lab/studio-test": {
+    title: "Studio listening test",
+    subtitle: "Blind A/B: sample renders against the Suno stem, to decide whether the studio is worth building",
+  },
   "/admin/music-lab": {
     title: "Music Lab",
     subtitle:
