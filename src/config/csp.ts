@@ -24,9 +24,19 @@
  *   (incompetech.com royalty-free audio + S3); frame-src for YouTube embeds.
  */
 
-/** Build the policy string for a given environment. */
+/**
+ * Build the policy string for a given environment.
+ *
+ * `scope: 'admin'` appends exactly one directive, `worker-src 'self' blob:`,
+ * for the Composition Studio listening test (/admin/music-lab/studio-test):
+ * Tone.js builds its clock as `new Worker(blob:…)`, and with no `worker-src`
+ * the browser falls back to `script-src`, which has no `blob:`. It is scoped
+ * to /admin so the public policy stays byte-identical. Worklet-based audio
+ * nodes are avoided on purpose: they would need `blob:` in `script-src`.
+ */
 export function buildContentSecurityPolicy(
-  nodeEnv: string | undefined = process.env.NODE_ENV
+  nodeEnv: string | undefined = process.env.NODE_ENV,
+  opts: { scope?: 'public' | 'admin' } = {}
 ): string {
   const isProduction = nodeEnv === 'production';
 
@@ -107,10 +117,16 @@ export function buildContentSecurityPolicy(
      * Playwright selector in the WebKit projects.
      */
     ...(isProduction ? ['upgrade-insecure-requests'] : []),
+    ...(opts.scope === 'admin' ? ["worker-src 'self' blob:"] : []),
   ].join('; ');
 }
 
 export const contentSecurityPolicy = buildContentSecurityPolicy();
+
+/** The /admin policy: the public one plus `worker-src 'self' blob:`. */
+export const adminContentSecurityPolicy = buildContentSecurityPolicy(process.env.NODE_ENV, {
+  scope: 'admin',
+});
 
 /**
  * `Strict-Transport-Security`, or null when it must not be sent.
