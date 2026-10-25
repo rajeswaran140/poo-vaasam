@@ -115,7 +115,7 @@ Expected: PASS, and tsc clean.
 
 **Files:**
 - Modify: `src/components/admin/MasteringComparePlayer.tsx`: `Props`, the radiogroup labels at about lines 508–513, the level note at about 518–524, and the match toggle at about 321–329
-- Test: `__tests__/components/mastering-compare-blind.test.tsx` (new; copy the AudioContext mocking from `mastering-player.test.tsx`)
+- Test: `__tests__/components/mastering-compare-blind.test.tsx` (new; copy the AudioContext mocking from `__tests__/components/mastering-player-resources.test.tsx`)
 
 **Interfaces:**
 - Produces: the optional prop `labels?: { a: string; b: string; levelNote?: string }`.
@@ -128,7 +128,7 @@ Expected: PASS, and tsc clean.
 
 - [ ] **Step 2: Run them and see them fail**
 
-Run: `NODE_OPTIONS=--no-experimental-strip-types npx jest __tests__/components/mastering-compare-blind.test.tsx __tests__/components/mastering-player.test.tsx`
+Run: `NODE_OPTIONS=--no-experimental-strip-types npx jest __tests__/components/mastering-compare-blind.test.tsx __tests__/components/mastering-player-stops.test.tsx`
 Expected: the two blind tests FAIL.
 
 - [ ] **Step 3: Implement the prop.** With `labels` unset, the component's output is unchanged.
