@@ -26,7 +26,7 @@ The feasibility assessment (a private Claude Doc, linked from the PR) found the 
 
 ### A note on what this public document leaves out
 
-This repo is public. The spec names candidate songs only as **A, B and C**, and does not describe any song's arrangement. The titles behind A to C are in the PR conversation and the private assessment doc. Melody transcriptions (note data) also live in the private S3 workspace, never in the repo.
+This repo is public. The spec names candidate songs only as **A, B and C**, and does not describe any song's arrangement. The titles behind A to C are given to Raj directly, never on GitHub. The exit report in the private assessment doc records the song that was used. Melody transcriptions (note data) also live in the private S3 workspace, never in the repo.
 
 ## Section 1: Melody choice
 
@@ -34,7 +34,7 @@ This repo is public. The spec names candidate songs only as **A, B and C**, and 
 
 The brief assumed songs with `STEMSET#` records in the stem library. **There are none yet.** The stem library shipped in #387/#388 but no stem set has been uploaded. The only Suno multitrack exports in S3 are two raw batches uploaded for the September karaoke orders, as plain workspace files under `audio/mastering/`.
 
-Suno names stems by family (`Woodwinds`, `Strings`, `Percussion`), not by instrument. Whether a `Woodwinds` stem is a flute line, and whether a `Strings` stem is a violin line, is for Raj to confirm by ear.
+Suno names stems by family (`Woodwinds`, `Strings`, `Percussion`), not by instrument. This spec treats a `Woodwinds` stem as the flute reference and a `Strings` stem as the violin reference. Raj can override either.
 
 Activity was measured on 2026-10-25 with ffmpeg `silencedetect` (seconds of sound above the threshold; the rest is silence):
 
@@ -163,7 +163,7 @@ Transcriptions go to `audio/mastering/studio/phase0/lines/<lineId>/notes.json`, 
 - **Component:** `src/components/admin/music/StudioPhase0.tsx`, with pure helpers in `src/lib/studio-phase0/`: WAV encoding, trial shuffling, and gamaka curve smoothing.
 - **Existing routes reused, unchanged:**
   - `GET /api/admin/mastering/download?mode=play`: presigned reads of packs, manifest, notes and stem cuts;
-  - `POST /api/admin/mastering/upload` (kind `audio`): upload each render WAV into the mastering workspace;
+  - `POST /api/admin/mastering/upload` (kind `audio`): upload each render WAV into the mastering workspace. The filename is `studio-phase0-<trialId>.wav`, so the key is easy to recognise. Nothing in the app lists `audio/mastering/` from S3: Sound Engineering and its pickers list saved jobs from DynamoDB, and the only S3 listing is the references prefix. So the renders appear in no admin list;
   - `POST /api/admin/music-lab/measure`: integrated loudness of each render and stem cut, through the existing `measure-fn` Lambda. Its role already reads `audio/mastering/*`.
 - **One new route:** `GET` and `PUT /api/admin/music-lab/studio-phase0/results`.
   - It reads and writes one JSON object at the fixed key `audio/mastering/studio/phase0/results.json`. The bucket is versioned, so every save is kept.
@@ -217,7 +217,9 @@ Before and after the deploy, run `curl -sI "https://tamilagaval.com/<path>?cb=<u
 - The `?cb=` value is unique per request so CloudFront cannot return a cached copy.
 - The same curl on `/admin/music-lab/studio-test` must show the added directive.
 
-The **CSP behaviour** check runs only on the deployed site. `next dev` adds `'unsafe-eval'` and drops `upgrade-insecure-requests`, so a dev-server pass proves nothing. The page installs a `securitypolicyviolation` listener that lists every violation on the page itself. Acceptance means **zero** violations:
+The **CSP behaviour** check runs only on the deployed site. `next dev` adds `'unsafe-eval'` and drops `upgrade-insecure-requests`, so a dev-server pass proves nothing. **Load the page with a full page load.** A CSP applies to the page that was loaded, and Next's client-side navigation fetches no new headers. Arriving from `/login` (which returns with `router.push`) or from a public page leaves that page's CSP in force, without `worker-src`. So the page checks, before loading anything, that a `blob:` Worker can start. If it cannot, it shows *"Reload this page"* and stops, instead of failing later in a way that looks like a library bug.
+
+The page installs a `securitypolicyviolation` listener that lists every violation on the page itself. Acceptance means **zero** violations:
 - after **Play live** has run every line;
 - after **Prepare trials** has rendered all 18 clips.
 
@@ -295,7 +297,7 @@ When Raj has finished, a **Phase 0 results** section is added to the feasibility
 3. The jest suite passes, including the CSP pins and the player's default-labels test.
 4. The `next build` route table shows **no change in First Load JS** for public routes against `master`.
 5. The deployed header diff on public pages is empty. The admin page carries `worker-src 'self' blob:`.
-6. On the deployed admin, in desktop Chrome:
+6. On the deployed admin, in desktop Chrome, on a **hard load** of the page:
    - all lines play live;
    - all 18 renders complete;
    - the page lists **zero** CSP violations.
@@ -340,7 +342,7 @@ The S3 folders (`studio-samples/`, `studio/phase0/`) stay. They are small, and P
    - **A** (recommended);
    - **A for flute and percussion, with C for violin** (needs one Suno multitrack export of a song with a longer string line);
    - or another song he prefers.
-   - Either way he also confirms, by ear, that the chosen `Woodwinds` and `Strings` stems carry flute-like and violin-like lines.
+   - The chosen song's `Woodwinds` and `Strings` stems become the flute and violin references, unless Raj says either doesn't suit. The blind trials would expose a mismatch anyway.
 2. **Melody input.** Option 2, a basic-pitch draft corrected by me (recommended), or option 1, hand-entered.
 3. **A fourth instrument?**
    - VSCO 2 CE also has clarinet, oboe and bassoon. VCSL has more percussion.
