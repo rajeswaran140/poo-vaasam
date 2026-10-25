@@ -154,3 +154,71 @@ describe('middleware — fresh-content Cache-Control on list pages', () => {
     expect(response.headers.get('Cache-Control')).toBeNull();
   });
 });
+
+describe('middleware — scraper block', () => {
+  function uaReq(pathname: string, userAgent?: string): NextRequest {
+    const headers: Record<string, string> = { host: 'tamilagaval.com' };
+    if (userAgent !== undefined) headers['user-agent'] = userAgent;
+    return new NextRequest(`https://tamilagaval.com${pathname}`, { headers });
+  }
+
+  const BLOCKED = [
+    'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.2; +https://openai.com/gptbot)',
+    'CCBot/2.0 (https://commoncrawl.org/faq/)',
+    'Mozilla/5.0 (compatible; Bytespider; spider-feedback@bytedance.com)',
+    'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; ClaudeBot/1.0; +claudebot@anthropic.com)',
+    'meta-externalagent/1.1 (+https://developers.facebook.com/docs/sharing/webmasters/crawler)',
+    'python-requests/2.31.0',
+    'Python-urllib/3.12',
+    'Scrapy/2.11.0 (+https://scrapy.org)',
+    'curl/8.5.0',
+    'Wget/1.21.4',
+    'Go-http-client/2.0',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/120.0.0.0 Safari/537.36',
+  ];
+
+  test.each(BLOCKED)('403s %s', (ua) => {
+    const response = middleware(uaReq('/songs', ua));
+    expect(response.status).toBe(403);
+    // A cached 403 would be served to the next real listener on this URL.
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+  });
+
+  const ALLOWED = [
+    // browsers
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
+    // search crawlers
+    'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+    'Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)',
+    // link previews — WhatsApp is how most listeners share
+    'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+    'WhatsApp/2.23.20.0',
+    'TelegramBot (like TwitterBot)',
+    'Twitterbot/1.0',
+    'Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)',
+    // AI answer engines that cite and send visitors
+    'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; OAI-SearchBot/1.0; +https://openai.com/searchbot',
+    'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; ChatGPT-User/1.0; +https://openai.com/bot',
+    'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; PerplexityBot/1.0; +https://perplexity.ai/perplexitybot)',
+    // the site's own /videos → /api/songs self-fetch (Node's default UA)
+    'node',
+    'undici',
+  ];
+
+  test.each(ALLOWED)('passes %s', (ua) => {
+    expect(middleware(uaReq('/songs', ua)).status).toBe(200);
+  });
+
+  test('passes a request with no User-Agent (self-fetch safety)', () => {
+    expect(middleware(uaReq('/songs')).status).toBe(200);
+  });
+
+  test('a blocked crawler can still read robots.txt', () => {
+    expect(middleware(uaReq('/robots.txt', 'GPTBot/1.2')).status).toBe(200);
+  });
+
+  test('blocks API routes too', () => {
+    expect(middleware(uaReq('/api/songs', 'python-requests/2.31.0')).status).toBe(403);
+  });
+});
