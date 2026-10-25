@@ -231,6 +231,22 @@ export function StudioPhase0() {
       const saved = await track('Saved results', () => loadResults());
       if (items.some((i) => i.error)) return;
       const all = buildTrials(m);
+      if (saved) {
+        // A session's order is fixed when it is first saved. If the manifest
+        // has gained or lost trials since, the old session cannot be resumed.
+        const want = all.map((t) => t.trialId).sort().join();
+        const have = [...saved.order].sort().join();
+        if (want !== have) {
+          items.push({
+            label: 'Session check',
+            done: false,
+            error:
+              'The saved results are for a different set of trials than this manifest. Nothing was changed. Ask for the session to be reset before testing.',
+          });
+          setLoadItems([...items]);
+          return;
+        }
+      }
       const session = saved ?? newSession(all, newSeed());
       resultsRef.current = session;
       setResults(session);
@@ -393,6 +409,13 @@ export function StudioPhase0() {
   const currentLine = current ? manifest?.lines.find((l) => l.lineId === current.lineId) : null;
   const showForm = !!currentId && (!revealedId || editingId === currentId);
   const v = allRated && results ? verdict(results, trials) : null;
+  const excluded = v
+    ? Object.entries(v.byPack).flatMap(([packId, p]) =>
+        p.lines
+          .filter((l) => l.excluded)
+          .map((l) => `${l.lineId} on ${packLabel(packId)}: Suno scored ${l.sunoScore}`)
+      )
+    : [];
 
   return (
     <div className="space-y-4 p-4">
@@ -438,7 +461,7 @@ export function StudioPhase0() {
         {loaded && <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">Everything loaded.</p>}
       </Section>
 
-      {loaded && manifest && (
+      {loaded && manifest && !allPrepared && (
         <Section title="Lines">
           <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
             Checks that live playback works. Not part of the blind test.
@@ -684,6 +707,16 @@ export function StudioPhase0() {
               })}
             </tbody>
           </table>
+          {excluded.length > 0 && (
+            <div className="mt-2 text-xs text-gray-700 dark:text-gray-300">
+              <p className="font-medium">Excluded (the Suno stem itself scored below 3):</p>
+              <ul className="list-disc pl-5">
+                {excluded.map((e) => (
+                  <li key={e}>{e}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           <p className="mt-2 text-xs text-gray-600 dark:text-gray-400">
             Suno identified {v.suno.hits} of {v.suno.total} times. Gamaka:{' '}
             {v.gamaka.map((g) => `${g.lineId} straight ${g.straight ?? '–'} / gamaka ${g.gamaka ?? '–'}`).join('; ')}.

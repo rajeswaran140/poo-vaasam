@@ -1,5 +1,5 @@
 /** @jest-environment node */
-import { encodeWav16 } from '@/lib/studio-phase0/wav';
+import { encodeWav16, limitPeak } from '@/lib/studio-phase0/wav';
 
 const ascii = (b: Uint8Array, at: number, n: number) => String.fromCharCode(...b.slice(at, at + n));
 
@@ -29,5 +29,24 @@ describe('encodeWav16', () => {
     const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     expect([v.getInt16(44, true), v.getInt16(46, true), v.getInt16(48, true), v.getInt16(50, true)])
       .toEqual([32767, -32768, 16384, 0]);
+  });
+});
+
+describe('limitPeak (final review: overlapping voices clipped before measuring)', () => {
+  it('scales a render whose peak is over −1 dBFS down to exactly −1 dBFS, both channels alike', () => {
+    const out = limitPeak([Float32Array.from([0.5, 1.8]), Float32Array.from([-0.9, 0])]);
+    const ceiling = Math.pow(10, -1 / 20);
+    expect(Math.max(...out.flatMap((c) => Array.from(c, Math.abs)))).toBeCloseTo(ceiling, 5);
+    expect(out[0][0] / out[1][0]).toBeCloseTo(0.5 / -0.9, 5);
+  });
+
+  it('raises a quiet render to −1 dBFS too (smplr renders peaked near −27 dBFS in Chrome)', () => {
+    const out = limitPeak([Float32Array.from([0.02, -0.05])]);
+    expect(Math.abs(out[0][1])).toBeCloseTo(Math.pow(10, -1 / 20), 5);
+    expect(out[0][0] / out[0][1]).toBeCloseTo(0.02 / -0.05, 5);
+  });
+
+  it('returns silence unchanged', () => {
+    expect(Array.from(limitPeak([new Float32Array(3)])[0])).toEqual([0, 0, 0]);
   });
 });

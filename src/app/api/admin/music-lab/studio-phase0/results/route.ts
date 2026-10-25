@@ -24,8 +24,12 @@ async function readStored(): Promise<Results | null> {
   try {
     const body = await S3Operations.getFile(RESULTS_KEY);
     const text = await (body as { transformToString: () => Promise<string> }).transformToString();
+    // Only a missing file means "no results yet". A file that fails to parse is
+    // an error: treating it as missing would start a new seed and the first save
+    // would overwrite the stored session.
     const parsed = resultsSchema.safeParse(JSON.parse(text));
-    return parsed.success ? parsed.data : null;
+    if (!parsed.success) throw new Error('Stored results.json fails the schema.');
+    return parsed.data;
   } catch (err) {
     if (err instanceof Error && err.name === 'NoSuchKey') return null;
     throw err;

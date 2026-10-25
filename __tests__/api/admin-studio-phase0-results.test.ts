@@ -99,3 +99,20 @@ it('PUT refuses to replace a stored session with a different seed (409)', async 
   expect((await put(JSON.stringify(other))).status).toBe(409);
   expect(uploadFile).not.toHaveBeenCalled();
 });
+
+describe('a stored file that fails the schema (final review I3)', () => {
+  const corrupt = () =>
+    getFile.mockResolvedValueOnce({ transformToString: () => Promise.resolve('{"version":1,"seed":"zz"}') });
+
+  it('GET reports an error instead of "no results", so the page never starts a new seed', async () => {
+    corrupt();
+    const res = await GET(new Request(URL_) as never);
+    expect(res.status).toBe(502);
+  });
+
+  it('PUT refuses to overwrite it', async () => {
+    corrupt();
+    expect((await put(JSON.stringify(session))).status).toBe(502);
+    expect(uploadFile).not.toHaveBeenCalled();
+  });
+});

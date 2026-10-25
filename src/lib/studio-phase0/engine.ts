@@ -24,6 +24,7 @@
  */
 import { z } from 'zod';
 import { curveForNote } from './gamaka';
+import { limitPeak } from './wav';
 import type { LineNotes, Note, PackSpec, Trial } from './model';
 
 export const SAMPLE_RATE = 48000;
@@ -119,6 +120,23 @@ export function percussionSample(pack: LoadedPack, midi: number): AudioBuffer {
 
 const isPercussion = (pack: LoadedPack) => pack.buffers.has('low');
 
+const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+/**
+ * The pack's pitched samples keyed by NOTE NAME ('60' → 'C4') for smplr.
+ * ⚠️ smplr reads a key as MIDI only when it is a note name. A bare "60" became
+ * an alias numbered 0..N-1 with no pitch spreading, so every straight note
+ * played the wrong sample or nothing (final review C1).
+ */
+export function samplerBuffers(pack: LoadedPack): Record<string, AudioBuffer> {
+  const out: Record<string, AudioBuffer> = {};
+  for (const [k, b] of pack.buffers) {
+    const n = Number(k);
+    if (Number.isInteger(n)) out[`${NAMES[n % 12]}${Math.floor(n / 12) - 1}`] = b;
+  }
+  return out;
+}
+
 /** One sample voice: 10 ms fades, optional detune curve. Returns its stop. */
 function voice(
   ctx: BaseAudioContext,
@@ -139,8 +157,10 @@ function voice(
   g.gain.linearRampToValueAtTime(level, at + fade);
   g.gain.setValueAtTime(level, at + dur - fade);
   g.gain.linearRampToValueAtTime(0, at + dur);
-  src.detune.value = detuneCents;
+  // A curve already carries detuneCents. Setting `.value` as well would add an
+  // event that can fall inside the curve's span, which Chrome rejects.
   if (curve) src.detune.setValueCurveAtTime(curve.map((c) => c + detuneCents), at, dur);
+  else src.detune.value = detuneCents;
   src.connect(g).connect(out);
   src.start(at);
   src.stop(at + dur + 0.02);
@@ -153,31 +173,59 @@ function voice(
   };
 }
 
-/** Schedule every note of a line from `t0` on `ctx` into `out`. Returns a stop for all of it. */
-async function scheduleLine(
+/**
+ * Sampler playback parameters, always set explicitly. ⚠️ smplr 1.1.0 copies
+ * `detune`, `decayTime` and `lpfCutoffHz` straight into the preset defaults,
+ * so leaving one unset makes every voice's detune NaN and Chrome throws.
+ */
+export const SAMPLER_PARAMS = { detune: 0, decayTime: 0.3, lpfCutoffHz: 20000 } as const;
+
+type StartFn = (e: { note: number; velocity: number; time: number; duration: number }) => () => void;
+
+/**
+ * Build the line's smplr Sampler (null for percussion, which uses the custom
+ * voice). Done BEFORE any note is scheduled, so no await sits between a
+ * scheduled time and its start. `lookaheadMs` covers the whole line for an
+ * offline render: smplr's scheduler otherwise queues anything more than
+ * 200 ms ahead of `currentTime` for a 50 ms timer, and an OfflineAudioContext
+ * sits at 0 until it renders, so those notes came out late or not at all
+ * (final review C2).
+ */
+async function buildSampler(
+  ctx: BaseAudioContext,
+  out: AudioNode,
+  pack: LoadedPack,
+  lookaheadMs?: number
+): Promise<StartFn | null> {
+  if (isPercussion(pack)) return null;
+  const { Sampler, Scheduler } = await import('smplr');
+  const inst = Sampler(ctx, {
+    ...SAMPLER_PARAMS,
+    buffers: samplerBuffers(pack),
+    destination: out,
+    ...(lookaheadMs ? { scheduler: Scheduler(ctx, { lookaheadMs }) } : {}),
+  });
+  await inst.load;
+  return (e) => inst.start(e);
+}
+
+/** Schedule every note of a line from `t0`. Synchronous. Returns a stop for all of it. */
+function scheduleNotes(
   ctx: BaseAudioContext,
   out: AudioNode,
   line: LineNotes,
   pack: LoadedPack,
   trial: Trial,
-  t0: number
-): Promise<() => void> {
+  t0: number,
+  start: StartFn | null
+): () => void {
   const stops: Array<() => void> = [];
-  const percussion = isPercussion(pack);
-  let sampler: { start: (e: { note: number; velocity: number; time: number; duration: number }) => () => void } | null =
-    null;
-  if (!percussion) {
-    const { Sampler } = await import('smplr');
-    const inst = Sampler(ctx, { buffers: Object.fromEntries(pack.buffers), destination: out });
-    await inst.load;
-    sampler = inst as unknown as typeof sampler;
-  }
   const end = t0 + line.durationSec;
   for (const note of line.notes as Note[]) {
     const at = t0 + note.t;
     if (at >= end) continue;
     const dur = Math.min(note.dur, end - at);
-    if (percussion) {
+    if (!start) {
       const b = percussionSample(pack, note.midi);
       stops.push(voice(ctx, out, b, at, Math.min(b.duration, end - at), note.vel, 0, null));
       continue;
@@ -187,20 +235,26 @@ async function scheduleLine(
       const { buffer, detuneCents } = noteToSample(pack, note.midi);
       stops.push(voice(ctx, out, buffer, at, dur, note.vel, detuneCents, curve));
     } else {
-      stops.push(sampler!.start({ note: note.midi, velocity: note.vel, time: at, duration: dur }));
+      stops.push(start({ note: note.midi, velocity: note.vel, time: at, duration: dur }));
     }
   }
   return () => stops.forEach((s) => s());
 }
 
 let live: AudioContext | null = null;
+let liveTone: import('tone').Context | null = null;
 
-/** The one live AudioContext (48 kHz), shared with Tone. Create it from a click. */
+/**
+ * The one live AudioContext (48 kHz), wrapped by its own Tone context. Create
+ * it from a click. Renders never touch Tone's global context (final review
+ * I1): every Tone node is given its context explicitly.
+ */
 export async function liveContext(): Promise<AudioContext> {
   if (!live) {
     live = new AudioContext({ sampleRate: SAMPLE_RATE });
     const Tone = await import('tone');
-    Tone.setContext(new Tone.Context(live));
+    liveTone = new Tone.Context(live);
+    Tone.setContext(liveTone);
   }
   await live.resume();
   return live;
@@ -213,16 +267,18 @@ export async function liveContext(): Promise<AudioContext> {
 export async function playLive(line: LineNotes, pack: LoadedPack, trial: Trial): Promise<() => void> {
   const ctx = await liveContext();
   const Tone = await import('tone');
-  const reverb = new Tone.Reverb(REVERB).toDestination();
+  const toneCtx = liveTone!;
+  const reverb = new Tone.Reverb({ ...REVERB, context: toneCtx }).toDestination();
   await reverb.ready;
   const bus = ctx.createGain();
   Tone.connect(bus, reverb);
-  const transport = Tone.getTransport();
+  const start = await buildSampler(ctx, bus, pack);
+  const transport = toneCtx.transport;
   transport.stop();
   transport.cancel();
   let stopNotes: (() => void) | null = null;
   transport.scheduleOnce((time) => {
-    void scheduleLine(ctx, bus, line, pack, trial, time).then((s) => (stopNotes = s));
+    stopNotes = scheduleNotes(ctx, bus, line, pack, trial, time, start);
   }, 0);
   transport.start();
   return () => {
@@ -236,24 +292,24 @@ export async function playLive(line: LineNotes, pack: LoadedPack, trial: Trial):
   };
 }
 
-/** Render a line offline: 48 kHz stereo, exactly `line.durationSec` long. */
+/**
+ * Render a line offline: 48 kHz stereo, exactly `line.durationSec` long, and
+ * peak-normalised to −1 dBFS (see `limitPeak`).
+ */
 export async function renderLine(line: LineNotes, pack: LoadedPack, trial: Trial): Promise<Float32Array[]> {
   const Tone = await import('tone');
   const frames = Math.round(line.durationSec * SAMPLE_RATE);
   const offline = new OfflineAudioContext(2, frames, SAMPLE_RATE);
   const toneOffline = new Tone.OfflineContext(offline);
-  const previous = Tone.getContext();
-  Tone.setContext(toneOffline);
-  try {
-    const reverb = new Tone.Reverb(REVERB).toDestination();
-    await reverb.ready;
-    const bus = offline.createGain();
-    Tone.connect(bus, reverb);
-    await scheduleLine(offline, bus, line, pack, trial, 0);
-    const rendered = await toneOffline.render(false);
-    const channels = rendered.toArray();
-    return Array.isArray(channels) ? channels : [channels, channels];
-  } finally {
-    Tone.setContext(previous);
-  }
+  const reverb = new Tone.Reverb({ ...REVERB, context: toneOffline }).toDestination();
+  await reverb.ready;
+  const bus = offline.createGain();
+  Tone.connect(bus, reverb);
+  const start = await buildSampler(offline, bus, pack, (line.durationSec + 1) * 1000);
+  scheduleNotes(offline, bus, line, pack, trial, 0, start);
+  const rendered = await toneOffline.render(false);
+  const channels = rendered.toArray();
+  reverb.dispose();
+  toneOffline.dispose();
+  return limitPeak(Array.isArray(channels) ? channels : [channels, channels]);
 }

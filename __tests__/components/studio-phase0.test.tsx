@@ -227,3 +227,47 @@ it('lists CSP violations on the page, and shows zero when there are none', async
   });
   expect(within(section('CSP violations')).getByText(/worker-src/)).toBeInTheDocument();
 });
+
+describe('final review fixes', () => {
+  async function rateCurrent(a: string, b: string) {
+    const listen = section('Listen');
+    fireEvent.click(within(within(listen).getByRole('radiogroup', { name: 'Score for A' })).getByRole('radio', { name: a }));
+    fireEvent.click(within(within(listen).getByRole('radiogroup', { name: 'Score for B' })).getByRole('radio', { name: b }));
+    fireEvent.click(within(within(listen).getByRole('radiogroup', { name: 'Which one is Suno?' })).getByRole('radio', { name: "Can't tell" }));
+    await act(async () => {
+      fireEvent.click(within(listen).getByRole('button', { name: 'Save' }));
+    });
+  }
+
+  it('lists a line excluded because its Suno stem scored below 3 (I2)', async () => {
+    wire();
+    await startAndLoad();
+    await prepareAll();
+    for (let i = 0; i < TRIALS.length; i++) {
+      await rateCurrent('2', '2');
+      const next = screen.queryByRole('button', { name: 'Next trial' });
+      if (next) fireEvent.click(next);
+    }
+    const summary = section('Summary');
+    expect(within(summary).getByText(/Excluded/)).toBeInTheDocument();
+    expect(summary.textContent).toMatch(/F1.*Suno scored 2/);
+  });
+
+  it('hides the non-blind Lines panel once the trials are prepared', async () => {
+    wire();
+    await startAndLoad();
+    expect(section('Lines')).toBeInTheDocument();
+    await prepareAll();
+    expect(screen.queryByRole('region', { name: 'Lines' })).toBeNull();
+  });
+
+  it('refuses saved results made for a different set of trials, instead of stalling', async () => {
+    const other = newSession(TRIALS.slice(0, 2), 'aaaaaaaabbbbbbbb') as Results;
+    wire({ results: other });
+    render(<StudioPhase0 />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Load the test' }));
+    const alert = await within(section('Load')).findByRole('alert');
+    expect(alert).toHaveTextContent(/different set of trials/);
+    expect(screen.queryByRole('region', { name: 'Prepare trials' })).toBeNull();
+  });
+});

@@ -36,3 +36,21 @@ export function encodeWav16(channels: Float32Array[], sampleRate: number): Uint8
   }
   return bytes;
 }
+
+/**
+ * Every render is scaled, as a whole, to a −1 dBFS peak: one gain for every
+ * channel, so the sound is unchanged. Down, because overlapping voices plus
+ * reverb can sum past full scale and `encodeWav16` would clip that before the
+ * loudness is measured. Up, because smplr renders peaked near −27 dBFS in
+ * Chrome, and the player's loudness matching pulls the Suno stem down to the
+ * quieter side, so the whole comparison would play very quietly. Silence is
+ * returned as it is.
+ */
+export function limitPeak(channels: Float32Array[]): Float32Array[] {
+  const ceiling = Math.pow(10, -1 / 20);
+  let peak = 0;
+  for (const c of channels) for (const v of c) peak = Math.max(peak, Math.abs(v));
+  if (peak === 0) return channels;
+  const g = ceiling / peak;
+  return channels.map((c) => c.map((v) => v * g));
+}
