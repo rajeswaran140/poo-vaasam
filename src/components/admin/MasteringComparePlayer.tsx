@@ -47,6 +47,14 @@ interface Props {
    * matched output via measure-fn if the assumption slips.
    */
   matchedKey?: string | null;
+  /**
+   * Blind mode, for the Composition Studio listening test. When set, the two
+   * buttons read `a` and `b`, the heading and the note under the buttons say
+   * nothing about which side is which, the *Match loudness* toggle is hidden
+   * (matching stays on), and `matchedKey` is ignored. Unset, the player is
+   * exactly as Sound Engineering has always had it.
+   */
+  labels?: { a: string; b: string; levelNote?: string };
 }
 
 async function playUrl(key: string): Promise<string> {
@@ -77,8 +85,11 @@ export function MasteringComparePlayer({
   afterLufs,
   onPrev,
   onNext,
-  matchedKey,
+  matchedKey: matchedKeyProp,
+  labels,
 }: Props) {
+  const blind = !!labels;
+  const matchedKey = blind ? null : matchedKeyProp;
   // Track order — also the arrow-key order, so the tracks can never drift
   // apart. 2-way (source, master) when there is no matched output; 3-way
   // (source, master, matched) when reference-matching produced one.
@@ -316,8 +327,10 @@ export function MasteringComparePlayer({
   return (
     <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50/60 p-4 dark:border-gray-800 dark:bg-gray-800/30">
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Compare before &amp; after</h3>
-        {canMatch && (
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+          {blind ? 'Compare A and B' : <>Compare before &amp; after</>}
+        </h3>
+        {canMatch && !blind && (
           <label className="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
             <input
               type="checkbox"
@@ -506,7 +519,9 @@ export function MasteringComparePlayer({
                 : 'border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'
             }`}
           >
-            {w === 'source'
+            {blind
+              ? w === 'source' ? labels.a : labels.b
+              : w === 'source'
               ? 'A · Before (source)'
               : w === 'master'
                 ? 'B · After (master)'
@@ -516,7 +531,9 @@ export function MasteringComparePlayer({
       </div>
 
       <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-        {matched && canMatch
+        {blind
+          ? labels.levelNote ?? 'Levels matched. Switch A/B while it plays.'
+          : matched && canMatch
           ? 'Levels matched — you are hearing the sound, not the loudness. Switch A/B while it plays.'
           : canMatch
             ? 'True levels — the master is at its mastered loudness, so it will sound louder. Switch A/B while it plays.'
