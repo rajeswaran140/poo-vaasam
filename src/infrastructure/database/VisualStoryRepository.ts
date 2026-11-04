@@ -438,6 +438,25 @@ export class VisualStoryRepository {
     }
   }
 
+  /** Remove a scene with all its shots and their candidates, in one transaction. */
+  async deleteScene(vsId: string, sceneOrder: number): Promise<void> {
+    try {
+      const pad = String(sceneOrder).padStart(3, '0');
+      const items = await this.queryPartition(vsId);
+      const keys: Key[] = items
+        .filter(
+          (i) =>
+            i.SK === sceneSk(sceneOrder) ||
+            String(i.SK).startsWith(`SHOT#${pad}#`) ||
+            String(i.SK).startsWith(`CAND#${pad}#`)
+        )
+        .map((i) => ({ PK: i.PK, SK: i.SK }));
+      await DynamoDBOperations.transactWrite(buildRewrite([], keys));
+    } catch (error) {
+      fail(error);
+    }
+  }
+
   /**
    * Re-sequence one scene's shots. `newOrder` lists the scene's CURRENT
    * shotOrders in the desired sequence; position i becomes shotOrder i+1.

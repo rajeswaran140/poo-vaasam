@@ -170,6 +170,20 @@ describe('deleteShot', () => {
   });
 });
 
+describe('deleteScene', () => {
+  it('deletes the scene, its shots and their candidates, and nothing from other scenes', async () => {
+    mockQuery.mockResolvedValue({
+      Items: [sceneItem(1), sceneItem(2), shotItem(1, 1, 5), shotItem(1, 2, 5), shotItem(2, 1, 5), candItem(1, 2, 'cd_1'), candItem(2, 1, 'cd_2')],
+    });
+    await repo.deleteScene(VS, 1);
+    const { dels, puts } = ops(mockTransact.mock.calls[0][0]);
+    expect(puts).toHaveLength(0);
+    expect(dels.map((k: any) => k.SK).sort()).toEqual(
+      [sceneSk(1), shotSk(1, 1), shotSk(1, 2), candSk(1, 2, 'cd_1')].sort()
+    );
+  });
+});
+
 describe('reorderShots', () => {
   it('rewrites shots and their candidates under the new positions in one transaction', async () => {
     mockQuery.mockResolvedValue({
