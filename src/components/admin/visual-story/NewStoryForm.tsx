@@ -27,7 +27,7 @@ export function NewStoryForm({ onCreated }: { onCreated: (vsId: string) => void 
 
   const [masterId, setMasterId] = useState<string | null>(null);
   const [title, setTitle] = useState('');
-  const [win, setWin] = useState<WindowValue>({ startSec: 0, lengthSec: 60 });
+  const [win, setWin] = useState<WindowValue>({ startSec: 0, lengthSec: 60, valid: true });
   const [aspect, setAspect] = useState<AspectRatio>('16:9');
   const [budget, setBudget] = useState(String(DEFAULT_BUDGET_USD_CAP));
   const [submitting, setSubmitting] = useState(false);
@@ -59,14 +59,14 @@ export function NewStoryForm({ onCreated }: { onCreated: (vsId: string) => void 
   const songSec = master?.editedDurationSec != null ? Math.floor(master.editedDurationSec) : 0;
   const budgetNum = Number(budget);
   const budgetOk = budget.trim() !== '' && Number.isFinite(budgetNum) && budgetNum >= 0 && budgetNum <= 500;
-  const lengthOk = win.lengthSec >= MIN_WINDOW_SEC && win.lengthSec <= MAX_WINDOW_SEC;
+  const lengthOk = win.valid && win.lengthSec >= MIN_WINDOW_SEC && win.lengthSec <= MAX_WINDOW_SEC;
   const canSubmit = !!master && songSec >= MIN_WINDOW_SEC && lengthOk && budgetOk && title.trim() !== '' && !submitting;
 
   const pick = (m: MasterRow) => {
     setMasterId(m.jobId);
     setTitle(m.title ?? '');
     const song = Math.floor(m.editedDurationSec ?? 0);
-    setWin({ startSec: 0, lengthSec: Math.min(60, song) });
+    setWin({ startSec: 0, lengthSec: Math.min(60, song), valid: true });
     setCreateError(null);
   };
 

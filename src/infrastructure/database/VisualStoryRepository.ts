@@ -372,6 +372,27 @@ export class VisualStoryRepository {
     return out.sort((a, b) => (a.SK < b.SK ? -1 : a.SK > b.SK ? 1 : 0));
   }
 
+  /** Number of SHOT# items in a story (COUNT query, follows pagination). */
+  async countShots(vsId: string): Promise<number> {
+    try {
+      let total = 0;
+      let exclusiveStartKey: Record<string, any> | undefined;
+      do {
+        const res = await DynamoDBOperations.query({
+          keyConditionExpression: 'PK = :pk AND begins_with(SK, :sk)',
+          expressionAttributeValues: { ':pk': vsPk(vsId), ':sk': 'SHOT#' },
+          select: 'COUNT',
+          exclusiveStartKey,
+        });
+        total += res.Count ?? 0;
+        exclusiveStartKey = res.LastEvaluatedKey as Record<string, any> | undefined;
+      } while (exclusiveStartKey);
+      return total;
+    } catch (error) {
+      fail(error);
+    }
+  }
+
   /** The whole story in one Query. `null` when there is no METADATA item. */
   async loadTree(vsId: string): Promise<{
     story: VisualStory;

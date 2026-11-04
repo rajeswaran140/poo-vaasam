@@ -4,7 +4,7 @@ import Link from 'next/link';
 import type { VisualStory } from '@/types/visualStory';
 
 /** The list endpoint returns METADATA only; shotCount is shown when a caller supplies it. */
-export type StoryRow = VisualStory & { shotCount?: number };
+export type StoryRow = VisualStory & { shotCount?: number | null };
 
 const usd = (n: number) => `$${n.toFixed(2)}`;
 

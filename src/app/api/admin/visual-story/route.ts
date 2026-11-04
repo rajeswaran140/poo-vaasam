@@ -40,7 +40,17 @@ export async function GET(request: NextRequest) {
   }
   try {
     const repo = new VisualStoryRepository();
-    const data = masterJobId ? await repo.listByMaster(masterJobId) : await repo.list();
+    const stories = masterJobId ? await repo.listByMaster(masterJobId) : await repo.list();
+    // One small COUNT query per story; a failed count blanks that row only.
+    const data = await Promise.all(
+      stories.map(async (story) => {
+        try {
+          return { ...story, shotCount: await repo.countShots(story.vsId) };
+        } catch {
+          return { ...story, shotCount: null };
+        }
+      })
+    );
     return NextResponse.json({ success: true, data });
   } catch (err) {
     console.error('visual-story list failed', err instanceof Error ? err.name : 'error');

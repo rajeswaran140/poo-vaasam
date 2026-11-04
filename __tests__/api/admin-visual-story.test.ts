@@ -20,6 +20,7 @@ const repo = {
   create: jest.fn(),
   list: jest.fn(),
   listByMaster: jest.fn(),
+  countShots: jest.fn(),
   findById: jest.fn(),
   loadTree: jest.fn(),
   patch: jest.fn(),
@@ -87,12 +88,29 @@ describe('auth', () => {
   });
 });
 
+describe('GET list shotCount', () => {
+  it('a failing count yields null for that row only', async () => {
+    repo.list.mockResolvedValue([{ vsId: 'a' }, { vsId: 'b' }]);
+    repo.countShots.mockImplementation(async (id: string) => {
+      if (id === 'a') throw new Error('boom');
+      return 7;
+    });
+    const res = await GET(req('GET'));
+    expect(res.status).toBe(200);
+    expect((await res.json()).data).toEqual([
+      { vsId: 'a', shotCount: null },
+      { vsId: 'b', shotCount: 7 },
+    ]);
+  });
+});
+
 describe('GET list', () => {
   it('lists all, or by master', async () => {
     repo.list.mockResolvedValue([{ vsId: VS }]);
     repo.listByMaster.mockResolvedValue([]);
+    repo.countShots.mockResolvedValue(4);
     const body = await (await GET(req('GET'))).json();
-    expect(body).toEqual({ success: true, data: [{ vsId: VS }] });
+    expect(body).toEqual({ success: true, data: [{ vsId: VS, shotCount: 4 }] });
     await GET(req('GET', undefined, true, `${URL_}?masterJobId=job-1`));
     expect(repo.listByMaster).toHaveBeenCalledWith('job-1');
     expect((await GET(req('GET', undefined, true, `${URL_}?masterJobId=a/b`))).status).toBe(400);

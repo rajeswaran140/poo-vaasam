@@ -45,6 +45,12 @@ describe('StoryList', () => {
     expect(screen.getByText('DRAFT')).toBeInTheDocument();
   });
 
+  it('renders the shot count, and a dash when the count is unknown', () => {
+    render(<StoryList stories={[{ ...STORY, shotCount: 12 }, { ...STORY, vsId: 'vs-2', title: 'Other test', shotCount: null }]} />);
+    expect(screen.getByText('12')).toBeInTheDocument();
+    expect(screen.getByText('—')).toBeInTheDocument();
+  });
+
   it('shows an empty message with no stories', () => {
     render(<StoryList stories={[]} />);
     expect(screen.getByText(/no stories yet/i)).toBeInTheDocument();
@@ -56,7 +62,7 @@ describe('WindowPicker', () => {
     const onChange = jest.fn();
     render(<WindowPicker songSec={95} startSec={10} lengthSec={60} onChange={onChange} />);
     fireEvent.change(screen.getByLabelText(/length/i), { target: { value: '120' } });
-    expect(onChange).toHaveBeenLastCalledWith({ startSec: 10, lengthSec: 85 });
+    expect(onChange).toHaveBeenLastCalledWith({ startSec: 10, lengthSec: 85, valid: true });
   });
 
   it('parses m:ss start and floors fractions', () => {
@@ -64,8 +70,28 @@ describe('WindowPicker', () => {
     render(<WindowPicker songSec={300} startSec={0} lengthSec={60} onChange={onChange} />);
     fireEvent.change(screen.getByLabelText(/start/i), { target: { value: '1:05.7' } });
     const last = onChange.mock.calls.at(-1)[0];
-    expect(last).toEqual({ startSec: 65, lengthSec: 60 });
+    expect(last).toEqual({ startSec: 65, lengthSec: 60, valid: true });
     expect(Number.isInteger(last.startSec) && Number.isInteger(last.lengthSec)).toBe(true);
+  });
+
+  it.each(['abc', '1:75', '9:00'])('flags start "%s" as invalid and reports it', (text) => {
+    const onChange = jest.fn();
+    render(<WindowPicker songSec={95} startSec={0} lengthSec={60} onChange={onChange} />);
+    fireEvent.change(screen.getByLabelText(/start/i), { target: { value: text } });
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ valid: false }));
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
+
+  it('an emptied length field stays empty and is invalid until blur restores the minimum', () => {
+    const onChange = jest.fn();
+    render(<WindowPicker songSec={300} startSec={0} lengthSec={60} onChange={onChange} />);
+    const input = screen.getByLabelText(/length/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '' } });
+    expect(input.value).toBe('');
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ valid: false }));
+    expect(onChange).not.toHaveBeenCalledWith(expect.objectContaining({ lengthSec: 0 }));
+    fireEvent.blur(input);
+    expect(onChange).toHaveBeenLastCalledWith({ startSec: 0, lengthSec: 30, valid: true });
   });
 
   it('displays the end as m:ss', () => {
@@ -105,6 +131,18 @@ describe('NewStoryForm', () => {
     const err = await screen.findByText(/window ends after the song/i);
     expect(err).toHaveAttribute('role', 'alert');
     expect(submit.parentElement).toContainElement(err);
+  });
+
+  it('disables Create while the start text is invalid', async () => {
+    mockMasters([master({ editedDurationSec: 300 })]);
+    render(<NewStoryForm onCreated={() => {}} />);
+    fireEvent.click(await screen.findByRole('radio', { name: /Test song/ }));
+    const submit = screen.getByRole('button', { name: /create story/i });
+    expect(submit).toBeEnabled();
+    fireEvent.change(screen.getByLabelText(/start/i), { target: { value: 'abc' } });
+    expect(submit).toBeDisabled();
+    fireEvent.change(screen.getByLabelText(/start/i), { target: { value: '0:10' } });
+    expect(submit).toBeEnabled();
   });
 
   it('posts integer seconds, aspect and budget, then calls onCreated', async () => {

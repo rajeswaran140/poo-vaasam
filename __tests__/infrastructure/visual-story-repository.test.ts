@@ -343,3 +343,19 @@ describe('settle', () => {
     expect(meta(id)).toMatchObject({ reservedUsd: 0, spentUsd: 0.05, committedUsd: 0.05 });
   });
 });
+
+describe('countShots', () => {
+  it('counts SHOT# items across pages with a COUNT query', async () => {
+    mockQuery.mockReset();
+    mockQuery
+      .mockResolvedValueOnce({ Count: 3, LastEvaluatedKey: { PK: 'x', SK: 'y' } })
+      .mockResolvedValueOnce({ Count: 2 });
+    const n = await new VisualStoryRepository().countShots('vs_1700000000000_abcdef12');
+    expect(n).toBe(5);
+    const first = mockQuery.mock.calls[0][0];
+    expect(first.keyConditionExpression).toBe('PK = :pk AND begins_with(SK, :sk)');
+    expect(first.expressionAttributeValues).toEqual({ ':pk': 'VSTORY#vs_1700000000000_abcdef12', ':sk': 'SHOT#' });
+    expect(first.select).toBe('COUNT');
+    expect(mockQuery.mock.calls[1][0].exclusiveStartKey).toEqual({ PK: 'x', SK: 'y' });
+  });
+});
