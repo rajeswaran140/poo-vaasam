@@ -5178,98 +5178,49 @@ Phase 2 will not touch this page's connect/disconnect flow — only add to it.
   },
   {
     slug: 'visual-story-studio-plan',
-    title: 'Visual Story Studio — the plan (designed, not built)',
+    title: 'Visual Story Studio — storyboards and stills',
     category: 'Visual Story',
-    updatedAt: '2026-09-11T15:05:50Z',
+    updatedAt: '2026-11-04T20:00:00Z',
     body: `# Visual Story Studio
 
-> **Nothing here is built yet.** This is the approved design, recorded so the decisions behind it survive. No code exists, no BytePlus account is connected, and nothing in the admin has changed. The full engineering spec is in the repo at \`docs/superpowers/specs/2026-09-11-visual-story-studio-design.md\`.
+The studio turns one of your saved masters into a storyboard for a music video: scenes, shots, characters, and a still picture for each shot. **Video clips, review and the final assembly are not built yet** — they come in later phases. What exists today costs pennies and lets you plan the whole video before any real money is spent. The step-by-step guide is in the repo at \`docs/VISUAL_STORY_STUDIO.md\`; the design is in \`docs/superpowers/specs/2026-09-11-visual-story-studio-design.md\`.
 
-## What it will do
+## What you can do today
 
-Turn a published piece — a song or a musical story — into a sequence of AI-generated video clips, through a workflow that keeps the expensive step deliberate:
-
-**Content → Visual Story → Scenes → Shots → Character references → Visual prompts → Generation → Candidates → Selected clips → Timeline**
-
-You pick a content record, break it into scenes, break each scene into shots, write a visual prompt per shot, and generate. Each shot collects several candidate clips; you choose one. The chosen clips in order are the timeline, which exports as a manifest for assembly elsewhere.
-
-Character references are the consistency mechanism: upload or generate a reference sheet for a person once, attach them to any shot, and the same face carries across the story.
-
-## Why it does not use Shared Stories
-
-This is the thing most likely to be misremembered later, so it is written down plainly.
-
-**Shared Stories** (\`/admin/stories\`) is the fan-submission inbox — a visitor's memory tied to a song theme, with a name, an optional email, and a \`NEW → REVIEWED → FEATURED → ARCHIVED\` moderation lifecycle.
-
-A **Visual Story** storyboards a piece *you published* — a content record, the same thing \`/admin/content\` manages. The 2026-09-11 musical story is content record \`cnt_1789096978174_fd96yxbx61\`; that is what gets storyboarded, not a row in the fan inbox.
-
-Two different things that happen to share the word "story". A Visual Story attaches to a **content id**. The fan inbox is untouched by this work, and one piece of content can carry several visual treatments.
-
-## The three modes — the cost ladder
-
-Mode is set per shot, so the cost of a story is visible before a single clip is generated.
-
-| Mode | What you get | Use it for |
-|---|---|---|
-| **STILL** | One image | Blocking out the whole storyboard cheaply |
-| **MOTION** | A short, low-resolution clip | Confirming the motion and the composition work |
-| **HERO** | Full resolution and duration | A deliberate handful of shots |
-
-The intended way to work: **storyboard everything in STILL first**, promote the shots that earn it to MOTION, promote a few to HERO. A story that goes straight to HERO on every shot is the expensive mistake this ladder exists to prevent.
-
-STILL does not use the video provider at all — it reuses the cover-art image generation already in the app. That matters more than it sounds: it means the storyboarding half of the tool works before any video provider is connected, and the cheapest mode never depends on the most expensive integration.
+1. **Create a story from a saved master.** Pick the master and the part of the song you want to film: a window of **30 to 120 seconds**, in whole seconds, inside the finished song. Choose the shape once — **16:9** (landscape) or **9:16** (vertical). The shape cannot be changed afterwards.
+2. **Let Claude draft the storyboard.** Paste the lyrics and press **Draft storyboard**. Claude proposes characters, scenes and shots that fit your window. The lyrics are used for that one request and are **not stored** anywhere — paste them again if you want a second draft. Look the draft over, then apply it — applying **replaces** the current storyboard, so you are asked first. A draft costs a few cents and the cost is shown.
+3. **Edit everything by hand.** Rename, add, remove and reorder scenes and shots. Set how long each shot lasts (1 to 15 seconds) and write what it should show. Edit the characters and say which characters appear in which shot. The bottom bar shows how much of your window the shots fill; they must fill it exactly before the later rendering step.
+4. **Add reference photos for a character.** They are private — kept in the media bucket in a folder that the public website cannot read — and are used to keep a character looking the same from shot to shot.
+5. **Make still pictures with Grok.** Each shot has a **STILL** button. Before it runs you see the price (**$0.02 per picture**) and what the story total will be afterwards, and you confirm. Each press makes one candidate picture for that shot; you choose which candidate to use.
 
 ## What stops a runaway bill
 
-Four separate controls, because one is never enough:
+- **Every spend is confirmed.** The price and the new story total are on screen before you say yes.
+- **A hard budget per story, default $40.** Set when you create the story and editable later. The server refuses any generation that would go past it — even if the confirm box were skipped. A budget of zero freezes the story without deleting it. You cannot lower the budget below what the story has already spent.
+- **Failed pictures are free.** Only a picture that was actually delivered counts toward the story total.
+- **A rate limit** stops one account from spending too fast.
 
-1. **The mode ladder** above — the shape of the work keeps most shots cheap.
-2. **A price before every spend.** The estimated cost of the shot and the resulting story total are shown before you confirm.
-3. **A budget ceiling on the story.** Set when you create it, editable afterwards. The server refuses to generate past it — not the browser, the server, so it holds even if a request skips the confirm dialog. A cap of zero is legal, and is how you freeze a story without deleting it.
-4. **A rate limit per admin.** Caps how fast one account can spend, the same way Music Director is capped.
+Later phases will add motion clips at about $0.02 per second and full-quality clips at about $0.08 per second. A whole 2-minute video is expected to land around **$25 to $35**, which is why the default budget is $40.
 
-Spend is recorded from what the provider actually charged where it reports a figure, and from the estimate otherwise. A **failed generation never counts against the budget.**
+## Where things are stored
 
-## How generation runs
+Everything for one story sits under \`audio/mastering/visual-story/<story id>/\` in the media bucket: reference photos in \`refs\`, still pictures in \`candidates\`. That area is private; you preview files through the admin, never by a public link.
 
-Video generation takes minutes. The admin's compute cannot wait that long — it cuts off at about 30 seconds — so generation is asynchronous, the same shape as Music Director and Sound Engineering: you ask for it, you get a job, the page watches the job.
+## Two steps only you can do
 
-The difference is who does the watching. **Your open browser drives it.** Each check makes one quick call to the provider and returns. That is what avoids adding new infrastructure for this feature.
+Until both are done, storyboarding and the Claude draft keep working (the draft uses the same Claude connection as Lyricist), but every **STILL** button reports that Grok image generation is not configured. Nothing else is held up.
 
-**The consequence, stated honestly: if you close the tab mid-generation, nothing is watching, and the job sits unfinished.** It is not lost. The clip still generates at the provider, and the job is always findable. The list page carries a **Reconcile in-flight** action that sweeps every unfinished job, checks each one, and files any that completed. It runs when the list page loads, and it ships in the same phase as generation — not bolted on later.
+1. **Create an xAI key and store it.** In the xAI console create an API key, then save it in the AWS parameter store as a SecureString named \`/amplify/d3rkmepk4popv0/master/XAI_API_KEY\` (region ca-central-1). Do this yourself; the key should never be pasted into chat.
+2. **Approve one permission.** The app's running role needs permission to read that one parameter and nothing else. The exact permission is written in \`docs/IAM_LEAST_PRIVILEGE.md\` (section 4). It has not been applied; it is applied only when you say yes.
 
-A job that has been waiting too long renders as **stale**, with an explicit prompt to check the provider, rather than looking like it is quietly still working.
+After both, a STILL button works on the next press. There is nothing to rebuild or redeploy. Rotating the key later is the same one-parameter change.
 
-## Not tied to Seedance
+## Not built yet
 
-Seedance 2.5 is the first video provider, not the only one it can ever have. Generation sits behind a provider interface, so adding Veo or anything else later is one new file — no change to the studio, the data, or the workflow.
+- Video clips (motion and full quality), and the review step where you choose between candidates.
+- Laying the chosen clips over the song and rendering the finished video.
 
-The same interface makes it testable with no provider at all: a fake provider exercises the whole path — submit, watch, finish, record the cost — so the tool can be built and verified before a BytePlus credential exists.
-
-BytePlus credentials will live in SSM, read at request time, the same way the Twitch tokens work. That means rotating the key needs no rebuild.
-
-## The six phases
-
-| Phase | What lands | Usable after it? |
-|---|---|---|
-| 1 | The design (this) | — |
-| 2 | Data layer, provider interface, fake provider, tests | No UI yet |
-| 3 | The studio: stories, scenes, shots, characters, prompts, **STILL mode** | **Yes — a complete storyboarding tool, no video spend** |
-| 4 | Seedance connected, **MOTION mode**, budget enforcement, reconcile | Yes — real video generation |
-| 5 | Candidate review, selection, **HERO mode** | Yes — the full review loop |
-| 6 | Timeline export | Yes — feature complete |
-
-Phase 3 is the deliberate milestone: a genuinely useful tool in your hands before any money is spent on video.
-
-## What is blocked, and on what
-
-**Phase 4 waits on one thing:** the BytePlus / Seedance 2.5 API reference. Four facts are needed — how to submit a generation, how to check its status, how long a finished task's download links stay alive, and what BytePlus charges per generation so the price shown before you confirm is a real number.
-
-Phases 2 and 3 need none of that and can start whenever.
-
-## Where the detail lives
-
-This page is the operator's view. The engineering interior — the database key layout, the provider interface in TypeScript, the API routes, error handling, and the test plan — is in the repo spec at \`docs/superpowers/specs/2026-09-11-visual-story-studio-design.md\`.
+These arrive in later phases; this page will be updated as each lands.
 `,
   },
   {

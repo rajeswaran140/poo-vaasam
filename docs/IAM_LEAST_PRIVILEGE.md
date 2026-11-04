@@ -87,3 +87,28 @@ Usage evidence: actively used across **20+ services** (amplify, athena, backup, 
 ## Side findings (not IAM, worth noting)
 - **Duplicate table:** `TamilWebContent` exists in **both ca-central-1 (live) and us-east-1 (legacy?)**. Confirm which is authoritative; the us-east-1 copy may be stale/abandoned (drift + cost risk). The old inline policy pointed only at us-east-1 — a latent mismatch.
 - After re-scoping, re-run `get-service-last-accessed-details` in ~1 week to confirm no denied calls crept up.
+
+---
+
+## 4. Visual Story Studio — read one SSM parameter (PROPOSED, NOT APPLIED)
+Added 2026-11-04 with the Visual Story Studio (Phases 2–3). The app now calls xAI Grok Imagine for still images, using an API key read **at request time** from SSM (`getXaiApiKey`, `WithDecryption`, cached per container) — the same pattern as the Twitch secrets. This is the first runtime SSM read the app makes from the SSR side, so the "no SSM" note in the header predates it.
+
+**Who:** the Amplify SSR (compute) role of app `d3rkmepk4popv0`, branch `master` — the role the running Next.js routes use. Its exact name is **not recorded in this repo; confirm it in Amplify → App settings → IAM roles before applying**. (The *build* role, `AmplifyPooVaasamBuildRole`, already reads `/amplify/d3rkmepk4popv0/master/*` for the build and is a different job.)
+
+**Add to that role as inline policy `visual-story-xai-key-read`:**
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadXaiApiKey",
+      "Effect": "Allow",
+      "Action": "ssm:GetParameter",
+      "Resource": "arn:aws:ssm:ca-central-1:975050319109:parameter/amplify/d3rkmepk4popv0/master/XAI_API_KEY"
+    }
+  ]
+}
+```
+Scope: one action on one parameter; no `GetParameters`, no wildcard. The parameter is a SecureString under the AWS-managed `alias/aws/ssm` key, whose key policy already lets principals in the account use it through SSM, so no separate `kms:Decrypt` grant is proposed. **If the first read after applying returns an AccessDenied on KMS, add `kms:Decrypt` with the `kms:ViaService = ssm.ca-central-1.amazonaws.com` condition used in the build-role policy.**
+
+**Owner steps (spec §6.2.2):** (1) create the xAI key and store it as SecureString `/amplify/d3rkmepk4popv0/master/XAI_API_KEY` in ca-central-1 — the key never passes through chat; (2) approve this grant. Until both are done the studio's STILL buttons report that Grok image generation is not configured; storyboarding and drafts are unaffected. **Nothing here has been applied.**
