@@ -17,6 +17,7 @@ const repo = {
   reorderShots: jest.fn(),
   putCharacter: jest.fn(),
   addCharacterRef: jest.fn(),
+  removeCharacterRef: jest.fn(),
 };
 jest.mock('@/infrastructure/database/VisualStoryRepository', () => ({
   ...jest.requireActual('@/infrastructure/database/VisualStoryRepository'),
@@ -25,10 +26,12 @@ jest.mock('@/infrastructure/database/VisualStoryRepository', () => ({
 
 const mockPresign = jest.fn();
 const mockLength = jest.fn();
+const mockDelete = jest.fn();
 jest.mock('@/infrastructure/storage/s3-client', () => ({
   S3Operations: {
     getSignedUploadPost: (...a: unknown[]) => mockPresign(...a),
     getContentLength: (...a: unknown[]) => mockLength(...a),
+    deleteFile: (...a: unknown[]) => mockDelete(...a),
   },
 }));
 
@@ -93,6 +96,9 @@ describe('every mutation without bearer is 401', () => {
     expect((await charsPOST(mk({ op: 'create', name: 'a', description: '' }, false), ctx())).status).toBe(401);
     expect((await uploadPOST(mk({ op: 'presign', contentType: 'image/png' }, false), uctx())).status).toBe(401);
     expect((await uploadPOST(mk({ op: 'confirm', key: 'k' }, false), uctx())).status).toBe(401);
+    expect((await uploadPOST(mk({ op: 'remove', key: 'k' }, false), uctx())).status).toBe(401);
+    expect(repo.removeCharacterRef).not.toHaveBeenCalled();
+    expect(mockDelete).not.toHaveBeenCalled();
     expect(repo.putScene).not.toHaveBeenCalled();
     expect(repo.deleteShot).not.toHaveBeenCalled();
     expect(repo.putCharacter).not.toHaveBeenCalled();
@@ -387,6 +393,56 @@ describe('character reference upload', () => {
     it('404 when the character vanished between head and write', async () => {
       repo.addCharacterRef.mockRejectedValue(new NotFoundError('gone'));
       expect((await uploadPOST(mk({ op: 'confirm', key: good() }), uctx())).status).toBe(404);
+    });
+  });
+  describe('remove', () => {
+    const key = () => refKey(VS, CH, 'png');
+    const withKey = (k: string) =>
+      tree({ characters: [{ charId: CH, name: 'T', description: '', createdAt: 't', refImageKeys: [k, 'other'] }] });
+
+    it('removes the key from the character and deletes the S3 object', async () => {
+      const k = key();
+      repo.loadTree.mockResolvedValue(withKey(k));
+      const res = await uploadPOST(mk({ op: 'remove', key: k }), uctx());
+      expect(res.status).toBe(200);
+      expect(repo.removeCharacterRef).toHaveBeenCalledWith(VS, CH, k);
+      expect(mockDelete).toHaveBeenCalledWith(k);
+      expect((await res.json()).data.character.refImageKeys).toEqual(['other']);
+    });
+    it('frees a slot: presign works again after a remove from a full character', async () => {
+      const k = key();
+      repo.loadTree.mockResolvedValue(
+        tree({ characters: [{ charId: CH, name: 'T', description: '', createdAt: 't', refImageKeys: [k, 'a', 'b', 'c'] }] })
+      );
+      expect((await uploadPOST(mk({ op: 'remove', key: k }), uctx())).status).toBe(200);
+      expect(repo.removeCharacterRef).toHaveBeenCalledTimes(1);
+    });
+    it('400 for a foreign key, with no repository or S3 call', async () => {
+      for (const k of ['audio/mastering/other.wav', refKey(VS, CH2, 'png'), `audio/mastering/visual-story/${VS}/refs/${CH}/../x.png`, '']) {
+        expect((await uploadPOST(mk({ op: 'remove', key: k }), uctx())).status).toBe(400);
+      }
+      expect(repo.removeCharacterRef).not.toHaveBeenCalled();
+      expect(mockDelete).not.toHaveBeenCalled();
+    });
+    it('404 when the key is not on the character, with no write and no S3 delete', async () => {
+      expect((await uploadPOST(mk({ op: 'remove', key: key() }), uctx())).status).toBe(404);
+      expect(repo.removeCharacterRef).not.toHaveBeenCalled();
+      expect(mockDelete).not.toHaveBeenCalled();
+    });
+    it('404 when the repository says it is already gone, and no S3 delete', async () => {
+      const k = key();
+      repo.loadTree.mockResolvedValue(withKey(k));
+      repo.removeCharacterRef.mockRejectedValue(new NotFoundError('x'));
+      expect((await uploadPOST(mk({ op: 'remove', key: k }), uctx())).status).toBe(404);
+      expect(mockDelete).not.toHaveBeenCalled();
+    });
+    it('still succeeds when the S3 delete fails', async () => {
+      const k = key();
+      repo.loadTree.mockResolvedValue(withKey(k));
+      mockDelete.mockRejectedValue(new Error('aws down'));
+      const res = await uploadPOST(mk({ op: 'remove', key: k }), uctx());
+      expect(res.status).toBe(200);
+      expect(repo.removeCharacterRef).toHaveBeenCalled();
     });
   });
 });

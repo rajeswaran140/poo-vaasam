@@ -519,6 +519,39 @@ export class VisualStoryRepository {
     }
   }
 
+  /**
+   * Remove one reference-image key from a character. DynamoDB removes list
+   * elements by index, so the index is read first and the write is conditional
+   * on that slot still holding the key: a concurrent add or remove makes the
+   * condition fail and we re-read, rather than dropping a different ref.
+   * NotFoundError when the character or the key is not there.
+   */
+  async removeCharacterRef(vsId: string, charId: string, key: string): Promise<void> {
+    try {
+      const keyOf = { PK: vsPk(vsId), SK: charSk(charId) };
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const item = await DynamoDBOperations.get(keyOf);
+        const refs: string[] = Array.isArray(item?.refImageKeys) ? item.refImageKeys : [];
+        const i = refs.indexOf(key);
+        if (i < 0) throw new NotFoundError(`removeCharacterRef: ${key} is not on character ${charId}`);
+        try {
+          await DynamoDBOperations.update({
+            key: keyOf,
+            updateExpression: `REMOVE refImageKeys[${i}]`,
+            expressionAttributeValues: { ':k': key },
+            conditionExpression: `refImageKeys[${i}] = :k`,
+          });
+          return;
+        } catch (error) {
+          if (!isConditionFailure(error)) throw error;
+        }
+      }
+      throw new NotFoundError(`removeCharacterRef: ${key} kept changing under the update`);
+    } catch (error) {
+      fail(error);
+    }
+  }
+
   async putCandidate(vsId: string, cand: Candidate): Promise<void> {
     try {
       await DynamoDBOperations.put({

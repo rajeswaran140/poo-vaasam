@@ -2,6 +2,7 @@
  * POST /api/admin/visual-story/[vsId]/characters/[charId]/upload
  *   { op: 'presign', contentType, size? } → { uploadUrl, fields, key }
  *   { op: 'confirm', key }                → appends the key to the character
+ *   { op: 'remove', key }                 → drops the key, then best-effort deletes the object
  *
  * Same presigned-POST pattern as /api/admin/mastering/upload, into the same
  * private mastering bucket: S3 itself enforces the size window
@@ -41,6 +42,7 @@ const bodySchema = z.discriminatedUnion('op', [
     size: z.number().int().positive().optional(),
   }),
   z.object({ op: z.literal('confirm'), key: z.string().max(1024) }),
+  z.object({ op: z.literal('remove'), key: z.string().max(1024) }),
 ]);
 
 const FULL = `A character can have at most ${MAX_REFS_PER_CHARACTER} reference images. Remove one first.`;
@@ -95,6 +97,24 @@ export async function POST(request: NextRequest, { params }: Ctx) {
         console.error('[visual-story/upload] presign failed:', err instanceof Error ? err.name : 'error');
         return fail('Could not create the upload URL.', 502);
       }
+    }
+
+    if (input.op === 'remove') {
+      // Same prefix rule as confirm: nothing outside this character's own refs
+      // can reach the repository or S3.
+      if (!isRefKeyFor(input.key, vsId, charId)) return fail('That file does not belong to this character.', 400);
+      if (!refs.includes(input.key)) return fail('That image is not on this character.', 404);
+      await repo.removeCharacterRef(vsId, charId, input.key);
+      try {
+        await S3Operations.deleteFile(input.key);
+      } catch (err) {
+        // The reference is already detached; an orphan in a private prefix is harmless.
+        console.error('[visual-story/upload] object delete failed:', err instanceof Error ? err.name : 'error');
+      }
+      return NextResponse.json({
+        success: true,
+        data: { character: { ...character, refImageKeys: refs.filter((k) => k !== input.key) } },
+      });
     }
 
     // confirm

@@ -130,6 +130,35 @@ describe('simple writes', () => {
     expect(p.conditionExpression).toBe('attribute_exists(PK)');
   });
 
+  describe('removeCharacterRef', () => {
+    const K = 'audio/mastering/visual-story/x/refs/b.png';
+    const char = (keys: string[]) => ({ PK, SK: charSk('ch_1'), charId: 'ch_1', refImageKeys: keys });
+
+    it('removes by index, conditional on that slot still holding the key', async () => {
+      mockGet.mockResolvedValue(char(['a', K, 'c']));
+      await repo.removeCharacterRef(VS, 'ch_1', K);
+      const p = mockUpdate.mock.calls[0][0];
+      expect(p.key).toEqual({ PK, SK: charSk('ch_1') });
+      expect(p.updateExpression).toBe('REMOVE refImageKeys[1]');
+      expect(p.conditionExpression).toBe('refImageKeys[1] = :k');
+      expect(p.expressionAttributeValues).toEqual({ ':k': K });
+    });
+    it('throws NotFoundError when the key (or character) is absent, without writing', async () => {
+      mockGet.mockResolvedValue(char(['a']));
+      await expect(repo.removeCharacterRef(VS, 'ch_1', K)).rejects.toBeInstanceOf(NotFoundError);
+      mockGet.mockResolvedValue(undefined);
+      await expect(repo.removeCharacterRef(VS, 'ch_1', K)).rejects.toBeInstanceOf(NotFoundError);
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
+    it('re-reads and retries when the list shifted under it', async () => {
+      mockGet.mockResolvedValueOnce(char(['a', K])).mockResolvedValueOnce(char([K]));
+      mockUpdate.mockRejectedValueOnce(Object.assign(new Error('c'), { name: 'ConditionalCheckFailedException' }));
+      await repo.removeCharacterRef(VS, 'ch_1', K);
+      expect(mockUpdate).toHaveBeenCalledTimes(2);
+      expect(mockUpdate.mock.calls[1][0].updateExpression).toBe('REMOVE refImageKeys[0]');
+    });
+  });
+
   it('selectCandidate sets selectedCandidateId on the shot', async () => {
     mockGet.mockResolvedValue(candItem(1, 2, 'cd_9'));
     await repo.selectCandidate(VS, 1, 2, 'cd_9');
