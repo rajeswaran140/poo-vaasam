@@ -80,9 +80,12 @@ export interface Candidate {
   candId: string;
   sceneOrder: number;
   shotOrder: number;
-  jobId: string;
+  /** The GENJOB# that produced it; null for a STILL (synchronous, no job — spec §6.4). */
+  jobId: string | null;
   providerId: string;
-  providerTaskId: string;
+  /** Null for a STILL: the image call completes inside the request (spec §6.4). */
+  providerTaskId: string | null;
+  mode: ShotMode;
   s3Key: string;
   posterKey?: string;
   costUsd: number;
