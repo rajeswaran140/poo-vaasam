@@ -269,3 +269,31 @@ it('classifies a 429 as a rate-limit error', async () => {
   const r = await generateLyrics(BRIEF);
   expect(r).toMatchObject({ ok: false, code: 'rate_limit' });
 });
+
+it('classifies an out-of-credit 400 as billing, saying so instead of "try again"', async () => {
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+  // The exact body Anthropic returned on 2026-10-28 when the balance ran out.
+  create.mockRejectedValueOnce(
+    Object.assign(
+      new Error(
+        '400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."}}'
+      ),
+      { status: 400 }
+    )
+  );
+  const r = await generateLyrics(BRIEF);
+  expect(r.ok).toBe(false);
+  if (!r.ok) {
+    expect(r.code).toBe('billing');
+    expect(r.error).toMatch(/credit/i);
+    expect(r.error).toMatch(/Plans & Billing/);
+    expect(r.error).not.toMatch(/try again/i);
+  }
+});
+
+it('keeps an ordinary 400 as upstream (only the credit message is billing)', async () => {
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+  create.mockRejectedValueOnce(Object.assign(new Error('400 max_tokens: too large'), { status: 400 }));
+  const r = await generateLyrics(BRIEF);
+  expect(r).toMatchObject({ ok: false, code: 'upstream' });
+});

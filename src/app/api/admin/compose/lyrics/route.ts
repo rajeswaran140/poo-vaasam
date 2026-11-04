@@ -26,6 +26,7 @@ const STATUS_BY_CODE: Record<LyricGenErrorCode, number> = {
   invalid_brief: 400,
   not_configured: 503,
   auth: 500, // a server-side key problem — not the caller's fault, don't 401
+  billing: 503, // the account is out of credit — a server-side problem too
   rate_limit: 429,
   upstream: 502,
   bad_response: 502,

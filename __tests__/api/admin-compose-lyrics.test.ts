@@ -87,6 +87,13 @@ it('maps bad_response to 502', async () => {
   expect((await post(VALID_BRIEF)).status).toBe(502);
 });
 
+it('maps billing to 503 and passes the out-of-credit message through', async () => {
+  mockGenerate.mockResolvedValueOnce({ ok: false, code: 'billing', error: 'The Anthropic account is out of credit.' });
+  const res = await post(VALID_BRIEF);
+  expect(res.status).toBe(503);
+  expect((await res.json()).error).toBe('The Anthropic account is out of credit.');
+});
+
 it('maps a service rate_limit to 429', async () => {
   mockGenerate.mockResolvedValueOnce({ ok: false, code: 'rate_limit', error: 'slow down' });
   expect((await post(VALID_BRIEF)).status).toBe(429);
