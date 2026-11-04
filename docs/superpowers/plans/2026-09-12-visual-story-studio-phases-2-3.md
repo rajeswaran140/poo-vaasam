@@ -1,5 +1,10 @@
 # Visual Story Studio — Phases 2–3 Implementation Plan
 
+> **SUPERSEDED 2026-11-04.** The spec was revised (Grok Imagine replaces Seedance; stories
+> anchor to a saved master, not a content record; an LLM storyboard draft and video assembly
+> were added). Tasks 1, 2, 3, 6 and 8 no longer match it. Do not execute this plan; a new
+> plan is written after the revised spec is approved.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a complete storyboarding tool for TamilAgaval — visual stories, scenes, shots, character references, visual prompts, and STILL-mode image generation — with no video provider wired and no money spent on video.
