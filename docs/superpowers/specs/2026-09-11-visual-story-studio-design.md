@@ -21,7 +21,7 @@ design with three changes, all requested on 2026-11-04:
 3. **A language model drafts the storyboard** from the song's lyrics (§6.5). The owner asked
    to "also use the Transformer LLM Architecture"; this design reads that as an LLM drafting
    scenes, shots and visual prompts, using the Claude path the Lyricist already uses.
-   *(Interpretation, to be confirmed by the owner.)*
+   *(Confirmed by the owner 2026-11-04.)*
 
 The owner's condition for spending on generation is that **each video comes out unique**.
 That is the success criterion this revision designs for (§1.1).
@@ -59,7 +59,7 @@ provider is a new adapter file plus one `case` in a registry.
 shot was generated for that song, with every paid call approved before it runs and every
 attempt's cost recorded.
 
-**"Unique"** (the owner's word; the precise meaning is to be confirmed): each story's
+**"Unique"** (the owner's word; confirmed 2026-11-04 as "every song its own world"): each story's
 characters, references and prompts belong to that story. Nothing is shared or reused across
 stories by default, no stock footage, and the storyboard is drafted from that song's own
 lyrics.
@@ -134,8 +134,8 @@ Section 7 records how that tension was resolved and why.
 | D4 | Parent entity (revises D2) | **Anchor to a saved master (`masterJobId`)**; `contentId` optional. *(Builder's call.)* Videos are made before a song is published, and the release pipeline already renders from a master | Content-only anchor (the song usually has no `CONTENT` record until it premieres) |
 | D5 | Assembly | **A new `assemble` action in `master-worker`**, reusing its ffmpeg layer, concat join and audio verify. *(Builder's call.)* | A new Lambda (constraint 8); in-browser assembly (quality, length) |
 | D6 | Aspect | **One aspect ratio per story**, fixed at creation, 9:16 or 16:9. A second format is a second story. *(Builder's call.)* | Generating both per shot (double cost); cropping 16:9 to 9:16 (loses most of the frame) |
-| D7 | STILL provider | **Grok `grok-imagine-image`** ($0.02/image), so one key serves the studio. *(Builder's suggestion, to be confirmed.)* | `gpt-image-1` via `generateCoverArt` (stays as the fallback adapter) |
-| D8 | Storyboard draft | **Claude (Sonnet) drafts scenes, shots and prompts from lyrics** the admin pastes or the song stores; nothing is generated until the admin edits and approves. *(Interpretation of the owner's request.)* | No drafting; a model per shot at generate time |
+| D7 | STILL provider | **Grok `grok-imagine-image`** ($0.02/image), so one key serves the studio and 9:16 stills work. *(Confirmed by the owner 2026-11-04.)* | `gpt-image-1` via `generateCoverArt` (stays as the fallback adapter) |
+| D8 | Storyboard draft | **Claude (Sonnet) drafts scenes, shots and prompts from lyrics** the admin pastes or the song stores; nothing is generated until the admin edits and approves. *(Confirmed by the owner 2026-11-04.)* | No drafting; a model per shot at generate time |
 
 ## 5. Data model
 
@@ -397,8 +397,8 @@ audio/mastering/visual-story/<vsId>/renders/<renderId>.mp4        assembled vide
 `STILL` is a single frame. It is served by an `ImageShotService` behind a small
 `ImageProvider` seam with two adapters:
 
-- **`grok-image`** — `grok-imagine-image` at $0.02 per image, the default *(D7, builder's
-  suggestion)*, so the studio needs one provider key.
+- **`grok-image`** — `grok-imagine-image` at $0.02 per image, the default *(D7, confirmed
+  by the owner)*, so the studio needs one provider key.
 - **`openai-image`** — the existing `generateCoverArt()` (`gpt-image-1`), kept as the
   fallback. It is hard-coded to landscape `1536x1024` (`src/services/ai/cover-art.ts`), so as
   it stands it cannot serve 9:16 stories; using it for them needs a size parameter added.
