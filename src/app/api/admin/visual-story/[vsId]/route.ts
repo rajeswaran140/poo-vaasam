@@ -12,6 +12,7 @@ import {
   VisualStoryRepository,
   VisualStoryDomainError,
   NotFoundError,
+  CapBelowCommittedError,
 } from '@/infrastructure/database/VisualStoryRepository';
 import { isVsId } from '@/types/visualStory';
 
@@ -33,6 +34,7 @@ const patchSchema = z
   .refine((v) => Object.keys(v).length > 0, { message: 'Nothing to change' });
 
 function mapError(err: unknown) {
+  if (err instanceof CapBelowCommittedError) return fail(err.message, 409);
   if (err instanceof NotFoundError) return fail('That story no longer exists.', 404);
   if (err instanceof VisualStoryDomainError) return fail(err.message, 400);
   console.error('visual-story route failed', err instanceof Error ? err.name : 'error');

@@ -72,6 +72,7 @@ jest.mock('@/infrastructure/database/dynamodb-client', () => ({
 
 import {
   VisualStoryRepository,
+  NotFoundError,
   VSTORY_INDEX_PK,
   VSTORY_INFLIGHT_PK,
   vsPk,
@@ -177,17 +178,34 @@ describe('reads', () => {
 
 describe('patch', () => {
   it('sets only the given fields plus updatedAt, guarded by existence', async () => {
-    store.set(`VSTORY#${VS}|METADATA`, { PK: `VSTORY#${VS}`, SK: 'METADATA' });
+    store.set(`VSTORY#${VS}|METADATA`, { PK: `VSTORY#${VS}`, SK: 'METADATA', committedUsd: 0 });
     await repo.patch(VS, { title: 'New', budgetUsdCap: 12.3456789 });
     const p = mockUpdate.mock.calls[0][0];
     expect(p.key).toEqual({ PK: `VSTORY#${VS}`, SK: 'METADATA' });
-    expect(p.conditionExpression).toBe('attribute_exists(PK)');
+    expect(p.conditionExpression).toBe('attribute_exists(PK) AND committedUsd <= :cap');
     expect(p.updateExpression).toMatch(/^SET /);
     expect(Object.values(p.expressionAttributeValues)).toEqual(
       expect.arrayContaining(['New', 12.345679])
     );
     expect(p.updateExpression).toContain('updatedAt');
     expect(p.updateExpression).not.toContain('status');
+  });
+});
+
+describe('patch cap guard', () => {
+  it('throws CapBelowCommittedError when committed exceeds the new cap at write time', async () => {
+    store.set(`VSTORY#${VS}|METADATA`, { PK: `VSTORY#${VS}`, SK: 'METADATA', committedUsd: 15, budgetUsdCap: 40 });
+    await expect(repo.patch(VS, { budgetUsdCap: 12 })).rejects.toMatchObject({
+      name: 'CapBelowCommittedError',
+      committedUsd: 15,
+    });
+  });
+  it('throws NotFoundError when the story is gone', async () => {
+    await expect(repo.patch(VS, { budgetUsdCap: 12 })).rejects.toBeInstanceOf(NotFoundError);
+  });
+  it('allows a cap equal to committed', async () => {
+    store.set(`VSTORY#${VS}|METADATA`, { PK: `VSTORY#${VS}`, SK: 'METADATA', committedUsd: 12 });
+    await expect(repo.patch(VS, { budgetUsdCap: 12 })).resolves.toBeUndefined();
   });
 });
 

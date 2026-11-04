@@ -34,7 +34,7 @@ import { GET, POST } from '@/app/api/admin/visual-story/route';
 import { GET as GET_ONE, PATCH, DELETE } from '@/app/api/admin/visual-story/[vsId]/route';
 import * as auth from '@/lib/auth-helper';
 import { __resetVisualStoryRateLimitForTests } from '@/lib/visual-story-rate-limit';
-import { NotFoundError } from '@/infrastructure/database/VisualStoryRepository';
+import { NotFoundError, CapBelowCommittedError } from '@/infrastructure/database/VisualStoryRepository';
 
 const requireAdmin = auth.requireAdmin as jest.Mock;
 const URL_ = 'https://tamilagaval.com/api/admin/visual-story';
@@ -205,6 +205,14 @@ describe('PATCH', () => {
     expect((await PATCH(req('PATCH', { status: 'BOGUS' }), ctx())).status).toBe(400);
     repo.findById.mockResolvedValue(null);
     expect((await PATCH(req('PATCH', { title: 'x' }), ctx())).status).toBe(404);
+  });
+  it('maps a repository CapBelowCommittedError (race lost) to 409 with the same copy', async () => {
+    repo.patch.mockRejectedValueOnce(new CapBelowCommittedError(15));
+    const res = await PATCH(req('PATCH', { budgetUsdCap: 20 }), ctx());
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe(
+      "The cap can't go below what's already spent or reserved ($15.00)."
+    );
   });
   it('maps a repository NotFoundError to 404', async () => {
     repo.patch.mockRejectedValueOnce(new NotFoundError('gone'));

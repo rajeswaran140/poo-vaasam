@@ -64,6 +64,14 @@ export class NotFoundError extends VisualStoryDomainError {
   }
 }
 
+/** A cap edit would put the budget below what is already spent or reserved (map to 409). */
+export class CapBelowCommittedError extends VisualStoryDomainError {
+  constructor(public readonly committedUsd: number) {
+    super(`The cap can't go below what's already spent or reserved ($${committedUsd.toFixed(2)}).`);
+    this.name = 'CapBelowCommittedError';
+  }
+}
+
 /** `newOrder` is not a permutation of the scene's shots (map to 400). */
 export class InvalidReorderError extends VisualStoryDomainError {
   constructor(message: string) {
@@ -243,13 +251,25 @@ export class VisualStoryRepository {
         values[':cap'] = round6(fields.budgetUsdCap);
         sets.push('#cap = :cap');
       }
-      await DynamoDBOperations.update({
-        key: metaKey(vsId),
-        updateExpression: `SET ${sets.join(', ')}`,
-        expressionAttributeNames: names,
-        expressionAttributeValues: values,
-        conditionExpression: 'attribute_exists(PK)',
-      });
+      // Atomic hard-ceiling guard: a concurrent reserve can raise committedUsd
+      // after the route's pre-check, so the cap write re-checks it itself.
+      const capping = fields.budgetUsdCap !== undefined;
+      try {
+        await DynamoDBOperations.update({
+          key: metaKey(vsId),
+          updateExpression: `SET ${sets.join(', ')}`,
+          expressionAttributeNames: names,
+          expressionAttributeValues: values,
+          conditionExpression: capping ? 'attribute_exists(PK) AND committedUsd <= :cap' : 'attribute_exists(PK)',
+        });
+      } catch (error) {
+        if (capping && isConditionFailure(error)) {
+          const story = await this.findById(vsId);
+          if (!story) throw new NotFoundError(`visual story ${vsId} not found`);
+          throw new CapBelowCommittedError(story.committedUsd);
+        }
+        throw error;
+      }
     } catch (error) {
       fail(error);
     }
