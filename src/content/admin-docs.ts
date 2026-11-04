@@ -5206,14 +5206,13 @@ Later phases will add motion clips at about $0.02 per second and full-quality cl
 
 Everything for one story sits under \`audio/mastering/visual-story/<story id>/\` in the media bucket: reference photos in \`refs\`, still pictures in \`candidates\`. That area is private; you preview files through the admin, never by a public link.
 
-## Two steps only you can do
+## One step only you can do
 
-Until both are done, storyboarding and the Claude draft keep working (the draft uses the same Claude connection as Lyricist), but every **STILL** button reports that Grok image generation is not configured. Nothing else is held up.
+Until it is done, storyboarding and the Claude draft keep working (the draft uses the same Claude connection as Lyricist), but every **STILL** button reports that Grok image generation is not configured. Nothing else is held up.
 
-1. **Create an xAI key and store it.** In the xAI console create an API key, then save it in the AWS parameter store as a SecureString named \`/amplify/d3rkmepk4popv0/master/XAI_API_KEY\` (region ca-central-1). Do this yourself; the key should never be pasted into chat.
-2. **Approve one permission.** The app's running role needs permission to read that one parameter and nothing else. The exact permission is written in \`docs/IAM_LEAST_PRIVILEGE.md\` (section 4). It has not been applied; it is applied only when you say yes.
+**Create an xAI key and store it.** In the xAI console create an API key, then save it in the AWS parameter store as a SecureString named \`/amplify/d3rkmepk4popv0/master/XAI_API_KEY\` (region ca-central-1). Do this yourself; the key should never be pasted into chat. The app's existing permissions already cover reading it, so no permission change is needed (recorded in \`docs/IAM_LEAST_PRIVILEGE.md\`, section 4).
 
-After both, a STILL button works on the next press. There is nothing to rebuild or redeploy. Rotating the key later is the same one-parameter change.
+A STILL button works on the next press; there is nothing to rebuild or redeploy. If it still says not configured, check the parameter name and that its type is SecureString.
 
 ## Not built yet
 

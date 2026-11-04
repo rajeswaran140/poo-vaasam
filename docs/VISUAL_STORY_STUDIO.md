@@ -51,8 +51,6 @@ This area is private (the CDN denies `audio/mastering/*`). Preview through the a
 
 Symptom: pressing STILL reports that Grok image generation is not configured. Storyboarding, the Claude draft, editing and reference photos still work.
 
-Fix (owner, once):
-1. Create an API key in the xAI console and store it as a SecureString named `/amplify/d3rkmepk4popv0/master/XAI_API_KEY` in **ca-central-1**. Do not paste the key into chat.
-2. Approve the one-permission grant in `docs/IAM_LEAST_PRIVILEGE.md` §4 (read that single parameter).
+Fix (owner, once): create an API key in the xAI console and store it as a SecureString named `/amplify/d3rkmepk4popv0/master/XAI_API_KEY` in **ca-central-1**. Do not paste the key into chat. No permission change is needed: the Amplify service role's existing `P24SsmSecureStringRead` grant already covers it (`docs/IAM_LEAST_PRIVILEGE.md` §4).
 
-No rebuild or redeploy is needed; the next STILL press picks the key up. To rotate the key, overwrite the same parameter (a running server may keep the old value briefly). If STILL reports an authorisation or billing problem from xAI instead, the key or the xAI account balance is the cause, not the studio.
+No rebuild or redeploy is needed; the next STILL press picks the key up. If it still says not configured, check the parameter name and that its type is SecureString. To rotate the key, overwrite the same parameter (a running server may keep the old value briefly). If STILL reports an authorisation or billing problem from xAI instead, the key or the xAI account balance is the cause, not the studio.
