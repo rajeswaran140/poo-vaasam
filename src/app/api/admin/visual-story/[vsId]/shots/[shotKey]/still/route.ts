@@ -96,7 +96,9 @@ export async function POST(request: NextRequest, { params }: Ctx) {
           providerId: 'grok-image', // always JPEG, matching the .jpg candidate key
           prompt: buildPrompt(shot, tree.characters),
           aspectRatio: tree.story.aspectRatio,
-          signal: request.signal,
+          // No request.signal: a client navigating away must not turn a call
+          // xAI may already have billed into an unbilled abort. The provider's
+          // own 25 s timeout bounds it.
         });
       } catch (err) {
         // e.g. SSM failing for a reason other than a missing parameter: nothing was billed.
@@ -130,7 +132,13 @@ export async function POST(request: NextRequest, { params }: Ctx) {
       await repo.putCandidate(vsId, candidate);
       return NextResponse.json({ success: true, data: { candidate } }, { status: 201 });
     } finally {
-      await repo.settle(vsId, { reservedUsd: est, billedUsd });
+      try {
+        await repo.settle(vsId, { reservedUsd: est, billedUsd });
+      } catch (err) {
+        // Keep the real outcome (201 / still charged / provider error); the
+        // reservation stays held, which blocks budget but never overspends.
+        console.error('visual-story still: settle failed', err instanceof Error ? err.name : 'error');
+      }
     }
   } catch (err) {
     return mapError(err);

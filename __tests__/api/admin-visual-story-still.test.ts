@@ -248,7 +248,7 @@ describe('POST still — money paths', () => {
   it('putCandidate fails after the image is saved ⇒ 5xx, settled as billed exactly once', async () => {
     repo.putCandidate.mockRejectedValueOnce(new Error('ddb down'));
     const res = await stillPOST(mk(), sctx());
-    expect(res.status).toBeGreaterThanOrEqual(500);
+    expect(res.status).toBe(500);
     expect(repo.settle).toHaveBeenCalledTimes(1);
     expect(repo.settle).toHaveBeenCalledWith(VS, { reservedUsd: 0.02, billedUsd: 0.02 });
   });
@@ -256,9 +256,51 @@ describe('POST still — money paths', () => {
   it('reserve throws (story vanished) ⇒ 5xx, provider never called, nothing settled', async () => {
     repo.reserve.mockRejectedValueOnce(new Error('reserve: visual story not found'));
     const res = await stillPOST(mk(), sctx());
-    expect(res.status).toBeGreaterThanOrEqual(500);
+    expect(res.status).toBe(500);
     expect(mockGenerate).not.toHaveBeenCalled();
     expect(repo.settle).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST still — review fixes', () => {
+  it('the client abort signal is not forwarded to the paid call', async () => {
+    const req = mk();
+    await stillPOST(req, sctx());
+    const arg = mockGenerate.mock.calls[0][0];
+    expect(arg.signal).toBeUndefined();
+    expect(arg.signal).not.toBe(req.signal);
+  });
+
+  it('an aborted client request still settles as billed when the provider succeeds', async () => {
+    const ac = new AbortController();
+    const req = new NextRequest('https://tamilagaval.com/api/admin/visual-story/x', {
+      method: 'POST', headers: bearer, signal: ac.signal,
+    });
+    mockGenerate.mockImplementationOnce(async (r: { signal?: AbortSignal }) => {
+      ac.abort();
+      if (r.signal?.aborted) return { ok: false, code: 'upstream', error: 'aborted', billed: false };
+      return okImage;
+    });
+    const res = await stillPOST(req, sctx());
+    expect(res.status).toBe(201);
+    expect(repo.settle).toHaveBeenCalledTimes(1);
+    expect(repo.settle).toHaveBeenCalledWith(VS, { reservedUsd: 0.02, billedUsd: 0.02 });
+  });
+
+  it('settle throwing keeps the original response', async () => {
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    repo.settle.mockRejectedValue(new Error('ddb down'));
+    expect((await stillPOST(mk(), sctx())).status).toBe(201);
+
+    mockUpload.mockRejectedValueOnce(new Error('S3 down'));
+    const charged = await stillPOST(mk(), sctx());
+    expect(charged.status).toBe(502);
+    expect((await charged.json()).error).toBe("The image was made but couldn't be saved; it was still charged.");
+
+    mockGenerate.mockResolvedValueOnce({ ok: false, code: 'content_policy', error: 'blocked', billed: true });
+    expect((await stillPOST(mk(), sctx())).status).toBe(422);
+    expect(repo.settle).toHaveBeenCalledTimes(3);
+    spy.mockRestore();
   });
 });
 
