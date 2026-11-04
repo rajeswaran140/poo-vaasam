@@ -14,8 +14,14 @@
 import { DynamoDBOperations, handleDynamoDBError } from './dynamodb-client';
 import {
   DEFAULT_BUDGET_USD_CAP,
+  deriveStartSecs,
   newId,
+  type Candidate,
+  type Character,
   type CreateStoryInput,
+  type Scene,
+  type Shot,
+  type StoryboardDraft,
   type VisualStory,
   type VisualStoryStatus,
 } from '@/types/visualStory';
@@ -43,6 +49,41 @@ const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
 
 /** Delete fan-out: bounded so a large story does not burst the table's write capacity. */
 const DELETE_CONCURRENCY = 10;
+
+/** DynamoDB TransactWriteItems accepts at most 100 operations. */
+export const MAX_TRANSACT_ITEMS = 100;
+
+/** The storyboard change would need more than one transaction can carry. */
+export class DraftTooLargeError extends Error {
+  constructor(public readonly itemCount: number) {
+    super(`This change touches ${itemCount} items; a single transaction allows ${MAX_TRANSACT_ITEMS}. Use fewer scenes or shots.`);
+    this.name = 'DraftTooLargeError';
+  }
+}
+
+type Row = Record<string, any>;
+type Key = { PK: string; SK: string };
+
+const stripKeys = <T extends Row>(item: Row): T => {
+  const { PK: _pk, SK: _sk, GSI1PK: _g1, GSI1SK: _g2, ...rest } = item;
+  return rest as T;
+};
+
+/**
+ * Build one transaction that makes `puts` the truth and removes `deleteKeys`.
+ * A key that is both deleted and put is only put: DynamoDB rejects two
+ * operations on one item in a transaction, and a Put overwrites anyway.
+ */
+function buildRewrite(puts: Row[], deleteKeys: Key[]): Array<Record<string, any>> {
+  const putSks = new Set(puts.map((p) => p.SK));
+  const dels = deleteKeys.filter((k) => !putSks.has(k.SK));
+  const total = puts.length + dels.length;
+  if (total > MAX_TRANSACT_ITEMS) throw new DraftTooLargeError(total);
+  return [
+    ...dels.map((Key) => ({ Delete: { Key } })),
+    ...puts.map((Item) => ({ Put: { Item } })),
+  ];
+}
 
 function isConditionFailure(e: unknown): boolean {
   return (e as { name?: string } | null)?.name === 'ConditionalCheckFailedException';
@@ -261,6 +302,255 @@ export class VisualStoryRepository {
         updateExpression: 'ADD reservedUsd :negR, spentUsd :b, committedUsd :delta',
         expressionAttributeValues: { ':negR': -r, ':b': b, ':delta': round6(b - r) },
       });
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Story tree (spec §5): scenes, shots, characters, candidates, drafts
+  // -------------------------------------------------------------------------
+
+  /** Every item in the story's partition (paginated), in SK order. */
+  private async queryPartition(vsId: string): Promise<Row[]> {
+    const out: Row[] = [];
+    let exclusiveStartKey: Record<string, any> | undefined;
+    do {
+      const res = await DynamoDBOperations.query({
+        keyConditionExpression: 'PK = :pk',
+        expressionAttributeValues: { ':pk': vsPk(vsId) },
+        exclusiveStartKey,
+      });
+      out.push(...((res.Items as Row[]) ?? []));
+      exclusiveStartKey = res.LastEvaluatedKey as Record<string, any> | undefined;
+    } while (exclusiveStartKey);
+    return out.sort((a, b) => (a.SK < b.SK ? -1 : a.SK > b.SK ? 1 : 0));
+  }
+
+  /** The whole story in one Query. `null` when there is no METADATA item. */
+  async loadTree(vsId: string): Promise<{
+    story: VisualStory;
+    scenes: Scene[];
+    shots: Shot[];
+    characters: Character[];
+    candidates: Candidate[];
+    drafts: StoryboardDraft[];
+  } | null> {
+    try {
+      const items = await this.queryPartition(vsId);
+      const metaItem = items.find((i) => i.SK === METADATA);
+      if (!metaItem) return null;
+      const by = (prefix: string) => items.filter((i) => String(i.SK).startsWith(prefix));
+
+      // SKs are zero-padded, so SK order is scene-then-shot order (R3).
+      const rawShots = by('SHOT#');
+      const starts = deriveStartSecs(rawShots as Array<{ durationSec: number }>);
+      return {
+        story: toStory(metaItem),
+        scenes: by('SCENE#').map((i) => stripKeys<Scene>(i)),
+        shots: rawShots.map((i, n) => ({ ...stripKeys<Shot>(i), startSec: starts[n] })),
+        characters: by('CHAR#').map((i) => stripKeys<Character>(i)),
+        candidates: by('CAND#').map((i) => stripKeys<Candidate>(i)),
+        drafts: by('DRAFT#').map((i) => stripKeys<StoryboardDraft>(i)),
+      };
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  async putScene(vsId: string, scene: Scene): Promise<void> {
+    try {
+      await DynamoDBOperations.put({ PK: vsPk(vsId), SK: sceneSk(scene.order), ...scene });
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  /** `startSec` is derived on read, never stored (it would go stale on every edit). */
+  async putShot(vsId: string, shot: Shot): Promise<void> {
+    try {
+      const { startSec: _derived, ...stored } = shot;
+      await DynamoDBOperations.put({ PK: vsPk(vsId), SK: shotSk(shot.sceneOrder, shot.shotOrder), ...stored });
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  /**
+   * Remove a shot and its candidates. Later shots keep their orders (gaps are
+   * fine; ordering is by SK) — `reorderShots` closes them.
+   */
+  async deleteShot(vsId: string, sceneOrder: number, shotOrder: number): Promise<void> {
+    try {
+      const prefix = `CAND#${String(sceneOrder).padStart(3, '0')}#${String(shotOrder).padStart(3, '0')}#`;
+      const items = await this.queryPartition(vsId);
+      const keys: Key[] = items
+        .filter((i) => i.SK === shotSk(sceneOrder, shotOrder) || String(i.SK).startsWith(prefix))
+        .map((i) => ({ PK: i.PK, SK: i.SK }));
+      await DynamoDBOperations.transactWrite(buildRewrite([], keys));
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  /**
+   * Re-sequence one scene's shots. `newOrder` lists the scene's CURRENT
+   * shotOrders in the desired sequence; position i becomes shotOrder i+1.
+   * Candidates move with their shot. One transaction (≤ 100 items).
+   */
+  async reorderShots(vsId: string, sceneOrder: number, newOrder: number[]): Promise<void> {
+    try {
+      const items = await this.queryPartition(vsId);
+      const shots = items.filter((i) => i.SK.startsWith('SHOT#') && i.sceneOrder === sceneOrder);
+      const have = shots.map((s) => s.shotOrder as number).sort((a, b) => a - b);
+      const want = [...newOrder].sort((a, b) => a - b);
+      if (have.length !== want.length || have.some((v, n) => v !== want[n])) {
+        throw new Error('reorderShots: newOrder must be a permutation of the scene\'s current shot orders');
+      }
+      const newPos = new Map<number, number>(newOrder.map((old, i) => [old, i + 1]));
+
+      const puts: Row[] = [];
+      const deleteKeys: Key[] = [];
+      for (const item of items) {
+        const isShot = item.SK.startsWith('SHOT#');
+        const isCand = item.SK.startsWith('CAND#');
+        if (!(isShot || isCand) || item.sceneOrder !== sceneOrder) continue;
+        const pos = newPos.get(item.shotOrder);
+        if (pos === undefined) continue;
+        deleteKeys.push({ PK: item.PK, SK: item.SK });
+        const moved: Row = { ...item, shotOrder: pos };
+        moved.SK = isShot ? shotSk(sceneOrder, pos) : candSk(sceneOrder, pos, item.candId);
+        puts.push(moved);
+      }
+      // A shot that did not move is left alone.
+      const changed = puts.filter((p, n) => p.SK !== deleteKeys[n].SK);
+      const unchangedKeys = new Set(puts.filter((p, n) => p.SK === deleteKeys[n].SK).map((p) => p.SK));
+      await DynamoDBOperations.transactWrite(
+        buildRewrite(changed, deleteKeys.filter((k) => !unchangedKeys.has(k.SK)))
+      );
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  async putCharacter(vsId: string, character: Character): Promise<void> {
+    try {
+      await DynamoDBOperations.put({ PK: vsPk(vsId), SK: charSk(character.charId), ...character });
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  /** Append a reference-image key; fails if the character no longer exists. */
+  async addCharacterRef(vsId: string, charId: string, key: string): Promise<void> {
+    try {
+      await DynamoDBOperations.update({
+        key: { PK: vsPk(vsId), SK: charSk(charId) },
+        updateExpression: 'SET refImageKeys = list_append(if_not_exists(refImageKeys, :empty), :k)',
+        expressionAttributeValues: { ':k': [key], ':empty': [] },
+        conditionExpression: 'attribute_exists(PK)',
+      });
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  async putCandidate(vsId: string, cand: Candidate): Promise<void> {
+    try {
+      await DynamoDBOperations.put({
+        PK: vsPk(vsId),
+        SK: candSk(cand.sceneOrder, cand.shotOrder, cand.candId),
+        ...cand,
+      });
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  /** Pick the candidate a shot uses. The candidate must exist on that shot. */
+  async selectCandidate(vsId: string, sceneOrder: number, shotOrder: number, candId: string): Promise<void> {
+    try {
+      const cand = await DynamoDBOperations.get({ PK: vsPk(vsId), SK: candSk(sceneOrder, shotOrder, candId) });
+      if (!cand) throw new Error(`selectCandidate: candidate ${candId} not found on shot ${sceneOrder}/${shotOrder}`);
+      await DynamoDBOperations.update({
+        key: { PK: vsPk(vsId), SK: shotSk(sceneOrder, shotOrder) },
+        updateExpression: 'SET selectedCandidateId = :c',
+        expressionAttributeValues: { ':c': candId },
+        conditionExpression: 'attribute_exists(PK)',
+      });
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  async putDraft(vsId: string, draft: StoryboardDraft): Promise<void> {
+    try {
+      await DynamoDBOperations.put({ PK: vsPk(vsId), SK: draftSk(draft.draftId), ...draft });
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  async getDraft(vsId: string, draftId: string): Promise<StoryboardDraft | null> {
+    try {
+      const item = await DynamoDBOperations.get({ PK: vsPk(vsId), SK: draftSk(draftId) });
+      return item ? stripKeys<StoryboardDraft>(item) : null;
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  /**
+   * Replace the story's storyboard with a draft's, in ONE transaction: all
+   * SCENE#/SHOT# items (and the candidates hanging off the replaced shots) are
+   * swapped for the draft's, and characters the story does not already have
+   * (matched by trimmed, case-insensitive name) are created. Existing
+   * characters are kept untouched. Throws `DraftTooLargeError` above 100 ops.
+   */
+  async applyDraft(vsId: string, draftId: string): Promise<void> {
+    try {
+      const draft = await this.getDraft(vsId, draftId);
+      if (!draft) throw new Error(`applyDraft: draft ${draftId} not found`);
+      const items = await this.queryPartition(vsId);
+      const now = new Date().toISOString();
+
+      const norm = (n: string) => n.trim().toLowerCase();
+      const charIdByName = new Map<string, string>();
+      for (const i of items) if (i.SK.startsWith('CHAR#')) charIdByName.set(norm(i.name), i.charId);
+
+      const puts: Row[] = [];
+      for (const c of draft.characters) {
+        if (charIdByName.has(norm(c.name))) continue;
+        const charId = newId('ch');
+        charIdByName.set(norm(c.name), charId);
+        puts.push({
+          PK: vsPk(vsId), SK: charSk(charId), charId, name: c.name, description: c.description,
+          refImageKeys: [], createdAt: now,
+        });
+      }
+
+      draft.scenes.forEach((scene, si) => {
+        const sceneOrder = si + 1;
+        puts.push({
+          PK: vsPk(vsId), SK: sceneSk(sceneOrder), order: sceneOrder, heading: scene.heading, summary: scene.summary,
+        });
+        scene.shots.forEach((shot, hi) => {
+          const shotOrder = hi + 1;
+          const charIds = shot.characterNames
+            .map((n) => charIdByName.get(norm(n)))
+            .filter((id): id is string => !!id);
+          puts.push({
+            PK: vsPk(vsId), SK: shotSk(sceneOrder, shotOrder), sceneOrder, shotOrder, mode: shot.mode,
+            durationSec: shot.durationSec, visualPrompt: shot.visualPrompt, negativePrompt: '',
+            charIds, selectedCandidateId: null,
+          });
+        });
+      });
+
+      const deleteKeys: Key[] = items
+        .filter((i) => /^(SCENE|SHOT|CAND)#/.test(i.SK))
+        .map((i) => ({ PK: i.PK, SK: i.SK }));
+      await DynamoDBOperations.transactWrite(buildRewrite(puts, deleteKeys));
     } catch (error) {
       handleDynamoDBError(error);
     }
