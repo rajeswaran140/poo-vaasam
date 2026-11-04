@@ -84,6 +84,8 @@ export function Studio({ vsId }: { vsId: string }) {
   const scene = scenes.find((s) => s.order === sceneOrder) ?? scenes[0] ?? null;
   const sceneShots = scene ? shots.filter((s) => s.sceneOrder === scene.order) : [];
   const editShot = shots.find((s) => shotKey(s) === editKey) ?? null;
+  // ISO timestamps sort as strings; the newest paid draft is shown on load.
+  const lastDraft = [...(tree.drafts ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null;
   const tabClass = (on: boolean) =>
     `rounded-md px-3 py-1 text-sm ${on ? 'bg-gray-200 text-gray-900 dark:bg-gray-700 dark:text-gray-100' : 'text-gray-700 dark:text-gray-300'}`;
 
@@ -132,6 +134,7 @@ export function Studio({ vsId }: { vsId: string }) {
             windowSec={story.windowEndSec - story.windowStartSec}
             sceneCount={scenes.length}
             shotCount={shots.length}
+            lastDraft={lastDraft}
             onChanged={refresh}
             onApplied={applied}
           />

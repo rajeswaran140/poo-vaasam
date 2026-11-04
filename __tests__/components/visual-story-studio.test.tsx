@@ -4,7 +4,7 @@
  * shot cards with STILL generation, the confirm-before-spend dialog, the
  * storyboard draft panel, the spend bar and the tiling indicator.
  */
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { Studio } from '@/components/admin/visual-story/Studio';
 import { adminFetch } from '@/lib/client-auth';
 import { putToS3 } from '@/lib/mastering-upload-client';
@@ -131,6 +131,22 @@ describe('Studio — shot cards', () => {
     expect(calls('/still')).toHaveLength(1);
   });
 
+  it('two Confirm clicks in the same tick send one still request', async () => {
+    const pending = deferred<Response>();
+    routes((url) => (url.endsWith('/still') ? pending.promise : undefined));
+    render(<Studio vsId={VS} />);
+    const c = await card('Shot 1.1');
+    fireEvent.click(within(c).getByRole('button', { name: /Generate still/ }));
+    const confirm = within(c).getByRole('button', { name: 'Confirm' });
+    act(() => {
+      confirm.click();
+      confirm.click();
+    });
+    expect(calls('/still')).toHaveLength(1);
+    await act(async () => pending.resolve(json({ success: true, data: { candidate: {} } }, 201)));
+    expect(calls('/still')).toHaveLength(1);
+  });
+
   it('reloads the tree after a generation so spend updates', async () => {
     let spent = 0.42;
     routes(
@@ -205,6 +221,45 @@ describe('Studio — draft panel', () => {
     expect(calls('/apply')).toHaveLength(0);
     fireEvent.click(screen.getByRole('button', { name: 'Replace storyboard' }));
     await waitFor(() => expect(calls(`/draft/${draft.draftId}/apply`)).toHaveLength(1));
+  });
+
+  it('two Replace clicks in the same tick send one apply request', async () => {
+    const pending = deferred<Response>();
+    routes((url) => {
+      if (url.endsWith('/draft')) return json({ success: true, data: { draft } }, 201);
+      if (url.endsWith('/apply')) return pending.promise;
+      return undefined;
+    });
+    await drafted();
+    fireEvent.click(await screen.findByRole('button', { name: 'Apply' }));
+    const replace = screen.getByRole('button', { name: 'Replace storyboard' });
+    act(() => {
+      replace.click();
+      replace.click();
+    });
+    expect(calls('/apply')).toHaveLength(1);
+    await act(async () => pending.resolve(json({ success: true, data: tree() })));
+    expect(calls('/apply')).toHaveLength(1);
+  });
+
+  it('shows the newest persisted draft on load, dated, and applies it without a new draft call', async () => {
+    const older = { ...draft, draftId: 'dr_1730000000000_olddraft1', createdAt: '2026-11-01T08:00:00Z',
+      scenes: [{ heading: 'Old scene', summary: '', shots: [{ durationSec: 60, mode: 'STILL', visualPrompt: 'Old draft shot', characterNames: [] }] }] };
+    const newer = { ...draft, draftId: 'dr_1730000000000_newdraft1', createdAt: '2026-11-03T08:00:00Z' };
+    const t = tree();
+    t.drafts = [newer, older];
+    routes((url) => (url.endsWith('/apply') ? json({ success: true, data: tree() }) : undefined), () => t);
+    render(<Studio vsId={VS} />);
+    const panel = await screen.findByRole('region', { name: 'Storyboard draft' });
+    expect(within(panel).getByText('Draft shot one')).toBeInTheDocument();
+    expect(within(panel).queryByText('Old draft shot')).not.toBeInTheDocument();
+    expect(within(panel).getByText(/^Last draft \(.+\)$/)).toBeInTheDocument();
+    expect(calls('/draft')).toHaveLength(0);
+    fireEvent.click(within(panel).getByRole('button', { name: 'Apply' }));
+    fireEvent.click(within(panel).getByRole('button', { name: 'Replace storyboard' }));
+    await waitFor(() => expect(calls(`/draft/${newer.draftId}/apply`)).toHaveLength(1));
+    // Once applied in this session it is not offered again as a draft to apply.
+    await waitFor(() => expect(within(panel).queryByRole('button', { name: 'Apply' })).not.toBeInTheDocument());
   });
 
   it('shows a draft error inside the draft panel', async () => {

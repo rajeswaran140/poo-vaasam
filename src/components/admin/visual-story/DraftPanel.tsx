@@ -3,7 +3,9 @@
 /**
  * Draft panel (spec §6.5, §10): paste lyrics → Claude proposes scenes and shots
  * → preview with the total against the window → Apply. Apply REPLACES the
- * current storyboard, so it asks first. The lyrics are sent once and never kept
+ * current storyboard, so it asks first. A draft is paid for, so the newest
+ * persisted one (tree.drafts) is shown on load as "Last draft (<date>)" — the
+ * model has no applied marker, so it is labelled by date, not as pending. The lyrics are sent once and never kept
  * here after the request. Errors render inside this panel.
  */
 
@@ -18,20 +20,34 @@ interface Props {
   windowSec: number;
   sceneCount: number;
   shotCount: number;
+  /** The newest persisted draft, if any. */
+  lastDraft: StoryboardDraft | null;
   /** Reload the tree (spend) after a draft request settles. */
   onChanged: () => void;
   /** The apply route returns the whole new tree. */
   onApplied: (tree: unknown) => void;
 }
 
-export function DraftPanel({ vsId, windowSec, sceneCount, shotCount, onChanged, onApplied }: Props) {
+const when = (iso: string) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' });
+};
+
+export function DraftPanel({ vsId, windowSec, sceneCount, shotCount, lastDraft, onChanged, onApplied }: Props) {
   const [lyrics, setLyrics] = useState('');
   const [pending, setPending] = useState(false);
   const inFlight = useRef(false);
-  const [draft, setDraft] = useState<StoryboardDraft | null>(null);
+  const [fresh, setFresh] = useState<StoryboardDraft | null>(null);
+  // A draft applied in this session is not offered again until a reload.
+  const [appliedId, setAppliedId] = useState<string | null>(null);
+  const applyInFlight = useRef(false);
   const [confirming, setConfirming] = useState(false);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const candidate = fresh ?? lastDraft;
+  const draft = candidate && candidate.draftId !== appliedId ? candidate : null;
+  const isFresh = !!draft && draft === fresh;
 
   const requestDraft = async () => {
     if (inFlight.current || !lyrics.trim()) return;
@@ -47,7 +63,7 @@ export function DraftPanel({ vsId, windowSec, sceneCount, shotCount, onChanged, 
       });
       const body = await res.json().catch(() => null);
       if (!res.ok || !body?.success) setError(body?.error || `Could not draft the storyboard (HTTP ${res.status}).`);
-      else setDraft(body.data.draft as StoryboardDraft);
+      else setFresh(body.data.draft as StoryboardDraft);
     } catch {
       setError('Could not reach the server. Check your connection and try again.');
     } finally {
@@ -58,7 +74,8 @@ export function DraftPanel({ vsId, windowSec, sceneCount, shotCount, onChanged, 
   };
 
   const apply = async () => {
-    if (!draft || applying) return;
+    if (!draft || applyInFlight.current) return;
+    applyInFlight.current = true;
     setApplying(true);
     setError(null);
     try {
@@ -68,12 +85,14 @@ export function DraftPanel({ vsId, windowSec, sceneCount, shotCount, onChanged, 
         setError(body?.error || 'Could not apply the draft.');
         return;
       }
-      setDraft(null);
+      setFresh(null);
+      setAppliedId(draft.draftId);
       setConfirming(false);
       onApplied(body.data);
     } catch {
       setError('Could not reach the server. Check your connection and try again.');
     } finally {
+      applyInFlight.current = false;
       setApplying(false);
     }
   };
@@ -110,6 +129,7 @@ export function DraftPanel({ vsId, windowSec, sceneCount, shotCount, onChanged, 
 
       {draft && (
         <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{isFresh ? 'New draft' : `Last draft (${when(draft.createdAt)})`}</h3>
           <p className={`text-sm font-medium ${draftSec === windowSec ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400'}`}>
             {`Draft fills ${draftSec} of ${windowSec} s`}
           </p>

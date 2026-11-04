@@ -229,6 +229,13 @@ describe('Admin Layout Authentication', () => {
       expect(screen.getByRole('heading', { level: 2, name: 'Notify' })).toBeInTheDocument();
     });
 
+    it('titles a visual story studio page "Visual Story Studio", not the "Admin" fallback', () => {
+      (usePathname as jest.Mock).mockReturnValue('/admin/visual-story/vs_1730000000000_abcdef12');
+      render(<AdminLayout><div>Body</div></AdminLayout>);
+      expect(screen.getByRole('heading', { level: 2, name: 'Visual Story Studio' })).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { level: 2, name: 'Admin' })).not.toBeInTheDocument();
+    });
+
     it('marks the Songs nav item active on the /admin/songs/publish sub-route', () => {
       (usePathname as jest.Mock).mockReturnValue('/admin/songs/publish');
       render(<AdminLayout><div>Body</div></AdminLayout>);
