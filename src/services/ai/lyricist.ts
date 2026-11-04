@@ -83,6 +83,7 @@ export type LyricGenErrorCode =
   | 'not_configured'
   | 'invalid_brief'
   | 'auth'
+  | 'billing'
   | 'rate_limit'
   | 'upstream'
   | 'bad_response';
@@ -174,6 +175,14 @@ export async function generateLyrics(
     }
     if (status === 429) {
       return { ok: false, code: 'rate_limit', error: 'The AI service is rate-limited right now. Please retry in a moment.' };
+    }
+    // Anthropic reports an empty balance as a plain 400; retrying can't help.
+    if (status === 400 && /credit balance is too low/i.test(detail)) {
+      return {
+        ok: false,
+        code: 'billing',
+        error: 'The Anthropic account is out of credit. Add credits in the Anthropic Console (Plans & Billing), then generate again.',
+      };
     }
     return { ok: false, code: 'upstream', error: 'The AI service failed to respond. Please try again.' };
   }
