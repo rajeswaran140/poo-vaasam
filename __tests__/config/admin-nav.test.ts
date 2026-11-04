@@ -54,3 +54,14 @@ describe('the prompts page is named for TamilAgaval Music', () => {
     expect(old).toMatch(/redirect\(['"]\/admin\/music-prompts['"]\)/);
   });
 });
+
+describe('Visual Story Studio nav entry', () => {
+  const entry = ADMIN_NAV_ITEMS.find((i) => i.href === '/admin/visual-story');
+
+  it('is in the sidebar beside the Compose tools and has a real page', () => {
+    expect(entry?.title).toBe('Visual Story Studio');
+    expect(entry?.section).toBe('Compose');
+    expect(isSidebarVisible(entry!)).toBe(true);
+    expect(existsSync(join(process.cwd(), 'src/app/(admin)/admin/visual-story/page.tsx'))).toBe(true);
+  });
+});

@@ -40,6 +40,7 @@ import {
   Globe,
   Send,
   Wallet,
+  Clapperboard,
 } from 'lucide-react';
 import { FEATURES } from '@/config/features';
 
@@ -229,6 +230,15 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     section: 'Compose',
     icon: SearchCheck,
     keywords: ['compose', 'review'],
+  },
+  {
+    href: '/admin/visual-story',
+    title: 'Visual Story Studio',
+    subtitle: 'Storyboard and generate music videos',
+    section: 'Compose',
+    icon: Clapperboard,
+    matchMode: 'prefix',
+    keywords: ['video', 'storyboard', 'shots', 'grok'],
   },
   {
     href: '/admin/music-lab',

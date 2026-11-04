@@ -133,6 +133,10 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
     subtitle:
       "Your own draft → honest feedback; coaches your craft, never rewrites",
   },
+  "/admin/visual-story": {
+    title: "Visual Story Studio",
+    subtitle: "Storyboard and generate music videos",
+  },
   "/admin/music-prompts": {
     title: "TamilAgaval Music Prompts",
     subtitle:
