@@ -172,6 +172,17 @@ describe('POST draft', () => {
     expect(repo.settle).toHaveBeenCalledTimes(1);
   });
 
+  it('bad_response WITH usage settles at its token cost and still returns 502', async () => {
+    mockGenerate.mockResolvedValueOnce({
+      ok: false, code: 'bad_response', error: 'x', usage: { inputTokens: 2000, outputTokens: 3000 },
+    });
+    const res = await draftPOST(mk({ lyrics: LYRICS }), ctx());
+    expect(res.status).toBe(502);
+    expect(repo.settle).toHaveBeenCalledTimes(1);
+    expect(repo.settle).toHaveBeenCalledWith(VS, { reservedUsd: DRAFT_ESTIMATE_USD, billedUsd: cost });
+    expect(repo.putDraft).not.toHaveBeenCalled();
+  });
+
   it('generateStoryboard THROWS ⇒ 502, unbilled, settled once', async () => {
     const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
     mockGenerate.mockRejectedValueOnce(new Error('boom'));

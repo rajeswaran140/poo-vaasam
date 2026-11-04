@@ -94,6 +94,7 @@ it('sum off by 40 is bad_response with the draft-again copy', async () => {
     ok: false,
     code: 'bad_response',
     error: "The draft's shots did not fit the chosen length. Please draft again.",
+    usage: { inputTokens: 120, outputTokens: 900 },
   });
 });
 
@@ -135,4 +136,32 @@ it('max_tokens stop is bad_response', async () => {
 it('schema-invalid output is bad_response', async () => {
   create.mockResolvedValue(toolResponse({ characters: [], scenes: [] }));
   expect(await generateStoryboard(req)).toMatchObject({ ok: false, code: 'bad_response' });
+});
+
+describe('usage on failure (a received response was billed)', () => {
+  const USAGE = { inputTokens: 120, outputTokens: 900 };
+  it('schema-invalid carries usage', async () => {
+    create.mockResolvedValue(toolResponse({ characters: [], scenes: [] }));
+    expect(await generateStoryboard(req)).toMatchObject({ ok: false, code: 'bad_response', usage: USAGE });
+  });
+  it('max_tokens carries usage', async () => {
+    create.mockResolvedValue(toolResponse(board([15], [15]), { stop_reason: 'max_tokens' }));
+    expect(await generateStoryboard(req)).toMatchObject({ ok: false, code: 'bad_response', usage: USAGE });
+  });
+  it('missing tool_use block carries usage', async () => {
+    create.mockResolvedValue({ content: [{ type: 'text', text: 'hi' }], stop_reason: 'end_turn', usage: { input_tokens: 120, output_tokens: 900 } });
+    expect(await generateStoryboard(req)).toMatchObject({ ok: false, code: 'bad_response', usage: USAGE });
+  });
+  it('tiling refusal carries usage', async () => {
+    create.mockResolvedValue(toolResponse(board([15, 15], [15, 15])));
+    expect(await generateStoryboard({ ...req, windowSec: 100 })).toMatchObject({ ok: false, code: 'bad_response', usage: USAGE });
+  });
+  it.each([[401], [429], [500]])('status %i has no usage', async (status) => {
+    create.mockRejectedValue(Object.assign(new Error('x'), { status }));
+    expect(await generateStoryboard(req)).not.toHaveProperty('usage');
+  });
+  it('not_configured has no usage', async () => {
+    delete process.env.ANTHROPIC_API_KEY;
+    expect(await generateStoryboard(req)).not.toHaveProperty('usage');
+  });
 });

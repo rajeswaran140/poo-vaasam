@@ -84,7 +84,11 @@ export async function POST(request: NextRequest, { params }: Ctx) {
         console.error('visual-story draft: generator threw', err instanceof Error ? err.name : 'error');
         result = { ok: false, code: 'upstream', error: 'The AI service failed to respond. Please try again.' };
       }
-      if (!result.ok) return fail(result.error, STATUS_BY_CODE[result.code] ?? 502);
+      if (!result.ok) {
+        // A received-but-unusable response was still billed by the provider.
+        if (result.usage) billedUsd = draftCostUsd(result.usage.inputTokens, result.usage.outputTokens);
+        return fail(result.error, STATUS_BY_CODE[result.code] ?? 502);
+      }
 
       const { inputTokens, outputTokens } = result.usage;
       const costUsd = draftCostUsd(inputTokens, outputTokens);

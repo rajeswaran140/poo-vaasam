@@ -44,7 +44,14 @@ export type StoryboardErrorCode =
 
 export type StoryboardResult =
   | { ok: true; data: StoryboardOutput; usage: { inputTokens: number; outputTokens: number } }
-  | { ok: false; code: StoryboardErrorCode; error: string };
+  // `usage` is present only when an Anthropic response was actually received
+  // (so its tokens were billed): bad_response cases. Absent for unbilled failures.
+  | {
+      ok: false;
+      code: StoryboardErrorCode;
+      error: string;
+      usage?: { inputTokens: number; outputTokens: number };
+    };
 
 export interface StoryboardRequest {
   lyrics: string;
@@ -144,24 +151,24 @@ export async function generateStoryboard(req: StoryboardRequest): Promise<Storyb
   console.info('[ai/storyboarder] complete', JSON.stringify({ model: DEFAULT_MODEL, ms: Date.now() - startedAt, ...usage, stopReason: res.stop_reason }));
 
   if (res.stop_reason === 'max_tokens') {
-    return { ok: false, code: 'bad_response', error: 'The AI response was too long and got cut off. Please try again.' };
+    return { ok: false, code: 'bad_response', error: 'The AI response was too long and got cut off. Please try again.', usage };
   }
 
   const toolUse = res.content.find(
     (block): block is Anthropic.Messages.ToolUseBlock => block.type === 'tool_use' && block.name === TOOL_NAME
   );
   if (!toolUse) {
-    return { ok: false, code: 'bad_response', error: 'The AI returned an unexpected format. Please try again.' };
+    return { ok: false, code: 'bad_response', error: 'The AI returned an unexpected format. Please try again.', usage };
   }
 
   const parsed = storyboardOutputSchema.safeParse(toolUse.input);
   if (!parsed.success) {
     console.error('[ai/storyboarder] tool output failed schema validation:', parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
-    return { ok: false, code: 'bad_response', error: 'The AI returned an incomplete storyboard. Please try again.' };
+    return { ok: false, code: 'bad_response', error: 'The AI returned an incomplete storyboard. Please try again.', usage };
   }
 
   if (!repairTiling(parsed.data, windowSec)) {
-    return { ok: false, code: 'bad_response', error: DOES_NOT_FIT };
+    return { ok: false, code: 'bad_response', error: DOES_NOT_FIT, usage };
   }
 
   return { ok: true, data: parsed.data, usage };
