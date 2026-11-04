@@ -53,8 +53,27 @@ const DELETE_CONCURRENCY = 10;
 /** DynamoDB TransactWriteItems accepts at most 100 operations. */
 export const MAX_TRANSACT_ITEMS = 100;
 
-/** The storyboard change would need more than one transaction can carry. */
-export class DraftTooLargeError extends Error {
+/** Base for errors a route should map to 4xx; never flattened into a DynamoDB 500. */
+export class VisualStoryDomainError extends Error {}
+
+/** A story, draft or candidate the caller named does not exist (map to 404). */
+export class NotFoundError extends VisualStoryDomainError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NotFoundError';
+  }
+}
+
+/** `newOrder` is not a permutation of the scene's shots (map to 400). */
+export class InvalidReorderError extends VisualStoryDomainError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidReorderError';
+  }
+}
+
+/** The storyboard change would need more than one transaction can carry (map to 400/409). */
+export class DraftTooLargeError extends VisualStoryDomainError {
   constructor(public readonly itemCount: number) {
     super(`This change touches ${itemCount} items; a single transaction allows ${MAX_TRANSACT_ITEMS}. Use fewer scenes or shots.`);
     this.name = 'DraftTooLargeError';
@@ -83,6 +102,12 @@ function buildRewrite(puts: Row[], deleteKeys: Key[]): Array<Record<string, any>
     ...dels.map((Key) => ({ Delete: { Key } })),
     ...puts.map((Item) => ({ Put: { Item } })),
   ];
+}
+
+/** Domain errors pass through untouched; anything else is a storage failure. */
+function fail(error: unknown): never {
+  if (error instanceof VisualStoryDomainError) throw error;
+  return handleDynamoDBError(error);
 }
 
 function isConditionFailure(e: unknown): boolean {
@@ -142,7 +167,7 @@ export class VisualStoryRepository {
       });
       return story;
     } catch (error) {
-      handleDynamoDBError(error);
+      fail(error);
     }
   }
 
@@ -151,7 +176,7 @@ export class VisualStoryRepository {
       const item = await DynamoDBOperations.get(metaKey(vsId));
       return item ? toStory(item) : null;
     } catch (error) {
-      handleDynamoDBError(error);
+      fail(error);
     }
   }
 
@@ -186,7 +211,7 @@ export class VisualStoryRepository {
       } while (exclusiveStartKey);
       return out;
     } catch (error) {
-      handleDynamoDBError(error);
+      fail(error);
     }
   }
 
@@ -226,7 +251,7 @@ export class VisualStoryRepository {
         conditionExpression: 'attribute_exists(PK)',
       });
     } catch (error) {
-      handleDynamoDBError(error);
+      fail(error);
     }
   }
 
@@ -251,7 +276,7 @@ export class VisualStoryRepository {
         await Promise.all(keys.slice(i, i + DELETE_CONCURRENCY).map((k) => DynamoDBOperations.delete(k)));
       }
     } catch (error) {
-      handleDynamoDBError(error);
+      fail(error);
     }
   }
 
@@ -303,7 +328,7 @@ export class VisualStoryRepository {
         expressionAttributeValues: { ':negR': -r, ':b': b, ':delta': round6(b - r) },
       });
     } catch (error) {
-      handleDynamoDBError(error);
+      fail(error);
     }
   }
 
@@ -354,7 +379,7 @@ export class VisualStoryRepository {
         drafts: by('DRAFT#').map((i) => stripKeys<StoryboardDraft>(i)),
       };
     } catch (error) {
-      handleDynamoDBError(error);
+      fail(error);
     }
   }
 
@@ -362,7 +387,7 @@ export class VisualStoryRepository {
     try {
       await DynamoDBOperations.put({ PK: vsPk(vsId), SK: sceneSk(scene.order), ...scene });
     } catch (error) {
-      handleDynamoDBError(error);
+      fail(error);
     }
   }
 
@@ -372,7 +397,7 @@ export class VisualStoryRepository {
       const { startSec: _derived, ...stored } = shot;
       await DynamoDBOperations.put({ PK: vsPk(vsId), SK: shotSk(shot.sceneOrder, shot.shotOrder), ...stored });
     } catch (error) {
-      handleDynamoDBError(error);
+      fail(error);
     }
   }
 
@@ -389,7 +414,7 @@ export class VisualStoryRepository {
         .map((i) => ({ PK: i.PK, SK: i.SK }));
       await DynamoDBOperations.transactWrite(buildRewrite([], keys));
     } catch (error) {
-      handleDynamoDBError(error);
+      fail(error);
     }
   }
 
@@ -405,7 +430,7 @@ export class VisualStoryRepository {
       const have = shots.map((s) => s.shotOrder as number).sort((a, b) => a - b);
       const want = [...newOrder].sort((a, b) => a - b);
       if (have.length !== want.length || have.some((v, n) => v !== want[n])) {
-        throw new Error('reorderShots: newOrder must be a permutation of the scene\'s current shot orders');
+        throw new InvalidReorderError('reorderShots: newOrder must be a permutation of the scene\'s current shot orders');
       }
       const newPos = new Map<number, number>(newOrder.map((old, i) => [old, i + 1]));
 
@@ -429,7 +454,7 @@ export class VisualStoryRepository {
         buildRewrite(changed, deleteKeys.filter((k) => !unchangedKeys.has(k.SK)))
       );
     } catch (error) {
-      handleDynamoDBError(error);
+      fail(error);
     }
   }
 
@@ -437,7 +462,7 @@ export class VisualStoryRepository {
     try {
       await DynamoDBOperations.put({ PK: vsPk(vsId), SK: charSk(character.charId), ...character });
     } catch (error) {
-      handleDynamoDBError(error);
+      fail(error);
     }
   }
 
@@ -451,7 +476,7 @@ export class VisualStoryRepository {
         conditionExpression: 'attribute_exists(PK)',
       });
     } catch (error) {
-      handleDynamoDBError(error);
+      fail(error);
     }
   }
 
@@ -463,7 +488,7 @@ export class VisualStoryRepository {
         ...cand,
       });
     } catch (error) {
-      handleDynamoDBError(error);
+      fail(error);
     }
   }
 
@@ -471,7 +496,7 @@ export class VisualStoryRepository {
   async selectCandidate(vsId: string, sceneOrder: number, shotOrder: number, candId: string): Promise<void> {
     try {
       const cand = await DynamoDBOperations.get({ PK: vsPk(vsId), SK: candSk(sceneOrder, shotOrder, candId) });
-      if (!cand) throw new Error(`selectCandidate: candidate ${candId} not found on shot ${sceneOrder}/${shotOrder}`);
+      if (!cand) throw new NotFoundError(`selectCandidate: candidate ${candId} not found on shot ${sceneOrder}/${shotOrder}`);
       await DynamoDBOperations.update({
         key: { PK: vsPk(vsId), SK: shotSk(sceneOrder, shotOrder) },
         updateExpression: 'SET selectedCandidateId = :c',
@@ -479,7 +504,7 @@ export class VisualStoryRepository {
         conditionExpression: 'attribute_exists(PK)',
       });
     } catch (error) {
-      handleDynamoDBError(error);
+      fail(error);
     }
   }
 
@@ -487,7 +512,7 @@ export class VisualStoryRepository {
     try {
       await DynamoDBOperations.put({ PK: vsPk(vsId), SK: draftSk(draft.draftId), ...draft });
     } catch (error) {
-      handleDynamoDBError(error);
+      fail(error);
     }
   }
 
@@ -496,7 +521,7 @@ export class VisualStoryRepository {
       const item = await DynamoDBOperations.get({ PK: vsPk(vsId), SK: draftSk(draftId) });
       return item ? stripKeys<StoryboardDraft>(item) : null;
     } catch (error) {
-      handleDynamoDBError(error);
+      fail(error);
     }
   }
 
@@ -510,7 +535,7 @@ export class VisualStoryRepository {
   async applyDraft(vsId: string, draftId: string): Promise<void> {
     try {
       const draft = await this.getDraft(vsId, draftId);
-      if (!draft) throw new Error(`applyDraft: draft ${draftId} not found`);
+      if (!draft) throw new NotFoundError(`applyDraft: draft ${draftId} not found`);
       const items = await this.queryPartition(vsId);
       const now = new Date().toISOString();
 
@@ -552,7 +577,7 @@ export class VisualStoryRepository {
         .map((i) => ({ PK: i.PK, SK: i.SK }));
       await DynamoDBOperations.transactWrite(buildRewrite(puts, deleteKeys));
     } catch (error) {
-      handleDynamoDBError(error);
+      fail(error);
     }
   }
 }

@@ -15,12 +15,20 @@ jest.mock('@/infrastructure/database/dynamodb-client', () => ({
     update: (p: any) => mockUpdate(p),
     transactWrite: (i: any[]) => mockTransact(i),
   },
-  handleDynamoDBError: (e: unknown) => { throw e; },
+  // Mirrors the real function: it NEVER rethrows the original, it wraps into a 500.
+  handleDynamoDBError: (e: any) => {
+    const w: any = new Error(e?.message || 'Unknown DynamoDB error');
+    w.name = 'DynamoDBError';
+    w.statusCode = 500;
+    throw w;
+  },
 }));
 
 import {
   VisualStoryRepository,
   DraftTooLargeError,
+  InvalidReorderError,
+  NotFoundError,
   vsPk,
   sceneSk,
   shotSk,
@@ -133,7 +141,7 @@ describe('simple writes', () => {
 
   it('selectCandidate refuses a candidate that is not on that shot', async () => {
     mockGet.mockResolvedValue(undefined);
-    await expect(repo.selectCandidate(VS, 1, 2, 'cd_x')).rejects.toThrow(/candidate/i);
+    await expect(repo.selectCandidate(VS, 1, 2, 'cd_x')).rejects.toBeInstanceOf(NotFoundError);
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
@@ -191,8 +199,8 @@ describe('reorderShots', () => {
 
   it('rejects an order that is not a permutation of the scene\'s shots', async () => {
     mockQuery.mockResolvedValue({ Items: [shotItem(1, 1, 5), shotItem(1, 2, 8)] });
-    await expect(repo.reorderShots(VS, 1, [1, 1])).rejects.toThrow(/permutation|order/i);
-    await expect(repo.reorderShots(VS, 1, [1])).rejects.toThrow(/permutation|order/i);
+    await expect(repo.reorderShots(VS, 1, [1, 1])).rejects.toBeInstanceOf(InvalidReorderError);
+    await expect(repo.reorderShots(VS, 1, [1])).rejects.toBeInstanceOf(InvalidReorderError);
     expect(mockTransact).not.toHaveBeenCalled();
   });
 });
@@ -253,6 +261,17 @@ describe('applyDraft', () => {
     expect(mockTransact).not.toHaveBeenCalled();
   });
 
+  it('keeps itemCount on DraftTooLargeError', async () => {
+    mockGet.mockResolvedValue({ PK, SK: draftSk('dr_1'), ...draft(10, Array(10).fill(9)) });
+    mockQuery.mockResolvedValue({ Items: [meta, shotItem(11, 1, 5)] });
+    await expect(repo.applyDraft(VS, 'dr_1')).rejects.toMatchObject({ itemCount: 101 });
+  });
+
+  it('still wraps genuine storage failures', async () => {
+    mockGet.mockRejectedValue(Object.assign(new Error('boom'), { name: 'InternalServerError' }));
+    await expect(repo.applyDraft(VS, 'dr_1')).rejects.toMatchObject({ statusCode: 500 });
+  });
+
   it('allows exactly 100', async () => {
     mockGet.mockResolvedValue({ PK, SK: draftSk('dr_1'), ...draft(10, Array(10).fill(9)) });
     mockQuery.mockResolvedValue({ Items: [meta] });
@@ -262,6 +281,6 @@ describe('applyDraft', () => {
 
   it('throws when the draft is missing', async () => {
     mockGet.mockResolvedValue(undefined);
-    await expect(repo.applyDraft(VS, 'dr_x')).rejects.toThrow(/draft/i);
+    await expect(repo.applyDraft(VS, 'dr_x')).rejects.toBeInstanceOf(NotFoundError);
   });
 });
