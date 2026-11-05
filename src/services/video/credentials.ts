@@ -3,8 +3,15 @@
  * per Lambda container. Never logged, stored or sent to the client.
  */
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
+import { awsConfig } from '@/lib/aws-config';
 
-const ssm = new SSMClient({ region: process.env.AWS_REGION || 'ca-central-1' });
+// Sign with the app user's keys like every other AWS call in the site: the
+// Amplify SSR server has no ambient credentials, so the default provider chain
+// throws CredentialsProviderError there (seen live 2026-11-05).
+const ssm = new SSMClient({
+  region: awsConfig.region,
+  ...(awsConfig.credentials ? { credentials: awsConfig.credentials } : {}),
+});
 
 let cached: string | undefined;
 
