@@ -144,9 +144,9 @@ describe('GrokProvider', () => {
         assets: [{ kind: 'video', url: 'https://v/x.mp4', contentType: 'video/mp4' }],
       });
     });
-    it('done without url -> bad_response', async () => {
+    it('done without url -> terminal billed bad_response failure', async () => {
       fetchMock.mockResolvedValue(res(200, { status: 'done' }));
-      expect(await p.poll('a')).toMatchObject({ ok: false, code: 'bad_response' });
+      expect(await p.poll('a')).toMatchObject({ ok: true, state: 'failed', code: 'bad_response', billed: true });
     });
     it('done + respect_moderation false -> billed content_policy', async () => {
       fetchMock.mockResolvedValue(res(200, { status: 'done', respect_moderation: false, video: { url: 'u' } }));
@@ -155,6 +155,7 @@ describe('GrokProvider', () => {
     it.each([
       [{ code: 'invalid_argument', message: 'Blocked by moderation' }, 'content_policy'],
       [{ code: 'invalid_argument', message: 'bad size' }, 'bad_response'],
+      [{ code: 'failed_precondition', message: 'x' }, 'bad_response'],
       [{ code: 'permission_denied', message: 'x' }, 'auth'],
       [{ code: 'internal', message: 'x' }, 'upstream'],
     ])('failed %j -> %s, unbilled', async (error, code) => {

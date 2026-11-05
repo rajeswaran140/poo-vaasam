@@ -1,8 +1,9 @@
 /**
  * GrokProvider — xAI Grok Imagine video (spec 6.2.1), in the owner's request
  * format: POST /v1/videos/generations -> request_id; GET /v1/videos/<id>.
- * Paid calls never receive the client's abort signal. Raw upstream text is
- * logged (name + status only) and never returned.
+ * Paid calls never receive the client's abort signal. Raw upstream error text
+ * (HTTP body or task error message, truncated) is logged server-side and
+ * never returned; network failures log only the error name.
  */
 import { getXaiApiKey } from '@/services/video/credentials';
 import { estimateCostUsd } from '@/services/video/cost';
@@ -116,7 +117,13 @@ export class GrokProvider implements VideoGenerationProvider {
           };
         }
         const url = j.video?.url;
-        if (typeof url !== 'string' || !url) return fail('bad_response', 'The video service returned no clip.');
+        if (typeof url !== 'string' || !url) {
+          // done is terminal at xAI and already charged: settle as a billed failure.
+          return {
+            ok: true, state: 'failed', code: 'bad_response', billed: true,
+            error: 'The video finished but no clip came back; it was still charged.',
+          };
+        }
         return {
           ok: true, state: 'succeeded', actualCostUsd: null,
           assets: [{ kind: 'video', url, contentType: 'video/mp4' }],
@@ -126,6 +133,9 @@ export class GrokProvider implements VideoGenerationProvider {
         const code = typeof j.error?.code === 'string' ? j.error.code : '';
         const message = typeof j.error?.message === 'string' ? j.error.message : '';
         if (message || code) console.error('[video/grok] task failed:', code, message.slice(0, 500));
+        if (code === 'failed_precondition') {
+          return { ok: true, state: 'failed', code: 'bad_response', billed: false, error: 'The video service rejected the request.' };
+        }
         if (code === 'invalid_argument') {
           return /moderat/i.test(message)
             ? { ok: true, state: 'failed', code: 'content_policy', billed: false, error: 'The prompt was blocked by the provider’s content filter.' }
