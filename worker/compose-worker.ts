@@ -7,15 +7,23 @@
  * the SAME service code as the app (bundled from src via esbuild — no logic
  * drift), writing the result onto a `<KIND>JOB#<id>` DynamoDB item the form polls.
  *
- * It handles three job kinds (dispatched on `event.kind`, default 'compose' for
+ * It handles four job kinds (dispatched on `event.kind`, default 'compose' for
  * back-compat):
  *   - 'compose'    → composeFromLyrics   → COMPOSEJOB#<id>  (~33-41s brief)
  *   - 'critique'   → critiqueLyric       → CRITICJOB#<id>   (~50-70s feedback)
  *   - 'suno-setup' → generateSunoSetup   → SUNOJOB#<id>     (arrangement)
+ *   - 'storyboard' → runStoryboardJob    → VSTORY#<vsId> / DRAFTJOB#<id>
+ *                    (Visual Story draft, ~45-65s; reserves/settles the story's
+ *                    budget — see src/services/video/storyboard-job.ts)
  *
  * ⚠️ 'suno-setup' shipped INLINE on the Amplify route first and 504'd on every
- * real song — the same ~30s wall that put compose and critique here. Do not move
- * any of them back.
+ * real song — the same ~30s wall that put compose and critique here. The
+ * storyboard draft was built inline too and timed out on every live call
+ * (2026-11-04). Do not move any of them back.
+ *
+ * ⚠️ 'storyboard' calls Anthropic with a 150 s timeout: the function's timeout
+ * must be above that (180 s), and its role needs GetItem/PutItem/UpdateItem on
+ * VSTORY# items of TamilWebContent.
  *
  * Build: npm run build:worker  →  worker-dist/index.js (handler: index.handler)
  */
@@ -23,6 +31,7 @@
 import { composeFromLyrics } from '@/services/ai/composer';
 import { critiqueLyric } from '@/services/ai/lyricCritic';
 import { generateSunoSetup } from '@/services/ai/sunoSetup';
+import { runStoryboardJob, type StoryboardJobEvent } from '@/services/video/storyboard-job';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 
@@ -56,7 +65,9 @@ type Patch =
   | { status: 'done'; result: unknown; error: null }
   | { status: 'error'; result: null; error: { code: string; message: string } };
 
-export const handler = async (event: JobEvent) => {
+export const handler = async (event: JobEvent | StoryboardJobEvent) => {
+  // Visual Story draft: its own job item and money flow; never the generic path below.
+  if (event?.kind === 'storyboard') return runStoryboardJob(event);
   const kind: NonNullable<JobEvent['kind']> =
     event?.kind === 'critique' ? 'critique' : event?.kind === 'suno-setup' ? 'suno-setup' : 'compose';
   const jobId = event?.jobId;
