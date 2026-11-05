@@ -12,6 +12,7 @@
  */
 
 import { DynamoDBOperations, handleDynamoDBError } from './dynamodb-client';
+import { VIDEO_STALE_MS } from '@/services/video/gen-job';
 import {
   DEFAULT_BUDGET_USD_CAP,
   deriveStartSecs,
@@ -46,6 +47,8 @@ export const charSk = (charId: string) => `CHAR#${charId}`;
 export const draftSk = (draftId: string) => `DRAFT#${draftId}`;
 export const draftJobSk = (jobId: string) => `DRAFTJOB#${jobId}`;
 export const genJobSk = (jobId: string) => `GENJOB#${jobId}`;
+/** One clip in flight per shot (Ruling V5): a separate row, so shot edits can't wipe it. */
+export const videoLockSk = (scene: number, shot: number) => `VIDLOCK#${pad3(scene)}#${pad3(shot)}`;
 
 const METADATA = 'METADATA';
 const metaKey = (vsId: string) => ({ PK: vsPk(vsId), SK: METADATA });
@@ -554,6 +557,50 @@ export class VisualStoryRepository {
         expressionAttributeValues: { ':now': new Date().toISOString(), ':one': 1 },
         conditionExpression: 'attribute_exists(PK)',
       });
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  /**
+   * Take the shot's video lock for `jobId`: a conditional put that succeeds
+   * when no lock exists or the existing one is older than VIDEO_STALE_MS (a
+   * crashed request can block the shot for at most that long). false when
+   * another job holds a fresh lock.
+   */
+  async claimShotVideo(vsId: string, sceneOrder: number, shotOrder: number, jobId: string, now: Date): Promise<boolean> {
+    try {
+      try {
+        await DynamoDBOperations.put(
+          { PK: vsPk(vsId), SK: videoLockSk(sceneOrder, shotOrder), jobId, createdAt: now.toISOString() },
+          {
+            conditionExpression: 'attribute_not_exists(PK) OR createdAt < :staleBefore',
+            expressionAttributeValues: { ':staleBefore': new Date(now.getTime() - VIDEO_STALE_MS).toISOString() },
+          }
+        );
+        return true;
+      } catch (error) {
+        if (isConditionFailure(error)) return false;
+        throw error;
+      }
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  /** Release the shot's video lock only if `jobId` still holds it. false when it doesn't (or it is gone). */
+  async releaseShotVideo(vsId: string, sceneOrder: number, shotOrder: number, jobId: string): Promise<boolean> {
+    try {
+      try {
+        await DynamoDBOperations.delete(
+          { PK: vsPk(vsId), SK: videoLockSk(sceneOrder, shotOrder) },
+          { conditionExpression: 'jobId = :j', expressionAttributeValues: { ':j': jobId } }
+        );
+        return true;
+      } catch (error) {
+        if (isConditionFailure(error)) return false;
+        throw error;
+      }
     } catch (error) {
       fail(error);
     }

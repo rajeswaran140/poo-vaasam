@@ -11,6 +11,8 @@ import type { VideoGenRequest } from '@/services/video/providers/types';
 
 /** xAI accepts at most this many `reference_images`. */
 export const MAX_REFERENCE_IMAGES = 14;
+/** A video job (and its per-shot VIDLOCK#) not finished after this long is ended / taken over (Rulings V4, V5). */
+export const VIDEO_STALE_MS = 60 * 60_000;
 /** Signed URLs handed to xAI live this long. */
 export const SIGNED_URL_TTL_SEC = 3600;
 

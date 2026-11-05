@@ -14,6 +14,8 @@ const repo = {
   settle: jest.fn(),
   createGenJob: jest.fn(),
   transitionGenJob: jest.fn(),
+  claimShotVideo: jest.fn(),
+  releaseShotVideo: jest.fn(),
 };
 jest.mock('@/infrastructure/database/VisualStoryRepository', () => ({
   ...jest.requireActual('@/infrastructure/database/VisualStoryRepository'),
@@ -140,6 +142,8 @@ beforeEach(() => {
   repo.reserve.mockResolvedValue(true);
   repo.settle.mockResolvedValue(undefined);
   repo.createGenJob.mockResolvedValue(undefined);
+  repo.claimShotVideo.mockResolvedValue(true);
+  repo.releaseShotVideo.mockResolvedValue(true);
   repo.transitionGenJob.mockImplementation(async (_vs: string, jobId: string, _from: string[], to: string, fields = {}) =>
     job({ jobId, status: to, ...fields })
   );
@@ -377,6 +381,113 @@ describe('POST video — money paths', () => {
     const res = await POST(mk(true, ac.signal), sctx());
     expect(res.status).toBe(202);
     expect(provider.submit.mock.calls[0][0].signal).toBeUndefined();
+  });
+});
+
+describe('POST video — per-shot lock (Ruling V5)', () => {
+  const quiet = () => jest.spyOn(console, 'error').mockImplementation(() => {});
+
+  it('two presses that both see no job: one claim wins ⇒ one reserve, one job, one submit, and a 409', async () => {
+    repo.claimShotVideo.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    const [a, b] = await Promise.all([POST(mk(), sctx()), POST(mk(), sctx())]);
+    expect([a.status, b.status].sort()).toEqual([202, 409]);
+    const lost = a.status === 409 ? a : b;
+    expect((await lost.json()).error).toBe('A video is already rendering for this shot.');
+    expect(repo.claimShotVideo).toHaveBeenCalledTimes(2);
+    expect(repo.reserve).toHaveBeenCalledTimes(1);
+    expect(repo.createGenJob).toHaveBeenCalledTimes(1);
+    expect(provider.submit).toHaveBeenCalledTimes(1);
+    expect(repo.settle).not.toHaveBeenCalled();
+  });
+
+  it('claim lost ⇒ 409 before isConfigured, signing or reserve; nothing released', async () => {
+    repo.claimShotVideo.mockResolvedValueOnce(false);
+    expect((await POST(mk(), sctx())).status).toBe(409);
+    expect(provider.isConfigured).not.toHaveBeenCalled();
+    expect(mockSign).not.toHaveBeenCalled();
+    expect(repo.reserve).not.toHaveBeenCalled();
+    expect(repo.releaseShotVideo).not.toHaveBeenCalled();
+  });
+
+  it('claims with the job id that is created, for this shot, at "now"', async () => {
+    expect((await POST(mk(), sctx())).status).toBe(202);
+    const [vsArg, s, sh, jobId, now] = repo.claimShotVideo.mock.calls[0];
+    expect([vsArg, s, sh]).toEqual([VS, 1, 2]);
+    expect(jobId).toBe(repo.createGenJob.mock.calls[0][1].jobId);
+    expect(now).toBeInstanceOf(Date);
+    expect(repo.claimShotVideo.mock.invocationCallOrder[0]).toBeLessThan(
+      provider.isConfigured.mock.invocationCallOrder[0]
+    );
+  });
+
+  it('accepted submit ⇒ the claim stays held (Task 4 releases it)', async () => {
+    expect((await POST(mk(), sctx())).status).toBe(202);
+    expect(repo.releaseShotVideo).not.toHaveBeenCalled();
+    repo.transitionGenJob.mockRejectedValueOnce(new Error('ddb down'));
+    const spy = quiet();
+    expect((await POST(mk(), sctx())).status).toBe(202);
+    expect(repo.releaseShotVideo).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it('the genJobs fast path answers 409 without claiming', async () => {
+    repo.loadTree.mockResolvedValueOnce(tree({ genJobs: [job({ status: 'running' })] }));
+    expect((await POST(mk(), sctx())).status).toBe(409);
+    expect(repo.claimShotVideo).not.toHaveBeenCalled();
+  });
+
+  it('claim throwing ⇒ 5xx, nothing reserved', async () => {
+    const spy = quiet();
+    repo.claimShotVideo.mockRejectedValueOnce(new Error('ddb down'));
+    expect((await POST(mk(), sctx())).status).toBe(500);
+    expect(repo.reserve).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  const released = () => {
+    expect(repo.releaseShotVideo).toHaveBeenCalledTimes(1);
+    const [vsArg, s, sh, jobId] = repo.releaseShotVideo.mock.calls[0];
+    expect([vsArg, s, sh]).toEqual([VS, 1, 2]);
+    expect(jobId).toBe(repo.claimShotVideo.mock.calls[0][3]);
+  };
+
+  it.each<[string, () => void, number]>([
+    ['not configured', () => provider.isConfigured.mockResolvedValueOnce(false), 503],
+    ['signing throws', () => mockSign.mockRejectedValueOnce(new Error('no creds')), 500],
+    ['reserve false', () => repo.reserve.mockResolvedValueOnce(false), 402],
+    ['createGenJob throws', () => repo.createGenJob.mockRejectedValueOnce(new Error('ddb down')), 500],
+    ['submit refused', () => provider.submit.mockResolvedValueOnce({ ok: false, code: 'rate_limit', error: 'x' }), 429],
+    ['submit throws', () => provider.submit.mockRejectedValueOnce(new Error('boom')), 502],
+    [
+      'submit refused and the failed transition throws',
+      () => {
+        provider.submit.mockResolvedValueOnce({ ok: false, code: 'auth', error: 'x' });
+        repo.transitionGenJob.mockRejectedValueOnce(new Error('ddb down'));
+      },
+      502,
+    ],
+  ])('%s ⇒ the claim is released once', async (_label, arrange, status) => {
+    const spy = quiet();
+    arrange();
+    expect((await POST(mk(), sctx())).status).toBe(status);
+    released();
+    spy.mockRestore();
+  });
+
+  it('release happens after the failed transition on a refused submit', async () => {
+    provider.submit.mockResolvedValueOnce({ ok: false, code: 'rate_limit', error: 'x' });
+    await POST(mk(), sctx());
+    expect(repo.transitionGenJob.mock.invocationCallOrder[0]).toBeLessThan(
+      repo.releaseShotVideo.mock.invocationCallOrder[0]
+    );
+  });
+
+  it('release throwing keeps the real response', async () => {
+    const spy = quiet();
+    repo.reserve.mockResolvedValueOnce(false);
+    repo.releaseShotVideo.mockRejectedValueOnce(new Error('ddb down'));
+    expect((await POST(mk(), sctx())).status).toBe(402);
+    spy.mockRestore();
   });
 });
 

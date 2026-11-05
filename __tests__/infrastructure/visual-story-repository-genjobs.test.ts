@@ -5,6 +5,7 @@ const mockQuery = jest.fn();
 const mockPut = jest.fn(async (..._a: any[]) => undefined);
 const mockGet = jest.fn();
 const mockUpdate = jest.fn(async (_p: any): Promise<any> => undefined);
+const mockDelete = jest.fn(async (..._a: any[]): Promise<any> => undefined);
 
 jest.mock('@/infrastructure/database/dynamodb-client', () => ({
   DynamoDBOperations: {
@@ -13,7 +14,7 @@ jest.mock('@/infrastructure/database/dynamodb-client', () => ({
     query: (p: any) => mockQuery(p),
     update: (p: any) => mockUpdate(p),
     transactWrite: jest.fn(),
-    delete: jest.fn(),
+    delete: (...a: any[]) => mockDelete(...a),
   },
   handleDynamoDBError: (e: any) => {
     const w: any = new Error(e?.message || 'Unknown DynamoDB error');
@@ -28,7 +29,9 @@ import {
   VisualStoryDomainError,
   vsPk,
   genJobSk,
+  videoLockSk,
 } from '@/infrastructure/database/VisualStoryRepository';
+import { VIDEO_STALE_MS } from '@/services/video/gen-job';
 import { candIdForJob, isGenJobId, type GenJob } from '@/types/visualStory';
 
 const repo = new VisualStoryRepository();
@@ -170,5 +173,68 @@ describe('loadTree', () => {
     const tree = await repo.loadTree(VS);
     expect(tree?.genJobs).toEqual([job()]);
     expect(tree?.candidates).toEqual([]);
+  });
+});
+
+describe('per-shot video lock (VIDLOCK#)', () => {
+  const NOW = new Date('2026-11-05T12:00:00.000Z');
+
+  it('builds the sort key', () => {
+    expect(videoLockSk(1, 2)).toBe('VIDLOCK#001#002');
+  });
+
+  it('the stale window is one hour', () => {
+    expect(VIDEO_STALE_MS).toBe(60 * 60_000);
+  });
+
+  it('claims with a conditional put that also takes over a lock older than 1 h', async () => {
+    mockPut.mockResolvedValueOnce(undefined);
+    await expect(repo.claimShotVideo(VS, 1, 2, JOB, NOW)).resolves.toBe(true);
+    const [item, opts] = mockPut.mock.calls[0];
+    expect(item).toEqual({ PK: vsPk(VS), SK: 'VIDLOCK#001#002', jobId: JOB, createdAt: NOW.toISOString() });
+    expect(opts.conditionExpression).toBe('attribute_not_exists(PK) OR createdAt < :staleBefore');
+    expect(opts.expressionAttributeValues).toEqual({ ':staleBefore': '2026-11-05T11:00:00.000Z' });
+  });
+
+  it('a held (fresh) lock ⇒ false', async () => {
+    mockPut.mockRejectedValueOnce(condFail());
+    await expect(repo.claimShotVideo(VS, 1, 2, JOB, NOW)).resolves.toBe(false);
+  });
+
+  it('any other error propagates', async () => {
+    mockPut.mockRejectedValueOnce(new Error('ddb down'));
+    await expect(repo.claimShotVideo(VS, 1, 2, JOB, NOW)).rejects.toThrow();
+  });
+
+  it('release is a delete guarded by the claiming jobId', async () => {
+    await expect(repo.releaseShotVideo(VS, 1, 2, JOB)).resolves.toBe(true);
+    const [key, opts] = mockDelete.mock.calls[0];
+    expect(key).toEqual({ PK: vsPk(VS), SK: 'VIDLOCK#001#002' });
+    expect(opts.conditionExpression).toBe('jobId = :j');
+    expect(opts.expressionAttributeValues).toEqual({ ':j': JOB });
+  });
+
+  it('release of a lock someone else now holds (or that is gone) ⇒ false, swallowed', async () => {
+    mockDelete.mockRejectedValueOnce(condFail());
+    await expect(repo.releaseShotVideo(VS, 1, 2, JOB)).resolves.toBe(false);
+  });
+
+  it('release with another error propagates', async () => {
+    mockDelete.mockRejectedValueOnce(new Error('ddb down'));
+    await expect(repo.releaseShotVideo(VS, 1, 2, JOB)).rejects.toThrow();
+  });
+
+  it('loadTree ignores VIDLOCK rows', async () => {
+    mockQuery.mockResolvedValueOnce({
+      Items: [
+        { PK: vsPk(VS), SK: 'METADATA', vsId: VS, aspectRatio: '9:16', budgetUsdCap: 40, spentUsd: 0, reservedUsd: 0 },
+        { PK: vsPk(VS), SK: 'VIDLOCK#001#002', jobId: JOB, createdAt: NOW.toISOString() },
+      ],
+    });
+    const tree = await repo.loadTree(VS);
+    expect(tree).not.toBeNull();
+    const all = JSON.stringify({ ...tree, story: undefined });
+    expect(all).not.toContain('VIDLOCK');
+    expect(all).not.toContain(JOB);
   });
 });

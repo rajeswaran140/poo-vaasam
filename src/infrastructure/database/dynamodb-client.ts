@@ -82,11 +82,20 @@ export class DynamoDBOperations {
   /**
    * Put an item
    */
-  static async put(item: Record<string, any>, options?: { conditionExpression?: string }) {
+  static async put(
+    item: Record<string, any>,
+    options?: {
+      conditionExpression?: string;
+      expressionAttributeValues?: Record<string, any>;
+      expressionAttributeNames?: Record<string, string>;
+    }
+  ) {
     const command = new PutCommand({
       TableName: TABLE_NAME,
       Item: item,
       ...(options?.conditionExpression ? { ConditionExpression: options.conditionExpression } : {}),
+      ...(options?.expressionAttributeValues ? { ExpressionAttributeValues: options.expressionAttributeValues } : {}),
+      ...(options?.expressionAttributeNames ? { ExpressionAttributeNames: options.expressionAttributeNames } : {}),
     });
 
     return await dynamoDBClient.send(command);
@@ -193,10 +202,20 @@ export class DynamoDBOperations {
   /**
    * Delete an item
    */
-  static async delete(key: Record<string, any>) {
+  static async delete(
+    key: Record<string, any>,
+    options?: {
+      conditionExpression?: string;
+      expressionAttributeValues?: Record<string, any>;
+      expressionAttributeNames?: Record<string, string>;
+    }
+  ) {
     const command = new DeleteCommand({
       TableName: TABLE_NAME,
       Key: key,
+      ...(options?.conditionExpression ? { ConditionExpression: options.conditionExpression } : {}),
+      ...(options?.expressionAttributeValues ? { ExpressionAttributeValues: options.expressionAttributeValues } : {}),
+      ...(options?.expressionAttributeNames ? { ExpressionAttributeNames: options.expressionAttributeNames } : {}),
     });
 
     return await dynamoDBClient.send(command);
