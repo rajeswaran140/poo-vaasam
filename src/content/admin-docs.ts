@@ -5208,7 +5208,7 @@ Everything for one story sits under \`audio/mastering/visual-story/<story id>/\`
 
 ## The draft runs on the background worker
 
-The website cannot run a one-minute request (Amplify stops requests after ~30 seconds), so the draft runs on the existing worker \`tamilagaval-compose-worker\`, like the Composer and the Lyric Critic. That worker has to be on the same release as the site, with a timeout of at least 180 seconds. A draft that has not finished after 10 minutes is marked failed ("The draft took too long. Please try again.") and its hold on the budget is released.
+The website cannot run a one-minute request (Amplify stops requests after ~30 seconds), so the draft runs on the existing worker \`tamilagaval-compose-worker\`, like the Composer and the Lyric Critic. That worker has to be on the same release as the site, with a timeout of at least 180 seconds. A draft that has not finished after 10 minutes is marked failed ("The draft took too long. Please try again.") and its hold on the budget is released — at the latest the next time the story is opened or another draft is started.
 
 ## One step only you can do
 

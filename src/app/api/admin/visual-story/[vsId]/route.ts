@@ -15,6 +15,7 @@ import {
   CapBelowCommittedError,
 } from '@/infrastructure/database/VisualStoryRepository';
 import { isVsId } from '@/types/visualStory';
+import { sweepStaleDraftJobs } from '@/services/video/storyboard-job';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -50,7 +51,11 @@ export async function GET(request: NextRequest, { params }: Ctx) {
   const { vsId } = await params;
   if (!isVsId(vsId)) return fail('That story no longer exists.', 404);
   try {
-    const tree = await new VisualStoryRepository().loadTree(vsId);
+    const repo = new VisualStoryRepository();
+    // Release any draft job that died on the worker (>10 min) before reading,
+    // so the spend bar never shows a dead hold (R14). Never throws.
+    await sweepStaleDraftJobs(repo, vsId);
+    const tree = await repo.loadTree(vsId);
     if (!tree) return fail('That story no longer exists.', 404);
     return NextResponse.json({ success: true, data: tree });
   } catch (err) {

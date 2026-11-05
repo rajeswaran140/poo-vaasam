@@ -392,6 +392,26 @@ export class VisualStoryRepository {
     }
   }
 
+  /** Every DRAFTJOB# row of a story (for the stale-job sweep). Never DRAFT# drafts. */
+  async listDraftJobs(vsId: string): Promise<DraftJob[]> {
+    try {
+      const out: DraftJob[] = [];
+      let exclusiveStartKey: Record<string, any> | undefined;
+      do {
+        const res = await DynamoDBOperations.query({
+          keyConditionExpression: 'PK = :pk AND begins_with(SK, :sk)',
+          expressionAttributeValues: { ':pk': vsPk(vsId), ':sk': 'DRAFTJOB#' },
+          exclusiveStartKey,
+        });
+        for (const item of (res.Items as Row[]) ?? []) out.push(stripKeys<DraftJob>(item));
+        exclusiveStartKey = res.LastEvaluatedKey as Record<string, any> | undefined;
+      } while (exclusiveStartKey);
+      return out;
+    } catch (error) {
+      fail(error);
+    }
+  }
+
   async getDraftJob(vsId: string, jobId: string): Promise<DraftJob | null> {
     try {
       const item = await DynamoDBOperations.get({ PK: vsPk(vsId), SK: draftJobSk(jobId) });

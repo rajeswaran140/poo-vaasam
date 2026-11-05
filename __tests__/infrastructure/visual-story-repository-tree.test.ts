@@ -381,6 +381,25 @@ describe('draft jobs', () => {
     expect(draftJobSk('dj_x')).toBe('DRAFTJOB#dj_x');
   });
 
+  it('listDraftJobs queries DRAFTJOB# only (never DRAFT# drafts), follows pagination, strips keys', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ Items: [{ PK, SK: draftJobSk('dj_a'), ...job, jobId: 'dj_a' }], LastEvaluatedKey: { PK, SK: 'x' } })
+      .mockResolvedValueOnce({ Items: [{ PK, SK: draftJobSk('dj_b'), ...job, jobId: 'dj_b' }] });
+    const jobs = await repo.listDraftJobs(VS);
+    expect(jobs.map((j) => j.jobId)).toEqual(['dj_a', 'dj_b']);
+    expect(jobs[0]).not.toHaveProperty('PK');
+    const q = mockQuery.mock.calls[0][0];
+    expect(q.keyConditionExpression).toBe('PK = :pk AND begins_with(SK, :sk)');
+    expect(q.expressionAttributeValues).toEqual({ ':pk': PK, ':sk': 'DRAFTJOB#' });
+    expect(mockQuery.mock.calls[1][0].exclusiveStartKey).toEqual({ PK, SK: 'x' });
+  });
+
+  it('loadTree keeps job rows out of drafts', async () => {
+    mockQuery.mockResolvedValue({ Items: [meta, { PK, SK: draftJobSk('dj_a'), ...job }, { PK, SK: draftSk('dr_1'), draftId: 'dr_1' }] });
+    const tree = await repo.loadTree(VS);
+    expect(tree!.drafts.map((d: any) => d.draftId)).toEqual(['dr_1']);
+  });
+
   it('getDraftJob strips keys; null when absent', async () => {
     mockGet.mockResolvedValueOnce({ PK, SK: draftJobSk(job.jobId), ...job });
     expect(await repo.getDraftJob(VS, job.jobId)).toEqual(job);

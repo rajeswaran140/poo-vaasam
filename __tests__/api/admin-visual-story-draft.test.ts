@@ -19,6 +19,7 @@ const repo = {
   createDraftJob: jest.fn(),
   getDraftJob: jest.fn(),
   transitionDraftJob: jest.fn(),
+  listDraftJobs: jest.fn(),
 };
 jest.mock('@/infrastructure/database/VisualStoryRepository', () => ({
   ...jest.requireActual('@/infrastructure/database/VisualStoryRepository'),
@@ -95,6 +96,7 @@ beforeEach(() => {
   repo.applyDraft.mockResolvedValue(undefined);
   repo.patch.mockResolvedValue(undefined);
   repo.createDraftJob.mockResolvedValue(undefined);
+  repo.listDraftJobs.mockResolvedValue([]);
   repo.transitionDraftJob.mockImplementation(async (_v, jobId, _f, to, fields) => ({
     jobId, status: to, createdAt: 't', updatedAt: 't', reservedUsd: RESERVE, ...fields,
   }));
@@ -154,6 +156,18 @@ describe('POST draft (enqueue only)', () => {
     expect(repo.settle).not.toHaveBeenCalled(); // the worker settles
     const body = await res.json();
     expect(body).toEqual({ success: true, data: { jobId: job.jobId } });
+  });
+
+  it('releases a dead (10-min-old) job before reserving, so its hold cannot cause a false 402', async () => {
+    const stale = new Date(Date.now() - DRAFT_JOB_STALE_MS - 5000).toISOString();
+    const dead = { jobId: 'dj_1600000000000_deadbeef', status: 'running', createdAt: stale, updatedAt: stale, reservedUsd: 0.09 };
+    repo.listDraftJobs.mockResolvedValueOnce([dead]);
+    // DynamoDB returns the stored row (ALL_NEW), so the release uses ITS reservedUsd.
+    repo.transitionDraftJob.mockImplementationOnce(async (_v, _j, _f, to, fields) => ({ ...dead, status: to, ...fields }));
+    expect((await draftPOST(mk({ lyrics: LYRICS }), ctx())).status).toBe(202);
+    expect(repo.settle).toHaveBeenCalledTimes(1);
+    expect(repo.settle).toHaveBeenCalledWith(VS, { reservedUsd: 0.09, billedUsd: 0 });
+    expect(repo.settle.mock.invocationCallOrder[0]).toBeLessThan(repo.reserve.mock.invocationCallOrder[0]);
   });
 
   it('honours COMPOSE_WORKER_FUNCTION', async () => {

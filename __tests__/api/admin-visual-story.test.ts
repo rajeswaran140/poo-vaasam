@@ -25,6 +25,10 @@ const repo = {
   loadTree: jest.fn(),
   patch: jest.fn(),
   remove: jest.fn(),
+  listDraftJobs: jest.fn(),
+  transitionDraftJob: jest.fn(),
+  getDraftJob: jest.fn(),
+  settle: jest.fn(),
 };
 jest.mock('@/infrastructure/database/VisualStoryRepository', () => ({
   ...jest.requireActual('@/infrastructure/database/VisualStoryRepository'),
@@ -67,6 +71,7 @@ beforeEach(() => {
   mockMasterGet.mockResolvedValue({ ...MASTER });
   mockContentFind.mockResolvedValue({ id: 'c1' });
   repo.create.mockImplementation(async (i) => ({ vsId: VS, ...i }));
+  repo.listDraftJobs.mockResolvedValue([]);
 });
 
 describe('auth', () => {
@@ -198,6 +203,38 @@ describe('GET one', () => {
     repo.loadTree.mockResolvedValueOnce(null);
     expect((await GET_ONE(req('GET'), ctx())).status).toBe(404);
     expect((await GET_ONE(req('GET'), ctx('../x'))).status).toBe(404);
+  });
+});
+
+describe('GET one — releases a dead draft job before loading (R14 sweep reachability)', () => {
+  const stale = new Date(Date.now() - 11 * 60_000).toISOString();
+  const fresh = new Date(Date.now() - 30_000).toISOString();
+  const job = (createdAt: string) => ({ jobId: 'dj_1700000000000_abcdef12', status: 'queued', createdAt, updatedAt: createdAt, reservedUsd: 0.1 });
+
+  it('a 10-minute-old queued job is failed and released once, before the tree is read', async () => {
+    repo.listDraftJobs.mockResolvedValueOnce([job(stale)]);
+    repo.transitionDraftJob.mockImplementationOnce(async (_v, jobId, _f, to) => ({ ...job(stale), jobId, status: to }));
+    repo.loadTree.mockResolvedValueOnce({ story: { vsId: VS }, scenes: [] });
+    expect((await GET_ONE(req('GET'), ctx())).status).toBe(200);
+    expect(repo.settle).toHaveBeenCalledTimes(1);
+    expect(repo.settle).toHaveBeenCalledWith(VS, { reservedUsd: 0.1, billedUsd: 0 });
+    expect(repo.settle.mock.invocationCallOrder[0]).toBeLessThan(repo.loadTree.mock.invocationCallOrder[0]);
+  });
+
+  it('a young job is left alone', async () => {
+    repo.listDraftJobs.mockResolvedValueOnce([job(fresh)]);
+    repo.loadTree.mockResolvedValueOnce({ story: { vsId: VS }, scenes: [] });
+    expect((await GET_ONE(req('GET'), ctx())).status).toBe(200);
+    expect(repo.transitionDraftJob).not.toHaveBeenCalled();
+    expect(repo.settle).not.toHaveBeenCalled();
+  });
+
+  it('a failing sweep never blocks the tree', async () => {
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    repo.listDraftJobs.mockRejectedValueOnce(new Error('ddb'));
+    repo.loadTree.mockResolvedValueOnce({ story: { vsId: VS }, scenes: [] });
+    expect((await GET_ONE(req('GET'), ctx())).status).toBe(200);
+    spy.mockRestore();
   });
 });
 

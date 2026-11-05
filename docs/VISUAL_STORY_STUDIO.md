@@ -15,7 +15,7 @@ Phases 2–3: storyboard a music video and make a still picture for each shot. *
 Open the story and use **Draft storyboard**: paste the lyrics and press the button. The draft runs in the background and takes **about a minute** (the panel says "Drafting… this takes about a minute." and the button stays disabled until it finishes). The new draft then appears in the panel with how much of your window it fills; review it, then apply. Applying **replaces** the current storyboard (its scenes, shots and their stills) and asks first. Characters are kept.
 - The lyrics are used for that request only and are **not stored**. Paste them again for another draft.
 - The button shows **≈$0.15**, a planning figure above what a draft can cost; a real draft costs a few cents (about $0.05–0.06 for a 2-minute window, measured 2026-11-04). While it runs, up to about $0.10 (more for longer lyrics) is held against the budget; only the actual cost counts toward the story total.
-- If a draft has not finished after 10 minutes it is marked failed ("The draft took too long. Please try again.") and its hold is released.
+- If a draft has not finished after 10 minutes it is marked failed ("The draft took too long. Please try again.") and its hold is released — at the latest the next time the story is opened or another draft is started.
 - The most recent draft is listed by date when you reopen the story.
 
 ### 3. Edit
@@ -58,7 +58,7 @@ This area is private (the CDN denies `audio/mastering/*`). Preview through the a
 
 ## The draft runs on the background worker
 
-The Claude draft does not run on the website itself (Amplify stops any request after ~30 s; a draft takes about a minute). The site starts it on the existing worker Lambda **`tamilagaval-compose-worker`** (job kind `storyboard`) and the panel checks on it every few seconds. That worker must run the same release as the site, with a timeout of at least **180 s** (the draft call itself is allowed 150 s). If the worker is behind, a draft never finishes: after 10 minutes it is marked failed and its hold is released.
+The Claude draft does not run on the website itself (Amplify stops any request after ~30 s; a draft takes about a minute). The site starts it on the existing worker Lambda **`tamilagaval-compose-worker`** (job kind `storyboard`) and the panel checks on it every few seconds. That worker must run the same release as the site, with a timeout of at least **180 s** (the draft call itself is allowed 150 s). If the worker is behind, a draft never finishes: once it is 10 minutes old it is marked failed and its hold released the next time the story is opened.
 
 ## When Grok isn't connected
 

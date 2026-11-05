@@ -8,7 +8,9 @@
  *   reserve (402 when it would cross the cap) → DRAFTJOB#<jobId> 'queued'
  *   → async-invoke the compose worker (kind 'storyboard') → 202 { jobId }.
  * The worker calls Claude, saves the draft and settles; the client polls
- * GET .../draft/jobs/[jobId], which also fails + releases a stuck job.
+ * GET .../draft/jobs/[jobId]. A job that died on the worker is failed +
+ * released by the sweep on that poll, on every story load, and here before
+ * reserving.
  *
  * Money: the reservation is bounded by the lyrics length (draftReserveUsd).
  * If the job cannot be written or the worker cannot be invoked, the
@@ -27,7 +29,7 @@ import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helpe
 import { awsConfig } from '@/lib/aws-config';
 import { VisualStoryRepository } from '@/infrastructure/database/VisualStoryRepository';
 import { draftReserveUsd } from '@/services/video/cost';
-import { settleQuietly, type StoryboardJobEvent } from '@/services/video/storyboard-job';
+import { settleQuietly, sweepStaleDraftJobs, type StoryboardJobEvent } from '@/services/video/storyboard-job';
 import { draftRequestSchema, isVsId, newId, type DraftJob } from '@/types/visualStory';
 import { fail, limitMutation, mapError } from '@/lib/visual-story-route';
 
@@ -65,6 +67,8 @@ export async function POST(request: NextRequest, { params }: Ctx) {
   try {
     story = await repo.findById(vsId);
     if (!story) return fail('That story no longer exists.', 404);
+    // A dead job's hold must not cause a false 402 (never throws).
+    await sweepStaleDraftJobs(repo, vsId);
     reserved = await repo.reserve(vsId, reserveUsd);
   } catch (err) {
     return mapError(err);

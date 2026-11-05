@@ -9,6 +9,7 @@
 import { createHash } from 'crypto';
 
 const repo = {
+  listDraftJobs: jest.fn(),
   transitionDraftJob: jest.fn(),
   getDraftJob: jest.fn(),
   putDraft: jest.fn(),
@@ -28,6 +29,7 @@ jest.mock('@/services/ai/storyboarder', () => ({
 import {
   runStoryboardJob,
   sweepStaleDraftJob,
+  sweepStaleDraftJobs,
   DRAFT_JOB_STALE_MS,
   WORKER_DRAFT_TIMEOUT_MS,
   STALE_DRAFT_ERROR,
@@ -219,5 +221,30 @@ describe('sweepStaleDraftJob', () => {
     repo.getDraftJob.mockResolvedValue({ ...job, status: 'failed' });
     await Promise.all([sweepStaleDraftJob(r(), VS, job as never, NOW), sweepStaleDraftJob(r(), VS, job as never, NOW)]);
     expect(repo.settle).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('sweepStaleDraftJobs (every story load and every new draft)', () => {
+  const NOW = Date.parse('2026-11-04T12:00:00.000Z');
+  const old = new Date(NOW - DRAFT_JOB_STALE_MS - 1000).toISOString();
+  const young = new Date(NOW - 60_000).toISOString();
+  const j = (jobId: string, status: string, createdAt: string) => ({ jobId, status, createdAt, updatedAt: createdAt, reservedUsd: RESERVED });
+
+  it('fails and releases every stale active job once; leaves young and finished ones alone', async () => {
+    repo.listDraftJobs.mockResolvedValueOnce([
+      j('dj_1700000000000_aaaaaaaa', 'queued', old),
+      j('dj_1700000000000_bbbbbbbb', 'running', young),
+      j('dj_1700000000000_cccccccc', 'done', old),
+      j('dj_1700000000000_dddddddd', 'running', old),
+    ]);
+    await sweepStaleDraftJobs(new VisualStoryRepository(), VS, NOW);
+    expect(repo.transitionDraftJob.mock.calls.map((c) => c[1])).toEqual(['dj_1700000000000_aaaaaaaa', 'dj_1700000000000_dddddddd']);
+    expect(repo.settle).toHaveBeenCalledTimes(2);
+    expect(repo.settle).toHaveBeenCalledWith(VS, { reservedUsd: RESERVED, billedUsd: 0 });
+  });
+
+  it('never throws: a storage failure is logged by name and the caller carries on', async () => {
+    repo.listDraftJobs.mockRejectedValueOnce(Object.assign(new Error('x'), { name: 'DynamoDBError' }));
+    await expect(sweepStaleDraftJobs(new VisualStoryRepository(), VS, NOW)).resolves.toBeUndefined();
   });
 });

@@ -5,7 +5,10 @@
  * Amplify's ~30 s ceiling. The draft route reserves money, writes a queued
  * `DRAFTJOB#<jobId>` item and invokes the compose worker; the worker runs
  * `runStoryboardJob`; the client polls the job route, which runs
- * `sweepStaleDraftJob` for a job that never finished.
+ * `sweepStaleDraftJob` for a job that never finished. Because a client may
+ * stop polling (4-minute cap, reload, closed tab), every story load and every
+ * new draft also runs `sweepStaleDraftJobs` over the story's jobs — so a dead
+ * job's hold is released the next time anyone opens the story.
  *
  * MONEY — exactly one settle per reservation. Both the worker and the sweep
  * finish a job with a CONDITIONAL transition (running → done|failed, or
@@ -56,6 +59,7 @@ export interface StoryboardJobEvent {
 }
 
 type Repo = Pick<VisualStoryRepository, 'transitionDraftJob' | 'getDraftJob' | 'putDraft' | 'settle'>;
+type SweepRepo = Pick<VisualStoryRepository, 'listDraftJobs' | 'transitionDraftJob' | 'getDraftJob' | 'settle'>;
 
 const errName = (e: unknown) => (e instanceof Error ? e.name : 'error');
 
@@ -192,7 +196,7 @@ export async function runStoryboardJob(
  * such a job cannot still be running. Returns the job as it now stands.
  */
 export async function sweepStaleDraftJob(
-  repo: Repo,
+  repo: Pick<VisualStoryRepository, 'transitionDraftJob' | 'getDraftJob' | 'settle'>,
   vsId: string,
   job: DraftJob,
   now: number = Date.now()
@@ -208,4 +212,21 @@ export async function sweepStaleDraftJob(
   if (!moved) return (await repo.getDraftJob(vsId, job.jobId)) ?? job;
   await settleQuietly(repo, vsId, moved.reservedUsd, 0, 'draft sweep');
   return moved;
+}
+
+/**
+ * Sweep every job of a story (the story GET and the draft POST call this, so a
+ * dead job is released even when nobody polls it any more). Never throws: a
+ * failure is logged by name and the caller carries on.
+ */
+export async function sweepStaleDraftJobs(repo: SweepRepo, vsId: string, now: number = Date.now()): Promise<void> {
+  try {
+    const jobs = await repo.listDraftJobs(vsId);
+    for (const job of jobs) {
+      if (job.status !== 'queued' && job.status !== 'running') continue;
+      await sweepStaleDraftJob(repo, vsId, job, now);
+    }
+  } catch (err) {
+    console.error('visual-story draft sweep failed', errName(err));
+  }
 }
