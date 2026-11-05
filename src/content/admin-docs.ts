@@ -5178,12 +5178,12 @@ Phase 2 will not touch this page's connect/disconnect flow — only add to it.
   },
   {
     slug: 'visual-story-studio-plan',
-    title: 'Visual Story Studio — storyboards and stills',
+    title: 'Visual Story Studio — storyboards, stills and video clips',
     category: 'Visual Story',
-    updatedAt: '2026-11-05T02:00:00Z',
+    updatedAt: '2026-11-05T12:00:00Z',
     body: `# Visual Story Studio
 
-The studio turns one of your saved masters into a storyboard for a music video: scenes, shots, characters, and a still picture for each shot. **Video clips, review and the final assembly are not built yet** — they come in later phases. What exists today costs pennies and lets you plan the whole video before any real money is spent. The step-by-step guide is in the repo at \`docs/VISUAL_STORY_STUDIO.md\`; the design is in \`docs/superpowers/specs/2026-09-11-visual-story-studio-design.md\`.
+The studio turns one of your saved masters into a storyboard for a music video: scenes, shots, characters, and a still picture and a video clip for each shot. **Joining the clips with the song is not built yet** (Phase 6). Storyboards and stills cost pennies, so you can plan the whole video before real money is spent on clips. The step-by-step guide is in the repo at \`docs/VISUAL_STORY_STUDIO.md\`; the design is in \`docs/superpowers/specs/2026-09-11-visual-story-studio-design.md\`.
 
 ## What you can do today
 
@@ -5193,6 +5193,10 @@ The studio turns one of your saved masters into a storyboard for a music video: 
 4. **Add reference photos for a character.** They are private — kept in the media bucket in a folder that the public website cannot read. Reference photos are stored for the later video phases and do not yet influence still pictures: a still is made from the shot's text plus the names and descriptions of the characters in it. Likewise, the negative prompt is not used for stills yet.
 5. **Make still pictures with Grok.** Each shot has a **Generate still ($0.02)** button. Before it runs you see the price and what the story total will be afterwards, and you confirm. Each confirm makes one candidate picture for that shot; you choose which candidate to use.
 
+6. **Make a video clip for a shot.** Press **Make video (6 s · $0.48)** (the label shows the shot's length and price), then confirm. The card says **"Rendering… about 1–3 minutes"** and the clip appears when ready. **Cancel** asks first: "Grok may still charge for this clip" — a cancelled clip is always counted as spent. **Check again** looks once more if the card stopped watching; **Check rendering videos (N)** on the story list checks every clip still rendering. On a still, **Use as first frame** starts the video from that picture (**First frame** in the shot panel, with **Clear** to undo). The photos of a shot's characters are sent to Grok too, and a clip that uses them is made at 720p. A video can't be made for a shot without a prompt, and only one video per shot at a time. While a clip renders you can't delete or reorder shots, delete scenes, apply a draft or delete the story ("Wait for the video to finish first.").
+
+**Before your first clip, raise the story's budget** in the bottom bar — older stories may have only $1.
+
 ## What stops a runaway bill
 
 - **Every spend is confirmed.** The price and the new story total are on screen before you say yes.
@@ -5200,7 +5204,7 @@ The studio turns one of your saved masters into a storyboard for a music video: 
 - **What is charged.** A delivered picture is charged. A picture the content filter refused is still charged ($0.02 — xAI bills the attempt) and counts toward the story total. A picture that fails for any other reason (Grok busy, timeout) is not charged. A draft that never got an answer from Claude is not charged.
 - **A rate limit** stops one account from spending too fast.
 
-Later phases will add motion clips at about $0.02 per second and full-quality clips at about $0.08 per second. A whole 2-minute video is expected to land around **$25 to $35**, which is why the default budget is $40.
+Video clips cost **$0.08 per second** (6 s = $0.48); a 30 s Short is about **$2.40 per full pass**, and every retry costs again. A clip is charged when Grok finishes it. One that fails, expires or is refused on submit is not charged. A cancelled clip is always counted, and so is one unfinished after an hour or one that finished but could not be saved after 10 tries. A whole 2-minute video is expected to land around **$25 to $35**, which is why the default budget is $40.
 
 ## Where things are stored
 
@@ -5220,10 +5224,9 @@ Until it is done, storyboarding and the Claude draft keep working (the draft use
 
 ## Not built yet
 
-- Video clips (motion and full quality), and the review step where you choose between candidates.
-- Laying the chosen clips over the song and rendering the finished video.
+- Laying the clips over the song and rendering the finished video (Phase 6).
 
-These arrive in later phases; this page will be updated as each lands.
+**Phase 4 exit check.** After your first short test clip, compare the xAI console's usage with the story's spent total. When they agree, the prices are confirmed (\`GROK_RATES_VERIFIED_AT\` in the code stays empty until then).
 `,
   },
   {

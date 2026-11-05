@@ -4,7 +4,7 @@ For the person running the admin. Admin page: **Visual Story** (`/admin/visual-s
 
 ## What exists today
 
-Phases 2–3: storyboard a music video and make a still picture for each shot. **Not built yet:** video clips (motion / full quality), choosing between clips, and rendering the finished video. Those are later phases.
+Phases 2–4: storyboard a music video, make a still picture for each shot, and make a **video clip** for each shot. **Not built yet:** joining the clips with the song into the finished video (Phase 6), and a review step for choosing between several clips.
 
 ## Workflow
 
@@ -33,19 +33,36 @@ Character reference photos are **stored for the later video phases and do not ye
 ### 4. Stills
 Press **Generate still ($0.02)** on a shot. You see the price and the story total after it, and confirm. Each confirm adds one candidate picture to that shot; choose the one to use. Errors (budget reached, content refused, Grok busy) appear beside the button you pressed.
 
+### 5. Video clips
+Press **Make video (6 s · $0.48)** on a shot (the label shows that shot's length and price). You see the price and the story total after it, and confirm. The button then reads "Rendering…" and the card says **"Rendering… about 1–3 minutes"**; the clip appears on the shot when it is ready.
+- **Cancel** (beside the progress line) asks first and warns **"Grok may still charge for this clip."** Pressing **Cancel video** counts the clip's price as spent, because Grok may already have accepted it; **Keep rendering** goes back.
+- **Check again** appears if the card stopped watching a clip (for example after a network hiccup). Press it to look once more. If you left the page, press **Check rendering videos (N)** on the story list; N is how many clips are still rendering.
+- **First frame:** on a still, **Use as first frame** makes the video start from that picture. The shot panel shows **First frame** with the picture and a **Clear** button to go back to no first frame.
+- **Character photos** of the characters in a shot are sent to Grok too. A clip that uses them is made at **720p** (without photos it is 1080p).
+- A video **can't be made for a shot without a prompt** ("Write a visual prompt first.").
+- **One video per shot at a time** ("A video is already rendering for this shot."). Other shots can render at the same time.
+- While any clip is rendering you can't delete or reorder shots, delete scenes, apply a draft, or delete the story. You see "Wait for the video to finish first." Wait, or cancel the clip.
+- A clip that has not finished after **1 hour** is ended and its price is counted as spent.
+- Clips are private; they are previewed through the admin only.
+
+**Before your first clip:** raise the story's **budget** in the bottom bar. Stories made earlier may have only $1, and a clip over the budget is refused.
+
+**What's next:** laying the clips over the song and rendering the finished video is Phase 6.
+
 ## Costs and limits
 
 | Item | Price |
 |---|---|
 | Claude storyboard draft | a few cents (the button shows a ≈$0.15 planning figure) |
 | Grok still picture | $0.02 each |
-| Motion clip (later phase) | about $0.02 per second |
-| Full-quality clip (later phase) | about $0.08 per second |
+| Video clip | $0.08 per second (6 s = $0.48) |
 
 - **Hard budget per story**, default $40. Change it with the **Budget** field in the bottom bar. The server refuses any generation that would exceed it. A budget of **0** freezes the story. You cannot set it lower than what is already spent or held for a running request; that refusal shows next to the field.
 - A picture the content filter **refused is still charged** ($0.02 — xAI bills it) and counts toward the story total. A picture that fails for any other reason (Grok busy, timeout, not configured) is not charged.
 - A draft that fails before Claude answers is not charged; one whose answer was unusable is charged for the tokens used.
 - A rate limit (20 requests a minute) applies to the studio's actions.
+- A clip is charged when Grok finishes it, including one its content filter refused. A clip that fails, expires or is refused on submit is not charged. A cancelled clip is **always counted**, and so is one still unfinished after an hour or one that finished but could not be saved after 10 tries.
+- A 30 s Short costs about **$2.40 for one full pass** (30 s × $0.08); every retry costs again.
 - A whole 2-minute video is expected to cost about $25–35 once video phases exist.
 
 ## Where files live
@@ -67,3 +84,9 @@ Symptom: **Generate still** reports that Grok image generation is not configured
 Fix (owner, once): create an API key in the xAI console and store it as a SecureString named `/amplify/d3rkmepk4popv0/master/XAI_API_KEY` in **ca-central-1**. Do not paste the key into chat. The site reads it as its app user `poo-vaasam-app-user`, which needs a one-line read grant on just this parameter (`docs/IAM_LEAST_PRIVILEGE.md` §4).
 
 No rebuild or redeploy is needed; the next **Generate still** picks the key up. If it still says not configured, check the parameter name and that its type is SecureString. To rotate the key, overwrite the same parameter (a running server may keep the old value briefly). If **Generate still** reports an authorisation or billing problem from xAI instead, the key or the xAI account balance is the cause, not the studio.
+
+## Phase 4 exit check (owner and controller, after the first clips)
+
+Make one short test clip. Then compare the xAI console's usage for that day with the stories' **spent** totals (story list). If they agree, the rates are right; record the date in `GROK_RATES_VERIFIED_AT` in `src/services/video/cost.ts`. **Until then it stays `null`** and the prices on screen are unconfirmed. If they differ, fix the rate card first.
+
+No worker or IAM change is needed for clips; the site's app user already reads `XAI_API_KEY`.
