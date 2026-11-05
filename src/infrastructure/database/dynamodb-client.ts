@@ -82,10 +82,11 @@ export class DynamoDBOperations {
   /**
    * Put an item
    */
-  static async put(item: Record<string, any>) {
+  static async put(item: Record<string, any>, options?: { conditionExpression?: string }) {
     const command = new PutCommand({
       TableName: TABLE_NAME,
       Item: item,
+      ...(options?.conditionExpression ? { ConditionExpression: options.conditionExpression } : {}),
     });
 
     return await dynamoDBClient.send(command);

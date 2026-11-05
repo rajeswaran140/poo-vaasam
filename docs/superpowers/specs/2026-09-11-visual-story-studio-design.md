@@ -654,6 +654,11 @@ before any video is generated.
 The workflow the UI encourages is: storyboard entirely in `STILL`, promote selected shots
 to `MOTION`, promote a few to `HERO`.
 
+**Owner's model choice (2026-11-05).** The owner chose `grok-imagine-video-1.5` ("best") for
+every clip. The UI therefore offers no `MOTION`/lite option: every video clip is generated as
+`HERO` at $0.080/s. The `MOTION` row and its rate card remain in the contract, but nothing in
+the UI or the generate route selects them.
+
 **2. Estimate before spend.** `estimateCostUsd()` is on the port, so the UI shows both the
 shot price and the resulting story total before the confirm click.
 

@@ -21,6 +21,8 @@ import {
   type CreateStoryInput,
   type DraftJob,
   type DraftJobStatus,
+  type GenJob,
+  type GenJobStatus,
   type Scene,
   type Shot,
   type StoryboardDraft,
@@ -43,6 +45,7 @@ export const candSk = (scene: number, shot: number, candId: string) =>
 export const charSk = (charId: string) => `CHAR#${charId}`;
 export const draftSk = (draftId: string) => `DRAFT#${draftId}`;
 export const draftJobSk = (jobId: string) => `DRAFTJOB#${jobId}`;
+export const genJobSk = (jobId: string) => `GENJOB#${jobId}`;
 
 const METADATA = 'METADATA';
 const metaKey = (vsId: string) => ({ PK: vsPk(vsId), SK: METADATA });
@@ -465,6 +468,121 @@ export class VisualStoryRepository {
   }
 
   // -------------------------------------------------------------------------
+  // Video jobs: GENJOB#<jobId> in the story partition; non-terminal rows sit on
+  // the sparse GSI1 partition VSTORY_INFLIGHT so the reconciler can find them.
+  // -------------------------------------------------------------------------
+
+  async createGenJob(vsId: string, job: GenJob): Promise<void> {
+    try {
+      try {
+        await DynamoDBOperations.put(
+          {
+            PK: vsPk(vsId),
+            SK: genJobSk(job.jobId),
+            ...job,
+            GSI1PK: VSTORY_INFLIGHT_PK,
+            GSI1SK: `${job.createdAt}#${vsId}#${job.jobId}`,
+          },
+          { conditionExpression: 'attribute_not_exists(PK)' }
+        );
+      } catch (error) {
+        if (isConditionFailure(error)) throw new VisualStoryDomainError(`video job ${job.jobId} already exists`);
+        throw error;
+      }
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  async getGenJob(vsId: string, jobId: string): Promise<GenJob | null> {
+    try {
+      const item = await DynamoDBOperations.get({ PK: vsPk(vsId), SK: genJobSk(jobId) });
+      return item ? stripKeys<GenJob>(item) : null;
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  /**
+   * Conditional transition (same contract as `transitionDraftJob`): the updated
+   * job, or null when the job is gone or not in one of `from`. A terminal `to`
+   * also drops the row from the in-flight index.
+   */
+  async transitionGenJob(
+    vsId: string,
+    jobId: string,
+    from: GenJobStatus[],
+    to: GenJobStatus,
+    fields: { providerTaskId?: string; code?: string; error?: string } = {}
+  ): Promise<GenJob | null> {
+    try {
+      const names: Record<string, string> = { '#s': 'status' };
+      const values: Record<string, any> = { ':to': to, ':u': new Date().toISOString() };
+      const sets = ['#s = :to', 'updatedAt = :u'];
+      for (const f of ['providerTaskId', 'code', 'error'] as const) {
+        if (fields[f] === undefined) continue;
+        names[`#${f}`] = f;
+        values[`:${f}`] = fields[f];
+        sets.push(`#${f} = :${f}`);
+      }
+      from.forEach((st, i) => (values[`:from${i}`] = st));
+      const terminal = to === 'succeeded' || to === 'failed' || to === 'cancelled';
+      try {
+        const item = await DynamoDBOperations.update({
+          key: { PK: vsPk(vsId), SK: genJobSk(jobId) },
+          updateExpression: `SET ${sets.join(', ')}${terminal ? ' REMOVE GSI1PK, GSI1SK' : ''}`,
+          expressionAttributeNames: names,
+          expressionAttributeValues: values,
+          conditionExpression: `attribute_exists(PK) AND #s IN (${from.map((_, i) => `:from${i}`).join(', ')})`,
+        });
+        return item ? stripKeys<GenJob>(item) : null;
+      } catch (error) {
+        if (isConditionFailure(error)) return null;
+        throw error;
+      }
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  /** Record a poll: attempts +1 (and copyFailures +1 when the copy failed), lastPolledAt now. */
+  async touchGenJob(vsId: string, jobId: string, opts: { copyFailed?: boolean } = {}): Promise<void> {
+    try {
+      await DynamoDBOperations.update({
+        key: { PK: vsPk(vsId), SK: genJobSk(jobId) },
+        updateExpression: `SET lastPolledAt = :now ADD attempts :one${opts.copyFailed ? ', copyFailures :one' : ''}`,
+        expressionAttributeValues: { ':now': new Date().toISOString(), ':one': 1 },
+        conditionExpression: 'attribute_exists(PK)',
+      });
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  /** Every non-terminal video job across all stories (sparse GSI1, paginated). */
+  async listInflight(): Promise<Array<{ vsId: string; job: GenJob }>> {
+    try {
+      const out: Array<{ vsId: string; job: GenJob }> = [];
+      let exclusiveStartKey: Record<string, any> | undefined;
+      do {
+        const res = await DynamoDBOperations.query({
+          keyConditionExpression: 'GSI1PK = :pk',
+          expressionAttributeValues: { ':pk': VSTORY_INFLIGHT_PK },
+          indexName: 'GSI1',
+          exclusiveStartKey,
+        });
+        for (const item of (res.Items as Row[]) ?? []) {
+          out.push({ vsId: String(item.PK).slice('VSTORY#'.length), job: stripKeys<GenJob>(item) });
+        }
+        exclusiveStartKey = res.LastEvaluatedKey as Record<string, any> | undefined;
+      } while (exclusiveStartKey);
+      return out;
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // Story tree (spec §5): scenes, shots, characters, candidates, drafts
   // -------------------------------------------------------------------------
 
@@ -513,6 +631,7 @@ export class VisualStoryRepository {
     characters: Character[];
     candidates: Candidate[];
     drafts: StoryboardDraft[];
+    genJobs: GenJob[];
   } | null> {
     try {
       const items = await this.queryPartition(vsId);
@@ -530,6 +649,7 @@ export class VisualStoryRepository {
         characters: by('CHAR#').map((i) => stripKeys<Character>(i)),
         candidates: by('CAND#').map((i) => stripKeys<Candidate>(i)),
         drafts: by('DRAFT#').map((i) => stripKeys<StoryboardDraft>(i)),
+        genJobs: by('GENJOB#').map((i) => stripKeys<GenJob>(i)),
       };
     } catch (error) {
       fail(error);
