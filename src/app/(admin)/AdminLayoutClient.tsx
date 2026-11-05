@@ -133,6 +133,10 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
     subtitle:
       "Your own draft → honest feedback; coaches your craft, never rewrites",
   },
+  "/admin/visual-story": {
+    title: "Visual Story Studio",
+    subtitle: "Storyboard and generate music videos",
+  },
   "/admin/music-prompts": {
     title: "TamilAgaval Music Prompts",
     subtitle:
@@ -259,6 +263,7 @@ export default function AdminLayoutClient({
 
   const isEditPage = pathname.includes("/edit");
   const isStemsPage = pathname.startsWith("/admin/mastering/stems/");
+  const isVisualStoryPage = pathname.startsWith("/admin/visual-story/");
   const pageInfo = isEditPage
     ? { title: "Edit Content", subtitle: "Update existing content" }
     : isStemsPage
@@ -266,10 +271,12 @@ export default function AdminLayoutClient({
           title: "Stems",
           subtitle: "A song's separate parts — store, hear and remix them",
         }
-      : PAGE_TITLES[pathname] || {
-          title: "Admin",
-          subtitle: "Manage your platform",
-        };
+      : isVisualStoryPage
+        ? PAGE_TITLES["/admin/visual-story"]
+        : PAGE_TITLES[pathname] || {
+            title: "Admin",
+            subtitle: "Manage your platform",
+          };
 
   const handleLogout = async () => {
     try {

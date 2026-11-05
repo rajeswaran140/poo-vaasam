@@ -247,13 +247,14 @@ export class S3Operations {
     key: string,
     contentType: string,
     maxSize: number,
-    expiresIn: number = 3600
+    expiresIn: number = 3600,
+    minSize: number = 0
   ): Promise<PresignedPost> {
     return await createPresignedPost(s3Client, {
       Bucket: BUCKET_NAME,
       Key: key,
       Conditions: [
-        ['content-length-range', 0, maxSize],
+        ['content-length-range', minSize, maxSize],
         ['eq', '$Content-Type', contentType],
       ],
       Fields: { 'Content-Type': contentType },

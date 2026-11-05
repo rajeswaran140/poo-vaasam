@@ -1,6 +1,6 @@
 # IAM Least-Privilege Drafts — account 975050319109
 
-Derived 2026-06-25 from (a) each user's **actual** service usage (`get-service-last-accessed-details`), (b) existing inline policies, and (c) the app's real AWS SDK imports (`@aws-sdk/client-{dynamodb,s3,lambda,amplify}` — **no** Bedrock/SES/SSM/Secrets). Goal: remove `AdministratorAccess` from app users so the `youtube.force-ssl` token's blast radius shrinks.
+Derived 2026-06-25 from (a) each user's **actual** service usage (`get-service-last-accessed-details`), (b) existing inline policies, and (c) the app's real AWS SDK imports (`@aws-sdk/client-{dynamodb,s3,lambda,amplify}` — **no** Bedrock/SES/Secrets; SSM runtime reads were added later and are covered by the Amplify service role's `P24SsmSecureStringRead` grant, see §4). Goal: remove `AdministratorAccess` from app users so the `youtube.force-ssl` token's blast radius shrinks.
 
 **REVIEW, then apply. Nothing here has been applied.** Test from a non-admin session before deleting the old keys.
 
@@ -87,3 +87,12 @@ Usage evidence: actively used across **20+ services** (amplify, athena, backup, 
 ## Side findings (not IAM, worth noting)
 - **Duplicate table:** `TamilWebContent` exists in **both ca-central-1 (live) and us-east-1 (legacy?)**. Confirm which is authoritative; the us-east-1 copy may be stale/abandoned (drift + cost risk). The old inline policy pointed only at us-east-1 — a latent mismatch.
 - After re-scoping, re-run `get-service-last-accessed-details` in ~1 week to confirm no denied calls crept up.
+
+---
+
+## 4. Visual Story Studio — xAI key read (NO IAM CHANGE NEEDED)
+Added 2026-11-04 with the Visual Story Studio (Phases 2–3). The app reads the xAI Grok Imagine API key at request time from SSM (`getXaiApiKey`, `WithDecryption`, cached per container) at `/amplify/d3rkmepk4popv0/master/XAI_API_KEY` — the same pattern as the Twitch secrets.
+
+**Already covered.** Verified read-only against AWS on 2026-11-04: Amplify app `d3rkmepk4popv0` has `iamServiceRoleArn = arn:aws:iam::975050319109:role/AmplifyPooVasamBuildRole` and no separate compute role (`computeRoleArn = null`), so SSR runs under that service role. Its inline policy `P24SsmSecureStringRead` already allows `ssm:GetParameter` and `ssm:GetParameters` on `arn:aws:ssm:ca-central-1:975050319109:parameter/amplify/d3rkmepk4popv0/master/*`, plus `kms:Decrypt` with `kms:ViaService = ssm.ca-central-1.amazonaws.com`. `XAI_API_KEY` falls under that wildcard. **No new policy is proposed or needed.**
+
+**Owner step (spec §6.2.2, step 2 resolved as above):** create the xAI key and store it as SecureString `/amplify/d3rkmepk4popv0/master/XAI_API_KEY` in ca-central-1; the key never passes through chat. If STILL still reports Grok as not configured afterwards, check the parameter name and that its type is SecureString.

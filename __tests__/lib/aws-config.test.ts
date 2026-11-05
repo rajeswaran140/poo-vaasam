@@ -38,6 +38,34 @@ describe('aws-config credential isolation', () => {
     const cfg = require('@/lib/aws-config');
     expect(cfg.s3Config.credentials?.accessKeyId).toBe('AKIASERVERONLY00000');
   });
+
+  it('carries AWS_SESSION_TOKEN with a Lambda role\'s temporary AWS_* keys (the compose worker)', () => {
+    delete process.env.APP_AWS_ACCESS_KEY_ID;
+    delete process.env.APP_AWS_SECRET_ACCESS_KEY;
+    delete process.env.NEXT_PUBLIC_APP_AWS_ACCESS_KEY_ID;
+    delete process.env.NEXT_PUBLIC_APP_AWS_SECRET_ACCESS_KEY;
+    process.env.AWS_ACCESS_KEY_ID = 'ASIAROLETEMP0000000';
+    process.env.AWS_SECRET_ACCESS_KEY = 'roleSecret';
+    process.env.AWS_SESSION_TOKEN = 'roleSessionToken';
+
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const cfg = require('@/lib/aws-config');
+    expect(cfg.dynamoDBConfig.credentials).toEqual({
+      accessKeyId: 'ASIAROLETEMP0000000',
+      secretAccessKey: 'roleSecret',
+      sessionToken: 'roleSessionToken',
+    });
+  });
+
+  it('never pairs the app user\'s static APP_AWS_* keys with a session token', () => {
+    process.env.APP_AWS_ACCESS_KEY_ID = 'AKIASERVERONLY00000';
+    process.env.APP_AWS_SECRET_ACCESS_KEY = 'serverSecret456';
+    process.env.AWS_SESSION_TOKEN = 'roleSessionToken';
+
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const cfg = require('@/lib/aws-config');
+    expect(cfg.dynamoDBConfig.credentials).toEqual({ accessKeyId: 'AKIASERVERONLY00000', secretAccessKey: 'serverSecret456' });
+  });
 });
 
 describe('mediaUrl / mediaConfig', () => {

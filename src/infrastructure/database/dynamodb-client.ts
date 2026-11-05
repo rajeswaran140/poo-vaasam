@@ -116,6 +116,7 @@ export class DynamoDBOperations {
     limit?: number;
     scanIndexForward?: boolean;
     exclusiveStartKey?: Record<string, any>;
+    select?: 'COUNT';
   }) {
     const command = new QueryCommand({
       TableName: TABLE_NAME,
@@ -127,6 +128,7 @@ export class DynamoDBOperations {
       Limit: params.limit,
       ScanIndexForward: params.scanIndexForward,
       ExclusiveStartKey: params.exclusiveStartKey,
+      Select: params.select,
     });
 
     return await dynamoDBClient.send(command);
