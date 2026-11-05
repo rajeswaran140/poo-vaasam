@@ -34,12 +34,37 @@ import { generateSunoSetup } from '@/services/ai/sunoSetup';
 import { runStoryboardJob, type StoryboardJobEvent } from '@/services/video/storyboard-job';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 
 const ddb = DynamoDBDocumentClient.from(
   new DynamoDBClient({ region: process.env.AWS_REGION || 'ca-central-1' }),
   { marshallOptions: { removeUndefinedValues: true } }
 );
 const TABLE = process.env.DYNAMODB_TABLE_NAME || 'TamilWebContent';
+
+// The AI service modules (composer/lyricCritic/sunoSetup/storyboarder) read the
+// Anthropic / Gemini keys from process.env at call time. Populate them once at
+// cold start from SSM SecureString so no plaintext secrets live on the Lambda's
+// env-var config. Cached across warm invocations — awaited in the handler.
+// (Restored 2026-11-05: this shipped from an unmerged branch on 2026-08-21, so
+// a deploy from master silently dropped it and every AI job lost its keys.)
+const ssm = new SSMClient({ region: process.env.AWS_REGION || 'ca-central-1' });
+async function ssmSecret(name: string): Promise<string> {
+  const r = await ssm.send(
+    new GetParameterCommand({ Name: `/tamilagaval/prod/${name}`, WithDecryption: true })
+  );
+  const v = r.Parameter?.Value;
+  if (!v) throw new Error(`SSM /tamilagaval/prod/${name} missing or empty`);
+  return v;
+}
+const secretsLoaded: Promise<void> = (async () => {
+  const [anthropic, gemini] = await Promise.all([
+    ssmSecret('ANTHROPIC_API_KEY'),
+    ssmSecret('GEMINI_API_KEY'),
+  ]);
+  process.env.ANTHROPIC_API_KEY = anthropic;
+  process.env.GEMINI_API_KEY = gemini;
+})();
 
 interface JobEvent {
   kind?: 'compose' | 'critique' | 'suno-setup';
@@ -66,6 +91,7 @@ type Patch =
   | { status: 'error'; result: null; error: { code: string; message: string } };
 
 export const handler = async (event: JobEvent | StoryboardJobEvent) => {
+  await secretsLoaded;
   // Visual Story draft: its own job item and money flow; never the generic path below.
   if (event?.kind === 'storyboard') return runStoryboardJob(event);
   const kind: NonNullable<JobEvent['kind']> =
