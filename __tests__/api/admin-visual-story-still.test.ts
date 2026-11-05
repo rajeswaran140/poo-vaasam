@@ -33,7 +33,7 @@ jest.mock('@/services/video/image-providers', () => ({
 import { POST as stillPOST } from '@/app/api/admin/visual-story/[vsId]/shots/[shotKey]/still/route';
 import { POST as selectPOST } from '@/app/api/admin/visual-story/[vsId]/select/route';
 import * as auth from '@/lib/auth-helper';
-import { VisualStoryRepository } from '@/infrastructure/database/VisualStoryRepository';
+import { VisualStoryRepository, NotFoundError } from '@/infrastructure/database/VisualStoryRepository';
 import { __resetVisualStoryRateLimitForTests } from '@/lib/visual-story-rate-limit';
 import { VISUAL_STORY_PREFIX } from '@/lib/visual-story-storage';
 
@@ -285,6 +285,16 @@ describe('POST still — review fixes', () => {
     expect(res.status).toBe(201);
     expect(repo.settle).toHaveBeenCalledTimes(1);
     expect(repo.settle).toHaveBeenCalledWith(VS, { reservedUsd: 0.02, billedUsd: 0.02 });
+  });
+
+  it('settle NotFoundError (story deleted mid-call, T3) is logged and swallowed, not sent to the client', async () => {
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    repo.settle.mockRejectedValueOnce(new NotFoundError('settle: visual story gone'));
+    const res = await stillPOST(mk(), sctx());
+    expect(res.status).toBe(201);
+    expect(JSON.stringify(await res.json())).not.toContain('settle');
+    expect(spy).toHaveBeenCalledWith('visual-story still: settle failed', 'NotFoundError');
+    spy.mockRestore();
   });
 
   it('settle throwing keeps the original response', async () => {
