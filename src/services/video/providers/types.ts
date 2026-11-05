@@ -10,7 +10,8 @@ export type VideoErrorCode =
   | 'rate_limit'       // provider 429 / quota exhausted
   | 'upstream'         // any other API or network failure, incl. timeout
   | 'bad_response'     // call succeeded but returned nothing usable
-  | 'content_policy';  // provider refused the prompt
+  | 'content_policy'   // provider refused the prompt
+  | 'billing';         // provider account is out of credit
 
 export interface VideoGenRequest {
   prompt: string;
@@ -37,7 +38,7 @@ export type SubmitResult =
 export type PollResult =
   | { ok: true; state: 'pending' | 'running' }
   | { ok: true; state: 'succeeded'; assets: ProviderAsset[]; actualCostUsd: number | null }
-  | { ok: true; state: 'failed'; code: VideoErrorCode; error: string }
+  | { ok: true; state: 'failed'; code: VideoErrorCode; error: string; billed: boolean }
   | { ok: false; code: VideoErrorCode; error: string };
 
 export interface VideoGenerationProvider {
