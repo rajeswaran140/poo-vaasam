@@ -457,13 +457,17 @@ describe('Studio — video clips', () => {
   }
 
   /** POST → 202 {jobId}; each GET of the job route returns the next poll (the last one repeats). */
-  function videoRoutes(opts: { polls?: Response[]; start?: () => Response | Promise<Response>; cancel?: () => Response; getTree?: () => unknown } = {}) {
+  function videoRoutes(opts: { polls?: (Response | Error)[]; start?: () => Response | Promise<Response>; cancel?: () => Response; getTree?: () => unknown } = {}) {
     const polls = [...(opts.polls ?? [json({ success: true, data: genJob('running') })])];
     routes(
       (url, init) => {
         if (url === videoUrl && init?.method === 'POST') return opts.start ? opts.start() : json({ success: true, data: { jobId: GJ } }, 202);
         if (url === jobUrl && init?.method === 'POST') return opts.cancel ? opts.cancel() : json({ success: true, data: genJob('cancelled') });
-        if (url === jobUrl) return polls.length > 1 ? polls.shift()! : polls[0];
+        if (url === jobUrl) {
+          const next = polls.length > 1 ? polls.shift()! : polls[0];
+          if (next instanceof Error) throw next;
+          return next;
+        }
         if (url.endsWith('/shots') && init?.method === 'POST') return json({ success: true, data: {} });
         if (url.endsWith('/select')) return json({ success: true, data: {} });
         return undefined;
@@ -702,6 +706,102 @@ describe('Studio — video clips', () => {
     fireEvent.click(within(form).getByRole('button', { name: 'Clear' }));
     await waitFor(() => expect(calls('/shots')).toHaveLength(1));
     expect(JSON.parse(calls('/shots')[0][1].body).firstFrameCandidateId).toBeNull();
+  });
+
+  it('a 5xx poll is transient: it keeps polling, then finishes with no error shown', async () => {
+    jest.useFakeTimers();
+    try {
+      videoRoutes({
+        polls: [json({ success: false, error: 'Gateway timeout' }, 504), json({ success: true, data: genJob('succeeded') })],
+      });
+      render(<Studio vsId={VS} />);
+      const c = await card('Shot 1.1');
+      await startVideo(c);
+      await waitFor(() => expect(polls()).toHaveLength(1));
+      expect(within(c).getByText('Rendering… about 1–3 minutes')).toBeInTheDocument();
+      expect(within(c).queryByRole('alert')).not.toBeInTheDocument();
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(5000);
+      });
+      expect(polls()).toHaveLength(2);
+      await waitFor(() => expect(within(c).queryByText('Rendering… about 1–3 minutes')).not.toBeInTheDocument());
+      expect(within(c).queryByRole('alert')).not.toBeInTheDocument();
+      expect(within(c).queryByRole('button', { name: 'Check again' })).not.toBeInTheDocument();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('a network failure mid-render keeps polling', async () => {
+    jest.useFakeTimers();
+    try {
+      videoRoutes({
+        polls: [new TypeError('Failed to fetch'), json({ success: true, data: genJob('running') }), json({ success: true, data: genJob('succeeded') })],
+        getTree: () => vtree({ jobs: [genJob('running')] }),
+      });
+      render(<Studio vsId={VS} />);
+      const c = await card('Shot 1.1');
+      await waitFor(() => expect(polls()).toHaveLength(1));
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(5000);
+      });
+      expect(polls()).toHaveLength(2);
+      expect(within(c).getByText('Rendering… about 1–3 minutes')).toBeInTheDocument();
+      expect(within(c).queryByRole('alert')).not.toBeInTheDocument();
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(5000);
+      });
+      expect(polls()).toHaveLength(3);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('a 4xx poll stops with a message in the card and "Check again" restarts polling', async () => {
+    const msg = 'That video no longer exists.';
+    videoRoutes({
+      polls: [json({ success: false, error: msg }, 404), json({ success: true, data: genJob('running') })],
+      getTree: () => vtree({ jobs: [genJob('running')] }),
+    });
+    render(<Studio vsId={VS} />);
+    const c = await card('Shot 1.1');
+    expect(await within(c).findByText(msg)).toBeInTheDocument();
+    expect(screen.getAllByText(msg)).toHaveLength(1);
+    expect(polls()).toHaveLength(1);
+    fireEvent.click(within(c).getByRole('button', { name: 'Check again' }));
+    await waitFor(() => expect(polls()).toHaveLength(2));
+    await waitFor(() => expect(within(c).queryByText(msg)).not.toBeInTheDocument());
+    expect(within(c).queryByRole('button', { name: 'Check again' })).not.toBeInTheDocument();
+    expect(within(c).getByText('Rendering… about 1–3 minutes')).toBeInTheDocument();
+  });
+
+  it('after the 15-minute cap "Check again" restarts polling', async () => {
+    jest.useFakeTimers();
+    try {
+      videoRoutes({ getTree: () => vtree({ jobs: [genJob('running')] }) });
+      render(<Studio vsId={VS} />);
+      const c = await card('Shot 1.1');
+      await waitFor(() => expect(polls()).toHaveLength(1));
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(15 * 60_000 + 5000);
+      });
+      expect(await within(c).findByText(STILL_REL)).toBeInTheDocument();
+      const n = polls().length;
+      fireEvent.click(within(c).getByRole('button', { name: 'Check again' }));
+      await waitFor(() => expect(polls()).toHaveLength(n + 1));
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('a failed job found on load reads "Last clip failed: …" inside its card', async () => {
+    const msg = 'Grok refused this clip under its content policy.';
+    videoRoutes({ getTree: () => vtree({ jobs: [genJob('failed', { code: 'content_policy', error: msg })] }) });
+    render(<Studio vsId={VS} />);
+    const c = await card('Shot 1.1');
+    expect(within(c).getByText(`Last clip failed: ${msg}`)).toBeInTheDocument();
+    expect(within(c).getByRole('button', { name: 'Make video (6 s · $0.48)' })).toBeEnabled();
+    expect(polls()).toHaveLength(0);
   });
 
   it('the characters panel says reference photos are used for video clips', async () => {

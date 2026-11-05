@@ -11,6 +11,9 @@
  * stays disabled while any job for this shot is in flight — the ref closes the
  * gap between two fast clicks, the state and the tree cover the rest.
  *
+ * Polling treats a network failure or a 5xx as transient and keeps going
+ * within the cap; a 4xx or the cap stops it, and "Check again" restarts it.
+ *
  * Cancel asks first: Grok may already have accepted the clip, so the server
  * always records it as spent (Ruling V6). Neither paid POST carries the poll's
  * abort signal. Every error renders here, inside the card.
@@ -30,21 +33,43 @@ const OFFLINE = 'Could not reach the server. Check your connection and try again
 
 const inflight = (j: GenJob) => j.status === 'submitted' || j.status === 'running';
 
+/** pollJob error codes: the job itself failed (terminal) vs this page stopped checking. */
+const JOB_FAILED = 'job_failed';
+const POLL_STOPPED = 'poll_stopped';
+
+const fake = (mapped: unknown) => ({ ok: true, status: 200, json: async () => mapped }) as Response;
+const RUNNING = { status: 'running' };
+
+/** Why a 4xx poll stops, by status — never by matching the message text. */
+function stopMessage(status: number, serverError: unknown): string {
+  if (status === 401 || status === 403) return 'Your sign-in has expired. Sign in again, then check again.';
+  if (typeof serverError === 'string' && serverError) return serverError;
+  if (status === 404) return 'That video no longer exists.';
+  return `Could not check the video (HTTP ${status}).`;
+}
+
 /**
- * The job route answers `{ success, data: GenJob }` (Ruling V2); pollJob reads
- * `{ status: 'done' | 'error' | … }`. Translate one into the other; a non-ok
- * response passes through so its `error` is thrown as-is.
+ * Fetch the job once and translate the route's `{ success, data: GenJob }`
+ * (Ruling V2) into pollJob's `{ status: 'done' | 'error' | 'running' }`.
+ * A network rejection or a 5xx (e.g. a gateway timeout while the server copies
+ * the finished clip) is transient: report "running" and try again next tick,
+ * within the 15-minute cap. A 4xx stops polling with a message.
  */
-async function asPollResponse(res: Response): Promise<Response> {
-  if (!res.ok) return res;
+async function fetchJobStatus(url: string, signal: AbortSignal): Promise<Response> {
+  let res: Response;
+  try {
+    res = await adminFetch(url, { signal });
+  } catch {
+    return fake(RUNNING);
+  }
+  if (res.status >= 500) return fake(RUNNING);
   const body = await res.json().catch(() => null);
-  const job = body?.data as GenJob | undefined;
-  let mapped: unknown;
-  if (!body?.success || !job) mapped = { status: 'error', error: { message: body?.error || 'Could not check the video.' } };
-  else if (job.status === 'succeeded' || job.status === 'cancelled') mapped = { status: 'done', result: job };
-  else if (job.status === 'failed') mapped = { status: 'error', error: { code: job.code, message: job.error || 'The video failed.' } };
-  else mapped = { status: 'running' };
-  return { ok: true, status: 200, json: async () => mapped } as Response;
+  if (!res.ok) return fake({ status: 'error', error: { code: POLL_STOPPED, message: stopMessage(res.status, body?.error) } });
+  const job = body?.success ? (body.data as GenJob | undefined) : undefined;
+  if (!job) return fake({ status: 'error', error: { code: POLL_STOPPED, message: 'Could not check the video.' } });
+  if (job.status === 'succeeded' || job.status === 'cancelled') return fake({ status: 'done', result: job });
+  if (job.status === 'failed') return fake({ status: 'error', error: { code: JOB_FAILED, message: job.error || 'The video failed.' } });
+  return fake(RUNNING);
 }
 
 interface Props {
@@ -65,6 +90,8 @@ export function VideoControls({ vsId, shotKey, label, durationSec, story, jobs, 
   const [jobId, setJobId] = useState<string | null>(null);
   const [polling, setPolling] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  // Polling stopped before the job ended (a 4xx, the cap): offer "Check again".
+  const [stopped, setStopped] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -88,7 +115,7 @@ export function VideoControls({ vsId, shotKey, label, durationSec, story, jobs, 
   const busy = starting || polling || !!running;
   // The newest job's failure stays visible after a reload (e.g. one the list page's reconcile ended).
   const newest = [...jobs].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-  const lastFailure = !busy && newest?.status === 'failed' ? newest.error ?? null : null;
+  const lastFailure = !busy && newest?.status === 'failed' ? `Last clip failed: ${newest.error || 'no reason given.'}` : null;
   const shownError = error ?? lastFailure;
 
   const poll = async (id: string) => {
@@ -100,10 +127,10 @@ export function VideoControls({ vsId, shotKey, label, durationSec, story, jobs, 
     setJobId(id);
     setPolling(true);
     setNote(null);
+    setStopped(false);
     try {
       await pollJob<GenJob>({
-        fetchStatus: async (signal) =>
-          asPollResponse(await adminFetch(`/api/admin/visual-story/${vsId}/video-jobs/${id}`, { signal })),
+        fetchStatus: (signal) => fetchJobStatus(`/api/admin/visual-story/${vsId}/video-jobs/${id}`, signal),
         signal: ctrl.signal,
         isMounted: () => mounted.current,
         intervalMs: POLL_INTERVAL_MS,
@@ -113,8 +140,14 @@ export function VideoControls({ vsId, shotKey, label, durationSec, story, jobs, 
     } catch (err) {
       if (!mounted.current || ctrl.signal.aborted) return;
       const message = err instanceof Error ? err.message : '';
-      if (message === POLL_TIMEOUT_MESSAGE) setNote(message);
-      else setError(message && !/fetch|network/i.test(message) ? message : OFFLINE);
+      const code = (err as { code?: string } | null)?.code;
+      if (code === JOB_FAILED) setError(message);
+      else {
+        // Not terminal: the job may still be rendering. Let the user look again.
+        setStopped(true);
+        if (message === POLL_TIMEOUT_MESSAGE) setNote(message);
+        else setError(code === POLL_STOPPED && message ? message : 'Could not check the video.');
+      }
     } finally {
       if (mounted.current && abort.current === ctrl) {
         setPolling(false);
@@ -130,6 +163,14 @@ export function VideoControls({ vsId, shotKey, label, durationSec, story, jobs, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running?.jobId]);
 
+  const checkAgain = () => {
+    const id = running?.jobId ?? jobId;
+    if (!id || polling) return;
+    polled.current.delete(id);
+    setError(null);
+    void poll(id);
+  };
+
   const start = async () => {
     if (inFlight.current || busy) return;
     inFlight.current = true;
@@ -137,6 +178,7 @@ export function VideoControls({ vsId, shotKey, label, durationSec, story, jobs, 
     setStarting(true);
     setError(null);
     setNote(null);
+    setStopped(false);
     let id: string | null = null;
     try {
       // No signal: a paid call is never cut short by the client.
@@ -177,6 +219,7 @@ export function VideoControls({ vsId, shotKey, label, durationSec, story, jobs, 
         abort.current?.abort();
         setPolling(false);
         setNote(null);
+        setStopped(false);
       }
     } catch {
       setError(OFFLINE);
@@ -235,6 +278,11 @@ export function VideoControls({ vsId, shotKey, label, durationSec, story, jobs, 
             </button>
           </div>
         </div>
+      )}
+      {stopped && !polling && (running || jobId) && (
+        <button type="button" onClick={checkAgain} className="rounded-md border border-gray-300 px-3 py-1 text-sm text-gray-700 dark:border-gray-600 dark:text-gray-300">
+          Check again
+        </button>
       )}
       {shownError && (
         <p role="alert" className="text-sm text-red-600 dark:text-red-400">
