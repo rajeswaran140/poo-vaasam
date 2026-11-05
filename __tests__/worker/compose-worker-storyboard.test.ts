@@ -8,6 +8,10 @@
  */
 
 const send = jest.fn().mockResolvedValue({});
+jest.mock('@aws-sdk/client-ssm', () => ({
+  SSMClient: class { send = async () => ({ Parameter: { Value: 'test-key' } }); },
+  GetParameterCommand: class { constructor(public input: Record<string, unknown>) {} },
+}));
 jest.mock('@aws-sdk/client-dynamodb', () => ({ DynamoDBClient: class {} }));
 jest.mock('@aws-sdk/lib-dynamodb', () => ({
   DynamoDBDocumentClient: { from: () => ({ send: (...a: unknown[]) => send(...a) }) },
