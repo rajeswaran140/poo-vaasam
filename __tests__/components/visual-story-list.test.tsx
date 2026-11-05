@@ -217,4 +217,28 @@ describe('Check rendering videos (list page)', () => {
     expect(err).toHaveAttribute('role', 'alert');
     expect(btn.parentElement).toContainElement(err);
   });
+
+  const listCalls = () => mockFetch.mock.calls.filter((c) => c[0] === '/api/admin/visual-story');
+
+  it('an error response still refreshes the list (some jobs may have finished before it failed)', async () => {
+    mockPage(1, () => json({ success: false, error: 'Something went wrong.' }, 504));
+    render(<VisualStoryListPage />);
+    const btn = await screen.findByRole('button', { name: /check rendering videos/i });
+    const before = listCalls().length;
+    fireEvent.click(btn);
+    await screen.findByText('Something went wrong.');
+    await waitFor(() => expect(listCalls().length).toBeGreaterThan(before));
+  });
+
+  it('a network failure shows the error and still refreshes the list', async () => {
+    mockPage(1, () => {
+      throw new TypeError('Failed to fetch');
+    });
+    render(<VisualStoryListPage />);
+    const btn = await screen.findByRole('button', { name: /check rendering videos/i });
+    const before = listCalls().length;
+    fireEvent.click(btn);
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    await waitFor(() => expect(listCalls().length).toBeGreaterThan(before));
+  });
 });

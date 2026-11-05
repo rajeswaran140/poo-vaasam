@@ -1,5 +1,5 @@
 /** @jest-environment node */
-/** Reconcile sweep: advances each in-flight video job once, within a 20 s budget; never forwards the request signal. */
+/** Reconcile sweep: advances each in-flight video job once, starting none after 6 s; never forwards the request signal. */
 
 import { NextRequest } from 'next/server';
 
@@ -88,17 +88,28 @@ describe('POST reconcile', () => {
     expect(rest).toEqual([]);
   });
 
-  it('stops before the 20 s budget is spent and reports the rest as still running', async () => {
+  it('starts no new advance after 6 s (each may take ~22 s) and reports the rest as still running', async () => {
     const t0 = 5_000_000;
     now.mockReturnValue(t0);
     repo.listInflight.mockResolvedValue(inflight(1, 2, 3, 4));
     mockAdvance.mockImplementation(async (_r, _p, _vs, j) => {
-      now.mockReturnValue(now() + 10_000);
+      now.mockReturnValue(now() + 3_000);
       return { ...j, status: 'succeeded' };
     });
     const res = await POST(post());
-    expect(mockAdvance).toHaveBeenCalledTimes(2); // 10 s, 20 s -> stop
+    expect(mockAdvance).toHaveBeenCalledTimes(2); // starts at 0 s and 3 s; 6 s -> stop
     expect(await res.json()).toEqual({ success: true, data: { checked: 2, finished: 2, stillRunning: 2 } });
+  });
+
+  it('one slow advance (20 s) is the only one started', async () => {
+    now.mockReturnValue(1_000_000);
+    repo.listInflight.mockResolvedValue(inflight(1, 2));
+    mockAdvance.mockImplementation(async (_r, _p, _vs, j) => {
+      now.mockReturnValue(now() + 20_000);
+      return j;
+    });
+    await POST(post());
+    expect(mockAdvance).toHaveBeenCalledTimes(1);
   });
 
   it('one job throwing is counted as still running and the sweep continues', async () => {

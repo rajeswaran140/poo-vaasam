@@ -52,7 +52,8 @@ export function StoryList({ stories }: { stories: StoryRow[] }) {
 
 /**
  * "Check rendering videos (N)" — runs the reconcile sweep, ONLY when pressed
- * (owner's decision: never on page load). Result and error show beside it.
+ * (owner's decision: never on page load). Result and error show beside it;
+ * the list is refreshed either way.
  */
 export function ReconcileButton({ count, onDone }: { count: number; onDone: () => void }) {
   const [busy, setBusy] = useState(false);
@@ -70,11 +71,13 @@ export function ReconcileButton({ count, onDone }: { count: number; onDone: () =
       if (!res.ok || !body?.success) throw new Error(body?.error || 'Could not check the videos.');
       const { finished, stillRunning } = body.data as { finished: number; stillRunning: number };
       setResult(`${finished} finished, ${stillRunning} still rendering`);
-      onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not check the videos.');
     } finally {
       setBusy(false);
+      // Always refresh: a sweep cut off by an error or timeout may still have
+      // finished some clips before it stopped.
+      onDone();
     }
   };
 

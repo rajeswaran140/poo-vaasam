@@ -23,7 +23,12 @@ import { limitMutation, mapError } from '@/lib/visual-story-route';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const RECONCILE_BUDGET_MS = 20_000;
+/**
+ * Start no new advance after this long. One advance can take up to ~22 s
+ * (gen-job's VIDEO_ADVANCE_DEADLINE_MS), so the last one started still ends
+ * inside the request ceiling.
+ */
+const RECONCILE_BUDGET_MS = 6_000;
 
 export async function POST(request: NextRequest) {
   let auth;
