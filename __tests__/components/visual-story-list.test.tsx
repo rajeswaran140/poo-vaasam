@@ -24,7 +24,7 @@ const STORY: VisualStory = {
 };
 
 const master = (over: Record<string, unknown>) => ({
-  jobId: 'job-1', title: 'Test song', editedDurationSec: 95, masterKey: 'k', savedAt: '2026-11-01', ...over,
+  id: 'job-1', title: 'Test song', editedDurationSec: 95, masterKey: 'k', savedAt: '2026-11-01', ...over,
 });
 
 function mockMasters(masters: unknown[]) {
@@ -111,7 +111,7 @@ describe('NewStoryForm', () => {
   });
 
   it('lists masters without a length but disables them with "no recorded length"', async () => {
-    mockMasters([master({ jobId: 'job-2', title: 'Other test', editedDurationSec: null })]);
+    mockMasters([master({ id: 'job-2', title: 'Other test', editedDurationSec: null })]);
     render(<NewStoryForm onCreated={() => {}} />);
     const radio = await screen.findByRole('radio', { name: /Other test/ });
     expect(radio).toBeDisabled();
