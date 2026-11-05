@@ -1,6 +1,6 @@
 /**
  * /api/admin/visual-story
- *   GET  [?masterJobId=]  → { success, data: VisualStory[] }
+ *   GET  [?masterJobId=]  → { success, data: VisualStory[], inflightCount }
  *   POST                  → 201 { success, data: VisualStory }
  *
  * A story is anchored to a SAVED master (audioKey = the master's masterKey)
@@ -51,7 +51,14 @@ export async function GET(request: NextRequest) {
         }
       })
     );
-    return NextResponse.json({ success: true, data });
+    // Drives the "Check rendering videos (N)" button; a failed count hides it, never the list.
+    let inflightCount = 0;
+    try {
+      inflightCount = (await repo.listInflight()).length;
+    } catch {
+      /* keep 0 */
+    }
+    return NextResponse.json({ success: true, data, inflightCount });
   } catch (err) {
     console.error('visual-story list failed', err instanceof Error ? err.name : 'error');
     return fail('Could not load stories.', 500);

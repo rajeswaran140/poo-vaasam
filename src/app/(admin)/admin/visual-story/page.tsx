@@ -2,10 +2,10 @@
 
 /** /admin/visual-story — stories list + "New from master". */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { adminFetch } from '@/lib/client-auth';
-import { StoryList, type StoryRow } from '@/components/admin/visual-story/StoryList';
+import { StoryList, ReconcileButton, type StoryRow } from '@/components/admin/visual-story/StoryList';
 import { NewStoryForm } from '@/components/admin/visual-story/NewStoryForm';
 
 export default function VisualStoryListPage() {
@@ -13,18 +13,24 @@ export default function VisualStoryListPage() {
   const [stories, setStories] = useState<StoryRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await adminFetch('/api/admin/visual-story');
-        const body = await res.json().catch(() => null);
-        if (!res.ok || !body?.success) throw new Error(body?.error || 'Could not load your stories.');
-        setStories(body.data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Could not load your stories.');
-      }
-    })();
+  const [inflightCount, setInflightCount] = useState(0);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await adminFetch('/api/admin/visual-story');
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body?.success) throw new Error(body?.error || 'Could not load your stories.');
+      setStories(body.data);
+      setInflightCount(typeof body.inflightCount === 'number' ? body.inflightCount : 0);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load your stories.');
+    }
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   return (
     <div className="space-y-6">
@@ -37,6 +43,7 @@ export default function VisualStoryListPage() {
           {error}
         </p>
       )}
+      <ReconcileButton count={inflightCount} onDone={load} />
       {stories === null && !error ? <p className="text-sm text-gray-500 dark:text-gray-400">Loading stories…</p> : stories && <StoryList stories={stories} />}
       <NewStoryForm onCreated={(vsId) => router.push(`/admin/visual-story/${vsId}`)} />
     </div>

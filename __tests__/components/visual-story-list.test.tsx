@@ -4,6 +4,7 @@
  * the "New from master" form and its window picker.
  */
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import VisualStoryListPage from '@/app/(admin)/admin/visual-story/page';
 import { StoryList } from '@/components/admin/visual-story/StoryList';
 import { NewStoryForm } from '@/components/admin/visual-story/NewStoryForm';
 import { WindowPicker } from '@/components/admin/visual-story/WindowPicker';
@@ -33,6 +34,8 @@ function mockMasters(masters: unknown[]) {
     return json({ success: true });
   });
 }
+
+jest.mock('next/navigation', () => ({ useRouter: () => ({ push: jest.fn() }) }));
 
 beforeEach(() => mockFetch.mockReset());
 
@@ -163,5 +166,55 @@ describe('NewStoryForm', () => {
       masterJobId: 'job-1', title: 'Test song', aspectRatio: '9:16',
       windowStartSec: 0, windowEndSec: 60, budgetUsdCap: 40,
     });
+  });
+});
+
+describe('Check rendering videos (list page)', () => {
+  const listBody = (inflightCount: number) => ({ success: true, data: [STORY], inflightCount });
+  function mockPage(inflightCount: number, reconcile?: () => Response) {
+    mockFetch.mockImplementation(async (url: string, _init?: RequestInit) => {
+      if (url === '/api/admin/visual-story/reconcile') return reconcile ? reconcile() : json({ success: true, data: { checked: 0, finished: 0, stillRunning: 0 } });
+      if (String(url).startsWith('/api/admin/music-lab/masters')) return json({ success: true, masters: [], nextCursor: null });
+      return json(listBody(inflightCount));
+    });
+  }
+  const reconcileCalls = () => mockFetch.mock.calls.filter((c) => c[0] === '/api/admin/visual-story/reconcile');
+
+  it('is hidden when nothing is rendering', async () => {
+    mockPage(0);
+    render(<VisualStoryListPage />);
+    await screen.findByText('Test song');
+    expect(screen.queryByRole('button', { name: /check rendering videos/i })).toBeNull();
+  });
+
+  it('shows the count and never fires on page load', async () => {
+    mockPage(3);
+    render(<VisualStoryListPage />);
+    expect(await screen.findByRole('button', { name: 'Check rendering videos (3)' })).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(reconcileCalls()).toHaveLength(0);
+  });
+
+  it('click POSTs once, shows the result beside the button and refreshes the list', async () => {
+    mockPage(3, () => json({ success: true, data: { checked: 3, finished: 2, stillRunning: 1 } }));
+    render(<VisualStoryListPage />);
+    const btn = await screen.findByRole('button', { name: /check rendering videos/i });
+    fireEvent.click(btn);
+    expect(await screen.findByText('2 finished, 1 still rendering')).toBeInTheDocument();
+    expect(reconcileCalls()).toHaveLength(1);
+    expect(reconcileCalls()[0][1]).toMatchObject({ method: 'POST' });
+    expect(btn.parentElement).toContainElement(screen.getByText('2 finished, 1 still rendering'));
+    const listCalls = mockFetch.mock.calls.filter((c) => c[0] === '/api/admin/visual-story');
+    expect(listCalls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('renders an error beside the button', async () => {
+    mockPage(1, () => json({ success: false, error: 'Something went wrong.' }, 500));
+    render(<VisualStoryListPage />);
+    const btn = await screen.findByRole('button', { name: /check rendering videos/i });
+    fireEvent.click(btn);
+    const err = await screen.findByText('Something went wrong.');
+    expect(err).toHaveAttribute('role', 'alert');
+    expect(btn.parentElement).toContainElement(err);
   });
 });
