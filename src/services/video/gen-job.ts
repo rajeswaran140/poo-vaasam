@@ -186,12 +186,13 @@ async function copyClip(
 /**
  * Advance a video job by one step and return it as it now stands.
  *
- * - Terminal → returned as is.
+ * - Terminal → returned as is (after an idempotent, jobId-guarded lock release).
  * - `running` → poll Grok once:
  *   pending/running or a poll error → touch (attempts +1);
  *   succeeded → copy the clip to private storage, THEN running → succeeded,
- *   settled billed (the reservation); a failed copy → touch with copyFailed,
- *   and the VIDEO_COPY_MAX_FAILURES-th → failed, settled billed;
+ *   settled billed (the reservation); a failed copy → touch with copyFailed
+ *   and stay running (never stale-ended: the clip exists), and the
+ *   VIDEO_COPY_MAX_FAILURES-th → failed, settled billed;
  *   failed → failed, settled billed or not per Grok's `billed`.
  * - Still non-terminal VIDEO_STALE_MS after createdAt (Ruling V4) → failed,
  *   settled BILLED even without a providerTaskId (V4b). A running job is
@@ -207,7 +208,16 @@ export async function advanceGenJob(
   job: GenJob,
   deps: AdvanceDeps = {}
 ): Promise<GenJob> {
-  if (isTerminal(job.status)) return job;
+  if (isTerminal(job.status)) {
+    // jobId-guarded and idempotent: clears a lock left by a crash between a
+    // won terminal transition and its release. Never settles.
+    try {
+      await repo.releaseShotVideo(vsId, job.sceneOrder, job.shotOrder, job.jobId);
+    } catch (err) {
+      console.error('visual-story video job: release failed', job.jobId, errName(err));
+    }
+    return job;
+  }
   const now = deps.now ?? Date.now();
   const fetchImpl = deps.fetchImpl ?? fetch;
 
@@ -241,6 +251,9 @@ export async function advanceGenJob(
       if (current.copyFailures >= VIDEO_COPY_MAX_FAILURES) {
         return endJob(repo, vsId, current, ['running'], 'failed', true, { code: 'upstream', error: COPY_FAILED_ERROR });
       }
+      // Grok finished the clip: keep retrying the copy, even past the hour —
+      // VIDEO_COPY_MAX_FAILURES bounds this path, not the stale end.
+      return current;
     } else if (poll.ok && poll.state === 'failed') {
       return endJob(repo, vsId, job, ['running'], 'failed', poll.billed, { code: poll.code, error: poll.error });
     } else {
@@ -262,14 +275,15 @@ export async function advanceGenJob(
 
 /**
  * Cancel a submitted|running job. Returns the cancelled job, or null when it
- * had already finished. The winner releases the shot and settles: billed when
- * Grok had accepted the task (it may still finish and charge), else unbilled.
- * Uses the STORED providerTaskId — the make-video route may have set it after
- * the caller's read.
+ * had already finished. The winner releases the shot and settles BILLED in
+ * both states (Ruling V6): a running task may still finish and charge, and a
+ * submitted job's submit may be in flight — Grok can accept it after this
+ * cancel, and the make-video route's lost transition then settles nothing.
+ * Over-record, never under-record (as V4b).
  */
 export async function cancelGenJob(repo: GenJobRepo, vsId: string, job: GenJob): Promise<GenJob | null> {
   const moved = await repo.transitionGenJob(vsId, job.jobId, ['submitted', 'running'], 'cancelled');
   if (!moved) return null;
-  await finishWon(repo, vsId, moved, moved.providerTaskId ? moved.reservedUsd : 0);
+  await finishWon(repo, vsId, moved, moved.reservedUsd);
   return moved;
 }

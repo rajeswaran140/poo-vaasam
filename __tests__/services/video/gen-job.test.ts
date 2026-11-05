@@ -110,14 +110,25 @@ describe('constants', () => {
 });
 
 describe('advanceGenJob', () => {
-  it.each(['succeeded', 'failed', 'cancelled'] as const)('a %s job is returned as is, nothing called', async (status) => {
-    const j = job({ status });
-    expect(await advance(j, STALE_NOW)).toBe(j);
-    expect(provider.poll).not.toHaveBeenCalled();
-    expect(repo.transitionGenJob).not.toHaveBeenCalled();
-    expect(repo.touchGenJob).not.toHaveBeenCalled();
-    expect(repo.settle).not.toHaveBeenCalled();
-    expect(repo.releaseShotVideo).not.toHaveBeenCalled();
+  it.each(['succeeded', 'failed', 'cancelled'] as const)(
+    'a %s job is returned as is: no poll, no transition, no settle — only the (idempotent) lock release',
+    async (status) => {
+      const j = job({ status });
+      expect(await advance(j, STALE_NOW)).toBe(j);
+      expect(provider.poll).not.toHaveBeenCalled();
+      expect(repo.transitionGenJob).not.toHaveBeenCalled();
+      expect(repo.touchGenJob).not.toHaveBeenCalled();
+      expect(repo.settle).not.toHaveBeenCalled();
+      // Clears a lock left by a crash between a won transition and its release.
+      expect(repo.releaseShotVideo).toHaveBeenCalledTimes(1);
+      expectReleased();
+    }
+  );
+
+  it('a release failure on a terminal job is swallowed', async () => {
+    repo.releaseShotVideo.mockRejectedValue(new Error('ddb'));
+    const j = job({ status: 'succeeded' });
+    expect(await advance(j)).toBe(j);
   });
 
   it.each(['pending', 'running'] as const)('running + %s → touch (attempts 1 more), no settle, no release', async (state) => {
@@ -202,6 +213,8 @@ describe('advanceGenJob', () => {
     expect(second).toBe(first);
     expect(provider.poll).not.toHaveBeenCalled();
     expect(fetchImpl).not.toHaveBeenCalled();
+    expect(mockUpload).not.toHaveBeenCalled();
+    expect(repo.transitionGenJob).not.toHaveBeenCalled();
     expect(repo.settle).not.toHaveBeenCalled();
   });
 
@@ -359,6 +372,31 @@ describe('advanceGenJob', () => {
       expect(repo.settle).toHaveBeenCalledTimes(1);
     });
 
+    it('a stale job whose poll succeeds but whose copy fails stays running (copy retries go on), nothing settled', async () => {
+      provider.poll.mockResolvedValue(succeeded);
+      fetchImpl.mockRejectedValue(new Error('timeout'));
+      const out = await advance(job({ copyFailures: 0 }), STALE_NOW);
+      expect(out.status).toBe('running');
+      expect(out.copyFailures).toBe(1);
+      expect(repo.touchGenJob).toHaveBeenCalledWith(VS, JOB, { copyFailed: true });
+      expect(repo.transitionGenJob).not.toHaveBeenCalled();
+      expect(repo.settle).not.toHaveBeenCalled();
+      expect(repo.releaseShotVideo).not.toHaveBeenCalled();
+    });
+
+    it('a stale job on its 10th copy failure ends with the copy-failed copy, not the stale one', async () => {
+      provider.poll.mockResolvedValue(succeeded);
+      fetchImpl.mockRejectedValue(new Error('timeout'));
+      const out = await advance(job({ copyFailures: 9 }), STALE_NOW);
+      expect(repo.transitionGenJob).toHaveBeenCalledTimes(1);
+      expect(repo.transitionGenJob).toHaveBeenCalledWith(VS, JOB, ['running'], 'failed', {
+        code: 'upstream',
+        error: COPY_FAILED_ERROR,
+      });
+      expect(repo.settle).toHaveBeenCalledTimes(1);
+      expect(out.error).toBe(COPY_FAILED_ERROR);
+    });
+
     it('a stale submitted job with NO providerTaskId → failed, still BILLED (V4b), release, no poll', async () => {
       const out = await advance(job({ status: 'submitted', providerTaskId: null }), STALE_NOW);
       expect(provider.poll).not.toHaveBeenCalled();
@@ -400,18 +438,13 @@ describe('cancelGenJob', () => {
     expect(out?.status).toBe('cancelled');
   });
 
-  it('without a providerTaskId → UNBILLED settle, release', async () => {
+  it('submitted with NO providerTaskId → still BILLED (Ruling V6: submit may be in flight), release', async () => {
     repo.transitionGenJob.mockImplementation(async (_vs, _id, _from, to) => ({ ...job({ providerTaskId: null }), status: to }));
     const out = await cancelGenJob(repo, VS, job({ status: 'submitted', providerTaskId: null }));
-    expect(repo.settle).toHaveBeenCalledWith(VS, { reservedUsd: 0.48, billedUsd: 0 });
+    expect(repo.settle).toHaveBeenCalledTimes(1);
+    expect(repo.settle).toHaveBeenCalledWith(VS, { reservedUsd: 0.48, billedUsd: 0.48 });
     expectReleased();
     expect(out?.status).toBe('cancelled');
-  });
-
-  it('bills on the STORED providerTaskId (set by the route after our read)', async () => {
-    repo.transitionGenJob.mockImplementation(async (_vs, _id, _from, to) => ({ ...job({ providerTaskId: 'req-9' }), status: to }));
-    await cancelGenJob(repo, VS, job({ status: 'submitted', providerTaskId: null }));
-    expect(repo.settle).toHaveBeenCalledWith(VS, { reservedUsd: 0.48, billedUsd: 0.48 });
   });
 
   it('a finished job → null, no settle, no release', async () => {
