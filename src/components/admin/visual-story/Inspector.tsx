@@ -2,8 +2,9 @@
 
 /**
  * Right inspector: edit the selected shot's prompt, negative prompt, duration
- * and cast. The parent remounts it per shot (`key`), so the form always starts
- * from that shot's saved values.
+ * and cast, or delete the shot (with its stills) after a confirm. The parent
+ * remounts it per shot (`key`), so the form always starts from that shot's
+ * saved values.
  */
 
 import { useState } from 'react';
@@ -26,6 +27,9 @@ export function Inspector({ vsId, shot, characters, onChanged }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   if (!shot) {
     return <p className="text-sm text-gray-600 dark:text-gray-400">Choose “Edit” on a shot to change its prompt, length and cast.</p>;
@@ -71,6 +75,30 @@ export function Inspector({ vsId, shot, characters, onChanged }: Props) {
     }
   };
 
+  const remove = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await adminFetch(`/api/admin/visual-story/${vsId}/shots`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ op: 'delete', sceneOrder: shot.sceneOrder, shotOrder: shot.shotOrder }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body?.success) {
+        setDeleteError(body?.error || 'Could not delete the shot.');
+        return;
+      }
+      setConfirmingDelete(false);
+      onChanged();
+    } catch {
+      setDeleteError('Could not reach the server. Check your connection and try again.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const field = 'mt-1 block w-full rounded-md border border-gray-300 px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-800';
 
   return (
@@ -107,6 +135,30 @@ export function Inspector({ vsId, shot, characters, onChanged }: Props) {
         {error && (
           <p role="alert" className="text-sm text-red-600 dark:text-red-400">
             {error}
+          </p>
+        )}
+      </div>
+      <div className="space-y-1 border-t border-gray-200 pt-3 dark:border-gray-700">
+        {!confirmingDelete ? (
+          <button type="button" onClick={() => setConfirmingDelete(true)} className="rounded-md border border-red-300 px-3 py-1 text-sm text-red-700 dark:border-red-700 dark:text-red-400">
+            Delete shot
+          </button>
+        ) : (
+          <div role="alertdialog" aria-label="Delete this shot?" className="space-y-2 rounded-md border border-red-300 bg-red-50 p-3 dark:border-red-700 dark:bg-red-950">
+            <p className="text-sm text-red-900 dark:text-red-200">{`Delete shot ${shot.sceneOrder}.${shot.shotOrder}? Its stills are deleted too. This cannot be undone.`}</p>
+            <div className="flex gap-2">
+              <button type="button" disabled={deleting} onClick={remove} className="rounded-md bg-red-600 px-3 py-1 text-sm font-medium text-white disabled:opacity-50">
+                {deleting ? 'Deleting…' : 'Delete'}
+              </button>
+              <button type="button" onClick={() => setConfirmingDelete(false)} className="rounded-md border border-gray-300 px-3 py-1 text-sm text-gray-700 dark:border-gray-600 dark:text-gray-300">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+        {deleteError && (
+          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+            {deleteError}
           </p>
         )}
       </div>

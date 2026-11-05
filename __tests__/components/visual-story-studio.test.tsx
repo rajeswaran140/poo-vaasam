@@ -349,3 +349,76 @@ describe('Studio — characters', () => {
     expect(confirm).toEqual({ op: 'confirm', key });
   });
 });
+
+describe('Studio — undo and budget (I1)', () => {
+  it('Delete shot (Inspector) asks first, says its stills go too, then deletes and reloads', async () => {
+    routes((url) => (url.endsWith('/shots') ? json({ success: true, data: {} }) : undefined));
+    render(<Studio vsId={VS} />);
+    fireEvent.click(within(await card('Shot 1.2')).getByRole('button', { name: 'Edit' }));
+    const form = screen.getByRole('form', { name: 'Edit shot 1.2' });
+    fireEvent.click(within(form).getByRole('button', { name: 'Delete shot' }));
+    const confirm = within(form).getByRole('alertdialog', { name: 'Delete this shot?' });
+    expect(confirm).toHaveTextContent('Delete shot 1.2? Its stills are deleted too. This cannot be undone.');
+    expect(calls('/shots')).toHaveLength(0);
+    const loadsBefore = treeLoads().length;
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(calls('/shots')).toHaveLength(1));
+    expect(JSON.parse(calls('/shots')[0][1].body)).toEqual({ op: 'delete', sceneOrder: 1, shotOrder: 2 });
+    await waitFor(() => expect(treeLoads().length).toBeGreaterThan(loadsBefore));
+  });
+
+  it('Delete shot can be cancelled; its error renders beside it', async () => {
+    routes((url) => (url.endsWith('/shots') ? json({ success: false, error: 'That item no longer exists.' }, 404) : undefined));
+    render(<Studio vsId={VS} />);
+    fireEvent.click(within(await card('Shot 1.1')).getByRole('button', { name: 'Edit' }));
+    const form = screen.getByRole('form', { name: 'Edit shot 1.1' });
+    fireEvent.click(within(form).getByRole('button', { name: 'Delete shot' }));
+    fireEvent.click(within(form).getByRole('button', { name: 'Cancel' }));
+    expect(within(form).queryByRole('alertdialog')).not.toBeInTheDocument();
+    fireEvent.click(within(form).getByRole('button', { name: 'Delete shot' }));
+    fireEvent.click(within(form).getByRole('button', { name: 'Delete' }));
+    expect(await within(form).findByText('That item no longer exists.')).toBeInTheDocument();
+  });
+
+  it('Delete scene (scene rail) asks first, names its shots and stills, then deletes', async () => {
+    routes((url) => (url.endsWith('/scenes') ? json({ success: true, data: {} }) : undefined));
+    render(<Studio vsId={VS} />);
+    await card('Shot 1.1');
+    const rail = screen.getByRole('navigation', { name: 'Scenes' });
+    fireEvent.click(within(rail).getByRole('button', { name: 'Delete scene Scene 1' }));
+    const confirm = within(rail).getByRole('alertdialog', { name: 'Delete this scene?' });
+    expect(confirm).toHaveTextContent('Delete “Scene 1”, its 2 shots and their stills? This cannot be undone.');
+    expect(calls('/scenes')).toHaveLength(0);
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(calls('/scenes')).toHaveLength(1));
+    expect(JSON.parse(calls('/scenes')[0][1].body)).toEqual({ op: 'delete', order: 1 });
+  });
+
+  it('Budget field PATCHes budgetUsdCap and reloads', async () => {
+    routes((url, init) => (url === `/api/admin/visual-story/${VS}` && init?.method === 'PATCH' ? json({ success: true, data: {} }) : undefined));
+    render(<Studio vsId={VS} />);
+    await card('Shot 1.1');
+    const bar = screen.getByRole('contentinfo', { name: 'Spend and timeline' });
+    const input = within(bar).getByLabelText('Budget (USD)');
+    expect(input).toHaveValue(40);
+    fireEvent.change(input, { target: { value: '55' } });
+    fireEvent.click(within(bar).getByRole('button', { name: 'Save budget' }));
+    await waitFor(() =>
+      expect(mockFetch.mock.calls.filter(([u, i]) => u === `/api/admin/visual-story/${VS}` && i?.method === 'PATCH')).toHaveLength(1)
+    );
+    const [, init] = mockFetch.mock.calls.find(([u, i]) => u === `/api/admin/visual-story/${VS}` && i?.method === 'PATCH')!;
+    expect(JSON.parse(init.body)).toEqual({ budgetUsdCap: 55 });
+  });
+
+  it('a 409 from the budget route shows next to the field', async () => {
+    const msg = "The cap can't go below what's already spent or reserved ($0.42).";
+    routes((url, init) => (url === `/api/admin/visual-story/${VS}` && init?.method === 'PATCH' ? json({ success: false, error: msg }, 409) : undefined));
+    render(<Studio vsId={VS} />);
+    await card('Shot 1.1');
+    const bar = screen.getByRole('contentinfo', { name: 'Spend and timeline' });
+    fireEvent.change(within(bar).getByLabelText('Budget (USD)'), { target: { value: '0.1' } });
+    fireEvent.click(within(bar).getByRole('button', { name: 'Save budget' }));
+    expect(await within(bar).findByText(msg)).toBeInTheDocument();
+    expect(screen.getAllByText(msg)).toHaveLength(1);
+  });
+});
