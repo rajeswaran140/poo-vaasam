@@ -48,3 +48,23 @@ describe('cost constants', () => {
     expect(GROK_RATES_VERIFIED_AT).toBeNull();
   });
 });
+
+describe('draftReserveUsd (M1: bounded by the lyrics length)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { draftReserveUsd, draftLabelUsd, draftCostUsd: cost, DRAFT_ESTIMATE_USD: est } = require('@/services/video/cost');
+
+  it('is the token cost of ceil(len/2)+1500 input and the 6000-token output ceiling', () => {
+    expect(draftReserveUsd('x'.repeat(1001))).toBeCloseTo(cost(501 + 1500, 6000), 10);
+    expect(draftReserveUsd('')).toBeCloseTo(cost(1500, 6000), 10);
+  });
+
+  it('stays below the flat estimate even at the 8000-character maximum', () => {
+    expect(draftReserveUsd('x'.repeat(8000))).toBeCloseTo(cost(5500, 6000), 10);
+    expect(draftReserveUsd('x'.repeat(8000))).toBeLessThan(est);
+  });
+
+  it('the UI label shows the flat estimate when it covers the bound, else the bound', () => {
+    expect(draftLabelUsd('x'.repeat(8000))).toBe(est);
+    expect(draftLabelUsd('x'.repeat(8000), 0.01)).toBeCloseTo(cost(5500, 6000), 10);
+  });
+});

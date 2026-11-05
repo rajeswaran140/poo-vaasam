@@ -5,9 +5,13 @@
  */
 
 const create = jest.fn();
+const ctor = jest.fn();
 jest.mock('@anthropic-ai/sdk', () => ({
   __esModule: true,
-  default: jest.fn().mockImplementation(() => ({ messages: { create } })),
+  default: jest.fn().mockImplementation((opts: unknown) => {
+    ctor(opts);
+    return { messages: { create } };
+  }),
 }));
 
 import { generateStoryboard, SYSTEM_PROMPT } from '@/services/ai/storyboarder';
@@ -16,6 +20,7 @@ import type { StoryboardDraft } from '@/types/visualStory';
 const originalEnv = process.env.ANTHROPIC_API_KEY;
 beforeEach(() => {
   create.mockReset();
+  ctor.mockReset();
   process.env.ANTHROPIC_API_KEY = 'sk-ant-test-key';
 });
 afterAll(() => {
@@ -164,4 +169,18 @@ describe('usage on failure (a received response was billed)', () => {
     delete process.env.ANTHROPIC_API_KEY;
     expect(await generateStoryboard(req)).not.toHaveProperty('usage');
   });
+});
+
+it('the client never retries (maxRetries 0): one paid call per job, inside the worker\'s budget', async () => {
+  create.mockResolvedValue(toolResponse(board([15], [15])));
+  await generateStoryboard(req);
+  expect(ctor).toHaveBeenCalledWith(expect.objectContaining({ maxRetries: 0 }));
+});
+
+it('honours options.timeoutMs (the worker passes 150 s); default stays 25 s', async () => {
+  create.mockResolvedValue(toolResponse(board([15], [15])));
+  await generateStoryboard(req, { timeoutMs: 150_000 });
+  expect(create.mock.calls[0][1].timeout).toBe(150_000);
+  await generateStoryboard(req);
+  expect(create.mock.calls[1][1].timeout).toBe(25_000);
 });

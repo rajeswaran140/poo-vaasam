@@ -11,9 +11,11 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { storyboardOutputSchema, storyboardOutputJsonSchema, type StoryboardOutput } from './storyboarderSchema';
 import type { AspectRatio } from '@/types/visualStory';
+import { DRAFT_MAX_OUTPUT_TOKENS } from '@/services/video/cost';
 
 export const DEFAULT_MODEL = 'claude-sonnet-4-6';
-const MAX_OUTPUT_TOKENS = 6000;
+/** Shared with the reservation bound (draftReserveUsd), so the two cannot drift. */
+const MAX_OUTPUT_TOKENS = DRAFT_MAX_OUTPUT_TOKENS;
 const REQUEST_TIMEOUT_MS = 25_000;
 const TOOL_NAME = 'submit_storyboard';
 const MIN_SHOT_SEC = 1;
@@ -62,10 +64,18 @@ export interface StoryboardRequest {
 
 const DOES_NOT_FIT = "The draft's shots did not fit the chosen length. Please draft again.";
 
+export interface StoryboardOptions {
+  /** Hard per-call timeout. The background worker passes 150 s; the default suits an inline caller. */
+  timeoutMs?: number;
+}
+
 function getClient(): Anthropic | null {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key || key === 'dummy-key-for-build') return null;
-  return new Anthropic({ apiKey: key });
+  // maxRetries: 0 — a full storyboard takes ~45-65 s (measured 2026-11-04). The
+  // SDK's default 2 retries turned one slow call into three billed attempts and
+  // ~77 s; a retry also cannot fit the worker Lambda's budget. One call per job.
+  return new Anthropic({ apiKey: key, maxRetries: 0 });
 }
 
 /**
@@ -90,7 +100,10 @@ function repairTiling(data: StoryboardOutput, windowSec: number): boolean {
   return true;
 }
 
-export async function generateStoryboard(req: StoryboardRequest): Promise<StoryboardResult> {
+export async function generateStoryboard(
+  req: StoryboardRequest,
+  options: StoryboardOptions = {}
+): Promise<StoryboardResult> {
   const { lyrics, windowSec, aspectRatio, signal } = req;
 
   const client = getClient();
@@ -124,7 +137,7 @@ export async function generateStoryboard(req: StoryboardRequest): Promise<Storyb
         tool_choice: { type: 'tool', name: TOOL_NAME },
         messages: [{ role: 'user', content: userMessage }],
       },
-      { signal, timeout: REQUEST_TIMEOUT_MS }
+      { signal, timeout: options.timeoutMs ?? REQUEST_TIMEOUT_MS }
     );
   } catch (err) {
     const status = (err as { status?: number })?.status;

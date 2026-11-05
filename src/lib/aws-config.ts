@@ -20,10 +20,19 @@ const secretAccessKey = process.env.APP_AWS_SECRET_ACCESS_KEY ||
                          process.env.AWS_SECRET_ACCESS_KEY ||
                          process.env.NEXT_PUBLIC_APP_AWS_SECRET_ACCESS_KEY;
 
+// On a Lambda (the compose worker) AWS_ACCESS_KEY_ID/SECRET are the execution
+// role's TEMPORARY keys and are only valid with AWS_SESSION_TOKEN; signing
+// without it fails every call with "security token invalid". Static app-user
+// keys (APP_AWS_*) never take a session token.
+const usingAppKeys = !!(process.env.APP_AWS_ACCESS_KEY_ID && process.env.APP_AWS_SECRET_ACCESS_KEY);
+const sessionToken =
+  !usingAppKeys && accessKeyId === process.env.AWS_ACCESS_KEY_ID ? process.env.AWS_SESSION_TOKEN : undefined;
+
 const credentials = accessKeyId && secretAccessKey
   ? {
       accessKeyId,
       secretAccessKey,
+      ...(sessionToken ? { sessionToken } : {}),
     }
   : undefined;
 
