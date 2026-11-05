@@ -1,7 +1,7 @@
 /**
  * POST /api/admin/visual-story/[vsId]/shots
  *   { op: 'create', sceneOrder, mode, durationSec, visualPrompt, negativePrompt?, charIds? }
- *   { op: 'update', sceneOrder, shotOrder, …any shot field }
+ *   { op: 'update', sceneOrder, shotOrder, …any shot field, firstFrameCandidateId (a STILL of this shot, or null to clear) }
  *   { op: 'delete', sceneOrder, shotOrder }
  *   { op: 'reorder', sceneOrder, order: [current shotOrders in the new sequence] }
  * Every response carries the shots with recomputed startSec and whether they
@@ -30,7 +30,12 @@ const bodySchema = z.discriminatedUnion('op', [
       negativePrompt: z.string().trim().max(1000).default(''),
       charIds: z.array(z.string()).max(14).default([]),
     }),
-  shotInputSchema.partial().extend({ op: z.literal('update'), sceneOrder: ord, shotOrder: ord }),
+  shotInputSchema.partial().extend({
+    op: z.literal('update'),
+    sceneOrder: ord,
+    shotOrder: ord,
+    firstFrameCandidateId: z.string().min(1).nullable().optional(),
+  }),
   z.object({ op: z.literal('delete'), sceneOrder: ord, shotOrder: ord }),
   z.object({ op: z.literal('reorder'), sceneOrder: ord, order: z.array(ord).min(1).max(100) }),
 ]);
@@ -81,8 +86,22 @@ export async function POST(request: NextRequest, { params }: Ctx) {
       const existing = find(input.shotOrder);
       if (!existing) return fail('That shot no longer exists.', 404);
       if (input.charIds && !input.charIds.every((id) => known.has(id))) return fail('Unknown character.', 400);
-      const { op: _op, sceneOrder: _s, shotOrder: _o, ...changes } = input;
+      const { op: _op, sceneOrder: _s, shotOrder: _o, firstFrameCandidateId: frame, ...changes } = input;
       shot = { ...existing, ...changes };
+      if (frame === null) {
+        delete shot.firstFrameCandidateId; // putShot replaces the item, so omitting the key clears it
+      } else if (frame !== undefined) {
+        // Same rule as buildVideoRequest: a STILL of this very shot.
+        const ok = tree.candidates.some(
+          (c) =>
+            c.candId === frame &&
+            c.mode === 'STILL' &&
+            c.sceneOrder === existing.sceneOrder &&
+            c.shotOrder === existing.shotOrder
+        );
+        if (!ok) return fail("Pick one of this shot's still pictures.", 400);
+        shot.firstFrameCandidateId = frame;
+      }
       await repo.putShot(vsId, shot);
     } else if (input.op === 'delete') {
       if (!find(input.shotOrder)) return fail('That shot no longer exists.', 404);

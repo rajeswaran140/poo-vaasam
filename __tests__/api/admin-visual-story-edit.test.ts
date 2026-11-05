@@ -213,6 +213,44 @@ describe('shots', () => {
     expect(repo.putShot).toHaveBeenCalledWith(VS, expect.objectContaining({ selectedCandidateId: 'cd_x' }));
     expect((await shotsPOST(mk({ op: 'update', sceneOrder: 1, shotOrder: 5, visualPrompt: 'B' }), ctx())).status).toBe(404);
   });
+  describe('first frame', () => {
+    const cand = (candId: string, shotOrder: number, mode: string) => ({
+      candId, sceneOrder: 1, shotOrder, jobId: null, providerId: 'p', providerTaskId: null,
+      mode, s3Key: `k/${candId}`, costUsd: 0, createdAt: 't',
+    });
+    const withCands = (firstFrameCandidateId?: string) =>
+      tree({
+        shots: [{ ...shot(1, 1, 10), ...(firstFrameCandidateId ? { firstFrameCandidateId } : {}) }, shot(1, 2, 10)],
+        candidates: [cand('cd_still', 1, 'STILL'), cand('cd_vid', 1, 'HERO'), cand('cd_other', 2, 'STILL')],
+      });
+    const set = (v: unknown) =>
+      shotsPOST(mk({ op: 'update', sceneOrder: 1, shotOrder: 1, firstFrameCandidateId: v }), ctx());
+    const MSG = "Pick one of this shot's still pictures.";
+
+    it('saves a still of the same shot', async () => {
+      repo.loadTree.mockResolvedValue(withCands());
+      expect((await set('cd_still')).status).toBe(200);
+      expect(repo.putShot).toHaveBeenCalledWith(VS, expect.objectContaining({ firstFrameCandidateId: 'cd_still' }));
+    });
+    it.each(['cd_vid', 'cd_other', 'cd_missing'])('rejects %s with 400', async (id) => {
+      repo.loadTree.mockResolvedValue(withCands());
+      const res = await set(id);
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe(MSG);
+      expect(repo.putShot).not.toHaveBeenCalled();
+    });
+    it('null clears the stored field', async () => {
+      repo.loadTree.mockResolvedValue(withCands('cd_still'));
+      expect((await set(null)).status).toBe(200);
+      const saved = repo.putShot.mock.calls[0][1];
+      expect('firstFrameCandidateId' in saved).toBe(false);
+    });
+    it('other edits keep the pinned frame', async () => {
+      repo.loadTree.mockResolvedValue(withCands('cd_still'));
+      await shotsPOST(mk({ op: 'update', sceneOrder: 1, shotOrder: 1, visualPrompt: 'B' }), ctx());
+      expect(repo.putShot).toHaveBeenCalledWith(VS, expect.objectContaining({ firstFrameCandidateId: 'cd_still' }));
+    });
+  });
   it('delete calls the repository and 404s on an unknown shot', async () => {
     expect((await shotsPOST(mk({ op: 'delete', sceneOrder: 1, shotOrder: 2 }), ctx())).status).toBe(200);
     expect(repo.deleteShot).toHaveBeenCalledWith(VS, 1, 2);
