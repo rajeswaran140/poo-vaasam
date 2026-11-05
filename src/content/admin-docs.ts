@@ -5180,7 +5180,7 @@ Phase 2 will not touch this page's connect/disconnect flow — only add to it.
     slug: 'visual-story-studio-plan',
     title: 'Visual Story Studio — storyboards and stills',
     category: 'Visual Story',
-    updatedAt: '2026-11-04T20:00:00Z',
+    updatedAt: '2026-11-05T02:00:00Z',
     body: `# Visual Story Studio
 
 The studio turns one of your saved masters into a storyboard for a music video: scenes, shots, characters, and a still picture for each shot. **Video clips, review and the final assembly are not built yet** — they come in later phases. What exists today costs pennies and lets you plan the whole video before any real money is spent. The step-by-step guide is in the repo at \`docs/VISUAL_STORY_STUDIO.md\`; the design is in \`docs/superpowers/specs/2026-09-11-visual-story-studio-design.md\`.
@@ -5188,16 +5188,16 @@ The studio turns one of your saved masters into a storyboard for a music video: 
 ## What you can do today
 
 1. **Create a story from a saved master.** Pick the master and the part of the song you want to film: a window of **30 to 120 seconds**, in whole seconds, inside the finished song. Choose the shape once — **16:9** (landscape) or **9:16** (vertical). The shape cannot be changed afterwards.
-2. **Let Claude draft the storyboard.** Paste the lyrics and press **Draft storyboard**. Claude proposes characters, scenes and shots that fit your window. The lyrics are used for that one request and are **not stored** anywhere — paste them again if you want a second draft. Look the draft over, then apply it — applying **replaces** the current storyboard, so you are asked first. A draft costs a few cents and the cost is shown.
-3. **Edit everything by hand.** Rename, add, remove and reorder scenes and shots. Set how long each shot lasts (1 to 15 seconds) and write what it should show. Edit the characters and say which characters appear in which shot. The bottom bar shows how much of your window the shots fill; they must fill it exactly before the later rendering step.
-4. **Add reference photos for a character.** They are private — kept in the media bucket in a folder that the public website cannot read — and are used to keep a character looking the same from shot to shot.
-5. **Make still pictures with Grok.** Each shot has a **STILL** button. Before it runs you see the price (**$0.02 per picture**) and what the story total will be afterwards, and you confirm. Each press makes one candidate picture for that shot; you choose which candidate to use.
+2. **Let Claude draft the storyboard.** Paste the lyrics and press **Draft storyboard**. Claude proposes characters, scenes and shots that fit your window. The draft runs in the background and takes **about a minute** — the button stays disabled until it is done, then the new draft appears. The lyrics are used for that one request and are **not stored** anywhere — paste them again if you want a second draft. Look the draft over, then apply it — applying **replaces** the current storyboard (scenes, shots and their stills), so you are asked first. The button shows ≈$0.15, a planning figure above what a draft can cost; a real one costs a few cents, and that is what counts toward the story total.
+3. **Edit by hand.** Add scenes and shots. **Delete scene** (in the scene list) and **Delete shot** (in the shot panel) each ask first, and remove the stills that belong to them too. For a shot you can change what it should show, how long it lasts (1 to 15 seconds), its negative prompt, and which characters appear. You can add characters. **What you cannot do yet:** there is no reorder of scenes or shots, scenes cannot be renamed once added, and characters cannot be edited or deleted. The bottom bar shows how much of your window the shots fill; they must fill it exactly before the later rendering step.
+4. **Add reference photos for a character.** They are private — kept in the media bucket in a folder that the public website cannot read. Reference photos are stored for the later video phases and do not yet influence still pictures: a still is made from the shot's text plus the names and descriptions of the characters in it. Likewise, the negative prompt is not used for stills yet.
+5. **Make still pictures with Grok.** Each shot has a **Generate still ($0.02)** button. Before it runs you see the price and what the story total will be afterwards, and you confirm. Each confirm makes one candidate picture for that shot; you choose which candidate to use.
 
 ## What stops a runaway bill
 
 - **Every spend is confirmed.** The price and the new story total are on screen before you say yes.
-- **A hard budget per story, default $40.** Set when you create the story and editable later. The server refuses any generation that would go past it — even if the confirm box were skipped. A budget of zero freezes the story without deleting it. You cannot lower the budget below what the story has already spent.
-- **Failed pictures are free.** Only a picture that was actually delivered counts toward the story total.
+- **A hard budget per story, default $40.** Set when you create the story; change it later with the **Budget** field in the bottom bar. The server refuses any generation that would go past it — even if the confirm box were skipped. A budget of zero freezes the story without deleting it. You cannot lower the budget below what the story has already spent or is holding for a running request; the reason shows next to the field.
+- **What is charged.** A delivered picture is charged. A picture the content filter refused is still charged ($0.02 — xAI bills the attempt) and counts toward the story total. A picture that fails for any other reason (Grok busy, timeout) is not charged. A draft that never got an answer from Claude is not charged.
 - **A rate limit** stops one account from spending too fast.
 
 Later phases will add motion clips at about $0.02 per second and full-quality clips at about $0.08 per second. A whole 2-minute video is expected to land around **$25 to $35**, which is why the default budget is $40.
@@ -5206,13 +5206,17 @@ Later phases will add motion clips at about $0.02 per second and full-quality cl
 
 Everything for one story sits under \`audio/mastering/visual-story/<story id>/\` in the media bucket: reference photos in \`refs\`, still pictures in \`candidates\`. That area is private; you preview files through the admin, never by a public link.
 
+## The draft runs on the background worker
+
+The website cannot run a one-minute request (Amplify stops requests after ~30 seconds), so the draft runs on the existing worker \`tamilagaval-compose-worker\`, like the Composer and the Lyric Critic. That worker has to be on the same release as the site, with a timeout of at least 180 seconds. A draft that has not finished after 10 minutes is marked failed ("The draft took too long. Please try again.") and its hold on the budget is released.
+
 ## One step only you can do
 
-Until it is done, storyboarding and the Claude draft keep working (the draft uses the same Claude connection as Lyricist), but every **STILL** button reports that Grok image generation is not configured. Nothing else is held up.
+Until it is done, storyboarding and the Claude draft keep working (the draft uses the same Claude connection as Lyricist), but every **Generate still** button reports that Grok image generation is not configured. Nothing else is held up.
 
 **Create an xAI key and store it.** In the xAI console create an API key, then save it in the AWS parameter store as a SecureString named \`/amplify/d3rkmepk4popv0/master/XAI_API_KEY\` (region ca-central-1). Do this yourself; the key should never be pasted into chat. The app's existing permissions already cover reading it, so no permission change is needed (recorded in \`docs/IAM_LEAST_PRIVILEGE.md\`, section 4).
 
-A STILL button works on the next press; there is nothing to rebuild or redeploy. If it still says not configured, check the parameter name and that its type is SecureString.
+**Generate still** works on the next press; there is nothing to rebuild or redeploy. If it still says not configured, check the parameter name and that its type is SecureString.
 
 ## Not built yet
 
