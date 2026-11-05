@@ -35,7 +35,7 @@ Press **Generate still ($0.02)** on a shot. You see the price and the story tota
 
 ### 5. Video clips
 Press **Make video (6 s · $0.48)** on a shot (the label shows that shot's length and price). You see the price and the story total after it, and confirm. The button then reads "Rendering…" and the card says **"Rendering… about 1–3 minutes"**; the clip appears on the shot when it is ready.
-- **Cancel** (beside the progress line) asks first and warns **"Grok may still charge for this clip."** Pressing **Cancel video** counts the clip's price as spent, because Grok may already have accepted it; **Keep rendering** goes back.
+- **Cancel** (beside the progress line) asks first and warns **"Grok may still charge for this clip, and it won't be kept."** Pressing **Cancel video** counts the clip's price as spent, because Grok may already have accepted it; **Keep rendering** goes back.
 - **Check again** appears if the card stopped watching a clip (for example after a network hiccup). Press it to look once more. If you left the page, press **Check rendering videos (N)** on the story list; N is how many clips are still rendering.
 - **First frame:** on a still, **Use as first frame** makes the video start from that picture. The shot panel shows **First frame** with the picture and a **Clear** button to go back to no first frame.
 - **Character photos** of the characters in a shot are sent to Grok too. A clip that uses them is made at **720p** (without photos it is 1080p).

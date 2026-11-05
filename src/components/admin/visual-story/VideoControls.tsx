@@ -268,7 +268,7 @@ export function VideoControls({ vsId, shotKey, label, durationSec, story, jobs, 
       )}
       {confirmingCancel && (polling || running) && (
         <div role="alertdialog" aria-label={`Cancel the video for ${label}?`} className="space-y-2 rounded-md border border-red-300 bg-red-50 p-2 text-sm dark:border-red-700 dark:bg-red-950">
-          <p className="text-red-900 dark:text-red-200">Grok may still charge for this clip.</p>
+          <p className="text-red-900 dark:text-red-200">Grok may still charge for this clip, and it won&apos;t be kept.</p>
           <div className="flex gap-2">
             <button type="button" disabled={cancelling} onClick={cancel} className="rounded-md bg-red-600 px-3 py-1 text-sm font-medium text-white disabled:opacity-50">
               {cancelling ? 'Cancelling…' : 'Cancel video'}

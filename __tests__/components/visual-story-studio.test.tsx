@@ -624,7 +624,7 @@ describe('Studio — video clips', () => {
     await within(c).findByText('Rendering… about 1–3 minutes');
     fireEvent.click(within(c).getByRole('button', { name: 'Cancel' }));
     const confirm = within(c).getByRole('alertdialog');
-    expect(confirm).toHaveTextContent('Grok may still charge for this clip.');
+    expect(confirm).toHaveTextContent("Grok may still charge for this clip, and it won't be kept.");
     expect(mockFetch.mock.calls.filter(([u, i]) => u === jobUrl && i?.method === 'POST')).toHaveLength(0);
     const loadsBefore = treeLoads().length;
     fireEvent.click(within(confirm).getByRole('button', { name: 'Cancel video' }));
