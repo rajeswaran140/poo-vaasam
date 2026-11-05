@@ -90,9 +90,23 @@ Usage evidence: actively used across **20+ services** (amplify, athena, backup, 
 
 ---
 
-## 4. Visual Story Studio — xAI key read (NO IAM CHANGE NEEDED)
-Added 2026-11-04 with the Visual Story Studio (Phases 2–3). The app reads the xAI Grok Imagine API key at request time from SSM (`getXaiApiKey`, `WithDecryption`, cached per container) at `/amplify/d3rkmepk4popv0/master/XAI_API_KEY` — the same pattern as the Twitch secrets.
+## 4. Visual Story Studio — xAI key read (grant on the app user)
+Added 2026-11-04 with the Visual Story Studio (Phases 2–3), **corrected 2026-11-05**. The app reads the xAI Grok Imagine API key at request time from SSM (`getXaiApiKey`, `WithDecryption`, cached per container) at `/amplify/d3rkmepk4popv0/master/XAI_API_KEY`.
 
-**Already covered.** Verified read-only against AWS on 2026-11-04: Amplify app `d3rkmepk4popv0` has `iamServiceRoleArn = arn:aws:iam::975050319109:role/AmplifyPooVasamBuildRole` and no separate compute role (`computeRoleArn = null`), so SSR runs under that service role. Its inline policy `P24SsmSecureStringRead` already allows `ssm:GetParameter` and `ssm:GetParameters` on `arn:aws:ssm:ca-central-1:975050319109:parameter/amplify/d3rkmepk4popv0/master/*`, plus `kms:Decrypt` with `kms:ViaService = ssm.ca-central-1.amazonaws.com`. `XAI_API_KEY` falls under that wildcard. **No new policy is proposed or needed.**
+**Correction.** The 2026-11-04 version of this section said no change was needed because the Amplify service role `AmplifyPooVasamBuildRole` (policy `P24SsmSecureStringRead`, `/master/*`) covers the path. That role is used by the **build**, not by the running site: the SSR server has no ambient AWS credentials and every AWS call in the app signs with **`poo-vaasam-app-user`** (`APP_AWS_*` keys, see `src/lib/aws-config.ts`). The first live STILL failed with `CredentialsProviderError`. The code now signs the read with the app user's keys, and that user needs:
 
-**Owner step (spec §6.2.2, step 2 resolved as above):** create the xAI key and store it as SecureString `/amplify/d3rkmepk4popv0/master/XAI_API_KEY` in ca-central-1; the key never passes through chat. If STILL still reports Grok as not configured afterwards, check the parameter name and that its type is SecureString.
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Sid": "ReadXaiApiKey",
+    "Effect": "Allow",
+    "Action": "ssm:GetParameter",
+    "Resource": "arn:aws:ssm:ca-central-1:975050319109:parameter/amplify/d3rkmepk4popv0/master/XAI_API_KEY"
+  }]
+}
+```
+
+as an inline policy `visual-story-xai-key-read` on `poo-vaasam-app-user` (applied only with the owner's yes). The parameter uses the AWS-managed `alias/aws/ssm` key, whose key policy already lets account principals decrypt through SSM — the same reason the existing Twitch SSM grant (`tamilagaval-app-twitch-ssm`) needs no `kms:Decrypt`.
+
+**Owner step:** store the key as SecureString `/amplify/d3rkmepk4popv0/master/XAI_API_KEY` in ca-central-1 (done 2026-11-05). If STILL still reports Grok as not configured, check the parameter name and that its type is SecureString.

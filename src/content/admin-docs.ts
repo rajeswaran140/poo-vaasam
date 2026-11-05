@@ -5214,7 +5214,7 @@ The website cannot run a one-minute request (Amplify stops requests after ~30 se
 
 Until it is done, storyboarding and the Claude draft keep working (the draft uses the same Claude connection as Lyricist), but every **Generate still** button reports that Grok image generation is not configured. Nothing else is held up.
 
-**Create an xAI key and store it.** In the xAI console create an API key, then save it in the AWS parameter store as a SecureString named \`/amplify/d3rkmepk4popv0/master/XAI_API_KEY\` (region ca-central-1). Do this yourself; the key should never be pasted into chat. The app's existing permissions already cover reading it, so no permission change is needed (recorded in \`docs/IAM_LEAST_PRIVILEGE.md\`, section 4).
+**Create an xAI key and store it.** In the xAI console create an API key, then save it in the AWS parameter store as a SecureString named \`/amplify/d3rkmepk4popv0/master/XAI_API_KEY\` (region ca-central-1). Do this yourself; the key should never be pasted into chat. The site reads it with its own AWS user (\`poo-vaasam-app-user\`), which has a one-line permission to read just this key (recorded in \`docs/IAM_LEAST_PRIVILEGE.md\`, section 4).
 
 **Generate still** works on the next press; there is nothing to rebuild or redeploy. If it still says not configured, check the parameter name and that its type is SecureString.
 
