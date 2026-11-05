@@ -54,6 +54,9 @@ export class S3Operations {
      *  Used e.g. for video thumbnails so a re-mirror propagates via the CDN
      *  within minutes instead of waiting out the default ~24h TTL. */
     cacheControl?: string;
+  }, options?: {
+    /** Abort the upload (e.g. at a request deadline). */
+    abortSignal?: AbortSignal;
   }) {
     const command = new PutObjectCommand({
       Bucket: BUCKET_NAME,
@@ -64,7 +67,11 @@ export class S3Operations {
       CacheControl: params.cacheControl,
     });
 
-    await s3Client.send(command);
+    if (options?.abortSignal) {
+      await s3Client.send(command, { abortSignal: options.abortSignal });
+    } else {
+      await s3Client.send(command);
+    }
 
     return {
       // Serve via the media base (CDN) so the bucket can stay private.
