@@ -3,15 +3,24 @@
 /**
  * Draft panel (spec §6.5, §10): paste lyrics → Claude proposes scenes and shots
  * → preview with the total against the window → Apply. Apply REPLACES the
- * current storyboard, so it asks first. A draft is paid for, so the newest
- * persisted one (tree.drafts) is shown on load as "Last draft (<date>)" — the
- * model has no applied marker, so it is labelled by date, not as pending. The lyrics are sent once and never kept
+ * current storyboard, so it asks first.
+ *
+ * A draft takes about a minute, so it runs on the background worker (R14):
+ * POST starts a job (202 { jobId }), the panel polls the job route with
+ * pollJob() until done/failed (cap 4 minutes), then reloads the tree — the new
+ * draft and the spend come from the server. The button stays disabled while a
+ * job is pending.
+ *
+ * A draft is paid for, so the newest persisted one (tree.drafts) is shown on
+ * load as "Last draft (<date>)" — the model has no applied marker, so it is
+ * labelled by date, not as pending. The lyrics are sent once and never kept
  * here after the request. Errors render inside this panel.
  */
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
-import { DRAFT_ESTIMATE_USD } from '@/services/video/cost';
+import { pollJob } from '@/lib/poll-job';
+import { draftLabelUsd } from '@/services/video/cost';
 import type { StoryboardDraft } from '@/types/visualStory';
 import { usd } from './ShotCard';
 
@@ -28,6 +37,10 @@ interface Props {
   onApplied: (tree: unknown) => void;
 }
 
+const POLL_INTERVAL_MS = 3000;
+const POLL_TIMEOUT_MS = 4 * 60_000;
+const POLL_TIMEOUT_MESSAGE = 'The draft is taking longer than expected. Reload the page in a few minutes to see it.';
+
 const when = (iso: string) => {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' });
@@ -37,7 +50,17 @@ export function DraftPanel({ vsId, windowSec, sceneCount, shotCount, lastDraft, 
   const [lyrics, setLyrics] = useState('');
   const [pending, setPending] = useState(false);
   const inFlight = useRef(false);
-  const [fresh, setFresh] = useState<StoryboardDraft | null>(null);
+  // The draft this session's job produced; it arrives through the tree reload.
+  const [freshId, setFreshId] = useState<string | null>(null);
+  const mounted = useRef(true);
+  const abort = useRef<AbortController | null>(null);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      abort.current?.abort();
+    };
+  }, []);
   // A draft applied in this session is not offered again until a reload.
   const [appliedId, setAppliedId] = useState<string | null>(null);
   const applyInFlight = useRef(false);
@@ -45,9 +68,8 @@ export function DraftPanel({ vsId, windowSec, sceneCount, shotCount, lastDraft, 
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const candidate = fresh ?? lastDraft;
-  const draft = candidate && candidate.draftId !== appliedId ? candidate : null;
-  const isFresh = !!draft && draft === fresh;
+  const draft = lastDraft && lastDraft.draftId !== appliedId ? lastDraft : null;
+  const isFresh = !!draft && draft.draftId === freshId;
 
   const requestDraft = async () => {
     if (inFlight.current || !lyrics.trim()) return;
@@ -55,6 +77,8 @@ export function DraftPanel({ vsId, windowSec, sceneCount, shotCount, lastDraft, 
     setPending(true);
     setError(null);
     setConfirming(false);
+    const ctrl = new AbortController();
+    abort.current = ctrl;
     try {
       const res = await adminFetch(`/api/admin/visual-story/${vsId}/draft`, {
         method: 'POST',
@@ -62,14 +86,34 @@ export function DraftPanel({ vsId, windowSec, sceneCount, shotCount, lastDraft, 
         body: JSON.stringify({ lyrics }),
       });
       const body = await res.json().catch(() => null);
-      if (!res.ok || !body?.success) setError(body?.error || `Could not draft the storyboard (HTTP ${res.status}).`);
-      else setFresh(body.data.draft as StoryboardDraft);
-    } catch {
-      setError('Could not reach the server. Check your connection and try again.');
+      if (!res.ok || !body?.success || !body?.data?.jobId) {
+        setError(body?.error || `Could not draft the storyboard (HTTP ${res.status}).`);
+        return;
+      }
+      const jobId = String(body.data.jobId);
+      const result = await pollJob<{ draftId: string }>({
+        fetchStatus: (signal) => adminFetch(`/api/admin/visual-story/${vsId}/draft/jobs/${jobId}`, { signal }),
+        signal: ctrl.signal,
+        isMounted: () => mounted.current,
+        intervalMs: POLL_INTERVAL_MS,
+        timeoutMs: POLL_TIMEOUT_MS,
+        timeoutMessage: POLL_TIMEOUT_MESSAGE,
+      });
+      if (result?.draftId && mounted.current) setFreshId(result.draftId);
+    } catch (err) {
+      if (!mounted.current) return;
+      const message = err instanceof Error ? err.message : '';
+      setError(
+        message && !/fetch|network/i.test(message)
+          ? message
+          : 'Could not reach the server. Check your connection and try again.'
+      );
     } finally {
       inFlight.current = false;
-      setPending(false);
-      onChanged();
+      if (mounted.current) {
+        setPending(false);
+        onChanged(); // the new draft and the settled spend come from the server
+      }
     }
   };
 
@@ -85,7 +129,7 @@ export function DraftPanel({ vsId, windowSec, sceneCount, shotCount, lastDraft, 
         setError(body?.error || 'Could not apply the draft.');
         return;
       }
-      setFresh(null);
+      setFreshId(null);
       setAppliedId(draft.draftId);
       setConfirming(false);
       onApplied(body.data);
@@ -119,8 +163,13 @@ export function DraftPanel({ vsId, windowSec, sceneCount, shotCount, lastDraft, 
         onClick={requestDraft}
         className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
       >
-        {pending ? 'Drafting…' : `Draft storyboard (≈${usd(DRAFT_ESTIMATE_USD)})`}
+        {pending ? 'Drafting…' : `Draft storyboard (≈${usd(draftLabelUsd(lyrics))})`}
       </button>
+      {pending && (
+        <p role="status" className="text-sm text-gray-700 dark:text-gray-300">
+          Drafting… this takes about a minute.
+        </p>
+      )}
       {error && (
         <p role="alert" className="text-sm text-red-600 dark:text-red-400">
           {error}

@@ -198,6 +198,9 @@ describe('Studio — draft panel', () => {
     createdAt: '2026-11-01',
   };
 
+  const JOB = 'dj_1730000000000_abcdef12';
+  const jobUrl = `/api/admin/visual-story/${VS}/draft/jobs/${JOB}`;
+
   async function drafted() {
     render(<Studio vsId={VS} />);
     await card('Shot 1.1');
@@ -205,16 +208,37 @@ describe('Studio — draft panel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Draft storyboard (≈$0.15)' }));
   }
 
-  it('drafts, previews the total against the window, warns that Apply replaces the storyboard, then applies', async () => {
-    routes((url) => {
-      if (url.endsWith('/draft')) return json({ success: true, data: { draft } }, 201);
-      if (url.endsWith('/apply')) return json({ success: true, data: tree() });
-      return undefined;
-    });
+  /** The draft runs on the worker (R14): POST → 202 {jobId}, then the job route; the tree carries the draft once done. */
+  function draftJob(opts: { polls?: Response[]; saves?: boolean; apply?: () => Promise<Response> | Response } = {}) {
+    let done = false; // the worker saves the draft when the job finishes
+    const polls = [...(opts.polls ?? [json({ success: true, status: 'done', result: { draftId: draft.draftId } })])];
+    routes(
+      (url, init) => {
+        if (url.endsWith('/draft') && init?.method === 'POST') return json({ success: true, data: { jobId: JOB } }, 202);
+        if (url === jobUrl) {
+          if (polls.length > 1) return polls.shift()!;
+          done = opts.saves ?? true;
+          return polls[0];
+        }
+        if (url.endsWith('/apply')) return opts.apply ? opts.apply() : json({ success: true, data: tree() });
+        return undefined;
+      },
+      () => {
+        const t = tree();
+        if (done) t.drafts = [draft];
+        return t;
+      }
+    );
+  }
+
+  it('POSTs the lyrics, polls the job, reloads the tree and shows the new draft; then Apply replaces', async () => {
+    draftJob();
     await drafted();
-    expect(await screen.findByText('Draft shot one')).toBeInTheDocument();
+    expect(await screen.findByText('New draft')).toBeInTheDocument();
+    expect(screen.getByText('Draft shot one')).toBeInTheDocument();
     expect(screen.getByText('Draft fills 60 of 60 s')).toBeInTheDocument();
     expect(JSON.parse(calls('/draft')[0][1].body)).toEqual({ lyrics: 'Line one\nLine two' });
+    expect(mockFetch.mock.calls.filter(([u]) => u === jobUrl).length).toBeGreaterThanOrEqual(1);
 
     fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
     expect(screen.getByText(/replaces the current storyboard/i)).toBeInTheDocument();
@@ -223,13 +247,43 @@ describe('Studio — draft panel', () => {
     await waitFor(() => expect(calls(`/draft/${draft.draftId}/apply`)).toHaveLength(1));
   });
 
+  it('while the job runs: "about a minute" copy, the button stays disabled, a second click sends nothing', async () => {
+    jest.useFakeTimers();
+    try {
+      draftJob({
+        polls: [json({ success: true, status: 'running' }), json({ success: true, status: 'done', result: { draftId: draft.draftId } })],
+      });
+      await drafted();
+      expect(await screen.findByText('Drafting… this takes about a minute.')).toBeInTheDocument();
+      const button = screen.getByRole('button', { name: 'Drafting…' });
+      expect(button).toBeDisabled();
+      fireEvent.click(button);
+      expect(calls('/draft')).toHaveLength(1);
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(5000);
+      });
+      expect(await screen.findByText('Draft shot one')).toBeInTheDocument();
+      expect(screen.queryByText('Drafting… this takes about a minute.')).not.toBeInTheDocument();
+      expect(calls('/draft')).toHaveLength(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('a failed job shows its error inside the draft panel and reloads spend', async () => {
+    const msg = 'The AI service is rate-limited right now. Please retry in a moment.';
+    draftJob({ polls: [json({ success: true, status: 'error', error: { code: 'rate_limit', message: msg } })], saves: false });
+    await drafted();
+    const panel = screen.getByRole('region', { name: 'Storyboard draft' });
+    expect(await within(panel).findByText(msg)).toBeInTheDocument();
+    expect(screen.getAllByText(msg)).toHaveLength(1);
+    await waitFor(() => expect(treeLoads().length).toBeGreaterThanOrEqual(2));
+    expect(screen.getByRole('button', { name: 'Draft storyboard (≈$0.15)' })).not.toBeDisabled();
+  });
+
   it('two Replace clicks in the same tick send one apply request', async () => {
     const pending = deferred<Response>();
-    routes((url) => {
-      if (url.endsWith('/draft')) return json({ success: true, data: { draft } }, 201);
-      if (url.endsWith('/apply')) return pending.promise;
-      return undefined;
-    });
+    draftJob({ apply: () => pending.promise });
     await drafted();
     fireEvent.click(await screen.findByRole('button', { name: 'Apply' }));
     const replace = screen.getByRole('button', { name: 'Replace storyboard' });
