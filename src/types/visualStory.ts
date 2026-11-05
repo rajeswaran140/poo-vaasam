@@ -126,11 +126,30 @@ export interface StoryboardDraft {
   createdAt: string;
 }
 
+/**
+ * A storyboard draft runs on the background worker (R14): the route reserves
+ * and writes a `DRAFTJOB#<jobId>` item, the worker moves it queued → running →
+ * done|failed, the client polls. Never carries the lyrics.
+ */
+export type DraftJobStatus = 'queued' | 'running' | 'done' | 'failed';
+
+export interface DraftJob {
+  jobId: string;
+  status: DraftJobStatus;
+  createdAt: string;
+  updatedAt: string;
+  /** What the route reserved against the cap; the one settle releases exactly this. */
+  reservedUsd: number;
+  draftId?: string | null;
+  code?: string | null;
+  error?: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Ids — `<prefix>_<13-digit ms>_<random>`; validate before building any key.
 // ---------------------------------------------------------------------------
 
-export type IdPrefix = 'vs' | 'ch' | 'cd' | 'dr';
+export type IdPrefix = 'vs' | 'ch' | 'cd' | 'dr' | 'dj';
 
 function idGuard(prefix: IdPrefix): (s: unknown) => boolean {
   const re = new RegExp(`^${prefix}_\\d{13}_[a-z0-9]{6,12}$`);
@@ -141,6 +160,7 @@ export const isVsId = idGuard('vs');
 export const isCharId = idGuard('ch');
 export const isCandId = idGuard('cd');
 export const isDraftId = idGuard('dr');
+export const isDraftJobId = idGuard('dj');
 
 export function newId(prefix: IdPrefix): string {
   let rand = '';

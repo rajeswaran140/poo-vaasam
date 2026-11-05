@@ -342,6 +342,17 @@ describe('settle', () => {
     await repo.settle(id, { reservedUsd: 0.02, billedUsd: 0.05 });
     expect(meta(id)).toMatchObject({ reservedUsd: 0, spentUsd: 0.05, committedUsd: 0.05 });
   });
+
+  it('is conditional on the story existing, so a deleted story is never re-created as a stub', async () => {
+    const id = await seedReserved(0.02);
+    await repo.settle(id, { reservedUsd: 0.02, billedUsd: 0 });
+    expect(mockUpdate.mock.calls.at(-1)![0].conditionExpression).toBe('attribute_exists(PK)');
+  });
+
+  it('a story deleted mid-call surfaces as NotFoundError (callers log and swallow it)', async () => {
+    await expect(repo.settle(VS, { reservedUsd: 0.02, billedUsd: 0.02 })).rejects.toBeInstanceOf(NotFoundError);
+    expect(store.size).toBe(0);
+  });
 });
 
 describe('countShots', () => {

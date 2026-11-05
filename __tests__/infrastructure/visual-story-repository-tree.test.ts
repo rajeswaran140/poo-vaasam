@@ -6,6 +6,7 @@ const mockPut = jest.fn(async (_i: any) => undefined);
 const mockGet = jest.fn();
 const mockUpdate = jest.fn(async (_p: any) => undefined);
 const mockTransact = jest.fn(async (_i: any[]) => undefined);
+const mockDelete = jest.fn(async (_k: any) => undefined);
 
 jest.mock('@/infrastructure/database/dynamodb-client', () => ({
   DynamoDBOperations: {
@@ -14,6 +15,7 @@ jest.mock('@/infrastructure/database/dynamodb-client', () => ({
     query: (p: any) => mockQuery(p),
     update: (p: any) => mockUpdate(p),
     transactWrite: (i: any[]) => mockTransact(i),
+    delete: (k: any) => mockDelete(k),
   },
   // Mirrors the real function: it NEVER rethrows the original, it wraps into a 500.
   handleDynamoDBError: (e: any) => {
@@ -35,6 +37,7 @@ import {
   candSk,
   charSk,
   draftSk,
+  draftJobSk,
 } from '@/infrastructure/database/VisualStoryRepository';
 import type { StoryboardDraft } from '@/types/visualStory';
 
@@ -190,12 +193,11 @@ describe('simple writes', () => {
 });
 
 describe('deleteShot', () => {
-  it('deletes the shot and its candidates in one transaction', async () => {
+  it('deletes the shot and its candidates item by item (no 100-item transaction limit)', async () => {
     mockQuery.mockResolvedValue({ Items: [shotItem(1, 2, 5), candItem(1, 2, 'cd_1'), candItem(1, 3, 'cd_2')] });
     await repo.deleteShot(VS, 1, 2);
-    const { dels, puts } = ops(mockTransact.mock.calls[0][0]);
-    expect(puts).toHaveLength(0);
-    expect(dels.map((k: any) => k.SK).sort()).toEqual([shotSk(1, 2), candSk(1, 2, 'cd_1')].sort());
+    expect(mockTransact).not.toHaveBeenCalled();
+    expect(mockDelete.mock.calls.map((c) => c[0].SK).sort()).toEqual([shotSk(1, 2), candSk(1, 2, 'cd_1')].sort());
   });
 });
 
@@ -205,11 +207,21 @@ describe('deleteScene', () => {
       Items: [sceneItem(1), sceneItem(2), shotItem(1, 1, 5), shotItem(1, 2, 5), shotItem(2, 1, 5), candItem(1, 2, 'cd_1'), candItem(2, 1, 'cd_2')],
     });
     await repo.deleteScene(VS, 1);
-    const { dels, puts } = ops(mockTransact.mock.calls[0][0]);
-    expect(puts).toHaveLength(0);
-    expect(dels.map((k: any) => k.SK).sort()).toEqual(
+    expect(mockTransact).not.toHaveBeenCalled();
+    expect(mockDelete.mock.calls.map((c) => c[0].SK).sort()).toEqual(
       [sceneSk(1), shotSk(1, 1), shotSk(1, 2), candSk(1, 2, 'cd_1')].sort()
     );
+  });
+
+  it('a scene with 40 shots x 3 stills (160 items) is deleted, not refused', async () => {
+    const items: any[] = [sceneItem(1)];
+    for (let h = 1; h <= 40; h++) {
+      items.push(shotItem(1, h, 1));
+      for (let c = 0; c < 3; c++) items.push(candItem(1, h, `cd_${h}_${c}`));
+    }
+    mockQuery.mockResolvedValue({ Items: items });
+    await repo.deleteScene(VS, 1);
+    expect(mockDelete).toHaveBeenCalledTimes(161);
   });
 });
 
@@ -261,7 +273,9 @@ describe('applyDraft', () => {
     createdAt: 't',
   });
 
-  it('writes 3 scenes + 8 shots + new characters and deletes prior scenes/shots', async () => {
+  const delSks = () => mockDelete.mock.calls.map((c) => c[0].SK);
+
+  it('writes 3 scenes + 8 shots + new characters, then deletes prior scenes/shots it did not overwrite', async () => {
     mockGet.mockResolvedValue({ PK, SK: draftSk('dr_1'), ...draft(3, [3, 3, 2], [
       { name: 'Asha', description: 'new' }, { name: 'Ravi', description: 'new2' },
     ]) });
@@ -275,13 +289,16 @@ describe('applyDraft', () => {
     await repo.applyDraft(VS, 'dr_1');
     expect(mockTransact).toHaveBeenCalledTimes(1);
     const { puts, dels } = ops(mockTransact.mock.calls[0][0]);
+    expect(dels).toHaveLength(0); // the transaction carries the new draft's puts only
     expect(puts.filter((p: any) => p.SK.startsWith('SCENE#'))).toHaveLength(3);
     expect(puts.filter((p: any) => p.SK.startsWith('SHOT#'))).toHaveLength(8);
     const chars = puts.filter((p: any) => p.SK.startsWith('CHAR#'));
     expect(chars.map((c: any) => c.name)).toEqual(['Ravi']); // Asha exists (case/space-insensitive)
     // prior scene 4 and shot 4#1 deleted; reused keys are overwritten, not deleted
     // (and the candidate of a replaced shot, so nothing is orphaned)
-    expect(dels.map((k: any) => k.SK).sort()).toEqual([sceneSk(4), shotSk(4, 1), candSk(1, 1, 'cd_1')].sort());
+    expect(delSks().sort()).toEqual([sceneSk(4), shotSk(4, 1), candSk(1, 1, 'cd_1')].sort());
+    // keys collide, so the old rows go only AFTER the new ones are written
+    expect(mockTransact.mock.invocationCallOrder[0]).toBeLessThan(Math.min(...mockDelete.mock.invocationCallOrder));
     // shots reference the existing character id; unknown names are dropped
     const firstShot = puts.find((p: any) => p.SK === shotSk(1, 1));
     expect(firstShot.charIds).toEqual(['ch_old']);
@@ -293,21 +310,38 @@ describe('applyDraft', () => {
     mockGet.mockResolvedValue({ PK, SK: draftSk('dr_1'), ...draft(1, [1]) });
     mockQuery.mockResolvedValue({ Items: [meta, shotItem(1, 1, 5), candItem(1, 1, 'cd_1')] });
     await repo.applyDraft(VS, 'dr_1');
-    const { dels } = ops(mockTransact.mock.calls[0][0]);
-    expect(dels.map((k: any) => k.SK)).toEqual([candSk(1, 1, 'cd_1')]);
+    expect(delSks()).toEqual([candSk(1, 1, 'cd_1')]);
   });
 
-  it('throws DraftTooLargeError when deletes + puts exceed 100', async () => {
-    mockGet.mockResolvedValue({ PK, SK: draftSk('dr_1'), ...draft(10, Array(10).fill(9)) }); // 10 + 90 = 100
-    mockQuery.mockResolvedValue({ Items: [meta, shotItem(11, 1, 5)] }); // +1 delete = 101
-    await expect(repo.applyDraft(VS, 'dr_1')).rejects.toBeInstanceOf(DraftTooLargeError);
+  it('a story with 20 shots x 3 stills applies a 16-shot draft (existing pictures do not count)', async () => {
+    const items: any[] = [meta];
+    for (let sc = 1; sc <= 4; sc++) {
+      items.push(sceneItem(sc));
+      for (let h = 1; h <= 5; h++) {
+        items.push(shotItem(sc, h, 3));
+        for (let c = 0; c < 3; c++) items.push(candItem(sc, h, `cd_${sc}${h}${c}`));
+      }
+    }
+    mockGet.mockResolvedValue({ PK, SK: draftSk('dr_1'), ...draft(4, [4, 4, 4, 4]) });
+    mockQuery.mockResolvedValue({ Items: items }); // 4 + 20 + 60 = 84 old rows
+    await repo.applyDraft(VS, 'dr_1');
+    expect(mockTransact.mock.calls[0][0]).toHaveLength(20); // 4 scenes + 16 shots
+    // 60 stills + shot 1..4#5 (not overwritten) are removed; overwritten keys are not deleted
+    expect(mockDelete).toHaveBeenCalledTimes(64);
+    expect(delSks().filter((k) => k.startsWith('CAND#'))).toHaveLength(60);
+  });
+
+  it('throws DraftTooLargeError when the draft itself needs more than 100 writes, naming what is too large', async () => {
+    mockGet.mockResolvedValue({ PK, SK: draftSk('dr_1'), ...draft(10, Array(10).fill(10)) }); // 10 + 100 = 110
+    mockQuery.mockResolvedValue({ Items: [meta] });
+    const err = await repo.applyDraft(VS, 'dr_1').catch((e) => e);
+    expect(err).toBeInstanceOf(DraftTooLargeError);
+    expect(err.itemCount).toBe(110);
+    expect(err.message).toBe(
+      'This draft has too many scenes, shots and new characters to apply (110; the limit is 100). Draft again for fewer shots.'
+    );
     expect(mockTransact).not.toHaveBeenCalled();
-  });
-
-  it('keeps itemCount on DraftTooLargeError', async () => {
-    mockGet.mockResolvedValue({ PK, SK: draftSk('dr_1'), ...draft(10, Array(10).fill(9)) });
-    mockQuery.mockResolvedValue({ Items: [meta, shotItem(11, 1, 5)] });
-    await expect(repo.applyDraft(VS, 'dr_1')).rejects.toMatchObject({ itemCount: 101 });
+    expect(mockDelete).not.toHaveBeenCalled();
   });
 
   it('still wraps genuine storage failures', async () => {
@@ -315,15 +349,71 @@ describe('applyDraft', () => {
     await expect(repo.applyDraft(VS, 'dr_1')).rejects.toMatchObject({ statusCode: 500 });
   });
 
-  it('allows exactly 100', async () => {
+  it('allows exactly 100 puts, however many old rows there are', async () => {
     mockGet.mockResolvedValue({ PK, SK: draftSk('dr_1'), ...draft(10, Array(10).fill(9)) });
-    mockQuery.mockResolvedValue({ Items: [meta] });
+    const old = Array.from({ length: 50 }, (_, i) => candItem(12, 1, `cd_${i}`));
+    mockQuery.mockResolvedValue({ Items: [meta, ...old] });
     await repo.applyDraft(VS, 'dr_1');
     expect(mockTransact.mock.calls[0][0]).toHaveLength(100);
+    expect(mockDelete).toHaveBeenCalledTimes(50);
+  });
+
+  it('a failed write leaves the old storyboard untouched (nothing deleted)', async () => {
+    mockGet.mockResolvedValue({ PK, SK: draftSk('dr_1'), ...draft(1, [1]) });
+    mockQuery.mockResolvedValue({ Items: [meta, shotItem(2, 1, 5)] });
+    mockTransact.mockRejectedValueOnce(Object.assign(new Error('x'), { name: 'TransactionCanceledException' }));
+    await expect(repo.applyDraft(VS, 'dr_1')).rejects.toMatchObject({ statusCode: 500 });
+    expect(mockDelete).not.toHaveBeenCalled();
   });
 
   it('throws when the draft is missing', async () => {
     mockGet.mockResolvedValue(undefined);
     await expect(repo.applyDraft(VS, 'dr_x')).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+describe('draft jobs', () => {
+  const job = { jobId: 'dj_1730000000000_abcdef12', status: 'queued', createdAt: 't0', updatedAt: 't0', reservedUsd: 0.1 };
+
+  it('createDraftJob writes DRAFTJOB#<jobId> in the story partition', async () => {
+    await repo.createDraftJob(VS, job as any);
+    expect(mockPut).toHaveBeenCalledWith({ PK, SK: draftJobSk(job.jobId), ...job });
+    expect(draftJobSk('dj_x')).toBe('DRAFTJOB#dj_x');
+  });
+
+  it('getDraftJob strips keys; null when absent', async () => {
+    mockGet.mockResolvedValueOnce({ PK, SK: draftJobSk(job.jobId), ...job });
+    expect(await repo.getDraftJob(VS, job.jobId)).toEqual(job);
+    mockGet.mockResolvedValueOnce(undefined);
+    expect(await repo.getDraftJob(VS, job.jobId)).toBeNull();
+  });
+
+  it('transitionDraftJob is conditional on the current status and returns the new job', async () => {
+    mockUpdate.mockResolvedValueOnce({ PK, SK: draftJobSk(job.jobId), ...job, status: 'done', draftId: 'dr_1' } as any);
+    const out = await repo.transitionDraftJob(VS, job.jobId, ['running'], 'done', { draftId: 'dr_1' });
+    expect(out).toMatchObject({ jobId: job.jobId, status: 'done', draftId: 'dr_1' });
+    expect(out).not.toHaveProperty('PK');
+    const p = mockUpdate.mock.calls[0][0];
+    expect(p.key).toEqual({ PK, SK: draftJobSk(job.jobId) });
+    expect(p.conditionExpression).toBe('attribute_exists(PK) AND #s IN (:from0)');
+    expect(p.expressionAttributeValues).toMatchObject({ ':from0': 'running', ':to': 'done', ':draftId': 'dr_1' });
+  });
+
+  it('accepts several from-states', async () => {
+    mockUpdate.mockResolvedValueOnce({ ...job, status: 'failed' } as any);
+    await repo.transitionDraftJob(VS, job.jobId, ['queued', 'running'], 'failed', { code: 'timeout', error: 'e' });
+    const p = mockUpdate.mock.calls[0][0];
+    expect(p.conditionExpression).toBe('attribute_exists(PK) AND #s IN (:from0, :from1)');
+    expect(p.expressionAttributeValues).toMatchObject({ ':from0': 'queued', ':from1': 'running', ':code': 'timeout', ':error': 'e' });
+  });
+
+  it('returns null when the job is no longer in a from-state (someone else finished it)', async () => {
+    mockUpdate.mockRejectedValueOnce(Object.assign(new Error('c'), { name: 'ConditionalCheckFailedException' }));
+    expect(await repo.transitionDraftJob(VS, job.jobId, ['queued'], 'running')).toBeNull();
+  });
+
+  it('wraps other storage failures', async () => {
+    mockUpdate.mockRejectedValueOnce(Object.assign(new Error('c'), { name: 'InternalServerError' }));
+    await expect(repo.transitionDraftJob(VS, job.jobId, ['queued'], 'running')).rejects.toMatchObject({ statusCode: 500 });
   });
 });

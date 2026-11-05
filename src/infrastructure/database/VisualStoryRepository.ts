@@ -19,6 +19,8 @@ import {
   type Candidate,
   type Character,
   type CreateStoryInput,
+  type DraftJob,
+  type DraftJobStatus,
   type Scene,
   type Shot,
   type StoryboardDraft,
@@ -40,6 +42,7 @@ export const candSk = (scene: number, shot: number, candId: string) =>
   `CAND#${pad3(scene)}#${pad3(shot)}#${candId}`;
 export const charSk = (charId: string) => `CHAR#${charId}`;
 export const draftSk = (draftId: string) => `DRAFT#${draftId}`;
+export const draftJobSk = (jobId: string) => `DRAFTJOB#${jobId}`;
 
 const METADATA = 'METADATA';
 const metaKey = (vsId: string) => ({ PK: vsPk(vsId), SK: METADATA });
@@ -80,10 +83,21 @@ export class InvalidReorderError extends VisualStoryDomainError {
   }
 }
 
-/** The storyboard change would need more than one transaction can carry (map to 400/409). */
+/**
+ * A storyboard change needs more writes than one transaction can carry (map to
+ * 400). `message` names what is too large: the draft being applied, or the
+ * scene being reordered.
+ */
 export class DraftTooLargeError extends VisualStoryDomainError {
-  constructor(public readonly itemCount: number) {
-    super(`This change touches ${itemCount} items; a single transaction allows ${MAX_TRANSACT_ITEMS}. Use fewer scenes or shots.`);
+  constructor(
+    public readonly itemCount: number,
+    what: 'draft' | 'reorder' = 'draft'
+  ) {
+    super(
+      what === 'draft'
+        ? `This draft has too many scenes, shots and new characters to apply (${itemCount}; the limit is ${MAX_TRANSACT_ITEMS}). Draft again for fewer shots.`
+        : `Reordering this scene moves too many shots and stills at once (${itemCount}; the limit is ${MAX_TRANSACT_ITEMS}).`
+    );
     this.name = 'DraftTooLargeError';
   }
 }
@@ -105,11 +119,18 @@ function buildRewrite(puts: Row[], deleteKeys: Key[]): Array<Record<string, any>
   const putSks = new Set(puts.map((p) => p.SK));
   const dels = deleteKeys.filter((k) => !putSks.has(k.SK));
   const total = puts.length + dels.length;
-  if (total > MAX_TRANSACT_ITEMS) throw new DraftTooLargeError(total);
+  if (total > MAX_TRANSACT_ITEMS) throw new DraftTooLargeError(total, 'reorder');
   return [
     ...dels.map((Key) => ({ Delete: { Key } })),
     ...puts.map((Item) => ({ Put: { Item } })),
   ];
+}
+
+/** Delete keys item by item, bounded so a large story does not burst write capacity. Not atomic. */
+async function deleteInBatches(keys: Key[]): Promise<void> {
+  for (let i = 0; i < keys.length; i += DELETE_CONCURRENCY) {
+    await Promise.all(keys.slice(i, i + DELETE_CONCURRENCY).map((k) => DynamoDBOperations.delete(k)));
+  }
 }
 
 /** Domain errors pass through untouched; anything else is a storage failure. */
@@ -292,9 +313,7 @@ export class VisualStoryRepository {
         exclusiveStartKey = res.LastEvaluatedKey as Record<string, any> | undefined;
       } while (exclusiveStartKey);
 
-      for (let i = 0; i < keys.length; i += DELETE_CONCURRENCY) {
-        await Promise.all(keys.slice(i, i + DELETE_CONCURRENCY).map((k) => DynamoDBOperations.delete(k)));
-      }
+      await deleteInBatches(keys);
     } catch (error) {
       fail(error);
     }
@@ -337,16 +356,89 @@ export class VisualStoryRepository {
   /**
    * Settle a finished call: release `reservedUsd`, and add `billedUsd` to spend
    * (0 when the provider did not bill). `committedUsd` moves by billed - reserved.
+   * Conditional on the story existing: a story deleted mid-call raises
+   * NotFoundError (callers log and swallow it) instead of an ADD upserting a
+   * stub METADATA row with only money counters.
    */
   async settle(vsId: string, args: { reservedUsd: number; billedUsd: number }): Promise<void> {
     const r = round6(args.reservedUsd);
     const b = round6(args.billedUsd);
     try {
-      await DynamoDBOperations.update({
-        key: metaKey(vsId),
-        updateExpression: 'ADD reservedUsd :negR, spentUsd :b, committedUsd :delta',
-        expressionAttributeValues: { ':negR': -r, ':b': b, ':delta': round6(b - r) },
-      });
+      try {
+        await DynamoDBOperations.update({
+          key: metaKey(vsId),
+          updateExpression: 'ADD reservedUsd :negR, spentUsd :b, committedUsd :delta',
+          expressionAttributeValues: { ':negR': -r, ':b': b, ':delta': round6(b - r) },
+          conditionExpression: 'attribute_exists(PK)',
+        });
+      } catch (error) {
+        if (isConditionFailure(error)) throw new NotFoundError(`settle: visual story ${vsId} not found`);
+        throw error;
+      }
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Draft jobs (R14): DRAFTJOB#<jobId> in the story partition
+  // -------------------------------------------------------------------------
+
+  async createDraftJob(vsId: string, job: DraftJob): Promise<void> {
+    try {
+      await DynamoDBOperations.put({ PK: vsPk(vsId), SK: draftJobSk(job.jobId), ...job });
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  async getDraftJob(vsId: string, jobId: string): Promise<DraftJob | null> {
+    try {
+      const item = await DynamoDBOperations.get({ PK: vsPk(vsId), SK: draftJobSk(jobId) });
+      return item ? stripKeys<DraftJob>(item) : null;
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  /**
+   * Move a job to `to` only if it is currently in one of `from`. Returns the
+   * updated job, or null when the condition failed (the job is gone or someone
+   * else — worker or sweep — already moved it). This conditional transition is
+   * what guarantees exactly one settle per reservation: only the side whose
+   * transition succeeds settles.
+   */
+  async transitionDraftJob(
+    vsId: string,
+    jobId: string,
+    from: DraftJobStatus[],
+    to: DraftJobStatus,
+    fields: { draftId?: string; code?: string; error?: string } = {}
+  ): Promise<DraftJob | null> {
+    try {
+      const names: Record<string, string> = { '#s': 'status' };
+      const values: Record<string, any> = { ':to': to, ':u': new Date().toISOString() };
+      const sets = ['#s = :to', 'updatedAt = :u'];
+      for (const f of ['draftId', 'code', 'error'] as const) {
+        if (fields[f] === undefined) continue;
+        names[`#${f}`] = f;
+        values[`:${f}`] = fields[f];
+        sets.push(`#${f} = :${f}`);
+      }
+      from.forEach((st, i) => (values[`:from${i}`] = st));
+      try {
+        const item = await DynamoDBOperations.update({
+          key: { PK: vsPk(vsId), SK: draftJobSk(jobId) },
+          updateExpression: `SET ${sets.join(', ')}`,
+          expressionAttributeNames: names,
+          expressionAttributeValues: values,
+          conditionExpression: `attribute_exists(PK) AND #s IN (${from.map((_, i) => `:from${i}`).join(', ')})`,
+        });
+        return item ? stripKeys<DraftJob>(item) : null;
+      } catch (error) {
+        if (isConditionFailure(error)) return null;
+        throw error;
+      }
     } catch (error) {
       fail(error);
     }
@@ -453,13 +545,17 @@ export class VisualStoryRepository {
       const keys: Key[] = items
         .filter((i) => i.SK === shotSk(sceneOrder, shotOrder) || String(i.SK).startsWith(prefix))
         .map((i) => ({ PK: i.PK, SK: i.SK }));
-      await DynamoDBOperations.transactWrite(buildRewrite([], keys));
+      await deleteInBatches(keys);
     } catch (error) {
       fail(error);
     }
   }
 
-  /** Remove a scene with all its shots and their candidates, in one transaction. */
+  /**
+   * Remove a scene with all its shots and their candidates. Item by item, not
+   * one transaction: a scene with many stills must not be refused for size. A
+   * failure part-way leaves some rows; retrying the delete finishes the job.
+   */
   async deleteScene(vsId: string, sceneOrder: number): Promise<void> {
     try {
       const pad = String(sceneOrder).padStart(3, '0');
@@ -472,7 +568,7 @@ export class VisualStoryRepository {
             String(i.SK).startsWith(`CAND#${pad}#`)
         )
         .map((i) => ({ PK: i.PK, SK: i.SK }));
-      await DynamoDBOperations.transactWrite(buildRewrite([], keys));
+      await deleteInBatches(keys);
     } catch (error) {
       fail(error);
     }
@@ -619,11 +715,18 @@ export class VisualStoryRepository {
   }
 
   /**
-   * Replace the story's storyboard with a draft's, in ONE transaction: all
-   * SCENE#/SHOT# items (and the candidates hanging off the replaced shots) are
-   * swapped for the draft's, and characters the story does not already have
-   * (matched by trimmed, case-insensitive name) are created. Existing
-   * characters are kept untouched. Throws `DraftTooLargeError` above 100 ops.
+   * Replace the story's storyboard with a draft's: all SCENE#/SHOT# items (and
+   * every CAND# hanging off the replaced shots) are swapped for the draft's, and
+   * characters the story does not already have (matched by trimmed,
+   * case-insensitive name) are created. Existing characters are kept untouched.
+   *
+   * The draft's rows are written in ONE transaction (puts only, so
+   * `DraftTooLargeError` above 100 refers to the draft alone, never to pictures
+   * the story already has). The new keys reuse the old ones (SCENE#001,
+   * SHOT#001#001…), so the old rows that were not overwritten are deleted
+   * AFTER the write, item by item. If that clean-up fails part-way the call
+   * throws and re-applying the same draft finishes it (characters are matched
+   * by name, so nothing is duplicated).
    */
   async applyDraft(vsId: string, draftId: string): Promise<void> {
     try {
@@ -665,10 +768,14 @@ export class VisualStoryRepository {
         });
       });
 
-      const deleteKeys: Key[] = items
-        .filter((i) => /^(SCENE|SHOT|CAND)#/.test(i.SK))
+      if (puts.length > MAX_TRANSACT_ITEMS) throw new DraftTooLargeError(puts.length, 'draft');
+      await DynamoDBOperations.transactWrite(puts.map((Item) => ({ Put: { Item } })));
+
+      const putSks = new Set(puts.map((p) => p.SK));
+      const stale: Key[] = items
+        .filter((i) => /^(SCENE|SHOT|CAND)#/.test(i.SK) && !putSks.has(i.SK))
         .map((i) => ({ PK: i.PK, SK: i.SK }));
-      await DynamoDBOperations.transactWrite(buildRewrite(puts, deleteKeys));
+      await deleteInBatches(stale);
     } catch (error) {
       fail(error);
     }
