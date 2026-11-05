@@ -9,9 +9,12 @@
  * accepted submit it stays held until Task 4's terminal transition.
  * Accepted ⇒ the job moves to `running` with the provider task id and the
  * reservation stays HELD — the job's poller settles it (billed or not) when
- * the job ends. Refused or thrown ⇒ the job moves to `failed` and the
- * reservation is released (nothing was billed), but only if that conditional
- * transition won: whoever ends the job settles it, exactly once.
+ * the job ends. A clean refusal (HTTP 4xx) ⇒ the job moves to `failed` and the
+ * reservation is released (nothing was billed). An ambiguous failure (timeout,
+ * network, HTTP ≥ 500, unreadable answer) or a thrown submit ⇒ `failed` but
+ * settled BILLED: Grok may still make, and charge for, the clip (Ruling V9).
+ * Either way only if that conditional transition won — whoever ends the job
+ * settles it, exactly once, through settleGenJob (Ruling V10).
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -33,6 +36,7 @@ type Ctx = { params: Promise<{ vsId: string; shotKey: string }> };
 const SHOT_KEY = /^(\d{3})-(\d{3})$/;
 
 const BUSY = 'A video is already rendering for this shot.';
+const AMBIGUOUS = "Grok didn't answer in time; it may still have been charged.";
 
 const STATUS_BY_CODE: Record<string, number> = {
   not_configured: 503,
@@ -151,8 +155,9 @@ export async function POST(request: NextRequest, { params }: Ctx) {
       // may already have accepted (and will bill).
       result = await provider.submit(videoReq);
     } catch (err) {
+      // We can't tell whether xAI saw it: treat as ambiguous (Ruling V9).
       console.error('visual-story video: submit threw', errName(err));
-      result = { ok: false, code: 'upstream', error: 'Video generation failed. Please try again.' };
+      result = { ok: false, code: 'upstream', error: AMBIGUOUS, ambiguous: true };
     }
 
     if (result.ok) {
@@ -170,20 +175,30 @@ export async function POST(request: NextRequest, { params }: Ctx) {
       return NextResponse.json({ success: true, data: { jobId } }, { status: 202 });
     }
 
-    // Refused before a task existed: nothing was billed. Settle only if this side ended the job.
+    // A clean refusal billed nothing; an ambiguous failure may have been
+    // accepted and charged — over-record (Ruling V9). Settle only if this side
+    // ended the job; the billed amount rides on the transition (Ruling V10).
+    const ambiguous = result.ambiguous === true;
+    const code = ambiguous ? 'upstream' : result.code;
+    const error = ambiguous ? AMBIGUOUS : result.error;
+    const billedUsd = ambiguous ? est : 0;
     let ended: GenJob | null = null;
     try {
-      ended = await repo.transitionGenJob(vsId, jobId, ['submitted'], 'failed', {
-        code: result.code,
-        error: result.error,
-      });
+      ended = await repo.transitionGenJob(vsId, jobId, ['submitted'], 'failed', { code, error, billedUsd });
     } catch (err) {
       // Left `submitted`: the 1-hour sweep ends it and settles it as BILLED
-      // (Ruling V4b) — it over-records this refused clip but never under-records.
+      // (Ruling V4b) — it may over-record a refused clip but never under-records.
       console.error('visual-story video: failed transition failed', jobId, errName(err));
     }
-    if (ended) await settleQuietly(repo, vsId, est, 0, 'video');
-    return fail(result.error, STATUS_BY_CODE[result.code] ?? 502);
+    if (ended) {
+      try {
+        await repo.settleGenJob(vsId, jobId, { reservedUsd: est, billedUsd });
+      } catch (err) {
+        // The job is terminal with its billed amount stored: the next advance settles it.
+        console.error('visual-story video: settle failed', jobId, errName(err));
+      }
+    }
+    return fail(error, STATUS_BY_CODE[code] ?? 502);
   } finally {
     if (!accepted) {
       try {

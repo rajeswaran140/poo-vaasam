@@ -5204,7 +5204,7 @@ The studio turns one of your saved masters into a storyboard for a music video: 
 - **What is charged.** A delivered picture is charged. A picture the content filter refused is still charged ($0.02 — xAI bills the attempt) and counts toward the story total. A picture that fails for any other reason (Grok busy, timeout) is not charged. A draft that never got an answer from Claude is not charged.
 - **A rate limit** stops one account from spending too fast.
 
-Video clips cost **$0.08 per second** (6 s = $0.48); a 30 s Short is about **$2.40 per full pass**, and every retry costs again. A clip is charged when Grok finishes it. One that fails, expires or is refused on submit is not charged. A cancelled clip is always counted, and so is one unfinished after an hour or one that finished but could not be saved after 10 tries. A whole 2-minute video is expected to land around **$25 to $35**, which is why the default budget is $40.
+Video clips cost **$0.08 per second** (6 s = $0.48); a 30 s Short is about **$2.40 per full pass**, and every retry costs again. A clip is charged when Grok finishes it. One that fails or expires is not charged, and a clear refusal is not charged; if Grok doesn't answer in time, the clip's cost is counted because Grok may still make it. A cancelled clip is always counted, and so is one unfinished after an hour or one that finished but could not be saved after 10 tries. A whole 2-minute video is expected to land around **$25 to $35**, which is why the default budget is $40.
 
 ## Where things are stored
 

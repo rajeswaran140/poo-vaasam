@@ -12,6 +12,7 @@ const repo = {
   loadTree: jest.fn(),
   reserve: jest.fn(),
   settle: jest.fn(),
+  settleGenJob: jest.fn(),
   createGenJob: jest.fn(),
   transitionGenJob: jest.fn(),
   claimShotVideo: jest.fn(),
@@ -141,6 +142,7 @@ beforeEach(() => {
   repo.loadTree.mockResolvedValue(tree());
   repo.reserve.mockResolvedValue(true);
   repo.settle.mockResolvedValue(undefined);
+  repo.settleGenJob.mockResolvedValue(true);
   repo.createGenJob.mockResolvedValue(undefined);
   repo.claimShotVideo.mockResolvedValue(true);
   repo.releaseShotVideo.mockResolvedValue(true);
@@ -284,9 +286,11 @@ describe('POST video — money paths', () => {
     expect(repo.transitionGenJob).toHaveBeenCalledWith(VS, jobId, ['submitted'], 'failed', {
       code: 'rate_limit',
       error: 'The video service is rate-limited; please retry shortly.',
+      billedUsd: 0,
     });
-    expect(repo.settle).toHaveBeenCalledTimes(1);
-    expect(repo.settle).toHaveBeenCalledWith(VS, { reservedUsd: 0.48, billedUsd: 0 });
+    expect(repo.settleGenJob).toHaveBeenCalledTimes(1);
+    expect(repo.settleGenJob).toHaveBeenCalledWith(VS, jobId, { reservedUsd: 0.48, billedUsd: 0 });
+    expect(repo.settle).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -296,24 +300,46 @@ describe('POST video — money paths', () => {
     ['auth', 502],
     ['upstream', 502],
     ['bad_response', 502],
-  ])('submit %s ⇒ %i, settled unbilled once', async (code, status) => {
+  ])('a clean submit refusal %s ⇒ %i, settled unbilled once', async (code, status) => {
     provider.submit.mockResolvedValueOnce({ ok: false, code, error: 'x' });
     expect((await POST(mk(), sctx())).status).toBe(status);
-    expect(repo.settle).toHaveBeenCalledTimes(1);
-    expect(repo.settle).toHaveBeenCalledWith(VS, { reservedUsd: 0.48, billedUsd: 0 });
+    expect(repo.settleGenJob).toHaveBeenCalledTimes(1);
+    expect(repo.settleGenJob).toHaveBeenCalledWith(VS, expect.any(String), { reservedUsd: 0.48, billedUsd: 0 });
   });
 
-  it('thrown submit ⇒ 502 upstream, job failed, settled unbilled once', async () => {
+  const AMBIGUOUS = "Grok didn't answer in time; it may still have been charged.";
+
+  it.each<[string, () => void]>([
+    ['an ambiguous failure (timeout, 5xx, unreadable)', () =>
+      provider.submit.mockResolvedValueOnce({ ok: false, code: 'upstream', error: 'x', ambiguous: true })],
+    ['a thrown submit', () => provider.submit.mockRejectedValueOnce(new Error('AccessDeniedException'))],
+  ])('%s ⇒ 502, job failed upstream with the may-be-charged copy, settled BILLED once (Ruling V9)', async (_n, arrange) => {
     const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
-    provider.submit.mockRejectedValueOnce(new Error('AccessDeniedException'));
+    arrange();
     const res = await POST(mk(), sctx());
     expect(res.status).toBe(502);
-    expect(repo.transitionGenJob).toHaveBeenCalledWith(
-      VS, expect.any(String), ['submitted'], 'failed', expect.objectContaining({ code: 'upstream' })
-    );
-    expect(repo.settle).toHaveBeenCalledTimes(1);
-    expect(repo.settle).toHaveBeenCalledWith(VS, { reservedUsd: 0.48, billedUsd: 0 });
+    expect((await res.json()).error).toBe(AMBIGUOUS);
+    const jobId = repo.createGenJob.mock.calls[0][1].jobId;
+    expect(repo.transitionGenJob).toHaveBeenCalledTimes(1);
+    expect(repo.transitionGenJob).toHaveBeenCalledWith(VS, jobId, ['submitted'], 'failed', {
+      code: 'upstream',
+      error: AMBIGUOUS,
+      billedUsd: 0.48,
+    });
+    expect(repo.settleGenJob).toHaveBeenCalledTimes(1);
+    expect(repo.settleGenJob).toHaveBeenCalledWith(VS, jobId, { reservedUsd: 0.48, billedUsd: 0.48 });
+    expect(repo.settle).not.toHaveBeenCalled();
+    // settled before the lock is released
+    expect(repo.settleGenJob.mock.invocationCallOrder[0]).toBeLessThan(repo.releaseShotVideo.mock.invocationCallOrder[0]);
     spy.mockRestore();
+  });
+
+  it('an ambiguous failure whose transition is lost (cancel won) ⇒ no settle here', async () => {
+    provider.submit.mockResolvedValueOnce({ ok: false, code: 'upstream', error: 'x', ambiguous: true });
+    repo.transitionGenJob.mockResolvedValueOnce(null);
+    expect((await POST(mk(), sctx())).status).toBe(502);
+    expect(repo.settleGenJob).not.toHaveBeenCalled();
+    expect(repo.settle).not.toHaveBeenCalled();
   });
 
   it('failed transition lost (job no longer submitted) ⇒ no settle, error still returned', async () => {
@@ -321,6 +347,7 @@ describe('POST video — money paths', () => {
     repo.transitionGenJob.mockResolvedValueOnce(null);
     expect((await POST(mk(), sctx())).status).toBe(429);
     expect(repo.settle).not.toHaveBeenCalled();
+    expect(repo.settleGenJob).not.toHaveBeenCalled();
   });
 
   it('failed transition throws ⇒ no settle (the stale sweep owns it), error still returned', async () => {
@@ -329,6 +356,7 @@ describe('POST video — money paths', () => {
     repo.transitionGenJob.mockRejectedValueOnce(new Error('ddb down'));
     expect((await POST(mk(), sctx())).status).toBe(422);
     expect(repo.settle).not.toHaveBeenCalled();
+    expect(repo.settleGenJob).not.toHaveBeenCalled();
     spy.mockRestore();
   });
 
@@ -359,19 +387,21 @@ describe('POST video — money paths', () => {
     const res = await POST(mk(), sctx());
     expect(res.status).toBe(202);
     expect(repo.settle).not.toHaveBeenCalled();
+    expect(repo.settleGenJob).not.toHaveBeenCalled();
 
     repo.transitionGenJob.mockResolvedValueOnce(null);
     expect((await POST(mk(), sctx())).status).toBe(202);
     expect(repo.settle).not.toHaveBeenCalled();
+    expect(repo.settleGenJob).not.toHaveBeenCalled();
     spy.mockRestore();
   });
 
   it('settle throwing keeps the provider error response', async () => {
     const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
     provider.submit.mockResolvedValueOnce({ ok: false, code: 'rate_limit', error: 'x' });
-    repo.settle.mockRejectedValueOnce(new Error('ddb down'));
+    repo.settleGenJob.mockRejectedValueOnce(new Error('ddb down'));
     expect((await POST(mk(), sctx())).status).toBe(429);
-    expect(repo.settle).toHaveBeenCalledTimes(1);
+    expect(repo.settleGenJob).toHaveBeenCalledTimes(1);
     spy.mockRestore();
   });
 

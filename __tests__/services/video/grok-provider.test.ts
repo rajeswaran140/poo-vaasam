@@ -91,9 +91,47 @@ describe('GrokProvider', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('submit 200 without request_id -> bad_response', async () => {
+  it('submit 200 without request_id -> ambiguous upstream (Grok answered OK: it may have accepted)', async () => {
     fetchMock.mockResolvedValue(res(200, {}));
-    expect(await p.submit(base)).toMatchObject({ ok: false, code: 'bad_response' });
+    expect(await p.submit(base)).toMatchObject({ ok: false, code: 'upstream', ambiguous: true });
+  });
+
+  describe('ambiguous submit failures (Ruling V9)', () => {
+    const abortErr = () => Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' });
+    it.each([
+      ['timeout', () => fetchMock.mockRejectedValue(abortErr())],
+      ['AbortError', () => fetchMock.mockRejectedValue(Object.assign(new Error('aborted'), { name: 'AbortError' }))],
+      ['network error', () => fetchMock.mockRejectedValue(new Error('ECONNRESET'))],
+      ['HTTP 500', () => fetchMock.mockResolvedValue(res(500, 'boom'))],
+      ['HTTP 502', () => fetchMock.mockResolvedValue(res(502, 'bad gateway'))],
+      ['HTTP 503 mentioning billing', () => fetchMock.mockResolvedValue(res(503, 'billing service down'))],
+      ['unreadable 2xx body', () => fetchMock.mockResolvedValue(res(200, '<html>not json'))],
+      ['body read throws', () => fetchMock.mockResolvedValue({ ok: true, status: 200, text: async () => { throw new Error('reset'); } })],
+    ])('%s -> { ok:false, code:upstream, ambiguous:true }', async (_n, arrange) => {
+      arrange();
+      const r = await p.submit(base);
+      expect(r).toMatchObject({ ok: false, code: 'upstream', ambiguous: true });
+    });
+
+    it.each([
+      [400, 'bad request', 'upstream'],
+      [401, 'bad key', 'auth'],
+      [403, 'out of credit billing', 'billing'],
+      [422, 'invalid', 'upstream'],
+      [429, 'slow down', 'rate_limit'],
+    ])('a clean HTTP %i refusal is not ambiguous', async (status, text, code) => {
+      fetchMock.mockResolvedValue(res(status, text));
+      const r = await p.submit(base);
+      expect(r).toMatchObject({ ok: false, code });
+      expect((r as { ambiguous?: boolean }).ambiguous).toBeUndefined();
+    });
+
+    it('poll failures never carry the flag', async () => {
+      fetchMock.mockRejectedValue(new Error('ECONNRESET'));
+      expect(await p.poll('a')).toEqual({ ok: false, code: 'upstream', error: expect.any(String) });
+      fetchMock.mockResolvedValue(res(500, 'boom'));
+      expect(await p.poll('a')).toEqual({ ok: false, code: 'upstream', error: expect.any(String) });
+    });
   });
 
   it.each([

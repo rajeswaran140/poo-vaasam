@@ -61,7 +61,7 @@ Press **Make video (6 s · $0.48)** on a shot (the label shows that shot's lengt
 - A picture the content filter **refused is still charged** ($0.02 — xAI bills it) and counts toward the story total. A picture that fails for any other reason (Grok busy, timeout, not configured) is not charged.
 - A draft that fails before Claude answers is not charged; one whose answer was unusable is charged for the tokens used.
 - A rate limit (20 requests a minute) applies to the studio's actions.
-- A clip is charged when Grok finishes it, including one its content filter refused. A clip that fails, expires or is refused on submit is not charged. A cancelled clip is **always counted**, and so is one still unfinished after an hour or one that finished but could not be saved after 10 tries.
+- A clip is charged when Grok finishes it, including one its content filter refused. A clip that fails or expires is not charged, and a clear refusal is not charged; if Grok doesn't answer in time, the clip's cost is counted because Grok may still make it. A cancelled clip is **always counted**, and so is one still unfinished after an hour or one that finished but could not be saved after 10 tries.
 - A 30 s Short costs about **$2.40 for one full pass** (30 s × $0.08); every retry costs again.
 - A whole 2-minute video is expected to cost about $25–35 once video phases exist.
 

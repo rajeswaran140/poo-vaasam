@@ -33,7 +33,17 @@ export interface ProviderAsset {
 
 export type SubmitResult =
   | { ok: true; providerTaskId: string; estimatedCostUsd: number }
-  | { ok: false; code: VideoErrorCode; error: string };
+  | {
+      ok: false;
+      code: VideoErrorCode;
+      error: string;
+      /**
+       * The provider may have accepted (and will bill) the request: a timeout,
+       * network error, HTTP ≥ 500 or an unreadable/incomplete success. Absent
+       * on a clean refusal (HTTP 4xx). Ruling V9.
+       */
+      ambiguous?: boolean;
+    };
 
 export type PollResult =
   | { ok: true; state: 'pending' | 'running' }

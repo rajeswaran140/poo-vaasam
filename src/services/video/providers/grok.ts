@@ -40,15 +40,23 @@ export function buildGrokVideoBody(req: VideoGenRequest): Record<string, unknown
 type Fail = { ok: false; code: VideoErrorCode; error: string };
 const fail = (code: VideoErrorCode, error: string): Fail => ({ ok: false, code, error });
 
+/** A call that failed where xAI may still have acted on it (Ruling V9). */
+type CallFail = Fail & { ambiguous: boolean };
+const UNREACHABLE = 'The video service could not be reached. Please try again.';
+
 async function configuredKey(): Promise<string | null> {
   const key = await getXaiApiKey();
   return key && !key.startsWith('dummy') ? key : null;
 }
 
-/** One xAI call: 20 s timeout, no client signal. */
+/**
+ * One xAI call: 20 s timeout, no client signal. A failure is `ambiguous` unless
+ * xAI cleanly refused it with an HTTP 4xx: a timeout, a network error, an HTTP
+ * ≥ 500 or an unreadable body may hide a request xAI accepted.
+ */
 async function call(
   url: string, method: 'GET' | 'POST', key: string, body?: unknown,
-): Promise<{ ok: true; json: Record<string, any> } | Fail> {
+): Promise<{ ok: true; json: Record<string, any> } | CallFail> {
   let status: number;
   let text: string;
   try {
@@ -62,21 +70,26 @@ async function call(
     text = await res.text();
   } catch (err) {
     console.error('[video/grok] request failed:', err instanceof Error ? err.name : 'error');
-    return fail('upstream', 'The video service could not be reached. Please try again.');
+    return { ...fail('upstream', UNREACHABLE), ambiguous: true };
+  }
+  if (status >= 500) {
+    console.error(`[video/grok] HTTP ${status}:`, text.slice(0, 500));
+    return { ...fail('upstream', 'Video generation failed. Please try again.'), ambiguous: true };
   }
   if (status < 200 || status >= 300) {
     console.error(`[video/grok] HTTP ${status}:`, text.slice(0, 500));
+    const refused = (f: Fail): CallFail => ({ ...f, ambiguous: false });
     // xAI reports an empty balance as a 4xx (often 403): check the body first.
-    if (/credit|billing/i.test(text)) return fail('billing', BILLING_MESSAGE);
-    if (status === 401 || status === 403) return fail('auth', 'The xAI key was rejected.');
-    if (status === 429) return fail('rate_limit', 'The video service is rate-limited; please retry shortly.');
-    return fail('upstream', 'Video generation failed. Please try again.');
+    if (/credit|billing/i.test(text)) return refused(fail('billing', BILLING_MESSAGE));
+    if (status === 401 || status === 403) return refused(fail('auth', 'The xAI key was rejected.'));
+    if (status === 429) return refused(fail('rate_limit', 'The video service is rate-limited; please retry shortly.'));
+    return refused(fail('upstream', 'Video generation failed. Please try again.'));
   }
   try {
     const json = JSON.parse(text);
     return { ok: true, json: json && typeof json === 'object' ? json : {} };
   } catch {
-    return fail('bad_response', 'The video service returned an unreadable response.');
+    return { ...fail('bad_response', 'The video service returned an unreadable response.'), ambiguous: true };
   }
 }
 
@@ -96,9 +109,15 @@ export class GrokProvider implements VideoGenerationProvider {
     const key = await configuredKey();
     if (!key) return fail('not_configured', 'Grok video generation is not configured.');
     const r = await call(SUBMIT_URL, 'POST', key, buildGrokVideoBody(req));
-    if (!r.ok) return r;
+    if (!r.ok) {
+      // Ambiguous: xAI may have accepted the request — the route bills it (Ruling V9).
+      return r.ambiguous ? { ok: false, code: 'upstream', error: r.error, ambiguous: true } : fail(r.code, r.error);
+    }
     const id = r.json.request_id;
-    if (typeof id !== 'string' || !id) return fail('bad_response', 'The video service returned no task id.');
+    if (typeof id !== 'string' || !id) {
+      // A 2xx without an id: xAI answered OK and may have queued it. Over-record.
+      return { ok: false, code: 'upstream', error: 'The video service returned no task id.', ambiguous: true };
+    }
     return { ok: true, providerTaskId: id, estimatedCostUsd: this.estimateCostUsd(req) };
   }
 
@@ -106,7 +125,7 @@ export class GrokProvider implements VideoGenerationProvider {
     const key = await configuredKey();
     if (!key) return fail('not_configured', 'Grok video generation is not configured.');
     const r = await call(`${POLL_URL}${encodeURIComponent(providerTaskId)}`, 'GET', key);
-    if (!r.ok) return r;
+    if (!r.ok) return fail(r.code, r.error);
     const j = r.json;
     switch (j.status) {
       case 'done': {
