@@ -139,6 +139,16 @@ async function deleteInBatches(keys: Key[]): Promise<void> {
   }
 }
 
+/**
+ * A GENJOB# row a shot edit may delete: terminal AND settled. In-flight rows
+ * hold a reservation (edits are refused while one exists), and a terminal row
+ * without `settledAt` is the only record that a settle is still owed.
+ */
+const isDroppableJob = (i: Row) =>
+  String(i.SK).startsWith('GENJOB#') &&
+  (i.status === 'succeeded' || i.status === 'failed' || i.status === 'cancelled') &&
+  !!i.settledAt;
+
 /** Domain errors pass through untouched; anything else is a storage failure. */
 function fail(error: unknown): never {
   if (error instanceof VisualStoryDomainError) throw error;
@@ -516,13 +526,13 @@ export class VisualStoryRepository {
     jobId: string,
     from: GenJobStatus[],
     to: GenJobStatus,
-    fields: { providerTaskId?: string; code?: string; error?: string } = {}
+    fields: { providerTaskId?: string; code?: string; error?: string; billedUsd?: number } = {}
   ): Promise<GenJob | null> {
     try {
       const names: Record<string, string> = { '#s': 'status' };
       const values: Record<string, any> = { ':to': to, ':u': new Date().toISOString() };
       const sets = ['#s = :to', 'updatedAt = :u'];
-      for (const f of ['providerTaskId', 'code', 'error'] as const) {
+      for (const f of ['providerTaskId', 'code', 'error', 'billedUsd'] as const) {
         if (fields[f] === undefined) continue;
         names[`#${f}`] = f;
         values[`:${f}`] = fields[f];
@@ -541,6 +551,64 @@ export class VisualStoryRepository {
         return item ? stripKeys<GenJob>(item) : null;
       } catch (error) {
         if (isConditionFailure(error)) return null;
+        throw error;
+      }
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  /**
+   * Settle a video job's reservation exactly once (Ruling V10): ONE
+   * transaction that stamps GENJOB# `settledAt`/`billedUsd` (only if not yet
+   * settled) and moves the story's money as `settle` does. Repeatable: a
+   * crash between a won terminal transition and this call is finished by the
+   * next advance, and a second call is a no-op.
+   *
+   * true = settled now. false = already settled (the settledAt condition), or
+   * the story is gone (logged). Any other cancellation — e.g. a write conflict
+   * with a concurrent touch — is thrown, never taken as "settled", so the
+   * caller can retry rather than strand the reservation.
+   */
+  async settleGenJob(
+    vsId: string,
+    jobId: string,
+    args: { reservedUsd: number; billedUsd: number }
+  ): Promise<boolean> {
+    const r = round6(args.reservedUsd);
+    const b = round6(args.billedUsd);
+    try {
+      try {
+        await DynamoDBOperations.transactWrite([
+          {
+            Update: {
+              Key: { PK: vsPk(vsId), SK: genJobSk(jobId) },
+              UpdateExpression: 'SET settledAt = :now, billedUsd = :b',
+              // attribute_exists(PK): never upsert a stub row for a job that is gone.
+              ConditionExpression: 'attribute_exists(PK) AND attribute_not_exists(settledAt)',
+              ExpressionAttributeValues: { ':now': new Date().toISOString(), ':b': b },
+            },
+          },
+          {
+            Update: {
+              Key: metaKey(vsId),
+              UpdateExpression: 'ADD reservedUsd :negR, spentUsd :b, committedUsd :delta',
+              ConditionExpression: 'attribute_exists(PK)',
+              ExpressionAttributeValues: { ':negR': -r, ':b': b, ':delta': round6(b - r) },
+            },
+          },
+        ]);
+        return true;
+      } catch (error) {
+        const reasons = (error as { name?: string; CancellationReasons?: Array<{ Code?: string }> } | null);
+        if (reasons?.name === 'TransactionCanceledException' && Array.isArray(reasons.CancellationReasons)) {
+          const [jobReason, storyReason] = reasons.CancellationReasons.map((c) => c?.Code);
+          if (jobReason === 'ConditionalCheckFailed') return false;
+          if (storyReason === 'ConditionalCheckFailed') {
+            console.error('visual-story settleGenJob: story not found', vsId, jobId);
+            return false;
+          }
+        }
         throw error;
       }
     } catch (error) {
@@ -730,7 +798,13 @@ export class VisualStoryRepository {
       const prefix = `CAND#${String(sceneOrder).padStart(3, '0')}#${String(shotOrder).padStart(3, '0')}#`;
       const items = await this.queryPartition(vsId);
       const keys: Key[] = items
-        .filter((i) => i.SK === shotSk(sceneOrder, shotOrder) || String(i.SK).startsWith(prefix))
+        .filter(
+          (i) =>
+            i.SK === shotSk(sceneOrder, shotOrder) ||
+            String(i.SK).startsWith(prefix) ||
+            // Old video jobs go too, so a later shot here never shows their failure.
+            (isDroppableJob(i) && i.sceneOrder === sceneOrder && i.shotOrder === shotOrder)
+        )
         .map((i) => ({ PK: i.PK, SK: i.SK }));
       await deleteInBatches(keys);
     } catch (error) {
@@ -752,7 +826,8 @@ export class VisualStoryRepository {
           (i) =>
             i.SK === sceneSk(sceneOrder) ||
             String(i.SK).startsWith(`SHOT#${pad}#`) ||
-            String(i.SK).startsWith(`CAND#${pad}#`)
+            String(i.SK).startsWith(`CAND#${pad}#`) ||
+            (isDroppableJob(i) && i.sceneOrder === sceneOrder)
         )
         .map((i) => ({ PK: i.PK, SK: i.SK }));
       await deleteInBatches(keys);
@@ -795,6 +870,15 @@ export class VisualStoryRepository {
       const unchangedKeys = new Set(puts.filter((p, n) => p.SK === deleteKeys[n].SK).map((p) => p.SK));
       await DynamoDBOperations.transactWrite(
         buildRewrite(changed, deleteKeys.filter((k) => !unchangedKeys.has(k.SK)))
+      );
+      // A moved shot's old video jobs would otherwise attach to whichever shot
+      // now sits at their position. After the transaction (not in it: they
+      // must not count toward its 100-item limit).
+      const movedFrom = new Set(newOrder.filter((old, i) => old !== i + 1));
+      await deleteInBatches(
+        items
+          .filter((i) => isDroppableJob(i) && i.sceneOrder === sceneOrder && movedFrom.has(i.shotOrder))
+          .map((i) => ({ PK: i.PK, SK: i.SK }))
       );
     } catch (error) {
       fail(error);
@@ -960,7 +1044,7 @@ export class VisualStoryRepository {
 
       const putSks = new Set(puts.map((p) => p.SK));
       const stale: Key[] = items
-        .filter((i) => /^(SCENE|SHOT|CAND)#/.test(i.SK) && !putSks.has(i.SK))
+        .filter((i) => (/^(SCENE|SHOT|CAND)#/.test(i.SK) && !putSks.has(i.SK)) || isDroppableJob(i))
         .map((i) => ({ PK: i.PK, SK: i.SK }));
       await deleteInBatches(stale);
     } catch (error) {

@@ -6,6 +6,7 @@ const mockPut = jest.fn(async (..._a: any[]) => undefined);
 const mockGet = jest.fn();
 const mockUpdate = jest.fn(async (_p: any): Promise<any> => undefined);
 const mockDelete = jest.fn(async (..._a: any[]): Promise<any> => undefined);
+const mockTransact = jest.fn(async (_i: any[]): Promise<any> => undefined);
 
 jest.mock('@/infrastructure/database/dynamodb-client', () => ({
   DynamoDBOperations: {
@@ -13,7 +14,7 @@ jest.mock('@/infrastructure/database/dynamodb-client', () => ({
     get: (k: any) => mockGet(k),
     query: (p: any) => mockQuery(p),
     update: (p: any) => mockUpdate(p),
-    transactWrite: jest.fn(),
+    transactWrite: (i: any[]) => mockTransact(i),
     delete: (...a: any[]) => mockDelete(...a),
   },
   handleDynamoDBError: (e: any) => {
@@ -127,6 +128,73 @@ describe('transitionGenJob', () => {
   it('returns null when the condition fails', async () => {
     mockUpdate.mockRejectedValueOnce(condFail());
     expect(await repo.transitionGenJob(VS, JOB, ['running'], 'failed')).toBeNull();
+  });
+});
+
+describe('transitionGenJob — billedUsd intent (Ruling V10)', () => {
+  it('stores billedUsd with the terminal transition', async () => {
+    await repo.transitionGenJob(VS, JOB, ['running'], 'failed', { code: 'upstream', error: 'e', billedUsd: 0.4 });
+    const p = mockUpdate.mock.calls[0][0];
+    expect(p.updateExpression).toMatch(/#billedUsd = :billedUsd/);
+    expect(p.expressionAttributeNames['#billedUsd']).toBe('billedUsd');
+    expect(p.expressionAttributeValues[':billedUsd']).toBe(0.4);
+  });
+});
+
+describe('settleGenJob (Ruling V10)', () => {
+  const cancelled = (codes: string[]) =>
+    Object.assign(new Error('Transaction cancelled'), {
+      name: 'TransactionCanceledException',
+      CancellationReasons: codes.map((Code) => ({ Code })),
+    });
+
+  it('one transaction: marks the job settled (once) and moves the story money, rounded to 6 decimals', async () => {
+    expect(await repo.settleGenJob(VS, JOB, { reservedUsd: 0.4, billedUsd: 0.4 })).toBe(true);
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockTransact).toHaveBeenCalledTimes(1);
+    const [jobOp, metaOp] = mockTransact.mock.calls[0][0];
+    expect(jobOp.Update.Key).toEqual({ PK: vsPk(VS), SK: genJobSk(JOB) });
+    expect(jobOp.Update.UpdateExpression).toBe('SET settledAt = :now, billedUsd = :b');
+    expect(jobOp.Update.ConditionExpression).toBe('attribute_exists(PK) AND attribute_not_exists(settledAt)');
+    expect(jobOp.Update.ExpressionAttributeValues).toEqual({ ':now': expect.any(String), ':b': 0.4 });
+    expect(metaOp.Update.Key).toEqual({ PK: vsPk(VS), SK: 'METADATA' });
+    expect(metaOp.Update.UpdateExpression).toBe('ADD reservedUsd :negR, spentUsd :b, committedUsd :delta');
+    expect(metaOp.Update.ConditionExpression).toBe('attribute_exists(PK)');
+    expect(metaOp.Update.ExpressionAttributeValues).toEqual({ ':negR': -0.4, ':b': 0.4, ':delta': 0 });
+  });
+
+  it('unbilled: releases the reservation, spends nothing', async () => {
+    await repo.settleGenJob(VS, JOB, { reservedUsd: 0.1 + 0.2, billedUsd: 0 });
+    const [jobOp, metaOp] = mockTransact.mock.calls[0][0];
+    expect(jobOp.Update.ExpressionAttributeValues[':b']).toBe(0);
+    expect(metaOp.Update.ExpressionAttributeValues).toEqual({ ':negR': -0.3, ':b': 0, ':delta': -0.3 });
+  });
+
+  it('cancelled by the settledAt condition ⇒ false (already settled: no double count)', async () => {
+    mockTransact.mockRejectedValueOnce(cancelled(['ConditionalCheckFailed', 'None']));
+    expect(await repo.settleGenJob(VS, JOB, { reservedUsd: 0.4, billedUsd: 0.4 })).toBe(false);
+  });
+
+  it('story missing ⇒ logged, false', async () => {
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockTransact.mockRejectedValueOnce(cancelled(['None', 'ConditionalCheckFailed']));
+    expect(await repo.settleGenJob(VS, JOB, { reservedUsd: 0.4, billedUsd: 0.4 })).toBe(false);
+    expect(log).toHaveBeenCalled();
+    log.mockRestore();
+  });
+
+  it('any other cancellation (e.g. a write conflict) is thrown, never taken as settled', async () => {
+    mockTransact.mockRejectedValueOnce(cancelled(['TransactionConflict', 'None']));
+    await expect(repo.settleGenJob(VS, JOB, { reservedUsd: 0.4, billedUsd: 0.4 })).rejects.toMatchObject({
+      name: 'DynamoDBError',
+    });
+  });
+
+  it('other storage errors are wrapped', async () => {
+    mockTransact.mockRejectedValueOnce(new Error('ddb down'));
+    await expect(repo.settleGenJob(VS, JOB, { reservedUsd: 0.4, billedUsd: 0 })).rejects.toMatchObject({
+      name: 'DynamoDBError',
+    });
   });
 });
 

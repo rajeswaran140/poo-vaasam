@@ -165,6 +165,10 @@ export interface GenJob {
   /** A VideoErrorCode or 'billing' (kept a plain string: this module imports no provider types). */
   code?: string;
   error?: string;
+  /** What the terminal transition decided to bill (the early-return settle uses it; Ruling V10). */
+  billedUsd?: number;
+  /** Set by the one settle of this job's reservation (Ruling V10). */
+  settledAt?: string;
   createdAt: string;
   updatedAt: string;
 }
