@@ -12,7 +12,7 @@ import { DEFAULT_BUDGET_USD_CAP, MIN_WINDOW_SEC, MAX_WINDOW_SEC, type AspectRati
 import { WindowPicker, formatMss, type WindowValue } from './WindowPicker';
 
 interface MasterRow {
-  jobId: string;
+  id: string;
   title: string | null;
   editedDurationSec: number | null;
 }
@@ -55,7 +55,7 @@ export function NewStoryForm({ onCreated }: { onCreated: (vsId: string) => void 
     void load(null);
   }, [load]);
 
-  const master = masters.find((m) => m.jobId === masterId) ?? null;
+  const master = masters.find((m) => m.id === masterId) ?? null;
   const songSec = master?.editedDurationSec != null ? Math.floor(master.editedDurationSec) : 0;
   const budgetNum = Number(budget);
   const budgetOk = budget.trim() !== '' && Number.isFinite(budgetNum) && budgetNum >= 0 && budgetNum <= 500;
@@ -63,7 +63,7 @@ export function NewStoryForm({ onCreated }: { onCreated: (vsId: string) => void 
   const canSubmit = !!master && songSec >= MIN_WINDOW_SEC && lengthOk && budgetOk && title.trim() !== '' && !submitting;
 
   const pick = (m: MasterRow) => {
-    setMasterId(m.jobId);
+    setMasterId(m.id);
     setTitle(m.title ?? '');
     const song = Math.floor(m.editedDurationSec ?? 0);
     setWin({ startSec: 0, lengthSec: Math.min(60, song), valid: true });
@@ -80,7 +80,7 @@ export function NewStoryForm({ onCreated }: { onCreated: (vsId: string) => void 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          masterJobId: master.jobId,
+          masterJobId: master.id,
           title: title.trim(),
           aspectRatio: aspect,
           windowStartSec: Math.floor(win.startSec),
@@ -116,12 +116,12 @@ export function NewStoryForm({ onCreated }: { onCreated: (vsId: string) => void 
             const noLength = m.editedDurationSec == null;
             const name = m.title || 'Untitled master';
             return (
-              <li key={m.jobId}>
+              <li key={m.id}>
                 <label className={`flex items-center gap-2 text-sm ${noLength ? 'text-gray-500 dark:text-gray-400' : 'text-gray-800 dark:text-gray-200'}`}>
                   <input
                     type="radio"
                     name="master"
-                    checked={masterId === m.jobId}
+                    checked={masterId === m.id}
                     disabled={noLength}
                     onChange={() => pick(m)}
                   />
@@ -160,7 +160,7 @@ export function NewStoryForm({ onCreated }: { onCreated: (vsId: string) => void 
           </label>
 
           {songSec >= MIN_WINDOW_SEC ? (
-            <WindowPicker key={master.jobId} songSec={songSec} startSec={win.startSec} lengthSec={win.lengthSec} onChange={setWin} />
+            <WindowPicker key={master.id} songSec={songSec} startSec={win.startSec} lengthSec={win.lengthSec} onChange={setWin} />
           ) : (
             <p className="text-sm text-red-600 dark:text-red-400">This song is shorter than the {MIN_WINDOW_SEC} s minimum window.</p>
           )}
