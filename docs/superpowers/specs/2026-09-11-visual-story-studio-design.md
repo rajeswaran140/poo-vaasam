@@ -170,7 +170,10 @@ PK = VSTORY#<vsId>
   SK = GENJOB#<jobId>
        jobId, sceneOrder, shotOrder, status, providerId, providerTaskId,
        reservedUsd, candId, attempts, copyFailures, lastPolledAt,
-       code, error, createdAt, updatedAt
+       code, error, billedUsd, settledAt, createdAt, updatedAt
+                                          billedUsd: stored by the terminal transition;
+                                          settledAt: stamped by settleGenJob in the same
+                                          transaction as the METADATA money move (V10)
        GSI1PK = 'VSTORY_INFLIGHT'        (present ONLY while non-terminal)
        GSI1SK = '<createdAt>#<vsId>#<jobId>'
 
