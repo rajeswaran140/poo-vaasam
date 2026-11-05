@@ -1,24 +1,34 @@
 /**
- * POST /api/admin/visual-story/[vsId]/draft — { lyrics } — ask Claude for a
- * storyboard draft (spec §6.5), under the story's hard budget cap.
+ * POST /api/admin/visual-story/[vsId]/draft — { lyrics } — start a storyboard
+ * draft (spec §6.5) on the background worker, under the story's hard cap.
  *
- * Money: DRAFT_ESTIMATE_USD is RESERVED before the paid call and SETTLED
- * exactly once afterwards on every path (one `finally`). Billed = the actual
- * token cost on success, 0 on any failure. The client's abort signal is never
- * forwarded (R10).
+ * Why a job (R14, owner decision 2026-11-04): a real draft takes ~45-65 s
+ * (measured live), far past Amplify's ~30 s ceiling — inline, every draft
+ * died before it could settle. So this route only ENQUEUES:
+ *   reserve (402 when it would cross the cap) → DRAFTJOB#<jobId> 'queued'
+ *   → async-invoke the compose worker (kind 'storyboard') → 202 { jobId }.
+ * The worker calls Claude, saves the draft and settles; the client polls
+ * GET .../draft/jobs/[jobId], which also fails + releases a stuck job.
  *
- * Privacy (spec §12): the pasted lyrics go only to the model. They are never
- * stored, returned or logged — the draft keeps a SHA-256 of them.
+ * Money: the reservation is bounded by the lyrics length (draftReserveUsd).
+ * If the job cannot be written or the worker cannot be invoked, the
+ * reservation is released here (unbilled) — for a failed invoke only via the
+ * conditional queued → failed transition, so a worker that did receive the
+ * event and claimed the job settles instead (exactly one settle).
+ *
+ * Privacy (spec §12): the lyrics go only into the worker's invoke payload and
+ * from there to the model. Never stored (the job item has no lyrics, the draft
+ * keeps a SHA-256), never returned, never logged.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createHash } from 'crypto';
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
+import { awsConfig } from '@/lib/aws-config';
 import { VisualStoryRepository } from '@/infrastructure/database/VisualStoryRepository';
-import { generateStoryboard, DEFAULT_MODEL, type StoryboardResult } from '@/services/ai/storyboarder';
-import { DRAFT_ESTIMATE_USD, draftCostUsd } from '@/services/video/cost';
-import { draftRequestSchema, isVsId, newId } from '@/types/visualStory';
-import type { StoryboardDraft } from '@/types/visualStory';
+import { draftReserveUsd } from '@/services/video/cost';
+import { settleQuietly, type StoryboardJobEvent } from '@/services/video/storyboard-job';
+import { draftRequestSchema, isVsId, newId, type DraftJob } from '@/types/visualStory';
 import { fail, limitMutation, mapError } from '@/lib/visual-story-route';
 
 export const runtime = 'nodejs';
@@ -26,11 +36,9 @@ export const dynamic = 'force-dynamic';
 
 type Ctx = { params: Promise<{ vsId: string }> };
 
-const STATUS_BY_CODE: Record<string, number> = {
-  not_configured: 503,
-  billing: 503,
-  rate_limit: 429,
-};
+/** Same worker and invoke pattern as /api/admin/compose. */
+const workerFunction = () => process.env.COMPOSE_WORKER_FUNCTION || 'tamilagaval-compose-worker';
+const ENQUEUE_ERROR = 'Could not start the draft. Please try again.';
 
 export async function POST(request: NextRequest, { params }: Ctx) {
   let auth;
@@ -51,16 +59,16 @@ export async function POST(request: NextRequest, { params }: Ctx) {
   const { lyrics } = parsed.data;
 
   const repo = new VisualStoryRepository();
-  let tree;
+  const reserveUsd = draftReserveUsd(lyrics);
+  let story;
   let reserved: boolean;
   try {
-    tree = await repo.loadTree(vsId);
-    if (!tree) return fail('That story no longer exists.', 404);
-    reserved = await repo.reserve(vsId, DRAFT_ESTIMATE_USD);
+    story = await repo.findById(vsId);
+    if (!story) return fail('That story no longer exists.', 404);
+    reserved = await repo.reserve(vsId, reserveUsd);
   } catch (err) {
     return mapError(err);
   }
-  const { story } = tree;
   if (!reserved) {
     return fail(
       `This would go over the story's budget ($${story.spentUsd.toFixed(2)} of $${story.budgetUsdCap.toFixed(2)}).`,
@@ -68,53 +76,53 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     );
   }
 
-  // From here a reservation is held: exactly one settle, whatever happens.
-  let billedUsd = 0;
+  // From here a reservation is held: it is released here on every failure path,
+  // or handed to the worker (which settles it) once the invoke is accepted.
+  const now = new Date().toISOString();
+  const job: DraftJob = { jobId: newId('dj'), status: 'queued', createdAt: now, updatedAt: now, reservedUsd: reserveUsd };
   try {
-    try {
-      let result: StoryboardResult;
-      try {
-        result = await generateStoryboard({
-          lyrics,
-          windowSec: story.windowEndSec - story.windowStartSec,
-          aspectRatio: story.aspectRatio,
-          // No request.signal (R10): a closed tab must not turn a billed call into unrecorded spend.
-        });
-      } catch (err) {
-        console.error('visual-story draft: generator threw', err instanceof Error ? err.name : 'error');
-        result = { ok: false, code: 'upstream', error: 'The AI service failed to respond. Please try again.' };
-      }
-      if (!result.ok) {
-        // A received-but-unusable response was still billed by the provider.
-        if (result.usage) billedUsd = draftCostUsd(result.usage.inputTokens, result.usage.outputTokens);
-        return fail(result.error, STATUS_BY_CODE[result.code] ?? 502);
-      }
-
-      const { inputTokens, outputTokens } = result.usage;
-      const costUsd = draftCostUsd(inputTokens, outputTokens);
-      billedUsd = costUsd; // record before anything that can fail
-
-      const draft: StoryboardDraft = {
-        draftId: newId('dr'),
-        lyricsHash: createHash('sha256').update(lyrics).digest('hex'),
-        model: DEFAULT_MODEL,
-        inputTokens,
-        outputTokens,
-        costUsd,
-        characters: result.data.characters,
-        scenes: result.data.scenes,
-        createdAt: new Date().toISOString(),
-      };
-      await repo.putDraft(vsId, draft);
-      return NextResponse.json({ success: true, data: { draft } }, { status: 201 });
-    } finally {
-      try {
-        await repo.settle(vsId, { reservedUsd: DRAFT_ESTIMATE_USD, billedUsd });
-      } catch (err) {
-        console.error('visual-story draft: settle failed', err instanceof Error ? err.name : 'error');
-      }
-    }
+    await repo.createDraftJob(vsId, job);
   } catch (err) {
+    await settleQuietly(repo, vsId, reserveUsd, 0, 'draft enqueue');
     return mapError(err);
   }
+
+  const event: StoryboardJobEvent = {
+    kind: 'storyboard',
+    jobId: job.jobId,
+    vsId,
+    lyrics,
+    windowSec: story.windowEndSec - story.windowStartSec,
+    aspectRatio: story.aspectRatio,
+  };
+  try {
+    const lambda = new LambdaClient({
+      region: awsConfig.region,
+      ...(awsConfig.credentials ? { credentials: awsConfig.credentials } : {}),
+    });
+    await lambda.send(
+      new InvokeCommand({
+        FunctionName: workerFunction(),
+        InvocationType: 'Event', // returns at once; the worker runs off-Amplify
+        Payload: Buffer.from(JSON.stringify(event)),
+      })
+    );
+  } catch (err) {
+    console.error('visual-story draft: worker invoke failed', err instanceof Error ? err.name : 'error');
+    try {
+      const failed = await repo.transitionDraftJob(vsId, job.jobId, ['queued'], 'failed', {
+        code: 'enqueue',
+        error: ENQUEUE_ERROR,
+      });
+      // Lost the transition: the worker got the event after all and owns the job.
+      if (!failed) return NextResponse.json({ success: true, data: { jobId: job.jobId } }, { status: 202 });
+      await settleQuietly(repo, vsId, reserveUsd, 0, 'draft enqueue');
+    } catch (e) {
+      // Job left queued: the job route's sweep fails and releases it after 10 minutes.
+      console.error('visual-story draft: could not fail the job', e instanceof Error ? e.name : 'error');
+    }
+    return fail(ENQUEUE_ERROR, 502);
+  }
+
+  return NextResponse.json({ success: true, data: { jobId: job.jobId } }, { status: 202 });
 }
