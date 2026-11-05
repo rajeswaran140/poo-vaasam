@@ -312,6 +312,21 @@ describe('POST apply', () => {
     expect(repo.applyDraft).not.toHaveBeenCalled();
   });
 
+  it('409s while a clip renders, applies once it is terminal', async () => {
+    const t = (status: string) => ({ story, scenes: [], shots: [], characters: [], candidates: [], drafts: [], genJobs: [{ jobId: 'gj_1', status }] });
+    for (const status of ['submitted', 'running']) {
+      repo.loadTree.mockResolvedValueOnce(t(status));
+      const res = await applyPOST(mk(), actx());
+      expect(res.status).toBe(409);
+      expect((await res.json()).error).toBe('Wait for the video to finish first.');
+    }
+    expect(repo.applyDraft).not.toHaveBeenCalled();
+    expect(repo.patch).not.toHaveBeenCalled();
+    repo.loadTree.mockResolvedValue(t('succeeded'));
+    expect((await applyPOST(mk(), actx())).status).toBe(200);
+    expect(repo.applyDraft).toHaveBeenCalledWith(VS, DR);
+  });
+
   it('malformed ids are 404', async () => {
     expect((await applyPOST(mk(), actx('../x'))).status).toBe(404);
     expect((await applyPOST(mk(), actx(DR, '../x'))).status).toBe(404);
@@ -320,7 +335,7 @@ describe('POST apply', () => {
 
   it('applies, sets STORYBOARDING, returns the tree', async () => {
     const tree = { story: { ...story, status: 'STORYBOARDING' }, scenes: [{ order: 1 }], shots: [], characters: [], candidates: [], drafts: [] };
-    repo.loadTree.mockResolvedValueOnce(tree);
+    repo.loadTree.mockResolvedValueOnce({ ...tree, story }).mockResolvedValueOnce(tree); // guard load, then the applied tree
     const res = await applyPOST(mk(), actx());
     expect(res.status).toBe(200);
     expect(repo.applyDraft).toHaveBeenCalledWith(VS, DR);

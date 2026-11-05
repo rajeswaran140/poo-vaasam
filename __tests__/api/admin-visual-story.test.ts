@@ -21,6 +21,7 @@ const repo = {
   list: jest.fn(),
   listByMaster: jest.fn(),
   countShots: jest.fn(),
+  listInflight: jest.fn(),
   findById: jest.fn(),
   loadTree: jest.fn(),
   patch: jest.fn(),
@@ -109,13 +110,29 @@ describe('GET list shotCount', () => {
   });
 });
 
+describe('GET list inflightCount', () => {
+  it('counts the in-flight video jobs', async () => {
+    repo.list.mockResolvedValue([]);
+    repo.listInflight.mockResolvedValue([{ vsId: VS, job: {} }, { vsId: VS, job: {} }, { vsId: 'x', job: {} }]);
+    expect((await (await GET(req('GET'))).json()).inflightCount).toBe(3);
+  });
+
+  it('a failing count is 0 and does not fail the list', async () => {
+    repo.list.mockResolvedValue([]);
+    repo.listInflight.mockRejectedValue(new Error('boom'));
+    const res = await GET(req('GET'));
+    expect(res.status).toBe(200);
+    expect((await res.json()).inflightCount).toBe(0);
+  });
+});
+
 describe('GET list', () => {
   it('lists all, or by master', async () => {
     repo.list.mockResolvedValue([{ vsId: VS }]);
     repo.listByMaster.mockResolvedValue([]);
     repo.countShots.mockResolvedValue(4);
     const body = await (await GET(req('GET'))).json();
-    expect(body).toEqual({ success: true, data: [{ vsId: VS, shotCount: 4 }] });
+    expect(body).toEqual({ success: true, data: [{ vsId: VS, shotCount: 4 }], inflightCount: 0 });
     await GET(req('GET', undefined, true, `${URL_}?masterJobId=job-1`));
     expect(repo.listByMaster).toHaveBeenCalledWith('job-1');
     expect((await GET(req('GET', undefined, true, `${URL_}?masterJobId=a/b`))).status).toBe(400);
@@ -279,6 +296,18 @@ describe('DELETE', () => {
   it('removes the partition', async () => {
     const res = await DELETE(req('DELETE'), ctx());
     expect(res.status).toBe(200);
+    expect(repo.remove).toHaveBeenCalledWith(VS);
+  });
+  it('409s while a clip renders, deletes once it is terminal', async () => {
+    for (const status of ['submitted', 'running']) {
+      repo.loadTree.mockResolvedValueOnce({ genJobs: [{ jobId: 'gj_1', status }] });
+      const res = await DELETE(req('DELETE'), ctx());
+      expect(res.status).toBe(409);
+      expect((await res.json()).error).toBe('Wait for the video to finish first.');
+    }
+    expect(repo.remove).not.toHaveBeenCalled();
+    repo.loadTree.mockResolvedValueOnce({ genJobs: [{ jobId: 'gj_1', status: 'failed' }] });
+    expect((await DELETE(req('DELETE'), ctx())).status).toBe(200);
     expect(repo.remove).toHaveBeenCalledWith(VS);
   });
   it('404 for a malformed id without touching the repo', async () => {

@@ -145,11 +145,39 @@ export interface DraftJob {
   error?: string | null;
 }
 
+/**
+ * A video generation job (`GENJOB#<jobId>`). Non-terminal rows are indexed on
+ * GSI1 (`VSTORY_INFLIGHT`) so the reconciler can find them across stories.
+ */
+export interface GenJob {
+  jobId: string;
+  sceneOrder: number;
+  shotOrder: number;
+  status: GenJobStatus;
+  providerId: string;
+  providerTaskId: string | null;
+  /** What the route reserved against the cap; the one settle releases exactly this. */
+  reservedUsd: number;
+  candId: string;
+  attempts: number;
+  copyFailures: number;
+  lastPolledAt: string | null;
+  /** A VideoErrorCode or 'billing' (kept a plain string: this module imports no provider types). */
+  code?: string;
+  error?: string;
+  /** What the terminal transition decided to bill (the early-return settle uses it; Ruling V10). */
+  billedUsd?: number;
+  /** Set by the one settle of this job's reservation (Ruling V10). */
+  settledAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ---------------------------------------------------------------------------
 // Ids — `<prefix>_<13-digit ms>_<random>`; validate before building any key.
 // ---------------------------------------------------------------------------
 
-export type IdPrefix = 'vs' | 'ch' | 'cd' | 'dr' | 'dj';
+export type IdPrefix = 'vs' | 'ch' | 'cd' | 'dr' | 'dj' | 'gj';
 
 function idGuard(prefix: IdPrefix): (s: unknown) => boolean {
   const re = new RegExp(`^${prefix}_\\d{13}_[a-z0-9]{6,12}$`);
@@ -161,6 +189,12 @@ export const isCharId = idGuard('ch');
 export const isCandId = idGuard('cd');
 export const isDraftId = idGuard('dr');
 export const isDraftJobId = idGuard('dj');
+export const isGenJobId = idGuard('gj');
+
+/** Deterministic candidate id for a video job, so a repeated copy is idempotent. */
+export function candIdForJob(jobId: string): string {
+  return `cd_${jobId.slice(3)}`;
+}
 
 export function newId(prefix: IdPrefix): string {
   let rand = '';

@@ -168,11 +168,20 @@ PK = VSTORY#<vsId>
        costUsd, createdAt
 
   SK = GENJOB#<jobId>
-       status, mode, providerId, providerTaskId, sceneOrder, shotOrder,
-       estimatedCostUsd, actualCostUsd, attempts, lastPolledAt,
-       error { code, message }, createdAt, updatedAt
+       jobId, sceneOrder, shotOrder, status, providerId, providerTaskId,
+       reservedUsd, candId, attempts, copyFailures, lastPolledAt,
+       code, error, billedUsd, settledAt, createdAt, updatedAt
+                                          billedUsd: stored by the terminal transition;
+                                          settledAt: stamped by settleGenJob in the same
+                                          transaction as the METADATA money move (V10)
        GSI1PK = 'VSTORY_INFLIGHT'        (present ONLY while non-terminal)
        GSI1SK = '<createdAt>#<vsId>#<jobId>'
+
+  SK = VIDLOCK#<nnn>#<mmm>                one-video-per-shot lock (V5)
+       jobId, createdAt                   taken by conditional put (absent OR older than 1 h)
+                                          before any reserve; released at every terminal
+                                          transition (jobId-guarded delete). A separate row
+                                          so shot edits cannot wipe it.
 
   SK = DRAFT#<draftId>                    one LLM storyboard draft (§6.5)
        lyricsHash, model, inputTokens, outputTokens, costUsd, scenes[], createdAt
@@ -654,6 +663,11 @@ before any video is generated.
 The workflow the UI encourages is: storyboard entirely in `STILL`, promote selected shots
 to `MOTION`, promote a few to `HERO`.
 
+**Owner's model choice (2026-11-05).** The owner chose `grok-imagine-video-1.5` ("best") for
+every clip. The UI therefore offers no `MOTION`/lite option: every video clip is generated as
+`HERO` at $0.080/s. The `MOTION` row and its rate card remain in the contract, but nothing in
+the UI or the generate route selects them.
+
 **2. Estimate before spend.** `estimateCostUsd()` is on the port, so the UI shows both the
 shot price and the resulting story total before the confirm click.
 
@@ -680,6 +694,17 @@ billed the call**, `spentUsd` rises by `actualCostUsd ?? estimatedCostUsd`. Bill
 output (`failed`, `expired`, `cancelled`, a synchronous 4xx) releases the reservation only.
 STILL images and storyboard drafts are synchronous; they reserve and settle inside the one
 request.
+
+**Video-clip money rules as built (2026-11-05).** A **cancelled** clip is always counted as
+billed (V6): cancel can race Grok accepting the submit, so the studio over-records rather than
+under-records. A job still unfinished **1 hour** after it was created is ended and counted as
+billed (V4/V4b), even without a provider task id, so a broken poll cannot spin forever. A
+finished clip whose copy into our bucket keeps failing is counted (and ended) after **10**
+tries. Only a synchronous submit failure, `failed` and `expired` are unbilled.
+
+**Known residual race (V8).** A structural edit (reorder, delete) and a Make-video press landing
+within a fraction of a second of each other can still put a clip on a moved or missing shot.
+Money is unaffected: the reservation and settle are independent of the shot row.
 
 `budgetUsdCap` is set when the story is created — the create route accepts it and falls
 back to `DEFAULT_BUDGET_USD_CAP`, a constant in `cost.ts`. It is editable afterwards via

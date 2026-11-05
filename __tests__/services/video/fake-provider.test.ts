@@ -78,8 +78,8 @@ describe('getVideoProvider', () => {
   it('throws on unknown id', () => {
     expect(() => getVideoProvider('nope')).toThrow(/Unknown video provider/);
   });
-  it('defaults to grok, which is not implemented yet', () => {
+  it('defaults to grok', () => {
     delete process.env.VIDEO_PROVIDER;
-    expect(() => getVideoProvider()).toThrow(/not implemented until Phase 4/);
+    expect(getVideoProvider().id).toBe('grok');
   });
 });

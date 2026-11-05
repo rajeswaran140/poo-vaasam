@@ -17,6 +17,14 @@ import type { Shot, VisualStory } from '@/types/visualStory';
 export const fail = (error: string, status: number) =>
   NextResponse.json({ success: false, error }, { status });
 
+/** True while any of the story's video clips is still being made. */
+export function hasRenderingVideo(tree: { genJobs?: { status: string }[] }): boolean {
+  return (tree.genJobs ?? []).some((j) => j.status === 'submitted' || j.status === 'running');
+}
+
+/** 409 for a structural edit while a clip renders, so a clip never lands on a moved or missing shot. */
+export const failRendering = () => fail('Wait for the video to finish first.', 409);
+
 /** Per-admin rate limit for a mutation. Returns a Response to send, or null to proceed. */
 export function limitMutation(
   auth: { userId?: string; email?: string },

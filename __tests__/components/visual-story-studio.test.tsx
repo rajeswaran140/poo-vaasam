@@ -422,3 +422,393 @@ describe('Studio — undo and budget (I1)', () => {
     expect(screen.getAllByText(msg)).toHaveLength(1);
   });
 });
+
+describe('Studio — video clips', () => {
+  const GJ = 'gj_1730000000000_abcdef12';
+  const VCD = 'cd_1730000000000_abcdef12'; // candIdForJob(GJ)
+  const SCD = 'cd_1730000000000_still0001';
+  const videoUrl = `/api/admin/visual-story/${VS}/shots/001-001/video`;
+  const jobUrl = `/api/admin/visual-story/${VS}/video-jobs/${GJ}`;
+  const STILL_REL = 'Still rendering. Use “Check rendering videos” on the story list.';
+
+  const genJob = (status: string, over = {}) => ({
+    jobId: GJ, sceneOrder: 1, shotOrder: 1, status, providerId: 'grok', providerTaskId: 'task-1',
+    reservedUsd: 0.48, candId: VCD, attempts: 0, copyFailures: 0, lastPolledAt: null,
+    createdAt: '2026-11-05T00:00:00Z', updatedAt: '2026-11-05T00:00:00Z', ...over,
+  });
+  const stillCand = {
+    candId: SCD, sceneOrder: 1, shotOrder: 1, jobId: null, providerId: 'grok-image', providerTaskId: null,
+    mode: 'STILL', s3Key: `audio/mastering/visual-story/${VS}/candidates/${SCD}.jpg`, costUsd: 0.02, createdAt: '2026-11-01',
+  };
+  const videoCand = {
+    candId: VCD, sceneOrder: 1, shotOrder: 1, jobId: GJ, providerId: 'grok', providerTaskId: 'task-1',
+    mode: 'HERO', s3Key: `audio/mastering/visual-story/${VS}/candidates/${VCD}.mp4`, costUsd: 0.48, createdAt: '2026-11-05',
+  };
+
+  /** Shot 1.1 lasts 6 s, so its clip costs 6 × $0.08 = $0.48. */
+  function vtree(over: { jobs?: unknown[]; candidates?: unknown[]; firstFrame?: string; spentUsd?: number } = {}) {
+    const t = tree({ spentUsd: over.spentUsd });
+    t.shots = [
+      shot(1, 1, 6, 0, { charIds: [CH], ...(over.firstFrame ? { firstFrameCandidateId: over.firstFrame } : {}) }),
+      shot(1, 2, 5, 6),
+    ];
+    t.candidates = over.candidates ?? [];
+    return { ...t, genJobs: over.jobs ?? [] };
+  }
+
+  /** POST → 202 {jobId}; each GET of the job route returns the next poll (the last one repeats). */
+  function videoRoutes(opts: { polls?: (Response | Error)[]; start?: () => Response | Promise<Response>; cancel?: () => Response; getTree?: () => unknown } = {}) {
+    const polls = [...(opts.polls ?? [json({ success: true, data: genJob('running') })])];
+    routes(
+      (url, init) => {
+        if (url === videoUrl && init?.method === 'POST') return opts.start ? opts.start() : json({ success: true, data: { jobId: GJ } }, 202);
+        if (url === jobUrl && init?.method === 'POST') return opts.cancel ? opts.cancel() : json({ success: true, data: genJob('cancelled') });
+        if (url === jobUrl) {
+          const next = polls.length > 1 ? polls.shift()! : polls[0];
+          if (next instanceof Error) throw next;
+          return next;
+        }
+        if (url.endsWith('/shots') && init?.method === 'POST') return json({ success: true, data: {} });
+        if (url.endsWith('/select')) return json({ success: true, data: {} });
+        return undefined;
+      },
+      (opts.getTree ?? (() => vtree())) as () => ReturnType<typeof tree>
+    );
+  }
+
+  const polls = () => mockFetch.mock.calls.filter(([u, i]) => u === jobUrl && !i?.method);
+
+  async function startVideo(c: HTMLElement) {
+    fireEvent.click(within(c).getByRole('button', { name: 'Make video (6 s · $0.48)' }));
+    fireEvent.click(within(within(c).getByRole('dialog')).getByRole('button', { name: 'Confirm' }));
+  }
+
+  it('confirm shows the $0.48 price and the story total after this call; nothing is sent yet', async () => {
+    videoRoutes();
+    render(<Studio vsId={VS} />);
+    const c = await card('Shot 1.1');
+    fireEvent.click(within(c).getByRole('button', { name: 'Make video (6 s · $0.48)' }));
+    const dialog = within(c).getByRole('dialog');
+    expect(dialog).toHaveTextContent('$0.48');
+    expect(dialog).toHaveTextContent('Story total after this: $0.90 of $40.00');
+    expect(calls('/video')).toHaveLength(0);
+  });
+
+  it('after Confirm the card shows "Rendering…", the button is disabled and a second click sends nothing', async () => {
+    videoRoutes();
+    render(<Studio vsId={VS} />);
+    const c = await card('Shot 1.1');
+    await startVideo(c);
+    expect(await within(c).findByText('Rendering… about 1–3 minutes')).toBeInTheDocument();
+    const button = within(c).getByRole('button', { name: /Rendering…|Make video/ });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(within(c).queryByRole('dialog')).not.toBeInTheDocument();
+    expect(calls('/video')).toHaveLength(1);
+    expect(calls('/shots/001-001/video')[0][1].method).toBe('POST');
+  });
+
+  it('two Confirm clicks in the same tick start one video', async () => {
+    const pending = deferred<Response>();
+    videoRoutes({ start: () => pending.promise });
+    render(<Studio vsId={VS} />);
+    const c = await card('Shot 1.1');
+    fireEvent.click(within(c).getByRole('button', { name: 'Make video (6 s · $0.48)' }));
+    const confirm = within(within(c).getByRole('dialog')).getByRole('button', { name: 'Confirm' });
+    act(() => {
+      confirm.click();
+      confirm.click();
+    });
+    expect(calls('/video')).toHaveLength(1);
+    await act(async () => pending.resolve(json({ success: true, data: { jobId: GJ } }, 202)));
+    expect(calls('/video')).toHaveLength(1);
+  });
+
+  it('polls the job every 5 s and reloads the tree when the clip is done', async () => {
+    jest.useFakeTimers();
+    try {
+      let done = false;
+      videoRoutes({
+        polls: [json({ success: true, data: genJob('running') }), json({ success: true, data: genJob('succeeded') })],
+        getTree: () => (done ? vtree({ jobs: [genJob('succeeded')], candidates: [videoCand] }) : vtree()),
+      });
+      render(<Studio vsId={VS} />);
+      const c = await card('Shot 1.1');
+      await startVideo(c);
+      expect(await within(c).findByText('Rendering… about 1–3 minutes')).toBeInTheDocument();
+      await waitFor(() => expect(polls()).toHaveLength(1));
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(4000);
+      });
+      expect(polls()).toHaveLength(1);
+      done = true;
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1000);
+      });
+      expect(polls()).toHaveLength(2);
+      await waitFor(() => expect(within(c).queryByText('Rendering… about 1–3 minutes')).not.toBeInTheDocument());
+      expect(within(c).getByRole('button', { name: 'Make video (6 s · $0.48)' })).toBeEnabled();
+      expect(c.querySelector('video')).not.toBeNull();
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(20_000);
+      });
+      expect(polls()).toHaveLength(2);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('a running job in the loaded tree resumes polling and keeps the button disabled', async () => {
+    videoRoutes({ getTree: () => vtree({ jobs: [genJob('running')] }) });
+    render(<Studio vsId={VS} />);
+    const c = await card('Shot 1.1');
+    expect(await within(c).findByText('Rendering… about 1–3 minutes')).toBeInTheDocument();
+    await waitFor(() => expect(polls().length).toBeGreaterThanOrEqual(1));
+    expect(calls('/video')).toHaveLength(0);
+    expect(within(c).getByRole('button', { name: /Rendering…|Make video/ })).toBeDisabled();
+    // Only the shot with the job is busy.
+    expect(within(await card('Shot 1.2')).getByRole('button', { name: /Make video/ })).toBeEnabled();
+  });
+
+  it("a failed job's message renders inside that shot's card", async () => {
+    const msg = 'Grok refused this clip under its content policy.';
+    videoRoutes({
+      polls: [json({ success: true, data: genJob('failed', { code: 'content_policy', error: msg }) })],
+    });
+    render(<Studio vsId={VS} />);
+    const c = await card('Shot 1.1');
+    await startVideo(c);
+    expect(await within(c).findByText(msg)).toBeInTheDocument();
+    expect(screen.getAllByText(msg)).toHaveLength(1);
+    expect(within(await card('Shot 1.2')).queryByText(msg)).not.toBeInTheDocument();
+    await waitFor(() => expect(within(c).getByRole('button', { name: 'Make video (6 s · $0.48)' })).toBeEnabled());
+  });
+
+  it('a 402 from the make-video route renders inside the card', async () => {
+    const msg = "This would go over the story's budget ($40.10 of $40.00).";
+    videoRoutes({ start: () => json({ success: false, error: msg }, 402) });
+    render(<Studio vsId={VS} />);
+    const c = await card('Shot 1.1');
+    await startVideo(c);
+    expect(await within(c).findByText(msg)).toBeInTheDocument();
+    expect(screen.getAllByText(msg)).toHaveLength(1);
+    expect(polls()).toHaveLength(0);
+  });
+
+  it('after 15 minutes it stops polling and points at "Check rendering videos"', async () => {
+    jest.useFakeTimers();
+    try {
+      videoRoutes({ getTree: () => vtree({ jobs: [genJob('running')] }) });
+      render(<Studio vsId={VS} />);
+      const c = await card('Shot 1.1');
+      await waitFor(() => expect(polls()).toHaveLength(1));
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(15 * 60_000 + 5000);
+      });
+      expect(await within(c).findByText(STILL_REL)).toBeInTheDocument();
+      const n = polls().length;
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(60_000);
+      });
+      expect(polls()).toHaveLength(n);
+      expect(within(c).getByRole('button', { name: /Rendering…|Make video/ })).toBeDisabled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('Cancel asks first (Grok may still charge), then POSTs op:cancel and reloads', async () => {
+    videoRoutes({ getTree: () => vtree({ jobs: [genJob('running')] }) });
+    render(<Studio vsId={VS} />);
+    const c = await card('Shot 1.1');
+    await within(c).findByText('Rendering… about 1–3 minutes');
+    fireEvent.click(within(c).getByRole('button', { name: 'Cancel' }));
+    const confirm = within(c).getByRole('alertdialog');
+    expect(confirm).toHaveTextContent("Grok may still charge for this clip, and it won't be kept.");
+    expect(mockFetch.mock.calls.filter(([u, i]) => u === jobUrl && i?.method === 'POST')).toHaveLength(0);
+    const loadsBefore = treeLoads().length;
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Cancel video' }));
+    await waitFor(() => expect(mockFetch.mock.calls.filter(([u, i]) => u === jobUrl && i?.method === 'POST')).toHaveLength(1));
+    const [, init] = mockFetch.mock.calls.find(([u, i]) => u === jobUrl && i?.method === 'POST')!;
+    expect(JSON.parse(init.body)).toEqual({ op: 'cancel' });
+    expect(init.signal).toBeUndefined();
+    await waitFor(() => expect(treeLoads().length).toBeGreaterThan(loadsBefore));
+  });
+
+  it('stops polling on unmount', async () => {
+    jest.useFakeTimers();
+    try {
+      videoRoutes({ getTree: () => vtree({ jobs: [genJob('running')] }) });
+      const { unmount } = render(<Studio vsId={VS} />);
+      await card('Shot 1.1');
+      await waitFor(() => expect(polls()).toHaveLength(1));
+      unmount();
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(30_000);
+      });
+      expect(polls()).toHaveLength(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('video candidates render a muted inline <video> with a "Video" badge and can be selected', async () => {
+    videoRoutes({ getTree: () => vtree({ candidates: [stillCand, videoCand] }) });
+    render(<Studio vsId={VS} />);
+    const c = await card('Shot 1.1');
+    await waitFor(() => expect(c.querySelector('video')).not.toBeNull());
+    const video = c.querySelector('video') as HTMLVideoElement;
+    await waitFor(() => expect(video).toHaveAttribute('src', 'https://signed.example/img'));
+    expect(video).toHaveAttribute('controls');
+    expect(video).toHaveAttribute('playsinline');
+    expect(video).toHaveAttribute('preload', 'metadata');
+    expect(video.muted).toBe(true);
+    expect(within(c).getByText('Video')).toBeInTheDocument();
+    expect(within(c).getByText('Still')).toBeInTheDocument();
+    fireEvent.click(within(c).getByRole('radio', { name: 'Video 2' }));
+    await waitFor(() => expect(calls('/select')).toHaveLength(1));
+    expect(JSON.parse(calls('/select')[0][1].body)).toEqual({ sceneOrder: 1, shotOrder: 1, candId: VCD });
+  });
+
+  it('"Use as first frame" is offered on stills only and POSTs the shot update', async () => {
+    videoRoutes({ getTree: () => vtree({ candidates: [stillCand, videoCand] }) });
+    render(<Studio vsId={VS} />);
+    const c = await card('Shot 1.1');
+    const buttons = within(c).getAllByRole('button', { name: 'Use as first frame' });
+    expect(buttons).toHaveLength(1);
+    fireEvent.click(buttons[0]);
+    await waitFor(() => expect(calls('/shots')).toHaveLength(1));
+    expect(JSON.parse(calls('/shots')[0][1].body)).toEqual({ op: 'update', sceneOrder: 1, shotOrder: 1, firstFrameCandidateId: SCD });
+  });
+
+  it('the pinned still reads "First frame" on the card; the Inspector shows it with Clear', async () => {
+    videoRoutes({ getTree: () => vtree({ candidates: [stillCand], firstFrame: SCD }) });
+    render(<Studio vsId={VS} />);
+    const c = await card('Shot 1.1');
+    expect(within(c).getByText('First frame')).toBeInTheDocument();
+    expect(within(c).queryByRole('button', { name: 'Use as first frame' })).not.toBeInTheDocument();
+    fireEvent.click(within(c).getByRole('button', { name: 'Edit' }));
+    const form = screen.getByRole('form', { name: 'Edit shot 1.1' });
+    expect(await within(form).findByRole('img', { name: 'First frame for shot 1.1' })).toBeInTheDocument();
+    expect(form).toHaveTextContent(/character photos are used for video clips/i);
+    expect(form).toHaveTextContent(/720p/);
+    fireEvent.click(within(form).getByRole('button', { name: 'Clear' }));
+    await waitFor(() => expect(calls('/shots')).toHaveLength(1));
+    expect(JSON.parse(calls('/shots')[0][1].body)).toEqual({ op: 'update', sceneOrder: 1, shotOrder: 1, firstFrameCandidateId: null });
+  });
+
+  it('a pinned id that no longer resolves does not crash the Inspector and can be cleared', async () => {
+    videoRoutes({ getTree: () => vtree({ candidates: [], firstFrame: 'cd_1730000000000_gone0001' }) });
+    render(<Studio vsId={VS} />);
+    fireEvent.click(within(await card('Shot 1.1')).getByRole('button', { name: 'Edit' }));
+    const form = screen.getByRole('form', { name: 'Edit shot 1.1' });
+    expect(within(form).queryByRole('img', { name: 'First frame for shot 1.1' })).not.toBeInTheDocument();
+    fireEvent.click(within(form).getByRole('button', { name: 'Clear' }));
+    await waitFor(() => expect(calls('/shots')).toHaveLength(1));
+    expect(JSON.parse(calls('/shots')[0][1].body).firstFrameCandidateId).toBeNull();
+  });
+
+  it('a 5xx poll is transient: it keeps polling, then finishes with no error shown', async () => {
+    jest.useFakeTimers();
+    try {
+      videoRoutes({
+        polls: [json({ success: false, error: 'Gateway timeout' }, 504), json({ success: true, data: genJob('succeeded') })],
+      });
+      render(<Studio vsId={VS} />);
+      const c = await card('Shot 1.1');
+      await startVideo(c);
+      await waitFor(() => expect(polls()).toHaveLength(1));
+      expect(within(c).getByText('Rendering… about 1–3 minutes')).toBeInTheDocument();
+      expect(within(c).queryByRole('alert')).not.toBeInTheDocument();
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(5000);
+      });
+      expect(polls()).toHaveLength(2);
+      await waitFor(() => expect(within(c).queryByText('Rendering… about 1–3 minutes')).not.toBeInTheDocument());
+      expect(within(c).queryByRole('alert')).not.toBeInTheDocument();
+      expect(within(c).queryByRole('button', { name: 'Check again' })).not.toBeInTheDocument();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('a network failure mid-render keeps polling', async () => {
+    jest.useFakeTimers();
+    try {
+      videoRoutes({
+        polls: [new TypeError('Failed to fetch'), json({ success: true, data: genJob('running') }), json({ success: true, data: genJob('succeeded') })],
+        getTree: () => vtree({ jobs: [genJob('running')] }),
+      });
+      render(<Studio vsId={VS} />);
+      const c = await card('Shot 1.1');
+      await waitFor(() => expect(polls()).toHaveLength(1));
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(5000);
+      });
+      expect(polls()).toHaveLength(2);
+      expect(within(c).getByText('Rendering… about 1–3 minutes')).toBeInTheDocument();
+      expect(within(c).queryByRole('alert')).not.toBeInTheDocument();
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(5000);
+      });
+      expect(polls()).toHaveLength(3);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('a 4xx poll stops with a message in the card and "Check again" restarts polling', async () => {
+    const msg = 'That video no longer exists.';
+    videoRoutes({
+      polls: [json({ success: false, error: msg }, 404), json({ success: true, data: genJob('running') })],
+      getTree: () => vtree({ jobs: [genJob('running')] }),
+    });
+    render(<Studio vsId={VS} />);
+    const c = await card('Shot 1.1');
+    expect(await within(c).findByText(msg)).toBeInTheDocument();
+    expect(screen.getAllByText(msg)).toHaveLength(1);
+    expect(polls()).toHaveLength(1);
+    fireEvent.click(within(c).getByRole('button', { name: 'Check again' }));
+    await waitFor(() => expect(polls()).toHaveLength(2));
+    await waitFor(() => expect(within(c).queryByText(msg)).not.toBeInTheDocument());
+    expect(within(c).queryByRole('button', { name: 'Check again' })).not.toBeInTheDocument();
+    expect(within(c).getByText('Rendering… about 1–3 minutes')).toBeInTheDocument();
+  });
+
+  it('after the 15-minute cap "Check again" restarts polling', async () => {
+    jest.useFakeTimers();
+    try {
+      videoRoutes({ getTree: () => vtree({ jobs: [genJob('running')] }) });
+      render(<Studio vsId={VS} />);
+      const c = await card('Shot 1.1');
+      await waitFor(() => expect(polls()).toHaveLength(1));
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(15 * 60_000 + 5000);
+      });
+      expect(await within(c).findByText(STILL_REL)).toBeInTheDocument();
+      const n = polls().length;
+      fireEvent.click(within(c).getByRole('button', { name: 'Check again' }));
+      await waitFor(() => expect(polls()).toHaveLength(n + 1));
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('a failed job found on load reads "Last clip failed: …" inside its card', async () => {
+    const msg = 'Grok refused this clip under its content policy.';
+    videoRoutes({ getTree: () => vtree({ jobs: [genJob('failed', { code: 'content_policy', error: msg })] }) });
+    render(<Studio vsId={VS} />);
+    const c = await card('Shot 1.1');
+    expect(within(c).getByText(`Last clip failed: ${msg}`)).toBeInTheDocument();
+    expect(within(c).getByRole('button', { name: 'Make video (6 s · $0.48)' })).toBeEnabled();
+    expect(polls()).toHaveLength(0);
+  });
+
+  it('the characters panel says reference photos are used for video clips', async () => {
+    videoRoutes();
+    render(<Studio vsId={VS} />);
+    await card('Shot 1.1');
+    fireEvent.click(screen.getByRole('tab', { name: 'Characters' }));
+    expect(screen.getByText(/reference photos are used for video clips/i)).toBeInTheDocument();
+  });
+});

@@ -38,6 +38,7 @@ import {
   charSk,
   draftSk,
   draftJobSk,
+  genJobSk,
 } from '@/infrastructure/database/VisualStoryRepository';
 import type { StoryboardDraft } from '@/types/visualStory';
 
@@ -58,6 +59,12 @@ const sceneItem = (n: number) => ({ PK, SK: sceneSk(n), order: n, heading: `Scen
 const candItem = (s: number, h: number, id: string) => ({
   PK, SK: candSk(s, h, id), candId: id, sceneOrder: s, shotOrder: h, jobId: 'j', providerId: 'grok',
   providerTaskId: '', s3Key: 'k', costUsd: 0.02, createdAt: 't',
+});
+
+/** A GENJOB# row; settled terminal by default (the only kind a shot edit may drop). */
+const jobItem = (s: number, h: number, id: string, extra: any = {}) => ({
+  PK, SK: genJobSk(id), jobId: id, sceneOrder: s, shotOrder: h, status: 'failed', code: 'upstream',
+  error: 'x', reservedUsd: 0.4, settledAt: 't', billedUsd: 0, createdAt: 't', updatedAt: 't', ...extra,
 });
 
 const ops = (items: any[]) => ({
@@ -198,6 +205,70 @@ describe('deleteShot', () => {
     await repo.deleteShot(VS, 1, 2);
     expect(mockTransact).not.toHaveBeenCalled();
     expect(mockDelete.mock.calls.map((c) => c[0].SK).sort()).toEqual([shotSk(1, 2), candSk(1, 2, 'cd_1')].sort());
+  });
+});
+
+describe('old video jobs never attach to another shot', () => {
+  const delSks = () => mockDelete.mock.calls.map((c) => c[0].SK).sort();
+
+  it('deleteShot also deletes that shot\'s settled terminal GENJOB# rows (not other shots\', not unsettled ones)', async () => {
+    mockQuery.mockResolvedValue({
+      Items: [
+        shotItem(1, 2, 5), candItem(1, 2, 'cd_1'),
+        jobItem(1, 2, 'gj_a'), jobItem(1, 2, 'gj_b', { status: 'succeeded' }), jobItem(1, 2, 'gj_c', { status: 'cancelled' }),
+        jobItem(1, 2, 'gj_unsettled', { settledAt: undefined }),
+        jobItem(1, 3, 'gj_other'),
+      ],
+    });
+    await repo.deleteShot(VS, 1, 2);
+    expect(delSks()).toEqual(
+      [shotSk(1, 2), candSk(1, 2, 'cd_1'), genJobSk('gj_a'), genJobSk('gj_b'), genJobSk('gj_c')].sort()
+    );
+  });
+
+  it('deleteShot never deletes an in-flight job row', async () => {
+    mockQuery.mockResolvedValue({
+      Items: [shotItem(1, 2, 5), jobItem(1, 2, 'gj_r', { status: 'running', settledAt: undefined })],
+    });
+    await repo.deleteShot(VS, 1, 2);
+    expect(delSks()).toEqual([shotSk(1, 2)]);
+  });
+
+  it('deleteScene deletes that scene\'s settled terminal GENJOB# rows', async () => {
+    mockQuery.mockResolvedValue({
+      Items: [sceneItem(1), shotItem(1, 1, 5), jobItem(1, 1, 'gj_a'), jobItem(2, 1, 'gj_other')],
+    });
+    await repo.deleteScene(VS, 1);
+    expect(delSks()).toEqual([sceneSk(1), shotSk(1, 1), genJobSk('gj_a')].sort());
+  });
+
+  it('reorderShots deletes the moved shots\' settled terminal jobs after the transaction, outside it', async () => {
+    mockQuery.mockResolvedValue({
+      Items: [
+        shotItem(1, 1, 5), shotItem(1, 2, 8), shotItem(1, 3, 2),
+        jobItem(1, 1, 'gj_1'), jobItem(1, 2, 'gj_2'), jobItem(1, 3, 'gj_3'),
+        jobItem(1, 3, 'gj_3u', { settledAt: undefined }),
+      ],
+    });
+    await repo.reorderShots(VS, 1, [2, 1, 3]); // shots 1 and 2 swap; 3 stays
+    const { puts, dels } = ops(mockTransact.mock.calls[0][0]);
+    expect([...puts.map((p: any) => p.SK), ...dels.map((k: any) => k.SK)].some((sk: string) => sk.startsWith('GENJOB#'))).toBe(false);
+    expect(delSks()).toEqual([genJobSk('gj_1'), genJobSk('gj_2')].sort());
+    expect(mockTransact.mock.invocationCallOrder[0]).toBeLessThan(Math.min(...mockDelete.mock.invocationCallOrder));
+  });
+
+  it('applyDraft deletes every settled terminal GENJOB# row with the replaced shots\' candidates', async () => {
+    mockGet.mockResolvedValue({
+      PK, SK: draftSk('dr_1'), draftId: 'dr_1', lyricsHash: 'h', model: 'm', inputTokens: 1, outputTokens: 2,
+      costUsd: 0.1, characters: [], createdAt: 't',
+      scenes: [{ heading: 'S', summary: 's', shots: [{ durationSec: 5, mode: 'STILL', visualPrompt: 'v', characterNames: [] }] }],
+    });
+    mockQuery.mockResolvedValue({
+      Items: [meta, shotItem(1, 1, 5), candItem(1, 1, 'cd_1'), jobItem(1, 1, 'gj_a'), jobItem(2, 4, 'gj_b'),
+        jobItem(1, 1, 'gj_u', { settledAt: undefined })],
+    });
+    await repo.applyDraft(VS, 'dr_1');
+    expect(delSks()).toEqual([candSk(1, 1, 'cd_1'), genJobSk('gj_a'), genJobSk('gj_b')].sort());
   });
 });
 

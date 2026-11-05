@@ -3,6 +3,7 @@
  * DEFAULT_PROVIDER_ID. Unknown ids throw. Mirrors getEngine().
  */
 import { FakeVideoProvider, FAKE_PROVIDER_ID } from './fake';
+import { GrokProvider } from './grok';
 import type { VideoGenerationProvider } from './types';
 
 export const GROK_PROVIDER_ID = 'grok';
@@ -14,7 +15,7 @@ export function getVideoProvider(id?: string): VideoGenerationProvider {
     case FAKE_PROVIDER_ID:
       return new FakeVideoProvider();
     case GROK_PROVIDER_ID:
-      throw new Error('Video provider "grok" is not implemented until Phase 4');
+      return new GrokProvider();
     default:
       throw new Error(`Unknown video provider: "${selected}"`);
   }

@@ -10,7 +10,7 @@
 import { useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
 import type { Shot, VisualStory } from '@/types/visualStory';
-import { usd } from './ShotCard';
+import { usd } from './ui-utils';
 
 const MAX_BUDGET_USD = 500;
 

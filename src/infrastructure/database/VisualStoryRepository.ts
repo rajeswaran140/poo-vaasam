@@ -12,6 +12,7 @@
  */
 
 import { DynamoDBOperations, handleDynamoDBError } from './dynamodb-client';
+import { VIDEO_STALE_MS } from '@/services/video/gen-job';
 import {
   DEFAULT_BUDGET_USD_CAP,
   deriveStartSecs,
@@ -21,6 +22,8 @@ import {
   type CreateStoryInput,
   type DraftJob,
   type DraftJobStatus,
+  type GenJob,
+  type GenJobStatus,
   type Scene,
   type Shot,
   type StoryboardDraft,
@@ -43,6 +46,9 @@ export const candSk = (scene: number, shot: number, candId: string) =>
 export const charSk = (charId: string) => `CHAR#${charId}`;
 export const draftSk = (draftId: string) => `DRAFT#${draftId}`;
 export const draftJobSk = (jobId: string) => `DRAFTJOB#${jobId}`;
+export const genJobSk = (jobId: string) => `GENJOB#${jobId}`;
+/** One clip in flight per shot (Ruling V5): a separate row, so shot edits can't wipe it. */
+export const videoLockSk = (scene: number, shot: number) => `VIDLOCK#${pad3(scene)}#${pad3(shot)}`;
 
 const METADATA = 'METADATA';
 const metaKey = (vsId: string) => ({ PK: vsPk(vsId), SK: METADATA });
@@ -132,6 +138,16 @@ async function deleteInBatches(keys: Key[]): Promise<void> {
     await Promise.all(keys.slice(i, i + DELETE_CONCURRENCY).map((k) => DynamoDBOperations.delete(k)));
   }
 }
+
+/**
+ * A GENJOB# row a shot edit may delete: terminal AND settled. In-flight rows
+ * hold a reservation (edits are refused while one exists), and a terminal row
+ * without `settledAt` is the only record that a settle is still owed.
+ */
+const isDroppableJob = (i: Row) =>
+  String(i.SK).startsWith('GENJOB#') &&
+  (i.status === 'succeeded' || i.status === 'failed' || i.status === 'cancelled') &&
+  !!i.settledAt;
 
 /** Domain errors pass through untouched; anything else is a storage failure. */
 function fail(error: unknown): never {
@@ -465,6 +481,223 @@ export class VisualStoryRepository {
   }
 
   // -------------------------------------------------------------------------
+  // Video jobs: GENJOB#<jobId> in the story partition; non-terminal rows sit on
+  // the sparse GSI1 partition VSTORY_INFLIGHT so the reconciler can find them.
+  // -------------------------------------------------------------------------
+
+  async createGenJob(vsId: string, job: GenJob): Promise<void> {
+    try {
+      try {
+        await DynamoDBOperations.put(
+          {
+            PK: vsPk(vsId),
+            SK: genJobSk(job.jobId),
+            ...job,
+            GSI1PK: VSTORY_INFLIGHT_PK,
+            GSI1SK: `${job.createdAt}#${vsId}#${job.jobId}`,
+          },
+          { conditionExpression: 'attribute_not_exists(PK)' }
+        );
+      } catch (error) {
+        if (isConditionFailure(error)) throw new VisualStoryDomainError(`video job ${job.jobId} already exists`);
+        throw error;
+      }
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  async getGenJob(vsId: string, jobId: string): Promise<GenJob | null> {
+    try {
+      const item = await DynamoDBOperations.get({ PK: vsPk(vsId), SK: genJobSk(jobId) });
+      return item ? stripKeys<GenJob>(item) : null;
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  /**
+   * Conditional transition (same contract as `transitionDraftJob`): the updated
+   * job, or null when the job is gone or not in one of `from`. A terminal `to`
+   * also drops the row from the in-flight index.
+   */
+  async transitionGenJob(
+    vsId: string,
+    jobId: string,
+    from: GenJobStatus[],
+    to: GenJobStatus,
+    fields: { providerTaskId?: string; code?: string; error?: string; billedUsd?: number } = {}
+  ): Promise<GenJob | null> {
+    try {
+      const names: Record<string, string> = { '#s': 'status' };
+      const values: Record<string, any> = { ':to': to, ':u': new Date().toISOString() };
+      const sets = ['#s = :to', 'updatedAt = :u'];
+      for (const f of ['providerTaskId', 'code', 'error', 'billedUsd'] as const) {
+        if (fields[f] === undefined) continue;
+        names[`#${f}`] = f;
+        values[`:${f}`] = fields[f];
+        sets.push(`#${f} = :${f}`);
+      }
+      from.forEach((st, i) => (values[`:from${i}`] = st));
+      const terminal = to === 'succeeded' || to === 'failed' || to === 'cancelled';
+      try {
+        const item = await DynamoDBOperations.update({
+          key: { PK: vsPk(vsId), SK: genJobSk(jobId) },
+          updateExpression: `SET ${sets.join(', ')}${terminal ? ' REMOVE GSI1PK, GSI1SK' : ''}`,
+          expressionAttributeNames: names,
+          expressionAttributeValues: values,
+          conditionExpression: `attribute_exists(PK) AND #s IN (${from.map((_, i) => `:from${i}`).join(', ')})`,
+        });
+        return item ? stripKeys<GenJob>(item) : null;
+      } catch (error) {
+        if (isConditionFailure(error)) return null;
+        throw error;
+      }
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  /**
+   * Settle a video job's reservation exactly once (Ruling V10): ONE
+   * transaction that stamps GENJOB# `settledAt`/`billedUsd` (only if not yet
+   * settled) and moves the story's money as `settle` does. Repeatable: a
+   * crash between a won terminal transition and this call is finished by the
+   * next advance, and a second call is a no-op.
+   *
+   * true = settled now. false = already settled (the settledAt condition), or
+   * the story is gone (logged). Any other cancellation — e.g. a write conflict
+   * with a concurrent touch — is thrown, never taken as "settled", so the
+   * caller can retry rather than strand the reservation.
+   */
+  async settleGenJob(
+    vsId: string,
+    jobId: string,
+    args: { reservedUsd: number; billedUsd: number }
+  ): Promise<boolean> {
+    const r = round6(args.reservedUsd);
+    const b = round6(args.billedUsd);
+    try {
+      try {
+        await DynamoDBOperations.transactWrite([
+          {
+            Update: {
+              Key: { PK: vsPk(vsId), SK: genJobSk(jobId) },
+              UpdateExpression: 'SET settledAt = :now, billedUsd = :b',
+              // attribute_exists(PK): never upsert a stub row for a job that is gone.
+              ConditionExpression: 'attribute_exists(PK) AND attribute_not_exists(settledAt)',
+              ExpressionAttributeValues: { ':now': new Date().toISOString(), ':b': b },
+            },
+          },
+          {
+            Update: {
+              Key: metaKey(vsId),
+              UpdateExpression: 'ADD reservedUsd :negR, spentUsd :b, committedUsd :delta',
+              ConditionExpression: 'attribute_exists(PK)',
+              ExpressionAttributeValues: { ':negR': -r, ':b': b, ':delta': round6(b - r) },
+            },
+          },
+        ]);
+        return true;
+      } catch (error) {
+        const reasons = (error as { name?: string; CancellationReasons?: Array<{ Code?: string }> } | null);
+        if (reasons?.name === 'TransactionCanceledException' && Array.isArray(reasons.CancellationReasons)) {
+          const [jobReason, storyReason] = reasons.CancellationReasons.map((c) => c?.Code);
+          if (jobReason === 'ConditionalCheckFailed') return false;
+          if (storyReason === 'ConditionalCheckFailed') {
+            console.error('visual-story settleGenJob: story not found', vsId, jobId);
+            return false;
+          }
+        }
+        throw error;
+      }
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  /** Record a poll: attempts +1 (and copyFailures +1 when the copy failed), lastPolledAt now. */
+  async touchGenJob(vsId: string, jobId: string, opts: { copyFailed?: boolean } = {}): Promise<void> {
+    try {
+      await DynamoDBOperations.update({
+        key: { PK: vsPk(vsId), SK: genJobSk(jobId) },
+        updateExpression: `SET lastPolledAt = :now ADD attempts :one${opts.copyFailed ? ', copyFailures :one' : ''}`,
+        expressionAttributeValues: { ':now': new Date().toISOString(), ':one': 1 },
+        conditionExpression: 'attribute_exists(PK)',
+      });
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  /**
+   * Take the shot's video lock for `jobId`: a conditional put that succeeds
+   * when no lock exists or the existing one is older than VIDEO_STALE_MS (a
+   * crashed request can block the shot for at most that long). false when
+   * another job holds a fresh lock.
+   */
+  async claimShotVideo(vsId: string, sceneOrder: number, shotOrder: number, jobId: string, now: Date): Promise<boolean> {
+    try {
+      try {
+        await DynamoDBOperations.put(
+          { PK: vsPk(vsId), SK: videoLockSk(sceneOrder, shotOrder), jobId, createdAt: now.toISOString() },
+          {
+            conditionExpression: 'attribute_not_exists(PK) OR createdAt < :staleBefore',
+            expressionAttributeValues: { ':staleBefore': new Date(now.getTime() - VIDEO_STALE_MS).toISOString() },
+          }
+        );
+        return true;
+      } catch (error) {
+        if (isConditionFailure(error)) return false;
+        throw error;
+      }
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  /** Release the shot's video lock only if `jobId` still holds it. false when it doesn't (or it is gone). */
+  async releaseShotVideo(vsId: string, sceneOrder: number, shotOrder: number, jobId: string): Promise<boolean> {
+    try {
+      try {
+        await DynamoDBOperations.delete(
+          { PK: vsPk(vsId), SK: videoLockSk(sceneOrder, shotOrder) },
+          { conditionExpression: 'jobId = :j', expressionAttributeValues: { ':j': jobId } }
+        );
+        return true;
+      } catch (error) {
+        if (isConditionFailure(error)) return false;
+        throw error;
+      }
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  /** Every non-terminal video job across all stories (sparse GSI1, paginated). */
+  async listInflight(): Promise<Array<{ vsId: string; job: GenJob }>> {
+    try {
+      const out: Array<{ vsId: string; job: GenJob }> = [];
+      let exclusiveStartKey: Record<string, any> | undefined;
+      do {
+        const res = await DynamoDBOperations.query({
+          keyConditionExpression: 'GSI1PK = :pk',
+          expressionAttributeValues: { ':pk': VSTORY_INFLIGHT_PK },
+          indexName: 'GSI1',
+          exclusiveStartKey,
+        });
+        for (const item of (res.Items as Row[]) ?? []) {
+          out.push({ vsId: String(item.PK).slice('VSTORY#'.length), job: stripKeys<GenJob>(item) });
+        }
+        exclusiveStartKey = res.LastEvaluatedKey as Record<string, any> | undefined;
+      } while (exclusiveStartKey);
+      return out;
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // Story tree (spec §5): scenes, shots, characters, candidates, drafts
   // -------------------------------------------------------------------------
 
@@ -513,6 +746,7 @@ export class VisualStoryRepository {
     characters: Character[];
     candidates: Candidate[];
     drafts: StoryboardDraft[];
+    genJobs: GenJob[];
   } | null> {
     try {
       const items = await this.queryPartition(vsId);
@@ -530,6 +764,7 @@ export class VisualStoryRepository {
         characters: by('CHAR#').map((i) => stripKeys<Character>(i)),
         candidates: by('CAND#').map((i) => stripKeys<Candidate>(i)),
         drafts: by('DRAFT#').map((i) => stripKeys<StoryboardDraft>(i)),
+        genJobs: by('GENJOB#').map((i) => stripKeys<GenJob>(i)),
       };
     } catch (error) {
       fail(error);
@@ -563,7 +798,13 @@ export class VisualStoryRepository {
       const prefix = `CAND#${String(sceneOrder).padStart(3, '0')}#${String(shotOrder).padStart(3, '0')}#`;
       const items = await this.queryPartition(vsId);
       const keys: Key[] = items
-        .filter((i) => i.SK === shotSk(sceneOrder, shotOrder) || String(i.SK).startsWith(prefix))
+        .filter(
+          (i) =>
+            i.SK === shotSk(sceneOrder, shotOrder) ||
+            String(i.SK).startsWith(prefix) ||
+            // Old video jobs go too, so a later shot here never shows their failure.
+            (isDroppableJob(i) && i.sceneOrder === sceneOrder && i.shotOrder === shotOrder)
+        )
         .map((i) => ({ PK: i.PK, SK: i.SK }));
       await deleteInBatches(keys);
     } catch (error) {
@@ -585,7 +826,8 @@ export class VisualStoryRepository {
           (i) =>
             i.SK === sceneSk(sceneOrder) ||
             String(i.SK).startsWith(`SHOT#${pad}#`) ||
-            String(i.SK).startsWith(`CAND#${pad}#`)
+            String(i.SK).startsWith(`CAND#${pad}#`) ||
+            (isDroppableJob(i) && i.sceneOrder === sceneOrder)
         )
         .map((i) => ({ PK: i.PK, SK: i.SK }));
       await deleteInBatches(keys);
@@ -628,6 +870,15 @@ export class VisualStoryRepository {
       const unchangedKeys = new Set(puts.filter((p, n) => p.SK === deleteKeys[n].SK).map((p) => p.SK));
       await DynamoDBOperations.transactWrite(
         buildRewrite(changed, deleteKeys.filter((k) => !unchangedKeys.has(k.SK)))
+      );
+      // A moved shot's old video jobs would otherwise attach to whichever shot
+      // now sits at their position. After the transaction (not in it: they
+      // must not count toward its 100-item limit).
+      const movedFrom = new Set(newOrder.filter((old, i) => old !== i + 1));
+      await deleteInBatches(
+        items
+          .filter((i) => isDroppableJob(i) && i.sceneOrder === sceneOrder && movedFrom.has(i.shotOrder))
+          .map((i) => ({ PK: i.PK, SK: i.SK }))
       );
     } catch (error) {
       fail(error);
@@ -793,7 +1044,7 @@ export class VisualStoryRepository {
 
       const putSks = new Set(puts.map((p) => p.SK));
       const stale: Key[] = items
-        .filter((i) => /^(SCENE|SHOT|CAND)#/.test(i.SK) && !putSks.has(i.SK))
+        .filter((i) => (/^(SCENE|SHOT|CAND)#/.test(i.SK) && !putSks.has(i.SK)) || isDroppableJob(i))
         .map((i) => ({ PK: i.PK, SK: i.SK }));
       await deleteInBatches(stale);
     } catch (error) {

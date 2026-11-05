@@ -2,7 +2,9 @@
 
 /**
  * Right inspector: edit the selected shot's prompt, negative prompt, duration
- * and cast, or delete the shot (with its stills) after a confirm. The parent
+ * and cast, see or clear its pinned first frame, or delete the shot (with its
+ * stills) after a confirm. A pinned id that no longer resolves to one of this
+ * shot's stills shows no picture but can still be cleared. The parent
  * remounts it per shot (`key`), so the form always starts from that shot's
  * saved values.
  */
@@ -10,16 +12,18 @@
 import { useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
 import { MAX_SHOT_SEC, MIN_SHOT_SEC } from '@/types/visualStory';
-import type { Character, Shot } from '@/types/visualStory';
+import type { Candidate, Character, Shot } from '@/types/visualStory';
+import { Thumb } from './ui-utils';
 
 interface Props {
   vsId: string;
   shot: Shot | null;
   characters: Character[];
+  candidates: Candidate[];
   onChanged: () => void;
 }
 
-export function Inspector({ vsId, shot, characters, onChanged }: Props) {
+export function Inspector({ vsId, shot, characters, candidates, onChanged }: Props) {
   const [prompt, setPrompt] = useState(shot?.visualPrompt ?? '');
   const [negative, setNegative] = useState(shot?.negativePrompt ?? '');
   const [duration, setDuration] = useState(String(shot?.durationSec ?? 5));
@@ -30,6 +34,8 @@ export function Inspector({ vsId, shot, characters, onChanged }: Props) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [clearing, setClearing] = useState(false);
+  const [frameError, setFrameError] = useState<string | null>(null);
 
   if (!shot) {
     return <p className="text-sm text-gray-600 dark:text-gray-400">Choose “Edit” on a shot to change its prompt, length and cast.</p>;
@@ -99,6 +105,33 @@ export function Inspector({ vsId, shot, characters, onChanged }: Props) {
     }
   };
 
+  const pinned = shot.firstFrameCandidateId ?? null;
+  const frame = pinned
+    ? candidates.find(
+        (c) => c.candId === pinned && c.mode === 'STILL' && c.sceneOrder === shot.sceneOrder && c.shotOrder === shot.shotOrder
+      ) ?? null
+    : null;
+
+  const clearFrame = async () => {
+    if (clearing) return;
+    setClearing(true);
+    setFrameError(null);
+    try {
+      const res = await adminFetch(`/api/admin/visual-story/${vsId}/shots`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ op: 'update', sceneOrder: shot.sceneOrder, shotOrder: shot.shotOrder, firstFrameCandidateId: null }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body?.success) setFrameError(body?.error || 'Could not clear the first frame.');
+      else onChanged();
+    } catch {
+      setFrameError('Could not reach the server. Check your connection and try again.');
+    } finally {
+      setClearing(false);
+    }
+  };
+
   const field = 'mt-1 block w-full rounded-md border border-gray-300 px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-800';
 
   return (
@@ -127,6 +160,29 @@ export function Inspector({ vsId, shot, characters, onChanged }: Props) {
           </label>
         ))}
       </fieldset>
+      <div className="space-y-1">
+        <p className="text-sm text-gray-700 dark:text-gray-300">First frame</p>
+        {pinned ? (
+          <div className="flex items-center gap-2">
+            {frame ? (
+              <Thumb s3Key={frame.s3Key} alt={`First frame for shot ${shot.sceneOrder}.${shot.shotOrder}`} />
+            ) : (
+              <span className="text-xs text-gray-600 dark:text-gray-400">That picture is no longer available.</span>
+            )}
+            <button type="button" disabled={clearing} onClick={clearFrame} className="text-sm text-blue-700 hover:underline disabled:opacity-50 dark:text-blue-400">
+              {clearing ? 'Clearing…' : 'Clear'}
+            </button>
+          </div>
+        ) : (
+          <p className="text-xs text-gray-600 dark:text-gray-400">None. Choose “Use as first frame” on a still to start the next clip from it.</p>
+        )}
+        <p className="text-xs text-gray-600 dark:text-gray-400">Character photos are used for video clips too; a clip with them renders at 720p.</p>
+        {frameError && (
+          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+            {frameError}
+          </p>
+        )}
+      </div>
       <div className="space-y-1">
         <button type="submit" disabled={!canSave} className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
           {busy ? 'Saving…' : 'Save shot'}

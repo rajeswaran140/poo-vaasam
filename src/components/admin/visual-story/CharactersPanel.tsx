@@ -10,7 +10,7 @@ import { useRef, useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
 import { putToS3 } from '@/lib/mastering-upload-client';
 import type { Character } from '@/types/visualStory';
-import { Thumb } from './ShotCard';
+import { Thumb } from './ui-utils';
 
 /** Mirrors ACCEPTED_REF_TYPES / MAX_REFS_PER_CHARACTER (that module is server-only). */
 const ACCEPT = 'image/jpeg,image/png,image/webp';
@@ -137,6 +137,9 @@ export function CharactersPanel({ vsId, characters, onChanged }: { vsId: string;
 
   return (
     <div className="space-y-3">
+      <p className="text-xs text-gray-600 dark:text-gray-400">
+        Reference photos are used for video clips: Grok keeps each character&apos;s look from them. A clip with references renders at 720p.
+      </p>
       {characters.length === 0 && <p className="text-sm text-gray-600 dark:text-gray-400">No characters yet.</p>}
       <ul className="space-y-2">
         {characters.map((c) => (

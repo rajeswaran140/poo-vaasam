@@ -1,0 +1,212 @@
+/**
+ * POST /api/admin/visual-story/[vsId]/shots/[shotKey]/video — start one Grok
+ * Imagine video clip for a shot (spec §6.2.1), under the story's hard budget
+ * cap (spec §11 layer 3). `shotKey` is `nnn-mmm` (sceneOrder-shotOrder). No body.
+ *
+ * Flow: claim the shot's VIDLOCK# (one clip in flight per shot, Ruling V5) →
+ * reserve the estimate → write a `submitted` GENJOB → submit to Grok. The
+ * claim is released on every path that leaves no submitted/running job; on an
+ * accepted submit it stays held until Task 4's terminal transition.
+ * Accepted ⇒ the job moves to `running` with the provider task id and the
+ * reservation stays HELD — the job's poller settles it (billed or not) when
+ * the job ends. A clean refusal (HTTP 4xx) ⇒ the job moves to `failed` and the
+ * reservation is released (nothing was billed). An ambiguous failure (timeout,
+ * network, HTTP ≥ 500, unreadable answer) or a thrown submit ⇒ `failed` but
+ * settled BILLED: Grok may still make, and charge for, the clip (Ruling V9).
+ * Either way only if that conditional transition won — whoever ends the job
+ * settles it, exactly once, through settleGenJob (Ruling V10).
+ */
+
+import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
+import { VisualStoryRepository } from '@/infrastructure/database/VisualStoryRepository';
+import { getVideoProvider, type SubmitResult, type VideoGenRequest } from '@/services/video/providers';
+import { buildVideoRequest } from '@/services/video/gen-job';
+import { settleQuietly } from '@/services/video/storyboard-job';
+import { estimateCostUsd } from '@/services/video/cost';
+import { candIdForJob, isVsId, newId } from '@/types/visualStory';
+import type { GenJob } from '@/types/visualStory';
+import { fail, limitMutation, mapError } from '@/lib/visual-story-route';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+type Ctx = { params: Promise<{ vsId: string; shotKey: string }> };
+
+const SHOT_KEY = /^(\d{3})-(\d{3})$/;
+
+const BUSY = 'A video is already rendering for this shot.';
+const AMBIGUOUS = "Grok didn't answer in time; it may still have been charged.";
+
+const STATUS_BY_CODE: Record<string, number> = {
+  not_configured: 503,
+  billing: 503,
+  rate_limit: 429,
+  content_policy: 422,
+};
+
+const errName = (e: unknown) => (e instanceof Error ? e.name : 'error');
+
+export async function POST(request: NextRequest, { params }: Ctx) {
+  let auth;
+  try {
+    auth = await requireAdmin(request);
+    requireBearer(request); // mutation that spends money — reject cookie-only auth (CSRF)
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+  const limited = limitMutation(auth, request);
+  if (limited) return limited;
+
+  const { vsId, shotKey } = await params;
+  const m = SHOT_KEY.exec(shotKey);
+  if (!isVsId(vsId)) return fail('That story no longer exists.', 404);
+  if (!m) return fail('That shot no longer exists.', 404);
+  const sceneOrder = Number(m[1]);
+  const shotOrder = Number(m[2]);
+
+  const repo = new VisualStoryRepository();
+  const provider = getVideoProvider('grok');
+  const jobId = newId('gj');
+  let tree;
+  let shot;
+  try {
+    tree = await repo.loadTree(vsId);
+    if (!tree) return fail('That story no longer exists.', 404);
+    shot = tree.shots.find((s) => s.sceneOrder === sceneOrder && s.shotOrder === shotOrder);
+    if (!shot) return fail('That shot no longer exists.', 404);
+    if (!shot.visualPrompt.trim()) return fail('Write a visual prompt first.', 400);
+    // Fast path only: two presses can both read an empty list. The lock below decides.
+    const busy = tree.genJobs.some(
+      (j) =>
+        j.sceneOrder === sceneOrder &&
+        j.shotOrder === shotOrder &&
+        (j.status === 'submitted' || j.status === 'running')
+    );
+    if (busy) return fail(BUSY, 409);
+  } catch (err) {
+    return mapError(err);
+  }
+
+  // One clip in flight per shot (Ruling V5): a conditional put on VIDLOCK#,
+  // taken before anything is reserved, so a double press or a second tab gets
+  // 409 and spends nothing.
+  let claimed: boolean;
+  try {
+    claimed = await repo.claimShotVideo(vsId, sceneOrder, shotOrder, jobId, new Date());
+  } catch (err) {
+    return mapError(err);
+  }
+  if (!claimed) return fail(BUSY, 409);
+
+  // The claim is released on every path that leaves no submitted/running job.
+  // On an accepted submit it stays held: Task 4 releases it (jobId-guarded) at
+  // the job's terminal transition.
+  let accepted = false;
+  try {
+    let videoReq: VideoGenRequest;
+    let est: number;
+    let reserved: boolean;
+    try {
+      if (!(await provider.isConfigured())) return fail('Grok video generation is not configured.', 503);
+      // Signed before reserving: a signing failure must not strand a reservation.
+      videoReq = await buildVideoRequest(tree, shot);
+      est = estimateCostUsd('grok', 'HERO', shot.durationSec);
+      reserved = await repo.reserve(vsId, est);
+    } catch (err) {
+      return mapError(err);
+    }
+    if (!reserved) {
+      const { spentUsd, budgetUsdCap } = tree.story;
+      return fail(
+        `This would go over the story's budget ($${spentUsd.toFixed(2)} of $${budgetUsdCap.toFixed(2)}).`,
+        402
+      );
+    }
+
+    // From here a reservation is held.
+    const now = new Date().toISOString();
+    const job: GenJob = {
+      jobId,
+      sceneOrder,
+      shotOrder,
+      status: 'submitted',
+      providerId: provider.id,
+      providerTaskId: null,
+      reservedUsd: est,
+      candId: candIdForJob(jobId),
+      attempts: 0,
+      copyFailures: 0,
+      lastPolledAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    try {
+      await repo.createGenJob(vsId, job);
+    } catch (err) {
+      // No job and no provider call: release the hold here, once.
+      await settleQuietly(repo, vsId, est, 0, 'video');
+      return mapError(err);
+    }
+
+    let result: SubmitResult;
+    try {
+      // No request.signal: a client navigating away must not abort a call xAI
+      // may already have accepted (and will bill).
+      result = await provider.submit(videoReq);
+    } catch (err) {
+      // We can't tell whether xAI saw it: treat as ambiguous (Ruling V9).
+      console.error('visual-story video: submit threw', errName(err));
+      result = { ok: false, code: 'upstream', error: AMBIGUOUS, ambiguous: true };
+    }
+
+    if (result.ok) {
+      accepted = true;
+      try {
+        const moved = await repo.transitionGenJob(vsId, jobId, ['submitted'], 'running', {
+          providerTaskId: result.providerTaskId,
+        });
+        if (!moved) console.error('visual-story video: running transition lost', jobId, result.providerTaskId);
+      } catch (err) {
+        // Left `submitted`; the 1-hour sweep settles it as BILLED (Ruling V4b).
+        console.error('visual-story video: running transition failed', jobId, result.providerTaskId, errName(err));
+      }
+      // The reservation stays held; the job's poller settles it.
+      return NextResponse.json({ success: true, data: { jobId } }, { status: 202 });
+    }
+
+    // A clean refusal billed nothing; an ambiguous failure may have been
+    // accepted and charged — over-record (Ruling V9). Settle only if this side
+    // ended the job; the billed amount rides on the transition (Ruling V10).
+    const ambiguous = result.ambiguous === true;
+    const code = ambiguous ? 'upstream' : result.code;
+    const error = ambiguous ? AMBIGUOUS : result.error;
+    const billedUsd = ambiguous ? est : 0;
+    let ended: GenJob | null = null;
+    try {
+      ended = await repo.transitionGenJob(vsId, jobId, ['submitted'], 'failed', { code, error, billedUsd });
+    } catch (err) {
+      // Left `submitted`: the 1-hour sweep ends it and settles it as BILLED
+      // (Ruling V4b) — it may over-record a refused clip but never under-records.
+      console.error('visual-story video: failed transition failed', jobId, errName(err));
+    }
+    if (ended) {
+      try {
+        await repo.settleGenJob(vsId, jobId, { reservedUsd: est, billedUsd });
+      } catch (err) {
+        // The job is terminal with its billed amount stored: the next advance settles it.
+        console.error('visual-story video: settle failed', jobId, errName(err));
+      }
+    }
+    return fail(error, STATUS_BY_CODE[code] ?? 502);
+  } finally {
+    if (!accepted) {
+      try {
+        await repo.releaseShotVideo(vsId, sceneOrder, shotOrder, jobId);
+      } catch (err) {
+        // The lock goes stale after an hour; the response stays the real outcome.
+        console.error('visual-story video: release failed', jobId, errName(err));
+      }
+    }
+  }
+}
