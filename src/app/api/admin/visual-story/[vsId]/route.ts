@@ -15,6 +15,7 @@ import {
   CapBelowCommittedError,
 } from '@/infrastructure/database/VisualStoryRepository';
 import { isVsId } from '@/types/visualStory';
+import { failRendering, hasRenderingVideo } from '@/lib/visual-story-route';
 import { sweepStaleDraftJobs } from '@/services/video/storyboard-job';
 
 export const runtime = 'nodejs';
@@ -106,7 +107,10 @@ export async function DELETE(request: NextRequest, { params }: Ctx) {
   const { vsId } = await params;
   if (!isVsId(vsId)) return fail('That story no longer exists.', 404);
   try {
-    await new VisualStoryRepository().remove(vsId);
+    const repo = new VisualStoryRepository();
+    const tree = await repo.loadTree(vsId);
+    if (tree && hasRenderingVideo(tree)) return failRendering();
+    await repo.remove(vsId);
     return NextResponse.json({ success: true });
   } catch (err) {
     return mapError(err);

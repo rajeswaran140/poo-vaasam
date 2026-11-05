@@ -298,6 +298,18 @@ describe('DELETE', () => {
     expect(res.status).toBe(200);
     expect(repo.remove).toHaveBeenCalledWith(VS);
   });
+  it('409s while a clip renders, deletes once it is terminal', async () => {
+    for (const status of ['submitted', 'running']) {
+      repo.loadTree.mockResolvedValueOnce({ genJobs: [{ jobId: 'gj_1', status }] });
+      const res = await DELETE(req('DELETE'), ctx());
+      expect(res.status).toBe(409);
+      expect((await res.json()).error).toBe('Wait for the video to finish first.');
+    }
+    expect(repo.remove).not.toHaveBeenCalled();
+    repo.loadTree.mockResolvedValueOnce({ genJobs: [{ jobId: 'gj_1', status: 'failed' }] });
+    expect((await DELETE(req('DELETE'), ctx())).status).toBe(200);
+    expect(repo.remove).toHaveBeenCalledWith(VS);
+  });
   it('404 for a malformed id without touching the repo', async () => {
     expect((await DELETE(req('DELETE'), ctx('bad'))).status).toBe(404);
     expect(repo.remove).not.toHaveBeenCalled();

@@ -11,7 +11,7 @@ import { z } from 'zod';
 import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { VisualStoryRepository } from '@/infrastructure/database/VisualStoryRepository';
 import { isVsId, sceneInputSchema } from '@/types/visualStory';
-import { fail, limitMutation, mapError, timelineOf } from '@/lib/visual-story-route';
+import { fail, failRendering, hasRenderingVideo, limitMutation, mapError, timelineOf } from '@/lib/visual-story-route';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -69,6 +69,7 @@ export async function POST(request: NextRequest, { params }: Ctx) {
         };
         await repo.putScene(vsId, scene);
       } else {
+        if (hasRenderingVideo(tree)) return failRendering();
         await repo.deleteScene(vsId, input.order);
       }
     }

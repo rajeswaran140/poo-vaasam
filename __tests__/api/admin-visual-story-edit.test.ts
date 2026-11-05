@@ -287,6 +287,42 @@ describe('shots', () => {
   });
 });
 
+describe('structural edits are blocked while a clip renders', () => {
+  const MSG = 'Wait for the video to finish first.';
+  const job = (status: string) => ({ jobId: 'gj_1', sceneOrder: 1, shotOrder: 1, status });
+  const withJob = (status: string) => repo.loadTree.mockResolvedValue(tree({ genJobs: [job(status)] }));
+  const cases: [string, () => Promise<Response>, jest.Mock][] = [
+    ['shot delete', () => shotsPOST(mk({ op: 'delete', sceneOrder: 1, shotOrder: 2 }), ctx()), repo.deleteShot],
+    ['shot reorder', () => shotsPOST(mk({ op: 'reorder', sceneOrder: 1, order: [2, 1] }), ctx()), repo.reorderShots],
+    ['scene delete', () => scenesPOST(mk({ op: 'delete', order: 1 }), ctx()), repo.deleteScene],
+  ];
+  it.each(['submitted', 'running'])('409s every structural op with a %s job', async (status) => {
+    for (const [, run, write] of cases) {
+      withJob(status);
+      const res = await run();
+      expect(res.status).toBe(409);
+      expect((await res.json()).error).toBe(MSG);
+      expect(write).not.toHaveBeenCalled();
+    }
+  });
+  it('succeeds once the job is terminal', async () => {
+    for (const status of ['succeeded', 'failed', 'cancelled']) {
+      for (const [, run] of cases) {
+        withJob(status);
+        expect((await run()).status).toBe(200);
+      }
+    }
+  });
+  it('still allows prompt edits and new shots while a clip renders', async () => {
+    withJob('running');
+    expect((await shotsPOST(mk({ op: 'update', sceneOrder: 1, shotOrder: 2, visualPrompt: 'New' }), ctx())).status).toBe(200);
+    expect(repo.putShot).toHaveBeenCalled();
+    expect(
+      (await shotsPOST(mk({ op: 'create', sceneOrder: 1, mode: 'STILL', durationSec: 5, visualPrompt: 'More' }), ctx())).status
+    ).toBe(201);
+  });
+});
+
 describe('characters', () => {
   it('create makes an id and starts with no references', async () => {
     const res = await charsPOST(mk({ op: 'create', name: ' Test ', description: 'd' }), ctx());

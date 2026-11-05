@@ -14,7 +14,7 @@ import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helpe
 import { VisualStoryRepository } from '@/infrastructure/database/VisualStoryRepository';
 import { isVsId, shotInputSchema } from '@/types/visualStory';
 import type { Shot } from '@/types/visualStory';
-import { fail, limitMutation, mapError, timelineOf } from '@/lib/visual-story-route';
+import { fail, failRendering, hasRenderingVideo, limitMutation, mapError, timelineOf } from '@/lib/visual-story-route';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -105,8 +105,10 @@ export async function POST(request: NextRequest, { params }: Ctx) {
       await repo.putShot(vsId, shot);
     } else if (input.op === 'delete') {
       if (!find(input.shotOrder)) return fail('That shot no longer exists.', 404);
+      if (hasRenderingVideo(tree)) return failRendering();
       await repo.deleteShot(vsId, input.sceneOrder, input.shotOrder);
     } else {
+      if (hasRenderingVideo(tree)) return failRendering();
       await repo.reorderShots(vsId, input.sceneOrder, input.order);
     }
 

@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { VisualStoryRepository } from '@/infrastructure/database/VisualStoryRepository';
 import { isDraftId, isVsId } from '@/types/visualStory';
-import { fail, limitMutation, mapError } from '@/lib/visual-story-route';
+import { fail, failRendering, hasRenderingVideo, limitMutation, mapError } from '@/lib/visual-story-route';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -32,6 +32,9 @@ export async function POST(request: NextRequest, { params }: Ctx) {
 
   try {
     const repo = new VisualStoryRepository();
+    const before = await repo.loadTree(vsId);
+    if (!before) return fail('That story no longer exists.', 404);
+    if (hasRenderingVideo(before)) return failRendering();
     await repo.applyDraft(vsId, draftId);
     await repo.patch(vsId, { status: 'STORYBOARDING' });
     const tree = await repo.loadTree(vsId);
