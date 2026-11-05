@@ -5,60 +5,25 @@
  * cost estimate, "Generate still" behind a confirm-before-spend dialog (spec
  * §11 layer 2), and the candidate strip with a radio for the chosen image.
  *
+ * "Make video" and its job's progress live in VideoControls. The strip shows
+ * stills and video clips; the radio picks either, and a still can be pinned
+ * as the shot's first frame (the next clip starts from it).
+ *
  * Every error from this card's own requests (402 over budget, 422 content
- * policy, 503 not connected, 502 upstream…) renders HERE, beside the button
- * that caused it — never in a page banner.
+ * policy, 503 not connected, 502 upstream, a failed clip…) renders HERE,
+ * beside the button that caused it — never in a page banner.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
 import { estimateCostUsd } from '@/services/video/cost';
-import type { Candidate, Character, Shot, ShotMode, VisualStory } from '@/types/visualStory';
+import type { Candidate, Character, GenJob, Shot, ShotMode, VisualStory } from '@/types/visualStory';
 import { formatMss } from './WindowPicker';
-
-export const usd = (n: number) => `$${n.toFixed(2)}`;
-
-/** `nnn-mmm`, the shot key the still route takes. */
-export const shotKey = (s: Pick<Shot, 'sceneOrder' | 'shotOrder'>) =>
-  `${String(s.sceneOrder).padStart(3, '0')}-${String(s.shotOrder).padStart(3, '0')}`;
+import { Thumb, VideoThumb, shotKey, usd } from './ui-utils';
+import { VideoControls } from './VideoControls';
 
 /** The STILL route always bills the Grok image rate, whatever the story's provider. */
 export const STILL_PRICE_USD = estimateCostUsd('grok', 'STILL', 1);
-
-/** A short-lived signed URL for a private workspace object, via the mastering download route. */
-export function usePlayUrl(key: string | null): string | null {
-  const [url, setUrl] = useState<string | null>(null);
-  useEffect(() => {
-    if (!key) return;
-    let cancelled = false;
-    setUrl(null);
-    void (async () => {
-      try {
-        const res = await adminFetch(`/api/admin/mastering/download?key=${encodeURIComponent(key)}&mode=play`);
-        const body = await res.json().catch(() => ({}));
-        if (!cancelled && res.ok && body.success && body.url) setUrl(body.url as string);
-      } catch {
-        // A preview is a convenience; a failed presign leaves the box empty.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [key]);
-  return url;
-}
-
-export function Thumb({ s3Key, alt }: { s3Key: string; alt: string }) {
-  const url = usePlayUrl(s3Key);
-  return url ? (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img src={url} alt={alt} className="h-16 w-16 rounded object-cover" />
-  ) : (
-    <span className="flex h-16 w-16 items-center justify-center rounded border border-dashed border-gray-300 text-xs text-gray-600 dark:border-gray-600 dark:text-gray-400">
-      …
-    </span>
-  );
-}
 
 function ModeBadge({ mode }: { mode: ShotMode }) {
   if (mode === 'HERO') {
@@ -76,16 +41,19 @@ interface Props {
   story: VisualStory;
   characters: Character[];
   candidates: Candidate[];
+  /** This shot's video jobs from the tree. */
+  jobs: GenJob[];
   selected: boolean;
   onEdit: () => void;
   /** Reload the story tree (spend, candidates) after any request settles. */
   onChanged: () => void;
 }
 
-export function ShotCard({ vsId, shot, story, characters, candidates, selected, onEdit, onChanged }: Props) {
+export function ShotCard({ vsId, shot, story, characters, candidates, jobs, selected, onEdit, onChanged }: Props) {
   const [confirming, setConfirming] = useState(false);
   const [pending, setPending] = useState(false);
   const [picking, setPicking] = useState(false);
+  const [pinning, setPinning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // State updates are async; the ref closes the gap between two fast clicks.
   const inFlight = useRef(false);
@@ -130,12 +98,32 @@ export function ShotCard({ vsId, shot, story, characters, candidates, selected, 
         body: JSON.stringify({ sceneOrder: shot.sceneOrder, shotOrder: shot.shotOrder, candId }),
       });
       const body = await res.json().catch(() => null);
-      if (!res.ok || !body?.success) setError(body?.error || 'Could not choose that image.');
+      if (!res.ok || !body?.success) setError(body?.error || 'Could not choose that picture or clip.');
       else onChanged();
     } catch {
       setError('Could not reach the server. Check your connection and try again.');
     } finally {
       setPicking(false);
+    }
+  };
+
+  const pinFirstFrame = async (candId: string) => {
+    if (pinning) return;
+    setPinning(true);
+    setError(null);
+    try {
+      const res = await adminFetch(`/api/admin/visual-story/${vsId}/shots`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ op: 'update', sceneOrder: shot.sceneOrder, shotOrder: shot.shotOrder, firstFrameCandidateId: candId }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body?.success) setError(body?.error || 'Could not use that picture as the first frame.');
+      else onChanged();
+    } catch {
+      setError('Could not reach the server. Check your connection and try again.');
+    } finally {
+      setPinning(false);
     }
   };
 
@@ -207,21 +195,48 @@ export function ShotCard({ vsId, shot, story, characters, candidates, selected, 
         )}
       </div>
 
+      <VideoControls
+        vsId={vsId}
+        shotKey={key}
+        label={label}
+        durationSec={shot.durationSec}
+        story={story}
+        jobs={jobs}
+        onChanged={onChanged}
+      />
+
       {candidates.length > 0 && (
-        <fieldset disabled={picking} className="flex flex-wrap gap-2">
-          <legend className="sr-only">{`Chosen image for ${label}`}</legend>
-          {candidates.map((c, i) => (
-            <label key={c.candId} className="flex flex-col items-center gap-1 text-xs text-gray-700 dark:text-gray-300">
-              <Thumb s3Key={c.s3Key} alt={`Candidate ${i + 1} for ${label}`} />
-              <input
-                type="radio"
-                name={`pick-${key}`}
-                aria-label={`Image ${i + 1}`}
-                checked={shot.selectedCandidateId === c.candId}
-                onChange={() => pick(c.candId)}
-              />
-            </label>
-          ))}
+        <fieldset disabled={picking || pinning} className="flex flex-wrap gap-3">
+          <legend className="sr-only">{`Chosen picture or clip for ${label}`}</legend>
+          {candidates.map((c, i) => {
+            const isVideo = c.mode !== 'STILL';
+            const name = `${isVideo ? 'Video' : 'Image'} ${i + 1}`;
+            return (
+              <div key={c.candId} className="flex flex-col items-center gap-1 text-xs text-gray-700 dark:text-gray-300">
+                {isVideo ? (
+                  <VideoThumb s3Key={c.s3Key} label={`Clip ${i + 1} for ${label}`} />
+                ) : (
+                  <Thumb s3Key={c.s3Key} alt={`Candidate ${i + 1} for ${label}`} />
+                )}
+                <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-700 dark:bg-gray-700 dark:text-gray-200">{isVideo ? 'Video' : 'Still'}</span>
+                <input
+                  type="radio"
+                  name={`pick-${key}`}
+                  aria-label={name}
+                  checked={shot.selectedCandidateId === c.candId}
+                  onChange={() => pick(c.candId)}
+                />
+                {!isVideo &&
+                  (shot.firstFrameCandidateId === c.candId ? (
+                    <span className="font-medium text-green-700 dark:text-green-400">First frame</span>
+                  ) : (
+                    <button type="button" onClick={() => pinFirstFrame(c.candId)} className="text-blue-700 hover:underline disabled:opacity-50 dark:text-blue-400">
+                      Use as first frame
+                    </button>
+                  ))}
+              </div>
+            );
+          })}
         </fieldset>
       )}
     </article>

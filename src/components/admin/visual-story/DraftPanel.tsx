@@ -22,7 +22,7 @@ import { adminFetch } from '@/lib/client-auth';
 import { pollJob } from '@/lib/poll-job';
 import { draftLabelUsd } from '@/services/video/cost';
 import type { StoryboardDraft } from '@/types/visualStory';
-import { usd } from './ShotCard';
+import { usd } from './ui-utils';
 
 interface Props {
   vsId: string;

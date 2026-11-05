@@ -5,8 +5,9 @@
 import { useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
 import { MAX_SHOT_SEC, MIN_SHOT_SEC } from '@/types/visualStory';
-import type { Candidate, Character, Scene, Shot, VisualStory } from '@/types/visualStory';
-import { ShotCard, shotKey } from './ShotCard';
+import type { Candidate, Character, GenJob, Scene, Shot, VisualStory } from '@/types/visualStory';
+import { ShotCard } from './ShotCard';
+import { shotKey } from './ui-utils';
 
 interface Props {
   vsId: string;
@@ -15,12 +16,13 @@ interface Props {
   shots: Shot[];
   characters: Character[];
   candidates: Candidate[];
+  genJobs: GenJob[];
   selectedKey: string | null;
   onEdit: (key: string) => void;
   onChanged: () => void;
 }
 
-export function ShotGrid({ vsId, story, scene, shots, characters, candidates, selectedKey, onEdit, onChanged }: Props) {
+export function ShotGrid({ vsId, story, scene, shots, characters, candidates, genJobs, selectedKey, onEdit, onChanged }: Props) {
   const [prompt, setPrompt] = useState('');
   const [duration, setDuration] = useState('5');
   const [busy, setBusy] = useState(false);
@@ -81,6 +83,7 @@ export function ShotGrid({ vsId, story, scene, shots, characters, candidates, se
               story={story}
               characters={characters}
               candidates={candidates.filter((c) => c.sceneOrder === s.sceneOrder && c.shotOrder === s.shotOrder)}
+              jobs={genJobs.filter((j) => j.sceneOrder === s.sceneOrder && j.shotOrder === s.shotOrder)}
               selected={selectedKey === key}
               onEdit={() => onEdit(key)}
               onChanged={onChanged}

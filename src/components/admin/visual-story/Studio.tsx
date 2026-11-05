@@ -13,10 +13,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { adminFetch } from '@/lib/client-auth';
-import type { Candidate, Character, Scene, Shot, StoryboardDraft, VisualStory } from '@/types/visualStory';
+import type { Candidate, Character, GenJob, Scene, Shot, StoryboardDraft, VisualStory } from '@/types/visualStory';
 import { SceneRail } from './SceneRail';
 import { ShotGrid } from './ShotGrid';
-import { shotKey } from './ShotCard';
+import { shotKey } from './ui-utils';
 import { Inspector } from './Inspector';
 import { CharactersPanel } from './CharactersPanel';
 import { DraftPanel } from './DraftPanel';
@@ -29,6 +29,8 @@ export interface StoryTree {
   characters: Character[];
   candidates: Candidate[];
   drafts: StoryboardDraft[];
+  /** Video jobs; a submitted|running one resumes polling in its shot card. */
+  genJobs?: GenJob[];
 }
 
 type Tab = 'inspector' | 'characters';
@@ -122,6 +124,7 @@ export function Studio({ vsId }: { vsId: string }) {
             shots={sceneShots}
             characters={characters}
             candidates={candidates}
+            genJobs={tree.genJobs ?? []}
             selectedKey={editKey}
             onEdit={(key) => {
               setEditKey(key);
@@ -151,7 +154,7 @@ export function Studio({ vsId }: { vsId: string }) {
           </div>
           <div role="tabpanel">
             {tab === 'inspector' ? (
-              <Inspector key={editKey ?? 'none'} vsId={vsId} shot={editShot} characters={characters} onChanged={refresh} />
+              <Inspector key={editKey ?? 'none'} vsId={vsId} shot={editShot} characters={characters} candidates={candidates} onChanged={refresh} />
             ) : (
               <CharactersPanel vsId={vsId} characters={characters} onChanged={refresh} />
             )}
