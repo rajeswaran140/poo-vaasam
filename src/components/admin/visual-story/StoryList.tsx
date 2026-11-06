@@ -4,12 +4,18 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { adminFetch } from '@/lib/client-auth';
 import type { VisualStory } from '@/types/visualStory';
+import { mmss, type StoryProgress } from '@/lib/visual-story-progress';
+import { Thumb } from './ui-utils';
 
-/** The list endpoint adds shotCount per story (R11); it is null when that story's count query failed. */
-export type StoryRow = VisualStory & { shotCount?: number | null };
+/**
+ * The list endpoint adds each story's progress (storyProgress) for its card;
+ * shotCount is null when that story could not be read.
+ */
+export type StoryRow = VisualStory & Partial<Omit<StoryProgress, 'shotCount'>> & { shotCount?: number | null };
 
 const usd = (n: number) => `$${n.toFixed(2)}`;
 
+/** One card per story: cover picture, shape and length, how ready it is, and a finished video. */
 export function StoryList({ stories }: { stories: StoryRow[] }) {
   if (stories.length === 0) {
     return (
@@ -19,34 +25,55 @@ export function StoryList({ stories }: { stories: StoryRow[] }) {
     );
   }
   return (
-    <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
-      <table className="min-w-full text-sm">
-        <thead className="bg-gray-50 text-left text-xs uppercase text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-          <tr>
-            <th className="px-3 py-2">Title</th>
-            <th className="px-3 py-2">Aspect</th>
-            <th className="px-3 py-2">Status</th>
-            <th className="px-3 py-2">Shots</th>
-            <th className="px-3 py-2">Spent</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-          {stories.map((s) => (
-            <tr key={s.vsId}>
-              <td className="px-3 py-2">
-                <Link href={`/admin/visual-story/${s.vsId}`} className="font-medium text-blue-700 hover:underline dark:text-blue-400">
-                  {s.title}
-                </Link>
-              </td>
-              <td className="px-3 py-2">{s.aspectRatio}</td>
-              <td className="px-3 py-2">{s.status}</td>
-              <td className="px-3 py-2">{s.shotCount ?? '—'}</td>
-              <td className="px-3 py-2">{`${usd(s.spentUsd)} of ${usd(s.budgetUsdCap)}`}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <ul aria-label="Stories" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {stories.map((s) => {
+        const known = typeof s.shotCount === 'number';
+        const windowSec = s.windowSec ?? s.windowEndSec - s.windowStartSec;
+        return (
+          <li key={s.vsId}>
+            <Link
+              href={`/admin/visual-story/${s.vsId}`}
+              className="flex gap-3 rounded-lg border border-gray-200 p-3 hover:border-blue-400 hover:bg-blue-50/40 dark:border-gray-700 dark:hover:border-blue-600 dark:hover:bg-blue-950/40"
+            >
+              <span className="shrink-0">
+                {s.coverKey ? (
+                  <Thumb s3Key={s.coverKey} alt="" aspect={s.aspectRatio} small />
+                ) : (
+                  <span
+                    className={`${s.aspectRatio === '9:16' ? 'h-24 w-14' : 'h-14 w-24'} flex items-center justify-center rounded bg-gray-100 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400`}
+                  >
+                    {s.aspectRatio}
+                  </span>
+                )}
+              </span>
+              <span className="min-w-0 space-y-0.5 text-sm">
+                <span className="block truncate font-medium text-blue-700 dark:text-blue-400">{s.title}</span>
+                <span className="block text-gray-600 dark:text-gray-400">{`${s.aspectRatio} · ${mmss(windowSec)} of song`}</span>
+                <span className="block text-gray-700 dark:text-gray-300">
+                  {!known
+                    ? 'Shots —'
+                    : s.shotCount === 0
+                      ? 'No shots yet'
+                      : `${s.readyCount ?? 0} of ${s.shotCount} ${s.shotCount === 1 ? 'shot' : 'shots'} ready`}
+                </span>
+                {/* Any finished video counts, even if a later re-render failed. */}
+                {s.videoKey && (
+                  <span className="inline-block rounded bg-green-100 px-1.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-200">
+                    Video ready
+                  </span>
+                )}
+                {s.render === 'running' && (
+                  <span className="inline-block rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                    Rendering…
+                  </span>
+                )}
+                <span className="block text-xs text-gray-500 dark:text-gray-400">{`${usd(s.spentUsd)} of ${usd(s.budgetUsdCap)} spent`}</span>
+              </span>
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

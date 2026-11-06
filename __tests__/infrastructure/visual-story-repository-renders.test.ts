@@ -89,3 +89,15 @@ describe('transitionRender', () => {
     expect(await repo.transitionRender(VS, RD, ['queued'], 'failed')).toBeNull();
   });
 });
+
+it('loadProgressParts reads only SHOT#, CAND# and RENDER# rows', async () => {
+  mockQuery.mockImplementation(async (p: { expressionAttributeValues: Record<string, string> }) => ({
+    Items: [{ PK: 'p', SK: `${p.expressionAttributeValues[':sk']}x`, durationSec: 1 }],
+  }));
+  const parts = await repo.loadProgressParts(VS);
+  const prefixes = mockQuery.mock.calls.map((c) => c[0].expressionAttributeValues[':sk']).sort();
+  expect(prefixes).toEqual(['CAND#', 'RENDER#', 'SHOT#']);
+  for (const c of mockQuery.mock.calls) expect(c[0].keyConditionExpression).toBe('PK = :pk AND begins_with(SK, :sk)');
+  expect(parts.shots).toHaveLength(1);
+  expect(parts.shots[0]).not.toHaveProperty('PK');
+});

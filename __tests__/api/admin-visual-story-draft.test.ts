@@ -356,3 +356,13 @@ describe('POST apply', () => {
     expect(repo.patch).not.toHaveBeenCalled();
   });
 });
+
+describe('POST draft — the story\'s Style', () => {
+  it('hands the style to the worker, so the draft is written for it', async () => {
+    repo.findById.mockResolvedValue({ ...story, style: 'warm cinematic film' });
+    const res = await draftPOST(mk({ lyrics: LYRICS }), ctx());
+    expect(res.status).toBe(202);
+    const event = JSON.parse(Buffer.from(mockSend.mock.calls[0][0].input.Payload).toString());
+    expect(event.style).toBe('warm cinematic film');
+  });
+});

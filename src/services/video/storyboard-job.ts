@@ -24,6 +24,7 @@
  */
 
 import { createHash } from 'crypto';
+import { MAX_STYLE_CHARS } from '@/lib/visual-story-style';
 import { VisualStoryRepository } from '@/infrastructure/database/VisualStoryRepository';
 import { generateStoryboard, DEFAULT_MODEL, type StoryboardResult } from '@/services/ai/storyboarder';
 import { draftCostUsd } from '@/services/video/cost';
@@ -61,6 +62,8 @@ export interface StoryboardJobEvent {
   lyrics: string;
   windowSec: number;
   aspectRatio: AspectRatio;
+  /** The story's Style; absent ⇒ none (and from a site older than Style). */
+  style?: string;
 }
 
 type Repo = Pick<VisualStoryRepository, 'transitionDraftJob' | 'getDraftJob' | 'putDraft' | 'settle'>;
@@ -112,7 +115,8 @@ function payloadOk(e: StoryboardJobEvent): boolean {
     Number.isInteger(e.windowSec) &&
     e.windowSec >= MIN_WINDOW_SEC &&
     e.windowSec <= MAX_WINDOW_SEC &&
-    (ASPECT_RATIOS as readonly string[]).includes(e.aspectRatio)
+    (ASPECT_RATIOS as readonly string[]).includes(e.aspectRatio) &&
+    (e.style === undefined || (typeof e.style === 'string' && e.style.length <= MAX_STYLE_CHARS))
   );
 }
 
@@ -153,7 +157,12 @@ export async function runStoryboardJob(
     let result: StoryboardResult;
     try {
       result = await generateStoryboard(
-        { lyrics: event.lyrics, windowSec: event.windowSec, aspectRatio: event.aspectRatio },
+        {
+          lyrics: event.lyrics,
+          windowSec: event.windowSec,
+          aspectRatio: event.aspectRatio,
+          ...(event.style ? { style: event.style } : {}),
+        },
         { timeoutMs: opts.timeoutMs ?? WORKER_DRAFT_TIMEOUT_MS }
       );
     } catch (err) {

@@ -174,6 +174,8 @@ function toStory(item: Record<string, any>): VisualStory {
     providerId: item.providerId,
     windowStartSec: item.windowStartSec,
     windowEndSec: item.windowEndSec,
+    // Stories made before Style existed have none.
+    style: typeof item.style === 'string' ? item.style : '',
     budgetUsdCap: item.budgetUsdCap,
     spentUsd: item.spentUsd ?? 0,
     reservedUsd: item.reservedUsd ?? 0,
@@ -199,6 +201,7 @@ export class VisualStoryRepository {
         providerId: 'grok',
         windowStartSec: input.windowStartSec,
         windowEndSec: input.windowEndSec,
+        style: input.style ?? '',
         budgetUsdCap: round6(input.budgetUsdCap ?? DEFAULT_BUDGET_USD_CAP),
         spentUsd: 0,
         reservedUsd: 0,
@@ -270,7 +273,7 @@ export class VisualStoryRepository {
    */
   async patch(
     vsId: string,
-    fields: { title?: string; status?: VisualStoryStatus; budgetUsdCap?: number }
+    fields: { title?: string; status?: VisualStoryStatus; budgetUsdCap?: number; style?: string }
   ): Promise<void> {
     try {
       const names: Record<string, string> = { '#updatedAt': 'updatedAt' };
@@ -285,6 +288,11 @@ export class VisualStoryRepository {
         names['#status'] = 'status';
         values[':status'] = fields.status;
         sets.push('#status = :status');
+      }
+      if (fields.style !== undefined) {
+        names['#style'] = 'style';
+        values[':style'] = fields.style;
+        sets.push('#style = :style');
       }
       if (fields.budgetUsdCap !== undefined) {
         names['#cap'] = 'budgetUsdCap';
@@ -825,6 +833,43 @@ export class VisualStoryRepository {
       exclusiveStartKey = res.LastEvaluatedKey as Record<string, any> | undefined;
     } while (exclusiveStartKey);
     return out.sort((a, b) => (a.SK < b.SK ? -1 : a.SK > b.SK ? 1 : 0));
+  }
+
+  private async queryPrefix(vsId: string, prefix: string): Promise<Row[]> {
+    const out: Row[] = [];
+    let exclusiveStartKey: Record<string, any> | undefined;
+    do {
+      const res = await DynamoDBOperations.query({
+        keyConditionExpression: 'PK = :pk AND begins_with(SK, :sk)',
+        expressionAttributeValues: { ':pk': vsPk(vsId), ':sk': prefix },
+        exclusiveStartKey,
+      });
+      out.push(...((res.Items as Row[]) ?? []));
+      exclusiveStartKey = res.LastEvaluatedKey as Record<string, any> | undefined;
+    } while (exclusiveStartKey);
+    return out.sort((a, b) => (a.SK < b.SK ? -1 : a.SK > b.SK ? 1 : 0));
+  }
+
+  /**
+   * Just what a story list card needs (storyProgress): shots, candidates and
+   * renders — three narrow Queries instead of the whole partition, which also
+   * holds every storyboard draft and video job the story ever had.
+   */
+  async loadProgressParts(vsId: string): Promise<{ shots: Shot[]; candidates: Candidate[]; renders: RenderJob[] }> {
+    try {
+      const [shots, candidates, renders] = await Promise.all([
+        this.queryPrefix(vsId, 'SHOT#'),
+        this.queryPrefix(vsId, 'CAND#'),
+        this.queryPrefix(vsId, 'RENDER#'),
+      ]);
+      return {
+        shots: shots.map((i) => stripKeys<Shot>(i)),
+        candidates: candidates.map((i) => stripKeys<Candidate>(i)),
+        renders: renders.map((i) => stripKeys<RenderJob>(i)),
+      };
+    } catch (error) {
+      fail(error);
+    }
   }
 
   /** Number of SHOT# items in a story (COUNT query, follows pagination). */

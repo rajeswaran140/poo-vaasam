@@ -21,6 +21,7 @@ import { candidateKey } from '@/lib/visual-story-storage';
 import { isVsId, newId } from '@/types/visualStory';
 import type { Candidate, Character, Shot } from '@/types/visualStory';
 import { chooseIfNone, fail, limitMutation, mapError } from '@/lib/visual-story-route';
+import { withStyle } from '@/lib/visual-story-style';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,13 +37,14 @@ const STATUS_BY_CODE: Record<string, number> = {
   content_policy: 422,
 };
 
-/** The shot's prompt plus who is in it, so the frame matches the cast. */
-function buildPrompt(shot: Shot, characters: Character[]): string {
+/** The shot's prompt plus who is in it, so the frame matches the cast, plus the story's style. */
+function buildPrompt(shot: Shot, characters: Character[], style: string): string {
   const cast = shot.charIds
     .map((id) => characters.find((c) => c.charId === id))
     .filter((c): c is Character => !!c)
     .map((c) => (c.description.trim() ? `${c.name}: ${c.description.trim()}` : c.name));
-  return cast.length ? `${shot.visualPrompt}\n\nCharacters in this shot:\n${cast.join('\n')}` : shot.visualPrompt;
+  const base = cast.length ? `${shot.visualPrompt}\n\nCharacters in this shot:\n${cast.join('\n')}` : shot.visualPrompt;
+  return withStyle(base, style);
 }
 
 export async function POST(request: NextRequest, { params }: Ctx) {
@@ -94,7 +96,7 @@ export async function POST(request: NextRequest, { params }: Ctx) {
       try {
         result = await generateStillImage({
           providerId: 'grok-image', // always JPEG, matching the .jpg candidate key
-          prompt: buildPrompt(shot, tree.characters),
+          prompt: buildPrompt(shot, tree.characters, tree.story.style),
           aspectRatio: tree.story.aspectRatio,
           // No request.signal: a client navigating away must not turn a call
           // xAI may already have billed into an unbilled abort. The provider's

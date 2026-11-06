@@ -8,6 +8,7 @@
  */
 
 import { z } from 'zod';
+import { styleSchema } from '@/lib/visual-story-style';
 
 export type VisualStoryStatus = 'DRAFT' | 'STORYBOARDING' | 'GENERATING' | 'REVIEW' | 'COMPLETE';
 export type ShotMode = 'STILL' | 'MOTION' | 'HERO';
@@ -45,6 +46,8 @@ export interface VisualStory {
   providerId: string;
   windowStartSec: number;
   windowEndSec: number;
+  /** The look every picture and clip asks for (visual-story-style.ts); '' = none. */
+  style: string;
   budgetUsdCap: number;
   spentUsd: number;
   reservedUsd: number;
@@ -249,6 +252,7 @@ export const createStorySchema = z
     windowEndSec: z.number(),
     contentId: z.string().trim().min(1).optional(),
     budgetUsdCap: z.number().min(0).max(500).optional(),
+    style: styleSchema.optional(),
   })
   .refine(
     (v) => {

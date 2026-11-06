@@ -196,3 +196,15 @@ it('asks for as many output tokens as the window needs, and for a shot count tha
   expect(create.mock.calls[0][0].messages[0].content).toContain('Aim for about 60 shots.');
   expect(SYSTEM_PROMPT).toContain('Keep each visual prompt under 50 words');
 });
+
+it('tells the model the story\'s style, and not to repeat it in every prompt', async () => {
+  create.mockResolvedValue(toolResponse(board([15], [15])));
+  await generateStoryboard({ ...req, style: 'hand-painted watercolour' });
+  const msg = create.mock.calls[0][0].messages[0].content as string;
+  expect(msg).toContain('Visual style for every shot: hand-painted watercolour');
+  expect(msg).toContain('added to every shot automatically');
+  create.mockClear();
+  create.mockResolvedValue(toolResponse(board([15], [15])));
+  await generateStoryboard(req);
+  expect(create.mock.calls[0][0].messages[0].content).not.toContain('Visual style');
+});

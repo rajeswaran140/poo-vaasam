@@ -6,6 +6,7 @@
  */
 
 import { S3Operations } from '@/infrastructure/storage/s3-client';
+import { withStyle } from '@/lib/visual-story-style';
 // Type-only: the repository value-imports VIDEO_STALE_MS from here.
 import type { VisualStoryRepository } from '@/infrastructure/database/VisualStoryRepository';
 import { candidateKey } from '@/lib/visual-story-storage';
@@ -40,7 +41,8 @@ const NO_CLIP_ERROR = 'Grok finished but returned no clip; it was still charged.
 
 /** The parts of `loadTree` a video request needs. */
 export interface VideoRequestTree {
-  story: Pick<VisualStory, 'aspectRatio'>;
+  /** `style` is optional only for callers built before Style existed. */
+  story: Pick<VisualStory, 'aspectRatio'> & { style?: string };
   characters: Character[];
   candidates: Candidate[];
 }
@@ -70,9 +72,10 @@ export async function buildVideoRequest(tree: VideoRequestTree, shot: Shot): Pro
     return tags.length ? `${line} (shown in ${tags.join(', ')})` : line;
   });
 
-  const prompt = castLines.length
-    ? `${shot.visualPrompt}\n\nCharacters in this shot:\n${castLines.join('\n')}`
-    : shot.visualPrompt;
+  const prompt = withStyle(
+    castLines.length ? `${shot.visualPrompt}\n\nCharacters in this shot:\n${castLines.join('\n')}` : shot.visualPrompt,
+    tree.story.style
+  );
 
   const firstFrame = shot.firstFrameCandidateId
     ? tree.candidates.find(

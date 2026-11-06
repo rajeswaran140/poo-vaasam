@@ -10,6 +10,9 @@ import { adminFetch } from '@/lib/client-auth';
 import { putToS3 } from '@/lib/mastering-upload-client';
 
 jest.mock('@/lib/client-auth', () => ({ adminFetch: jest.fn() }));
+import { __resetPlayUrlCacheForTests } from '@/components/admin/visual-story/ui-utils';
+// Preview links are cached per file across the page; start each test clean.
+beforeEach(() => __resetPlayUrlCacheForTests());
 jest.mock('@/lib/mastering-upload-client', () => ({ putToS3: jest.fn() }));
 const mockPush = jest.fn();
 jest.mock('next/navigation', () => ({ useRouter: () => ({ push: mockPush }) }));
@@ -968,7 +971,7 @@ describe('Studio — phone layout and flow (audit PR 2)', () => {
     expect(JSON.parse(calls('/select')[0][1].body)).toEqual({ sceneOrder: 1, shotOrder: 1, candId: CD });
   });
 
-  it('the chosen picture reads "Chosen"; the others offer "Tap to choose"', async () => {
+  it('the chosen picture reads "✓ Chosen"; the others offer "Tap to choose"', async () => {
     const t = tree();
     const other = 'cd_1730000000001_abcdef12';
     t.candidates = [still(CD), still(other)];
@@ -976,7 +979,7 @@ describe('Studio — phone layout and flow (audit PR 2)', () => {
     routes(undefined, () => t);
     render(<Studio vsId={VS} />);
     const c = await card('Shot 1.1');
-    expect(within(c).getByText('Chosen')).toBeInTheDocument();
+    expect(within(c).getByText('✓ Chosen')).toBeInTheDocument();
     expect(within(c).getByText('Tap to choose')).toBeInTheDocument();
   });
 
@@ -1066,5 +1069,78 @@ describe('Studio — phone layout and flow (audit PR 2)', () => {
     routes(undefined, () => empty);
     render(<Studio vsId={VS} />);
     expect(await screen.findByText(/No scenes yet/)).not.toHaveTextContent(/below/);
+  });
+});
+
+describe('the story\'s Style', () => {
+  it('shows none set, and saves a style with PATCH, then reloads', async () => {
+    let saved = '';
+    routes((url, init) => {
+      if (url === `/api/admin/visual-story/${VS}` && init?.method === 'PATCH') {
+        saved = JSON.parse(String(init.body)).style;
+        return json({ success: true });
+      }
+      return undefined;
+    }, () => ({ ...tree(), story: { ...tree().story, style: saved } }));
+    render(<Studio vsId={VS} />);
+    expect(await screen.findByText('none set')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Set style' }));
+    fireEvent.change(screen.getByLabelText('Style'), { target: { value: ' hand-painted watercolour ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save style' }));
+    expect(await screen.findByText('hand-painted watercolour')).toBeInTheDocument();
+    expect(saved).toBe('hand-painted watercolour');
+    expect(screen.getByRole('button', { name: 'Edit style' })).toBeInTheDocument();
+  });
+
+  it('shows the server\'s refusal beside the field', async () => {
+    routes((url, init) =>
+      url === `/api/admin/visual-story/${VS}` && init?.method === 'PATCH'
+        ? json({ success: false, error: 'Keep the style under 300 characters' }, 400)
+        : undefined);
+    render(<Studio vsId={VS} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Set style' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save style' }));
+    const alert = await screen.findByText('Keep the style under 300 characters');
+    expect(screen.getByRole('form', { name: 'Story style' })).toContainElement(alert);
+  });
+});
+
+describe('steps bar and song timeline', () => {
+  it('shows the four steps with the next one marked', async () => {
+    routes();
+    render(<Studio vsId={VS} />);
+    const steps = await screen.findByRole('list', { name: 'Steps' });
+    const items = within(steps).getAllByRole('listitem');
+    expect(items).toHaveLength(4);
+    // 58 of 60 s filled: storyboard done, filling the song is next.
+    expect(items[0]).toHaveTextContent('1. Storyboard');
+    expect(items[1]).toHaveAttribute('aria-current', 'step');
+    expect(items[1]).toHaveTextContent('0:58 of 1:00');
+  });
+
+  it('lays every shot on the timeline and opens one when pressed', async () => {
+    routes();
+    render(<Studio vsId={VS} />);
+    const strip = await screen.findByRole('region', { name: 'Song timeline' });
+    const second = within(strip).getByRole('button', { name: 'Scene 1, shot 2, 28 s, nothing chosen' });
+    expect(within(strip).getAllByRole('button')).toHaveLength(2);
+    fireEvent.click(second);
+    expect(second).toHaveAttribute('aria-current', 'true');
+    // The shot panel opens on that shot.
+    expect(screen.getByRole('form', { name: 'Edit shot 1.2' })).toBeInTheDocument();
+  });
+
+  it('opens a shot in another scene, switching the grid to that scene', async () => {
+    const t = tree();
+    t.scenes.push({ order: 2, heading: 'Scene 2', summary: 'Later' });
+    t.shots = [shot(1, 1, 30, 0), shot(2, 1, 30, 30)];
+    routes(undefined, () => t);
+    render(<Studio vsId={VS} />);
+    await card('Shot 1.1');
+    expect(screen.queryByRole('article', { name: /Shot 2\.1/ })).toBeNull();
+    fireEvent.click(within(screen.getByRole('region', { name: 'Song timeline' })).getByRole('button', { name: /Scene 2, shot 1/ }));
+    expect(await card('Shot 2.1')).toBeInTheDocument();
+    expect(screen.getByRole('form', { name: 'Edit shot 2.1' })).toBeInTheDocument();
   });
 });

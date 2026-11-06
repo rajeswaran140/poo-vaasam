@@ -266,3 +266,22 @@ describe('long windows reach the storyboarder', () => {
     expect(mockGenerate).not.toHaveBeenCalled();
   });
 });
+
+describe('the story\'s Style reaches the storyboarder', () => {
+  const repoFor = () => ({
+    transitionDraftJob: jest.fn().mockResolvedValue({ jobId: JOB, status: 'running', reservedUsd: 0.1 }),
+    getDraftJob: jest.fn(), putDraft: jest.fn(), settle: jest.fn(),
+  });
+
+  it('passes it through', async () => {
+    mockGenerate.mockResolvedValue({ ok: false, code: 'upstream', error: 'x' });
+    await runStoryboardJob({ kind: 'storyboard', jobId: JOB, vsId: VS, lyrics: LYRICS, windowSec: 45, aspectRatio: '9:16', style: '35mm film' }, { repo: repoFor() as never });
+    expect(mockGenerate).toHaveBeenCalledWith(expect.objectContaining({ style: '35mm film' }), expect.anything());
+  });
+
+  it('refuses a style that is not a short string, before any call', async () => {
+    mockGenerate.mockClear();
+    await runStoryboardJob({ kind: 'storyboard', jobId: JOB, vsId: VS, lyrics: LYRICS, windowSec: 45, aspectRatio: '9:16', style: 'x'.repeat(301) }, { repo: repoFor() as never });
+    expect(mockGenerate).not.toHaveBeenCalled();
+  });
+});

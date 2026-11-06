@@ -267,11 +267,13 @@ export function ShotCard({ vsId, shot, story, characters, candidates, jobs, sele
             return (
               <div key={c.candId} className="flex flex-col items-center gap-1 text-xs text-gray-700 dark:text-gray-300">
                 {/* A clip's player stays outside the label: pressing play must not change the choice. */}
-                {isVideo && <VideoThumb s3Key={c.s3Key} label={`Clip ${i + 1} for ${label}`} />}
+                {isVideo && <VideoThumb s3Key={c.s3Key} label={`Clip ${i + 1} for ${label}`} aspect={story.aspectRatio} />}
                 <label
-                  className={`flex cursor-pointer flex-col items-center gap-1 rounded-md p-1 ${chosen ? 'ring-2 ring-blue-500 dark:ring-blue-400' : ''}`}
+                  className={`flex cursor-pointer flex-col items-center gap-1 rounded-md p-1 ${
+                    chosen ? 'bg-blue-50 ring-4 ring-blue-600 dark:bg-blue-950 dark:ring-blue-400' : 'ring-1 ring-gray-200 dark:ring-gray-700'
+                  }`}
                 >
-                  {!isVideo && <Thumb s3Key={c.s3Key} alt={`Candidate ${i + 1} for ${label}`} />}
+                  {!isVideo && <Thumb s3Key={c.s3Key} alt={`Candidate ${i + 1} for ${label}`} aspect={story.aspectRatio} />}
                   <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-700 dark:bg-gray-700 dark:text-gray-200">{badge}</span>
                   <span className="flex min-h-11 items-center gap-1 lg:min-h-0">
                     <input
@@ -282,7 +284,7 @@ export function ShotCard({ vsId, shot, story, characters, candidates, jobs, sele
                       onChange={() => pick(c.candId)}
                       className="h-5 w-5 lg:h-auto lg:w-auto"
                     />
-                    {chosen ? 'Chosen' : 'Tap to choose'}
+                    {chosen ? <span className="font-semibold text-blue-800 dark:text-blue-300">✓ Chosen</span> : 'Tap to choose'}
                   </span>
                 </label>
                 {!isVideo &&

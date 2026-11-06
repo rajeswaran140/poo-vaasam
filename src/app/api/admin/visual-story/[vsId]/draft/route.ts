@@ -100,6 +100,8 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     lyrics,
     windowSec: story.windowEndSec - story.windowStartSec,
     aspectRatio: story.aspectRatio,
+    // Absent when the story has none, so the event keeps its original shape.
+    ...(story.style ? { style: story.style } : {}),
   };
   try {
     const lambda = new LambdaClient({

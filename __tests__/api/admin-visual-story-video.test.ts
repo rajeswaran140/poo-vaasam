@@ -577,3 +577,11 @@ describe('buildVideoRequest', () => {
     expect(req.prompt).not.toContain('<IMAGE_14>');
   });
 });
+
+describe('buildVideoRequest — the story\'s Style', () => {
+  it('adds the story\'s style to the clip request, after the cast', async () => {
+    const t = tree({ story: { ...tree().story, style: 'hand-painted watercolour' } }) as unknown as Parameters<typeof buildVideoRequest>[0];
+    const req = await buildVideoRequest(t, tree().shots[1] as never);
+    expect(req.prompt).toMatch(/Test girl: a girl in a yellow half-saree[\s\S]*\n\nVisual style: hand-painted watercolour$/);
+  });
+});
