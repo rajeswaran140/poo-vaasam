@@ -232,6 +232,13 @@ describe('shots', () => {
       expect((await set('cd_still')).status).toBe(200);
       expect(repo.putShot).toHaveBeenCalledWith(VS, expect.objectContaining({ firstFrameCandidateId: 'cd_still' }));
     });
+    it('saves an uploaded picture of the same shot', async () => {
+      repo.loadTree.mockResolvedValue(
+        tree({ shots: [shot(1, 1, 10), shot(1, 2, 10)], candidates: [{ ...cand('cd_mine', 1, 'STILL'), providerId: 'upload' }] })
+      );
+      expect((await set('cd_mine')).status).toBe(200);
+      expect(repo.putShot).toHaveBeenCalledWith(VS, expect.objectContaining({ firstFrameCandidateId: 'cd_mine' }));
+    });
     it.each(['cd_vid', 'cd_other', 'cd_missing'])('rejects %s with 400', async (id) => {
       repo.loadTree.mockResolvedValue(withCands());
       const res = await set(id);
