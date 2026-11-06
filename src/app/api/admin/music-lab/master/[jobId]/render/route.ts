@@ -34,6 +34,7 @@ import {
   planVideoMotion,
 } from '@/lib/master-video';
 import { SHORT_MOTIONS } from '@/lib/master-short';
+import { checkBackground, isBackgroundKey } from '@/lib/master-background';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -71,6 +72,12 @@ const bodySchema = z.object({
    * (1080p) — at 1440p only short songs would finish in the worker's time.
    */
   motion: z.enum(SHORT_MOTIONS).optional(),
+  /**
+   * A clip or GIF looped under the song in place of the still — see
+   * master-background.ts. `coverKey` stays required: it is what the job
+   * records and so the YouTube thumbnail. Plays alone: no slideshow, no move.
+   */
+  backgroundKey: z.string().min(1).optional(),
 });
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ jobId: string }> }) {
@@ -110,6 +117,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         { success: false, error: renderRefusalMessage(plan.reason) },
         { status: 409 }
       );
+    }
+
+    const backgroundKey = parsed.data.backgroundKey ?? null;
+    if (backgroundKey) {
+      // The worker can read the whole bucket: the same guard as every key.
+      if (!isBackgroundKey(backgroundKey)) {
+        return NextResponse.json(
+          { success: false, error: 'That background is not a video or GIF in the mastering workspace.' },
+          { status: 400 }
+        );
+      }
+      const fits = checkBackground({
+        audioSeconds: parsed.data.durationSec ?? job.editedDurationSec,
+        height,
+        slideshow: (parsed.data.covers?.length ?? 0) > 1,
+        motion: parsed.data.motion,
+      });
+      if (!fits.ok) return NextResponse.json({ success: false, error: fits.message }, { status: 409 });
     }
 
     // A slideshow is checked a second time, for its timing. Only the cuts are
@@ -170,6 +195,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
               ...(covers && parsed.data.transition === 'crossfade' ? { transition: 'crossfade' } : {}),
               // Absent for a still video: the event keeps its original shape.
               ...(moves ? { motion: parsed.data.motion } : {}),
+              // Absent without one: the event keeps its original shape.
+              ...(backgroundKey ? { backgroundKey } : {}),
             },
           })
         ),

@@ -24,6 +24,7 @@ import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { awsConfig } from '@/lib/aws-config';
 import { planShort, planFullVertical, shortRefusalMessage, SHORT_FPS, SHORT_MOTIONS } from '@/lib/master-short';
 import { planSegments, slideshowRefusalMessage, SLIDE_TRANSITIONS } from '@/lib/master-video';
+import { checkBackground, isBackgroundKey } from '@/lib/master-background';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -56,6 +57,8 @@ const bodySchema = z.object({
   motion: z.enum(SHORT_MOTIONS).optional(),
   /** `crossfade` blends a second around each cut; absent or `cut` ⇒ hard cuts. */
   transition: z.enum(SLIDE_TRANSITIONS).optional(),
+  /** A clip or GIF looped under the song instead of the still — see master-background.ts. */
+  backgroundKey: z.string().min(1).optional(),
 });
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ jobId: string }> }) {
@@ -105,6 +108,23 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       if (!fits.ok) {
         return NextResponse.json({ success: false, error: fits.message }, { status: 409 });
       }
+    }
+
+    const backgroundKey = parsed.data.backgroundKey ?? null;
+    if (backgroundKey) {
+      if (!isBackgroundKey(backgroundKey)) {
+        return NextResponse.json(
+          { success: false, error: 'That background is not a video or GIF in the mastering workspace.' },
+          { status: 400 }
+        );
+      }
+      const fits = checkBackground({
+        // Only the whole song can be long; a clip is at most three minutes.
+        audioSeconds: parsed.data.full ? job.editedDurationSec : null,
+        slideshow: (parsed.data.covers?.length ?? 0) > 1,
+        motion: parsed.data.motion,
+      });
+      if (!fits.ok) return NextResponse.json({ success: false, error: fits.message }, { status: 409 });
     }
 
     const covers = parsed.data.covers?.length ? parsed.data.covers : null;
@@ -160,6 +180,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
               // Absent for a still: the event keeps its original shape unless
               // something will move.
               ...(moves ? { motion: parsed.data.motion } : {}),
+              ...(backgroundKey ? { backgroundKey } : {}),
             },
           })
         ),

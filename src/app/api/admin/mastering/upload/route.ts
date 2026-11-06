@@ -26,6 +26,11 @@ import {
   masteringCoverKey,
 } from '@/lib/mastering-storage';
 import { stemUploadKey, isValidMasterJobId } from '@/lib/stems';
+import {
+  ACCEPTED_BACKGROUND_TYPES,
+  MAX_BACKGROUND_BYTES,
+  masteringBackgroundKey,
+} from '@/lib/master-background';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -41,8 +46,11 @@ const uploadSchema = z.object({
    * `cover` uploads the still image the YouTube render is built from. Same
    * workspace, same guards, different allow-list and a much smaller cap — an
    * image has no business being 500 MB.
+   *
+   * `background` is a clip or GIF looped under the song in place of the
+   * still — see master-background.ts. Its own allow-list and cap.
    */
-  kind: z.enum(['audio', 'cover', 'stem']).optional(),
+  kind: z.enum(['audio', 'cover', 'stem', 'background']).optional(),
   masterJobId: z.string().optional(),
 });
 
@@ -67,6 +75,7 @@ export async function POST(request: NextRequest) {
   const { filename, contentType, size, kind, masterJobId } = parsed.data;
   const isCover = kind === 'cover';
   const isStem = kind === 'stem';
+  const isBackground = kind === 'background';
   if (isStem && !isValidMasterJobId(masterJobId)) {
     return NextResponse.json(
       { success: false, error: 'A stem must belong to a saved master.' },
@@ -74,7 +83,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const allowed = isCover ? ACCEPTED_COVER_TYPES : ACCEPTED_UPLOAD_TYPES;
+  const allowed = isCover ? ACCEPTED_COVER_TYPES : isBackground ? ACCEPTED_BACKGROUND_TYPES : ACCEPTED_UPLOAD_TYPES;
   if (!(allowed as readonly string[]).includes(contentType)) {
     // WAV only for audio. Mastering a lossy source just fixes its level while
     // baking the compression artefacts in — the doc is explicit about this, so
@@ -84,12 +93,14 @@ export async function POST(request: NextRequest) {
         success: false,
         error: isCover
           ? 'Upload a JPEG, PNG or WebP cover.'
-          : 'Upload a WAV. Mastering an MP3 only re-levels a file that has already lost detail.',
+          : isBackground
+            ? 'Upload an MP4, MOV, WebM or GIF.'
+            : 'Upload a WAV. Mastering an MP3 only re-levels a file that has already lost detail.',
       },
       { status: 400 }
     );
   }
-  const cap = isCover ? MAX_COVER_BYTES : MAX_UPLOAD_BYTES;
+  const cap = isCover ? MAX_COVER_BYTES : isBackground ? MAX_BACKGROUND_BYTES : MAX_UPLOAD_BYTES;
   if (typeof size === 'number' && size > cap) {
     return NextResponse.json(
       { success: false, error: `File too large — the limit is ${Math.round(cap / (1024 * 1024))}MB.` },
@@ -100,11 +111,13 @@ export async function POST(request: NextRequest) {
   const nonce = randomUUID().slice(0, 8);
   const key = isCover
     ? masteringCoverKey(filename, contentType, Date.now(), nonce)
-    : isStem
-      ? stemUploadKey(masterJobId!, filename, Date.now(), nonce)
-      : masteringUploadKey(filename, Date.now(), nonce);
+    : isBackground
+      ? masteringBackgroundKey(filename, contentType, Date.now(), nonce)
+      : isStem
+        ? stemUploadKey(masterJobId!, filename, Date.now(), nonce)
+        : masteringUploadKey(filename, Date.now(), nonce);
   if (!key) {
-    return NextResponse.json({ success: false, error: 'Unsupported cover type.' }, { status: 400 });
+    return NextResponse.json({ success: false, error: 'Unsupported file type.' }, { status: 400 });
   }
 
   try {
@@ -114,7 +127,7 @@ export async function POST(request: NextRequest) {
     // policy, so a browser lying about `size` above still cannot exceed it.
     const { url, fields } = await S3Operations.getSignedUploadPost(
       key,
-      isCover ? contentType : 'audio/wav',
+      isCover || isBackground ? contentType : 'audio/wav',
       cap,
       UPLOAD_URL_TTL_SECONDS
     );
