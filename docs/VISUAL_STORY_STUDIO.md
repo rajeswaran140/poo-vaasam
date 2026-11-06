@@ -46,7 +46,7 @@ Press **Make video (6 s · $0.48)** on a shot (the label shows that shot's lengt
 - A clip that has not finished after **1 hour** is ended and its price is counted as spent.
 - Clips are private; they are previewed through the admin only.
 
-**Before your first clip:** raise the story's **budget** in the bottom bar. Stories made earlier may have only $1, and a clip over the budget is refused.
+**Before your first clip:** raise the story's **budget** in the bottom bar. Stories made earlier may have only $1, and a clip over the budget is refused. Each shot card shows what a clip of that shot costs: every clip is $0.08 a second, whatever the shot's mode. When a picture or clip would go over the budget, its message has a **Raise budget** button that takes you to the **Budget** field.
 
 **What's next:** laying the clips over the song and rendering the finished video is Phase 6.
 

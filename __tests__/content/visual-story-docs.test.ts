@@ -23,6 +23,11 @@ describe.each([
     expect(text).toMatch(/text[^.]*(warp|scrambl)/i);
   });
 
+  it('says a clip costs $0.08 a second whatever the mode, and names Raise budget', () => {
+    expect(text).toMatch(/\$0\.08 a second, whatever the shot's mode/);
+    expect(text).toContain('Raise budget');
+  });
+
   it('says plainly what the UI cannot do yet', () => {
     expect(text).toMatch(/no reorder/i);
     expect(text).toMatch(/scenes cannot be renamed/i);

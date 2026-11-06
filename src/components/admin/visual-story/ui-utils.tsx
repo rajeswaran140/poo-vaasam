@@ -8,6 +8,23 @@ import type { Shot } from '@/types/visualStory';
 
 export const usd = (n: number) => `$${n.toFixed(2)}`;
 
+/** The bottom bar's Budget field, so an over-budget message can send the user to it. */
+export const BUDGET_INPUT_ID = 'vs-budget';
+
+/** Shown beside an over-budget message: brings the Budget field into view and focuses it. */
+export function RaiseBudgetButton() {
+  const go = () => {
+    const el = document.getElementById(BUDGET_INPUT_ID) as HTMLInputElement | null;
+    el?.scrollIntoView?.({ block: 'center' });
+    el?.focus();
+  };
+  return (
+    <button type="button" onClick={go} className="rounded-md border border-gray-300 px-3 py-1 text-sm text-gray-700 dark:border-gray-600 dark:text-gray-300">
+      Raise budget
+    </button>
+  );
+}
+
 /** `nnn-mmm`, the shot key the still and video routes take. */
 export const shotKey = (s: Pick<Shot, 'sceneOrder' | 'shotOrder'>) =>
   `${String(s.sceneOrder).padStart(3, '0')}-${String(s.shotOrder).padStart(3, '0')}`;

@@ -99,6 +99,9 @@ export function Studio({ vsId }: { vsId: string }) {
         </Link>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{story.title}</h1>
         <p className="text-sm text-gray-600 dark:text-gray-400">{`${story.aspectRatio} · ${story.status}`}</p>
+        <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          Joining the clips with the song is not built yet. For now, make and choose a picture or clip for each shot.
+        </p>
       </header>
       {loadError && (
         <p role="alert" className="text-sm text-red-600 dark:text-red-400">

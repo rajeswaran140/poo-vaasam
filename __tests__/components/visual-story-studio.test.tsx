@@ -80,11 +80,14 @@ async function card(label: string) {
 }
 
 describe('Studio — shot cards', () => {
-  it('shows the mode badge, prompt, character chip and m:ss span', async () => {
+  it('shows the real clip price (not a per-mode estimate), prompt, character chip and m:ss span', async () => {
     routes();
     render(<Studio vsId={VS} />);
     const c = await card('Shot 1.2');
-    expect(within(c).getByText('STILL')).toBeInTheDocument();
+    // Every clip is made at the $0.08/s video rate, whatever the shot's mode: 28 s = $2.24.
+    expect(within(c).getByText('28 s · clip $2.24')).toBeInTheDocument();
+    expect(within(c).queryByText('STILL')).not.toBeInTheDocument();
+    expect(c).not.toHaveTextContent(/estimate/);
     expect(within(c).getByText('Prompt 1.2')).toBeInTheDocument();
     expect(within(c).getByText('0:30–0:58')).toBeInTheDocument();
     expect(within(await card('Shot 1.1')).getByText('Hero')).toBeInTheDocument();
@@ -184,6 +187,30 @@ describe('Studio — spend and tiling', () => {
     render(<Studio vsId={VS} />);
     expect(await screen.findByText('Shots fill 58 of 60 s')).toBeInTheDocument();
     expect(screen.getByText('$1.50 spent + $0.15 reserved of $40.00')).toBeInTheDocument();
+  });
+
+  it('says what all the shots would cost as clips, and no longer promises a render', async () => {
+    routes();
+    render(<Studio vsId={VS} />);
+    // 30 + 28 = 58 s × $0.08 = $4.64.
+    expect(await screen.findByText('All 2 shots as clips: about $4.64')).toBeInTheDocument();
+    expect(screen.getByRole('contentinfo', { name: 'Spend and timeline' })).not.toHaveTextContent(/render/);
+  });
+
+  it('says plainly that joining the clips with the song is not built yet', async () => {
+    routes();
+    render(<Studio vsId={VS} />);
+    await card('Shot 1.1');
+    expect(screen.getByText(/Joining the clips with the song is not built yet/)).toBeInTheDocument();
+  });
+
+  it('over the cap, the still dialog offers "Raise budget", which focuses the Budget field', async () => {
+    routes(undefined, () => tree({ spentUsd: 39.99 }));
+    render(<Studio vsId={VS} />);
+    const c = await card('Shot 1.1');
+    fireEvent.click(within(c).getByRole('button', { name: 'Generate still ($0.02)' }));
+    fireEvent.click(within(within(c).getByRole('dialog')).getByRole('button', { name: 'Raise budget' }));
+    expect(document.activeElement).toBe(screen.getByLabelText('Budget (USD)'));
   });
 });
 
@@ -479,7 +506,7 @@ describe('Studio — video clips', () => {
   const SCD = 'cd_1730000000000_still0001';
   const videoUrl = `/api/admin/visual-story/${VS}/shots/001-001/video`;
   const jobUrl = `/api/admin/visual-story/${VS}/video-jobs/${GJ}`;
-  const STILL_REL = 'Still rendering. Use “Check rendering videos” on the story list.';
+  const STILL_REL = 'Still rendering. Press Check again in a minute.';
 
   const genJob = (status: string, over = {}) => ({
     jobId: GJ, sceneOrder: 1, shotOrder: 1, status, providerId: 'grok', providerTaskId: 'task-1',
@@ -643,6 +670,18 @@ describe('Studio — video clips', () => {
     expect(await within(c).findByText(msg)).toBeInTheDocument();
     expect(screen.getAllByText(msg)).toHaveLength(1);
     expect(polls()).toHaveLength(0);
+    fireEvent.click(within(c).getByRole('button', { name: 'Raise budget' }));
+    expect(document.activeElement).toBe(screen.getByLabelText('Budget (USD)'));
+  });
+
+  it('over the cap, the video dialog offers "Raise budget" too', async () => {
+    videoRoutes({ getTree: () => vtree({ spentUsd: 39.9 }) });
+    render(<Studio vsId={VS} />);
+    const c = await card('Shot 1.1');
+    fireEvent.click(within(c).getByRole('button', { name: /Make video/ }));
+    const dialog = within(c).getByRole('dialog', { name: 'Confirm video for Shot 1.1' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Raise budget' }));
+    expect(document.activeElement).toBe(screen.getByLabelText('Budget (USD)'));
   });
 
   it('after 15 minutes it stops polling and points at "Check rendering videos"', async () => {

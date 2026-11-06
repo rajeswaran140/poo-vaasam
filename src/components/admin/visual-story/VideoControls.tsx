@@ -24,11 +24,11 @@ import { adminFetch } from '@/lib/client-auth';
 import { pollJob } from '@/lib/poll-job';
 import { estimateCostUsd } from '@/services/video/cost';
 import type { GenJob, VisualStory } from '@/types/visualStory';
-import { usd } from './ui-utils';
+import { RaiseBudgetButton, usd } from './ui-utils';
 
 const POLL_INTERVAL_MS = 5000;
 const POLL_TIMEOUT_MS = 15 * 60_000;
-const POLL_TIMEOUT_MESSAGE = 'Still rendering. Use “Check rendering videos” on the story list.';
+const POLL_TIMEOUT_MESSAGE = 'Still rendering. Press Check again in a minute.';
 const OFFLINE = 'Could not reach the server. Check your connection and try again.';
 
 const inflight = (j: GenJob) => j.status === 'submitted' || j.status === 'running';
@@ -95,6 +95,8 @@ export function VideoControls({ vsId, shotKey, label, durationSec, story, jobs, 
   const [error, setError] = useState<string | null>(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  // The text of the last 402 refusal: "Raise budget" shows only while that message does.
+  const [overBudgetMsg, setOverBudgetMsg] = useState<string | null>(null);
   const inFlight = useRef(false);
   // Every job id this mount has polled, so a reload that still lists it doesn't start a second poller.
   const polled = useRef(new Set<string>());
@@ -184,7 +186,11 @@ export function VideoControls({ vsId, shotKey, label, durationSec, story, jobs, 
       // No signal: a paid call is never cut short by the client.
       const res = await adminFetch(`/api/admin/visual-story/${vsId}/shots/${shotKey}/video`, { method: 'POST' });
       const body = await res.json().catch(() => null);
-      if (!res.ok || !body?.success || !body?.data?.jobId) setError(body?.error || `Could not start the video (HTTP ${res.status}).`);
+      if (!res.ok || !body?.success || !body?.data?.jobId) {
+        const msg = body?.error || `Could not start the video (HTTP ${res.status}).`;
+        setError(msg);
+        setOverBudgetMsg(res.status === 402 ? msg : null);
+      }
       else id = String(body.data.jobId);
     } catch {
       setError(OFFLINE);
@@ -245,7 +251,12 @@ export function VideoControls({ vsId, shotKey, label, durationSec, story, jobs, 
         <div role="dialog" aria-label={`Confirm video for ${label}`} className="space-y-2 rounded-md border border-gray-200 bg-gray-50 p-2 text-sm dark:border-gray-700 dark:bg-gray-800">
           <p className="text-gray-800 dark:text-gray-200">{`Make one ${durationSec}-second video clip for ${usd(price)}?`}</p>
           <p className="text-gray-600 dark:text-gray-400">{`Story total after this: ${usd(after)} of ${usd(story.budgetUsdCap)}`}</p>
-          {overCap && <p className="text-red-600 dark:text-red-400">That is over this story&apos;s budget cap.</p>}
+          {overCap && (
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-red-600 dark:text-red-400">That is over this story&apos;s budget cap.</p>
+              <RaiseBudgetButton />
+            </div>
+          )}
           <div className="flex gap-2">
             <button type="button" onClick={start} disabled={overCap} className="rounded-md bg-blue-600 px-3 py-1 text-sm font-medium text-white disabled:opacity-50">
               Confirm
@@ -289,6 +300,7 @@ export function VideoControls({ vsId, shotKey, label, durationSec, story, jobs, 
           {shownError}
         </p>
       )}
+      {error && error === overBudgetMsg && <RaiseBudgetButton />}
     </div>
   );
 }
