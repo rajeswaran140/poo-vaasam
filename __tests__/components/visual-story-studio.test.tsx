@@ -10,6 +10,9 @@ import { adminFetch } from '@/lib/client-auth';
 import { putToS3 } from '@/lib/mastering-upload-client';
 
 jest.mock('@/lib/client-auth', () => ({ adminFetch: jest.fn() }));
+import { __resetPlayUrlCacheForTests } from '@/components/admin/visual-story/ui-utils';
+// Preview links are cached per file across the page; start each test clean.
+beforeEach(() => __resetPlayUrlCacheForTests());
 jest.mock('@/lib/mastering-upload-client', () => ({ putToS3: jest.fn() }));
 const mockPush = jest.fn();
 jest.mock('next/navigation', () => ({ useRouter: () => ({ push: mockPush }) }));
@@ -1119,10 +1122,25 @@ describe('steps bar and song timeline', () => {
   it('lays every shot on the timeline and opens one when pressed', async () => {
     routes();
     render(<Studio vsId={VS} />);
-    const strip = await screen.findByRole('navigation', { name: 'Song timeline' });
+    const strip = await screen.findByRole('region', { name: 'Song timeline' });
     const second = within(strip).getByRole('button', { name: 'Scene 1, shot 2, 28 s, nothing chosen' });
     expect(within(strip).getAllByRole('button')).toHaveLength(2);
     fireEvent.click(second);
     expect(second).toHaveAttribute('aria-current', 'true');
+    // The shot panel opens on that shot.
+    expect(screen.getByRole('form', { name: 'Edit shot 1.2' })).toBeInTheDocument();
+  });
+
+  it('opens a shot in another scene, switching the grid to that scene', async () => {
+    const t = tree();
+    t.scenes.push({ order: 2, heading: 'Scene 2', summary: 'Later' });
+    t.shots = [shot(1, 1, 30, 0), shot(2, 1, 30, 30)];
+    routes(undefined, () => t);
+    render(<Studio vsId={VS} />);
+    await card('Shot 1.1');
+    expect(screen.queryByRole('article', { name: /Shot 2\.1/ })).toBeNull();
+    fireEvent.click(within(screen.getByRole('region', { name: 'Song timeline' })).getByRole('button', { name: /Scene 2, shot 1/ }));
+    expect(await card('Shot 2.1')).toBeInTheDocument();
+    expect(screen.getByRole('form', { name: 'Edit shot 2.1' })).toBeInTheDocument();
   });
 });

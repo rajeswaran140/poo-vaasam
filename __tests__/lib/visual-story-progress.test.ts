@@ -1,6 +1,6 @@
 /** @jest-environment node */
 /** How far a story has got — shared by the steps bar and the story cards. */
-import { storyProgress, storySteps } from '@/lib/visual-story-progress';
+import { mmss, storyProgress, storySteps } from '@/lib/visual-story-progress';
 import type { Candidate, RenderJob, Shot } from '@/types/visualStory';
 
 const shot = (shotOrder: number, durationSec: number, selectedCandidateId: string | null) =>
@@ -49,5 +49,16 @@ describe('storySteps', () => {
     const finished = storySteps(storyProgress({ ...base, renders: [render('done', '2026-11-06T01:00:00Z', 'v.mp4')] }));
     expect(states(finished)).toEqual(['done', 'done', 'done', 'done']);
     expect(finished[3].detail).toBe('Finished');
+  });
+});
+
+describe('edge cases', () => {
+  it('an over-filled song is not done, and says by how much', () => {
+    const steps = storySteps(storyProgress({ story, shots: [shot(1, 40, null)], candidates: [] }));
+    expect(steps[1]).toMatchObject({ state: 'current', detail: '0:40 of 0:30' });
+  });
+  it('never prints 0:60', () => {
+    expect(mmss(59.6)).toBe('1:00');
+    expect(mmss(125)).toBe('2:05');
   });
 });

@@ -6,6 +6,9 @@
  * loaded; and a failed render says why.
  */
 jest.mock('@/lib/client-auth', () => ({ adminFetch: jest.fn() }));
+import { __resetPlayUrlCacheForTests } from '@/components/admin/visual-story/ui-utils';
+// Preview links are cached per file across the page; start each test clean.
+beforeEach(() => __resetPlayUrlCacheForTests());
 
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { adminFetch } from '@/lib/client-auth';

@@ -56,7 +56,11 @@ export interface Step {
   state: StepState;
 }
 
-export const mmss = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
+export const mmss = (sec: number) => {
+  // Rounded first, so 59.6 s reads 1:00, never 0:60.
+  const s = Math.max(0, Math.round(sec));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
 
 /**
  * The four steps from an empty story to a finished video. The first step not

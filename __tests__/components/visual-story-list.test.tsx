@@ -12,6 +12,9 @@ import { adminFetch } from '@/lib/client-auth';
 import type { VisualStory } from '@/types/visualStory';
 
 jest.mock('@/lib/client-auth', () => ({ adminFetch: jest.fn() }));
+import { __resetPlayUrlCacheForTests } from '@/components/admin/visual-story/ui-utils';
+// Preview links are cached per file across the page; start each test clean.
+beforeEach(() => __resetPlayUrlCacheForTests());
 const mockFetch = adminFetch as jest.Mock;
 
 const json = (body: unknown, status = 200) =>
@@ -55,7 +58,8 @@ describe('StoryList', () => {
   });
 
   it('marks a story with a finished video, and one rendering', () => {
-    render(<StoryList stories={[{ ...STORY, shotCount: 2, readyCount: 2, render: 'done' }, { ...STORY, vsId: 'vs-2', title: 'Other test', shotCount: 2, render: 'running' }]} />);
+    // A finished video stays 'ready' even when the newest re-render failed.
+    render(<StoryList stories={[{ ...STORY, shotCount: 2, readyCount: 2, render: 'failed', videoKey: 'v.mp4' }, { ...STORY, vsId: 'vs-2', title: 'Other test', shotCount: 2, render: 'running' }]} />);
     expect(within(screen.getByRole('link', { name: /Test song/ })).getByText('Video ready')).toBeInTheDocument();
     expect(within(screen.getByRole('link', { name: /Other test/ })).getByText('Rendering…')).toBeInTheDocument();
   });

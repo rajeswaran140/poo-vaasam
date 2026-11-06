@@ -835,6 +835,43 @@ export class VisualStoryRepository {
     return out.sort((a, b) => (a.SK < b.SK ? -1 : a.SK > b.SK ? 1 : 0));
   }
 
+  private async queryPrefix(vsId: string, prefix: string): Promise<Row[]> {
+    const out: Row[] = [];
+    let exclusiveStartKey: Record<string, any> | undefined;
+    do {
+      const res = await DynamoDBOperations.query({
+        keyConditionExpression: 'PK = :pk AND begins_with(SK, :sk)',
+        expressionAttributeValues: { ':pk': vsPk(vsId), ':sk': prefix },
+        exclusiveStartKey,
+      });
+      out.push(...((res.Items as Row[]) ?? []));
+      exclusiveStartKey = res.LastEvaluatedKey as Record<string, any> | undefined;
+    } while (exclusiveStartKey);
+    return out.sort((a, b) => (a.SK < b.SK ? -1 : a.SK > b.SK ? 1 : 0));
+  }
+
+  /**
+   * Just what a story list card needs (storyProgress): shots, candidates and
+   * renders — three narrow Queries instead of the whole partition, which also
+   * holds every storyboard draft and video job the story ever had.
+   */
+  async loadProgressParts(vsId: string): Promise<{ shots: Shot[]; candidates: Candidate[]; renders: RenderJob[] }> {
+    try {
+      const [shots, candidates, renders] = await Promise.all([
+        this.queryPrefix(vsId, 'SHOT#'),
+        this.queryPrefix(vsId, 'CAND#'),
+        this.queryPrefix(vsId, 'RENDER#'),
+      ]);
+      return {
+        shots: shots.map((i) => stripKeys<Shot>(i)),
+        candidates: candidates.map((i) => stripKeys<Candidate>(i)),
+        renders: renders.map((i) => stripKeys<RenderJob>(i)),
+      };
+    } catch (error) {
+      fail(error);
+    }
+  }
+
   /** Number of SHOT# items in a story (COUNT query, follows pagination). */
   async countShots(vsId: string): Promise<number> {
     try {

@@ -25,7 +25,7 @@ export function TimelineStrip({ shots, candidates, aspect, selectedKey, onOpen }
   if (shots.length === 0) return null;
   const height = aspect === '9:16' ? 'h-20' : 'h-12';
   return (
-    <nav aria-label="Song timeline" className="overflow-x-auto pb-1">
+    <section aria-label="Song timeline" className="overflow-x-auto pb-1">
       <ol className="flex min-w-max gap-1">
         {shots.map((s) => {
           const chosen = s.selectedCandidateId ? candidates.find((c) => c.candId === s.selectedCandidateId) : undefined;
@@ -59,6 +59,6 @@ export function TimelineStrip({ shots, candidates, aspect, selectedKey, onOpen }
           );
         })}
       </ol>
-    </nav>
+    </section>
   );
 }

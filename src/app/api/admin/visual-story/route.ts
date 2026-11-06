@@ -24,6 +24,22 @@ export const dynamic = 'force-dynamic';
 const fail = (error: string, status: number) =>
   NextResponse.json({ success: false, error }, { status });
 
+/** Stories whose progress is read at once. */
+const LIST_CONCURRENCY = 4;
+
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i]);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
 const mss = (sec: number) => {
   const s = Math.max(0, Math.floor(sec));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
@@ -42,20 +58,16 @@ export async function GET(request: NextRequest) {
   try {
     const repo = new VisualStoryRepository();
     const stories = masterJobId ? await repo.listByMaster(masterJobId) : await repo.list();
-    // One partition Query per story for its card (progress, cover, video);
-    // a failed one blanks that card's progress only, never the list.
-    const data = await Promise.all(
-      stories.map(async (story) => {
-        try {
-          const tree = await repo.loadTree(story.vsId);
-          if (!tree) return { ...story, shotCount: null };
-          const p = storyProgress(tree);
-          return { ...story, ...p };
-        } catch {
-          return { ...story, shotCount: null };
-        }
-      })
-    );
+    // Each card's progress from three narrow Queries, a few stories at a
+    // time so a long list cannot burst the table; a failed read blanks that
+    // card's progress only, never the list.
+    const data = await mapLimit(stories, LIST_CONCURRENCY, async (story) => {
+      try {
+        return { ...story, ...storyProgress({ story, ...(await repo.loadProgressParts(story.vsId)) }) };
+      } catch {
+        return { ...story, shotCount: null };
+      }
+    });
     // Drives the "Check rendering videos (N)" button; a failed count hides it, never the list.
     let inflightCount = 0;
     try {

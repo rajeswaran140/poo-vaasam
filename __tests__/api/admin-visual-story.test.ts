@@ -21,6 +21,7 @@ const repo = {
   list: jest.fn(),
   listByMaster: jest.fn(),
   countShots: jest.fn(),
+  loadProgressParts: jest.fn(),
   listInflight: jest.fn(),
   findById: jest.fn(),
   loadTree: jest.fn(),
@@ -107,8 +108,8 @@ describe('GET list — each story\'s progress for its card', () => {
   });
 
   it('adds shots ready, length filled, cover picture and finished video', async () => {
-    repo.list.mockResolvedValue([{ vsId: 'b' }]);
-    repo.loadTree.mockResolvedValue(progressTree('b'));
+    repo.list.mockResolvedValue([{ vsId: 'b', windowStartSec: 0, windowEndSec: 12 }]);
+    repo.loadProgressParts.mockResolvedValue(progressTree('b'));
     const [row] = (await (await GET(req('GET'))).json()).data;
     expect(row).toMatchObject({
       vsId: 'b', shotCount: 2, readyCount: 1, filledSec: 12, windowSec: 12,
@@ -116,9 +117,26 @@ describe('GET list — each story\'s progress for its card', () => {
     });
   });
 
+  it('reads only shots, candidates and renders — never a whole partition — four stories at a time', async () => {
+    const ids = ['a', 'b', 'c', 'd', 'e', 'f'];
+    repo.list.mockResolvedValue(ids.map((vsId) => ({ vsId, windowStartSec: 0, windowEndSec: 12 })));
+    let open = 0;
+    let peak = 0;
+    repo.loadProgressParts.mockImplementation(async (id: string) => {
+      open++; peak = Math.max(peak, open);
+      await new Promise((r) => setTimeout(r, 5));
+      open--;
+      return progressTree(id);
+    });
+    const data = (await (await GET(req('GET'))).json()).data;
+    expect(data.map((r: { vsId: string }) => r.vsId)).toEqual(ids);
+    expect(peak).toBe(4);
+    expect(repo.loadTree).not.toHaveBeenCalled();
+  });
+
   it('a story whose read fails keeps its row, without progress', async () => {
-    repo.list.mockResolvedValue([{ vsId: 'a' }, { vsId: 'b' }]);
-    repo.loadTree.mockImplementation(async (id: string) => {
+    repo.list.mockResolvedValue([{ vsId: 'a' }, { vsId: 'b', windowStartSec: 0, windowEndSec: 12 }]);
+    repo.loadProgressParts.mockImplementation(async (id: string) => {
       if (id === 'a') throw new Error('boom');
       return progressTree('b');
     });
@@ -150,7 +168,7 @@ describe('GET list', () => {
   it('lists all, or by master', async () => {
     repo.list.mockResolvedValue([{ vsId: VS }]);
     repo.listByMaster.mockResolvedValue([]);
-    repo.loadTree.mockResolvedValue(null);
+    repo.loadProgressParts.mockRejectedValue(new Error('x'));
     const body = await (await GET(req('GET'))).json();
     expect(body).toEqual({ success: true, data: [{ vsId: VS, shotCount: null }], inflightCount: 0 });
     await GET(req('GET', undefined, true, `${URL_}?masterJobId=job-1`));
@@ -369,5 +387,13 @@ describe('PATCH style', () => {
     const res = await PATCH(req('PATCH', { style: 'x'.repeat(301) }), ctx());
     expect(res.status).toBe(400);
     expect((await res.json()).error).toBe('Keep the style under 300 characters');
+  });
+});
+
+describe('PATCH style — whitespace', () => {
+  it('treats a style of only spaces as none', async () => {
+    repo.findById.mockResolvedValue({ vsId: VS, committedUsd: 0, budgetUsdCap: 40 });
+    expect((await PATCH(req('PATCH', { style: '   ' }), ctx())).status).toBe(200);
+    expect(repo.patch).toHaveBeenLastCalledWith(VS, { style: '' });
   });
 });

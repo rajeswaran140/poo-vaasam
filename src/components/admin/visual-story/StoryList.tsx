@@ -56,7 +56,8 @@ export function StoryList({ stories }: { stories: StoryRow[] }) {
                       ? 'No shots yet'
                       : `${s.readyCount ?? 0} of ${s.shotCount} ${s.shotCount === 1 ? 'shot' : 'shots'} ready`}
                 </span>
-                {s.render === 'done' && (
+                {/* Any finished video counts, even if a later re-render failed. */}
+                {s.videoKey && (
                   <span className="inline-block rounded bg-green-100 px-1.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-200">
                     Video ready
                   </span>
