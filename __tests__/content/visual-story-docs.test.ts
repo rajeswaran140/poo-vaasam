@@ -15,6 +15,14 @@ describe.each([
   ['admin doc', adminDoc],
   ['operator guide', guide],
 ])('%s', (_name, text) => {
+  it('describes Upload picture: free, JPEG or PNG, usable as the first frame, text may warp', () => {
+    expect(text).toContain('Upload picture');
+    expect(text).toMatch(/upload picture[^.]*JPEG or PNG/i);
+    expect(text).toMatch(/for free/i);
+    expect(text).toMatch(/Yours/);
+    expect(text).toMatch(/text[^.]*(warp|scrambl)/i);
+  });
+
   it('says plainly what the UI cannot do yet', () => {
     expect(text).toMatch(/no reorder/i);
     expect(text).toMatch(/scenes cannot be renamed/i);

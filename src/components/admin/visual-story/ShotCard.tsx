@@ -3,7 +3,8 @@
 /**
  * One shot in the grid: mode badge, prompt, cast, its span on the window, the
  * cost estimate, "Generate still" behind a confirm-before-spend dialog (spec
- * §11 layer 2), and the candidate strip with a radio for the chosen image.
+ * §11 layer 2), "Upload picture" for the admin's own image (free, so no
+ * dialog), and the candidate strip with a radio for the chosen image.
  *
  * "Make video" and its job's progress live in VideoControls. The strip shows
  * stills and video clips; the radio picks either, and a still can be pinned
@@ -16,6 +17,7 @@
 
 import { useRef, useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
+import { putToS3 } from '@/lib/mastering-upload-client';
 import { estimateCostUsd } from '@/services/video/cost';
 import type { Candidate, Character, GenJob, Shot, ShotMode, VisualStory } from '@/types/visualStory';
 import { formatMss } from './WindowPicker';
@@ -24,6 +26,20 @@ import { VideoControls } from './VideoControls';
 
 /** The STILL route always bills the Grok image rate, whatever the story's provider. */
 export const STILL_PRICE_USD = estimateCostUsd('grok', 'STILL', 1);
+
+/** Mirrors ACCEPTED_PICTURE_TYPES (that module is server-only). */
+const PICTURE_ACCEPT = 'image/jpeg,image/png';
+
+async function postJson(url: string, payload: unknown) {
+  const res = await adminFetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok || !body?.success) throw new Error(body?.error || `Request failed (HTTP ${res.status}).`);
+  return body;
+}
 
 function ModeBadge({ mode }: { mode: ShotMode }) {
   if (mode === 'HERO') {
@@ -54,6 +70,7 @@ export function ShotCard({ vsId, shot, story, characters, candidates, jobs, sele
   const [pending, setPending] = useState(false);
   const [picking, setPicking] = useState(false);
   const [pinning, setPinning] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // State updates are async; the ref closes the gap between two fast clicks.
   const inFlight = useRef(false);
@@ -84,6 +101,23 @@ export function ShotCard({ vsId, shot, story, characters, candidates, jobs, sele
       setPending(false);
       // Spend moves on success AND on a billed refusal, so always reload.
       onChanged();
+    }
+  };
+
+  const uploadPicture = async (file: File) => {
+    if (uploading) return;
+    setUploading(true);
+    setError(null);
+    const url = `/api/admin/visual-story/${vsId}/shots/${key}/upload`;
+    try {
+      const presign = await postJson(url, { op: 'presign', contentType: file.type, size: file.size });
+      await putToS3(presign.uploadUrl, presign.fields, file, () => {}, new AbortController().signal);
+      await postJson(url, { op: 'confirm', key: presign.key });
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'The upload failed.');
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -188,6 +222,21 @@ export function ShotCard({ vsId, shot, story, characters, candidates, jobs, sele
             </div>
           </div>
         )}
+        <label className="block text-xs text-gray-700 dark:text-gray-300">
+          {uploading ? 'Uploading…' : 'Upload picture (JPEG or PNG, free)'}
+          <input
+            type="file"
+            accept={PICTURE_ACCEPT}
+            aria-label={`Upload a picture for ${label}`}
+            disabled={uploading}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = '';
+              if (f) void uploadPicture(f);
+            }}
+            className="mt-1 block text-xs"
+          />
+        </label>
         {error && (
           <p role="alert" className="text-sm text-red-600 dark:text-red-400">
             {error}
@@ -218,7 +267,7 @@ export function ShotCard({ vsId, shot, story, characters, candidates, jobs, sele
                 ) : (
                   <Thumb s3Key={c.s3Key} alt={`Candidate ${i + 1} for ${label}`} />
                 )}
-                <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-700 dark:bg-gray-700 dark:text-gray-200">{isVideo ? 'Video' : 'Still'}</span>
+                <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-700 dark:bg-gray-700 dark:text-gray-200">{isVideo ? 'Video' : c.providerId === 'upload' ? 'Yours' : 'Still'}</span>
                 <input
                   type="radio"
                   name={`pick-${key}`}
