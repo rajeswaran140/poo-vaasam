@@ -24,6 +24,8 @@ import {
   type DraftJobStatus,
   type GenJob,
   type GenJobStatus,
+  type RenderJob,
+  type RenderStatus,
   type Scene,
   type Shot,
   type StoryboardDraft,
@@ -47,6 +49,7 @@ export const charSk = (charId: string) => `CHAR#${charId}`;
 export const draftSk = (draftId: string) => `DRAFT#${draftId}`;
 export const draftJobSk = (jobId: string) => `DRAFTJOB#${jobId}`;
 export const genJobSk = (jobId: string) => `GENJOB#${jobId}`;
+export const renderSk = (renderId: string) => `RENDER#${renderId}`;
 /** One clip in flight per shot (Ruling V5): a separate row, so shot edits can't wipe it. */
 export const videoLockSk = (scene: number, shot: number) => `VIDLOCK#${pad3(scene)}#${pad3(shot)}`;
 
@@ -481,6 +484,84 @@ export class VisualStoryRepository {
   }
 
   // -------------------------------------------------------------------------
+  // Renders (Phase 6): RENDER#<renderId> in the story partition. The worker
+  // writes its own transitions with the same conditions (it cannot Query).
+  // -------------------------------------------------------------------------
+
+  async createRender(vsId: string, job: RenderJob): Promise<void> {
+    try {
+      await DynamoDBOperations.put({ PK: vsPk(vsId), SK: renderSk(job.renderId), ...job });
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  async listRenders(vsId: string): Promise<RenderJob[]> {
+    try {
+      const out: RenderJob[] = [];
+      let exclusiveStartKey: Record<string, any> | undefined;
+      do {
+        const res = await DynamoDBOperations.query({
+          keyConditionExpression: 'PK = :pk AND begins_with(SK, :sk)',
+          expressionAttributeValues: { ':pk': vsPk(vsId), ':sk': 'RENDER#' },
+          exclusiveStartKey,
+        });
+        for (const item of (res.Items as Row[]) ?? []) out.push(stripKeys<RenderJob>(item));
+        exclusiveStartKey = res.LastEvaluatedKey as Record<string, any> | undefined;
+      } while (exclusiveStartKey);
+      return out;
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  async getRender(vsId: string, renderId: string): Promise<RenderJob | null> {
+    try {
+      const item = await DynamoDBOperations.get({ PK: vsPk(vsId), SK: renderSk(renderId) });
+      return item ? stripKeys<RenderJob>(item) : null;
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  /** Move a render to `to` only from one of `from`; null when it is gone or already moved. */
+  async transitionRender(
+    vsId: string,
+    renderId: string,
+    from: RenderStatus[],
+    to: RenderStatus,
+    fields: { s3Key?: string; error?: string } = {}
+  ): Promise<RenderJob | null> {
+    try {
+      const names: Record<string, string> = { '#s': 'status' };
+      const values: Record<string, any> = { ':to': to, ':u': new Date().toISOString() };
+      const sets = ['#s = :to', 'updatedAt = :u'];
+      for (const f of ['s3Key', 'error'] as const) {
+        if (fields[f] === undefined) continue;
+        names[`#${f}`] = f;
+        values[`:${f}`] = fields[f];
+        sets.push(`#${f} = :${f}`);
+      }
+      from.forEach((st, i) => (values[`:from${i}`] = st));
+      try {
+        const item = await DynamoDBOperations.update({
+          key: { PK: vsPk(vsId), SK: renderSk(renderId) },
+          updateExpression: `SET ${sets.join(', ')}`,
+          expressionAttributeNames: names,
+          expressionAttributeValues: values,
+          conditionExpression: `attribute_exists(PK) AND #s IN (${from.map((_, i) => `:from${i}`).join(', ')})`,
+        });
+        return item ? stripKeys<RenderJob>(item) : null;
+      } catch (error) {
+        if (isConditionFailure(error)) return null;
+        throw error;
+      }
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // Video jobs: GENJOB#<jobId> in the story partition; non-terminal rows sit on
   // the sparse GSI1 partition VSTORY_INFLIGHT so the reconciler can find them.
   // -------------------------------------------------------------------------
@@ -747,6 +828,7 @@ export class VisualStoryRepository {
     candidates: Candidate[];
     drafts: StoryboardDraft[];
     genJobs: GenJob[];
+    renders: RenderJob[];
   } | null> {
     try {
       const items = await this.queryPartition(vsId);
@@ -765,6 +847,7 @@ export class VisualStoryRepository {
         candidates: by('CAND#').map((i) => stripKeys<Candidate>(i)),
         drafts: by('DRAFT#').map((i) => stripKeys<StoryboardDraft>(i)),
         genJobs: by('GENJOB#').map((i) => stripKeys<GenJob>(i)),
+        renders: by('RENDER#').map((i) => stripKeys<RenderJob>(i)),
       };
     } catch (error) {
       fail(error);

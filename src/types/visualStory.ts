@@ -180,10 +180,37 @@ export interface GenJob {
 }
 
 // ---------------------------------------------------------------------------
+// Assembly (Phase 6, spec §7.4): RENDER#<renderId> in the story partition
+// ---------------------------------------------------------------------------
+
+export type RenderStatus = 'queued' | 'running' | 'done' | 'failed';
+
+/**
+ * One assembly of the timeline. It carries the shot list it was asked for, so
+ * the worker — whose role cannot Query — renders exactly what was checked,
+ * and a later edit of the story cannot change a render already queued.
+ */
+export interface RenderJob {
+  renderId: string;
+  status: RenderStatus;
+  aspectRatio: AspectRatio;
+  windowStartSec: number;
+  windowEndSec: number;
+  shots: Array<{ sceneOrder: number; shotOrder: number; key: string; durationSec: number }>;
+  /** The route's estimate of worker time, seconds. */
+  estimateSec: number;
+  /** Set when done: the MP4 in the mastering workspace. */
+  s3Key?: string;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ---------------------------------------------------------------------------
 // Ids — `<prefix>_<13-digit ms>_<random>`; validate before building any key.
 // ---------------------------------------------------------------------------
 
-export type IdPrefix = 'vs' | 'ch' | 'cd' | 'dr' | 'dj' | 'gj';
+export type IdPrefix = 'vs' | 'ch' | 'cd' | 'dr' | 'dj' | 'gj' | 'rd';
 
 function idGuard(prefix: IdPrefix): (s: unknown) => boolean {
   const re = new RegExp(`^${prefix}_\\d{13}_[a-z0-9]{6,12}$`);
@@ -196,6 +223,7 @@ export const isCandId = idGuard('cd');
 export const isDraftId = idGuard('dr');
 export const isDraftJobId = idGuard('dj');
 export const isGenJobId = idGuard('gj');
+export const isRenderId = idGuard('rd');
 
 /** Deterministic candidate id for a video job, so a repeated copy is idempotent. */
 export function candIdForJob(jobId: string): string {
