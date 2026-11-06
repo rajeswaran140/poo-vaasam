@@ -20,7 +20,19 @@ export const MAX_REF_BYTES = 10 * 1024 * 1024;
 export const MAX_REFS_PER_CHARACTER = 4;
 
 const REF_EXTS = ['jpg', 'png', 'webp'] as const;
-const CAND_EXTS = ['jpg', 'mp4'] as const;
+const CAND_EXTS = ['jpg', 'png', 'mp4'] as const;
+
+/** A picture the admin uploads to a shot: the types Grok takes as a first frame. */
+export const ACCEPTED_PICTURE_TYPES = ['image/jpeg', 'image/png'] as const;
+
+/** The stored extension for an accepted shot-picture type, else null. */
+export function pictureExtensionFor(contentType: string): 'jpg' | 'png' | null {
+  switch (contentType) {
+    case 'image/jpeg': return 'jpg';
+    case 'image/png': return 'png';
+    default: return null;
+  }
+}
 
 /** The stored extension for an accepted reference type, else null. */
 export function refExtensionFor(contentType: string): (typeof REF_EXTS)[number] | null {
@@ -45,7 +57,7 @@ export function refKey(vsId: string, charId: string, ext: string): string {
   return `${refPrefix(vsId, charId)}${randomUUID()}.${ext}`;
 }
 
-/** Key of a generated candidate's still/poster (`jpg`) or clip (`mp4`). */
+/** Key of a candidate's still (`jpg`, or an uploaded `png`), poster (`jpg`) or clip (`mp4`). */
 export function candidateKey(vsId: string, candId: string, ext: string): string {
   if (!isVsId(vsId)) throw new Error('invalid vsId');
   if (!isCandId(candId)) throw new Error('invalid candId');
@@ -66,4 +78,18 @@ export function isRefKeyFor(key: unknown, vsId: string, charId: string): boolean
   const prefix = refPrefix(vsId, charId);
   if (!key.startsWith(prefix)) return false;
   return new RegExp(`^${UUID}\\.(jpg|png|webp)$`).test(key.slice(prefix.length));
+}
+
+/**
+ * The candidate id and extension of a picture key exactly as `candidateKey`
+ * builds it for THIS story (`jpg` or `png` only), else null. Used to confirm an
+ * uploaded shot picture: the server minted the key, the client only echoes it.
+ */
+export function parseUploadedPictureKey(key: unknown, vsId: string): { candId: string; ext: 'jpg' | 'png' } | null {
+  if (typeof key !== 'string' || key.length > 1024 || !isVsId(vsId)) return null;
+  const prefix = `${VISUAL_STORY_PREFIX}${vsId}/candidates/`;
+  if (!key.startsWith(prefix)) return null;
+  const m = /^([^/.]+)\.(jpg|png)$/.exec(key.slice(prefix.length));
+  if (!m || !isCandId(m[1])) return null;
+  return { candId: m[1], ext: m[2] as 'jpg' | 'png' };
 }

@@ -553,6 +553,14 @@ describe('buildVideoRequest', () => {
     expect(req.firstFrameUrl).toBeUndefined();
   });
 
+  it('an uploaded picture (providerId upload, .png) pinned as first frame is sent as the first frame', async () => {
+    const UP = 'cd_1700000000005_abcdef12';
+    const mine = { ...cand(UP, 1, 2), providerId: 'upload', costUsd: 0, s3Key: `audio/mastering/visual-story/${VS}/candidates/${UP}.png` };
+    const s = shot(1, 2, { firstFrameCandidateId: UP });
+    const req = await buildVideoRequest(t({ candidates: [mine] }), s as never);
+    expect(req.firstFrameUrl).toBe(signed(mine.s3Key));
+  });
+
   it('references follow the cast order, skip unknown characters, and cap at 14 before signing', async () => {
     const keys = (p: string, n: number) => Array.from({ length: n }, (_, i) => `ref/${p}${i}.jpg`);
     const characters = [

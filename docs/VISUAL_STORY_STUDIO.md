@@ -38,6 +38,7 @@ Press **Make video (6 s · $0.48)** on a shot (the label shows that shot's lengt
 - **Cancel** (beside the progress line) asks first and warns **"Grok may still charge for this clip, and it won't be kept."** Pressing **Cancel video** counts the clip's price as spent, because Grok may already have accepted it; **Keep rendering** goes back.
 - **Check again** appears if the card stopped watching a clip (for example after a network hiccup). Press it to look once more. If you left the page, press **Check rendering videos (N)** on the story list; N is how many clips are still rendering.
 - **First frame:** on a still, **Use as first frame** makes the video start from that picture. The shot panel shows **First frame** with the picture and a **Clear** button to go back to no first frame.
+- **Upload picture:** adds your own JPEG or PNG (up to 10 MB, e.g. a thumbnail) to a shot for free. It shows as **Yours** next to the stills and can be picked or used as the first frame. Use a picture already in the story's shape (crop a 16:9 thumbnail to 9:16 for a vertical story), and one without text: a title on it will likely warp once it moves.
 - **Character photos** of the characters in a shot are sent to Grok too. A clip that uses them is made at **720p** (without photos it is 1080p).
 - A video **can't be made for a shot without a prompt** ("Write a visual prompt first.").
 - **One video per shot at a time** ("A video is already rendering for this shot."). Other shots can render at the same time.

@@ -423,6 +423,56 @@ describe('Studio — undo and budget (I1)', () => {
   });
 });
 
+describe('Studio — upload your own picture', () => {
+  const uploadUrl = `/api/admin/visual-story/${VS}/shots/001-002/upload`;
+  const key = `audio/mastering/visual-story/${VS}/candidates/${CD}.png`;
+
+  it('presigns, POSTs the file to S3, confirms on THIS shot, then reloads', async () => {
+    routes((url, init) => {
+      if (url !== uploadUrl) return undefined;
+      const op = JSON.parse(String(init?.body)).op;
+      if (op === 'presign') return json({ success: true, uploadUrl: 'https://s3.example', fields: { a: 'b' }, key });
+      if (op === 'confirm') return json({ success: true, data: { candidate: {} } }, 201);
+      return undefined;
+    });
+    mockPut.mockResolvedValue(undefined);
+    render(<Studio vsId={VS} />);
+    const c = await card('Shot 1.2');
+    expect(c).toHaveTextContent('Upload picture (JPEG or PNG, free)');
+    const loadsBefore = treeLoads().length;
+    const file = new File(['xy'], 'thumb.png', { type: 'image/png' });
+    fireEvent.change(within(c).getByLabelText('Upload a picture for Shot 1.2'), { target: { files: [file] } });
+    await waitFor(() => expect(calls('/001-002/upload')).toHaveLength(2));
+    const [presign, confirm] = calls('/001-002/upload').map(([, i]) => JSON.parse(i.body));
+    expect(presign).toEqual({ op: 'presign', contentType: 'image/png', size: 2 });
+    expect(mockPut).toHaveBeenCalledWith('https://s3.example', { a: 'b' }, file, expect.any(Function), expect.anything());
+    expect(confirm).toEqual({ op: 'confirm', key });
+    await waitFor(() => expect(treeLoads().length).toBeGreaterThan(loadsBefore));
+  });
+
+  it('a refused upload shows its reason in the card and never reaches S3', async () => {
+    routes((url) => (url === uploadUrl ? json({ success: false, error: 'Upload a JPEG or PNG picture.' }, 400) : undefined));
+    render(<Studio vsId={VS} />);
+    const c = await card('Shot 1.2');
+    const file = new File(['x'], 'thumb.webp', { type: 'image/webp' });
+    fireEvent.change(within(c).getByLabelText('Upload a picture for Shot 1.2'), { target: { files: [file] } });
+    expect(await within(c).findByRole('alert')).toHaveTextContent('Upload a JPEG or PNG picture.');
+    expect(mockPut).not.toHaveBeenCalled();
+  });
+
+  it('an uploaded picture is labelled "Yours" and can be the first frame', async () => {
+    const mine = {
+      candId: CD, sceneOrder: 1, shotOrder: 2, jobId: null, providerId: 'upload', providerTaskId: null,
+      mode: 'STILL', s3Key: key, costUsd: 0, createdAt: '2026-11-06',
+    };
+    routes(undefined, () => ({ ...tree(), candidates: [mine] }));
+    render(<Studio vsId={VS} />);
+    const c = await card('Shot 1.2');
+    expect(await within(c).findByText('Yours')).toBeInTheDocument();
+    expect(within(c).getByRole('button', { name: 'Use as first frame' })).toBeInTheDocument();
+  });
+});
+
 describe('Studio — video clips', () => {
   const GJ = 'gj_1730000000000_abcdef12';
   const VCD = 'cd_1730000000000_abcdef12'; // candIdForJob(GJ)
