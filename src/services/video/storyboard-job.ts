@@ -39,10 +39,15 @@ import {
   type StoryboardDraft,
 } from '@/types/visualStory';
 
-/** The worker's per-call Anthropic timeout (the worker Lambda must allow more than this). */
-export const WORKER_DRAFT_TIMEOUT_MS = 150_000;
+/**
+ * The worker's per-call Anthropic timeout. A seven-minute window writes ~19k
+ * tokens at ~50/s, so the call can take 6-7 minutes. ⚠️ ORDER MATTERS: this <
+ * the compose-worker Lambda's timeout (720 s) < DRAFT_JOB_STALE_MS, or the
+ * Lambda dies mid-call or the sweep fails a job that is still running.
+ */
+export const WORKER_DRAFT_TIMEOUT_MS = 600_000;
 /** A job not finished after this long cannot still be running on the worker. */
-export const DRAFT_JOB_STALE_MS = 10 * 60_000;
+export const DRAFT_JOB_STALE_MS = 15 * 60_000;
 export const STALE_DRAFT_ERROR = 'The draft took too long. Please try again.';
 
 const UPSTREAM_ERROR = 'The AI service failed to respond. Please try again.';

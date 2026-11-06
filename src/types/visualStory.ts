@@ -19,7 +19,13 @@ export const ASPECT_RATIOS = ['16:9', '9:16'] as const;
 
 export const DEFAULT_BUDGET_USD_CAP = 40;
 export const MIN_WINDOW_SEC = 30;
-export const MAX_WINDOW_SEC = 120;
+/**
+ * Seven minutes — most whole songs. Bounded twice over (measured 2026-11-06):
+ * the storyboard draft for 420 s is ~19k output tokens, under the SDK's
+ * non-streaming ceiling (see draftMaxOutputTokens), and assembling 420 s of
+ * zoomed stills is ~670 s of the 900 s worker (see estimateAssembleSec).
+ */
+export const MAX_WINDOW_SEC = 420;
 export const MIN_SHOT_SEC = 1;
 export const MAX_SHOT_SEC = 15;
 

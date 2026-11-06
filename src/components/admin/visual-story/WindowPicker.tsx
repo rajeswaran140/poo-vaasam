@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * WindowPicker — start (m:ss) + length (30–120 s) of the slice of the song a
+ * WindowPicker — start (m:ss) + length (30–420 s) of the slice of the song a
  * story covers. The end is shown, and the length is clamped so the window never
  * runs past the song. Emits INTEGER seconds only (shots tile the window with ===).
  */

@@ -74,7 +74,10 @@ describe('runStoryboardJob', () => {
       { lyrics: LYRICS, windowSec: 45, aspectRatio: '9:16' },
       { timeoutMs: WORKER_DRAFT_TIMEOUT_MS }
     );
-    expect(WORKER_DRAFT_TIMEOUT_MS).toBe(150_000);
+    // Long windows write ~19k tokens at ~50/s: the call may run ~6-7 minutes.
+    expect(WORKER_DRAFT_TIMEOUT_MS).toBe(600_000);
+    // The sweep must never fail a job the worker could still be running.
+    expect(DRAFT_JOB_STALE_MS).toBeGreaterThan(WORKER_DRAFT_TIMEOUT_MS + 120_000);
 
     const [vsArg, draft] = repo.putDraft.mock.calls[0];
     expect(vsArg).toBe(VS);
@@ -246,5 +249,20 @@ describe('sweepStaleDraftJobs (every story load and every new draft)', () => {
   it('never throws: a storage failure is logged by name and the caller carries on', async () => {
     repo.listDraftJobs.mockRejectedValueOnce(Object.assign(new Error('x'), { name: 'DynamoDBError' }));
     await expect(sweepStaleDraftJobs(new VisualStoryRepository(), VS, NOW)).resolves.toBeUndefined();
+  });
+});
+
+describe('long windows reach the storyboarder', () => {
+  it('runs a seven-minute window and refuses one a second longer, before any call', async () => {
+    const repo = {
+      transitionDraftJob: jest.fn().mockResolvedValue({ jobId: JOB, status: 'running', reservedUsd: 0.5 }),
+      getDraftJob: jest.fn(), putDraft: jest.fn(), settle: jest.fn(),
+    };
+    mockGenerate.mockResolvedValue({ ok: false, code: 'upstream', error: 'x' });
+    await runStoryboardJob({ kind: 'storyboard', jobId: JOB, vsId: VS, lyrics: LYRICS, windowSec: 420, aspectRatio: '16:9' }, { repo: repo as never });
+    expect(mockGenerate).toHaveBeenCalledWith(expect.objectContaining({ windowSec: 420 }), expect.anything());
+    mockGenerate.mockClear();
+    await runStoryboardJob({ kind: 'storyboard', jobId: JOB, vsId: VS, lyrics: LYRICS, windowSec: 421, aspectRatio: '16:9' }, { repo: repo as never });
+    expect(mockGenerate).not.toHaveBeenCalled();
   });
 });

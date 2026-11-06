@@ -9,7 +9,7 @@ Phases 2–4: storyboard a music video, make a still picture for each shot, and 
 ## Workflow
 
 ### 1. Create
-**New from master.** Pick a saved master, then the part of the song to film: **30 to 120 seconds**, whole seconds, inside the finished song. Pick **16:9** or **9:16**; this cannot be changed later. Set the story's **budget** (default **$40**).
+**New from master.** Pick a saved master, then the part of the song to film: **30 seconds to 7 minutes** (420 s), whole seconds, inside the finished song — most whole songs fit. Pick **16:9** or **9:16**; this cannot be changed later. Set the story's **budget** (default **$40**).
 
 ### 2. Draft
 Open the story and use **Draft storyboard**: paste the lyrics and press the button. The draft runs in the background and takes **about a minute** (the panel says "Drafting… this takes about a minute." and the button stays disabled until it finishes). The new draft then appears in the panel with how much of your window it fills; review it, then apply. Applying **replaces** the current storyboard (its scenes, shots and their stills) and asks first. Characters are kept.

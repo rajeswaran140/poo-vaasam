@@ -58,7 +58,7 @@ const DR = 'dr_1700000000000_abcdef12';
 const JOB = 'dj_1700000000000_abcdef12';
 const bearer = { Authorization: 'Bearer t' };
 const LYRICS = 'Line one of the test song\nLine two';
-const RESERVE = draftReserveUsd(LYRICS);
+const RESERVE = draftReserveUsd(LYRICS, 45); // the story's 10-55 s window
 
 const mk = (body?: unknown, withBearer = true) =>
   new NextRequest('https://tamilagaval.com/api/admin/visual-story/x', {

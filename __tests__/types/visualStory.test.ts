@@ -29,14 +29,14 @@ describe('createStorySchema', () => {
     expect(createStorySchema.safeParse({ ...base, contentId: 'c1', budgetUsdCap: 40 }).success).toBe(true);
     expect(createStorySchema.safeParse({ ...base, budgetUsdCap: 501 }).success).toBe(false);
   });
-  it.each([29, 121])('rejects a window of %i s with the 30–120 message', (len) => {
+  it.each([29, 421])('rejects a window of %i s with the 30–420 message', (len) => {
     const r = createStorySchema.safeParse({ ...base, windowEndSec: base.windowStartSec + len });
     expect(r.success).toBe(false);
-    if (!r.success) expect(JSON.stringify(r.error.issues)).toContain('30–120');
+    if (!r.success) expect(JSON.stringify(r.error.issues)).toContain('30–420');
   });
-  it('accepts the 30 s and 120 s edges', () => {
+  it('accepts the 30 s and 420 s (seven-minute) edges', () => {
     expect(createStorySchema.safeParse({ ...base, windowEndSec: 40 }).success).toBe(true);
-    expect(createStorySchema.safeParse({ ...base, windowEndSec: 130 }).success).toBe(true);
+    expect(createStorySchema.safeParse({ ...base, windowEndSec: 430 }).success).toBe(true);
   });
   it('rejects an unsupported aspect ratio', () => {
     expect(createStorySchema.safeParse({ ...base, aspectRatio: '1:1' }).success).toBe(false);

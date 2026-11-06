@@ -40,8 +40,25 @@ export const GROK_RATES_VERIFIED_AT: string | null = null;
 /** Flat planning estimate for one storyboard draft call (the figure the UI shows). */
 export const DRAFT_ESTIMATE_USD = 0.15;
 
-/** The storyboarder's max_tokens: no draft can bill more output than this. */
+/** The storyboarder's max_tokens for a short window; longer ones get more (draftMaxOutputTokens). */
 export const DRAFT_MAX_OUTPUT_TOKENS = 6000;
+
+/**
+ * The ceiling. The SDK refuses a NON-streaming call whose max_tokens implies
+ * over 10 minutes (60 min × max_tokens / 128 000, i.e. above ~21 333) unless
+ * the client has its own timeout, so the draft stays under it.
+ */
+export const DRAFT_MAX_OUTPUT_TOKENS_CEILING = 20000;
+
+/**
+ * max_tokens for a draft of this window: no draft can bill more output than
+ * this. Measured live: a 30 s window wrote 1 313-1 585 tokens for 5 shots,
+ * ~250 per shot plus the characters. 45 per second of window covers 5-8 s
+ * shots with room to spare; the reservation uses the same figure.
+ */
+export function draftMaxOutputTokens(windowSec: number): number {
+  return Math.min(DRAFT_MAX_OUTPUT_TOKENS_CEILING, Math.max(DRAFT_MAX_OUTPUT_TOKENS, Math.round(45 * windowSec)));
+}
 /** System prompt + tool schema + framing, in tokens (rounded up). */
 export const DRAFT_PROMPT_OVERHEAD_TOKENS = 1500;
 
@@ -70,11 +87,11 @@ export function draftCostUsd(inputTokens: number, outputTokens: number): number 
  * input cost can exceed this; the overshoot is bounded by the 8000-char lyrics
  * limit (a few cents) and is recorded as spend at settle.
  */
-export function draftReserveUsd(lyrics: string): number {
-  return draftCostUsd(Math.ceil(lyrics.length / 2) + DRAFT_PROMPT_OVERHEAD_TOKENS, DRAFT_MAX_OUTPUT_TOKENS);
+export function draftReserveUsd(lyrics: string, windowSec: number): number {
+  return draftCostUsd(Math.ceil(lyrics.length / 2) + DRAFT_PROMPT_OVERHEAD_TOKENS, draftMaxOutputTokens(windowSec));
 }
 
 /** The price the Draft button shows: the flat estimate when it covers the reservation, else the reservation. */
-export function draftLabelUsd(lyrics: string, estimateUsd: number = DRAFT_ESTIMATE_USD): number {
-  return Math.max(estimateUsd, draftReserveUsd(lyrics));
+export function draftLabelUsd(lyrics: string, windowSec: number, estimateUsd: number = DRAFT_ESTIMATE_USD): number {
+  return Math.max(estimateUsd, draftReserveUsd(lyrics, windowSec));
 }

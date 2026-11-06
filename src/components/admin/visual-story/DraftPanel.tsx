@@ -7,7 +7,7 @@
  *
  * A draft takes about a minute, so it runs on the background worker (R14):
  * POST starts a job (202 { jobId }), the panel polls the job route with
- * pollJob() until done/failed (cap 4 minutes), then reloads the tree — the new
+ * pollJob() until done/failed (cap 12 minutes), then reloads the tree — the new
  * draft and the spend come from the server. The button stays disabled while a
  * job is pending.
  *
@@ -38,7 +38,8 @@ interface Props {
 }
 
 const POLL_INTERVAL_MS = 3000;
-const POLL_TIMEOUT_MS = 4 * 60_000;
+/** A seven-minute window's draft can take ~7 minutes on the worker; wait past that. */
+const POLL_TIMEOUT_MS = 12 * 60_000;
 const POLL_TIMEOUT_MESSAGE = 'The draft is taking longer than expected. Reload the page in a few minutes to see it.';
 
 const when = (iso: string) => {
@@ -163,7 +164,7 @@ export function DraftPanel({ vsId, windowSec, sceneCount, shotCount, lastDraft, 
         onClick={requestDraft}
         className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
       >
-        {pending ? 'Drafting…' : `Draft storyboard (≈${usd(draftLabelUsd(lyrics))})`}
+        {pending ? 'Drafting…' : `Draft storyboard (≈${usd(draftLabelUsd(lyrics, windowSec))})`}
       </button>
       {pending && (
         <p role="status" className="text-sm text-gray-700 dark:text-gray-300">
