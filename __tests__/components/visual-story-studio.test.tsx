@@ -968,7 +968,7 @@ describe('Studio — phone layout and flow (audit PR 2)', () => {
     expect(JSON.parse(calls('/select')[0][1].body)).toEqual({ sceneOrder: 1, shotOrder: 1, candId: CD });
   });
 
-  it('the chosen picture reads "Chosen"; the others offer "Tap to choose"', async () => {
+  it('the chosen picture reads "✓ Chosen"; the others offer "Tap to choose"', async () => {
     const t = tree();
     const other = 'cd_1730000000001_abcdef12';
     t.candidates = [still(CD), still(other)];
@@ -976,7 +976,7 @@ describe('Studio — phone layout and flow (audit PR 2)', () => {
     routes(undefined, () => t);
     render(<Studio vsId={VS} />);
     const c = await card('Shot 1.1');
-    expect(within(c).getByText('Chosen')).toBeInTheDocument();
+    expect(within(c).getByText('✓ Chosen')).toBeInTheDocument();
     expect(within(c).getByText('Tap to choose')).toBeInTheDocument();
   });
 
@@ -1100,5 +1100,29 @@ describe('the story\'s Style', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save style' }));
     const alert = await screen.findByText('Keep the style under 300 characters');
     expect(screen.getByRole('form', { name: 'Story style' })).toContainElement(alert);
+  });
+});
+
+describe('steps bar and song timeline', () => {
+  it('shows the four steps with the next one marked', async () => {
+    routes();
+    render(<Studio vsId={VS} />);
+    const steps = await screen.findByRole('list', { name: 'Steps' });
+    const items = within(steps).getAllByRole('listitem');
+    expect(items).toHaveLength(4);
+    // 58 of 60 s filled: storyboard done, filling the song is next.
+    expect(items[0]).toHaveTextContent('1. Storyboard');
+    expect(items[1]).toHaveAttribute('aria-current', 'step');
+    expect(items[1]).toHaveTextContent('0:58 of 1:00');
+  });
+
+  it('lays every shot on the timeline and opens one when pressed', async () => {
+    routes();
+    render(<Studio vsId={VS} />);
+    const strip = await screen.findByRole('navigation', { name: 'Song timeline' });
+    const second = within(strip).getByRole('button', { name: 'Scene 1, shot 2, 28 s, nothing chosen' });
+    expect(within(strip).getAllByRole('button')).toHaveLength(2);
+    fireEvent.click(second);
+    expect(second).toHaveAttribute('aria-current', 'true');
   });
 });

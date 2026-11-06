@@ -8,6 +8,8 @@ Phases 2–6: storyboard a music video, make a still picture and a **video clip*
 
 ## Workflow
 
+**Finding your way.** The story list shows each story as a card with its first picture, shape and length, how many shots are ready, and **Video ready** once it has a finished video. In a story, the **steps** under the title (Storyboard → Fill the song → Choose pictures or clips → Render video) tick off as you go and mark the next one. The **song timeline** below them shows every shot in order, its width by its length, with its chosen picture (or **▶ Clip**) and an amber **Choose** where nothing is chosen yet; press a shot to open it. Previews in the shot cards are large and in the story's own shape, and the chosen one is outlined and reads **✓ Chosen**.
+
 ### 1. Create
 **New from master.** Pick a saved master, then the part of the song to film: **30 seconds to 7 minutes** (420 s), whole seconds, inside the finished song — most whole songs fit. Pick **16:9** or **9:16**; this cannot be changed later. Set the story's **budget** (default **$40**), and optionally its **Style**.
 

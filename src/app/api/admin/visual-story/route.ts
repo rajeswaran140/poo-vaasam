@@ -16,6 +16,7 @@ import { MasterJobRepository } from '@/infrastructure/database/MasterJobReposito
 import { ContentRepository } from '@/infrastructure/database/ContentRepository';
 import { VisualStoryRepository } from '@/infrastructure/database/VisualStoryRepository';
 import { createStorySchema } from '@/types/visualStory';
+import { storyProgress } from '@/lib/visual-story-progress';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -41,11 +42,15 @@ export async function GET(request: NextRequest) {
   try {
     const repo = new VisualStoryRepository();
     const stories = masterJobId ? await repo.listByMaster(masterJobId) : await repo.list();
-    // One small COUNT query per story; a failed count blanks that row only.
+    // One partition Query per story for its card (progress, cover, video);
+    // a failed one blanks that card's progress only, never the list.
     const data = await Promise.all(
       stories.map(async (story) => {
         try {
-          return { ...story, shotCount: await repo.countShots(story.vsId) };
+          const tree = await repo.loadTree(story.vsId);
+          if (!tree) return { ...story, shotCount: null };
+          const p = storyProgress(tree);
+          return { ...story, ...p };
         } catch {
           return { ...story, shotCount: null };
         }

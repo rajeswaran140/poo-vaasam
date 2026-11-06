@@ -30,6 +30,9 @@ import { SpendBar } from './SpendBar';
 import { StoryActions } from './StoryActions';
 import { RenderPanel } from './RenderPanel';
 import { StyleField } from './StyleField';
+import { StepsBar } from './StepsBar';
+import { TimelineStrip } from './TimelineStrip';
+import { storyProgress } from '@/lib/visual-story-progress';
 
 export interface StoryTree {
   story: VisualStory;
@@ -163,6 +166,19 @@ export function Studio({ vsId }: { vsId: string }) {
         <p className="text-sm text-gray-600 dark:text-gray-400">{`${story.aspectRatio} · ${story.status}`}</p>
         <StyleField vsId={vsId} style={story.style ?? ''} onChanged={refresh} />
       </header>
+      <StepsBar progress={storyProgress({ story, shots, candidates, renders: tree.renders ?? [] })} />
+      <TimelineStrip
+        shots={shots}
+        candidates={candidates}
+        aspect={story.aspectRatio}
+        selectedKey={editKey}
+        onOpen={(s) => {
+          setSceneOrder(s.sceneOrder);
+          setEditKey(shotKey(s));
+          setTab('inspector');
+          setEditNonce((n) => n + 1);
+        }}
+      />
       <RenderPanel
         vsId={vsId}
         story={story}

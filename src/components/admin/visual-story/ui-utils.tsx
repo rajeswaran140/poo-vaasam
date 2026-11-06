@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
-import type { Shot } from '@/types/visualStory';
+import type { AspectRatio, Shot } from '@/types/visualStory';
 
 export const usd = (n: number) => `$${n.toFixed(2)}`;
 
@@ -55,22 +55,40 @@ export function usePlayUrl(key: string | null): string | null {
 const EMPTY_BOX =
   'flex items-center justify-center rounded border border-dashed border-gray-300 text-xs text-gray-600 dark:border-gray-600 dark:text-gray-400';
 
-export function Thumb({ s3Key, alt }: { s3Key: string; alt: string }) {
+/**
+ * Preview box sizes. `aspect` gives a large preview in the story's own shape
+ * (a 9:16 picture is not cropped to a square); `fill` fills its parent. With
+ * neither, the small square the reference photos and first frame use.
+ */
+export function previewBox(aspect?: AspectRatio, fill = false, small = false): string {
+  if (fill) return 'h-full w-full';
+  if (small && aspect === '9:16') return 'h-24 w-14';
+  if (small && aspect === '16:9') return 'h-14 w-24';
+  if (aspect === '9:16') return 'aspect-[9/16] w-28 sm:w-32';
+  if (aspect === '16:9') return 'aspect-video w-48 sm:w-56';
+  return 'h-16 w-16';
+}
+
+export function Thumb({
+  s3Key, alt, aspect, fill, small,
+}: { s3Key: string; alt: string; aspect?: AspectRatio; fill?: boolean; small?: boolean }) {
   const url = usePlayUrl(s3Key);
+  const box = previewBox(aspect, fill, small);
   return url ? (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={url} alt={alt} className="h-16 w-16 rounded object-cover" />
+    <img src={url} alt={alt} loading="lazy" className={`${box} rounded object-cover`} />
   ) : (
-    <span className={`h-16 w-16 ${EMPTY_BOX}`}>…</span>
+    <span className={`${box} ${EMPTY_BOX}`}>…</span>
   );
 }
 
 /** A video clip preview: muted, inline, only its metadata loaded until played. */
-export function VideoThumb({ s3Key, label }: { s3Key: string; label: string }) {
+export function VideoThumb({ s3Key, label, aspect }: { s3Key: string; label: string; aspect?: AspectRatio }) {
   const url = usePlayUrl(s3Key);
+  const box = aspect ? previewBox(aspect) : 'h-24 w-40';
   return url ? (
-    <video src={url} aria-label={label} controls muted playsInline preload="metadata" className="h-24 w-40 rounded bg-black object-contain" />
+    <video src={url} aria-label={label} controls muted playsInline preload="metadata" className={`${box} rounded bg-black object-contain`} />
   ) : (
-    <span className={`h-24 w-40 ${EMPTY_BOX}`}>…</span>
+    <span className={`${box} ${EMPTY_BOX}`}>…</span>
   );
 }

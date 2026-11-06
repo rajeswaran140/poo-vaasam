@@ -3,7 +3,7 @@
  * COMPONENT TESTS — Visual Story Studio list page pieces: the story table,
  * the "New from master" form and its window picker.
  */
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import VisualStoryListPage from '@/app/(admin)/admin/visual-story/page';
 import { StoryList } from '@/components/admin/visual-story/StoryList';
 import { NewStoryForm } from '@/components/admin/visual-story/NewStoryForm';
@@ -40,18 +40,30 @@ jest.mock('next/navigation', () => ({ useRouter: () => ({ push: jest.fn() }) }))
 beforeEach(() => mockFetch.mockReset());
 
 describe('StoryList', () => {
-  it('renders spend as "$0.42 of $40.00" and links to the studio', () => {
+  it('shows each story as a card linking to the studio, with its shape, length and spend', () => {
     render(<StoryList stories={[STORY]} />);
-    expect(screen.getByText('$0.42 of $40.00')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Test song/ })).toHaveAttribute('href', '/admin/visual-story/vs-1');
-    expect(screen.getByText('16:9')).toBeInTheDocument();
-    expect(screen.getByText('DRAFT')).toBeInTheDocument();
+    const card = screen.getByRole('link', { name: /Test song/ });
+    expect(card).toHaveAttribute('href', '/admin/visual-story/vs-1');
+    expect(within(card).getByText('$0.42 of $40.00 spent')).toBeInTheDocument();
+    expect(within(card).getByText(/^16:9 · \d+:\d{2} of song$/)).toBeInTheDocument();
   });
 
-  it('renders the shot count, and a dash when the count is unknown', () => {
-    render(<StoryList stories={[{ ...STORY, shotCount: 12 }, { ...STORY, vsId: 'vs-2', title: 'Other test', shotCount: null }]} />);
-    expect(screen.getByText('12')).toBeInTheDocument();
-    expect(screen.getByText('—')).toBeInTheDocument();
+  it('says how many shots are ready, and a dash when that is unknown', () => {
+    render(<StoryList stories={[{ ...STORY, shotCount: 12, readyCount: 9 }, { ...STORY, vsId: 'vs-2', title: 'Other test', shotCount: null }]} />);
+    expect(screen.getByText('9 of 12 shots ready')).toBeInTheDocument();
+    expect(screen.getByText('Shots —')).toBeInTheDocument();
+  });
+
+  it('marks a story with a finished video, and one rendering', () => {
+    render(<StoryList stories={[{ ...STORY, shotCount: 2, readyCount: 2, render: 'done' }, { ...STORY, vsId: 'vs-2', title: 'Other test', shotCount: 2, render: 'running' }]} />);
+    expect(within(screen.getByRole('link', { name: /Test song/ })).getByText('Video ready')).toBeInTheDocument();
+    expect(within(screen.getByRole('link', { name: /Other test/ })).getByText('Rendering…')).toBeInTheDocument();
+  });
+
+  it('shows the cover picture when there is one', async () => {
+    mockFetch.mockResolvedValue(json({ success: true, url: 'https://signed.example/cover' }));
+    const { container } = render(<StoryList stories={[{ ...STORY, shotCount: 1, coverKey: 'audio/mastering/visual-story/vs-1/candidates/cd_1.jpg' }]} />);
+    await waitFor(() => expect(container.querySelector('img')).toHaveAttribute('src', 'https://signed.example/cover'));
   });
 
   it('shows an empty message with no stories', () => {

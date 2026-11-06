@@ -94,19 +94,39 @@ describe('auth', () => {
   });
 });
 
-describe('GET list shotCount', () => {
-  it('a failing count yields null for that row only', async () => {
+describe('GET list — each story\'s progress for its card', () => {
+  const C = (vs: string) => `audio/mastering/visual-story/${vs}/candidates`;
+  const progressTree = (vs: string) => ({
+    story: { vsId: vs, windowStartSec: 0, windowEndSec: 12 },
+    shots: [
+      { sceneOrder: 1, shotOrder: 1, durationSec: 6, selectedCandidateId: 'cd_s' },
+      { sceneOrder: 1, shotOrder: 2, durationSec: 6, selectedCandidateId: null },
+    ],
+    candidates: [{ candId: 'cd_s', mode: 'STILL', s3Key: `${C(vs)}/cd_s.jpg` }],
+    renders: [{ renderId: 'rd_1', status: 'done', s3Key: 'v.mp4', createdAt: '2026-11-06T00:00:00Z' }],
+  });
+
+  it('adds shots ready, length filled, cover picture and finished video', async () => {
+    repo.list.mockResolvedValue([{ vsId: 'b' }]);
+    repo.loadTree.mockResolvedValue(progressTree('b'));
+    const [row] = (await (await GET(req('GET'))).json()).data;
+    expect(row).toMatchObject({
+      vsId: 'b', shotCount: 2, readyCount: 1, filledSec: 12, windowSec: 12,
+      render: 'done', videoKey: 'v.mp4', coverKey: `${C('b')}/cd_s.jpg`,
+    });
+  });
+
+  it('a story whose read fails keeps its row, without progress', async () => {
     repo.list.mockResolvedValue([{ vsId: 'a' }, { vsId: 'b' }]);
-    repo.countShots.mockImplementation(async (id: string) => {
+    repo.loadTree.mockImplementation(async (id: string) => {
       if (id === 'a') throw new Error('boom');
-      return 7;
+      return progressTree('b');
     });
     const res = await GET(req('GET'));
     expect(res.status).toBe(200);
-    expect((await res.json()).data).toEqual([
-      { vsId: 'a', shotCount: null },
-      { vsId: 'b', shotCount: 7 },
-    ]);
+    const data = (await res.json()).data;
+    expect(data[0]).toEqual({ vsId: 'a', shotCount: null });
+    expect(data[1]).toMatchObject({ vsId: 'b', shotCount: 2 });
   });
 });
 
@@ -130,9 +150,9 @@ describe('GET list', () => {
   it('lists all, or by master', async () => {
     repo.list.mockResolvedValue([{ vsId: VS }]);
     repo.listByMaster.mockResolvedValue([]);
-    repo.countShots.mockResolvedValue(4);
+    repo.loadTree.mockResolvedValue(null);
     const body = await (await GET(req('GET'))).json();
-    expect(body).toEqual({ success: true, data: [{ vsId: VS, shotCount: 4 }], inflightCount: 0 });
+    expect(body).toEqual({ success: true, data: [{ vsId: VS, shotCount: null }], inflightCount: 0 });
     await GET(req('GET', undefined, true, `${URL_}?masterJobId=job-1`));
     expect(repo.listByMaster).toHaveBeenCalledWith('job-1');
     expect((await GET(req('GET', undefined, true, `${URL_}?masterJobId=a/b`))).status).toBe(400);
