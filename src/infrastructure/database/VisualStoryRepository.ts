@@ -22,6 +22,8 @@ import {
   type CreateStoryInput,
   type DraftJob,
   type DraftJobStatus,
+  type CheckStatus,
+  type StoryCheck,
   type GenJob,
   type GenJobStatus,
   type RenderJob,
@@ -50,6 +52,7 @@ export const draftSk = (draftId: string) => `DRAFT#${draftId}`;
 export const draftJobSk = (jobId: string) => `DRAFTJOB#${jobId}`;
 export const genJobSk = (jobId: string) => `GENJOB#${jobId}`;
 export const renderSk = (renderId: string) => `RENDER#${renderId}`;
+export const checkSk = (checkId: string) => `CHECK#${checkId}`;
 /** One clip in flight per shot (Ruling V5): a separate row, so shot edits can't wipe it. */
 export const videoLockSk = (scene: number, shot: number) => `VIDLOCK#${pad3(scene)}#${pad3(shot)}`;
 
@@ -482,6 +485,74 @@ export class VisualStoryRepository {
           conditionExpression: `attribute_exists(PK) AND #s IN (${from.map((_, i) => `:from${i}`).join(', ')})`,
         });
         return item ? stripKeys<DraftJob>(item) : null;
+      } catch (error) {
+        if (isConditionFailure(error)) return null;
+        throw error;
+      }
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Storyboard checks: CHECK#<checkId> in the story partition — the job and,
+  // once done, its result. Same exactly-one-settle contract as draft jobs.
+  // -------------------------------------------------------------------------
+
+  async createCheck(vsId: string, check: StoryCheck): Promise<void> {
+    try {
+      await DynamoDBOperations.put({ PK: vsPk(vsId), SK: checkSk(check.checkId), ...check });
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  /** Every check of a story, oldest first (ids sort by creation time). */
+  async listChecks(vsId: string): Promise<StoryCheck[]> {
+    try {
+      return (await this.queryPrefix(vsId, 'CHECK#')).map((i) => stripKeys<StoryCheck>(i));
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  async getCheck(vsId: string, checkId: string): Promise<StoryCheck | null> {
+    try {
+      const item = await DynamoDBOperations.get({ PK: vsPk(vsId), SK: checkSk(checkId) });
+      return item ? stripKeys<StoryCheck>(item) : null;
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  /** Conditional move, as transitionDraftJob: null when the check is gone or already moved. */
+  async transitionCheck(
+    vsId: string,
+    checkId: string,
+    from: CheckStatus[],
+    to: CheckStatus,
+    fields: Pick<StoryCheck, 'summary' | 'issues' | 'costUsd' | 'code' | 'error'> = {}
+  ): Promise<StoryCheck | null> {
+    try {
+      const names: Record<string, string> = { '#s': 'status' };
+      const values: Record<string, any> = { ':to': to, ':u': new Date().toISOString() };
+      const sets = ['#s = :to', 'updatedAt = :u'];
+      for (const f of ['summary', 'issues', 'costUsd', 'code', 'error'] as const) {
+        if (fields[f] === undefined) continue;
+        names[`#${f}`] = f;
+        values[`:${f}`] = fields[f];
+        sets.push(`#${f} = :${f}`);
+      }
+      from.forEach((st, i) => (values[`:from${i}`] = st));
+      try {
+        const item = await DynamoDBOperations.update({
+          key: { PK: vsPk(vsId), SK: checkSk(checkId) },
+          updateExpression: `SET ${sets.join(', ')}`,
+          expressionAttributeNames: names,
+          expressionAttributeValues: values,
+          conditionExpression: `attribute_exists(PK) AND #s IN (${from.map((_, i) => `:from${i}`).join(', ')})`,
+        });
+        return item ? stripKeys<StoryCheck>(item) : null;
       } catch (error) {
         if (isConditionFailure(error)) return null;
         throw error;

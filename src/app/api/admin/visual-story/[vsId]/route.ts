@@ -18,6 +18,7 @@ import {
 import { isVsId } from '@/types/visualStory';
 import { failRendering, hasRenderingVideo } from '@/lib/visual-story-route';
 import { sweepStaleDraftJobs } from '@/services/video/storyboard-job';
+import { isCheckInFlight, sweepStaleChecks } from '@/services/video/check-job';
 import { isRenderInFlight, sweepStaleRenders } from '@/lib/visual-story-render';
 
 export const runtime = 'nodejs';
@@ -120,6 +121,10 @@ export async function DELETE(request: NextRequest, { params }: Ctx) {
     const drafts = await repo.listDraftJobs(vsId);
     if (drafts.some((j) => j.status === 'queued' || j.status === 'running')) {
       return fail('Wait for the draft to finish first.', 409);
+    }
+    // Same for a storyboard check: it would settle against a deleted story.
+    if ((await sweepStaleChecks(repo, vsId)).some(isCheckInFlight)) {
+      return fail('Wait for the storyboard check to finish first.', 409);
     }
     // A render still running would upload into a story that no longer exists.
     if (tree && (await sweepStaleRenders(repo, vsId, tree.renders ?? [])).some(isRenderInFlight)) {
