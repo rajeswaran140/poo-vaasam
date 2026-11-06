@@ -200,11 +200,12 @@ describe('Studio — spend and tiling', () => {
     expect(screen.getByRole('contentinfo', { name: 'Spend and timeline' })).not.toHaveTextContent(/render/);
   });
 
-  it('says plainly that joining the clips with the song is not built yet', async () => {
+  it('offers the render panel under the title, and no longer says joining is not built', async () => {
     routes();
     render(<Studio vsId={VS} />);
     await card('Shot 1.1');
-    expect(screen.getByText(/Joining the clips with the song is not built yet/)).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Render video' })).toBeInTheDocument();
+    expect(screen.queryByText(/not built yet/)).toBeNull();
   });
 
   it('over the cap, the still dialog offers "Raise budget", which focuses the Budget field', async () => {
