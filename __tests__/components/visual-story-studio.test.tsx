@@ -995,6 +995,18 @@ describe('Studio — phone layout and flow (audit PR 2)', () => {
     expect(screen.queryByLabelText('Story title')).not.toBeInTheDocument();
   });
 
+  it('rename and delete never show together, and the title stays a heading while renaming', async () => {
+    routes();
+    render(<Studio vsId={VS} />);
+    await card('Shot 1.1');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete story' }));
+    expect(screen.queryByRole('button', { name: 'Rename' })).not.toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole('alertdialog', { name: 'Delete this story?' })).getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+    expect(screen.getByRole('heading', { level: 1, name: 'Test song' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete story' })).not.toBeInTheDocument();
+  });
+
   it('a refused rename shows its reason beside the title field', async () => {
     routes((url, init) => (init?.method === 'PATCH' ? json({ success: false, error: 'Title is required' }, 400) : undefined));
     render(<Studio vsId={VS} />);

@@ -32,6 +32,7 @@ export function StoryActions({ vsId, title, shotCount, onChanged, onDeleted }: P
   const startRename = () => {
     setDraftTitle(title);
     setRenameError(null);
+    setConfirmingDelete(false);
     setRenaming(true);
   };
 
@@ -81,37 +82,13 @@ export function StoryActions({ vsId, title, shotCount, onChanged, onDeleted }: P
 
   return (
     <div className="space-y-2">
-      {renaming ? (
-        <form onSubmit={saveTitle} aria-label="Rename story" className="flex flex-wrap items-end gap-2">
-          <label className="text-sm text-gray-700 dark:text-gray-300">
-            Story title
-            <input
-              type="text"
-              value={draftTitle}
-              maxLength={120}
-              onChange={(e) => setDraftTitle(e.target.value)}
-              className="mt-1 block w-72 max-w-full rounded-md border border-gray-300 px-2 py-1 dark:border-gray-600 dark:bg-gray-800"
-            />
-          </label>
-          <button type="submit" disabled={saving} className={`${BUTTON} border-blue-600 bg-blue-600 font-medium text-white disabled:opacity-50`}>
-            {saving ? 'Saving…' : 'Save title'}
-          </button>
-          <button type="button" onClick={() => setRenaming(false)} className={`${BUTTON} border-gray-300 text-gray-700 dark:border-gray-600 dark:text-gray-300`}>
-            Cancel
-          </button>
-          {renameError && (
-            <p role="alert" className="basis-full text-sm text-red-600 dark:text-red-400">
-              {renameError}
-            </p>
-          )}
-        </form>
-      ) : (
-        <div className="flex flex-wrap items-center gap-2">
-          <h1 className="mr-2 text-2xl font-bold text-gray-900 dark:text-gray-100">{title}</h1>
-          <button type="button" onClick={startRename} className={`${BUTTON} border-gray-300 text-gray-700 dark:border-gray-600 dark:text-gray-300`}>
-            Rename
-          </button>
-          {!confirmingDelete && (
+      <div className="flex flex-wrap items-center gap-2">
+        <h1 className="mr-2 text-2xl font-bold text-gray-900 dark:text-gray-100">{title}</h1>
+        {!renaming && !confirmingDelete && (
+          <>
+            <button type="button" onClick={startRename} className={`${BUTTON} border-gray-300 text-gray-700 dark:border-gray-600 dark:text-gray-300`}>
+              Rename
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -122,8 +99,33 @@ export function StoryActions({ vsId, title, shotCount, onChanged, onDeleted }: P
             >
               Delete story
             </button>
-          )}
-        </div>
+          </>
+        )}
+      </div>
+      {renaming && (
+          <form onSubmit={saveTitle} aria-label="Rename story" className="flex flex-wrap items-end gap-2">
+            <label className="text-sm text-gray-700 dark:text-gray-300">
+              Story title
+              <input
+                type="text"
+                value={draftTitle}
+                maxLength={120}
+                onChange={(e) => setDraftTitle(e.target.value)}
+                className="mt-1 block w-72 max-w-full rounded-md border border-gray-300 px-2 py-1 dark:border-gray-600 dark:bg-gray-800"
+              />
+            </label>
+            <button type="submit" disabled={saving} className={`${BUTTON} border-blue-600 bg-blue-600 font-medium text-white disabled:opacity-50`}>
+              {saving ? 'Saving…' : 'Save title'}
+            </button>
+            <button type="button" onClick={() => setRenaming(false)} className={`${BUTTON} border-gray-300 text-gray-700 dark:border-gray-600 dark:text-gray-300`}>
+              Cancel
+            </button>
+            {renameError && (
+              <p role="alert" className="basis-full text-sm text-red-600 dark:text-red-400">
+                {renameError}
+              </p>
+            )}
+          </form>
       )}
       {confirmingDelete && (
         <div role="alertdialog" aria-label="Delete this story?" className="space-y-2 rounded-md border border-red-300 bg-red-50 p-3 dark:border-red-700 dark:bg-red-950">
