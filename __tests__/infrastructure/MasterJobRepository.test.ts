@@ -121,3 +121,15 @@ describe('lineage', () => {
     expect((await repo.get('j2'))!.derivedFrom).toEqual({ jobId: 'p1', via: 'stem-remix' });
   });
 });
+
+describe('video backgrounds', () => {
+  it('reads each render\'s background, null on an old row or a non-string', async () => {
+    mockGet.mockResolvedValueOnce(stored({
+      videoBackgroundKey: 'audio/mastering/1_d_loop.mov', shortBackgroundKey: 42,
+    }));
+    const job = (await repo.get('j1'))!;
+    expect(job.videoBackgroundKey).toBe('audio/mastering/1_d_loop.mov');
+    expect(job.shortBackgroundKey).toBeNull();
+    expect(job.verticalBackgroundKey).toBeNull();
+  });
+});

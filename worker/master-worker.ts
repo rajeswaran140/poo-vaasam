@@ -67,6 +67,9 @@ import {
 } from '@/lib/master-analysis';
 import {
   buildComposeArgs,
+  buildVideoFilter,
+  VIDEO_CRF,
+  VIDEO_AUDIO_BITRATE,
   buildVideoArgs,
   buildSegmentArgs,
   buildConcatList,
@@ -95,6 +98,9 @@ import {
 import {
   buildLoudnessArgs,
   buildShortComposeArgs,
+  buildShortFrameFilter,
+  SHORT_FADE_IN_SEC,
+  shortFadeOutFor,
   buildShortArgs,
   buildFullVerticalArgs,
   planFullVertical,
@@ -119,6 +125,16 @@ import {
   shortRefusalMessage,
 } from '@/lib/master-short';
 import { parseEbur128Loudness, pickHookWindow } from '@/lib/hook-window';
+import {
+  isBackgroundKey,
+  checkBackground,
+  backgroundFilterFrom,
+  backgroundMaxrateFor,
+  buildBackgroundFirstFrameArgs,
+  buildBackgroundLoopArgs,
+  buildBackgroundTrackArgs,
+  buildBackgroundMuxArgs,
+} from '@/lib/master-background';
 import {
   comparePartsAndSuggest,
   onsetEnvelope,
@@ -257,6 +273,12 @@ interface MasterEvent {
      * VIDEO_MOTION_FPS whatever `height` says. Validated here: Event-invoked.
      */
     motion?: unknown;
+    /**
+     * A clip or GIF looped under the song instead of the still — see
+     * master-background.ts. `coverKey` is still recorded (the thumbnail) but
+     * not drawn. Absent ⇒ every older path, untouched.
+     */
+    backgroundKey?: unknown;
   };
   /**
    * A pre-master ANALYSIS — measure a source before anything is decided about
@@ -305,6 +327,8 @@ interface MasterEvent {
     motion?: unknown;
     /** `crossfade` blends a second around each cut. Absent or `cut` ⇒ hard cuts. */
     transition?: unknown;
+    /** A clip or GIF looped under the song instead of the still. See `render.backgroundKey`. */
+    backgroundKey?: unknown;
   };
   /**
    * Render ~20s around a two-part crossfade so it can be judged without
@@ -774,6 +798,69 @@ function readPickedWindow(spec: NonNullable<MasterEvent['short']>): { startSec: 
 }
 
 /**
+ * Render over a VIDEO BACKGROUND instead of a still — shared by the 16:9
+ * video and both vertical renders, which differ only in the frame they
+ * compose to and how they treat the audio. See master-background.ts for the
+ * three passes and the measurements behind them.
+ *
+ * Returns a message for the operator on failure; the caller writes it to its
+ * own error field and the scratch directory is the caller's to remove.
+ */
+async function renderOverBackground(params: {
+  bucket: string;
+  dir: string;
+  backgroundKey: string;
+  /** The still compose graph for this render, given the clip's aspect. */
+  stillFilterFor: (aspect: number | undefined) => string;
+  crf: number;
+  maxrate: string;
+  audioPath: string;
+  outPath: string;
+  /** Picture length; null ⇒ unknown, the loop ends with the audio. */
+  seconds: number | null;
+  window?: { startSec: number; seconds: number };
+  audioFilter?: string;
+  audioBitrate: string;
+}): Promise<{ ok: true } | { ok: false; message: string }> {
+  const { dir } = params;
+  const srcPath = join(dir, `background${params.backgroundKey.match(/\.[a-z0-9]+$/i)?.[0] ?? '.mp4'}`);
+  const firstPath = join(dir, `background-first${FRAME_EXTENSION}`);
+  const loopPath = join(dir, 'background-loop.mp4');
+  const trackPath = join(dir, 'background-track.mp4');
+
+  const obj = await s3.send(new GetObjectCommand({ Bucket: params.bucket, Key: params.backgroundKey }));
+  writeFileSync(srcPath, Buffer.from(await obj.Body!.transformToByteArray()));
+
+  // The shape ON SCREEN: a portrait phone video's header says 1920x1080 and
+  // rotates on decode, so the aspect is read from a decoded frame instead.
+  if (ff(buildBackgroundFirstFrameArgs(srcPath, firstPath)).status !== 0) {
+    return { ok: false, message: 'the background video could not be read' };
+  }
+  const aspect = probeCoverAspect(firstPath);
+  const looped = ff(buildBackgroundLoopArgs({
+    srcPath, outPath: loopPath, filter: backgroundFilterFrom(params.stillFilterFor(aspect)),
+    crf: params.crf, maxrate: params.maxrate,
+  }));
+  if (looped.status !== 0) return { ok: false, message: 'the background video could not be encoded' };
+
+  if (params.seconds !== null) {
+    const track = ff(buildBackgroundTrackArgs({ loopPath, outPath: trackPath, seconds: params.seconds }));
+    if (track.status !== 0) return { ok: false, message: 'the render failed repeating the background' };
+  }
+  const muxed = ff(buildBackgroundMuxArgs({
+    videoPath: params.seconds !== null ? trackPath : loopPath,
+    loop: params.seconds === null,
+    audioPath: params.audioPath,
+    outPath: params.outPath,
+    ...(params.window ? { window: params.window } : {}),
+    ...(params.audioFilter ? { audioFilter: params.audioFilter } : {}),
+    audioBitrate: params.audioBitrate,
+  }));
+  if (muxed.status !== 0) return { ok: false, message: 'the render failed adding the song to the background' };
+  return { ok: true };
+}
+
+/**
  * Render a hook-first vertical clip for Reels / Instagram / Shorts.
  *
  * Three passes, each cheap:
@@ -842,6 +929,20 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
     const ordered = planSegments(slideList, 1e7, SHORT_FPS);
     if (!ordered.ok && ordered.reason !== 'segment-too-short') {
       await patch(jobId, { [errorField]: slideshowRefusalMessage(ordered.reason) });
+      return { ok: false };
+    }
+  }
+  // A video background, checked before anything is downloaded. The whole
+  // song's length cap is planFullVertical's, below — the same ten minutes.
+  const backgroundKey = spec.backgroundKey === undefined || spec.backgroundKey === null ? null : spec.backgroundKey;
+  if (backgroundKey !== null) {
+    if (!isBackgroundKey(backgroundKey)) {
+      await patch(jobId, { [errorField]: 'background must be a video or GIF in the mastering workspace' });
+      return { ok: false };
+    }
+    const fits = checkBackground({ slideshow: slideList.length > 1, motion });
+    if (!fits.ok) {
+      await patch(jobId, { [errorField]: fits.message });
       return { ok: false };
     }
   }
@@ -936,6 +1037,68 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
      * measurement above. One image — the usual case, and every job without a
      * slideshow — takes the original two-pass path untouched.
      */
+    /** Store the finished file under its own key and fields — clip or whole song. */
+    const storeResult = async () => {
+      if (fullSeconds !== null) {
+        const verticalKey = fullVerticalKeyFor(audioKey);
+        await s3.send(new PutObjectCommand({
+          Bucket: bucket, Key: verticalKey, Body: readFileSync(outPath), ContentType: 'video/mp4',
+        }));
+        await patch(jobId, {
+          verticalKey,
+          verticalRenderedAt: new Date().toISOString(),
+          verticalSeconds: Number(fullSeconds.toFixed(2)),
+          verticalError: null,
+          coverKey,
+          // What it plays over, written every time — see videoBackgroundKey.
+          verticalBackgroundKey: backgroundKey,
+        });
+        return { ok: true, verticalKey };
+      }
+
+      const shortKey = shortKeyFor(audioKey);
+      await s3.send(new PutObjectCommand({
+        Bucket: bucket, Key: shortKey, Body: readFileSync(outPath), ContentType: 'video/mp4',
+      }));
+      await patch(jobId, {
+        shortKey,
+        shortRenderedAt: new Date().toISOString(),
+        shortStartSec: Number(startSec.toFixed(2)),
+        shortSeconds: seconds,
+        shortPicked: spec.startSec !== undefined || spec.seconds !== undefined,
+        shortMotion: motion,
+        shortError: null,
+        coverKey,
+        shortBackgroundKey: backgroundKey,
+      });
+      return { ok: true, shortKey, startSec };
+    };
+
+    if (backgroundKey !== null) {
+      /* ---- the video background: loop once, repeat by copy, then the audio
+       * exactly as this render always treats it — seeked and bounded for a
+       * clip, whole for the song, faded in and out either way.
+       */
+      const secs = fullSeconds ?? seconds;
+      const fadeOut = shortFadeOutFor(secs);
+      const done = await renderOverBackground({
+        bucket, dir, backgroundKey,
+        stillFilterFor: (aspect) => buildShortFrameFilter(aspect),
+        // The vertical still's own quality (crf 20); 1080x1920 is 1080p's pixel count.
+        crf: 20, maxrate: backgroundMaxrateFor(1080),
+        audioPath, outPath, seconds: secs,
+        ...(fullSeconds === null ? { window: { startSec, seconds } } : {}),
+        audioFilter: `afade=t=in:st=0:d=${SHORT_FADE_IN_SEC},afade=t=out:st=${(secs - fadeOut).toFixed(3)}:d=${fadeOut}`,
+        audioBitrate: '192k',
+      });
+      if (!done.ok) {
+        await patch(jobId, { [errorField]: done.message });
+        return { ok: false };
+      }
+      checkRenderedClip(audioPath, outPath, secs);
+      return await storeResult();
+    }
+
     const shown =
       slideList.length > 1
         ? windowCovers(slideList, fullSeconds !== null ? 0 : startSec, fullSeconds ?? seconds)
@@ -1071,36 +1234,7 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
     // one — rounding 221.5 to 222 is a 0.5 s "fault" that is not in the file.
     checkRenderedClip(audioPath, outPath, fullSeconds ?? seconds);
 
-    if (fullSeconds !== null) {
-      const verticalKey = fullVerticalKeyFor(audioKey);
-      await s3.send(new PutObjectCommand({
-        Bucket: bucket, Key: verticalKey, Body: readFileSync(outPath), ContentType: 'video/mp4',
-      }));
-      await patch(jobId, {
-        verticalKey,
-        verticalRenderedAt: new Date().toISOString(),
-        verticalSeconds: Number(fullSeconds.toFixed(2)),
-        verticalError: null,
-        coverKey,
-      });
-      return { ok: true, verticalKey };
-    }
-
-    const shortKey = shortKeyFor(audioKey);
-    await s3.send(new PutObjectCommand({
-      Bucket: bucket, Key: shortKey, Body: readFileSync(outPath), ContentType: 'video/mp4',
-    }));
-    await patch(jobId, {
-      shortKey,
-      shortRenderedAt: new Date().toISOString(),
-      shortStartSec: Number(startSec.toFixed(2)),
-      shortSeconds: seconds,
-      shortPicked: spec.startSec !== undefined || spec.seconds !== undefined,
-      shortMotion: motion,
-      shortError: null,
-      coverKey,
-    });
-    return { ok: true, shortKey, startSec };
+    return await storeResult();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[master-worker] short render failed:', message);
@@ -1271,6 +1405,20 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
     await patch(jobId, { videoError: `height must be one of ${VIDEO_HEIGHTS.join(', ')}` });
     return { ok: false };
   }
+  // A video background. Checked before anything is downloaded, like every
+  // other key: this role can read the whole bucket.
+  const backgroundKey = spec.backgroundKey === undefined || spec.backgroundKey === null ? null : spec.backgroundKey;
+  if (backgroundKey !== null) {
+    if (!isBackgroundKey(backgroundKey)) {
+      await patch(jobId, { videoError: 'background must be a video or GIF in the mastering workspace' });
+      return { ok: false };
+    }
+    const fits = checkBackground({ height, slideshow, motion });
+    if (!fits.ok) {
+      await patch(jobId, { videoError: fits.message });
+      return { ok: false };
+    }
+  }
 
   const dir = mkdtempSync(join(tmpdir(), 'render-'));
   const audioPath = join(dir, 'master.wav');
@@ -1309,6 +1457,15 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
     // screen labels it that way, so the operator can see it did not move.
     if (moving && !slideshow && audioSeconds === null) moving = false;
 
+    if (backgroundKey !== null) {
+      // Re-asked against the FILE: the route only knew the recorded length.
+      const fits = checkBackground({ audioSeconds });
+      if (!fits.ok) {
+        await patch(jobId, { videoError: fits.message });
+        return { ok: false };
+      }
+    }
+
     if (moving) {
       const fits = planVideoMotion(audioSeconds, motion);
       if (!fits.ok) {
@@ -1323,8 +1480,24 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
      * Reported separately so a failure says which half broke; they fail for
      * different reasons (an unreadable cover vs an encode problem).
      */
-    // A moving video is a slideshow of one: the move belongs to the stretch.
-    if (!slideshow && !moving) {
+    if (backgroundKey !== null) {
+      /* ---- the video background ---------------------------------------------
+       * Loop once, repeat by copy, lay the song under it. The cover is not
+       * drawn — it is only the thumbnail — so it is not downloaded either.
+       */
+      const done = await renderOverBackground({
+        bucket, dir, backgroundKey,
+        stillFilterFor: (aspect) => buildVideoFilter(height, aspect),
+        crf: VIDEO_CRF, maxrate: backgroundMaxrateFor(height),
+        audioPath, outPath, seconds: audioSeconds,
+        audioBitrate: VIDEO_AUDIO_BITRATE,
+      });
+      if (!done.ok) {
+        await patch(jobId, { videoError: done.message });
+        return { ok: false };
+      }
+    } else if (!slideshow && !moving) {
+      // A moving video is a slideshow of one: the move belongs to the stretch.
       const coverPath = coverPathFor(coverKey, 0);
       const framePath = join(dir, `frame${FRAME_EXTENSION}`);
       const cover = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: coverKey }));
@@ -1462,6 +1635,9 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
       // Whether THIS file moves. A still 1080p render and a moving one share
       // the 1080p key, so the key alone cannot say which is stored.
       videoMotion: moving ? motion : 'none',
+      // Likewise what it plays over: written every time, so a still render
+      // after a background one says so.
+      videoBackgroundKey: backgroundKey,
     });
     return { ok: true, videoKey, audioCheck: audioCheck.status };
   } catch (err) {

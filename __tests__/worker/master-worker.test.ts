@@ -3719,3 +3719,201 @@ describe('stem remix', () => {
     expect(done.ExpressionAttributeValues![':notes']).toEqual(['Bass resampled from 44.1 kHz to 48 kHz']);
   });
 });
+
+/**
+ * A video background: a clip or GIF looped under the song instead of the
+ * still. Four passes — first frame, loop, track, mux — and only the loop
+ * filters. The cover is NOT downloaded (it is only the thumbnail) but IS
+ * recorded, because the job's cover is what the YouTube upload sets.
+ */
+describe('a video background', () => {
+  const AUDIO = 'audio/mastering/1_a_song-master-14LUFS.wav';
+  const COVER = 'audio/mastering/1_c_cover.jpg';
+  const BG = 'audio/mastering/1_d_loop.mov';
+  const ffArgs = () => spawnSync.mock.calls.map((c) => c[1] as string[]);
+  /** A 5:32 master, as the WAV header prints it. */
+  const HEADER = 'Input #0, wav, from \'/tmp/master-test/master.wav\':\n' +
+    '  Duration: 00:05:32.00, bitrate: 2304 kb/s\n' +
+    '  Stream #0:0: Audio: pcm_s24le, 48000 Hz, stereo, s32 (24 bit), 2304 kb/s\n';
+  let firstFrame = '  Stream #0:0: Video: ppm, rgb24, 1080x1920, 25 fps\n';
+
+  const loopPass = () => ffArgs().find((a) => a.includes('-filter_complex'))!;
+  const trackPass = () => ffArgs().find((a) => a.includes('-stream_loop') && !a.includes('-c:a'));
+  const muxPass = () => ffArgs().find((a) => a.includes('-c:a'))!;
+  const gets = () => s3Send.mock.calls
+    .map((c) => c[0] as { input: Record<string, unknown> })
+    .filter((c) => !('Body' in c.input)).map((c) => c.input.Key);
+  const put = () => s3Send.mock.calls
+    .map((c) => c[0] as { input: Record<string, unknown> })
+    .find((c) => 'Body' in c.input);
+
+  beforeEach(() => {
+    firstFrame = '  Stream #0:0: Video: ppm, rgb24, 1080x1920, 25 fps\n';
+    spawnSync.mockReset();
+    spawnSync.mockImplementation((_cmd: string, args: string[]) => {
+      if (args.length === 3 && args[2].includes('master.wav')) return { status: 1, stdout: '', stderr: HEADER };
+      if (args.length === 3 && args[2].includes('background-first')) return { status: 1, stdout: '', stderr: firstFrame };
+      return { status: 0, stdout: '', stderr: '' };
+    });
+    s3Send.mockReset();
+    s3Send.mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'Body' in cmd.input
+        ? Promise.resolve({})
+        : Promise.resolve({ Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) } })
+    );
+  });
+
+  describe('the 16:9 video', () => {
+    const render = (over: Record<string, unknown> = {}) =>
+      ({ audioKey: AUDIO, coverKey: COVER, height: 1440, backgroundKey: BG, ...over });
+
+    it('loops the clip once, repeats it by copy, then lays the whole song under it', async () => {
+      const res = await handler({ jobId: 'j1', render: render() } as never);
+      expect(res).toMatchObject({ ok: true });
+
+      // The background, not the cover: the cover is only the thumbnail.
+      expect(gets()).toEqual([AUDIO, BG]);
+
+      const loop = loopPass();
+      expect(loop.join(' ')).toContain('background.mov');
+      expect(loop[loop.indexOf('-maxrate') + 1]).toBe('10M');
+      expect(loop.join(' ')).toContain('2560:1440');
+      // Only the loop filters; nothing that runs for the song's length does.
+      expect(ffArgs().filter((a) => a.includes('-filter_complex'))).toHaveLength(1);
+
+      const track = trackPass()!;
+      expect(track[track.indexOf('-frames:v') + 1]).toBe(String(Math.floor(332 * 25)));
+
+      const mux = muxPass();
+      expect(mux[mux.indexOf('-c:v') + 1]).toBe('copy');
+      expect(mux[mux.indexOf('-b:a') + 1]).toBe('384k');
+      expect(mux.join(' ')).toContain('master.wav');
+      expect(mux).not.toContain('-shortest');
+      expect(mux).not.toContain('-stream_loop');
+      expect(ffArgs().join(' ')).not.toContain('loudnorm');
+    });
+
+    it('keeps the backdrop for a portrait clip, read from its first frame as displayed', async () => {
+      await handler({ jobId: 'j1', render: render() } as never);
+      expect(loopPass().join(' ')).toContain('boxblur');
+    });
+
+    it('fills the frame with a 16:9 clip', async () => {
+      firstFrame = '  Stream #0:0: Video: ppm, rgb24, 1920x1080, 25 fps\n';
+      await handler({ jobId: 'j1', render: render() } as never);
+      expect(loopPass().join(' ')).not.toContain('boxblur');
+    });
+
+    it('stores the MP4 under the ordinary key and records cover AND background', async () => {
+      await handler({ jobId: 'j1', render: render() } as never);
+      expect(put()?.input).toMatchObject({ Key: 'audio/mastering/1_a_song-master-14LUFS-1440p.mp4', ContentType: 'video/mp4' });
+      expect(patched()).toMatchObject({
+        videoKey: 'audio/mastering/1_a_song-master-14LUFS-1440p.mp4',
+        coverKey: COVER,
+        videoBackgroundKey: BG,
+        videoMotion: 'none',
+        videoError: null,
+      });
+    });
+
+    it('a still render records that it has no background', async () => {
+      await handler({ jobId: 'j1', render: render({ backgroundKey: undefined }) } as never);
+      expect(patched().videoBackgroundKey).toBeNull();
+    });
+
+    it('with no readable song length, loops straight into the mux and ends with the audio', async () => {
+      spawnSync.mockImplementation((_cmd: string, args: string[]) =>
+        args.length === 3 && args[2].includes('background-first')
+          ? { status: 1, stdout: '', stderr: firstFrame }
+          : { status: 0, stdout: '', stderr: '' });
+      const res = await handler({ jobId: 'j1', render: render() } as never);
+      expect(res).toMatchObject({ ok: true });
+      expect(trackPass()).toBeUndefined();
+      const mux = muxPass();
+      expect(mux).toContain('-stream_loop');
+      expect(mux).toContain('-shortest');
+    });
+
+    it('refuses a song over ten minutes once it has read the file, before fetching the background', async () => {
+      spawnSync.mockImplementation((_cmd: string, args: string[]) =>
+        args.length === 3 && args[2].includes('master.wav')
+          ? { status: 1, stdout: '', stderr: HEADER.replace('00:05:32.00', '00:10:01.00') }
+          : { status: 0, stdout: '', stderr: '' });
+      const res = await handler({ jobId: 'j1', render: render() } as never);
+      expect(res).toMatchObject({ ok: false });
+      expect(String(patched().videoError)).toContain('10 minutes');
+      expect(gets()).toEqual([AUDIO]);
+      expect(put()).toBeUndefined();
+    });
+
+    it('says which step failed when the clip will not decode', async () => {
+      spawnSync.mockImplementation((_cmd: string, args: string[]) => {
+        if (args.length === 3 && args[2].includes('master.wav')) return { status: 1, stdout: '', stderr: HEADER };
+        if (args.includes('-frames:v') && args.includes('1')) return { status: 1, stdout: '', stderr: 'moov atom not found' };
+        return { status: 0, stdout: '', stderr: '' };
+      });
+      const res = await handler({ jobId: 'j1', render: render() } as never);
+      expect(res).toMatchObject({ ok: false });
+      expect(patched().videoError).toBe('the background video could not be read');
+      expect(put()).toBeUndefined();
+    });
+
+    describe('refusals never touch S3', () => {
+      it.each([
+        ['a background outside the workspace', { backgroundKey: 'images/x.mov' }],
+        ['a still image as a background', { backgroundKey: 'audio/mastering/1_d_loop.png' }],
+        ['a background with motion', { motion: 'zoom-in' }],
+        ['a background with a slideshow', { covers: [{ coverKey: COVER, startSec: 0 }, { coverKey: COVER, startSec: 100 }] }],
+        ['a background at 4K', { height: 2160 }],
+      ])('%s', async (_label, over) => {
+        const res = await handler({ jobId: 'j1', render: render(over) } as never);
+        expect(res).toMatchObject({ ok: false });
+        expect(typeof patched().videoError).toBe('string');
+        expect(s3Send).not.toHaveBeenCalled();
+        expect(spawnSync).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe('the vertical renders', () => {
+    const short = (over: Record<string, unknown> = {}) =>
+      ({ audioKey: AUDIO, coverKey: COVER, backgroundKey: BG, ...over });
+
+    it('a picked clip: vertical frame, the window seeked, faded, 192k', async () => {
+      const res = await handler({ jobId: 'j1', short: short({ startSec: 60, seconds: 45 }) } as never);
+      expect(res).toMatchObject({ ok: true });
+      expect(loopPass().join(' ')).toContain('1080:1920');
+      expect(loopPass()[loopPass().indexOf('-maxrate') + 1]).toBe('8M');
+      expect(trackPass()![trackPass()!.indexOf('-frames:v') + 1]).toBe(String(45 * 25));
+      const mux = muxPass();
+      expect(Number(mux[mux.indexOf('-ss') + 1])).toBeCloseTo(60, 3);
+      expect(mux[mux.indexOf('-af') + 1]).toContain('afade=t=out:st=42.000:d=3');
+      expect(mux[mux.indexOf('-b:a') + 1]).toBe('192k');
+      expect(patched()).toMatchObject({ shortBackgroundKey: BG, shortSeconds: 45, coverKey: COVER });
+    });
+
+    it('the whole song: never seeked, its own fields', async () => {
+      const res = await handler({ jobId: 'j1', short: short({ full: true }) } as never);
+      expect(res).toMatchObject({ ok: true });
+      expect(trackPass()![trackPass()!.indexOf('-frames:v') + 1]).toBe(String(332 * 25));
+      expect(muxPass()).not.toContain('-ss');
+      expect(patched()).toMatchObject({ verticalBackgroundKey: BG, verticalError: null });
+      expect(patched()).not.toHaveProperty('shortBackgroundKey');
+    });
+
+    it('a still short records that it has no background', async () => {
+      await handler({ jobId: 'j1', short: short({ backgroundKey: undefined, startSec: 60, seconds: 45 }) } as never);
+      expect(patched().shortBackgroundKey).toBeNull();
+    });
+
+    it.each([
+      ['outside the workspace', { backgroundKey: 'images/x.gif' }],
+      ['with motion', { motion: 'pan-left' }],
+    ])('refuses a background %s without touching S3', async (_label, over) => {
+      const res = await handler({ jobId: 'j1', short: short({ startSec: 60, seconds: 45, ...over }) } as never);
+      expect(res).toMatchObject({ ok: false });
+      expect(typeof patched().shortError).toBe('string');
+      expect(s3Send).not.toHaveBeenCalled();
+    });
+  });
+});
