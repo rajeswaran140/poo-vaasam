@@ -370,3 +370,28 @@ describe('countShots', () => {
     expect(mockQuery.mock.calls[1][0].exclusiveStartKey).toEqual({ PK: 'x', SK: 'y' });
   });
 });
+
+describe('style', () => {
+  it('stores the style given at creation, or none', async () => {
+    await repo.create(input({ style: 'warm cinematic film' }));
+    expect((mockPut.mock.calls[0][0] as Item).style).toBe('warm cinematic film');
+    mockPut.mockClear();
+    const s = await repo.create(input());
+    expect((mockPut.mock.calls[0][0] as Item).style).toBe('');
+    expect(s.style).toBe('');
+  });
+
+  it('reads a story made before Style existed as having none', async () => {
+    store.set(`VSTORY#${VS}|METADATA`, { PK: `VSTORY#${VS}`, SK: 'METADATA', vsId: VS, title: 't' });
+    expect((await repo.findById(VS))!.style).toBe('');
+  });
+
+  it('patches the style alone, guarded only by existence', async () => {
+    store.set(`VSTORY#${VS}|METADATA`, { PK: `VSTORY#${VS}`, SK: 'METADATA', committedUsd: 0 });
+    await repo.patch(VS, { style: '35mm film' });
+    const p = mockUpdate.mock.calls[0][0];
+    expect(p.updateExpression).toContain('#style = :style');
+    expect(p.expressionAttributeValues[':style']).toBe('35mm film');
+    expect(p.conditionExpression).toBe('attribute_exists(PK)');
+  });
+});

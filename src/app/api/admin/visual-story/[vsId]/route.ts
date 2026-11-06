@@ -1,12 +1,13 @@
 /**
  * /api/admin/visual-story/[vsId]
  *   GET    → { success, data: tree }
- *   PATCH  { title?, status?, budgetUsdCap? }
+ *   PATCH  { title?, status?, budgetUsdCap?, style? }
  *   DELETE → removes the whole partition (refused while a clip renders, a draft runs or the video renders)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { styleSchema } from '@/lib/visual-story-style';
 import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import {
   VisualStoryRepository,
@@ -32,6 +33,8 @@ const patchSchema = z
     title: z.string().trim().min(1, 'Title is required').max(120).optional(),
     status: z.enum(['DRAFT', 'STORYBOARDING', 'GENERATING', 'REVIEW', 'COMPLETE']).optional(),
     budgetUsdCap: z.number().min(0).max(500).optional(),
+    // '' clears it.
+    style: styleSchema.optional(),
   })
   .strict()
   .refine((v) => Object.keys(v).length > 0, { message: 'Nothing to change' });

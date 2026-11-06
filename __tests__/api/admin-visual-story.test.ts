@@ -334,3 +334,20 @@ describe('DELETE', () => {
     expect(repo.remove).not.toHaveBeenCalled();
   });
 });
+
+describe('PATCH style', () => {
+  beforeEach(() => {
+    repo.findById.mockResolvedValue({ vsId: VS, committedUsd: 0, budgetUsdCap: 40 });
+  });
+  it('saves the style trimmed, and lets it be cleared', async () => {
+    expect((await PATCH(req('PATCH', { style: '  warm cinematic film ' }), ctx())).status).toBe(200);
+    expect(repo.patch).toHaveBeenCalledWith(VS, { style: 'warm cinematic film' });
+    expect((await PATCH(req('PATCH', { style: '' }), ctx())).status).toBe(200);
+    expect(repo.patch).toHaveBeenLastCalledWith(VS, { style: '' });
+  });
+  it('refuses a style over 300 characters, saying so', async () => {
+    const res = await PATCH(req('PATCH', { style: 'x'.repeat(301) }), ctx());
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('Keep the style under 300 characters');
+  });
+});

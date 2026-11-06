@@ -353,3 +353,17 @@ describe('POST select', () => {
     expect(repo.selectCandidate).not.toHaveBeenCalled();
   });
 });
+
+describe('POST still — the story\'s Style', () => {
+  it('adds the story\'s style to the picture request', async () => {
+    repo.loadTree.mockResolvedValueOnce(tree({ story: { ...tree().story, spentUsd: 0, committedUsd: 0, style: 'warm cinematic film, 35mm' } }));
+    expect((await stillPOST(mk(), sctx())).status).toBe(201);
+    expect(mockGenerate.mock.calls[0][0].prompt).toMatch(/\n\nVisual style: warm cinematic film, 35mm$/);
+  });
+
+  it('sends no style line for a story without one', async () => {
+    repo.loadTree.mockResolvedValueOnce(tree({ story: { ...tree().story, spentUsd: 0, committedUsd: 0 } }));
+    expect((await stillPOST(mk(), sctx())).status).toBe(201);
+    expect(mockGenerate.mock.calls[0][0].prompt).not.toContain('Visual style');
+  });
+});

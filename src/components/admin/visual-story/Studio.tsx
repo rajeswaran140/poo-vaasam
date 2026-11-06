@@ -29,6 +29,7 @@ import { DraftPanel } from './DraftPanel';
 import { SpendBar } from './SpendBar';
 import { StoryActions } from './StoryActions';
 import { RenderPanel } from './RenderPanel';
+import { StyleField } from './StyleField';
 
 export interface StoryTree {
   story: VisualStory;
@@ -160,6 +161,7 @@ export function Studio({ vsId }: { vsId: string }) {
           onDeleted={() => router.push('/admin/visual-story')}
         />
         <p className="text-sm text-gray-600 dark:text-gray-400">{`${story.aspectRatio} · ${story.status}`}</p>
+        <StyleField vsId={vsId} style={story.style ?? ''} onChanged={refresh} />
       </header>
       <RenderPanel
         vsId={vsId}

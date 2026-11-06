@@ -64,6 +64,8 @@ export interface StoryboardRequest {
   lyrics: string;
   windowSec: number;
   aspectRatio: AspectRatio;
+  /** The story's Style; '' or absent ⇒ none. */
+  style?: string;
   signal?: AbortSignal;
 }
 
@@ -110,6 +112,7 @@ export async function generateStoryboard(
   options: StoryboardOptions = {}
 ): Promise<StoryboardResult> {
   const { lyrics, windowSec, aspectRatio, signal } = req;
+  const style = (req.style ?? '').trim();
 
   const client = getClient();
   if (!client) {
@@ -121,6 +124,11 @@ export async function generateStoryboard(
     // Bounds the output: ~250 tokens a shot must fit draftMaxOutputTokens.
     `Aim for about ${targetShotCount(windowSec)} shots.`,
     `Aspect ratio: ${aspectRatio}`,
+    // The style is appended to every picture and clip request by the studio,
+    // so the prompts should suit it without spending tokens repeating it.
+    ...(style
+      ? [`Visual style for every shot: ${style}. Write each visualPrompt to suit this look; do not repeat the style words — they are added to every shot automatically.`]
+      : []),
     '',
     'Lyrics:',
     lyrics,

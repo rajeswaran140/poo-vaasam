@@ -174,6 +174,8 @@ function toStory(item: Record<string, any>): VisualStory {
     providerId: item.providerId,
     windowStartSec: item.windowStartSec,
     windowEndSec: item.windowEndSec,
+    // Stories made before Style existed have none.
+    style: typeof item.style === 'string' ? item.style : '',
     budgetUsdCap: item.budgetUsdCap,
     spentUsd: item.spentUsd ?? 0,
     reservedUsd: item.reservedUsd ?? 0,
@@ -199,6 +201,7 @@ export class VisualStoryRepository {
         providerId: 'grok',
         windowStartSec: input.windowStartSec,
         windowEndSec: input.windowEndSec,
+        style: input.style ?? '',
         budgetUsdCap: round6(input.budgetUsdCap ?? DEFAULT_BUDGET_USD_CAP),
         spentUsd: 0,
         reservedUsd: 0,
@@ -270,7 +273,7 @@ export class VisualStoryRepository {
    */
   async patch(
     vsId: string,
-    fields: { title?: string; status?: VisualStoryStatus; budgetUsdCap?: number }
+    fields: { title?: string; status?: VisualStoryStatus; budgetUsdCap?: number; style?: string }
   ): Promise<void> {
     try {
       const names: Record<string, string> = { '#updatedAt': 'updatedAt' };
@@ -285,6 +288,11 @@ export class VisualStoryRepository {
         names['#status'] = 'status';
         values[':status'] = fields.status;
         sets.push('#status = :status');
+      }
+      if (fields.style !== undefined) {
+        names['#style'] = 'style';
+        values[':style'] = fields.style;
+        sets.push('#style = :style');
       }
       if (fields.budgetUsdCap !== undefined) {
         names['#cap'] = 'budgetUsdCap';

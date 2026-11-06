@@ -89,3 +89,14 @@ describe.each([
     expect(text).toMatch(/720 s/);
   });
 });
+
+describe.each([
+  ['admin docs', adminDoc],
+  ['operator guide', guide],
+])('Style (%s)', (_name, text) => {
+  it('explains what the Style does and that made pictures keep their look', () => {
+    expect(text).toContain('Edit style');
+    expect(text).toMatch(/added to every picture and clip/i);
+    expect(text).toMatch(/already made keep/i);
+  });
+});

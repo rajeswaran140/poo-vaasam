@@ -250,3 +250,23 @@ describe('Check rendering videos (list page)', () => {
     await waitFor(() => expect(listCalls().length).toBeGreaterThan(before));
   });
 });
+
+describe('NewStoryForm — Style', () => {
+  it('sends the style typed, trimmed, and nothing when left empty', async () => {
+    const posts: string[] = [];
+    mockFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') { posts.push(String(init.body)); return json({ success: false, error: 'stop here' }, 400); }
+      return json({ success: true, masters: [master({})], nextCursor: null });
+    });
+    render(<NewStoryForm onCreated={() => {}} />);
+    fireEvent.click(await screen.findByRole('radio', { name: /Test song/ }));
+    fireEvent.click(screen.getByRole('button', { name: /create story/i }));
+    await screen.findByText('stop here');
+    expect(JSON.parse(posts[0])).not.toHaveProperty('style');
+
+    fireEvent.change(screen.getByLabelText(/Style \(optional\)/), { target: { value: '  warm cinematic film ' } });
+    fireEvent.click(screen.getByRole('button', { name: /create story/i }));
+    await waitFor(() => expect(posts).toHaveLength(2));
+    expect(JSON.parse(posts[1]).style).toBe('warm cinematic film');
+  });
+});

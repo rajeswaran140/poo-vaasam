@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
 import { DEFAULT_BUDGET_USD_CAP, MIN_WINDOW_SEC, MAX_WINDOW_SEC, type AspectRatio } from '@/types/visualStory';
+import { MAX_STYLE_CHARS } from '@/lib/visual-story-style';
 import { WindowPicker, formatMss, type WindowValue } from './WindowPicker';
 
 interface MasterRow {
@@ -30,6 +31,7 @@ export function NewStoryForm({ onCreated }: { onCreated: (vsId: string) => void 
   const [win, setWin] = useState<WindowValue>({ startSec: 0, lengthSec: 60, valid: true });
   const [aspect, setAspect] = useState<AspectRatio>('16:9');
   const [budget, setBudget] = useState(String(DEFAULT_BUDGET_USD_CAP));
+  const [style, setStyle] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -86,6 +88,7 @@ export function NewStoryForm({ onCreated }: { onCreated: (vsId: string) => void 
           windowStartSec: Math.floor(win.startSec),
           windowEndSec: Math.floor(win.startSec + win.lengthSec),
           budgetUsdCap: budgetNum,
+          ...(style.trim() ? { style: style.trim() } : {}),
         }),
       });
       const body = await res.json().catch(() => null);
@@ -189,6 +192,21 @@ export function NewStoryForm({ onCreated }: { onCreated: (vsId: string) => void 
             />
           </label>
           {!budgetOk && <p role="alert" className="text-sm text-red-600 dark:text-red-400">Enter a budget between $0 and $500.</p>}
+
+          <label className="block text-sm text-gray-700 dark:text-gray-300">
+            Style (optional)
+            <input
+              type="text"
+              value={style}
+              maxLength={MAX_STYLE_CHARS}
+              onChange={(e) => setStyle(e.target.value)}
+              placeholder="e.g. warm cinematic film, golden-hour light, 35mm"
+              className="mt-1 block w-full max-w-xl rounded-md border border-gray-300 px-2 py-1 dark:border-gray-600 dark:bg-gray-800"
+            />
+            <span className="mt-1 block text-gray-600 dark:text-gray-400">
+              Added to every picture and clip, and given to the storyboard draft, so the look stays the same. You can change it later.
+            </span>
+          </label>
         </>
       )}
 

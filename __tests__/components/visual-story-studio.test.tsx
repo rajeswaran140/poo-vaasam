@@ -1068,3 +1068,37 @@ describe('Studio — phone layout and flow (audit PR 2)', () => {
     expect(await screen.findByText(/No scenes yet/)).not.toHaveTextContent(/below/);
   });
 });
+
+describe('the story\'s Style', () => {
+  it('shows none set, and saves a style with PATCH, then reloads', async () => {
+    let saved = '';
+    routes((url, init) => {
+      if (url === `/api/admin/visual-story/${VS}` && init?.method === 'PATCH') {
+        saved = JSON.parse(String(init.body)).style;
+        return json({ success: true });
+      }
+      return undefined;
+    }, () => ({ ...tree(), story: { ...tree().story, style: saved } }));
+    render(<Studio vsId={VS} />);
+    expect(await screen.findByText('none set')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Set style' }));
+    fireEvent.change(screen.getByLabelText('Style'), { target: { value: ' hand-painted watercolour ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save style' }));
+    expect(await screen.findByText('hand-painted watercolour')).toBeInTheDocument();
+    expect(saved).toBe('hand-painted watercolour');
+    expect(screen.getByRole('button', { name: 'Edit style' })).toBeInTheDocument();
+  });
+
+  it('shows the server\'s refusal beside the field', async () => {
+    routes((url, init) =>
+      url === `/api/admin/visual-story/${VS}` && init?.method === 'PATCH'
+        ? json({ success: false, error: 'Keep the style under 300 characters' }, 400)
+        : undefined);
+    render(<Studio vsId={VS} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Set style' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save style' }));
+    const alert = await screen.findByText('Keep the style under 300 characters');
+    expect(screen.getByRole('form', { name: 'Story style' })).toContainElement(alert);
+  });
+});
