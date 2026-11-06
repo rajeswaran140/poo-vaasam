@@ -3,7 +3,9 @@
 /**
  * /admin/visual-story/[vsId] — the studio (spec §10): scene rail on the left,
  * the selected scene's shot grid and the draft panel in the centre, the shot
- * inspector / characters panel on the right, spend and tiling along the bottom.
+ * inspector / characters panel on the right, spend and tiling along the bottom;
+ * the render panel under the title joins the chosen pictures and clips with
+ * the song (Phase 6).
  *
  * One source of truth: after any mutation the whole tree is reloaded with one
  * GET, so spend, candidates and startSec always come from the server. The page
@@ -17,7 +19,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { adminFetch } from '@/lib/client-auth';
-import type { Candidate, Character, GenJob, Scene, Shot, StoryboardDraft, VisualStory } from '@/types/visualStory';
+import type { Candidate, Character, GenJob, RenderJob, Scene, Shot, StoryboardDraft, VisualStory } from '@/types/visualStory';
 import { SceneRail } from './SceneRail';
 import { ShotGrid } from './ShotGrid';
 import { shotKey } from './ui-utils';
@@ -26,6 +28,7 @@ import { CharactersPanel } from './CharactersPanel';
 import { DraftPanel } from './DraftPanel';
 import { SpendBar } from './SpendBar';
 import { StoryActions } from './StoryActions';
+import { RenderPanel } from './RenderPanel';
 
 export interface StoryTree {
   story: VisualStory;
@@ -36,6 +39,8 @@ export interface StoryTree {
   drafts: StoryboardDraft[];
   /** Video jobs; a submitted|running one resumes polling in its shot card. */
   genJobs?: GenJob[];
+  /** Assemblies of the timeline (Phase 6); the newest shows in the render panel. */
+  renders?: RenderJob[];
 }
 
 type Tab = 'inspector' | 'characters';
@@ -155,10 +160,15 @@ export function Studio({ vsId }: { vsId: string }) {
           onDeleted={() => router.push('/admin/visual-story')}
         />
         <p className="text-sm text-gray-600 dark:text-gray-400">{`${story.aspectRatio} · ${story.status}`}</p>
-        <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
-          Joining the clips with the song is not built yet. For now, make and choose a picture or clip for each shot.
-        </p>
       </header>
+      <RenderPanel
+        vsId={vsId}
+        story={story}
+        shots={shots}
+        candidates={tree.candidates}
+        renders={tree.renders ?? []}
+        onChanged={refresh}
+      />
       {loadError && (
         <p role="alert" className="text-sm text-red-600 dark:text-red-400">
           {loadError}

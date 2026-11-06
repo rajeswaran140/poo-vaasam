@@ -21,8 +21,8 @@
  * storyboard draft was built inline too and timed out on every live call
  * (2026-11-04). Do not move any of them back.
  *
- * ⚠️ 'storyboard' calls Anthropic with a 150 s timeout: the function's timeout
- * must be above that (180 s), and its role needs GetItem/PutItem/UpdateItem on
+ * ⚠️ 'storyboard' calls Anthropic with a 600 s timeout (a whole song): the function's timeout
+ * must be above that (720 s), and its role needs GetItem/PutItem/UpdateItem on
  * VSTORY# items of TamilWebContent.
  *
  * Build: npm run build:worker  →  worker-dist/index.js (handler: index.handler)

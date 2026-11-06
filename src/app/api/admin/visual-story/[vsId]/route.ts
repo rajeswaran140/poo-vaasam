@@ -2,7 +2,7 @@
  * /api/admin/visual-story/[vsId]
  *   GET    → { success, data: tree }
  *   PATCH  { title?, status?, budgetUsdCap? }
- *   DELETE → removes the whole partition (refused while a clip renders or a draft runs)
+ *   DELETE → removes the whole partition (refused while a clip renders, a draft runs or the video renders)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -17,6 +17,7 @@ import {
 import { isVsId } from '@/types/visualStory';
 import { failRendering, hasRenderingVideo } from '@/lib/visual-story-route';
 import { sweepStaleDraftJobs } from '@/services/video/storyboard-job';
+import { isRenderInFlight, sweepStaleRenders } from '@/lib/visual-story-render';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -116,6 +117,10 @@ export async function DELETE(request: NextRequest, { params }: Ctx) {
     const drafts = await repo.listDraftJobs(vsId);
     if (drafts.some((j) => j.status === 'queued' || j.status === 'running')) {
       return fail('Wait for the draft to finish first.', 409);
+    }
+    // A render still running would upload into a story that no longer exists.
+    if (tree && (await sweepStaleRenders(repo, vsId, tree.renders ?? [])).some(isRenderInFlight)) {
+      return fail('Wait for the video render to finish first.', 409);
     }
     await repo.remove(vsId);
     return NextResponse.json({ success: true });

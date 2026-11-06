@@ -61,14 +61,16 @@ export async function POST(request: NextRequest, { params }: Ctx) {
   const { lyrics } = parsed.data;
 
   const repo = new VisualStoryRepository();
-  const reserveUsd = draftReserveUsd(lyrics);
   let story;
+  let reserveUsd = 0;
   let reserved: boolean;
   try {
     story = await repo.findById(vsId);
     if (!story) return fail('That story no longer exists.', 404);
     // A dead job's hold must not cause a false 402 (never throws).
     await sweepStaleDraftJobs(repo, vsId);
+    // A longer window may write more tokens, so it reserves more.
+    reserveUsd = draftReserveUsd(lyrics, story.windowEndSec - story.windowStartSec);
     reserved = await repo.reserve(vsId, reserveUsd);
   } catch (err) {
     return mapError(err);

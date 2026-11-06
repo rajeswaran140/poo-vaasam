@@ -72,3 +72,20 @@ describe.each([
     expect(text).not.toMatch(/Press \*\*STILL\*\*/);
   });
 });
+
+describe.each([
+  ['admin docs', adminDoc],
+  ['operator guide', guide],
+])('Phase 6 and longer stories (%s)', (_name, text) => {
+  it('describes rendering and no longer says joining is not built', () => {
+    expect(text).toContain('Render video');
+    expect(text).toMatch(/slow zoom/i);
+    expect(text).toMatch(/costs nothing from (the story's )?(the )?budget|costs nothing from the budget/i);
+    expect(text).not.toMatch(/not built yet[^.]*joining|joining[^.]*not built yet/i);
+  });
+
+  it('says a story may cover up to 7 minutes and the worker needs 720 s', () => {
+    expect(text).toMatch(/30 seconds to 7 minutes/);
+    expect(text).toMatch(/720 s/);
+  });
+});

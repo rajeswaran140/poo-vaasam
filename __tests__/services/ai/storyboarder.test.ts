@@ -184,3 +184,15 @@ it('honours options.timeoutMs (the worker passes 150 s); default stays 25 s', as
   await generateStoryboard(req);
   expect(create.mock.calls[1][1].timeout).toBe(25_000);
 });
+
+it('asks for as many output tokens as the window needs, and for a shot count that fits them', async () => {
+  create.mockResolvedValue(toolResponse(board([15], [15])));
+  await generateStoryboard({ ...req, windowSec: 30 });
+  expect(create.mock.calls[0][0].max_tokens).toBe(6000);
+  create.mockClear();
+  create.mockResolvedValue(toolResponse(board([15], [15])));
+  await generateStoryboard({ ...req, windowSec: 420 }).catch(() => null);
+  expect(create.mock.calls[0][0].max_tokens).toBe(20000);
+  expect(create.mock.calls[0][0].messages[0].content).toContain('Aim for about 60 shots.');
+  expect(SYSTEM_PROMPT).toContain('Keep each visual prompt under 50 words');
+});

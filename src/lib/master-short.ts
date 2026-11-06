@@ -705,6 +705,11 @@ export function buildMotionSegmentArgs(params: {
   size?: { width: number; height: number };
   fps?: number;
   codecArgs?: readonly string[];
+  /**
+   * Run on the source frame BEFORE the move — once, since the input is one
+   * still — e.g. a colour conversion. Omitted ⇒ the move alone, as always.
+   */
+  inputFilter?: string;
 }): string[] {
   const fps = params.fps ?? SHORT_FPS;
   const size = params.size ?? { width: SHORT_WIDTH, height: SHORT_HEIGHT };
@@ -735,7 +740,7 @@ export function buildMotionSegmentArgs(params: {
   return [
     '-hide_banner', '-nostats',
     '-i', params.framePath,
-    '-vf', `zoompan=${expr}:d=${frames}:s=${size.width}x${size.height}:fps=${fps}`,
+    '-vf', (params.inputFilter ? `${params.inputFilter},` : '') + `zoompan=${expr}:d=${frames}:s=${size.width}x${size.height}:fps=${fps}`,
     '-frames:v', String(frames),
     ...(params.codecArgs ?? SHORT_MOTION_CODEC_ARGS),
     '-an',

@@ -4,18 +4,18 @@ For the person running the admin. Admin page: **Visual Story** (`/admin/visual-s
 
 ## What exists today
 
-Phases 2–4: storyboard a music video, make a still picture for each shot, and make a **video clip** for each shot. **Not built yet:** joining the clips with the song into the finished video (Phase 6), and a review step for choosing between several clips.
+Phases 2–6: storyboard a music video, make a still picture and a **video clip** for each shot, and **render the finished video**: every shot's chosen picture or clip joined with the song. **Not built yet:** a review step for choosing between several clips.
 
 ## Workflow
 
 ### 1. Create
-**New from master.** Pick a saved master, then the part of the song to film: **30 to 120 seconds**, whole seconds, inside the finished song. Pick **16:9** or **9:16**; this cannot be changed later. Set the story's **budget** (default **$40**).
+**New from master.** Pick a saved master, then the part of the song to film: **30 seconds to 7 minutes** (420 s), whole seconds, inside the finished song — most whole songs fit. Pick **16:9** or **9:16**; this cannot be changed later. Set the story's **budget** (default **$40**).
 
 ### 2. Draft
-Open the story and use **Draft storyboard**: paste the lyrics and press the button. The draft runs in the background and takes **about a minute** (the panel says "Drafting… this takes about a minute." and the button stays disabled until it finishes). The new draft then appears in the panel with how much of your window it fills; review it, then apply. Applying **replaces** the current storyboard (its scenes, shots and their stills) and asks first. Characters are kept.
+Open the story and use **Draft storyboard**: paste the lyrics and press the button. The draft runs in the background and takes **about a minute** for a short window and up to **7 minutes** for a whole song (the panel says "Drafting… this takes about a minute." and the button stays disabled until it finishes). The new draft then appears in the panel with how much of your window it fills; review it, then apply. Applying **replaces** the current storyboard (its scenes, shots and their stills) and asks first. Characters are kept.
 - The lyrics are used for that request only and are **not stored**. Paste them again for another draft.
 - The button shows **≈$0.15**, a planning figure above what a draft can cost; a real draft costs a few cents (about $0.05–0.06 for a 2-minute window, measured 2026-11-04). While it runs, up to about $0.10 (more for longer lyrics) is held against the budget; only the actual cost counts toward the story total.
-- If a draft has not finished after 10 minutes it is marked failed ("The draft took too long. Please try again.") and its hold is released — at the latest the next time the story is opened or another draft is started.
+- If a draft has not finished after 15 minutes it is marked failed ("The draft took too long. Please try again.") and its hold is released — at the latest the next time the story is opened or another draft is started.
 - The most recent draft is listed by date when you reopen the story.
 
 ### 3. Edit
@@ -49,7 +49,17 @@ Press **Make video (6 s · $0.48)** on a shot (the label shows that shot's lengt
 
 **Before your first clip:** raise the story's **budget** in the bottom bar. Stories made earlier may have only $1, and a clip over the budget is refused. Each shot card shows what a clip of that shot costs: every clip is $0.08 a second, whatever the shot's mode. When a picture or clip would go over the budget, its message has a **Raise budget** button that takes you to the **Budget** field.
 
-**What's next:** laying the clips over the song and rendering the finished video is Phase 6.
+### 6. Render the video
+The **Render video** panel under the title joins every shot's chosen picture or clip, in order, with the song's part the story covers, into one MP4.
+- It needs **every shot to have a picture or clip chosen** and the shots to **add up exactly** to the story's length. The panel says what is missing ("1 of 12 shots need a picture or clip chosen.", "The shots add up to 2:40 of the song's 3:00.").
+- **Pictures get a slow zoom** (alternating in and out); **clips play as made**, without their own sound. A clip a second shorter than its shot holds its last frame; a longer one is cut.
+- The panel says how long it takes — a 3-minute mix of clips and pictures takes about 4–5 minutes — and you can keep working meanwhile. Reopening the story picks the progress up again.
+- The song fades in and out only where the story starts or ends **inside** the song; a story covering the whole song keeps its own start and ending.
+- When it's done the video plays in the panel, with **Download video**. A new render replaces what the panel shows; earlier files stay in storage.
+- A render that would take too long for the worker is refused before it starts, with what to change: fewer, longer shots, or clips in place of some pictures (a picture takes longer to render than a clip).
+- One render at a time per story ("A render is already running for this story."), and the story can't be deleted while it runs ("Wait for the video render to finish first.").
+- If a shot's file can't be used, the message names it, for example "Scene 2, shot 3: the clip could not be read."
+- Rendering costs nothing from the story's budget: it runs on our own worker.
 
 ## Costs and limits
 
@@ -65,19 +75,26 @@ Press **Make video (6 s · $0.48)** on a shot (the label shows that shot's lengt
 - A rate limit (20 requests a minute) applies to the studio's actions.
 - A clip is charged when Grok finishes it, including one its content filter refused. A clip that fails or expires is not charged, and a clear refusal is not charged; if Grok doesn't answer in time, the clip's cost is counted because Grok may still make it. A cancelled clip is **always counted**, and so is one still unfinished after an hour or one that finished but could not be saved after 10 tries.
 - A 30 s Short costs about **$2.40 for one full pass** (30 s × $0.08); every retry costs again.
-- A whole 2-minute video is expected to cost about $25–35 once video phases exist.
+- A 3-minute video is about $14 if every shot is a clip, about $7–8 half clips and half pictures, plus retries. Rendering it is free.
 
 ## Where files live
 
 Bucket `tamil-web-media`, under `audio/mastering/visual-story/<story id>/`:
 - `refs/<character id>/…` — reference photos
-- `candidates/<candidate id>.jpg` — still pictures
+- `candidates/<candidate id>.jpg` / `.mp4` — still pictures and clips
+- `renders/<render id>.mp4` — finished videos
 
 This area is private (the CDN denies `audio/mastering/*`). Preview through the admin only. The story's records are in the existing `TamilWebContent` table; nothing new was added to AWS.
 
 ## The draft runs on the background worker
 
-The Claude draft does not run on the website itself (Amplify stops any request after ~30 s; a draft takes about a minute). The site starts it on the existing worker Lambda **`tamilagaval-compose-worker`** (job kind `storyboard`) and the panel checks on it every few seconds. That worker must run the same release as the site, with a timeout of at least **180 s** (the draft call itself is allowed 150 s). If the worker is behind, a draft never finishes: once it is 10 minutes old it is marked failed and its hold released the next time the story is opened.
+The Claude draft does not run on the website itself (Amplify stops any request after ~30 s; a draft takes about a minute). The site starts it on the existing worker Lambda **`tamilagaval-compose-worker`** (job kind `storyboard`) and the panel checks on it every few seconds. That worker must run the same release as the site, with a timeout of at least **720 s** (the draft call itself is allowed 600 s, for a whole song). If the worker is behind, a draft never finishes: once it is 15 minutes old it is marked failed and its hold released the next time the story is opened.
+
+## Rendering runs on the master worker
+
+**Render video** runs on **`tamilagaval-master-worker`** (event `assemble`), the Lambda that already renders the mastering videos. It must be deployed from master **before** anyone renders: an older worker does not know the `assemble` event, and the render then sits "Rendering…" until it is failed as too slow (30 minutes queued, or 16 minutes after it started). The worker writes only the story's render record and the MP4 under `renders/`.
+
+A render is refused if it would take more than about 10 minutes of the worker's 15 (`MAX_ASSEMBLE_SEC`, 600 s): a picture takes about a second of work per second of video, a clip about 0.6. So seven minutes of pictures only is refused; mix in clips, or use longer shots. The limit can rise once a real all-pictures render has been timed on the Lambda.
 
 ## When Grok isn't connected
 

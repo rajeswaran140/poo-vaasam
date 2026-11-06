@@ -224,11 +224,11 @@ describe('GET one', () => {
 });
 
 describe('GET one — releases a dead draft job before loading (R14 sweep reachability)', () => {
-  const stale = new Date(Date.now() - 11 * 60_000).toISOString();
+  const stale = new Date(Date.now() - 16 * 60_000).toISOString(); // past DRAFT_JOB_STALE_MS (15 min)
   const fresh = new Date(Date.now() - 30_000).toISOString();
   const job = (createdAt: string) => ({ jobId: 'dj_1700000000000_abcdef12', status: 'queued', createdAt, updatedAt: createdAt, reservedUsd: 0.1 });
 
-  it('a 10-minute-old queued job is failed and released once, before the tree is read', async () => {
+  it('a 16-minute-old queued job is failed and released once, before the tree is read', async () => {
     repo.listDraftJobs.mockResolvedValueOnce([job(stale)]);
     repo.transitionDraftJob.mockImplementationOnce(async (_v, jobId, _f, to) => ({ ...job(stale), jobId, status: to }));
     repo.loadTree.mockResolvedValueOnce({ story: { vsId: VS }, scenes: [] });

@@ -49,22 +49,42 @@ describe('cost constants', () => {
   });
 });
 
-describe('draftReserveUsd (M1: bounded by the lyrics length)', () => {
+describe('draftMaxOutputTokens (scales with the window, under the SDK\'s non-streaming ceiling)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { draftMaxOutputTokens } = require('@/services/video/cost');
+
+  it('keeps 6000 for a short window and grows with a long one', () => {
+    expect(draftMaxOutputTokens(30)).toBe(6000);
+    expect(draftMaxOutputTokens(120)).toBe(6000);
+    expect(draftMaxOutputTokens(300)).toBe(14400);
+    expect(draftMaxOutputTokens(400)).toBe(19200);
+    expect(draftMaxOutputTokens(420)).toBe(20000);
+  });
+
+  it('never exceeds 20000: past ~21333 the SDK refuses a non-streaming call', () => {
+    expect(draftMaxOutputTokens(10_000)).toBe(20000);
+  });
+});
+
+describe('draftReserveUsd (M1: bounded by the lyrics length and the window)', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { draftReserveUsd, draftLabelUsd, draftCostUsd: cost, DRAFT_ESTIMATE_USD: est } = require('@/services/video/cost');
 
-  it('is the token cost of ceil(len/2)+1500 input and the 6000-token output ceiling', () => {
-    expect(draftReserveUsd('x'.repeat(1001))).toBeCloseTo(cost(501 + 1500, 6000), 10);
-    expect(draftReserveUsd('')).toBeCloseTo(cost(1500, 6000), 10);
+  it('is the token cost of ceil(len/2)+1500 input and the window\'s output ceiling', () => {
+    expect(draftReserveUsd('x'.repeat(1001), 30)).toBeCloseTo(cost(501 + 1500, 6000), 10);
+    expect(draftReserveUsd('', 30)).toBeCloseTo(cost(1500, 6000), 10);
+    expect(draftReserveUsd('', 420)).toBeCloseTo(cost(1500, 20000), 10);
   });
 
-  it('stays below the flat estimate even at the 8000-character maximum', () => {
-    expect(draftReserveUsd('x'.repeat(8000))).toBeCloseTo(cost(5500, 6000), 10);
-    expect(draftReserveUsd('x'.repeat(8000))).toBeLessThan(est);
+  it('stays below the flat estimate for a short window even at the 8000-character maximum', () => {
+    expect(draftReserveUsd('x'.repeat(8000), 30)).toBeCloseTo(cost(5500, 6000), 10);
+    expect(draftReserveUsd('x'.repeat(8000), 30)).toBeLessThan(est);
   });
 
   it('the UI label shows the flat estimate when it covers the bound, else the bound', () => {
-    expect(draftLabelUsd('x'.repeat(8000))).toBe(est);
-    expect(draftLabelUsd('x'.repeat(8000), 0.01)).toBeCloseTo(cost(5500, 6000), 10);
+    expect(draftLabelUsd('x'.repeat(8000), 30)).toBe(est);
+    expect(draftLabelUsd('x'.repeat(8000), 30, 0.01)).toBeCloseTo(cost(5500, 6000), 10);
+    // A seven-minute window reserves more than the flat estimate, and says so.
+    expect(draftLabelUsd('x'.repeat(8000), 420)).toBeCloseTo(cost(5500, 20000), 10);
   });
 });
