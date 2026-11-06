@@ -3993,6 +3993,20 @@ Beside **Make vertical short** (and **Make a short**): a **Motion** choice. **No
 - The audio is untouched — a moving short is cut from the same window of the same master, and comes out the same length.
 - **Needs the worker deployed after 2026-10-01 (fourth deploy)** for the whole song to move. Before that a move chosen for the whole song is ignored and it renders still.
 
+## A video background — a clip or GIF instead of the cover
+
+Beside **Cover image** in the render panel, and beside the cover in a saved master's row panel: **Background video or GIF (optional)**. Pick an MP4, MOV, WebM or GIF (up to 200 MB) and it loops under the song **in place of the cover** — in the 16:9 video, the short and **Whole song, vertical**. The button reads **Render video (video background)**.
+
+- **You still choose a cover.** It is not drawn, but it is the YouTube thumbnail, exactly as before.
+- **The clip loops from start to end until the song finishes.** Only the song is heard — the clip's own sound is dropped. Only the first minute of a longer clip is used.
+- **It is shaped like a cover:** a 16:9 clip fills the 16:9 frame, a 9:16 one fills the vertical frame, and anything else (a square GIF, a portrait phone video in the 16:9 video) sits on a blurred copy of itself rather than being cropped. A phone video filmed upright is read the right way up.
+- **A small GIF is scaled up and may look soft.** A clip at least as big as the frame looks best.
+- **It plays alone:** **Motion** must be **None** and there can be no extra images — either is refused with a message beside the button. **Remove background** goes back to the cover.
+- **1080p or 1440p** for the 16:9 video (not 2160p), and **songs up to 10 minutes**.
+- **It is quick:** the clip is encoded once and then repeated, so a 5-minute song took about a minute to render in testing, much like a still one.
+- **A finished video says so**: **Video (video background)** in the row and **Download MP4 (video background)** in the panel — a still render and a background one at the same height are the same file, and the newer replaces the older.
+- **Needs the worker deployed after 2026-11-06.** Before that the background is ignored and the cover is used.
+
 ## The whole song, vertical
 
 Beside **Make vertical short** in a saved master's row panel, and beside **Make a short** in the render panel under a song you have just mastered and saved: **Whole song, vertical**. It renders the **entire song at 1080×1920** — for a Facebook video or an Instagram feed post, where vertical is welcome and the three-minute Reels limit does not apply.
