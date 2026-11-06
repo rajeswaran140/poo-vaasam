@@ -210,10 +210,48 @@ export interface RenderJob {
 }
 
 // ---------------------------------------------------------------------------
+// Storyboard check: CHECK#<checkId> in the story partition. One row is both
+// the job (the worker moves it queued → running → done|failed) and, once
+// done, its result. Advice only: a check never edits a shot.
+// ---------------------------------------------------------------------------
+
+export type CheckStatus = 'queued' | 'running' | 'done' | 'failed';
+
+export const CHECK_ISSUE_KINDS = ['character', 'lyrics', 'repeat', 'text', 'style', 'other'] as const;
+export type CheckIssueKind = (typeof CHECK_ISSUE_KINDS)[number];
+
+export interface CheckIssue {
+  kind: CheckIssueKind;
+  sceneOrder: number;
+  /** null: the issue is about the whole scene. */
+  shotOrder: number | null;
+  problem: string;
+  suggestion: string;
+}
+
+export interface StoryCheck {
+  checkId: string;
+  status: CheckStatus;
+  createdAt: string;
+  updatedAt: string;
+  /** What the route reserved against the cap; the one settle releases exactly this. */
+  reservedUsd: number;
+  /** storyboardHash of what was checked, so an edit afterwards shows as out of date. */
+  shotsHash: string;
+  /** Whether lyrics were pasted (the lyrics themselves are never stored). */
+  withLyrics: boolean;
+  summary?: string;
+  issues?: CheckIssue[];
+  costUsd?: number;
+  code?: string;
+  error?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Ids — `<prefix>_<13-digit ms>_<random>`; validate before building any key.
 // ---------------------------------------------------------------------------
 
-export type IdPrefix = 'vs' | 'ch' | 'cd' | 'dr' | 'dj' | 'gj' | 'rd';
+export type IdPrefix = 'vs' | 'ch' | 'cd' | 'dr' | 'dj' | 'gj' | 'rd' | 'ck';
 
 function idGuard(prefix: IdPrefix): (s: unknown) => boolean {
   const re = new RegExp(`^${prefix}_\\d{13}_[a-z0-9]{6,12}$`);
@@ -227,6 +265,7 @@ export const isDraftId = idGuard('dr');
 export const isDraftJobId = idGuard('dj');
 export const isGenJobId = idGuard('gj');
 export const isRenderId = idGuard('rd');
+export const isCheckId = idGuard('ck');
 
 /** Deterministic candidate id for a video job, so a repeated copy is idempotent. */
 export function candIdForJob(jobId: string): string {
@@ -288,6 +327,11 @@ export const draftRequestSchema = z.object({
   lyrics: z.string().trim().min(1, 'Paste the lyrics').max(8000),
 });
 export type DraftRequest = z.infer<typeof draftRequestSchema>;
+
+/** Lyrics are optional for a check: without them it cannot compare shots with the words. */
+export const checkRequestSchema = z.object({
+  lyrics: z.string().trim().max(8000).optional(),
+});
 
 // ---------------------------------------------------------------------------
 // Timeline helpers

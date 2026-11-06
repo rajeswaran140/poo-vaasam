@@ -28,6 +28,9 @@ const repo = {
   patch: jest.fn(),
   remove: jest.fn(),
   listDraftJobs: jest.fn(),
+  listChecks: jest.fn(),
+  transitionCheck: jest.fn(),
+  getCheck: jest.fn(),
   transitionDraftJob: jest.fn(),
   getDraftJob: jest.fn(),
   settle: jest.fn(),
@@ -74,6 +77,7 @@ beforeEach(() => {
   mockContentFind.mockResolvedValue({ id: 'c1' });
   repo.create.mockImplementation(async (i) => ({ vsId: VS, ...i }));
   repo.listDraftJobs.mockResolvedValue([]);
+  repo.listChecks.mockResolvedValue([]);
 });
 
 describe('auth', () => {
@@ -359,6 +363,27 @@ describe('DELETE', () => {
     expect(repo.remove).not.toHaveBeenCalled();
     repo.listDraftJobs.mockResolvedValue([{ jobId: 'dj_1', status: 'failed', createdAt: now, updatedAt: now, reservedUsd: 0.1 }]);
     expect((await DELETE(req('DELETE'), ctx())).status).toBe(200);
+  });
+  it('409s while a storyboard check runs; a dead one is swept and does not block', async () => {
+    const now = new Date().toISOString();
+    const ck = (status: string, createdAt = now) => ({ checkId: 'ck_1', status, createdAt, updatedAt: createdAt, reservedUsd: 0.1, shotsHash: 'h', withLyrics: false });
+    for (const status of ['queued', 'running']) {
+      repo.listChecks.mockResolvedValueOnce([ck(status)]);
+      const res = await DELETE(req('DELETE'), ctx());
+      expect(res.status).toBe(409);
+      expect((await res.json()).error).toBe('Wait for the storyboard check to finish first.');
+    }
+    expect(repo.remove).not.toHaveBeenCalled();
+    const old = new Date(Date.now() - 16 * 60 * 1000).toISOString();
+    repo.listChecks.mockResolvedValueOnce([ck('running', old)]);
+    repo.transitionCheck.mockResolvedValueOnce({ ...ck('failed', old) });
+    expect((await DELETE(req('DELETE'), ctx())).status).toBe(200);
+    expect(repo.settle).toHaveBeenCalledWith(VS, { reservedUsd: 0.1, billedUsd: 0 });
+  });
+  it('a failed check read refuses the delete rather than guessing', async () => {
+    repo.listChecks.mockRejectedValueOnce(new Error('ddb'));
+    expect((await DELETE(req('DELETE'), ctx())).status).toBe(500);
+    expect(repo.remove).not.toHaveBeenCalled();
   });
   it('sweeps a dead draft first, so it never blocks the delete forever', async () => {
     const old = new Date(Date.now() - 11 * 60 * 1000).toISOString();

@@ -238,7 +238,7 @@ describe('Studio — draft panel', () => {
   async function drafted() {
     render(<Studio vsId={VS} />);
     await card('Shot 1.1');
-    fireEvent.change(screen.getByLabelText(/lyrics/i), { target: { value: 'Line one\nLine two' } });
+    fireEvent.change(screen.getByLabelText(/^Lyrics$/), { target: { value: 'Line one\nLine two' } });
     fireEvent.click(screen.getByRole('button', { name: 'Draft storyboard (≈$0.15)' }));
   }
 

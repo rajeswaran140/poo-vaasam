@@ -20,6 +20,7 @@ const repo = {
   getRender: jest.fn(),
   transitionRender: jest.fn(),
   listDraftJobs: jest.fn().mockResolvedValue([]),
+  listChecks: jest.fn().mockResolvedValue([]),
   transitionDraftJob: jest.fn(),
   settle: jest.fn(),
   remove: jest.fn(),
@@ -83,6 +84,7 @@ beforeEach(() => {
   __resetVisualStoryRateLimitForTests();
   requireAdmin.mockResolvedValue({ isAuthenticated: true, userId: 'admin-1' });
   repo.listDraftJobs.mockResolvedValue([]);
+  repo.listChecks.mockResolvedValue([]);
   repo.transitionRender.mockImplementation(async (_v, renderId, _f, to, fields) => ({ ...render({ renderId }), status: to, ...fields }));
 });
 

@@ -25,6 +25,7 @@ import { ShotGrid } from './ShotGrid';
 import { shotKey } from './ui-utils';
 import { Inspector } from './Inspector';
 import { CharactersPanel } from './CharactersPanel';
+import { CheckPanel } from './CheckPanel';
 import { DraftPanel } from './DraftPanel';
 import { SpendBar } from './SpendBar';
 import { StoryActions } from './StoryActions';
@@ -150,6 +151,26 @@ export function Studio({ vsId }: { vsId: string }) {
     />
   );
 
+  const checkPanel = (
+    <CheckPanel
+      key="check"
+      vsId={vsId}
+      story={story}
+      scenes={scenes}
+      shots={shots}
+      characters={characters}
+      onOpen={(sceneOrder, shotOrder) => {
+        setSceneOrder(sceneOrder);
+        const target = shots.find((s) => s.sceneOrder === sceneOrder && s.shotOrder === shotOrder);
+        if (!target) return;
+        setEditKey(shotKey(target));
+        setTab('inspector');
+        setEditNonce((n) => n + 1);
+      }}
+      onChanged={refresh}
+    />
+  );
+
   return (
     <div className="space-y-4">
       <header className="space-y-1">
@@ -204,8 +225,8 @@ export function Studio({ vsId }: { vsId: string }) {
         />
 
         <div className="space-y-6">
-          {/* Keyed, so swapping the order moves them without remounting (the draft panel keeps its poll). */}
-          {shots.length === 0 ? [draftPanel, shotGrid] : [shotGrid, draftPanel]}
+          {/* Keyed, so swapping the order moves them without remounting (the draft and check panels keep their polls). The check sits above the shots: it is read before spending. */}
+          {shots.length === 0 ? [draftPanel, shotGrid] : [checkPanel, shotGrid, draftPanel]}
         </div>
 
         <aside ref={asideRef} className="scroll-mt-4 space-y-3">

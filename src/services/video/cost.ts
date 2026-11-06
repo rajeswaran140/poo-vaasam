@@ -96,3 +96,21 @@ export function draftReserveUsd(lyrics: string, windowSec: number): number {
 export function draftLabelUsd(lyrics: string, windowSec: number, estimateUsd: number = DRAFT_ESTIMATE_USD): number {
   return Math.max(estimateUsd, draftReserveUsd(lyrics, windowSec));
 }
+
+/**
+ * Storyboard check (Claude): its max_tokens. A full list (30 issues, each up
+ * to ~230 tokens with its JSON) plus the summary fits; well under the SDK's
+ * ~21 333 non-streaming ceiling. The reservation uses the same figure.
+ */
+export const CHECK_MAX_OUTPUT_TOKENS = 8000;
+/** System prompt + tool schema, in tokens (rounded up). */
+export const CHECK_PROMPT_OVERHEAD_TOKENS = 1200;
+
+/**
+ * What a check reserves against the cap: the message length (~2 characters a
+ * token, as drafts assume — Tamil lyrics can run denser, a few cents at most)
+ * plus the prompt, and the whole output ceiling. Also the price on the button.
+ */
+export function checkReserveUsd(messageChars: number): number {
+  return draftCostUsd(Math.ceil(messageChars / 2) + CHECK_PROMPT_OVERHEAD_TOKENS, CHECK_MAX_OUTPUT_TOKENS);
+}

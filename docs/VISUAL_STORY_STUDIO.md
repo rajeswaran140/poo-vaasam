@@ -22,6 +22,13 @@ Open the story and use **Draft storyboard**: paste the lyrics and press the butt
 - If a draft has not finished after 15 minutes it is marked failed ("The draft took too long. Please try again.") and its hold is released — at the latest the next time the story is opened or another draft is started.
 - The most recent draft is listed by date when you reopen the story.
 
+### 2b. Check the storyboard
+Once a story has shots, **Check storyboard** sits above them. Press it before you spend on pictures and clips: Claude reads every shot (each prompt goes to Grok on its own, so it looks for what Grok would get wrong) and lists the problems, each with a **Try:** fix. It changes nothing; press **Scene X, shot Y** on a problem to open that shot and fix it yourself.
+- It looks for: a character drawn differently from shot to shot, or a person in a prompt who is not ticked as a character on that shot (their photo would not be sent); shots back to back that would come out the same; anything that invites words, signs or logos in the picture; a prompt that fights the story's style or shape; real people or political symbols.
+- **Lyrics (optional):** paste them to also check that each scene fits its words. They are sent once, not stored, and the box empties.
+- The button shows the most it can cost (a few cents; more for a long story or with lyrics). That much is held while it runs, and only the real cost counts. It takes about a minute and runs on the same background worker as drafts.
+- One check at a time per story. The last check stays on the page; once you edit the storyboard it says **"You have changed the storyboard since this check"** — check again when you are ready. A check not finished after 15 minutes is marked failed and its hold released.
+
 ### 3. Edit
 What the studio lets you change by hand today:
 - **Scenes:** add a scene (heading) in the left rail; **Delete scene** removes it with all its shots and their stills, after a confirm.
@@ -70,6 +77,7 @@ The **Render video** panel under the title joins every shot's chosen picture or 
 | Item | Price |
 |---|---|
 | Claude storyboard draft | a few cents (the button shows a ≈$0.15 planning figure) |
+| Claude storyboard check | a few cents (the button shows the most it can cost) |
 | Grok still picture | $0.02 each |
 | Video clip | $0.08 per second (6 s = $0.48) |
 
@@ -92,7 +100,7 @@ This area is private (the CDN denies `audio/mastering/*`). Preview through the a
 
 ## The draft runs on the background worker
 
-The Claude draft does not run on the website itself (Amplify stops any request after ~30 s; a draft takes about a minute). The site starts it on the existing worker Lambda **`tamilagaval-compose-worker`** (job kind `storyboard`) and the panel checks on it every few seconds. That worker must run the same release as the site, with a timeout of at least **720 s** (the draft call itself is allowed 600 s, for a whole song). If the worker is behind, a draft never finishes: once it is 15 minutes old it is marked failed and its hold released the next time the story is opened.
+The Claude draft does not run on the website itself (Amplify stops any request after ~30 s; a draft takes about a minute). The site starts it on the existing worker Lambda **`tamilagaval-compose-worker`** (job kind `storyboard`; the storyboard check is job kind `story-check`) and the panel checks on it every few seconds. That worker must run the same release as the site, with a timeout of at least **720 s** (the draft call itself is allowed 600 s, for a whole song). If the worker is behind, a draft never finishes: once it is 15 minutes old it is marked failed and its hold released the next time the story is opened.
 
 ## Rendering runs on the master worker
 
