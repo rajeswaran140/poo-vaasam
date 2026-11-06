@@ -51,7 +51,9 @@ it('mints and recognises render ids', () => {
 it('creates a render in the story partition, only while the story exists', async () => {
   await repo.createRender(VS, render());
   const [check, put] = mockTransact.mock.calls[0][0];
-  expect(check).toEqual({ ConditionCheck: { Key: { PK: vsPk(VS), SK: 'METADATA' }, ConditionExpression: 'attribute_exists(PK)' } });
+  // An Update, not a ConditionCheck: the site's IAM user lacks dynamodb:ConditionCheckItem.
+  expect(check.Update).toMatchObject({ Key: { PK: vsPk(VS), SK: 'METADATA' }, ConditionExpression: 'attribute_exists(PK)' });
+  expect(check).not.toHaveProperty('ConditionCheck');
   expect(put.Put.Item).toMatchObject({ PK: vsPk(VS), SK: renderSk(RD), status: 'queued' });
   expect(put.Put.ConditionExpression).toBe('attribute_not_exists(PK)');
 });

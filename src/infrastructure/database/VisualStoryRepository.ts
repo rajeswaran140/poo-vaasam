@@ -491,13 +491,22 @@ export class VisualStoryRepository {
   /**
    * Only while the story exists: a delete landing between the route's read
    * and this write would otherwise leave an orphan render the worker renders
-   * into a deleted story's folder.
+   * into a deleted story's folder. ⚠️ An UPDATE on METADATA, not a
+   * ConditionCheck: the site's IAM user has TransactWriteItems with
+   * Put/Update/Delete but not dynamodb:ConditionCheckItem.
    */
   async createRender(vsId: string, job: RenderJob): Promise<void> {
     try {
       try {
         await DynamoDBOperations.transactWrite([
-          { ConditionCheck: { Key: metaKey(vsId), ConditionExpression: 'attribute_exists(PK)' } },
+          {
+            Update: {
+              Key: metaKey(vsId),
+              UpdateExpression: 'SET lastRenderAt = :now',
+              ConditionExpression: 'attribute_exists(PK)',
+              ExpressionAttributeValues: { ':now': job.createdAt },
+            },
+          },
           {
             Put: {
               Item: { PK: vsPk(vsId), SK: renderSk(job.renderId), ...job },
