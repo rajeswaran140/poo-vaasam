@@ -68,9 +68,31 @@ export function isBackgroundKey(key: unknown): key is string {
 
 /**
  * Only this much of a longer clip is looped. It bounds the one expensive step
- * (the loop encode) whatever is uploaded: a minute of noisy 1440p is ~250 s.
+ * (the loop encode) whatever is uploaded. Measured 2026-11-06 on the layer's
+ * 7.0.2, the worst source a phone produces — 60 s of 4K 60 fps HDR HEVC,
+ * portrait, onto the 1440p backdrop: 249-264 s. Thirty seconds halves that,
+ * leaving the 900 s Lambda room for a ten-minute song's mux and checks.
  */
-export const BACKGROUND_LOOP_MAX_SECONDS = 60;
+export const BACKGROUND_LOOP_MAX_SECONDS = 30;
+
+/**
+ * True when the clip's header says HDR — HLG (iPhone's default) or PQ.
+ * Converted straight to 8-bit BT.709 such a clip comes out grey and flat, so
+ * the loop tone-maps it first (BACKGROUND_TONEMAP). Read from the
+ * `ffmpeg -i` header, e.g. "yuv420p10le(tv, bt2020nc/bt2020/arib-std-b67)".
+ */
+export function isHdrHeader(log: string): boolean {
+  return /arib-std-b67|smpte2084/i.test(log);
+}
+
+/**
+ * HDR to SDR: linearise, convert the primaries to BT.709, compress the
+ * highlights (hable), back to BT.709 video range. zscale and tonemap are both
+ * in the layer's static build (checked 2026-11-06).
+ */
+export const BACKGROUND_TONEMAP =
+  'zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,' +
+  'zscale=t=bt709:m=bt709:r=tv,format=yuv420p';
 
 /**
  * Longest song a background may run under — the same ten minutes the
@@ -153,9 +175,11 @@ export function buildBackgroundFirstFrameArgs(srcPath: string, framePath: string
  * frame-rate change must happen first, and a filter's output label only once —
  * so the source is normalised and then split for each reader.
  */
-export function backgroundFilterFrom(stillFilter: string): string {
+export function backgroundFilterFrom(stillFilter: string, opts: { hdr?: boolean } = {}): string {
   const reads = stillFilter.split('[0:v]').length - 1;
-  const head = `[0:v]scale=trunc(iw*sar/2)*2:ih,setsar=1,fps=${BACKGROUND_FPS}`;
+  // The frame rate drops BEFORE the tone-map, so a 60 fps clip pays for 25.
+  const head =
+    `[0:v]scale=trunc(iw*sar/2)*2:ih,setsar=1,fps=${BACKGROUND_FPS}` + (opts.hdr ? `,${BACKGROUND_TONEMAP}` : '');
   if (reads <= 1) return stillFilter.replace('[0:v]', `${head},`);
   const labels = Array.from({ length: reads }, (_, i) => `[bgsrc${i}]`);
   let i = 0;
@@ -184,6 +208,8 @@ export function buildBackgroundLoopArgs(params: {
     '-c:v', 'libx264', '-preset', 'veryfast',
     '-crf', String(params.crf), '-maxrate', params.maxrate, '-bufsize', bufsize,
     '-pix_fmt', 'yuv420p', '-r', String(BACKGROUND_FPS), '-g', String(BACKGROUND_FPS * 2),
+    // Say what the pixels are. Untagged, players guess — and guess differently.
+    '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709',
     '-y', params.outPath,
   ];
 }

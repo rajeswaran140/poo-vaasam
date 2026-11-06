@@ -180,6 +180,28 @@ describe('a video background from a library row', () => {
   });
 });
 
+describe('a row remembers its background', () => {
+  it('reopens with the background its last render used, named, and sends it again', async () => {
+    routeFetch({}, [masterFixture({ videoBackgroundKey: 'audio/mastering/1700000000000_ab12cd34_loop.mov' })]);
+    await openLibrary();
+    openRenderPanel(SONG);
+    expect(within(rowFor(SONG)).getByText('loop.mov')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Make vertical short/ }));
+    await waitFor(() => expect(shortPosts()).toHaveLength(1));
+    expect(JSON.parse(shortPosts()[0][1].body as string)).toMatchObject({
+      backgroundKey: 'audio/mastering/1700000000000_ab12cd34_loop.mov',
+    });
+  });
+
+  it('opens with none when no render used one', async () => {
+    routeFetch();
+    await openLibrary();
+    openRenderPanel(SONG);
+    expect(screen.getByLabelText(/Background video or GIF for/)).toBeInTheDocument();
+  });
+});
+
 describe('a background video is labelled in its row', () => {
   it('says so on the row\'s video link', async () => {
     routeFetch({}, [masterFixture({ videoKey: 'audio/mastering/out-master-14LUFS-1440p.mp4', videoMotion: 'none', videoBackgroundKey: BG })]);

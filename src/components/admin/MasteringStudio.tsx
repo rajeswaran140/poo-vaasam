@@ -330,6 +330,18 @@ export function parseHashtags(input: string): string[] {
 const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 
 /** A saved list, as the fields hold it. Null or absent ⇒ no images. */
+/**
+ * The background a master's last render used — video, then short, then the
+ * whole-song vertical — named as uploaded (our timestamp prefix stripped).
+ * Not downloadFilename: that names DOWNLOADS and falls back to .wav for an
+ * extension it does not write, which a .mov or .gif is.
+ */
+function lastBackgroundOf(m: Pick<MasterJob, 'videoBackgroundKey' | 'shortBackgroundKey' | 'verticalBackgroundKey'>) {
+  const key = m.videoBackgroundKey ?? m.shortBackgroundKey ?? m.verticalBackgroundKey ?? null;
+  if (!key) return null;
+  return { key, name: key.slice(key.lastIndexOf('/') + 1).replace(/^\d+_[a-z0-9]+_/i, '') };
+}
+
 function toSlides(saved: MasterJob['slides']): Slide[] {
   return (saved ?? []).map((x) => ({ key: x.coverKey, name: x.name, at: x.at, auto: x.auto }));
 }
@@ -545,7 +557,11 @@ export function MasteringStudio() {
   const [rowRender, setRowRender] = useState<{
     id: string;
     cover: { key: string; name: string } | null;
-    /** The row's video background, if one was picked. Never seeded: named, not assumed. */
+    /**
+     * The row's video background. Seeded from the one its last render used,
+     * like the cover, and named on screen beside **Remove background** —
+     * otherwise each of the three renders meant uploading the clip again.
+     */
     background?: { key: string; name: string } | null;
   } | null>(null);
   /**
@@ -1707,6 +1723,7 @@ export function MasteringStudio() {
     if (!jobId || !cover) return;
     setShorting(true);
     setError(null);
+    setPanelError(null);
     try {
       const slides = panelSlides?.id === jobId ? panelSlides.slides : toSlides(job?.slides);
       const fresh = await startShort(
@@ -2199,6 +2216,7 @@ export function MasteringStudio() {
                     shortStartSec: fresh.shortStartSec,
                     shortSeconds: fresh.shortSeconds,
                     shortError: fresh.shortError,
+                    shortBackgroundKey: fresh.shortBackgroundKey,
                   }
                 : x
             )
@@ -2243,6 +2261,7 @@ export function MasteringStudio() {
                     verticalRenderedAt: fresh.verticalRenderedAt,
                     verticalSeconds: fresh.verticalSeconds,
                     verticalError: fresh.verticalError,
+                    verticalBackgroundKey: fresh.verticalBackgroundKey,
                   }
                 : x
             )
@@ -4240,6 +4259,7 @@ export function MasteringStudio() {
                                     cover: m.coverKey
                                       ? { key: m.coverKey, name: downloadFilename(m.coverKey) }
                                       : null,
+                                    background: lastBackgroundOf(m),
                                   }
                             )
                           }

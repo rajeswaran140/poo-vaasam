@@ -3998,9 +3998,11 @@ Beside **Make vertical short** (and **Make a short**): a **Motion** choice. **No
 Beside **Cover image** in the render panel, and beside the cover in a saved master's row panel: **Background video or GIF (optional)**. Pick an MP4, MOV, WebM or GIF (up to 200 MB) and it loops under the song **in place of the cover** — in the 16:9 video, the short and **Whole song, vertical**. The button reads **Render video (video background)**.
 
 - **You still choose a cover.** It is not drawn, but it is the YouTube thumbnail, exactly as before.
-- **The clip loops from start to end until the song finishes.** Only the song is heard — the clip's own sound is dropped. Only the first minute of a longer clip is used.
+- **The clip loops from start to end until the song finishes.** Only the song is heard — the clip's own sound is dropped. Only the first 30 seconds of a longer clip are used.
 - **It is shaped like a cover:** a 16:9 clip fills the 16:9 frame, a 9:16 one fills the vertical frame, and anything else (a square GIF, a portrait phone video in the 16:9 video) sits on a blurred copy of itself rather than being cropped. A phone video filmed upright is read the right way up.
 - **A small GIF is scaled up and may look soft.** A clip at least as big as the frame looks best.
+- **iPhone video (HDR) is converted to ordinary colour.** Check the first one you make; if it looks dull or too bright, export the clip as SDR ("Most Compatible") and use that.
+- **A saved master's row remembers its background**, named beside **Remove background**, so the video, the short and the vertical can all use it without uploading it again.
 - **It plays alone:** **Motion** must be **None** and there can be no extra images — either is refused with a message beside the button. **Remove background** goes back to the cover.
 - **1080p or 1440p** for the 16:9 video (not 2160p), and **songs up to 10 minutes**.
 - **It is quick:** the clip is encoded once and then repeated, so a 5-minute song took about a minute to render in testing, much like a still one.

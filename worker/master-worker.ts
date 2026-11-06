@@ -134,6 +134,7 @@ import {
   buildBackgroundLoopArgs,
   buildBackgroundTrackArgs,
   buildBackgroundMuxArgs,
+  isHdrHeader,
 } from '@/lib/master-background';
 import {
   comparePartsAndSuggest,
@@ -837,8 +838,11 @@ async function renderOverBackground(params: {
     return { ok: false, message: 'the background video could not be read' };
   }
   const aspect = probeCoverAspect(firstPath);
+  // An iPhone records HDR by default; untreated it comes out grey and flat.
+  const header = ff(['-hide_banner', '-i', srcPath]);
+  const hdr = isHdrHeader(`${header.stdout ?? ''}${header.stderr ?? ''}`);
   const looped = ff(buildBackgroundLoopArgs({
-    srcPath, outPath: loopPath, filter: backgroundFilterFrom(params.stillFilterFor(aspect)),
+    srcPath, outPath: loopPath, filter: backgroundFilterFrom(params.stillFilterFor(aspect), { hdr }),
     crf: params.crf, maxrate: params.maxrate,
   }));
   if (looped.status !== 0) return { ok: false, message: 'the background video could not be encoded' };

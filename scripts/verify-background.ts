@@ -4,8 +4,8 @@
  *
  * Runs the real arg builders from src/lib/master-background.ts over generated
  * fixtures that exercise what testsrc alone does not: a portrait phone video
- * stored as rotated HEVC in a MOV, a VP9 WebM, and a square GIF with uneven
- * frame delays. For each render it reports the video and audio STREAM lengths
+ * stored as rotated HEVC in a MOV, a 10-bit HLG (iPhone-style HDR) clip, a VP9
+ * WebM, and a square GIF with uneven frame delays. For each render it reports the video and audio STREAM lengths
  * separately — the container's Duration is the longer of the two and would
  * hide a picture that outruns the song (see buildVideoArgs for that history).
  *
@@ -27,6 +27,7 @@ import {
   buildBackgroundLoopArgs,
   buildBackgroundTrackArgs,
   buildBackgroundMuxArgs,
+  isHdrHeader,
 } from '../src/lib/master-background';
 import { buildVideoFilter, VIDEO_CRF, VIDEO_AUDIO_BITRATE } from '../src/lib/master-video';
 import { buildShortFrameFilter, SHORT_FADE_IN_SEC, shortFadeOutFor } from '../src/lib/master-short';
@@ -59,6 +60,10 @@ ff(['-f', 'lavfi', '-i', 'sine=f=440:r=48000', '-ac', '2', '-t', String(SONG), '
 ff(['-f', 'lavfi', '-i', 'testsrc2=s=1920x1080:r=30', '-f', 'lavfi', '-i', 'sine=f=300', '-t', '5',
   '-c:v', 'libx265', '-preset', 'ultrafast', '-tag:v', 'hvc1', '-c:a', 'aac', '-y', p('raw.mov')]);
 ff(['-display_rotation', '90', '-i', p('raw.mov'), '-c', 'copy', '-y', p('phone.mov')]);
+// An iPhone-style HDR clip: 10-bit HEVC tagged HLG / BT.2020, 60 fps.
+ff(['-f', 'lavfi', '-i', 'testsrc2=s=1920x1080:r=60,format=yuv420p10le', '-t', '5', '-c:v', 'libx265', '-preset', 'ultrafast',
+  '-x265-params', 'log-level=error:colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc',
+  '-color_primaries', 'bt2020', '-color_trc', 'arib-std-b67', '-colorspace', 'bt2020nc', '-tag:v', 'hvc1', '-y', p('hdr.mov')]);
 ff(['-f', 'lavfi', '-i', 'testsrc2=s=1280x720:r=24', '-t', '5', '-c:v', 'libvpx-vp9', '-deadline', 'realtime',
   '-cpu-used', '8', '-b:v', '1M', '-y', p('clip.webm')]);
 for (const [i, c] of ['224080', '664080', 'aa4080', 'ee4080'].entries()) {
@@ -73,15 +78,16 @@ ff(['-f', 'concat', '-safe', '0', '-i', p('gif.txt'), '-vf', 'split[a][b];[a]pal
 type Kind = '16:9' | 'clip' | 'full';
 const rows: string[] = [];
 let failed = false;
-for (const src of ['phone.mov', 'clip.webm', 'square.gif']) {
+for (const src of ['phone.mov', 'hdr.mov', 'clip.webm', 'square.gif']) {
   const aspect = aspectOf(p(src));
+  const hdr = isHdrHeader(spawnSync(FFMPEG, ['-hide_banner', '-i', p(src)], { encoding: 'utf8' }).stderr);
   for (const kind of ['16:9', 'clip', 'full'] as Kind[]) {
     const still = kind === '16:9' ? buildVideoFilter(1440, aspect) : buildShortFrameFilter(aspect);
     const loop = p('loop.mp4');
     const out = p('out.mp4');
     const t0 = Date.now();
     ff(buildBackgroundLoopArgs({
-      srcPath: p(src), outPath: loop, filter: backgroundFilterFrom(still),
+      srcPath: p(src), outPath: loop, filter: backgroundFilterFrom(still, { hdr }),
       crf: kind === '16:9' ? VIDEO_CRF : 20, maxrate: backgroundMaxrateFor(kind === '16:9' ? 1440 : 1080),
     }).slice(1));
     const t1 = Date.now();
@@ -107,7 +113,7 @@ for (const src of ['phone.mov', 'clip.webm', 'square.gif']) {
     const ok = r.status === 0 && warnings === 0 && decodeErrors === 0 &&
       a >= secs - 0.001 && v <= secs + 0.001 && secs - v <= 0.04;
     if (!ok) failed = true;
-    rows.push(`${ok ? 'ok  ' : 'FAIL'} ${src.padEnd(11)} ${kind.padEnd(5)} aspect ${aspect.toFixed(3)}  ` +
+    rows.push(`${ok ? 'ok  ' : 'FAIL'} ${src.padEnd(11)} ${kind.padEnd(5)} ${hdr ? 'HDR' : 'SDR'} aspect ${aspect.toFixed(3)}  ` +
       `loop ${((t1 - t0) / 1000).toFixed(1)}s render ${((t2 - t1) / 1000).toFixed(1)}s  ` +
       `video ${v.toFixed(3)} audio ${a.toFixed(3)}  warnings ${warnings} decodeErrors ${decodeErrors}  ` +
       `${(statSync(out).size / 1048576).toFixed(1)} MB`);

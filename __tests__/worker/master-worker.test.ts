@@ -3798,6 +3798,20 @@ describe('a video background', () => {
       expect(loopPass().join(' ')).toContain('boxblur');
     });
 
+    it('tone-maps a clip whose header says HDR, and only that one', async () => {
+      await handler({ jobId: 'j1', render: render() } as never);
+      expect(loopPass().join(' ')).not.toContain('tonemap');
+
+      spawnSync.mockClear();
+      const base = spawnSync.getMockImplementation()!;
+      spawnSync.mockImplementation((cmd: string, args: string[]) =>
+        args.length === 3 && args[2].endsWith('background.mov')
+          ? { status: 1, stdout: '', stderr: 'Video: hevc (Main 10), yuv420p10le(tv, bt2020nc/bt2020/arib-std-b67), 3840x2160' }
+          : base(cmd, args));
+      await handler({ jobId: 'j1', render: render() } as never);
+      expect(loopPass().join(' ')).toContain('tonemap=tonemap=hable');
+    });
+
     it('fills the frame with a 16:9 clip', async () => {
       firstFrame = '  Stream #0:0: Video: ppm, rgb24, 1920x1080, 25 fps\n';
       await handler({ jobId: 'j1', render: render() } as never);

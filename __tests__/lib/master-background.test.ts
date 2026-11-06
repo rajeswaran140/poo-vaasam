@@ -19,6 +19,8 @@ import {
   buildBackgroundTrackArgs,
   buildBackgroundMuxArgs,
   backgroundMaxrateFor,
+  isHdrHeader,
+  BACKGROUND_TONEMAP,
   BACKGROUND_FPS,
   BACKGROUND_LOOP_MAX_SECONDS,
   BACKGROUND_MAX_SONG_SECONDS,
@@ -53,6 +55,15 @@ describe('accepted files and keys', () => {
     ['not a string', 42],
   ])('refuses %s', (_label, key) => {
     expect(isBackgroundKey(key)).toBe(false);
+  });
+});
+
+describe('isHdrHeader', () => {
+  it('spots HLG (iPhone) and PQ, and nothing else', () => {
+    expect(isHdrHeader('Video: hevc (Main 10), yuv420p10le(tv, bt2020nc/bt2020/arib-std-b67, progressive), 3840x2160')).toBe(true);
+    expect(isHdrHeader('Video: hevc, yuv420p10le(tv, bt2020nc/bt2020/smpte2084), 3840x2160')).toBe(true);
+    expect(isHdrHeader('Video: h264 (High), yuv420p(tv, bt709, progressive), 1920x1080')).toBe(false);
+    expect(isHdrHeader('Video: gif, bgra, 400x400')).toBe(false);
   });
 });
 
@@ -100,6 +111,12 @@ describe('backgroundFilterFrom', () => {
     expect(f.split('[bgsrc1]').length - 1).toBe(2);
   });
 
+  it('tone-maps an HDR clip after the rate drop, and leaves SDR alone', () => {
+    const hdr = backgroundFilterFrom(buildVideoFilter(1440, 9 / 16), { hdr: true });
+    expect(hdr).toContain(`fps=${BACKGROUND_FPS},${BACKGROUND_TONEMAP},split=2`);
+    expect(backgroundFilterFrom(buildVideoFilter(1440, 9 / 16))).not.toContain('tonemap');
+  });
+
   it('works on the vertical frame filter too', () => {
     const f = backgroundFilterFrom(buildShortFrameFilter(16 / 9));
     expect(f).toContain('split=2');
@@ -124,6 +141,7 @@ describe('the two passes', () => {
     expect(a[a.indexOf('-maxrate') + 1]).toBe('8M');
     expect(a[a.indexOf('-bufsize') + 1]).toBe('16M');
     expect(a[a.indexOf('-r') + 1]).toBe(String(BACKGROUND_FPS));
+    expect(a[a.indexOf('-color_trc') + 1]).toBe('bt709');
   });
 
   it('caps 1440p a little higher than 1080p', () => {
