@@ -126,6 +126,32 @@ import {
 } from '@/lib/master-short';
 import { parseEbur128Loudness, pickHookWindow } from '@/lib/hook-window';
 import {
+  ASSEMBLE_CODEC_ARGS,
+  ASSEMBLE_FPS,
+  STILL_SOURCE_SCALE,
+  assembleFades,
+  assembleFrameSize,
+  assemblyKindOf,
+  buildAssembleConcatList,
+  buildAssembleJoinArgs,
+  buildClipSegmentArgs,
+  isAssemblyShotKey,
+  shotLabel,
+  stillMotionFor,
+} from '@/lib/visual-story-assemble';
+import { renderKey } from '@/lib/visual-story-storage';
+import {
+  ASPECT_RATIOS,
+  MAX_SHOT_SEC,
+  MAX_WINDOW_SEC,
+  MIN_SHOT_SEC,
+  MIN_WINDOW_SEC,
+  isRenderId,
+  isVsId,
+  type AspectRatio,
+  type RenderStatus,
+} from '@/types/visualStory';
+import {
   isBackgroundKey,
   checkBackground,
   backgroundFilterFrom,
@@ -280,6 +306,21 @@ interface MasterEvent {
      * not drawn. Absent ⇒ every older path, untouched.
      */
     backgroundKey?: unknown;
+  };
+  /**
+   * ASSEMBLE a visual story's render (Phase 6): the chosen picture or clip of
+   * every shot, in order, over the story's window of the master. The route
+   * sends the whole checked timeline because this role cannot Query; the only
+   * row written is the story's RENDER#<renderId>. Everything is re-checked.
+   */
+  assemble?: {
+    vsId?: unknown;
+    renderId?: unknown;
+    audioKey?: unknown;
+    aspectRatio?: unknown;
+    windowStartSec?: unknown;
+    windowEndSec?: unknown;
+    shots?: unknown;
   };
   /**
    * A pre-master ANALYSIS — measure a source before anything is decided about
@@ -1655,6 +1696,179 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
 }
 
 /**
+ * Move a story render to `to`, only from one of `from` and only while the
+ * story exists — the same condition the app's repository uses. Returns false
+ * when someone else moved it first (the stale sweep) or the story is gone.
+ */
+async function transitionStoryRender(
+  vsId: string,
+  renderId: string,
+  from: RenderStatus[],
+  to: RenderStatus,
+  fields: { s3Key?: string; error?: string } = {},
+): Promise<boolean> {
+  const names: Record<string, string> = { '#s': 'status' };
+  const values: Record<string, unknown> = { ':to': to, ':u': new Date().toISOString() };
+  const sets = ['#s = :to', 'updatedAt = :u'];
+  for (const f of ['s3Key', 'error'] as const) {
+    if (fields[f] === undefined) continue;
+    names[`#${f}`] = f;
+    values[`:${f}`] = fields[f];
+    sets.push(`#${f} = :${f}`);
+  }
+  from.forEach((st, i) => (values[`:from${i}`] = st));
+  try {
+    await ddb.send(new UpdateCommand({
+      TableName: TABLE,
+      Key: { PK: `VSTORY#${vsId}`, SK: `RENDER#${renderId}` },
+      UpdateExpression: `SET ${sets.join(', ')}`,
+      ExpressionAttributeNames: names,
+      ExpressionAttributeValues: values,
+      ConditionExpression: `attribute_exists(PK) AND #s IN (${from.map((_, i) => `:from${i}`).join(', ')})`,
+    }));
+    return true;
+  } catch (err) {
+    if ((err as { name?: string })?.name === 'ConditionalCheckFailedException') return false;
+    throw err;
+  }
+}
+
+type AssembleShot = { sceneOrder: number; shotOrder: number; key: string; durationSec: number };
+
+/** The event's timeline, re-checked; a message for the operator when it is not one we render. */
+function readAssembly(spec: NonNullable<MasterEvent['assemble']>, vsId: string):
+  | { ok: true; audioKey: string; aspect: AspectRatio; start: number; end: number; shots: AssembleShot[] }
+  | { ok: false; message: string } {
+  const bad = (message: string) => ({ ok: false as const, message });
+  const audioKey = spec.audioKey;
+  if (typeof audioKey !== 'string' || !isMasteringKey(audioKey) || !isMasterKey(audioKey)) {
+    return bad('The story\'s song is not a mastered file in the mastering workspace.');
+  }
+  if (!(ASPECT_RATIOS as readonly unknown[]).includes(spec.aspectRatio)) return bad('That video shape is not one this renderer knows.');
+  const start = Number(spec.windowStartSec);
+  const end = Number(spec.windowEndSec);
+  const windowSec = end - start;
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || windowSec < MIN_WINDOW_SEC || windowSec > MAX_WINDOW_SEC) {
+    return bad('The story\'s part of the song is not one this renderer accepts.');
+  }
+  if (!Array.isArray(spec.shots) || spec.shots.length === 0 || spec.shots.length > 1000) return bad('The render has no shots.');
+  const shots: AssembleShot[] = [];
+  for (const raw of spec.shots as Array<Record<string, unknown>>) {
+    const sh = {
+      sceneOrder: Number(raw?.sceneOrder), shotOrder: Number(raw?.shotOrder), key: raw?.key as string, durationSec: Number(raw?.durationSec),
+    };
+    if (!Number.isInteger(sh.sceneOrder) || !Number.isInteger(sh.shotOrder)) return bad('A shot in the render is malformed.');
+    if (!isAssemblyShotKey(sh.key, vsId)) return bad(`${shotLabel(sh)}: that file cannot be used in the video.`);
+    if (!Number.isInteger(sh.durationSec) || sh.durationSec < MIN_SHOT_SEC || sh.durationSec > MAX_SHOT_SEC) {
+      return bad(`${shotLabel(sh)} has a length this renderer does not accept.`);
+    }
+    shots.push(sh);
+  }
+  if (shots.reduce((n, sh) => n + sh.durationSec, 0) !== windowSec) {
+    return bad('The shots do not fill the story\'s part of the song.');
+  }
+  return { ok: true, audioKey, aspect: spec.aspectRatio as AspectRatio, start, end, shots };
+}
+
+/**
+ * Assemble a story (Phase 6, spec §7.4). One shot at a time — download,
+ * encode its segment, delete its files — because a still's 4x compose frame
+ * is ~100 MB and a story may hold dozens. See visual-story-assemble.ts.
+ */
+async function assembleStory(spec: NonNullable<MasterEvent['assemble']>, bucket: string) {
+  // Without valid ids there is no row this worker may safely write.
+  if (!isVsId(spec.vsId) || !isRenderId(spec.renderId)) {
+    console.error('[master-worker] bad assemble ids');
+    return { ok: false };
+  }
+  const vsId = spec.vsId as string;
+  const renderId = spec.renderId as string;
+  const failRender = async (message: string) => {
+    await transitionStoryRender(vsId, renderId, ['queued', 'running'], 'failed', { error: message }).catch((err) =>
+      console.error('[master-worker] could not record the failed render:', err instanceof Error ? err.name : 'error'));
+    return { ok: false };
+  };
+
+  const plan = readAssembly(spec, vsId);
+  if (!plan.ok) return await failRender(plan.message);
+  // Claimed, or already cleared by the stale sweep / a deleted story: then stop.
+  let claimed: boolean;
+  try {
+    claimed = await transitionStoryRender(vsId, renderId, ['queued'], 'running');
+  } catch (err) {
+    console.error('[master-worker] assemble claim failed:', err instanceof Error ? err.name : 'error');
+    return { ok: false };
+  }
+  if (!claimed) return { ok: false };
+
+  const { audioKey, aspect, start, end, shots } = plan;
+  const windowSec = end - start;
+  const size = assembleFrameSize(aspect);
+  const dir = mkdtempSync(join(tmpdir(), 'assemble-'));
+  const audioPath = join(dir, 'master.wav');
+  const outPath = join(dir, 'story.mp4');
+  try {
+    const audio = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: audioKey }));
+    writeFileSync(audioPath, await audio.Body!.transformToByteArray());
+    const header = ff(['-hide_banner', '-i', audioPath]);
+    const songSec = parseSourceInfo(`${header.stdout ?? ''}${header.stderr ?? ''}`)?.durationSec ?? null;
+    if (songSec !== null && end > songSec + 0.5) {
+      return await failRender('The story\'s part of the song runs past the end of the song.');
+    }
+
+    const segments: string[] = [];
+    for (const [i, sh] of shots.entries()) {
+      const label = shotLabel(sh);
+      const ext = sh.key.match(/\.[a-z0-9]+$/i)?.[0] ?? '';
+      const src = join(dir, `shot${i}${ext}`);
+      const frame = join(dir, `shot${i}-frame${FRAME_EXTENSION}`);
+      const seg = join(dir, `seg${i}.mp4`);
+      const obj = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: sh.key }));
+      writeFileSync(src, await obj.Body!.transformToByteArray());
+      if (assemblyKindOf(sh.key) === 'clip') {
+        if (ff(buildClipSegmentArgs({ srcPath: src, outPath: seg, durationSec: sh.durationSec, aspect })).status !== 0) {
+          return await failRender(`${label}: the clip could not be read.`);
+        }
+      } else {
+        const coverAspect = probeCoverAspect(src);
+        const composed = ff(aspect === '16:9'
+          ? buildComposeArgs({ coverPath: src, framePath: frame, height: 1080, coverAspect, sourceScale: STILL_SOURCE_SCALE })
+          : buildShortComposeArgs({ coverPath: src, framePath: frame, coverAspect, sourceScale: STILL_SOURCE_SCALE }));
+        if (composed.status !== 0) return await failRender(`${label}: the picture could not be read.`);
+        const moved = ff(buildMotionSegmentArgs({
+          framePath: frame, seconds: sh.durationSec, outPath: seg, motion: stillMotionFor(i),
+          size, fps: ASSEMBLE_FPS, codecArgs: ASSEMBLE_CODEC_ARGS,
+        }));
+        if (moved.status !== 0) return await failRender(`${label}: the picture could not be animated.`);
+      }
+      // One shot's files at a time: the source and a ~100 MB frame go now.
+      rmSync(src, { force: true });
+      rmSync(frame, { force: true });
+      segments.push(seg);
+    }
+
+    const listPath = join(dir, 'segments.txt');
+    writeFileSync(listPath, buildAssembleConcatList(segments));
+    const fades = assembleFades({ windowStartSec: start, windowEndSec: end, songSec });
+    const joined = ff(buildAssembleJoinArgs({ listPath, audioPath, outPath, windowStartSec: start, windowSec, ...fades }));
+    if (joined.status !== 0) return await failRender('The render failed joining the shots. Please try again.');
+
+    // Logged, never blocking — the same verdict the Short gets.
+    checkRenderedClip(audioPath, outPath, windowSec);
+
+    const key = renderKey(vsId, renderId);
+    await s3.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: readFileSync(outPath), ContentType: 'video/mp4' }));
+    const done = await transitionStoryRender(vsId, renderId, ['running'], 'done', { s3Key: key });
+    return { ok: done, s3Key: key };
+  } catch (err) {
+    console.error('[master-worker] assemble failed:', err instanceof Error ? err.message : String(err));
+    return await failRender('The render failed. Please try again.');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
  * Content-Type for `thumbnails.set`, from the cover's own file extension.
  *
  * The cover-upload route accepts .jpg/.jpeg, .png and .webp. Hardcoding
@@ -2264,6 +2478,15 @@ export const handler = async (event: MasterEvent) => {
       return { ok: false, error: 'analysisId and TAKES_BUCKET are required' };
     }
     return await analyseSource(id, event.analyse, TAKES_BUCKET);
+  }
+
+  // A story assembly writes only its own RENDER# row and never a master job.
+  if (event?.assemble) {
+    if (!TAKES_BUCKET) {
+      console.error('[master-worker] bad assemble event: no bucket');
+      return { ok: false, error: 'TAKES_BUCKET is required' };
+    }
+    return await assembleStory(event.assemble, TAKES_BUCKET);
   }
 
   // A render is a different job entirely — branch before the mastering guards,

@@ -11,7 +11,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { MASTERING_PREFIX } from '@/lib/mastering-storage';
-import { isVsId, isCharId, isCandId } from '@/types/visualStory';
+import { isVsId, isCharId, isCandId, isRenderId } from '@/types/visualStory';
 
 export const VISUAL_STORY_PREFIX = `${MASTERING_PREFIX}visual-story/`;
 
@@ -63,6 +63,13 @@ export function candidateKey(vsId: string, candId: string, ext: string): string 
   if (!isCandId(candId)) throw new Error('invalid candId');
   if (!(CAND_EXTS as readonly string[]).includes(ext)) throw new Error('invalid candidate extension');
   return `${VISUAL_STORY_PREFIX}${vsId}/candidates/${candId}.${ext}`;
+}
+
+/** Key of a finished render (Phase 6): one MP4 per render, beside the story's candidates. */
+export function renderKey(vsId: string, renderId: string): string {
+  if (!isVsId(vsId)) throw new Error('invalid vsId');
+  if (!isRenderId(renderId)) throw new Error('invalid renderId');
+  return `${VISUAL_STORY_PREFIX}${vsId}/renders/${renderId}.mp4`;
 }
 
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
