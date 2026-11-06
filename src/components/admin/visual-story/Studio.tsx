@@ -26,6 +26,7 @@ import { shotKey } from './ui-utils';
 import { Inspector } from './Inspector';
 import { CharactersPanel } from './CharactersPanel';
 import { CheckPanel } from './CheckPanel';
+import { BatchPanel } from './BatchPanel';
 import { DraftPanel } from './DraftPanel';
 import { SpendBar } from './SpendBar';
 import { StoryActions } from './StoryActions';
@@ -171,6 +172,18 @@ export function Studio({ vsId }: { vsId: string }) {
     />
   );
 
+  const batchPanel = (
+    <BatchPanel
+      key="batch"
+      vsId={vsId}
+      story={story}
+      shots={shots}
+      candidates={candidates}
+      genJobs={tree.genJobs ?? []}
+      onChanged={refresh}
+    />
+  );
+
   return (
     <div className="space-y-4">
       <header className="space-y-1">
@@ -225,8 +238,8 @@ export function Studio({ vsId }: { vsId: string }) {
         />
 
         <div className="space-y-6">
-          {/* Keyed, so swapping the order moves them without remounting (the draft and check panels keep their polls). The check sits above the shots: it is read before spending. */}
-          {shots.length === 0 ? [draftPanel, shotGrid] : [checkPanel, shotGrid, draftPanel]}
+          {/* Keyed, so swapping the order moves them without remounting (the draft and check panels keep their polls). The check sits above the shots: it is read before spending; the every-shot buttons sit between. */}
+          {shots.length === 0 ? [draftPanel, shotGrid] : [checkPanel, batchPanel, shotGrid, draftPanel]}
         </div>
 
         <aside ref={asideRef} className="scroll-mt-4 space-y-3">
