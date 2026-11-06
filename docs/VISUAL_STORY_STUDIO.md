@@ -14,7 +14,7 @@ Phases 2–6: storyboard a music video, make a still picture and a **video clip*
 ### 2. Draft
 Open the story and use **Draft storyboard**: paste the lyrics and press the button. The draft runs in the background and takes **about a minute** for a short window and up to **7 minutes** for a whole song (the panel says "Drafting… this takes about a minute." and the button stays disabled until it finishes). The new draft then appears in the panel with how much of your window it fills; review it, then apply. Applying **replaces** the current storyboard (its scenes, shots and their stills) and asks first. Characters are kept.
 - The lyrics are used for that request only and are **not stored**. Paste them again for another draft.
-- The button shows **≈$0.15**, a planning figure above what a draft can cost; a real draft costs a few cents (about $0.05–0.06 for a 2-minute window, measured 2026-11-04). While it runs, up to about $0.10 (more for longer lyrics) is held against the budget; only the actual cost counts toward the story total.
+- The button shows the most the draft can cost: **≈$0.15** for a short window, up to about **$0.32** for a whole song (it writes more). That much is held against the budget while it runs; only the actual cost counts toward the story total. A real draft costs less — a few cents for a short window (about $0.05–0.06 for 2 minutes, measured 2026-11-04).
 - If a draft has not finished after 15 minutes it is marked failed ("The draft took too long. Please try again.") and its hold is released — at the latest the next time the story is opened or another draft is started.
 - The most recent draft is listed by date when you reopen the story.
 
@@ -29,7 +29,7 @@ Not available yet: there is **no reorder** of scenes or shots, **scenes cannot b
 
 The bottom bar shows how much of the window the shots fill. They must fill it **exactly** before the later rendering step. It also has the **Budget** field (see below). On a phone, **Edit** takes you down to the shot panel, and the bottom bar sits at the end of the page with a one-line summary (spent, seconds filled, shots chosen) pinned to the bottom of the screen.
 
-Character reference photos are **stored for the later video phases and do not yet influence still pictures**. They are private (kept in the media bucket, never publicly linked). A still uses the shot's text and the names and descriptions of the characters in it. The **negative prompt is not used for stills yet** either.
+Character reference photos are **sent to Grok with a shot's video clip** (made at 720p) so characters look the same from clip to clip; they **do not yet influence still pictures**. They are private (kept in the media bucket, never publicly linked). A still uses the shot's text and the names and descriptions of the characters in it. The **negative prompt is not used yet**, by stills or clips.
 
 ### 4. Stills
 Press **Generate still ($0.02)** on a shot. You see the price and the story total after it, and confirm. Each confirm adds one candidate picture to that shot. A shot's first picture is chosen for you; tap another picture to choose it instead. Errors (budget reached, content refused, Grok busy) appear beside the button you pressed.

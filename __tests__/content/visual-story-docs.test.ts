@@ -60,8 +60,11 @@ describe.each([
   });
 
   it('does not over-promise: reference photos and the negative prompt do not affect stills yet', () => {
-    expect(text).toMatch(/reference photos[^.]*stored for the later video phases[^.]*do not yet (influence|affect) still pictures/i);
-    expect(text).toMatch(/negative prompt is not used for stills yet/i);
+    // Clips use them since Phase 4; stills still do not.
+    expect(text).toMatch(/reference photos[^.]*sent to Grok with a shot's \*{0,2}video clip/i);
+    expect(text).toMatch(/do not yet (influence|affect) still pictures/i);
+    expect(text).not.toMatch(/stored for the later video phases/i);
+    expect(text).toMatch(/negative prompt is not used yet/i);
     expect(text).not.toMatch(/used to keep a character looking the same/i);
   });
 
