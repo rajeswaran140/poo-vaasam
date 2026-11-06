@@ -103,6 +103,35 @@ it('sum off by 40 is bad_response with the draft-again copy', async () => {
   });
 });
 
+it('a whole song drafted for a short window is scaled to fit, not refused', async () => {
+  // Whole-song lyrics on a 60 s window: Claude paces the shots for the song (sum 135).
+  create.mockResolvedValue(toolResponse(board([15, 15, 15, 15], [15, 15, 15, 15, 15])));
+  const r = await generateStoryboard({ ...req, windowSec: 60 });
+  expect(r.ok).toBe(true);
+  if (!r.ok) return;
+  const d = durations(r);
+  expect(d).toHaveLength(9);
+  expect(d.reduce((a, b) => a + b, 0)).toBe(60);
+  expect(d.every((x) => x >= 6 && x <= 7)).toBe(true);
+});
+
+it('scales up too, keeping each shot within 1-15 s', async () => {
+  create.mockResolvedValue(toolResponse(board([2, 4], [6, 8])));
+  const r = await generateStoryboard({ ...req, windowSec: 50 }); // sum 20
+  expect(r.ok).toBe(true);
+  if (!r.ok) return;
+  const d = durations(r);
+  expect(d.reduce((a, b) => a + b, 0)).toBe(50);
+  expect(d.every((x) => x >= 1 && x <= 15)).toBe(true);
+  expect(d).toEqual([...d].sort((a, b) => a - b)); // the longer shots stay longer
+});
+
+it('tells Claude the lyrics may run past the window', async () => {
+  create.mockResolvedValue(toolResponse(board([15], [15])));
+  await generateStoryboard(req);
+  expect(create.mock.calls[0][0].messages[0].content).toMatch(/lyrics may cover more than the window/i);
+});
+
 it('system prompt carries the no-text and apolitical rules; user message carries lyrics and ratio', async () => {
   create.mockResolvedValue(toolResponse(board([15], [15])));
   await generateStoryboard(req);

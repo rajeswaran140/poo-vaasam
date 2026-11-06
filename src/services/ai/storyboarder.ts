@@ -93,7 +93,7 @@ function getClient(): Anthropic | null {
 function repairTiling(data: StoryboardOutput, windowSec: number): boolean {
   const shots = data.scenes.flatMap((s) => s.shots);
   let diff = windowSec - shots.reduce((n, s) => n + s.durationSec, 0);
-  if (Math.abs(diff) > MAX_SHOT_SEC) return false;
+  if (Math.abs(diff) > MAX_SHOT_SEC) return scaleToWindow(data, windowSec);
   const next = shots.map((s) => s.durationSec);
   for (let i = next.length - 1; i >= 0 && diff !== 0; i--) {
     const target = Math.min(MAX_SHOT_SEC, Math.max(MIN_SHOT_SEC, next[i] + diff));
@@ -101,6 +101,36 @@ function repairTiling(data: StoryboardOutput, windowSec: number): boolean {
     next[i] = target;
   }
   if (diff !== 0) return false;
+  shots.forEach((s, i) => {
+    s.durationSec = next[i];
+  });
+  return true;
+}
+
+/**
+ * A large miss (typically whole-song lyrics on a short window, paced for the
+ * song): scale every shot by window/total, keeping 1-15 s and the shots' order
+ * of length, then spread the rounding error a second at a time from the end.
+ * Returns false (data left untouched) only when the shots cannot fill the window.
+ */
+function scaleToWindow(data: StoryboardOutput, windowSec: number): boolean {
+  const shots = data.scenes.flatMap((s) => s.shots);
+  const total = shots.reduce((n, s) => n + s.durationSec, 0);
+  if (total <= 0 || shots.length > windowSec || shots.length * MAX_SHOT_SEC < windowSec) return false;
+  const clamp = (n: number) => Math.min(MAX_SHOT_SEC, Math.max(MIN_SHOT_SEC, n));
+  const next = shots.map((s) => clamp(Math.round((s.durationSec * windowSec) / total)));
+  let diff = windowSec - next.reduce((a, b) => a + b, 0);
+  const step = Math.sign(diff);
+  while (diff !== 0) {
+    let moved = false;
+    for (let i = next.length - 1; i >= 0 && diff !== 0; i--) {
+      if (clamp(next[i] + step) === next[i]) continue;
+      next[i] += step;
+      diff -= step;
+      moved = true;
+    }
+    if (!moved) return false;
+  }
   shots.forEach((s, i) => {
     s.durationSec = next[i];
   });
@@ -123,6 +153,8 @@ export async function generateStoryboard(
     `Window length: ${windowSec} seconds (shot durations must sum to exactly ${windowSec}).`,
     // Bounds the output: ~250 tokens a shot must fit draftMaxOutputTokens.
     `Aim for about ${targetShotCount(windowSec)} shots.`,
+    // Owners often paste the whole song for a short window; the window still sets the length.
+    `The lyrics may cover more than the window: picture the part that fits, and keep the total at ${windowSec} seconds.`,
     `Aspect ratio: ${aspectRatio}`,
     // The style is appended to every picture and clip request by the studio,
     // so the prompts should suit it without spending tokens repeating it.
@@ -201,7 +233,9 @@ export async function generateStoryboard(
     return { ok: false, code: 'bad_response', error: 'The AI returned an incomplete storyboard. Please try again.', usage };
   }
 
+  const shotsSec = parsed.data.scenes.flatMap((s) => s.shots.map((x) => x.durationSec));
   if (!repairTiling(parsed.data, windowSec)) {
+    console.error('[ai/storyboarder] shots do not fit', JSON.stringify({ windowSec, shots: shotsSec.length, totalSec: shotsSec.reduce((a, b) => a + b, 0) }));
     return { ok: false, code: 'bad_response', error: DOES_NOT_FIT, usage };
   }
 
