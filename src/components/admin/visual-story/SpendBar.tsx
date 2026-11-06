@@ -2,15 +2,17 @@
 
 /**
  * Bottom bar: spend against the cap (and the Budget field that edits the cap),
- * how much of the window the shots fill, and how many have a chosen image.
+ * what every shot would cost as a clip, how much of the window the shots fill,
+ * and how many have a chosen image.
  * The route refuses a cap below what is spent or reserved (409); that message
  * shows next to the field.
  */
 
 import { useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
+import { estimateCostUsd } from '@/services/video/cost';
 import type { Shot, VisualStory } from '@/types/visualStory';
-import { usd } from './ui-utils';
+import { BUDGET_INPUT_ID, usd } from './ui-utils';
 
 const MAX_BUDGET_USD = 500;
 
@@ -56,6 +58,8 @@ export function SpendBar({ vsId, story, shots, onChanged }: Props) {
   const totalSec = shots.reduce((t, s) => t + s.durationSec, 0);
   const tiles = totalSec === windowSec;
   const chosen = shots.filter((s) => s.selectedCandidateId).length;
+  // Every clip is made at the video rate, whatever the shot's mode.
+  const allClipsUsd = shots.reduce((t, s) => t + estimateCostUsd('grok', 'HERO', s.durationSec), 0);
   const cap = story.budgetUsdCap;
   const pct = (n: number) => (cap > 0 ? Math.min(100, (n / cap) * 100) : 100);
 
@@ -72,6 +76,7 @@ export function SpendBar({ vsId, story, shots, onChanged }: Props) {
         <label className="text-gray-700 dark:text-gray-300">
           Budget (USD)
           <input
+            id={BUDGET_INPUT_ID}
             type="number"
             min={0}
             max={MAX_BUDGET_USD}
@@ -92,8 +97,9 @@ export function SpendBar({ vsId, story, shots, onChanged }: Props) {
       </form>
       <p className={tiles ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400'}>
         <span>{`Shots fill ${totalSec} of ${windowSec} s`}</span>
-        {!tiles && <span className="text-gray-600 dark:text-gray-400">{' — they must fill the window exactly to render'}</span>}
+        {!tiles && <span className="text-gray-600 dark:text-gray-400">{' — they should fill the window exactly'}</span>}
       </p>
+      <p className="text-gray-700 dark:text-gray-300">{`All ${shots.length} shots as clips: about ${usd(allClipsUsd)}`}</p>
       <p className="text-gray-700 dark:text-gray-300">{`${chosen} of ${shots.length} shots have a chosen image`}</p>
     </footer>
   );

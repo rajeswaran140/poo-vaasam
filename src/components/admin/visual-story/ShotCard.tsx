@@ -1,9 +1,9 @@
 'use client';
 
 /**
- * One shot in the grid: mode badge, prompt, cast, its span on the window, the
- * cost estimate, "Generate still" behind a confirm-before-spend dialog (spec
- * §11 layer 2), "Upload picture" for the admin's own image (free, so no
+ * One shot in the grid: prompt, cast, its span on the window, the price of a
+ * clip (every clip is made at the video rate, whatever the shot's mode),
+ * "Generate still" behind a confirm-before-spend dialog (spec §11 layer 2), "Upload picture" for the admin's own image (free, so no
  * dialog), and the candidate strip with a radio for the chosen image.
  *
  * "Make video" and its job's progress live in VideoControls. The strip shows
@@ -19,9 +19,9 @@ import { useRef, useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
 import { putToS3 } from '@/lib/mastering-upload-client';
 import { estimateCostUsd } from '@/services/video/cost';
-import type { Candidate, Character, GenJob, Shot, ShotMode, VisualStory } from '@/types/visualStory';
+import type { Candidate, Character, GenJob, Shot, VisualStory } from '@/types/visualStory';
 import { formatMss } from './WindowPicker';
-import { Thumb, VideoThumb, shotKey, usd } from './ui-utils';
+import { RaiseBudgetButton, Thumb, VideoThumb, shotKey, usd } from './ui-utils';
 import { VideoControls } from './VideoControls';
 
 /** The STILL route always bills the Grok image rate, whatever the story's provider. */
@@ -39,16 +39,6 @@ async function postJson(url: string, payload: unknown) {
   const body = await res.json().catch(() => null);
   if (!res.ok || !body?.success) throw new Error(body?.error || `Request failed (HTTP ${res.status}).`);
   return body;
-}
-
-function ModeBadge({ mode }: { mode: ShotMode }) {
-  if (mode === 'HERO') {
-    return <span className="rounded px-2 py-0.5 text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">{mode}</span>;
-  }
-  if (mode === 'MOTION') {
-    return <span className="rounded px-2 py-0.5 text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">{mode}</span>;
-  }
-  return <span className="rounded px-2 py-0.5 text-xs font-semibold bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200">{mode}</span>;
 }
 
 interface Props {
@@ -71,6 +61,8 @@ export function ShotCard({ vsId, shot, story, characters, candidates, jobs, sele
   const [picking, setPicking] = useState(false);
   const [pinning, setPinning] = useState(false);
   const [uploading, setUploading] = useState(false);
+  // The text of the last 402 refusal: "Raise budget" shows only while that message does.
+  const [overBudgetMsg, setOverBudgetMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // State updates are async; the ref closes the gap between two fast clicks.
   const inFlight = useRef(false);
@@ -93,7 +85,11 @@ export function ShotCard({ vsId, shot, story, characters, candidates, jobs, sele
     try {
       const res = await adminFetch(`/api/admin/visual-story/${vsId}/shots/${key}/still`, { method: 'POST' });
       const body = await res.json().catch(() => null);
-      if (!res.ok || !body?.success) setError(body?.error || `Could not generate the still (HTTP ${res.status}).`);
+      if (!res.ok || !body?.success) {
+        const msg = body?.error || `Could not generate the still (HTTP ${res.status}).`;
+        setError(msg);
+        setOverBudgetMsg(res.status === 402 ? msg : null);
+      }
     } catch {
       setError('Could not reach the server. Check your connection and try again.');
     } finally {
@@ -168,7 +164,6 @@ export function ShotCard({ vsId, shot, story, characters, candidates, jobs, sele
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <ModeBadge mode={shot.mode} />
           <span className="text-xs text-gray-600 dark:text-gray-400">{label}</span>
         </div>
         <span className="text-xs text-gray-600 dark:text-gray-400">{`${formatMss(shot.startSec)}–${formatMss(shot.startSec + shot.durationSec)}`}</span>
@@ -187,7 +182,7 @@ export function ShotCard({ vsId, shot, story, characters, candidates, jobs, sele
       )}
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-        <span>{`${shot.durationSec} s · estimate ${usd(estimateCostUsd('grok', shot.mode, shot.durationSec))} as ${shot.mode}`}</span>
+        <span>{`${shot.durationSec} s · clip ${usd(estimateCostUsd('grok', 'HERO', shot.durationSec))}`}</span>
         <button type="button" onClick={onEdit} className="text-blue-700 hover:underline dark:text-blue-400">
           Edit
         </button>
@@ -206,7 +201,12 @@ export function ShotCard({ vsId, shot, story, characters, candidates, jobs, sele
           <div role="dialog" aria-label={`Confirm still for ${label}`} className="space-y-2 rounded-md border border-gray-200 bg-gray-50 p-2 text-sm dark:border-gray-700 dark:bg-gray-800">
             <p className="text-gray-800 dark:text-gray-200">{`Generate one still image for ${usd(STILL_PRICE_USD)}?`}</p>
             <p className="text-gray-600 dark:text-gray-400">{`Story total after this: ${usd(after)} of ${usd(story.budgetUsdCap)}`}</p>
-            {overCap && <p className="text-red-600 dark:text-red-400">That is over this story&apos;s budget cap.</p>}
+            {overCap && (
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-red-600 dark:text-red-400">That is over this story&apos;s budget cap.</p>
+              <RaiseBudgetButton />
+            </div>
+          )}
             <div className="flex gap-2">
               <button
                 type="button"
@@ -242,6 +242,7 @@ export function ShotCard({ vsId, shot, story, characters, candidates, jobs, sele
             {error}
           </p>
         )}
+        {error && error === overBudgetMsg && <RaiseBudgetButton />}
       </div>
 
       <VideoControls
