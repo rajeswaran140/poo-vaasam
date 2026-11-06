@@ -15,7 +15,7 @@ jest.mock('@/components/admin/MasteringComparePlayer', () => ({
   MasteringComparePlayer: () => null,
 }));
 
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import { MasteringStudio } from '@/components/admin/MasteringStudio';
 import { adminFetch } from '@/lib/client-auth';
 
@@ -177,6 +177,25 @@ describe('a video background from a library row', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Render video/ }));
     await waitFor(() => expect(renderPosts()).toHaveLength(1));
     expect(lastBody()).toMatchObject({ coverKey: 'audio/mastering/new-cover.png', backgroundKey: BG });
+  });
+});
+
+describe('a background upload shows its progress', () => {
+  it('says how far it has got, in the row, and clears when done', async () => {
+    routeFetch();
+    await openLibrary();
+    openRenderPanel(SONG);
+    let finish: (key: string) => void = () => {};
+    uploadMock.mockImplementationOnce((_f: File, onProgress: (l: number, t: number) => void) => {
+      onProgress(42, 100);
+      return new Promise<string>((resolve) => { finish = resolve; });
+    });
+    fireEvent.change(screen.getByLabelText(/Background video or GIF for/i), { target: { files: [clip('loop.mov')] } });
+    expect(await within(rowFor(SONG)).findByText('Uploading background… 42%')).toBeInTheDocument();
+
+    await act(async () => { finish(BG); });
+    await screen.findByText(/loop\.mov/);
+    expect(screen.queryByText(/Uploading background/)).toBeNull();
   });
 });
 

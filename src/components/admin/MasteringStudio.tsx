@@ -460,6 +460,11 @@ export function MasteringStudio() {
    * renders. The cover stays: it is the YouTube thumbnail. Cleared with it.
    */
   const [background, setBackground] = useState<{ key: string; name: string } | null>(null);
+  /**
+   * A background upload in flight: where ('panel' or a library row's id) and
+   * how far. A 200 MB clip takes minutes; without this the page looks hung.
+   */
+  const [backgroundProgress, setBackgroundProgress] = useState<{ where: string; pct: number } | null>(null);
   const [coverUploading, setCoverUploading] = useState(false);
   const [videoHeight, setVideoHeight] = useState<number>(1440);
   const [rendering, setRendering] = useState(false);
@@ -1413,7 +1418,13 @@ export function MasteringStudio() {
     setCoverUploading(true);
     const controller = new AbortController();
     try {
-      const key = await uploadToWorkspace(file, () => {}, controller.signal, 'background');
+      setBackgroundProgress({ where: 'panel', pct: 0 });
+      const key = await uploadToWorkspace(
+        file,
+        (loaded, total) => setBackgroundProgress({ where: 'panel', pct: total ? Math.floor((loaded / total) * 100) : 0 }),
+        controller.signal,
+        'background'
+      );
       if (!mounted.current) return;
       setBackground({ key, name: file.name });
       setAnnounce('Background uploaded.');
@@ -1421,7 +1432,10 @@ export function MasteringStudio() {
       if (!mounted.current) return;
       if (!isAbort(err)) setPanelError(err instanceof Error ? err.message : String(err));
     } finally {
-      if (mounted.current) setCoverUploading(false);
+      if (mounted.current) {
+        setCoverUploading(false);
+        setBackgroundProgress(null);
+      }
     }
   }, []);
 
@@ -2089,7 +2103,13 @@ export function MasteringStudio() {
       setRowBusy(id);
       const controller = new AbortController();
       try {
-        const key = await uploadToWorkspace(file, () => {}, controller.signal, 'background');
+        setBackgroundProgress({ where: id, pct: 0 });
+        const key = await uploadToWorkspace(
+          file,
+          (loaded, total) => setBackgroundProgress({ where: id, pct: total ? Math.floor((loaded / total) * 100) : 0 }),
+          controller.signal,
+          'background'
+        );
         if (!mounted.current) return;
         setRowRender((prev) => ({
           id, cover: prev?.id === id ? prev.cover : null, background: { key, name: file.name },
@@ -2098,7 +2118,10 @@ export function MasteringStudio() {
       } catch (err) {
         if (mounted.current && !isAbort(err)) failRow(id, err);
       } finally {
-        if (mounted.current) setRowBusy(null);
+        if (mounted.current) {
+          setRowBusy(null);
+          setBackgroundProgress(null);
+        }
       }
     },
     [failRow]
@@ -3356,6 +3379,11 @@ export function MasteringStudio() {
                       className="mt-1 block w-full max-w-xs text-xs text-gray-600 file:mr-3 file:rounded-lg file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-gray-700 dark:text-gray-300 dark:file:border-gray-700 dark:file:bg-gray-900 dark:file:text-gray-200"
                     />
                   )}
+                  {backgroundProgress?.where === 'panel' && (
+                    <p role="status" className="mt-1 text-xs text-gray-600 dark:text-gray-300">
+                      Uploading background… {backgroundProgress.pct}%
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label htmlFor={`${inputId}-height`} className="block text-xs font-medium text-gray-600 dark:text-gray-300">
@@ -4394,6 +4422,11 @@ export function MasteringStudio() {
                             }}
                             className="text-xs"
                           />
+                          {backgroundProgress?.where === m.id && (
+                            <span role="status" className="text-xs text-gray-600 dark:text-gray-300">
+                              Uploading background… {backgroundProgress.pct}%
+                            </span>
+                          )}
                         </>
                       )}
                       {/* "Render" alone did not say WHAT it rendered, and it sat

@@ -1770,7 +1770,9 @@ export async function uploadToYoutube(
     const token = await youtubeAccessToken();
 
     const obj = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: plan.videoKey }));
-    writeFileSync(videoPath, Buffer.from(await obj.Body!.transformToByteArray()));
+    // The bytes go straight to disk: Buffer.from() would COPY them, and a
+    // video-background render can be ~750 MB against a 3008 MB Lambda.
+    writeFileSync(videoPath, await obj.Body!.transformToByteArray());
     const size = statSync(videoPath).size;
 
     // Resume an interrupted session rather than opening a new one — opening a
