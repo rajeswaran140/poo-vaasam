@@ -24,6 +24,7 @@ jest.mock('@/infrastructure/storage/s3-client', () => ({
 import { POST as uploadPOST } from '@/app/api/admin/mastering/upload/route';
 import { GET as downloadGET } from '@/app/api/admin/mastering/download/route';
 import { MASTERING_PREFIX, MAX_UPLOAD_BYTES } from '@/lib/mastering-storage';
+import { MAX_BACKGROUND_BYTES, isBackgroundKey } from '@/lib/master-background';
 import * as auth from '@/lib/auth-helper';
 
 const requireAdmin = auth.requireAdmin as jest.Mock;
@@ -86,6 +87,46 @@ describe('upload presign', () => {
 
   it('400s on a malformed body', async () => {
     expect((await uploadPOST(post({ contentType: 'audio/wav' }))).status).toBe(400);
+  });
+});
+
+describe('background upload presign', () => {
+  it.each([
+    ['video/mp4', '.mp4'],
+    ['video/quicktime', '.mov'],
+    ['video/webm', '.webm'],
+    ['image/gif', '.gif'],
+  ])('presigns a %s background into the workspace, pinned and capped', async (contentType, ext) => {
+    const res = await uploadPOST(post({ filename: 'Loop', contentType, size: 50_000_000, kind: 'background' }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.key.endsWith(ext)).toBe(true);
+    expect(isBackgroundKey(body.key)).toBe(true);
+    const [key, pinned, maxSize] = mockUploadPost.mock.calls[0];
+    expect(key).toBe(body.key);
+    expect(pinned).toBe(contentType);
+    expect(maxSize).toBe(MAX_BACKGROUND_BYTES);
+  });
+
+  it('refuses a still image or a WAV as a background', async () => {
+    for (const contentType of ['image/png', 'image/jpeg', 'audio/wav']) {
+      const res = await uploadPOST(post({ filename: 'x', contentType, kind: 'background' }));
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe('Upload an MP4, MOV, WebM or GIF.');
+    }
+    expect(mockUploadPost).not.toHaveBeenCalled();
+  });
+
+  it('refuses an oversized background before presigning', async () => {
+    const res = await uploadPOST(post({ filename: 'x.mp4', contentType: 'video/mp4', size: MAX_BACKGROUND_BYTES + 1, kind: 'background' }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('File too large — the limit is 200MB.');
+    expect(mockUploadPost).not.toHaveBeenCalled();
+  });
+
+  it('still refuses a video as a cover', async () => {
+    const res = await uploadPOST(post({ filename: 'x.mp4', contentType: 'video/mp4', kind: 'cover' }));
+    expect(res.status).toBe(400);
   });
 });
 

@@ -200,3 +200,36 @@ describe('a crossfade between images', () => {
   });
 });
 
+
+/** A video background on the vertical renders: the clip and the whole song. */
+describe('a video background', () => {
+  const BG = 'audio/mastering/1_ef_loop.gif';
+
+  it('forwards the background with a picked window', async () => {
+    const res = await post({ coverKey: A, startSec: 96, seconds: 30, backgroundKey: BG });
+    expect(res.status).toBe(202);
+    expect(sentEvent()).toEqual({ audioKey: AUDIO, coverKey: A, startSec: 96, seconds: 30, backgroundKey: BG });
+  });
+
+  it('forwards the background for the whole song', async () => {
+    await post({ coverKey: A, full: true, backgroundKey: BG });
+    expect(sentEvent()).toEqual({ audioKey: AUDIO, coverKey: A, full: true, backgroundKey: BG });
+  });
+
+  it('sends no `backgroundKey` field without one', async () => {
+    await post({ coverKey: A });
+    expect(sentEvent()).not.toHaveProperty('backgroundKey');
+  });
+
+  it('refuses a background outside the workspace', async () => {
+    const res = await post({ coverKey: A, backgroundKey: 'images/x.gif' });
+    expect(res.status).toBe(400);
+    expect(lambdaSend).not.toHaveBeenCalled();
+  });
+
+  it('refuses a background with motion or a slideshow', async () => {
+    expect((await post({ coverKey: A, backgroundKey: BG, motion: 'pan-left' })).status).toBe(409);
+    expect((await post({ coverKey: A, backgroundKey: BG, covers: LIST })).status).toBe(409);
+    expect(lambdaSend).not.toHaveBeenCalled();
+  });
+});

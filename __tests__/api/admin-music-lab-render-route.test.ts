@@ -261,3 +261,59 @@ describe('a video that moves', () => {
   });
 });
 
+
+/**
+ * A video background: a clip or GIF looped under the song. The cover stays —
+ * it is what the job records and therefore the YouTube thumbnail — and the
+ * background travels beside it as its own field.
+ */
+describe('a video background', () => {
+  const BG = 'audio/mastering/1_ef_loop.mov';
+
+  it('forwards the background beside the cover, at the height asked for', async () => {
+    const res = await render({ coverKey: A, backgroundKey: BG, height: 1080 });
+    expect(res.status).toBe(202);
+    expect(sentEvent()).toEqual({ audioKey: AUDIO, coverKey: A, height: 1080, backgroundKey: BG });
+  });
+
+  it('sends no `backgroundKey` field without one — the event keeps its shape', async () => {
+    await render({ coverKey: A });
+    expect(sentEvent()).not.toHaveProperty('backgroundKey');
+  });
+
+  it.each([
+    ['outside the workspace', 'images/x.mp4'],
+    ['a still image', 'audio/mastering/1_ef_loop.png'],
+  ])('refuses a background %s without invoking the worker', async (_label, backgroundKey) => {
+    const res = await render({ coverKey: A, backgroundKey });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('That background is not a video or GIF in the mastering workspace.');
+    expect(lambdaSend).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['4K', { height: 2160 }, '1080p or 1440p'],
+    ['motion', { motion: 'zoom-in' }, 'Motion to None'],
+    ['a slideshow', { covers: [{ coverKey: A, startSec: 0 }, { coverKey: B, startSec: 100 }] }, 'slideshow'],
+  ])('refuses a background with %s, saying what to change', async (_label, over, words) => {
+    const res = await render({ coverKey: A, backgroundKey: BG, ...over });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toContain(words);
+    expect(lambdaSend).not.toHaveBeenCalled();
+  });
+
+  it('refuses a song it already knows is over 10 minutes', async () => {
+    getMock.mockResolvedValue({ ...baseJob, editedDurationSec: 601 });
+    const res = await render({ coverKey: A, backgroundKey: BG });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toContain('10 minutes');
+    expect(lambdaSend).not.toHaveBeenCalled();
+  });
+
+  it('still refuses an unsaved master first', async () => {
+    getMock.mockResolvedValue({ ...baseJob, savedAt: null });
+    const res = await render({ coverKey: A, backgroundKey: BG });
+    expect(res.status).toBe(409);
+    expect(lambdaSend).not.toHaveBeenCalled();
+  });
+});

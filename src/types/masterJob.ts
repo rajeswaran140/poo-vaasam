@@ -250,6 +250,14 @@ export interface MasterJob {
    * 1080p render and a moving one share the same `-1080p.mp4` key.
    */
   videoMotion?: string | null;
+  /**
+   * The clip or GIF each stored render was looped over (master-background.ts),
+   * or null for a still one — written on every render, so it always describes
+   * the file at that render's key. Absent on renders made before backgrounds.
+   */
+  videoBackgroundKey?: string | null;
+  shortBackgroundKey?: string | null;
+  verticalBackgroundKey?: string | null;
   /** How many stems this master's stem set holds; null/absent ⇒ none. Written by StemSetRepository. */
   stemCount?: number | null;
   verticalKey: string | null;

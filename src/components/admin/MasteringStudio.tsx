@@ -330,6 +330,18 @@ export function parseHashtags(input: string): string[] {
 const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 
 /** A saved list, as the fields hold it. Null or absent ⇒ no images. */
+/**
+ * The background a master's last render used — video, then short, then the
+ * whole-song vertical — named as uploaded (our timestamp prefix stripped).
+ * Not downloadFilename: that names DOWNLOADS and falls back to .wav for an
+ * extension it does not write, which a .mov or .gif is.
+ */
+function lastBackgroundOf(m: Pick<MasterJob, 'videoBackgroundKey' | 'shortBackgroundKey' | 'verticalBackgroundKey'>) {
+  const key = m.videoBackgroundKey ?? m.shortBackgroundKey ?? m.verticalBackgroundKey ?? null;
+  if (!key) return null;
+  return { key, name: key.slice(key.lastIndexOf('/') + 1).replace(/^\d+_[a-z0-9]+_/i, '') };
+}
+
 function toSlides(saved: MasterJob['slides']): Slide[] {
   return (saved ?? []).map((x) => ({ key: x.coverKey, name: x.name, at: x.at, auto: x.auto }));
 }
@@ -443,6 +455,16 @@ export function MasteringStudio() {
   const [publishing, setPublishing] = useState(false);
   /** Cover art for the YouTube render, once uploaded. */
   const [cover, setCover] = useState<{ key: string; name: string } | null>(null);
+  /**
+   * A clip or GIF looped under the song instead of the cover, in all three
+   * renders. The cover stays: it is the YouTube thumbnail. Cleared with it.
+   */
+  const [background, setBackground] = useState<{ key: string; name: string } | null>(null);
+  /**
+   * A background upload in flight: where ('panel' or a library row's id) and
+   * how far. A 200 MB clip takes minutes; without this the page looks hung.
+   */
+  const [backgroundProgress, setBackgroundProgress] = useState<{ where: string; pct: number } | null>(null);
   const [coverUploading, setCoverUploading] = useState(false);
   const [videoHeight, setVideoHeight] = useState<number>(1440);
   const [rendering, setRendering] = useState(false);
@@ -537,7 +559,16 @@ export function MasteringStudio() {
    * videoKey column in DynamoDB that nothing on this page could reach — the
    * same defect the MP3 row button already fixed for the web file.
    */
-  const [rowRender, setRowRender] = useState<{ id: string; cover: { key: string; name: string } | null } | null>(null);
+  const [rowRender, setRowRender] = useState<{
+    id: string;
+    cover: { key: string; name: string } | null;
+    /**
+     * The row's video background. Seeded from the one its last render used,
+     * like the cover, and named on screen beside **Remove background** —
+     * otherwise each of the three renders meant uploading the clip again.
+     */
+    background?: { key: string; name: string } | null;
+  } | null>(null);
   /**
    * The extra images of a row's slideshow — image 2 onward; the cover is image 1.
    *
@@ -895,6 +926,7 @@ export function MasteringStudio() {
     // song under this one's name.
     setMasterName('');
     setCover(null);
+    setBackground(null);
     setAnalysis(null);
     clearUploadDraft();
     if (fileInput.current) fileInput.current.value = '';
@@ -1054,6 +1086,7 @@ export function MasteringStudio() {
     // title, the cover and the previous file's measurements all go with it.
     setMasterName('');
     setCover(null);
+    setBackground(null);
     setAnalysis(null);
     clearUploadDraft();
     setRecipeNonce((n) => n + 1);
@@ -1379,6 +1412,33 @@ export function MasteringStudio() {
     }
   }, []);
 
+  /** A video background for the current job. Same workspace, its own allow-list. */
+  const onPickBackground = useCallback(async (file: File) => {
+    setPanelError(null);
+    setCoverUploading(true);
+    const controller = new AbortController();
+    try {
+      setBackgroundProgress({ where: 'panel', pct: 0 });
+      const key = await uploadToWorkspace(
+        file,
+        (loaded, total) => setBackgroundProgress({ where: 'panel', pct: total ? Math.floor((loaded / total) * 100) : 0 }),
+        controller.signal,
+        'background'
+      );
+      if (!mounted.current) return;
+      setBackground({ key, name: file.name });
+      setAnnounce('Background uploaded.');
+    } catch (err) {
+      if (!mounted.current) return;
+      if (!isAbort(err)) setPanelError(err instanceof Error ? err.message : String(err));
+    } finally {
+      if (mounted.current) {
+        setCoverUploading(false);
+        setBackgroundProgress(null);
+      }
+    }
+  }, []);
+
   /** An extra slideshow image for the current job. Same upload path as the cover. */
   const onPickSlide = useCallback(async (id: string, index: number, file: File) => {
     setPanelError(null);
@@ -1447,7 +1507,9 @@ export function MasteringStudio() {
        * A slow zoom or pan. The route renders a moving video at 1080p whatever
        * `height` says. `none` or omitted ⇒ no field is sent at all.
        */
-      motion: ShortMotion = 'none'
+      motion: ShortMotion = 'none',
+      /** A video background; omitted ⇒ no field is sent at all. */
+      backgroundKey: string | null = null
     ): Promise<MasterJob | null> => {
       const res = await adminFetch(`/api/admin/music-lab/master/${targetId}/render`, {
         method: 'POST',
@@ -1456,6 +1518,7 @@ export function MasteringStudio() {
           coverKey,
           height,
           ...(motion !== 'none' ? { motion } : {}),
+          ...(backgroundKey ? { backgroundKey } : {}),
           ...(slideshow
             ? {
                 covers: slideshow.covers,
@@ -1517,22 +1580,23 @@ export function MasteringStudio() {
         job?.videoRenderedAt ?? null,
         job?.videoError ?? null,
         covers ? { covers, durationSec: job?.editedDurationSec ?? null, transition: slideTransition } : undefined,
-        shortMotion
+        shortMotion,
+        background?.key ?? null
       );
       if (fresh) setJob(fresh);
     } catch (err) {
       if (!mounted.current) return;
       const message = err instanceof Error ? err.message : String(err);
-      // A refusal about something chosen IN this panel — the images, or a
-      // move — is shown here, next to the button. Only a plain still render
-      // keeps the page banner it always used. (A motion refusal used to land
-      // in the banner, ~1,000 lines above: the button looked dead.)
-      if (covers || shortMotion !== 'none') setPanelError(message);
+      // A refusal about something chosen IN this panel — the images, a move,
+      // or a background — is shown here, next to the button. Only a plain
+      // still render keeps the page banner it always used. (A motion refusal
+      // used to land in the banner, ~1,000 lines above: the button looked dead.)
+      if (covers || shortMotion !== 'none' || background) setPanelError(message);
       else setError(message);
     } finally {
       if (mounted.current) setRendering(false);
     }
-  }, [jobId, cover, videoHeight, job, panelSlides, slideTransition, shortMotion, startRender]);
+  }, [jobId, cover, background, videoHeight, job, panelSlides, slideTransition, shortMotion, startRender]);
 
   /**
    * POST the short and poll until the clip lands.
@@ -1559,7 +1623,9 @@ export function MasteringStudio() {
       /** A slow zoom or pan. `none` or omitted ⇒ no field is sent at all. */
       motion: ShortMotion = 'none',
       /** Sent only with a slideshow, and only when it is a crossfade. */
-      transition: SlideTransition = 'cut'
+      transition: SlideTransition = 'cut',
+      /** A video background; omitted ⇒ no field is sent at all. */
+      backgroundKey: string | null = null
     ): Promise<MasterJob | null> => {
       const res = await adminFetch(`/api/admin/music-lab/master/${targetId}/short`, {
         method: 'POST',
@@ -1573,6 +1639,7 @@ export function MasteringStudio() {
           ...(covers ? { covers } : {}),
           ...(covers && transition === 'crossfade' ? { transition } : {}),
           ...(motion !== 'none' ? { motion } : {}),
+          ...(backgroundKey ? { backgroundKey } : {}),
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -1580,8 +1647,9 @@ export function MasteringStudio() {
       setAnnounce('Cutting the short.');
 
       // A still clip is under a minute of work. A MOVING one filters every
-      // frame — a 3-minute short measured 143 s — so it gets the video's budget.
-      const deadline = Date.now() + (motion !== 'none' ? 10 : 3) * 60 * 1000;
+      // frame — a 3-minute short measured 143 s — so it gets the video's budget,
+      // and so does a background, whose loop is encoded first.
+      const deadline = Date.now() + (motion !== 'none' || backgroundKey ? 10 : 3) * 60 * 1000;
       for (let attempt = 0; ; attempt++) {
         if (attempt > 0) await new Promise((r) => setTimeout(r, 4000));
         if (!mounted.current) return null;
@@ -1624,7 +1692,9 @@ export function MasteringStudio() {
       /** A slow zoom or pan, out and back. `none` or omitted ⇒ no field is sent. */
       motion: ShortMotion = 'none',
       /** Sent only with a slideshow, and only when it is a crossfade. */
-      transition: SlideTransition = 'cut'
+      transition: SlideTransition = 'cut',
+      /** A video background; omitted ⇒ no field is sent at all. */
+      backgroundKey: string | null = null
     ): Promise<MasterJob | null> => {
       const res = await adminFetch(`/api/admin/music-lab/master/${targetId}/short`, {
         method: 'POST',
@@ -1635,6 +1705,7 @@ export function MasteringStudio() {
           ...(covers ? { covers } : {}),
           ...(covers && transition === 'crossfade' ? { transition } : {}),
           ...(motion !== 'none' ? { motion } : {}),
+          ...(backgroundKey ? { backgroundKey } : {}),
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -1666,21 +1737,27 @@ export function MasteringStudio() {
     if (!jobId || !cover) return;
     setShorting(true);
     setError(null);
+    setPanelError(null);
     try {
       const slides = panelSlides?.id === jobId ? panelSlides.slides : toSlides(job?.slides);
       const fresh = await startShort(
         jobId, cover.key, job?.shortRenderedAt ?? null, job?.shortError ?? null,
         slides.length > 0 ? slidesToCovers(cover.key, slides) : null,
         shortMotion,
-        slideTransition
+        slideTransition,
+        background?.key ?? null
       );
       if (fresh) setJob(fresh);
     } catch (err) {
-      if (mounted.current) setError(err instanceof Error ? err.message : String(err));
+      if (!mounted.current) return;
+      const message = err instanceof Error ? err.message : String(err);
+      // A background refusal belongs beside the background, like the video's.
+      if (background) setPanelError(message);
+      else setError(message);
     } finally {
       if (mounted.current) setShorting(false);
     }
-  }, [jobId, cover, job, panelSlides, shortMotion, slideTransition, startShort]);
+  }, [jobId, cover, background, job, panelSlides, shortMotion, slideTransition, startShort]);
 
   /** The whole song, vertical, for the CURRENT job. The clip is left alone. */
   const makeVertical = useCallback(async () => {
@@ -1693,7 +1770,8 @@ export function MasteringStudio() {
         jobId, cover.key, job?.verticalRenderedAt ?? null, job?.verticalError ?? null,
         slides.length > 0 ? slidesToCovers(cover.key, slides) : null,
         shortMotion,
-        slideTransition
+        slideTransition,
+        background?.key ?? null
       );
       if (fresh) setJob(fresh);
     } catch (err) {
@@ -1701,7 +1779,7 @@ export function MasteringStudio() {
     } finally {
       if (mounted.current) setVerticaling(false);
     }
-  }, [jobId, cover, job, panelSlides, shortMotion, slideTransition, startVertical]);
+  }, [jobId, cover, background, job, panelSlides, shortMotion, slideTransition, startVertical]);
 
   /**
    * Render ~20 seconds around the crossfade and play it.
@@ -2004,12 +2082,46 @@ export function MasteringStudio() {
       try {
         const key = await uploadToWorkspace(file, () => {}, controller.signal, 'cover');
         if (!mounted.current) return;
-        setRowRender({ id, cover: { key, name: file.name } });
+        // A background already picked for THIS row stays: it is a separate choice.
+        setRowRender((prev) => ({
+          id, cover: { key, name: file.name }, background: prev?.id === id ? prev.background ?? null : null,
+        }));
         setAnnounce('Cover uploaded.');
       } catch (err) {
         if (mounted.current && !isAbort(err)) failRow(id, err);
       } finally {
         if (mounted.current) setRowBusy(null);
+      }
+    },
+    [failRow]
+  );
+
+  /** A video background for a library row's renders. */
+  const onPickRowBackground = useCallback(
+    async (id: string, file: File) => {
+      setRowError(null);
+      setRowBusy(id);
+      const controller = new AbortController();
+      try {
+        setBackgroundProgress({ where: id, pct: 0 });
+        const key = await uploadToWorkspace(
+          file,
+          (loaded, total) => setBackgroundProgress({ where: id, pct: total ? Math.floor((loaded / total) * 100) : 0 }),
+          controller.signal,
+          'background'
+        );
+        if (!mounted.current) return;
+        setRowRender((prev) => ({
+          id, cover: prev?.id === id ? prev.cover : null, background: { key, name: file.name },
+        }));
+        setAnnounce('Background uploaded.');
+      } catch (err) {
+        if (mounted.current && !isAbort(err)) failRow(id, err);
+      } finally {
+        if (mounted.current) {
+          setRowBusy(null);
+          setBackgroundProgress(null);
+        }
       }
     },
     [failRow]
@@ -2065,14 +2177,22 @@ export function MasteringStudio() {
         row?.videoRenderedAt ?? null,
         row?.videoError ?? null,
         covers ? { covers, durationSec: row?.editedDurationSec ?? null, transition: slideTransition } : undefined,
-        shortMotion
+        shortMotion,
+        rowRender.background?.key ?? null
       );
       if (!fresh) return;
       setLibrary((prev) =>
         prev
           ? prev.map((x) =>
               x.id === id
-                ? { ...x, videoKey: fresh.videoKey, videoRenderedAt: fresh.videoRenderedAt, videoError: fresh.videoError }
+                ? {
+                    ...x,
+                    videoKey: fresh.videoKey,
+                    videoRenderedAt: fresh.videoRenderedAt,
+                    videoError: fresh.videoError,
+                    videoMotion: fresh.videoMotion,
+                    videoBackgroundKey: fresh.videoBackgroundKey,
+                  }
                 : x
             )
           : prev
@@ -2104,7 +2224,8 @@ export function MasteringStudio() {
         id, rowCover.key, row?.shortRenderedAt ?? null, row?.shortError ?? null,
         slides.length > 0 ? slidesToCovers(rowCover.key, slides) : null,
         shortMotion,
-        slideTransition
+        slideTransition,
+        rowRender.background?.key ?? null
       );
       if (!fresh) return;
       setLibrary((prev) =>
@@ -2118,6 +2239,7 @@ export function MasteringStudio() {
                     shortStartSec: fresh.shortStartSec,
                     shortSeconds: fresh.shortSeconds,
                     shortError: fresh.shortError,
+                    shortBackgroundKey: fresh.shortBackgroundKey,
                   }
                 : x
             )
@@ -2148,7 +2270,8 @@ export function MasteringStudio() {
         id, rowCover.key, row?.verticalRenderedAt ?? null, row?.verticalError ?? null,
         slides.length > 0 ? slidesToCovers(rowCover.key, slides) : null,
         shortMotion,
-        slideTransition
+        slideTransition,
+        rowRender.background?.key ?? null
       );
       if (!fresh) return;
       setLibrary((prev) =>
@@ -2161,6 +2284,7 @@ export function MasteringStudio() {
                     verticalRenderedAt: fresh.verticalRenderedAt,
                     verticalSeconds: fresh.verticalSeconds,
                     verticalError: fresh.verticalError,
+                    verticalBackgroundKey: fresh.verticalBackgroundKey,
                   }
                 : x
             )
@@ -2295,6 +2419,7 @@ export function MasteringStudio() {
     setSavedAt(null);
     setPublished(null);
     setCover(null);
+    setBackground(null);
     clearUploadDraft();
 
     setSourceKey(m.s3Key);
@@ -3222,6 +3347,44 @@ export function MasteringStudio() {
                     className="mt-1 block w-full max-w-xs text-xs text-gray-600 file:mr-3 file:rounded-lg file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-gray-700 dark:text-gray-300 dark:file:border-gray-700 dark:file:bg-gray-900 dark:file:text-gray-200"
                   />
                 </div>
+                {/* A clip or GIF looped under the song in all three renders.
+                    The cover above stays: it is the YouTube thumbnail. */}
+                <div>
+                  <label htmlFor={`${inputId}-background`} className="block text-xs font-medium text-gray-600 dark:text-gray-300">
+                    Background video or GIF (optional)
+                  </label>
+                  {background ? (
+                    <p className="mt-1 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                      <span className="font-medium">{background.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => setBackground(null)}
+                        disabled={rendering || shorting || verticaling}
+                        className="text-orange-700 underline disabled:opacity-60 dark:text-orange-300"
+                      >
+                        Remove background
+                      </button>
+                    </p>
+                  ) : (
+                    <input
+                      id={`${inputId}-background`}
+                      type="file"
+                      accept="video/mp4,video/quicktime,video/webm,image/gif"
+                      disabled={rendering || coverUploading}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        e.target.value = '';
+                        if (f) void onPickBackground(f);
+                      }}
+                      className="mt-1 block w-full max-w-xs text-xs text-gray-600 file:mr-3 file:rounded-lg file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-gray-700 dark:text-gray-300 dark:file:border-gray-700 dark:file:bg-gray-900 dark:file:text-gray-200"
+                    />
+                  )}
+                  {backgroundProgress?.where === 'panel' && (
+                    <p role="status" className="mt-1 text-xs text-gray-600 dark:text-gray-300">
+                      Uploading background… {backgroundProgress.pct}%
+                    </p>
+                  )}
+                </div>
                 <div>
                   <label htmlFor={`${inputId}-height`} className="block text-xs font-medium text-gray-600 dark:text-gray-300">
                     Upload size
@@ -3254,7 +3417,9 @@ export function MasteringStudio() {
                     : <Film className="h-4 w-4" aria-hidden="true" />}
                   {rendering
                     ? 'Rendering…'
-                    : panelSlidesNow.length > 0
+                    : background
+                      ? 'Render video (video background)'
+                      : panelSlidesNow.length > 0
                       ? `Render slideshow (${panelSlidesNow.length + 1} images${shortMotion !== 'none' ? ', 1080p, moving' : ''})`
                       : shortMotion !== 'none'
                         ? 'Render video (1080p, moving)'
@@ -3267,10 +3432,18 @@ export function MasteringStudio() {
                     className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900"
                   >
                     <Download className="h-4 w-4" aria-hidden="true" /> Download MP4
-                    {job.videoMotion && job.videoMotion !== 'none' ? ' (moving)' : ''}
+                    {job.videoBackgroundKey ? ' (video background)' : job.videoMotion && job.videoMotion !== 'none' ? ' (moving)' : ''}
                   </button>
                 )}
               </div>
+
+              {background && (
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  The background loops under the song in the video, the short and the whole-song vertical.
+                  The cover is still the YouTube thumbnail. Motion and extra images don&apos;t apply, and
+                  songs up to 10 minutes can be rendered this way.
+                </p>
+              )}
 
               {/* MORE IMAGES = A SLIDESHOW, for all three renders. Times are
                   seconds into the SONG; a short shows whichever images fall
@@ -4061,7 +4234,7 @@ export function MasteringStudio() {
                         onClick={() => void downloadKey(m.videoKey!, m.title ?? '', m.target)}
                         className="text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
                       >
-                        Video{m.videoMotion && m.videoMotion !== 'none' ? ' (moving)' : ''}
+                        Video{m.videoBackgroundKey ? ' (video background)' : m.videoMotion && m.videoMotion !== 'none' ? ' (moving)' : ''}
                       </button>
                     )}
                     {m.shortKey && (
@@ -4114,6 +4287,7 @@ export function MasteringStudio() {
                                     cover: m.coverKey
                                       ? { key: m.coverKey, name: downloadFilename(m.coverKey) }
                                       : null,
+                                    background: lastBackgroundOf(m),
                                   }
                             )
                           }
@@ -4215,6 +4389,46 @@ export function MasteringStudio() {
                         }}
                         className="text-xs"
                       />
+                      {/* A clip or GIF looped under the song instead of the
+                          cover; the cover stays as the YouTube thumbnail. */}
+                      {rowRender.background ? (
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          background <span className="font-medium">{rowRender.background.name}</span>{' '}
+                          <button
+                            type="button"
+                            disabled={rowBusy === m.id}
+                            onClick={() => setRowRender((prev) => (prev ? { ...prev, background: null } : prev))}
+                            className="text-orange-700 underline disabled:opacity-50 dark:text-orange-300"
+                          >
+                            Remove background
+                          </button>
+                        </span>
+                      ) : (
+                        <>
+                          <label
+                            htmlFor={`${inputId}-rowbg-${m.id}`}
+                            className="text-xs font-medium text-gray-600 dark:text-gray-300"
+                          >
+                            Background video or GIF for {m.title || 'this master'} (optional)
+                          </label>
+                          <input
+                            id={`${inputId}-rowbg-${m.id}`}
+                            type="file"
+                            accept="video/mp4,video/quicktime,video/webm,image/gif"
+                            disabled={rowBusy === m.id}
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (f) void onPickRowBackground(m.id, f);
+                            }}
+                            className="text-xs"
+                          />
+                          {backgroundProgress?.where === m.id && (
+                            <span role="status" className="text-xs text-gray-600 dark:text-gray-300">
+                              Uploading background… {backgroundProgress.pct}%
+                            </span>
+                          )}
+                        </>
+                      )}
                       {/* "Render" alone did not say WHAT it rendered, and it sat
                           first in a strip opened by a button reading "Render
                           video" — so the whole panel read as being about video
@@ -4233,7 +4447,9 @@ export function MasteringStudio() {
                         onClick={() => void renderRowVideo()}
                         className="rounded bg-orange-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
                       >
-                        {slidesFor(m.id).length > 0
+                        {rowRender.background
+                          ? `Render video (${videoHeight}p, video background)`
+                          : slidesFor(m.id).length > 0
                           ? `Render slideshow (${slidesFor(m.id).length + 1} images${shortMotion !== 'none' ? ', 1080p, moving' : ''})`
                           : shortMotion !== 'none'
                             ? 'Render video (1080p, moving)'

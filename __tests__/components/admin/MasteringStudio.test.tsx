@@ -1880,6 +1880,42 @@ describe('per-song identity resets with the source', () => {
     // Render must be unavailable until a cover is chosen FOR THIS song.
     expect(screen.getByRole('button', { name: /Render video/ })).toBeDisabled();
   });
+
+  it('sends a background beside the cover, and does not carry it to the next song', async () => {
+    render(<MasteringStudio />);
+    await masterOnce('audio/mastering/1_a_songA.wav');
+    mockedFetch.mockResolvedValueOnce(json({ success: true, title: 'A' }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save to library/ })); });
+    await screen.findByRole('button', { name: /Saved to library/ });
+
+    mockedFetch.mockResolvedValueOnce(json({ success: true, uploadUrl: 'https://s3/u', fields: {}, key: 'audio/mastering/coverA.jpg' }));
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/Cover image/i), { target: { files: [new File(['x'], 'coverA.jpg', { type: 'image/jpeg' })] } });
+    });
+    mockedFetch.mockResolvedValueOnce(json({ success: true, uploadUrl: 'https://s3/u', fields: {}, key: 'audio/mastering/loop.mov' }));
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/^Background video or GIF \(optional\)$/), {
+        target: { files: [new File(['x'], 'loop.mov', { type: 'video/quicktime' })] },
+      });
+    });
+    await screen.findByText('loop.mov');
+    // Uploaded as a background, under its own allow-list.
+    const presign = mockedFetch.mock.calls.filter(([u]) => String(u) === '/api/admin/mastering/upload').at(-1)!;
+    expect(JSON.parse(presign[1].body as string)).toMatchObject({ kind: 'background', contentType: 'video/quicktime' });
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Render video (video background)' })); });
+    const post = mockedFetch.mock.calls.find(([u, init]) => String(u).endsWith('/render') && init?.method === 'POST')!;
+    expect(JSON.parse(post[1].body as string)).toEqual({
+      coverKey: 'audio/mastering/coverA.jpg', height: 1440, backgroundKey: 'audio/mastering/loop.mov',
+    });
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Start over/i })); });
+    await masterOnce('audio/mastering/2_b_songB.wav');
+    mockedFetch.mockResolvedValueOnce(json({ success: true, title: 'B' }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save to library/ })); });
+    await screen.findByRole('button', { name: /Saved to library/ });
+    expect(screen.queryByText('loop.mov')).toBeNull();
+  });
 });
 
 /**
