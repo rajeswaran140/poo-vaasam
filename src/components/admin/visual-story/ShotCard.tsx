@@ -4,7 +4,8 @@
  * One shot in the grid: prompt, cast, its span on the window, the price of a
  * clip (every clip is made at the video rate, whatever the shot's mode),
  * "Generate still" behind a confirm-before-spend dialog (spec §11 layer 2), "Upload picture" for the admin's own image (free, so no
- * dialog), and the candidate strip with a radio for the chosen image.
+ * dialog), and the candidate strip: tap a still (anywhere on it) or a clip's
+ * radio to choose it. The server chooses a shot's first picture by itself.
  *
  * "Make video" and its job's progress live in VideoControls. The strip shows
  * stills and video clips; the radio picks either, and a still can be pinned
@@ -183,7 +184,7 @@ export function ShotCard({ vsId, shot, story, characters, candidates, jobs, sele
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
         <span>{`${shot.durationSec} s · clip ${usd(estimateCostUsd('grok', 'HERO', shot.durationSec))}`}</span>
-        <button type="button" onClick={onEdit} className="text-blue-700 hover:underline dark:text-blue-400">
+        <button type="button" onClick={onEdit} className="min-h-11 min-w-11 text-blue-700 hover:underline lg:min-h-0 lg:min-w-0 dark:text-blue-400">
           Edit
         </button>
       </div>
@@ -212,11 +213,11 @@ export function ShotCard({ vsId, shot, story, characters, candidates, jobs, sele
                 type="button"
                 onClick={generate}
                 disabled={overCap}
-                className="rounded-md bg-blue-600 px-3 py-1 text-sm font-medium text-white disabled:opacity-50"
+                className="min-h-11 rounded-md bg-blue-600 px-3 py-1 text-sm font-medium text-white disabled:opacity-50 lg:min-h-0"
               >
                 Confirm
               </button>
-              <button type="button" onClick={() => setConfirming(false)} className="rounded-md border border-gray-300 px-3 py-1 text-sm text-gray-700 dark:border-gray-600 dark:text-gray-300">
+              <button type="button" onClick={() => setConfirming(false)} className="min-h-11 rounded-md border border-gray-300 px-3 py-1 text-sm lg:min-h-0 text-gray-700 dark:border-gray-600 dark:text-gray-300">
                 Cancel
               </button>
             </div>
@@ -261,26 +262,38 @@ export function ShotCard({ vsId, shot, story, characters, candidates, jobs, sele
           {candidates.map((c, i) => {
             const isVideo = c.mode !== 'STILL';
             const name = `${isVideo ? 'Video' : 'Image'} ${i + 1}`;
+            const chosen = shot.selectedCandidateId === c.candId;
+            const badge = isVideo ? 'Video' : c.providerId === 'upload' ? 'Yours' : 'Still';
             return (
               <div key={c.candId} className="flex flex-col items-center gap-1 text-xs text-gray-700 dark:text-gray-300">
-                {isVideo ? (
-                  <VideoThumb s3Key={c.s3Key} label={`Clip ${i + 1} for ${label}`} />
-                ) : (
-                  <Thumb s3Key={c.s3Key} alt={`Candidate ${i + 1} for ${label}`} />
-                )}
-                <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-700 dark:bg-gray-700 dark:text-gray-200">{isVideo ? 'Video' : c.providerId === 'upload' ? 'Yours' : 'Still'}</span>
-                <input
-                  type="radio"
-                  name={`pick-${key}`}
-                  aria-label={name}
-                  checked={shot.selectedCandidateId === c.candId}
-                  onChange={() => pick(c.candId)}
-                />
+                {/* A clip's player stays outside the label: pressing play must not change the choice. */}
+                {isVideo && <VideoThumb s3Key={c.s3Key} label={`Clip ${i + 1} for ${label}`} />}
+                <label
+                  className={`flex cursor-pointer flex-col items-center gap-1 rounded-md p-1 ${chosen ? 'ring-2 ring-blue-500 dark:ring-blue-400' : ''}`}
+                >
+                  {!isVideo && <Thumb s3Key={c.s3Key} alt={`Candidate ${i + 1} for ${label}`} />}
+                  <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-700 dark:bg-gray-700 dark:text-gray-200">{badge}</span>
+                  <span className="flex min-h-11 items-center gap-1 lg:min-h-0">
+                    <input
+                      type="radio"
+                      name={`pick-${key}`}
+                      aria-label={name}
+                      checked={chosen}
+                      onChange={() => pick(c.candId)}
+                      className="h-5 w-5 lg:h-auto lg:w-auto"
+                    />
+                    {chosen ? 'Chosen' : 'Tap to choose'}
+                  </span>
+                </label>
                 {!isVideo &&
                   (shot.firstFrameCandidateId === c.candId ? (
                     <span className="font-medium text-green-700 dark:text-green-400">First frame</span>
                   ) : (
-                    <button type="button" onClick={() => pinFirstFrame(c.candId)} className="text-blue-700 hover:underline disabled:opacity-50 dark:text-blue-400">
+                    <button
+                      type="button"
+                      onClick={() => pinFirstFrame(c.candId)}
+                      className="min-h-11 text-blue-700 hover:underline disabled:opacity-50 lg:min-h-0 dark:text-blue-400"
+                    >
                       Use as first frame
                     </button>
                   ))}

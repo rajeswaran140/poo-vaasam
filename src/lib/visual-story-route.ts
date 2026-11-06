@@ -11,6 +11,7 @@ import {
   NotFoundError,
   CapBelowCommittedError,
 } from '@/infrastructure/database/VisualStoryRepository';
+import type { VisualStoryRepository } from '@/infrastructure/database/VisualStoryRepository';
 import { deriveStartSecs, tilesWindow } from '@/types/visualStory';
 import type { Shot, VisualStory } from '@/types/visualStory';
 
@@ -54,4 +55,23 @@ export function timelineOf(story: Pick<VisualStory, 'windowStartSec' | 'windowEn
       tiles: tilesWindow(shots, windowSec),
     },
   };
+}
+
+/**
+ * After a new picture is saved: choose it if the shot has nothing chosen yet.
+ * Best effort: the picture exists (and may be paid for), so a failure here is
+ * logged and never changes the response.
+ */
+export async function chooseIfNone(
+  repo: Pick<VisualStoryRepository, 'selectCandidateIfNone'>,
+  vsId: string,
+  sceneOrder: number,
+  shotOrder: number,
+  candId: string
+): Promise<void> {
+  try {
+    await repo.selectCandidateIfNone(vsId, sceneOrder, shotOrder, candId);
+  } catch (err) {
+    console.error('visual-story: auto-choose failed', err instanceof Error ? err.name : 'error');
+  }
 }

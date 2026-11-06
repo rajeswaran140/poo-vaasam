@@ -23,15 +23,16 @@ What the studio lets you change by hand today:
 - **Scenes:** add a scene (heading) in the left rail; **Delete scene** removes it with all its shots and their stills, after a confirm.
 - **Shots:** add a shot to the selected scene; **Edit** a shot to change what it should show, its length (**1–15 s**), its negative prompt and which characters appear; **Delete shot** (in the shot panel) removes it and its stills, after a confirm.
 - **Characters:** add a character (name and description) and add or remove its reference photos.
+- **Story:** **Rename** (beside the title) changes the story's title. **Delete story** removes the story with all its shots, pictures and clips, after a confirm; money already spent is not refunded. It is refused while a draft or a clip is still being made ("Wait for the draft to finish first.", "Wait for the video to finish first.").
 
 Not available yet: there is **no reorder** of scenes or shots, **scenes cannot be renamed** after they are added, and **characters cannot be edited or deleted** once created. Delete and re-add instead (or apply a new draft).
 
-The bottom bar shows how much of the window the shots fill. They must fill it **exactly** before the later rendering step. It also has the **Budget** field (see below).
+The bottom bar shows how much of the window the shots fill. They must fill it **exactly** before the later rendering step. It also has the **Budget** field (see below). On a phone, **Edit** takes you down to the shot panel, and the bottom bar sits at the end of the page with a one-line summary (spent, seconds filled, shots chosen) pinned to the bottom of the screen.
 
 Character reference photos are **stored for the later video phases and do not yet influence still pictures**. They are private (kept in the media bucket, never publicly linked). A still uses the shot's text and the names and descriptions of the characters in it. The **negative prompt is not used for stills yet** either.
 
 ### 4. Stills
-Press **Generate still ($0.02)** on a shot. You see the price and the story total after it, and confirm. Each confirm adds one candidate picture to that shot; choose the one to use. Errors (budget reached, content refused, Grok busy) appear beside the button you pressed.
+Press **Generate still ($0.02)** on a shot. You see the price and the story total after it, and confirm. Each confirm adds one candidate picture to that shot. A shot's first picture is chosen for you; tap another picture to choose it instead. Errors (budget reached, content refused, Grok busy) appear beside the button you pressed.
 
 ### 5. Video clips
 Press **Make video (6 s · $0.48)** on a shot (the label shows that shot's length and price). You see the price and the story total after it, and confirm. The button then reads "Rendering…" and the card says **"Rendering… about 1–3 minutes"**; the clip appears on the shot when it is ready.

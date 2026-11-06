@@ -8,7 +8,13 @@ jest.mock('@/lib/auth-helper', () => ({
   requireAdmin: jest.fn(),
 }));
 
-const repo = { loadTree: jest.fn(), putCandidate: jest.fn(), reserve: jest.fn(), settle: jest.fn() };
+const repo = {
+  loadTree: jest.fn(),
+  putCandidate: jest.fn(),
+  selectCandidateIfNone: jest.fn(),
+  reserve: jest.fn(),
+  settle: jest.fn(),
+};
 jest.mock('@/infrastructure/database/VisualStoryRepository', () => ({
   ...jest.requireActual('@/infrastructure/database/VisualStoryRepository'),
   VisualStoryRepository: jest.fn().mockImplementation(() => repo),
@@ -142,6 +148,14 @@ describe('confirm', () => {
     expect((await res.json()).data.candidate.candId).toBe(CD);
     expect(repo.reserve).not.toHaveBeenCalled();
     expect(repo.settle).not.toHaveBeenCalled();
+  });
+  it('chooses the uploaded picture when the shot has nothing chosen; a failed choose keeps the 201', async () => {
+    const key = candidateKey(VS, CD, 'jpg');
+    repo.selectCandidateIfNone.mockResolvedValueOnce(true);
+    expect((await POST(mk({ op: 'confirm', key }), ctx())).status).toBe(201);
+    expect(repo.selectCandidateIfNone).toHaveBeenCalledWith(VS, 1, 2, CD);
+    repo.selectCandidateIfNone.mockRejectedValueOnce(new Error('ddb down'));
+    expect((await POST(mk({ op: 'confirm', key }), ctx())).status).toBe(201);
   });
   it('400 for a key that is not a picture key of this story, and never heads S3', async () => {
     for (const key of [

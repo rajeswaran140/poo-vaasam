@@ -968,6 +968,32 @@ export class VisualStoryRepository {
     }
   }
 
+  /**
+   * Choose `candId` for a shot that has nothing chosen yet, so a shot's first
+   * picture is chosen for you. Drafted and hand-added shots store an explicit
+   * null, hence the NULL type test. false when something is already chosen
+   * (or the shot is gone): the admin's own choice is never replaced.
+   */
+  async selectCandidateIfNone(vsId: string, sceneOrder: number, shotOrder: number, candId: string): Promise<boolean> {
+    try {
+      try {
+        await DynamoDBOperations.update({
+          key: { PK: vsPk(vsId), SK: shotSk(sceneOrder, shotOrder) },
+          updateExpression: 'SET selectedCandidateId = :c',
+          expressionAttributeValues: { ':c': candId, ':nullT': 'NULL' },
+          conditionExpression:
+            'attribute_exists(PK) AND (attribute_not_exists(selectedCandidateId) OR attribute_type(selectedCandidateId, :nullT))',
+        });
+        return true;
+      } catch (error) {
+        if (isConditionFailure(error)) return false;
+        throw error;
+      }
+    } catch (error) {
+      fail(error);
+    }
+  }
+
   async putDraft(vsId: string, draft: StoryboardDraft): Promise<void> {
     try {
       await DynamoDBOperations.put({ PK: vsPk(vsId), SK: draftSk(draft.draftId), ...draft });

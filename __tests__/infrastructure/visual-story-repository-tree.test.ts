@@ -184,6 +184,26 @@ describe('simple writes', () => {
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
+  it('selectCandidateIfNone chooses only when nothing (or an explicit null) is chosen, and never creates a shot', async () => {
+    expect(await repo.selectCandidateIfNone(VS, 1, 2, 'cd_9')).toBe(true);
+    const p = mockUpdate.mock.calls[0][0];
+    expect(p.key).toEqual({ PK, SK: shotSk(1, 2) });
+    expect(p.updateExpression).toBe('SET selectedCandidateId = :c');
+    expect(p.expressionAttributeValues).toEqual({ ':c': 'cd_9', ':nullT': 'NULL' });
+    expect(p.conditionExpression).toBe(
+      'attribute_exists(PK) AND (attribute_not_exists(selectedCandidateId) OR attribute_type(selectedCandidateId, :nullT))'
+    );
+  });
+
+  it('selectCandidateIfNone returns false when a choice already exists; other errors still throw', async () => {
+    const cond: any = new Error('cond');
+    cond.name = 'ConditionalCheckFailedException';
+    mockUpdate.mockRejectedValueOnce(cond);
+    expect(await repo.selectCandidateIfNone(VS, 1, 2, 'cd_9')).toBe(false);
+    mockUpdate.mockRejectedValueOnce(new Error('boom'));
+    await expect(repo.selectCandidateIfNone(VS, 1, 2, 'cd_9')).rejects.toThrow();
+  });
+
   it('putDraft / getDraft round-trip through the draft key', async () => {
     const d: StoryboardDraft = {
       draftId: 'dr_1', lyricsHash: 'h', model: 'm', inputTokens: 1, outputTokens: 2, costUsd: 0.1,

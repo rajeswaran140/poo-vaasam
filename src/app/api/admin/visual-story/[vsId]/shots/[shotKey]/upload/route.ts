@@ -25,7 +25,7 @@ import {
   parseUploadedPictureKey,
   pictureExtensionFor,
 } from '@/lib/visual-story-storage';
-import { fail, limitMutation, mapError } from '@/lib/visual-story-route';
+import { chooseIfNone, fail, limitMutation, mapError } from '@/lib/visual-story-route';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -130,6 +130,7 @@ export async function POST(request: NextRequest, { params }: Ctx) {
       createdAt: new Date().toISOString(),
     };
     await repo.putCandidate(vsId, candidate);
+    await chooseIfNone(repo, vsId, sceneOrder, shotOrder, pic.candId);
     return NextResponse.json({ success: true, data: { candidate } }, { status: 201 });
   } catch (err) {
     return mapError(err);

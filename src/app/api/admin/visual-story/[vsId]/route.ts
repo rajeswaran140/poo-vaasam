@@ -2,7 +2,7 @@
  * /api/admin/visual-story/[vsId]
  *   GET    → { success, data: tree }
  *   PATCH  { title?, status?, budgetUsdCap? }
- *   DELETE → removes the whole partition
+ *   DELETE → removes the whole partition (refused while a clip renders or a draft runs)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -110,6 +110,13 @@ export async function DELETE(request: NextRequest, { params }: Ctx) {
     const repo = new VisualStoryRepository();
     const tree = await repo.loadTree(vsId);
     if (tree && hasRenderingVideo(tree)) return failRendering();
+    // A draft still being made would settle against a deleted story. Release
+    // dead ones first (>10 min) so a crashed draft never blocks the delete.
+    await sweepStaleDraftJobs(repo, vsId);
+    const drafts = await repo.listDraftJobs(vsId);
+    if (drafts.some((j) => j.status === 'queued' || j.status === 'running')) {
+      return fail('Wait for the draft to finish first.', 409);
+    }
     await repo.remove(vsId);
     return NextResponse.json({ success: true });
   } catch (err) {

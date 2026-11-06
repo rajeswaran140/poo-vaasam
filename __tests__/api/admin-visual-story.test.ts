@@ -310,6 +310,25 @@ describe('DELETE', () => {
     expect((await DELETE(req('DELETE'), ctx())).status).toBe(200);
     expect(repo.remove).toHaveBeenCalledWith(VS);
   });
+  it('409s while a draft is being made (it would settle against a deleted story)', async () => {
+    const now = new Date().toISOString();
+    for (const status of ['queued', 'running']) {
+      repo.listDraftJobs.mockResolvedValue([{ jobId: 'dj_1', status, createdAt: now, updatedAt: now, reservedUsd: 0.1 }]);
+      const res = await DELETE(req('DELETE'), ctx());
+      expect(res.status).toBe(409);
+      expect((await res.json()).error).toBe('Wait for the draft to finish first.');
+    }
+    expect(repo.remove).not.toHaveBeenCalled();
+    repo.listDraftJobs.mockResolvedValue([{ jobId: 'dj_1', status: 'failed', createdAt: now, updatedAt: now, reservedUsd: 0.1 }]);
+    expect((await DELETE(req('DELETE'), ctx())).status).toBe(200);
+  });
+  it('sweeps a dead draft first, so it never blocks the delete forever', async () => {
+    const old = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+    const dead = { jobId: 'dj_1', status: 'running', createdAt: old, updatedAt: old, reservedUsd: 0.1 };
+    repo.listDraftJobs.mockResolvedValueOnce([dead]).mockResolvedValueOnce([]);
+    expect((await DELETE(req('DELETE'), ctx())).status).toBe(200);
+    expect(repo.remove).toHaveBeenCalledWith(VS);
+  });
   it('404 for a malformed id without touching the repo', async () => {
     expect((await DELETE(req('DELETE'), ctx('bad'))).status).toBe(404);
     expect(repo.remove).not.toHaveBeenCalled();

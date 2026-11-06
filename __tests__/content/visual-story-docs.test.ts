@@ -28,6 +28,23 @@ describe.each([
     expect(text).toContain('Raise budget');
   });
 
+  it('says the first picture is chosen for you and a tap chooses another', () => {
+    expect(text).toMatch(/first picture is chosen for you/i);
+    expect(text).toMatch(/tap (another|a) picture to choose it/i);
+    expect(text).not.toMatch(/choose the one to use|you choose which candidate to use/i);
+  });
+
+  it('describes Rename and Delete story, and that delete waits for a running draft or clip', () => {
+    expect(text).toContain('Rename');
+    expect(text).toContain('Delete story');
+    expect(text).toContain('Wait for the draft to finish first.');
+  });
+
+  it('tells a phone user where Edit goes and where the bottom bar is', () => {
+    expect(text).toMatch(/on a phone[^.]*Edit[^.]*shot panel/i);
+    expect(text).toMatch(/on a phone[^.]*one-line summary/i);
+  });
+
   it('says plainly what the UI cannot do yet', () => {
     expect(text).toMatch(/no reorder/i);
     expect(text).toMatch(/scenes cannot be renamed/i);
