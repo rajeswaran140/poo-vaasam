@@ -11,7 +11,7 @@
  * out of date. The lyrics are sent once and not kept. Errors render here.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
 import { pollJob } from '@/lib/poll-job';
 import { buildCheckInput, buildCheckMessage } from '@/lib/visual-story-check';
@@ -59,6 +59,11 @@ export function CheckPanel({ vsId, story, scenes, shots, characters, onOpen, onC
   const mounted = useRef(true);
   const abort = useRef<AbortController | null>(null);
   const seq = useRef(0);
+  // Checks whose status could not be read: not watched again until the owner starts a new one.
+  const failedIds = useRef(new Set<string>());
+  // Read through a ref, so a new callback from the parent never re-runs the effect below.
+  const changed = useRef(onChanged);
+  changed.current = onChanged;
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -85,6 +90,7 @@ export function CheckPanel({ vsId, story, scenes, shots, characters, onOpen, onC
     async (checkId: string) => {
       inFlight.current = true;
       setPending(true);
+      setError(null);
       const ctrl = new AbortController();
       abort.current = ctrl;
       try {
@@ -97,6 +103,7 @@ export function CheckPanel({ vsId, story, scenes, shots, characters, onOpen, onC
           timeoutMessage: POLL_TIMEOUT_MESSAGE,
         });
       } catch (err) {
+        failedIds.current.add(checkId);
         if (!mounted.current) return;
         const message = err instanceof Error ? err.message : '';
         setError(message && !/fetch|network/i.test(message) ? message : 'Could not reach the server. Check your connection and try again.');
@@ -105,20 +112,26 @@ export function CheckPanel({ vsId, story, scenes, shots, characters, onOpen, onC
         if (mounted.current) {
           setPending(false);
           await loadLatest();
-          onChanged(); // the settled spend comes from the server
+          changed.current(); // the settled spend comes from the server
         }
       }
     },
-    [vsId, loadLatest, onChanged]
+    [vsId, loadLatest]
   );
+
+  // What would be checked. Its text is the effect's key: a page reload with
+  // the same storyboard (new arrays, same content) does not reload the check.
+  const input = useMemo(() => buildCheckInput({ story, scenes, shots, characters }), [story, scenes, shots, characters]);
+  const inputKey = JSON.stringify(input);
 
   // Reload on every storyboard change, so an edit marks the check out of date;
   // a check still running when the page opened is watched to the end.
   useEffect(() => {
     void loadLatest().then((latest) => {
-      if (latest && (latest.status === 'queued' || latest.status === 'running') && !inFlight.current) void watch(latest.checkId);
+      if (!latest || (latest.status !== 'queued' && latest.status !== 'running')) return;
+      if (!inFlight.current && !failedIds.current.has(latest.checkId)) void watch(latest.checkId);
     });
-  }, [loadLatest, watch, scenes, shots, characters, story.style]);
+  }, [loadLatest, watch, inputKey]);
 
   const start = async () => {
     if (inFlight.current) return;
@@ -147,7 +160,7 @@ export function CheckPanel({ vsId, story, scenes, shots, characters, onOpen, onC
     }
   };
 
-  const priceUsd = checkReserveUsd(buildCheckMessage(buildCheckInput({ story, scenes, shots, characters }), lyrics).length);
+  const priceUsd = checkReserveUsd(buildCheckMessage(input, lyrics).length);
   const shotExists = (sceneOrder: number, shotOrder: number | null) =>
     shotOrder === null ? scenes.some((s) => s.order === sceneOrder) : shots.some((s) => s.sceneOrder === sceneOrder && s.shotOrder === shotOrder);
   const done = check?.status === 'done' ? check : null;

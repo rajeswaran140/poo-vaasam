@@ -5,11 +5,12 @@
  * each problem opens its shot, an edited storyboard says the check is out of
  * date, and a failure is said inside the panel.
  */
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { CheckPanel } from '@/components/admin/visual-story/CheckPanel';
 import { adminFetch } from '@/lib/client-auth';
 import { buildCheckInput, buildCheckMessage } from '@/lib/visual-story-check';
 import { checkReserveUsd } from '@/services/video/cost';
+import { pollJob } from '@/lib/poll-job';
 import type { Shot, VisualStory } from '@/types/visualStory';
 
 jest.mock('@/lib/client-auth', () => ({ adminFetch: jest.fn() }));
@@ -47,7 +48,10 @@ function setup(latest: { check: unknown; outOfDate: boolean }, post?: () => Resp
   return { onOpen, onChanged };
 }
 
-beforeEach(() => mockFetch.mockReset());
+beforeEach(() => {
+  mockFetch.mockReset();
+  (pollJob as jest.Mock).mockReset().mockResolvedValue({ checkId: CK });
+});
 
 it('shows the price, and the last check with links that open each shot', async () => {
   const { onOpen } = setup({ check: done, outOfDate: false });
@@ -94,4 +98,31 @@ it('shows a refusal inside the panel', async () => {
 it('shows why the last check failed', async () => {
   setup({ check: { ...done, status: 'failed', error: 'The check took too long. Please try again.' }, outOfDate: false });
   expect(await screen.findByText('Last check failed: The check took too long. Please try again.')).toBeInTheDocument();
+});
+
+const checkGets = () => mockFetch.mock.calls.filter(([url, init]) => url.endsWith('/check') && !init?.method).length;
+
+it('does not reload the check when the page reloads an unchanged storyboard', async () => {
+  setup({ check: done, outOfDate: false });
+  await screen.findByText('Two small problems.');
+  expect(checkGets()).toBe(1);
+  const again = <CheckPanel vsId={VS} story={{ ...story }} scenes={[...scenes]} shots={shots.map((s) => ({ ...s }))} characters={[]} onOpen={jest.fn()} onChanged={jest.fn()} />;
+  const { rerender } = render(again);
+  rerender(<CheckPanel vsId={VS} story={{ ...story }} scenes={[...scenes]} shots={shots.map((s) => ({ ...s }))} characters={[]} onOpen={jest.fn()} onChanged={jest.fn()} />);
+  await act(async () => {});
+  // One GET for the first panel, one for the second mount — none for the rerender.
+  expect(checkGets()).toBe(2);
+});
+
+it('a check whose status keeps failing is not watched again in a loop', async () => {
+  (pollJob as jest.Mock).mockRejectedValue(new Error('HTTP 500'));
+  const onChanged = jest.fn();
+  mockFetch.mockImplementation(async (url: string) =>
+    url.endsWith('/check') ? json({ success: true, data: { check: { ...done, status: 'running' }, outOfDate: false } }) : json({}, 404));
+  const { rerender } = render(<CheckPanel vsId={VS} story={story} scenes={scenes} shots={shots} characters={[]} onOpen={jest.fn()} onChanged={onChanged} />);
+  expect(await screen.findByRole('alert')).toHaveTextContent('HTTP 500');
+  // The page reloads after the failure (onChanged); a changed storyboard reloads the check again.
+  rerender(<CheckPanel vsId={VS} story={story} scenes={scenes} shots={[shots[0]]} characters={[]} onOpen={jest.fn()} onChanged={onChanged} />);
+  await act(async () => {});
+  expect(pollJob).toHaveBeenCalledTimes(1);
 });

@@ -10,6 +10,14 @@ import type { AspectRatio, Character, CheckIssue, Scene, Shot } from '@/types/vi
 
 export const MAX_CHECK_ISSUES = 30;
 
+/**
+ * The worker's per-field limits (checkPayloadOk). A draft can store longer
+ * text than these, so the input is clipped to them here — deterministically,
+ * so the out-of-date hash is stable — rather than refused on the worker.
+ */
+export const CHECK_FIELD_LIMITS = { name: 60, description: 1000, heading: 120, summary: 600, prompt: 2000 } as const;
+const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) : s);
+
 /** What is checked: the storyboard as the owner sees it, characters by name. */
 export interface CheckInput {
   aspectRatio: AspectRatio;
@@ -36,11 +44,14 @@ export function buildCheckInput(tree: {
     aspectRatio: tree.story.aspectRatio,
     windowSec: tree.story.windowEndSec - tree.story.windowStartSec,
     style: (tree.story.style ?? '').trim(),
-    characters: tree.characters.map((c) => ({ name: c.name, description: c.description })),
+    characters: tree.characters.map((c) => ({
+      name: clip(c.name, CHECK_FIELD_LIMITS.name),
+      description: clip(c.description, CHECK_FIELD_LIMITS.description),
+    })),
     scenes: scenes.map((sc) => ({
       order: sc.order,
-      heading: sc.heading,
-      summary: sc.summary,
+      heading: clip(sc.heading, CHECK_FIELD_LIMITS.heading),
+      summary: clip(sc.summary, CHECK_FIELD_LIMITS.summary),
       shots: tree.shots
         .filter((s) => s.sceneOrder === sc.order)
         .sort((a, b) => a.shotOrder - b.shotOrder)
@@ -49,8 +60,11 @@ export function buildCheckInput(tree: {
           startSec: s.startSec,
           durationSec: s.durationSec,
           mode: s.mode,
-          visualPrompt: s.visualPrompt,
-          characters: s.charIds.map((id) => nameOf.get(id)).filter((n): n is string => !!n),
+          visualPrompt: clip(s.visualPrompt, CHECK_FIELD_LIMITS.prompt),
+          characters: s.charIds
+            .map((id) => nameOf.get(id))
+            .filter((n): n is string => !!n)
+            .map((n) => clip(n, CHECK_FIELD_LIMITS.name)),
         })),
     })),
   };

@@ -153,3 +153,36 @@ describe('checkStoryboard', () => {
     expect(draftCostUsd(3000, 800)).toBeCloseTo(0.021, 6);
   });
 });
+
+describe('review fixes', () => {
+  it('clips over-long fields to what the worker accepts, so a long draft can still be checked', () => {
+    const t = tree();
+    t.characters[0] = { ...t.characters[0], name: 'N'.repeat(80), description: 'd'.repeat(1500) };
+    t.scenes[0] = { ...t.scenes[0], heading: 'h'.repeat(200), summary: 's'.repeat(900) };
+    t.shots[0] = shot(2, 1, { visualPrompt: 'p'.repeat(2500) });
+    const input = buildCheckInput(t);
+    expect(input.characters[0].name).toHaveLength(60);
+    expect(input.characters[0].description).toHaveLength(1000);
+    const two = input.scenes.find((s) => s.order === 2)!;
+    expect(two.heading).toHaveLength(120);
+    expect(two.summary).toHaveLength(600);
+    expect(two.shots[0].visualPrompt).toHaveLength(2000);
+    expect(input.scenes[0].shots[1].characters[0]).toHaveLength(60);
+  });
+
+  it('leaves room for a full list of issues', () => {
+    expect(CHECK_MAX_OUTPUT_TOKENS).toBeGreaterThanOrEqual(8000);
+    expect(CHECK_MAX_OUTPUT_TOKENS).toBeLessThan(21_333);
+  });
+
+  it('tells Claude not to quote the lyrics, and removes any lyric line it quotes anyway', async () => {
+    expect(CHECK_SYSTEM_PROMPT).toMatch(/Never quote/);
+    create.mockResolvedValue(tool({
+      summary: 'Scene 1 says "Placeholder line one" but shows noon.',
+      issues: [{ kind: 'lyrics', sceneOrder: 1, shotOrder: 1, problem: 'The words Placeholder line two mean night.', suggestion: 'Make it night.' }],
+    }));
+    const r = await checkStoryboard(buildCheckInput(tree()), { lyrics: LYRICS, timeoutMs: 1 });
+    expect(JSON.stringify(r)).not.toContain('Placeholder line');
+    expect(r).toMatchObject({ ok: true, issues: [{ suggestion: 'Make it night.' }] });
+  });
+});

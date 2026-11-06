@@ -98,10 +98,11 @@ export function draftLabelUsd(lyrics: string, windowSec: number, estimateUsd: nu
 }
 
 /**
- * Storyboard check (Claude): its max_tokens. 30 issues of ~100 tokens plus the
- * summary fit with room to spare; the reservation uses the same figure.
+ * Storyboard check (Claude): its max_tokens. A full list (30 issues, each up
+ * to ~230 tokens with its JSON) plus the summary fits; well under the SDK's
+ * ~21 333 non-streaming ceiling. The reservation uses the same figure.
  */
-export const CHECK_MAX_OUTPUT_TOKENS = 4000;
+export const CHECK_MAX_OUTPUT_TOKENS = 8000;
 /** System prompt + tool schema, in tokens (rounded up). */
 export const CHECK_PROMPT_OVERHEAD_TOKENS = 1200;
 

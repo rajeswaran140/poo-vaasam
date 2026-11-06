@@ -50,7 +50,7 @@ Each shot's visualPrompt is sent to an image/video model on its own, with the st
 
 Report only real problems that would waste a generation or break the video, most important first. Kinds:
 - character: a character described differently between shots (age, clothing, hair, build) with no story reason; a person a prompt describes who is not in that shot's characters list (their photo will not be sent); a listed character the prompt never shows; a prompt that relies on a name alone where the model needs a visible description.
-- lyrics: only when lyrics are given — a scene or shot that does not fit the words at that point. The lyrics run through the scenes in order; judge by order, not exact timing. Do not judge the lyrics themselves.
+- lyrics: only when lyrics are given — a scene or shot that does not fit the words at that point. The lyrics run through the scenes in order; judge by order, not exact timing. Do not judge the lyrics themselves. Never quote or paraphrase the lyrics in your answer: describe the mood or subject in your own words and refer to scenes and shots by number.
 - repeat: shots back to back that would come out nearly the same picture.
 - text: anything that invites written words, signs, captions, logos, numbers or watermarks in the frame.
 - style: a prompt that fights the story's style line, or framing that does not suit the aspect ratio (9:16 is tall: close and medium framing; 16:9 is wide).
@@ -70,6 +70,20 @@ export type CheckResult =
   | { ok: true; summary: string; issues: CheckIssue[]; usage: Usage }
   // `usage` only when a response arrived (its tokens were billed).
   | { ok: false; code: CheckErrorCode; error: string; usage?: Usage };
+
+/**
+ * The result is stored and shown; the lyrics must not be. The prompt forbids
+ * quoting them, and this removes any lyric line (12+ characters) quoted anyway.
+ */
+export function redactLyrics(lyrics: string | undefined): (text: string) => string {
+  const lines = (lyrics ?? '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length >= 12)
+    .sort((a, b) => b.length - a.length);
+  if (lines.length === 0) return (t) => t;
+  return (text) => lines.reduce((t, line) => t.split(line).join('…'), text);
+}
 
 function getClient(): Anthropic | null {
   const key = process.env.ANTHROPIC_API_KEY;
@@ -139,5 +153,7 @@ export async function checkStoryboard(
   if (!parsed?.success) {
     return { ok: false, code: 'bad_response', error: 'The AI returned an incomplete check. Please try again.', usage };
   }
-  return { ok: true, summary: parsed.data.summary, issues: keepKnownIssues(input, parsed.data.issues), usage };
+  const hide = redactLyrics(opts.lyrics);
+  const issues = keepKnownIssues(input, parsed.data.issues).map((i) => ({ ...i, problem: hide(i.problem), suggestion: hide(i.suggestion) }));
+  return { ok: true, summary: hide(parsed.data.summary), issues, usage };
 }
