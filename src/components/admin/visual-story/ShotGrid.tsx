@@ -31,7 +31,7 @@ export function ShotGrid({ vsId, story, scene, shots, characters, candidates, ge
   if (!scene) {
     return (
       <p className="rounded-lg border border-dashed border-gray-300 p-6 text-sm text-gray-600 dark:border-gray-600 dark:text-gray-400">
-        No scenes yet. Draft a storyboard from the lyrics below, or add a scene.
+        No scenes yet. Draft a storyboard from the lyrics, or add a scene.
       </p>
     );
   }

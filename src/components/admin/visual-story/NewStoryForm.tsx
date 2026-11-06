@@ -173,6 +173,7 @@ export function NewStoryForm({ onCreated }: { onCreated: (vsId: string) => void 
                 {a}
               </label>
             ))}
+            <span className="text-gray-600 dark:text-gray-400">This can&apos;t be changed later.</span>
           </fieldset>
 
           <label className="block text-sm text-gray-700 dark:text-gray-300">

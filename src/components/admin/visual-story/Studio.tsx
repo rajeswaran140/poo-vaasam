@@ -8,9 +8,13 @@
  * One source of truth: after any mutation the whole tree is reloaded with one
  * GET, so spend, candidates and startSec always come from the server. The page
  * banner is for loading the story only; every control's error renders beside it.
+ *
+ * Phones: the columns stack, so Edit scrolls the shot panel into view, and a
+ * story with no shots shows the draft panel (the first step) above the grid.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { adminFetch } from '@/lib/client-auth';
 import type { Candidate, Character, GenJob, Scene, Shot, StoryboardDraft, VisualStory } from '@/types/visualStory';
@@ -21,6 +25,7 @@ import { Inspector } from './Inspector';
 import { CharactersPanel } from './CharactersPanel';
 import { DraftPanel } from './DraftPanel';
 import { SpendBar } from './SpendBar';
+import { StoryActions } from './StoryActions';
 
 export interface StoryTree {
   story: VisualStory;
@@ -35,12 +40,19 @@ export interface StoryTree {
 
 type Tab = 'inspector' | 'characters';
 
+/** Below Tailwind's lg the three columns stack and the shot panel sits under everything. */
+const STACKED_QUERY = '(max-width: 1023px)';
+
 export function Studio({ vsId }: { vsId: string }) {
   const [tree, setTree] = useState<StoryTree | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sceneOrder, setSceneOrder] = useState<number | null>(null);
   const [editKey, setEditKey] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('inspector');
+  // Bumped on every Edit press, so pressing Edit on the same shot scrolls again.
+  const [editNonce, setEditNonce] = useState(0);
+  const asideRef = useRef<HTMLElement>(null);
+  const router = useRouter();
   // Only the newest reload may write state; an older, slower one must not undo it.
   const seq = useRef(0);
 
@@ -64,6 +76,12 @@ export function Studio({ vsId }: { vsId: string }) {
   }, [load]);
 
   const refresh = useCallback(() => void load(), [load]);
+
+  useEffect(() => {
+    if (editNonce === 0) return;
+    if (!window.matchMedia?.(STACKED_QUERY)?.matches) return;
+    asideRef.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+  }, [editNonce]);
 
   const applied = useCallback((next: unknown) => {
     seq.current++; // supersede any reload already in flight
@@ -89,7 +107,39 @@ export function Studio({ vsId }: { vsId: string }) {
   // ISO timestamps sort as strings; the newest paid draft is shown on load.
   const lastDraft = [...(tree.drafts ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null;
   const tabClass = (on: boolean) =>
-    `rounded-md px-3 py-1 text-sm ${on ? 'bg-gray-200 text-gray-900 dark:bg-gray-700 dark:text-gray-100' : 'text-gray-700 dark:text-gray-300'}`;
+    `min-h-11 rounded-md px-3 py-1 text-sm lg:min-h-0 ${on ? 'bg-gray-200 text-gray-900 dark:bg-gray-700 dark:text-gray-100' : 'text-gray-700 dark:text-gray-300'}`;
+
+  const shotGrid = (
+    <ShotGrid
+      key="grid"
+      vsId={vsId}
+      story={story}
+      scene={scene}
+      shots={sceneShots}
+      characters={characters}
+      candidates={candidates}
+      genJobs={tree.genJobs ?? []}
+      selectedKey={editKey}
+      onEdit={(key) => {
+        setEditKey(key);
+        setTab('inspector');
+        setEditNonce((n) => n + 1);
+      }}
+      onChanged={refresh}
+    />
+  );
+  const draftPanel = (
+    <DraftPanel
+      key="draft"
+      vsId={vsId}
+      windowSec={story.windowEndSec - story.windowStartSec}
+      sceneCount={scenes.length}
+      shotCount={shots.length}
+      lastDraft={lastDraft}
+      onChanged={refresh}
+      onApplied={applied}
+    />
+  );
 
   return (
     <div className="space-y-4">
@@ -97,7 +147,13 @@ export function Studio({ vsId }: { vsId: string }) {
         <Link href="/admin/visual-story" className="text-sm text-blue-700 hover:underline dark:text-blue-400">
           ← All stories
         </Link>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{story.title}</h1>
+        <StoryActions
+          vsId={vsId}
+          title={story.title}
+          shotCount={shots.length}
+          onChanged={refresh}
+          onDeleted={() => router.push('/admin/visual-story')}
+        />
         <p className="text-sm text-gray-600 dark:text-gray-400">{`${story.aspectRatio} · ${story.status}`}</p>
         <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
           Joining the clips with the song is not built yet. For now, make and choose a picture or clip for each shot.
@@ -120,33 +176,11 @@ export function Studio({ vsId }: { vsId: string }) {
         />
 
         <div className="space-y-6">
-          <ShotGrid
-            vsId={vsId}
-            story={story}
-            scene={scene}
-            shots={sceneShots}
-            characters={characters}
-            candidates={candidates}
-            genJobs={tree.genJobs ?? []}
-            selectedKey={editKey}
-            onEdit={(key) => {
-              setEditKey(key);
-              setTab('inspector');
-            }}
-            onChanged={refresh}
-          />
-          <DraftPanel
-            vsId={vsId}
-            windowSec={story.windowEndSec - story.windowStartSec}
-            sceneCount={scenes.length}
-            shotCount={shots.length}
-            lastDraft={lastDraft}
-            onChanged={refresh}
-            onApplied={applied}
-          />
+          {/* Keyed, so swapping the order moves them without remounting (the draft panel keeps its poll). */}
+          {shots.length === 0 ? [draftPanel, shotGrid] : [shotGrid, draftPanel]}
         </div>
 
-        <aside className="space-y-3">
+        <aside ref={asideRef} className="scroll-mt-4 space-y-3">
           <div role="tablist" aria-label="Inspector" className="flex gap-2">
             <button type="button" role="tab" aria-selected={tab === 'inspector'} onClick={() => setTab('inspector')} className={tabClass(tab === 'inspector')}>
               Shot

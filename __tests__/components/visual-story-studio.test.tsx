@@ -11,6 +11,8 @@ import { putToS3 } from '@/lib/mastering-upload-client';
 
 jest.mock('@/lib/client-auth', () => ({ adminFetch: jest.fn() }));
 jest.mock('@/lib/mastering-upload-client', () => ({ putToS3: jest.fn() }));
+const mockPush = jest.fn();
+jest.mock('next/navigation', () => ({ useRouter: () => ({ push: mockPush }) }));
 const mockFetch = adminFetch as jest.Mock;
 const mockPut = putToS3 as jest.Mock;
 
@@ -73,6 +75,7 @@ function deferred<T>() {
 beforeEach(() => {
   mockFetch.mockReset();
   mockPut.mockReset();
+  mockPush.mockReset();
 });
 
 async function card(label: string) {
@@ -899,5 +902,156 @@ describe('Studio — video clips', () => {
     await card('Shot 1.1');
     fireEvent.click(screen.getByRole('tab', { name: 'Characters' }));
     expect(screen.getByText(/reference photos are used for video clips/i)).toBeInTheDocument();
+  });
+});
+
+describe('Studio — phone layout and flow (audit PR 2)', () => {
+  const still = (candId: string, shotOrder = 1) => ({
+    candId, sceneOrder: 1, shotOrder, jobId: null, providerId: 'grok-image', providerTaskId: null, mode: 'STILL',
+    s3Key: `audio/mastering/visual-story/${VS}/candidates/${candId}.jpg`, costUsd: 0.02, createdAt: '2026-11-01',
+  });
+  const setPhone = (phone: boolean) => {
+    window.matchMedia = jest.fn().mockImplementation((q: string) => ({ matches: phone, media: q })) as never;
+  };
+  let scrolled: jest.Mock;
+  beforeEach(() => {
+    scrolled = jest.fn();
+    Element.prototype.scrollIntoView = scrolled;
+  });
+  afterEach(() => {
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    delete (window as { matchMedia?: unknown }).matchMedia;
+  });
+
+  it('on a phone, Edit brings the shot panel into view, every time it is pressed', async () => {
+    setPhone(true);
+    routes();
+    render(<Studio vsId={VS} />);
+    fireEvent.click(within(await card('Shot 1.2')).getByRole('button', { name: 'Edit' }));
+    const panel = screen.getByRole('form', { name: 'Edit shot 1.2' });
+    await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(1));
+    expect(panel.closest('aside')).toBe(scrolled.mock.contexts[0]);
+    fireEvent.click(within(await card('Shot 1.2')).getByRole('button', { name: 'Edit' }));
+    await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(2));
+  });
+
+  it('on a wide screen the shot panel is already beside the grid, so Edit does not scroll', async () => {
+    setPhone(false);
+    routes();
+    render(<Studio vsId={VS} />);
+    fireEvent.click(within(await card('Shot 1.2')).getByRole('button', { name: 'Edit' }));
+    screen.getByRole('form', { name: 'Edit shot 1.2' });
+    expect(scrolled).not.toHaveBeenCalled();
+  });
+
+  it('the spend bar is pinned only on wide screens, with one short line pinned on phones', async () => {
+    routes(undefined, () => tree({ spentUsd: 1.5, reservedUsd: 0.15 }));
+    render(<Studio vsId={VS} />);
+    const bar = await screen.findByRole('contentinfo', { name: 'Spend and timeline' });
+    expect(bar.className).toMatch(/(^| )lg:sticky( |$)/);
+    expect(bar.className).not.toMatch(/(^| )sticky( |$)/);
+    const line = screen.getByText('$1.65 of $40.00 · 58/60 s filled · 0/2 chosen');
+    expect(line.className).toMatch(/(^| )sticky( |$)/);
+    expect(line.className).toMatch(/lg:hidden/);
+    expect(document.querySelectorAll('#vs-budget')).toHaveLength(1);
+  });
+
+  it('tapping a still picture chooses it', async () => {
+    const t = tree();
+    t.candidates = [still(CD)];
+    routes((url) => (url.endsWith('/select') ? json({ success: true, data: {} }) : undefined), () => t);
+    render(<Studio vsId={VS} />);
+    const c = await card('Shot 1.1');
+    fireEvent.click(await within(c).findByRole('img', { name: 'Candidate 1 for Shot 1.1' }));
+    await waitFor(() => expect(calls('/select')).toHaveLength(1));
+    expect(JSON.parse(calls('/select')[0][1].body)).toEqual({ sceneOrder: 1, shotOrder: 1, candId: CD });
+  });
+
+  it('the chosen picture reads "Chosen"; the others offer "Tap to choose"', async () => {
+    const t = tree();
+    const other = 'cd_1730000000001_abcdef12';
+    t.candidates = [still(CD), still(other)];
+    t.shots[0].selectedCandidateId = CD;
+    routes(undefined, () => t);
+    render(<Studio vsId={VS} />);
+    const c = await card('Shot 1.1');
+    expect(within(c).getByText('Chosen')).toBeInTheDocument();
+    expect(within(c).getByText('Tap to choose')).toBeInTheDocument();
+  });
+
+  it('Rename saves the new title with a PATCH and reloads', async () => {
+    routes((url, init) => (url === `/api/admin/visual-story/${VS}` && init?.method === 'PATCH' ? json({ success: true, data: {} }) : undefined));
+    render(<Studio vsId={VS} />);
+    await card('Shot 1.1');
+    fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+    const input = screen.getByLabelText('Story title');
+    expect(input).toHaveValue('Test song');
+    fireEvent.change(input, { target: { value: '  New name ' } });
+    const loadsBefore = treeLoads().length;
+    fireEvent.click(screen.getByRole('button', { name: 'Save title' }));
+    await waitFor(() => expect(treeLoads().length).toBeGreaterThan(loadsBefore));
+    const patch = mockFetch.mock.calls.find(([, i]) => i?.method === 'PATCH');
+    expect(JSON.parse(patch![1].body)).toEqual({ title: 'New name' });
+    expect(screen.queryByLabelText('Story title')).not.toBeInTheDocument();
+  });
+
+  it('a refused rename shows its reason beside the title field', async () => {
+    routes((url, init) => (init?.method === 'PATCH' ? json({ success: false, error: 'Title is required' }, 400) : undefined));
+    render(<Studio vsId={VS} />);
+    await card('Shot 1.1');
+    fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save title' }));
+    const form = screen.getByRole('form', { name: 'Rename story' });
+    expect(await within(form).findByRole('alert')).toHaveTextContent('Title is required');
+  });
+
+  it('Delete story asks first, then deletes and goes back to the story list', async () => {
+    routes((url, init) => (url === `/api/admin/visual-story/${VS}` && init?.method === 'DELETE' ? json({ success: true }) : undefined));
+    render(<Studio vsId={VS} />);
+    await card('Shot 1.1');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete story' }));
+    const confirm = screen.getByRole('alertdialog', { name: 'Delete this story?' });
+    expect(confirm).toHaveTextContent('Delete "Test song" with its 2 shots, pictures and clips? This cannot be undone. Money already spent is not refunded.');
+    expect(mockFetch.mock.calls.some(([, i]) => i?.method === 'DELETE')).toBe(false);
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/admin/visual-story'));
+  });
+
+  it('a refused delete (a draft or clip is running) shows its reason in the confirm and stays', async () => {
+    routes((url, init) => (init?.method === 'DELETE' ? json({ success: false, error: 'Wait for the draft to finish first.' }, 409) : undefined));
+    render(<Studio vsId={VS} />);
+    await card('Shot 1.1');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete story' }));
+    const confirm = screen.getByRole('alertdialog', { name: 'Delete this story?' });
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Delete' }));
+    expect(await within(confirm).findByRole('alert')).toHaveTextContent('Wait for the draft to finish first.');
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('with no shots yet, the draft panel comes before the shot grid; with shots, after it', async () => {
+    const empty = tree();
+    empty.shots = [];
+    routes(undefined, () => empty);
+    const { unmount } = render(<Studio vsId={VS} />);
+    const draft = await screen.findByRole('region', { name: 'Storyboard draft' });
+    const grid = screen.getByRole('region', { name: 'Shots in Scene 1' });
+    expect(draft.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    unmount();
+
+    routes();
+    render(<Studio vsId={VS} />);
+    await card('Shot 1.1');
+    const draft2 = screen.getByRole('region', { name: 'Storyboard draft' });
+    const grid2 = screen.getByRole('region', { name: 'Shots in Scene 1' });
+    expect(grid2.compareDocumentPosition(draft2) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('with no scenes, the empty grid no longer points "below"', async () => {
+    const empty = tree();
+    empty.scenes = [];
+    empty.shots = [];
+    routes(undefined, () => empty);
+    render(<Studio vsId={VS} />);
+    expect(await screen.findByText(/No scenes yet/)).not.toHaveTextContent(/below/);
   });
 });

@@ -148,6 +148,14 @@ describe('NewStoryForm', () => {
     expect(submit).toBeEnabled();
   });
 
+  it('warns beside the aspect radios that the shape cannot be changed later', async () => {
+    mockFetch.mockResolvedValue(json({ success: true, masters: [master({})], nextCursor: null }));
+    render(<NewStoryForm onCreated={jest.fn()} />);
+    fireEvent.click(await screen.findByRole('radio', { name: /Test song/ }));
+    const group = screen.getByRole('group', { name: 'Aspect ratio' });
+    expect(group).toHaveTextContent("This can't be changed later.");
+  });
+
   it('posts integer seconds, aspect and budget, then calls onCreated', async () => {
     const onCreated = jest.fn();
     mockFetch.mockImplementation(async (url: string, init?: RequestInit) => {
