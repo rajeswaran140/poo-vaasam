@@ -14,6 +14,7 @@ const repo = {
   settle: jest.fn(),
   putCandidate: jest.fn(),
   selectCandidate: jest.fn(),
+  selectCandidateIfNone: jest.fn(),
 };
 jest.mock('@/infrastructure/database/VisualStoryRepository', () => ({
   ...jest.requireActual('@/infrastructure/database/VisualStoryRepository'),
@@ -110,6 +111,7 @@ beforeEach(() => {
   repo.settle.mockResolvedValue(undefined);
   repo.putCandidate.mockResolvedValue(undefined);
   repo.selectCandidate.mockResolvedValue(undefined);
+  repo.selectCandidateIfNone.mockResolvedValue(true);
   mockUpload.mockResolvedValue({ key: 'k', url: 'u', bucket: 'b' });
   mockGenerate.mockResolvedValue(okImage);
 });
@@ -249,6 +251,21 @@ describe('POST still — money paths', () => {
     repo.putCandidate.mockRejectedValueOnce(new Error('ddb down'));
     const res = await stillPOST(mk(), sctx());
     expect(res.status).toBe(500);
+    expect(repo.settle).toHaveBeenCalledTimes(1);
+    expect(repo.settle).toHaveBeenCalledWith(VS, { reservedUsd: 0.02, billedUsd: 0.02 });
+  });
+
+  it("chooses the new still when the shot has nothing chosen (the repo keeps an existing choice)", async () => {
+    const res = await stillPOST(mk(), sctx());
+    expect(res.status).toBe(201);
+    const candId = repo.putCandidate.mock.calls[0][1].candId;
+    expect(repo.selectCandidateIfNone).toHaveBeenCalledWith(VS, 1, 2, candId);
+  });
+
+  it('a failed auto-choose keeps the 201 and the single billed settle', async () => {
+    repo.selectCandidateIfNone.mockRejectedValueOnce(new Error('ddb down'));
+    const res = await stillPOST(mk(), sctx());
+    expect(res.status).toBe(201);
     expect(repo.settle).toHaveBeenCalledTimes(1);
     expect(repo.settle).toHaveBeenCalledWith(VS, { reservedUsd: 0.02, billedUsd: 0.02 });
   });
