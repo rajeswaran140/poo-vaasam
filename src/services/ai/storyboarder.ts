@@ -19,6 +19,11 @@ const TOOL_NAME = 'submit_storyboard';
 const MIN_SHOT_SEC = 1;
 const MAX_SHOT_SEC = 15;
 
+/** About one shot per 7 s of window: keeps a whole song's draft inside its output ceiling. */
+export function targetShotCount(windowSec: number): number {
+  return Math.max(1, Math.round(windowSec / 7));
+}
+
 export const SYSTEM_PROMPT = `You are a film storyboard artist. Given song lyrics, a window length in seconds and an aspect ratio, you design a visual storyboard by calling the ${TOOL_NAME} tool. Provide your entire answer as the tool's arguments — do not write any prose.
 
 EVERY SONG IS ITS OWN WORLD:
@@ -27,7 +32,8 @@ EVERY SONG IS ITS OWN WORLD:
 - Invent characters for this song only — never real people, celebrities or existing fictional characters. At most 6; describe each visually (age, build, clothing, distinguishing features) so they can be drawn consistently. Refer to them in shots by exactly the same name.
 
 SHOTS:
-- Use shots averaging 5-8 seconds; a long window gets more shots, not longer ones.
+- Use shots averaging about 7 seconds (5-10 s); a long window gets more shots, not longer ones. Aim for the shot count the request gives.
+- Keep each visual prompt under 50 words: one clear picture, not a paragraph.
 - Group shots into 1-12 scenes, each with a short heading and a one-or-two sentence summary, following the emotional arc of the lyrics.
 - Each shot has an integer durationSec between 1 and 15, a mode (STILL by default; MOTION only where movement carries the moment; HERO sparingly for the single most important shot), a concrete visualPrompt describing what the camera sees, and the names of the characters present.
 - The durations of ALL shots, across all scenes, MUST add up to exactly the window length in seconds. Check your arithmetic before answering.
@@ -64,7 +70,7 @@ export interface StoryboardRequest {
 const DOES_NOT_FIT = "The draft's shots did not fit the chosen length. Please draft again.";
 
 export interface StoryboardOptions {
-  /** Hard per-call timeout. The background worker passes 150 s; the default suits an inline caller. */
+  /** Hard per-call timeout. The background worker passes 600 s (a whole song); the default suits an inline caller. */
   timeoutMs?: number;
 }
 
@@ -112,6 +118,8 @@ export async function generateStoryboard(
 
   const userMessage = [
     `Window length: ${windowSec} seconds (shot durations must sum to exactly ${windowSec}).`,
+    // Bounds the output: ~250 tokens a shot must fit draftMaxOutputTokens.
+    `Aim for about ${targetShotCount(windowSec)} shots.`,
     `Aspect ratio: ${aspectRatio}`,
     '',
     'Lyrics:',
@@ -164,7 +172,12 @@ export async function generateStoryboard(
   console.info('[ai/storyboarder] complete', JSON.stringify({ model: DEFAULT_MODEL, ms: Date.now() - startedAt, ...usage, stopReason: res.stop_reason }));
 
   if (res.stop_reason === 'max_tokens') {
-    return { ok: false, code: 'bad_response', error: 'The AI response was too long and got cut off. Please try again.', usage };
+    return {
+      ok: false,
+      code: 'bad_response',
+      error: 'The storyboard was too long to finish. Draft a shorter part of the song, or try once more.',
+      usage,
+    };
   }
 
   const toolUse = res.content.find(

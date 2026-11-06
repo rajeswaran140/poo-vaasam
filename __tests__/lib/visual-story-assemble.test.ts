@@ -125,8 +125,9 @@ describe('estimateAssembleSec', () => {
     expect(est).toBeLessThan(MAX_ASSEMBLE_SEC / 2);
   });
 
-  it('puts seven minutes of stills under the limit and a pile of one-second stills over it', () => {
-    expect(estimateAssembleSec(shots(70, 6, '.jpg'))).toBeLessThanOrEqual(MAX_ASSEMBLE_SEC);
+  it('fits seven minutes of half clips, half pictures; refuses seven minutes of pictures only', () => {
+    expect(estimateAssembleSec([...shots(35, 6, '.mp4'), ...shots(35, 6, '.jpg')])).toBeLessThanOrEqual(MAX_ASSEMBLE_SEC);
+    expect(estimateAssembleSec(shots(70, 6, '.jpg'))).toBeGreaterThan(MAX_ASSEMBLE_SEC);
     expect(estimateAssembleSec(shots(420, 1, '.jpg'))).toBeGreaterThan(MAX_ASSEMBLE_SEC);
   });
 

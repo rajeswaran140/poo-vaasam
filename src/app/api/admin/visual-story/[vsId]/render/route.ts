@@ -86,6 +86,8 @@ export async function POST(request: NextRequest, { params }: Ctx) {
                 windowStartSec: job.windowStartSec,
                 windowEndSec: job.windowEndSec,
                 shots: job.shots,
+                // The worker refuses an event that waited too long to start.
+                createdAt: job.createdAt,
               },
             })
           ),

@@ -21,6 +21,7 @@ import {
   ASSEMBLE_CODEC_ARGS,
   ASSEMBLE_FPS,
   STILL_SOURCE_SCALE,
+  STILL_TO_BT709,
   assembleFrameSize,
   assemblyKindOf,
   buildAssembleConcatList,
@@ -57,7 +58,7 @@ function segment(src: string, durationSec: number, aspect: AspectRatio, index: n
       : buildShortComposeArgs({ coverPath: src, framePath: frame, coverAspect, sourceScale: STILL_SOURCE_SCALE })).slice(1));
     ff(buildMotionSegmentArgs({
       framePath: frame, seconds: durationSec, outPath: out, motion: stillMotionFor(index),
-      size: assembleFrameSize(aspect), fps: ASSEMBLE_FPS, codecArgs: ASSEMBLE_CODEC_ARGS,
+      size: assembleFrameSize(aspect), fps: ASSEMBLE_FPS, codecArgs: ASSEMBLE_CODEC_ARGS, inputFilter: STILL_TO_BT709,
     }).slice(1));
     rmSync(frame, { force: true });
   }

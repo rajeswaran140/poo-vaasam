@@ -44,7 +44,7 @@ import { GET } from '@/app/api/admin/visual-story/[vsId]/render/[renderId]/route
 import { DELETE } from '@/app/api/admin/visual-story/[vsId]/route';
 import * as auth from '@/lib/auth-helper';
 import { __resetVisualStoryRateLimitForTests } from '@/lib/visual-story-rate-limit';
-import { RENDER_STALE_MS, STALE_RENDER_ERROR } from '@/lib/visual-story-render';
+import { RENDER_QUEUED_STALE_MS, RENDER_RUNNING_STALE_MS, STALE_RENDER_ERROR } from '@/lib/visual-story-render';
 
 const requireAdmin = auth.requireAdmin as jest.Mock;
 const VS = 'vs_1700000000000_abcdef12';
@@ -101,6 +101,7 @@ describe('POST render', () => {
           { sceneOrder: 1, shotOrder: 1, key: `${C}/cd_1700000000000_aaaaaa.mp4`, durationSec: 6 },
           { sceneOrder: 1, shotOrder: 2, key: `${C}/cd_1700000000000_bbbbbb.jpg`, durationSec: 6 },
         ],
+        createdAt: repo.createRender.mock.calls[0][1].createdAt,
       },
     });
   });
@@ -130,10 +131,20 @@ describe('POST render', () => {
   });
 
   it('clears a dead render first, so it does not block a new one', async () => {
-    const old = new Date(Date.now() - RENDER_STALE_MS - 1000).toISOString();
-    repo.loadTree.mockResolvedValue(tree({ renders: [render({ status: 'running', createdAt: old })] }));
+    const old = new Date(Date.now() - RENDER_RUNNING_STALE_MS - 1000).toISOString();
+    repo.loadTree.mockResolvedValue(tree({ renders: [render({ status: 'running', createdAt: old, updatedAt: old })] }));
     expect((await POST(mk(), ctx())).status).toBe(202);
-    expect(repo.transitionRender).toHaveBeenCalledWith(VS, RD, ['queued', 'running'], 'failed', { error: STALE_RENDER_ERROR });
+    expect(repo.transitionRender).toHaveBeenCalledWith(VS, RD, ['running'], 'failed', { error: STALE_RENDER_ERROR });
+  });
+
+  it('times a running render from when the worker claimed it, not from when it was queued', async () => {
+    // Queued 20 minutes ago (waited in Lambda's queue), claimed 5 minutes ago: still running.
+    const queued = new Date(Date.now() - 20 * 60_000).toISOString();
+    const claimed = new Date(Date.now() - 5 * 60_000).toISOString();
+    repo.loadTree.mockResolvedValue(tree({ renders: [render({ status: 'running', createdAt: queued, updatedAt: claimed })] }));
+    const res = await POST(mk(), ctx());
+    expect(res.status).toBe(409);
+    expect(repo.transitionRender).not.toHaveBeenCalled();
   });
 
   it('fails the render it just queued when the worker cannot be invoked', async () => {
@@ -161,7 +172,7 @@ describe('GET render', () => {
   });
 
   it('fails a render the worker can no longer be running', async () => {
-    repo.getRender.mockResolvedValue(render({ status: 'queued', createdAt: new Date(Date.now() - RENDER_STALE_MS - 1).toISOString() }));
+    repo.getRender.mockResolvedValue(render({ status: 'queued', createdAt: new Date(Date.now() - RENDER_QUEUED_STALE_MS - 1).toISOString() }));
     const res = await GET(mk('GET'), rctx());
     expect((await res.json()).data.render).toMatchObject({ status: 'failed', error: STALE_RENDER_ERROR });
   });

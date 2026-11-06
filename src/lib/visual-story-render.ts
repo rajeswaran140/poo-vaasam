@@ -18,8 +18,17 @@ import {
 } from '@/lib/visual-story-assemble';
 import type { Candidate, RenderJob, Shot, VisualStory } from '@/types/visualStory';
 
-/** The worker times out at 900 s; a render older than this cannot still be running. */
-export const RENDER_STALE_MS = 16 * 60_000;
+/**
+ * When a render can no longer be running. ⚠️ TWO CLOCKS: the worker's event
+ * can wait in Lambda's async queue (reserved concurrency 3, shared with
+ * mastering) before it starts, so a RUNNING render is timed from its claim
+ * (`updatedAt`) — the worker dies at 900 s — and a QUEUED one from creation.
+ * The worker refuses to start an event older than RENDER_MAX_QUEUE_MS, so a
+ * render the sweep fails while queued can never start afterwards.
+ */
+export const RENDER_RUNNING_STALE_MS = 16 * 60_000;
+export const RENDER_QUEUED_STALE_MS = 30 * 60_000;
+export const RENDER_MAX_QUEUE_MS = 25 * 60_000;
 export const STALE_RENDER_ERROR = 'The render took too long. Please try again.';
 
 export type RenderPlan =
@@ -84,8 +93,13 @@ export async function sweepStaleRenders(
 ): Promise<RenderJob[]> {
   const out: RenderJob[] = [];
   for (const r of renders) {
-    if (isRenderInFlight(r) && now - Date.parse(r.createdAt) > RENDER_STALE_MS) {
-      const moved = await repo.transitionRender(vsId, r.renderId, ['queued', 'running'], 'failed', { error: STALE_RENDER_ERROR });
+    const stale =
+      (r.status === 'running' && now - Date.parse(r.updatedAt) > RENDER_RUNNING_STALE_MS) ||
+      (r.status === 'queued' && now - Date.parse(r.createdAt) > RENDER_QUEUED_STALE_MS);
+    if (stale) {
+      // Only from the status it was judged in: a queued render the worker has
+      // just claimed is running now, on the other clock, and must not be failed.
+      const moved = await repo.transitionRender(vsId, r.renderId, [r.status], 'failed', { error: STALE_RENDER_ERROR });
       out.push(moved ?? r);
     } else {
       out.push(r);

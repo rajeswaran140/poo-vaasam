@@ -25,7 +25,7 @@ jest.mock('@/infrastructure/database/dynamodb-client', () => ({
   },
 }));
 
-import { VisualStoryRepository, vsPk, renderSk } from '@/infrastructure/database/VisualStoryRepository';
+import { VisualStoryRepository, NotFoundError, vsPk, renderSk } from '@/infrastructure/database/VisualStoryRepository';
 import { isRenderId, newId, type RenderJob } from '@/types/visualStory';
 
 const repo = new VisualStoryRepository();
@@ -48,9 +48,17 @@ it('mints and recognises render ids', () => {
   expect(isRenderId('gj_1793000000000_abc123')).toBe(false);
 });
 
-it('creates a render in the story partition', async () => {
+it('creates a render in the story partition, only while the story exists', async () => {
   await repo.createRender(VS, render());
-  expect(mockPut.mock.calls[0][0]).toMatchObject({ PK: vsPk(VS), SK: renderSk(RD), status: 'queued' });
+  const [check, put] = mockTransact.mock.calls[0][0];
+  expect(check).toEqual({ ConditionCheck: { Key: { PK: vsPk(VS), SK: 'METADATA' }, ConditionExpression: 'attribute_exists(PK)' } });
+  expect(put.Put.Item).toMatchObject({ PK: vsPk(VS), SK: renderSk(RD), status: 'queued' });
+  expect(put.Put.ConditionExpression).toBe('attribute_not_exists(PK)');
+});
+
+it('reports a story deleted in the meantime as not found', async () => {
+  mockTransact.mockRejectedValueOnce(Object.assign(new Error('x'), { name: 'TransactionCanceledException' }));
+  await expect(repo.createRender(VS, render())).rejects.toBeInstanceOf(NotFoundError);
 });
 
 it('lists only RENDER# rows, across pages', async () => {

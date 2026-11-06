@@ -36,7 +36,10 @@ jest.mock('node:fs', () => ({
   readFileSync: () => Buffer.from('MASTERED-WAV-BYTES'),
   rmSync: (...a: unknown[]) => mockRmSync(...a),
   statSync: (...a: unknown[]) => mockStatSync(...a),
+  createReadStream: (p: string) => ({ stream: p }),
+  readdirSync: () => mockReaddir(),
 }));
+const mockReaddir = jest.fn((): string[] => []);
 jest.mock('@aws-sdk/lib-dynamodb', () => ({
   DynamoDBDocumentClient: { from: () => ({ send: (...a: unknown[]) => send(...a) }) },
   UpdateCommand: class { constructor(public input: Record<string, unknown>) {} },
@@ -101,7 +104,7 @@ it('renders each shot in order, joins them over the window, uploads, and marks t
   expect(clip).toContain('-an');
   // The still: composed, then a slow zoom across its 15 s.
   expect(ffArgs().some((a) => a.includes('-filter_complex') && a.some((x) => x.includes('scale=7680:4320')))).toBe(true);
-  expect(ffArgs().some((a) => a.some((x) => x.startsWith('zoompan=')))).toBe(true);
+  expect(ffArgs().some((a) => a.some((x) => x.includes('zoompan=')))).toBe(true);
   // The join: the master's window, both fades (an excerpt), never -shortest.
   const join = ffArgs().find((a) => a.includes('concat'))!;
   const at = join.indexOf(join.find((x) => x.endsWith('master.wav'))!);
@@ -115,6 +118,46 @@ it('renders each shot in order, joins them over the window, uploads, and marks t
   expect(done.Key).toEqual({ PK: `VSTORY#${VS}`, SK: `RENDER#${RD}` });
   expect(done.ConditionExpression).toContain('attribute_exists(PK)');
   expect(done.ExpressionAttributeValues[':s3Key']).toBe(`audio/mastering/visual-story/${VS}/renders/${RD}.mp4`);
+});
+
+it('streams the upload instead of reading a large video into memory', async () => {
+  await handler({ assemble: assemble() } as never);
+  expect(put()?.input.Body).toEqual({ stream: '/tmp/master-test/story.mp4' });
+  expect(put()?.input.ContentLength).toBe(123456);
+});
+
+it('frees the segments once joined, and clears a killed run\'s leftovers first', async () => {
+  mockReaddir.mockReturnValueOnce(['assemble-old', 'other-dir']);
+  await handler({ assemble: assemble() } as never);
+  const removed = mockRmSync.mock.calls.map((c) => String(c[0]));
+  expect(removed).toContain('/tmp/assemble-old');
+  expect(removed).not.toContain('/tmp/other-dir');
+  expect(removed).toContain('/tmp/master-test/seg0.mp4');
+  expect(removed).toContain('/tmp/master-test/seg1.mp4');
+});
+
+it('converts a still to the BT.709 the video is tagged with', async () => {
+  await handler({ assemble: assemble() } as never);
+  const zoom = ffArgs().find((a) => a.some((x) => x.includes('zoompan=')))!;
+  // Before the move, so it runs once on the one source frame, not on every output frame.
+  expect(zoom[zoom.indexOf('-vf') + 1]).toMatch(/^scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,zoompan=/);
+});
+
+it('refuses an event that waited too long in the queue, before any download', async () => {
+  const old = new Date(Date.now() - 26 * 60_000).toISOString();
+  const res = await handler({ assemble: assemble({ createdAt: old }) } as never);
+  expect(res).toMatchObject({ ok: false });
+  expect(statuses()).toEqual(['failed']);
+  expect(updates()[0].ExpressionAttributeValues[':error']).toBe('The render waited too long to start. Please try again.');
+  expect(s3Send).not.toHaveBeenCalled();
+});
+
+it('stops with a clear message before the Lambda would be killed', async () => {
+  const res = await handler({ assemble: assemble() } as never, { getRemainingTimeInMillis: () => 60_000 } as never);
+  expect(res).toMatchObject({ ok: false });
+  expect(statuses()).toEqual(['running', 'failed']);
+  expect(String(updates()[1].ExpressionAttributeValues[':error'])).toContain('ran out of time');
+  expect(put()).toBeUndefined();
 });
 
 it('never queries the table — its role cannot', async () => {

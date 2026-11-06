@@ -90,6 +90,12 @@ This area is private (the CDN denies `audio/mastering/*`). Preview through the a
 
 The Claude draft does not run on the website itself (Amplify stops any request after ~30 s; a draft takes about a minute). The site starts it on the existing worker Lambda **`tamilagaval-compose-worker`** (job kind `storyboard`) and the panel checks on it every few seconds. That worker must run the same release as the site, with a timeout of at least **720 s** (the draft call itself is allowed 600 s, for a whole song). If the worker is behind, a draft never finishes: once it is 15 minutes old it is marked failed and its hold released the next time the story is opened.
 
+## Rendering runs on the master worker
+
+**Render video** runs on **`tamilagaval-master-worker`** (event `assemble`), the Lambda that already renders the mastering videos. It must be deployed from master **before** anyone renders: an older worker does not know the `assemble` event, and the render then sits "Rendering…" until it is failed as too slow (30 minutes queued, or 16 minutes after it started). The worker writes only the story's render record and the MP4 under `renders/`.
+
+A render is refused if it would take more than about 10 minutes of the worker's 15 (`MAX_ASSEMBLE_SEC`, 600 s): a picture takes about a second of work per second of video, a clip about 0.6. So seven minutes of pictures only is refused; mix in clips, or use longer shots. The limit can rise once a real all-pictures render has been timed on the Lambda.
+
 ## When Grok isn't connected
 
 Symptom: **Generate still** reports that Grok image generation is not configured. Storyboarding, the Claude draft, editing and reference photos still work.

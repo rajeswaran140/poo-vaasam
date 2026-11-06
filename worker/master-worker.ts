@@ -11,7 +11,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, statSync, createReadStream, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
@@ -135,11 +135,13 @@ import {
   buildAssembleConcatList,
   buildAssembleJoinArgs,
   buildClipSegmentArgs,
+  STILL_TO_BT709,
   isAssemblyShotKey,
   shotLabel,
   stillMotionFor,
 } from '@/lib/visual-story-assemble';
 import { renderKey } from '@/lib/visual-story-storage';
+import { RENDER_MAX_QUEUE_MS } from '@/lib/visual-story-render';
 import {
   ASPECT_RATIOS,
   MAX_SHOT_SEC,
@@ -321,6 +323,7 @@ interface MasterEvent {
     windowStartSec?: unknown;
     windowEndSec?: unknown;
     shots?: unknown;
+    createdAt?: unknown;
   };
   /**
    * A pre-master ANALYSIS — measure a source before anything is decided about
@@ -1696,8 +1699,9 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
 }
 
 /**
- * Move a story render to `to`, only from one of `from` and only while the
- * story exists — the same condition the app's repository uses. Returns false
+ * Move a story render to `to`, only from one of `from` and only while its
+ * RENDER# row exists (deleting the story deletes it) — the same condition the
+ * app's repository uses. Returns false
  * when someone else moved it first (the stale sweep) or the story is gone.
  */
 async function transitionStoryRender(
@@ -1775,7 +1779,16 @@ function readAssembly(spec: NonNullable<MasterEvent['assemble']>, vsId: string):
  * encode its segment, delete its files — because a still's 4x compose frame
  * is ~100 MB and a story may hold dozens. See visual-story-assemble.ts.
  */
-async function assembleStory(spec: NonNullable<MasterEvent['assemble']>, bucket: string) {
+/** Stop before the Lambda kills us, so the render says why instead of hanging. */
+const ASSEMBLE_RESERVE_MS = 90_000;
+const OUT_OF_TIME =
+  'The render ran out of time. Use fewer, longer shots, or clips in place of some pictures (a picture takes longer than a clip).';
+
+async function assembleStory(
+  spec: NonNullable<MasterEvent['assemble']>,
+  bucket: string,
+  remainingMs: () => number = () => Number.POSITIVE_INFINITY,
+) {
   // Without valid ids there is no row this worker may safely write.
   if (!isVsId(spec.vsId) || !isRenderId(spec.renderId)) {
     console.error('[master-worker] bad assemble ids');
@@ -1791,6 +1804,12 @@ async function assembleStory(spec: NonNullable<MasterEvent['assemble']>, bucket:
 
   const plan = readAssembly(spec, vsId);
   if (!plan.ok) return await failRender(plan.message);
+  // An event that sat in the async queue past this may already have been
+  // failed by the sweep; starting it now would only waste the worker.
+  const created = typeof spec.createdAt === 'string' ? Date.parse(spec.createdAt) : Number.NaN;
+  if (Number.isFinite(created) && Date.now() - created > RENDER_MAX_QUEUE_MS) {
+    return await failRender('The render waited too long to start. Please try again.');
+  }
   // Claimed, or already cleared by the stale sweep / a deleted story: then stop.
   let claimed: boolean;
   try {
@@ -1804,6 +1823,15 @@ async function assembleStory(spec: NonNullable<MasterEvent['assemble']>, bucket:
   const { audioKey, aspect, start, end, shots } = plan;
   const windowSec = end - start;
   const size = assembleFrameSize(aspect);
+  // A run the Lambda killed skipped its `finally`; a warm container would
+  // otherwise carry its segments into this one's 4 GB.
+  try {
+    for (const name of readdirSync(tmpdir())) {
+      if (name.startsWith('assemble-')) rmSync(join(tmpdir(), name), { recursive: true, force: true });
+    }
+  } catch {
+    // Best effort: a listing failure only means less free space.
+  }
   const dir = mkdtempSync(join(tmpdir(), 'assemble-'));
   const audioPath = join(dir, 'master.wav');
   const outPath = join(dir, 'story.mp4');
@@ -1817,7 +1845,9 @@ async function assembleStory(spec: NonNullable<MasterEvent['assemble']>, bucket:
     }
 
     const segments: string[] = [];
+    let stills = 0;
     for (const [i, sh] of shots.entries()) {
+      if (remainingMs() < ASSEMBLE_RESERVE_MS) return await failRender(OUT_OF_TIME);
       const label = shotLabel(sh);
       const ext = sh.key.match(/\.[a-z0-9]+$/i)?.[0] ?? '';
       const src = join(dir, `shot${i}${ext}`);
@@ -1836,8 +1866,10 @@ async function assembleStory(spec: NonNullable<MasterEvent['assemble']>, bucket:
           : buildShortComposeArgs({ coverPath: src, framePath: frame, coverAspect, sourceScale: STILL_SOURCE_SCALE }));
         if (composed.status !== 0) return await failRender(`${label}: the picture could not be read.`);
         const moved = ff(buildMotionSegmentArgs({
-          framePath: frame, seconds: sh.durationSec, outPath: seg, motion: stillMotionFor(i),
+          framePath: frame, seconds: sh.durationSec, outPath: seg, motion: stillMotionFor(stills++),
           size, fps: ASSEMBLE_FPS, codecArgs: ASSEMBLE_CODEC_ARGS,
+          // RGB to the BT.709 the file is tagged with — see STILL_TO_BT709.
+          inputFilter: STILL_TO_BT709,
         }));
         if (moved.status !== 0) return await failRender(`${label}: the picture could not be animated.`);
       }
@@ -1847,17 +1879,23 @@ async function assembleStory(spec: NonNullable<MasterEvent['assemble']>, bucket:
       segments.push(seg);
     }
 
+    if (remainingMs() < ASSEMBLE_RESERVE_MS) return await failRender(OUT_OF_TIME);
     const listPath = join(dir, 'segments.txt');
     writeFileSync(listPath, buildAssembleConcatList(segments));
     const fades = assembleFades({ windowStartSec: start, windowEndSec: end, songSec });
     const joined = ff(buildAssembleJoinArgs({ listPath, audioPath, outPath, windowStartSec: start, windowSec, ...fades }));
     if (joined.status !== 0) return await failRender('The render failed joining the shots. Please try again.');
+    // The segments are in the finished file now; free their space before the upload.
+    for (const seg of segments) rmSync(seg, { force: true });
 
     // Logged, never blocking — the same verdict the Short gets.
     checkRenderedClip(audioPath, outPath, windowSec);
 
     const key = renderKey(vsId, renderId);
-    await s3.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: readFileSync(outPath), ContentType: 'video/mp4' }));
+    // Streamed, not read whole: seven minutes of 1080p can be ~1 GB.
+    await s3.send(new PutObjectCommand({
+      Bucket: bucket, Key: key, Body: createReadStream(outPath), ContentLength: statSync(outPath).size, ContentType: 'video/mp4',
+    }));
     const done = await transitionStoryRender(vsId, renderId, ['running'], 'done', { s3Key: key });
     return { ok: done, s3Key: key };
   } catch (err) {
@@ -2468,7 +2506,7 @@ async function renderStemMix(spec: NonNullable<MasterEvent['stemMix']>, bucket: 
   }
 }
 
-export const handler = async (event: MasterEvent) => {
+export const handler = async (event: MasterEvent, context?: { getRemainingTimeInMillis?: () => number }) => {
   const jobId = event?.jobId;
   const s3Key = event?.s3Key;
   if (event?.analyse) {
@@ -2486,7 +2524,7 @@ export const handler = async (event: MasterEvent) => {
       console.error('[master-worker] bad assemble event: no bucket');
       return { ok: false, error: 'TAKES_BUCKET is required' };
     }
-    return await assembleStory(event.assemble, TAKES_BUCKET);
+    return await assembleStory(event.assemble, TAKES_BUCKET, () => context?.getRemainingTimeInMillis?.() ?? Number.POSITIVE_INFINITY);
   }
 
   // A render is a different job entirely — branch before the mastering guards,

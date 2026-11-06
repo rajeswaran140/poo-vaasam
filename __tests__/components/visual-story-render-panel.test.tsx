@@ -95,3 +95,29 @@ it('picks up a render that was already running when the page loaded', async () =
   expect(screen.getByRole('alert')).toHaveTextContent('Scene 1, shot 2: the picture could not be read.');
   expect(onChanged).toHaveBeenCalled();
 });
+
+it('keeps showing the last finished video when a re-render fails', async () => {
+  routes();
+  const older = renderJob({ renderId: 'rd_1700000000000_old000', status: 'done', s3Key: 'k/old.mp4', createdAt: '2026-11-06T10:00:00.000Z' });
+  const newer = renderJob({ status: 'failed', error: 'Scene 1, shot 1: the clip could not be read.', createdAt: '2026-11-06T11:00:00.000Z' });
+  render(<RenderPanel vsId={VS} story={story} shots={READY_SHOTS} candidates={CANDS} renders={[older, newer]} onChanged={jest.fn()} />);
+  expect(screen.getByRole('alert')).toHaveTextContent('the clip could not be read');
+  expect(screen.getByText('Last finished video:')).toBeInTheDocument();
+  expect(await screen.findByLabelText('Finished video')).toHaveAttribute('src', 'https://s3/play');
+});
+
+it('gives the button back when it stops waiting', async () => {
+  routes({ polls: [renderJob({ status: 'running' })] });
+  render(<RenderPanel vsId={VS} story={story} shots={READY_SHOTS} candidates={CANDS} renders={[renderJob({ status: 'running' })]} onChanged={jest.fn()} />);
+  await act(async () => { await jest.advanceTimersByTimeAsync(18 * 60_000); });
+  expect(screen.getByRole('alert')).toHaveTextContent('taking longer than expected');
+  expect(screen.getByRole('button', { name: 'Render video' })).toBeEnabled();
+});
+
+it('starts one render however fast the button is pressed twice', async () => {
+  routes({ polls: [renderJob({ status: 'running' })] });
+  render(<RenderPanel vsId={VS} story={story} shots={READY_SHOTS} candidates={CANDS} renders={[]} onChanged={jest.fn()} />);
+  const button = screen.getByRole('button', { name: 'Render video' });
+  await act(async () => { fireEvent.click(button); fireEvent.click(button); });
+  expect(mockFetch.mock.calls.filter(([u, init]) => String(u).endsWith('/render') && init?.method === 'POST')).toHaveLength(1);
+});

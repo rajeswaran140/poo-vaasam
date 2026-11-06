@@ -53,11 +53,12 @@ export const DRAFT_MAX_OUTPUT_TOKENS_CEILING = 20000;
 /**
  * max_tokens for a draft of this window: no draft can bill more output than
  * this. Measured live: a 30 s window wrote 1 313-1 585 tokens for 5 shots,
- * ~250 per shot plus the characters. 45 per second of window covers 5-8 s
- * shots with room to spare; the reservation uses the same figure.
+ * ~250 per shot plus the characters. The prompt asks for ~7 s shots
+ * (targetShotCount), ~36 tokens per second of window; 48 leaves a third
+ * spare. The reservation uses the same figure.
  */
 export function draftMaxOutputTokens(windowSec: number): number {
-  return Math.min(DRAFT_MAX_OUTPUT_TOKENS_CEILING, Math.max(DRAFT_MAX_OUTPUT_TOKENS, Math.round(45 * windowSec)));
+  return Math.min(DRAFT_MAX_OUTPUT_TOKENS_CEILING, Math.max(DRAFT_MAX_OUTPUT_TOKENS, Math.round(48 * windowSec)));
 }
 /** System prompt + tool schema + framing, in tokens (rounded up). */
 export const DRAFT_PROMPT_OVERHEAD_TOKENS = 1500;

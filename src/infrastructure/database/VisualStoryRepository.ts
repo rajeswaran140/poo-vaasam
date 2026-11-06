@@ -488,9 +488,29 @@ export class VisualStoryRepository {
   // writes its own transitions with the same conditions (it cannot Query).
   // -------------------------------------------------------------------------
 
+  /**
+   * Only while the story exists: a delete landing between the route's read
+   * and this write would otherwise leave an orphan render the worker renders
+   * into a deleted story's folder.
+   */
   async createRender(vsId: string, job: RenderJob): Promise<void> {
     try {
-      await DynamoDBOperations.put({ PK: vsPk(vsId), SK: renderSk(job.renderId), ...job });
+      try {
+        await DynamoDBOperations.transactWrite([
+          { ConditionCheck: { Key: metaKey(vsId), ConditionExpression: 'attribute_exists(PK)' } },
+          {
+            Put: {
+              Item: { PK: vsPk(vsId), SK: renderSk(job.renderId), ...job },
+              ConditionExpression: 'attribute_not_exists(PK)',
+            },
+          },
+        ]);
+      } catch (error) {
+        if ((error as { name?: string } | null)?.name === 'TransactionCanceledException') {
+          throw new NotFoundError(`createRender: visual story ${vsId} not found`);
+        }
+        throw error;
+      }
     } catch (error) {
       fail(error);
     }

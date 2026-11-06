@@ -102,6 +102,16 @@ export function stillMotionFor(index: number): Exclude<ShortMotion, 'none'> {
   return index % 2 === 0 ? 'zoom-in' : 'zoom-out';
 }
 
+/**
+ * A still's RGB frame converted with the BT.709 matrix the segments are tagged
+ * with, BEFORE the zoom. Left to the encoder, swscale uses BT.601 and the
+ * picture's colours shift beside the clips (measured 23.9 dB against the
+ * source, 35.5 dB converted). Before the move it runs once on the one input
+ * frame (15 s of zoom: 14.3 s, same as unconverted); after it, on every
+ * output frame (41 s).
+ */
+export const STILL_TO_BT709 = 'scale=out_color_matrix=bt709:out_range=tv,format=yuv420p';
+
 /** The compose step enlarges the frame this much so the zoom moves smoothly. */
 export const STILL_SOURCE_SCALE = MOTION_SOURCE_SCALE;
 
@@ -176,8 +186,12 @@ export const ASSEMBLE_COST = {
   joinPerSec: 0.35,
 } as const;
 
-/** The longest render the route will queue: the rest of 900 s is margin. */
-export const MAX_ASSEMBLE_SEC = 700;
+/**
+ * The longest render the route will queue. 600 of the worker's 900 s until a
+ * real all-pictures story has been timed on the Lambda: the costs above came
+ * from synthetic fixtures on a 2-core box, and real AI pictures encode slower.
+ */
+export const MAX_ASSEMBLE_SEC = 600;
 
 export function estimateAssembleSec(shots: ReadonlyArray<{ key: string; durationSec: number }>): number {
   let total = 0;

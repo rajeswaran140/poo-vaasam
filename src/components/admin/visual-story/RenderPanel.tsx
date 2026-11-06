@@ -32,11 +32,16 @@ interface Props {
 }
 
 export function RenderPanel({ vsId, story, shots, candidates, renders, onChanged }: Props) {
-  const latest = [...renders].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null;
+  const newestFirst = [...renders].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const latest = newestFirst[0] ?? null;
+  /** A failed or running re-render does not hide the last video that worked. */
+  const lastDone = newestFirst.find((r) => r.status === 'done' && r.s3Key) ?? null;
   const [current, setCurrent] = useState<RenderJob | null>(latest);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
+  /** Synchronous, so a double click cannot start two renders before state updates. */
+  const startingRef = useRef(false);
   const pollAbort = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -66,6 +71,11 @@ export function RenderPanel({ vsId, story, shots, candidates, renders, onChanged
           const res = await adminFetch(`/api/admin/visual-story/${vsId}/render/${renderId}`, { signal: ctrl.signal });
           const body = await res.json().catch(() => null);
           const render = body?.data?.render as RenderJob | undefined;
+          if (res.status === 404) {
+            setCurrent(null);
+            setError(body?.error || 'That render no longer exists.');
+            return;
+          }
           if (res.ok && render) {
             setCurrent(render);
             if (render.status === 'done' || render.status === 'failed') {
@@ -78,6 +88,9 @@ export function RenderPanel({ vsId, story, shots, candidates, renders, onChanged
           // A dropped poll is retried on the next tick.
         }
         if (Date.now() > deadline) {
+          // Stop showing it as running: the button comes back, and the server
+          // says so if it really is still going.
+          setCurrent(null);
           setError('The render is taking longer than expected. Reload the page in a few minutes to see it.');
           return;
         }
@@ -103,7 +116,8 @@ export function RenderPanel({ vsId, story, shots, candidates, renders, onChanged
   const ready = shots.length > 0 && missing === 0 && total === windowSec && estimate <= MAX_ASSEMBLE_SEC;
 
   const start = async () => {
-    if (starting || inFlight) return;
+    if (startingRef.current || inFlight) return;
+    startingRef.current = true;
     setStarting(true);
     setError(null);
     try {
@@ -122,6 +136,7 @@ export function RenderPanel({ vsId, story, shots, candidates, renders, onChanged
     } catch {
       setError('Could not reach the server. Check your connection and try again.');
     } finally {
+      startingRef.current = false;
       if (mounted.current) setStarting(false);
     }
   };
@@ -168,7 +183,16 @@ export function RenderPanel({ vsId, story, shots, candidates, renders, onChanged
           {current.error || 'The render failed. Please try again.'}
         </p>
       )}
-      {current?.status === 'done' && current.s3Key && <FinishedVideo s3Key={current.s3Key} />}
+      {current?.status === 'done' && current.s3Key ? (
+        <FinishedVideo s3Key={current.s3Key} />
+      ) : (
+        lastDone?.s3Key && (
+          <div className="space-y-1 border-t border-gray-200 pt-2 dark:border-gray-700">
+            <p className="text-sm text-gray-600 dark:text-gray-400">Last finished video:</p>
+            <FinishedVideo s3Key={lastDone.s3Key} />
+          </div>
+        )
+      )}
     </section>
   );
 }

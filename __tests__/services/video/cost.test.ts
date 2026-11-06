@@ -56,8 +56,9 @@ describe('draftMaxOutputTokens (scales with the window, under the SDK\'s non-str
   it('keeps 6000 for a short window and grows with a long one', () => {
     expect(draftMaxOutputTokens(30)).toBe(6000);
     expect(draftMaxOutputTokens(120)).toBe(6000);
-    expect(draftMaxOutputTokens(300)).toBe(13500);
-    expect(draftMaxOutputTokens(420)).toBe(18900);
+    expect(draftMaxOutputTokens(300)).toBe(14400);
+    expect(draftMaxOutputTokens(400)).toBe(19200);
+    expect(draftMaxOutputTokens(420)).toBe(20000);
   });
 
   it('never exceeds 20000: past ~21333 the SDK refuses a non-streaming call', () => {
@@ -72,7 +73,7 @@ describe('draftReserveUsd (M1: bounded by the lyrics length and the window)', ()
   it('is the token cost of ceil(len/2)+1500 input and the window\'s output ceiling', () => {
     expect(draftReserveUsd('x'.repeat(1001), 30)).toBeCloseTo(cost(501 + 1500, 6000), 10);
     expect(draftReserveUsd('', 30)).toBeCloseTo(cost(1500, 6000), 10);
-    expect(draftReserveUsd('', 420)).toBeCloseTo(cost(1500, 18900), 10);
+    expect(draftReserveUsd('', 420)).toBeCloseTo(cost(1500, 20000), 10);
   });
 
   it('stays below the flat estimate for a short window even at the 8000-character maximum', () => {
@@ -84,6 +85,6 @@ describe('draftReserveUsd (M1: bounded by the lyrics length and the window)', ()
     expect(draftLabelUsd('x'.repeat(8000), 30)).toBe(est);
     expect(draftLabelUsd('x'.repeat(8000), 30, 0.01)).toBeCloseTo(cost(5500, 6000), 10);
     // A seven-minute window reserves more than the flat estimate, and says so.
-    expect(draftLabelUsd('x'.repeat(8000), 420)).toBeCloseTo(cost(5500, 18900), 10);
+    expect(draftLabelUsd('x'.repeat(8000), 420)).toBeCloseTo(cost(5500, 20000), 10);
   });
 });
