@@ -41,7 +41,7 @@ jest.mock('@/services/video/providers', () => ({
 }));
 
 import { POST } from '@/app/api/admin/visual-story/[vsId]/shots/[shotKey]/video/route';
-import { buildVideoRequest } from '@/services/video/gen-job';
+import { NO_LIP_MOVEMENT, buildVideoRequest } from '@/services/video/gen-job';
 import * as auth from '@/lib/auth-helper';
 import { VisualStoryRepository } from '@/infrastructure/database/VisualStoryRepository';
 import { __resetVisualStoryRateLimitForTests } from '@/lib/visual-story-rate-limit';
@@ -536,7 +536,7 @@ describe('buildVideoRequest', () => {
 
   it('no cast ⇒ the bare shot prompt, no references, no first frame', async () => {
     const req = await buildVideoRequest(t(), tree().shots[0] as never);
-    expect(req.prompt).toBe('A lamp on a window sill at dusk');
+    expect(req.prompt).toBe(`A lamp on a window sill at dusk\n\n${NO_LIP_MOVEMENT}`);
     expect(req.referenceImageUrls).toBeUndefined();
     expect(req.firstFrameUrl).toBeUndefined();
   });
@@ -611,10 +611,28 @@ describe('buildVideoRequest — starts from the chosen picture', () => {
   });
 });
 
+describe('buildVideoRequest — no singing', () => {
+  const t = (over: Record<string, unknown> = {}) => tree(over) as unknown as Parameters<typeof buildVideoRequest>[0];
+
+  it('every clip says nobody sings, speaks or moves their lips (Grok cannot sync to the song)', async () => {
+    for (const s of [tree().shots[0], tree().shots[1]]) {
+      const req = await buildVideoRequest(t(), s as never);
+      expect(req.prompt).toContain(NO_LIP_MOVEMENT);
+    }
+  });
+
+  it('comes last, after the style, so nothing later overrides it', async () => {
+    const req = await buildVideoRequest(t({ story: { ...tree().story, style: 'hand-painted watercolour' } }), tree().shots[1] as never);
+    expect(req.prompt.endsWith(NO_LIP_MOVEMENT)).toBe(true);
+    expect(req.prompt).toContain('Visual style: hand-painted watercolour');
+  });
+});
+
 describe('buildVideoRequest — the story\'s Style', () => {
   it('adds the story\'s style to the clip request, after the cast', async () => {
     const t = tree({ story: { ...tree().story, style: 'hand-painted watercolour' } }) as unknown as Parameters<typeof buildVideoRequest>[0];
     const req = await buildVideoRequest(t, tree().shots[1] as never);
-    expect(req.prompt).toMatch(/Test girl: a girl in a yellow half-saree[\s\S]*\n\nVisual style: hand-painted watercolour$/);
+    expect(req.prompt).toMatch(/Test girl: a girl in a yellow half-saree[\s\S]*\n\nVisual style: hand-painted watercolour\n\n/);
+    expect(req.prompt.endsWith(NO_LIP_MOVEMENT)).toBe(true);
   });
 });

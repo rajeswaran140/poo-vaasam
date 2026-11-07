@@ -39,6 +39,13 @@ export const COPY_FAILED_ERROR = "The clip was made but couldn't be saved; it wa
 export const STALE_VIDEO_ERROR = "Grok didn't finish this clip within an hour; it may still have been charged.";
 const NO_CLIP_ERROR = 'Grok finished but returned no clip; it was still charged.';
 
+/**
+ * Appended to every clip, last. Grok cannot sync mouths to the song, so a
+ * singing or talking face is always out of time with the music (owner, 2026-11-07).
+ */
+export const NO_LIP_MOVEMENT =
+  'No one in the scene sings, speaks or moves their lips: every mouth stays closed or softly smiling, still, throughout.';
+
 /** The parts of `loadTree` a video request needs. */
 export interface VideoRequestTree {
   /** `style` is optional only for callers built before Style existed. */
@@ -84,10 +91,10 @@ export async function buildVideoRequest(tree: VideoRequestTree, shot: Shot): Pro
     return tags.length ? `${line} (shown in ${tags.join(', ')})` : line;
   });
 
-  const prompt = withStyle(
+  const prompt = `${withStyle(
     castLines.length ? `${shot.visualPrompt}\n\nCharacters in this shot:\n${castLines.join('\n')}` : shot.visualPrompt,
     tree.story.style
-  );
+  )}\n\n${NO_LIP_MOVEMENT}`;
 
   const sign = (key: string) => S3Operations.getSignedUrl(key, SIGNED_URL_TTL_SEC);
   const [firstFrameUrl, referenceImageUrls] = await Promise.all([
