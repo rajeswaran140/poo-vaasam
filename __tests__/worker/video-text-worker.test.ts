@@ -124,6 +124,13 @@ interface World {
 
 let world: World;
 
+/** Added to Date.now(): lets a fake step "take" time without waiting for it. */
+let clockSkew = 0;
+const realNow = Date.now.bind(Date);
+const timeout = () => Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' });
+/** Per-key S3 behaviour for a test: receives the call's abortSignal. */
+let s3Override: ((cmd: { kind: string; input: Record<string, unknown> }, signal: AbortSignal | undefined) => Promise<unknown> | undefined) | null = null;
+
 const BLOCKS = [
   { id: 'title', track: 'title', text: 'Title', startSec: 0, endSec: 5 },
   { id: 'l1', track: 'lyric', text: 'line', startSec: 18, endSec: 22 },
@@ -173,7 +180,9 @@ function fakeFfmpeg(_bin: string, args: string[]) {
 
 const notFound = () => Object.assign(new Error('NotFound'), { name: 'NotFound' });
 
-async function fakeS3(cmd: { kind: string; input: Record<string, unknown> }) {
+async function fakeS3(cmd: { kind: string; input: Record<string, unknown> }, opts?: { abortSignal?: AbortSignal }) {
+  const overridden = s3Override?.(cmd, opts?.abortSignal);
+  if (overridden) return overridden;
   const key = cmd.input.Key as string;
   switch (cmd.kind) {
     case 'head':
@@ -243,7 +252,12 @@ beforeEach(() => {
   spawnSync.mockReset().mockImplementation(fakeFfmpeg);
   getSignedUrl.mockReset().mockResolvedValue('https://signed.example/source.mp4?X-Amz-Signature=secret');
   delete process.env.AWS_LAMBDA_FUNCTION_NAME;
+  clockSkew = 0;
+  s3Override = null;
+  jest.spyOn(Date, 'now').mockImplementation(() => realNow() + clockSkew);
 });
+
+afterEach(() => jest.restoreAllMocks());
 
 /** Every render patch: the fields set (by name) and the renderId it was conditional on. */
 const patches = () =>
@@ -526,6 +540,83 @@ describe('videoTextRender', () => {
     await render({ getRemainingTimeInMillis: () => 100_000 });
     expect(lastError()).toBe(OUT_OF_TIME);
     expect(keysLeft()).toEqual([]);
+  });
+
+  describe('every S3 transfer is bounded by the deadline', () => {
+    const LAMBDA = { getRemainingTimeInMillis: () => 900_000 };
+
+    it('a source download stopped for time ends in error with the out-of-time message', async () => {
+      const signals: Array<AbortSignal | undefined> = [];
+      s3Override = (cmd, signal) => {
+        if (cmd.kind !== 'get' || cmd.input.Key !== SRC_KEY) return undefined;
+        signals.push(signal);
+        return Promise.reject(timeout());
+      };
+      await render(LAMBDA);
+      expect(signals).toHaveLength(1);
+      expect(signals[0]).toBeInstanceOf(AbortSignal);
+      expect(statuses()).toEqual(['segmenting', 'error']);
+      expect(lastError()).toBe(OUT_OF_TIME);
+      expect(lambdaSend).not.toHaveBeenCalled();
+      expect(keysLeft()).toEqual([]);
+    });
+
+    it('a slow output upload stopped for time ends in error, with no output key written', async () => {
+      const signals: Array<AbortSignal | undefined> = [];
+      s3Override = (cmd, signal) => {
+        if (cmd.kind !== 'put' || cmd.input.Key !== outputKey(PID, RID)) return undefined;
+        signals.push(signal);
+        // Rejected without reading the body, as a send stopped early does: the
+        // worker must still close the stream before deleting the file under it.
+        return Promise.reject(timeout());
+      };
+      await render(LAMBDA);
+      expect(signals[0]).toBeInstanceOf(AbortSignal);
+      expect(statuses().pop()).toBe('error');
+      expect(lastError()).toBe(OUT_OF_TIME);
+      expect(patches().some((p) => p.fields.outputKey)).toBe(false);
+      expect(keysLeft()).toEqual([]);
+    });
+
+    it('the output upload is not started without 30 s left', async () => {
+      // The last check before the upload (the output's packet timing) "takes" until 25 s remain.
+      spawnSync.mockImplementation((b: string, args: string[]) => {
+        const r = fakeFfmpeg(b, args);
+        if (args.includes('framecrc') && args.includes('0:a:0') && basename(args[args.indexOf('-i') + 1]) === 'output.mp4') clockSkew = 875_000;
+        return r;
+      });
+      await render(LAMBDA);
+      expect(lastError()).toBe(OUT_OF_TIME);
+      expect(s3Send.mock.calls.some((c) => c[0].kind === 'put' && c[0].input.Key === outputKey(PID, RID))).toBe(false);
+    });
+
+    it('every coordinator S3 call carries an abort signal', async () => {
+      await render(LAMBDA);
+      expect(statuses().pop()).toBe('done');
+      const calls = s3Send.mock.calls.filter((c) => ['get', 'put', 'head', 'list', 'delete'].includes(c[0].kind));
+      expect(calls.length).toBeGreaterThan(10);
+      for (const c of calls) expect(c[1]?.abortSignal).toBeInstanceOf(AbortSignal);
+    });
+  });
+
+  it('R16: a failed progress patch is logged and the render still ends done', async () => {
+    // Each chunk "takes" 4 s, so every reply is past the 3 s progress throttle.
+    const reply = world.chunkReply;
+    world.chunkReply = (e) => { clockSkew += 4_000; return reply(e); };
+    let failed = 0;
+    ddbSend.mockImplementation(async (cmd: { kind: string; input: Record<string, unknown> }) => {
+      const expr = String(cmd.input.UpdateExpression ?? '');
+      if (cmd.kind === 'update' && expr.includes('progress') && !expr.includes('#status') && failed === 0) {
+        failed++;
+        throw new Error('throttled');
+      }
+      return fakeDdb(cmd);
+    });
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    await render();
+    expect(failed).toBe(1);
+    expect(statuses()).toEqual(['segmenting', 'encoding', 'joining', 'done']);
+    expect(spy.mock.calls.some((c) => String(c[0]).includes('progress patch failed'))).toBe(true);
   });
 
   it('refuses a source whose frame size no longer matches the project (the PNGs would not fit)', async () => {

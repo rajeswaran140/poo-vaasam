@@ -263,21 +263,66 @@ function assertSameAudio(expected: AudioFingerprint, actual: AudioFingerprint, w
 
 // ------------------------------------------------------------------ S3 helpers
 
-/** Streamed to disk: a 1 GB source held in memory (twice, with Buffer.from) would kill the Lambda silently. */
+/** Kept back from every S3 transfer for the error patch that must follow a stopped one. */
+const S3_FINISH_MARGIN_MS = 10_000;
+/** The slowest the output upload is assumed to run, for the check before it starts. */
+const UPLOAD_BYTES_PER_SEC = 50 * 1024 * 1024;
+const MIN_UPLOAD_MS = 30_000;
+
+const isAbort = (err: unknown) => {
+  const name = (err as { name?: string })?.name;
+  return name === 'TimeoutError' || name === 'AbortError';
+};
+
+/**
+ * Run one S3 transfer bounded by the time this invocation has left, less
+ * S3_FINISH_MARGIN_MS. A Lambda killed mid-transfer runs neither catch nor
+ * finally, so the render would sit in a live status for the 20-minute stale
+ * window; stopped here, it throws the out-of-time failure, which the caller's
+ * catch writes. Without a Lambda clock (tests, a local run) it is unbounded.
+ */
+async function bounded<T>(deps: VideoTextDeps, run: (abortSignal: AbortSignal | undefined) => Promise<T>): Promise<T> {
+  const budget = Math.floor(deps.deadline() - S3_FINISH_MARGIN_MS - Date.now());
+  if (Number.isFinite(budget) && budget <= 0) throw new VideoTextFailure(OUT_OF_TIME_MESSAGE);
+  try {
+    return await run(Number.isFinite(budget) ? AbortSignal.timeout(budget) : undefined);
+  } catch (err) {
+    if (isAbort(err)) throw new VideoTextFailure(OUT_OF_TIME_MESSAGE);
+    throw err;
+  }
+}
+
+/**
+ * Streamed to disk: a 1 GB source held in memory (twice, with Buffer.from)
+ * would kill the Lambda silently. One signal bounds the request AND the body:
+ * the SDK's abort covers only the response headers.
+ */
 async function downloadTo(deps: VideoTextDeps, key: string, path: string): Promise<void> {
-  const obj = await deps.s3.send(new GetObjectCommand({ Bucket: deps.bucket, Key: key }));
-  if (!obj.Body) throw new Error(`empty object ${key}`);
-  await pipeline(obj.Body as Readable, createWriteStream(path));
+  await bounded(deps, async (abortSignal) => {
+    const obj = await deps.s3.send(new GetObjectCommand({ Bucket: deps.bucket, Key: key }), { abortSignal });
+    if (!obj.Body) throw new Error(`empty object ${key}`);
+    await pipeline(obj.Body as Readable, createWriteStream(path), abortSignal ? { signal: abortSignal } : {});
+  });
 }
 
 async function uploadFrom(deps: VideoTextDeps, key: string, path: string): Promise<void> {
-  await deps.s3.send(new PutObjectCommand({
-    Bucket: deps.bucket,
-    Key: key,
-    Body: createReadStream(path),
-    ContentLength: statSync(path).size,
-    ContentType: 'video/mp4',
-  }));
+  const body = createReadStream(path);
+  // A send that fails before reading leaves the stream's open pending; the
+  // scratch is deleted next, and that open's ENOENT, unheard, would be an
+  // uncaught exception that crashes the container. The send sees real read
+  // errors through its own listener.
+  body.on('error', () => {});
+  try {
+    await bounded(deps, (abortSignal) => deps.s3.send(new PutObjectCommand({
+      Bucket: deps.bucket,
+      Key: key,
+      Body: body,
+      ContentLength: statSync(path).size,
+      ContentType: 'video/mp4',
+    }), { abortSignal }));
+  } finally {
+    body.destroy();
+  }
 }
 
 /** Delete everything a render wrote except its output. Never throws: the lifecycle rule is the backstop. */
@@ -287,13 +332,14 @@ async function deleteIntermediates(deps: VideoTextDeps, projectId: string, rende
   try {
     let token: string | undefined;
     do {
-      const page = await deps.s3.send(new ListObjectsV2Command({ Bucket: deps.bucket, Prefix: prefix, ContinuationToken: token }));
+      const page = await bounded(deps, (abortSignal) =>
+        deps.s3.send(new ListObjectsV2Command({ Bucket: deps.bucket, Prefix: prefix, ContinuationToken: token }), { abortSignal }));
       const keys = (page.Contents ?? []).map((o) => o.Key).filter((k): k is string => !!k && k !== keep);
       if (keys.length > 0) {
-        await deps.s3.send(new DeleteObjectsCommand({
+        await bounded(deps, (abortSignal) => deps.s3.send(new DeleteObjectsCommand({
           Bucket: deps.bucket,
           Delete: { Objects: keys.map((Key) => ({ Key })), Quiet: true },
-        }));
+        }), { abortSignal }));
       }
       token = page.IsTruncated ? page.NextContinuationToken : undefined;
     } while (token);
@@ -467,7 +513,8 @@ export async function renderVideoTextChunk(
     await uploadFrom(deps, key, outPath);
     return { ok: true, key };
   } catch (err) {
-    if (isOutOfTime(err)) return { ok: false, message: 'it ran out of time' };
+    // Here a VideoTextFailure only comes from a bounded S3 transfer: out of time too.
+    if (isOutOfTime(err) || err instanceof VideoTextFailure) return { ok: false, message: 'it ran out of time' };
     console.error(`[video-text] chunk ${index} failed:`, err instanceof Error ? err.message : String(err));
     return { ok: false, message: CHUNK_FAILED_MESSAGE };
   } finally {
@@ -620,8 +667,11 @@ export async function renderVideoText(
     // R1: the route cannot know the browser's PNG uploads finished; check every one before any work.
     for (const b of blocks) {
       try {
-        await deps.s3.send(new HeadObjectCommand({ Bucket: deps.bucket, Key: overlayKey(projectId, renderId, b.id) }));
-      } catch {
+        await bounded(deps, (abortSignal) =>
+          deps.s3.send(new HeadObjectCommand({ Bucket: deps.bucket, Key: overlayKey(projectId, renderId, b.id) }), { abortSignal }));
+      } catch (err) {
+        // Out of time is not a missing image.
+        if (err instanceof VideoTextFailure) throw err;
         throw new VideoTextFailure(MISSING_PNG_MESSAGE);
       }
     }
@@ -683,7 +733,12 @@ export async function renderVideoText(
     await encodeChunks(deps, specs, async (done) => {
       if (Date.now() - lastProgressAt < PROGRESS_EVERY_MS) return;
       lastProgressAt = Date.now();
-      await patch({ progress: { done, total } });
+      // R16: progress is advisory. A failed write is logged, never a reason to stop the chunks.
+      try {
+        await patch({ progress: { done, total } });
+      } catch (err) {
+        console.error('[video-text] progress patch failed:', err instanceof Error ? err.message : String(err));
+      }
     });
 
     // ---- joining
@@ -707,6 +762,9 @@ export async function renderVideoText(
     if (sourceAudio) assertSameAudio(sourceAudio, audioFingerprint(deps, outPath), 'output');
 
     const outKey = outputKey(projectId, renderId);
+    // A ~1 GB upload cut off by the Lambda's kill would write nothing: refuse it now instead.
+    const uploadMs = Math.max(MIN_UPLOAD_MS, (statSync(outPath).size / UPLOAD_BYTES_PER_SEC) * 1000);
+    if (deps.deadline() - Date.now() < uploadMs) throw new VideoTextFailure(OUT_OF_TIME_MESSAGE);
     await uploadFrom(deps, outKey, outPath);
     await patch({ status: 'done', outputKey: outKey, outputExpiresAt: expiresAtFrom(new Date().toISOString()), error: null });
     return { ok: true };
