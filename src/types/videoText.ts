@@ -1,0 +1,63 @@
+/** Shared shapes for the Video Text admin tool. Pure types, safe on client and server. */
+
+export type Track = 'title' | 'lyric' | 'credits';
+
+export interface TextBlock {
+  id: string;
+  track: Track;
+  text: string;
+  startSec: number;
+  endSec: number;
+}
+
+export interface TextStyle {
+  /** 0.75–1.5, default 1. */
+  sizeScale: number;
+  lyricPosition: 'lower' | 'middle';
+}
+
+export interface SourceInfo {
+  key: string;
+  width: number;
+  height: number;
+  fps: number;
+  durationSec: number;
+  hasAudio: boolean;
+  uploadedAt: string;
+  expiresAt: string;
+}
+
+export type RenderStatus =
+  | 'idle'
+  | 'queued'
+  | 'segmenting'
+  | 'encoding'
+  | 'joining'
+  | 'done'
+  | 'error';
+
+export interface RenderState {
+  renderId: string | null;
+  status: RenderStatus;
+  progress: { done: number; total: number } | null;
+  outputKey: string | null;
+  outputExpiresAt: string | null;
+  error: string | null;
+  startedAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface VideoTextProject {
+  id: string;
+  name: string;
+  titleText: string;
+  creditsText: string;
+  lyricsText: string;
+  blocks: TextBlock[];
+  style: TextStyle;
+  source: SourceInfo | null;
+  render: RenderState;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}

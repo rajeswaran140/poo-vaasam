@@ -211,6 +211,14 @@ import {
 } from '@/lib/stems';
 import { stemSetFromItem } from '@/lib/stemSetHydrate';
 import type { MasterJob } from '@/types/masterJob';
+import {
+  VIDEO_TEXT_CHUNK_FUNCTION,
+  CHUNK_ONLY_MESSAGE,
+  probeVideoText,
+  renderVideoText,
+  renderVideoTextChunk,
+  type VideoTextDeps,
+} from './video-text';
 
 const FFMPEG = process.env.FFMPEG_PATH || '/opt/bin/ffmpeg';
 const REGION = process.env.AWS_REGION || 'ca-central-1';
@@ -443,6 +451,12 @@ interface MasterEvent {
    * never look like a master run, and it writes no job record at all.
    */
   seam?: { partAKey?: string; partBKey?: string; editA?: unknown; join?: unknown };
+  /** Video Text (worker/video-text.ts): read an uploaded video's header. RequestResponse. */
+  videoTextProbe?: { key?: unknown };
+  /** Video Text: coordinate one render. Event; never throws, always ends in a render patch. */
+  videoTextRender?: { projectId?: unknown; renderId?: unknown };
+  /** Video Text: one chunk, on the chunk function only. RequestResponse. */
+  videoTextChunk?: unknown;
   /**
    * How the master reaches its level. Absent or `'loudness'` is the two-pass
    * loudnorm every job has always used; `'peak'` is one gain change to -1 dBTP
@@ -2768,6 +2782,11 @@ async function renderStemMix(spec: NonNullable<MasterEvent['stemMix']>, bucket: 
   }
 }
 
+/** What worker/video-text.ts borrows from this bundle. */
+const videoTextDeps = (): VideoTextDeps => ({
+  s3, ddb, lambda: lambdaClient, ff, bucket: TAKES_BUCKET, table: TABLE, deadline: () => invocationDeadline,
+});
+
 export const handler = async (event: MasterEvent, context?: { getRemainingTimeInMillis?: () => number }) => {
   const remaining = context?.getRemainingTimeInMillis?.();
   invocationDeadline = typeof remaining === 'number' ? Date.now() + remaining : Number.POSITIVE_INFINITY;
@@ -2776,6 +2795,15 @@ export const handler = async (event: MasterEvent, context?: { getRemainingTimeIn
     console.error('[master-worker] the background-prep function was sent another kind of event');
     return { ok: false, message: 'this function only prepares background clips' };
   }
+  // The chunk function is this same bundle too, with its own budget: chunks only.
+  if (process.env.AWS_LAMBDA_FUNCTION_NAME === VIDEO_TEXT_CHUNK_FUNCTION && !event?.videoTextChunk) {
+    console.error('[master-worker] the video-text chunk function was sent another kind of event');
+    return { ok: false, message: CHUNK_ONLY_MESSAGE };
+  }
+  // Video Text: no job record; each branch reports in its own reply or render patch.
+  if (event?.videoTextProbe) return await probeVideoText(event.videoTextProbe, videoTextDeps());
+  if (event?.videoTextRender) return await renderVideoText(event.videoTextRender, videoTextDeps());
+  if (event?.videoTextChunk) return await renderVideoTextChunk(event.videoTextChunk, videoTextDeps());
   const jobId = event?.jobId;
   const s3Key = event?.s3Key;
   if (event?.analyse) {
