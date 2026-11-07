@@ -57,6 +57,10 @@ export function VideoTextApp() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const wanted = useRef<string | null>(null);
+  const openRef = useRef<VideoTextProject | null>(null);
+  openRef.current = open;
+  // The open editor's "may I leave?" check (unsaved edits ask first).
+  const leaveGuard = useRef<(() => boolean) | null>(null);
 
   const loadList = useCallback(async () => {
     try {
@@ -95,6 +99,13 @@ export function VideoTextApp() {
   useEffect(() => {
     const sync = () => {
       const id = projectFromUrl();
+      // Back/forward away from a project with unsaved edits: ask, and on
+      // "stay" put the project's address back.
+      const current = openRef.current;
+      if (current && id !== current.id && leaveGuard.current && !leaveGuard.current()) {
+        setUrlProject(current.id);
+        return;
+      }
       if (id) void openProject(id);
       else {
         wanted.current = null;
@@ -157,7 +168,7 @@ export function VideoTextApp() {
       </header>
 
       {open ? (
-        <VideoTextEditor key={open.id} project={open} onBack={back} />
+        <VideoTextEditor key={open.id} project={open} onBack={back} leaveGuard={leaveGuard} />
       ) : (
         <div className="space-y-4">
           {creating ? (

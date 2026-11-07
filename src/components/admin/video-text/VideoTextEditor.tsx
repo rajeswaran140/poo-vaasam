@@ -17,7 +17,7 @@ import { putToS3 } from '@/lib/mastering-upload-client';
 import { MAX_VIDEO_TEXT_BYTES } from '@/lib/video-text/keys';
 import { syncTextToBlocks, validateBlocks } from '@/lib/video-text/timeline';
 import type { SourceInfo, TextBlock, TextStyle, VideoTextProject } from '@/types/videoText';
-import { useAutosave } from './useAutosave';
+import { useAutosave, type AutosaveStatus } from './useAutosave';
 import { useRenderJob } from './useRenderJob';
 import { Timeline } from './Timeline';
 import { TextPreview } from './TextPreview';
@@ -76,9 +76,55 @@ function Section({ title, children, testId }: { title?: string; children: ReactN
   );
 }
 
-type UploadState = { phase: 'idle' } | { phase: 'uploading'; pct: number } | { phase: 'checking' };
+type UploadState = { phase: 'idle' } | { phase: 'saving' } | { phase: 'uploading'; pct: number } | { phase: 'checking' };
 
-export function VideoTextEditor({ project: initial, onBack }: { project: VideoTextProject; onBack: () => void }) {
+export const LEAVE_MESSAGE = 'You have unsaved changes. Leave anyway?';
+const HELD_MESSAGE = 'Changes will save when the render starts';
+
+/**
+ * Save status and error. Rendered under Name AND above the timeline, so a
+ * failed save is seen beside the lyrics and blocks that caused it (on a phone
+ * Name is off-screen by then). Only the first copy is announced.
+ */
+function SaveStatus({
+  status,
+  error,
+  announce,
+  testId,
+}: {
+  status: AutosaveStatus;
+  error: string | null;
+  announce: boolean;
+  testId?: string;
+}) {
+  const label = status === 'saving' ? 'Saving…' : status === 'saved' ? 'Saved' : status === 'held' ? HELD_MESSAGE : null;
+  return (
+    <div className="min-w-0 text-xs" data-testid={testId}>
+      <span
+        className="text-gray-500 dark:text-gray-400"
+        {...(announce ? { role: 'status', 'aria-live': 'polite' as const } : {})}
+      >
+        {status === 'error' ? null : label}
+      </span>
+      {status === 'error' && error && (
+        <p {...(announce ? { role: 'alert' } : {})} className="text-sm text-red-600 dark:text-red-400">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+export function VideoTextEditor({
+  project: initial,
+  onBack,
+  leaveGuard,
+}: {
+  project: VideoTextProject;
+  onBack: () => void;
+  /** Set to a check the app runs before leaving by browser Back; true = go. */
+  leaveGuard?: { current: (() => boolean) | null };
+}) {
   const [project, setProject] = useState<VideoTextProject>(initial);
   const [nameInput, setNameInput] = useState(initial.name);
   const [playhead, setPlayhead] = useState(0);
@@ -88,6 +134,17 @@ export function VideoTextEditor({ project: initial, onBack }: { project: VideoTe
   const job = useRenderJob(initial.id, initial.render);
   const onVersion = useCallback((version: number) => setProject((p) => ({ ...p, version })), []);
   const autosave = useAutosave(project, onVersion, { hold: job.startingUp });
+
+  // Leaving with unsaved edits — pending, held for a render, or failed — asks first.
+  const { isDirty } = autosave;
+  const confirmLeave = useCallback(() => !isDirty() || window.confirm(LEAVE_MESSAGE), [isDirty]);
+  useEffect(() => {
+    if (!leaveGuard) return;
+    leaveGuard.current = confirmLeave;
+    return () => {
+      if (leaveGuard.current === confirmLeave) leaveGuard.current = null;
+    };
+  }, [leaveGuard, confirmLeave]);
 
   // ---- text → blocks
   const setTexts = (patch: Partial<Pick<VideoTextProject, 'titleText' | 'creditsText' | 'lyricsText'>>) =>
@@ -265,7 +322,9 @@ export function VideoTextEditor({ project: initial, onBack }: { project: VideoTe
       const contentType = videoTypeOf(file);
       if (!contentType) throw new Error('Upload an MP4 or MOV video.');
       if (file.size > MAX_VIDEO_TEXT_BYTES) throw new Error('Videos up to 1 GB can be used.');
-      // The server fits the STORED text to the new length: save first.
+      // The server fits the STORED text to the new length: save first. The
+      // saving phase already counts as uploading, so Make video is disabled.
+      setUpload({ phase: 'saving' });
       const saved = await autosave.flush();
       if (!saved.ok) throw new Error(saved.error);
       setUpload({ phase: 'uploading', pct: 0 });
@@ -331,8 +390,16 @@ export function VideoTextEditor({ project: initial, onBack }: { project: VideoTe
       const res = await adminFetch(`/api/admin/video-text/${initial.id}/download`);
       const body = await res.json().catch(() => ({}));
       if (!res.ok || typeof body?.url !== 'string') throw new Error(body?.error || 'Could not create the download link.');
-      // The link is an attachment, so the page stays put.
-      window.location.href = body.url;
+      // The link is an attachment, so the page stays put — and this is not
+      // leaving, so the unsaved-changes warning must not fire for it.
+      autosave.skipNextUnloadWarning();
+      const a = document.createElement('a');
+      a.href = body.url;
+      a.download = '';
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
     } catch (err) {
       setDownloadError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -350,16 +417,17 @@ export function VideoTextEditor({ project: initial, onBack }: { project: VideoTe
   const lockUploadAndRender = uploading || job.running;
   const previewUrl = localUrl ?? remoteUrl;
   const render = job.render;
-  const showDownload = !job.running && render.status === 'done' && Boolean(render.outputKey);
-
-  const saveLabel =
-    autosave.status === 'error' ? null : autosave.status === 'saving' ? 'Saving…' : autosave.status === 'saved' ? 'Saved' : null;
+  // A video uploaded after the render finished makes that output out of date.
+  const outputIsStale = Boolean(
+    source && render.updatedAt && new Date(source.uploadedAt).getTime() > new Date(render.updatedAt).getTime(),
+  );
+  const showDownload = !job.running && render.status === 'done' && Boolean(render.outputKey) && !outputIsStale;
 
   return (
     <div className="min-w-0 space-y-6">
       <button
         type="button"
-        onClick={onBack}
+        onClick={() => confirmLeave() && onBack()}
         className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"
       >
         <ArrowLeft className="h-4 w-4" aria-hidden="true" /> All projects
@@ -371,9 +439,6 @@ export function VideoTextEditor({ project: initial, onBack }: { project: VideoTe
           <label htmlFor={ids.name} className="text-sm font-semibold text-gray-800 dark:text-gray-100">
             Name
           </label>
-          <span className="text-xs text-gray-500 dark:text-gray-400" role="status" aria-live="polite">
-            {saveLabel}
-          </span>
         </div>
         <input
           id={ids.name}
@@ -382,7 +447,9 @@ export function VideoTextEditor({ project: initial, onBack }: { project: VideoTe
           maxLength={120}
           onChange={(e) => onName(e.target.value)}
         />
-        <FieldError>{autosave.status === 'error' ? autosave.error : null}</FieldError>
+        <div className="mt-1">
+          <SaveStatus status={autosave.status} error={autosave.error} announce />
+        </div>
       </div>
 
       {/* Upload */}
@@ -404,7 +471,11 @@ export function VideoTextEditor({ project: initial, onBack }: { project: VideoTe
               : 'border-gray-300 bg-gray-50/60 dark:border-gray-700 dark:bg-gray-900/30'
           } ${lockUploadAndRender ? 'opacity-60' : ''}`}
         >
-          {upload.phase === 'uploading' ? (
+          {upload.phase === 'saving' ? (
+            <p className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Saving…
+            </p>
+          ) : upload.phase === 'uploading' ? (
             <div className="space-y-2">
               <p className="text-sm text-gray-700 dark:text-gray-200">Uploading {upload.pct}%</p>
               <div
@@ -534,7 +605,8 @@ export function VideoTextEditor({ project: initial, onBack }: { project: VideoTe
             </Section>
           )}
 
-          {/* Timeline */}
+          {/* Timeline, with the save status beside it */}
+          <SaveStatus status={autosave.status} error={autosave.error} announce={false} testId="timeline-save-status" />
           <Timeline
             blocks={project.blocks}
             durationSec={source.durationSec}

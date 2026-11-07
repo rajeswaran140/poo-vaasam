@@ -126,9 +126,13 @@ export function useRenderJob(projectId: string, initial: RenderState) {
   const [render, setRender] = useState<RenderState>(initial);
   const [phase, setPhase] = useState<Phase | null>(null);
   const [running, setRunning] = useState(resume);
-  const [error, setError] = useState<string | null>(
-    initial.status === 'error' ? initial.error : null,
-  );
+  const [error, setError] = useState<string | null>(() => {
+    if (initial.status === 'error') return initial.error;
+    // In flight on paper, but silent for longer than the slot's stale time:
+    // say so, rather than showing nothing beside an enabled button.
+    if (isInFlight(initial) && !isFresh(initial)) return STOPPED;
+    return null;
+  });
   const [startedAt, setStartedAt] = useState<number | null>(() => {
     if (!resume) return null;
     const t = initial.startedAt ? new Date(initial.startedAt).getTime() : NaN;

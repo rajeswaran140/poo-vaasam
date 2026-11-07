@@ -1,16 +1,22 @@
 /** @jest-environment jsdom */
 /** The Video Text project list: list, create inline, open, back, and ?p= survives a reload. */
 jest.mock('@/lib/client-auth', () => ({ adminFetch: jest.fn() }));
+const mockGuard = jest.fn(() => true);
 jest.mock('@/components/admin/video-text/VideoTextEditor', () => ({
-  VideoTextEditor: ({ project, onBack }: { project: { name: string }; onBack: () => void }) => (
-    <div>
-      <p>Editing {project.name}</p>
-      <button type="button" onClick={onBack}>All projects</button>
-    </div>
-  ),
+  VideoTextEditor: ({ project, onBack, leaveGuard }: {
+    project: { name: string }; onBack: () => void; leaveGuard?: { current: (() => boolean) | null };
+  }) => {
+    if (leaveGuard) leaveGuard.current = () => mockGuard();
+    return (
+      <div>
+        <p>Editing {project.name}</p>
+        <button type="button" onClick={onBack}>All projects</button>
+      </div>
+    );
+  },
 }));
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { adminFetch } from '@/lib/client-auth';
 import { VideoTextApp } from '@/components/admin/video-text/VideoTextApp';
 
@@ -69,4 +75,21 @@ it('New project asks for a name inline and opens it', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Create' }));
   expect(await screen.findByText('Editing Fresh')).toBeInTheDocument();
   await waitFor(() => expect(window.location.search).toBe('?p=n'));
+});
+
+it('browser Back away from a project asks the editor first, and stays when told to', async () => {
+  window.history.replaceState(null, '', '/admin/video-text?p=a');
+  render(<VideoTextApp />);
+  expect(await screen.findByText('Editing Song A')).toBeInTheDocument();
+
+  mockGuard.mockReturnValueOnce(false);
+  window.history.replaceState(null, '', '/admin/video-text');
+  act(() => { window.dispatchEvent(new PopStateEvent('popstate')); });
+  expect(mockGuard).toHaveBeenCalled();
+  expect(screen.getByText('Editing Song A')).toBeInTheDocument();
+  expect(window.location.search).toBe('?p=a');
+
+  window.history.replaceState(null, '', '/admin/video-text');
+  act(() => { window.dispatchEvent(new PopStateEvent('popstate')); });
+  expect(await screen.findByText('Song B')).toBeInTheDocument();
 });

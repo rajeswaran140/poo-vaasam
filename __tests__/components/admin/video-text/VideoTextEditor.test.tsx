@@ -109,7 +109,7 @@ describe('autosave', () => {
     expect(body.edits.titleText).toBe('Song');
     expect(body.edits.blocks).toEqual([expect.objectContaining({ id: 'title', text: 'Song' })]);
     await act(async () => {});
-    expect(screen.getByText('Saved')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Saved');
 
     // The next save carries the version the server returned.
     fireEvent.change(title, { target: { value: 'Song 2' } });
@@ -136,7 +136,9 @@ describe('autosave', () => {
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'My title' } });
     await act(async () => { jest.advanceTimersByTime(800); });
     await act(async () => {});
-    expect(screen.getByText(msg)).toBeInTheDocument();
+    // Under Name (announced) and beside the timeline, where the edit was made.
+    expect(screen.getByRole('alert')).toHaveTextContent(msg);
+    expect(within(screen.getByTestId('timeline-save-status')).getByText(msg)).toBeInTheDocument();
     expect(screen.getByLabelText('Title')).toHaveValue('My title');
 
     // Not dropped: the next change tries again with everything typed so far.
@@ -210,6 +212,7 @@ describe('Make video', () => {
     await act(async () => { jest.advanceTimersByTime(800); });
     expect(calls('PATCH', '/api/admin/video-text/p1')).toHaveLength(0);
     expect(screen.getByLabelText('Title')).toHaveValue('Changed');
+    expect(within(screen.getByTestId('timeline-save-status')).getByText('Changes will save when the render starts')).toBeInTheDocument();
 
     // The worker has moved on: the held edit is saved.
     status = 'encoding';
@@ -329,6 +332,85 @@ it('an expired preview link is fetched again and playback resumes from the same 
   expect(screen.getByRole('alert')).toHaveTextContent('The video could not be played — reload the page to try again.');
   expect(calls('GET', '/api/admin/video-text/p1/source')).toHaveLength(2);
   clock.mockRestore();
+});
+
+describe('leaving with unsaved edits', () => {
+  it('"All projects" asks first, and stays on "Cancel"', async () => {
+    jest.useFakeTimers();
+    routes['PATCH /api/admin/video-text/p1'] = () => json({ version: 4 });
+    const onBack = jest.fn();
+    const confirm = jest.spyOn(window, 'confirm').mockReturnValue(false);
+    render(<VideoTextEditor project={project()} onBack={onBack} />);
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Unsaved' } });
+    fireEvent.click(screen.getByRole('button', { name: /All projects/ }));
+    expect(confirm).toHaveBeenCalledWith('You have unsaved changes. Leave anyway?');
+    expect(onBack).not.toHaveBeenCalled();
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: /All projects/ }));
+    expect(onBack).toHaveBeenCalledTimes(1);
+    confirm.mockRestore();
+    jest.useRealTimers();
+  });
+
+  it('with nothing unsaved, "All projects" leaves without asking; the guard says go', async () => {
+    const onBack = jest.fn();
+    const confirm = jest.spyOn(window, 'confirm');
+    const guard: { current: (() => boolean) | null } = { current: null };
+    render(<VideoTextEditor project={project()} onBack={onBack} leaveGuard={guard} />);
+    expect(guard.current?.()).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: /All projects/ }));
+    expect(onBack).toHaveBeenCalled();
+    expect(confirm).not.toHaveBeenCalled();
+    confirm.mockRestore();
+    await waitFor(() => expect(calls('GET', '/api/admin/video-text/p1/source')).toHaveLength(1));
+  });
+});
+
+it('Make video is disabled while an upload saves its pending edits first', async () => {
+  jest.useFakeTimers();
+  let release!: (r: Response) => void;
+  routes['PATCH /api/admin/video-text/p1'] = () => new Promise<Response>((r) => { release = r; });
+  routes['POST /api/admin/video-text/p1/upload'] = () => json({ error: 'stop here' }, 400);
+  render(<VideoTextEditor project={project({ titleText: 'Song', blocks: [titleBlock] })} onBack={() => {}} />);
+  fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Pending' } });
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText(/Choose a video/i), { target: { files: [new File(['x'], 'a.mp4', { type: 'video/mp4' })] } });
+  });
+  expect(calls('PATCH', '/api/admin/video-text/p1')).toHaveLength(1);
+  expect(screen.getByRole('button', { name: 'Make video' })).toBeDisabled();
+  await act(async () => { release(json({ version: 4 })); });
+  await waitFor(() => expect(screen.getByText('stop here')).toBeInTheDocument());
+  expect(screen.getByRole('button', { name: 'Make video' })).toBeEnabled();
+  jest.useRealTimers();
+});
+
+describe('Download', () => {
+  const done = (updatedAt: string): RenderState => ({
+    ...idleRender, renderId: 'r1', status: 'done', outputKey: 'audio/mastering/video-text/p1/render-r1/output.mp4',
+    outputExpiresAt: '2999-12-08T00:00:00.000Z', updatedAt,
+  });
+
+  it('is hidden when the video was uploaded after the render finished', () => {
+    render(<VideoTextEditor project={project({ render: done('2026-11-06T00:00:00.000Z') })} onBack={() => {}} />);
+    expect(screen.queryByRole('button', { name: 'Download' })).toBeNull();
+  });
+
+  it('downloads through a link and does not trigger the unsaved-changes warning', async () => {
+    jest.useFakeTimers();
+    routes['GET /api/admin/video-text/p1/download'] = () => json({ url: 'https://s3/out.mp4' });
+    routes['PATCH /api/admin/video-text/p1'] = () => json({ version: 4 });
+    const click = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    render(<VideoTextEditor project={project({ render: done('2026-11-08T00:00:00.000Z') })} onBack={() => {}} />);
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Unsaved' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Download' })); });
+    await waitFor(() => expect(click).toHaveBeenCalledTimes(1));
+    expect((click.mock.contexts[0] as HTMLAnchorElement).href).toBe('https://s3/out.mp4');
+    const leaving = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(leaving);
+    expect(leaving.defaultPrevented).toBe(false);
+    click.mockRestore();
+    jest.useRealTimers();
+  });
 });
 
 it('a re-upload that moved one line says so in the singular', async () => {

@@ -62,3 +62,13 @@ it('two start() calls in one tick run one render', async () => {
   expect(posts('/render')).toHaveLength(1);
   expect(renderBlockPng).toHaveBeenCalledTimes(1);
 });
+
+it('a render still "in flight" but silent past the stale time shows the stopped message, not nothing', () => {
+  const old = new Date(Date.now() - 21 * 60 * 1000).toISOString();
+  const { result } = renderHook(() =>
+    useRenderJob('p1', { ...idle, renderId: 'r0', status: 'encoding', startedAt: old, updatedAt: old }),
+  );
+  expect(result.current.running).toBe(false);
+  expect(result.current.error).toBe('The render stopped responding — press Make video to try again.');
+  expect(mockedFetch).not.toHaveBeenCalled();
+});
