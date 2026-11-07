@@ -24,6 +24,8 @@ import { TextPreview } from './TextPreview';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const EXPIRED = 'The uploaded video was deleted after 30 days — upload it again; your timing is kept.';
+const UNPLAYABLE = 'The video could not be played — reload the page to try again.';
+const LINK_RETRY_AFTER_MS = 60 * 1000;
 const NOT_SAVED = 'Your latest changes are not saved yet — see the message at the top, then try again.';
 
 /** "7 Dec 2026", in UTC so it matches the stored date everywhere. */
@@ -109,24 +111,69 @@ export function VideoTextEditor({ project: initial, onBack }: { project: VideoTe
   const sourceKey = project.source?.key ?? null;
   const expired = isExpired(project.source);
 
+  const fetchPreviewUrl = useCallback(async (): Promise<string> => {
+    const res = await adminFetch(`/api/admin/video-text/${initial.id}/source`);
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || typeof body?.url !== 'string') throw new Error(body?.error || 'Could not load the video.');
+    return body.url;
+  }, [initial.id]);
+  const linkFetchedAt = useRef(0);
+  const resumeAt = useRef<number | null>(null);
+
   useEffect(() => {
     if (!sourceKey || expired || localUrl) return;
     let cancelled = false;
     setPreviewError(null);
-    (async () => {
-      try {
-        const res = await adminFetch(`/api/admin/video-text/${initial.id}/source`);
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok || typeof body?.url !== 'string') throw new Error(body?.error || 'Could not load the video.');
-        if (!cancelled) setRemoteUrl(body.url);
-      } catch (err) {
-        if (!cancelled) setPreviewError(err instanceof Error ? err.message : String(err));
-      }
-    })();
+    fetchPreviewUrl().then(
+      (url) => {
+        if (cancelled) return;
+        linkFetchedAt.current = Date.now();
+        setRemoteUrl(url);
+      },
+      (err) => !cancelled && setPreviewError(err instanceof Error ? err.message : String(err)),
+    );
     return () => {
       cancelled = true;
     };
-  }, [initial.id, sourceKey, expired, localUrl]);
+  }, [sourceKey, expired, localUrl, fetchPreviewUrl]);
+
+  // The link lasts an hour and timing 40 lines can take longer: once it
+  // expires every seek fails. Fetch a new link and carry on from the same
+  // spot. An error on a link under a minute old is not an expiry — say so.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !remoteUrl || localUrl) return;
+    let cancelled = false;
+    const onError = () => {
+      if (Date.now() - linkFetchedAt.current < LINK_RETRY_AFTER_MS) {
+        setPreviewError(UNPLAYABLE);
+        return;
+      }
+      linkFetchedAt.current = Date.now();
+      const at = v.currentTime;
+      fetchPreviewUrl().then(
+        (url) => {
+          if (cancelled) return;
+          resumeAt.current = at;
+          setPreviewError(null);
+          setRemoteUrl(url);
+        },
+        (err) => !cancelled && setPreviewError(err instanceof Error ? err.message : String(err)),
+      );
+    };
+    const onLoaded = () => {
+      if (resumeAt.current === null) return;
+      v.currentTime = resumeAt.current;
+      resumeAt.current = null;
+    };
+    v.addEventListener('error', onError);
+    v.addEventListener('loadedmetadata', onLoaded);
+    return () => {
+      cancelled = true;
+      v.removeEventListener('error', onError);
+      v.removeEventListener('loadedmetadata', onLoaded);
+    };
+  }, [remoteUrl, localUrl, fetchPreviewUrl]);
 
   useEffect(() => () => {
     if (localUrl) URL.revokeObjectURL(localUrl);

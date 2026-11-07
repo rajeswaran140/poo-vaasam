@@ -192,6 +192,36 @@ describe('Make video', () => {
     );
   });
 
+  it('holds autosave while the render is starting, then saves once the worker has the blocks', async () => {
+    jest.useFakeTimers();
+    let status: RenderState['status'] = 'queued';
+    routes['POST /api/admin/video-text/p1/overlays'] = () =>
+      json({ uploads: [{ blockId: 'title', url: 'https://s3', fields: {}, key: 'k' }] });
+    routes['POST /api/admin/video-text/p1/render'] = () => json({ status: 'queued' }, 202);
+    routes['GET /api/admin/video-text/p1'] = () =>
+      json({ project: { ...p(), render: { ...idleRender, renderId: lastRenderId(), status, updatedAt: new Date().toISOString() } } });
+    routes['PATCH /api/admin/video-text/p1'] = () => json({ version: 4 });
+    render(<VideoTextEditor project={p()} onBack={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Make video' }));
+    await waitFor(() => expect(calls('GET', '/api/admin/video-text/p1')).toHaveLength(1));
+
+    // Still queued: the worker has not read the stored blocks yet.
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Changed' } });
+    await act(async () => { jest.advanceTimersByTime(800); });
+    expect(calls('PATCH', '/api/admin/video-text/p1')).toHaveLength(0);
+    expect(screen.getByLabelText('Title')).toHaveValue('Changed');
+
+    // The worker has moved on: the held edit is saved.
+    status = 'encoding';
+    await act(async () => { jest.advanceTimersByTime(4000); });
+    await waitFor(() => expect(screen.getByText(/Encoding/)).toBeInTheDocument());
+    await act(async () => { jest.advanceTimersByTime(800); });
+    const patches = calls('PATCH', '/api/admin/video-text/p1');
+    expect(patches).toHaveLength(1);
+    expect(bodyOf(patches[0][1]).edits.titleText).toBe('Changed');
+    jest.useRealTimers();
+  });
+
   it('mounting with an encoding render resumes polling and shows Encoding', async () => {
     const now = new Date().toISOString();
     const inFlight: RenderState = {
@@ -204,6 +234,28 @@ describe('Make video', () => {
     await waitFor(() => expect(calls('GET', '/api/admin/video-text/p1').length).toBeGreaterThan(0));
     expect(renderBlockPng).not.toHaveBeenCalled();
   });
+});
+
+it('an expired preview link is fetched again and playback resumes from the same spot', async () => {
+  let n = 0;
+  routes['GET /api/admin/video-text/p1/source'] = () => json({ url: `https://s3/source-${++n}.mp4` });
+  const { container } = render(<VideoTextEditor project={project()} onBack={() => {}} />);
+  await waitFor(() => expect(container.querySelector('video')).toHaveAttribute('src', 'https://s3/source-1.mp4'));
+  const video = container.querySelector('video')!;
+  video.currentTime = 42;
+  // An hour later the link has expired and the next range request fails.
+  const realNow = Date.now();
+  const clock = jest.spyOn(Date, 'now').mockReturnValue(realNow + 61 * 60 * 1000);
+  await act(async () => { fireEvent.error(video); });
+  await waitFor(() => expect(video).toHaveAttribute('src', 'https://s3/source-2.mp4'));
+  fireEvent.loadedMetadata(video);
+  expect(video.currentTime).toBe(42);
+
+  // A second failure straight away is not an expiry: say so, do not loop.
+  await act(async () => { fireEvent.error(video); });
+  expect(screen.getByRole('alert')).toHaveTextContent('The video could not be played — reload the page to try again.');
+  expect(calls('GET', '/api/admin/video-text/p1/source')).toHaveLength(2);
+  clock.mockRestore();
 });
 
 it('a re-upload that moved lines says so', async () => {
