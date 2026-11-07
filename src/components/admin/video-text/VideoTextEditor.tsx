@@ -15,7 +15,7 @@ import { ArrowLeft, Download, Loader2, UploadCloud } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 import { putToS3 } from '@/lib/mastering-upload-client';
 import { MAX_VIDEO_TEXT_BYTES } from '@/lib/video-text/keys';
-import { syncTextToBlocks, validateBlocks } from '@/lib/video-text/timeline';
+import { syncTextToBlocks, unplacedLineCount, validateBlocks } from '@/lib/video-text/timeline';
 import type { SourceInfo, TextBlock, TextStyle, VideoTextProject } from '@/types/videoText';
 import { useAutosave, type AutosaveStatus } from './useAutosave';
 import { useRenderJob } from './useRenderJob';
@@ -421,6 +421,8 @@ export function VideoTextEditor({
   const outputIsStale = Boolean(
     source && render.updatedAt && new Date(source.uploadedAt).getTime() > new Date(render.updatedAt).getTime(),
   );
+  // A video too short for every line keeps the lines that fit; say how many do not.
+  const unplaced = source ? unplacedLineCount(project.blocks, project) : 0;
   const showDownload = !job.running && render.status === 'done' && Boolean(render.outputKey) && !outputIsStale;
 
   return (
@@ -614,6 +616,12 @@ export function VideoTextEditor({
             onChange={setBlocks}
             onSeek={seek}
           />
+          {unplaced > 0 && (
+            <p className="text-sm text-amber-700 dark:text-amber-400">
+              {unplaced === 1 ? "1 line doesn't" : `${unplaced} lines don't`} fit in this video — it is too short to show
+              each for half a second.
+            </p>
+          )}
 
           {/* Style */}
           <div className="flex min-w-0 flex-wrap items-center gap-x-8 gap-y-3">

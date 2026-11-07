@@ -1,7 +1,8 @@
 import {
   lyricLines, defaultBlocks, moveBlock, resizeBlock, clampToDuration, syncTextToBlocks,
-  validateBlocks, MIN_BLOCK_SEC,
+  validateBlocks, MIN_BLOCK_SEC, unplacedLineCount,
 } from '@/lib/video-text/timeline';
+import { floorCentis } from '@/lib/video-text/keys';
 import type { TextBlock } from '@/types/videoText';
 
 const base = { titleText: 'T', creditsText: 'C', lyricsText: 'l1\nl2\nl3\nl4', durationSec: 344 };
@@ -155,5 +156,111 @@ describe('validateBlocks', () => {
   });
   it('flags a too-short block', () => {
     expect(validateBlocks([{ id: 'title', track: 'title', text: 'T', startSec: 1, endSec: 1.1 }], 344)).toEqual(expect.any(String));
+  });
+});
+
+const nLines = (n: number) => Array.from({ length: n }, (_, i) => `l${i}`).join('\n');
+const lyricsOk = (b: TextBlock[]) => {
+  const l = lyrics(b);
+  for (let i = 1; i < l.length; i++) expect(l[i].startSec).toBeGreaterThanOrEqual(l[i - 1].endSec - 0.005);
+};
+
+describe('F5: clampToDuration re-tiles lyrics inside the lyric region', () => {
+  it('344 -> 300 keeps every lyric between the title end and the credits start', () => {
+    const { blocks } = clampToDuration(defaultBlocks(base), 300);
+    expect(validateBlocks(blocks, 300)).toBeNull();
+    const t = get(blocks, 'title');
+    const c = get(blocks, 'credits');
+    const l = lyrics(blocks);
+    expect(l).toHaveLength(4);
+    for (const b of l) {
+      expect(b.startSec).toBeGreaterThanOrEqual(t.endSec);
+      expect(b.endSec).toBeLessThanOrEqual(c.startSec);
+    }
+  });
+  it('falls back to the whole video when the region cannot hold the lines', () => {
+    const many = defaultBlocks({ ...base, lyricsText: nLines(40) });
+    const { blocks } = clampToDuration(many, 25);
+    expect(validateBlocks(blocks, 25)).toBeNull();
+    expect(lyrics(blocks)).toHaveLength(40);
+  });
+});
+
+describe('F6: the generator never produces a layout validateBlocks rejects', () => {
+  it.each([
+    [12, 3],
+    [30, 40],
+    [5, 20],
+    [3, 4],
+    [0.5, 3],
+  ])('defaultBlocks at %s s with %s lines', (d, n) => {
+    const b = defaultBlocks({ ...base, lyricsText: nLines(n), durationSec: d });
+    expect(validateBlocks(b, d)).toBeNull();
+    lyricsOk(b);
+  });
+  it('shrinks title and credits on a short video so lyrics get room', () => {
+    const b = defaultBlocks({ ...base, lyricsText: nLines(3), durationSec: 12 });
+    expect(get(b, 'title').endSec).toBeLessThan(5);
+    expect(get(b, 'credits').endSec - get(b, 'credits').startSec).toBeLessThan(10);
+    expect(get(b, 'title').endSec).toBeLessThanOrEqual(get(b, 'credits').startSec);
+    for (const l of lyrics(b)) {
+      expect(l.startSec).toBeGreaterThanOrEqual(get(b, 'title').endSec);
+      expect(l.endSec).toBeLessThanOrEqual(get(b, 'credits').startSec);
+    }
+  });
+  it('keeps the 5 s / 10 s defaults on a full-length video', () => {
+    const b = defaultBlocks(base);
+    expect(get(b, 'title').endSec).toBe(5);
+    expect(get(b, 'credits').startSec).toBe(334);
+  });
+  it('caps lyrics at what fits and reports the rest as unplaced', () => {
+    const texts = { ...base, lyricsText: nLines(20), durationSec: 5 };
+    const b = defaultBlocks(texts);
+    expect(lyrics(b)).toHaveLength(10);
+    expect(unplacedLineCount(b, texts)).toBe(10);
+    expect(unplacedLineCount(defaultBlocks(base), base)).toBe(0);
+  });
+  it('places nothing in a video shorter than the minimum block', () => {
+    const b = defaultBlocks({ ...base, durationSec: 0.29 });
+    expect(b).toEqual([]);
+    expect(validateBlocks(b, 0.29)).toBeNull();
+  });
+  it('syncTextToBlocks stays valid as lines are added to a short video', () => {
+    for (const [d, n] of [[12, 3], [30, 40], [5, 20]] as const) {
+      let b = defaultBlocks({ ...base, lyricsText: nLines(1), durationSec: d });
+      for (let k = 2; k <= n; k++) {
+        b = syncTextToBlocks(b, { titleText: 'T', creditsText: 'C', lyricsText: nLines(k) }, d);
+        expect(validateBlocks(b, d)).toBeNull();
+        lyricsOk(b);
+      }
+    }
+  });
+  it('syncTextToBlocks adds title and credits that fit a short video', () => {
+    const b = defaultBlocks({ titleText: '', creditsText: '', lyricsText: nLines(3), durationSec: 4 });
+    const out = syncTextToBlocks(b, { titleText: 'T', creditsText: 'C', lyricsText: nLines(3) }, 4);
+    expect(validateBlocks(out, 4)).toBeNull();
+  });
+  it('clampToDuration stays valid down to a very short video', () => {
+    const from = defaultBlocks({ ...base, lyricsText: nLines(20) });
+    for (const d of [60, 12, 5, 3, 1, 0.5]) {
+      const { blocks } = clampToDuration(from, d);
+      expect(validateBlocks(blocks, d)).toBeNull();
+      lyricsOk(blocks);
+    }
+  });
+});
+
+describe('F1 + F6 property: every 0.01 s length from 0.29 s to 600 s', () => {
+  it('defaultBlocks(d) is valid against floorCentis(d)', () => {
+    const texts = { titleText: 'T', creditsText: 'C', lyricsText: nLines(6) };
+    const specials = [0.29, 128.14, 343.99];
+    const ds: number[] = [...specials];
+    for (let c = 29; c <= 60000; c += 1) ds.push(c / 100);
+    for (const raw of ds) {
+      const d = floorCentis(raw);
+      expect(floorCentis(d)).toBe(d);
+      const problem = validateBlocks(defaultBlocks({ ...texts, durationSec: d }), d);
+      if (problem !== null) throw new Error(`d=${d}: ${problem}`);
+    }
   });
 });

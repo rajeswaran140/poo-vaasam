@@ -413,6 +413,15 @@ describe('Download', () => {
   });
 });
 
+it('F6: says how many lines do not fit in a very short video', async () => {
+  render(<VideoTextEditor project={project({ source: { ...source, durationSec: 5 } })} onBack={() => {}} />);
+  const lines = Array.from({ length: 20 }, (_, i) => `l${i}`).join('\n');
+  fireEvent.change(screen.getByLabelText('Lyrics'), { target: { value: lines } });
+  expect(screen.getAllByRole('slider', { name: /^Lyric \d+:/ })).toHaveLength(10);
+  expect(screen.getByText("10 lines don't fit in this video — it is too short to show each for half a second.")).toBeInTheDocument();
+  await waitFor(() => expect(calls('GET', '/api/admin/video-text/p1/source')).toHaveLength(1));
+});
+
 it('a re-upload that moved one line says so in the singular', async () => {
   routes['POST /api/admin/video-text/p1/upload'] = () => json({ url: 'https://s3', fields: {}, key: 'audio/mastering/video-text/p1/source/c.mp4' });
   routes['POST /api/admin/video-text/p1/source'] = () =>
