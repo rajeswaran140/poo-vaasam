@@ -60,6 +60,29 @@ import { MasteringStudio, buildJoinPayload, parseTagList, parseHashtags } from '
 import { adminFetch } from '@/lib/client-auth';
 import { downloadFilename } from '@/lib/mastering-storage';
 
+/**
+ * The 2026-11-07 layout keeps the rare controls behind disclosures that are
+ * CLOSED on every load. Tests that use those controls open them first, the way
+ * Raj would; what each control then does is asserted exactly as before.
+ */
+const openDisclosure = async (name: RegExp) => {
+  const toggle = screen.getByRole('button', { name });
+  if (toggle.getAttribute('aria-expanded') !== 'true') {
+    await act(async () => { fireEvent.click(toggle); });
+  }
+};
+const openMoreTools = () => openDisclosure(/^More tools/);
+/** Open a saved-master row's "…" menu — the first row's, or row `index`. */
+const openRowMenu = async (index = 0) => {
+  const menus = await screen.findAllByRole('button', { name: /^More actions for / });
+  await act(async () => { fireEvent.click(menus[index]); });
+};
+/** Pick an item from a row's "…" menu. */
+const pickRowMenuItem = async (name: RegExp, index = 0) => {
+  await openRowMenu(index);
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name })); });
+};
+
 const mockedFetch = adminFetch as jest.Mock;
 const json = (body: unknown, ok = true, status = 200) =>
   ({ ok, status, json: async () => body }) as unknown as Response;
@@ -229,7 +252,7 @@ describe('verdict copy', () => {
     await uploadA();
     await waitFor(() => expect(screen.getByRole('button', { name: /Master to/ })).toBeEnabled());
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
   };
 
   it('passes a master that lands within 1 LU — not the 0.1 LU hair-trigger', async () => {
@@ -266,7 +289,7 @@ describe('dual-target workflow', () => {
     await uploadA();
     await waitFor(() => expect(screen.getByRole('button', { name: /Master to -14/ })).toBeEnabled());
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
 
     // Pick Apple's -16: the button must become live again, still holding the
     // uploaded source. Previously it stayed disabled and the only way on was a
@@ -275,7 +298,7 @@ describe('dual-target workflow', () => {
     const master16 = screen.getByRole('button', { name: /Master to -16/ });
     expect(master16).toBeEnabled();
     // The stale -14 result must not still be on screen against the new target.
-    expect(screen.queryByText(/3 · Result/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Mastered result/)).not.toBeInTheDocument();
   });
 
   it('keeps the trim/fade when mastering the SAME source to a second target', async () => {
@@ -293,7 +316,7 @@ describe('dual-target workflow', () => {
       fireEvent.change(screen.getByLabelText(/Fade out/i), { target: { value: '6' } });
     });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
 
     await act(async () => { fireEvent.click(screen.getByRole('radio', { name: /-16 LUFS/ })); });
     mockedFetch.mockResolvedValueOnce(json({ success: true, jobId: 'job-2', status: 'queued' }));
@@ -411,14 +434,14 @@ describe('download', () => {
     await uploadA();
     await waitFor(() => expect(screen.getByRole('button', { name: /Master to/ })).toBeEnabled());
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
 
     mockedFetch.mockResolvedValueOnce(json({ success: true, url: 'https://s3/signed', filename: 'song-master-14LUFS.wav' }));
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Download for Adobe/ })); });
 
     // Navigating would destroy the result panel; a new tab preserves it.
     await waitFor(() => expect(window.open).toHaveBeenCalledWith('https://s3/signed', '_blank', 'noopener'));
-    expect(screen.getByText(/3 · Result/)).toBeInTheDocument();
+    expect(screen.getByText(/Mastered result/)).toBeInTheDocument();
   });
 
   it('carries the master title (with its target) into the download request', async () => {
@@ -427,7 +450,7 @@ describe('download', () => {
     await uploadA();
     await waitFor(() => expect(screen.getByRole('button', { name: /Master to/ })).toBeEnabled());
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
 
     await act(async () => {
       fireEvent.change(screen.getByLabelText(/name this master/i), { target: { value: 'Amma En Agame' } });
@@ -445,7 +468,7 @@ describe('download', () => {
     await uploadA();
     await waitFor(() => expect(screen.getByRole('button', { name: /Master to/ })).toBeEnabled());
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
 
     mockedFetch.mockResolvedValueOnce(json({ success: true, url: 'https://s3/signed', filename: 'x.wav' }));
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Download for Adobe/ })); });
@@ -458,7 +481,7 @@ describe('download', () => {
     await uploadA();
     await waitFor(() => expect(screen.getByRole('button', { name: /Master to/ })).toBeEnabled());
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
 
     const createObjectURL = jest.fn(() => 'blob:report');
     const revokeObjectURL = jest.fn();
@@ -482,7 +505,7 @@ describe('download', () => {
     await uploadA();
     await waitFor(() => expect(screen.getByRole('button', { name: /Master to/ })).toBeEnabled());
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
 
     expect(screen.getByText(/Streaming readiness/i)).toBeInTheDocument();
     // −14 master plays as-is on the −14 streamers, playback lowered on Apple −16.
@@ -560,7 +583,7 @@ describe('cancelling is an outcome, not a failure', () => {
     routeDefaults(doneJob({ id: 'job-7' }));
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Resume watching job/i })); });
 
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
     expect(mockedFetch.mock.calls.at(-1)![0]).toBe('/api/admin/music-lab/master/job-7');
   });
 });
@@ -576,7 +599,7 @@ describe('source file info', () => {
     await uploadA();
     await waitFor(() => expect(screen.getByRole('button', { name: /Master to/ })).toBeEnabled());
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
 
     expect(screen.getByText('16-bit · 44.1 kHz · stereo · 3:42')).toBeInTheDocument();
     expect(screen.getByText('24-bit · 48 kHz')).toBeInTheDocument(); // what we wrote
@@ -589,7 +612,8 @@ describe('source file info', () => {
     await uploadA();
     await waitFor(() => expect(screen.getByRole('button', { name: /Master to/ })).toBeEnabled());
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
+    await openDisclosure(/^Full measurements/);
     expect(screen.getByRole('rowheader', { name: /^Source$/ })).toBeInTheDocument();
   });
 });
@@ -605,7 +629,7 @@ describe('job recovery', () => {
 
     render(<MasteringStudio />);
 
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
     expect(screen.getByText('song.wav')).toBeInTheDocument();
     expect(mockedFetch.mock.calls[0][0]).toBe('/api/admin/music-lab/master/job-9');
     // A finished job must not be replayed on the next mount.
@@ -629,7 +653,7 @@ describe('per-job state resets between masters', () => {
     await uploadA();
     await waitFor(() => expect(screen.getByRole('button', { name: /Master to -14/ })).toBeEnabled());
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
 
     // Save the first master.
     mockedFetch.mockResolvedValueOnce(json({ success: true, title: 'One' }));
@@ -642,7 +666,7 @@ describe('per-job state resets between masters', () => {
     mockedFetch.mockResolvedValueOnce(json({ success: true, jobId: 'job-2', status: 'queued' }));
     mockedFetch.mockResolvedValue(json(doneJob({ id: 'job-2', target: -16, afterLufs: -16 })));
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -16/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
 
     // The second master must be savable. Before the fix this read "Saved to
     // library" and was disabled, for a job that had never been saved.
@@ -657,7 +681,7 @@ describe('per-job state resets between masters', () => {
     await uploadA();
     await waitFor(() => expect(screen.getByRole('button', { name: /Master to -14/ })).toBeEnabled());
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
 
     expect(screen.queryByRole('button', { name: /Publish web MP3/ })).not.toBeInTheDocument();
   });
@@ -723,6 +747,7 @@ describe('two-part assembly', () => {
       mockedFetch.mockResolvedValue(
         json({ success: true, status: 'ready', url: 'https://s3/seam.mp3', levelsNote: 'within 0.3 LU', levels: { mismatched: false } })
       );
+      await openMoreTools();
       await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Hear the seam/i })); });
 
       const req = mockedFetch.mock.calls.find(
@@ -747,6 +772,7 @@ describe('two-part assembly', () => {
           levels: { mismatched: true, gapLu: 3 },
         })
       );
+      await openMoreTools();
       await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Hear the seam/i })); });
 
       const audio = await screen.findByLabelText(/crossfade between Part A and Part B/i);
@@ -761,6 +787,7 @@ describe('two-part assembly', () => {
       await setUpSeam();
       mockedFetch.mockResolvedValueOnce(json({ success: true, previewKey: 'audio/mastering/seam/abc.mp3', status: 'queued' }));
       mockedFetch.mockResolvedValue(json({ success: true, status: 'ready', url: 'https://s3/first.mp3', levelsNote: '', levels: {} }));
+      await openMoreTools();
       await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Hear the seam/i })); });
       expect(await screen.findByLabelText(/crossfade between Part A/i)).toHaveAttribute('src', 'https://s3/first.mp3');
 
@@ -770,6 +797,7 @@ describe('two-part assembly', () => {
       });
       mockedFetch.mockResolvedValueOnce(json({ success: true, previewKey: 'audio/mastering/seam/def.mp3', status: 'queued' }));
       mockedFetch.mockResolvedValue(json({ success: true, status: 'ready', url: 'https://s3/second.mp3', levelsNote: '', levels: {} }));
+      await openMoreTools();
       await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Hear the seam/i })); });
 
       const audio = await screen.findByLabelText(/crossfade between Part A/i);
@@ -804,6 +832,7 @@ describe('two-part assembly', () => {
           },
         })
       );
+      await openMoreTools();
       await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Hear the seam/i })); });
 
       expect(await screen.findByText(/176\.2 BPM/)).toBeInTheDocument();
@@ -823,6 +852,7 @@ describe('two-part assembly', () => {
       mockedFetch.mockResolvedValue(
         json({ success: true, status: 'ready', url: 'https://s3/seam.mp3', levelsNote: '', levels: {} })
       );
+      await openMoreTools();
       await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Hear the seam/i })); });
 
       expect(await screen.findByLabelText(/crossfade between Part A/i)).toBeInTheDocument();
@@ -834,6 +864,7 @@ describe('two-part assembly', () => {
       mockedFetch.mockResolvedValueOnce(
         json({ success: false, error: "the 4.5s crossfade is longer than Part B" }, false, 409)
       );
+      await openMoreTools();
       await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Hear the seam/i })); });
 
       expect(await screen.findByRole('alert')).toHaveTextContent(/longer than Part B/);
@@ -857,7 +888,7 @@ describe('two-part assembly', () => {
     mockedFetch.mockResolvedValueOnce(json({ success: true, jobId: 'job-1', status: 'queued' }));
     mockedFetch.mockResolvedValue(json(doneJob()));
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
 
     const enqueue = mockedFetch.mock.calls.find(
       (c) => c[0] === '/api/admin/music-lab/master' && c[1]?.method === 'POST'
@@ -879,7 +910,7 @@ describe('two-part assembly', () => {
     render(<MasteringStudio />);
     await uploadA();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
 
     const enqueue = mockedFetch.mock.calls.find(
       (c) => c[0] === '/api/admin/music-lab/master' && c[1]?.method === 'POST'
@@ -896,7 +927,7 @@ describe('two-part assembly', () => {
     mockedFetch.mockResolvedValueOnce(json({ success: true, jobId: 'job-1', status: 'queued' }));
     mockedFetch.mockResolvedValue(json(doneJob()));
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
 
     const enqueue = mockedFetch.mock.calls.find(
       (c) => c[0] === '/api/admin/music-lab/master' && c[1]?.method === 'POST'
@@ -918,6 +949,7 @@ describe('two-part assembly', () => {
     const mp3 = new File(['x'], 'part-b.mp3', { type: 'audio/mpeg' });
     await act(async () => { fireEvent.change(input, { target: { files: [mp3] } }); });
 
+    await openMoreTools();
     expect(await screen.findByRole('alert')).toHaveTextContent(/Part B must be a WAV/i);
   });
 });
@@ -985,7 +1017,7 @@ describe('two-part assembly — stale and lost state', () => {
     mockedFetch.mockResolvedValue(json(doneJob()));
     render(<MasteringStudio />);
 
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
     // Re-arm for the second target: the join must still be attached.
     await act(async () => { fireEvent.click(screen.getByRole('radio', { name: /-16 LUFS/ })); });
     expect(await screen.findByText('part-b.wav')).toBeInTheDocument();
@@ -1002,7 +1034,7 @@ describe('two-part assembly — stale and lost state', () => {
     render(<MasteringStudio />);
     await uploadA();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
 
     expect(screen.getByText(/Two parts joined with a 3s crossfade \(qsin, equal power\) — 6:20 assembled/)).toBeInTheDocument();
   });
@@ -1028,7 +1060,7 @@ describe('render for YouTube', () => {
     render(<MasteringStudio />);
     await uploadA();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
     mockedFetch.mockResolvedValueOnce(json({ success: true, title: 'One' }));
     mockedFetch.mockResolvedValueOnce(json({ success: true, masters: [] }));
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save to library/ })); });
@@ -1056,6 +1088,7 @@ describe('render for YouTube', () => {
       mockedFetch.mock.calls.filter((c) => String(c[0]).endsWith(suffix) && c[1]?.method === 'POST');
 
     async function addSecondImage(at: string) {
+      await openMoreTools();
       await act(async () => { fireEvent.click(screen.getByRole('button', { name: /add image/i })); });
       mockedFetch.mockResolvedValueOnce(
         json({ success: true, uploadUrl: 'https://s3/u', fields: { key: 'k' }, key: 'audio/mastering/1_c_second.jpg' })
@@ -1076,6 +1109,7 @@ describe('render for YouTube', () => {
       mockedFetch.mockResolvedValue(
         json(savedDoneJob({ verticalKey: VERTICAL, verticalRenderedAt: '2026-10-01T00:00:00.000Z', verticalSeconds: 221.9 }))
       );
+      await openMoreTools();
       await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Whole song, vertical/ })); });
 
       expect(JSON.parse(posted('/short')[0][1].body)).toEqual({ coverKey: COVER, full: true });
@@ -1087,6 +1121,7 @@ describe('render for YouTube', () => {
       await addCover();
 
       mockedFetch.mockResolvedValueOnce(json({ success: false, error: 'Save this master before making a short.' }, false, 409));
+      await openMoreTools();
       await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Whole song, vertical/ })); });
 
       expect(await screen.findByText(/Save this master before making a short/)).toBeInTheDocument();
@@ -1129,6 +1164,7 @@ describe('render for YouTube', () => {
       mockedFetch.mockResolvedValue(
         json(savedDoneJob({ verticalKey: VERTICAL, verticalRenderedAt: '2026-10-01T00:00:01.000Z' }))
       );
+      await openMoreTools();
       await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Whole song, vertical/ })); });
       expect(JSON.parse(posted('/short')[1][1].body)).toEqual({ coverKey: COVER, full: true, covers: LIST });
     });
@@ -1149,6 +1185,7 @@ describe('render for YouTube', () => {
       mockedFetch.mockResolvedValue(
         json(savedDoneJob({ verticalKey: VERTICAL, verticalRenderedAt: '2026-10-01T00:00:01.000Z' }))
       );
+      await openMoreTools();
       await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Whole song, vertical/ })); });
       expect(JSON.parse(posted('/short')[1][1].body)).toEqual({ coverKey: COVER, full: true, motion: 'zoom-out' });
     });
@@ -1236,6 +1273,7 @@ describe('render for YouTube', () => {
     it('will not render a slideshow while an added image is unfinished', async () => {
       await masterAndSave();
       await addCover();
+      await openMoreTools();
       await act(async () => { fireEvent.click(screen.getByRole('button', { name: /add image/i })); });
 
       expect(screen.getByRole('button', { name: /Render slideshow/ })).toBeDisabled();
@@ -1248,7 +1286,7 @@ describe('render for YouTube', () => {
     render(<MasteringStudio />);
     await uploadA();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
     expect(screen.queryByRole('button', { name: /Render video/ })).not.toBeInTheDocument();
   });
 
@@ -1299,7 +1337,7 @@ describe('render for YouTube', () => {
 
   /** The "Render for YouTube" panel — where its own refusals must appear. */
   const renderSection = () =>
-    screen.getByRole('heading', { name: /Render for YouTube/ }).closest('div') as HTMLElement;
+    screen.getByRole('heading', { name: /4 · Video/ }).closest('section') as HTMLElement;
   /** Every alert on the page sits inside `section` — none in the page banner. */
   const onlyAlertsIn = (section: HTMLElement) => {
     for (const a of screen.getAllByRole('alert')) expect(section).toContainElement(a);
@@ -1631,6 +1669,7 @@ describe('render for YouTube', () => {
         await act(async () => {
           fireEvent.change(screen.getByLabelText(/End at/i), { target: { value: '2:21' } });
         });
+        await openDisclosure(/^Short settings/);
         expect(screen.getByRole('button', { name: /Let it pick/i })).toBeInTheDocument();
 
         await act(async () => {
@@ -1699,7 +1738,7 @@ describe('re-opening a saved master', () => {
     render(<MasteringStudio />);
     mockedFetch.mockResolvedValueOnce(json({ success: true, masters: [job] }));
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Saved masters/i })); });
-    await act(async () => { fireEvent.click(await screen.findByRole('button', { name: /Edit & re-master/i })); });
+    await pickRowMenuItem(/Edit & re-master/i);
   }
 
   it('restores the source and the trim recipe without a re-upload', async () => {
@@ -1718,7 +1757,7 @@ describe('re-opening a saved master', () => {
     mockedFetch.mockResolvedValueOnce(json({ success: true, jobId: 'job-9', status: 'queued' }));
     mockedFetch.mockResolvedValue(json(doneJob({ id: 'job-9', target: -16, afterLufs: -16 })));
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -16/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
 
     const enqueue = mockedFetch.mock.calls.find(
       (c) => c[0] === '/api/admin/music-lab/master' && c[1]?.method === 'POST'
@@ -1739,7 +1778,7 @@ describe('re-opening a saved master', () => {
     mockedFetch.mockResolvedValueOnce(json({ success: true, jobId: 'job-9', status: 'queued' }));
     mockedFetch.mockResolvedValue(json(doneJob({ id: 'job-9', target: -16, afterLufs: -16 })));
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -16/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
 
     const enqueue = mockedFetch.mock.calls.find(
       (c) => c[0] === '/api/admin/music-lab/master' && c[1]?.method === 'POST'
@@ -1764,7 +1803,7 @@ describe('re-opening a saved master', () => {
     mockedFetch.mockResolvedValueOnce(json({ success: true, jobId: 'job-9', status: 'queued' }));
     mockedFetch.mockResolvedValue(json(doneJob({ id: 'job-9', target: -16, afterLufs: -16 })));
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -16/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
 
     expect((screen.getByLabelText(/Name this master/i) as HTMLInputElement).value).toBe('காதல் மழை');
   });
@@ -1775,7 +1814,7 @@ describe('re-opening a saved master', () => {
     await reopen();
     expect(screen.queryByRole('button', { name: /Saved to library/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Publish web MP3/ })).not.toBeInTheDocument();
-    expect(screen.queryByText(/3 · Result/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Mastered result/)).not.toBeInTheDocument();
   });
 
   it('clears a previous seam when re-opening a single-source master', async () => {
@@ -1790,15 +1829,12 @@ describe('re-opening a saved master', () => {
       ],
     }));
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Saved masters/i })); });
-    const buttons = await screen.findAllByRole('button', { name: /Edit & re-master/i });
-
-    await act(async () => { fireEvent.click(buttons[0]); });
+    await pickRowMenuItem(/Edit & re-master/i, 0);
     expect(screen.getByLabelText(/Crossfade \(seconds\)/i)).toBeInTheDocument();
 
     mockedFetch.mockResolvedValueOnce(json({ success: true, masters: [] }));
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Saved masters/i })); });
-    const again = await screen.findAllByRole('button', { name: /Edit & re-master/i });
-    await act(async () => { fireEvent.click(again[1]); });
+    await pickRowMenuItem(/Edit & re-master/i, 1);
 
     expect(screen.queryByLabelText(/Crossfade \(seconds\)/i)).not.toBeInTheDocument();
   });
@@ -1871,7 +1907,7 @@ describe('re-open: the seam seed is scoped to its own Part B', () => {
     render(<MasteringStudio />);
     mockedFetch.mockResolvedValueOnce(json({ success: true, masters: [savedWithSeam] }));
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Saved masters/i })); });
-    await act(async () => { fireEvent.click(await screen.findByRole('button', { name: /Edit & re-master/i })); });
+    await pickRowMenuItem(/Edit & re-master/i);
   }
 
   it('re-masters with the ORIGINAL curve and Part B edit, not rebuilt defaults', async () => {
@@ -1879,7 +1915,7 @@ describe('re-open: the seam seed is scoped to its own Part B', () => {
     mockedFetch.mockResolvedValueOnce(json({ success: true, jobId: 'job-9', status: 'queued' }));
     mockedFetch.mockResolvedValue(json(doneJob({ id: 'job-9' })));
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
 
     const body = JSON.parse(
       mockedFetch.mock.calls.find((c) => c[0] === '/api/admin/music-lab/master' && c[1]?.method === 'POST')![1].body
@@ -1892,6 +1928,7 @@ describe('re-open: the seam seed is scoped to its own Part B', () => {
     // Swapping the file must not inherit the previous one's trim — that would
     // cut an unrelated section and master cleanly.
     await reopenSeamed();
+    await openMoreTools();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Remove/i })); });
 
     const input = document.getElementById(
@@ -1907,7 +1944,7 @@ describe('re-open: the seam seed is scoped to its own Part B', () => {
     mockedFetch.mockResolvedValueOnce(json({ success: true, jobId: 'job-9', status: 'queued' }));
     mockedFetch.mockResolvedValue(json(doneJob({ id: 'job-9' })));
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
 
     const body = JSON.parse(
       mockedFetch.mock.calls.find((c) => c[0] === '/api/admin/music-lab/master' && c[1]?.method === 'POST')![1].body
@@ -1936,7 +1973,7 @@ describe('per-song identity resets with the source', () => {
     await uploadA();
     await waitFor(() => expect(screen.getByRole('button', { name: /Master to -14/ })).toBeEnabled());
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
   }
 
   it('does NOT carry the previous song\'s name into the next one', async () => {
@@ -1999,6 +2036,7 @@ describe('per-song identity resets with the source', () => {
 
     expect(screen.getByRole('button', { name: /^Render video/ })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Make a short/ })).toBeDisabled();
+    await openMoreTools();
     expect(screen.getByRole('button', { name: /Whole song, vertical/ })).toBeDisabled();
   });
 
@@ -2074,7 +2112,7 @@ describe('rendering from the saved-masters library', () => {
     mockedFetch.mockResolvedValueOnce(json({ success: true, masters: [job] }));
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Saved masters/i })); });
     // Same readiness signal the re-open tests use — the row's own control.
-    await screen.findByRole('button', { name: /Edit & re-master/i });
+    await screen.findAllByRole('button', { name: /^More actions for / });
   }
 
   /**
@@ -2125,7 +2163,7 @@ describe('rendering from the saved-masters library', () => {
     await openLibrary(row({ videoKey: 'audio/mastering/1_a-master-14LUFS-1440p.mp4' }));
     const renderBtn = screen.getByRole('button', { name: /Video or short for காதல் மழை/ });
     expect(renderBtn).toBeInTheDocument();
-    expect(renderBtn).toHaveTextContent('Video / short');
+    expect(renderBtn).toHaveTextContent('Re-render video');
   });
 
   it('shows "Render video" button on a row that has no video yet', async () => {
@@ -2133,7 +2171,7 @@ describe('rendering from the saved-masters library', () => {
     await openLibrary();
     const renderBtn = screen.getByRole('button', { name: /Video or short for காதல் மழை/ });
     expect(renderBtn).toBeInTheDocument();
-    expect(renderBtn).toHaveTextContent('Make video or short');
+    expect(renderBtn).toHaveTextContent(/^Render video$/);
   });
 
   /**
@@ -2262,7 +2300,9 @@ describe('rendering from the saved-masters library', () => {
     // attempt 1 only fires after the real 4s poll interval.
     fireEvent.click(screen.getByRole('button', { name: /^Render video/ }));
     await waitFor(
-      () => expect(screen.queryByRole('button', { name: /^Render video/ })).not.toBeInTheDocument(),
+      // The panel's own cover field — the button's label now changes to its
+      // timer while it runs, so the label alone is no longer a closed signal.
+      () => expect(screen.queryByLabelText(/Cover for காதல் மழை/i)).not.toBeInTheDocument(),
       { timeout: 8000, interval: 250 }
     );
 
@@ -2392,7 +2432,8 @@ describe('rendering from the saved-masters library', () => {
       // The panel closes only once startShort resolves with a finished job.
       fireEvent.click(screen.getByRole('button', { name: /^Re-cut vertical short$/ }));
       await waitFor(
-        () => expect(screen.queryByRole('button', { name: /^Re-cut vertical short$/ })).not.toBeInTheDocument(),
+        // The panel's own cover field: the button shows its timer while it runs.
+        () => expect(screen.queryByLabelText(/Cover for காதல் மழை/i)).not.toBeInTheDocument(),
         { timeout: 8000, interval: 250 }
       );
 
@@ -2560,7 +2601,7 @@ describe('rendering from the saved-masters library', () => {
     render(<MasteringStudio />);
     mockedFetch.mockResolvedValueOnce(json({ success: true, masters: [row({ coverKey: 'audio/mastering/1_c_cover.jpg' }), B()] }));
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Saved masters/i })); });
-    await screen.findAllByRole('button', { name: /Edit & re-master/i });
+    await screen.findAllByRole('button', { name: /^More actions for / });
   }
   /** A's render is accepted and then never finishes; B's play is refused. */
   function routeLongRenderOnA(finishOnPoll = Infinity) {
@@ -2704,7 +2745,7 @@ describe('upload to YouTube', () => {
     render(<MasteringStudio />);
     await uploadA();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
     mockedFetch.mockResolvedValueOnce(json({ success: true, title: 'One' }));
     mockedFetch.mockResolvedValueOnce(json({ success: true, masters: [] }));
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save to library/ })); });
@@ -2878,7 +2919,7 @@ describe('upload to YouTube', () => {
 
   /** The "Upload to YouTube" panel. */
   const uploadSection = () =>
-    screen.getByRole('heading', { name: /Upload to YouTube/ }).closest('div') as HTMLElement;
+    screen.getByRole('heading', { name: /5 · YouTube/ }).closest('section') as HTMLElement;
 
   /**
    * Audit 2026-11-07, defect 4: every upload refusal went to the page banner,
@@ -2956,7 +2997,7 @@ describe('upload panel reachability after a remount', () => {
       return Promise.resolve(json(job));
     });
     render(<MasteringStudio />);
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
   }
 
   it('opens the panel from the job row alone, with no Save in this session', async () => {
@@ -2965,14 +3006,15 @@ describe('upload panel reachability after a remount', () => {
     // Proof the session-local flag is NOT what opened it: an unsaved-looking
     // Save button is still sitting there offering to save.
     expect(screen.getByRole('button', { name: /Save to library/ })).toBeInTheDocument();
-    expect(await screen.findByRole('heading', { name: /Upload to YouTube/i })).toBeInTheDocument();
+    // Every step heading always renders now, so the panel's own field is the proof.
+    expect(await screen.findByLabelText(/Video title/i)).toBeInTheDocument();
   });
 
   it('offers Retry once a queued row is older than the stale window — the resume, reachable', async () => {
     // Older than any plausible window, so no fake clock is needed. The worker's
     // own ceiling is 900s; a row this old cannot still be running.
     await remountWith(persisted({ uploadStatus: 'queued', updatedAt: '2020-01-01T00:00:00.000Z' }));
-    await screen.findByRole('heading', { name: /Upload to YouTube/i });
+    await screen.findByLabelText(/Video title/i);
     await act(async () => {
       fireEvent.change(screen.getByLabelText(/Video title/i), { target: { value: 'ஒரு பாடல்' } });
     });
@@ -2985,7 +3027,7 @@ describe('upload panel reachability after a remount', () => {
 
   it('keeps it disabled while a queued row is still fresh — the double-click guard is untouched', async () => {
     await remountWith(persisted({ uploadStatus: 'queued', updatedAt: new Date().toISOString() }));
-    await screen.findByRole('heading', { name: /Upload to YouTube/i });
+    await screen.findByLabelText(/Video title/i);
     await act(async () => {
       fireEvent.change(screen.getByLabelText(/Video title/i), { target: { value: 'ஒரு பாடல்' } });
     });
@@ -3028,7 +3070,7 @@ describe('upload panel honesty', () => {
     render(<MasteringStudio />);
     await uploadA();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
     mockedFetch.mockResolvedValueOnce(json({ success: true, title: 'One' }));
     mockedFetch.mockResolvedValueOnce(json({ success: true, masters: [] }));
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save to library/ })); });
@@ -3087,7 +3129,7 @@ describe('the karaoke bed', () => {
     await uploadA();
     pickBed();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Make the karaoke bed/i })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
   }
 
   it('is offered alongside -14 and -16', async () => {
@@ -3187,9 +3229,9 @@ describe('the karaoke bed', () => {
    */
   it('clears a finished bed when -14 is chosen, despite the shared target', async () => {
     await runBed();
-    expect(screen.getByText(/3 · Result/)).toBeInTheDocument();
+    expect(screen.getByText(/Mastered result/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('radio', { name: /-14 LUFS/ }));
-    await waitFor(() => expect(screen.queryByText(/3 · Result/)).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText(/Mastered result/)).not.toBeInTheDocument());
   });
 
   /**
@@ -3236,7 +3278,7 @@ describe('the karaoke bed', () => {
       masters: [bedJob({ id: 'm1', title: 'ஈழத்து மண்ணே', savedAt: '2026-09-18T00:00:00.000Z' })],
     }));
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Saved masters/i })); });
-    await act(async () => { fireEvent.click(await screen.findByRole('button', { name: /Edit & re-master/i })); });
+    await pickRowMenuItem(/Edit & re-master/i);
     expect(screen.getByRole('radio', { name: /Karaoke bed/i })).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByRole('radio', { name: /-14 LUFS/ })).toHaveAttribute('aria-checked', 'false');
   });
@@ -3252,7 +3294,7 @@ describe('the page names the source as TamilAgaval Music', () => {
     primeHappyPath();
     render(<MasteringStudio />);
 
-    expect(screen.getByText(/1 · Source WAV from TamilAgaval Music/)).toBeInTheDocument();
+    expect(screen.getByText(/1 · Upload/)).toBeInTheDocument();
     expect(screen.getByText(/Export the WAV from TamilAgaval Music/)).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/SUNO/);
     expect(document.body.textContent).not.toMatch(/Adobe/);
@@ -3296,7 +3338,7 @@ describe('opening a source from a link (e.g. "Master this remix")', () => {
     mockedFetch.mockResolvedValueOnce(json({ success: true, jobId: 'job-9', status: 'queued' }));
     mockedFetch.mockResolvedValue(json(doneJob({ id: 'job-9', target: -16, afterLufs: -16 })));
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -16/ })); });
-    await screen.findByText(/3 · Result/);
+    await screen.findByText(/Mastered result/);
 
     // "the name field is pre-filled with the title": only on screen once a
     // job exists, same as every other re-opened-master test in this file.
@@ -3315,7 +3357,7 @@ describe('opening a source from a link (e.g. "Master this remix")', () => {
     primeHappyPath();
     render(<MasteringStudio />);
 
-    const sourceSection = screen.getByText(/1 · Source WAV from TamilAgaval Music/).closest('section')!;
+    const sourceSection = screen.getByText(/1 · Upload/).closest('section')!;
     expect(await within(sourceSection).findByRole('status')).toHaveTextContent(
       "That link's source can't be mastered — choose a file instead."
     );
@@ -3329,7 +3371,7 @@ describe('opening a source from a link (e.g. "Master this remix")', () => {
     primeHappyPath();
     render(<MasteringStudio />);
 
-    const sourceSection = screen.getByText(/1 · Source WAV from TamilAgaval Music/).closest('section')!;
+    const sourceSection = screen.getByText(/1 · Upload/).closest('section')!;
     expect(await within(sourceSection).findByRole('status')).toHaveTextContent(
       "That link's source can't be mastered — choose a file instead."
     );
@@ -3341,7 +3383,7 @@ describe('opening a source from a link (e.g. "Master this remix")', () => {
     primeHappyPath();
     render(<MasteringStudio />);
 
-    const sourceSection = screen.getByText(/1 · Source WAV from TamilAgaval Music/).closest('section')!;
+    const sourceSection = screen.getByText(/1 · Upload/).closest('section')!;
     expect(await within(sourceSection).findByRole('status')).toHaveTextContent(
       "That link's source can't be mastered — choose a file instead."
     );
@@ -3360,7 +3402,7 @@ describe('opening a source from a link (e.g. "Master this remix")', () => {
     primeHappyPath(doneJob());
     render(<MasteringStudio />);
 
-    const sourceSection = screen.getByText(/1 · Source WAV from TamilAgaval Music/).closest('section')!;
+    const sourceSection = screen.getByText(/1 · Upload/).closest('section')!;
     expect(await within(sourceSection).findByRole('status')).toHaveTextContent(
       'A job already in progress was reopened instead of the link — finish or clear it, then follow the link again.'
     );
@@ -3375,7 +3417,7 @@ describe('opening a source from a link (e.g. "Master this remix")', () => {
     primeHappyPath();
     render(<MasteringStudio />);
 
-    const sourceSection = screen.getByText(/1 · Source WAV from TamilAgaval Music/).closest('section')!;
+    const sourceSection = screen.getByText(/1 · Upload/).closest('section')!;
     expect(await within(sourceSection).findByRole('status')).toHaveTextContent(
       "That link's source can't be mastered — choose a file instead."
     );

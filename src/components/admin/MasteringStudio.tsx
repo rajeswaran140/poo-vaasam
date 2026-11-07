@@ -22,7 +22,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   SlidersHorizontal, Upload, Download, Loader2, CheckCircle2,
-  AlertTriangle, FileAudio, RotateCcw, X, Info, Save, Library, Play, Pause, Pencil, Link2, Film,
+  AlertTriangle, FileAudio, RotateCcw, X, Info, Save, Library, Play, Pause, Link2, Film,
   Smartphone,
 } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
@@ -68,6 +68,10 @@ import {
   type Finding,
 } from '@/lib/release-checklist';
 import { FindingRow, groupFindings } from '@/components/admin/ReleaseFindings';
+import { Disclosure } from '@/components/admin/Disclosure';
+import { MoreTools, ToolBlock } from '@/components/admin/MoreTools';
+import { RowActionsMenu, type RowMenuItem } from '@/components/admin/RowActionsMenu';
+import { useElapsed, elapsedClock } from '@/components/admin/useElapsed';
 
 /**
  * Rows per library page. 25 is roughly a screenful of grouped rows and keeps
@@ -403,6 +407,9 @@ function toSaved(slides: readonly Slide[]): NonNullable<MasterJob['slides']> {
 /** Typing a time saves once the typing pauses, not on every keystroke. */
 const SLIDES_SAVE_DELAY_MS = 400;
 
+/** Which step's button a page-level failure belongs under. */
+type ErrorSlot = 'upload' | 'master' | 'save' | 'tools';
+
 /** What the operator reads for each move. `none` says what it does, not what it is. */
 const MOTION_LABELS: Record<ShortMotion, string> = {
   none: 'None (still)',
@@ -413,6 +420,81 @@ const MOTION_LABELS: Record<ShortMotion, string> = {
   'pan-up': 'Pan up',
   'pan-down': 'Pan down',
 };
+
+/** A refusal, shown directly under the button that caused it. */
+function InlineAlert({ message }: { message: string }) {
+  return (
+    <p
+      role="alert"
+      className="mt-3 flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300"
+    >
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+      <span>{message}</span>
+    </p>
+  );
+}
+
+/**
+ * What the hidden Trim and Join tools will do to the next master, in a phrase —
+ * or null when they do nothing. Shown beside the Master button so a recipe
+ * restored from the library is never applied unseen.
+ */
+export function recipeLine(
+  edit: MasterEdit | null,
+  partB: { name: string } | null,
+  overlapSec: number
+): string | null {
+  const parts: string[] = [];
+  if (edit) {
+    const trimmed = edit.trimStartSec > 0 || edit.trimEndSec !== null;
+    if (trimmed) {
+      parts.push(`a trim ${formatTime(edit.trimStartSec)}–${edit.trimEndSec !== null ? formatTime(edit.trimEndSec) : 'end'}`);
+    }
+    if (edit.fadeInSec > 0) parts.push(`a ${edit.fadeInSec}s fade-in`);
+    if (edit.fadeOutSec > 0) parts.push(`a ${edit.fadeOutSec}s fade-out`);
+  }
+  if (partB) parts.push(`Part B joined with a ${overlapSec}s crossfade`);
+  return parts.length ? parts.join(', ') : null;
+}
+
+/**
+ * The Video settings line, e.g. "1440p · still". Same rules as the render
+ * button's label: a moving video renders at 1080p whatever the size says, and
+ * motion does not apply under a video background.
+ */
+export function videoSettingsSummary(height: number, motion: ShortMotion, backgroundCount: number): string {
+  if (backgroundCount > 0) return `${height}p · video background`;
+  if (motion !== 'none') return `1080p · ${MOTION_LABELS[motion].toLowerCase()}`;
+  return `${height}p · still`;
+}
+
+/** The Short settings line: the window (or "loudest stretch") and the motion. */
+export function shortSettingsSummary(
+  window: { startSec: number; seconds: number } | null,
+  motion: ShortMotion
+): string {
+  const where = window ? `${window.seconds}s from ${formatTime(window.startSec)}` : 'loudest stretch';
+  return `${where} · ${motion === 'none' ? 'still' : MOTION_LABELS[motion].toLowerCase()}`;
+}
+
+/** The one-line Background summary. */
+export const backgroundSummary = (count: number) =>
+  count === 0 ? '(none)' : count === 1 ? '1 clip' : `${count} clips`;
+
+/** A library row's running action, for its button's timer. Pure, for setState. */
+function withActivity(
+  prev: ReadonlyMap<string, { label: string; since: number }>,
+  id: string,
+  label: string | null
+): ReadonlyMap<string, { label: string; since: number }> {
+  const next = new Map(prev);
+  if (label) next.set(id, { label, since: Date.now() });
+  else next.delete(id);
+  return next;
+}
+
+/** Which part of a library row's panel a "…" menu item opened. */
+type RowPanelPart = 'short' | 'background' | 'slideshow' | 'vertical';
 
 export function MasteringStudio() {
   const inputId = useId();
@@ -488,7 +570,12 @@ export function MasteringStudio() {
   // Optional human title for the export. Storage stays UUID-based; this only
   // shapes the download filename and the saved report. Empty ⇒ de-noised default.
   const [masterName, setMasterName] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  /**
+   * A page-level failure, tagged with the STEP whose button caused it and
+   * rendered under that button — never in a banner under the page header,
+   * which is where a refusal used to land ~1,500 lines away from the click.
+   */
+  const [pageError, setPageError] = useState<{ slot: ErrorSlot; message: string } | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [announce, setAnnounce] = useState('');
   const [dragging, setDragging] = useState(false);
@@ -538,7 +625,12 @@ export function MasteringStudio() {
    * render panel. The page banner (`error`) is far above this panel — an error
    * there, for a button here, reads as a button that did nothing.
    */
-  const [panelError, setPanelError] = useState<string | null>(null);
+  /**
+   * The inline render panel's failure, tagged with WHERE its button sits: the
+   * Video step (cover, render, short, background) or More tools (slideshow,
+   * whole-song vertical), so it shows under the button that was pressed.
+   */
+  const [panelError, setPanelError] = useState<{ at: 'video' | 'tools'; message: string } | null>(null);
   /**
    * The window for the short, when the operator chose one.
    *
@@ -621,6 +713,8 @@ export function MasteringStudio() {
      * otherwise each of the three renders meant uploading the clip again.
      */
     backgrounds?: BackgroundClip[];
+    /** The sections a "…" menu item opened; the rest stay closed. */
+    parts?: RowPanelPart[];
   } | null>(null);
   /**
    * The extra images of a row's slideshow — image 2 onward; the cover is image 1.
@@ -683,6 +777,12 @@ export function MasteringStudio() {
    * anything done on row B re-enabled row A while A's long render still ran.
    */
   const [rowBusy, setRowBusyIds] = useState<ReadonlySet<string>>(() => new Set());
+  /** What each busy row is doing and since when — its button's timer. */
+  const [rowActivity, setRowActivity] = useState<ReadonlyMap<string, { label: string; since: number }>>(() => new Map());
+  // Re-renders once a second while any row works, so its timer moves.
+  useElapsed(rowActivity.size > 0);
+  /** More tools: closed on every page load, never remembered. */
+  const [moreToolsOpen, setMoreToolsOpen] = useState(false);
   /** Mark one row busy or idle, leaving every other row as it is. */
   const setRowBusy = useCallback((id: string, on: boolean) => {
     setRowBusyIds((prev) => {
@@ -774,7 +874,7 @@ export function MasteringStudio() {
   const commitPanelSlides = useCallback(
     (id: string, slides: Slide[]) => {
       setPanelSlides({ id, slides });
-      saveSlides(id, slides, setPanelError);
+      saveSlides(id, slides, (message) => setPanelError({ at: 'tools', message }));
     },
     [saveSlides]
   );
@@ -834,7 +934,7 @@ export function MasteringStudio() {
       // still running and still recoverable. stopWatching has already set the
       // stage and said so; don't overwrite that with a red alert.
       if (isAbort(err)) return;
-      setError(err instanceof Error ? err.message : String(err));
+      setPageError({ slot: 'master', message: err instanceof Error ? err.message : String(err) });
       setStage('ready');
       setAnnounce('Mastering failed.');
     }
@@ -978,7 +1078,7 @@ export function MasteringStudio() {
     setSent({ loaded: 0, total: 0 });
     setJob(null);
     setJobId(null);
-    setError(null);
+    setPageError(null);
     setAnnounce('');
     setSavedAt(null);
     setPublished(null);
@@ -1021,7 +1121,7 @@ export function MasteringStudio() {
     const stored = paused ?? readStored();
     if (!stored) return;
     setPaused(null);
-    setError(null);
+    setPageError(null);
     void watch(stored.jobId, stored);
   }, [paused, watch]);
 
@@ -1080,15 +1180,15 @@ export function MasteringStudio() {
    * tail that misalign the overlap.
    */
   const onPickPartB = useCallback(async (file: File) => {
-    setError(null);
+    setPageError(null);
     const extOk = /\.wave?$/i.test(file.name);
     const typeOk = (ACCEPTED_UPLOAD_TYPES as readonly string[]).includes(file.type);
     if (!typeOk && !extOk) {
-      setError('Part B must be a WAV. MP3 padding adds silent frames that misalign the crossfade.');
+      setPageError({ slot: 'tools', message: 'Part B must be a WAV. MP3 padding adds silent frames that misalign the crossfade.' });
       return;
     }
     if (file.size > MAX_UPLOAD_BYTES) {
-      setError(`Part B is ${MB(file.size)}, over the ${MB(MAX_UPLOAD_BYTES)} limit.`);
+      setPageError({ slot: 'tools', message: `Part B is ${MB(file.size)}, over the ${MB(MAX_UPLOAD_BYTES)} limit.` });
       return;
     }
     setPartBUploading(true);
@@ -1109,7 +1209,7 @@ export function MasteringStudio() {
       if (sourceKey) void runAnalysis(sourceKey, key);
     } catch (err) {
       if (!mounted.current) return;
-      if (!isAbort(err)) setError(err instanceof Error ? err.message : String(err));
+      if (!isAbort(err)) setPageError({ slot: 'tools', message: err instanceof Error ? err.message : String(err) });
     } finally {
       if (mounted.current) setPartBUploading(false);
     }
@@ -1118,7 +1218,7 @@ export function MasteringStudio() {
   const onPick = useCallback(async (picked: File | null) => {
     if (!picked) return;
     setPendingParent(null);
-    setError(null);
+    setPageError(null);
     setJob(null);
     // A fresh pick replaces whatever a `?source=` link left behind — a
     // refusal note from an earlier, different source would otherwise sit
@@ -1130,11 +1230,11 @@ export function MasteringStudio() {
     const extOk = /\.wave?$/i.test(picked.name);
     const typeOk = (ACCEPTED_UPLOAD_TYPES as readonly string[]).includes(picked.type);
     if (!typeOk && !extOk) {
-      setError('That is not a WAV. Export the lossless WAV from TamilAgaval Music — mastering an MP3 only re-levels a file that has already lost detail.');
+      setPageError({ slot: 'upload', message: 'That is not a WAV. Export the lossless WAV from TamilAgaval Music — mastering an MP3 only re-levels a file that has already lost detail.' });
       return;
     }
     if (picked.size > MAX_UPLOAD_BYTES) {
-      setError(`That file is ${MB(picked.size)}, over the ${MB(MAX_UPLOAD_BYTES)} limit.`);
+      setPageError({ slot: 'upload', message: `That file is ${MB(picked.size)}, over the ${MB(MAX_UPLOAD_BYTES)} limit.` });
       return;
     }
 
@@ -1198,7 +1298,7 @@ export function MasteringStudio() {
         setAnnounce('Upload cancelled.');
         return;
       }
-      setError(err instanceof Error ? err.message : String(err));
+      setPageError({ slot: 'upload', message: err instanceof Error ? err.message : String(err) });
       setStage('idle');
       setSource(null);
     }
@@ -1206,7 +1306,7 @@ export function MasteringStudio() {
 
   const startMastering = useCallback(async () => {
     if (!sourceKey || !source) return;
-    setError(null);
+    setPageError(null);
     setJob(null);
     // Per-job state, not per-session. `savedAt` was set on the first save and
     // never cleared, so mastering a SECOND file in the same visit met a
@@ -1278,7 +1378,7 @@ export function MasteringStudio() {
       await watch(body.jobId, stored);
     } catch (err) {
       if (!mounted.current) return;
-      setError(err instanceof Error ? err.message : String(err));
+      setPageError({ slot: 'master', message: err instanceof Error ? err.message : String(err) });
       setStage('ready');
     }
   }, [sourceKey, source, target, targetId, isBed, edit, partB, overlapSec, partBStartSec, seedJoin, watch, selectedReferenceKey, matchingMethod, pendingParent]);
@@ -1298,8 +1398,10 @@ export function MasteringStudio() {
      * labelling it one is how the wrong file gets uploaded as the full song.
      */
     label?: string,
+    /** Where a failure is shown. Omitted ⇒ under the Save step's downloads. */
+    onError?: (message: string) => void,
   ) => {
-    setError(null);
+    setPageError(null);
     try {
       // Present a friendly filename ("<title> (Master -14 LUFS).wav") when the
       // admin has named the master; the server sanitises it. Storage key is
@@ -1316,7 +1418,9 @@ export function MasteringStudio() {
       // page with an S3 error document and destroy the result panel.
       window.open(body.url, '_blank', 'noopener');
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      if (onError) onError(message);
+      else setPageError({ slot: 'save', message: message });
     }
   }, []);
 
@@ -1401,7 +1505,7 @@ export function MasteringStudio() {
   const saveToLibrary = useCallback(async () => {
     if (!jobId) return;
     setSaving(true);
-    setError(null);
+    setPageError(null);
     try {
       const res = await adminFetch(`/api/admin/music-lab/master/${jobId}/save`, {
         method: 'POST',
@@ -1415,7 +1519,7 @@ export function MasteringStudio() {
       setLibraryOpen(true);
       void loadLibrary();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setPageError({ slot: 'save', message: err instanceof Error ? err.message : String(err) });
     } finally {
       setSaving(false);
     }
@@ -1433,7 +1537,7 @@ export function MasteringStudio() {
   const publishToSite = useCallback(async (overwrite = false) => {
     if (!jobId) return;
     setPublishing(true);
-    setError(null);
+    setPageError(null);
     try {
       const res = await adminFetch(`/api/admin/music-lab/master/${jobId}/publish`, {
         method: 'POST',
@@ -1456,7 +1560,7 @@ export function MasteringStudio() {
       setPublished({ key: body.key as string, replaced: Boolean(body.replaced) });
       setAnnounce(body.replaced ? 'Web MP3 replaced on the site path.' : 'Web MP3 staged on the site path.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setPageError({ slot: 'save', message: err instanceof Error ? err.message : String(err) });
     } finally {
       setPublishing(false);
     }
@@ -1475,7 +1579,7 @@ export function MasteringStudio() {
     } catch (err) {
       if (!mounted.current) return;
       // In the render panel, beside the cover input — not the page banner.
-      if (!isAbort(err)) setPanelError(err instanceof Error ? err.message : String(err));
+      if (!isAbort(err)) setPanelError({ at: 'video', message: err instanceof Error ? err.message : String(err) });
     } finally {
       if (mounted.current) setCoverUploading(false);
     }
@@ -1498,7 +1602,7 @@ export function MasteringStudio() {
       setAnnounce(`Image ${index + 2} uploaded.`);
     } catch (err) {
       if (!mounted.current) return;
-      if (!isAbort(err)) setPanelError(err instanceof Error ? err.message : String(err));
+      if (!isAbort(err)) setPanelError({ at: 'tools', message: err instanceof Error ? err.message : String(err) });
     } finally {
       if (mounted.current) setCoverUploading(false);
     }
@@ -1610,7 +1714,7 @@ export function MasteringStudio() {
     const slides = panelSlides?.id === jobId ? panelSlides.slides : toSlides(job?.slides);
     const covers = slides.length > 0 ? slidesToCovers(cover.key, slides) : null;
     setRendering(true);
-    setError(null);
+    setPageError(null);
     setPanelError(null);
     try {
       // Capture the job's CURRENT videoRenderedAt/videoError before the POST,
@@ -1634,7 +1738,7 @@ export function MasteringStudio() {
       // Every refusal is shown here, next to the button — a plain still render
       // too, since the 2026-11-07 audit. (The banner sits ~1,000 lines above:
       // a refusal there made the button look dead.)
-      setPanelError(err instanceof Error ? err.message : String(err));
+      setPanelError({ at: 'video', message: err instanceof Error ? err.message : String(err) });
     } finally {
       if (mounted.current) setRendering(false);
     }
@@ -1779,7 +1883,7 @@ export function MasteringStudio() {
   const makeShort = useCallback(async () => {
     if (!jobId || !cover) return;
     setShorting(true);
-    setError(null);
+    setPageError(null);
     setPanelError(null);
     try {
       const slides = panelSlides?.id === jobId ? panelSlides.slides : toSlides(job?.slides);
@@ -1796,7 +1900,7 @@ export function MasteringStudio() {
     } catch (err) {
       if (!mounted.current) return;
       // Beside the button, like the video's — with or without a background.
-      setPanelError(err instanceof Error ? err.message : String(err));
+      setPanelError({ at: 'video', message: err instanceof Error ? err.message : String(err) });
     } finally {
       if (mounted.current) setShorting(false);
     }
@@ -1820,7 +1924,7 @@ export function MasteringStudio() {
       // song while this one rendered (audit 2026-11-07).
       if (fresh) setJob((prev) => (prev && prev.id === fresh.id ? fresh : prev));
     } catch (err) {
-      if (mounted.current) setPanelError(err instanceof Error ? err.message : String(err));
+      if (mounted.current) setPanelError({ at: 'tools', message: err instanceof Error ? err.message : String(err) });
     } finally {
       if (mounted.current) setVerticaling(false);
     }
@@ -1841,7 +1945,7 @@ export function MasteringStudio() {
     if (!partB || !sourceKey) return;
     setSeamBusy(true);
     setSeamPreview(null);
-    setError(null);
+    setPageError(null);
     try {
       const join = buildJoinPayload({
         partBKey: partB.key,
@@ -1886,7 +1990,7 @@ export function MasteringStudio() {
         }
       }
     } catch (err) {
-      if (mounted.current) setError(err instanceof Error ? err.message : String(err));
+      if (mounted.current) setPageError({ slot: 'tools', message: err instanceof Error ? err.message : String(err) });
     } finally {
       if (mounted.current) setSeamBusy(false);
     }
@@ -1950,6 +2054,10 @@ export function MasteringStudio() {
    * it runs only while an upload is actually believed to be in flight.
    */
   const [, tickUploadClock] = useState(0);
+  const renderElapsed = useElapsed(rendering);
+  const shortElapsed = useElapsed(shorting);
+  const verticalElapsed = useElapsed(verticaling);
+  const uploadElapsed = useElapsed(uploadingToYoutube);
   useEffect(() => {
     if (!uploadInFlight) return;
     const t = setInterval(() => tickUploadClock((n) => n + 1), 30_000);
@@ -2058,7 +2166,7 @@ export function MasteringStudio() {
     if (uploadStarting.current) return;
     uploadStarting.current = true;
     setUploadingToYoutube(true);
-    setError(null);
+    setPageError(null);
     setYoutubeError(null);
     setReleaseCheck(null);
     setReleaseCheckError(null);
@@ -2182,6 +2290,7 @@ export function MasteringStudio() {
     if (!rowRender?.cover) return;
     const { id, cover: rowCover } = rowRender;
     setRowBusy(id, true);
+    setRowActivity((prev) => withActivity(prev, id, 'Rendering'));
     setRowError((prev) => (prev?.id === id ? null : prev));
     try {
       // Same discriminator as the inline panel: capture this row's CURRENT
@@ -2232,6 +2341,7 @@ export function MasteringStudio() {
     } catch (err) {
       if (mounted.current) failRow(id, err);
     } finally {
+      setRowActivity((prev) => withActivity(prev, id, null));
       if (mounted.current) setRowBusy(id, false);
     }
   }, [rowRender, rowSlides, slideTransition, shortMotion, videoHeight, library, startRender, failRow, setRowBusy]);
@@ -2247,6 +2357,7 @@ export function MasteringStudio() {
     if (!rowRender?.cover) return;
     const { id, cover: rowCover } = rowRender;
     setRowBusy(id, true);
+    setRowActivity((prev) => withActivity(prev, id, 'Cutting'));
     setRowError((prev) => (prev?.id === id ? null : prev));
     try {
       const row = library?.find((x) => x.id === id);
@@ -2287,6 +2398,7 @@ export function MasteringStudio() {
     } catch (err) {
       if (mounted.current) failRow(id, err);
     } finally {
+      setRowActivity((prev) => withActivity(prev, id, null));
       if (mounted.current) setRowBusy(id, false);
     }
   }, [rowRender, rowSlides, shortMotion, slideTransition, library, startShort, failRow, setRowBusy]);
@@ -2300,6 +2412,7 @@ export function MasteringStudio() {
     if (!rowRender?.cover) return;
     const { id, cover: rowCover } = rowRender;
     setRowBusy(id, true);
+    setRowActivity((prev) => withActivity(prev, id, 'Rendering vertical'));
     setRowError((prev) => (prev?.id === id ? null : prev));
     try {
       const row = library?.find((x) => x.id === id);
@@ -2337,6 +2450,7 @@ export function MasteringStudio() {
     } catch (err) {
       if (mounted.current) failRow(id, err);
     } finally {
+      setRowActivity((prev) => withActivity(prev, id, null));
       if (mounted.current) setRowBusy(id, false);
     }
   }, [rowRender, rowSlides, shortMotion, slideTransition, library, startVertical, failRow, setRowBusy]);
@@ -2450,7 +2564,7 @@ export function MasteringStudio() {
   const reopenMaster = useCallback((m: MasterJob) => {
     if (!m.s3Key) return;
     abort.current?.abort();
-    setError(null);
+    setPageError(null);
     setJob(null);
     setJobId(null);
     // Same reasoning as onPick: a library re-open replaces whatever a
@@ -2589,6 +2703,70 @@ export function MasteringStudio() {
    */
   const storedStillProcessing = Boolean(stored && (stored.durationSeconds === 0 || stored.definition === 'sd'));
 
+  /**
+   * Open a library row's panel at one of its sections — a "…" menu item. Opens
+   * (never toggles shut) and keeps whatever the panel already held when it is
+   * this row's; otherwise seeds it exactly as the Render video button does.
+   */
+  const openRowPanel = (m: MasterJob, part: RowPanelPart) =>
+    setRowRender((prev) =>
+      prev?.id === m.id
+        ? { ...prev, parts: [...new Set([...(prev.parts ?? []), part])] }
+        : {
+            id: m.id,
+            cover: m.coverKey ? { key: m.coverKey, name: downloadFilename(m.coverKey) } : null,
+            backgrounds: lastBackgroundOf(m),
+            parts: [part],
+          }
+    );
+  /** Open or close one section of an open row panel. */
+  const setRowPart = (id: string, part: RowPanelPart, on: boolean) =>
+    setRowRender((prev) =>
+      prev?.id === id
+        ? { ...prev, parts: on ? [...new Set([...(prev.parts ?? []), part])] : (prev.parts ?? []).filter((x) => x !== part) }
+        : prev
+    );
+  /** The row's "…" menu: everything but play, render and the YouTube state. */
+  const rowMenuItems = (m: MasterJob): RowMenuItem[] => {
+    const renderable = Boolean(m.masterKey) && !isPeakMaster(m);
+    const onRowError = (message: string) => setRowError({ id: m.id, message });
+    return [
+      ...(renderable
+        ? [
+            { label: 'Make a short', onSelect: () => openRowPanel(m, 'short'), disabled: rowBusy.has(m.id) },
+            { label: 'Background', onSelect: () => openRowPanel(m, 'background'), disabled: rowBusy.has(m.id) },
+            { label: 'Slideshow', onSelect: () => openRowPanel(m, 'slideshow'), disabled: rowBusy.has(m.id) },
+            { label: 'Whole-song vertical', onSelect: () => openRowPanel(m, 'vertical'), disabled: rowBusy.has(m.id) },
+          ]
+        : []),
+      // Repair marks live in the player, which opens under the library.
+      ...(m.masterKey
+        ? [{ label: 'Repair marks (opens the player)', onSelect: () => { if (playing?.id !== m.id) void playSaved(m); } }]
+        : []),
+      // The source is never modified, so re-opening costs nothing and loses
+      // nothing — it restores the recipe and hands back control at "ready".
+      ...(m.s3Key ? [{ label: 'Edit & re-master', onSelect: () => reopenMaster(m) }] : []),
+      { label: 'Rename', onSelect: () => setRenaming({ id: m.id, value: m.title ?? '' }) },
+      ...(m.masterKey
+        ? [{
+            label: 'Download WAV',
+            onSelect: () => void downloadKey(m.masterKey!, m.title ?? '', m.target, isPeakMaster(m) ? bedLabel : undefined, onRowError),
+          }]
+        : []),
+      // The MP3 was reachable only from the result panel of the run that
+      // produced it — so a master saved yesterday had a web file in S3 that
+      // nothing on this page could open.
+      ...(m.mp3Key
+        ? [{
+            label: 'Download MP3',
+            onSelect: () => void downloadKey(m.mp3Key!, m.title ?? '', m.target, isPeakMaster(m) ? bedLabel : undefined, onRowError),
+          }]
+        : []),
+      // The song's stems live on their own page.
+      { label: m.stemCount ? `Stems (${m.stemCount})` : 'Add stems', href: `/admin/mastering/stems/${m.id}` },
+    ];
+  };
+
   return (
     <div className="space-y-6">
       <header>
@@ -2606,21 +2784,18 @@ export function MasteringStudio() {
       {/* Announced to screen readers at every stage change. */}
       <p role="status" aria-live="polite" className="sr-only">{announce}</p>
 
-      {error && (
-        <div
-          role="alert"
-          className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300"
-        >
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          <span>{error}</span>
-        </div>
-      )}
+      {/* THE FIVE STEPS — upload, master, save, video, YouTube — and nothing
+          between them. Every heading always renders, so the page reads the
+          same before a song is loaded; each body keeps the gate it had. The
+          rare controls live in More tools, below step 5. */}
 
+      {/* 1 — upload */}
       {/* 1 — source */}
       <section aria-busy={stage === 'uploading'} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-          1 · Source WAV from TamilAgaval Music
+          1 · Upload
         </h2>
+        <p className="-mt-2 mb-3 text-xs text-gray-500 dark:text-gray-400">The source WAV from TamilAgaval Music.</p>
 
         {sourceLinkNote && (
           <p role="status" className="mb-3 text-sm text-amber-700 dark:text-amber-400">
@@ -2716,12 +2891,14 @@ export function MasteringStudio() {
             )}
           </div>
         )}
+        {pageError?.slot === 'upload' && <InlineAlert message={pageError.message} />}
       </section>
 
-      {/* 2 — target + run */}
+
+      {/* 2 — master */}
       <section aria-busy={stage === 'mastering'} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-          2 · Target &amp; master
+          2 · Master
         </h2>
 
         {/* "Master target", not "Streaming loudness target": one of these is
@@ -2770,18 +2947,9 @@ export function MasteringStudio() {
             : 'Each target writes its own file, so you can master the same song for both without one overwriting the other.'}
         </p>
 
-        {sourceKey && (
+
+        {sourceKey && (analysing || analysis) && (
           <div className="mt-4">
-            {/*
-              Mounted for as long as a source is loaded — including while the
-              worker runs. Unmounting it mid-run would tear down its region and
-              fade state, and its remount would push `null` back up, so the
-              second target in the dual-target flow would quietly master the
-              UNTRIMMED file. Disabled rather than removed.
-            */}
-            {/* Pre-master analysis — advisory. It measures the source and
-                proposes; nothing is applied without a click, because a wrong
-                automatic trim is worse than no trim. */}
             {(analysing || analysis) && (
               <div className="mt-4 rounded-lg border border-gray-200 p-4 text-sm dark:border-gray-800">
                 <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -2832,7 +3000,8 @@ export function MasteringStudio() {
                           });
                           setSeedDurationSec(analysis.durationSec ?? 0);
                           setRecipeNonce((n) => n + 1);
-                          setAnnounce('Suggested trim applied.');
+                          setMoreToolsOpen(true);
+                          setAnnounce('Suggested trim applied — it is in More tools, under Trim.');
                         }}
                         className="mt-1 inline-flex items-center gap-2 rounded-lg border border-orange-300 px-3 py-1.5 text-xs font-medium text-orange-700 transition hover:bg-orange-50 dark:border-orange-800 dark:text-orange-300 dark:hover:bg-orange-900/20"
                       >
@@ -2845,42 +3014,6 @@ export function MasteringStudio() {
               </div>
             )}
 
-            <MasteringTrimPanel
-              key={`trim-${recipeNonce}`}
-              file={pickedFile}
-              onChange={setEdit}
-              disabled={stage === 'mastering'}
-              initialEdit={seedEdit}
-              knownDurationSec={seedDurationSec}
-            />
-
-            {/* Both panels edit the SAME pre-pass, upstream of every
-                measurement — which is what makes "master the assembled song
-                once" the only available order. */}
-            <MasteringJoinPanel
-              key={`join-${recipeNonce}`}
-              partB={partB}
-              onPick={(f) => void onPickPartB(f)}
-              onClear={() => { setPartB(null); setPartBStartSec(0); setSeedJoin(null); }}
-              overlapSec={overlapSec}
-              onOverlapChange={setOverlapSec}
-              partBStartSec={partBStartSec}
-              onPartBStartChange={setPartBStartSec}
-              uploading={partBUploading}
-              progressPct={partBSent.total ? Math.round((partBSent.loaded / partBSent.total) * 100) : 0}
-              disabled={stage === 'mastering'}
-              onPreviewSeam={() => void previewSeam()}
-              previewBusy={seamBusy}
-              previewUrl={seamPreview?.url ?? null}
-              previewNote={seamPreview?.note ?? null}
-              previewMismatched={seamPreview?.mismatched ?? false}
-              comparison={seamPreview?.comparison ?? null}
-              onApplySuggestion={({ partBStartSec, overlapSec }) => {
-                setPartBStartSec(partBStartSec);
-                setOverlapSec(overlapSec);
-                setAnnounce(`Set Part B to start at ${partBStartSec}s with a ${overlapSec}s crossfade.`);
-              }}
-            />
           </div>
         )}
 
@@ -2946,6 +3079,23 @@ export function MasteringStudio() {
           </div>
         )}
 
+
+        {/* Trim and Join live in More tools, hidden but MOUNTED. What they
+            will do to this master is said here, beside the button it
+            changes, so a restored recipe is never applied unseen. */}
+        {sourceKey && stage !== 'idle' && (recipeLine(edit, partB, overlapSec) !== null) && (
+          <p className="mt-4 flex flex-wrap items-center gap-x-2 text-xs text-gray-600 dark:text-gray-300">
+            <span>Includes {recipeLine(edit, partB, overlapSec)}.</span>
+            <button
+              type="button"
+              onClick={() => setMoreToolsOpen(true)}
+              className="text-orange-700 underline hover:text-orange-800 dark:text-orange-400"
+            >
+              Adjust in More tools
+            </button>
+          </p>
+        )}
+
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
             type="button"
@@ -2957,7 +3107,7 @@ export function MasteringStudio() {
               ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
               : <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />}
             {stage === 'mastering'
-              ? `${isBed ? 'Making the bed' : 'Mastering'}… ${elapsed}s`
+              ? `${isBed ? 'Making the bed' : 'Mastering'}… ${elapsedClock(elapsed)}`
               : isBed
                 ? 'Make the karaoke bed'
                 : `Master to ${target} LUFS`}
@@ -2998,16 +3148,14 @@ export function MasteringStudio() {
             {jobId && <> Job <code className="rounded bg-gray-100 px-1 dark:bg-gray-800">{jobId.slice(0, 8)}</code>.</>}
           </p>
         )}
-      </section>
+        {pageError?.slot === 'master' && <InlineAlert message={pageError.message} />}
 
-      {/* 3 — result + hand-off */}
-      {stage === 'done' && job && (
-        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-            3 · Result
-            {readiness.ok && <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />}
-          </h2>
-
+        {stage === 'done' && job && (
+          <div className="mt-5 border-t border-gray-100 pt-4 dark:border-gray-800">
+            <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              Mastered result
+              {readiness.ok && <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />}
+            </h3>
           {/* One glanceable verdict, driven by the SAME rules as the saved .txt
               report so the screen and the file cannot disagree. Requires all
               three: on target, peak-safe, dynamics preserved. */}
@@ -3045,6 +3193,77 @@ export function MasteringStudio() {
             </dl>
           </div>
 
+          <p className="mt-3 text-sm text-gray-700 dark:text-gray-300">
+            {/* A bed has no target to land on. Saying "measured -20.2 against a
+                -14 LUFS target" over a correct bed is the defect this whole
+                mode exists to remove, and it would have said exactly that. */}
+            {isBedJob &&
+              (typeof job.peakGainDb === 'number'
+                ? `Gain applied ${job.peakGainDb >= 0 ? '+' : ''}${job.peakGainDb.toFixed(2)} dB — the bed sits at ${dbtp(job.afterTp)} and lands at ${lufs(job.afterLufs)}, range unchanged.`
+                : `The bed was written at ${dbtp(job.afterTp)}, but the gain it used was not recorded.`)}
+            {!isBedJob && verdict === 'on-target' && `Landed on ${job.target} LUFS, peak-safe.`}
+            {!isBedJob && verdict === 'off-target' &&
+              `Measured ${lufs(job.afterLufs)} against a ${job.target} LUFS target — worth a listen before you use it.`}
+            {!isBedJob && verdict === 'unmeasured' &&
+              `The master was written, but the check measurement did not come back — download it and verify before use.`}
+            {!isBedJob && verdict === 'on-target' && movedLu !== null && movedLu < 1 && (
+              <span className="text-gray-500 dark:text-gray-400">
+                {' '}The source moved {movedLu.toFixed(2)} LU — below what anyone can hear, which is the correct
+                outcome for a song that was already on target.
+              </span>
+            )}
+          </p>
+
+          {joinLine(job) && (
+            <p className="mt-3 flex items-start gap-2 text-xs text-gray-600 dark:text-gray-300">
+              <Link2 className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              {/* Same string as the saved .txt — otherwise a master whose length
+                  nobody can account for is explained on screen and nowhere else. */}
+              <span>{joinLine(job)}</span>
+            </p>
+          )}
+
+          {/* Reference-matched mastering progress (Phase 1C UI). Rendered only
+              when the job carries a matchingStage — loudnorm-only jobs never
+              set it, so this stays invisible for the legacy path. Falls back
+              to text for stages the Python worker patches; a completed match
+              shows the matched output key so the admin can grab it while the
+              3-way A/B player (Phase 1C PR 3) is still being built. */}
+          {job.matchingStage && (
+            <p className="mt-3 flex items-start gap-2 text-xs text-gray-600 dark:text-gray-300">
+              <SlidersHorizontal className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span>
+                Reference-matched output:{' '}
+                <strong className="tabular-nums">
+                  {job.matchingStage === 'completed'
+                    ? 'ready'
+                    : job.matchingStage === 'failed'
+                      ? 'failed'
+                      : `${job.matchingStage}…`}
+                </strong>
+                {job.matchedMasterKey && (
+                  <>
+                    {' · '}
+                    <button
+                      type="button"
+                      onClick={() => downloadKey(job.matchedMasterKey!, masterName || 'reference-matched', target)}
+                      className="text-orange-700 underline hover:text-orange-800 dark:text-orange-400"
+                    >
+                      download matched WAV
+                    </button>
+                  </>
+                )}
+                {job.matchingError && (
+                  <span className="ml-1 text-red-600 dark:text-red-400">
+                    ({job.matchingError.code}: {job.matchingError.message})
+                  </span>
+                )}
+              </span>
+            </p>
+          )}
+
+
+            <Disclosure label="Full measurements" summary="loudness table · platform landing" className="mt-3">
           {/* overflow-x-auto, NOT overflow-hidden. This page is an installable
               PWA meant to live on a phone, and four columns of LUFS/dBTP figures
               do not fit a 360px screen — hidden would clip them with no way to
@@ -3096,81 +3315,12 @@ export function MasteringStudio() {
             </table>
           </div>
 
-          {joinLine(job) && (
-            <p className="mt-3 flex items-start gap-2 text-xs text-gray-600 dark:text-gray-300">
-              <Link2 className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              {/* Same string as the saved .txt — otherwise a master whose length
-                  nobody can account for is explained on screen and nowhere else. */}
-              <span>{joinLine(job)}</span>
-            </p>
-          )}
-
-          {/* Reference-matched mastering progress (Phase 1C UI). Rendered only
-              when the job carries a matchingStage — loudnorm-only jobs never
-              set it, so this stays invisible for the legacy path. Falls back
-              to text for stages the Python worker patches; a completed match
-              shows the matched output key so the admin can grab it while the
-              3-way A/B player (Phase 1C PR 3) is still being built. */}
-          {job.matchingStage && (
-            <p className="mt-3 flex items-start gap-2 text-xs text-gray-600 dark:text-gray-300">
-              <SlidersHorizontal className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              <span>
-                Reference-matched output:{' '}
-                <strong className="tabular-nums">
-                  {job.matchingStage === 'completed'
-                    ? 'ready'
-                    : job.matchingStage === 'failed'
-                      ? 'failed'
-                      : `${job.matchingStage}…`}
-                </strong>
-                {job.matchedMasterKey && (
-                  <>
-                    {' · '}
-                    <button
-                      type="button"
-                      onClick={() => downloadKey(job.matchedMasterKey!, masterName || 'reference-matched', target)}
-                      className="text-orange-700 underline hover:text-orange-800 dark:text-orange-400"
-                    >
-                      download matched WAV
-                    </button>
-                  </>
-                )}
-                {job.matchingError && (
-                  <span className="ml-1 text-red-600 dark:text-red-400">
-                    ({job.matchingError.code}: {job.matchingError.message})
-                  </span>
-                )}
-              </span>
-            </p>
-          )}
-
           <p className="mt-3 flex items-start gap-2 text-xs text-gray-500 dark:text-gray-400">
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             <span>
               <strong>Integrated</strong> is how loud the song plays overall — the number platforms normalise to.
               <strong> True peak</strong> is how close the loudest instant comes to distortion; at or under -1 dBTP is safe.
             </span>
-          </p>
-
-          <p className="mt-3 text-sm text-gray-700 dark:text-gray-300">
-            {/* A bed has no target to land on. Saying "measured -20.2 against a
-                -14 LUFS target" over a correct bed is the defect this whole
-                mode exists to remove, and it would have said exactly that. */}
-            {isBedJob &&
-              (typeof job.peakGainDb === 'number'
-                ? `Gain applied ${job.peakGainDb >= 0 ? '+' : ''}${job.peakGainDb.toFixed(2)} dB — the bed sits at ${dbtp(job.afterTp)} and lands at ${lufs(job.afterLufs)}, range unchanged.`
-                : `The bed was written at ${dbtp(job.afterTp)}, but the gain it used was not recorded.`)}
-            {!isBedJob && verdict === 'on-target' && `Landed on ${job.target} LUFS, peak-safe.`}
-            {!isBedJob && verdict === 'off-target' &&
-              `Measured ${lufs(job.afterLufs)} against a ${job.target} LUFS target — worth a listen before you use it.`}
-            {!isBedJob && verdict === 'unmeasured' &&
-              `The master was written, but the check measurement did not come back — download it and verify before use.`}
-            {!isBedJob && verdict === 'on-target' && movedLu !== null && movedLu < 1 && (
-              <span className="text-gray-500 dark:text-gray-400">
-                {' '}The source moved {movedLu.toFixed(2)} LU — below what anyone can hear, which is the correct
-                outcome for a song that was already on target.
-              </span>
-            )}
           </p>
 
           {/* Nobody streams a karaoke bed, so this table would grade it against
@@ -3218,19 +3368,18 @@ export function MasteringStudio() {
             </div>
           )}
 
-          {job.masterKey && job.s3Key && (
-            <MasteringComparePlayer
-              sourceKey={job.s3Key}
-              masterKey={job.masterKey}
-              beforeLufs={job.beforeLufs}
-              afterLufs={job.afterLufs}
-              // Phase 1C UI: 3-way A/B/C when the matchering-worker produced
-              // a matched output alongside the loudnorm master. Absent →
-              // player renders as it always has.
-              matchedKey={job.matchingStage === 'completed' ? job.matchedMasterKey : null}
-            />
-          )}
+            </Disclosure>
+          </div>
+        )}
+      </section>
 
+      {/* 3 — save */}
+      <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          3 · Save
+        </h2>
+        {stage === 'done' && job ? (
+          <>
           <div className="mt-4">
             <label htmlFor={`${inputId}-name`} className="block text-xs font-medium text-gray-600 dark:text-gray-300">
               Name this master <span className="font-normal text-gray-400">(optional)</span>
@@ -3359,50 +3508,99 @@ export function MasteringStudio() {
             </div>
           )}
 
-          {/* Render for YouTube — cover art over the MASTERED audio, encoded
-              once. This is what keeps Premiere out of the audio path: no
-              re-export, so nothing can re-level or re-encode the master before
-              YouTube receives it. */}
-          {/* A bed is a deliverable, not a release — `planRender` and
-              `planShort` both refuse one, so this panel would offer two buttons
-              whose only outcome is a refusal. */}
-          {savedAt && job.masterKey && !isBedJob && (
-            <div className="mt-4 rounded-lg border border-gray-200 p-4 dark:border-gray-800">
-              <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                <Film className="h-3.5 w-3.5" aria-hidden="true" /> Render for YouTube
-              </h3>
+          {pageError?.slot === 'save' && <InlineAlert message={pageError.message} />}
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50/60 p-4 text-sm dark:border-amber-900/40 dark:bg-amber-900/10">
+            <p className="font-semibold text-amber-800 dark:text-amber-300">Hand-off to Adobe — master once</p>
+            <p className="mt-1 text-gray-700 dark:text-gray-200">
+              Import this WAV as the audio track and pass it through untouched at 48 kHz. If Essential Sound&rsquo;s
+              &ldquo;Auto-Match&rdquo; is on, or the export adds gain, it re-processes the audio and cancels the master
+              you just made. Export with PCM or high-bitrate AAC and <strong>no loudness normalisation</strong>.
+            </p>
+          </div>
+          </>
+        ) : (
+          <p className="text-sm text-gray-500 dark:text-gray-400">Master a song first — then name it and save it to the library.</p>
+        )}
+      </section>
 
-              <div className="mt-3 flex flex-wrap items-end gap-3">
-                <div>
-                  <label htmlFor={`${inputId}-cover`} className="block text-xs font-medium text-gray-600 dark:text-gray-300">
-                    Cover image
-                  </label>
-                  <input
-                    id={`${inputId}-cover`}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    disabled={rendering || coverUploading}
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      e.target.value = '';
-                      if (f) void onPickCover(f);
-                    }}
-                    className="mt-1 block w-full max-w-xs text-xs text-gray-600 file:mr-3 file:rounded-lg file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-gray-700 dark:text-gray-300 dark:file:border-gray-700 dark:file:bg-gray-900 dark:file:text-gray-200"
-                  />
-                </div>
-                {/* Clips or GIFs played in order under the song in all three
-                    renders. The cover above stays: it is the YouTube thumbnail. */}
-                <BackgroundClipsField
-                  idPrefix={inputId}
-                  clips={backgrounds}
-                  onChange={setBackgrounds}
-                  masterJobId={jobId}
-                  songSeconds={job.editedDurationSec ?? null}
-                  disabled={rendering || shorting || verticaling || coverUploading}
-                  onBusyChange={setBackgroundUploading}
-                  onError={setPanelError}
-                  onAnnounce={setAnnounce}
-                />
+      {/* 4 — video */}
+      <section aria-busy={rendering || shorting} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          4 · Video
+        </h2>
+        {/* Render for YouTube — cover art over the MASTERED audio, encoded
+            once. This is what keeps Premiere out of the audio path: no
+            re-export, so nothing can re-level or re-encode the master before
+            YouTube receives it. A bed is a deliverable, not a release —
+            `planRender` and `planShort` both refuse one. */}
+        {stage === 'done' && job && savedAt && job.masterKey && !isBedJob ? (
+          <div>
+            <div>
+              <label htmlFor={`${inputId}-cover`} className="block text-xs font-medium text-gray-600 dark:text-gray-300">
+                Cover image
+              </label>
+              <input
+                id={`${inputId}-cover`}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                disabled={rendering || coverUploading}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = '';
+                  if (f) void onPickCover(f);
+                }}
+                className="mt-1 block w-full max-w-xs text-xs text-gray-600 file:mr-3 file:rounded-lg file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-gray-700 dark:text-gray-300 dark:file:border-gray-700 dark:file:bg-gray-900 dark:file:text-gray-200"
+              />
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {coverUploading ? 'Uploading cover…' : cover ? `Cover: ${cover.name}.` : 'Add a cover to render.'}
+              </p>
+            </div>
+
+            {/* THE MAIN BUTTON, with its settings closed under it. */}
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void renderVideo()}
+                disabled={
+                  !cover || rendering || coverUploading || backgroundUploading ||
+                  // An added image with no file or no readable time is
+                  // unfinished — rendering would silently drop it.
+                  (panelSlidesNow.length > 0 && slidesToCovers(cover.key, panelSlidesNow) === null)
+                }
+                className="inline-flex items-center gap-2 rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {rendering
+                  ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  : <Film className="h-4 w-4" aria-hidden="true" />}
+                {rendering
+                  ? `Rendering… ${elapsedClock(renderElapsed)}`
+                  : backgrounds.length > 1
+                    ? `Render video (${backgrounds.length} background clips)`
+                    : backgrounds.length > 0
+                    ? 'Render video (video background)'
+                    : panelSlidesNow.length > 0
+                    ? `Render slideshow (${panelSlidesNow.length + 1} images${shortMotion !== 'none' ? ', 1080p, moving' : ''})`
+                    : shortMotion !== 'none'
+                      ? 'Render video (1080p, moving)'
+                      : 'Render video'}
+              </button>
+              {job.videoKey && (
+                <button
+                  type="button"
+                  onClick={() => void downloadKey(job.videoKey!, masterName.trim(), job.target, undefined, (message) => setPanelError({ at: 'video', message }))}
+                  className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900"
+                >
+                  <Download className="h-4 w-4" aria-hidden="true" /> Download MP4
+                  {job.videoBackgroundKey ? ' (video background)' : job.videoMotion && job.videoMotion !== 'none' ? ' (moving)' : ''}
+                </button>
+              )}
+            </div>
+            <Disclosure
+              label="Video settings:"
+              summary={videoSettingsSummary(videoHeight, shortMotion, backgrounds.length)}
+              className="mt-2"
+            >
+              <div className="mt-2 flex flex-wrap items-end gap-3 rounded-lg bg-gray-50 p-3 dark:bg-gray-800/40">
                 <div>
                   <label htmlFor={`${inputId}-height`} className="block text-xs font-medium text-gray-600 dark:text-gray-300">
                     Upload size
@@ -3419,141 +3617,63 @@ export function MasteringStudio() {
                     <option value={2160}>2160p</option>
                   </select>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void renderVideo()}
-                  disabled={
-                    !cover || rendering || coverUploading || backgroundUploading ||
-                    // An added image with no file or no readable time is
-                    // unfinished — rendering would silently drop it.
-                    (panelSlidesNow.length > 0 && slidesToCovers(cover.key, panelSlidesNow) === null)
-                  }
-                  className="inline-flex items-center gap-2 rounded-lg border border-orange-300 px-4 py-2 text-sm font-medium text-orange-700 transition hover:bg-orange-50 disabled:opacity-60 dark:border-orange-800 dark:text-orange-300 dark:hover:bg-orange-900/20"
-                >
-                  {rendering
-                    ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                    : <Film className="h-4 w-4" aria-hidden="true" />}
-                  {rendering
-                    ? 'Rendering…'
-                    : backgrounds.length > 1
-                      ? `Render video (${backgrounds.length} background clips)`
-                      : backgrounds.length > 0
-                      ? 'Render video (video background)'
-                      : panelSlidesNow.length > 0
-                      ? `Render slideshow (${panelSlidesNow.length + 1} images${shortMotion !== 'none' ? ', 1080p, moving' : ''})`
-                      : shortMotion !== 'none'
-                        ? 'Render video (1080p, moving)'
-                        : 'Render video'}
-                </button>
-                {job.videoKey && (
-                  <button
-                    type="button"
-                    onClick={() => void downloadKey(job.videoKey!, masterName.trim(), job.target)}
-                    className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900"
-                  >
-                    <Download className="h-4 w-4" aria-hidden="true" /> Download MP4
-                    {job.videoBackgroundKey ? ' (video background)' : job.videoMotion && job.videoMotion !== 'none' ? ' (moving)' : ''}
-                  </button>
-                )}
-              </div>
-
-              {backgrounds.length > 0 && (
-                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                  The background plays under the song in the video, the short and the whole-song vertical.
-                  The cover is still the YouTube thumbnail. Motion and extra images don&apos;t apply, and
-                  songs up to 10 minutes can be rendered this way.
-                </p>
-              )}
-
-              {/* MORE IMAGES = A SLIDESHOW, for all three renders. Times are
-                  seconds into the SONG; a short shows whichever images fall
-                  inside its window — the worker works that out. */}
-              {jobId && (
-                <div className="mt-3">
-                  <SlideshowFields
-                    slides={panelSlidesNow}
-                    onChange={(slides) => commitPanelSlides(jobId, slides)}
-                    onPickImage={(i, f) => void onPickSlide(jobId, i, f)}
-                    disabled={!cover || rendering || coverUploading}
-                    idPrefix={`${inputId}-slide`}
-                    durationSec={job.editedDurationSec}
-                    transition={slideTransition}
-                    onTransitionChange={setSlideTransition}
-                  />
-                </div>
-              )}
-              {panelError && (
-                <p
-                  role="alert"
-                  className="mt-3 flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300"
-                >
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-                  <span>{panelError}</span>
-                </p>
-              )}
-
-              {/* THE VERTICAL CLIP. A second, independent render from the same
-                  cover and the same mastered WAV — not a crop of the video, and
-                  not a step on the way to one. It exists because the channel
-                  posts 2-3 songs a week to YouTube and the rest goes to Reels
-                  and Instagram, which want 9:16. */}
-              <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-gray-200 pt-4 dark:border-gray-800">
-                <button
-                  type="button"
-                  onClick={() => void makeShort()}
-                  disabled={!cover || shorting || rendering || coverUploading || backgroundUploading || (panelSlidesNow.length > 0 && slidesToCovers(cover.key, panelSlidesNow) === null)}
-                  className="inline-flex items-center gap-2 rounded-lg border border-indigo-300 px-4 py-2 text-sm font-medium text-indigo-700 transition hover:bg-indigo-50 disabled:opacity-60 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-900/20"
-                >
-                  {shorting
-                    ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                    : <Smartphone className="h-4 w-4" aria-hidden="true" />}
-                  {shorting ? 'Cutting…' : 'Make a short'}
-                </button>
-                {job.shortKey && (
-                  <button
-                    type="button"
-                    onClick={() => void downloadKey(job.shortKey!, masterName.trim(), job.target, 'Short')}
-                    className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900"
-                  >
-                    <Download className="h-4 w-4" aria-hidden="true" /> Download short
-                  </button>
-                )}
-                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                {/* A slow move across each image, for ALL three renders —
+                    the video, the short and the whole-song vertical. */}
+                <label className="block text-xs font-medium text-gray-600 dark:text-gray-300">
                   Motion
                   <select
                     value={shortMotion}
                     disabled={shorting}
                     onChange={(e) => setShortMotion(e.target.value as ShortMotion)}
-                    className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                    className="mt-1 block rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
                   >
                     {SHORT_MOTIONS.map((mo) => (
                       <option key={mo} value={mo}>{MOTION_LABELS[mo]}</option>
                     ))}
                   </select>
                 </label>
-                {/* The WHOLE song at 1080x1920 — a Facebook video or an Instagram
-                    feed post. Its own file, beside the clip; the window fields
-                    do not apply to it. */}
+                <p className="w-full text-xs text-gray-500 dark:text-gray-400">
+                  Encodes the <strong>mastered WAV</strong> at AAC 384k/48&nbsp;kHz — the audio never
+                  passes through another editor, so nothing can re-level it. 1440p is the default
+                  because YouTube gives higher-resolution uploads a better audio codec. Motion applies
+                  to the video, the short and the whole-song vertical; a moving video is 1080p.
+                </p>
+              </div>
+            </Disclosure>
+
+            {/* THE VERTICAL CLIP. A second, independent render from the same
+                cover and the same mastered WAV — not a crop of the video, and
+                not a step on the way to one. It exists because the channel
+                posts 2-3 songs a week to YouTube and the rest goes to Reels
+                and Instagram, which want 9:16. */}
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void makeShort()}
+                disabled={!cover || shorting || rendering || coverUploading || backgroundUploading || (panelSlidesNow.length > 0 && slidesToCovers(cover.key, panelSlidesNow) === null)}
+                className="inline-flex items-center gap-2 rounded-lg border border-indigo-300 px-4 py-2 text-sm font-medium text-indigo-700 transition hover:bg-indigo-50 disabled:opacity-60 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-900/20"
+              >
+                {shorting
+                  ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  : <Smartphone className="h-4 w-4" aria-hidden="true" />}
+                {shorting ? `Cutting… ${elapsedClock(shortElapsed)}` : 'Make a short'}
+              </button>
+              {job.shortKey && (
                 <button
                   type="button"
-                  onClick={() => void makeVertical()}
-                  disabled={!cover || verticaling || shorting || rendering || coverUploading || backgroundUploading || (panelSlidesNow.length > 0 && slidesToCovers(cover.key, panelSlidesNow) === null)}
-                  className="inline-flex items-center gap-2 rounded-lg border border-indigo-300 px-4 py-2 text-sm font-medium text-indigo-700 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-900/20"
+                  onClick={() => void downloadKey(job.shortKey!, masterName.trim(), job.target, 'Short', (message) => setPanelError({ at: 'video', message }))}
+                  className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900"
                 >
-                  {verticaling
-                    ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                    : <Smartphone className="h-4 w-4" aria-hidden="true" />}
-                  {verticaling ? 'Rendering…' : 'Whole song, vertical'}
+                  <Download className="h-4 w-4" aria-hidden="true" /> Download short
                 </button>
-                {job.verticalKey && (
-                  <button
-                    type="button"
-                    onClick={() => void downloadKey(job.verticalKey!, masterName.trim(), job.target, 'Vertical')}
-                    className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
-                  >
-                    <Download className="h-4 w-4" aria-hidden="true" /> Download vertical
-                  </button>
-                )}
+              )}
+            </div>
+            <Disclosure
+              label="Short settings:"
+              summary={shortSettingsSummary(windowFor(jobId), shortMotion)}
+              className="mt-2"
+            >
+              <div className="mt-2 flex flex-wrap items-center gap-3 rounded-lg bg-gray-50 p-3 dark:bg-gray-800/40">
                 <ShortWindowFields
                   value={windowFor(jobId)}
                   onChange={(w) => setShortWindow(w && jobId ? { jobId, ...w } : null)}
@@ -3562,7 +3682,7 @@ export function MasteringStudio() {
                 />
                 <p className="w-full text-xs text-gray-500 dark:text-gray-400">
                   1080&times;1920, faded at both ends. No lyrics are burned in — download it and
-                  post it to Reels or Instagram by hand.
+                  post it to Reels or Instagram by hand. Motion is set under Video settings.
                   {typeof job.shortStartSec === 'number' && (
                     <>
                       {' '}Last clip: {job.shortSeconds ?? 30}s from {formatTime(job.shortStartSec)}
@@ -3571,41 +3691,81 @@ export function MasteringStudio() {
                   )}
                 </p>
               </div>
+            </Disclosure>
 
-              {/* PREFLIGHT — what is about to be encoded, before it is.
-                  A leftover cover from the previous song used to render that
-                  song's artwork into this song's video, silently; the fix was
-                  to clear it, and this makes the remaining risk visible. */}
-              {cover && !rendering && (
-                <dl className="mt-3 grid gap-x-4 gap-y-1 rounded-lg bg-gray-50 p-3 text-xs dark:bg-gray-800/40 sm:grid-cols-[7rem_1fr]">
-                  <dt className="font-medium text-gray-600 dark:text-gray-300">Cover</dt>
-                  <dd className="truncate text-gray-800 dark:text-gray-100">{cover.name}</dd>
-                  <dt className="font-medium text-gray-600 dark:text-gray-300">Audio</dt>
-                  <dd className="text-gray-800 dark:text-gray-100">
-                    the mastered WAV{typeof job.afterLufs === 'number' ? ` (${job.afterLufs.toFixed(1)} LUFS)` : ''} → AAC 384k/48 kHz
-                  </dd>
-                  <dt className="font-medium text-gray-600 dark:text-gray-300">Downloads as</dt>
-                  <dd className="truncate text-gray-800 dark:text-gray-100">
-                    {masterName.trim()
-                      ? `${masterName.trim()} (Master ${job.target} LUFS).mp4`
-                      : <span className="text-amber-700 dark:text-amber-400">unnamed — name this master first</span>}
-                  </dd>
-                </dl>
-              )}
+            {/* Clips or GIFs played in order under the song in all three
+                renders. The cover above stays: it is the YouTube thumbnail. */}
+            <Disclosure
+              label="Background:"
+              summary={backgroundSummary(backgrounds.length)}
+              className="mt-3"
+            >
+              <div className="mt-2 rounded-lg bg-gray-50 p-3 dark:bg-gray-800/40">
+                <BackgroundClipsField
+                  idPrefix={inputId}
+                  clips={backgrounds}
+                  onChange={setBackgrounds}
+                  masterJobId={jobId}
+                  songSeconds={job.editedDurationSec ?? null}
+                  disabled={rendering || shorting || verticaling || coverUploading}
+                  onBusyChange={setBackgroundUploading}
+                  onError={(message) => setPanelError(message ? { at: 'video', message } : null)}
+                  onAnnounce={setAnnounce}
+                />
+                {backgrounds.length > 0 && (
+                  <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                    The background plays under the song in the video, the short and the whole-song vertical.
+                    The cover is still the YouTube thumbnail. Motion and extra images don&apos;t apply, and
+                    songs up to 10 minutes can be rendered this way.
+                  </p>
+                )}
+              </div>
+            </Disclosure>
+
+            {panelError?.at === 'video' && <InlineAlert message={panelError.message} />}
+
+            {/* PREFLIGHT — what is about to be encoded, before it is.
+                A leftover cover from the previous song used to render that
+                song's artwork into this song's video, silently; the fix was
+                to clear it, and this makes the remaining risk visible. */}
+            {cover && !rendering && (
+              <dl className="mt-3 grid gap-x-4 gap-y-1 rounded-lg bg-gray-50 p-3 text-xs dark:bg-gray-800/40 sm:grid-cols-[7rem_1fr]">
+                <dt className="font-medium text-gray-600 dark:text-gray-300">Cover</dt>
+                <dd className="truncate text-gray-800 dark:text-gray-100">{cover.name}</dd>
+                <dt className="font-medium text-gray-600 dark:text-gray-300">Audio</dt>
+                <dd className="text-gray-800 dark:text-gray-100">
+                  the mastered WAV{typeof job.afterLufs === 'number' ? ` (${job.afterLufs.toFixed(1)} LUFS)` : ''} → AAC 384k/48 kHz
+                </dd>
+                <dt className="font-medium text-gray-600 dark:text-gray-300">Downloads as</dt>
+                <dd className="truncate text-gray-800 dark:text-gray-100">
+                  {masterName.trim()
+                    ? `${masterName.trim()} (Master ${job.target} LUFS).mp4`
+                    : <span className="text-amber-700 dark:text-amber-400">unnamed — name this master first</span>}
+                </dd>
+              </dl>
+            )}
+            {job.videoKey && (
               <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                {coverUploading
-                  ? 'Uploading cover…'
-                  : cover
-                    ? `Cover: ${cover.name}. `
-                    : 'Add a cover to render. '}
-                Encodes the <strong>mastered WAV</strong> at AAC 384k/48&nbsp;kHz — the audio never
-                passes through another editor, so nothing can re-level it. 1440p is the default
-                because YouTube gives higher-resolution uploads a better audio codec.
-                {job.videoKey && ' Upload it below, or download the MP4 and do it by hand.'}
+                Upload it in step 5, or download the MP4 and do it by hand.
               </p>
-            </div>
-          )}
+            )}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            {stage === 'done' && job && isBedJob
+              ? 'A karaoke bed is a deliverable, not a release — it has no video.'
+              : 'Save the master in step 3 first — then render its video and short here.'}
+          </p>
+        )}
+      </section>
 
+      {/* 5 — YouTube */}
+      <section aria-busy={uploadingToYoutube} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          5 · YouTube
+        </h2>
+        {stage === 'done' && job && uploadPanelOpen ? (
+          <>
           {/*
             UPLOAD TO YOUTUBE — the last step that used to happen outside the
             portal. Four sections in order: the picture, the metadata, the
@@ -3613,11 +3773,8 @@ export function MasteringStudio() {
             `planUpload` refuses everything else server-side, and offering a
             button that can only 409 is worse than not offering one.
           */}
-          {uploadPanelOpen && (
-            <div className="mt-4 rounded-lg border border-gray-200 p-4 dark:border-gray-800">
-              <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                <Upload className="h-3.5 w-3.5" aria-hidden="true" /> Upload to YouTube
-              </h3>
+          {job && (
+            <div>
 
               {/* 1 — THE PICTURE. A bad render reached YouTube unseen once;
                   the whole panel exists so that cannot happen again. */}
@@ -3642,7 +3799,7 @@ export function MasteringStudio() {
                 )}
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                   This is the cover the MP4 was encoded from — the frame itself is this image fitted
-                  to {videoHeight}p. If it is the wrong picture, re-render above before uploading:
+                  to {videoHeight}p. If it is the wrong picture, re-render in step 4 before uploading:
                   YouTube cannot swap a video file, so a wrong frame means deleting the video and
                   starting again.
                 </p>
@@ -3927,7 +4084,7 @@ export function MasteringStudio() {
                     ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                     : <Upload className="h-4 w-4" aria-hidden="true" />}
                   {uploadingToYoutube
-                    ? 'Uploading…'
+                    ? `Uploading… ${elapsedClock(uploadElapsed)}`
                     : job.youtubeVideoId
                       ? 'Already uploaded'
                       : job.uploadStatus === 'failed' || uploadStale
@@ -4067,16 +4224,179 @@ export function MasteringStudio() {
             </div>
           )}
 
-          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50/60 p-4 text-sm dark:border-amber-900/40 dark:bg-amber-900/10">
-            <p className="font-semibold text-amber-800 dark:text-amber-300">Hand-off to Adobe — master once</p>
-            <p className="mt-1 text-gray-700 dark:text-gray-200">
-              Import this WAV as the audio track and pass it through untouched at 48 kHz. If Essential Sound&rsquo;s
-              &ldquo;Auto-Match&rdquo; is on, or the export adds gain, it re-processes the audio and cancels the master
-              you just made. Export with PCM or high-bitrate AAC and <strong>no loudness normalisation</strong>.
-            </p>
-          </div>
-        </section>
-      )}
+
+          </>
+        ) : (
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            {stage === 'done' && job && isBedJob
+              ? 'A karaoke bed goes to its buyer, not to YouTube.'
+              : 'Once step 4 has made the video, it is uploaded from here as a private draft.'}
+          </p>
+        )}
+      </section>
+
+      {/* MORE TOOLS — closed on every load. Each tool keeps the gate it had
+          where it used to live; the blocks are hidden, never unmounted. */}
+      <MoreTools open={moreToolsOpen} onOpenChange={setMoreToolsOpen}>
+        <ToolBlock title="Trim">
+          {sourceKey ? (
+            /*
+              Mounted for as long as a source is loaded — including while the
+              worker runs. Unmounting it mid-run would tear down its region and
+              fade state, and its remount would push `null` back up, so the
+              second target in the dual-target flow would quietly master the
+              UNTRIMMED file. Disabled rather than removed.
+            */
+            <MasteringTrimPanel
+              key={`trim-${recipeNonce}`}
+              file={pickedFile}
+              onChange={setEdit}
+              disabled={stage === 'mastering'}
+              initialEdit={seedEdit}
+              knownDurationSec={seedDurationSec}
+            />
+          ) : (
+            <p className="text-xs text-gray-500 dark:text-gray-400">Upload a WAV in step 1 to trim it.</p>
+          )}
+        </ToolBlock>
+
+        <ToolBlock title="Join two parts">
+          {sourceKey ? (
+            <>
+            {/* Both panels edit the SAME pre-pass, upstream of every
+                measurement — which is what makes "master the assembled song
+                once" the only available order. */}
+            <MasteringJoinPanel
+              key={`join-${recipeNonce}`}
+              partB={partB}
+              onPick={(f) => void onPickPartB(f)}
+              onClear={() => { setPartB(null); setPartBStartSec(0); setSeedJoin(null); }}
+              overlapSec={overlapSec}
+              onOverlapChange={setOverlapSec}
+              partBStartSec={partBStartSec}
+              onPartBStartChange={setPartBStartSec}
+              uploading={partBUploading}
+              progressPct={partBSent.total ? Math.round((partBSent.loaded / partBSent.total) * 100) : 0}
+              disabled={stage === 'mastering'}
+              onPreviewSeam={() => void previewSeam()}
+              previewBusy={seamBusy}
+              previewUrl={seamPreview?.url ?? null}
+              previewNote={seamPreview?.note ?? null}
+              previewMismatched={seamPreview?.mismatched ?? false}
+              comparison={seamPreview?.comparison ?? null}
+              onApplySuggestion={({ partBStartSec, overlapSec }) => {
+                setPartBStartSec(partBStartSec);
+                setOverlapSec(overlapSec);
+                setAnnounce(`Set Part B to start at ${partBStartSec}s with a ${overlapSec}s crossfade.`);
+              }}
+            />
+              {pageError?.slot === 'tools' && <InlineAlert message={pageError.message} />}
+            </>
+          ) : (
+            <p className="text-xs text-gray-500 dark:text-gray-400">Upload Part A in step 1 to add a Part B.</p>
+          )}
+        </ToolBlock>
+
+        <ToolBlock title="Compare before and after">
+          {stage === 'done' && job?.masterKey && job.s3Key ? (
+            <MasteringComparePlayer
+              sourceKey={job.s3Key}
+              masterKey={job.masterKey}
+              beforeLufs={job.beforeLufs}
+              afterLufs={job.afterLufs}
+              // Phase 1C UI: 3-way A/B/C when the matchering-worker produced
+              // a matched output alongside the loudnorm master. Absent →
+              // player renders as it always has.
+              matchedKey={job.matchingStage === 'completed' ? job.matchedMasterKey : null}
+            />
+          ) : (
+            <p className="text-xs text-gray-500 dark:text-gray-400">Master a song to compare it with its source.</p>
+          )}
+        </ToolBlock>
+
+        {stage === 'done' && job && savedAt && job.masterKey && !isBedJob ? (
+          <>
+            {/* MORE IMAGES = A SLIDESHOW, for all three renders. Times are
+                seconds into the SONG; a short shows whichever images fall
+                inside its window — the worker works that out. */}
+            <ToolBlock title="Slideshow">
+              {jobId && (
+                <SlideshowFields
+                  slides={panelSlidesNow}
+                  onChange={(slides) => commitPanelSlides(jobId, slides)}
+                  onPickImage={(i, f) => void onPickSlide(jobId, i, f)}
+                  disabled={!cover || rendering || coverUploading}
+                  idPrefix={`${inputId}-slide`}
+                  durationSec={job.editedDurationSec}
+                  transition={slideTransition}
+                  onTransitionChange={setSlideTransition}
+                />
+              )}
+              {!cover && (
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Add a cover in step 4 first — it is image 1.</p>
+              )}
+            </ToolBlock>
+
+            {/* The WHOLE song at 1080x1920 — a Facebook video or an Instagram
+                feed post. Its own file, beside the clip; the short's window
+                does not apply to it. */}
+            <ToolBlock title="Whole-song vertical">
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => void makeVertical()}
+                  disabled={!cover || verticaling || shorting || rendering || coverUploading || backgroundUploading || (panelSlidesNow.length > 0 && slidesToCovers(cover.key, panelSlidesNow) === null)}
+                  className="inline-flex items-center gap-2 rounded-lg border border-indigo-300 px-4 py-2 text-sm font-medium text-indigo-700 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-900/20"
+                >
+                  {verticaling
+                    ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    : <Smartphone className="h-4 w-4" aria-hidden="true" />}
+                  {verticaling ? `Rendering… ${elapsedClock(verticalElapsed)}` : 'Whole song, vertical'}
+                </button>
+                {job.verticalKey && (
+                  <button
+                    type="button"
+                    onClick={() => void downloadKey(job.verticalKey!, masterName.trim(), job.target, 'Vertical', (message) => setPanelError({ at: 'tools', message }))}
+                    className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
+                  >
+                    <Download className="h-4 w-4" aria-hidden="true" /> Download vertical
+                  </button>
+                )}
+              </div>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Uses the cover, background and motion from step 4.
+              </p>
+            </ToolBlock>
+            {panelError?.at === 'tools' && <InlineAlert message={panelError.message} />}
+          </>
+        ) : (
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Slideshow and whole-song vertical appear here once a master is saved (step 3).
+          </p>
+        )}
+
+        {/* Repair marks live in the saved-master player (press M while it
+            plays), which opens in the library below. */}
+        <ToolBlock title="Repair marks">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Marks are made in the saved-master player: press Play on a saved master below, then press{' '}
+            <kbd>M</kbd> to mark a moment.
+          </p>
+          {stage === 'done' && job && savedAt && job.masterKey && (
+            <button
+              type="button"
+              onClick={() => {
+                if (!libraryOpen) toggleLibrary();
+                if (playing?.id !== job.id) void playSaved(job);
+              }}
+              className="mt-2 inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+            >
+              <Play className="h-3.5 w-3.5" aria-hidden="true" /> Open this master&rsquo;s repair marks
+            </button>
+          )}
+        </ToolBlock>
+      </MoreTools>
+
 
 
       <section className="mt-8">
@@ -4188,14 +4508,6 @@ export function MasteringStudio() {
                             {lineageLabel(m.derivedFrom, library?.find((x) => x.id === m.derivedFrom!.jobId)?.title ?? null)}
                           </span>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => setRenaming({ id: m.id, value: m.title ?? '' })}
-                          aria-label={`Rename ${m.title ?? 'master'}`}
-                          className="shrink-0 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-                        >
-                          <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-                        </button>
                       </span>
                     )}
                     {m.publishedAt && (
@@ -4230,38 +4542,16 @@ export function MasteringStudio() {
                       download links happen to be present. */}
                   <ReleasePipelineRow job={m} />
 
-                  {/* 4 — what can be DONE with it, ruled off from the facts
-                      above so a download link is never mistaken for a number.
-                      Files on the left, the two actions that change something
-                      pushed right, because those are the ones worth a pause. */}
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-gray-100 pt-1.5 dark:border-gray-800">
-                    {m.masterKey && (
-                      <button
-                        type="button"
-                        onClick={() => void downloadKey(m.masterKey!, m.title ?? '', m.target, isPeakMaster(m) ? bedLabel : undefined)}
-                        className="text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
-                      >
-                        WAV
-                      </button>
-                    )}
-                    {/* The MP3 was reachable only from the result panel of the run
-                        that produced it — so a master saved yesterday had a web
-                        file in S3 that nothing on this page could open. */}
-                    {m.mp3Key && (
-                      <button
-                        type="button"
-                        onClick={() => void downloadKey(m.mp3Key!, m.title ?? '', m.target, isPeakMaster(m) ? bedLabel : undefined)}
-                        className="text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
-                      >
-                        MP3
-                      </button>
-                    )}
-                    {/* Same fix as the MP3 button above, for the video: a render
+                  {/* 4 — what can be DONE with it. Only the everyday actions
+                      are on the row: the rendered files, Render video, and
+                      the YouTube state. Everything else is in the "…" menu. */}
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-gray-100 pt-1.5 dark:border-gray-800">
+                    {/* Same fix as the MP3 download, for the video: a render
                         that finished in an earlier session had no route back. */}
                     {m.videoKey && (
                       <button
                         type="button"
-                        onClick={() => void downloadKey(m.videoKey!, m.title ?? '', m.target)}
+                        onClick={() => void downloadKey(m.videoKey!, m.title ?? '', m.target, undefined, (message) => setRowError({ id: m.id, message }))}
                         className="text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
                       >
                         Video{m.videoBackgroundKey ? ' (video background)' : m.videoMotion && m.videoMotion !== 'none' ? ' (moving)' : ''}
@@ -4270,7 +4560,7 @@ export function MasteringStudio() {
                     {m.shortKey && (
                       <button
                         type="button"
-                        onClick={() => void downloadKey(m.shortKey!, m.title ?? '', m.target, 'Short')}
+                        onClick={() => void downloadKey(m.shortKey!, m.title ?? '', m.target, 'Short', (message) => setRowError({ id: m.id, message }))}
                         className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
                       >
                         Short
@@ -4279,21 +4569,26 @@ export function MasteringStudio() {
                     {m.verticalKey && (
                       <button
                         type="button"
-                        onClick={() => void downloadKey(m.verticalKey!, m.title ?? '', m.target, 'Vertical')}
+                        onClick={() => void downloadKey(m.verticalKey!, m.title ?? '', m.target, 'Vertical', (message) => setRowError({ id: m.id, message }))}
                         className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
                       >
                         Vertical
                       </button>
                     )}
-                    {/* The song's stems live on their own page — the library
-                        row only says whether there are any. */}
-                    <a
-                      href={`/admin/mastering/stems/${m.id}`}
-                      className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
-                    >
-                      {m.stemCount ? `Stems (${m.stemCount})` : 'Add stems'}
-                    </a>
-                    <span className="ml-auto flex flex-wrap items-center gap-x-3">
+                    {/* The uploaded-to-YouTube state, on the row. Uploading
+                        itself happens in step 5, which follows the master
+                        mastered and saved in this session. */}
+                    {m.youtubeVideoId && (
+                      <a
+                        href={`https://studio.youtube.com/video/${m.youtubeVideoId}/edit`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 hover:underline dark:text-emerald-400"
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> On YouTube (private draft or later)
+                      </a>
+                    )}
+                    <span className="ml-auto flex items-center gap-2">
                       {/* And a way to MAKE one. The inline panel is gated on savedAt,
                           which only this session's Save sets, so without this a master
                           saved yesterday could never be rendered at all. */}
@@ -4322,23 +4617,15 @@ export function MasteringStudio() {
                             )
                           }
                           aria-label={`Video or short for ${m.title ?? 'this master'}`}
-                          className="text-xs font-medium text-orange-600 hover:underline disabled:opacity-50 dark:text-orange-400"
+                          aria-expanded={rowRender?.id === m.id}
+                          className="rounded bg-orange-600 px-2 py-1 text-xs font-medium text-white hover:bg-orange-700 disabled:opacity-60"
                         >
-                          {m.videoKey || m.shortKey ? 'Video / short' : 'Make video or short'}
+                          {rowActivity.get(m.id)
+                            ? `${rowActivity.get(m.id)!.label}… ${elapsedClock(Math.floor((Date.now() - rowActivity.get(m.id)!.since) / 1000))}`
+                            : m.videoKey ? 'Re-render video' : 'Render video'}
                         </button>
                       )}
-                      {/* The source is never modified, so re-opening costs nothing and
-                          loses nothing — it restores the recipe and hands back
-                          control at the "ready" stage. */}
-                      {m.s3Key && (
-                        <button
-                          type="button"
-                          onClick={() => reopenMaster(m)}
-                          className="text-xs font-medium text-orange-600 hover:underline dark:text-orange-400"
-                        >
-                          Edit &amp; re-master
-                        </button>
-                      )}
+                      <RowActionsMenu forWhom={m.title || 'this master'} items={rowMenuItems(m)} />
                     </span>
                   </div>
 
@@ -4347,7 +4634,7 @@ export function MasteringStudio() {
                       the render panel below — because play and rename can fail
                       with that panel closed, and an error nobody can see is the
                       same as no error at all. */}
-                  {rowError?.id === m.id && (
+                  {rowError?.id === m.id && rowRender?.id !== m.id && (
                     <p
                       role="alert"
                       className="mt-2 flex w-full items-start gap-2 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-red-800 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300"
@@ -4392,146 +4679,190 @@ export function MasteringStudio() {
 
 
                   {rowRender?.id === m.id && (
-                    <div className="mt-2 flex w-full flex-wrap items-center gap-2 border-t border-gray-100 pt-2 dark:border-gray-800">
-                      <label
-                        htmlFor={`${inputId}-rowcover-${m.id}`}
-                        className="text-xs font-medium text-gray-600 dark:text-gray-300"
-                      >
-                        Cover for {m.title || 'this master'}
-                      </label>
-                      {/* Named, not assumed. Reusing a cover silently would leave
-                          the operator unable to tell which image is about to be
-                          encoded — and the file input beside it is still the way
-                          to replace it. */}
-                      {rowRender.cover && (
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          using <span className="font-medium">{rowRender.cover.name}</span> — replace it here if you want a different one:
-                        </span>
+                    <div className="mt-2 w-full space-y-2 border-t border-gray-100 pt-2 dark:border-gray-800">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <label
+                          htmlFor={`${inputId}-rowcover-${m.id}`}
+                          className="text-xs font-medium text-gray-600 dark:text-gray-300"
+                        >
+                          Cover for {m.title || 'this master'}
+                        </label>
+                        {/* Named, not assumed. Reusing a cover silently would leave
+                            the operator unable to tell which image is about to be
+                            encoded — and the file input beside it is still the way
+                            to replace it. */}
+                        {rowRender.cover && (
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            using <span className="font-medium">{rowRender.cover.name}</span> — replace it here if you want a different one:
+                          </span>
+                        )}
+                        <input
+                          id={`${inputId}-rowcover-${m.id}`}
+                          type="file"
+                          accept="image/*"
+                          disabled={rowBusy.has(m.id)}
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) void onPickRowCover(m.id, f);
+                          }}
+                          className="max-w-full text-xs"
+                        />
+                      </div>
+                      {/* "Render" alone did not say WHAT it rendered — both buttons
+                          name their output. The short sits right under the video,
+                          as in step 4; the same cover feeds both, and a short is
+                          not a step on the way to the video. */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={
+                            !rowRender.cover ||
+                            rowBusy.has(m.id) ||
+                            // An added image with no file or no readable time is
+                            // unfinished — rendering would silently drop it.
+                            (slidesFor(m.id).length > 0 &&
+                              slidesToCovers(rowRender.cover.key, slidesFor(m.id)) === null)
+                          }
+                          onClick={() => void renderRowVideo()}
+                          className="rounded bg-orange-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
+                        >
+                          {rowActivity.get(m.id)?.label === 'Rendering'
+                            ? `Rendering… ${elapsedClock(Math.floor((Date.now() - rowActivity.get(m.id)!.since) / 1000))}`
+                            : (rowRender.backgrounds?.length ?? 0) > 1
+                            ? `Render video (${videoHeight}p, ${rowRender.backgrounds!.length} background clips)`
+                            : rowRender.backgrounds?.length
+                            ? `Render video (${videoHeight}p, video background)`
+                            : slidesFor(m.id).length > 0
+                            ? `Render slideshow (${slidesFor(m.id).length + 1} images${shortMotion !== 'none' ? ', 1080p, moving' : ''})`
+                            : shortMotion !== 'none'
+                              ? 'Render video (1080p, moving)'
+                              : `Render video (${videoHeight}p)`}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!rowRender.cover || rowBusy.has(m.id) || (slidesFor(m.id).length > 0 && slidesToCovers(rowRender.cover.key, slidesFor(m.id)) === null)}
+                          onClick={() => void makeRowShort()}
+                          className="rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
+                        >
+                          {rowActivity.get(m.id)?.label === 'Cutting'
+                            ? `Cutting… ${elapsedClock(Math.floor((Date.now() - rowActivity.get(m.id)!.since) / 1000))}`
+                            : m.shortKey ? 'Re-cut vertical short' : 'Make vertical short'}
+                        </button>
+                        {/* The WHOLE song at 1080x1920 — for a Facebook video or an
+                            Instagram feed post. Its own button and its own file: it
+                            sits beside the clip and never replaces it. Opened from
+                            the "…" menu; the short's window does not apply to it. */}
+                        {rowRender.parts?.includes('vertical') && (
+                          <button
+                            type="button"
+                            disabled={!rowRender.cover || rowBusy.has(m.id) || (slidesFor(m.id).length > 0 && slidesToCovers(rowRender.cover.key, slidesFor(m.id)) === null)}
+                            onClick={() => void makeRowVertical()}
+                            className="rounded border border-indigo-600 px-2 py-1 text-xs font-medium text-indigo-700 disabled:opacity-50 dark:border-indigo-400 dark:text-indigo-300"
+                          >
+                            {rowActivity.get(m.id)?.label === 'Rendering vertical'
+                              ? `Rendering… ${elapsedClock(Math.floor((Date.now() - rowActivity.get(m.id)!.since) / 1000))}`
+                              : m.verticalKey ? 'Re-render whole song, vertical' : 'Whole song, vertical'}
+                          </button>
+                        )}
+                        {rowBusy.has(m.id) && !rowActivity.get(m.id) && (
+                          <span className="text-xs text-gray-500 dark:text-gray-400">Working…</span>
+                        )}
+                      </div>
+                      {rowError?.id === m.id && (
+                        <p
+                          role="alert"
+                          className="flex w-full items-start gap-2 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-red-800 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300"
+                        >
+                          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                          <span>{rowError.message}</span>
+                        </p>
                       )}
-                      <input
-                        id={`${inputId}-rowcover-${m.id}`}
-                        type="file"
-                        accept="image/*"
-                        disabled={rowBusy.has(m.id)}
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) void onPickRowCover(m.id, f);
-                        }}
-                        className="text-xs"
-                      />
-                      {/* Clips or GIFs played in order under the song instead
-                          of the cover; the cover stays as the YouTube thumbnail. */}
-                      <BackgroundClipsField
-                        idPrefix={`${inputId}-rowbg-${m.id}`}
-                        forWhom={m.title || 'this master'}
-                        clips={rowRender.backgrounds ?? []}
-                        onChange={(update) =>
-                          setRowRender((prev) =>
-                            prev?.id === m.id ? { ...prev, backgrounds: update(prev.backgrounds ?? []) } : prev
-                          )
-                        }
-                        masterJobId={m.id}
-                        songSeconds={m.editedDurationSec ?? null}
-                        disabled={rowBusy.has(m.id)}
-                        // Clears only its own row's flag: the row may have been closed or switched meanwhile.
-                        onBusyChange={(on) => setRowBusy(m.id, on)}
-                        onError={(message) => setRowError((prev) => (message ? { id: m.id, message } : prev?.id === m.id ? null : prev))}
-                        onAnnounce={setAnnounce}
-                      />
-                      {/* "Render" alone did not say WHAT it rendered, and it sat
-                          first in a strip opened by a button reading "Render
-                          video" — so the whole panel read as being about video
-                          and the short button was easy to miss. Both now name
-                          their output. */}
-                      <button
-                        type="button"
-                        disabled={
-                          !rowRender.cover ||
-                          rowBusy.has(m.id) ||
-                          // An added image with no file or no readable time is
-                          // unfinished — rendering would silently drop it.
-                          (slidesFor(m.id).length > 0 &&
-                            slidesToCovers(rowRender.cover.key, slidesFor(m.id)) === null)
-                        }
-                        onClick={() => void renderRowVideo()}
-                        className="rounded bg-orange-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
-                      >
-                        {(rowRender.backgrounds?.length ?? 0) > 1
-                          ? `Render video (${videoHeight}p, ${rowRender.backgrounds!.length} background clips)`
-                          : rowRender.backgrounds?.length
-                          ? `Render video (${videoHeight}p, video background)`
-                          : slidesFor(m.id).length > 0
-                          ? `Render slideshow (${slidesFor(m.id).length + 1} images${shortMotion !== 'none' ? ', 1080p, moving' : ''})`
-                          : shortMotion !== 'none'
-                            ? 'Render video (1080p, moving)'
-                            : `Render video (${videoHeight}p)`}
-                      </button>
-                      {/* The same cover feeds both. A short is not a step on the
-                          way to the video and does not need one to exist. */}
-                      <button
-                        type="button"
-                        disabled={!rowRender.cover || rowBusy.has(m.id) || (slidesFor(m.id).length > 0 && slidesToCovers(rowRender.cover.key, slidesFor(m.id)) === null)}
-                        onClick={() => void makeRowShort()}
-                        className="rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
-                      >
-                        {m.shortKey ? 'Re-cut vertical short' : 'Make vertical short'}
-                      </button>
                       {/* A slow move across each image, for ALL three renders.
                           Still by default. A moving 16:9 video is 1080p. */}
-                      <label className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-300">
-                        Motion
-                        <select
-                          value={shortMotion}
-                          disabled={rowBusy.has(m.id)}
-                          onChange={(e) => setShortMotion(e.target.value as ShortMotion)}
-                          className="rounded border border-gray-300 bg-white px-1 py-0.5 text-xs text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
-                        >
-                          {SHORT_MOTIONS.map((mo) => (
-                            <option key={mo} value={mo}>{MOTION_LABELS[mo]}</option>
-                          ))}
-                        </select>
-                      </label>
-                      {/* The WHOLE song at 1080x1920 — for a Facebook video or an
-                          Instagram feed post. Its own button and its own file: it
-                          sits beside the clip and never replaces it. The window
-                          fields below do not apply to it. */}
-                      <button
-                        type="button"
-                        disabled={!rowRender.cover || rowBusy.has(m.id) || (slidesFor(m.id).length > 0 && slidesToCovers(rowRender.cover.key, slidesFor(m.id)) === null)}
-                        onClick={() => void makeRowVertical()}
-                        className="rounded border border-indigo-600 px-2 py-1 text-xs font-medium text-indigo-700 disabled:opacity-50 dark:border-indigo-400 dark:text-indigo-300"
+                      <Disclosure
+                        label="Motion:"
+                        summary={shortMotion === 'none' ? 'still' : MOTION_LABELS[shortMotion].toLowerCase()}
                       >
-                        {m.verticalKey ? 'Re-render whole song, vertical' : 'Whole song, vertical'}
-                      </button>
-                      {rowBusy.has(m.id) && (
-                        <span className="text-xs text-gray-500 dark:text-gray-400">Working…</span>
-                      )}
+                        <label className="mt-1 flex items-center gap-1 text-xs text-gray-600 dark:text-gray-300">
+                          Motion
+                          <select
+                            value={shortMotion}
+                            disabled={rowBusy.has(m.id)}
+                            onChange={(e) => setShortMotion(e.target.value as ShortMotion)}
+                            className="rounded border border-gray-300 bg-white px-1 py-0.5 text-xs text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                          >
+                            {SHORT_MOTIONS.map((mo) => (
+                              <option key={mo} value={mo}>{MOTION_LABELS[mo]}</option>
+                            ))}
+                          </select>
+                        </label>
+                      </Disclosure>
                       {/* The window, EDITABLE here — not a read-only echo of it.
                           This is where the songs that want a short actually live:
                           the inline panel is gated on savedAt, so from the library
                           the only way to set a window used to be the player's
                           "Use for the short" button, and a timestamp read off a
                           lyric sheet could not be typed at all. */}
+                      <Disclosure
+                        label="Short window:"
+                        summary={shortSettingsSummary(windowFor(m.id), shortMotion)}
+                        open={rowRender.parts?.includes('short') ?? false}
+                        onOpenChange={(on) => setRowPart(m.id, 'short', on)}
+                      >
+                        <ShortWindowFields
+                          compact
+                          value={windowFor(m.id)}
+                          onChange={(w) => setShortWindow(w ? { jobId: m.id, ...w } : null)}
+                          disabled={rowBusy.has(m.id)}
+                          idPrefix={`${inputId}-rowshort-${m.id}`}
+                        />
+                      </Disclosure>
+                      {/* Clips or GIFs played in order under the song instead
+                          of the cover; the cover stays as the YouTube thumbnail. */}
+                      <Disclosure
+                        label="Background:"
+                        summary={backgroundSummary(rowRender.backgrounds?.length ?? 0)}
+                        open={rowRender.parts?.includes('background') ?? false}
+                        onOpenChange={(on) => setRowPart(m.id, 'background', on)}
+                      >
+                        <BackgroundClipsField
+                          idPrefix={`${inputId}-rowbg-${m.id}`}
+                          forWhom={m.title || 'this master'}
+                          clips={rowRender.backgrounds ?? []}
+                          onChange={(update) =>
+                            setRowRender((prev) =>
+                              prev?.id === m.id ? { ...prev, backgrounds: update(prev.backgrounds ?? []) } : prev
+                            )
+                          }
+                          masterJobId={m.id}
+                          songSeconds={m.editedDurationSec ?? null}
+                          disabled={rowBusy.has(m.id)}
+                          // Clears only its own row's flag: the row may have been closed or switched meanwhile.
+                          onBusyChange={(on) => setRowBusy(m.id, on)}
+                          onError={(message) => setRowError((prev) => (message ? { id: m.id, message } : prev?.id === m.id ? null : prev))}
+                          onAnnounce={setAnnounce}
+                        />
+                      </Disclosure>
                       {/* MORE IMAGES = A SLIDESHOW, for all three renders. Times are
                           seconds into the SONG; a short shows whichever images fall
                           inside its window — the worker works that out. */}
-                      <SlideshowFields
-                        slides={slidesFor(m.id)}
-                        onChange={(slides) => commitRowSlides(m.id, slides)}
-                        onPickImage={(i, f) => void onPickRowSlide(m.id, i, f)}
-                        disabled={rowBusy.has(m.id) || !rowRender.cover}
-                        idPrefix={`${inputId}-rowslide-${m.id}`}
-                        durationSec={m.editedDurationSec}
-                        transition={slideTransition}
-                        onTransitionChange={setSlideTransition}
-                      />
-                      <ShortWindowFields
-                        compact
-                        value={windowFor(m.id)}
-                        onChange={(w) => setShortWindow(w ? { jobId: m.id, ...w } : null)}
-                        disabled={rowBusy.has(m.id)}
-                        idPrefix={`${inputId}-rowshort-${m.id}`}
-                      />
+                      <Disclosure
+                        label="Slideshow:"
+                        summary={slidesFor(m.id).length > 0 ? `${slidesFor(m.id).length + 1} images` : 'cover only'}
+                        open={rowRender.parts?.includes('slideshow') ?? false}
+                        onOpenChange={(on) => setRowPart(m.id, 'slideshow', on)}
+                      >
+                        <SlideshowFields
+                          slides={slidesFor(m.id)}
+                          onChange={(slides) => commitRowSlides(m.id, slides)}
+                          onPickImage={(i, f) => void onPickRowSlide(m.id, i, f)}
+                          disabled={rowBusy.has(m.id) || !rowRender.cover}
+                          idPrefix={`${inputId}-rowslide-${m.id}`}
+                          durationSec={m.editedDurationSec}
+                          transition={slideTransition}
+                          onTransitionChange={setSlideTransition}
+                        />
+                      </Disclosure>
                       {/* What the last render's audio measured, beside the
                           button that produced it. A failure is NOT shown here —
                           it renders in the row above, where it cannot be missed
