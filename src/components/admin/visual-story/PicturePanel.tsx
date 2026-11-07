@@ -10,16 +10,25 @@
  * Moving = shot mode HERO, Still = STILL; nothing else is stored. A moving
  * picture that already has a clip is not paid for again. Nothing renders while
  * a clip failed, a row has no picture, or the seconds do not fill the story's
- * window ("Fit to N s" scales them, 1-15 s each). Paid requests go one at a
+ * window ("Fit to N s" scales them, 1-15 s each).
+ *
+ * Chaining: a moving row after a moving row can "continue from the previous
+ * picture's clip". Its clip is made after the previous one ends: the browser
+ * grabs that clip's last frame, uploads it to this row and pins it as the first
+ * frame, so the motion runs on across the cut. Chained rows go one after
+ * another; the others are started together. Paid requests go one at a
  * time through the shot routes (visual-story-runner), so the budget cap holds.
  * Errors render here.
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { adminFetch } from '@/lib/client-auth';
 import { putToS3 } from '@/lib/mastering-upload-client';
 import { delay } from '@/lib/poll-job';
 import { estimateAssembleSec, MAX_ASSEMBLE_SEC } from '@/lib/visual-story-assemble';
 import { fitDurations, MAX_FIT_SEC, MIN_FIT_SEC } from '@/lib/visual-story-fit';
+import { grabLastFrame } from '@/lib/visual-story-last-frame';
+import { candidateKey } from '@/lib/visual-story-keys';
 import { followClips, postWithRetry, STOPPED, type Started } from '@/lib/visual-story-runner';
 import { estimateCostUsd } from '@/services/video/cost';
 import { candIdForJob } from '@/types/visualStory';
@@ -93,9 +102,12 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
   const clipOf = (s: Shot) => newest(candidates.filter((c) => of(s)(c) && c.mode !== 'STILL'));
   const jobNow = (s: Shot) => genJobs.find((j) => of(s)(j) && (j.status === 'submitted' || j.status === 'running'));
   const rendersNow = (s: Shot) => !!jobNow(s);
+  const prevOf = (s: Shot) => rows[rows.indexOf(s) - 1];
+  /** Continues from the previous row's clip: both moving, and the owner asked for it. */
+  const chained = (s: Shot) => !!s.chainFromPrevious && isMoving(s) && !!prevOf(s) && isMoving(prevOf(s)!);
   const toAnimate = rows.filter((s) => isMoving(s) && !clipOf(s) && !rendersNow(s));
   const price = toAnimate.reduce((n, s) => n + estimateCostUsd('grok', 'HERO', s.durationSec), 0);
-  const missing = rows.filter((s) => !picOf(s));
+  const missing = rows.filter((s) => !picOf(s) && !chained(s));
   const fits = total === windowSec;
   const after = story.spentUsd + story.reservedUsd + price;
   const overCap = after > story.budgetUsdCap + 1e-9;
@@ -112,6 +124,22 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
       setNonce((n) => n + 1);
     }
     return r.ok;
+  };
+
+  /** Upload one picture to a shot; the new still's id. */
+  const uploadTo = async (target: Pick<Shot, 'sceneOrder' | 'shotOrder'>, file: File): Promise<{ ok: true; candId?: string } | { ok: false; error: string }> => {
+    const url = `${base}/shots/${shotKey(target)}/upload`;
+    const presign = await post(url, { op: 'presign', contentType: file.type, size: file.size });
+    if (!presign.ok) return { ok: false, error: presign.error };
+    const p = presign.data as { uploadUrl: string; fields: Record<string, string>; key: string };
+    try {
+      await putToS3(p.uploadUrl, p.fields, file, () => {}, abort.current.signal);
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'The upload failed.' };
+    }
+    const ok = await post(url, { op: 'confirm', key: p.key });
+    if (!ok.ok) return { ok: false, error: ok.error };
+    return { ok: true, candId: (ok.data?.candidate as { candId?: string } | undefined)?.candId };
   };
 
   const addPictures = async (files: File[]) => {
@@ -142,21 +170,8 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
           failed.push(`${file.name}: ${made.ok ? 'Could not add it.' : made.error}`);
           continue;
         }
-        const url = `${base}/shots/${shotKey(created)}/upload`;
-        const presign = await post(url, { op: 'presign', contentType: file.type, size: file.size });
-        if (!presign.ok) {
-          failed.push(`${file.name}: ${presign.error}`);
-          continue;
-        }
-        const p = presign.data as { uploadUrl: string; fields: Record<string, string>; key: string };
-        try {
-          await putToS3(p.uploadUrl, p.fields, file, () => {}, abort.current.signal);
-        } catch (err) {
-          failed.push(`${file.name}: ${err instanceof Error ? err.message : 'The upload failed.'}`);
-          continue;
-        }
-        const ok = await post(url, { op: 'confirm', key: p.key });
-        if (!ok.ok) failed.push(`${file.name}: ${ok.error}`);
+        const up = await uploadTo(created, file);
+        if (!up.ok) failed.push(`${file.name}: ${up.error}`);
       }
     } finally {
       if (mounted.current) {
@@ -199,6 +214,33 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
     }
   };
 
+  /** Grab the previous clip's last frame, upload it to `s`, pin it, and start `s`'s clip. */
+  const continueFrom = async (s: Shot, prevClipId: string): Promise<{ ok: true; jobId: string } | { ok: false; error: string; stop?: boolean }> => {
+    let blob: Blob;
+    try {
+      // A fresh signature each time: a copy cached without CORS headers would taint the canvas.
+      const res = await adminFetch(`/api/admin/mastering/download?key=${encodeURIComponent(candidateKey(vsId, prevClipId, 'mp4'))}&mode=play`);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success || !json.url) return { ok: false, error: 'Could not open the previous clip.' };
+      blob = await grabLastFrame(String(json.url));
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Could not copy the last frame.' };
+    }
+    const up = await uploadTo(s, new File([blob], 'last-frame.jpg', { type: 'image/jpeg' }));
+    if (!up.ok) return { ok: false, error: up.error };
+    if (!up.candId) return { ok: false, error: 'The last frame was not saved.' };
+    const pinned = await post(`${base}/shots`, { op: 'update', sceneOrder: s.sceneOrder, shotOrder: s.shotOrder, firstFrameCandidateId: up.candId });
+    if (!pinned.ok) return { ok: false, error: pinned.error, stop: pinned.status === STOPPED };
+    const r = await post(`${base}/shots/${shotKey(s)}/video`);
+    if (r.ok && r.data?.jobId) return { ok: true, jobId: String(r.data.jobId) };
+    if (!r.ok && (r.status === 402 || r.status === 401 || r.status === 403)) {
+      setError(r.error);
+      setOverBudget(r.status === 402);
+      return { ok: false, error: r.error, stop: true };
+    }
+    return { ok: false, error: r.ok ? 'No job was started.' : r.status === 0 ? 'The connection dropped; the clip may have started.' : r.error, stop: !r.ok && r.status === STOPPED };
+  };
+
   const make = async () => {
     setConfirming(false);
     setBusy(true);
@@ -216,11 +258,14 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
     });
     let ready = true;
     try {
-      // 1. Start a clip for each moving picture without one (it starts from the chosen picture).
-      for (const [i, s] of toAnimate.entries()) {
+      // 1. Start a clip for each moving picture without one (it starts from the chosen picture);
+      //    chained rows wait for the clip before them (step 2b).
+      const heads = toAnimate.filter((s) => !chained(s));
+      const chains = toAnimate.filter(chained);
+      for (const [i, s] of heads.entries()) {
         if (i > 0) await delay(START_GAP_MS, abort.current.signal);
         if (stop.current || !mounted.current) break;
-        setProgress(`Starting clip ${i + 1} of ${toAnimate.length}…`);
+        setProgress(`Starting clip ${i + 1} of ${heads.length}…`);
         // Pin the picture, so the clip — and any re-make after the clip is chosen — starts from it.
         const picture = picOf(s);
         if (picture && s.firstFrameCandidateId !== picture.candId) {
@@ -264,6 +309,39 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
           ready = false;
         }
         if (res.failed.length) ready = false;
+      }
+      // 2b. Chained rows, in order: each starts from the last frame of the clip before it.
+      for (const s of chains) {
+        if (stop.current || !mounted.current) {
+          ready = false;
+          break;
+        }
+        const prev = prevOf(s)!;
+        const prevClip = made.get(shotKey(prev)) ?? clipOf(prev)?.candId;
+        if (!prevClip) {
+          failed.push(`${nameOf(s)}: ${nameOf(prev).toLowerCase()} has no clip, so it cannot continue from it.`);
+          ready = false;
+          continue;
+        }
+        setProgress(`Continuing ${nameOf(s).toLowerCase()} from ${nameOf(prev).toLowerCase()}…`);
+        const r = await continueFrom(s, prevClip);
+        if (!r.ok) {
+          failed.push(`${nameOf(s)}: ${r.error}`);
+          ready = false;
+          if (r.stop) break;
+          continue;
+        }
+        setRendering(true);
+        const res = await followClips(vsId, [{ jobId: r.jobId, shot: s }], {
+          ...ctl(),
+          onProgress: () => setProgress(`Animating ${nameOf(s).toLowerCase()}…`),
+        });
+        setRendering(false);
+        if (res.succeeded.length) made.set(shotKey(s), candIdForJob(r.jobId));
+        else {
+          failed.push(res.failed.length ? `${nameOf(s)}: ${res.failed[0].error}` : `${nameOf(s)}: its clip is still rendering. Press Make the video again in a few minutes.`);
+          ready = false;
+        }
       }
       if (!ready || !mounted.current) return;
       // 3. Choose what each shot shows: its clip when moving, its picture when still.
@@ -391,7 +469,20 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
                       />
                     </label>
                   )}
-                  {!p && <p className="text-red-600 dark:text-red-400">{`${name} has no picture yet.`}</p>}
+                  {isMoving(s) && prevOf(s) && isMoving(prevOf(s)!) && (
+                    <label className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                      <input
+                        type="checkbox"
+                        aria-label={`${name} continues from ${nameOf(prevOf(s)!).toLowerCase()}`}
+                        checked={!!s.chainFromPrevious}
+                        disabled={busy}
+                        onChange={(e) => void update(s, { chainFromPrevious: e.target.checked }).then(() => changed.current())}
+                      />
+                      {`Continue from ${nameOf(prevOf(s)!).toLowerCase()}'s clip (smooth cut; made after it)`}
+                    </label>
+                  )}
+                  {chained(s) && !clipOf(s) && <p className="text-gray-600 dark:text-gray-400">{`Starts where ${nameOf(prevOf(s)!).toLowerCase()} ends.`}</p>}
+                  {!p && !chained(s) && <p className="text-red-600 dark:text-red-400">{`${name} has no picture yet.`}</p>}
                 </div>
               </li>
             );

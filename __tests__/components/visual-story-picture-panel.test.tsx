@@ -16,6 +16,8 @@ import type { Candidate, GenJob, Scene, Shot, VisualStory } from '@/types/visual
 
 jest.mock('@/lib/client-auth', () => ({ adminFetch: jest.fn() }));
 jest.mock('@/lib/mastering-upload-client', () => ({ putToS3: jest.fn(async () => undefined) }));
+jest.mock('@/lib/visual-story-last-frame', () => ({ grabLastFrame: jest.fn(async () => new Blob(['last'], { type: 'image/jpeg' })) }));
+import { grabLastFrame } from '@/lib/visual-story-last-frame';
 const mockFetch = adminFetch as jest.Mock;
 
 const VS = 'vs_1700000000000_abcdef12';
@@ -249,5 +251,87 @@ describe('review fixes', () => {
     await act(async () => {});
     expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument();
     await act(async () => release());
+  });
+});
+
+describe('chaining: continue from the previous picture\'s clip', () => {
+  const J1 = 'gj_1700000000001_aaaaaaaa';
+  const J2 = 'gj_1700000000002_bbbbbbbb';
+
+  it('offers the option only on a moving row after a moving row, and saves it', async () => {
+    routes(() => undefined);
+    setup({ shots: [shot(1, 8, { mode: 'HERO' }), shot(2, 8, { mode: 'HERO' }), shot(3, 8)] });
+    expect(screen.queryByLabelText('Picture 1 continues from picture 0')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Picture 3 continues from picture 2')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Picture 2 continues from picture 1'));
+    await flush();
+    expect(calls()).toEqual([{ url: `/api/admin/visual-story/${VS}/shots`, body: { op: 'update', sceneOrder: 1, shotOrder: 2, chainFromPrevious: true } }]);
+  });
+
+  it('makes the first clip, grabs its last frame, starts the next clip from it, then renders', async () => {
+    let next = 0;
+    routes((u, i) => {
+      if (u.endsWith('/video') && i?.method === 'POST') return json({ success: true, data: { jobId: [J1, J2][next++] } }, 202);
+      if (u.includes('/video-jobs/')) return json({ success: true, data: { jobId: u.split('/').pop(), status: 'succeeded' } });
+      if (u.endsWith('/upload')) {
+        const b = JSON.parse(String(i?.body));
+        return b.op === 'presign'
+          ? json({ success: true, uploadUrl: 'https://s3', fields: {}, key: 'k-last' })
+          : json({ success: true, data: { candidate: { candId: 'cd_1700000000009_cccccccc' } } }, 201);
+      }
+      if (u.endsWith('/render') && i?.method === 'POST') return json({ success: true, data: { renderId: 'rd_1' } }, 202);
+      return undefined;
+    });
+    // Picture 2 continues from picture 1, so it needs no picture of its own.
+    setup({ shots: [shot(1, 8, { mode: 'HERO', firstFrameCandidateId: 'cd_p1' }), shot(2, 8, { mode: 'HERO', chainFromPrevious: true, selectedCandidateId: null })], candidates: [pic(1)] });
+    expect(screen.getByText('Starts where picture 1 ends.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Make the video (2 moving · $1.28)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    for (let k = 0; k < 4; k++) await flush();
+
+    const seq = calls().map((x) => `${x.url.replace(`/api/admin/visual-story/${VS}`, '')} ${x.body ? JSON.stringify(x.body) : ''}`.trim());
+    expect(seq).toEqual([
+      '/shots/001-001/video',
+      '/shots/001-002/upload {"op":"presign","contentType":"image/jpeg","size":4}',
+      '/shots/001-002/upload {"op":"confirm","key":"k-last"}',
+      '/shots {"op":"update","sceneOrder":1,"shotOrder":2,"firstFrameCandidateId":"cd_1700000000009_cccccccc"}',
+      '/shots/001-002/video',
+      '/select {"sceneOrder":1,"shotOrder":1,"candId":"cd_1700000000001_aaaaaaaa"}',
+      '/select {"sceneOrder":1,"shotOrder":2,"candId":"cd_1700000000002_bbbbbbbb"}',
+      '/render',
+    ]);
+    // The frame came from picture 1's new clip, signed fresh.
+    expect(mockFetch.mock.calls.some(([u]) => String(u).startsWith('/api/admin/mastering/download') && String(u).includes(encodeURIComponent(`candidates/cd_1700000000001_aaaaaaaa.mp4`)))).toBe(true);
+    expect(grabLastFrame).toHaveBeenCalledWith('https://s3/play');
+    expect(screen.getByRole('status')).toHaveTextContent('The video is rendering');
+  });
+
+  it('when the first clip fails, the chained one is not made and nothing renders', async () => {
+    routes((u, i) => {
+      if (u.endsWith('/video') && i?.method === 'POST') return json({ success: true, data: { jobId: J1 } }, 202);
+      if (u.includes('/video-jobs/')) return json({ success: true, data: { jobId: J1, status: 'failed', error: 'Refused.' } });
+      return undefined;
+    });
+    setup({ shots: [shot(1, 8, { mode: 'HERO', firstFrameCandidateId: 'cd_p1' }), shot(2, 8, { mode: 'HERO', chainFromPrevious: true })] });
+    fireEvent.click(screen.getByRole('button', { name: /Make the video/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    for (let k = 0; k < 3; k++) await flush();
+    expect(calls().filter((x) => x.url.endsWith('/video'))).toHaveLength(1);
+    expect(calls().some((x) => x.url.endsWith('/render'))).toBe(false);
+    expect(screen.getByText('Picture 2: picture 1 has no clip, so it cannot continue from it.')).toBeInTheDocument();
+  });
+
+  it('a last frame that cannot be copied names the picture and stops before the render', async () => {
+    (grabLastFrame as jest.Mock).mockRejectedValueOnce(new Error('The clip could not be loaded.'));
+    routes((u, i) => (u.endsWith('/render') && i?.method === 'POST' ? json({ success: true, data: {} }, 202) : undefined));
+    setup({
+      shots: [shot(1, 8, { mode: 'HERO' }), shot(2, 8, { mode: 'HERO', chainFromPrevious: true })],
+      candidates: [pic(1), pic(1, 'HERO', 'cd_1700000000001_aaaaaaaa'), pic(2)],
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Make the video/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    for (let k = 0; k < 3; k++) await flush();
+    expect(screen.getByText('Picture 2: The clip could not be loaded.')).toBeInTheDocument();
+    expect(calls().some((x) => x.url.endsWith('/render'))).toBe(false);
   });
 });

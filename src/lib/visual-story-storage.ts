@@ -10,17 +10,17 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { MASTERING_PREFIX } from '@/lib/mastering-storage';
 import { isVsId, isCharId, isCandId, isRenderId } from '@/types/visualStory';
 
-export const VISUAL_STORY_PREFIX = `${MASTERING_PREFIX}visual-story/`;
+// Client-safe parts (no node:crypto), shared with the browser.
+export { VISUAL_STORY_PREFIX, candidateKey } from '@/lib/visual-story-keys';
+import { VISUAL_STORY_PREFIX } from '@/lib/visual-story-keys';
 
 export const ACCEPTED_REF_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
 export const MAX_REF_BYTES = 10 * 1024 * 1024;
 export const MAX_REFS_PER_CHARACTER = 4;
 
 const REF_EXTS = ['jpg', 'png', 'webp'] as const;
-const CAND_EXTS = ['jpg', 'png', 'mp4'] as const;
 
 /** A picture the admin uploads to a shot: the types Grok takes as a first frame. */
 export const ACCEPTED_PICTURE_TYPES = ['image/jpeg', 'image/png'] as const;
@@ -57,13 +57,6 @@ export function refKey(vsId: string, charId: string, ext: string): string {
   return `${refPrefix(vsId, charId)}${randomUUID()}.${ext}`;
 }
 
-/** Key of a candidate's still (`jpg`, or an uploaded `png`), poster (`jpg`) or clip (`mp4`). */
-export function candidateKey(vsId: string, candId: string, ext: string): string {
-  if (!isVsId(vsId)) throw new Error('invalid vsId');
-  if (!isCandId(candId)) throw new Error('invalid candId');
-  if (!(CAND_EXTS as readonly string[]).includes(ext)) throw new Error('invalid candidate extension');
-  return `${VISUAL_STORY_PREFIX}${vsId}/candidates/${candId}.${ext}`;
-}
 
 /** Key of a finished render (Phase 6): one MP4 per render, beside the story's candidates. */
 export function renderKey(vsId: string, renderId: string): string {
