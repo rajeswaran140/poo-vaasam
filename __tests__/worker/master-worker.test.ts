@@ -17,12 +17,18 @@ const s3Send = jest.fn();
 const spawnSync = jest.fn();
 const ssmSend = jest.fn();
 const fetchMock = jest.fn();
+const lambdaSend = jest.fn().mockResolvedValue({});
 
 jest.mock('node:child_process', () => ({ spawnSync: (...a: unknown[]) => spawnSync(...a) }));
 jest.mock('@aws-sdk/client-s3', () => ({
   S3Client: class { send = (...a: unknown[]) => s3Send(...a); },
   GetObjectCommand: class { constructor(public input: unknown) {} },
   PutObjectCommand: class { constructor(public input: unknown) {} },
+  HeadObjectCommand: class { constructor(public input: unknown) { (this as { head?: boolean }).head = true; } },
+}));
+jest.mock('@aws-sdk/client-lambda', () => ({
+  LambdaClient: class { send = (...a: unknown[]) => lambdaSend(...a); },
+  InvokeCommand: class { constructor(public input: Record<string, unknown>) {} },
 }));
 jest.mock('@aws-sdk/client-dynamodb', () => ({ DynamoDBClient: class {} }));
 jest.mock('@aws-sdk/client-ssm', () => ({
@@ -3929,5 +3935,232 @@ describe('a video background', () => {
       expect(typeof patched().shortError).toBe('string');
       expect(s3Send).not.toHaveBeenCalled();
     });
+  });
+});
+
+/**
+ * SEVERAL BACKGROUND CLIPS (2026-11-07): a story's 10-20 clips, in order.
+ * Each clip is prepared by its own invocation of the background-prep function
+ * (a 15 s clip costs 34-73 s to encode; twenty would outlast this Lambda), and
+ * the render only joins them by copy. What must hold: the clips play in the
+ * order sent, a clip used twice is prepared once, a failure names the clip,
+ * and one clip still takes the original single path.
+ */
+describe('several background clips', () => {
+  const AUDIO = 'audio/mastering/1_a_song-master-14LUFS.wav';
+  const COVER = 'audio/mastering/1_c_cover.jpg';
+  const C1 = 'audio/mastering/visual-story/vs_abc/candidates/c_1.mp4';
+  const C2 = 'audio/mastering/visual-story/vs_abc/candidates/c_2.mp4';
+  const C3 = 'audio/mastering/1_d_loop.mov';
+  const prep = (src: string, f: string) => `audio/mastering/background-prepared/v1/${f}/${src.slice('audio/mastering/'.length).replace(/\.[a-z0-9]+$/i, '')}.mp4`;
+  const HEADER = 'Input #0, wav\n  Duration: 00:05:32.00, bitrate: 2304 kb/s\n  Stream #0:0: Audio: pcm_s24le, 48000 Hz, stereo\n';
+  const ffArgs = () => spawnSync.mock.calls.map((c) => c[1] as string[]);
+  const invoked = () => lambdaSend.mock.calls.map((c) => JSON.parse(String((c[0] as { input: { Payload: Buffer } }).input.Payload)));
+  const gets = () => s3Send.mock.calls
+    .map((c) => c[0] as { input: Record<string, unknown>; head?: boolean })
+    .filter((c) => !('Body' in c.input) && !c.head).map((c) => c.input.Key);
+  const ok = (key: string) => ({ Payload: Buffer.from(JSON.stringify({ ok: true, key })) });
+
+  beforeEach(() => {
+    spawnSync.mockReset();
+    spawnSync.mockImplementation((_cmd: string, args: string[]) => {
+      if (args.length === 3 && args[2].includes('master.wav')) return { status: 1, stdout: '', stderr: HEADER };
+      if (args.length === 3 && args[2].includes('background')) return { status: 1, stdout: '', stderr: '  Stream #0:0: Video: ppm, rgb24, 1080x1920\n' };
+      return { status: 0, stdout: '', stderr: '' };
+    });
+    s3Send.mockReset();
+    s3Send.mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'Body' in cmd.input
+        ? Promise.resolve({})
+        : Promise.resolve({ Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) } })
+    );
+    lambdaSend.mockReset();
+    lambdaSend.mockImplementation(async (cmd: { input: { Payload: Buffer } }) => {
+      const { prepareBackground: p } = JSON.parse(String(cmd.input.Payload));
+      return ok(prep(p.srcKey, p.frame.kind === 'vertical' ? 'vertical' : String(p.frame.height)));
+    });
+    mockWriteFileSync.mockClear();
+  });
+
+  const render = (over: Record<string, unknown> = {}) =>
+    ({ audioKey: AUDIO, coverKey: COVER, height: 1440, backgroundKeys: [C1, C2, C3, C1], ...over });
+
+  it('prepares each clip once elsewhere, joins them in order by copy, then repeats and mixes as before', async () => {
+    const res = await handler({ jobId: 'j1', render: render() } as never);
+    expect(res).toMatchObject({ ok: true });
+
+    // Three distinct clips → three preparations, synchronous, for THIS frame.
+    expect(invoked()).toEqual([C1, C2, C3].map((srcKey) => ({ prepareBackground: { srcKey, frame: { kind: 'video', height: 1440 } } })));
+    const call = lambdaSend.mock.calls[0][0] as { input: Record<string, unknown> };
+    expect(call.input).toMatchObject({ FunctionName: 'tamilagaval-background-prep', InvocationType: 'RequestResponse' });
+
+    // The render itself never encodes a clip: no filter graph at all.
+    expect(ffArgs().filter((a) => a.includes('-filter_complex'))).toHaveLength(0);
+    // The prepared segments are what it downloads — each once.
+    expect(gets()).toEqual([AUDIO, prep(C1, '1440'), prep(C2, '1440'), prep(C3, '1440')]);
+
+    // The concat list repeats clip 1 at the end: order is the operator's.
+    const list = mockWriteFileSync.mock.calls.find((c) => String(c[0]).endsWith('background-list.txt'))!;
+    const lines = String(list[1]).trim().split('\n');
+    expect(lines).toHaveLength(4);
+    expect(lines[0]).toBe(lines[3]);
+    expect(new Set(lines).size).toBe(3);
+
+    const join = ffArgs().find((a) => a.includes('concat'))!;
+    expect(join[join.indexOf('-c') + 1]).toBe('copy');
+    const track = ffArgs().find((a) => a.includes('-stream_loop') && !a.includes('-c:a'))!;
+    expect(track[track.indexOf('-i') + 1]).toBe(join.at(-1));
+    expect(track[track.indexOf('-frames:v') + 1]).toBe(String(332 * 25));
+
+    expect(patched()).toMatchObject({
+      videoBackgroundKey: C1,
+      videoBackgroundKeys: [C1, C2, C3, C1],
+      videoError: null,
+    });
+  });
+
+  it('prepares at most ten at a time', async () => {
+    let running = 0;
+    let most = 0;
+    lambdaSend.mockImplementation(async (cmd: { input: { Payload: Buffer } }) => {
+      running++;
+      most = Math.max(most, running);
+      await new Promise((r) => setTimeout(r, 5));
+      running--;
+      const { prepareBackground: p } = JSON.parse(String(cmd.input.Payload));
+      return ok(prep(p.srcKey, '1440'));
+    });
+    const keys = Array.from({ length: 20 }, (_, i) => `audio/mastering/visual-story/vs_abc/candidates/c_${i}.mp4`);
+    const res = await handler({ jobId: 'j1', render: render({ backgroundKeys: keys }) } as never);
+    expect(res).toMatchObject({ ok: true });
+    expect(lambdaSend).toHaveBeenCalledTimes(20);
+    expect(most).toBe(10);
+  });
+
+  it('the vertical renders prepare for the vertical frame and record their own list', async () => {
+    const res = await handler({ jobId: 'j1', short: { audioKey: AUDIO, coverKey: COVER, full: true, backgroundKeys: [C1, C2] } } as never);
+    expect(res).toMatchObject({ ok: true });
+    expect(invoked().map((e) => e.prepareBackground.frame)).toEqual([{ kind: 'vertical' }, { kind: 'vertical' }]);
+    expect(patched()).toMatchObject({ verticalBackgroundKey: C1, verticalBackgroundKeys: [C1, C2] });
+  });
+
+  it('one clip in the list takes the original single path and records no list', async () => {
+    const res = await handler({ jobId: 'j1', render: render({ backgroundKeys: [C3] }) } as never);
+    expect(res).toMatchObject({ ok: true });
+    expect(lambdaSend).not.toHaveBeenCalled();
+    expect(ffArgs().filter((a) => a.includes('-filter_complex'))).toHaveLength(1);
+    expect(patched()).toMatchObject({ videoBackgroundKey: C3, videoBackgroundKeys: null });
+  });
+
+  it('a clip that cannot be prepared is named, and nothing is stored', async () => {
+    lambdaSend.mockImplementation(async (cmd: { input: { Payload: Buffer } }) => {
+      const { prepareBackground: p } = JSON.parse(String(cmd.input.Payload));
+      return p.srcKey === C2
+        ? { Payload: Buffer.from(JSON.stringify({ ok: false, message: 'the background video could not be read' })) }
+        : ok(prep(p.srcKey, '1440'));
+    });
+    const res = await handler({ jobId: 'j1', render: render() } as never);
+    expect(res).toMatchObject({ ok: false });
+    expect(patched().videoError).toBe('background clip 2: the background video could not be read');
+    expect(s3Send.mock.calls.some((c) => 'Body' in (c[0] as { input: Record<string, unknown> }).input)).toBe(false);
+  });
+
+  it('a crashed preparation, or one answering with some other file, is a failure — never a wrong clip', async () => {
+    lambdaSend.mockResolvedValueOnce({ FunctionError: 'Unhandled', Payload: Buffer.from('{}') });
+    let res = await handler({ jobId: 'j1', render: render({ backgroundKeys: [C1, C2] }) } as never);
+    expect(res).toMatchObject({ ok: false });
+    expect(patched().videoError).toBe('background clip 1: it could not be prepared');
+
+    send.mockClear();
+    lambdaSend.mockReset();
+    lambdaSend.mockResolvedValue(ok('audio/mastering/1_a_song-master-14LUFS.wav'));
+    res = await handler({ jobId: 'j1', render: render({ backgroundKeys: [C1, C2] }) } as never);
+    expect(res).toMatchObject({ ok: false });
+    expect(patched().videoError).toBe('background clip 1: it could not be prepared');
+  });
+
+  it('says plainly when the prep function has not been set up', async () => {
+    lambdaSend.mockRejectedValue(Object.assign(new Error('Function not found'), { name: 'ResourceNotFoundException' }));
+    const res = await handler({ jobId: 'j1', render: render({ backgroundKeys: [C1, C2] }) } as never);
+    expect(res).toMatchObject({ ok: false });
+    expect(String(patched().videoError)).toContain('not switched on yet');
+  });
+
+  it.each([
+    ['a clip outside the workspace', [C1, 'images/x.mp4'], 'Background clip 2'],
+    ['twenty-one clips', Array(21).fill(C1), 'Up to 20'],
+    ['a list and a single key', [C1, C2], 'not both'],
+  ])('refuses %s before touching S3 or invoking anything', async (label, keys, says) => {
+    const res = await handler({
+      jobId: 'j1',
+      render: render({ backgroundKeys: keys, ...(label.includes('single') ? { backgroundKey: C3 } : {}) }),
+    } as never);
+    expect(res).toMatchObject({ ok: false });
+    expect(String(patched().videoError)).toContain(says);
+    expect(s3Send).not.toHaveBeenCalled();
+    expect(lambdaSend).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * PREPARING ONE CLIP — what the background-prep function runs (the same
+ * bundle, its own function). It trusts nothing in the event: the source must be
+ * a background, the frame one it knows, and it writes ONLY the key it works out
+ * itself. A clip prepared before is not prepared again.
+ */
+describe('prepareBackground', () => {
+  const C1 = 'audio/mastering/visual-story/vs_abc/candidates/c_1.mp4';
+  const OUT = 'audio/mastering/background-prepared/v1/1080/visual-story/vs_abc/candidates/c_1.mp4';
+  const ffArgs = () => spawnSync.mock.calls.map((c) => c[1] as string[]);
+  const puts = () => s3Send.mock.calls.map((c) => (c[0] as { input: Record<string, unknown> }).input).filter((i) => 'Body' in i);
+
+  beforeEach(() => {
+    spawnSync.mockReset();
+    spawnSync.mockImplementation((_cmd: string, args: string[]) =>
+      args.length === 3 ? { status: 1, stdout: '', stderr: '  Stream #0:0: Video: ppm, rgb24, 1088x1920\n' } : { status: 0, stdout: '', stderr: '' });
+    s3Send.mockReset();
+    s3Send.mockImplementation((cmd: { input: Record<string, unknown>; head?: boolean }) => {
+      if (cmd.head) return Promise.reject(Object.assign(new Error('NotFound'), { name: 'NotFound' }));
+      return 'Body' in cmd.input
+        ? Promise.resolve({})
+        : Promise.resolve({ Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) } });
+    });
+  });
+
+  it('encodes the clip to the frame, the same recipe as one background, and stores it under its own key', async () => {
+    const res = await handler({ prepareBackground: { srcKey: C1, frame: { kind: 'video', height: 1080 } } } as never);
+    expect(res).toEqual({ ok: true, key: OUT });
+    const loop = ffArgs().find((a) => a.includes('-filter_complex'))!;
+    expect(loop.join(' ')).toContain('1920:1080');
+    expect(loop.join(' ')).toContain('boxblur');
+    expect(loop[loop.indexOf('-maxrate') + 1]).toBe('8M');
+    expect(loop[loop.indexOf('-t') + 1]).toBe('30');
+    expect(puts()).toEqual([expect.objectContaining({ Key: OUT, ContentType: 'video/mp4' })]);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('a clip already prepared for this frame is not encoded again', async () => {
+    s3Send.mockImplementation(() => Promise.resolve({}));
+    const res = await handler({ prepareBackground: { srcKey: C1, frame: { kind: 'video', height: 1080 } } } as never);
+    expect(res).toEqual({ ok: true, key: OUT });
+    expect(spawnSync).not.toHaveBeenCalled();
+    expect(puts()).toEqual([]);
+  });
+
+  it('says which step failed', async () => {
+    spawnSync.mockImplementation(() => ({ status: 1, stdout: '', stderr: 'moov atom not found' }));
+    const res = await handler({ prepareBackground: { srcKey: C1, frame: { kind: 'vertical' } } } as never);
+    expect(res).toEqual({ ok: false, message: 'the background video could not be read' });
+    expect(puts()).toEqual([]);
+  });
+
+  it.each([
+    ['a source outside the workspace', { srcKey: 'images/x.mp4', frame: { kind: 'vertical' } }],
+    ['a still as a source', { srcKey: 'audio/mastering/1_c.png', frame: { kind: 'vertical' } }],
+    ['a frame it does not know', { srcKey: C1, frame: { kind: 'video', height: 2160 } }],
+  ])('refuses %s without touching S3', async (_label, spec) => {
+    const res = await handler({ prepareBackground: spec } as never);
+    expect(res).toMatchObject({ ok: false });
+    expect(s3Send).not.toHaveBeenCalled();
   });
 });

@@ -1894,7 +1894,7 @@ describe('per-song identity resets with the source', () => {
     });
     mockedFetch.mockResolvedValueOnce(json({ success: true, uploadUrl: 'https://s3/u', fields: {}, key: 'audio/mastering/loop.mov' }));
     await act(async () => {
-      fireEvent.change(screen.getByLabelText(/^Background video or GIF \(optional\)$/), {
+      fireEvent.change(screen.getByLabelText(/^Background videos or GIFs \(optional/), {
         target: { files: [new File(['x'], 'loop.mov', { type: 'video/quicktime' })] },
       });
     });

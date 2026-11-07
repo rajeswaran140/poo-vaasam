@@ -258,6 +258,10 @@ export interface MasterJob {
   videoBackgroundKey?: string | null;
   shortBackgroundKey?: string | null;
   verticalBackgroundKey?: string | null;
+  /** Several clips, in playing order, when the render joined more than one; the key above is then the first. */
+  videoBackgroundKeys?: string[] | null;
+  shortBackgroundKeys?: string[] | null;
+  verticalBackgroundKeys?: string[] | null;
   /** How many stems this master's stem set holds; null/absent ⇒ none. Written by StemSetRepository. */
   stemCount?: number | null;
   verticalKey: string | null;

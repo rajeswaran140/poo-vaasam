@@ -92,6 +92,9 @@ The **Render video** panel under the title joins every shot's chosen picture or 
 - If a shot's file can't be used, the message names it, for example "Scene 2, shot 3: the clip could not be read."
 - Rendering costs nothing from the story's budget: it runs on our own worker.
 
+### 6b. Or play the clips under the whole song, in Mastering
+The story's render covers the story's window. To play its clips under a **whole song** (and get the song's video, short and whole-song vertical from the Mastering pipeline), open the song in **Mastering** and use **Add clips from a visual story** in the background field: the story's clips are added in story order, up to 20, without downloading anything. They play one after another and repeat from the first if the song is longer. See *A video background → Several clips* in the admin docs. Each clip is prepared on `tamilagaval-background-prep` (one-time setup: `scripts/setup-background-prep.sh`).
+
 ## Costs and limits
 
 | Item | Price |

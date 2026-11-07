@@ -233,3 +233,27 @@ describe('a video background', () => {
     expect(lambdaSend).not.toHaveBeenCalled();
   });
 });
+
+/** Several clips on the vertical renders (2026-11-07). */
+describe('several background clips', () => {
+  const C1 = 'audio/mastering/visual-story/vs_abc/candidates/c_1.mp4';
+  const C2 = 'audio/mastering/visual-story/vs_abc/candidates/c_2.mp4';
+
+  it('forwards the list for the whole song', async () => {
+    const res = await post({ coverKey: A, full: true, backgroundKeys: [C1, C2] });
+    expect(res.status).toBe(202);
+    expect(sentEvent()).toEqual({ audioKey: AUDIO, coverKey: A, full: true, backgroundKeys: [C1, C2] });
+  });
+
+  it('a list of one travels as the single background', async () => {
+    await post({ coverKey: A, full: true, backgroundKeys: [C1] });
+    expect(sentEvent()).toEqual({ audioKey: AUDIO, coverKey: A, full: true, backgroundKey: C1 });
+  });
+
+  it('refuses a bad clip without invoking the worker', async () => {
+    const res = await post({ coverKey: A, full: true, backgroundKeys: [C1, 'images/x.mp4'] });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('Background clip 2 is not a video or GIF in the mastering workspace.');
+    expect(lambdaSend).not.toHaveBeenCalled();
+  });
+});

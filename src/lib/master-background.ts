@@ -26,7 +26,7 @@
  * thumbnail; a background never replaces it. It travels as `backgroundKey`.
  */
 
-import { isMasteringKey, masteringUploadKey } from '@/lib/mastering-storage';
+import { MASTERING_PREFIX, isMasteringKey, masteringUploadKey } from '@/lib/mastering-storage';
 
 /** What ffmpeg on the layer is known to decode for this. Phone video, web video, GIF. */
 export const ACCEPTED_BACKGROUND_TYPES = ['video/mp4', 'video/quicktime', 'video/webm', 'image/gif'] as const;
@@ -280,4 +280,123 @@ export function buildBackgroundMuxArgs(params: {
     ...(params.loop ? ['-shortest'] : []),
     '-y', params.outPath,
   ];
+}
+
+/* ---------------------------------------------------------------------------
+ * SEVERAL CLIPS — added 2026-11-07, for a story told in 10-20 clips (Grok makes
+ * at most 15 s at a time). The clips play in order, hard cuts, and the whole
+ * list repeats if the song is longer.
+ *
+ * ⚠️ WHY EACH CLIP IS PREPARED ELSEWHERE. Encoding a clip to the frame is the
+ * one expensive step: a real 15 s Grok clip (1088x1920, 24 Mb/s) measured 73 s
+ * at 1440p, 50 s at 1080p and 34 s vertical on the layer's 7.0.2 with 2 cores
+ * (2026-11-07). Twenty in the render itself is 24 minutes against a 15-minute
+ * Lambda. So each clip is encoded by its own invocation of
+ * BACKGROUND_PREP_FUNCTION, in parallel, and saved under preparedBackgroundKey;
+ * the render then joins them by stream copy. Every segment comes from the same
+ * buildBackgroundLoopArgs recipe at the same frame, which is what makes a
+ * copy join safe (see ASSEMBLE_CODEC_ARGS for the same rule in the story
+ * render). One clip still takes the original single-Lambda path.
+ * ------------------------------------------------------------------------- */
+
+/** Twenty 15 s clips is five minutes of story. */
+export const MAX_BACKGROUND_CLIPS = 20;
+
+
+/** At most this many clips prepare at once — the prep function's reserved concurrency. */
+export const BACKGROUND_PREP_CONCURRENCY = 10;
+
+/** The frame a clip is prepared for: the 16:9 video at a height, or the vertical (short and whole-song). */
+export type BackgroundFrame = { kind: 'video'; height: 1080 | 1440 } | { kind: 'vertical' };
+
+export function isBackgroundFrame(frame: unknown): frame is BackgroundFrame {
+  if (!frame || typeof frame !== 'object') return false;
+  const f = frame as { kind?: unknown; height?: unknown };
+  if (f.kind === 'vertical') return true;
+  return f.kind === 'video' && (BACKGROUND_HEIGHTS as readonly unknown[]).includes(f.height);
+}
+
+const PREPARED_PREFIX = `${MASTERING_PREFIX}background-prepared/v1/`;
+
+/**
+ * Where a clip prepared for a frame is kept. Readable rather than hashed: the
+ * source keys are already unique (timestamp + nonce, or a story candidate id)
+ * and never overwritten, so the same source and frame always mean the same
+ * segment. `v1` is the recipe: change buildBackgroundLoopArgs or the frame
+ * filters and bump it, or old segments are reused.
+ */
+export function preparedBackgroundKey(srcKey: string, frame: BackgroundFrame): string {
+  const id = frame.kind === 'vertical' ? 'vertical' : String(frame.height);
+  return `${PREPARED_PREFIX}${id}/${srcKey.slice(MASTERING_PREFIX.length).replace(/\.[a-z0-9]+$/i, '')}.mp4`;
+}
+
+export function isPreparedBackgroundKey(key: unknown): key is string {
+  return typeof key === 'string' && isMasteringKey(key) && key.startsWith(PREPARED_PREFIX) && key.endsWith('.mp4');
+}
+
+export type BackgroundKeys = { ok: true; keys: string[] } | { ok: false; message: string };
+
+/**
+ * The clips a render plays over, from either field: the original single
+ * `backgroundKey` or the list. Shared by the routes and the worker, so both
+ * refuse the same things. Empty ⇒ no background. A clip may appear twice.
+ */
+export function normaliseBackgroundKeys(single: unknown, list: unknown): BackgroundKeys {
+  const hasSingle = single !== undefined && single !== null;
+  const hasList = list !== undefined && list !== null;
+  if (hasSingle && hasList) return { ok: false, message: 'Send one background or a list of clips, not both.' };
+  if (hasSingle) {
+    return isBackgroundKey(single)
+      ? { ok: true, keys: [single] }
+      : { ok: false, message: 'That background is not a video or GIF in the mastering workspace.' };
+  }
+  if (!hasList) return { ok: true, keys: [] };
+  if (!Array.isArray(list)) return { ok: false, message: 'The background clips must be a list.' };
+  if (list.length > MAX_BACKGROUND_CLIPS) {
+    return { ok: false, message: `Up to ${MAX_BACKGROUND_CLIPS} background clips can be joined.` };
+  }
+  const bad = list.findIndex((k) => !isBackgroundKey(k));
+  if (bad >= 0) {
+    return { ok: false, message: `Background clip ${bad + 1} is not a video or GIF in the mastering workspace.` };
+  }
+  return { ok: true, keys: list as string[] };
+}
+
+/** The concat demuxer's list: one quoted path a line, a `'` written as `'\''`. */
+export function buildBackgroundConcatList(paths: string[]): string {
+  return paths.map((p) => `file '${p.replace(/'/g, "'\\''")}'\n`).join('');
+}
+
+/** Join the prepared clips, in order, by copy — the one sequence the track repeats. */
+export function buildBackgroundJoinArgs(params: { listPath: string; outPath: string }): string[] {
+  return [
+    '-hide_banner', '-nostats',
+    '-f', 'concat', '-safe', '0', '-i', params.listPath,
+    '-map', '0:v', '-c', 'copy',
+    '-y', params.outPath,
+  ];
+}
+
+/** The request fields for a render: nothing, the original single field, or the list. */
+export function backgroundRequestFields(keys: string[]): { backgroundKey?: string; backgroundKeys?: string[] } {
+  if (keys.length > 1) return { backgroundKeys: keys };
+  return keys.length === 1 ? { backgroundKey: keys[0] } : {};
+}
+
+const mmss = (sec: number) => {
+  const s = Math.round(sec);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
+
+/**
+ * The line under the panel's clip list. Each clip counts for at most what is
+ * used of it (BACKGROUND_LOOP_MAX_SECONDS). A length that cannot be known (a
+ * GIF, a file the browser cannot read) leaves the total out rather than guess.
+ */
+export function backgroundSummary(clips: Array<{ seconds?: number | null }>, songSeconds: number | null): string {
+  const count = `${clips.length} clip${clips.length === 1 ? '' : 's'}`;
+  if (clips.some((c) => typeof c.seconds !== 'number' || !(c.seconds > 0))) return count;
+  const total = clips.reduce((sum, c) => sum + Math.min(c.seconds as number, BACKGROUND_LOOP_MAX_SECONDS), 0);
+  const repeats = songSeconds !== null && songSeconds > total + 0.5;
+  return `${count} · ${mmss(total)} of video${repeats ? ` · the song is ${mmss(songSeconds)}, so the clips repeat from clip 1` : ''}`;
 }

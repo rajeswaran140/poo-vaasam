@@ -19,6 +19,9 @@
 #   tamilagaval-compose-worker    3   (historical: near-zero; 3 is comfortable)
 #   tamilagaval-measure-fn        3   (fast — 60 s max — 3 is plenty)
 #   tamilagaval-yt-snapshot       2   (5-min cron = 1 concurrent expected; +1 for manual)
+#   tamilagaval-background-prep  10   (one per background clip, invoked synchronously by a
+#                                      render joining several; 10 at a time is what the
+#                                      render asks for — BACKGROUND_PREP_CONCURRENCY)
 #
 # PREREQUISITES:
 #   awscli v2 with lambda:PutFunctionConcurrency + GetFunctionConcurrency.
@@ -65,6 +68,7 @@ apply tamilagaval-master-worker  3 "3008 MB / 900 s; historical 8 invs/day"
 apply tamilagaval-compose-worker 3 "512 MB / 180 s; near-zero baseline"
 apply tamilagaval-measure-fn     3 "1024 MB / 60 s; fast, low volume"
 apply tamilagaval-yt-snapshot    2 "128 MB / 30 s; 5-min cron = 1 concurrent expected"
+apply tamilagaval-background-prep 10 "3008 MB / 300 s; one per clip, 10 at a time per render"
 
 echo
 echo '=== to unlimit a function later (removes the cap): ==='

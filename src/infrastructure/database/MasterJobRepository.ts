@@ -46,6 +46,11 @@ function decodeCursor(cursor?: string): Record<string, unknown> | undefined {
  * as strings. Hydrate them back to objects here; anything unparseable degrades
  * to null so a corrupt row still renders the rest of the job.
  */
+/** A stored list of keys, or null — a stray value never reaches the screen as a list. */
+function keyList(v: unknown): string[] | null {
+  return Array.isArray(v) && v.every((k) => typeof k === 'string') ? (v as string[]) : null;
+}
+
 function safeParseStats(s: string): MasterJob['matchingStats'] {
   try {
     const parsed = JSON.parse(s);
@@ -266,6 +271,9 @@ export class MasterJobRepository {
       videoBackgroundKey: typeof item.videoBackgroundKey === 'string' ? item.videoBackgroundKey : null,
       shortBackgroundKey: typeof item.shortBackgroundKey === 'string' ? item.shortBackgroundKey : null,
       verticalBackgroundKey: typeof item.verticalBackgroundKey === 'string' ? item.verticalBackgroundKey : null,
+      videoBackgroundKeys: keyList(item.videoBackgroundKeys),
+      shortBackgroundKeys: keyList(item.shortBackgroundKeys),
+      verticalBackgroundKeys: keyList(item.verticalBackgroundKeys),
       stemCount: typeof item.stemCount === 'number' ? item.stemCount : null,
       verticalKey: typeof item.verticalKey === 'string' ? item.verticalKey : null,
       verticalRenderedAt: typeof item.verticalRenderedAt === 'string' ? item.verticalRenderedAt : null,

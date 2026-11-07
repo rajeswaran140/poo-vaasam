@@ -317,3 +317,38 @@ describe('a video background', () => {
     expect(lambdaSend).not.toHaveBeenCalled();
   });
 });
+
+/** Several clips — a story's 10-20, joined in order (2026-11-07). */
+describe('several background clips', () => {
+  const C1 = 'audio/mastering/visual-story/vs_abc/candidates/c_1.mp4';
+  const C2 = 'audio/mastering/visual-story/vs_abc/candidates/c_2.mp4';
+
+  it('forwards the list in order', async () => {
+    const res = await render({ coverKey: A, backgroundKeys: [C2, C1, C2], height: 1080 });
+    expect(res.status).toBe(202);
+    expect(sentEvent()).toEqual({ audioKey: AUDIO, coverKey: A, height: 1080, backgroundKeys: [C2, C1, C2] });
+  });
+
+  it('a list of one travels as the single background — the old event shape', async () => {
+    await render({ coverKey: A, backgroundKeys: [C1] });
+    expect(sentEvent()).toMatchObject({ backgroundKey: C1 });
+    expect(sentEvent()).not.toHaveProperty('backgroundKeys');
+  });
+
+  it.each([
+    ['a clip outside the workspace', { backgroundKeys: [C1, 'images/x.mp4'] }, 'Background clip 2 is not a video or GIF in the mastering workspace.'],
+    ['twenty-one clips', { backgroundKeys: Array(21).fill(C1) }, 'Up to 20 background clips can be joined.'],
+    ['both fields', { backgroundKeys: [C1, C2], backgroundKey: C1 }, 'Send one background or a list of clips, not both.'],
+  ])('refuses %s without invoking the worker', async (_label, over, error) => {
+    const res = await render({ coverKey: A, ...over });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe(error);
+    expect(lambdaSend).not.toHaveBeenCalled();
+  });
+
+  it('applies the same rules as one background', async () => {
+    const res = await render({ coverKey: A, backgroundKeys: [C1, C2], motion: 'zoom-in' });
+    expect(res.status).toBe(409);
+    expect(lambdaSend).not.toHaveBeenCalled();
+  });
+});

@@ -24,7 +24,7 @@ import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { awsConfig } from '@/lib/aws-config';
 import { planShort, planFullVertical, shortRefusalMessage, SHORT_FPS, SHORT_MOTIONS } from '@/lib/master-short';
 import { planSegments, slideshowRefusalMessage, SLIDE_TRANSITIONS } from '@/lib/master-video';
-import { checkBackground, isBackgroundKey } from '@/lib/master-background';
+import { checkBackground, normaliseBackgroundKeys } from '@/lib/master-background';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -59,6 +59,8 @@ const bodySchema = z.object({
   transition: z.enum(SLIDE_TRANSITIONS).optional(),
   /** A clip or GIF looped under the song instead of the still — see master-background.ts. */
   backgroundKey: z.string().min(1).optional(),
+  /** Several clips, played in order — see normaliseBackgroundKeys for the rules. */
+  backgroundKeys: z.array(z.string()).optional(),
 });
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ jobId: string }> }) {
@@ -110,14 +112,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
     }
 
-    const backgroundKey = parsed.data.backgroundKey ?? null;
+    // One clip or several. The worker can read the whole bucket: every key is guarded.
+    const backgrounds = normaliseBackgroundKeys(parsed.data.backgroundKey, parsed.data.backgroundKeys);
+    if (!backgrounds.ok) {
+      return NextResponse.json({ success: false, error: backgrounds.message }, { status: 400 });
+    }
+    const backgroundKeys = backgrounds.keys;
+    const backgroundKey = backgroundKeys[0] ?? null;
     if (backgroundKey) {
-      if (!isBackgroundKey(backgroundKey)) {
-        return NextResponse.json(
-          { success: false, error: 'That background is not a video or GIF in the mastering workspace.' },
-          { status: 400 }
-        );
-      }
       const fits = checkBackground({
         // Only the whole song can be long; a clip is at most three minutes.
         audioSeconds: parsed.data.full ? job.editedDurationSec : null,
@@ -180,7 +182,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
               // Absent for a still: the event keeps its original shape unless
               // something will move.
               ...(moves ? { motion: parsed.data.motion } : {}),
-              ...(backgroundKey ? { backgroundKey } : {}),
+              // One clip keeps the original field, so the event keeps its shape.
+              ...(backgroundKeys.length > 1 ? { backgroundKeys } : backgroundKey ? { backgroundKey } : {}),
             },
           })
         ),
