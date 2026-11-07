@@ -1297,6 +1297,100 @@ describe('render for YouTube', () => {
     expect(await screen.findByRole('button', { name: /Download MP4/ })).toBeInTheDocument();
   });
 
+  /** The "Render for YouTube" panel — where its own refusals must appear. */
+  const renderSection = () =>
+    screen.getByRole('heading', { name: /Render for YouTube/ }).closest('div') as HTMLElement;
+  /** Every alert on the page sits inside `section` — none in the page banner. */
+  const onlyAlertsIn = (section: HTMLElement) => {
+    for (const a of screen.getAllByRole('alert')) expect(section).toContainElement(a);
+  };
+
+  /**
+   * Audit 2026-11-07, defect 1. The poll threw only on an error DIFFERENT from
+   * the one already on the job, and the worker clears it only on success — so
+   * a retry that failed for the same reason was waited on for ten minutes.
+   * The route now clears it on enqueue; past the first read, any error is
+   * this attempt's.
+   */
+  it('a retry that fails with the SAME error is reported, not waited on to the deadline', async () => {
+    await masterAndSave(savedDoneJob({ videoError: 'x264 died' }));
+    await addCover();
+    mockedFetch.mockResolvedValueOnce(json({ success: true, videoKey: 'v', height: 1440, status: 'queued' }));
+    mockedFetch.mockResolvedValue(json(savedDoneJob({ videoError: 'x264 died' })));
+    fireEvent.click(screen.getByRole('button', { name: /Render video/ }));
+
+    await waitFor(
+      () => expect(within(renderSection()).getByRole('alert')).toHaveTextContent(/x264 died/),
+      { timeout: 8000, interval: 250 }
+    );
+    expect(screen.getByRole('button', { name: /Render video/ })).toBeEnabled();
+  }, 15000);
+
+  // Plausible defect b: one 502 from the status route (an HTML error page)
+  // ended the wait with a JSON parse error.
+  it('a failed status read is skipped, not reported — the render keeps being followed', async () => {
+    await masterAndSave();
+    await addCover();
+    mockedFetch.mockResolvedValueOnce(json({ success: true, videoKey: 'v', height: 1440, status: 'queued' }));
+    mockedFetch.mockResolvedValueOnce({
+      ok: false, status: 502, json: async () => { throw new SyntaxError('Unexpected token <'); },
+    } as unknown as Response);
+    mockedFetch.mockResolvedValue(
+      json(savedDoneJob({ videoKey: 'audio/mastering/1_a_song-master-14LUFS-1440p.mp4', videoRenderedAt: '2026-11-07T00:00:00.000Z' }))
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Render video/ }));
+
+    expect(await screen.findByRole('button', { name: /Download MP4/ }, { timeout: 8000 })).toBeInTheDocument();
+    expect(screen.queryByText(/Unexpected token/)).not.toBeInTheDocument();
+  }, 15000);
+
+  // Plausible defect a: the poll's `setJob(fresh)` did not check which job
+  // was open, so a render finishing after a switch replaced the new song.
+  it('a render that lands for another job does not replace the one on screen', async () => {
+    await masterAndSave();
+    await addCover();
+    mockedFetch.mockResolvedValueOnce(json({ success: true, videoKey: 'v', height: 1440, status: 'queued' }));
+    mockedFetch.mockResolvedValue(
+      json(savedDoneJob({ id: 'another-job', videoKey: 'audio/mastering/other-1440p.mp4', videoRenderedAt: '2026-11-07T00:00:00.000Z' }))
+    );
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Render video/ })); });
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Render video/ })).toBeEnabled());
+    expect(screen.queryByRole('button', { name: /Download MP4/ })).not.toBeInTheDocument();
+  });
+
+  /** Audit 2026-11-07, defect 4: refusals belong next to the button that caused them. */
+  describe('refusals appear in this panel, not in the page banner', () => {
+    it('a plain still render refusal', async () => {
+      await masterAndSave();
+      await addCover();
+      mockedFetch.mockResolvedValueOnce(json({ success: false, error: 'Render source must be a mastered WAV.' }, false, 409));
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Render video/ })); });
+      expect(within(renderSection()).getByRole('alert')).toHaveTextContent(/mastered WAV/);
+      onlyAlertsIn(renderSection());
+    });
+
+    it('a short refusal with no background chosen', async () => {
+      await masterAndSave();
+      await addCover();
+      mockedFetch.mockResolvedValueOnce(json({ success: false, error: 'That window is too short for a short.' }, false, 409));
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Make a short/ })); });
+      expect(within(renderSection()).getByRole('alert')).toHaveTextContent(/too short for a short/);
+      onlyAlertsIn(renderSection());
+    });
+
+    it('a cover upload that fails', async () => {
+      await masterAndSave();
+      const input = screen.getByLabelText(/Cover image/i) as HTMLInputElement;
+      mockedFetch.mockResolvedValueOnce(json({ success: false, error: 'That image type is not allowed.' }, false, 400));
+      await act(async () => {
+        fireEvent.change(input, { target: { files: [new File(['x'], 'cover.jpg', { type: 'image/jpeg' })] } });
+      });
+      expect(within(renderSection()).getByRole('alert')).toBeInTheDocument();
+      onlyAlertsIn(renderSection());
+    });
+  });
+
   it('reports a render failure instead of spinning forever', async () => {
     await masterAndSave();
     await addCover();
@@ -2435,6 +2529,113 @@ describe('rendering from the saved-masters library', () => {
       expect(mockedFetch.mock.calls.filter((c) => String(c[0]).endsWith('/render'))).toHaveLength(0);
     });
   });
+
+  /**
+   * Audit 2026-11-07, defect 2: the row's re-render patch copied five fields
+   * and dropped the audio verdict, so a re-render whose audio FAILED its check
+   * left the row saying nothing — the warning only appeared after a reload.
+   */
+  it('a row re-render brings its audio verdict with it', async () => {
+    await openLibrary(row({ coverKey: 'audio/mastering/1_c_cover.jpg' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Video or short for காதல் மழை/ }));
+    });
+    mockedFetch.mockResolvedValueOnce(json({ success: true, videoKey: 'v', height: 1440, status: 'queued' }));
+    mockedFetch.mockResolvedValue(json(row({
+      coverKey: 'audio/mastering/1_c_cover.jpg',
+      videoKey: 'audio/mastering/1_a-master-14LUFS-1440p.mp4',
+      videoRenderedAt: '2026-11-07T00:00:00.000Z',
+      videoAudioCheck: 'failed',
+      videoAudioFindings: ['The video is 2.4 s longer than its master.'],
+    })));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^Render video/ })); });
+
+    expect(await screen.findByText(/audio does not match its master — do not upload it/)).toBeInTheDocument();
+    expect(screen.getByText('The video is 2.4 s longer than its master.')).toBeInTheDocument();
+  });
+
+  /** Two rows, A (with a cover) and B. */
+  const B = () => row({ id: 'saved-vid-2', title: 'நிலா', masterKey: 'audio/mastering/1700000000001_cd34_nila-master-14LUFS.wav' });
+  async function openTwoRows() {
+    render(<MasteringStudio />);
+    mockedFetch.mockResolvedValueOnce(json({ success: true, masters: [row({ coverKey: 'audio/mastering/1_c_cover.jpg' }), B()] }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Saved masters/i })); });
+    await screen.findAllByRole('button', { name: /Edit & re-master/i });
+  }
+  /** A's render is accepted and then never finishes; B's play is refused. */
+  function routeLongRenderOnA(finishOnPoll = Infinity) {
+    let polls = 0;
+    mockedFetch.mockImplementation((url: string, init?: { method?: string }) => {
+      const u = String(url);
+      if (u.endsWith('/saved-vid-1/render') && init?.method === 'POST') {
+        return Promise.resolve(json({ success: true, videoKey: 'v', height: 1440, status: 'queued' }));
+      }
+      if (u.endsWith('/saved-vid-1')) {
+        polls += 1;
+        return Promise.resolve(json(polls >= finishOnPoll
+          ? row({ coverKey: 'audio/mastering/1_c_cover.jpg', videoKey: 'audio/mastering/new-1440p.mp4', videoRenderedAt: '2026-11-07T00:00:00.000Z' })
+          : row({ coverKey: 'audio/mastering/1_c_cover.jpg' })));
+      }
+      if (u.startsWith('/api/admin/mastering/download')) {
+        return Promise.resolve(json({ success: false, error: 'That master is not reachable.' }, false, 404));
+      }
+      return Promise.resolve(json({ success: true }));
+    });
+  }
+
+  /**
+   * Audit 2026-11-07, defect 3: `rowBusy` was ONE slot, and every row action
+   * ended with a bare `setRowBusy(null)` — so anything done on row B
+   * re-enabled row A while A's long render was still running.
+   */
+  it('an action on another row does not re-enable a row that is still rendering', async () => {
+    await openTwoRows();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Video or short for காதல் மழை/ }));
+    });
+    routeLongRenderOnA();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^Render video/ })); });
+    expect(screen.getByRole('button', { name: /Play காதல் மழை/ })).toBeDisabled();
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Play நிலா/ })); });
+    // B's refusal is B's; A is still busy rendering.
+    expect(await screen.findByText(/That master is not reachable/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Play நிலா/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Play காதல் மழை/ })).toBeDisabled();
+  });
+
+  it('starting an action on one row does not clear another row\'s error', async () => {
+    await openTwoRows();
+    routeLongRenderOnA();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Play நிலா/ })); });
+    expect(await screen.findByText(/That master is not reachable/)).toBeInTheDocument();
+    // Opening A's panel and starting a render is A's business only.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Video or short for காதல் மழை/ }));
+    });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^Render video/ })); });
+    expect(screen.getByText(/That master is not reachable/)).toBeInTheDocument();
+  });
+
+  it('a row\'s render finishing closes ITS panel, never one opened on another row since', async () => {
+    await openTwoRows();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Video or short for காதல் மழை/ }));
+    });
+    routeLongRenderOnA(2); // finishes on the second poll, ~4 s in
+    fireEvent.click(screen.getByRole('button', { name: /^Render video/ }));
+    // While A renders, the operator opens B.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Video or short for நிலா/ }));
+    });
+    expect(screen.getByLabelText(/Cover for நிலா/i)).toBeInTheDocument();
+
+    await waitFor(
+      () => expect(screen.getByRole('button', { name: /Play காதல் மழை/ })).toBeEnabled(),
+      { timeout: 8000, interval: 250 }
+    );
+    expect(screen.getByLabelText(/Cover for நிலா/i)).toBeInTheDocument();
+  }, 15000);
 });
 
 /**
@@ -2674,6 +2875,35 @@ describe('upload to YouTube', () => {
       .toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   }, 15000);
+
+  /** The "Upload to YouTube" panel. */
+  const uploadSection = () =>
+    screen.getByRole('heading', { name: /Upload to YouTube/ }).closest('div') as HTMLElement;
+
+  /**
+   * Audit 2026-11-07, defect 4: every upload refusal went to the page banner,
+   * ~1,300 lines above the button. It belongs beside the button.
+   */
+  it('a refused upload says so in the upload panel, not in the page banner', async () => {
+    await openPanel();
+    mockedFetch.mockResolvedValueOnce(json({ success: false, error: 'An upload is already running for this master.' }, false, 409));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^Upload to YouTube$/ })); });
+    expect(within(uploadSection()).getByRole('alert')).toHaveTextContent(/already running/);
+    for (const a of screen.getAllByRole('alert')) expect(uploadSection()).toContainElement(a);
+  });
+
+  /** Audit 2026-11-07, defect 5: React state alone does not stop a double click. */
+  it('a double click sends ONE upload request', async () => {
+    await openPanel();
+    primeUploadPhase([readyJob({ updatedAt: 't0' })]);
+    const button = screen.getByRole('button', { name: /^Upload to YouTube$/ });
+    await act(async () => {
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
+    const posts = mockedFetch.mock.calls.filter((c) => String(c[0]).endsWith('/youtube') && c[1]?.method === 'POST');
+    expect(posts).toHaveLength(1);
+  });
 });
 
 /**

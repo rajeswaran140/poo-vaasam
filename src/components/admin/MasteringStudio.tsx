@@ -135,6 +135,38 @@ const targetById = (id: string): (typeof TARGETS)[number] =>
  * from the library or from sessionStorage lands on the right radio without a
  * second field that could disagree with `normalizationMode`.
  */
+/**
+ * One status read for a render or upload poll. A failed or unreadable read —
+ * a 502 HTML page, a dropped connection — is SKIPPED (null), not reported: it
+ * says nothing about the render, and the poll's own deadline still bounds the
+ * wait. Until the 2026-11-07 audit one such read ended the wait with a JSON
+ * parse error while the render carried on.
+ */
+async function readJobForPoll(id: string): Promise<MasterJob | null> {
+  try {
+    const s = await adminFetch(`/api/admin/music-lab/master/${id}`);
+    if (!s.ok) return null;
+    return (await s.json()) as MasterJob;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Is this error, read on poll `attempt`, the attempt's own?
+ *
+ * The render and short routes clear the field on enqueue (audit 2026-11-07),
+ * so after the POST any error is this attempt's — EXCEPT on the very first
+ * read: DynamoDB reads here are eventually consistent, and a read
+ * milliseconds after the clear can still return the previous attempt's
+ * message. So the first read only trusts an error that differs from the one
+ * captured before the POST, and every read after it trusts any error. A retry
+ * that fails for the same reason is reported one interval later instead of
+ * being waited on until the deadline.
+ */
+const isThisAttemptsError = (error: string | null | undefined, prior: string | null, attempt: number) =>
+  Boolean(error) && (attempt > 0 || error !== prior);
+
 const targetIdOf = (job: { target: number; normalizationMode?: MasterJob['normalizationMode'] }): TargetId =>
   targetIdFor(job) as TargetId;
 
@@ -551,6 +583,18 @@ export function MasteringStudio() {
   );
   const [uploadingToYoutube, setUploadingToYoutube] = useState(false);
   /**
+   * The upload's own failure, shown in the upload panel beside its button. It
+   * used to go to the page banner, ~1,300 lines above (audit 2026-11-07).
+   */
+  const [youtubeError, setYoutubeError] = useState<string | null>(null);
+  /**
+   * Set synchronously on the first click. `uploadingToYoutube` is state, so two
+   * clicks in one event-loop turn both read it as false and both POSTed.
+   */
+  const uploadStarting = useRef(false);
+  // One song's upload failure is not the next song's.
+  useEffect(() => setYoutubeError(null), [jobId]);
+  /**
    * Presigned URL for the cover the video was built from — the picture, on
    * screen, BEFORE the upload. A bad render reaching YouTube unseen is the
    * whole reason this panel exists.
@@ -633,7 +677,22 @@ export function MasteringStudio() {
   const [playing, setPlaying] = useState<{ id: string; url: string; sourceUrl: string | null } | null>(null);
   /** Which row is being renamed, and the draft text. */
   const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
-  const [rowBusy, setRowBusy] = useState<string | null>(null);
+  /**
+   * The library rows with an action running, by id. A SET since the 2026-11-07
+   * audit: it was one slot, and every action ended by clearing it — so
+   * anything done on row B re-enabled row A while A's long render still ran.
+   */
+  const [rowBusy, setRowBusyIds] = useState<ReadonlySet<string>>(() => new Set());
+  /** Mark one row busy or idle, leaving every other row as it is. */
+  const setRowBusy = useCallback((id: string, on: boolean) => {
+    setRowBusyIds((prev) => {
+      if (prev.has(id) === on) return prev;
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
   /**
    * A library row's failure, scoped to the row that caused it.
    *
@@ -1405,7 +1464,7 @@ export function MasteringStudio() {
 
   /** Cover art for the render. Same workspace, same guards, image allow-list. */
   const onPickCover = useCallback(async (file: File) => {
-    setError(null);
+    setPanelError(null);
     setCoverUploading(true);
     const controller = new AbortController();
     try {
@@ -1415,7 +1474,8 @@ export function MasteringStudio() {
       setAnnounce('Cover uploaded.');
     } catch (err) {
       if (!mounted.current) return;
-      if (!isAbort(err)) setError(err instanceof Error ? err.message : String(err));
+      // In the render panel, beside the cover input — not the page banner.
+      if (!isAbort(err)) setPanelError(err instanceof Error ? err.message : String(err));
     } finally {
       if (mounted.current) setCoverUploading(false);
     }
@@ -1458,7 +1518,8 @@ export function MasteringStudio() {
    * Resolves with the finished job, or null if the component unmounted.
    *
    * `videoKey` is NOT a safe "done" signal: the render route never clears the
-   * job's existing `videoKey`/`videoError` on enqueue, it just re-invokes the
+   * job's existing `videoKey` on enqueue (it clears `videoError` — since the
+   * 2026-11-07 audit — but not the file), it just re-invokes the
    * worker to overwrite the same S3 key. On a RE-render, attempt 0 would see
    * the *previous* render's leftovers and declare success (or failure)
    * instantly, before the new encode has done anything. `videoRenderedAt` is
@@ -1525,16 +1586,15 @@ export function MasteringStudio() {
       for (let attempt = 0; ; attempt++) {
         if (attempt > 0) await new Promise((r) => setTimeout(r, 4000));
         if (!mounted.current) return null;
-        const s = await adminFetch(`/api/admin/music-lab/master/${targetId}`);
-        const fresh = (await s.json()) as MasterJob;
-        if (fresh.videoRenderedAt && fresh.videoRenderedAt !== priorVideoRenderedAt) {
+        const fresh = await readJobForPoll(targetId);
+        if (!mounted.current) return null;
+        if (fresh?.videoRenderedAt && fresh.videoRenderedAt !== priorVideoRenderedAt) {
           setAnnounce('Video ready.');
           return fresh;
         }
-        // A stale error from a previous attempt can also be sitting on the job
-        // at attempt 0 (the route does not clear `videoError` either) — only a
-        // DIFFERENT error belongs to this render.
-        if (fresh.videoError && fresh.videoError !== priorVideoError) throw new Error(fresh.videoError);
+        // The route clears `videoError` on enqueue, so an error now is this
+        // render's — see isThisAttemptsError for the first read.
+        if (fresh && isThisAttemptsError(fresh.videoError, priorVideoError, attempt)) throw new Error(fresh.videoError!);
         if (Date.now() > deadline) {
           throw new Error('The render is taking longer than expected — reload to check on it.');
         }
@@ -1566,16 +1626,15 @@ export function MasteringStudio() {
         shortMotion,
         backgrounds.map((b) => b.key)
       );
-      if (fresh) setJob(fresh);
+      // Only onto the job it belongs to: the operator may have opened another
+      // song while this one rendered (audit 2026-11-07).
+      if (fresh) setJob((prev) => (prev && prev.id === fresh.id ? fresh : prev));
     } catch (err) {
       if (!mounted.current) return;
-      const message = err instanceof Error ? err.message : String(err);
-      // A refusal about something chosen IN this panel — the images, a move,
-      // or a background — is shown here, next to the button. Only a plain
-      // still render keeps the page banner it always used. (A motion refusal
-      // used to land in the banner, ~1,000 lines above: the button looked dead.)
-      if (covers || shortMotion !== 'none' || backgrounds.length > 0) setPanelError(message);
-      else setError(message);
+      // Every refusal is shown here, next to the button — a plain still render
+      // too, since the 2026-11-07 audit. (The banner sits ~1,000 lines above:
+      // a refusal there made the button look dead.)
+      setPanelError(err instanceof Error ? err.message : String(err));
     } finally {
       if (mounted.current) setRendering(false);
     }
@@ -1636,13 +1695,13 @@ export function MasteringStudio() {
       for (let attempt = 0; ; attempt++) {
         if (attempt > 0) await new Promise((r) => setTimeout(r, 4000));
         if (!mounted.current) return null;
-        const s = await adminFetch(`/api/admin/music-lab/master/${targetId}`);
-        const fresh = (await s.json()) as MasterJob;
-        if (fresh.shortRenderedAt && fresh.shortRenderedAt !== priorShortRenderedAt) {
+        const fresh = await readJobForPoll(targetId);
+        if (!mounted.current) return null;
+        if (fresh?.shortRenderedAt && fresh.shortRenderedAt !== priorShortRenderedAt) {
           setAnnounce('Short ready.');
           return fresh;
         }
-        if (fresh.shortError && fresh.shortError !== priorShortError) throw new Error(fresh.shortError);
+        if (fresh && isThisAttemptsError(fresh.shortError, priorShortError, attempt)) throw new Error(fresh.shortError!);
         if (Date.now() > deadline) {
           throw new Error('The short is taking longer than expected — reload to check on it.');
         }
@@ -1702,13 +1761,13 @@ export function MasteringStudio() {
       for (let attempt = 0; ; attempt++) {
         if (attempt > 0) await new Promise((r) => setTimeout(r, 4000));
         if (!mounted.current) return null;
-        const s = await adminFetch(`/api/admin/music-lab/master/${targetId}`);
-        const fresh = (await s.json()) as MasterJob;
-        if (fresh.verticalRenderedAt && fresh.verticalRenderedAt !== priorVerticalRenderedAt) {
+        const fresh = await readJobForPoll(targetId);
+        if (!mounted.current) return null;
+        if (fresh?.verticalRenderedAt && fresh.verticalRenderedAt !== priorVerticalRenderedAt) {
           setAnnounce('Vertical video ready.');
           return fresh;
         }
-        if (fresh.verticalError && fresh.verticalError !== priorVerticalError) throw new Error(fresh.verticalError);
+        if (fresh && isThisAttemptsError(fresh.verticalError, priorVerticalError, attempt)) throw new Error(fresh.verticalError!);
         if (Date.now() > deadline) {
           throw new Error('The vertical render is taking longer than expected — reload to check on it.');
         }
@@ -1731,13 +1790,13 @@ export function MasteringStudio() {
         slideTransition,
         backgrounds.map((b) => b.key)
       );
-      if (fresh) setJob(fresh);
+      // Only onto the job it belongs to: the operator may have opened another
+      // song while this one rendered (audit 2026-11-07).
+      if (fresh) setJob((prev) => (prev && prev.id === fresh.id ? fresh : prev));
     } catch (err) {
       if (!mounted.current) return;
-      const message = err instanceof Error ? err.message : String(err);
-      // A background refusal belongs beside the background, like the video's.
-      if (backgrounds.length > 0) setPanelError(message);
-      else setError(message);
+      // Beside the button, like the video's — with or without a background.
+      setPanelError(err instanceof Error ? err.message : String(err));
     } finally {
       if (mounted.current) setShorting(false);
     }
@@ -1757,7 +1816,9 @@ export function MasteringStudio() {
         slideTransition,
         backgrounds.map((b) => b.key)
       );
-      if (fresh) setJob(fresh);
+      // Only onto the job it belongs to: the operator may have opened another
+      // song while this one rendered (audit 2026-11-07).
+      if (fresh) setJob((prev) => (prev && prev.id === fresh.id ? fresh : prev));
     } catch (err) {
       if (mounted.current) setPanelError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -1994,8 +2055,11 @@ export function MasteringStudio() {
     if (!jobId || !job) return;
     const title = uploadTitleValue.trim();
     if (!title) return;
+    if (uploadStarting.current) return;
+    uploadStarting.current = true;
     setUploadingToYoutube(true);
     setError(null);
+    setYoutubeError(null);
     setReleaseCheck(null);
     setReleaseCheckError(null);
     const priorUpdatedAt = job.updatedAt ?? null;
@@ -2023,23 +2087,26 @@ export function MasteringStudio() {
       for (let attempt = 0; ; attempt++) {
         if (attempt > 0) await new Promise((r) => setTimeout(r, 4000));
         if (!mounted.current) return;
-        const s = await adminFetch(`/api/admin/music-lab/master/${jobId}`);
-        const fresh = (await s.json()) as MasterJob;
-        const moved = fresh.updatedAt !== priorUpdatedAt;
+        const fresh = await readJobForPoll(jobId);
+        if (!mounted.current) return;
+        const moved = fresh !== null && fresh.updatedAt !== priorUpdatedAt;
+        // Only onto the job it belongs to — another song may be open by now.
+        const keep = (f: MasterJob) => setJob((prev) => (prev && prev.id === f.id ? f : prev));
         if (
+          fresh &&
           moved &&
           fresh.uploadStatus === 'uploaded' &&
           fresh.youtubeVideoId &&
           fresh.uploadedToYoutubeAt !== priorUploadedAt
         ) {
-          setJob(fresh);
+          keep(fresh);
           setAnnounce('Uploaded to YouTube as a private draft.');
           // Read back what YouTube stored, rather than trusting what we sent.
           void runReleaseCheck(fresh.youtubeVideoId);
           return;
         }
-        if (moved && fresh.uploadStatus === 'failed') {
-          setJob(fresh);
+        if (fresh && moved && fresh.uploadStatus === 'failed') {
+          keep(fresh);
           throw new Error(fresh.uploadError || 'The upload failed.');
         }
         if (Date.now() > deadline) {
@@ -2051,8 +2118,9 @@ export function MasteringStudio() {
         }
       }
     } catch (err) {
-      if (mounted.current) setError(err instanceof Error ? err.message : String(err));
+      if (mounted.current) setYoutubeError(err instanceof Error ? err.message : String(err));
     } finally {
+      uploadStarting.current = false;
       if (mounted.current) setUploadingToYoutube(false);
     }
   }, [jobId, job, uploadTitleValue, uploadDescription, uploadTags, uploadPlaylistIds, runReleaseCheck]);
@@ -2060,8 +2128,8 @@ export function MasteringStudio() {
   /** Cover for a library row's render. Same upload path as the inline panel. */
   const onPickRowCover = useCallback(
     async (id: string, file: File) => {
-      setRowError(null);
-      setRowBusy(id);
+      setRowError((prev) => (prev?.id === id ? null : prev));
+      setRowBusy(id, true);
       const controller = new AbortController();
       try {
         const key = await uploadToWorkspace(file, () => {}, controller.signal, 'cover');
@@ -2074,17 +2142,17 @@ export function MasteringStudio() {
       } catch (err) {
         if (mounted.current && !isAbort(err)) failRow(id, err);
       } finally {
-        if (mounted.current) setRowBusy(null);
+        if (mounted.current) setRowBusy(id, false);
       }
     },
-    [failRow]
+    [failRow, setRowBusy]
   );
 
   /** An extra image for a row's slideshow. Same upload path as the cover. */
   const onPickRowSlide = useCallback(
     async (id: string, index: number, file: File) => {
-      setRowError(null);
-      setRowBusy(id);
+      setRowError((prev) => (prev?.id === id ? null : prev));
+      setRowBusy(id, true);
       const controller = new AbortController();
       try {
         const key = await uploadToWorkspace(file, () => {}, controller.signal, 'cover');
@@ -2099,10 +2167,10 @@ export function MasteringStudio() {
       } catch (err) {
         if (mounted.current && !isAbort(err)) failRow(id, err);
       } finally {
-        if (mounted.current) setRowBusy(null);
+        if (mounted.current) setRowBusy(id, false);
       }
     },
-    [failRow, rowSlides, library, commitRowSlides]
+    [failRow, setRowBusy, rowSlides, library, commitRowSlides]
   );
 
   /**
@@ -2113,8 +2181,8 @@ export function MasteringStudio() {
   const renderRowVideo = useCallback(async () => {
     if (!rowRender?.cover) return;
     const { id, cover: rowCover } = rowRender;
-    setRowBusy(id);
-    setRowError(null);
+    setRowBusy(id, true);
+    setRowError((prev) => (prev?.id === id ? null : prev));
     try {
       // Same discriminator as the inline panel: capture this row's CURRENT
       // videoRenderedAt/videoError from the loaded library before the POST.
@@ -2145,18 +2213,28 @@ export function MasteringStudio() {
                     videoError: fresh.videoError,
                     videoMotion: fresh.videoMotion,
                     videoBackgroundKey: fresh.videoBackgroundKey,
+                    // Everything else the worker's success patch writes. The
+                    // row's audio verdict reads these two: without them a
+                    // re-render whose audio FAILED its check said nothing
+                    // until a reload (audit 2026-11-07).
+                    videoAudioCheck: fresh.videoAudioCheck,
+                    videoAudioFindings: fresh.videoAudioFindings,
+                    videoBackgroundKeys: fresh.videoBackgroundKeys,
+                    coverKey: fresh.coverKey,
                   }
                 : x
             )
           : prev
       );
-      setRowRender(null);
+      // Closes only the panel of the row that finished — the operator may have
+      // opened another row's since.
+      setRowRender((prev) => (prev?.id === id ? null : prev));
     } catch (err) {
       if (mounted.current) failRow(id, err);
     } finally {
-      if (mounted.current) setRowBusy(null);
+      if (mounted.current) setRowBusy(id, false);
     }
-  }, [rowRender, rowSlides, slideTransition, shortMotion, videoHeight, library, startRender, failRow]);
+  }, [rowRender, rowSlides, slideTransition, shortMotion, videoHeight, library, startRender, failRow, setRowBusy]);
 
   /**
    * Cut a short from the library, for the same reason renderRowVideo exists:
@@ -2168,8 +2246,8 @@ export function MasteringStudio() {
   const makeRowShort = useCallback(async () => {
     if (!rowRender?.cover) return;
     const { id, cover: rowCover } = rowRender;
-    setRowBusy(id);
-    setRowError(null);
+    setRowBusy(id, true);
+    setRowError((prev) => (prev?.id === id ? null : prev));
     try {
       const row = library?.find((x) => x.id === id);
       const slides = rowSlides?.id === id ? rowSlides.slides : toSlides(row?.slides);
@@ -2193,18 +2271,25 @@ export function MasteringStudio() {
                     shortSeconds: fresh.shortSeconds,
                     shortError: fresh.shortError,
                     shortBackgroundKey: fresh.shortBackgroundKey,
+                    // The rest of the worker's success patch — see renderRowVideo.
+                    shortPicked: fresh.shortPicked,
+                    shortMotion: fresh.shortMotion,
+                    shortBackgroundKeys: fresh.shortBackgroundKeys,
+                    coverKey: fresh.coverKey,
                   }
                 : x
             )
           : prev
       );
-      setRowRender(null);
+      // Closes only the panel of the row that finished — the operator may have
+      // opened another row's since.
+      setRowRender((prev) => (prev?.id === id ? null : prev));
     } catch (err) {
       if (mounted.current) failRow(id, err);
     } finally {
-      if (mounted.current) setRowBusy(null);
+      if (mounted.current) setRowBusy(id, false);
     }
-  }, [rowRender, rowSlides, shortMotion, slideTransition, library, startShort, failRow]);
+  }, [rowRender, rowSlides, shortMotion, slideTransition, library, startShort, failRow, setRowBusy]);
 
   /**
    * Render the whole song vertically from the library — beside "Make vertical
@@ -2214,8 +2299,8 @@ export function MasteringStudio() {
   const makeRowVertical = useCallback(async () => {
     if (!rowRender?.cover) return;
     const { id, cover: rowCover } = rowRender;
-    setRowBusy(id);
-    setRowError(null);
+    setRowBusy(id, true);
+    setRowError((prev) => (prev?.id === id ? null : prev));
     try {
       const row = library?.find((x) => x.id === id);
       const slides = rowSlides?.id === id ? rowSlides.slides : toSlides(row?.slides);
@@ -2238,18 +2323,23 @@ export function MasteringStudio() {
                     verticalSeconds: fresh.verticalSeconds,
                     verticalError: fresh.verticalError,
                     verticalBackgroundKey: fresh.verticalBackgroundKey,
+                    // The rest of the worker's success patch — see renderRowVideo.
+                    verticalBackgroundKeys: fresh.verticalBackgroundKeys,
+                    coverKey: fresh.coverKey,
                   }
                 : x
             )
           : prev
       );
-      setRowRender(null);
+      // Closes only the panel of the row that finished — the operator may have
+      // opened another row's since.
+      setRowRender((prev) => (prev?.id === id ? null : prev));
     } catch (err) {
       if (mounted.current) failRow(id, err);
     } finally {
-      if (mounted.current) setRowBusy(null);
+      if (mounted.current) setRowBusy(id, false);
     }
-  }, [rowRender, rowSlides, shortMotion, slideTransition, library, startVertical, failRow]);
+  }, [rowRender, rowSlides, shortMotion, slideTransition, library, startVertical, failRow, setRowBusy]);
 
   /**
    * Deliberately NOT loaded on mount: listing scans the table, and most visits
@@ -2274,8 +2364,8 @@ export function MasteringStudio() {
       setPlaying(null);
       return;
     }
-    setRowBusy(m.id);
-    setRowError(null);
+    setRowBusy(m.id, true);
+    setRowError((prev) => (prev?.id === m.id ? null : prev));
     try {
       const res = await adminFetch(
         `/api/admin/mastering/download?key=${encodeURIComponent(m.masterKey)}&mode=play`
@@ -2300,9 +2390,9 @@ export function MasteringStudio() {
     } catch (err) {
       failRow(m.id, err);
     } finally {
-      setRowBusy(null);
+      setRowBusy(m.id, false);
     }
-  }, [playing, failRow]);
+  }, [playing, failRow, setRowBusy]);
 
   /**
    * Commit a rename. The server sanitises the title (it also drives the
@@ -2318,14 +2408,14 @@ export function MasteringStudio() {
     // Enter commits, and the input then unmounts — which can also fire onBlur
     // with the pre-commit closure still holding `renaming`. Without this the
     // same rename is PATCHed twice.
-    if (rowBusy === id) return;
+    if (rowBusy.has(id)) return;
     // Closing an editor without changing anything must not cost a write.
     if (next === (library?.find((x) => x.id === id)?.title ?? '')) {
       setRenaming(null);
       return;
     }
-    setRowBusy(id);
-    setRowError(null);
+    setRowBusy(id, true);
+    setRowError((prev) => (prev?.id === id ? null : prev));
     try {
       const res = await adminFetch(`/api/admin/music-lab/master/${id}/rename`, {
         method: 'PATCH',
@@ -2341,9 +2431,9 @@ export function MasteringStudio() {
     } catch (err) {
       failRow(id, err);
     } finally {
-      setRowBusy(null);
+      setRowBusy(id, false);
     }
-  }, [renaming, rowBusy, library, failRow]);
+  }, [renaming, rowBusy, setRowBusy, library, failRow]);
 
   /**
    * Re-open a saved master for another pass.
@@ -3871,7 +3961,17 @@ export function MasteringStudio() {
                 )}
               </div>
 
-              {job.uploadStatus === 'failed' && job.uploadError && !job.youtubeVideoId && (
+              {youtubeError && (
+                <p
+                  role="alert"
+                  className="mt-3 flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300"
+                >
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span>{youtubeError}</span>
+                </p>
+              )}
+
+              {job.uploadStatus === 'failed' && job.uploadError && !job.youtubeVideoId && youtubeError !== job.uploadError && (
                 <p className="mt-2 text-xs text-red-600 dark:text-red-400">{job.uploadError}</p>
               )}
 
@@ -4045,11 +4145,11 @@ export function MasteringStudio() {
                     <button
                       type="button"
                       onClick={() => void playSaved(m)}
-                      disabled={rowBusy === m.id}
+                      disabled={rowBusy.has(m.id)}
                       aria-label={playing?.id === m.id ? `Stop ${m.title ?? 'master'}` : `Play ${m.title ?? 'master'}`}
                       className="shrink-0 rounded-full border border-gray-300 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
                     >
-                      {rowBusy === m.id ? (
+                      {rowBusy.has(m.id) ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
                       ) : playing?.id === m.id ? (
                         <Pause className="h-3.5 w-3.5" aria-hidden="true" />
@@ -4200,7 +4300,7 @@ export function MasteringStudio() {
                       {m.masterKey && !isPeakMaster(m) && (
                         <button
                           type="button"
-                          disabled={rowBusy === m.id}
+                          disabled={rowBusy.has(m.id)}
                           onClick={() =>
                             // SEEDED FROM THE JOB'S OWN COVER. Opening with `cover: null`
                             // left both buttons disabled on a row that already had one —
@@ -4312,7 +4412,7 @@ export function MasteringStudio() {
                         id={`${inputId}-rowcover-${m.id}`}
                         type="file"
                         accept="image/*"
-                        disabled={rowBusy === m.id}
+                        disabled={rowBusy.has(m.id)}
                         onChange={(e) => {
                           const f = e.target.files?.[0];
                           if (f) void onPickRowCover(m.id, f);
@@ -4332,10 +4432,10 @@ export function MasteringStudio() {
                         }
                         masterJobId={m.id}
                         songSeconds={m.editedDurationSec ?? null}
-                        disabled={rowBusy === m.id}
+                        disabled={rowBusy.has(m.id)}
                         // Clears only its own row's flag: the row may have been closed or switched meanwhile.
-                        onBusyChange={(on) => setRowBusy((prev) => (on ? m.id : prev === m.id ? null : prev))}
-                        onError={(message) => setRowError(message ? { id: m.id, message } : null)}
+                        onBusyChange={(on) => setRowBusy(m.id, on)}
+                        onError={(message) => setRowError((prev) => (message ? { id: m.id, message } : prev?.id === m.id ? null : prev))}
                         onAnnounce={setAnnounce}
                       />
                       {/* "Render" alone did not say WHAT it rendered, and it sat
@@ -4347,7 +4447,7 @@ export function MasteringStudio() {
                         type="button"
                         disabled={
                           !rowRender.cover ||
-                          rowBusy === m.id ||
+                          rowBusy.has(m.id) ||
                           // An added image with no file or no readable time is
                           // unfinished — rendering would silently drop it.
                           (slidesFor(m.id).length > 0 &&
@@ -4370,7 +4470,7 @@ export function MasteringStudio() {
                           way to the video and does not need one to exist. */}
                       <button
                         type="button"
-                        disabled={!rowRender.cover || rowBusy === m.id || (slidesFor(m.id).length > 0 && slidesToCovers(rowRender.cover.key, slidesFor(m.id)) === null)}
+                        disabled={!rowRender.cover || rowBusy.has(m.id) || (slidesFor(m.id).length > 0 && slidesToCovers(rowRender.cover.key, slidesFor(m.id)) === null)}
                         onClick={() => void makeRowShort()}
                         className="rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
                       >
@@ -4382,7 +4482,7 @@ export function MasteringStudio() {
                         Motion
                         <select
                           value={shortMotion}
-                          disabled={rowBusy === m.id}
+                          disabled={rowBusy.has(m.id)}
                           onChange={(e) => setShortMotion(e.target.value as ShortMotion)}
                           className="rounded border border-gray-300 bg-white px-1 py-0.5 text-xs text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
                         >
@@ -4397,13 +4497,13 @@ export function MasteringStudio() {
                           fields below do not apply to it. */}
                       <button
                         type="button"
-                        disabled={!rowRender.cover || rowBusy === m.id || (slidesFor(m.id).length > 0 && slidesToCovers(rowRender.cover.key, slidesFor(m.id)) === null)}
+                        disabled={!rowRender.cover || rowBusy.has(m.id) || (slidesFor(m.id).length > 0 && slidesToCovers(rowRender.cover.key, slidesFor(m.id)) === null)}
                         onClick={() => void makeRowVertical()}
                         className="rounded border border-indigo-600 px-2 py-1 text-xs font-medium text-indigo-700 disabled:opacity-50 dark:border-indigo-400 dark:text-indigo-300"
                       >
                         {m.verticalKey ? 'Re-render whole song, vertical' : 'Whole song, vertical'}
                       </button>
-                      {rowBusy === m.id && (
+                      {rowBusy.has(m.id) && (
                         <span className="text-xs text-gray-500 dark:text-gray-400">Working…</span>
                       )}
                       {/* The window, EDITABLE here — not a read-only echo of it.
@@ -4419,7 +4519,7 @@ export function MasteringStudio() {
                         slides={slidesFor(m.id)}
                         onChange={(slides) => commitRowSlides(m.id, slides)}
                         onPickImage={(i, f) => void onPickRowSlide(m.id, i, f)}
-                        disabled={rowBusy === m.id || !rowRender.cover}
+                        disabled={rowBusy.has(m.id) || !rowRender.cover}
                         idPrefix={`${inputId}-rowslide-${m.id}`}
                         durationSec={m.editedDurationSec}
                         transition={slideTransition}
@@ -4429,7 +4529,7 @@ export function MasteringStudio() {
                         compact
                         value={windowFor(m.id)}
                         onChange={(w) => setShortWindow(w ? { jobId: m.id, ...w } : null)}
-                        disabled={rowBusy === m.id}
+                        disabled={rowBusy.has(m.id)}
                         idPrefix={`${inputId}-rowshort-${m.id}`}
                       />
                       {/* What the last render's audio measured, beside the
