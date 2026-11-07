@@ -643,7 +643,10 @@ export async function renderVideoText(
   let current = true;
   try {
     if (!deps.bucket) throw new VideoTextFailure('the worker is not configured (TAKES_BUCKET is missing)');
-    const got = await deps.ddb.send(new GetCommand({ TableName: deps.table, Key: projectKey(projectId) }));
+    // Consistent: the route claimed the render slot (and the editor saved the
+    // blocks) just before invoking us; an eventually consistent read could
+    // still show the previous render or the previous blocks.
+    const got = await deps.ddb.send(new GetCommand({ TableName: deps.table, Key: projectKey(projectId), ConsistentRead: true }));
     const project = got.Item as StoredProject | undefined;
     if (!project) {
       console.error('[video-text] render for a missing project', projectId);

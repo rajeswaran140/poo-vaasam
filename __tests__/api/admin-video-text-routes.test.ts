@@ -230,6 +230,10 @@ describe('overlays', () => {
     expect(presignPost.mock.calls[0][1]).toBe('image/png');
     expect(presignPost.mock.calls[0][2]).toBe(5 * 1024 * 1024);
   });
+  it('F2: reads the project strongly consistent (it follows the pre-render save)', async () => {
+    await overlaysPOST(req({ renderId: 'r1', blockIds: ['b1'] }), ctx);
+    expect(repo.get).toHaveBeenCalledWith(ID, { consistent: true });
+  });
   it('400s an unknown block', async () => {
     const res = await overlaysPOST(req({ renderId: 'r1', blockIds: ['nope'] }), ctx);
     expect(res.status).toBe(400);
@@ -250,6 +254,11 @@ describe('render', () => {
     expect(res.status).toBe(409);
     expect((await res.json()).error).toBe('A render is already running.');
     expect(lambdaSend).not.toHaveBeenCalled();
+  });
+  it('F2: reads the project strongly consistent (it follows the pre-render save)', async () => {
+    repo.startRender.mockResolvedValue({ ok: true });
+    await renderPOST(req({ renderId: 'r1' }), ctx);
+    expect(repo.get).toHaveBeenCalledWith(ID, { consistent: true });
   });
   it('sends an Event invoke with the exact payload', async () => {
     repo.startRender.mockResolvedValue({ ok: true });

@@ -37,7 +37,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   try {
     const repo = new VideoTextRepository();
-    const project = await repo.get(id);
+    // Consistent: this follows the pre-render save (PATCH); a stale read would miss it.
+    const project = await repo.get(id, { consistent: true });
     if (!project) return NextResponse.json({ error: 'Project not found.' }, { status: 404 });
     if (!project.source) return NextResponse.json({ error: 'Upload a video first.' }, { status: 400 });
     if (new Date(project.source.expiresAt).getTime() <= Date.now()) {

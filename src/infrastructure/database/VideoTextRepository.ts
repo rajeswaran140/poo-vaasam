@@ -81,9 +81,16 @@ export class VideoTextRepository {
     }
   }
 
-  async get(id: string): Promise<VideoTextProject | null> {
+  /**
+   * `consistent` asks for a strongly consistent read: for a read that must see
+   * a write that just returned (the pre-render save before overlays/render).
+   */
+  async get(id: string, { consistent = false }: { consistent?: boolean } = {}): Promise<VideoTextProject | null> {
     try {
-      const item = await DynamoDBOperations.get(keyOf(id));
+      const key = keyOf(id);
+      const item = consistent
+        ? await DynamoDBOperations.get(key, { consistentRead: true })
+        : await DynamoDBOperations.get(key);
       return item ? hydrate(item as Record<string, unknown>) : null;
     } catch (error) {
       handleDynamoDBError(error);

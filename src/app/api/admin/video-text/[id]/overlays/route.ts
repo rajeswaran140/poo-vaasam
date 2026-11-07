@@ -35,7 +35,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { renderId, blockIds } = parsed.data;
 
   try {
-    const project = await new VideoTextRepository().get(id);
+    // Consistent: this follows the pre-render save (PATCH); a stale read would miss it.
+    const project = await new VideoTextRepository().get(id, { consistent: true });
     if (!project) return NextResponse.json({ error: 'Project not found.' }, { status: 404 });
 
     // Only keys for blocks that exist: stops the client presigning arbitrary keys.

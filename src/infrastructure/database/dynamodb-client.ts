@@ -104,10 +104,17 @@ export class DynamoDBOperations {
   /**
    * Get an item by primary key
    */
-  static async get(key: Record<string, any>) {
+  static async get(
+    key: Record<string, any>,
+    options: {
+      /** Strongly consistent: sees a write that just returned. */
+      consistentRead?: boolean;
+    } = {}
+  ) {
     const command = new GetCommand({
       TableName: TABLE_NAME,
       Key: key,
+      ...(options.consistentRead ? { ConsistentRead: true } : {}),
     });
 
     const response = await dynamoDBClient.send(command);

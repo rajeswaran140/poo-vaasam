@@ -414,6 +414,13 @@ describe('videoTextRender', () => {
     expect(world.store.has(SRC_KEY)).toBe(true);
   });
 
+  it('F2: reads the project strongly consistent (the claim was just written)', async () => {
+    await render();
+    const gets = ddbSend.mock.calls.map((c) => c[0] as { kind: string; input: Record<string, unknown> }).filter((c) => c.kind === 'get');
+    expect(gets.length).toBeGreaterThan(0);
+    for (const g of gets) expect(g.input.ConsistentRead).toBe(true);
+  });
+
   it('every patch is conditional on the renderId from the event', async () => {
     await render();
     expect(patches().length).toBeGreaterThan(3);

@@ -72,6 +72,14 @@ describe('get', () => {
     expect(p.GSI1PK).toBeUndefined();
   });
 
+  it('F2: reads strongly consistent only when asked', async () => {
+    mockGet.mockResolvedValue(undefined);
+    await repo.get('abc');
+    expect(mockGet.mock.calls[0]).toEqual([{ PK: 'VIDEOTEXT#abc', SK: 'METADATA' }]);
+    await repo.get('abc', { consistent: true });
+    expect(mockGet.mock.calls[1]).toEqual([{ PK: 'VIDEOTEXT#abc', SK: 'METADATA' }, { consistentRead: true }]);
+  });
+
   it('rejects an invalid id without reading', async () => {
     await expect(repo.get('../x')).rejects.toThrow();
     expect(mockGet).not.toHaveBeenCalled();
