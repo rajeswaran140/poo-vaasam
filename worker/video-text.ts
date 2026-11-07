@@ -418,7 +418,7 @@ export function startOffsetRefusal(videoStartSec: number, fps: number): string |
 export async function probeVideoText(
   spec: { key?: unknown },
   deps: VideoTextDeps,
-): Promise<{ ok: true; info: ProbeInfo } | { ok: false; message: string }> {
+): Promise<{ ok: true; info: ProbeInfo } | { ok: false; message: string; retryable?: true }> {
   sweepScratch();
   const key = spec?.key;
   if (typeof key !== 'string' || !key.startsWith(VIDEO_TEXT_PREFIX) || key.includes('..') || key.length > 1024) {
@@ -434,7 +434,8 @@ export async function probeVideoText(
       // ffmpeg never opened it: an expired/forbidden URL or the network, not the file.
       // Logged with every query string cut, so no signature reaches the logs.
       console.error('[video-text] probe could not open the source:', log.replace(/\?[^\s'"]*/g, '?…').slice(-500));
-      return { ok: false, message: PROBE_FAILED_MESSAGE };
+      // Transient (F11): the route answers 503 and the page re-checks the same upload.
+      return { ok: false, message: PROBE_FAILED_MESSAGE, retryable: true };
     }
     const video = parseVideoStream(log);
     const refusal = refusalFor(video);
@@ -451,9 +452,9 @@ export async function probeVideoText(
       info: { width: video!.width, height: video!.height, fps: video!.fps!, durationSec: floorCentis(durationSec), hasAudio: hasAudioStream(log) },
     };
   } catch (err) {
-    if (isOutOfTime(err)) return { ok: false, message: 'reading the video took too long — try again' };
+    if (isOutOfTime(err)) return { ok: false, message: 'reading the video took too long — try again', retryable: true };
     console.error('[video-text] probe failed:', err instanceof Error ? err.name : 'unknown');
-    return { ok: false, message: PROBE_FAILED_MESSAGE };
+    return { ok: false, message: PROBE_FAILED_MESSAGE, retryable: true };
   }
 }
 

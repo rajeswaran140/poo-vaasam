@@ -219,6 +219,13 @@ describe('source', () => {
     expect(res.status).toBe(503);
     expect((await res.json()).error).toBe('The video worker is busy — try again in a minute.');
   });
+  it('F11: 503s a probe that could not open the file (retryable), without storing', async () => {
+    lambdaSend.mockResolvedValue(probePayload({ ok: false, message: 'the video could not be read — try again', retryable: true }));
+    const res = await sourcePOST(req({ key }), ctx);
+    expect(res.status).toBe(503);
+    expect((await res.json()).error).toBe('The video could not be checked just now — press Try again.');
+    expect(repo.setSource).not.toHaveBeenCalled();
+  });
   it('422s a probe failure with its message, or the fallback', async () => {
     lambdaSend.mockResolvedValue(probePayload({ ok: false, message: 'No video stream.' }));
     let res = await sourcePOST(req({ key }), ctx);

@@ -454,6 +454,28 @@ it('a re-upload that moved lines says so', async () => {
   expect(screen.getByText('Video: 1440p · 3:20 · deleted on 7 Dec 2999')).toBeInTheDocument();
 });
 
+it('F11: a 503 from the check offers Try again, which re-checks the same key without re-uploading', async () => {
+  const key = 'audio/mastering/video-text/p1/source/b.mp4';
+  routes['POST /api/admin/video-text/p1/upload'] = () => json({ url: 'https://s3', fields: { a: 'b' }, key });
+  let checks = 0;
+  routes['POST /api/admin/video-text/p1/source'] = () =>
+    ++checks === 1
+      ? json({ error: 'The video could not be checked just now — press Try again.' }, 503)
+      : json({ source: { ...source, durationSec: 200 }, blocks: [titleBlock], moved: 0, version: 9 });
+  render(<VideoTextEditor project={project({ titleText: 'Song', blocks: [titleBlock] })} onBack={() => {}} />);
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText(/Choose a video/i), { target: { files: [new File(['x'], 'b.mp4', { type: 'video/mp4' })] } });
+  });
+  expect(await screen.findByText('The video could not be checked just now — press Try again.')).toBeInTheDocument();
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+  });
+  expect(await screen.findByText('Video: 1440p · 3:20 · deleted on 7 Dec 2999')).toBeInTheDocument();
+  expect(calls('POST', '/api/admin/video-text/p1/upload')).toHaveLength(1);
+  const checked = calls('POST', '/api/admin/video-text/p1/source').map(([, init]) => bodyOf(init));
+  expect(checked).toEqual([{ key }, { key }]);
+});
+
 function lastRenderId(): string | undefined {
   const c = calls('POST', '/api/admin/video-text/p1/render').at(-1);
   return c ? bodyOf(c[1]).renderId : undefined;

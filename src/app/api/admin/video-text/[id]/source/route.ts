@@ -22,6 +22,8 @@ export const dynamic = 'force-dynamic';
 
 const MASTER_WORKER_FUNCTION = process.env.MASTER_WORKER_FUNCTION || 'tamilagaval-master-worker';
 const UNREADABLE = 'This video could not be read.';
+/** The worker could not open the file (network, signing, its own time limit): nothing wrong with the video. */
+const CHECK_AGAIN = 'The video could not be checked just now — press Try again.';
 const RENDER_RUNNING = 'A render is running — wait for it to finish before uploading a new video.';
 
 const PREVIEW_URL_TTL_SECONDS = 60 * 60;
@@ -30,7 +32,7 @@ const schema = z.object({ key: z.string().min(1).max(1024) });
 
 type ProbeResult =
   | { ok: true; info: { width: number; height: number; fps: number; durationSec: number; hasAudio: boolean } }
-  | { ok: false; message?: string };
+  | { ok: false; message?: string; retryable?: boolean };
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -116,6 +118,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       throw err;
     }
 
+    if (probe && probe.ok === false && probe.retryable === true) {
+      // 503 = retryable: the page offers Try again, which re-checks this same key.
+      return NextResponse.json({ error: CHECK_AGAIN }, { status: 503 });
+    }
     if (!probe || probe.ok !== true) {
       const message = probe && probe.ok === false ? probe.message : undefined;
       return NextResponse.json({ error: message || UNREADABLE }, { status: 422 });

@@ -372,7 +372,8 @@ describe('videoTextProbe', () => {
     withHeader('[https @ 0x1] HTTP error 403 Forbidden\nhttps://signed.example/source.mp4?X-Amz-Signature=secret: Server returned 403 Forbidden\n');
     const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
     const res = (await probe()) as { ok: boolean; message: string };
-    expect(res).toEqual({ ok: false, message: 'the video could not be read — try again' });
+    // F11: retryable — the route answers 503 and the page re-checks the same key.
+    expect(res).toEqual({ ok: false, message: 'the video could not be read — try again', retryable: true });
     expect(JSON.stringify(spy.mock.calls)).not.toContain('secret');
     spy.mockRestore();
   });
@@ -381,6 +382,7 @@ describe('videoTextProbe', () => {
     withHeader("Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'https://signed.example/source.mp4?X-Amz-Signature=secret':\n  Duration: 00:00:45.00\n  Stream #0:0: Audio: aac, 48000 Hz, stereo\n");
     const res = (await probe()) as { ok: boolean; message: string };
     expect(res).toEqual({ ok: false, message: expect.stringContaining('Export it as an MP4 or MOV') });
+    expect(res).not.toHaveProperty('retryable');
     expect(res.message).not.toContain('secret');
   });
 
