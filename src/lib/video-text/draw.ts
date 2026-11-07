@@ -162,11 +162,14 @@ export function drawBlock(
   ctx.restore();
 }
 
+/** A Tamil letter: without sample text, load()/check() only cover the Latin range of a subset font. */
+const TAMIL_SAMPLE = 'அ';
+
 export async function ensureFonts(): Promise<void> {
   if (typeof document === 'undefined' || !document.fonts) return;
   const font = `700 32px ${resolveFontFamily()}`;
-  await document.fonts.load(font);
-  if (!document.fonts.check(font)) {
+  await document.fonts.load(font, TAMIL_SAMPLE);
+  if (!document.fonts.check(font, TAMIL_SAMPLE)) {
     throw new Error('The Tamil font did not load — reload the page and try again.');
   }
 }

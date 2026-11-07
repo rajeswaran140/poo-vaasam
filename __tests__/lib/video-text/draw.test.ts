@@ -158,4 +158,13 @@ describe('resolveFontFamily / ensureFonts', () => {
       'The Tamil font did not load — reload the page and try again.',
     );
   });
+
+  it('F7: loads and checks with a Tamil letter, so the Tamil subset (not only Latin) is fetched', async () => {
+    const load = jest.fn(async () => []);
+    const check = jest.fn(() => true);
+    Object.defineProperty(document, 'fonts', { configurable: true, value: { load, check } });
+    await ensureFonts();
+    expect(load).toHaveBeenCalledWith(expect.stringContaining('700 32px'), 'அ');
+    expect(check).toHaveBeenCalledWith(expect.stringContaining('700 32px'), 'அ');
+  });
 });
