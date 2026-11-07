@@ -3,6 +3,8 @@ import {
   FONT_FAMILY,
   wrapLines,
   layoutBlock,
+  resolveFontFamily,
+  ensureFonts,
   renderBlockPng,
 } from '@/lib/video-text/draw';
 import type { TextBlock, TextStyle } from '@/types/videoText';
@@ -103,7 +105,7 @@ describe('renderBlockPng', () => {
     sizes.length = 0;
     Object.defineProperty(document, 'fonts', {
       configurable: true,
-      value: { load: jest.fn(async (f: string) => { order.push('load:' + f); return []; }) },
+      value: { load: jest.fn(async (f: string) => { order.push('load:' + f); return []; }), check: () => true },
     });
     class FakeOffscreen {
       constructor(w: number, h: number) { sizes.push([w, h]); }
@@ -127,8 +129,33 @@ describe('renderBlockPng', () => {
     const blob = await renderBlockPng(block('lyric', 'hi'), { width: 1280, height: 720 }, STYLE);
     expect(blob).toBeInstanceOf(Blob);
     expect(sizes).toEqual([[1280, 720]]);
-    expect(order[0]).toBe('load:700 32px "Noto Sans Tamil"');
+    expect(order[0]).toBe('load:700 32px ' + FONT_FAMILY);
     expect(order.indexOf('getContext')).toBeGreaterThan(0);
     expect(FONT_FAMILY).toContain('Noto Sans Tamil');
+  });
+});
+
+describe('resolveFontFamily / ensureFonts', () => {
+  afterEach(() => {
+    document.documentElement.style.removeProperty('--font-tamil');
+  });
+
+  it('uses the --font-tamil variable when set', () => {
+    document.documentElement.style.setProperty('--font-tamil', "'__notoSansTamil_abc'");
+    expect(resolveFontFamily()).toBe(`'__notoSansTamil_abc', "Noto Sans", sans-serif`);
+  });
+
+  it('falls back to FONT_FAMILY when unset', () => {
+    expect(resolveFontFamily()).toBe(FONT_FAMILY);
+  });
+
+  it('ensureFonts throws when the font check fails after load', async () => {
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: { load: jest.fn(async () => []), check: () => false },
+    });
+    await expect(ensureFonts()).rejects.toThrow(
+      'The Tamil font did not load — reload the page and try again.',
+    );
   });
 });

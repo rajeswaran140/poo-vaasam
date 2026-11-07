@@ -83,7 +83,17 @@ function ellipsize(ctx: MeasureCtx, line: string, maxWidth: number): string {
   return gs.join('').trimEnd() + ELLIPSIS;
 }
 
-const fontFor = (px: number) => `700 ${px}px ${FONT_FAMILY}`;
+/**
+ * next/font registers a hashed family name, exposed as the `--font-tamil` CSS
+ * variable on <html>. Canvas cannot use var(), so read it and use the real name.
+ */
+export function resolveFontFamily(): string {
+  if (typeof document === 'undefined') return FONT_FAMILY;
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--font-tamil').trim();
+  return v ? `${v}, "Noto Sans", sans-serif` : FONT_FAMILY;
+}
+
+const fontFor = (px: number) => `700 ${px}px ${resolveFontFamily()}`;
 
 /**
  * `yBaseline[i]` is the vertical middle of line i: `drawBlock` sets
@@ -154,7 +164,11 @@ export function drawBlock(
 
 export async function ensureFonts(): Promise<void> {
   if (typeof document === 'undefined' || !document.fonts) return;
-  await document.fonts.load('700 32px "Noto Sans Tamil"');
+  const font = `700 32px ${resolveFontFamily()}`;
+  await document.fonts.load(font);
+  if (!document.fonts.check(font)) {
+    throw new Error('The Tamil font did not load — reload the page and try again.');
+  }
 }
 
 export async function renderBlockPng(
