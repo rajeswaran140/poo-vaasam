@@ -1,6 +1,6 @@
 import {
   VIDEO_TEXT_PREFIX, MAX_VIDEO_TEXT_BYTES, RETENTION_DAYS, sourceKey, overlayKey, segmentKey,
-  chunkOutKey, outputKey, renderPrefix, isVideoTextKeyFor, isValidProjectId, expiresAtFrom,
+  chunkOutKey, outputKey, renderPrefix, isVideoTextKeyFor, isValidProjectId, expiresAtFrom, floorCentis,
 } from '@/lib/video-text/keys';
 
 const P = 'p1';
@@ -58,5 +58,22 @@ describe('video-text keys', () => {
 
   it('computes the expiry 30 days on', () => {
     expect(expiresAtFrom('2026-11-07T00:00:00.000Z')).toBe('2026-12-07T00:00:00.000Z');
+  });
+});
+
+describe('floorCentis (F1)', () => {
+  it('floors to 0.01 s and leaves already-floored values alone', () => {
+    expect(floorCentis(128.14)).toBe(128.14);
+    expect(floorCentis(128.149)).toBe(128.14);
+    expect(floorCentis(0.29)).toBe(0.29);
+    expect(floorCentis(343.99)).toBe(343.99);
+    expect(floorCentis(12.3499)).toBe(12.34);
+  });
+  it('is idempotent for every 0.01 s from 0.29 to 600', () => {
+    for (let c = 29; c <= 60000; c++) {
+      const d = c / 100;
+      expect(floorCentis(d)).toBe(d);
+      expect(floorCentis(floorCentis(d + 0.004))).toBe(d);
+    }
   });
 });

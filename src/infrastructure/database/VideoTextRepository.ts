@@ -11,7 +11,7 @@
  */
 
 import { DynamoDBOperations, handleDynamoDBError } from './dynamodb-client';
-import { isValidProjectId } from '@/lib/video-text/keys';
+import { floorCentis, isValidProjectId } from '@/lib/video-text/keys';
 import type {
   RenderState,
   SourceInfo,
@@ -164,12 +164,17 @@ export class VideoTextRepository {
   /**
    * Attach an uploaded video and its (re)computed blocks, and reset the render:
    * an output made from the previous source no longer matches. durationSec is
-   * floored to 0.01 s here (ledger R4) so no caller can store a value that
-   * rounds PAST the real end of the file.
+   * floored to 0.01 s here (ledger R4, floorCentis — idempotent, so a value the
+   * caller already floored is stored unchanged) and the stored value is
+   * returned, so the caller answers with exactly what the row holds.
    */
-  async setSource(id: string, source: SourceInfo, blocks: TextBlock[]): Promise<{ version: number }> {
+  async setSource(
+    id: string,
+    source: SourceInfo,
+    blocks: TextBlock[]
+  ): Promise<{ version: number; durationSec: number }> {
     const now = new Date().toISOString();
-    const stored: SourceInfo = { ...source, durationSec: Math.floor(source.durationSec * 100) / 100 };
+    const stored: SourceInfo = { ...source, durationSec: floorCentis(source.durationSec) };
     try {
       // Bumps version: this rewrites blocks, so a tab holding the old version
       // must get a conflict on its next save rather than overwrite them.
@@ -195,7 +200,7 @@ export class VideoTextRepository {
           ':now': now,
         },
       });
-      return { version: (attrs as { version: number }).version };
+      return { version: (attrs as { version: number }).version, durationSec: stored.durationSec };
     } catch (error) {
       if (isConditionFailure(error)) throw new Error('video text project not found');
       handleDynamoDBError(error);

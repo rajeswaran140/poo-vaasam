@@ -296,6 +296,11 @@ describe('videoTextProbe', () => {
     expect(s3Send.mock.calls.filter((c) => c[0].kind === 'get')).toHaveLength(0);
   });
 
+  it('F1: a 2:08.14 video is reported as 128.14, not 128.13', async () => {
+    withHeader(header({ duration: '00:02:08.14' }));
+    expect(await probe()).toMatchObject({ ok: true, info: { durationSec: 128.14 } });
+  });
+
   it('refuses a variable frame rate with the exact message', async () => {
     withHeader(header({ video: 'h264 (High), yuv420p, 1920x1080, 726 kb/s, 29.5 fps, 30 tbr, 600 tbn' }));
     expect(await probe()).toEqual({ ok: false, message: VFR_MESSAGE });

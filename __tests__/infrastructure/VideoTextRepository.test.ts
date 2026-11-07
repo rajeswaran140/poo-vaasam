@@ -154,7 +154,14 @@ describe('setSource', () => {
     expect(a.expressionAttributeValues[':one']).toBe(1);
     expect(a.updateExpression).toContain('GSI1SK = :now');
     expect(a.updateExpression).toContain('#updatedAt = :now');
-    expect(r).toEqual({ version: 5 });
+    expect(r).toEqual({ version: 5, durationSec: 12.34 });
+  });
+
+  it('F1: floors idempotently — an already-floored 128.14 is stored (and returned) as 128.14', async () => {
+    mockUpdate.mockResolvedValueOnce({ version: 5 });
+    const r = await repo.setSource('abc', { ...src, durationSec: 128.14 }, []);
+    expect((arg().expressionAttributeValues[':source'] as SourceInfo).durationSec).toBe(128.14);
+    expect(r).toMatchObject({ durationSec: 128.14 });
   });
 
   it('does not mutate the caller\'s source object', async () => {

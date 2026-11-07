@@ -42,6 +42,7 @@ import { POST as overlaysPOST } from '@/app/api/admin/video-text/[id]/overlays/r
 import { POST as renderPOST } from '@/app/api/admin/video-text/[id]/render/route';
 import { GET as downloadGET } from '@/app/api/admin/video-text/[id]/download/route';
 import { MAX_VIDEO_TEXT_BYTES } from '@/lib/video-text/keys';
+import { validateBlocks } from '@/lib/video-text/timeline';
 
 const ID = 'p1';
 const ctx = { params: Promise.resolve({ id: ID }) };
@@ -179,7 +180,7 @@ describe('source', () => {
   });
   it('probes, stores and returns version', async () => {
     lambdaSend.mockResolvedValue(probePayload({ ok: true, info }));
-    repo.setSource.mockResolvedValue({ version: 4 });
+    repo.setSource.mockResolvedValue({ version: 4, durationSec: 60 });
     const res = await sourcePOST(req({ key }), ctx);
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -189,6 +190,18 @@ describe('source', () => {
     const cmd = lambdaSend.mock.calls[0][0] as { args: { InvocationType: string; Payload: Buffer } };
     expect(cmd.args.InvocationType).toBe('RequestResponse');
     expect(JSON.parse(cmd.args.Payload.toString())).toEqual({ videoTextProbe: { key } });
+  });
+  it('F1: floors the probed length once, builds blocks on it and returns the stored value', async () => {
+    repo.get.mockResolvedValue(project({ blocks: [], titleText: 'T', creditsText: 'C', lyricsText: 'a\nb\nc' }));
+    lambdaSend.mockResolvedValue(probePayload({ ok: true, info: { ...info, durationSec: 128.149 } }));
+    repo.setSource.mockImplementation(async (_id: string, s: { durationSec: number }) => ({ version: 4, durationSec: s.durationSec }));
+    const res = await sourcePOST(req({ key }), ctx);
+    const body = await res.json();
+    const [, storedSource, storedBlocks] = repo.setSource.mock.calls[0];
+    expect(storedSource.durationSec).toBe(128.14);
+    expect(body.source.durationSec).toBe(128.14);
+    expect(Math.max(...storedBlocks.map((b: { endSec: number }) => b.endSec))).toBe(128.14);
+    expect(validateBlocks(body.blocks, body.source.durationSec)).toBeNull();
   });
   it('503s a throttle', async () => {
     lambdaSend.mockRejectedValue(Object.assign(new Error('x'), { name: 'TooManyRequestsException' }));

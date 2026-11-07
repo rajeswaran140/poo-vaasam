@@ -13,7 +13,7 @@ import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helpe
 import { S3Operations } from '@/infrastructure/storage/s3-client';
 import { VideoTextRepository } from '@/infrastructure/database/VideoTextRepository';
 import { awsConfig } from '@/lib/aws-config';
-import { expiresAtFrom, isValidProjectId, isVideoTextKeyFor } from '@/lib/video-text/keys';
+import { expiresAtFrom, floorCentis, isValidProjectId, isVideoTextKeyFor } from '@/lib/video-text/keys';
 import { clampToDuration, defaultBlocks } from '@/lib/video-text/timeline';
 import type { SourceInfo } from '@/types/videoText';
 
@@ -121,7 +121,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     const now = new Date().toISOString();
-    const source: SourceInfo = { key, ...probe.info, uploadedAt: now, expiresAt: expiresAtFrom(now) };
+    // Floored BEFORE the blocks are fitted (R4): the blocks, the stored row and
+    // the answer all carry the same length.
+    const source: SourceInfo = {
+      key,
+      ...probe.info,
+      durationSec: floorCentis(probe.info.durationSec),
+      uploadedAt: now,
+      expiresAt: expiresAtFrom(now),
+    };
 
     // Re-fit existing text to the new length; a fresh project gets default timing.
     let blocks = project.blocks;
@@ -137,8 +145,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       });
     }
 
-    const { version } = await repo.setSource(id, source, blocks);
-    return NextResponse.json({ source, blocks, moved, version });
+    const { version, durationSec } = await repo.setSource(id, source, blocks);
+    return NextResponse.json({ source: { ...source, durationSec }, blocks, moved, version });
   } catch (err) {
     console.error('[api/video-text/source] failed:', err instanceof Error ? err.message : String(err));
     return NextResponse.json({ error: 'Could not check the video.' }, { status: 502 });

@@ -61,6 +61,7 @@ import {
   VIDEO_TEXT_PREFIX,
   chunkOutKey,
   expiresAtFrom,
+  floorCentis,
   isValidProjectId,
   isVideoTextKeyFor,
   outputKey,
@@ -203,8 +204,6 @@ export function parseDurationSec(log: string): number | null {
   return Number.isFinite(sec) && sec > 0 ? sec : null;
 }
 
-/** R4: floored to 0.01 s so a stored length never rounds past the real end. */
-const floorCentis = (sec: number) => Math.floor(sec * 100 + 1e-6) / 100;
 
 /**
  * The first presentation time, in seconds, of a framecrc listing taken with
