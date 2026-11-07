@@ -242,9 +242,11 @@ describe('several clips', () => {
     const k1440 = preparedBackgroundKey(A, { kind: 'video', height: 1440 });
     const k1080 = preparedBackgroundKey(A, { kind: 'video', height: 1080 });
     const kv = preparedBackgroundKey(A, { kind: 'vertical' });
-    expect(k1440).toBe('audio/mastering/background-prepared/v1/1440/visual-story/vs_abc/candidates/c_1.mp4');
+    expect(k1440).toBe('audio/mastering/background-prepared/v1/1440/visual-story/vs_abc/candidates/c_1-mp4.mp4');
     expect(new Set([k1440, k1080, kv]).size).toBe(3);
-    expect(preparedBackgroundKey(B, { kind: 'vertical' })).toBe('audio/mastering/background-prepared/v1/vertical/1_d_loop.mp4');
+    expect(preparedBackgroundKey(B, { kind: 'vertical' })).toBe('audio/mastering/background-prepared/v1/vertical/1_d_loop-mov.mp4');
+    // Two sources differing only in type never share a prepared clip.
+    expect(preparedBackgroundKey('audio/mastering/x.mp4', { kind: 'vertical' })).not.toBe(preparedBackgroundKey('audio/mastering/x.mov', { kind: 'vertical' }));
     expect(isPreparedBackgroundKey(k1440)).toBe(true);
     expect(isPreparedBackgroundKey(A)).toBe(false);
     expect(isPreparedBackgroundKey('audio/mastering/background-prepared/v1/../x.mp4')).toBe(false);

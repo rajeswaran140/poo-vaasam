@@ -10,7 +10,7 @@
  * uploaded again, the keys are already in the mastering workspace.
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
 import { uploadToWorkspace } from '@/lib/mastering-upload-client';
 import { MAX_BACKGROUND_CLIPS, backgroundSummary } from '@/lib/master-background';
@@ -70,6 +70,8 @@ export function BackgroundClipsField(props: {
   const [stories, setStories] = useState<{ rows: StoryRow[]; all: boolean } | null>(null);
   const [loading, setLoading] = useState(false);
   const [picked, setPicked] = useState<{ vsId: string; clips: StoryClip[]; withoutClip: string[] } | null>(null);
+  /** The story asked for last: a slower earlier answer must not replace it. */
+  const wanted = useRef<string | null>(null);
   const room = MAX_BACKGROUND_CLIPS - clips.length;
   const busy = progress !== null || loading;
 
@@ -145,18 +147,20 @@ export function BackgroundClipsField(props: {
     async (vsId: string) => {
       onError(null);
       setPicked(null);
+      wanted.current = vsId || null;
       if (!vsId) return;
       setLoading(true);
       try {
         const res = await adminFetch(`/api/admin/visual-story/${encodeURIComponent(vsId)}`);
         const body = await res.json().catch(() => ({}));
+        if (wanted.current !== vsId) return;
         if (!res.ok || !body.success) throw new Error(body.error || 'Could not load that story.');
         const tree = body.data as { shots: Shot[]; candidates: Candidate[] };
         setPicked({ vsId, ...storyBackgroundClips(tree) });
       } catch (err) {
-        onError(err instanceof Error ? err.message : String(err));
+        if (wanted.current === vsId) onError(err instanceof Error ? err.message : String(err));
       } finally {
-        setLoading(false);
+        if (wanted.current === vsId) setLoading(false);
       }
     },
     [onError]

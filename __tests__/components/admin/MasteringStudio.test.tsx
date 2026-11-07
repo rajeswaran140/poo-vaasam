@@ -1881,6 +1881,33 @@ describe('per-song identity resets with the source', () => {
     expect(screen.getByRole('button', { name: /Render video/ })).toBeDisabled();
   });
 
+  it('holds every Render button while background clips are still uploading, even when a cover upload finishes first', async () => {
+    render(<MasteringStudio />);
+    await masterOnce('audio/mastering/1_a_songA.wav');
+    mockedFetch.mockResolvedValueOnce(json({ success: true, title: 'A' }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save to library/ })); });
+    await screen.findByRole('button', { name: /Saved to library/ });
+
+    // The cover's presign is held, then the background's never answers.
+    let coverPresign: (r: Response) => void = () => {};
+    mockedFetch.mockImplementationOnce(() => new Promise<Response>((r) => { coverPresign = r; }));
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/Cover image/i), { target: { files: [new File(['x'], 'coverA.jpg', { type: 'image/jpeg' })] } });
+    });
+    mockedFetch.mockImplementationOnce(() => new Promise(() => {}));
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/^Background videos or GIFs \(optional/), {
+        target: { files: [new File(['x'], 'one.mp4', { type: 'video/mp4' }), new File(['x'], 'two.mp4', { type: 'video/mp4' })] },
+      });
+    });
+    await act(async () => { coverPresign(json({ success: true, uploadUrl: 'https://s3/u', fields: {}, key: 'audio/mastering/coverA.jpg' })); });
+    expect((await screen.findAllByText(/coverA\.jpg/)).length).toBeGreaterThan(0);
+
+    expect(screen.getByRole('button', { name: /^Render video/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Make a short/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Whole song, vertical/ })).toBeDisabled();
+  });
+
   it('sends a background beside the cover, and does not carry it to the next song', async () => {
     render(<MasteringStudio />);
     await masterOnce('audio/mastering/1_a_songA.wav');

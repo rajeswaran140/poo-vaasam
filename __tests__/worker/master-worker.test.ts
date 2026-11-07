@@ -3952,7 +3952,7 @@ describe('several background clips', () => {
   const C1 = 'audio/mastering/visual-story/vs_abc/candidates/c_1.mp4';
   const C2 = 'audio/mastering/visual-story/vs_abc/candidates/c_2.mp4';
   const C3 = 'audio/mastering/1_d_loop.mov';
-  const prep = (src: string, f: string) => `audio/mastering/background-prepared/v1/${f}/${src.slice('audio/mastering/'.length).replace(/\.[a-z0-9]+$/i, '')}.mp4`;
+  const prep = (src: string, f: string) => `audio/mastering/background-prepared/v1/${f}/${src.slice('audio/mastering/'.length).replace(/\.([a-z0-9]+)$/i, '-$1')}.mp4`;
   const HEADER = 'Input #0, wav\n  Duration: 00:05:32.00, bitrate: 2304 kb/s\n  Stream #0:0: Audio: pcm_s24le, 48000 Hz, stereo\n';
   const ffArgs = () => spawnSync.mock.calls.map((c) => c[1] as string[]);
   const invoked = () => lambdaSend.mock.calls.map((c) => JSON.parse(String((c[0] as { input: { Payload: Buffer } }).input.Payload)));
@@ -4086,6 +4086,48 @@ describe('several background clips', () => {
     expect(String(patched().videoError)).toContain('not switched on yet');
   });
 
+  /** The Lambda's own clock: 900 s at the start of a render. */
+  const ctx = (ms: number) => ({ getRemainingTimeInMillis: () => ms });
+
+  it('a prep function busy with another render says so — it does not blame a clip', async () => {
+    lambdaSend.mockRejectedValue(Object.assign(new Error('Rate exceeded'), { name: 'TooManyRequestsException' }));
+    // Room to start, none to wait and retry.
+    const res = await handler({ jobId: 'j1', render: render({ backgroundKeys: [C1, C2] }) } as never, ctx(290_000));
+    expect(res).toMatchObject({ ok: false });
+    expect(patched().videoError).toBe('the clip preparer is busy with another render — try again in a few minutes');
+  });
+
+  it('refuses before preparing anything when too little time is left to finish', async () => {
+    const res = await handler({ jobId: 'j1', render: render({ backgroundKeys: [C1, C2] }) } as never, ctx(200_000));
+    expect(res).toMatchObject({ ok: false });
+    expect(String(patched().videoError)).toContain('not enough time');
+    expect(lambdaSend).not.toHaveBeenCalled();
+  });
+
+  it('stops before the join when preparing took the time the song needs, and says the clips are kept', async () => {
+    let now = 1_000_000;
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+    lambdaSend.mockImplementation(async (cmd: { input: { Payload: Buffer } }) => {
+      now += 400_000;
+      const { prepareBackground: p } = JSON.parse(String(cmd.input.Payload));
+      return ok(prep(p.srcKey, '1440'));
+    });
+    try {
+      const res = await handler({ jobId: 'j1', render: render({ backgroundKeys: [C1, C2] }) } as never, ctx(880_000));
+      expect(res).toMatchObject({ ok: false });
+      expect(String(patched().videoError)).toContain('the prepared clips are kept');
+      expect(ffArgs().some((a) => a.includes('concat'))).toBe(false);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it('bounds each preparation by the time left', async () => {
+    await handler({ jobId: 'j1', render: render({ backgroundKeys: [C1, C2] }) } as never, ctx(880_000));
+    const opts = lambdaSend.mock.calls[0][1] as { abortSignal?: AbortSignal } | undefined;
+    expect(opts?.abortSignal).toBeDefined();
+  });
+
   it.each([
     ['a clip outside the workspace', [C1, 'images/x.mp4'], 'Background clip 2'],
     ['twenty-one clips', Array(21).fill(C1), 'Up to 20'],
@@ -4110,7 +4152,7 @@ describe('several background clips', () => {
  */
 describe('prepareBackground', () => {
   const C1 = 'audio/mastering/visual-story/vs_abc/candidates/c_1.mp4';
-  const OUT = 'audio/mastering/background-prepared/v1/1080/visual-story/vs_abc/candidates/c_1.mp4';
+  const OUT = 'audio/mastering/background-prepared/v1/1080/visual-story/vs_abc/candidates/c_1-mp4.mp4';
   const ffArgs = () => spawnSync.mock.calls.map((c) => c[1] as string[]);
   const puts = () => s3Send.mock.calls.map((c) => (c[0] as { input: Record<string, unknown> }).input).filter((i) => 'Body' in i);
 
@@ -4152,6 +4194,18 @@ describe('prepareBackground', () => {
     const res = await handler({ prepareBackground: { srcKey: C1, frame: { kind: 'vertical' } } } as never);
     expect(res).toEqual({ ok: false, message: 'the background video could not be read' });
     expect(puts()).toEqual([]);
+  });
+
+  it('the prep function takes nothing else — not a render, not an upload', async () => {
+    process.env.AWS_LAMBDA_FUNCTION_NAME = 'tamilagaval-background-prep';
+    try {
+      const res = await handler({ jobId: 'j1', render: { audioKey: 'audio/mastering/1_a_song-master-14LUFS.wav', coverKey: 'audio/mastering/c.jpg', height: 1440 } } as never);
+      expect(res).toMatchObject({ ok: false });
+      expect(s3Send).not.toHaveBeenCalled();
+      expect(send).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.AWS_LAMBDA_FUNCTION_NAME;
+    }
   });
 
   it.each([

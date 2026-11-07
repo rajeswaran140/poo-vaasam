@@ -473,6 +473,8 @@ export function MasteringStudio() {
    */
   const [backgrounds, setBackgrounds] = useState<BackgroundClip[]>([]);
   const [coverUploading, setCoverUploading] = useState(false);
+  /** Background clips uploading — its own flag: a cover finishing must not unlock Render mid-list. */
+  const [backgroundUploading, setBackgroundUploading] = useState(false);
   const [videoHeight, setVideoHeight] = useState<number>(1440);
   const [rendering, setRendering] = useState(false);
   /** The vertical hook clip for Reels/Shorts — a separate render from the video. */
@@ -1518,8 +1520,8 @@ export function MasteringStudio() {
       // finished before the first tick would have elapsed, and waiting anyway
       // would show a spinner for a file that already exists.
       // A moving video draws every frame — about the song's own length again.
-      // Several background clips are prepared first, a couple of minutes more.
-      const deadline = Date.now() + (motion !== 'none' || backgroundKeys.length > 1 ? 14 : 10) * 60 * 1000;
+      // Several background clips are prepared first: wait out the worker's whole 15 minutes.
+      const deadline = Date.now() + (backgroundKeys.length > 1 ? 16 : motion !== 'none' ? 14 : 10) * 60 * 1000;
       for (let attempt = 0; ; attempt++) {
         if (attempt > 0) await new Promise((r) => setTimeout(r, 4000));
         if (!mounted.current) return null;
@@ -1630,7 +1632,7 @@ export function MasteringStudio() {
       // A still clip is under a minute of work. A MOVING one filters every
       // frame — a 3-minute short measured 143 s — so it gets the video's budget,
       // and so does a background, whose loop is encoded first.
-      const deadline = Date.now() + (backgroundKeys.length > 1 ? 14 : motion !== 'none' || backgroundKeys.length > 0 ? 10 : 3) * 60 * 1000;
+      const deadline = Date.now() + (backgroundKeys.length > 1 ? 16 : motion !== 'none' || backgroundKeys.length > 0 ? 10 : 3) * 60 * 1000;
       for (let attempt = 0; ; attempt++) {
         if (attempt > 0) await new Promise((r) => setTimeout(r, 4000));
         if (!mounted.current) return null;
@@ -1695,8 +1697,8 @@ export function MasteringStudio() {
 
       // A moving whole song takes most of its own length to draw (5:32 measured
       // 294 s), and the worker has 15 minutes — so wait nearly that long.
-      // Several background clips are prepared first, a couple of minutes more.
-      const deadline = Date.now() + (motion !== 'none' || backgroundKeys.length > 1 ? 14 : 10) * 60 * 1000;
+      // Several background clips are prepared first: wait out the worker's whole 15 minutes.
+      const deadline = Date.now() + (backgroundKeys.length > 1 ? 16 : motion !== 'none' ? 14 : 10) * 60 * 1000;
       for (let attempt = 0; ; attempt++) {
         if (attempt > 0) await new Promise((r) => setTimeout(r, 4000));
         if (!mounted.current) return null;
@@ -3306,8 +3308,8 @@ export function MasteringStudio() {
                   onChange={setBackgrounds}
                   masterJobId={jobId}
                   songSeconds={job.editedDurationSec ?? null}
-                  disabled={rendering || shorting || verticaling}
-                  onBusyChange={setCoverUploading}
+                  disabled={rendering || shorting || verticaling || coverUploading}
+                  onBusyChange={setBackgroundUploading}
                   onError={setPanelError}
                   onAnnounce={setAnnounce}
                 />
@@ -3331,7 +3333,7 @@ export function MasteringStudio() {
                   type="button"
                   onClick={() => void renderVideo()}
                   disabled={
-                    !cover || rendering || coverUploading ||
+                    !cover || rendering || coverUploading || backgroundUploading ||
                     // An added image with no file or no readable time is
                     // unfinished — rendering would silently drop it.
                     (panelSlidesNow.length > 0 && slidesToCovers(cover.key, panelSlidesNow) === null)
@@ -3409,7 +3411,7 @@ export function MasteringStudio() {
                 <button
                   type="button"
                   onClick={() => void makeShort()}
-                  disabled={!cover || shorting || rendering || coverUploading || (panelSlidesNow.length > 0 && slidesToCovers(cover.key, panelSlidesNow) === null)}
+                  disabled={!cover || shorting || rendering || coverUploading || backgroundUploading || (panelSlidesNow.length > 0 && slidesToCovers(cover.key, panelSlidesNow) === null)}
                   className="inline-flex items-center gap-2 rounded-lg border border-indigo-300 px-4 py-2 text-sm font-medium text-indigo-700 transition hover:bg-indigo-50 disabled:opacity-60 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-900/20"
                 >
                   {shorting
@@ -3445,7 +3447,7 @@ export function MasteringStudio() {
                 <button
                   type="button"
                   onClick={() => void makeVertical()}
-                  disabled={!cover || verticaling || shorting || rendering || coverUploading || (panelSlidesNow.length > 0 && slidesToCovers(cover.key, panelSlidesNow) === null)}
+                  disabled={!cover || verticaling || shorting || rendering || coverUploading || backgroundUploading || (panelSlidesNow.length > 0 && slidesToCovers(cover.key, panelSlidesNow) === null)}
                   className="inline-flex items-center gap-2 rounded-lg border border-indigo-300 px-4 py-2 text-sm font-medium text-indigo-700 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-900/20"
                 >
                   {verticaling
@@ -4331,7 +4333,8 @@ export function MasteringStudio() {
                         masterJobId={m.id}
                         songSeconds={m.editedDurationSec ?? null}
                         disabled={rowBusy === m.id}
-                        onBusyChange={(on) => setRowBusy(on ? m.id : null)}
+                        // Clears only its own row's flag: the row may have been closed or switched meanwhile.
+                        onBusyChange={(on) => setRowBusy((prev) => (on ? m.id : prev === m.id ? null : prev))}
                         onError={(message) => setRowError(message ? { id: m.id, message } : null)}
                         onAnnounce={setAnnounce}
                       />

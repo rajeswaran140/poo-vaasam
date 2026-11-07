@@ -327,7 +327,8 @@ const PREPARED_PREFIX = `${MASTERING_PREFIX}background-prepared/v1/`;
  */
 export function preparedBackgroundKey(srcKey: string, frame: BackgroundFrame): string {
   const id = frame.kind === 'vertical' ? 'vertical' : String(frame.height);
-  return `${PREPARED_PREFIX}${id}/${srcKey.slice(MASTERING_PREFIX.length).replace(/\.[a-z0-9]+$/i, '')}.mp4`;
+  // The source's extension is kept (`c_1.mp4` → `c_1-mp4.mp4`): x.mp4 and x.mov are different clips.
+  return `${PREPARED_PREFIX}${id}/${srcKey.slice(MASTERING_PREFIX.length).replace(/\.([a-z0-9]+)$/i, '-$1')}.mp4`;
 }
 
 export function isPreparedBackgroundKey(key: unknown): key is string {

@@ -861,6 +861,27 @@ function readPickedWindow(spec: NonNullable<MasterEvent['short']>): { startSec: 
 /** The function each of several clips is prepared by — see master-background.ts. */
 const BACKGROUND_PREP_FUNCTION = process.env.BACKGROUND_PREP_FUNCTION || 'tamilagaval-background-prep';
 
+/**
+ * When THIS invocation is killed (Date.now() ms), set by the handler from the
+ * Lambda's own clock. Preparing several clips is the one step here that waits
+ * on others, so it is the one that checks.
+ */
+let invocationDeadline = Number.POSITIVE_INFINITY;
+
+/**
+ * Kept back for what follows the preparation: download the segments, join,
+ * repeat, mux and check. A ten-minute song at 1440p measured 118 s for the
+ * mux alone (2026-11-06); twice that, for the rest and for a cold S3.
+ */
+const BACKGROUND_FINISH_RESERVE_MS = 240_000;
+
+/** The shortest a clip has been seen to prepare in, cold start included. */
+const BACKGROUND_PREP_MIN_MS = 45_000;
+
+const PREP_BUSY = 'the clip preparer is busy with another render — try again in a few minutes';
+const PREP_SLOW =
+  'preparing the clips took too long to finish the render here — try again: the prepared clips are kept, so it will be quicker';
+
 /** The compose graph and quality a frame's background is encoded with — the still render's own. */
 function backgroundRecipe(frame: BackgroundFrame) {
   return frame.kind === 'vertical'
@@ -944,17 +965,29 @@ async function prepareBackground(
   }
 }
 
-/** Ask the background-prep function for one clip, and check it answered with THAT clip. */
-async function invokePrepare(srcKey: string, frame: BackgroundFrame): Promise<{ ok: true; key: string } | { ok: false; message: string }> {
+type PrepResult = { ok: true; key: string } | { ok: false; message: string; whole?: boolean };
+
+/**
+ * Ask the background-prep function for one clip, and check it answered with
+ * THAT clip. Each call is bounded by the time this render can still spend; a
+ * throttle (another render holding the ten) is waited out while there is time.
+ * `whole` marks a failure that is not about this clip.
+ */
+async function invokePrepare(srcKey: string, frame: BackgroundFrame): Promise<PrepResult> {
   const expected = preparedBackgroundKey(srcKey, frame);
-  // Two renders at once can ask for more than its ten: wait and ask again.
-  for (let attempt = 0; ; attempt++) {
+  for (;;) {
+    const budget = invocationDeadline - BACKGROUND_FINISH_RESERVE_MS - Date.now();
+    if (budget < BACKGROUND_PREP_MIN_MS) return { ok: false, message: PREP_SLOW, whole: true };
     try {
-      const res = await lambdaClient.send(new InvokeCommand({
-        FunctionName: BACKGROUND_PREP_FUNCTION,
-        InvocationType: 'RequestResponse',
-        Payload: Buffer.from(JSON.stringify({ prepareBackground: { srcKey, frame } })),
-      }));
+      const res = await lambdaClient.send(
+        new InvokeCommand({
+          FunctionName: BACKGROUND_PREP_FUNCTION,
+          InvocationType: 'RequestResponse',
+          Payload: Buffer.from(JSON.stringify({ prepareBackground: { srcKey, frame } })),
+        }),
+        // Never an infinite wait: a finite budget, or the prep function's own 300 s.
+        { abortSignal: AbortSignal.timeout(Number.isFinite(budget) ? budget : 300_000) }
+      );
       if (res.FunctionError) return { ok: false, message: 'it could not be prepared' };
       const out = JSON.parse(Buffer.from(res.Payload ?? new Uint8Array()).toString() || '{}') as { ok?: boolean; key?: unknown; message?: unknown };
       if (out.ok === true && out.key === expected) return { ok: true, key: expected };
@@ -962,10 +995,16 @@ async function invokePrepare(srcKey: string, frame: BackgroundFrame): Promise<{ 
     } catch (err) {
       const name = (err as { name?: string })?.name;
       if (name === 'ResourceNotFoundException') {
-        return { ok: false, message: 'joining several clips is not switched on yet (the background-prep function is missing)' };
+        return { ok: false, message: 'joining several clips is not switched on yet (the background-prep function is missing)', whole: true };
       }
-      if (name === 'TooManyRequestsException' && attempt < 6) {
-        await new Promise((r) => setTimeout(r, 20_000));
+      if (name === 'AbortError' || name === 'TimeoutError') return { ok: false, message: PREP_SLOW, whole: true };
+      if (name === 'TooManyRequestsException') {
+        // Jittered, so two waiting renders do not retry in step.
+        const wait = 15_000 + Math.floor(Math.random() * 15_000);
+        if (Date.now() + wait + BACKGROUND_PREP_MIN_MS + BACKGROUND_FINISH_RESERVE_MS > invocationDeadline) {
+          return { ok: false, message: PREP_BUSY, whole: true };
+        }
+        await new Promise((r) => setTimeout(r, wait));
         continue;
       }
       console.error('[master-worker] background prep invoke failed:', err instanceof Error ? err.message : String(err));
@@ -980,6 +1019,9 @@ async function invokePrepare(srcKey: string, frame: BackgroundFrame): Promise<{ 
  * by its place in the operator's list.
  */
 async function prepareBackgroundClips(keys: string[], frame: BackgroundFrame): Promise<{ ok: true; prepared: Map<string, string> } | { ok: false; message: string }> {
+  if (Date.now() + BACKGROUND_PREP_MIN_MS + BACKGROUND_FINISH_RESERVE_MS > invocationDeadline) {
+    return { ok: false, message: 'there was not enough time left to prepare the clips — try again' };
+  }
   const unique = [...new Set(keys)];
   const prepared = new Map<string, string>();
   let failure: string | null = null;
@@ -989,11 +1031,14 @@ async function prepareBackgroundClips(keys: string[], frame: BackgroundFrame): P
       const src = unique[next++];
       const r = await invokePrepare(src, frame);
       if (r.ok) prepared.set(src, r.key);
-      else failure ??= `background clip ${keys.indexOf(src) + 1}: ${r.message}`;
+      else failure ??= r.whole ? r.message : `background clip ${keys.indexOf(src) + 1}: ${r.message}`;
     }
   };
   await Promise.all(Array.from({ length: Math.min(BACKGROUND_PREP_CONCURRENCY, unique.length) }, lane));
-  return failure !== null ? { ok: false, message: failure } : { ok: true, prepared };
+  if (failure !== null) return { ok: false, message: failure };
+  // All ready, but the song still has to be laid under them: refused now, not killed mid-mux.
+  if (Date.now() + BACKGROUND_FINISH_RESERVE_MS > invocationDeadline) return { ok: false, message: PREP_SLOW };
+  return { ok: true, prepared };
 }
 
 /**
@@ -2676,6 +2721,13 @@ async function renderStemMix(spec: NonNullable<MasterEvent['stemMix']>, bucket: 
 }
 
 export const handler = async (event: MasterEvent, context?: { getRemainingTimeInMillis?: () => number }) => {
+  const remaining = context?.getRemainingTimeInMillis?.();
+  invocationDeadline = typeof remaining === 'number' ? Date.now() + remaining : Number.POSITIVE_INFINITY;
+  // The prep function is this same bundle with a 300 s budget: it does that one job only.
+  if (process.env.AWS_LAMBDA_FUNCTION_NAME === BACKGROUND_PREP_FUNCTION && !event?.prepareBackground) {
+    console.error('[master-worker] the background-prep function was sent another kind of event');
+    return { ok: false, message: 'this function only prepares background clips' };
+  }
   const jobId = event?.jobId;
   const s3Key = event?.s3Key;
   if (event?.analyse) {
