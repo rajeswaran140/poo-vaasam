@@ -8,9 +8,10 @@
  * It drives the same per-shot routes as the shot cards, one shot at a time, so
  * the server's reservations, budget cap and settles are unchanged. A clip
  * starts from the shot's chosen picture: a chosen STILL that is not yet the
- * first frame is pinned first. A 402 stops the run; a 429 waits and retries;
+ * first frame is pinned first, and a shot with no picture is left out. A 402 stops the run; a 429 waits and retries;
  * any other failure is named and the run goes on. Stop finishes the current
- * shot and starts no more. Started clips are followed here to the end, since
+ * shot and starts no more (it is checked after every wait); once every clip is
+ * started there is nothing left to stop, so Stop is hidden while they render. Started clips are followed here to the end, since
  * their shot cards are only mounted for the scene on screen. Errors render here.
  */
 
@@ -28,6 +29,9 @@ const RATE_LIMIT_TRIES = 3;
 const POLL_INTERVAL_MS = 10_000;
 const POLL_TIMEOUT_MS = 20 * 60_000;
 const OFFLINE = 'Could not reach the server.';
+const CLIP_MAYBE_STARTED = 'The connection dropped; the clip may have started. Open the scene to check.';
+/** post()'s status when Stop was pressed during a rate-limit wait: nothing was sent. */
+const STOPPED = -1;
 
 type Kind = 'pictures' | 'videos';
 
@@ -42,9 +46,17 @@ export function shotsNeedingPicture(shots: Shot[], candidates: Candidate[]): Sho
   return shots.filter((s) => !candidates.some((c) => of(s)(c) && c.mode === 'STILL'));
 }
 
-/** Shots with no clip yet and none rendering. */
-export function shotsNeedingVideo(shots: Shot[], candidates: Candidate[], genJobs: GenJob[]): Shot[] {
+/** Shots with no clip yet and none rendering (picture or not). */
+function shotsWithoutClip(shots: Shot[], candidates: Candidate[], genJobs: GenJob[]): Shot[] {
   return shots.filter((s) => !candidates.some((c) => of(s)(c) && c.mode !== 'STILL') && !genJobs.some((j) => of(s)(j) && inflight(j)));
+}
+
+/** A first frame is pinned, or the chosen picture is a still that can be. */
+const hasStartPicture = (s: Shot, candidates: Candidate[]) => !!s.firstFrameCandidateId || firstFrameToPin(s, candidates) !== null;
+
+/** Shots a clip can be made for now: no clip, a picture to start from, and a prompt (the route refuses an empty one). */
+export function shotsNeedingVideo(shots: Shot[], candidates: Candidate[], genJobs: GenJob[]): Shot[] {
+  return shotsWithoutClip(shots, candidates, genJobs).filter((s) => s.visualPrompt.trim() && hasStartPicture(s, candidates));
 }
 
 /** The chosen picture to pin as the clip's first frame, or null when none is needed. */
@@ -74,14 +86,18 @@ export function BatchPanel({ vsId, story, shots, candidates, genJobs, onChanged 
   const [failures, setFailures] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [overBudget, setOverBudget] = useState(false);
+  // Clips are started and now rendering on Grok: Stop has nothing left to stop.
+  const [rendering, setRendering] = useState(false);
   const stop = useRef(false);
   const mounted = useRef(true);
-  const abort = useRef(new AbortController());
+  const abort = useRef<AbortController>(new AbortController());
   const changed = useRef(onChanged);
   changed.current = onChanged;
   useEffect(() => {
     mounted.current = true;
-    const ctrl = abort.current;
+    // Made here, so a StrictMode remount in dev does not keep an aborted one (every wait would be skipped).
+    const ctrl = new AbortController();
+    abort.current = ctrl;
     return () => {
       mounted.current = false;
       ctrl.abort();
@@ -90,6 +106,7 @@ export function BatchPanel({ vsId, story, shots, candidates, genJobs, onChanged 
 
   const pictureShots = shotsNeedingPicture(shots, candidates);
   const videoShots = shotsNeedingVideo(shots, candidates, genJobs);
+  const needPictureFirst = shotsWithoutClip(shots, candidates, genJobs).filter((s) => !hasStartPicture(s, candidates)).length;
   const priceOf = (kind: Kind, list: Shot[]) =>
     list.reduce((n, s) => n + estimateCostUsd('grok', kind === 'pictures' ? 'STILL' : 'HERO', s.durationSec), 0);
   const picturePrice = priceOf('pictures', pictureShots);
@@ -111,7 +128,7 @@ export function BatchPanel({ vsId, story, shots, candidates, genJobs, onChanged 
       if (res.ok && json?.success) return { ok: true, data: json.data };
       if (res.status === 429 && attempt < RATE_LIMIT_TRIES) {
         await delay(RATE_LIMIT_WAIT_MS, abort.current.signal);
-        if (!mounted.current) return { ok: false, status: 0, error: OFFLINE };
+        if (!mounted.current || stop.current) return { ok: false, status: STOPPED, error: '' };
         continue;
       }
       return { ok: false, status: res.status, error: json?.error || `HTTP ${res.status}` };
@@ -159,10 +176,12 @@ export function BatchPanel({ vsId, story, shots, candidates, genJobs, onChanged 
     const started: { jobId: string; shot: Shot }[] = [];
     let made = 0;
     let tried = 0;
+    let refused = false;
     try {
       for (const s of list) {
         if (stop.current || !mounted.current) break;
         if (tried > 0) await delay(START_GAP_MS, abort.current.signal);
+        if (stop.current || !mounted.current) break;
         tried++;
         const base = `/api/admin/visual-story/${vsId}/shots`;
         setProgress(kind === 'pictures' ? `Picture ${tried} of ${list.length}…` : `Starting clip ${tried} of ${list.length}…`);
@@ -170,6 +189,7 @@ export function BatchPanel({ vsId, story, shots, candidates, genJobs, onChanged 
           const pin = firstFrameToPin(s, candidates);
           if (pin) {
             const r = await post(base, { op: 'update', sceneOrder: s.sceneOrder, shotOrder: s.shotOrder, firstFrameCandidateId: pin });
+            if (!r.ok && r.status === STOPPED) break;
             if (!r.ok) {
               failed.push(`${label(s)}: ${r.error}`);
               continue;
@@ -184,24 +204,29 @@ export function BatchPanel({ vsId, story, shots, candidates, genJobs, onChanged 
           } else if (r.data?.jobId) started.push({ jobId: String(r.data.jobId), shot: s });
           continue;
         }
+        if (r.status === STOPPED) break;
         if (r.status === 402 || r.status === 401 || r.status === 403) {
           setError(r.error);
           setOverBudget(r.status === 402);
+          refused = true;
           break;
         }
-        failed.push(`${label(s)}: ${r.error}`);
+        // 9: a video POST that never answered may still have been accepted (and charged).
+        failed.push(`${label(s)}: ${kind === 'videos' && r.status === 0 ? CLIP_MAYBE_STARTED : r.error}`);
       }
       if (kind === 'videos' && started.length) {
         changed.current();
+        setRendering(true);
         made = await follow(started, failed);
       }
     } finally {
       if (mounted.current) {
         const noun = kind === 'pictures' ? 'pictures' : 'clips';
-        setSummary(`${stop.current ? 'Stopped' : 'Done'}: ${made} of ${list.length} ${noun} made.`);
+        setSummary(`${stop.current || refused ? 'Stopped' : 'Done'}: ${made} of ${list.length} ${noun} made.`);
         setFailures(failed);
         setProgress(null);
         setRunning(null);
+        setRendering(false);
         changed.current();
       }
     }
@@ -262,13 +287,20 @@ export function BatchPanel({ vsId, story, shots, candidates, genJobs, onChanged 
         {button('videos', videoShots.length, videoPrice, 'Videos for every shot')}
       </div>
       {pictureShots.length === 0 && <p className="text-sm text-gray-600 dark:text-gray-400">Every shot has a picture.</p>}
+      {needPictureFirst > 0 && (
+        <p className="text-sm text-gray-600 dark:text-gray-400">{needPictureFirst === 1 ? '1 shot needs a picture before its clip.' : `${needPictureFirst} shots need a picture before their clips.`}</p>
+      )}
       {confirming && !running && confirmBox(confirming)}
       {running && (
         <p className="flex flex-wrap items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
           <span>{progress}</span>
-          <button type="button" onClick={() => (stop.current = true)} className="text-blue-700 hover:underline dark:text-blue-400">
-            Stop
-          </button>
+          {rendering ? (
+            <span className="text-gray-600 dark:text-gray-400">The clips keep rendering even if you leave this page.</span>
+          ) : (
+            <button type="button" onClick={() => (stop.current = true)} className="text-blue-700 hover:underline dark:text-blue-400">
+              Stop
+            </button>
+          )}
         </p>
       )}
       {error && (

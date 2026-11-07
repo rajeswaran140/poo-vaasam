@@ -76,6 +76,7 @@ describe('pictures for every shot', () => {
     expect(posts('/still')).toHaveLength(1);
     expect(screen.getByRole('alert')).toHaveTextContent("This would go over the story's budget");
     expect(screen.getByRole('button', { name: 'Raise budget' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Stopped: 0 of 2 pictures made.');
   });
 
   it('names a shot that failed and carries on with the rest', async () => {
@@ -156,17 +157,29 @@ describe('videos for every shot', () => {
     ]);
     expect(screen.getByRole('status')).toHaveTextContent('Done: 2 of 2 clips made.');
     expect(onChanged).toHaveBeenCalled();
+    // The pin goes in before that shot's clip is asked for.
+    const order = mockFetch.mock.calls.map(([u]) => String(u)).filter((u) => u.endsWith('/shots') || u.endsWith('/video'));
+    expect(order.slice(0, 2)).toEqual([`/api/admin/visual-story/${VS}/shots`, `/api/admin/visual-story/${VS}/shots/001-002/video`]);
   });
 
   it('skips a shot whose clip is already rendering', () => {
     routes(() => undefined);
-    setup([shot(1, 1, 8), shot(1, 2, 7)], [], [{ jobId: 'gj_x', status: 'running', sceneOrder: 1, shotOrder: 1 } as GenJob]);
+    setup(
+      [shot(1, 1, 8, { selectedCandidateId: 'cd_a' }), shot(1, 2, 7, { selectedCandidateId: 'cd_b' })],
+      [cand('cd_a', 1, 1, 'STILL'), cand('cd_b', 1, 2, 'STILL')],
+      [{ jobId: 'gj_x', status: 'running', sceneOrder: 1, shotOrder: 1 } as GenJob]
+    );
     expect(screen.getByRole('button', { name: 'Videos for every shot (1 shot · $0.56)' })).toBeInTheDocument();
   });
 
   it('will not start over the budget cap', () => {
     routes(() => undefined);
-    setup([shot(1, 1, 15), shot(1, 2, 15)], [], [], { ...story, budgetUsdCap: 2 } as VisualStory);
+    setup(
+      [shot(1, 1, 15, { selectedCandidateId: 'cd_a' }), shot(1, 2, 15, { selectedCandidateId: 'cd_b' })],
+      [cand('cd_a', 1, 1, 'STILL'), cand('cd_b', 1, 2, 'STILL')],
+      [],
+      { ...story, budgetUsdCap: 2 } as VisualStory
+    );
     fireEvent.click(screen.getByRole('button', { name: /Videos for every shot/ }));
     expect(screen.getByText("That is over this story's budget cap.")).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled();
@@ -180,12 +193,81 @@ describe('videos for every shot', () => {
       if (u.endsWith('video-jobs/gj_2')) return json({ success: true, data: { jobId: 'gj_2', status: 'succeeded' } });
       return undefined;
     });
-    setup([shot(1, 1, 8), shot(1, 2, 7)]);
+    setup(withPictures([shot(1, 1, 8), shot(1, 2, 7)]), pics([shot(1, 1, 8), shot(1, 2, 7)]));
     fireEvent.click(screen.getByRole('button', { name: /Videos for every shot/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     await flush();
     await flush();
     expect(screen.getByRole('status')).toHaveTextContent('Done: 1 of 2 clips made.');
     expect(screen.getByText('Scene 1, shot 1: The video service rejected the request.')).toBeInTheDocument();
+  });
+});
+
+const withPictures = (list: Shot[]) => list.map((s) => ({ ...s, selectedCandidateId: `cd_${s.sceneOrder}${s.shotOrder}` }));
+const pics = (list: Shot[]) => list.map((s) => cand(`cd_${s.sceneOrder}${s.shotOrder}`, s.sceneOrder, s.shotOrder, 'STILL'));
+
+describe('review fixes', () => {
+  it('Stop pressed in the gap between shots pays for no more', async () => {
+    routes(() => undefined);
+    setup([shot(1, 1, 8), shot(1, 2, 7), shot(1, 3, 6)]);
+    fireEvent.click(screen.getByRole('button', { name: /Pictures for every shot/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await act(async () => { await jest.advanceTimersByTimeAsync(1000); }); // first picture done, now in the gap
+    expect(posts('/still')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    await flush();
+    expect(posts('/still')).toHaveLength(1);
+    expect(screen.getByRole('status')).toHaveTextContent('Stopped: 1 of 3 pictures made.');
+  });
+
+  it('Stop pressed while waiting out a rate limit does not resend', async () => {
+    routes((u, i) => (u.includes('/still') && i?.method === 'POST' ? json({ success: false, error: 'Too many requests' }, 429) : undefined));
+    setup([shot(1, 1, 8)]);
+    fireEvent.click(screen.getByRole('button', { name: /Pictures for every shot/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await act(async () => { await jest.advanceTimersByTimeAsync(1000); });
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    await flush();
+    expect(posts('/still')).toHaveLength(1);
+    expect(screen.getByRole('status')).toHaveTextContent('Stopped: 0 of 1 pictures made.');
+  });
+
+  it('while clips render there is no Stop, and it says they keep rendering', async () => {
+    routes((u, i) => {
+      if (u.endsWith('/video') && i?.method === 'POST') return json({ success: true, data: { jobId: 'gj_1' } }, 202);
+      if (u.endsWith('video-jobs/gj_1')) return json({ success: true, data: { jobId: 'gj_1', status: 'running' } });
+      return undefined;
+    });
+    const list = withPictures([shot(1, 1, 8)]);
+    setup(list.map((s) => ({ ...s, firstFrameCandidateId: s.selectedCandidateId! })), pics(list));
+    fireEvent.click(screen.getByRole('button', { name: /Videos for every shot/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await act(async () => { await jest.advanceTimersByTimeAsync(1000); });
+    expect(screen.getByText(/Rendering: 0 of 1 clips finished/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument();
+    expect(screen.getByText(/keep rendering even if you leave this page/)).toBeInTheDocument();
+  });
+
+  it('leaves out shots with no chosen picture or no prompt, and says how many need a picture', () => {
+    routes(() => undefined);
+    setup(
+      [shot(1, 1, 8, { selectedCandidateId: 'cd_a' }), shot(1, 2, 7), shot(1, 3, 6, { selectedCandidateId: 'cd_c', visualPrompt: '  ' })],
+      [cand('cd_a', 1, 1, 'STILL'), cand('cd_c', 1, 3, 'STILL')]
+    );
+    expect(screen.getByRole('button', { name: 'Videos for every shot (1 shot · $0.64)' })).toBeInTheDocument();
+    expect(screen.getByText('1 shot needs a picture before its clip.')).toBeInTheDocument();
+  });
+
+  it('a dropped connection on a clip says it may have started', async () => {
+    mockFetch.mockImplementation(async (u: string, i?: RequestInit) => {
+      if (u.endsWith('/video') && i?.method === 'POST') throw new TypeError('fetch failed');
+      return json({ success: true, data: {} });
+    });
+    const list = withPictures([shot(1, 1, 8)]);
+    setup(list.map((s) => ({ ...s, firstFrameCandidateId: s.selectedCandidateId! })), pics(list));
+    fireEvent.click(screen.getByRole('button', { name: /Videos for every shot/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await flush();
+    expect(screen.getByText(/Scene 1, shot 1: The connection dropped; the clip may have started/)).toBeInTheDocument();
   });
 });

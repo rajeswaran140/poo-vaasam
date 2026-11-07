@@ -32,8 +32,8 @@ Once a story has shots, **Check storyboard** sits above them. Press it before yo
 ### 2c. Every shot at once
 Below the check, **Every shot** has two buttons; each shows how many shots and the total, and confirms with the story total first.
 - **Pictures for every shot** makes one picture ($0.02) for each shot that has none. The first picture of a shot is chosen for it.
-- **Videos for every shot** makes a clip ($0.08 a second) for each shot that has no clip and none rendering. Each clip starts from the shot's chosen picture (a chosen still is set as the first frame first). You see the clips only after they are made, so try one or two by hand first.
-- One shot at a time through the same routes as the shot cards, so the budget cap holds. Over the cap it stops and offers **Raise budget**; a shot that fails is named and the rest go on; **Stop** finishes the current shot and starts no more. Clips already started keep rendering after Stop or leaving the page — open their scenes to see them.
+- **Videos for every shot** makes a clip ($0.08 a second) for each shot that has a chosen picture, no clip and none rendering; a shot with no picture is left out and counted ("N shots need a picture before their clips"). Each clip starts from that picture (a chosen still is set as the first frame first). You see the clips only after they are made, so try one or two by hand first.
+- One shot at a time through the same routes as the shot cards, so the budget cap holds. Over the cap it stops and offers **Raise budget**; a shot that fails is named and the rest go on; **Stop** finishes the current shot and starts no more; once every clip has started there is nothing to stop, so it is hidden while they render. Clips already started keep rendering after Stop or leaving the page — open their scenes to see them.
 
 ### 3. Edit
 What the studio lets you change by hand today:
