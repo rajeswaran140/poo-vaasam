@@ -35,7 +35,11 @@ Instead of a draft (or beside one), **Video from your pictures** builds the stor
 - Each row: the picture, its **seconds** (1-15), and **Still** (a slow zoom in the render, free) or **Moving** (Grok animates it starting from your picture, $0.08 a second). A moving row has **How it moves**, a short prompt (pre-filled: gentle, natural movement, keep the picture as it is).
 - **Total N s of M s** must match the story's length; **Fit to M s** scales every row (1-15 s each).
 - **Make the video (N moving · $X)** confirms with the story total, then: makes a clip for each moving picture that has none yet (one at a time; a clip already made is not paid again), waits for them, chooses each clip for its shot and each still picture for a still shot, and starts **Render video**. A failed clip, a row with no picture, or a total that does not fit stops it before the render, and says why.
+- Each moving picture is pinned as its shot's first frame before its clip is made, so a later re-make (from the shot card) still starts from it. A clip already rendering is waited for and used, not paid again. **Remove** deletes a row (e.g. one whose upload failed).
+- A video too long for the render worker (stills cost more render time than clips) is refused before anything is paid.
+- The panel shows only for a story built from pictures (every shot in a "Your pictures" scene) or an empty one; a drafted story keeps its shot cards.
 - Grok makes at most 15 s per clip, so a long video is always several clips joined; the render joins them into one video.
+- Known gap: a clip made for 8 s on a row later set to 15 s holds its last frame for the extra 7 s (shorter cuts it); re-make that clip from the shot card.
 
 ### 2c. Every shot at once
 Below the check, **Every shot** has two buttons; each shows how many shots and the total, and confirms with the story total first.

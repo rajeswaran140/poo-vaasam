@@ -43,7 +43,8 @@ export async function postWithRetry(url: string, body: unknown, ctl: RunControl)
       return { ok: false, status: 0, error: OFFLINE };
     }
     const json = await res.json().catch(() => null);
-    if (res.ok && json?.success) return { ok: true, data: json.data };
+    // Most routes answer under `data`; the upload presign answers at the top level.
+    if (res.ok && json?.success) return { ok: true, data: json.data ?? json };
     if (res.status === 429 && attempt < RATE_LIMIT_TRIES) {
       await delay(RATE_LIMIT_WAIT_MS, ctl.signal);
       if (!ctl.isMounted() || ctl.isStopped?.()) return { ok: false, status: STOPPED, error: '' };

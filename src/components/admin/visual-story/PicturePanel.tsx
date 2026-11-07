@@ -18,6 +18,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { putToS3 } from '@/lib/mastering-upload-client';
 import { delay } from '@/lib/poll-job';
+import { estimateAssembleSec, MAX_ASSEMBLE_SEC } from '@/lib/visual-story-assemble';
 import { fitDurations, MAX_FIT_SEC, MIN_FIT_SEC } from '@/lib/visual-story-fit';
 import { followClips, postWithRetry, STOPPED, type Started } from '@/lib/visual-story-runner';
 import { estimateCostUsd } from '@/services/video/cost';
@@ -55,6 +56,10 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
   const [error, setError] = useState<string | null>(null);
   const [overBudget, setOverBudget] = useState(false);
   const [rendering, setRendering] = useState(false);
+  // Stop is offered only while the video is being made (not during uploads or Fit).
+  const [making, setMaking] = useState(false);
+  // Bumped when a save fails, so the seconds boxes show the saved value again.
+  const [nonce, setNonce] = useState(0);
   const stop = useRef(false);
   const mounted = useRef(true);
   const abort = useRef<AbortController>(new AbortController());
@@ -74,6 +79,9 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
   const post = (url: string, body?: unknown) => postWithRetry(url, body, ctl());
   const base = `/api/admin/visual-story/${vsId}`;
 
+  // Only a story built here: a drafted story's shots are left to the shot cards.
+  const pictureScenes = scenes.filter((sc) => sc.heading === SCENE_HEADING).map((sc) => sc.order);
+  const ownsStory = shots.every((s) => pictureScenes.includes(s.sceneOrder));
   const rows = [...shots].sort((a, b) => a.sceneOrder - b.sceneOrder || a.shotOrder - b.shotOrder);
   const nameOf = (s: Shot) => `Picture ${rows.indexOf(s) + 1}`;
   const windowSec = story.windowEndSec - story.windowStartSec;
@@ -83,19 +91,26 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
     return sel?.mode === 'STILL' ? sel : newest(candidates.filter((c) => of(s)(c) && c.mode === 'STILL'));
   };
   const clipOf = (s: Shot) => newest(candidates.filter((c) => of(s)(c) && c.mode !== 'STILL'));
-  const rendersNow = (s: Shot) => genJobs.some((j) => of(s)(j) && (j.status === 'submitted' || j.status === 'running'));
+  const jobNow = (s: Shot) => genJobs.find((j) => of(s)(j) && (j.status === 'submitted' || j.status === 'running'));
+  const rendersNow = (s: Shot) => !!jobNow(s);
   const toAnimate = rows.filter((s) => isMoving(s) && !clipOf(s) && !rendersNow(s));
   const price = toAnimate.reduce((n, s) => n + estimateCostUsd('grok', 'HERO', s.durationSec), 0);
   const missing = rows.filter((s) => !picOf(s));
   const fits = total === windowSec;
   const after = story.spentUsd + story.reservedUsd + price;
   const overCap = after > story.budgetUsdCap + 1e-9;
-  const canMake = rows.length > 0 && fits && missing.length === 0 && !busy;
+  // The worker's own limit, checked before anything is paid (clips assemble faster than stills).
+  const workSec = estimateAssembleSec(rows.map((s) => ({ key: isMoving(s) ? 'clip.mp4' : 'picture.jpg', durationSec: s.durationSec })));
+  const tooLong = workSec > MAX_ASSEMBLE_SEC;
+  const canMake = rows.length > 0 && fits && missing.length === 0 && !tooLong && !busy;
 
   const update = async (s: Shot, fields: Record<string, unknown>) => {
     setError(null);
     const r = await post(`${base}/shots`, { op: 'update', sceneOrder: s.sceneOrder, shotOrder: s.shotOrder, ...fields });
-    if (!r.ok && r.status !== STOPPED) setError(`${nameOf(s)}: ${r.error}`);
+    if (!r.ok) {
+      setError(`${nameOf(s)}: ${r.error || 'Not saved.'}`);
+      setNonce((n) => n + 1);
+    }
     return r.ok;
   };
 
@@ -105,9 +120,10 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
     setError(null);
     setSummary(null);
     setFailures([]);
+    stop.current = false;
     const failed: string[] = [];
     try {
-      let sceneOrder = scenes.length ? Math.max(...scenes.map((s) => s.order)) : 0;
+      let sceneOrder = pictureScenes.length ? Math.max(...pictureScenes) : 0;
       if (!sceneOrder) {
         const r = await post(`${base}/scenes`, { op: 'create', heading: SCENE_HEADING, summary: '' });
         const order = r.ok ? Number((r.data?.scene as { order?: number } | undefined)?.order) : NaN;
@@ -159,6 +175,7 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
       return;
     }
     setBusy(true);
+    stop.current = false;
     try {
       for (const [i, s] of rows.entries()) {
         if (next[i] !== s.durationSec && !(await update(s, { durationSec: next[i] }))) break;
@@ -169,16 +186,34 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
     }
   };
 
+  const remove = async (s: Shot) => {
+    setBusy(true);
+    setError(null);
+    stop.current = false;
+    try {
+      const r = await post(`${base}/shots`, { op: 'delete', sceneOrder: s.sceneOrder, shotOrder: s.shotOrder });
+      if (!r.ok) setError(`${nameOf(s)}: ${r.error}`);
+    } finally {
+      if (mounted.current) setBusy(false);
+      changed.current();
+    }
+  };
+
   const make = async () => {
     setConfirming(false);
     setBusy(true);
+    setMaking(true);
     setSummary(null);
     setError(null);
     setOverBudget(false);
     setFailures([]);
     stop.current = false;
     const failed: string[] = [];
-    const started: Started[] = [];
+    // A moving picture's clip already rendering is followed too: it is paid for, so it is used.
+    const started: Started[] = rows.flatMap((s) => {
+      const j = isMoving(s) && !clipOf(s) ? jobNow(s) : undefined;
+      return j ? [{ jobId: j.jobId, shot: s }] : [];
+    });
     let ready = true;
     try {
       // 1. Start a clip for each moving picture without one (it starts from the chosen picture).
@@ -186,6 +221,17 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
         if (i > 0) await delay(START_GAP_MS, abort.current.signal);
         if (stop.current || !mounted.current) break;
         setProgress(`Starting clip ${i + 1} of ${toAnimate.length}…`);
+        // Pin the picture, so the clip — and any re-make after the clip is chosen — starts from it.
+        const picture = picOf(s);
+        if (picture && s.firstFrameCandidateId !== picture.candId) {
+          const pinned = await post(`${base}/shots`, { op: 'update', sceneOrder: s.sceneOrder, shotOrder: s.shotOrder, firstFrameCandidateId: picture.candId });
+          if (!pinned.ok) {
+            ready = false;
+            if (pinned.status === STOPPED) break;
+            failed.push(`${nameOf(s)}: ${pinned.error}`);
+            continue;
+          }
+        }
         const r = await post(`${base}/shots/${shotKey(s)}/video`);
         if (r.ok && r.data?.jobId) {
           started.push({ jobId: String(r.data.jobId), shot: s });
@@ -224,7 +270,12 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
       setProgress('Choosing each picture and clip…');
       for (const s of rows) {
         const want = isMoving(s) ? (made.get(shotKey(s)) ?? clipOf(s)?.candId) : picOf(s)?.candId;
-        if (!want || want === s.selectedCandidateId) continue;
+        if (!want) {
+          failed.push(`${nameOf(s)}: ${isMoving(s) ? 'it has no clip yet.' : 'it has no picture yet.'}`);
+          ready = false;
+          continue;
+        }
+        if (want === s.selectedCandidateId) continue;
         const r = await post(`${base}/select`, { sceneOrder: s.sceneOrder, shotOrder: s.shotOrder, candId: want });
         if (!r.ok) {
           failed.push(`${nameOf(s)}: ${r.error}`);
@@ -245,11 +296,14 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
         setFailures(failed);
         setProgress(null);
         setRendering(false);
+        setMaking(false);
         setBusy(false);
         changed.current();
       }
     }
   };
+
+  if (!ownsStory) return null;
 
   return (
     <section aria-label="Video from your pictures" className="space-y-3 rounded-lg border border-gray-200 p-4 dark:border-gray-700">
@@ -290,7 +344,7 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
                       max={MAX_FIT_SEC}
                       aria-label={`Seconds for ${name.toLowerCase()}`}
                       defaultValue={s.durationSec}
-                      key={`${shotKey(s)}-${s.durationSec}`}
+                      key={`${shotKey(s)}-${s.durationSec}-${nonce}`}
                       disabled={busy}
                       onBlur={(e) => {
                         const v = Math.round(Number(e.target.value));
@@ -310,6 +364,15 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
                       <option value="moving">{`Moving (${usd(estimateCostUsd('grok', 'HERO', s.durationSec))})`}</option>
                     </select>
                     {isMoving(s) && clipOf(s) && <span className="text-green-700 dark:text-green-400">Clip made</span>}
+                    <button
+                      type="button"
+                      disabled={busy}
+                      aria-label={`Remove ${name.toLowerCase()}`}
+                      onClick={() => void remove(s)}
+                      className="text-blue-700 hover:underline disabled:opacity-50 dark:text-blue-400"
+                    >
+                      Remove
+                    </button>
                   </div>
                   {isMoving(s) && (
                     <label className="block text-gray-700 dark:text-gray-300">
@@ -347,6 +410,11 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
         </div>
       )}
 
+      {tooLong && (
+        <p className="text-sm text-red-600 dark:text-red-400">
+          {`This video is too long to render in one go (about ${Math.ceil(workSec / 60)} minutes of work; the most is ${MAX_ASSEMBLE_SEC / 60}). Make more of the pictures Moving, or make a shorter story.`}
+        </p>
+      )}
       {rows.length > 0 && (
         <button
           type="button"
@@ -389,7 +457,7 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
           {rendering ? (
             <span className="text-gray-600 dark:text-gray-400">The clips keep rendering even if you leave this page.</span>
           ) : (
-            busy && (
+            making && (
               <button type="button" onClick={() => (stop.current = true)} className="text-blue-700 hover:underline dark:text-blue-400">
                 Stop
               </button>

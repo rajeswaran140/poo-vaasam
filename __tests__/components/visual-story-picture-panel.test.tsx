@@ -70,7 +70,8 @@ it('adding pictures to an empty story makes a scene, one still shot per picture,
     if (u.endsWith('/shots') && i?.method === 'POST') return json({ success: true, data: { shot: { sceneOrder: 1, shotOrder: ++shotNo } } }, 201);
     if (u.endsWith('/upload')) {
       const b = JSON.parse(String(i?.body));
-      return b.op === 'presign' ? json({ success: true, data: { uploadUrl: 'https://s3', fields: {}, key: `k${shotNo}` } }) : json({ success: true, data: {} }, 201);
+      // The real route answers presign at the top level, confirm under data.
+      return b.op === 'presign' ? json({ success: true, uploadUrl: 'https://s3', fields: {}, key: `k${shotNo}` }) : json({ success: true, data: { candidate: { candId: `cd_up${shotNo}` } } }, 201);
     }
     return undefined;
   });
@@ -87,6 +88,8 @@ it('adding pictures to an empty story makes a scene, one still shot per picture,
   ]);
   expect(c.filter((x) => x.url.endsWith('/shots/001-002/upload')).map((x) => x.body.op)).toEqual(['presign', 'confirm']);
   expect(putToS3).toHaveBeenCalledTimes(2);
+  expect((putToS3 as jest.Mock).mock.calls[0][0]).toBe('https://s3');
+  expect(screen.queryByRole('list', { name: 'What went wrong' })).not.toBeInTheDocument();
   expect(onChanged).toHaveBeenCalled();
 });
 
@@ -127,6 +130,8 @@ it('animates only the moving picture, chooses its clip, then renders', async () 
   await flush();
   await flush();
   expect(calls()).toEqual([
+    // The picture is pinned first, so a later re-make still starts from it once the clip is chosen.
+    { url: `/api/admin/visual-story/${VS}/shots`, body: { op: 'update', sceneOrder: 1, shotOrder: 1, firstFrameCandidateId: 'cd_p1' } },
     { url: `/api/admin/visual-story/${VS}/shots/001-001/video`, body: undefined },
     { url: `/api/admin/visual-story/${VS}/select`, body: { sceneOrder: 1, shotOrder: 1, candId: 'cd_1700000000001_aaaaaaaa' } },
     { url: `/api/admin/visual-story/${VS}/render`, body: undefined },
@@ -181,4 +186,68 @@ it('will not start over the budget cap', () => {
   fireEvent.click(screen.getByRole('button', { name: /Make the video/ }));
   expect(screen.getByText("That is over this story's budget cap.")).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled();
+});
+
+describe('review fixes', () => {
+  it('a clip already rendering is waited for and used, not left out or paid again', async () => {
+    routes((u, i) => {
+      if (u.includes('/video-jobs/gj_1700000000002_bbbbbbbb')) return json({ success: true, data: { jobId: 'gj_1700000000002_bbbbbbbb', status: 'succeeded' } });
+      if (u.endsWith('/render') && i?.method === 'POST') return json({ success: true, data: { renderId: 'rd_1' } }, 202);
+      return undefined;
+    });
+    setup({
+      shots: [shot(1, 8, { mode: 'HERO', firstFrameCandidateId: 'cd_p1' }), shot(2, 8)],
+      genJobs: [{ jobId: 'gj_1700000000002_bbbbbbbb', status: 'running', sceneOrder: 1, shotOrder: 1 } as GenJob],
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Make the video (0 moving · $0.00)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await flush();
+    expect(calls().some((x) => x.url.endsWith('/video'))).toBe(false);
+    expect(calls()).toContainEqual({ url: `/api/admin/visual-story/${VS}/select`, body: { sceneOrder: 1, shotOrder: 1, candId: 'cd_1700000000002_bbbbbbbb' } });
+    expect(calls().at(-1)!.url).toMatch(/\/render$/);
+  });
+
+  it('a moving picture that ends with no clip stops before the render', async () => {
+    routes(() => undefined);
+    // Moving, no clip, and its clip cannot be started (no picture to pin is fine; the route refuses).
+    routes((u, i) => (u.endsWith('/video') && i?.method === 'POST' ? json({ success: false, error: 'Write a visual prompt first.' }, 400) : undefined));
+    setup({ shots: [shot(1, 8, { mode: 'HERO' }), shot(2, 8)] });
+    fireEvent.click(screen.getByRole('button', { name: /Make the video/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await flush();
+    expect(calls().some((x) => x.url.endsWith('/render'))).toBe(false);
+    expect(screen.getByRole('status')).toHaveTextContent('Not rendered');
+  });
+
+  it('is not shown for a drafted story (shots outside the pictures scene)', () => {
+    routes(() => undefined);
+    setup({ scenes: [{ order: 1, heading: 'Morning by the sea', summary: 's' }] });
+    expect(screen.queryByRole('region', { name: 'Video from your pictures' })).not.toBeInTheDocument();
+  });
+
+  it('refuses before paying when the render would be too long for the worker', () => {
+    routes(() => undefined);
+    const many = Array.from({ length: 41 }, (_, i) => shot(i + 1, 15));
+    setup({ shots: many, candidates: many.map((s) => pic(s.shotOrder)), story: { ...story, windowEndSec: 615 } as VisualStory });
+    expect(screen.getByText(/too long to render in one go/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Make the video/ })).toBeDisabled();
+  });
+
+  it('a row can be removed', async () => {
+    routes(() => undefined);
+    setup({ shots: [shot(1, 8), shot(2, 8, { selectedCandidateId: null })], candidates: [pic(1)] });
+    fireEvent.click(screen.getByRole('button', { name: 'Remove picture 2' }));
+    await flush();
+    expect(calls()).toEqual([{ url: `/api/admin/visual-story/${VS}/shots`, body: { op: 'delete', sceneOrder: 1, shotOrder: 2 } }]);
+  });
+
+  it('Stop is not offered while pictures upload', async () => {
+    let release: () => void = () => {};
+    mockFetch.mockImplementation(() => new Promise((r) => { release = () => r(json({ success: true, data: { scene: { order: 1 } } }, 201)); }));
+    setup({ scenes: [], shots: [], candidates: [] });
+    fireEvent.change(screen.getByLabelText(/Add pictures/), { target: { files: [new File(['a'], 'one.jpg', { type: 'image/jpeg' })] } });
+    await act(async () => {});
+    expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument();
+    await act(async () => release());
+  });
 });
