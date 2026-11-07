@@ -6,7 +6,9 @@
  * overlays → stream-copy join over the extracted audio. Then it checks what
  * would be silent if wrong:
  *
- *   - the audio packets are bit-identical: source = extracted .mka = output;
+ *   - the audio packets are bit-identical: source = extracted .m4a/.mov = output,
+ *     AND land at the same times (pts, start_time, duration) — a hash alone
+ *     cannot see a container that drops the AAC priming offset;
  *   - the output has the source's frame count, duration (within one frame)
  *     and a constant frame step across every join (no drift vs the audio);
  *   - a full decode of the output prints no errors;
@@ -21,6 +23,7 @@
  * ffprobe; the box's ffprobe only READS metadata here.
  *
  * Run: FFMPEG_PATH=/path/to/layer/bin/ffmpeg npx tsx scripts/bench-video-text.ts <src.mp4> [workDir]
+ * (BENCH_SKIP_COST=1 skips the timing section and runs only the checks.)
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync, rmSync } from 'node:fs';
@@ -29,7 +32,7 @@ import { join } from 'node:path';
 import {
   SEGMENT_TARGET_SEC, CHUNK_CRF, CHUNK_PRESET,
   parseSegmentList, buildSegmentArgs, overlaysForSegment, buildChunkArgs,
-  buildJoinMuxArgs, buildAudioHashArgs, buildAudioExtractArgs,
+  buildJoinMuxArgs, buildAudioHashArgs, buildAudioExtractArgs, audioExtractExtFor,
 } from '../src/lib/video-text/render-plan';
 
 const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg';
@@ -73,7 +76,7 @@ function pixel(path: string, frame: number, x: number, y: number): number[] {
 }
 
 // ---------------------------------------------------------------- 1. extract + segment
-const audio = join(dir, 'audio.mka');
+const audio = join(dir, `audio${audioExtractExtFor(src)}`);
 ff(buildAudioExtractArgs(src, audio));
 const listPath = join(dir, 'segments.csv');
 ff(buildSegmentArgs(src, join(dir, 'seg%03d.mp4'), listPath, SEGMENT_TARGET_SEC));
@@ -124,7 +127,7 @@ function costAt(height: number, seg: string, segLen: number) {
 console.log('COST (dev box, wall s per s of video; best of 2 except the -loop 1 form)');
 const seg0Len = segs[0].endSec - segs[0].startSec;
 const pct = (a: number, b: number) => `${a >= b ? '+' : ''}${((a / b - 1) * 100).toFixed(0)}%`;
-for (const h of [1440, 1080]) {
+for (const h of process.env.BENCH_SKIP_COST ? [] : [1440, 1080]) {
   const c = costAt(h, join(dir, segs[0].file), seg0Len);
   console.log(`  ${h}p  plain ${c.plain.toFixed(3)}  3 overlays ${c.three.toFixed(3)} (${pct(c.three, c.plain)})` +
     `  8 lyric overlays ${c.eight.toFixed(3)} (${pct(c.eight, c.plain)})` +
@@ -137,6 +140,9 @@ const cut = segs[0].endSec; // the first join
 const blocks: Block[] = [
   { id: 'cross', startSec: cut - 5, endSec: cut + 5, color: [255, 0, 0], x: 0.05, y: 0.05 },
   { id: 'inside', startSec: 3, endSec: 8, color: [0, 255, 0], x: 0.45, y: 0.05 },
+  // Two lyric lines tiled edge to edge, in different places so each is read on its own.
+  { id: 'adjA', startSec: 8, endSec: 10, color: [255, 255, 0], x: 0.25, y: 0.35 },
+  { id: 'adjB', startSec: 10, endSec: 12, color: [255, 0, 255], x: 0.65, y: 0.35 },
   { id: 'later', startSec: segs[Math.min(2, segs.length - 1)].startSec + 2, endSec: segs[Math.min(2, segs.length - 1)].startSec + 6, color: [0, 0, 255], x: 0.85, y: 0.05 },
 ];
 const pngOf = Object.fromEntries(blocks.map((b) => { const p = join(dir, `${b.id}.png`); makePng(p, W, H, b); return [b.id, p]; }));
@@ -157,11 +163,29 @@ console.log(`RENDER: ${segs.length} chunks encoded in ${encodeSec.toFixed(1)} s 
 console.log('CHECKS');
 const [hSrc, hMka, hOut] = [hash(src), hash(audio), hash(output)];
 console.log(`  audio ${hSrc}`);
-check(hSrc === hMka, 'audio hash: source = extracted .mka');
+check(hSrc === hMka, `audio hash: source = extracted ${audioExtractExtFor(src)}`);
 check(hSrc === hOut, 'audio hash: source = output');
 const outFull = join(dir, 'out-from-src.mp4');
 ff(buildJoinMuxArgs({ concatListPath: concat, srcPath: src, outPath: outFull, hasAudio: true }));
 check(hash(outFull) === hSrc, 'audio hash: join reading the FULL source as input 1 also matches');
+
+// Same packets is not same timing: the packets must also sit at the same times.
+const aTiming = (p: string) => ({
+  stream: probe(['-select_streams', 'a:0', '-show_entries', 'stream=start_time,duration', '-of', 'csv=p=0', p]),
+  pts: probe(['-select_streams', 'a:0', '-show_entries', 'packet=pts_time', '-of', 'csv=p=0', p]),
+});
+const tSrc = aTiming(src);
+console.log(`  audio start_time,duration ${tSrc.stream}, first pts ${tSrc.pts.split('\n')[0]}`);
+for (const [label, p] of [[`extracted ${audioExtractExtFor(src)}`, audio], ['output', output], ['output (full-source join)', outFull]]) {
+  const t = aTiming(p);
+  check(t.stream === tSrc.stream && t.pts === tSrc.pts,
+    `audio timing: ${label} start_time,duration ${t.stream}; all ${t.pts.split('\n').length} packet pts equal source`);
+}
+// For the record: what a Matroska extract would have done (ruled out, R3-amended).
+const mka = join(dir, 'audio-control.mka');
+ff(['-hide_banner', '-nostats', '-i', src, '-map', '0:a:0', '-c', 'copy', '-y', mka]);
+const tMka = aTiming(mka);
+console.log(`  info  .mka control: hash ${hash(mka) === hSrc ? 'EQUAL' : 'differs'}, start_time,duration ${tMka.stream}, first pts ${tMka.pts.split('\n')[0]}`);
 
 const [dSrc, dOut] = [vDur(src), vDur(output)];
 check(Math.abs(dSrc - dOut) <= 1 / fps + 1e-6, `video duration ${dOut} vs source ${dSrc} (within one frame)`);
@@ -187,9 +211,11 @@ for (const b of blocks) {
   for (const f of [...frames].sort((a, z) => a - z)) {
     if (f >= pOut.length) continue;
     const t = f / fps;
-    const shown = t >= b.startSec - 1e-6 && t <= b.endSec + 1e-6;
+    const shown = t >= b.startSec - 1e-6 && t < b.endSec - 1e-6; // half-open, like the enable window
     const got = pixel(output, f, px, py);
-    const ok = shown ? near(got, b.color, 40) : !near(got, b.color, 40) && near(got, pixel(src, f, px, py), 24);
+    // Absent = the source's own pixel came through (a source already that colour there
+    // is still a pass, so pick a neutral-coloured source for a meaningful control).
+    const ok = shown ? near(got, b.color, 40) : near(got, pixel(src, f, px, py), 24);
     check(ok, `${b.id.padEnd(6)} frame ${String(f).padStart(4)} (t=${t.toFixed(2)}) ${shown ? 'shown ' : 'absent'} rgb ${got.join(',')}`);
   }
 }

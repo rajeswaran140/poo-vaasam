@@ -164,7 +164,7 @@ export function buildChunkArgs(params: {
   if (overlays.length > 0) {
     const steps = overlays.map((o, i) => {
       const from = i === 0 ? '[0:v]' : `[v${i}]`;
-      return `${from}[${i + 1}:v]overlay=0:0:enable='between(t,${o.fromSec},${o.toSec})':eof_action=repeat[v${i + 1}]`;
+      return `${from}[${i + 1}:v]overlay=0:0:enable='gte(t,${o.fromSec})*lt(t,${o.toSec})':eof_action=repeat[v${i + 1}]`;
     });
     graph = ['-filter_complex', steps.join(';'), '-map', `[v${overlays.length}]`];
   }
@@ -183,7 +183,7 @@ export function buildChunkArgs(params: {
 /**
  * STEP 3 — join the chunks by stream copy and lay the original audio under
  * them, copied. `srcPath` is whatever holds that audio: usually the small
- * audio-only file from buildAudioExtractArgs (the big source is deleted
+ * audio-only .m4a/.mov from buildAudioExtractArgs (the big source is deleted
  * before the chunks come back), or the full source; `-map 1:a:0` reads the
  * first audio stream of either. No `-shortest`: it would trim the song to the
  * video's last frame.
@@ -213,10 +213,24 @@ export function buildAudioHashArgs(path: string): string[] {
 }
 
 /**
+ * Which container holds the extracted audio: QuickTime for a `.mov` source,
+ * MP4 (named `.m4a`) for everything else. Both are ISO-BMFF, which keeps the
+ * AAC priming edit list. Not Matroska: it drops that offset (first packet pts
+ * -0.023 s with 1024 skip samples) and rounds times to 1 ms, so the packets
+ * still hash the same but the whole song plays ~23 ms late against the video.
+ */
+export function audioExtractExtFor(srcPath: string): '.m4a' | '.mov' {
+  return /\.mov$/i.test(srcPath) ? '.mov' : '.m4a';
+}
+
+/**
  * Copy the source's first audio stream to its own small file, untouched, so
- * the big source can be deleted while the chunks encode. Give `outPath` a
- * `.mka` extension: Matroska takes any codec by stream copy.
+ * the big source can be deleted while the chunks encode. The container comes
+ * from the SOURCE path (audioExtractExtFor) and is forced with `-f`, so it is
+ * the same muxer family the stream came out of; name `outPath` with
+ * audioExtractExtFor(srcPath) to match.
  */
 export function buildAudioExtractArgs(srcPath: string, outPath: string): string[] {
-  return ['-hide_banner', '-nostats', '-i', srcPath, '-map', '0:a:0', '-c', 'copy', '-y', outPath];
+  const format = audioExtractExtFor(srcPath) === '.mov' ? 'mov' : 'mp4';
+  return ['-hide_banner', '-nostats', '-i', srcPath, '-map', '0:a:0', '-c', 'copy', '-f', format, '-y', outPath];
 }

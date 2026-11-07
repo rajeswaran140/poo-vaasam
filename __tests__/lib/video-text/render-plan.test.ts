@@ -19,6 +19,7 @@ import {
   buildJoinMuxArgs,
   buildAudioHashArgs,
   buildAudioExtractArgs,
+  audioExtractExtFor,
 } from '@/lib/video-text/render-plan';
 import { VIDEO_CRF } from '@/lib/master-video';
 
@@ -118,8 +119,9 @@ describe('buildChunkArgs', () => {
     expect(inputs).toEqual(['/tmp/seg001.mp4', '/tmp/a.png', '/tmp/b.png']);
   });
   it('chains timed overlays bound to the segment length', () => {
-    expect(filter).toContain("[0:v][1:v]overlay=0:0:enable='between(t,15,19.96)'");
-    expect(filter).toContain("enable='between(t,0,5.04)'");
+    expect(filter).toContain("[0:v][1:v]overlay=0:0:enable='gte(t,15)*lt(t,19.96)'");
+    expect(filter).toContain("enable='gte(t,0)*lt(t,5.04)'");
+    expect(filter).not.toContain('between');
     // A one-frame overlay input is held by eof_action=repeat; `shortest=1`
     // would end the chunk after its first frame.
     expect(filter).not.toContain('shortest');
@@ -136,6 +138,18 @@ describe('buildChunkArgs', () => {
     expect(after(args, '-fps_mode')).toBe('passthrough');
     expect(args[args.length - 1]).toBe('/tmp/chunk001.mp4');
   });
+  it('gives two blocks sharing an edge half-open windows, so the shared frame draws only the later one', () => {
+    // Lyric lines are tiled edge to edge; between() includes both ends, so at
+    // 10 fps frame 45 of A=[2,4.5] B=[4.5,7] showed both lines.
+    const f = after(buildChunkArgs({
+      segPath: '/tmp/s.mp4',
+      overlays: [{ path: '/tmp/a.png', fromSec: 2, toSec: 4.5 }, { path: '/tmp/b.png', fromSec: 4.5, toSec: 7 }],
+      width: 1920, height: 1080, outPath: '/tmp/c.mp4', crf: 16, preset: 'veryfast',
+    }), '-filter_complex');
+    const [a, b] = f.split(';');
+    expect(a).toContain("enable='gte(t,2)*lt(t,4.5)'");
+    expect(b).toContain("enable='gte(t,4.5)*lt(t,7)'");
+  });
   it('re-encodes the segment the same way when it has no overlays', () => {
     const plain = buildChunkArgs({
       segPath: '/tmp/s.mp4', overlays: [], width: 1920, height: 1080, outPath: '/tmp/c.mp4', crf: 16, preset: 'veryfast',
@@ -151,10 +165,10 @@ describe('buildChunkArgs', () => {
 
 describe('buildJoinMuxArgs', () => {
   it('joins the chunks and copies the original audio, never shortening', () => {
-    const args = buildJoinMuxArgs({ concatListPath: '/tmp/c.txt', srcPath: '/tmp/audio.mka', outPath: '/tmp/o.mp4', hasAudio: true });
+    const args = buildJoinMuxArgs({ concatListPath: '/tmp/c.txt', srcPath: '/tmp/audio.m4a', outPath: '/tmp/o.mp4', hasAudio: true });
     expect(args.slice(args.indexOf('-f'), args.indexOf('-f') + 6)).toEqual(['-f', 'concat', '-safe', '0', '-i', '/tmp/c.txt']);
     const inputs = args.flatMap((a, i) => (a === '-i' ? [args[i + 1]] : []));
-    expect(inputs).toEqual(['/tmp/c.txt', '/tmp/audio.mka']);
+    expect(inputs).toEqual(['/tmp/c.txt', '/tmp/audio.m4a']);
     expect(args).toContain('0:v:0');
     expect(args).toContain('1:a:0');
     expect(after(args, '-c')).toBe('copy');
@@ -183,14 +197,31 @@ describe('buildAudioHashArgs', () => {
 });
 
 describe('buildAudioExtractArgs', () => {
-  it('copies only the first audio stream, untouched', () => {
-    const args = buildAudioExtractArgs('/tmp/src.mp4', '/tmp/audio.mka');
+  // Matroska drops the AAC priming edit list and rounds to 1 ms: the packets
+  // hash the same but the whole song lands ~23 ms late. ISO-BMFF keeps it.
+  it('copies only the first audio stream, untouched, into an mp4 container for an mp4 source', () => {
+    const args = buildAudioExtractArgs('/tmp/src.mp4', '/tmp/audio.m4a');
     expect(after(args, '-i')).toBe('/tmp/src.mp4');
     expect(after(args, '-map')).toBe('0:a:0');
     expect(args.filter((a) => a === '-map')).toHaveLength(1);
     expect(after(args, '-c')).toBe('copy');
+    expect(after(args, '-f')).toBe('mp4');
     expect(args).not.toContain('-vn');
     expect(args).not.toContain('-c:a');
-    expect(args[args.length - 1]).toBe('/tmp/audio.mka');
+    expect(args[args.length - 1]).toBe('/tmp/audio.m4a');
+  });
+  it('uses a QuickTime container for a .mov source', () => {
+    expect(after(buildAudioExtractArgs('/tmp/src.MOV', '/tmp/audio.mov'), '-f')).toBe('mov');
+  });
+  it('never writes Matroska', () => {
+    expect(buildAudioExtractArgs('/tmp/src.mp4', '/tmp/a.m4a').join(' ')).not.toMatch(/matroska|\.mka/);
+  });
+});
+
+describe('audioExtractExtFor', () => {
+  it('names the extracted audio for its container', () => {
+    expect(audioExtractExtFor('/tmp/src.mp4')).toBe('.m4a');
+    expect(audioExtractExtFor('/tmp/src.MOV')).toBe('.mov');
+    expect(audioExtractExtFor('/tmp/src')).toBe('.m4a');
   });
 });
