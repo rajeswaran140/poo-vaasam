@@ -22,9 +22,16 @@
 #
 # After this, `npm run deploy:master-worker` updates all three functions' code.
 #
-# USAGE:  ./scripts/setup-video-text.sh          # apply
-#         ./scripts/setup-video-text.sh --dry    # print the write commands only
-#                                                # (read-only AWS calls still run)
+# The bucket is VERSIONED, so Expiration alone only adds a delete marker. The
+# rule therefore also expires noncurrent versions after 1 day, and a second rule
+# (video-text-markers) removes the leftover delete markers.
+#
+# USAGE:  ./scripts/setup-video-text.sh                       # apply
+#         ./scripts/setup-video-text.sh --dry                 # print the write commands only
+#                                                             # (read-only AWS calls still run)
+#         ./scripts/setup-video-text.sh --remove-lifecycle    # rollback: drop only our two
+#                                                             # lifecycle rules (steps 1-3 untouched)
+#         add --dry to --remove-lifecycle to preview it
 set -euo pipefail
 
 REGION="${AWS_REGION:-ca-central-1}"
@@ -36,10 +43,20 @@ ZIP="master-worker.zip"
 BUCKET="tamil-web-media"
 BUCKET_REGION="us-east-1"
 RULE_ID="video-text-30d"
+MARKER_ID="video-text-markers"
 RULE_PREFIX="audio/mastering/video-text/"
 run() { if [ "${1:-}" = "--dry" ]; then shift; echo "+ $*"; else shift; "$@"; fi; }
-DRY="${1:-}"
+DRY=""; REMOVE=0
+for arg in "$@"; do
+  case "$arg" in
+    --dry) DRY="--dry" ;;
+    --remove-lifecycle) REMOVE=1 ;;
+    *) echo "unknown argument: $arg" >&2
+       echo "usage: $0 [--dry] [--remove-lifecycle]" >&2; exit 2 ;;
+  esac
+done
 
+if [ "$REMOVE" = 0 ]; then
 [ -f "$ZIP" ] || { echo "Build $ZIP first: npm run build:master-worker && (cd master-worker-dist && zip -q -r ../$ZIP index.js)"; exit 1; }
 
 echo "=== 1. create $FN ==="
@@ -61,12 +78,18 @@ else
 fi
 
 echo "=== 2. reserve 20 concurrent ==="
-# AWS refuses a reservation that leaves the account under 100 unreserved.
-UNRESERVED=$(aws --region "$REGION" lambda get-account-settings --query AccountLimit.UnreservedConcurrentExecutions --output text)
-echo "  unreserved now: $UNRESERVED"
-if [ "$UNRESERVED" -lt 120 ]; then echo "  too few unreserved executions to reserve 20 — stopping"; exit 1; fi
-run "$DRY" aws --region "$REGION" lambda put-function-concurrency --function-name "$FN" \
-  --reserved-concurrent-executions 20 --query ReservedConcurrentExecutions --output text
+CURRENT_RES=$(aws --region "$REGION" lambda get-function-concurrency --function-name "$FN" \
+  --query ReservedConcurrentExecutions --output text 2>/dev/null || echo None)
+if [ "$CURRENT_RES" = "20" ]; then
+  echo "  already reserved at 20 — skipping"
+else
+  # AWS refuses a reservation that leaves the account under 100 unreserved.
+  UNRESERVED=$(aws --region "$REGION" lambda get-account-settings --query AccountLimit.UnreservedConcurrentExecutions --output text)
+  echo "  unreserved now: $UNRESERVED"
+  if [ "$UNRESERVED" -lt 120 ]; then echo "  too few unreserved executions to reserve 20 — stopping"; exit 1; fi
+  run "$DRY" aws --region "$REGION" lambda put-function-concurrency --function-name "$FN" \
+    --reserved-concurrent-executions 20 --query ReservedConcurrentExecutions --output text
+fi
 
 echo "=== 3. allow the worker role to invoke it ==="
 run "$DRY" aws iam put-role-policy --role-name "$ROLE" --policy-name invoke-video-text-chunk --policy-document "{
@@ -77,8 +100,9 @@ run "$DRY" aws iam put-role-policy --role-name "$ROLE" --policy-name invoke-vide
     \"Resource\": \"arn:aws:lambda:${REGION}:${ACCOUNT}:function:${FN}\"
   }]
 }"
+fi
 
-echo "=== 4. 30-day lifecycle rule on s3://${BUCKET}/${RULE_PREFIX} (merge, not replace) ==="
+echo "=== 4. 30-day lifecycle rules on s3://${BUCKET}/${RULE_PREFIX} (merge, not replace; remove mode: ${REMOVE}) ==="
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 # NoSuchLifecycleConfiguration = no rules yet. Any other failure stops the script.
 if aws --region "$BUCKET_REGION" s3api get-bucket-lifecycle-configuration --bucket "$BUCKET" >"$TMP/current.json" 2>"$TMP/err.txt"; then
@@ -89,34 +113,41 @@ else
   cat "$TMP/err.txt" >&2; echo "  could not read the current lifecycle configuration — stopping"; exit 1
 fi
 
-NEW_RULE="{\"ID\":\"${RULE_ID}\",\"Filter\":{\"Prefix\":\"${RULE_PREFIX}\"},\"Status\":\"Enabled\",\"Expiration\":{\"Days\":30},\"AbortIncompleteMultipartUpload\":{\"DaysAfterInitiation\":1}}"
+RULE_A="{\"ID\":\"${RULE_ID}\",\"Filter\":{\"Prefix\":\"${RULE_PREFIX}\"},\"Status\":\"Enabled\",\"Expiration\":{\"Days\":30},\"NoncurrentVersionExpiration\":{\"NoncurrentDays\":1},\"AbortIncompleteMultipartUpload\":{\"DaysAfterInitiation\":1}}"
+RULE_B="{\"ID\":\"${MARKER_ID}\",\"Filter\":{\"Prefix\":\"${RULE_PREFIX}\"},\"Status\":\"Enabled\",\"Expiration\":{\"ExpiredObjectDeleteMarker\":true}}"
+if [ "$REMOVE" = 1 ]; then OURS="[]"; else OURS="[$RULE_A,$RULE_B]"; fi
+# Drop BOTH of our IDs from the current set, then append ours (none when removing).
 if command -v jq >/dev/null 2>&1; then
-  jq --argjson r "$NEW_RULE" '{Rules: (((.Rules // []) | map(select(.ID != "'"$RULE_ID"'"))) + [$r])}' "$TMP/current.json" >"$TMP/merged.json"
-  ids() { jq -r '[.Rules[].ID // "(no id)"] | join(", ")' "$1"; }
-  count() { jq '.Rules | length' "$1"; }
-  has_rule() { jq '[.Rules[] | select(.ID == "'"$RULE_ID"'")] | length' "$1"; }
+  jq --argjson ours "$OURS" '{Rules: (((.Rules // []) | map(select(.ID != "'"$RULE_ID"'" and .ID != "'"$MARKER_ID"'"))) + $ours)}' "$TMP/current.json" >"$TMP/merged.json"
+  ids() { jq -r '.Rules[].ID // "(no id)"' "$1"; }
 else
-  python3 - "$TMP/current.json" "$TMP/merged.json" "$RULE_ID" "$NEW_RULE" <<'PY'
+  python3 - "$TMP/current.json" "$TMP/merged.json" "$RULE_ID" "$MARKER_ID" "$OURS" <<'PY'
 import json, sys
-cur, out, rid, rule = sys.argv[1:5]
-rules = [r for r in (json.load(open(cur)).get("Rules") or []) if r.get("ID") != rid]
-rules.append(json.loads(rule))
+cur, out, a, b, ours = sys.argv[1:6]
+rules = [r for r in (json.load(open(cur)).get("Rules") or []) if r.get("ID") not in (a, b)]
+rules += json.loads(ours)
 json.dump({"Rules": rules}, open(out, "w"), indent=2)
 PY
-  ids() { python3 -c 'import json,sys; print(", ".join(r.get("ID","(no id)") for r in json.load(open(sys.argv[1]))["Rules"]))' "$1"; }
-  count() { python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["Rules"]))' "$1"; }
-  has_rule() { python3 -c 'import json,sys; print(sum(1 for r in json.load(open(sys.argv[1]))["Rules"] if r.get("ID")==sys.argv[2]))' "$1" "$RULE_ID"; }
+  ids() { python3 -c 'import json,sys; print("\n".join(r.get("ID","(no id)") for r in json.load(open(sys.argv[1]))["Rules"]))' "$1"; }
 fi
-
-BEFORE=$(count "$TMP/current.json"); AFTER=$(count "$TMP/merged.json")
-echo "  rules before ($BEFORE): $(ids "$TMP/current.json")"
-echo "  rules after  ($AFTER): $(ids "$TMP/merged.json")"
-# The merge drops at most the one old copy of our own rule; anything lower means other rules would be wiped.
-if [ "$AFTER" -lt $((BEFORE - 1)) ] || [ "$(has_rule "$TMP/merged.json")" != "1" ]; then
-  echo "  merged rule set looks wrong (would wipe other rules) — refusing to put"; exit 1
+ids "$TMP/current.json" | sort >"$TMP/ids.before"; ids "$TMP/merged.json" | sort >"$TMP/ids.after"
+echo "  rules before ($(grep -c . "$TMP/ids.before" || true)): $(paste -sd, "$TMP/ids.before" | sed 's/,/, /g')"
+echo "  rules after  ($(grep -c . "$TMP/ids.after" || true)): $(paste -sd, "$TMP/ids.after" | sed 's/,/, /g')"
+# Guard: every existing ID other than our two must survive; ours must be present (apply) or gone (remove).
+grep -vxF -e "$RULE_ID" -e "$MARKER_ID" "$TMP/ids.before" >"$TMP/ids.others" || true
+if [ -s "$TMP/ids.others" ] && [ -n "$(grep -vxFf "$TMP/ids.after" "$TMP/ids.others" || true)" ]; then
+  echo "  merged rule set would lose another rule — refusing to put"; exit 1
+fi
+OURS_AFTER=$(grep -cxF -e "$RULE_ID" -e "$MARKER_ID" "$TMP/ids.after" || true)
+if { [ "$REMOVE" = 1 ] && [ "$OURS_AFTER" != 0 ]; } || { [ "$REMOVE" = 0 ] && [ "$OURS_AFTER" != 2 ]; }; then
+  echo "  our rules are not as expected in the merged set — refusing to put"; exit 1
 fi
 echo "  merged configuration:"; sed 's/^/    /' "$TMP/merged.json"
-run "$DRY" aws --region "$BUCKET_REGION" s3api put-bucket-lifecycle-configuration --bucket "$BUCKET" \
+if [ ! -s "$TMP/ids.after" ]; then
+  run "$DRY" aws --region "$BUCKET_REGION" s3api delete-bucket-lifecycle --bucket "$BUCKET"
+else
+  run "$DRY" aws --region "$BUCKET_REGION" s3api put-bucket-lifecycle-configuration --bucket "$BUCKET" \
   --lifecycle-configuration "file://$TMP/merged.json"
+fi
 
 echo "done — IAM changes can take a minute to apply; wait before the first Video Text render."

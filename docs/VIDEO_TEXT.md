@@ -24,11 +24,18 @@ Both run the same bundle, `master-worker.zip`.
 
 `scripts/apply-lambda-concurrency-limits.sh` also carries the reservation of 20.
 
-## 30-day rule
-Lifecycle rule `video-text-30d` expires everything under `audio/mastering/video-text/`
-after 30 days and aborts incomplete multipart uploads after 1 day. The setup script
-MERGES it into the bucket's existing rules (it never replaces them) and refuses to
-put if the merged set would lose other rules. Download renders you want to keep.
+## 30-day rules
+The bucket is VERSIONED, so an expiration alone only adds a delete marker and the
+bytes would survive until the bucket-wide `expire-noncurrent-90d` rule (about 120
+days in total). Two rules on `audio/mastering/video-text/` fix that:
+- `video-text-30d`: expire after 30 days, expire noncurrent versions 1 day later (this
+  also cleans up the worker's deleted intermediates), abort incomplete multipart
+  uploads after 1 day.
+- `video-text-markers`: removes leftover expired delete markers.
+The setup script MERGES both into the existing rules (it never replaces them) and
+refuses to put if any other rule would be lost. Download renders you want to keep.
+The DR replica bucket keeps its own copies under its own rules (follow-up, not
+changed here).
 
 ## Deploy checklist
 - Chunk function runtime is `nodejs20.x` or newer (the code uses `AbortSignal.any`).
@@ -45,5 +52,6 @@ put if the merged set would lose other rules. Download renders you want to keep.
   (`aws lambda put-function-concurrency --function-name tamilagaval-video-text-chunk --reserved-concurrent-executions 0 --region ca-central-1`).
 - Remove the function: `aws lambda delete-function ...` and `aws iam delete-role-policy
   --role-name tamilagaval-compose-worker-role --policy-name invoke-video-text-chunk`.
-- Lifecycle: re-run the merge without the rule, or delete only the `video-text-30d`
-  entry from the current configuration. Never `delete-bucket-lifecycle`.
+- Lifecycle: `./scripts/setup-video-text.sh --dry --remove-lifecycle`, then without
+  `--dry`. It reads the configuration, drops only our two IDs, applies the same guard
+  and puts the rest. Never `delete-bucket-lifecycle` by hand.
