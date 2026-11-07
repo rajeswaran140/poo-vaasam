@@ -68,6 +68,7 @@ import {
   renderPrefix,
   segmentKey,
 } from '@/lib/video-text/keys';
+import { isHdrHeader } from '@/lib/master-background';
 import type { RenderState, TextBlock } from '@/types/videoText';
 
 export const VIDEO_TEXT_CHUNK_FUNCTION = process.env.VIDEO_TEXT_CHUNK_FUNCTION || 'tamilagaval-video-text-chunk';
@@ -96,6 +97,10 @@ export const OUT_OF_TIME_MESSAGE = 'the render ran out of time — try again; if
 export const CHUNK_ONLY_MESSAGE = 'this function only renders video-text chunks';
 const ROTATED_MESSAGE =
   'This video is stored rotated (typical of phone recordings), so it plays at a different size than it is stored. Export it upright and upload again.';
+/** R13: the picture must start at 0:00, or the join (which starts it at 0) would move it against the audio. */
+export const START_OFFSET_MESSAGE = "This video's picture does not start at 0:00 — export it again from your editor and upload it.";
+/** R15: the chunk encode is 8-bit Rec. 709; HDR would come out grey and flat. */
+export const HDR_MESSAGE = 'This video is HDR — export it as SDR (Rec. 709) and upload it again.';
 const UNREADABLE_MESSAGE = 'This file could not be read as a video. Export it as an MP4 or MOV and upload again.';
 const PROBE_FAILED_MESSAGE = 'the video could not be read — try again';
 const RENDER_FAILED_MESSAGE = 'the render failed — try again';
@@ -147,6 +152,8 @@ export interface VideoStreamInfo {
   fps: number | null;
   tbr: number | null;
   rotated: boolean;
+  /** PQ (smpte2084) or HLG (arib-std-b67) transfer on the stream line. */
+  hdr: boolean;
 }
 
 const rate = (m: RegExpMatchArray | null): number | null => {
@@ -179,6 +186,8 @@ export function parseVideoStream(log: string): VideoStreamInfo | null {
       fps: rate(rest.match(/([\d.]+)(k?)\s*fps\b/)),
       tbr: rate(rest.match(/([\d.]+)(k?)\s*tbr\b/)),
       rotated: !!rotation && Math.abs(Number(rotation[1])) % 360 !== 0,
+      // The transfer sits in the pixel-format brackets: yuv420p10le(tv, bt2020nc/bt2020/smpte2084, progressive).
+      hdr: isHdrHeader(rest),
     };
   }
   return null;
@@ -345,9 +354,20 @@ function refusalFor(video: VideoStreamInfo | null): string | null {
   if (Math.max(video.width, video.height) > MAX_LONG_SIDE || Math.min(video.width, video.height) > MAX_SHORT_SIDE) {
     return `This video is ${video.width}×${video.height}, larger than 3840×2160. Export it at 4K or smaller and upload again.`;
   }
+  if (video.hdr) return HDR_MESSAGE;
   if (video.rotated) return ROTATED_MESSAGE;
   if (video.fps === null || video.tbr === null || Math.abs(video.fps - video.tbr) > VFR_TOLERANCE * video.tbr) return VFR_MESSAGE;
   return null;
+}
+
+/**
+ * R13. Segment times are the source's own presentation times, and the join
+ * starts the picture at 0 while the audio keeps its own: a picture starting
+ * at v0 would play v0 early against the song. Anything past half a frame is
+ * refused rather than shifted.
+ */
+export function startOffsetRefusal(videoStartSec: number, fps: number): string | null {
+  return Math.abs(videoStartSec) > 0.5 / fps ? START_OFFSET_MESSAGE : null;
 }
 
 export async function probeVideoText(
@@ -374,6 +394,11 @@ export async function probeVideoText(
     const video = parseVideoStream(log);
     const refusal = refusalFor(video);
     if (refusal) return { ok: false, message: refusal };
+    // R13, at upload: the first video packets only (the moov plus a few hundred KB over HTTP).
+    const videoStart = firstPtsSec(deps.ff(buildVideoStartArgs(url)).stdout ?? '');
+    if (videoStart === null) return { ok: false, message: UNREADABLE_MESSAGE };
+    const offsetRefusal = startOffsetRefusal(videoStart, video!.fps!);
+    if (offsetRefusal) return { ok: false, message: offsetRefusal };
     const durationSec = parseDurationSec(log);
     if (durationSec === null) return { ok: false, message: 'The length of this video could not be read. Export it again and upload again.' };
     return {
@@ -453,22 +478,14 @@ export async function renderVideoTextChunk(
 // ------------------------------------------------------------------ render
 
 /**
- * The segment list in the blocks' timeline (R8). With -avoid_negative_ts
- * disabled the csv carries the source's own presentation times, so a video
- * stream that starts at v0 > 0 lists every later cut v0 late — while the
- * first segment is listed from 0 (measured on 6.1.1: a 0.5 s-delayed stream
- * gave `0,20.5` then `20.5,40.5`). Subtracting v0 and clamping at 0 handles
- * both. Then refuse a segment the chunk function could not encode in time.
+ * R8: refuse a segment the chunk function could not encode in time. The
+ * times are used as listed: R13 guarantees the picture starts at 0, so the
+ * source's presentation times are the blocks' timeline.
  */
-export function planSegments(entries: SegmentEntry[], videoStartSec: number): SegmentEntry[] {
-  const shifted = entries.map((e) => ({
-    file: e.file,
-    startSec: Math.max(0, e.startSec - videoStartSec),
-    endSec: Math.max(0, e.endSec - videoStartSec),
-  }));
-  if (shifted.length === 0) throw new VideoTextFailure(RENDER_FAILED_MESSAGE);
-  if (shifted.some((e) => e.endSec - e.startSec > MAX_SEGMENT_SEC)) throw new VideoTextFailure(FEW_KEYFRAMES_MESSAGE);
-  return shifted;
+export function planSegments(entries: SegmentEntry[]): SegmentEntry[] {
+  if (entries.length === 0) throw new VideoTextFailure(RENDER_FAILED_MESSAGE);
+  if (entries.some((e) => e.endSec - e.startSec > MAX_SEGMENT_SEC)) throw new VideoTextFailure(FEW_KEYFRAMES_MESSAGE);
+  return entries;
 }
 
 type ChunkOutcome = { ok: true } | { ok: false; message: string };
@@ -635,6 +652,9 @@ export async function renderVideoText(
 
     const videoStart = firstPtsSec(deps.ff(buildVideoStartArgs(srcPath)).stdout ?? '');
     if (videoStart === null) throw new VideoTextFailure(UNREADABLE_MESSAGE);
+    // R13 backstop: the probe refused this at upload; a source replaced since must not slip through.
+    const offsetRefusal = startOffsetRefusal(videoStart, video!.fps!);
+    if (offsetRefusal) throw new VideoTextFailure(offsetRefusal);
 
     const listPath = join(dir, 'segments.csv');
     const seg = deps.ff(buildSegmentArgs(srcPath, join(dir, 'segment-%04d.mp4'), listPath, SEGMENT_TARGET_SEC));
@@ -642,7 +662,7 @@ export async function renderVideoText(
       console.error('[video-text] segmenting failed:', (seg.stderr ?? '').slice(-2000));
       throw new VideoTextFailure('the video could not be split into parts');
     }
-    const segments = planSegments(parseSegmentList(readFileSync(listPath, 'utf8')), videoStart);
+    const segments = planSegments(parseSegmentList(readFileSync(listPath, 'utf8')));
     rmSync(srcPath, { force: true });
     for (let i = 0; i < segments.length; i++) {
       const local = join(dir, segments[i].file);

@@ -73,6 +73,8 @@ const MISSING_PNG = 'some text images did not upload — press Make video again'
 const FEW_KEYFRAMES =
   'This video has too few keyframes to split — export it again with a keyframe at least every 10 seconds.';
 const OUT_OF_TIME = 'the render ran out of time — try again; if it happens again, use a shorter video';
+const START_OFFSET = "This video's picture does not start at 0:00 — export it again from your editor and upload it.";
+const HDR = 'This video is HDR — export it as SDR (Rec. 709) and upload it again.';
 
 // ---------------------------------------------------------------- ffmpeg logs
 
@@ -267,6 +269,7 @@ describe('videoTextProbe', () => {
   const probe = (key = SRC_KEY) => handler({ videoTextProbe: { key } } as never);
   const withHeader = (h: string) => spawnSync.mockImplementation((_b: string, args: string[]) => {
     world.ffArgs.push(args);
+    if (args.includes('framecrc')) return { status: 0, stdout: videoPackets(world.videoFirstPts), stderr: '' };
     return { status: 1, stdout: '', stderr: h };
   });
 
@@ -306,9 +309,39 @@ describe('videoTextProbe', () => {
     expect(await probe()).toEqual({ ok: false, message: expect.stringContaining('3840×2160') });
   });
 
-  it('refuses a rotated video, whose header size is not the size it plays at', async () => {
+  it('R13: refuses a picture that does not start at 0:00, reading only the first packets over the URL', async () => {
+    withHeader(header());
+    world.videoFirstPts = 6400; // 0.5 s at 1/12800
+    expect(await probe()).toEqual({ ok: false, message: START_OFFSET });
+    const crc = world.ffArgs.find((a) => a.includes('framecrc'))!;
+    expect(crc).toEqual(expect.arrayContaining(['-copyts', '-frames:v', '64', '0:v:0', 'https://signed.example/source.mp4?X-Amz-Signature=secret']));
+  });
+
+  it('R13: one frame late is refused, under half a frame is accepted (25 fps: limit 0.02 s)', async () => {
+    withHeader(header());
+    world.videoFirstPts = 512; // 0.04 s
+    expect(await probe()).toEqual({ ok: false, message: START_OFFSET });
+    world.videoFirstPts = 128; // 0.01 s
+    expect(await probe()).toMatchObject({ ok: true });
+  });
+
+  it('R15: refuses HDR, PQ or HLG, with the exact message', async () => {
+    withHeader(header({ video: 'hevc (Main 10) (hev1 / 0x31766568), yuv420p10le(tv, bt2020nc/bt2020/smpte2084, progressive), 1920x1080, 25 fps, 25 tbr, 12800 tbn' }));
+    expect(await probe()).toEqual({ ok: false, message: HDR });
+    withHeader(header({ video: 'hevc (Main 10), yuv420p10le(tv, bt2020nc/bt2020/arib-std-b67, progressive), 1920x1080, 25 fps, 25 tbr, 12800 tbn' }));
+    expect(await probe()).toEqual({ ok: false, message: HDR });
+    withHeader(header({ video: 'h264 (High), yuv420p(tv, bt709, progressive), 1920x1080, 25 fps, 25 tbr, 12800 tbn' }));
+    expect(await probe()).toMatchObject({ ok: true });
+  });
+
+  it('R14: refuses a rotated video, whose header size is not the size it plays at', async () => {
     withHeader(header({ extra: '    Side data:\n      displaymatrix: rotation of -90.00 degrees\n' }));
     expect(await probe()).toEqual({ ok: false, message: expect.stringContaining('rotated') });
+    // The older tag form, and 0 / 360 degrees are not rotations.
+    withHeader(header({ extra: '    Metadata:\n      rotate          : 90\n' }));
+    expect(await probe()).toEqual({ ok: false, message: expect.stringContaining('rotated') });
+    withHeader(header({ extra: '    Side data:\n      displaymatrix: rotation of -0.00 degrees\n' }));
+    expect(await probe()).toMatchObject({ ok: true });
   });
 
   it('reports no audio as hasAudio: false, not an error', async () => {
@@ -470,16 +503,23 @@ describe('videoTextRender', () => {
     expect(lambdaSend).not.toHaveBeenCalled();
   });
 
-  it('R8: a video stream starting at 0.5 s has that start subtracted from the cut times', async () => {
-    world.videoFirstPts = 6400; // 0.5 s at 1/12800
-    // What the segment muxer writes for such a source: the first segment
-    // starts at 0, every later cut carries the offset.
-    world.csv = 'segment-0000.mp4,0.000000,20.500000\nsegment-0001.mp4,20.500000,40.500000\nsegment-0002.mp4,40.500000,45.500000\n';
+  it('R13 backstop: a source whose picture starts late is refused before segmenting, nothing shifted', async () => {
+    world.videoFirstPts = 6400; // 0.5 s
     await render();
-    const byIndex = [...world.invoked].sort((a, b) => a.index - b.index);
-    expect(byIndex[0].overlays).toEqual([{ id: 'title', fromSec: 0, toSec: 5 }, { id: 'l1', fromSec: 18, toSec: 20 }]);
-    expect(byIndex[1].overlays).toEqual([{ id: 'l1', fromSec: 0, toSec: 2 }, { id: 'cred', fromSec: 15, toSec: 20 }]);
-    expect(statuses().pop()).toBe('done');
+    expect(lastError()).toBe(START_OFFSET);
+    expect(world.ffArgs.some((a) => a.includes('segment'))).toBe(false);
+    expect(lambdaSend).not.toHaveBeenCalled();
+    expect(keysLeft()).toEqual([]);
+  });
+
+  it('R14/R15 backstop: the coordinator re-applies the probe refusals to the downloaded file', async () => {
+    spawnSync.mockImplementation((b: string, args: string[]) =>
+      args.length === 3 && args[1] === '-i'
+        ? { status: 1, stdout: '', stderr: header({ extra: '    Side data:\n      displaymatrix: rotation of 90.00 degrees\n' }) }
+        : fakeFfmpeg(b, args));
+    await render();
+    expect(lastError()).toEqual(expect.stringContaining('rotated'));
+    expect(lambdaSend).not.toHaveBeenCalled();
   });
 
   it('stops with the out-of-time message when the join reserve is gone', async () => {
