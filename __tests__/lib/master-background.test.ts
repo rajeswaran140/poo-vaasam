@@ -24,6 +24,15 @@ import {
   BACKGROUND_FPS,
   BACKGROUND_LOOP_MAX_SECONDS,
   BACKGROUND_MAX_SONG_SECONDS,
+  MAX_BACKGROUND_CLIPS,
+  normaliseBackgroundKeys,
+  preparedBackgroundKey,
+  isPreparedBackgroundKey,
+  isBackgroundFrame,
+  buildBackgroundConcatList,
+  buildBackgroundJoinArgs,
+  backgroundRequestFields,
+  backgroundSummary,
 } from '@/lib/master-background';
 import { buildVideoFilter } from '@/lib/master-video';
 import { buildShortFrameFilter } from '@/lib/master-short';
@@ -196,5 +205,90 @@ describe('the two passes', () => {
     });
     expect(a.slice(0, 6)).toEqual(['-hide_banner', '-nostats', '-stream_loop', '-1', '-i', '/t/loop.mp4']);
     expect(a).toContain('-shortest');
+  });
+});
+
+/**
+ * SEVERAL CLIPS (2026-11-07): 10-20 story clips joined in order, the whole
+ * list repeating under the song. Each clip is prepared on its own (one per
+ * worker), so the join is a copy and the cache key must be stable per clip
+ * AND per frame — a 1080p segment is no use to a 1440p render.
+ */
+describe('several clips', () => {
+  const A = 'audio/mastering/visual-story/vs_abc/candidates/c_1.mp4';
+  const B = 'audio/mastering/1_d_loop.mov';
+
+  it('takes one key or a list, and says which clip is wrong', () => {
+    expect(normaliseBackgroundKeys(B, undefined)).toEqual({ ok: true, keys: [B] });
+    expect(normaliseBackgroundKeys(undefined, [A, B, A])).toEqual({ ok: true, keys: [A, B, A] });
+    expect(normaliseBackgroundKeys(undefined, undefined)).toEqual({ ok: true, keys: [] });
+    expect(normaliseBackgroundKeys(null, null)).toEqual({ ok: true, keys: [] });
+    expect(normaliseBackgroundKeys(undefined, [A, 'images/x.mp4'])).toEqual({
+      ok: false, message: 'Background clip 2 is not a video or GIF in the mastering workspace.',
+    });
+    expect(normaliseBackgroundKeys(B, [A])).toMatchObject({ ok: false });
+    expect(normaliseBackgroundKeys(undefined, 'x' as never)).toMatchObject({ ok: false });
+  });
+
+  it(`allows ${20} clips and refuses one more`, () => {
+    expect(MAX_BACKGROUND_CLIPS).toBe(20);
+    expect(normaliseBackgroundKeys(undefined, Array(20).fill(A))).toMatchObject({ ok: true });
+    expect(normaliseBackgroundKeys(undefined, Array(21).fill(A))).toEqual({
+      ok: false, message: 'Up to 20 background clips can be joined.',
+    });
+  });
+
+  it('keeps a prepared clip per source AND per frame, inside the workspace', () => {
+    const k1440 = preparedBackgroundKey(A, { kind: 'video', height: 1440 });
+    const k1080 = preparedBackgroundKey(A, { kind: 'video', height: 1080 });
+    const kv = preparedBackgroundKey(A, { kind: 'vertical' });
+    expect(k1440).toBe('audio/mastering/background-prepared/v1/1440/visual-story/vs_abc/candidates/c_1-mp4.mp4');
+    expect(new Set([k1440, k1080, kv]).size).toBe(3);
+    expect(preparedBackgroundKey(B, { kind: 'vertical' })).toBe('audio/mastering/background-prepared/v1/vertical/1_d_loop-mov.mp4');
+    // Two sources differing only in type never share a prepared clip.
+    expect(preparedBackgroundKey('audio/mastering/x.mp4', { kind: 'vertical' })).not.toBe(preparedBackgroundKey('audio/mastering/x.mov', { kind: 'vertical' }));
+    expect(isPreparedBackgroundKey(k1440)).toBe(true);
+    expect(isPreparedBackgroundKey(A)).toBe(false);
+    expect(isPreparedBackgroundKey('audio/mastering/background-prepared/v1/../x.mp4')).toBe(false);
+  });
+
+  it('knows the frames it can prepare, and nothing else', () => {
+    expect(isBackgroundFrame({ kind: 'video', height: 1440 })).toBe(true);
+    expect(isBackgroundFrame({ kind: 'video', height: 1080 })).toBe(true);
+    expect(isBackgroundFrame({ kind: 'video', height: 2160 })).toBe(false);
+    expect(isBackgroundFrame({ kind: 'vertical' })).toBe(true);
+    expect(isBackgroundFrame({ kind: 'square' })).toBe(false);
+    expect(isBackgroundFrame(null)).toBe(false);
+  });
+
+  it('joins the prepared clips in order by copy, quoting each path', () => {
+    expect(buildBackgroundConcatList(['/tmp/a/seg-0.mp4', "/tmp/it's/seg-1.mp4"])).toBe(
+      "file '/tmp/a/seg-0.mp4'\nfile '/tmp/it'\\''s/seg-1.mp4'\n"
+    );
+    const args = buildBackgroundJoinArgs({ listPath: '/tmp/a/list.txt', outPath: '/tmp/a/seq.mp4' });
+    expect(args).toEqual(expect.arrayContaining(['-f', 'concat', '-safe', '0', '-i', '/tmp/a/list.txt']));
+    expect(args[args.indexOf('-c') + 1]).toBe('copy');
+    expect(args.at(-1)).toBe('/tmp/a/seq.mp4');
+  });
+});
+
+describe('what the panel sends and says', () => {
+  const A = 'audio/mastering/1_a.mp4';
+  const B = 'audio/mastering/1_b.mp4';
+
+  it('sends nothing, the single field, or the list — the event keeps its old shape for one clip', () => {
+    expect(backgroundRequestFields([])).toEqual({});
+    expect(backgroundRequestFields([A])).toEqual({ backgroundKey: A });
+    expect(backgroundRequestFields([A, B])).toEqual({ backgroundKeys: [A, B] });
+  });
+
+  it('adds up the clips (each at most the 30 s used) and says when they repeat', () => {
+    expect(backgroundSummary([{ seconds: 15 }, { seconds: 15 }], 361)).toBe(
+      '2 clips · 0:30 of video · the song is 6:01, so the clips repeat from clip 1'
+    );
+    expect(backgroundSummary([{ seconds: 45 }, { seconds: 15 }], 40)).toBe('2 clips · 0:45 of video');
+    expect(backgroundSummary(Array(20).fill({ seconds: 15 }), 300)).toBe('20 clips · 5:00 of video');
+    expect(backgroundSummary([{ seconds: 15 }, { seconds: null }], 300)).toBe('2 clips');
+    expect(backgroundSummary([{ seconds: 15 }], null)).toBe('1 clip · 0:15 of video');
   });
 });

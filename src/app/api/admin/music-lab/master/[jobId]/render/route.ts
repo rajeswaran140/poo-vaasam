@@ -34,7 +34,7 @@ import {
   planVideoMotion,
 } from '@/lib/master-video';
 import { SHORT_MOTIONS } from '@/lib/master-short';
-import { checkBackground, isBackgroundKey } from '@/lib/master-background';
+import { checkBackground, normaliseBackgroundKeys } from '@/lib/master-background';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -78,6 +78,8 @@ const bodySchema = z.object({
    * records and so the YouTube thumbnail. Plays alone: no slideshow, no move.
    */
   backgroundKey: z.string().min(1).optional(),
+  /** Several clips, played in order — see normaliseBackgroundKeys for the rules. */
+  backgroundKeys: z.array(z.string()).optional(),
 });
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ jobId: string }> }) {
@@ -119,15 +121,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       );
     }
 
-    const backgroundKey = parsed.data.backgroundKey ?? null;
+    // One clip or several. The worker can read the whole bucket: every key is guarded.
+    const backgrounds = normaliseBackgroundKeys(parsed.data.backgroundKey, parsed.data.backgroundKeys);
+    if (!backgrounds.ok) {
+      return NextResponse.json({ success: false, error: backgrounds.message }, { status: 400 });
+    }
+    const backgroundKeys = backgrounds.keys;
+    const backgroundKey = backgroundKeys[0] ?? null;
     if (backgroundKey) {
-      // The worker can read the whole bucket: the same guard as every key.
-      if (!isBackgroundKey(backgroundKey)) {
-        return NextResponse.json(
-          { success: false, error: 'That background is not a video or GIF in the mastering workspace.' },
-          { status: 400 }
-        );
-      }
       const fits = checkBackground({
         audioSeconds: parsed.data.durationSec ?? job.editedDurationSec,
         height,
@@ -196,7 +197,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
               // Absent for a still video: the event keeps its original shape.
               ...(moves ? { motion: parsed.data.motion } : {}),
               // Absent without one: the event keeps its original shape.
-              ...(backgroundKey ? { backgroundKey } : {}),
+              // One clip keeps the original field, so the event keeps its shape.
+              ...(backgroundKeys.length > 1 ? { backgroundKeys } : backgroundKey ? { backgroundKey } : {}),
             },
           })
         ),

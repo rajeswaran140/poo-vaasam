@@ -3995,19 +3995,32 @@ Beside **Make vertical short** (and **Make a short**): a **Motion** choice. **No
 
 ## A video background — a clip or GIF instead of the cover
 
-Beside **Cover image** in the render panel, and beside the cover in a saved master's row panel: **Background video or GIF (optional)**. Pick an MP4, MOV, WebM or GIF (up to 200 MB) and it loops under the song **in place of the cover** — in the 16:9 video, the short and **Whole song, vertical**. The button reads **Render video (video background)**.
+Beside **Cover image** in the render panel, and beside the cover in a saved master's row panel: **Background videos or GIFs (optional — up to 20, played in order)**. Pick an MP4, MOV, WebM or GIF (up to 200 MB each) and it loops under the song **in place of the cover** — in the 16:9 video, the short and **Whole song, vertical**. The button reads **Render video (video background)**.
 
 - **You still choose a cover.** It is not drawn, but it is the YouTube thumbnail, exactly as before.
 - **The clip loops from start to end until the song finishes.** Only the song is heard — the clip's own sound is dropped. Only the first 30 seconds of a longer clip are used.
 - **It is shaped like a cover:** a 16:9 clip fills the 16:9 frame, a 9:16 one fills the vertical frame, and anything else (a square GIF, a portrait phone video in the 16:9 video) sits on a blurred copy of itself rather than being cropped. A phone video filmed upright is read the right way up.
 - **A small GIF is scaled up and may look soft.** A clip at least as big as the frame looks best.
 - **iPhone video (HDR) is converted to ordinary colour.** Check the first one you make; if it looks dull or too bright, export the clip as SDR ("Most Compatible") and use that.
-- **A saved master's row remembers its background**, named beside **Remove background**, so the video, the short and the vertical can all use it without uploading it again.
-- **It plays alone:** **Motion** must be **None** and there can be no extra images — either is refused with a message beside the button. **Remove background** goes back to the cover.
+- **A saved master's row remembers its background** (one clip or the whole list), so the video, the short and the vertical can all use it without uploading it again.
+- **It plays alone:** **Motion** must be **None** and there can be no extra images — either is refused with a message beside the button. **Remove** (or **Remove all**) goes back to the cover.
 - **1080p or 1440p** for the 16:9 video (not 2160p), and **songs up to 10 minutes**.
 - **It is quick:** the clip is encoded once and then repeated, so a 5-minute song took about a minute to render in testing, much like a still one.
 - **A finished video says so**: **Video (video background)** in the row and **Download MP4 (video background)** in the panel — a still render and a background one at the same height are the same file, and the newer replaces the older.
 - Live since 2026-11-06 (site build 811 and the master worker deploy that day).
+
+### Several clips — a story told in 10-20 clips
+
+A visual story's clips are at most 15 seconds each, so a story needs many. Add up to **20 clips** to the same field and they play **one after another, in the order listed, with straight cuts**; if the song is longer than all of them together, the whole list starts again from clip 1.
+
+- **Add clips from a visual story** lists the stories made for this song (every story, if none is linked). Choose one and it shows how many clips it has, in story order, and which shots have no clip yet; **Add N clips** puts them in the list. **Nothing is downloaded or uploaded** — the story's own clip files are used.
+- **Which clip a shot gives:** the clip chosen for that shot; if its chosen item is a picture, its newest clip, named *(newest clip)* so you can check it. A shot with no clip at all is left out and named.
+- **You can also pick several files at once** with the file button — they are added in the order picked.
+- **Reorder with ↑ and ↓**, take one out with **Remove**, or start again with **Remove all**. The line under the list adds up the clips (each counts up to 30 seconds) and says when the song is longer, e.g. *4 clips · 1:00 of video · the song is 6:01, so the clips repeat from clip 1*.
+- **The button says how many**: **Render video (12 background clips)**. The same list is used by the short and the whole-song vertical.
+- **It takes a few minutes longer than one clip.** Each clip is prepared separately, ten at a time — about a minute or two for twenty — and the render then joins them without re-encoding. A clip prepared once is kept, so rendering again (or making the short after the video) reuses it.
+- **A failure names the clip**, e.g. *background clip 4: the background video could not be read*.
+- **Needs a one-time setup** (\`scripts/setup-background-prep.sh\`: a \`tamilagaval-background-prep\` function) and the master worker deployed after 2026-11-07. Until then a render with two or more clips says *joining several clips is not switched on yet*; one clip works as before.
 
 ## The whole song, vertical
 

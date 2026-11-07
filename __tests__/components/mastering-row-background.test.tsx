@@ -109,7 +109,7 @@ const shortPosts = () =>
 
 async function pickBackground() {
   uploadMock.mockResolvedValueOnce(BG);
-  fireEvent.change(screen.getByLabelText(/Background video or GIF for/i), { target: { files: [clip('loop.mov')] } });
+  fireEvent.change(screen.getByLabelText(/Background videos or GIFs for/i), { target: { files: [clip('loop.mov')] } });
   await screen.findByText(/loop\.mov/);
 }
 
@@ -149,7 +149,7 @@ describe('a video background from a library row', () => {
     await openLibrary();
     openRenderPanel(SONG);
     await pickBackground();
-    fireEvent.click(screen.getByRole('button', { name: /Remove background/ }));
+    fireEvent.click(screen.getByRole('button', { name: "Remove clip 1" }));
 
     fireEvent.click(screen.getByRole('button', { name: /^Render video \(1440p\)/ }));
     await waitFor(() => expect(renderPosts()).toHaveLength(1));
@@ -190,7 +190,7 @@ describe('a background upload shows its progress', () => {
       onProgress(42, 100);
       return new Promise<string>((resolve) => { finish = resolve; });
     });
-    fireEvent.change(screen.getByLabelText(/Background video or GIF for/i), { target: { files: [clip('loop.mov')] } });
+    fireEvent.change(screen.getByLabelText(/Background videos or GIFs for/i), { target: { files: [clip('loop.mov')] } });
     expect(await within(rowFor(SONG)).findByText('Uploading background… 42%')).toBeInTheDocument();
 
     await act(async () => { finish(BG); });
@@ -217,7 +217,7 @@ describe('a row remembers its background', () => {
     routeFetch();
     await openLibrary();
     openRenderPanel(SONG);
-    expect(screen.getByLabelText(/Background video or GIF for/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Background videos or GIFs for/)).toBeInTheDocument();
   });
 });
 
@@ -226,5 +226,21 @@ describe('a background video is labelled in its row', () => {
     routeFetch({}, [masterFixture({ videoKey: 'audio/mastering/out-master-14LUFS-1440p.mp4', videoMotion: 'none', videoBackgroundKey: BG })]);
     await openLibrary();
     expect(within(rowFor(SONG)).getByRole('button', { name: /^Video \(video background\)$/ })).toBeInTheDocument();
+  });
+});
+
+describe('a row whose last render joined several clips', () => {
+  const C1 = 'audio/mastering/visual-story/vs_a/candidates/c_1.mp4';
+  const C2 = 'audio/mastering/visual-story/vs_a/candidates/c_2.mp4';
+
+  it('reopens with the whole list, in order, and sends it as a list', async () => {
+    routeFetch({}, [masterFixture({ videoBackgroundKey: C1, videoBackgroundKeys: [C1, C2, C1] })]);
+    await openLibrary();
+    openRenderPanel(SONG);
+    expect(within(rowFor(SONG)).getByText('3 clips')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /^Render video \(1440p, 3 background clips\)/ }));
+    await waitFor(() => expect(renderPosts()).toHaveLength(1));
+    expect(lastBody()).toEqual({ coverKey: COVER, height: 1440, backgroundKeys: [C1, C2, C1] });
   });
 });

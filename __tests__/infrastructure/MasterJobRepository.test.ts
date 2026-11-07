@@ -132,4 +132,13 @@ describe('video backgrounds', () => {
     expect(job.shortBackgroundKey).toBeNull();
     expect(job.verticalBackgroundKey).toBeNull();
   });
+
+  it('reads the clip lists of a joined background, null on an old row or a stray value', async () => {
+    const list = ['audio/mastering/visual-story/vs_a/candidates/c_1.mp4', 'audio/mastering/1_d_loop.mov'];
+    mockGet.mockResolvedValueOnce(stored({ videoBackgroundKeys: list, shortBackgroundKeys: ['x', 3] }));
+    const job = (await repo.get('j1'))!;
+    expect(job.videoBackgroundKeys).toEqual(list);
+    expect(job.shortBackgroundKeys).toBeNull();
+    expect(job.verticalBackgroundKeys).toBeNull();
+  });
 });

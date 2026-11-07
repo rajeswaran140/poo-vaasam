@@ -14,7 +14,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, statSync, createReadStream, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, GetObjectCommand, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, UpdateCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
@@ -154,8 +154,14 @@ import {
   type RenderStatus,
 } from '@/types/visualStory';
 import {
-  isBackgroundKey,
   checkBackground,
+  normaliseBackgroundKeys,
+  preparedBackgroundKey,
+  isBackgroundFrame,
+  buildBackgroundConcatList,
+  buildBackgroundJoinArgs,
+  BACKGROUND_PREP_CONCURRENCY,
+  type BackgroundFrame,
   backgroundFilterFrom,
   backgroundMaxrateFor,
   buildBackgroundFirstFrameArgs,
@@ -308,6 +314,8 @@ interface MasterEvent {
      * not drawn. Absent ⇒ every older path, untouched.
      */
     backgroundKey?: unknown;
+    /** Several clips, joined in order — instead of `backgroundKey`, never with it. */
+    backgroundKeys?: unknown;
   };
   /**
    * ASSEMBLE a visual story's render (Phase 6): the chosen picture or clip of
@@ -374,7 +382,15 @@ interface MasterEvent {
     transition?: unknown;
     /** A clip or GIF looped under the song instead of the still. See `render.backgroundKey`. */
     backgroundKey?: unknown;
+    /** Several clips, joined in order. See `render.backgroundKeys`. */
+    backgroundKeys?: unknown;
   };
+  /**
+   * PREPARE ONE BACKGROUND CLIP for a frame and store it — what the
+   * background-prep function (this same bundle) is invoked with, synchronously,
+   * by a render joining several clips. Writes no job record.
+   */
+  prepareBackground?: { srcKey?: unknown; frame?: unknown };
   /**
    * Render ~20s around a two-part crossfade so it can be judged without
    * mastering the whole song. Handled before the mastering guards: it must
@@ -842,11 +858,197 @@ function readPickedWindow(spec: NonNullable<MasterEvent['short']>): { startSec: 
   return { startSec: Math.round(startSec * 10) / 10, seconds: Math.round(seconds * 10) / 10 };
 }
 
+/** The function each of several clips is prepared by — see master-background.ts. */
+const BACKGROUND_PREP_FUNCTION = process.env.BACKGROUND_PREP_FUNCTION || 'tamilagaval-background-prep';
+
+/**
+ * When THIS invocation is killed (Date.now() ms), set by the handler from the
+ * Lambda's own clock. Preparing several clips is the one step here that waits
+ * on others, so it is the one that checks.
+ */
+let invocationDeadline = Number.POSITIVE_INFINITY;
+
+/**
+ * Kept back for what follows the preparation: download the segments, join,
+ * repeat, mux and check. A ten-minute song at 1440p measured 118 s for the
+ * mux alone (2026-11-06); twice that, for the rest and for a cold S3.
+ */
+const BACKGROUND_FINISH_RESERVE_MS = 240_000;
+
+/** The shortest a clip has been seen to prepare in, cold start included. */
+const BACKGROUND_PREP_MIN_MS = 45_000;
+
+const PREP_BUSY = 'the clip preparer is busy with another render — try again in a few minutes';
+const PREP_SLOW =
+  'preparing the clips took too long to finish the render here — try again: the prepared clips are kept, so it will be quicker';
+
+/** The compose graph and quality a frame's background is encoded with — the still render's own. */
+function backgroundRecipe(frame: BackgroundFrame) {
+  return frame.kind === 'vertical'
+    ? {
+        stillFilterFor: (aspect: number | undefined) => buildShortFrameFilter(aspect),
+        // The vertical still's own quality (crf 20); 1080x1920 is 1080p's pixel count.
+        crf: 20, maxrate: backgroundMaxrateFor(1080),
+      }
+    : {
+        stillFilterFor: (aspect: number | undefined) => buildVideoFilter(frame.height, aspect),
+        crf: VIDEO_CRF, maxrate: backgroundMaxrateFor(frame.height),
+      };
+}
+
+/**
+ * STEP 1 for one downloaded clip: read its shape as displayed, tone-map it if
+ * HDR, encode it to the frame. The same for a single background and for each
+ * of several, so a joined clip looks exactly as it would alone.
+ */
+function encodeBackgroundClip(params: {
+  srcPath: string;
+  firstPath: string;
+  outPath: string;
+  frame: BackgroundFrame;
+}): { ok: true } | { ok: false; message: string } {
+  const { srcPath } = params;
+  // The shape ON SCREEN: a portrait phone video's header says 1920x1080 and
+  // rotates on decode, so the aspect is read from a decoded frame instead.
+  if (ff(buildBackgroundFirstFrameArgs(srcPath, params.firstPath)).status !== 0) {
+    return { ok: false, message: 'the background video could not be read' };
+  }
+  const aspect = probeCoverAspect(params.firstPath);
+  // An iPhone records HDR by default; untreated it comes out grey and flat.
+  const header = ff(['-hide_banner', '-i', srcPath]);
+  const hdr = isHdrHeader(`${header.stdout ?? ''}${header.stderr ?? ''}`);
+  const recipe = backgroundRecipe(params.frame);
+  const looped = ff(buildBackgroundLoopArgs({
+    srcPath, outPath: params.outPath, filter: backgroundFilterFrom(recipe.stillFilterFor(aspect), { hdr }),
+    crf: recipe.crf, maxrate: recipe.maxrate,
+  }));
+  if (looped.status !== 0) return { ok: false, message: 'the background video could not be encoded' };
+  return { ok: true };
+}
+
+/**
+ * Prepare one clip for a frame and store it under preparedBackgroundKey — the
+ * background-prep function's whole job. A clip already prepared is not
+ * prepared again: the key is the source's and the frame's, never reused for
+ * anything else. Re-checked here; the render is not the only possible caller.
+ */
+async function prepareBackground(
+  spec: NonNullable<MasterEvent['prepareBackground']>,
+  bucket: string,
+): Promise<{ ok: true; key: string } | { ok: false; message: string }> {
+  const keys = normaliseBackgroundKeys(spec.srcKey, undefined);
+  if (!keys.ok || keys.keys.length !== 1) return { ok: false, message: 'the clip must be a video or GIF in the mastering workspace' };
+  if (!isBackgroundFrame(spec.frame)) return { ok: false, message: 'that frame is not one this renderer knows' };
+  const srcKey = keys.keys[0];
+  const outKey = preparedBackgroundKey(srcKey, spec.frame);
+  try {
+    await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: outKey }));
+    return { ok: true, key: outKey };
+  } catch {
+    // Not there (or not readable as a head): prepare it.
+  }
+  const dir = mkdtempSync(join(tmpdir(), 'bgprep-'));
+  try {
+    const srcPath = join(dir, `background${srcKey.match(/\.[a-z0-9]+$/i)?.[0] ?? '.mp4'}`);
+    const outPath = join(dir, 'background-loop.mp4');
+    const obj = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: srcKey }));
+    writeFileSync(srcPath, Buffer.from(await obj.Body!.transformToByteArray()));
+    const done = encodeBackgroundClip({ srcPath, firstPath: join(dir, `background-first${FRAME_EXTENSION}`), outPath, frame: spec.frame });
+    if (!done.ok) return done;
+    await s3.send(new PutObjectCommand({ Bucket: bucket, Key: outKey, Body: readFileSync(outPath), ContentType: 'video/mp4' }));
+    return { ok: true, key: outKey };
+  } catch (err) {
+    console.error('[master-worker] background prep failed:', err instanceof Error ? err.message : String(err));
+    return { ok: false, message: 'it could not be prepared' };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+type PrepResult = { ok: true; key: string } | { ok: false; message: string; whole?: boolean };
+
+/**
+ * Ask the background-prep function for one clip, and check it answered with
+ * THAT clip. Each call is bounded by the time this render can still spend; a
+ * throttle (another render holding the ten) is waited out while there is time.
+ * `whole` marks a failure that is not about this clip.
+ */
+async function invokePrepare(srcKey: string, frame: BackgroundFrame): Promise<PrepResult> {
+  const expected = preparedBackgroundKey(srcKey, frame);
+  for (;;) {
+    const budget = invocationDeadline - BACKGROUND_FINISH_RESERVE_MS - Date.now();
+    if (budget < BACKGROUND_PREP_MIN_MS) return { ok: false, message: PREP_SLOW, whole: true };
+    try {
+      const res = await lambdaClient.send(
+        new InvokeCommand({
+          FunctionName: BACKGROUND_PREP_FUNCTION,
+          InvocationType: 'RequestResponse',
+          Payload: Buffer.from(JSON.stringify({ prepareBackground: { srcKey, frame } })),
+        }),
+        // Never an infinite wait: a finite budget, or the prep function's own 300 s.
+        { abortSignal: AbortSignal.timeout(Number.isFinite(budget) ? budget : 300_000) }
+      );
+      if (res.FunctionError) return { ok: false, message: 'it could not be prepared' };
+      const out = JSON.parse(Buffer.from(res.Payload ?? new Uint8Array()).toString() || '{}') as { ok?: boolean; key?: unknown; message?: unknown };
+      if (out.ok === true && out.key === expected) return { ok: true, key: expected };
+      return { ok: false, message: out.ok === false && typeof out.message === 'string' ? out.message : 'it could not be prepared' };
+    } catch (err) {
+      const name = (err as { name?: string })?.name;
+      if (name === 'ResourceNotFoundException') {
+        return { ok: false, message: 'joining several clips is not switched on yet (the background-prep function is missing)', whole: true };
+      }
+      if (name === 'AbortError' || name === 'TimeoutError') return { ok: false, message: PREP_SLOW, whole: true };
+      if (name === 'TooManyRequestsException') {
+        // Jittered, so two waiting renders do not retry in step.
+        const wait = 15_000 + Math.floor(Math.random() * 15_000);
+        if (Date.now() + wait + BACKGROUND_PREP_MIN_MS + BACKGROUND_FINISH_RESERVE_MS > invocationDeadline) {
+          return { ok: false, message: PREP_BUSY, whole: true };
+        }
+        await new Promise((r) => setTimeout(r, wait));
+        continue;
+      }
+      console.error('[master-worker] background prep invoke failed:', err instanceof Error ? err.message : String(err));
+      return { ok: false, message: 'it could not be prepared' };
+    }
+  }
+}
+
+/**
+ * Prepare several clips, BACKGROUND_PREP_CONCURRENCY at a time; a clip listed
+ * twice is prepared once. The first failure stops new work and names the clip
+ * by its place in the operator's list.
+ */
+async function prepareBackgroundClips(keys: string[], frame: BackgroundFrame): Promise<{ ok: true; prepared: Map<string, string> } | { ok: false; message: string }> {
+  if (Date.now() + BACKGROUND_PREP_MIN_MS + BACKGROUND_FINISH_RESERVE_MS > invocationDeadline) {
+    return { ok: false, message: 'there was not enough time left to prepare the clips — try again' };
+  }
+  const unique = [...new Set(keys)];
+  const prepared = new Map<string, string>();
+  let failure: string | null = null;
+  let next = 0;
+  const lane = async () => {
+    while (failure === null && next < unique.length) {
+      const src = unique[next++];
+      const r = await invokePrepare(src, frame);
+      if (r.ok) prepared.set(src, r.key);
+      else failure ??= r.whole ? r.message : `background clip ${keys.indexOf(src) + 1}: ${r.message}`;
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(BACKGROUND_PREP_CONCURRENCY, unique.length) }, lane));
+  if (failure !== null) return { ok: false, message: failure };
+  // All ready, but the song still has to be laid under them: refused now, not killed mid-mux.
+  if (Date.now() + BACKGROUND_FINISH_RESERVE_MS > invocationDeadline) return { ok: false, message: PREP_SLOW };
+  return { ok: true, prepared };
+}
+
 /**
  * Render over a VIDEO BACKGROUND instead of a still — shared by the 16:9
  * video and both vertical renders, which differ only in the frame they
  * compose to and how they treat the audio. See master-background.ts for the
  * three passes and the measurements behind them.
+ *
+ * One clip is encoded here. Several are each prepared by the background-prep
+ * function and only JOINED here, by copy, into the sequence the track repeats.
  *
  * Returns a message for the operator on failure; the caller writes it to its
  * own error field and the scratch directory is the caller's to remove.
@@ -854,11 +1056,9 @@ function readPickedWindow(spec: NonNullable<MasterEvent['short']>): { startSec: 
 async function renderOverBackground(params: {
   bucket: string;
   dir: string;
-  backgroundKey: string;
-  /** The still compose graph for this render, given the clip's aspect. */
-  stillFilterFor: (aspect: number | undefined) => string;
-  crf: number;
-  maxrate: string;
+  /** One or more, in playing order. */
+  backgroundKeys: string[];
+  frame: BackgroundFrame;
   audioPath: string;
   outPath: string;
   /** Picture length; null ⇒ unknown, the loop ends with the audio. */
@@ -867,29 +1067,36 @@ async function renderOverBackground(params: {
   audioFilter?: string;
   audioBitrate: string;
 }): Promise<{ ok: true } | { ok: false; message: string }> {
-  const { dir } = params;
-  const srcPath = join(dir, `background${params.backgroundKey.match(/\.[a-z0-9]+$/i)?.[0] ?? '.mp4'}`);
-  const firstPath = join(dir, `background-first${FRAME_EXTENSION}`);
+  const { dir, backgroundKeys } = params;
   const loopPath = join(dir, 'background-loop.mp4');
   const trackPath = join(dir, 'background-track.mp4');
 
-  const obj = await s3.send(new GetObjectCommand({ Bucket: params.bucket, Key: params.backgroundKey }));
-  writeFileSync(srcPath, Buffer.from(await obj.Body!.transformToByteArray()));
-
-  // The shape ON SCREEN: a portrait phone video's header says 1920x1080 and
-  // rotates on decode, so the aspect is read from a decoded frame instead.
-  if (ff(buildBackgroundFirstFrameArgs(srcPath, firstPath)).status !== 0) {
-    return { ok: false, message: 'the background video could not be read' };
+  if (backgroundKeys.length === 1) {
+    const key = backgroundKeys[0];
+    const srcPath = join(dir, `background${key.match(/\.[a-z0-9]+$/i)?.[0] ?? '.mp4'}`);
+    const obj = await s3.send(new GetObjectCommand({ Bucket: params.bucket, Key: key }));
+    writeFileSync(srcPath, Buffer.from(await obj.Body!.transformToByteArray()));
+    const done = encodeBackgroundClip({ srcPath, firstPath: join(dir, `background-first${FRAME_EXTENSION}`), outPath: loopPath, frame: params.frame });
+    if (!done.ok) return done;
+  } else {
+    const ready = await prepareBackgroundClips(backgroundKeys, params.frame);
+    if (!ready.ok) return ready;
+    // Each prepared clip downloaded once, however often it plays.
+    const local = new Map<string, string>();
+    for (const src of backgroundKeys) {
+      if (local.has(src)) continue;
+      const segPath = join(dir, `background-seg-${local.size}.mp4`);
+      const obj = await s3.send(new GetObjectCommand({ Bucket: params.bucket, Key: ready.prepared.get(src)! }));
+      writeFileSync(segPath, Buffer.from(await obj.Body!.transformToByteArray()));
+      local.set(src, segPath);
+    }
+    const listPath = join(dir, 'background-list.txt');
+    writeFileSync(listPath, buildBackgroundConcatList(backgroundKeys.map((k) => local.get(k)!)));
+    const joined = ff(buildBackgroundJoinArgs({ listPath, outPath: loopPath }));
+    // The segments are copied into the sequence; the scratch disk needs the room for the track.
+    for (const segPath of local.values()) rmSync(segPath, { force: true });
+    if (joined.status !== 0) return { ok: false, message: 'the background clips could not be joined' };
   }
-  const aspect = probeCoverAspect(firstPath);
-  // An iPhone records HDR by default; untreated it comes out grey and flat.
-  const header = ff(['-hide_banner', '-i', srcPath]);
-  const hdr = isHdrHeader(`${header.stdout ?? ''}${header.stderr ?? ''}`);
-  const looped = ff(buildBackgroundLoopArgs({
-    srcPath, outPath: loopPath, filter: backgroundFilterFrom(params.stillFilterFor(aspect), { hdr }),
-    crf: params.crf, maxrate: params.maxrate,
-  }));
-  if (looped.status !== 0) return { ok: false, message: 'the background video could not be encoded' };
 
   if (params.seconds !== null) {
     const track = ff(buildBackgroundTrackArgs({ loopPath, outPath: trackPath, seconds: params.seconds }));
@@ -982,12 +1189,16 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
   }
   // A video background, checked before anything is downloaded. The whole
   // song's length cap is planFullVertical's, below — the same ten minutes.
-  const backgroundKey = spec.backgroundKey === undefined || spec.backgroundKey === null ? null : spec.backgroundKey;
+  const backgrounds = normaliseBackgroundKeys(spec.backgroundKey, spec.backgroundKeys);
+  if (!backgrounds.ok) {
+    await patch(jobId, { [errorField]: backgrounds.message });
+    return { ok: false };
+  }
+  const backgroundKeys = backgrounds.keys;
+  const backgroundKey = backgroundKeys[0] ?? null;
+  // The list is recorded only when there is one; a single clip keeps the old record.
+  const backgroundList = backgroundKeys.length > 1 ? backgroundKeys : null;
   if (backgroundKey !== null) {
-    if (!isBackgroundKey(backgroundKey)) {
-      await patch(jobId, { [errorField]: 'background must be a video or GIF in the mastering workspace' });
-      return { ok: false };
-    }
     const fits = checkBackground({ slideshow: slideList.length > 1, motion });
     if (!fits.ok) {
       await patch(jobId, { [errorField]: fits.message });
@@ -1100,6 +1311,7 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
           coverKey,
           // What it plays over, written every time — see videoBackgroundKey.
           verticalBackgroundKey: backgroundKey,
+          verticalBackgroundKeys: backgroundList,
         });
         return { ok: true, verticalKey };
       }
@@ -1118,6 +1330,7 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
         shortError: null,
         coverKey,
         shortBackgroundKey: backgroundKey,
+        shortBackgroundKeys: backgroundList,
       });
       return { ok: true, shortKey, startSec };
     };
@@ -1130,10 +1343,7 @@ async function renderShort(jobId: string, spec: NonNullable<MasterEvent['short']
       const secs = fullSeconds ?? seconds;
       const fadeOut = shortFadeOutFor(secs);
       const done = await renderOverBackground({
-        bucket, dir, backgroundKey,
-        stillFilterFor: (aspect) => buildShortFrameFilter(aspect),
-        // The vertical still's own quality (crf 20); 1080x1920 is 1080p's pixel count.
-        crf: 20, maxrate: backgroundMaxrateFor(1080),
+        bucket, dir, backgroundKeys, frame: { kind: 'vertical' },
         audioPath, outPath, seconds: secs,
         ...(fullSeconds === null ? { window: { startSec, seconds } } : {}),
         audioFilter: `afade=t=in:st=0:d=${SHORT_FADE_IN_SEC},afade=t=out:st=${(secs - fadeOut).toFixed(3)}:d=${fadeOut}`,
@@ -1455,12 +1665,14 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
   }
   // A video background. Checked before anything is downloaded, like every
   // other key: this role can read the whole bucket.
-  const backgroundKey = spec.backgroundKey === undefined || spec.backgroundKey === null ? null : spec.backgroundKey;
+  const backgrounds = normaliseBackgroundKeys(spec.backgroundKey, spec.backgroundKeys);
+  if (!backgrounds.ok) {
+    await patch(jobId, { videoError: backgrounds.message });
+    return { ok: false };
+  }
+  const backgroundKeys = backgrounds.keys;
+  const backgroundKey = backgroundKeys[0] ?? null;
   if (backgroundKey !== null) {
-    if (!isBackgroundKey(backgroundKey)) {
-      await patch(jobId, { videoError: 'background must be a video or GIF in the mastering workspace' });
-      return { ok: false };
-    }
     const fits = checkBackground({ height, slideshow, motion });
     if (!fits.ok) {
       await patch(jobId, { videoError: fits.message });
@@ -1534,9 +1746,9 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
        * drawn — it is only the thumbnail — so it is not downloaded either.
        */
       const done = await renderOverBackground({
-        bucket, dir, backgroundKey,
-        stillFilterFor: (aspect) => buildVideoFilter(height, aspect),
-        crf: VIDEO_CRF, maxrate: backgroundMaxrateFor(height),
+        bucket, dir, backgroundKeys,
+        // checkBackground above allows only these two heights.
+        frame: { kind: 'video', height: height as 1080 | 1440 },
         audioPath, outPath, seconds: audioSeconds,
         audioBitrate: VIDEO_AUDIO_BITRATE,
       });
@@ -1686,6 +1898,8 @@ async function renderVideo(jobId: string, spec: NonNullable<MasterEvent['render'
       // Likewise what it plays over: written every time, so a still render
       // after a background one says so.
       videoBackgroundKey: backgroundKey,
+      // The whole list when there are several; a single clip keeps the old record.
+      videoBackgroundKeys: backgroundKeys.length > 1 ? backgroundKeys : null,
     });
     return { ok: true, videoKey, audioCheck: audioCheck.status };
   } catch (err) {
@@ -2507,6 +2721,13 @@ async function renderStemMix(spec: NonNullable<MasterEvent['stemMix']>, bucket: 
 }
 
 export const handler = async (event: MasterEvent, context?: { getRemainingTimeInMillis?: () => number }) => {
+  const remaining = context?.getRemainingTimeInMillis?.();
+  invocationDeadline = typeof remaining === 'number' ? Date.now() + remaining : Number.POSITIVE_INFINITY;
+  // The prep function is this same bundle with a 300 s budget: it does that one job only.
+  if (process.env.AWS_LAMBDA_FUNCTION_NAME === BACKGROUND_PREP_FUNCTION && !event?.prepareBackground) {
+    console.error('[master-worker] the background-prep function was sent another kind of event');
+    return { ok: false, message: 'this function only prepares background clips' };
+  }
   const jobId = event?.jobId;
   const s3Key = event?.s3Key;
   if (event?.analyse) {
@@ -2516,6 +2737,12 @@ export const handler = async (event: MasterEvent, context?: { getRemainingTimeIn
       return { ok: false, error: 'analysisId and TAKES_BUCKET are required' };
     }
     return await analyseSource(id, event.analyse, TAKES_BUCKET);
+  }
+
+  // One clip of several, for a render elsewhere: no job record, the answer is the reply.
+  if (event?.prepareBackground) {
+    if (!TAKES_BUCKET) return { ok: false, message: 'TAKES_BUCKET is required' };
+    return await prepareBackground(event.prepareBackground, TAKES_BUCKET);
   }
 
   // A story assembly writes only its own RENDER# row and never a master job.
