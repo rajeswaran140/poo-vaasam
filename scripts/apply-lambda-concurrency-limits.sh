@@ -22,6 +22,8 @@
 #   tamilagaval-background-prep  10   (one per background clip, invoked synchronously by a
 #                                      render joining several; 10 at a time is what the
 #                                      render asks for — BACKGROUND_PREP_CONCURRENCY)
+#   tamilagaval-video-text-chunk 20   (parallel Video Text render chunks, invoked synchronously
+#                                      by the master-worker)
 #
 # PREREQUISITES:
 #   awscli v2 with lambda:PutFunctionConcurrency + GetFunctionConcurrency.
@@ -69,6 +71,7 @@ apply tamilagaval-compose-worker 3 "512 MB / 180 s; near-zero baseline"
 apply tamilagaval-measure-fn     3 "1024 MB / 60 s; fast, low volume"
 apply tamilagaval-yt-snapshot    2 "128 MB / 30 s; 5-min cron = 1 concurrent expected"
 apply tamilagaval-background-prep 10 "3008 MB / 300 s; one per clip, 10 at a time per render"
+apply tamilagaval-video-text-chunk 20 "3008 MB / 300 s; parallel Video Text render chunks"
 
 echo
 echo '=== to unlimit a function later (removes the cap): ==='
