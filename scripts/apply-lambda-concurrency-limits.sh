@@ -71,7 +71,13 @@ apply tamilagaval-compose-worker 3 "512 MB / 180 s; near-zero baseline"
 apply tamilagaval-measure-fn     3 "1024 MB / 60 s; fast, low volume"
 apply tamilagaval-yt-snapshot    2 "128 MB / 30 s; 5-min cron = 1 concurrent expected"
 apply tamilagaval-background-prep 10 "3008 MB / 300 s; one per clip, 10 at a time per render"
-apply tamilagaval-video-text-chunk 20 "3008 MB / 300 s; parallel Video Text render chunks"
+# Created by scripts/setup-video-text.sh (which reserves the 20 itself); before
+# that it does not exist, and put-function-concurrency would fail the script.
+if aws --region "$REGION" lambda get-function --function-name tamilagaval-video-text-chunk >/dev/null 2>&1; then
+  apply tamilagaval-video-text-chunk 20 "3008 MB / 300 s; parallel Video Text render chunks"
+else
+  echo "--- tamilagaval-video-text-chunk  — not set up yet (scripts/setup-video-text.sh) — skipped"
+fi
 
 echo
 echo '=== to unlimit a function later (removes the cap): ==='
