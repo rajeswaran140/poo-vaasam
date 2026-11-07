@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { S3Operations } from '@/infrastructure/storage/s3-client';
+import { VideoTextRepository } from '@/infrastructure/database/VideoTextRepository';
 import { MAX_VIDEO_TEXT_BYTES, isValidProjectId, sourceKey } from '@/lib/video-text/keys';
 
 export const runtime = 'nodejs';
@@ -41,6 +42,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const key = sourceKey(id, filename, contentType, Date.now(), randomUUID().slice(0, 8));
   try {
+    // No upload URL for a project that does not exist (it would only leave an orphan file).
+    if (!(await new VideoTextRepository().get(id))) {
+      return NextResponse.json({ error: 'Project not found.' }, { status: 404 });
+    }
     const { url, fields } = await S3Operations.getSignedUploadPost(
       key,
       contentType,

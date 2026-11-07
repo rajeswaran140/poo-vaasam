@@ -161,6 +161,13 @@ describe('upload', () => {
   it('refuses other content types', async () => {
     expect((await uploadPOST(req({ filename: 'a.avi', contentType: 'video/x-msvideo', size: 10 }), ctx)).status).toBe(400);
   });
+  it('F8: 404s a project that does not exist, without presigning', async () => {
+    repo.get.mockResolvedValue(null);
+    const res = await uploadPOST(req({ filename: 'a.mp4', contentType: 'video/mp4', size: 10 }), ctx);
+    expect(res.status).toBe(404);
+    expect((await res.json()).error).toBe('Project not found.');
+    expect(presignPost).not.toHaveBeenCalled();
+  });
   it('presigns a key inside the project', async () => {
     const res = await uploadPOST(req({ filename: 'a.mp4', contentType: 'video/mp4', size: 10 }), ctx);
     const body = await res.json();
