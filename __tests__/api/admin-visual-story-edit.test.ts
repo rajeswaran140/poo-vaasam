@@ -193,6 +193,13 @@ describe('shots', () => {
     }
     expect(repo.putShot).not.toHaveBeenCalled();
   });
+  it('update saves chainFromPrevious, and refuses a non-boolean', async () => {
+    repo.loadTree.mockResolvedValue(tree());
+    const res = await shotsPOST(mk({ op: 'update', sceneOrder: 1, shotOrder: 2, chainFromPrevious: true }), ctx());
+    expect(res.status).toBe(200);
+    expect(repo.putShot).toHaveBeenCalledWith(VS, expect.objectContaining({ shotOrder: 2, chainFromPrevious: true }));
+    expect((await shotsPOST(mk({ op: 'update', sceneOrder: 1, shotOrder: 2, chainFromPrevious: 'yes' }), ctx())).status).toBe(400);
+  });
   it('update of durationSec returns recomputed startSecs and the tiling state', async () => {
     repo.loadTree
       .mockResolvedValueOnce(tree())

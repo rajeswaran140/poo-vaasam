@@ -82,6 +82,10 @@ export interface Shot {
   negativePrompt: string;
   charIds: string[];
   firstFrameCandidateId?: string;
+  /** "Video from your pictures": this clip starts from the last frame of the previous shot's clip. */
+  chainFromPrevious?: boolean;
+  /** The previous shot's clip whose last frame this shot's first frame was copied from. */
+  chainedFromCandId?: string;
   selectedCandidateId: string | null;
 }
 
@@ -314,6 +318,8 @@ export const shotInputSchema = z.object({
   visualPrompt: z.string().trim().min(1, 'A visual prompt is required').max(2000),
   negativePrompt: z.string().trim().max(1000),
   charIds: z.array(z.string()).max(14),
+  chainFromPrevious: z.boolean().optional(),
+  chainedFromCandId: z.string().min(1).max(64).optional(),
 });
 export type ShotInput = z.infer<typeof shotInputSchema>;
 
