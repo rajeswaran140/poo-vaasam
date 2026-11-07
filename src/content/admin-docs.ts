@@ -5206,6 +5206,32 @@ Phase 2 will not touch this page's connect/disconnect flow — only add to it.
 `,
   },
   {
+    slug: 'video-text',
+    title: 'Video Text — a title, lyrics and credits on a finished video',
+    category: 'Music Lab',
+    updatedAt: '2026-11-07T18:00:00Z',
+    body: `# Video Text
+
+**Video Text** (\`/admin/video-text\`, in the Sound section of the sidebar) adds a title, the lyrics and the credits to a song video you have already finished, and gives you back an MP4 with the text burned in. It is its own page: the Mastering page and Visual Story Studio still make clean videos with no text.
+
+## The flow
+
+1. **New project.** Give it a name. The list shows every project with when it was last edited and whether its video is ready; the address keeps \`?p=…\` so a reload opens the same project.
+2. **Upload the MP4** (or MOV) you downloaded — drag it onto the box or choose it. **Videos up to 1 GB** can be used. When it has been checked the page reads, for example, "Video: 1440p · 5:44 · deleted on 7 Dec 2026".
+3. **Type the title and credits, and paste the lyrics** — one line per lyric line. Each line becomes a block on the timeline. The title starts at 0–5 s, the credits cover the last 10 s, and the lyric lines are spread evenly in between.
+4. **Line the lyrics up with the singing.** Play the preview — the text is drawn on it exactly as it will be burned in. Drag a block to move it, or drag its edges to change when it starts and ends. Click the ruler to jump there. With a block selected, ← / → nudge it 0.1 s (hold Shift for 1 s), and [ / ] move its start or end to the playhead. The zoom slider stretches the timeline.
+5. **Text size and Lyric position** (Lower or Middle) are the only style controls.
+6. **Make video.** The page draws each text block, uploads it, and the worker burns them in. The button shows the stage and the time so far, for example "Encoding 7/18 · 2:14". The picture size and frame rate stay the same, and the **audio is copied untouched**. If it fails, the reason shows under the button.
+7. **Download** the finished MP4.
+
+Everything saves as you go ("Saved" at the top). If the same project is open in another tab, the page says so instead of overwriting it — reload to see the latest. You can keep editing while a video is being made; the changes are for the next one.
+
+## Deleted after 30 days
+
+The uploaded video, the finished video and every in-between file are **deleted 30 days after they were written**, by a storage rule. The page shows the date. The project itself — title, lyrics, credits, timings, size and position — is kept with no expiry. When the upload has been deleted, upload the same video again: the timing is kept, and lines past the end of a shorter video are moved inside it (the page says how many).
+`,
+  },
+  {
     slug: 'visual-story-studio-plan',
     title: 'Visual Story Studio — storyboards, stills and video clips',
     category: 'Visual Story',

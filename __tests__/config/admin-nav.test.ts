@@ -65,3 +65,16 @@ describe('Visual Story Studio nav entry', () => {
     expect(existsSync(join(process.cwd(), 'src/app/(admin)/admin/visual-story/page.tsx'))).toBe(true);
   });
 });
+
+describe('Video Text nav entry', () => {
+  const entry = ADMIN_NAV_ITEMS.find((i) => i.href === '/admin/video-text');
+
+  it('is in the Sound section right after Bulk upload and has a real page', () => {
+    expect(entry?.title).toBe('Video Text');
+    expect(entry?.section).toBe('Sound');
+    expect(isSidebarVisible(entry!)).toBe(true);
+    const i = ADMIN_NAV_ITEMS.findIndex((x) => x.href === '/admin/video-text');
+    expect(ADMIN_NAV_ITEMS[i - 1]?.href).toBe('/admin/mastering/bulk');
+    expect(existsSync(join(process.cwd(), 'src/app/(admin)/admin/video-text/page.tsx'))).toBe(true);
+  });
+});

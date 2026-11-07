@@ -41,6 +41,7 @@ import {
   Send,
   Wallet,
   Clapperboard,
+  Type,
 } from 'lucide-react';
 import { FEATURES } from '@/config/features';
 
@@ -290,6 +291,14 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     section: 'Sound',
     icon: UploadCloud,
     keywords: ['upload', 'stems', 'batch', 'wav', 'multiple'],
+  },
+  {
+    href: '/admin/video-text',
+    title: 'Video Text',
+    subtitle: 'Add a title, lyrics and credits to a finished video',
+    section: 'Sound',
+    icon: Type,
+    keywords: ['lyrics', 'title', 'credits', 'text', 'subtitles'],
   },
   {
     href: '/admin/lexicon',
