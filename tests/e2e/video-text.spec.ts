@@ -10,7 +10,11 @@
  * Requires E2E_ADMIN_EMAIL / E2E_ADMIN_PASSWORD (see tests/support/admin-auth).
  */
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page, type Route } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
+import { defaultBlocks } from '../../src/lib/video-text/timeline';
 import { adminCredentials, NO_CREDS_REASON } from '../support/admin-credentials';
 
 test.skip(!adminCredentials(), NO_CREDS_REASON);
@@ -63,5 +67,179 @@ test.describe('video text page', () => {
     await page.getByRole('button', { name: /All projects/ }).click();
     await expect(page.getByRole('button', { name: 'New project' })).toBeVisible();
     await expect(page).not.toHaveURL(/[?&]p=/);
+  });
+});
+
+/**
+ * The editor in a real browser WITHOUT touching production: every
+ * /api/admin/video-text request is fulfilled here, and the only other request
+ * the page may make for the project is the fixture clip. Anything else under
+ * that API is aborted and fails the test.
+ *
+ * The clip is WebM (VP8 + Opus), not MP4: Playwright's bundled Chromium has no
+ * H.264 decoder, so an MP4 would never produce a frame to draw over.
+ */
+test.describe('video text editor (mocked API)', () => {
+  const ID = 'e2efixture01';
+  const DURATION = 12;
+  const CLIP_URL = '/e2e-fixture/clip.webm';
+  const lyricsText = 'தமிழ் மண்ணின் வாசம்\nகடலலை பாடும் ராகம்\nஊரெங்கும் உறவின் கீதம்';
+  const titleText = 'தமிழகவல்';
+  const creditsText = 'இசை: ராஜ்';
+
+  let clipPath = '';
+  let ffmpegMissing = '';
+
+  test.beforeAll(() => {
+    const dir = path.join(process.cwd(), 'test-results');
+    mkdirSync(dir, { recursive: true });
+    clipPath = path.join(dir, 'video-text-fixture.webm');
+    try {
+      execFileSync(
+        'ffmpeg',
+        [
+          '-y', '-loglevel', 'error',
+          '-f', 'lavfi', '-i', `testsrc=size=1280x720:rate=25:duration=${DURATION}`,
+          '-f', 'lavfi', '-i', `sine=frequency=440:duration=${DURATION}`,
+          '-c:v', 'libvpx', '-b:v', '1M', '-g', '5', '-c:a', 'libopus', '-shortest', clipPath,
+        ],
+        { stdio: 'pipe' }
+      );
+    } catch (err) {
+      ffmpegMissing = `ffmpeg could not make the fixture clip: ${err instanceof Error ? err.message.split('\n')[0] : err}`;
+    }
+  });
+
+  function project() {
+    const now = new Date().toISOString();
+    return {
+      id: ID,
+      name: 'E2E fixture song',
+      titleText,
+      creditsText,
+      lyricsText,
+      blocks: defaultBlocks({ titleText, creditsText, lyricsText, durationSec: DURATION }),
+      style: { sizeScale: 1, lyricPosition: 'lower' },
+      source: {
+        key: 'video-text/e2efixture01/source.mp4',
+        width: 1280,
+        height: 720,
+        fps: 25,
+        durationSec: DURATION,
+        hasAudio: true,
+        uploadedAt: now,
+        expiresAt: new Date(Date.now() + 7 * 864e5).toISOString(),
+      },
+      render: {
+        renderId: null, status: 'idle', progress: null, outputKey: null,
+        outputExpiresAt: null, error: null, startedAt: null, updatedAt: null,
+      },
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+
+  test('renders the tracks, draws the title, nudges a block, and never calls the real API', async ({ page }, testInfo) => {
+    test.skip(Boolean(ffmpegMissing), ffmpegMissing || 'ffmpeg missing');
+
+    const unexpected: string[] = [];
+    const patches: string[] = [];
+    const json = (route: Route, body: unknown, status = 200) =>
+      route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+
+    await page.route('**/api/admin/video-text**', async (route) => {
+      const req = route.request();
+      const { pathname } = new URL(req.url());
+      const rest = pathname.replace(/^\/api\/admin\/video-text\/?/, '');
+      const method = req.method();
+      if (rest === '' && method === 'GET') return json(route, { projects: [project()] });
+      if (rest === ID && method === 'GET') return json(route, { project: project() });
+      if (rest === `${ID}/source` && method === 'GET') return json(route, { url: CLIP_URL });
+      if (rest === ID && method === 'PATCH') {
+        patches.push(req.postData() ?? '');
+        const sent = JSON.parse(req.postData() ?? '{}');
+        return json(route, { version: (sent.version ?? 1) + 1 });
+      }
+      unexpected.push(`${method} ${pathname}`);
+      return route.abort();
+    });
+
+    // Serve the clip with Range support so the browser can seek.
+    await page.route(`**${CLIP_URL}`, async (route) => {
+      const body = readFileSync(clipPath);
+      const size = statSync(clipPath).size;
+      const range = /bytes=(\d*)-(\d*)/.exec(route.request().headers()['range'] ?? '');
+      if (!range) {
+        return route.fulfill({ status: 200, contentType: 'video/webm', headers: { 'accept-ranges': 'bytes' }, body });
+      }
+      const start = range[1] ? Number(range[1]) : 0;
+      const end = range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+      return route.fulfill({
+        status: 206,
+        contentType: 'video/webm',
+        headers: { 'accept-ranges': 'bytes', 'content-range': `bytes ${start}-${end}/${size}` },
+        body: body.subarray(start, end + 1),
+      });
+    });
+
+    await page.goto('/admin/video-text');
+    await page.locator('ul li button').first().click();
+    await expect(page.getByRole('button', { name: /All projects/ })).toBeVisible({ timeout: 30_000 });
+
+    // Three tracks, and the three lyric blocks as labelled sliders.
+    for (const row of ['Title row', 'Lyrics row', 'Credits row']) {
+      await expect(page.getByRole('group', { name: row })).toBeVisible();
+    }
+    const lyricBlocks = page.getByRole('slider', { name: /^Lyric \d: / });
+    await expect(lyricBlocks).toHaveCount(3);
+    for (let i = 0; i < 3; i++) await expect(lyricBlocks.nth(i)).toBeVisible();
+
+    // Seek to ~1 s: the title is on screen, so the overlay canvas has pixels.
+    const video = page.locator('video');
+    await expect(video).toBeVisible();
+    await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.readyState), { timeout: 30_000 }).toBeGreaterThanOrEqual(2);
+    await video.evaluate(
+      (v: HTMLVideoElement) =>
+        new Promise<void>((resolve) => {
+          v.addEventListener('seeked', () => resolve(), { once: true });
+          v.currentTime = 1;
+        })
+    );
+    const opaque = () =>
+      page.evaluate(() => {
+        const c = document.querySelector('canvas[aria-hidden="true"]') as HTMLCanvasElement | null;
+        const ctx = c?.getContext('2d');
+        if (!c || !ctx || !c.width || !c.height) return 0;
+        const d = ctx.getImageData(0, 0, c.width, c.height).data;
+        let n = 0;
+        for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++;
+        return n;
+      });
+    await expect.poll(opaque, { timeout: 15_000 }).toBeGreaterThan(0);
+
+    await page.screenshot({ path: 'test-results/video-text-editor-1280.png', fullPage: true });
+
+    // ArrowRight on a focused lyric block moves it.
+    const first = lyricBlocks.first();
+    const before = await first.getAttribute('aria-valuetext');
+    await first.focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(first).not.toHaveAttribute('aria-valuetext', before ?? '');
+
+    // Autosave goes to the mock, not production.
+    await expect.poll(() => patches.length, { timeout: 15_000 }).toBeGreaterThan(0);
+
+    // No sideways scroll on a phone.
+    await page.setViewportSize({ width: 390, height: 800 });
+    await page.waitForTimeout(300);
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
+    await page.screenshot({ path: 'test-results/video-text-editor-390.png', fullPage: true });
+
+    expect(unexpected, 'requests to the video-text API that the test did not mock').toEqual([]);
+    testInfo.annotations.push({ type: 'patches', description: String(patches.length) });
   });
 });
