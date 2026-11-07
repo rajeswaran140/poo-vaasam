@@ -267,7 +267,53 @@ async function patchAnalysis(id: string, fields: Record<string, unknown>): Promi
   }));
 }
 
-const ff = (args: string[]) => spawnSync(FFMPEG, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+/**
+ * Kept back from every ffmpeg call for what a failure still has to do: write
+ * the error field and remove the scratch directory. A DynamoDB patch is well
+ * under a second; this is generous on purpose, for a cold connection.
+ */
+const FFMPEG_FINISH_MARGIN_MS = 20_000;
+
+/** What a render reports when ffmpeg was stopped for time. */
+const FFMPEG_OUT_OF_TIME =
+  'the render ran out of time — ffmpeg was stopped before the function\'s time limit. Try again; if it happens again, try a shorter or simpler render';
+
+/** Thrown, never returned: it must reach each render's own catch, which writes ITS error field. */
+class FfmpegOutOfTime extends Error {
+  constructor() {
+    super(FFMPEG_OUT_OF_TIME);
+    this.name = 'FfmpegOutOfTime';
+  }
+}
+
+/**
+ * Run ffmpeg, bounded by the time this invocation has left.
+ *
+ * ⚠️ WHY (audit 2026-11-07). There was no timeout: a hung ffmpeg ran until the
+ * Lambda's own kill (900 s here, 300 s on the prep function, same bundle), and
+ * that kill writes nothing — the job sat with no error and the Studio waited
+ * out its whole deadline. Now each call gets the remaining time minus
+ * FFMPEG_FINISH_MARGIN_MS, is SIGKILLed past it, and throws FfmpegOutOfTime,
+ * which each render's catch writes to its own field. With no time left at all
+ * it throws without starting. A caller that swallows errors (a probe that
+ * falls back) simply meets the throw at the next call.
+ *
+ * Without a Lambda clock (a local run, the tests) there is no timeout: the
+ * options are exactly what they always were.
+ */
+const ff = (args: string[]) => {
+  if (!Number.isFinite(invocationDeadline)) {
+    return spawnSync(FFMPEG, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  }
+  // Never 0: spawnSync reads a timeout of 0 as "no timeout".
+  const budget = Math.floor(invocationDeadline - FFMPEG_FINISH_MARGIN_MS - Date.now());
+  if (budget <= 0) throw new FfmpegOutOfTime();
+  const r = spawnSync(FFMPEG, args, {
+    encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: budget, killSignal: 'SIGKILL',
+  });
+  if ((r.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT') throw new FfmpegOutOfTime();
+  return r;
+};
 
 /**
  * DynamoDB cannot store NaN or Infinity, and ffmpeg produces both: an absent
@@ -959,6 +1005,8 @@ async function prepareBackground(
     return { ok: true, key: outKey };
   } catch (err) {
     console.error('[master-worker] background prep failed:', err instanceof Error ? err.message : String(err));
+    // Out of time is not the clip's fault, and the render that asked must say so.
+    if (err instanceof FfmpegOutOfTime) return { ok: false, message: err.message };
     return { ok: false, message: 'it could not be prepared' };
   } finally {
     rmSync(dir, { recursive: true, force: true });
