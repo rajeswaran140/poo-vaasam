@@ -3424,3 +3424,202 @@ describe('opening a source from a link (e.g. "Master this remix")', () => {
     expect(within(sourceSection).getByText(/Drop a WAV here/i)).toBeInTheDocument();
   });
 });
+
+/**
+ * The 2026-11-07 layout: five steps, the rare tools behind "More tools", the
+ * library rows' rare actions behind a "…" menu, settings closed under their
+ * buttons with a one-line summary, and a timer on a running job's button.
+ */
+describe('page layout', () => {
+  const savedJob = (over: Record<string, unknown> = {}) =>
+    doneJob({ mp3Key: 'audio/mastering/1_a_song-master-14LUFS.mp3', mp3Tp: -3.5, ...over });
+  const libraryRow = (over: Record<string, unknown> = {}) => ({
+    id: 'saved-vid-1',
+    status: 'done',
+    s3Key: 'audio/mastering/1700000000000_ab12_kadhal.wav',
+    masterKey: 'audio/mastering/1700000000000_ab12_kadhal-master-14LUFS.wav',
+    mp3Key: null,
+    videoKey: null,
+    target: -14,
+    title: 'காதல் மழை',
+    savedAt: '2026-08-01T10:00:00.000Z',
+    edit: null, join: null, source: null,
+    afterLufs: -14, afterTp: -3.2, beforeLra: 3, afterLra: 3,
+    error: null,
+    ...over,
+  });
+
+  async function masterAndSave() {
+    primeHappyPath(savedJob());
+    render(<MasteringStudio />);
+    await uploadA();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Master to -14/ })); });
+    await screen.findByText(/Mastered result/);
+    mockedFetch.mockResolvedValueOnce(json({ success: true, title: 'One' }));
+    mockedFetch.mockResolvedValueOnce(json({ success: true, masters: [] }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save to library/ })); });
+    await screen.findByRole('button', { name: /Saved to library/ });
+  }
+
+  async function addCover() {
+    mockedFetch.mockResolvedValueOnce(
+      json({ success: true, uploadUrl: 'https://s3/u', fields: { key: 'k' }, key: 'audio/mastering/1_c_cover.jpg' })
+    );
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/Cover image/i), {
+        target: { files: [new File(['x'], 'cover.jpg', { type: 'image/jpeg' })] },
+      });
+    });
+  }
+
+  async function openLibraryWith(job: Record<string, unknown>) {
+    routeDefaults();
+    render(<MasteringStudio />);
+    mockedFetch.mockResolvedValueOnce(json({ success: true, masters: [job] }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Saved masters/i })); });
+    await screen.findByRole('button', { name: /^More actions for / });
+  }
+
+  it('shows the five steps in order, before anything is loaded', () => {
+    routeDefaults();
+    render(<MasteringStudio />);
+    const steps = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+    expect(steps).toEqual(['1 · Upload', '2 · Master', '3 · Save', '4 · Video', '5 · YouTube']);
+  });
+
+  it('keeps More tools closed by default and opens it on click', async () => {
+    routeDefaults();
+    render(<MasteringStudio />);
+    const toggle = screen.getByRole('button', { name: /^More tools/ });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    // Hidden, so out of the accessibility tree.
+    expect(screen.queryByRole('heading', { name: 'Trim' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Join two parts' })).not.toBeInTheDocument();
+
+    await act(async () => { fireEvent.click(toggle); });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    for (const name of ['Trim', 'Join two parts', 'Compare before and after', 'Repair marks']) {
+      expect(screen.getByRole('heading', { name })).toBeVisible();
+    }
+  });
+
+  it('keeps the trim panel MOUNTED while More tools is closed, so a recipe is never dropped', async () => {
+    primeHappyPath();
+    render(<MasteringStudio />);
+    await uploadA();
+    // Closed, yet the trim fields exist — hidden, not unmounted.
+    expect(screen.getByRole('button', { name: /^More tools/ })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByLabelText(/Fade out/i)).not.toBeVisible();
+  });
+
+  it('opens the row "…" menu and reaches Make a short, Background and Slideshow', async () => {
+    await openLibraryWith(libraryRow({ coverKey: 'audio/mastering/1_c_cover.jpg' }));
+    const trigger = screen.getByRole('button', { name: 'More actions for காதல் மழை' });
+    expect(trigger).toHaveAttribute('aria-haspopup', 'true');
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+
+    await act(async () => { fireEvent.click(trigger); });
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    for (const name of [/^Make a short$/, /^Background$/, /^Slideshow$/, /^Whole-song vertical$/, /^Repair marks/, /^Edit & re-master$/, /^Rename$/, /^Download WAV$/]) {
+      expect(screen.getByRole('button', { name })).toBeInTheDocument();
+    }
+
+    // Make a short → the row's panel, with the short window open.
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^Make a short$/ })); });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('button', { name: /^Make vertical short$/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /^Short window:/ })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByLabelText(/Start at/i)).toBeVisible();
+
+    // Background → the same panel, now with the clips field showing.
+    await pickRowMenuItem(/^Background$/);
+    expect(screen.getByRole('button', { name: /^Background:/ })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByLabelText(/^Background videos or GIFs/)).toBeVisible();
+    // Opening one section never closes another.
+    expect(screen.getByRole('button', { name: /^Short window:/ })).toHaveAttribute('aria-expanded', 'true');
+
+    // Slideshow → the image list.
+    await pickRowMenuItem(/^Slideshow$/);
+    expect(screen.getByRole('button', { name: /add image/i })).toBeVisible();
+  });
+
+  it('closes the row menu with Escape and hands focus back to its button', async () => {
+    await openLibraryWith(libraryRow());
+    const trigger = screen.getByRole('button', { name: 'More actions for காதல் மழை' });
+    await act(async () => { fireEvent.click(trigger); });
+    const first = screen.getByRole('button', { name: /^Make a short$/ });
+    expect(first).toHaveFocus();
+    await act(async () => { fireEvent.keyDown(first, { key: 'Escape' }); });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: /^Make a short$/ })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it('still shows a red "do not upload" verdict on the row while its menu is closed', async () => {
+    await openLibraryWith(libraryRow({
+      videoKey: 'audio/mastering/1700000000000_ab12_kadhal-master-14LUFS-1440p.mp4',
+      videoAudioCheck: 'failed',
+      videoAudioFindings: ['The video is 2.4 s longer than its master.'],
+    }));
+    expect(screen.getByRole('button', { name: 'More actions for காதல் மழை' })).toHaveAttribute('aria-expanded', 'false');
+    const verdict = screen.getByText(/does not match its master — do not upload it/);
+    expect(verdict).toBeVisible();
+    expect(verdict.closest('[role="alert"]')).toBeVisible();
+    // The rendered file stays on the row too.
+    expect(screen.getByRole('button', { name: /^Video$/ })).toBeVisible();
+  });
+
+  it('summarises the video settings, and follows the chosen height and motion', async () => {
+    await masterAndSave();
+    const toggle = screen.getByRole('button', { name: /^Video settings:/ });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(toggle).toHaveTextContent('1440p · still');
+
+    await act(async () => { fireEvent.click(toggle); });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/Upload size/i), { target: { value: '2160' } });
+    });
+    expect(toggle).toHaveTextContent('2160p · still');
+
+    // A moving video is 1080p whatever the size says — same rule as the button.
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/Motion/), { target: { value: 'zoom-in' } });
+    });
+    expect(toggle).toHaveTextContent('1080p · slow zoom in');
+    expect(screen.getByRole('button', { name: /^Short settings:/ })).toHaveTextContent('loudest stretch · slow zoom in');
+  });
+
+  it('summarises the background as "(none)" until clips are added', async () => {
+    await masterAndSave();
+    const toggle = screen.getByRole('button', { name: /^Background:/ });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(toggle).toHaveTextContent('(none)');
+  });
+
+  it('shows what a running render is doing, with its elapsed time, on its button', async () => {
+    await masterAndSave();
+    await addCover();
+    // Accepted, then never finished: every status read is the unchanged job.
+    mockedFetch.mockResolvedValueOnce(json({ success: true, videoKey: 'v', height: 1440, status: 'queued' }));
+    mockedFetch.mockResolvedValue(json(savedJob()));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^Render video/ })); });
+
+    const busy = await screen.findByRole('button', { name: /^Rendering… 0:0\d$/ });
+    expect(busy).toBeDisabled();
+    await waitFor(() => expect(busy).toHaveTextContent(/Rendering… 0:0[1-9]/), { timeout: 3000 });
+  });
+
+  it('puts a page-level error under the step whose button caused it — no banner', async () => {
+    routeDefaults();
+    render(<MasteringStudio />);
+    const input = document.getElementById(
+      screen.getByText(/Drop a WAV here/i).closest('label')!.getAttribute('for')!
+    ) as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [new File(['x'], 'song.mp3', { type: 'audio/mpeg' })] } });
+    });
+    const upload = screen.getByRole('heading', { name: '1 · Upload' }).closest('section')!;
+    expect(within(upload).getByRole('alert')).toHaveTextContent(/That is not a WAV/);
+    for (const a of screen.getAllByRole('alert')) expect(upload).toContainElement(a);
+  });
+});
