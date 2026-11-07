@@ -29,6 +29,12 @@ Once a story has shots, **Check storyboard** sits above them. Press it before yo
 - The button shows the most it can cost (a few cents; more for a long story or with lyrics). That much is held while it runs, and only the real cost counts. It takes about a minute and runs on the same background worker as drafts.
 - One check at a time per story. The last check stays on the page; once you edit the storyboard it says **"You have changed the storyboard since this check"** — check again when you are ready. A check not finished after 15 minutes is marked failed and its hold released.
 
+### 2c. Every shot at once
+Below the check, **Every shot** has two buttons; each shows how many shots and the total, and confirms with the story total first.
+- **Pictures for every shot** makes one picture ($0.02) for each shot that has none. The first picture of a shot is chosen for it.
+- **Videos for every shot** makes a clip ($0.08 a second) for each shot that has a chosen picture, no clip and none rendering; a shot with no picture is left out and counted ("N shots need a picture before their clips"). Each clip starts from that picture (a chosen still is set as the first frame first). You see the clips only after they are made, so try one or two by hand first.
+- One shot at a time through the same routes as the shot cards, so the budget cap holds. Over the cap it stops and offers **Raise budget**; a shot that fails is named and the rest go on; **Stop** finishes the current shot and starts no more; once every clip has started there is nothing to stop, so it is hidden while they render. Clips already started keep rendering after Stop or leaving the page — open their scenes to see them.
+
 ### 3. Edit
 What the studio lets you change by hand today:
 - **Scenes:** add a scene (heading) in the left rail; **Delete scene** removes it with all its shots and their stills, after a confirm.
