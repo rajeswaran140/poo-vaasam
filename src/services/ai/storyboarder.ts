@@ -12,6 +12,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { storyboardOutputSchema, storyboardOutputJsonSchema, type StoryboardOutput } from './storyboarderSchema';
 import type { AspectRatio } from '@/types/visualStory';
 import { draftMaxOutputTokens } from '@/services/video/cost';
+import { fitDurations } from '@/lib/visual-story-fit';
 
 export const DEFAULT_MODEL = 'claude-sonnet-4-6';
 const REQUEST_TIMEOUT_MS = 25_000;
@@ -115,22 +116,8 @@ function repairTiling(data: StoryboardOutput, windowSec: number): boolean {
  */
 function scaleToWindow(data: StoryboardOutput, windowSec: number): boolean {
   const shots = data.scenes.flatMap((s) => s.shots);
-  const total = shots.reduce((n, s) => n + s.durationSec, 0);
-  if (total <= 0 || shots.length > windowSec || shots.length * MAX_SHOT_SEC < windowSec) return false;
-  const clamp = (n: number) => Math.min(MAX_SHOT_SEC, Math.max(MIN_SHOT_SEC, n));
-  const next = shots.map((s) => clamp(Math.round((s.durationSec * windowSec) / total)));
-  let diff = windowSec - next.reduce((a, b) => a + b, 0);
-  const step = Math.sign(diff);
-  while (diff !== 0) {
-    let moved = false;
-    for (let i = next.length - 1; i >= 0 && diff !== 0; i--) {
-      if (clamp(next[i] + step) === next[i]) continue;
-      next[i] += step;
-      diff -= step;
-      moved = true;
-    }
-    if (!moved) return false;
-  }
+  const next = fitDurations(shots.map((s) => s.durationSec), windowSec);
+  if (!next) return false;
   shots.forEach((s, i) => {
     s.durationSec = next[i];
   });

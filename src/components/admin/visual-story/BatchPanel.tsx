@@ -16,27 +16,19 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { adminFetch } from '@/lib/client-auth';
 import { delay } from '@/lib/poll-job';
+import { followClips, postWithRetry, shotLabel as label, STOPPED, type Started } from '@/lib/visual-story-runner';
 import { estimateCostUsd } from '@/services/video/cost';
 import type { Candidate, GenJob, Shot, VisualStory } from '@/types/visualStory';
 import { RaiseBudgetButton, shotKey, usd } from './ui-utils';
 
-/** Gap between paid requests, and the wait after a 429, both within the 20-a-minute route limit. */
+/** Gap between paid requests, within the 20-a-minute route limit. */
 const START_GAP_MS = 3000;
-const RATE_LIMIT_WAIT_MS = 30_000;
-const RATE_LIMIT_TRIES = 3;
-const POLL_INTERVAL_MS = 10_000;
-const POLL_TIMEOUT_MS = 20 * 60_000;
-const OFFLINE = 'Could not reach the server.';
 const CLIP_MAYBE_STARTED = 'The connection dropped; the clip may have started. Open the scene to check.';
-/** post()'s status when Stop was pressed during a rate-limit wait: nothing was sent. */
-const STOPPED = -1;
 
 type Kind = 'pictures' | 'videos';
 
 const inflight = (j: GenJob) => j.status === 'submitted' || j.status === 'running';
-const label = (s: Pick<Shot, 'sceneOrder' | 'shotOrder'>) => `Scene ${s.sceneOrder}, shot ${s.shotOrder}`;
 const plural = (n: number) => `${n} shot${n === 1 ? '' : 's'}`;
 const of = (s: Pick<Shot, 'sceneOrder' | 'shotOrder'>) => (c: Pick<Candidate, 'sceneOrder' | 'shotOrder'>) =>
   c.sceneOrder === s.sceneOrder && c.shotOrder === s.shotOrder;
@@ -76,8 +68,6 @@ interface Props {
   onChanged: () => void;
 }
 
-type Outcome = { ok: true; data?: { jobId?: string } } | { ok: false; status: number; error: string };
-
 export function BatchPanel({ vsId, story, shots, candidates, genJobs, onChanged }: Props) {
   const [confirming, setConfirming] = useState<Kind | null>(null);
   const [running, setRunning] = useState<Kind | null>(null);
@@ -112,56 +102,8 @@ export function BatchPanel({ vsId, story, shots, candidates, genJobs, onChanged 
   const picturePrice = priceOf('pictures', pictureShots);
   const videoPrice = priceOf('videos', videoShots);
 
-  /** One paid POST, retried after a 429. No signal: a paid call is never cut short. */
-  const post = async (url: string, body?: unknown): Promise<Outcome> => {
-    for (let attempt = 1; ; attempt++) {
-      let res: Response;
-      try {
-        res = await adminFetch(url, {
-          method: 'POST',
-          ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}),
-        });
-      } catch {
-        return { ok: false, status: 0, error: OFFLINE };
-      }
-      const json = await res.json().catch(() => null);
-      if (res.ok && json?.success) return { ok: true, data: json.data };
-      if (res.status === 429 && attempt < RATE_LIMIT_TRIES) {
-        await delay(RATE_LIMIT_WAIT_MS, abort.current.signal);
-        if (!mounted.current || stop.current) return { ok: false, status: STOPPED, error: '' };
-        continue;
-      }
-      return { ok: false, status: res.status, error: json?.error || `HTTP ${res.status}` };
-    }
-  };
-
-  /** Follow started clips until each ends (or the cap); returns how many succeeded. */
-  const follow = async (jobs: { jobId: string; shot: Shot }[], failed: string[]): Promise<number> => {
-    let open = [...jobs];
-    let made = 0;
-    const until = Date.now() + POLL_TIMEOUT_MS;
-    while (open.length && mounted.current && Date.now() < until) {
-      const still: typeof open = [];
-      for (const j of open) {
-        let job: GenJob | undefined;
-        try {
-          const res = await adminFetch(`/api/admin/visual-story/${vsId}/video-jobs/${j.jobId}`, { signal: abort.current.signal });
-          const json = await res.json().catch(() => null);
-          job = res.ok && json?.success ? (json.data as GenJob) : undefined;
-        } catch {
-          job = undefined; // transient: look again next round
-        }
-        if (job?.status === 'succeeded') made++;
-        else if (job?.status === 'failed' || job?.status === 'cancelled') failed.push(`${label(j.shot)}: ${job.error || 'The video failed.'}`);
-        else still.push(j);
-      }
-      open = still;
-      setProgress(`Rendering: ${jobs.length - open.length} of ${jobs.length} clips finished…`);
-      if (open.length) await delay(POLL_INTERVAL_MS, abort.current.signal);
-    }
-    if (open.length && mounted.current) failed.push(`${open.length} still rendering — open their scenes in a few minutes to see them.`);
-    return made;
-  };
+  const ctl = { signal: abort.current.signal, isMounted: () => mounted.current, isStopped: () => stop.current };
+  const post = (url: string, body?: unknown) => postWithRetry(url, body, { ...ctl, signal: abort.current.signal });
 
   const run = async (kind: Kind) => {
     const list = kind === 'pictures' ? pictureShots : videoShots;
@@ -173,7 +115,7 @@ export function BatchPanel({ vsId, story, shots, candidates, genJobs, onChanged 
     setFailures([]);
     stop.current = false;
     const failed: string[] = [];
-    const started: { jobId: string; shot: Shot }[] = [];
+    const started: Started[] = [];
     let made = 0;
     let tried = 0;
     let refused = false;
@@ -217,7 +159,14 @@ export function BatchPanel({ vsId, story, shots, candidates, genJobs, onChanged 
       if (kind === 'videos' && started.length) {
         changed.current();
         setRendering(true);
-        made = await follow(started, failed);
+        const r = await followClips(vsId, started, {
+          ...ctl,
+          signal: abort.current.signal,
+          onProgress: (done, total) => setProgress(`Rendering: ${done} of ${total} clips finished…`),
+        });
+        made = r.succeeded.length;
+        failed.push(...r.failed.map((f) => `${label(f.shot)}: ${f.error}`));
+        if (r.open && mounted.current) failed.push(`${r.open} still rendering — open their scenes in a few minutes to see them.`);
       }
     } finally {
       if (mounted.current) {

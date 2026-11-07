@@ -27,6 +27,7 @@ import { Inspector } from './Inspector';
 import { CharactersPanel } from './CharactersPanel';
 import { CheckPanel } from './CheckPanel';
 import { BatchPanel } from './BatchPanel';
+import { PicturePanel } from './PicturePanel';
 import { DraftPanel } from './DraftPanel';
 import { SpendBar } from './SpendBar';
 import { StoryActions } from './StoryActions';
@@ -172,6 +173,19 @@ export function Studio({ vsId }: { vsId: string }) {
     />
   );
 
+  const picturePanel = (
+    <PicturePanel
+      key="pictures"
+      vsId={vsId}
+      story={story}
+      scenes={scenes}
+      shots={shots}
+      candidates={candidates}
+      genJobs={tree.genJobs ?? []}
+      onChanged={refresh}
+    />
+  );
+
   const batchPanel = (
     <BatchPanel
       key="batch"
@@ -238,8 +252,8 @@ export function Studio({ vsId }: { vsId: string }) {
         />
 
         <div className="space-y-6">
-          {/* Keyed, so swapping the order moves them without remounting (the draft and check panels keep their polls). The check sits above the shots: it is read before spending; the every-shot buttons sit between. */}
-          {shots.length === 0 ? [draftPanel, shotGrid] : [checkPanel, batchPanel, shotGrid, draftPanel]}
+          {/* Keyed, so swapping the order moves them without remounting (the draft and check panels keep their polls). The check sits above the shots: it is read before spending; the pictures panel and the every-shot buttons sit between; an empty story offers pictures or a draft. */}
+          {shots.length === 0 ? [picturePanel, draftPanel, shotGrid] : [checkPanel, picturePanel, batchPanel, shotGrid, draftPanel]}
         </div>
 
         <aside ref={asideRef} className="scroll-mt-4 space-y-3">

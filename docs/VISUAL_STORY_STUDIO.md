@@ -29,6 +29,14 @@ Once a story has shots, **Check storyboard** sits above them. Press it before yo
 - The button shows the most it can cost (a few cents; more for a long story or with lyrics). That much is held while it runs, and only the real cost counts. It takes about a minute and runs on the same background worker as drafts.
 - One check at a time per story. The last check stays on the page; once you edit the storyboard it says **"You have changed the storyboard since this check"** — check again when you are ready. A check not finished after 15 minutes is marked failed and its hold released.
 
+### 2b-bis. Video from your pictures
+Instead of a draft (or beside one), **Video from your pictures** builds the story from your own pictures.
+- **Add pictures** takes several JPEG or PNG files at once; each becomes a shot, in order (a new story gets a scene called "Your pictures"). Free.
+- Each row: the picture, its **seconds** (1-15), and **Still** (a slow zoom in the render, free) or **Moving** (Grok animates it starting from your picture, $0.08 a second). A moving row has **How it moves**, a short prompt (pre-filled: gentle, natural movement, keep the picture as it is).
+- **Total N s of M s** must match the story's length; **Fit to M s** scales every row (1-15 s each).
+- **Make the video (N moving · $X)** confirms with the story total, then: makes a clip for each moving picture that has none yet (one at a time; a clip already made is not paid again), waits for them, chooses each clip for its shot and each still picture for a still shot, and starts **Render video**. A failed clip, a row with no picture, or a total that does not fit stops it before the render, and says why.
+- Grok makes at most 15 s per clip, so a long video is always several clips joined; the render joins them into one video.
+
 ### 2c. Every shot at once
 Below the check, **Every shot** has two buttons; each shows how many shots and the total, and confirms with the story total first.
 - **Pictures for every shot** makes one picture ($0.02) for each shot that has none. The first picture of a shot is chosen for it.
