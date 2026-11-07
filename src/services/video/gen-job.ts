@@ -49,20 +49,32 @@ export interface VideoRequestTree {
 
 /**
  * The provider request for one shot: the shot's prompt plus its cast
- * ("Name: description", tagged with the `<IMAGE_n>` references that show
- * them), the pinned first-frame STILL and the cast's reference photos — all
- * as short-lived signed URLs. Never carries an abort signal (R10).
+ * ("Name: description") and, as short-lived signed URLs, EITHER a first frame
+ * OR the cast's reference photos. The first frame is the pinned STILL, else
+ * the shot's chosen picture when that is a STILL of this shot (an upload
+ * counts). A clip that starts from a picture sends it alone — the picture
+ * already shows the cast, and xAI documents image and reference_images
+ * separately, never together. Without one, each cast line is tagged with the
+ * `<IMAGE_n>` references that show them. Never carries an abort signal (R10).
  */
 export async function buildVideoRequest(tree: VideoRequestTree, shot: Shot): Promise<VideoGenRequest> {
   const cast = shot.charIds
     .map((id) => tree.characters.find((c) => c.charId === id))
     .filter((c): c is Character => !!c);
 
+  const stillOfShot = (candId: string | null | undefined) =>
+    candId
+      ? tree.candidates.find(
+          (c) => c.candId === candId && c.sceneOrder === shot.sceneOrder && c.shotOrder === shot.shotOrder && c.mode === 'STILL'
+        )
+      : undefined;
+  const firstFrame = stillOfShot(shot.firstFrameCandidateId) ?? stillOfShot(shot.selectedCandidateId);
+
   // Cap before signing, so the <IMAGE_n> indices match the URLs sent.
   const refKeys: string[] = [];
   const castLines = cast.map((c) => {
     const tags: string[] = [];
-    for (const key of c.refImageKeys ?? []) {
+    for (const key of firstFrame ? [] : (c.refImageKeys ?? [])) {
       if (refKeys.length >= MAX_REFERENCE_IMAGES) break;
       tags.push(`<IMAGE_${refKeys.length}>`);
       refKeys.push(key);
@@ -76,16 +88,6 @@ export async function buildVideoRequest(tree: VideoRequestTree, shot: Shot): Pro
     castLines.length ? `${shot.visualPrompt}\n\nCharacters in this shot:\n${castLines.join('\n')}` : shot.visualPrompt,
     tree.story.style
   );
-
-  const firstFrame = shot.firstFrameCandidateId
-    ? tree.candidates.find(
-        (c) =>
-          c.candId === shot.firstFrameCandidateId &&
-          c.sceneOrder === shot.sceneOrder &&
-          c.shotOrder === shot.shotOrder &&
-          c.mode === 'STILL'
-      )
-    : undefined;
 
   const sign = (key: string) => S3Operations.getSignedUrl(key, SIGNED_URL_TTL_SEC);
   const [firstFrameUrl, referenceImageUrls] = await Promise.all([

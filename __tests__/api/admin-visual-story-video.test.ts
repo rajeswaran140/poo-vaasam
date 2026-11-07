@@ -247,12 +247,10 @@ describe('POST video — money paths', () => {
     expect(sub.durationSec).toBe(6);
     expect(sub.aspectRatio).toBe('9:16');
     expect(sub.firstFrameUrl).toBe(signed(cand(STILL, 1, 2).s3Key));
-    expect(sub.referenceImageUrls).toEqual([
-      signed('audio/mastering/visual-story/ref/a.jpg'),
-      signed('audio/mastering/visual-story/ref/b.jpg'),
-    ]);
+    // A clip that starts from a picture sends that picture alone: it already shows the cast.
+    expect(sub.referenceImageUrls).toBeUndefined();
     expect(mockSign).toHaveBeenCalledWith(cand(STILL, 1, 2).s3Key, 3600);
-    expect(mockSign).toHaveBeenCalledWith('audio/mastering/visual-story/ref/a.jpg', 3600);
+    expect(mockSign).toHaveBeenCalledTimes(1);
 
     expect(repo.transitionGenJob).toHaveBeenCalledTimes(1);
     expect(repo.transitionGenJob).toHaveBeenCalledWith(VS, created.jobId, ['submitted'], 'running', {
@@ -525,7 +523,7 @@ describe('buildVideoRequest', () => {
   const t = (over: Record<string, unknown> = {}) => tree(over) as unknown as Parameters<typeof buildVideoRequest>[0];
 
   it('prompt carries the shot prompt and each cast member, with <IMAGE_n> tags for references', async () => {
-    const req = await buildVideoRequest(t(), tree().shots[1] as never);
+    const req = await buildVideoRequest(t(), shot(1, 2, { charIds: [CH] }) as never);
     expect(req.prompt).toContain('A lamp on a window sill at dusk');
     expect(req.prompt).toContain('Test girl: a girl in a yellow half-saree');
     expect(req.prompt).toContain('<IMAGE_0>');
@@ -575,6 +573,41 @@ describe('buildVideoRequest', () => {
     expect(req.prompt).toMatch(/\nA\b/);
     expect(req.prompt).toContain('<IMAGE_13>');
     expect(req.prompt).not.toContain('<IMAGE_14>');
+  });
+});
+
+describe('buildVideoRequest — starts from the chosen picture', () => {
+  const t = (over: Record<string, unknown> = {}) => tree(over) as unknown as Parameters<typeof buildVideoRequest>[0];
+
+  it('a chosen still is the first frame when none is pinned; the picture goes alone, no reference photos', async () => {
+    const s = shot(1, 2, { charIds: [CH], selectedCandidateId: STILL });
+    const req = await buildVideoRequest(t(), s as never);
+    expect(req.firstFrameUrl).toBe(signed(cand(STILL, 1, 2).s3Key));
+    expect(req.referenceImageUrls).toBeUndefined();
+    expect(req.prompt).toContain('Test girl: a girl in a yellow half-saree');
+    expect(req.prompt).not.toContain('<IMAGE_');
+  });
+
+  it('an uploaded picture that is chosen (not pinned) is sent as the first frame', async () => {
+    const UP = 'cd_1700000000005_abcdef12';
+    const mine = { ...cand(UP, 1, 2), providerId: 'upload', costUsd: 0, s3Key: `audio/mastering/visual-story/${VS}/candidates/${UP}.png` };
+    const req = await buildVideoRequest(t({ candidates: [mine] }), shot(1, 2, { charIds: [CH], selectedCandidateId: UP }) as never);
+    expect(req.firstFrameUrl).toBe(signed(mine.s3Key));
+    expect(req.referenceImageUrls).toBeUndefined();
+  });
+
+  it('a pinned first frame wins over the chosen picture', async () => {
+    const s = shot(1, 2, { selectedCandidateId: OTHER_STILL, firstFrameCandidateId: STILL });
+    const req = await buildVideoRequest(t({ candidates: [cand(STILL, 1, 2), cand(OTHER_STILL, 1, 2)] }), s as never);
+    expect(req.firstFrameUrl).toBe(signed(cand(STILL, 1, 2).s3Key));
+  });
+
+  it('a chosen clip, or another shot\'s still, is not a first frame: the cast photos go instead', async () => {
+    for (const sel of [CLIP, OTHER_STILL]) {
+      const req = await buildVideoRequest(t(), shot(1, 2, { charIds: [CH], selectedCandidateId: sel }) as never);
+      expect(req.firstFrameUrl).toBeUndefined();
+      expect(req.referenceImageUrls).toHaveLength(2);
+    }
   });
 });
 

@@ -29,6 +29,18 @@ Once a story has shots, **Check storyboard** sits above them. Press it before yo
 - The button shows the most it can cost (a few cents; more for a long story or with lyrics). That much is held while it runs, and only the real cost counts. It takes about a minute and runs on the same background worker as drafts.
 - One check at a time per story. The last check stays on the page; once you edit the storyboard it says **"You have changed the storyboard since this check"** — check again when you are ready. A check not finished after 15 minutes is marked failed and its hold released.
 
+### 2b-bis. Video from your pictures
+Instead of a draft (or beside one), **Video from your pictures** builds the story from your own pictures.
+- **Add pictures** takes several JPEG or PNG files at once; each becomes a shot, in order (a new story gets a scene called "Your pictures"). Free.
+- Each row: the picture, its **seconds** (1-15), and **Still** (a slow zoom in the render, free) or **Moving** (Grok animates it starting from your picture, $0.08 a second). A moving row has **How it moves**, a short prompt (pre-filled: gentle, natural movement, keep the picture as it is).
+- **Total N s of M s** must match the story's length; **Fit to M s** scales every row (1-15 s each).
+- **Make the video (N moving · $X)** confirms with the story total, then: makes a clip for each moving picture that has none yet (one at a time; a clip already made is not paid again), waits for them, chooses each clip for its shot and each still picture for a still shot, and starts **Render video**. A failed clip, a row with no picture, or a total that does not fit stops it before the render, and says why.
+- Each moving picture is pinned as its shot's first frame before its clip is made, so a later re-make (from the shot card) still starts from it. A clip already rendering is waited for and used, not paid again. **Remove** deletes a row (e.g. one whose upload failed).
+- A video too long for the render worker (stills cost more render time than clips) is refused before anything is paid.
+- The panel shows only for a story built from pictures (every shot in a "Your pictures" scene) or an empty one; a drafted story keeps its shot cards.
+- Grok makes at most 15 s per clip, so a long video is always several clips joined; the render joins them into one video.
+- Known gap: a clip made for 8 s on a row later set to 15 s holds its last frame for the extra 7 s (shorter cuts it); re-make that clip from the shot card.
+
 ### 2c. Every shot at once
 Below the check, **Every shot** has two buttons; each shows how many shots and the total, and confirms with the story total first.
 - **Pictures for every shot** makes one picture ($0.02) for each shot that has none. The first picture of a shot is chosen for it.
@@ -55,7 +67,7 @@ Press **Generate still ($0.02)** on a shot. You see the price and the story tota
 Press **Make video (6 s · $0.48)** on a shot (the label shows that shot's length and price). You see the price and the story total after it, and confirm. The button then reads "Rendering…" and the card says **"Rendering… about 1–3 minutes"**; the clip appears on the shot when it is ready.
 - **Cancel** (beside the progress line) asks first and warns **"Grok may still charge for this clip, and it won't be kept."** Pressing **Cancel video** counts the clip's price as spent, because Grok may already have accepted it; **Keep rendering** goes back.
 - **Check again** appears if the card stopped watching a clip (for example after a network hiccup). Press it to look once more. If you left the page, press **Check rendering videos (N)** on the story list; N is how many clips are still rendering.
-- **First frame:** on a still, **Use as first frame** makes the video start from that picture. The shot panel shows **First frame** with the picture and a **Clear** button to go back to no first frame.
+- **First frame:** a clip starts from the shot's **chosen picture** when that is a still or your upload. **Use as first frame** on another still starts it from that one instead; the shot panel shows **First frame** with the picture and a **Clear** button to go back to the chosen picture. A clip that starts from a picture sends only that picture, not the characters' photos (the picture already shows them; xAI documents the two inputs separately), and is made at 1080p. With no chosen still, the characters' photos are sent instead, at 720p.
 - **Upload picture:** adds your own JPEG or PNG (up to 10 MB, e.g. a thumbnail) to a shot for free. It shows as **Yours** next to the stills and can be picked or used as the first frame. Use a picture already in the story's shape (crop a 16:9 thumbnail to 9:16 for a vertical story), and one without text: a title on it will likely warp once it moves.
 - **Character photos** of the characters in a shot are sent to Grok too. A clip that uses them is made at **720p** (without photos it is 1080p).
 - A video **can't be made for a shot without a prompt** ("Write a visual prompt first.").
