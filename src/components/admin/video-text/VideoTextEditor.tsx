@@ -26,7 +26,6 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const EXPIRED = 'The uploaded video was deleted after 30 days — upload it again; your timing is kept.';
 const UNPLAYABLE = 'The video could not be played — reload the page to try again.';
 const LINK_RETRY_AFTER_MS = 60 * 1000;
-const NOT_SAVED = 'Your latest changes are not saved yet — see the message at the top, then try again.';
 
 /** "7 Dec 2026", in UTC so it matches the stored date everywhere. */
 export function formatDay(iso: string | null | undefined): string {
@@ -225,7 +224,13 @@ export function VideoTextEditor({ project: initial, onBack }: { project: VideoTe
         version: body.version,
       }));
       const moved = Number(body.moved) || 0;
-      setMovedNote(moved > 0 ? `${moved} lines were past the new end and were moved inside the video.` : null);
+      setMovedNote(
+        moved === 1
+          ? '1 line was past the new end and was moved inside the video.'
+          : moved > 1
+            ? `${moved} lines were past the new end and were moved inside the video.`
+            : null,
+      );
       const file = uploadedFile.current;
       if (file) {
         setLocalUrl(URL.createObjectURL(file));
@@ -261,7 +266,8 @@ export function VideoTextEditor({ project: initial, onBack }: { project: VideoTe
       if (!contentType) throw new Error('Upload an MP4 or MOV video.');
       if (file.size > MAX_VIDEO_TEXT_BYTES) throw new Error('Videos up to 1 GB can be used.');
       // The server fits the STORED text to the new length: save first.
-      if (!(await autosave.flush())) throw new Error(NOT_SAVED);
+      const saved = await autosave.flush();
+      if (!saved.ok) throw new Error(saved.error);
       setUpload({ phase: 'uploading', pct: 0 });
       const res = await adminFetch(`/api/admin/video-text/${initial.id}/upload`, {
         method: 'POST',
@@ -288,27 +294,29 @@ export function VideoTextEditor({ project: initial, onBack }: { project: VideoTe
     if (!retryKey) return;
     const key = retryKey;
     void runUpload(async () => {
-      if (!(await autosave.flush())) throw new Error(NOT_SAVED);
+      const saved = await autosave.flush();
+      if (!saved.ok) throw new Error(saved.error);
       await confirmSource(key);
     });
   };
 
   // ---- Make video
+  // One saved state is rendered: flush (waits out a save in flight, then
+  // PATCHes what is on screen), and draw from exactly what was PATCHed. From
+  // here autosave holds until the worker has read the stored blocks.
   const makeVideo = () => {
     const source = project.source;
     if (!source) return;
-    const blocks = project.blocks;
     void job.start({
-      blocks,
-      frame: { width: source.width, height: source.height },
-      style: project.style,
-      beforeStart: async () => {
+      prepare: async () => {
         if (isExpired(source)) return EXPIRED;
+        const saved = await autosave.flush();
+        if (!saved.ok) return saved.error;
+        const { blocks, style } = saved.edits;
         if (blocks.length === 0) return 'Add a title, lyrics or credits first.';
         const problem = validateBlocks(blocks, source.durationSec);
         if (problem) return problem;
-        // The render and the overlay check both read the STORED blocks.
-        return (await autosave.flush()) || NOT_SAVED;
+        return { blocks, style, frame: { width: source.width, height: source.height } };
       },
     });
   };

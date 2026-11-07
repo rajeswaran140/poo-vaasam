@@ -222,6 +222,79 @@ describe('Make video', () => {
     jest.useRealTimers();
   });
 
+  it('renders exactly one saved state: an edit typed during an in-flight save is PATCHed, then drawn', async () => {
+    jest.useFakeTimers();
+    const patched: Array<{ version: number; edits: VideoTextProject }> = [];
+    let release!: (r: Response) => void;
+    routes['PATCH /api/admin/video-text/p1'] = (init) => {
+      patched.push(bodyOf(init));
+      return patched.length === 1 ? new Promise<Response>((r) => { release = r; }) : json({ version: 5 });
+    };
+    routes['POST /api/admin/video-text/p1/overlays'] = (init) =>
+      json({ uploads: bodyOf(init).blockIds.map((blockId: string) => ({ blockId, url: 'https://s3', fields: {}, key: `k-${blockId}` })) });
+    routes['POST /api/admin/video-text/p1/render'] = () => json({ status: 'queued' }, 202);
+    routes['GET /api/admin/video-text/p1'] = () =>
+      json({ project: { ...p(), render: { ...idleRender, renderId: lastRenderId(), status: 'done', outputKey: 'k' } } });
+    render(<VideoTextEditor project={p()} onBack={() => {}} />);
+
+    const title = screen.getByLabelText('Title');
+    fireEvent.change(title, { target: { value: 'First' } });
+    await act(async () => { jest.advanceTimersByTime(800); });
+    expect(patched).toHaveLength(1); // in flight, unanswered
+    fireEvent.change(title, { target: { value: 'Second' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Make video' }));
+    await act(async () => {});
+    expect(renderBlockPng).not.toHaveBeenCalled(); // waits for the save in flight
+    // Typed after the click, still before the in-flight save settles: it is
+    // part of the state that gets saved, so it must be what is drawn.
+    fireEvent.change(title, { target: { value: 'Third' } });
+
+    await act(async () => { release(json({ version: 4 })); });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument());
+    expect(patched).toHaveLength(2);
+    expect(patched[1].version).toBe(4);
+    expect(patched[1].edits.titleText).toBe('Third');
+    const drawn = (renderBlockPng as jest.Mock).mock.calls.map((c) => c[0]);
+    expect(drawn).toEqual(patched[1].edits.blocks);
+    expect(drawn[0]).toMatchObject({ id: 'title', text: 'Third' });
+    expect(bodyOf(calls('POST', '/api/admin/video-text/p1/overlays')[0][1]).blockIds).toEqual(['title']);
+    jest.useRealTimers();
+  });
+
+  it('a 409 on the pre-render save stops the render with the conflict message under Make video', async () => {
+    const msg = 'This project was changed in another tab — reload to see the latest.';
+    routes['PATCH /api/admin/video-text/p1'] = () => json({ error: msg }, 409);
+    render(<VideoTextEditor project={p()} onBack={() => {}} />);
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Edited' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Make video' }));
+    await waitFor(() => expect(within(screen.getByTestId('make-video')).getByRole('alert')).toHaveTextContent(msg));
+    expect(renderBlockPng).not.toHaveBeenCalled();
+    expect(calls('POST', '/api/admin/video-text/p1/overlays')).toHaveLength(0);
+  });
+
+  it('leaving during the hold does not save the held edit, and closing the tab is warned', async () => {
+    jest.useFakeTimers();
+    routes['POST /api/admin/video-text/p1/overlays'] = () =>
+      json({ uploads: [{ blockId: 'title', url: 'https://s3', fields: {}, key: 'k' }] });
+    routes['POST /api/admin/video-text/p1/render'] = () => json({ status: 'queued' }, 202);
+    routes['GET /api/admin/video-text/p1'] = () =>
+      json({ project: { ...p(), render: { ...idleRender, renderId: lastRenderId(), status: 'queued', updatedAt: new Date().toISOString() } } });
+    routes['PATCH /api/admin/video-text/p1'] = () => json({ version: 4 });
+    const { unmount } = render(<VideoTextEditor project={p()} onBack={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Make video' }));
+    await waitFor(() => expect(calls('GET', '/api/admin/video-text/p1')).toHaveLength(1));
+
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Held' } });
+    const leaving = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(leaving);
+    expect(leaving.defaultPrevented).toBe(true);
+
+    unmount();
+    await act(async () => {});
+    expect(calls('PATCH', '/api/admin/video-text/p1')).toHaveLength(0);
+    jest.useRealTimers();
+  });
+
   it('mounting with an encoding render resumes polling and shows Encoding', async () => {
     const now = new Date().toISOString();
     const inFlight: RenderState = {
@@ -256,6 +329,18 @@ it('an expired preview link is fetched again and playback resumes from the same 
   expect(screen.getByRole('alert')).toHaveTextContent('The video could not be played — reload the page to try again.');
   expect(calls('GET', '/api/admin/video-text/p1/source')).toHaveLength(2);
   clock.mockRestore();
+});
+
+it('a re-upload that moved one line says so in the singular', async () => {
+  routes['POST /api/admin/video-text/p1/upload'] = () => json({ url: 'https://s3', fields: {}, key: 'audio/mastering/video-text/p1/source/c.mp4' });
+  routes['POST /api/admin/video-text/p1/source'] = () =>
+    json({ source: { ...source, durationSec: 200 }, blocks: [titleBlock], moved: 1, version: 9 });
+  routes['PATCH /api/admin/video-text/p1'] = () => json({ version: 10 });
+  render(<VideoTextEditor project={project({ titleText: 'Song', blocks: [titleBlock] })} onBack={() => {}} />);
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText(/Choose a video/i), { target: { files: [new File(['x'], 'b.mp4', { type: 'video/mp4' })] } });
+  });
+  expect(await screen.findByText('1 line was past the new end and was moved inside the video.')).toBeInTheDocument();
 });
 
 it('a re-upload that moved lines says so', async () => {

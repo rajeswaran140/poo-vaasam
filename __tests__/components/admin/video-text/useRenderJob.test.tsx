@@ -22,11 +22,12 @@ const idle: RenderState = {
   renderId: null, status: 'idle', progress: null, outputKey: null,
   outputExpiresAt: null, error: null, startedAt: null, updatedAt: null,
 };
-const input = {
+const snapshot = {
   blocks: [{ id: 'title', track: 'title' as const, text: 'Song', startSec: 0, endSec: 5 }],
   frame: { width: 1920, height: 1080 },
   style: { sizeScale: 1, lyricPosition: 'lower' as const },
 };
+const input = { prepare: async () => snapshot };
 
 beforeEach(() => {
   jest.clearAllMocks();

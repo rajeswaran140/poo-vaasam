@@ -2,6 +2,7 @@
 
 /**
  * Make video, start to finish:
+ *   0. prepare(): save the project, get back the exact saved state;
  *   1. ensureFonts();
  *   2. draw every block to a PNG at the video's size, 4 at a time;
  *   3. POST overlays, then upload every PNG (4 at a time);
@@ -40,16 +41,25 @@ const TOO_LONG = 'The render is taking longer than expected — reload to check 
 const MAX_WAIT_MS = 40 * 60 * 1000;
 
 type Phase =
+  | { kind: 'saving' }
   | { kind: 'drawing'; done: number; total: number }
   | { kind: 'uploading'; done: number; total: number }
   | { kind: 'server' };
 
-export interface RenderInput {
+/** One saved state of the project: what the PNGs are drawn from. */
+export interface RenderSnapshot {
   blocks: TextBlock[];
   frame: { width: number; height: number };
   style: TextStyle;
-  /** Runs first (the autosave flush); false or a thrown error stops the render. */
-  beforeStart?: () => Promise<boolean | string>;
+}
+
+export interface RenderInput {
+  /**
+   * Saves the project and resolves with the exact state the server now holds
+   * (the editor: autosave flush → its PATCHed edits), or a message that stops
+   * the render. The PNGs are drawn from this object, never from live state.
+   */
+  prepare: () => Promise<RenderSnapshot | string>;
 }
 
 const isFresh = (r: RenderState) =>
@@ -94,6 +104,7 @@ const mmss = (sec: number) => {
 };
 
 function stageLabel(phase: Phase | null, render: RenderState): string | null {
+  if (phase?.kind === 'saving') return 'Saving…';
   if (phase?.kind === 'drawing') return `Drawing text ${phase.done}/${phase.total}…`;
   if (phase?.kind === 'uploading') return `Uploading text ${phase.done}/${phase.total}…`;
   switch (render.status) {
@@ -193,15 +204,14 @@ export function useRenderJob(projectId: string, initial: RenderState) {
       setError(null);
       setRunning(true);
       setStartedAt(Date.now());
-      const total = input.blocks.length;
-      setPhase({ kind: 'drawing', done: 0, total });
+      setPhase({ kind: 'saving' });
       try {
-        if (input.beforeStart) {
-          const ok = await input.beforeStart();
-          if (ok !== true) throw new Error(typeof ok === 'string' ? ok : 'Save your changes first, then try again.');
-        }
+        const snap = await input.prepare();
+        if (typeof snap === 'string') throw new Error(snap);
+        const { blocks, frame, style } = snap;
+        const total = blocks.length;
+        setPhase({ kind: 'drawing', done: 0, total });
         await ensureFonts();
-        const { blocks, frame, style } = input;
         const pngs = await inBatches(
           blocks,
           (b) => renderBlockPng(b, frame, style),
@@ -261,7 +271,7 @@ export function useRenderJob(projectId: string, initial: RenderState) {
     render,
     running,
     /** True until the worker has read the stored blocks (it leaves `queued`); autosave holds meanwhile. */
-    startingUp: running && (phase?.kind === 'drawing' || phase?.kind === 'uploading' || render.status === 'queued'),
+    startingUp: running && (phase?.kind === 'saving' || phase?.kind === 'drawing' || phase?.kind === 'uploading' || render.status === 'queued'),
     error,
     /** e.g. "Encoding 7/18 · 2:14" while running, else null. */
     stage: label ? `${label}${elapsed ? ` · ${elapsed}` : ''}` : null,

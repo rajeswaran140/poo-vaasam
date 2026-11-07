@@ -10,12 +10,14 @@
  *   not marked saved, and the next change (or flush) sends everything again.
  * - A version bump from elsewhere (POST /source, R9) arrives as a new
  *   `project.version`; the hook adopts it for the next PATCH.
- * - `flush()` saves anything pending now and says whether the server has it.
- *   Upload and Make video call it first: both act on the STORED project.
+ * - `flush()` saves anything pending now and resolves with the edits the
+ *   server holds. Upload and Make video call it first: both act on the
+ *   STORED project, and Make video draws from exactly those edits.
  * - `hold` keeps edits local (nothing is dropped) while Make video is
  *   starting: the worker reads the stored blocks when it leaves `queued`, and
  *   the PNGs were drawn from the flushed ones. An edit saved in between would
- *   burn old text, or fail on a missing PNG for a new line. `flush()` ignores it.
+ *   burn old text, or fail on a missing PNG for a new line. `flush()` ignores it;
+ *   the save on unmount respects it.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
@@ -36,11 +38,14 @@ export const editsOf = (p: VideoTextProject): Edits => ({
 
 export type AutosaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
+/** What the server now holds — the exact edits PATCHed (parsed back from the body sent) — or why not. */
+export type FlushResult = { ok: true; edits: Edits } | { ok: false; error: string };
+
 export function useAutosave(
   project: VideoTextProject,
   onVersion: (version: number) => void,
   { hold = false }: { hold?: boolean } = {},
-): { status: AutosaveStatus; error: string | null; flush: () => Promise<boolean> } {
+): { status: AutosaveStatus; error: string | null; flush: () => Promise<FlushResult> } {
   const [status, setStatus] = useState<AutosaveStatus>('idle');
   const [error, setError] = useState<string | null>(null);
 
@@ -49,29 +54,35 @@ export function useAutosave(
   latest.current = { id: project.id, snapshot, edits: editsOf(project) };
 
   const savedSnapshot = useRef(snapshot);
+  const savedEdits = useRef<Edits>(JSON.parse(snapshot) as Edits);
+  const holdRef = useRef(hold);
+  holdRef.current = hold;
   const version = useRef(project.version);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const inFlight = useRef<Promise<boolean> | null>(null);
+  const inFlight = useRef<Promise<FlushResult> | null>(null);
   const mounted = useRef(true);
   const onVersionRef = useRef(onVersion);
   onVersionRef.current = onVersion;
 
   // Leaving the editor (Back, or another project) inside the debounce window
-  // must not drop the last edits: send them on the way out.
-  const flushRef = useRef<() => Promise<boolean>>(async () => true);
+  // must not drop the last edits: send them on the way out — unless a render
+  // is starting (hold): then they stay unsaved, and beforeunload warns.
+  const flushRef = useRef<() => Promise<FlushResult>>(async () => ({ ok: true, edits: savedEdits.current }));
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
       if (timer.current) clearTimeout(timer.current);
-      if (latest.current.snapshot !== savedSnapshot.current) void flushRef.current();
+      if (!holdRef.current && latest.current.snapshot !== savedSnapshot.current) void flushRef.current();
     };
   }, []);
 
-  /** Send the current edits once. Resolves true when the server has them. */
-  const saveNow = useCallback(async (): Promise<boolean> => {
-    const { id, snapshot: sent, edits } = latest.current;
-    if (sent === savedSnapshot.current) return true;
+  /** Send the current edits once. */
+  const saveNow = useCallback(async (): Promise<FlushResult> => {
+    const { id, snapshot: sent } = latest.current;
+    if (sent === savedSnapshot.current) return { ok: true, edits: savedEdits.current };
+    // A detached copy of exactly what goes over the wire.
+    const edits = JSON.parse(sent) as Edits;
     setStatus('saving');
     try {
       const res = await adminFetch(`/api/admin/video-text/${id}`, {
@@ -85,29 +96,35 @@ export function useAutosave(
       }
       version.current = body.version;
       savedSnapshot.current = sent;
+      savedEdits.current = edits;
       onVersionRef.current(body.version);
       if (mounted.current) {
         setError(null);
         setStatus(latest.current.snapshot === sent ? 'saved' : 'saving');
       }
-      return true;
+      return { ok: true, edits };
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       if (mounted.current) {
-        setError(err instanceof Error ? err.message : String(err));
+        setError(message);
         setStatus('error');
       }
-      return false;
+      return { ok: false, error: message };
     }
   }, []);
 
-  /** Wait for any save in flight, then save what is pending. */
-  const flush = useCallback(async (): Promise<boolean> => {
+  /**
+   * Wait for any save in flight to settle, then save what is on screen now.
+   * Resolves with the edits the server holds afterwards — Make video draws
+   * from exactly these, never from live state.
+   */
+  const flush = useCallback(async (): Promise<FlushResult> => {
     if (timer.current) {
       clearTimeout(timer.current);
       timer.current = null;
     }
     while (inFlight.current) await inFlight.current;
-    if (latest.current.snapshot === savedSnapshot.current) return true;
+    if (latest.current.snapshot === savedSnapshot.current) return { ok: true, edits: savedEdits.current };
     const run = saveNow();
     inFlight.current = run;
     try {
@@ -136,10 +153,13 @@ export function useAutosave(
     }, AUTOSAVE_DELAY_MS);
   }, [snapshot, project.version, flush, hold]);
 
-  // Closing the tab inside the 800 ms window would lose the last keystrokes.
+  // Closing the tab with unsaved edits (inside the 800 ms window, or held
+  // while a render starts) would lose them: ask first.
   useEffect(() => {
     const warn = (e: BeforeUnloadEvent) => {
-      if (latest.current.snapshot !== savedSnapshot.current) e.preventDefault();
+      if (latest.current.snapshot === savedSnapshot.current) return;
+      e.preventDefault();
+      e.returnValue = ''; // older browsers only prompt when this is set
     };
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
