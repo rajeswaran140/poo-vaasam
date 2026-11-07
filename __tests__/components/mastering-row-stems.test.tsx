@@ -80,6 +80,8 @@ describe('the stems link on a saved-master row', () => {
   it('offers "Add stems" on a master with none', async () => {
     routeFetch({}, [masterFixture()]);
     await openLibrary();
+    // In the row's "…" menu since the 2026-11-07 layout.
+    fireEvent.click(within(rowFor(SONG)).getByRole('button', { name: /^More actions for / }));
     const link = within(rowFor(SONG)).getByRole('link', { name: /^Add stems$/ });
     expect(link).toHaveAttribute('href', '/admin/mastering/stems/job1');
   });
@@ -87,6 +89,7 @@ describe('the stems link on a saved-master row', () => {
   it('shows the count when the master has stems', async () => {
     routeFetch({}, [masterFixture({ stemCount: 11 })]);
     await openLibrary();
+    fireEvent.click(within(rowFor(SONG)).getByRole('button', { name: /^More actions for / }));
     expect(within(rowFor(SONG)).getByRole('link', { name: /^Stems \(11\)$/ })).toHaveAttribute('href', '/admin/mastering/stems/job1');
   });
 });

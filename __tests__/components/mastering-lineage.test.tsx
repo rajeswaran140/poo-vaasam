@@ -46,8 +46,10 @@ it('sends the reopened master as the parent of the new job', async () => {
   render(<MasteringStudio />);
   fireEvent.click(screen.getByRole('button', { name: /Saved masters/i }));
   await screen.findByText('Remix of ஈழத்து மண்ணே');
-  // Rows render newest first: [child, parent]. The reopen button reads "Edit & re-master".
-  fireEvent.click(screen.getAllByRole('button', { name: /Edit & re-master/ })[1]);
+  // Rows render newest first: [child, parent]. "Edit & re-master" is in each
+  // row's "…" menu since the 2026-11-07 layout.
+  fireEvent.click(screen.getAllByRole('button', { name: /^More actions for / })[1]);
+  fireEvent.click(screen.getByRole('button', { name: /Edit & re-master/ }));
   fireEvent.click(await screen.findByRole('button', { name: /Master to -14 LUFS/ }));
   await waitFor(() => {
     const post = mockedFetch.mock.calls.find(([u, i]) => u === '/api/admin/music-lab/master' && i?.method === 'POST');
@@ -85,10 +87,12 @@ it('re-opening another master replaces the pending parent', async () => {
   render(<MasteringStudio />);
   fireEvent.click(screen.getByRole('button', { name: /Saved masters/i }));
   await screen.findByText('Remix of ஈழத்து மண்ணே');
-  fireEvent.click(screen.getAllByRole('button', { name: /Edit & re-master/ })[1]); // parent
+  fireEvent.click(screen.getAllByRole('button', { name: /^More actions for / })[1]); // parent's menu
+  fireEvent.click(screen.getByRole('button', { name: /Edit & re-master/ }));
   // Re-opening closes the library panel; open it again to pick the child.
   fireEvent.click(screen.getByRole('button', { name: /Saved masters/i }));
-  fireEvent.click((await screen.findAllByRole('button', { name: /Edit & re-master/ }))[0]); // then the child
+  fireEvent.click((await screen.findAllByRole('button', { name: /^More actions for / }))[0]); // then the child's
+  fireEvent.click(screen.getByRole('button', { name: /Edit & re-master/ }));
   fireEvent.click(await screen.findByRole('button', { name: /Master to -14 LUFS/ }));
   await waitFor(() => {
     const post = mockedFetch.mock.calls.find(([u, i]) => u === '/api/admin/music-lab/master' && i?.method === 'POST');

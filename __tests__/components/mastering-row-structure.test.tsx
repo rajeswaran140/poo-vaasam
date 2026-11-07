@@ -69,19 +69,25 @@ function row(): HTMLElement {
 }
 
 describe('the row still carries everything it used to', () => {
-  const CONTROLS: Array<[string, RegExp]> = [
-    ['play', /^Play /],
-    ['rename', /^Rename /],
-    ['download WAV', /^WAV$/],
-    ['download MP3', /^MP3$/],
-    ['download video', /^Video$/],
-    ['download short', /^Short$/],
-    ['make video or short', /Video or short for/],
-    ['edit & re-master', /Edit & re-master/],
+  // Since the 2026-11-07 layout the everyday controls are on the row and the
+  // rare ones are in its "…" menu — still in the row, one click away.
+  const CONTROLS: Array<[string, RegExp, 'row' | 'menu']> = [
+    ['play', /^Play /, 'row'],
+    ['rename', /^Rename$/, 'menu'],
+    ['download WAV', /^Download WAV$/, 'menu'],
+    ['download MP3', /^Download MP3$/, 'menu'],
+    ['download video', /^Video$/, 'row'],
+    ['download short', /^Short$/, 'row'],
+    ['make video or short', /Video or short for/, 'row'],
+    ['edit & re-master', /Edit & re-master/, 'menu'],
   ];
 
-  it.each(CONTROLS)('keeps the %s control', async (_label, name) => {
+  it.each(CONTROLS)('keeps the %s control', async (_label, name, where) => {
     await openLibrary();
+    if (where === 'menu') {
+      expect(within(row()).queryByRole('button', { name })).not.toBeInTheDocument();
+      fireEvent.click(within(row()).getByRole('button', { name: /^More actions for / }));
+    }
     expect(within(row()).getByRole('button', { name })).toBeInTheDocument();
   });
 
@@ -105,15 +111,15 @@ describe('facts and actions are in different zones', () => {
     expect(within(factLine as HTMLElement).queryByRole('button')).toBeNull();
   });
 
-  it('groups the four download links together, apart from the title', async () => {
+  it('groups the rendered-file links together, apart from the title', async () => {
     await openLibrary();
     const r = within(row());
-    const wav = r.getByRole('button', { name: /^WAV$/ });
+    const video = r.getByRole('button', { name: /^Video$/ });
     const short = r.getByRole('button', { name: /^Short$/ });
-    expect(wav.parentElement).toBe(short.parentElement);
+    expect(video.parentElement).toBe(short.parentElement);
 
     // ...and the title is not in that container.
     const title = r.getByText(SONG);
-    expect(wav.parentElement?.contains(title)).toBe(false);
+    expect(video.parentElement?.contains(title)).toBe(false);
   });
 });

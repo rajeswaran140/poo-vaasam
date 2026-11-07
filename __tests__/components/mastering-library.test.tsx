@@ -94,6 +94,8 @@ describe('rename', () => {
   it('PATCHes the new title', async () => {
     routeFetch();
     await openLibrary();
+    // Rename is in the row's "…" menu since the 2026-11-07 layout.
+    fireEvent.click(screen.getAllByRole('button', { name: /^More actions for / })[0]);
     fireEvent.click(screen.getByRole('button', { name: /^Rename/ }));
     const input = screen.getByLabelText('Master name');
     fireEvent.change(input, { target: { value: 'New name' } });
@@ -106,6 +108,8 @@ describe('rename', () => {
   it('does NOT write when the name is unchanged — closing an editor is free', async () => {
     routeFetch();
     await openLibrary();
+    // Rename is in the row's "…" menu since the 2026-11-07 layout.
+    fireEvent.click(screen.getAllByRole('button', { name: /^More actions for / })[0]);
     fireEvent.click(screen.getByRole('button', { name: /^Rename/ }));
     const input = screen.getByLabelText('Master name');
     fireEvent.keyDown(input, { key: 'Enter' });
@@ -117,6 +121,8 @@ describe('rename', () => {
   it('abandons on Escape without writing', async () => {
     routeFetch();
     await openLibrary();
+    // Rename is in the row's "…" menu since the 2026-11-07 layout.
+    fireEvent.click(screen.getAllByRole('button', { name: /^More actions for / })[0]);
     fireEvent.click(screen.getByRole('button', { name: /^Rename/ }));
     const input = screen.getByLabelText('Master name');
     fireEvent.change(input, { target: { value: 'Discarded' } });
@@ -131,6 +137,8 @@ describe('rename', () => {
       rename: { ok: true, json: async () => ({ success: true, title: 'Server cleaned' }) },
     });
     await openLibrary();
+    // Rename is in the row's "…" menu since the 2026-11-07 layout.
+    fireEvent.click(screen.getAllByRole('button', { name: /^More actions for / })[0]);
     fireEvent.click(screen.getByRole('button', { name: /^Rename/ }));
     const input = screen.getByLabelText('Master name');
     fireEvent.change(input, { target: { value: 'typed/name' } });
@@ -146,6 +154,8 @@ describe('rename', () => {
       },
     });
     await openLibrary();
+    // Rename is in the row's "…" menu since the 2026-11-07 layout.
+    fireEvent.click(screen.getAllByRole('button', { name: /^More actions for / })[0]);
     fireEvent.click(screen.getByRole('button', { name: /^Rename/ }));
     const input = screen.getByLabelText('Master name');
     fireEvent.change(input, { target: { value: 'Nope' } });
