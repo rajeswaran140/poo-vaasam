@@ -83,9 +83,15 @@ function rowFor(title: string): HTMLElement {
   throw new Error(`no row <li> found for ${title}`);
 }
 
-/** Open a row's "Video or short" panel, which holds the render/short buttons. */
+/**
+ * Open a row's "Video or short" panel, which holds the render/short buttons,
+ * then its Whole-song vertical part — since the 2026-11-07 layout that is reached from the row's
+ * "…" menu, as Raj reaches it.
+ */
 function openRenderPanel(title: string) {
   fireEvent.click(screen.getByRole('button', { name: new RegExp(`Video or short for ${title}`) }));
+  fireEvent.click(screen.getByRole('button', { name: `More actions for ${title}` }));
+  fireEvent.click(screen.getByRole('button', { name: /^Whole-song vertical$/ }));
 }
 
 beforeEach(() => mockedFetch.mockReset());

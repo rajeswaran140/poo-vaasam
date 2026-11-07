@@ -80,7 +80,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
 
   try {
-    const job = await new MasterJobRepository().get(jobId);
+    const repo = new MasterJobRepository();
+    const job = await repo.get(jobId);
     if (!job) return NextResponse.json({ success: false, error: 'Job not found' }, { status: 404 });
 
     // Every eligibility rule lives in the planner, so the route and the worker
@@ -152,6 +153,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         );
       }
     }
+
+    // The previous attempt's error goes now — after every refusal, before the
+    // invoke — so any error on the row afterwards is THIS attempt's. The
+    // whole song and the clip keep separate fields, exactly as the worker
+    // writes them. See the render route for the defect this closes.
+    await repo.clearRenderError(jobId, parsed.data.full ? 'verticalError' : 'shortError');
 
     const lambda = new LambdaClient({
       region: awsConfig.region,

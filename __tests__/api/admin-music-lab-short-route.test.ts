@@ -16,8 +16,9 @@ jest.mock('@/lib/auth-helper', () => ({
 }));
 
 const getMock = jest.fn();
+const clearRenderErrorMock = jest.fn().mockResolvedValue(undefined);
 jest.mock('@/infrastructure/database/MasterJobRepository', () => ({
-  MasterJobRepository: jest.fn().mockImplementation(() => ({ get: getMock })),
+  MasterJobRepository: jest.fn().mockImplementation(() => ({ get: getMock, clearRenderError: clearRenderErrorMock })),
 }));
 
 const lambdaSend = jest.fn().mockResolvedValue({});
@@ -64,6 +65,7 @@ const baseJob = {
 beforeEach(() => {
   getMock.mockReset().mockResolvedValue(baseJob);
   lambdaSend.mockClear();
+  clearRenderErrorMock.mockClear();
 });
 
 async function post(body: unknown) {
@@ -255,5 +257,29 @@ describe('several background clips', () => {
     expect(res.status).toBe(400);
     expect((await res.json()).error).toBe('Background clip 2 is not a video or GIF in the mastering workspace.');
     expect(lambdaSend).not.toHaveBeenCalled();
+  });
+});
+
+/** Audit 2026-11-07, defect 1 — see the render route's twin of this block. */
+describe('a new short clears the previous attempt\'s error', () => {
+  it('clears shortError for a clip, BEFORE invoking the worker', async () => {
+    const res = await post({ coverKey: A });
+    expect(res.status).toBe(202);
+    expect(clearRenderErrorMock).toHaveBeenCalledWith('j1', 'shortError');
+    expect(clearRenderErrorMock.mock.invocationCallOrder[0]).toBeLessThan(lambdaSend.mock.invocationCallOrder[0]);
+  });
+
+  it('clears verticalError for the whole song, and never the clip\'s', async () => {
+    const res = await post({ coverKey: A, full: true });
+    expect(res.status).toBe(202);
+    expect(clearRenderErrorMock).toHaveBeenCalledTimes(1);
+    expect(clearRenderErrorMock).toHaveBeenCalledWith('j1', 'verticalError');
+  });
+
+  it('leaves the error alone when the request is refused', async () => {
+    getMock.mockResolvedValue({ ...baseJob, masterKey: null });
+    const res = await post({ coverKey: A });
+    expect(res.status).toBe(409);
+    expect(clearRenderErrorMock).not.toHaveBeenCalled();
   });
 });

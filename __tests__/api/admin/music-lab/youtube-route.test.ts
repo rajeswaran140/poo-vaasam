@@ -17,9 +17,11 @@ jest.mock('@/lib/youtube-quota', () => {
   return { ...actual, consumeQuota: (...a: unknown[]) => consumeQuota(...a) };
 });
 const get = jest.fn();
-const markUploadQueued = jest.fn().mockResolvedValue(undefined);
+const QUEUED_AT = '2026-11-07T12:00:00.000Z';
+const markUploadQueued = jest.fn().mockResolvedValue({ ok: true, queuedAt: QUEUED_AT });
+const releaseUploadQueued = jest.fn().mockResolvedValue(undefined);
 jest.mock('@/infrastructure/database/MasterJobRepository', () => ({
-  MasterJobRepository: jest.fn(() => ({ get, markUploadQueued })),
+  MasterJobRepository: jest.fn(() => ({ get, markUploadQueued, releaseUploadQueued })),
 }));
 
 const body = {
@@ -40,7 +42,8 @@ const okJob = {
 };
 
 beforeEach(() => {
-  send.mockClear(); markUploadQueued.mockClear(); consumeQuota.mockClear();
+  send.mockClear(); markUploadQueued.mockClear(); consumeQuota.mockClear(); releaseUploadQueued.mockClear();
+  markUploadQueued.mockResolvedValue({ ok: true, queuedAt: QUEUED_AT });
   consumeQuota.mockResolvedValue({ blocked: false, used: 1800, limit: 10000, day: '2026-09-16' });
 });
 
@@ -106,7 +109,27 @@ describe('quota accounting — an upload is 1600+ units and was charged nothing 
     const res = await POST(req(), ctx);
     expect(res.status).toBe(429);
     expect(send).not.toHaveBeenCalled();
-    expect(markUploadQueued).not.toHaveBeenCalled();
+  });
+
+  // Audit 2026-11-07: the mark now comes FIRST (so a refused duplicate never
+  // burns quota), which means a quota refusal must give the mark back —
+  // otherwise the button would sit disabled for 20 minutes for nothing.
+  it('a quota refusal releases its own queued mark, restoring what the row held', async () => {
+    get.mockResolvedValue({ ...okJob, uploadStatus: 'failed', uploadError: 'last time', updatedAt: '2026-11-07T11:00:00.000Z' });
+    consumeQuota.mockResolvedValue({ blocked: true, used: 9900, limit: 10000, day: '2026-09-16' });
+    await POST(req(), ctx);
+    expect(releaseUploadQueued).toHaveBeenCalledWith('j1', QUEUED_AT, {
+      uploadStatus: 'failed', uploadError: 'last time', updatedAt: '2026-11-07T11:00:00.000Z',
+    });
+  });
+
+  it('a quota ledger that throws also releases the mark, and answers 502', async () => {
+    get.mockResolvedValue(okJob);
+    consumeQuota.mockRejectedValueOnce(new Error('ddb down'));
+    const res = await POST(req(), ctx);
+    expect(res.status).toBe(502);
+    expect(releaseUploadQueued).toHaveBeenCalledTimes(1);
+    expect(send).not.toHaveBeenCalled();
   });
 
   it('the 429 says what an upload costs, so the operator can reason about the wait', async () => {
@@ -123,5 +146,36 @@ describe('quota accounting — an upload is 1600+ units and was charged nothing 
     const res = await POST(req(), ctx);
     expect(res.status).toBe(409);
     expect(consumeQuota).not.toHaveBeenCalled();
+  });
+});
+
+
+/**
+ * Audit 2026-11-07, defect 5: get → planUpload → mark was a read-then-write
+ * race. Two requests that both read the row before either wrote passed the
+ * planner and started two uploads. The mark is now a conditional write.
+ */
+describe('the double-upload race', () => {
+  it('answers 409 when the conditional mark loses, and neither charges nor invokes', async () => {
+    get.mockResolvedValue(okJob);
+    markUploadQueued.mockResolvedValueOnce({ ok: false });
+    const res = await POST(req(), ctx);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/already running/i);
+    expect(consumeQuota).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(releaseUploadQueued).not.toHaveBeenCalled();
+  });
+
+  it('marks BEFORE charging, so a refused duplicate burns no quota', async () => {
+    get.mockResolvedValue(okJob);
+    await POST(req(), ctx);
+    expect(markUploadQueued.mock.invocationCallOrder[0]).toBeLessThan(consumeQuota.mock.invocationCallOrder[0]);
+  });
+
+  it('a successful upload never releases its mark', async () => {
+    get.mockResolvedValue(okJob);
+    expect((await POST(req(), ctx)).status).toBe(202);
+    expect(releaseUploadQueued).not.toHaveBeenCalled();
   });
 });

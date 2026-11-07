@@ -84,9 +84,15 @@ function rowFor(title: string): HTMLElement {
   throw new Error(`no row <li> found for ${title}`);
 }
 
-/** Open a row's "Video or short" panel, which holds the render/short buttons. */
+/**
+ * Open a row's "Video or short" panel, which holds the render/short buttons,
+ * then its Background part — since the 2026-11-07 layout that is reached from the row's
+ * "…" menu, as Raj reaches it.
+ */
 function openRenderPanel(title: string) {
   fireEvent.click(screen.getByRole('button', { name: new RegExp(`Video or short for ${title}`) }));
+  fireEvent.click(screen.getByRole('button', { name: `More actions for ${title}` }));
+  fireEvent.click(screen.getByRole('button', { name: /^Background$/ }));
 }
 
 beforeEach(() => mockedFetch.mockReset());
@@ -237,7 +243,9 @@ describe('a row whose last render joined several clips', () => {
     routeFetch({}, [masterFixture({ videoBackgroundKey: C1, videoBackgroundKeys: [C1, C2, C1] })]);
     await openLibrary();
     openRenderPanel(SONG);
-    expect(within(rowFor(SONG)).getByText('3 clips')).toBeInTheDocument();
+    // Once in the clip list, once in the closed-line summary on its toggle.
+    expect(within(rowFor(SONG)).getAllByText('3 clips')).toHaveLength(2);
+    expect(within(rowFor(SONG)).getByRole('button', { name: /^Background: 3 clips/ })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /^Render video \(1440p, 3 background clips\)/ }));
     await waitFor(() => expect(renderPosts()).toHaveLength(1));

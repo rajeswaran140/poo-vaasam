@@ -4218,3 +4218,92 @@ describe('prepareBackground', () => {
     expect(s3Send).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Audit 2026-11-07, defect 6: ffmpeg had no timeout. A hung encode ran until
+ * the Lambda's own kill, which writes nothing, so the job sat with no error and
+ * the Studio waited out its whole deadline. Each ffmpeg call is now bounded by
+ * the time this invocation has left, minus room to record the failure, and a
+ * timed-out pass fails the render through its ordinary catch.
+ */
+describe('ffmpeg is bounded by the invocation\'s time', () => {
+  const AUDIO = 'audio/mastering/1_a_song-master-14LUFS.wav';
+  const COVER = 'audio/mastering/1_c_cover.jpg';
+  const C1 = 'audio/mastering/visual-story/vs_abc/candidates/c_1.mp4';
+  const ctx = (ms: number) => ({ getRemainingTimeInMillis: () => ms });
+  const timedOut = () => ({
+    status: null, signal: 'SIGKILL', stdout: '', stderr: '',
+    error: Object.assign(new Error('spawnSync ffmpeg ETIMEDOUT'), { code: 'ETIMEDOUT' }),
+  });
+  const opts = () => spawnSync.mock.calls.map((c) => c[2] as { timeout?: number; killSignal?: string });
+
+  beforeEach(() => {
+    spawnSync.mockReset();
+    spawnSync.mockImplementation(() => ({ status: 0, stdout: '', stderr: '' }));
+    s3Send.mockReset();
+    s3Send.mockImplementation((cmd: { input: Record<string, unknown>; head?: boolean }) => {
+      if (cmd.head) return Promise.reject(Object.assign(new Error('NotFound'), { name: 'NotFound' }));
+      return 'Body' in cmd.input
+        ? Promise.resolve({})
+        : Promise.resolve({ Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) } });
+    });
+  });
+
+  it('gives every ffmpeg call a timeout inside the time left, with room to write the error', async () => {
+    await handler({ jobId: 'j1', render: { audioKey: AUDIO, coverKey: COVER, height: 1440 } } as never, ctx(900_000));
+    expect(spawnSync).toHaveBeenCalled();
+    for (const o of opts()) {
+      expect(typeof o.timeout).toBe('number');
+      expect(o.timeout!).toBeGreaterThan(0);
+      // At least 15 s kept back for the patch that records a failure.
+      expect(o.timeout!).toBeLessThanOrEqual(900_000 - 15_000);
+      expect(o.killSignal).toBe('SIGKILL');
+    }
+  });
+
+  it('without a Lambda clock (a local run) there is no timeout at all', async () => {
+    await handler({ jobId: 'j1', render: { audioKey: AUDIO, coverKey: COVER, height: 1440 } } as never);
+    for (const o of opts()) expect(o.timeout).toBeUndefined();
+  });
+
+  it('a timed-out video encode writes videoError, saying it ran out of time', async () => {
+    spawnSync.mockImplementation((_cmd: string, args: string[]) =>
+      args.includes('libx264') ? timedOut() : { status: 0, stdout: '', stderr: '' });
+    const res = await handler({ jobId: 'j1', render: { audioKey: AUDIO, coverKey: COVER, height: 1440 } } as never, ctx(900_000));
+    expect(res).toMatchObject({ ok: false });
+    expect(String(patched().videoError)).toMatch(/ran out of time/);
+    expect(patched()).not.toHaveProperty('videoRenderedAt');
+  });
+
+  it('a timed-out clip writes shortError, and a timed-out whole song writes verticalError', async () => {
+    // The whole song is bounded by the master's length, read from its header.
+    const HEADER = "Input #0, wav, from '/tmp/master.wav':\n  Duration: 00:03:41.50, bitrate: 2304 kb/s\n" +
+      '  Stream #0:0: Audio: pcm_s24le, 48000 Hz, stereo, s32 (24 bit), 2304 kb/s\n';
+    spawnSync.mockImplementation((_cmd: string, args: string[]) =>
+      args.includes('-c:v') ? timedOut()
+        : args.length === 3 && args[1] === '-i' ? { status: 0, stdout: '', stderr: HEADER }
+          : { status: 0, stdout: '', stderr: '' });
+    await handler({ jobId: 'j1', short: { audioKey: AUDIO, coverKey: COVER, startSec: 10, seconds: 30 } } as never, ctx(900_000));
+    expect(String(patched().shortError)).toMatch(/ran out of time/);
+
+    send.mockClear();
+    await handler({ jobId: 'j1', short: { audioKey: AUDIO, coverKey: COVER, full: true } } as never, ctx(900_000));
+    expect(String(patched().verticalError)).toMatch(/ran out of time/);
+    expect(patched()).not.toHaveProperty('shortError');
+  });
+
+  it('with no time left, ffmpeg is not started at all and the render still says why', async () => {
+    const res = await handler({ jobId: 'j1', render: { audioKey: AUDIO, coverKey: COVER, height: 1440 } } as never, ctx(5_000));
+    expect(res).toMatchObject({ ok: false });
+    expect(spawnSync).not.toHaveBeenCalled();
+    expect(String(patched().videoError)).toMatch(/ran out of time/);
+  });
+
+  it('the prep function (300 s) says it ran out of time, not "could not be prepared"', async () => {
+    spawnSync.mockImplementation(() => timedOut());
+    const res = await handler({ prepareBackground: { srcKey: C1, frame: { kind: 'vertical' } } } as never, ctx(300_000));
+    expect(res).toMatchObject({ ok: false });
+    expect(String((res as { message?: string }).message)).toMatch(/ran out of time/);
+    for (const o of opts()) expect(o.timeout!).toBeLessThanOrEqual(300_000 - 15_000);
+  });
+});

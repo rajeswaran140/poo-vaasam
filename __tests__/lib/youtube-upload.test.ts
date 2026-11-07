@@ -273,3 +273,72 @@ describe('markUploadQueued refreshes updatedAt', () => {
     expect(planUpload(requeuedJob, input, { now: oneSecondLater })).toEqual({ ok: false, reason: 'in-flight' });
   });
 });
+
+/**
+ * Audit 2026-11-07, defect 5: markUploadQueued was an unconditional SET, so
+ * two requests that both passed planUpload's in-flight check (each read the
+ * row before the other wrote it) both marked the job queued and both invoked
+ * the worker. The write itself is now the gate, with planUpload's own rules.
+ */
+describe('markUploadQueued is a conditional write', () => {
+  beforeEach(() => mockUpdate.mockReset());
+  const NOW = Date.parse('2026-11-07T12:00:00.000Z');
+
+  it('returns the stamp it wrote when the write succeeds', async () => {
+    mockUpdate.mockResolvedValueOnce({});
+    const r = await new MasterJobRepository().markUploadQueued('j1', NOW);
+    expect(r).toEqual({ ok: true, queuedAt: new Date(NOW).toISOString() });
+  });
+
+  it('is conditioned on no video id and no fresh upload in flight', async () => {
+    mockUpdate.mockResolvedValueOnce({});
+    await new MasterJobRepository().markUploadQueued('j1', NOW);
+    const args = mockUpdate.mock.calls[0][0];
+    const cond = args.conditionExpression as string;
+    // A NULL-type youtubeVideoId EXISTS, so attribute_not_exists alone would
+    // refuse every row — see planUpload. Null and empty both count as "none".
+    expect(cond).toContain('attribute_not_exists(#youtubeVideoId) OR #youtubeVideoId = :null');
+    expect(cond).toContain('NOT (#uploadStatus IN (:queued, :uploading))');
+    expect(cond).toContain('#updatedAt < :staleBefore');
+    expect(args.expressionAttributeValues[':staleBefore']).toBe(new Date(NOW - UPLOAD_STALE_AFTER_MS).toISOString());
+    expect(args.expressionAttributeValues[':null']).toBeNull();
+  });
+
+  it('returns ok:false (does not throw) when the condition fails — the double-click lost', async () => {
+    mockUpdate.mockRejectedValueOnce(Object.assign(new Error('Conditional check failed'), { name: 'ConditionalCheckFailedException' }));
+    const r = await new MasterJobRepository().markUploadQueued('j1', NOW);
+    expect(r).toEqual({ ok: false });
+  });
+
+  it('still throws any other DynamoDB error', async () => {
+    mockUpdate.mockRejectedValueOnce(Object.assign(new Error('boom'), { name: 'InternalServerError' }));
+    await expect(new MasterJobRepository().markUploadQueued('j1', NOW)).rejects.toThrow('boom');
+  });
+});
+
+describe('releaseUploadQueued puts back what was there', () => {
+  beforeEach(() => mockUpdate.mockReset());
+
+  it('restores the prior status, error and updatedAt, only if the row still holds OUR stamp', async () => {
+    mockUpdate.mockResolvedValueOnce({});
+    await new MasterJobRepository().releaseUploadQueued('j1', '2026-11-07T12:00:00.000Z', {
+      uploadStatus: 'failed', uploadError: 'quota', updatedAt: '2026-11-07T11:00:00.000Z',
+    });
+    const args = mockUpdate.mock.calls[0][0];
+    expect(args.conditionExpression).toBe('#uploadStatus = :queued AND #updatedAt = :stamp');
+    expect(args.expressionAttributeValues).toMatchObject({
+      ':queued': 'queued',
+      ':stamp': '2026-11-07T12:00:00.000Z',
+      ':uploadStatus': 'failed',
+      ':uploadError': 'quota',
+      ':updatedAt': '2026-11-07T11:00:00.000Z',
+    });
+  });
+
+  it('a lost condition is not an error — someone else owns the row now', async () => {
+    mockUpdate.mockRejectedValueOnce(Object.assign(new Error('c'), { name: 'ConditionalCheckFailedException' }));
+    await expect(
+      new MasterJobRepository().releaseUploadQueued('j1', 's', { uploadStatus: null, uploadError: null, updatedAt: null })
+    ).resolves.toBeUndefined();
+  });
+});

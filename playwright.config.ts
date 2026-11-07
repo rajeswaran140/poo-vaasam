@@ -34,6 +34,10 @@ export default defineConfig({
     {
       name: 'setup',
       testMatch: /support\/admin-auth\.ts/,
+      // A real browser's user agent. Without a device the context reports
+      // "HeadlessChrome", which src/lib/scraper-block.ts refuses with a 403
+      // ("Automated access is not permitted."), so sign-in never loaded.
+      use: { ...devices['Desktop Chrome'] },
     },
     // Admin pages are behind Cognito, so they cannot share the anonymous
     // projects' context. Kept separate rather than authenticating everything:

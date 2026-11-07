@@ -69,7 +69,29 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ success: false, error: uploadRefusalMessage(plan.reason) }, { status: 409 });
     }
 
-    // CHARGE THE QUOTA LEDGER BEFORE ENQUEUEING, never after.
+    // THE MARK IS THE GATE (audit 2026-11-07). planUpload above read the row;
+    // two requests that both read it before either wrote would both pass. So
+    // the queued mark is a CONDITIONAL write carrying planUpload's in-flight
+    // and already-uploaded rules, and losing it is a 409 — the second click
+    // of a double-click lands here.
+    //
+    // It comes BEFORE the quota charge, so a refused duplicate never charges
+    // the ledger 1700 units for an upload that was never going to run. The
+    // price of that order is the back-out below: if the quota guard refuses,
+    // the mark is released (the row's prior state restored), which is safe
+    // here and NOT after the invoke — no worker exists yet to be orphaned.
+    const mark = await repo.markUploadQueued(jobId);
+    if (!mark.ok) {
+      return NextResponse.json({ success: false, error: uploadRefusalMessage('in-flight') }, { status: 409 });
+    }
+    const release = () =>
+      repo.releaseUploadQueued(jobId, mark.queuedAt, {
+        uploadStatus: job.uploadStatus ?? null,
+        uploadError: job.uploadError ?? null,
+        updatedAt: job.updatedAt ?? null,
+      });
+
+    // CHARGE THE QUOTA LEDGER BEFORE INVOKING, never after.
     //
     // An upload is the most expensive thing this project does — videos.insert
     // alone is 1600 of a 10,000/day budget shared with the analytics routes,
@@ -87,8 +109,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       withThumbnail: Boolean(plan.coverKey),
       playlistCount: plan.playlistIds.length,
     });
-    const quota = await consumeQuota(cost, { surface: 'data' });
+    let quota: Awaited<ReturnType<typeof consumeQuota>>;
+    try {
+      quota = await consumeQuota(cost, { surface: 'data' });
+    } catch (err) {
+      // Nothing was invoked: give the mark back, then fail as before.
+      await release().catch(() => {});
+      throw err;
+    }
     if (quota.blocked) {
+      await release().catch(() => {});
       return NextResponse.json(
         {
           success: false,
@@ -97,10 +127,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         { status: 429 }
       );
     }
-
-    // Queued BEFORE the invoke, so a double-click loses the race at the
-    // planner's `in-flight` guard rather than starting two uploads.
-    await repo.markUploadQueued(jobId);
 
     const lambda = new LambdaClient({
       region: awsConfig.region,

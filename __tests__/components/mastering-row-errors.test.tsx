@@ -114,6 +114,8 @@ describe('a row failure is reported in the row that failed', () => {
     routeFetch({ rename: refuse('Only a saved master can be renamed') });
     await openLibrary();
 
+    // Rename is in the row's "…" menu since the 2026-11-07 layout.
+    fireEvent.click(screen.getAllByRole('button', { name: /^More actions for / })[0]);
     fireEvent.click(screen.getByRole('button', { name: /^Rename/ }));
     const input = screen.getByLabelText('Master name');
     fireEvent.change(input, { target: { value: 'Nope' } });
