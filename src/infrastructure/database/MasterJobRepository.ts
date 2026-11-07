@@ -11,8 +11,13 @@ import type { MasterJob, MasterLineage } from '@/types/masterJob';
 import { parseDerivedFrom } from '@/lib/master-lineage';
 import { parseMasterEdit, isNoOpEdit, type MasterEdit } from '@/lib/master-edit';
 import { parseMasterJoin, type MasterJoin } from '@/lib/master-join';
+import { UPLOAD_STALE_AFTER_MS } from '@/lib/youtube-upload';
 
 const TTL_SECONDS = 24 * 60 * 60;
+
+/** The three render error fields a new attempt clears — see clearRenderError. */
+const RENDER_ERROR_FIELDS = ['videoError', 'shortError', 'verticalError'] as const;
+export type RenderErrorField = (typeof RENDER_ERROR_FIELDS)[number];
 
 /**
  * The sparse GSI1 partition holding SAVED masters only. Written by `save()`; an
@@ -495,22 +500,124 @@ export class MasterJobRepository {
    * No ttl clause — uploading only ever runs on a saved job, where save() has
    * already removed it.
    */
-  async markUploadQueued(id: string): Promise<void> {
+  /*
+   * ⚠️ CONDITIONAL, since the 2026-11-07 audit. It used to be an unconditional
+   * SET, so the route's get → planUpload → mark was a read-then-write race: two
+   * requests that both read the row before either wrote it both passed the
+   * planner's `in-flight` check, both marked the job queued and both invoked
+   * the worker. The write is now the gate, with planUpload's own rules:
+   *
+   *  - no `youtubeVideoId`. A JS null is stored as a NULL-type attribute that
+   *    EXISTS, so `attribute_not_exists` alone would refuse every row (see
+   *    planUpload); null and '' both mean "none", as truthiness does there.
+   *  - no upload in flight: `uploadStatus` is not queued/uploading, or its
+   *    `updatedAt` is older than UPLOAD_STALE_AFTER_MS. A missing `updatedAt`
+   *    on a queued row fails the `<`, i.e. counts as in flight, as it does in
+   *    planUpload.
+   *
+   * Returns `{ ok: false }` when the condition fails — the caller answers 409 —
+   * and the stamp it wrote otherwise, so a caller that has to back out (the
+   * quota guard) can release exactly its own mark and nobody else's.
+   */
+  async markUploadQueued(
+    id: string,
+    now: number = Date.now()
+  ): Promise<{ ok: true; queuedAt: string } | { ok: false }> {
+    const queuedAt = new Date(now).toISOString();
     try {
       await DynamoDBOperations.update({
         key: { PK: `MASTERJOB#${id}`, SK: 'METADATA' },
         updateExpression:
           'SET #uploadStatus = :uploadStatus, #uploadError = :uploadError, #updatedAt = :now',
+        conditionExpression:
+          'attribute_exists(PK)' +
+          ' AND (attribute_not_exists(#youtubeVideoId) OR #youtubeVideoId = :null OR #youtubeVideoId = :empty)' +
+          ' AND (NOT (#uploadStatus IN (:queued, :uploading)) OR #updatedAt < :staleBefore)',
+        expressionAttributeNames: {
+          '#uploadStatus': 'uploadStatus',
+          '#uploadError': 'uploadError',
+          '#updatedAt': 'updatedAt',
+          '#youtubeVideoId': 'youtubeVideoId',
+        },
+        expressionAttributeValues: {
+          ':uploadStatus': 'queued',
+          ':uploadError': null,
+          ':now': queuedAt,
+          ':null': null,
+          ':empty': '',
+          ':queued': 'queued',
+          ':uploading': 'uploading',
+          ':staleBefore': new Date(now - UPLOAD_STALE_AFTER_MS).toISOString(),
+        },
+      });
+      return { ok: true, queuedAt };
+    } catch (error) {
+      if ((error as { name?: string })?.name === 'ConditionalCheckFailedException') return { ok: false };
+      handleDynamoDBError(error);
+    }
+  }
+
+  /**
+   * Undo a `markUploadQueued` that turned out not to start anything — the quota
+   * guard refused, or charging failed — by putting back exactly what the row
+   * held before. Safe where a rollback AFTER the invoke is not (see the route):
+   * no worker has been invoked yet, so there is no upload this could orphan.
+   *
+   * Conditional on the row still holding OUR queued stamp, so it can never
+   * overwrite a later mark or a worker's write. A lost condition is not an
+   * error: someone else owns the row now, and their state is the right one.
+   */
+  async releaseUploadQueued(
+    id: string,
+    queuedAt: string,
+    prior: { uploadStatus: string | null; uploadError: string | null; updatedAt: string | null }
+  ): Promise<void> {
+    try {
+      await DynamoDBOperations.update({
+        key: { PK: `MASTERJOB#${id}`, SK: 'METADATA' },
+        updateExpression:
+          'SET #uploadStatus = :uploadStatus, #uploadError = :uploadError, #updatedAt = :updatedAt',
+        conditionExpression: '#uploadStatus = :queued AND #updatedAt = :stamp',
         expressionAttributeNames: {
           '#uploadStatus': 'uploadStatus',
           '#uploadError': 'uploadError',
           '#updatedAt': 'updatedAt',
         },
         expressionAttributeValues: {
-          ':uploadStatus': 'queued',
-          ':uploadError': null,
-          ':now': new Date().toISOString(),
+          ':uploadStatus': prior.uploadStatus,
+          ':uploadError': prior.uploadError,
+          ':updatedAt': prior.updatedAt,
+          ':queued': 'queued',
+          ':stamp': queuedAt,
         },
+      });
+    } catch (error) {
+      if ((error as { name?: string })?.name === 'ConditionalCheckFailedException') return;
+      handleDynamoDBError(error);
+    }
+  }
+
+  /**
+   * Clear one render's error when a new attempt is enqueued.
+   *
+   * WHY (audit 2026-11-07). The worker clears these only on SUCCESS, and the
+   * Studio's poll treated an error equal to the one already on the row as a
+   * leftover — so a retry that failed for the same reason never reported it
+   * and spun until its deadline. Cleared here, before the invoke, any error
+   * on the row afterwards belongs to the attempt that was just started.
+   *
+   * Deliberately does NOT set `updatedAt` — the upload guard reads it to judge
+   * whether an upload is in flight (see setSlides).
+   */
+  async clearRenderError(id: string, field: RenderErrorField): Promise<void> {
+    if (!RENDER_ERROR_FIELDS.includes(field)) throw new Error(`not a render error field: ${String(field)}`);
+    try {
+      await DynamoDBOperations.update({
+        key: { PK: `MASTERJOB#${id}`, SK: 'METADATA' },
+        updateExpression: 'SET #field = :null',
+        conditionExpression: 'attribute_exists(PK)',
+        expressionAttributeNames: { '#field': field },
+        expressionAttributeValues: { ':null': null },
       });
     } catch (error) {
       handleDynamoDBError(error);

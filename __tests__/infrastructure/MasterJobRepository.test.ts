@@ -13,11 +13,12 @@
 
 const mockPut = jest.fn();
 const mockGet = jest.fn();
+const mockUpdate = jest.fn();
 jest.mock('@/infrastructure/database/dynamodb-client', () => ({
   DynamoDBOperations: {
     put: (...a: unknown[]) => mockPut(...a),
     get: (...a: unknown[]) => mockGet(...a),
-    query: jest.fn(), scanAll: jest.fn(), update: jest.fn(), delete: jest.fn(),
+    query: jest.fn(), scanAll: jest.fn(), update: (...a: unknown[]) => mockUpdate(...a), delete: jest.fn(),
   },
   handleDynamoDBError: (e: unknown) => { throw e; },
 }));
@@ -35,7 +36,7 @@ const stored = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-beforeEach(() => { mockPut.mockReset(); mockGet.mockReset(); });
+beforeEach(() => { mockPut.mockReset(); mockGet.mockReset(); mockUpdate.mockReset(); });
 
 describe('create', () => {
   it('writes both peak fields as null, so a loudness job says so explicitly', async () => {
@@ -140,5 +141,39 @@ describe('video backgrounds', () => {
     expect(job.videoBackgroundKeys).toEqual(list);
     expect(job.shortBackgroundKeys).toBeNull();
     expect(job.verticalBackgroundKeys).toBeNull();
+  });
+});
+
+/**
+ * Audit 2026-11-07, defect 1: a retry that failed with the SAME message as the
+ * last attempt spun until the deadline, because the poll only threw on an error
+ * that differed from the one already on the row, and nothing cleared it.
+ * The routes now clear the field on enqueue, through this.
+ */
+describe('clearRenderError', () => {
+  it.each(['videoError', 'shortError', 'verticalError'] as const)('clears %s and nothing else', async (field) => {
+    mockUpdate.mockResolvedValueOnce({});
+    await repo.clearRenderError('j1', field);
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    const args = mockUpdate.mock.calls[0][0];
+    expect(args.key).toEqual({ PK: 'MASTERJOB#j1', SK: 'METADATA' });
+    expect(args.updateExpression).toBe('SET #field = :null');
+    expect(args.expressionAttributeNames).toEqual({ '#field': field });
+    expect(args.expressionAttributeValues).toEqual({ ':null': null });
+    // Never creates a row for a job that does not exist.
+    expect(args.conditionExpression).toBe('attribute_exists(PK)');
+  });
+
+  it('does NOT touch updatedAt — the upload guard reads it to judge an upload in flight', async () => {
+    mockUpdate.mockResolvedValueOnce({});
+    await repo.clearRenderError('j1', 'videoError');
+    const args = mockUpdate.mock.calls[0][0];
+    expect(args.updateExpression).not.toContain('updatedAt');
+    expect(Object.values(args.expressionAttributeNames)).not.toContain('updatedAt');
+  });
+
+  it('refuses a field that is not a render error', async () => {
+    await expect(repo.clearRenderError('j1', 'youtubeVideoId' as never)).rejects.toThrow();
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,11 @@
 /**
  * POST /api/admin/music-lab/measure — server-side loudness measurement.
- * Body: { s3Key, bucket?, target=-14 }. Admin-gated, Node runtime.
+ * Body: { s3Key, target=-14 }. Admin-gated, Node runtime.
+ *
+ * There is no `bucket` field: measure-fn always reads its own env bucket. No
+ * caller ever sent one, and passing it through let a request aim the function
+ * at any bucket its role can read (audit 2026-11-07). Keys are NOT limited to
+ * the mastering prefix — MusicLab measures takes stored outside it.
  *
  * Synchronously invokes the `measure-fn` Lambda (which has the ffmpeg layer +
  * S3 read) and returns its { metrics, badge, verdict } JSON. The browser never
@@ -39,7 +44,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'A valid s3Key is required' }, { status: 400 });
   }
   const target = Number.isFinite(body?.target) ? Number(body.target) : -14;
-  const bucket = typeof body?.bucket === 'string' ? body.bucket : undefined;
 
   try {
     const lambda = new LambdaClient({
@@ -50,7 +54,7 @@ export async function POST(request: NextRequest) {
       new InvokeCommand({
         FunctionName: MEASURE_FUNCTION,
         InvocationType: 'RequestResponse',
-        Payload: Buffer.from(JSON.stringify({ s3Key, ...(bucket ? { bucket } : {}), target })),
+        Payload: Buffer.from(JSON.stringify({ s3Key, target })),
       })
     );
     const payload = res.Payload ? Buffer.from(res.Payload).toString() : '';

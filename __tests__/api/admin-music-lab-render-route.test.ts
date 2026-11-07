@@ -22,8 +22,9 @@ jest.mock('@/lib/auth-helper', () => ({
 }));
 
 const getMock = jest.fn();
+const clearRenderErrorMock = jest.fn().mockResolvedValue(undefined);
 jest.mock('@/infrastructure/database/MasterJobRepository', () => ({
-  MasterJobRepository: jest.fn().mockImplementation(() => ({ get: getMock })),
+  MasterJobRepository: jest.fn().mockImplementation(() => ({ get: getMock, clearRenderError: clearRenderErrorMock })),
 }));
 
 const lambdaSend = jest.fn().mockResolvedValue({});
@@ -71,6 +72,7 @@ const baseJob = {
 beforeEach(() => {
   getMock.mockReset().mockResolvedValue(baseJob);
   lambdaSend.mockClear();
+  clearRenderErrorMock.mockClear();
 });
 
 async function render(body: unknown) {
@@ -349,6 +351,37 @@ describe('several background clips', () => {
   it('applies the same rules as one background', async () => {
     const res = await render({ coverKey: A, backgroundKeys: [C1, C2], motion: 'zoom-in' });
     expect(res.status).toBe(409);
+    expect(lambdaSend).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Audit 2026-11-07, defect 1: a retry that failed with the same message as the
+ * last attempt was never reported — the Studio could not tell it from the
+ * leftover. The route clears the field on enqueue, so any error afterwards is
+ * this attempt's.
+ */
+describe('a new render clears the previous attempt\'s error', () => {
+  it('clears videoError BEFORE invoking the worker', async () => {
+    getMock.mockResolvedValue({ ...baseJob, videoError: 'the video render failed' });
+    const res = await render({ coverKey: A });
+    expect(res.status).toBe(202);
+    expect(clearRenderErrorMock).toHaveBeenCalledWith('j1', 'videoError');
+    expect(clearRenderErrorMock.mock.invocationCallOrder[0]).toBeLessThan(lambdaSend.mock.invocationCallOrder[0]);
+  });
+
+  it('leaves the error alone when the request is refused — the operator may still be reading it', async () => {
+    getMock.mockResolvedValue({ ...baseJob, videoError: 'old', masterKey: null });
+    const res = await render({ coverKey: A });
+    expect(res.status).toBe(409);
+    expect(clearRenderErrorMock).not.toHaveBeenCalled();
+    expect(lambdaSend).not.toHaveBeenCalled();
+  });
+
+  it('does not invoke the worker when the clear fails', async () => {
+    clearRenderErrorMock.mockRejectedValueOnce(new Error('ddb down'));
+    const res = await render({ coverKey: A });
+    expect(res.status).toBe(502);
     expect(lambdaSend).not.toHaveBeenCalled();
   });
 });

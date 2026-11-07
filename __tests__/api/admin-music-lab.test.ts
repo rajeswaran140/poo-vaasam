@@ -21,7 +21,9 @@ jest.mock('@aws-sdk/client-lambda', () => ({
 const mockCreate = jest.fn();
 const mockGet = jest.fn();
 jest.mock('@/infrastructure/database/MasterJobRepository', () => ({
-  MasterJobRepository: jest.fn().mockImplementation(() => ({ create: mockCreate, get: mockGet })),
+  MasterJobRepository: jest.fn().mockImplementation(() => ({
+    create: mockCreate, get: mockGet, clearRenderError: jest.fn().mockResolvedValue(undefined),
+  })),
 }));
 
 import { POST as measurePOST } from '@/app/api/admin/music-lab/measure/route';
@@ -75,6 +77,17 @@ describe('measure', () => {
     const body = await res.json();
     expect(body).toMatchObject({ success: true, badge: '+3 LU hot', verdict: 'clip-risk' });
     expect(MockInvoke.mock.calls[0][0].InvocationType).toBe('RequestResponse');
+  });
+
+  // Audit 2026-11-07, defect 7: no caller sends `bucket`, and passing one
+  // through let any admin request point measure-fn at any bucket its role can
+  // read. The worker's own env bucket is the only one.
+  it('never forwards a caller-supplied bucket to measure-fn', async () => {
+    mockSend.mockResolvedValueOnce({ Payload: Buffer.from(JSON.stringify({ metrics: {}, badge: 'ok', verdict: 'ok' })) });
+    await measurePOST(post('/api/admin/music-lab/measure', { s3Key: 'audio/take.mp3', bucket: 'someone-elses-bucket' }));
+    const sent = JSON.parse(Buffer.from(MockInvoke.mock.calls[0][0].Payload).toString());
+    expect(sent).toEqual({ s3Key: 'audio/take.mp3', target: -14 });
+    expect('bucket' in sent).toBe(false);
   });
 
   it('502s when measure-fn returns a FunctionError', async () => {

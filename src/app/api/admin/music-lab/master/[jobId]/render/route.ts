@@ -101,7 +101,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const height = moves ? VIDEO_MOTION_HEIGHT : parsed.data.height ?? DEFAULT_VIDEO_HEIGHT;
 
   try {
-    const job = await new MasterJobRepository().get(jobId);
+    const repo = new MasterJobRepository();
+    const job = await repo.get(jobId);
     if (!job) return NextResponse.json({ success: false, error: 'Job not found' }, { status: 404 });
 
     // Every eligibility rule lives in the planner, so the route and the worker
@@ -169,6 +170,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         );
       }
     }
+
+    // The previous attempt's error goes now, after every refusal above (a 409
+    // must not wipe a message the operator may still be reading) and before
+    // the invoke. The worker clears it only on success, so without this a
+    // retry that failed for the SAME reason looked, to the Studio's poll,
+    // exactly like the leftover — and was waited on until the deadline.
+    await repo.clearRenderError(jobId, 'videoError');
 
     const lambda = new LambdaClient({
       region: awsConfig.region,
