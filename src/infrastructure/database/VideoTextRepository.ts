@@ -41,6 +41,21 @@ const idleRender = (): RenderState => ({
   updatedAt: null,
 });
 
+/**
+ * The render slot is free: no render in flight (idle, done or error), or the
+ * in-flight one has not written for RENDER_STALE_MS. A missing or NULL
+ * render.updatedAt on an in-flight status makes `<` false, so such a render
+ * counts as in flight, not stale. Shared by startRender and setSource.
+ */
+const RENDER_SLOT_FREE = '(#render.#status IN (:idle, :done, :error) OR #render.#updatedAt < :staleBefore)';
+const renderSlotNames = { '#render': 'render', '#status': 'status', '#updatedAt': 'updatedAt' };
+const renderSlotValues = (now: number) => ({
+  ':idle': 'idle',
+  ':done': 'done',
+  ':error': 'error',
+  ':staleBefore': new Date(now - RENDER_STALE_MS).toISOString(),
+});
+
 const isConditionFailure = (error: unknown) =>
   (error as { name?: string })?.name === 'ConditionalCheckFailedException';
 
@@ -174,13 +189,20 @@ export class VideoTextRepository {
    * floored to 0.01 s here (ledger R4, floorCentis — idempotent, so a value the
    * caller already floored is stored unchanged) and the stored value is
    * returned, so the caller answers with exactly what the row holds.
+   *
+   * Refused while a render is in flight (same rule as startRender): resetting
+   * the render under a running worker would orphan it. A failed condition is
+   * told apart (missing vs rendering) by one follow-up read.
    */
   async setSource(
     id: string,
     source: SourceInfo,
-    blocks: TextBlock[]
-  ): Promise<{ version: number; durationSec: number }> {
-    const now = new Date().toISOString();
+    blocks: TextBlock[],
+    now: number = Date.now()
+  ): Promise<
+    { ok: true; version: number; durationSec: number } | { ok: false; reason: 'missing' | 'rendering' }
+  > {
+    const stamp = new Date(now).toISOString();
     const stored: SourceInfo = { ...source, durationSec: floorCentis(source.durationSec) };
     try {
       // Bumps version: this rewrites blocks, so a tab holding the old version
@@ -191,40 +213,45 @@ export class VideoTextRepository {
           'SET #source = :source, #blocks = :blocks, #render = :render, #updatedAt = :now, GSI1SK = :now,' +
           ' #version = #version + :one',
         // Never create a project by attaching a source to one that does not exist.
-        conditionExpression: 'attribute_exists(PK)',
+        conditionExpression: `attribute_exists(PK) AND ${RENDER_SLOT_FREE}`,
         expressionAttributeNames: {
+          ...renderSlotNames,
           '#source': 'source',
           '#blocks': 'blocks',
-          '#render': 'render',
-          '#updatedAt': 'updatedAt',
           '#version': 'version',
         },
         expressionAttributeValues: {
+          ...renderSlotValues(now),
           ':one': 1,
           ':source': stored,
           ':blocks': blocks,
           ':render': idleRender(),
-          ':now': now,
+          ':now': stamp,
         },
       });
-      return { version: (attrs as { version: number }).version, durationSec: stored.durationSec };
+      return { ok: true, version: (attrs as { version: number }).version, durationSec: stored.durationSec };
     } catch (error) {
-      if (isConditionFailure(error)) throw new Error('video text project not found');
+      if (isConditionFailure(error)) {
+        const existing = await this.get(id, { consistent: true });
+        return { ok: false, reason: existing ? 'rendering' : 'missing' };
+      }
       handleDynamoDBError(error);
     }
   }
 
   /**
-   * Claim the render slot. Succeeds when no render is in flight (idle, done or
-   * error) or the in-flight one has not written for RENDER_STALE_MS. A missing
-   * or NULL render.updatedAt on an in-flight status makes `<` false, so such a
-   * render counts as in flight, not stale.
+   * Claim the render slot for the version the caller drew its PNGs from.
+   * Succeeds when the slot is free (RENDER_SLOT_FREE) and the project is still
+   * at `expectedVersion` — the blocks the worker reads are the ones drawn. A
+   * failed condition is told apart by one follow-up read: missing, changed
+   * (another tab saved), or busy (a render is in flight).
    */
   async startRender(
     id: string,
     renderId: string,
+    expectedVersion: number,
     now: number = Date.now()
-  ): Promise<{ ok: true } | { ok: false }> {
+  ): Promise<{ ok: true } | { ok: false; reason: 'missing' | 'changed' | 'busy' }> {
     const stamp = new Date(now).toISOString();
     try {
       await DynamoDBOperations.update({
@@ -233,33 +260,33 @@ export class VideoTextRepository {
           'SET #render.#renderId = :renderId, #render.#status = :queued,' +
           ' #render.#error = :null, #render.#outputKey = :null, #render.#outputExpiresAt = :null,' +
           ' #render.#progress = :null, #render.#startedAt = :stamp, #render.#updatedAt = :stamp',
-        conditionExpression:
-          'attribute_exists(PK) AND (#render.#status IN (:idle, :done, :error) OR #render.#updatedAt < :staleBefore)',
+        conditionExpression: `attribute_exists(PK) AND #version = :version AND ${RENDER_SLOT_FREE}`,
         expressionAttributeNames: {
-          '#render': 'render',
+          ...renderSlotNames,
           '#renderId': 'renderId',
-          '#status': 'status',
           '#error': 'error',
           '#outputKey': 'outputKey',
           '#outputExpiresAt': 'outputExpiresAt',
           '#progress': 'progress',
           '#startedAt': 'startedAt',
-          '#updatedAt': 'updatedAt',
+          '#version': 'version',
         },
         expressionAttributeValues: {
+          ...renderSlotValues(now),
           ':renderId': renderId,
           ':queued': 'queued',
           ':null': null,
           ':stamp': stamp,
-          ':idle': 'idle',
-          ':done': 'done',
-          ':error': 'error',
-          ':staleBefore': new Date(now - RENDER_STALE_MS).toISOString(),
+          ':version': expectedVersion,
         },
       });
       return { ok: true };
     } catch (error) {
-      if (isConditionFailure(error)) return { ok: false };
+      if (isConditionFailure(error)) {
+        const existing = await this.get(id, { consistent: true });
+        if (!existing) return { ok: false, reason: 'missing' };
+        return { ok: false, reason: existing.version !== expectedVersion ? 'changed' : 'busy' };
+      }
       handleDynamoDBError(error);
     }
   }

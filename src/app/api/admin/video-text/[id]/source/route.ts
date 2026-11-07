@@ -22,6 +22,7 @@ export const dynamic = 'force-dynamic';
 
 const MASTER_WORKER_FUNCTION = process.env.MASTER_WORKER_FUNCTION || 'tamilagaval-master-worker';
 const UNREADABLE = 'This video could not be read.';
+const RENDER_RUNNING = 'A render is running — wait for it to finish before uploading a new video.';
 
 const PREVIEW_URL_TTL_SECONDS = 60 * 60;
 
@@ -145,8 +146,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       });
     }
 
-    const { version, durationSec } = await repo.setSource(id, source, blocks);
-    return NextResponse.json({ source: { ...source, durationSec }, blocks, moved, version });
+    const saved = await repo.setSource(id, source, blocks);
+    if (!saved.ok) {
+      return saved.reason === 'missing'
+        ? NextResponse.json({ error: 'Project not found.' }, { status: 404 })
+        : NextResponse.json({ error: RENDER_RUNNING }, { status: 409 });
+    }
+    return NextResponse.json({ source: { ...source, durationSec: saved.durationSec }, blocks, moved, version: saved.version });
   } catch (err) {
     console.error('[api/video-text/source] failed:', err instanceof Error ? err.message : String(err));
     return NextResponse.json({ error: 'Could not check the video.' }, { status: 502 });

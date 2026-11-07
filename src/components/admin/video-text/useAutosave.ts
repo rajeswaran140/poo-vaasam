@@ -39,8 +39,11 @@ export const editsOf = (p: VideoTextProject): Edits => ({
 /** `held`: edits are waiting for the render start-up to finish (see `hold`). */
 export type AutosaveStatus = 'idle' | 'saving' | 'held' | 'saved' | 'error';
 
-/** What the server now holds — the exact edits PATCHed (parsed back from the body sent) — or why not. */
-export type FlushResult = { ok: true; edits: Edits } | { ok: false; error: string };
+/**
+ * What the server now holds — the exact edits PATCHed (parsed back from the
+ * body sent) and the version they were saved at — or why not.
+ */
+export type FlushResult = { ok: true; edits: Edits; version: number } | { ok: false; error: string };
 
 export function useAutosave(
   project: VideoTextProject,
@@ -77,7 +80,11 @@ export function useAutosave(
   // Leaving the editor (Back, or another project) inside the debounce window
   // must not drop the last edits: send them on the way out — unless a render
   // is starting (hold): then they stay unsaved, and beforeunload warns.
-  const flushRef = useRef<() => Promise<FlushResult>>(async () => ({ ok: true, edits: savedEdits.current }));
+  const flushRef = useRef<() => Promise<FlushResult>>(async () => ({
+    ok: true,
+    edits: savedEdits.current,
+    version: version.current,
+  }));
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -90,7 +97,7 @@ export function useAutosave(
   /** Send the current edits once. */
   const saveNow = useCallback(async (): Promise<FlushResult> => {
     const { id, snapshot: sent } = latest.current;
-    if (sent === savedSnapshot.current) return { ok: true, edits: savedEdits.current };
+    if (sent === savedSnapshot.current) return { ok: true, edits: savedEdits.current, version: version.current };
     // A detached copy of exactly what goes over the wire.
     const edits = JSON.parse(sent) as Edits;
     setStatus('saving');
@@ -116,7 +123,7 @@ export function useAutosave(
         setError(null);
         setStatus(latest.current.snapshot === sent ? 'saved' : holdRef.current ? 'held' : 'saving');
       }
-      return { ok: true, edits };
+      return { ok: true, edits, version: version.current };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (mounted.current) {
@@ -138,7 +145,9 @@ export function useAutosave(
       timer.current = null;
     }
     while (inFlight.current) await inFlight.current;
-    if (latest.current.snapshot === savedSnapshot.current) return { ok: true, edits: savedEdits.current };
+    if (latest.current.snapshot === savedSnapshot.current) {
+      return { ok: true, edits: savedEdits.current, version: version.current };
+    }
     const run = saveNow();
     inFlight.current = run;
     try {

@@ -88,7 +88,7 @@ describe('auth', () => {
     ['upload', () => uploadPOST(req({ filename: 'a.mp4', contentType: 'video/mp4', size: 10 }), ctx)],
     ['source', () => sourcePOST(req({ key: `audio/mastering/video-text/${ID}/source/a.mp4` }), ctx)],
     ['overlays', () => overlaysPOST(req({ renderId: 'r1', blockIds: ['b1'] }), ctx)],
-    ['render', () => renderPOST(req({ renderId: 'r1' }), ctx)],
+    ['render', () => renderPOST(req({ renderId: 'r1', version: 3 }), ctx)],
   ];
   it.each(mutating)('%s rejects a non-admin', async (_n, call) => {
     requireAdminMock.mockRejectedValue({ status: 403 });
@@ -180,7 +180,7 @@ describe('source', () => {
   });
   it('probes, stores and returns version', async () => {
     lambdaSend.mockResolvedValue(probePayload({ ok: true, info }));
-    repo.setSource.mockResolvedValue({ version: 4, durationSec: 60 });
+    repo.setSource.mockResolvedValue({ ok: true, version: 4, durationSec: 60 });
     const res = await sourcePOST(req({ key }), ctx);
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -194,7 +194,7 @@ describe('source', () => {
   it('F1: floors the probed length once, builds blocks on it and returns the stored value', async () => {
     repo.get.mockResolvedValue(project({ blocks: [], titleText: 'T', creditsText: 'C', lyricsText: 'a\nb\nc' }));
     lambdaSend.mockResolvedValue(probePayload({ ok: true, info: { ...info, durationSec: 128.149 } }));
-    repo.setSource.mockImplementation(async (_id: string, s: { durationSec: number }) => ({ version: 4, durationSec: s.durationSec }));
+    repo.setSource.mockImplementation(async (_id: string, s: { durationSec: number }) => ({ ok: true, version: 4, durationSec: s.durationSec }));
     const res = await sourcePOST(req({ key }), ctx);
     const body = await res.json();
     const [, storedSource, storedBlocks] = repo.setSource.mock.calls[0];
@@ -202,6 +202,16 @@ describe('source', () => {
     expect(body.source.durationSec).toBe(128.14);
     expect(Math.max(...storedBlocks.map((b: { endSec: number }) => b.endSec))).toBe(128.14);
     expect(validateBlocks(body.blocks, body.source.durationSec)).toBeNull();
+  });
+  it('F4: 409s while a render is running, and 404s a project deleted meanwhile', async () => {
+    lambdaSend.mockResolvedValue(probePayload({ ok: true, info }));
+    repo.setSource.mockResolvedValue({ ok: false, reason: 'rendering' });
+    let res = await sourcePOST(req({ key }), ctx);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('A render is running — wait for it to finish before uploading a new video.');
+    repo.setSource.mockResolvedValue({ ok: false, reason: 'missing' });
+    res = await sourcePOST(req({ key }), ctx);
+    expect(res.status).toBe(404);
   });
   it('503s a throttle', async () => {
     lambdaSend.mockRejectedValue(Object.assign(new Error('x'), { name: 'TooManyRequestsException' }));
@@ -244,25 +254,45 @@ describe('overlays', () => {
 describe('render', () => {
   it('410s an expired source', async () => {
     repo.get.mockResolvedValue(project({ source: source({ expiresAt: '2000-01-01T00:00:00.000Z' }) }));
-    const res = await renderPOST(req({ renderId: 'r1' }), ctx);
+    const res = await renderPOST(req({ renderId: 'r1', version: 3 }), ctx);
     expect(res.status).toBe(410);
     expect(repo.startRender).not.toHaveBeenCalled();
   });
   it('409s when a render is already running', async () => {
-    repo.startRender.mockResolvedValue({ ok: false });
-    const res = await renderPOST(req({ renderId: 'r1' }), ctx);
+    repo.startRender.mockResolvedValue({ ok: false, reason: 'busy' });
+    const res = await renderPOST(req({ renderId: 'r1', version: 3 }), ctx);
     expect(res.status).toBe(409);
     expect((await res.json()).error).toBe('A render is already running.');
     expect(lambdaSend).not.toHaveBeenCalled();
   });
   it('F2: reads the project strongly consistent (it follows the pre-render save)', async () => {
     repo.startRender.mockResolvedValue({ ok: true });
-    await renderPOST(req({ renderId: 'r1' }), ctx);
+    await renderPOST(req({ renderId: 'r1', version: 3 }), ctx);
     expect(repo.get).toHaveBeenCalledWith(ID, { consistent: true });
+  });
+  it('F10: passes the drawn version to the claim', async () => {
+    repo.startRender.mockResolvedValue({ ok: true });
+    await renderPOST(req({ renderId: 'r1', version: 3 }), ctx);
+    expect(repo.startRender).toHaveBeenCalledWith(ID, 'r1', 3);
+  });
+  it('F10: 409s a version the project has moved past (read or claim), without invoking', async () => {
+    const changed = 'This project was changed in another tab — reload, then press Make video again.';
+    let res = await renderPOST(req({ renderId: 'r1', version: 2 }), ctx);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe(changed);
+    expect(repo.startRender).not.toHaveBeenCalled();
+    repo.startRender.mockResolvedValue({ ok: false, reason: 'changed' });
+    res = await renderPOST(req({ renderId: 'r1', version: 3 }), ctx);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe(changed);
+    expect(lambdaSend).not.toHaveBeenCalled();
+  });
+  it('F10: 400s a render request without a version', async () => {
+    expect((await renderPOST(req({ renderId: 'r1' }), ctx)).status).toBe(400);
   });
   it('sends an Event invoke with the exact payload', async () => {
     repo.startRender.mockResolvedValue({ ok: true });
-    const res = await renderPOST(req({ renderId: 'r1' }), ctx);
+    const res = await renderPOST(req({ renderId: 'r1', version: 3 }), ctx);
     expect(res.status).toBe(202);
     const cmd = lambdaSend.mock.calls[0][0] as { args: { InvocationType: string; Payload: Buffer } };
     expect(cmd.args.InvocationType).toBe('Event');
@@ -271,7 +301,7 @@ describe('render', () => {
   it('marks the render errored and 502s when the invoke fails', async () => {
     repo.startRender.mockResolvedValue({ ok: true });
     lambdaSend.mockRejectedValue(new Error('boom'));
-    const res = await renderPOST(req({ renderId: 'r1' }), ctx);
+    const res = await renderPOST(req({ renderId: 'r1', version: 3 }), ctx);
     expect(res.status).toBe(502);
     expect(repo.patchRender).toHaveBeenCalledWith(ID, 'r1', { status: 'error', error: 'The render could not be started — try again.' });
   });

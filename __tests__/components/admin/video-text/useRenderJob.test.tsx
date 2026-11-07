@@ -26,6 +26,7 @@ const snapshot = {
   blocks: [{ id: 'title', track: 'title' as const, text: 'Song', startSec: 0, endSec: 5 }],
   frame: { width: 1920, height: 1080 },
   style: { sizeScale: 1, lyricPosition: 'lower' as const },
+  version: 7,
 };
 const input = { prepare: async () => snapshot };
 
@@ -61,6 +62,8 @@ it('two start() calls in one tick run one render', async () => {
   expect(posts('/overlays')).toHaveLength(1);
   expect(posts('/render')).toHaveLength(1);
   expect(renderBlockPng).toHaveBeenCalledTimes(1);
+  // F10: the render is claimed for the version the PNGs were drawn from.
+  expect(JSON.parse(String(posts('/render')[0][1].body)).version).toBe(7);
 });
 
 it('a render still "in flight" but silent past the stale time shows the stopped message, not nothing', () => {

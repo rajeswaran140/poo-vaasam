@@ -51,6 +51,8 @@ export interface RenderSnapshot {
   blocks: TextBlock[];
   frame: { width: number; height: number };
   style: TextStyle;
+  /** The project version these blocks were saved at; the render is claimed only at it. */
+  version: number;
 }
 
 export interface RenderInput {
@@ -212,7 +214,7 @@ export function useRenderJob(projectId: string, initial: RenderState) {
       try {
         const snap = await input.prepare();
         if (typeof snap === 'string') throw new Error(snap);
-        const { blocks, frame, style } = snap;
+        const { blocks, frame, style, version } = snap;
         const total = blocks.length;
         setPhase({ kind: 'drawing', done: 0, total });
         await ensureFonts();
@@ -250,7 +252,7 @@ export function useRenderJob(projectId: string, initial: RenderState) {
         const started = await adminFetch(`/api/admin/video-text/${projectId}/render`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ renderId }),
+          body: JSON.stringify({ renderId, version }),
         });
         if (started.status !== 202) {
           const b = await started.json().catch(() => ({}));

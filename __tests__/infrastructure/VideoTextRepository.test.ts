@@ -150,7 +150,20 @@ describe('setSource', () => {
     expect((a.expressionAttributeValues[':source'] as SourceInfo).durationSec).toBe(12.34);
     expect(a.expressionAttributeValues[':blocks']).toEqual([]);
     expect(a.expressionAttributeValues[':render']).toMatchObject({ renderId: null, status: 'idle', progress: null });
-    expect(a.conditionExpression).toBe('attribute_exists(PK)');
+    expect(a.conditionExpression).toBe(
+      'attribute_exists(PK) AND (#render.#status IN (:idle, :done, :error) OR #render.#updatedAt < :staleBefore)'
+    );
+  });
+
+  it('F4: refuses while a fresh render is in flight (same rule as startRender)', async () => {
+    const now = Date.parse('2026-11-07T12:00:00.000Z');
+    mockUpdate.mockRejectedValueOnce(ccf());
+    mockGet.mockResolvedValueOnce({ PK: 'VIDEOTEXT#abc', SK: 'METADATA', id: 'abc' });
+    expect(await repo.setSource('abc', src, [], now)).toEqual({ ok: false, reason: 'rendering' });
+    const a = arg();
+    expect(a.expressionAttributeValues[':staleBefore']).toBe(new Date(now - RENDER_STALE_MS).toISOString());
+    expect(a.expressionAttributeNames).toMatchObject({ '#status': 'status', '#updatedAt': 'updatedAt' });
+    expect(mockGet.mock.calls[0][1]).toEqual({ consistentRead: true });
   });
 
   it('increments version, refreshes updatedAt + GSI1SK, and returns the new version', async () => {
@@ -162,14 +175,14 @@ describe('setSource', () => {
     expect(a.expressionAttributeValues[':one']).toBe(1);
     expect(a.updateExpression).toContain('GSI1SK = :now');
     expect(a.updateExpression).toContain('#updatedAt = :now');
-    expect(r).toEqual({ version: 5, durationSec: 12.34 });
+    expect(r).toEqual({ ok: true, version: 5, durationSec: 12.34 });
   });
 
   it('F1: floors idempotently — an already-floored 128.14 is stored (and returned) as 128.14', async () => {
     mockUpdate.mockResolvedValueOnce({ version: 5 });
     const r = await repo.setSource('abc', { ...src, durationSec: 128.14 }, []);
     expect((arg().expressionAttributeValues[':source'] as SourceInfo).durationSec).toBe(128.14);
-    expect(r).toMatchObject({ durationSec: 128.14 });
+    expect(r).toMatchObject({ ok: true, durationSec: 128.14 });
   });
 
   it('does not mutate the caller\'s source object', async () => {
@@ -178,9 +191,10 @@ describe('setSource', () => {
     expect(src.durationSec).toBe(12.3499);
   });
 
-  it('throws when the project does not exist', async () => {
+  it('answers missing when the project does not exist', async () => {
     mockUpdate.mockRejectedValueOnce(ccf());
-    await expect(repo.setSource('abc', src, [])).rejects.toThrow(/not found/);
+    mockGet.mockResolvedValueOnce(undefined);
+    expect(await repo.setSource('abc', src, [])).toEqual({ ok: false, reason: 'missing' });
   });
 });
 
@@ -189,12 +203,14 @@ describe('startRender', () => {
 
   it('sends the idle/done/error OR stale condition and moves to queued', async () => {
     mockUpdate.mockResolvedValueOnce({});
-    expect(await repo.startRender('abc', 'r1', now)).toEqual({ ok: true });
+    expect(await repo.startRender('abc', 'r1', 7, now)).toEqual({ ok: true });
     const a = arg();
     expect(a.conditionExpression).toBe(
-      'attribute_exists(PK) AND (#render.#status IN (:idle, :done, :error) OR #render.#updatedAt < :staleBefore)'
+      'attribute_exists(PK) AND #version = :version AND' +
+        ' (#render.#status IN (:idle, :done, :error) OR #render.#updatedAt < :staleBefore)'
     );
-    expect(a.expressionAttributeNames).toMatchObject({ '#render': 'render', '#status': 'status', '#updatedAt': 'updatedAt' });
+    expect(a.expressionAttributeValues[':version']).toBe(7);
+    expect(a.expressionAttributeNames).toMatchObject({ '#render': 'render', '#status': 'status', '#updatedAt': 'updatedAt', '#version': 'version' });
     expect(a.expressionAttributeValues[':staleBefore']).toBe(new Date(now - RENDER_STALE_MS).toISOString());
     expect(a.expressionAttributeValues[':queued']).toBe('queued');
     expect(a.expressionAttributeValues[':renderId']).toBe('r1');
@@ -206,14 +222,28 @@ describe('startRender', () => {
 
   it('is 20 minutes', () => { expect(RENDER_STALE_MS).toBe(20 * 60 * 1000); });
 
-  it('returns { ok: false } when the condition fails (a render is in flight)', async () => {
+  it('answers busy when the condition fails at the same version (a render is in flight)', async () => {
     mockUpdate.mockRejectedValueOnce(ccf());
-    expect(await repo.startRender('abc', 'r1', now)).toEqual({ ok: false });
+    mockGet.mockResolvedValueOnce({ id: 'abc', version: 7 });
+    expect(await repo.startRender('abc', 'r1', 7, now)).toEqual({ ok: false, reason: 'busy' });
+    expect(mockGet.mock.calls[0][1]).toEqual({ consistentRead: true });
+  });
+
+  it('F10: answers changed when another tab saved a newer version', async () => {
+    mockUpdate.mockRejectedValueOnce(ccf());
+    mockGet.mockResolvedValueOnce({ id: 'abc', version: 8 });
+    expect(await repo.startRender('abc', 'r1', 7, now)).toEqual({ ok: false, reason: 'changed' });
+  });
+
+  it('answers missing when the project is gone', async () => {
+    mockUpdate.mockRejectedValueOnce(ccf());
+    mockGet.mockResolvedValueOnce(undefined);
+    expect(await repo.startRender('abc', 'r1', 7, now)).toEqual({ ok: false, reason: 'missing' });
   });
 
   it('rethrows other errors', async () => {
     mockUpdate.mockRejectedValueOnce(new Error('boom'));
-    await expect(repo.startRender('abc', 'r1', now)).rejects.toThrow('boom');
+    await expect(repo.startRender('abc', 'r1', 7, now)).rejects.toThrow('boom');
   });
 });
 

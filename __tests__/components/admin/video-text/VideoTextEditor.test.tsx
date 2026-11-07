@@ -167,6 +167,8 @@ describe('Make video', () => {
     expect(calls('POST', '/api/admin/video-text/p1/overlays')).toHaveLength(1);
     const renderId = bodyOf(calls('POST', '/api/admin/video-text/p1/render')[0][1]).renderId;
     expect(renderId).toMatch(/^[A-Za-z0-9_-]{1,64}$/);
+    // F10: nothing to save, so the version the editor holds.
+    expect(bodyOf(calls('POST', '/api/admin/video-text/p1/render')[0][1]).version).toBe(3);
     expect(bodyOf(calls('POST', '/api/admin/video-text/p1/overlays')[0][1])).toEqual({ renderId, blockIds: ['title'] });
     expect(putToS3).toHaveBeenCalledTimes(1);
   });
@@ -260,6 +262,8 @@ describe('Make video', () => {
     const drawn = (renderBlockPng as jest.Mock).mock.calls.map((c) => c[0]);
     expect(drawn).toEqual(patched[1].edits.blocks);
     expect(drawn[0]).toMatchObject({ id: 'title', text: 'Third' });
+    // F10: the render claims the version that save returned.
+    expect(bodyOf(calls('POST', '/api/admin/video-text/p1/render')[0][1]).version).toBe(5);
     expect(bodyOf(calls('POST', '/api/admin/video-text/p1/overlays')[0][1]).blockIds).toEqual(['title']);
     jest.useRealTimers();
   });

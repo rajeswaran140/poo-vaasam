@@ -375,7 +375,7 @@ export function VideoTextEditor({
         if (blocks.length === 0) return 'Add a title, lyrics or credits first.';
         const problem = validateBlocks(blocks, source.durationSec);
         if (problem) return problem;
-        return { blocks, style, frame: { width: source.width, height: source.height } };
+        return { blocks, style, frame: { width: source.width, height: source.height }, version: saved.version };
       },
     });
   };
