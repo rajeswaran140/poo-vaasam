@@ -61,6 +61,7 @@ beforeEach(() => {
   jest.useFakeTimers();
   mockFetch.mockReset();
   (putToS3 as jest.Mock).mockClear();
+  (grabLastFrame as jest.Mock).mockClear();
   __resetPlayUrlCacheForTests();
 });
 afterEach(() => jest.useRealTimers());
@@ -294,7 +295,7 @@ describe('chaining: continue from the previous picture\'s clip', () => {
       '/shots/001-001/video',
       '/shots/001-002/upload {"op":"presign","contentType":"image/jpeg","size":4}',
       '/shots/001-002/upload {"op":"confirm","key":"k-last"}',
-      '/shots {"op":"update","sceneOrder":1,"shotOrder":2,"firstFrameCandidateId":"cd_1700000000009_cccccccc"}',
+      '/shots {"op":"update","sceneOrder":1,"shotOrder":2,"firstFrameCandidateId":"cd_1700000000009_cccccccc","chainedFromCandId":"cd_1700000000001_aaaaaaaa"}',
       '/shots/001-002/video',
       '/select {"sceneOrder":1,"shotOrder":1,"candId":"cd_1700000000001_aaaaaaaa"}',
       '/select {"sceneOrder":1,"shotOrder":2,"candId":"cd_1700000000002_bbbbbbbb"}',
@@ -333,5 +334,84 @@ describe('chaining: continue from the previous picture\'s clip', () => {
     for (let k = 0; k < 3; k++) await flush();
     expect(screen.getByText('Picture 2: The clip could not be loaded.')).toBeInTheDocument();
     expect(calls().some((x) => x.url.endsWith('/render'))).toBe(false);
+  });
+});
+
+describe('chaining review fixes', () => {
+  const V1 = 'cd_1700000000001_aaaaaaaa';
+  const V1B = 'cd_1700000000005_dddddddd';
+  const J2 = 'gj_1700000000002_bbbbbbbb';
+  const clip = (shotOrder: number, candId: string, createdAt: string): Candidate => ({ ...pic(shotOrder, 'HERO', candId), s3Key: `k/${candId}.mp4`, createdAt });
+
+  it('a chained clip made from the previous clip that is still current is not paid again', () => {
+    routes(() => undefined);
+    setup({
+      shots: [shot(1, 8, { mode: 'HERO' }), shot(2, 8, { mode: 'HERO', chainFromPrevious: true, chainedFromCandId: V1 })],
+      candidates: [pic(1), clip(1, V1, 't1'), clip(2, 'cd_1700000000006_eeeeeeee', 't2')],
+    });
+    expect(screen.getByRole('button', { name: 'Make the video (0 moving · $0.00)' })).toBeInTheDocument();
+  });
+
+  it('when the previous clip was re-made, the chained clip is re-made from the new last frame (and priced)', async () => {
+    routes((u, i) => {
+      if (u.endsWith('/video') && i?.method === 'POST') return json({ success: true, data: { jobId: J2 } }, 202);
+      if (u.includes('/video-jobs/')) return json({ success: true, data: { jobId: J2, status: 'succeeded' } });
+      if (u.endsWith('/upload')) {
+        const b = JSON.parse(String(i?.body));
+        return b.op === 'presign' ? json({ success: true, uploadUrl: 'https://s3', fields: {}, key: 'k' }) : json({ success: true, data: { candidate: { candId: 'cd_1700000000009_cccccccc' } } }, 201);
+      }
+      if (u.endsWith('/render') && i?.method === 'POST') return json({ success: true, data: {} }, 202);
+      return undefined;
+    });
+    setup({
+      shots: [shot(1, 8, { mode: 'HERO' }), shot(2, 8, { mode: 'HERO', chainFromPrevious: true, chainedFromCandId: V1 })],
+      // Picture 1 now has a newer clip (V1B) than the one picture 2 was chained from.
+      candidates: [pic(1), clip(1, V1, 't1'), clip(1, V1B, 't3'), clip(2, 'cd_1700000000006_eeeeeeee', 't2')],
+    });
+    expect(screen.getByText('Will be made again, to start where picture 1 now ends.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Make the video (1 moving · $0.64)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    for (let k = 0; k < 3; k++) await flush();
+    // The frame is taken from the clip's stored key, not a rebuilt one.
+    expect(mockFetch.mock.calls.some(([u]) => String(u).includes(encodeURIComponent(`k/${V1B}.mp4`)))).toBe(true);
+    expect(calls()).toContainEqual({ url: `/api/admin/visual-story/${VS}/shots`, body: { op: 'update', sceneOrder: 1, shotOrder: 2, firstFrameCandidateId: 'cd_1700000000009_cccccccc', chainedFromCandId: V1B } });
+    expect(calls().filter((x) => x.url.endsWith('/video'))).toHaveLength(1);
+  });
+
+  it('a re-run reuses the last frame already copied from the same clip (no second upload)', async () => {
+    routes((u, i) => {
+      if (u.endsWith('/video') && i?.method === 'POST') return json({ success: true, data: { jobId: J2 } }, 202);
+      if (u.includes('/video-jobs/')) return json({ success: true, data: { jobId: J2, status: 'succeeded' } });
+      if (u.endsWith('/render') && i?.method === 'POST') return json({ success: true, data: {} }, 202);
+      return undefined;
+    });
+    setup({
+      shots: [shot(1, 8, { mode: 'HERO' }), shot(2, 8, { mode: 'HERO', chainFromPrevious: true, chainedFromCandId: V1, firstFrameCandidateId: 'cd_last', selectedCandidateId: 'cd_last' })],
+      candidates: [pic(1), clip(1, V1, 't1'), pic(2, 'STILL', 'cd_last')],
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Make the video/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    for (let k = 0; k < 3; k++) await flush();
+    expect(grabLastFrame).not.toHaveBeenCalled();
+    expect(calls().some((x) => x.url.endsWith('/upload'))).toBe(false);
+    expect(calls().filter((x) => x.url.endsWith('/video'))).toHaveLength(1);
+  });
+
+  it('a budget refusal stops the chain: no frame is copied for the next row', async () => {
+    routes((u, i) => {
+      if (u.endsWith('/video') && i?.method === 'POST') return json({ success: false, error: "This would go over the story's budget." }, 402);
+      if (u.endsWith('/upload')) {
+        const b = JSON.parse(String(i?.body));
+        return b.op === 'presign' ? json({ success: true, uploadUrl: 'https://s3', fields: {}, key: 'k' }) : json({ success: true, data: { candidate: { candId: 'cd_1700000000009_cccccccc' } } }, 201);
+      }
+      return undefined;
+    });
+    setup({ shots: [shot(1, 8, { mode: 'HERO', firstFrameCandidateId: 'cd_p1' }), shot(2, 8, { mode: 'HERO', chainFromPrevious: true })], candidates: [pic(1), clip(1, V1, 't1')] });
+    fireEvent.click(screen.getByRole('button', { name: /Make the video/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    for (let k = 0; k < 3; k++) await flush();
+    expect(screen.getByRole('alert')).toHaveTextContent("over the story's budget");
+    expect(calls().filter((x) => x.url.endsWith('/upload'))).toHaveLength(2); // presign + confirm once, then the 402 stops it
+    expect(calls().filter((x) => x.url.endsWith('/video'))).toHaveLength(1);
   });
 });

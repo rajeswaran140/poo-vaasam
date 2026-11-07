@@ -23,19 +23,25 @@ beforeEach(() => {
     }
     return el;
   });
-  jest.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ({ drawImage }) as never);
+  const lit = new Uint8ClampedArray(64 * 64 * 4).fill(120);
+  jest.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ({ drawImage, getImageData: () => ({ data: lit }) }) as never);
   jest.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(function (cb: BlobCallback, type?: string) {
     cb(new Blob(['jpeg'], { type }));
   });
 });
 afterEach(() => jest.restoreAllMocks());
 
-it('loads with CORS, seeks to the end, and returns a JPEG of that frame', async () => {
+const tick = async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); };
+
+it('loads with CORS, plays a moment (Safari), seeks to the very last frame, and returns a JPEG of it', async () => {
+  const play = jest.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+  jest.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
   const p = grabLastFrame('https://s3/clip.mp4');
   expect(video.crossOrigin).toBe('anonymous');
-  video.dispatchEvent(new Event('loadeddata'));
-  await Promise.resolve();
-  expect(video.currentTime).toBeCloseTo(7.95, 2);
+  video.dispatchEvent(new Event('loadedmetadata'));
+  await tick();
+  expect(play).toHaveBeenCalled();
+  expect(video.currentTime).toBeCloseTo(7.999, 3);
   video.dispatchEvent(new Event('seeked'));
   const blob = await p;
   expect(blob.type).toBe('image/jpeg');
@@ -46,4 +52,17 @@ it('a clip that will not load is an error', async () => {
   const p = grabLastFrame('https://s3/clip.mp4');
   video.dispatchEvent(new Event('error'));
   await expect(p).rejects.toThrow('The clip could not be loaded.');
+});
+
+it('an all-black frame (Safari before playing) is an error, never a paid first frame', async () => {
+  jest.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+  jest.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+  jest.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(
+    () => ({ drawImage, getImageData: () => ({ data: new Uint8ClampedArray(64 * 64 * 4) }) }) as never
+  );
+  const p = grabLastFrame('https://s3/clip.mp4');
+  video.dispatchEvent(new Event('loadedmetadata'));
+  await tick();
+  video.dispatchEvent(new Event('seeked'));
+  await expect(p).rejects.toThrow(/black/);
 });

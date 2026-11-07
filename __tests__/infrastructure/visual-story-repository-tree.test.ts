@@ -120,6 +120,14 @@ describe('loadTree', () => {
   });
 });
 
+describe('loadTree reads', () => {
+  it('reads strongly consistent, so a write just made (a pinned first frame) is seen by the next paid call', async () => {
+    mockQuery.mockResolvedValueOnce({ Items: [] });
+    await repo.loadTree(VS);
+    expect(mockQuery).toHaveBeenCalledWith(expect.objectContaining({ consistentRead: true }));
+  });
+});
+
 describe('simple writes', () => {
   it('putScene / putShot / putCharacter / putCandidate use the key builders and drop startSec', async () => {
     await repo.putScene(VS, { order: 2, heading: 'H', summary: 'S' });

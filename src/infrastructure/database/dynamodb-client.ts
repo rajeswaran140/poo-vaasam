@@ -127,6 +127,8 @@ export class DynamoDBOperations {
     scanIndexForward?: boolean;
     exclusiveStartKey?: Record<string, any>;
     select?: 'COUNT';
+    /** Strongly consistent (base table only): sees a write that just returned. */
+    consistentRead?: boolean;
   }) {
     const command = new QueryCommand({
       TableName: TABLE_NAME,
@@ -139,6 +141,7 @@ export class DynamoDBOperations {
       ScanIndexForward: params.scanIndexForward,
       ExclusiveStartKey: params.exclusiveStartKey,
       Select: params.select,
+      ...(params.consistentRead ? { ConsistentRead: true } : {}),
     });
 
     return await dynamoDBClient.send(command);

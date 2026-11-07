@@ -899,6 +899,9 @@ export class VisualStoryRepository {
         keyConditionExpression: 'PK = :pk',
         expressionAttributeValues: { ':pk': vsPk(vsId) },
         exclusiveStartKey,
+        // A paid call often follows a write by milliseconds (pin the first frame,
+        // then make the clip): an eventually consistent read could miss it.
+        consistentRead: true,
       });
       out.push(...((res.Items as Row[]) ?? []));
       exclusiveStartKey = res.LastEvaluatedKey as Record<string, any> | undefined;
