@@ -167,14 +167,17 @@ export class VideoTextRepository {
    * floored to 0.01 s here (ledger R4) so no caller can store a value that
    * rounds PAST the real end of the file.
    */
-  async setSource(id: string, source: SourceInfo, blocks: TextBlock[]): Promise<void> {
+  async setSource(id: string, source: SourceInfo, blocks: TextBlock[]): Promise<{ version: number }> {
     const now = new Date().toISOString();
     const stored: SourceInfo = { ...source, durationSec: Math.floor(source.durationSec * 100) / 100 };
     try {
-      await DynamoDBOperations.update({
+      // Bumps version: this rewrites blocks, so a tab holding the old version
+      // must get a conflict on its next save rather than overwrite them.
+      const attrs = await DynamoDBOperations.update({
         key: keyOf(id),
         updateExpression:
-          'SET #source = :source, #blocks = :blocks, #render = :render, #updatedAt = :now, GSI1SK = :now',
+          'SET #source = :source, #blocks = :blocks, #render = :render, #updatedAt = :now, GSI1SK = :now,' +
+          ' #version = #version + :one',
         // Never create a project by attaching a source to one that does not exist.
         conditionExpression: 'attribute_exists(PK)',
         expressionAttributeNames: {
@@ -182,14 +185,17 @@ export class VideoTextRepository {
           '#blocks': 'blocks',
           '#render': 'render',
           '#updatedAt': 'updatedAt',
+          '#version': 'version',
         },
         expressionAttributeValues: {
+          ':one': 1,
           ':source': stored,
           ':blocks': blocks,
           ':render': idleRender(),
           ':now': now,
         },
       });
+      return { version: (attrs as { version: number }).version };
     } catch (error) {
       if (isConditionFailure(error)) throw new Error('video text project not found');
       handleDynamoDBError(error);

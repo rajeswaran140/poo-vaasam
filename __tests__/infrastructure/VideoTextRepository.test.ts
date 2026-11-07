@@ -136,7 +136,7 @@ describe('setSource', () => {
   };
 
   it('floors durationSec to 0.01 s, stores blocks and resets render to idle', async () => {
-    mockUpdate.mockResolvedValueOnce({});
+    mockUpdate.mockResolvedValueOnce({ version: 5 });
     await repo.setSource('abc', src, []);
     const a = arg();
     expect((a.expressionAttributeValues[':source'] as SourceInfo).durationSec).toBe(12.34);
@@ -145,8 +145,20 @@ describe('setSource', () => {
     expect(a.conditionExpression).toBe('attribute_exists(PK)');
   });
 
+  it('increments version, refreshes updatedAt + GSI1SK, and returns the new version', async () => {
+    mockUpdate.mockResolvedValueOnce({ version: 5 });
+    const r = await repo.setSource('abc', src, []);
+    const a = arg();
+    expect(a.updateExpression).toContain('#version = #version + :one');
+    expect(a.expressionAttributeNames['#version']).toBe('version');
+    expect(a.expressionAttributeValues[':one']).toBe(1);
+    expect(a.updateExpression).toContain('GSI1SK = :now');
+    expect(a.updateExpression).toContain('#updatedAt = :now');
+    expect(r).toEqual({ version: 5 });
+  });
+
   it('does not mutate the caller\'s source object', async () => {
-    mockUpdate.mockResolvedValueOnce({});
+    mockUpdate.mockResolvedValueOnce({ version: 2 });
     await repo.setSource('abc', src, []);
     expect(src.durationSec).toBe(12.3499);
   });
