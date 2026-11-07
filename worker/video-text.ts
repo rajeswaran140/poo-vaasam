@@ -97,6 +97,7 @@ export const CHUNK_ONLY_MESSAGE = 'this function only renders video-text chunks'
 const ROTATED_MESSAGE =
   'This video is stored rotated (typical of phone recordings), so it plays at a different size than it is stored. Export it upright and upload again.';
 const UNREADABLE_MESSAGE = 'This file could not be read as a video. Export it as an MP4 or MOV and upload again.';
+const PROBE_FAILED_MESSAGE = 'the video could not be read — try again';
 const RENDER_FAILED_MESSAGE = 'the render failed — try again';
 const CHUNK_FAILED_MESSAGE = 'the text could not be drawn onto this part';
 
@@ -364,6 +365,12 @@ export async function probeVideoText(
     const url = await getSignedUrl(deps.s3, new GetObjectCommand({ Bucket: deps.bucket, Key: key }), { expiresIn: 300 });
     // The log echoes the signed URL: it is parsed, never returned or logged.
     const log = logOf(deps.ff(['-hide_banner', '-i', url]));
+    if (!/^Input #0/m.test(log)) {
+      // ffmpeg never opened it: an expired/forbidden URL or the network, not the file.
+      // Logged with every query string cut, so no signature reaches the logs.
+      console.error('[video-text] probe could not open the source:', log.replace(/\?[^\s'"]*/g, '?…').slice(-500));
+      return { ok: false, message: PROBE_FAILED_MESSAGE };
+    }
     const video = parseVideoStream(log);
     const refusal = refusalFor(video);
     if (refusal) return { ok: false, message: refusal };
@@ -376,7 +383,7 @@ export async function probeVideoText(
   } catch (err) {
     if (isOutOfTime(err)) return { ok: false, message: 'reading the video took too long — try again' };
     console.error('[video-text] probe failed:', err instanceof Error ? err.name : 'unknown');
-    return { ok: false, message: 'the video could not be read — try again' };
+    return { ok: false, message: PROBE_FAILED_MESSAGE };
   }
 }
 

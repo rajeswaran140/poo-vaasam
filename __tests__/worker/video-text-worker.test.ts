@@ -316,10 +316,19 @@ describe('videoTextProbe', () => {
     expect(await probe()).toMatchObject({ ok: true, info: { hasAudio: false } });
   });
 
-  it('never echoes the ffmpeg log (it carries the signed URL)', async () => {
-    withHeader('https://signed.example/source.mp4?X-Amz-Signature=secret: Invalid data found when processing input\n');
+  it('a URL ffmpeg could not open is "try again", not "export again", and the signature is never logged', async () => {
+    withHeader('[https @ 0x1] HTTP error 403 Forbidden\nhttps://signed.example/source.mp4?X-Amz-Signature=secret: Server returned 403 Forbidden\n');
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
     const res = (await probe()) as { ok: boolean; message: string };
-    expect(res.ok).toBe(false);
+    expect(res).toEqual({ ok: false, message: 'the video could not be read — try again' });
+    expect(JSON.stringify(spy.mock.calls)).not.toContain('secret');
+    spy.mockRestore();
+  });
+
+  it('an opened file with no readable video stream is the file\'s fault, and never echoes the log', async () => {
+    withHeader("Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'https://signed.example/source.mp4?X-Amz-Signature=secret':\n  Duration: 00:00:45.00\n  Stream #0:0: Audio: aac, 48000 Hz, stereo\n");
+    const res = (await probe()) as { ok: boolean; message: string };
+    expect(res).toEqual({ ok: false, message: expect.stringContaining('Export it as an MP4 or MOV') });
     expect(res.message).not.toContain('secret');
   });
 
