@@ -66,3 +66,21 @@ it('disabled (a new video uploading): keys and buttons do nothing', () => {
   expect(screen.getByRole('button', { name: /Mark In/ })).toBeDisabled();
   expect(onChange).not.toHaveBeenCalled();
 });
+
+it('marks at the video\'s own clock at the press, not a playhead a frame behind', () => {
+  const onChange = jest.fn();
+  const video = { current: { currentTime: 20.04 } as HTMLVideoElement };
+  render(<CutMarks cut={null} durationSec={60} fps={25} playheadSec={20} onChange={onChange} onSeek={jest.fn()} video={video} />);
+  fireEvent.keyDown(window, { key: 'i' });
+  expect(onChange).toHaveBeenLastCalledWith({ inSec: 20.04, outSec: 60 });
+  fireEvent.click(screen.getByRole('button', { name: /Mark Out/ }));
+  expect(onChange).toHaveBeenLastCalledWith({ inSec: 0, outSec: 20.04 });
+});
+
+it('the physical I and O keys work with another keyboard layout active', () => {
+  const { onChange } = setup(null, 12);
+  fireEvent.keyDown(window, { key: 'ி', code: 'KeyI' });
+  expect(onChange).toHaveBeenLastCalledWith({ inSec: 12, outSec: 60 });
+  fireEvent.keyDown(window, { key: 'ொ', code: 'KeyO' });
+  expect(onChange).toHaveBeenLastCalledWith({ inSec: 0, outSec: 12 });
+});

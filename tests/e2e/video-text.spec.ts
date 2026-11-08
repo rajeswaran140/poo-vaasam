@@ -677,4 +677,56 @@ test.describe('video text editor (mocked API)', () => {
     expect(writes, 'non-GET /api/ requests the mocks did not fulfil').toEqual([]);
     expect(unexpected, 'requests to the video-text API that the test did not mock').toEqual([]);
   });
+
+  test('In and Out: I while the song plays, O after a seek; shaded, saved, Shift+I goes back, Clear removes them', async ({ page }) => {
+    test.skip(Boolean(ffmpegMissing), ffmpegMissing || 'ffmpeg missing');
+    const { writes, unexpected, patches } = await mockEditor(page);
+    const { seekTo } = await openEditor(page);
+    const video = page.locator('video');
+    const summary = page.getByTestId('cut-summary');
+    await expect(summary).toHaveText(/exports the whole video/);
+    const lastCut = () => {
+      const last = patches.at(-1);
+      return last ? JSON.parse(last).edits.cut : 'none';
+    };
+
+    // I typed into the lyrics is text, not a mark.
+    const lyricsBox = page.getByLabel('Lyrics', { exact: true });
+    await lyricsBox.focus();
+    await page.keyboard.press('i');
+    await expect(summary).toHaveText(/exports the whole video/);
+    await lyricsBox.press('Backspace');
+    await lyricsBox.blur();
+
+    // Mark In while playing: the mark is the video's own time at the press, on a frame.
+    await seekTo(4);
+    await video.evaluate((v: HTMLVideoElement) => v.play());
+    await page.waitForFunction(() => (document.querySelector('video') as HTMLVideoElement).currentTime >= 5, null, { polling: 'raf', timeout: 15_000 });
+    await page.keyboard.press('i');
+    await video.evaluate((v: HTMLVideoElement) => v.pause());
+    await expect(summary).toHaveText(/exports 0:0[5-6]\.\d\d to 0:40\.00/);
+    await seekTo(20);
+    await page.keyboard.press('o');
+    await expect(summary).toHaveText(/to 0:20\.00 \(/);
+    await expect(page.getByTestId('cut-shade-in')).toBeVisible();
+    await expect(page.getByTestId('cut-shade-out')).toBeVisible();
+    await expect.poll(lastCut, { timeout: 15_000 }).toMatchObject({ outSec: 20 });
+    const saved = lastCut() as { inSec: number; outSec: number };
+    expect(saved.inSec).toBeGreaterThanOrEqual(5);
+    expect(saved.inSec).toBeLessThan(6.5);
+    expect(Math.abs(saved.inSec * 25 - Math.round(saved.inSec * 25))).toBeLessThan(0.03);
+
+    // Shift+I goes to In.
+    await page.keyboard.press('Shift+I');
+    await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.currentTime)).toBeCloseTo(saved.inSec, 1);
+
+    // Clear: whole video again, saved as no cut.
+    await page.getByRole('button', { name: 'Clear In and Out' }).click();
+    await expect(summary).toHaveText(/exports the whole video/);
+    await expect(page.getByTestId('cut-shade-in')).toHaveCount(0);
+    await expect.poll(lastCut, { timeout: 15_000 }).toBeNull();
+
+    expect(writes, 'non-GET /api/ requests the mocks did not fulfil').toEqual([]);
+    expect(unexpected, 'requests to the video-text API that the test did not mock').toEqual([]);
+  });
 });
