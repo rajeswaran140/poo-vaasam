@@ -62,6 +62,25 @@ export function markOut(cut: Cut | null | undefined, sec: number, durationSec: n
   return normalise(inn, outSec, durationSec, fps);
 }
 
+/**
+ * A handle dragged (or arrowed) to `sec`: it stops a second short of the
+ * other mark instead of crossing it. Unlike markIn/markOut, which follow
+ * Premiere's rule for a single I/O press (the other mark goes back to its
+ * end), a drag passes through many positions, and that rule would wipe out
+ * the other mark the moment the handle touched it.
+ */
+export function dragMark(cut: Cut | null | undefined, kind: 'in' | 'out', sec: number, durationSec: number, fps: number): Cut | null {
+  const { inSec, outSec } = cutRange(cut, durationSec);
+  const f = fpsOr(fps);
+  const t = snapToFrame(sec, fps);
+  if (kind === 'in') {
+    const max = r3(Math.floor((outSec - MIN_CUT_SEC) * f + 1e-6) / f);
+    return normalise(Math.max(0, Math.min(t, max)), outSec, durationSec, fps);
+  }
+  const min = r3(Math.ceil((inSec + MIN_CUT_SEC) * f - 1e-6) / f);
+  return normalise(inSec, Math.min(durationSec, Math.max(t, min)), durationSec, fps);
+}
+
 /** Why these marks cannot be exported, or null. `durationSec` is the stored video length. */
 export function validateCut(cut: Cut | null | undefined, durationSec: number): string | null {
   if (!cut) return null;
@@ -75,9 +94,25 @@ export function validateCut(cut: Cut | null | undefined, durationSec: number): s
   return null;
 }
 
-/** A cut fitted to a new video length (a re-upload): kept when it still fits, else shortened or dropped. */
+/**
+ * A cut fitted to a new video (a re-upload): kept when it still fits, else
+ * shortened or dropped, and put back on the new video's frames (it may have
+ * another frame rate).
+ */
 export function fitCutToDuration(cut: Cut | null | undefined, durationSec: number, fps: number): Cut | null {
   if (!cut) return null;
-  if (cut.inSec > lastIn(durationSec, fps)) return null;
-  return normalise(cut.inSec, Math.min(cut.outSec, durationSec), durationSec, fps);
+  const inSec = snapToFrame(cut.inSec, fps);
+  if (inSec > lastIn(durationSec, fps)) return null;
+  const outSec = cut.outSec >= durationSec ? durationSec : Math.min(durationSec, snapToFrame(cut.outSec, fps));
+  if (outSec - inSec < MIN_CUT_SEC) return normalise(inSec, durationSec, durationSec, fps);
+  return normalise(inSec, outSec, durationSec, fps);
+}
+
+/** Marks on this video's frames: the worker's guard for marks saved off them. Out at the end stays the end. */
+export function snapCut(cut: Cut, durationSec: number, fps: number): Cut {
+  const half = 0.5 / fpsOr(fps);
+  return {
+    inSec: snapToFrame(cut.inSec, fps),
+    outSec: cut.outSec >= durationSec - half ? cut.outSec : snapToFrame(cut.outSec, fps),
+  };
 }

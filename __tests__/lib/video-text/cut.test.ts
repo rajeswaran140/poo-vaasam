@@ -1,4 +1,4 @@
-import { cutLength, cutRange, fitCutToDuration, markIn, markOut, snapToFrame, validateCut } from '@/lib/video-text/cut';
+import { cutLength, cutRange, dragMark, fitCutToDuration, markIn, markOut, snapCut, snapToFrame, validateCut } from '@/lib/video-text/cut';
 
 const D = 60;
 
@@ -65,5 +65,29 @@ describe('fitCutToDuration (a re-upload)', () => {
     expect(fitCutToDuration({ inSec: 29.5, outSec: 40 }, 30, 25)).toBeNull();
     expect(fitCutToDuration({ inSec: 0, outSec: 40 }, 30, 25)).toBeNull();
     expect(fitCutToDuration(null, 30, 25)).toBeNull();
+  });
+});
+
+describe('dragMark (a handle dragged or arrowed)', () => {
+  it('stops a second short of the other mark and never moves it', () => {
+    expect(dragMark({ inSec: 30, outSec: 60 }, 'in', 59.2, 200, 30)).toEqual({ inSec: 59, outSec: 60 });
+    expect(dragMark({ inSec: 30, outSec: 60 }, 'in', 40, 200, 30)).toEqual({ inSec: 40, outSec: 60 });
+    expect(dragMark({ inSec: 30, outSec: 60 }, 'out', 10, 200, 30)).toEqual({ inSec: 30, outSec: 31 });
+    // Already a second apart: an arrow toward the other mark does nothing.
+    expect(dragMark({ inSec: 30, outSec: 31 }, 'in', 30.033, 200, 30)).toEqual({ inSec: 30, outSec: 31 });
+  });
+  it('dragged to the ends, the marks become no cut', () => {
+    expect(dragMark({ inSec: 30, outSec: 200 }, 'in', -5, 200, 30)).toBeNull();
+    expect(dragMark({ inSec: 0, outSec: 60 }, 'out', 250, 200, 30)).toBeNull();
+  });
+});
+
+describe('re-upload at another frame rate, and marks saved off frames', () => {
+  it('fitCutToDuration puts the marks back on the new frames', () => {
+    expect(fitCutToDuration({ inSec: 1.033, outSec: 20.967 }, 30, 25)).toEqual({ inSec: 1.04, outSec: 20.96 });
+  });
+  it('snapCut snaps both marks, leaving an Out at the end alone', () => {
+    expect(snapCut({ inSec: 25.013, outSec: 41.99 }, 45, 25)).toEqual({ inSec: 25, outSec: 42 });
+    expect(snapCut({ inSec: 25, outSec: 45 }, 45, 25)).toEqual({ inSec: 25, outSec: 45 });
   });
 });

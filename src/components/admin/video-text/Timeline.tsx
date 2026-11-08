@@ -27,7 +27,7 @@
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
 import { dragEdge, moveBlock, sameBlocks } from '@/lib/video-text/timeline';
-import { cutRange, markIn, markOut } from '@/lib/video-text/cut';
+import { cutRange, dragMark } from '@/lib/video-text/cut';
 import type { Cut, TextBlock, Track } from '@/types/videoText';
 
 const MAX_PX_PER_SEC = 40;
@@ -277,26 +277,31 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek, c
 
   // ---- In / Out handles
   const inner = useRef<HTMLDivElement>(null);
-  const markDrag = useRef<{ kind: 'in' | 'out'; pointerId: number } | null>(null);
+  /** `grab`: seconds between the pointer and the mark at pointerdown, so the mark does not jump to the pointer. */
+  const markDrag = useRef<{ kind: 'in' | 'out'; pointerId: number; grab: number } | null>(null);
   const latestCut = useRef(cut);
   latestCut.current = cut;
   const setMark = (kind: 'in' | 'out', sec: number) => {
     if (!onCutChange) return;
     const c = latestCut.current;
-    const next = kind === 'in' ? markIn(c, sec, durationSec, fps) : markOut(c, sec, durationSec, fps);
+    // A handle stops a second short of the other mark; it never moves it.
+    const next = dragMark(c, kind, sec, durationSec, fps);
     if (JSON.stringify(next) !== JSON.stringify(c)) onCutChange(next);
   };
   const beginMarkDrag = (e: PointerEvent<HTMLElement>, kind: 'in' | 'out') => {
     if (e.button !== 0) return;
     e.stopPropagation();
-    markDrag.current = { kind, pointerId: e.pointerId };
+    const rect = inner.current?.getBoundingClientRect();
+    const r = cutRange(latestCut.current, durationSec);
+    const at = kind === 'in' ? r.inSec : r.outSec;
+    markDrag.current = { kind, pointerId: e.pointerId, grab: rect ? (e.clientX - rect.left) / pps - at : 0 };
     e.currentTarget.setPointerCapture?.(e.pointerId);
   };
   const onMarkMove = (e: PointerEvent<HTMLElement>) => {
     const d = markDrag.current;
     const rect = inner.current?.getBoundingClientRect();
     if (!d || d.pointerId !== e.pointerId || !rect) return;
-    setMark(d.kind, Math.min(durationSec, Math.max(0, (e.clientX - rect.left) / pps)));
+    setMark(d.kind, Math.min(durationSec, Math.max(0, (e.clientX - rect.left) / pps - d.grab)));
   };
   const endMarkDrag = (e: PointerEvent<HTMLElement>) => {
     if (markDrag.current?.pointerId === e.pointerId) markDrag.current = null;
@@ -308,6 +313,14 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek, c
     setMark(kind, at + step);
   };
   const range = cutRange(cut, durationSec);
+  // Flags sit inside the kept part; when it is too narrow for both, they go
+  // outside it, so neither covers the other.
+  const FLAG_PX = 12;
+  const flagsOutside = (range.outSec - range.inSec) * pps < FLAG_PX * 2;
+  const flagLeft = (kind: 'in' | 'out', at: number) => {
+    const x = kind === 'in' ? (flagsOutside ? at * pps - FLAG_PX : at * pps) : flagsOutside ? at * pps : at * pps - FLAG_PX;
+    return Math.min(Math.max(0, x), Math.max(0, innerWidth - FLAG_PX));
+  };
 
   return (
     <div className="min-w-0 space-y-2">
@@ -462,8 +475,7 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek, c
                       className={`absolute top-0 z-30 flex h-6 w-3 cursor-ew-resize touch-none select-none items-center justify-center bg-emerald-600 text-[9px] font-bold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 ${
                         kind === 'in' ? 'rounded-l' : 'rounded-r'
                       }`}
-                      // The In flag sits just inside the kept part, the Out flag just after it.
-                      style={{ left: kind === 'in' ? at * pps : at * pps - 12 }}
+                      style={{ left: flagLeft(kind, at) }}
                     >
                       {kind === 'in' ? 'I' : 'O'}
                     </div>

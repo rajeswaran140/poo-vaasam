@@ -52,8 +52,12 @@ export function CutMarks({ cut, durationSec, fps, playheadSec, onChange, onSeek,
     return typeof t === 'number' && Number.isFinite(t) ? t : live.current.playheadSec;
   };
 
-  const setIn = () => onChange(markIn(live.current.cut, now(), durationSec, fps));
-  const setOut = () => onChange(markOut(live.current.cut, now(), durationSec, fps));
+  // A press that changes nothing is not an edit (it would call the last video older than it is).
+  const apply = (next: Cut | null) => {
+    if (JSON.stringify(next) !== JSON.stringify(live.current.cut ?? null)) onChange(next);
+  };
+  const setIn = () => apply(markIn(live.current.cut, now(), durationSec, fps));
+  const setOut = () => apply(markOut(live.current.cut, now(), durationSec, fps));
   const actions = useRef({ setIn, setOut, onSeek });
   actions.current = { setIn, setOut, onSeek };
 

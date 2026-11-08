@@ -383,6 +383,12 @@ export function buildAudioCutArgs(audioPath: string, outPath: string, cut: Cut, 
   const format = /\.mov$/i.test(audioPath) ? 'mov' : 'mp4';
   return [
     '-hide_banner', '-nostats',
+    // The marks are times on the SOURCE's clock. Without this, ffmpeg adds the
+    // file's start time to -ss/-to, and the extract's start time is the
+    // audio's own first timestamp: a song whose sound starts 78 ms after the
+    // picture was cut 78 ms late and played that much early (audit 2026-11-08,
+    // measured on 7.0.2). With it, a source starting at 0 cuts the same.
+    '-seek_timestamp', '1',
     ...(cut.inSec > 0 ? ['-ss', String(cut.inSec)] : []),
     ...(cut.outSec < durationSec - half ? ['-to', String(cut.outSec)] : []),
     '-i', audioPath,
@@ -397,24 +403,43 @@ export function buildAudioCutArgs(audioPath: string, outPath: string, cut: Cut, 
  * the song's own packets, unchanged and with none dropped.
  */
 export function isPacketRunOf(part: string, whole: string): boolean {
+  return cutStartOnSource(part, whole) !== null;
+}
+
+/**
+ * Where on the source's clock the cut's time 0 lies, in seconds, or null when
+ * `part` is not a run of `whole`'s packets (see isPacketRunOf). Both are
+ * framecrc listings read with -copyts in the same time base: the cut's first
+ * packet sits at pts p in the cut and at pts s in the source, so the cut's 0
+ * is source time (s − p). It must equal In, or the sound plays off the picture.
+ */
+export function cutStartOnSource(part: string, whole: string): number | null {
+  const tbOf = (framecrc: string) => {
+    const m = framecrc.match(/^#tb 0:\s*(\d+)\/(\d+)/m);
+    return m ? Number(m[1]) / Number(m[2]) : null;
+  };
   const packets = (framecrc: string) =>
     framecrc
       .split(/\r?\n/)
       .filter((l) => l && !l.startsWith('#'))
       .map((l) => {
         const f = l.split(',').map((x) => x.trim());
-        return `${f[4]}:${f[5]}`;
+        return { pts: Number(f[2]), id: `${f[4]}:${f[5]}` };
       });
   const p = packets(part);
   const w = packets(whole);
-  if (p.length === 0 || p.length > w.length) return false;
+  if (p.length === 0 || p.length > w.length) return null;
   for (let start = 0; start + p.length <= w.length; start++) {
-    if (w[start] !== p[0]) continue;
+    if (w[start].id !== p[0].id) continue;
     let i = 1;
-    while (i < p.length && w[start + i] === p[i]) i++;
-    if (i === p.length) return true;
+    while (i < p.length && w[start + i].id === p[i].id) i++;
+    if (i === p.length) {
+      const tb = tbOf(part) ?? tbOf(whole);
+      if (tb === null || tbOf(whole) !== tb) return null;
+      return (w[start].pts - p[0].pts) * tb;
+    }
   }
-  return false;
+  return null;
 }
 
 /**

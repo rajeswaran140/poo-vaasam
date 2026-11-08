@@ -84,3 +84,10 @@ it('the physical I and O keys work with another keyboard layout active', () => {
   fireEvent.keyDown(window, { key: 'ொ', code: 'KeyO' });
   expect(onChange).toHaveBeenLastCalledWith({ inSec: 0, outSec: 12 });
 });
+
+it('pressing I again at the same frame is not an edit', () => {
+  const { onChange } = setup({ inSec: 12, outSec: 40 }, 12);
+  fireEvent.keyDown(window, { key: 'i' });
+  fireEvent.click(screen.getByRole('button', { name: /Mark In/ }));
+  expect(onChange).not.toHaveBeenCalled();
+});
