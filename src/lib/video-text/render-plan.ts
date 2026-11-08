@@ -270,7 +270,10 @@ export function buildChunkArgs(params: {
     // The PNG is decoded ONCE and repeated in the graph (loop filter): `-loop 1`
     // would decode the full-frame image again for every clip frame.
     const clip = (input: number, kind: 'in' | 'out', shift: number) =>
-      `[${input}:v]loop=loop=${clipFrames - 1}:size=1:start=0,setpts=N/(${fps}*TB),format=rgba,` +
+      // settb=AVTB first: the PNG input's timebase is 1/25, and setpts on it
+      // truncates to whole 1/25 s ticks — at 60 or 29.97 fps the ramp stepped
+      // and even blinked off a frame (review, measured on 7.0.2).
+      `[${input}:v]loop=loop=${clipFrames - 1}:size=1:start=0,settb=AVTB,setpts=N/(${fps}*TB),format=rgba,` +
       `fade=t=${kind}:st=0:d=${d}:alpha=1,setpts=PTS+(${shift})/TB`;
     if (fadeIn) {
       inputs.push('-i', o.path);

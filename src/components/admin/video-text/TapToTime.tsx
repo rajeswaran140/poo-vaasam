@@ -9,7 +9,7 @@
  * (tapLyric / endLyricAt).
  */
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
-import { endLyricAt, tapLyric } from '@/lib/video-text/timeline';
+import { MIN_BLOCK_SEC, endLyricAt, tapLyric, validateBlocks } from '@/lib/video-text/timeline';
 import type { TextBlock } from '@/types/videoText';
 
 type Session = { from: number; next: number; open: number | null; snapshot: TextBlock[] };
@@ -38,7 +38,9 @@ export function TapToTime({ blocks, durationSec, video, onChange, disabled }: Ta
 
   const start = () => {
     setNote(null);
-    setSession({ from: startAt, next: startAt, open: null, snapshot: blocks });
+    // The select shows the clamped line; start from the same one.
+    const from = Math.min(startAt, Math.max(0, lyric.length - 1));
+    setSession({ from, next: from, open: null, snapshot: blocks });
     void video.current?.play()?.catch(() => undefined);
   };
 
@@ -50,14 +52,23 @@ export function TapToTime({ blocks, durationSec, video, onChange, disabled }: Ta
   const tap = useCallback(() => {
     const { blocks: bs, session: s } = live.current;
     if (!s) return;
-    const count = bs.filter((b) => b.track === 'lyric').length;
+    const sorted = bs.filter((b) => b.track === 'lyric').sort((a, b) => a.startSec - b.startSec);
+    const count = sorted.length;
     const t = video.current?.currentTime ?? 0;
+    if (s.next < count && t > durationSec - MIN_BLOCK_SEC) {
+      setNote('The song has ended — press Stop.');
+      return;
+    }
     if (s.next < count) {
-      const next = tapLyric(bs, s.next, t, durationSec, { closePrevious: s.open === s.next - 1 });
+      const closePrevious = s.open === s.next - 1;
+      const next = tapLyric(bs, s.next, t, durationSec, { closePrevious });
       if (!next) {
+        const prev = sorted[s.next - 1];
         setNote(
-          s.next > 0 && s.open === s.next - 1
-            ? 'Too quick — a line shows for at least half a second. Tap again.'
+          prev && t < prev.startSec + MIN_BLOCK_SEC
+            ? closePrevious
+              ? 'Too quick — a line shows for at least half a second. Tap again.'
+              : `That is before line ${s.next} starts. Move the playhead later, or start from an earlier line.`
             : 'No room left for the remaining lines before the end of the video.',
         );
         return;
@@ -90,10 +101,23 @@ export function TapToTime({ blocks, durationSec, video, onChange, disabled }: Ta
     setNote('Stopped. Lines you did not tap kept their times.');
   };
 
+  // Cancel puts back only the lyric TIMES from before the session; anything
+  // else edited meanwhile (text, title, credits) is kept.
   const cancel = () => {
-    if (session) onChange(session.snapshot);
+    if (session) {
+      const before = new Map(session.snapshot.filter((b) => b.track === 'lyric').map((b) => [b.id, b]));
+      const restored = live.current.blocks.map((b) => {
+        const was = b.track === 'lyric' ? before.get(b.id) : undefined;
+        return was ? { ...b, startSec: was.startSec, endSec: was.endSec } : b;
+      });
+      if (validateBlocks(restored, durationSec) === null) {
+        onChange(restored);
+        setNote('Cancelled — every line is back where it was.');
+      } else {
+        setNote('Lines were changed while tapping, so the old times could not be put back. Drag them to adjust.');
+      }
+    }
     finish();
-    setNote('Cancelled — every line is back where it was.');
   };
 
   // Space taps while a session runs (not while typing in a field).
@@ -101,6 +125,7 @@ export function TapToTime({ blocks, durationSec, video, onChange, disabled }: Ta
     if (!session) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== 'Space' && e.key !== ' ') return;
+      if (e.repeat) return e.preventDefault(); // holding Space must not race through lines
       const el = e.target as HTMLElement | null;
       if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
       e.preventDefault(); // not the video's play/pause, not a page scroll

@@ -299,12 +299,19 @@ describe('fades in the chunk command', () => {
     expect(args.filter((a) => a === '-loop')).toHaveLength(0); // never -loop 1 (decodes every frame)
     expect(args.filter((a) => a === 'p.png')).toHaveLength(3);
     const g = graphOf(args);
-    expect(g).toContain('[1:v]loop=loop=9:size=1:start=0,setpts=N/(25*TB),format=rgba,fade=t=in:st=0:d=0.3:alpha=1,setpts=PTS+(1)/TB[fi1]');
-    expect(g).toContain('[3:v]loop=loop=9:size=1:start=0,setpts=N/(25*TB),format=rgba,fade=t=out:st=0:d=0.3:alpha=1,setpts=PTS+(2.7)/TB[fo3]');
+    expect(g).toContain('[1:v]loop=loop=9:size=1:start=0,settb=AVTB,setpts=N/(25*TB),format=rgba,fade=t=in:st=0:d=0.3:alpha=1,setpts=PTS+(1)/TB[fi1]');
+    expect(g).toContain('[3:v]loop=loop=9:size=1:start=0,settb=AVTB,setpts=N/(25*TB),format=rgba,fade=t=out:st=0:d=0.3:alpha=1,setpts=PTS+(2.7)/TB[fo3]');
     expect(g).toContain("[0:v][fi1]overlay=0:0:enable='gte(t,1)*lt(t,1.3)':eof_action=pass[v1]");
     expect(g).toContain("[v1][2:v]overlay=0:0:enable='gte(t,1.3)*lt(t,2.7)':eof_action=repeat[v2]");
     expect(g).toContain("[v2][fo3]overlay=0:0:enable='gte(t,2.7)*lt(t,3)':eof_action=pass[v3]");
     expect(args[args.indexOf('-map') + 1]).toBe('[v3]');
+  });
+
+  it('fade clips switch to a fine timebase before timing frames (1/25 truncated 60 and 29.97 fps fades)', () => {
+    const args = buildChunkArgs({ ...base, fps: 29.97, overlays: [{ path: 'p.png', fromSec: 1, toSec: 3, fade: { inAt: 1.23, outAt: 2.81, sec: 0.3 } }] });
+    const g = graphOf(args);
+    expect(g).toContain('settb=AVTB,setpts=N/(29.97*TB)');
+    expect(g.indexOf('settb=AVTB')).toBeLessThan(g.indexOf('setpts=N/'));
   });
 
   it('a block crossing the cut: the fade-in clip is shifted before 0, the fade-out past the end', () => {

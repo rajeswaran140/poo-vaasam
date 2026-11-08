@@ -109,3 +109,81 @@ it('shows nothing when there are no lyric lines', () => {
   setup([]);
   expect(screen.queryByTestId('tap-to-time')).toBeNull();
 });
+
+describe('review fixes', () => {
+  it('a first tap before the previous line starts says so (not "no room")', () => {
+    const { at } = setup();
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Tap to time lyrics' }));
+    at(9); // line 2 starts at 9: a tap for line 3 here is before it
+    fireEvent.click(tapButton());
+    expect(screen.getByRole('status')).toHaveTextContent('That is before line 2 starts. Move the playhead later, or start from an earlier line.');
+  });
+
+  it('holding Space (key repeat) does not start more lines', () => {
+    const { at, times } = setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Tap to time lyrics' }));
+    at(10);
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', key: ' ' })); });
+    at(12);
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', key: ' ', repeat: true })); });
+    expect(times()[1]).toBe('13-16'); // line 2 untouched by the repeat
+    expect(screen.getByText(/Line 2 of 3/)).toBeInTheDocument();
+  });
+
+  it('a tap after the song has ended asks for Stop instead of moving the line', () => {
+    const { at, times } = setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Tap to time lyrics' }));
+    at(59.8);
+    fireEvent.click(tapButton());
+    expect(screen.getByRole('status')).toHaveTextContent('The song has ended — press Stop.');
+    expect(times()[0]).toBe('5-8');
+  });
+
+  it('Cancel puts back only the lyric times; other edits made meanwhile stay', () => {
+    const video = { currentTime: 0, play: jest.fn(() => Promise.resolve()), pause: jest.fn() };
+    const ref = { current: video as unknown as HTMLVideoElement };
+    const title: TextBlock = { id: 'title', track: 'title', text: 'T', startSec: 0, endSec: 5 };
+    let setOuter!: (b: TextBlock[]) => void;
+    function Host() {
+      const [blocks, setBlocks] = React.useState<TextBlock[]>([title, ...lines]);
+      setOuter = setBlocks;
+      return (
+        <>
+          <TapToTime blocks={blocks} durationSec={60} video={ref} onChange={setBlocks} />
+          <ul>{blocks.map((b) => <li key={b.id} data-testid={b.id}>{`${b.text}:${b.startSec}-${b.endSec}`}</li>)}</ul>
+        </>
+      );
+    }
+    render(<Host />);
+    fireEvent.click(screen.getByRole('button', { name: 'Tap to time lyrics' }));
+    video.currentTime = 30;
+    fireEvent.click(screen.getByRole('button', { name: /^Tap: / }));
+    // Meanwhile the title is stretched and a lyric's text corrected.
+    act(() => setOuter([
+      { ...title, endSec: 60 },
+      ...lines.map((b, i) => (i === 1 ? { ...b, text: 'L2 fixed', startSec: 33, endSec: 36 } : i === 0 ? { ...b, startSec: 30, endSec: 33 } : { ...b, startSec: 36, endSec: 39 })),
+    ]));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByTestId('title').textContent).toBe('T:0-60');
+    expect(screen.getByTestId('lyric-1').textContent).toBe('L2 fixed:9-12');
+    expect(screen.getByTestId('lyric-0').textContent).toBe('L1:5-8');
+  });
+
+  it('a start line beyond the current lyrics starts at the last line, not "all timed"', () => {
+    function Host() {
+      const [blocks, setBlocks] = React.useState<TextBlock[]>(lines);
+      return (
+        <>
+          <TapToTime blocks={blocks} durationSec={60} video={{ current: { currentTime: 20, play: () => Promise.resolve(), pause() {} } as unknown as HTMLVideoElement }} onChange={setBlocks} />
+          <button onClick={() => setBlocks(lines.slice(0, 2))}>shrink</button>
+        </>
+      );
+    }
+    render(<Host />);
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'shrink' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Tap to time lyrics' }));
+    expect(screen.getByText(/Line 2 of 2/)).toBeInTheDocument();
+  });
+});
