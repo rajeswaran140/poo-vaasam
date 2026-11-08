@@ -437,3 +437,45 @@ describe('timeline audit fixes (2026-11-08)', () => {
     expect(scrollLeft()).toBe(4000 - 150);
   });
 });
+
+describe('In and Out marks', () => {
+  const withCut = (cut: { inSec: number; outSec: number } | null) => {
+    const onCutChange = jest.fn();
+    render(
+      <Timeline blocks={[lyric(0, 5, 10)]} durationSec={60} playheadSec={0} onChange={jest.fn()} onSeek={jest.fn()} cut={cut} fps={25} onCutChange={onCutChange} />,
+    );
+    return onCutChange;
+  };
+  it('no marks: no shading and no handles', () => {
+    withCut(null);
+    expect(screen.queryByTestId('cut-shade-in')).toBeNull();
+    expect(screen.queryByRole('slider', { name: 'In mark' })).toBeNull();
+  });
+  it('shades outside the marks and shows both handles with their times', () => {
+    withCut({ inSec: 10, outSec: 40 });
+    expect(screen.getByTestId('cut-shade-in')).toBeInTheDocument();
+    expect(screen.getByTestId('cut-shade-out')).toBeInTheDocument();
+    expect(screen.getByRole('slider', { name: 'In mark' })).toHaveAttribute('aria-valuetext', '0:10.0');
+    expect(screen.getByRole('slider', { name: 'Out mark' })).toHaveAttribute('aria-valuetext', '0:40.0');
+  });
+  it('an Out at the end shades nothing after it', () => {
+    withCut({ inSec: 10, outSec: 60 });
+    expect(screen.queryByTestId('cut-shade-out')).toBeNull();
+  });
+  it('arrow keys on a focused handle move it one frame, Shift one second', () => {
+    const onCutChange = withCut({ inSec: 10, outSec: 40 });
+    const h = screen.getByRole('slider', { name: 'In mark' });
+    fireEvent.keyDown(h, { key: 'ArrowRight' });
+    expect(onCutChange).toHaveBeenLastCalledWith({ inSec: 10.04, outSec: 40 });
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'Out mark' }), { key: 'ArrowLeft', shiftKey: true });
+    expect(onCutChange).toHaveBeenLastCalledWith({ inSec: 10, outSec: 39 });
+  });
+  it('clicking a handle does not seek', () => {
+    const onSeek = jest.fn();
+    render(
+      <Timeline blocks={[]} durationSec={60} playheadSec={0} onChange={jest.fn()} onSeek={onSeek} cut={{ inSec: 10, outSec: 40 }} fps={25} onCutChange={jest.fn()} />,
+    );
+    fireEvent.click(screen.getByTestId('cut-in'));
+    expect(onSeek).not.toHaveBeenCalled();
+  });
+});

@@ -51,7 +51,8 @@ On 2026-11-06 Raj asked for **no** text overlays in the studio or in the masteri
 
 - No YouTube upload, no publishing, no link to a saved master record.
 - No automatic lyric timing (no speech-to-text alignment). Raj times lines by hand.
-- No video cutting, trimming, transitions, effects, colour, or audio editing. Text only.
+- No transitions, effects, colour, or audio editing.
+- ~~No video cutting or trimming.~~ **Changed 2026-11-08 (Raj: "video cut and start and end", "similar as premier pro"):** In and Out marks, Premiere-style. See "In and Out" below.
 - No karaoke word-by-word highlighting. Whole lines only.
 - No change to Visual Story Studio, the Mastering page, or any existing render.
 
@@ -119,3 +120,15 @@ On 2026-11-06 Raj asked for **no** text overlays in the studio or in the masteri
 2. Reloading the page mid-edit loses nothing.
 3. A failed render shows its reason on the page, beside the Make video button.
 4. Tests pass in CI. A read-only Playwright spec loads the page.
+
+
+## In and Out (added 2026-11-08)
+
+Raj asked for a cut so one upload can give a short part as well as the full song ("some times we have to render short duration, full song, vertical, short"), working "similar as premier pro".
+
+- **Marks:** Mark In (key **I**) and Mark Out (key **O**) at the playhead; Shift+I / Shift+O go to them; Clear removes them. Two handles on the ruler drag them; the parts outside are shaded. In alone runs to the end, Out alone starts at 0, a mark crossing the other sends that one back to its end of the video (Premiere's rules). The part must be at least 1 s.
+- **Text stays where it is**, as in Premiere: a line outside the marks is not in the video, a line crossing a mark shows for the part inside. Raj drags the title and credits into the marked part himself.
+- **Picture:** marks snap to the video's frames. Only the segments inside the marks are encoded; the chunk whose segment holds a mark trims to it after the overlays (`trim` half a frame early, then `setpts=PTS-STARTPTS`), so the first frame is the frame at In. Verified on the layer's 7.0.2 at 30 and 10 fps: exact frame count, first and last frames matching the source by PSNR, a line crossing In ending on its own frame.
+- **Sound is still never re-encoded.** It is cut from the extracted audio by input seeking with stream copy (`-ss In -to Out -c copy`), which starts at the packet holding In and marks the samples before it to be skipped (measured: first packet pts −192 at 48 kHz for an In 4 ms into it). The worker proves the cut is a contiguous run of the song's own packets (same size and checksum, none missing) and that the output's audio is exactly the cut's, hash and timing.
+- A re-upload keeps marks that fit the new video, runs an Out past the new end to the end, and drops marks whose In is past it.
+- **Not included:** turning a 16:9 video vertical. Mastering already makes the vertical and the short.

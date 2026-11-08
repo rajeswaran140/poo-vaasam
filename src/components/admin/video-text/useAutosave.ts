@@ -25,7 +25,9 @@ import type { VideoTextProject } from '@/types/videoText';
 
 export const AUTOSAVE_DELAY_MS = 800;
 
-export type Edits = Pick<VideoTextProject, 'name' | 'titleText' | 'creditsText' | 'lyricsText' | 'blocks' | 'style'>;
+export type Edits = Pick<VideoTextProject, 'name' | 'titleText' | 'creditsText' | 'lyricsText' | 'blocks' | 'style'> & {
+  cut: VideoTextProject['cut'];
+};
 
 export const editsOf = (p: VideoTextProject): Edits => ({
   name: p.name,
@@ -34,6 +36,7 @@ export const editsOf = (p: VideoTextProject): Edits => ({
   lyricsText: p.lyricsText,
   blocks: p.blocks,
   style: p.style,
+  cut: p.cut ?? null,
 });
 
 /** `held`: edits are waiting for the render start-up to finish (see `hold`). */

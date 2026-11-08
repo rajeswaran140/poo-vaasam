@@ -395,3 +395,45 @@ describe('download', () => {
     expect(presignGet).toHaveBeenCalledWith(out, 900, 'A B song-text.mp4');
   });
 });
+
+describe('In and Out (the cut)', () => {
+  const key = `audio/mastering/video-text/${ID}/source/a.mp4`;
+  it('PATCH saves the marks, and still saves edits from a tab that has none', async () => {
+    repo.saveEdits.mockResolvedValue({ ok: true, version: 4 });
+    let res = await PATCH(req({ edits: { ...edits(), cut: { inSec: 10, outSec: 40 } }, version: 3 }, 'PATCH'), ctx);
+    expect(res.status).toBe(200);
+    expect(repo.saveEdits.mock.calls[0][1].cut).toEqual({ inSec: 10, outSec: 40 });
+    res = await PATCH(req({ edits: { ...edits(), cut: null }, version: 3 }, 'PATCH'), ctx);
+    expect(res.status).toBe(200);
+    res = await PATCH(req({ edits: edits(), version: 3 }, 'PATCH'), ctx);
+    expect(res.status).toBe(200);
+    expect(repo.saveEdits.mock.calls[2][1]).not.toHaveProperty('cut');
+  });
+  it('PATCH 400s marks outside the video or under a second apart', async () => {
+    for (const cut of [{ inSec: 10, outSec: 61 }, { inSec: 10, outSec: 10.5 }, { inSec: -1, outSec: 5 }]) {
+      const res = await PATCH(req({ edits: { ...edits(), cut }, version: 3 }, 'PATCH'), ctx);
+      expect(res.status).toBe(400);
+    }
+    expect(repo.saveEdits).not.toHaveBeenCalled();
+  });
+  it('render 400s stored marks that no longer fit the video, without claiming', async () => {
+    repo.get.mockResolvedValue(project({ cut: { inSec: 50, outSec: 70 } }));
+    const res = await renderPOST(req({ renderId: 'r1', version: 3 }), ctx);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('The In and Out marks are outside the video — set them again.');
+    expect(repo.startRender).not.toHaveBeenCalled();
+  });
+  it('a re-upload keeps marks that fit, shortens an Out past the new end, and returns them', async () => {
+    const info = { width: 1920, height: 1080, fps: 30, durationSec: 30, hasAudio: true };
+    lambdaSend.mockResolvedValue(probePayload({ ok: true, info }));
+    repo.setSource.mockResolvedValue({ ok: true, version: 4, durationSec: 30 });
+    repo.get.mockResolvedValue(project({ cut: { inSec: 10, outSec: 40 } }));
+    const body = await (await sourcePOST(req({ key }), ctx)).json();
+    // Out past the new end now runs to the end.
+    expect(body.cut).toEqual({ inSec: 10, outSec: 30 });
+    expect(repo.setSource.mock.calls[0][3]).toEqual({ inSec: 10, outSec: 30 });
+    // An In past the new end: the marks are cleared.
+    repo.get.mockResolvedValue(project({ cut: { inSec: 45, outSec: 50 } }));
+    expect((await (await sourcePOST(req({ key }), ctx)).json()).cut).toBeNull();
+  });
+});

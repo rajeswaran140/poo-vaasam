@@ -6,6 +6,7 @@ import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helpe
 import { VideoTextRepository } from '@/infrastructure/database/VideoTextRepository';
 import { isValidProjectId } from '@/lib/video-text/keys';
 import { validateBlocks } from '@/lib/video-text/timeline';
+import { validateCut } from '@/lib/video-text/cut';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -50,6 +51,8 @@ const patchSchema = z.object({
         .object({ title: trackStyleSchema.optional(), lyric: trackStyleSchema.optional(), credits: trackStyleSchema.optional() })
         .optional(),
     }),
+    // Missing from tabs opened before the cut existed: those keep the stored marks.
+    cut: z.object({ inSec: z.number().finite().min(0), outSec: z.number().finite().min(0) }).nullable().optional(),
   }),
 });
 
@@ -95,6 +98,8 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
     if (!project) return NextResponse.json({ error: 'Project not found.' }, { status: 404 });
     const problem = validateBlocks(edits.blocks, project.source?.durationSec ?? Number.MAX_SAFE_INTEGER);
     if (problem) return NextResponse.json({ error: problem }, { status: 400 });
+    const cutProblem = project.source ? validateCut(edits.cut, project.source.durationSec) : null;
+    if (cutProblem) return NextResponse.json({ error: cutProblem }, { status: 400 });
 
     const saved = await repo.saveEdits(id, edits, version);
     if (!saved.ok) {

@@ -16,6 +16,7 @@ import { awsConfig } from '@/lib/aws-config';
 import { expiresAtFrom, floorCentis, isValidProjectId, isVideoTextKeyFor } from '@/lib/video-text/keys';
 import { clampToDuration, defaultBlocks } from '@/lib/video-text/timeline';
 import type { SourceInfo } from '@/types/videoText';
+import { fitCutToDuration } from '@/lib/video-text/cut';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -155,13 +156,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       });
     }
 
-    const saved = await repo.setSource(id, source, blocks);
+    // In and Out are kept when they still fit the new video, else shortened or cleared.
+    const cut = fitCutToDuration(project.cut, source.durationSec, source.fps);
+    const saved = await repo.setSource(id, source, blocks, cut);
     if (!saved.ok) {
       return saved.reason === 'missing'
         ? NextResponse.json({ error: 'Project not found.' }, { status: 404 })
         : NextResponse.json({ error: RENDER_RUNNING }, { status: 409 });
     }
-    return NextResponse.json({ source: { ...source, durationSec: saved.durationSec }, blocks, moved, version: saved.version });
+    return NextResponse.json({ source: { ...source, durationSec: saved.durationSec }, blocks, moved, cut, version: saved.version });
   } catch (err) {
     console.error('[api/video-text/source] failed:', err instanceof Error ? err.message : String(err));
     return NextResponse.json({ error: 'Could not check the video.' }, { status: 502 });

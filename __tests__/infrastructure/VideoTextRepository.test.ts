@@ -159,7 +159,7 @@ describe('setSource', () => {
     const now = Date.parse('2026-11-07T12:00:00.000Z');
     mockUpdate.mockRejectedValueOnce(ccf());
     mockGet.mockResolvedValueOnce({ PK: 'VIDEOTEXT#abc', SK: 'METADATA', id: 'abc' });
-    expect(await repo.setSource('abc', src, [], now)).toEqual({ ok: false, reason: 'rendering' });
+    expect(await repo.setSource('abc', src, [], null, now)).toEqual({ ok: false, reason: 'rendering' });
     const a = arg();
     expect(a.expressionAttributeValues[':staleBefore']).toBe(new Date(now - RENDER_STALE_MS).toISOString());
     expect(a.expressionAttributeNames).toMatchObject({ '#status': 'status', '#updatedAt': 'updatedAt' });

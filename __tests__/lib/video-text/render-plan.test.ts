@@ -21,6 +21,9 @@ import {
   buildAudioHashArgs,
   buildAudioExtractArgs,
   audioExtractExtFor,
+  segmentsForCut,
+  buildAudioCutArgs,
+  isPacketRunOf,
 } from '@/lib/video-text/render-plan';
 import { VIDEO_CRF } from '@/lib/master-video';
 
@@ -347,5 +350,68 @@ describe('segmentPlanFor with fades', () => {
       const secPerSec = 4.9 * ((2560 * 1440 * 30) / (2560 * 1440 * 24)) * 1.55;
       expect(faded.maxSec * secPerSec).toBeLessThanOrEqual(230 + 1e-6);
     }
+  });
+});
+
+describe('the cut (In and Out)', () => {
+  const chunkArgs = buildChunkArgs;
+  const entries = [
+    { file: 's0.mp4', startSec: 0, endSec: 20 },
+    { file: 's1.mp4', startSec: 20, endSec: 40 },
+    { file: 's2.mp4', startSec: 40, endSec: 45 },
+  ];
+  it('no cut keeps every segment whole', () => {
+    expect(segmentsForCut(entries, null, 25, 45)).toEqual(entries.map((entry) => ({ entry })));
+  });
+  it('keeps only the segments inside, trimming the two the marks fall in', () => {
+    expect(segmentsForCut(entries, { inSec: 25, outSec: 42 }, 25, 45)).toEqual([
+      { entry: entries[1], trim: { fromSec: 5 } },
+      { entry: entries[2], trim: { toSec: 2 } },
+    ]);
+  });
+  it('both marks in one segment trim it at both ends', () => {
+    expect(segmentsForCut(entries, { inSec: 22, outSec: 30 }, 25, 45)).toEqual([{ entry: entries[1], trim: { fromSec: 2, toSec: 10 } }]);
+  });
+  it('a mark on a segment boundary (within half a frame) leaves the neighbour out and trims nothing', () => {
+    expect(segmentsForCut(entries, { inSec: 20, outSec: 40.01 }, 25, 45)).toEqual([{ entry: entries[1] }]);
+  });
+  it('Out at the end of the video trims nothing at the end', () => {
+    expect(segmentsForCut(entries, { inSec: 41, outSec: 45 }, 25, 45)).toEqual([{ entry: entries[2], trim: { fromSec: 1 } }]);
+  });
+  it('a chunk trims AFTER its overlays, half a frame early, and restarts at 0', () => {
+    const args = chunkArgs({
+      segPath: 'seg.mp4', overlays: [{ path: 'a.png', fromSec: 0, toSec: 5 }], width: 1920, height: 1080,
+      outPath: 'out.mp4', crf: 20, preset: 'veryfast', fps: 25, trim: { fromSec: 5, toSec: 10 },
+    });
+    const graph = args[args.indexOf('-filter_complex') + 1];
+    expect(graph).toBe("[0:v][1:v]overlay=0:0:enable='gte(t,0)*lt(t,5)':eof_action=repeat[v1];[v1]trim=start=4.98:end=9.98,setpts=PTS-STARTPTS[vt]");
+    expect(args[args.indexOf('-map') + 1]).toBe('[vt]');
+  });
+  it('a trim with no overlays still goes through the filter graph', () => {
+    const args = chunkArgs({ segPath: 'seg.mp4', overlays: [], width: 1920, height: 1080, outPath: 'out.mp4', crf: 20, preset: 'veryfast', fps: 10, trim: { toSec: 2 } });
+    expect(args[args.indexOf('-filter_complex') + 1]).toBe('[0:v]trim=end=1.95,setpts=PTS-STARTPTS[vt]');
+  });
+  it('no trim leaves the chunk exactly as before', () => {
+    const args = chunkArgs({ segPath: 'seg.mp4', overlays: [], width: 1920, height: 1080, outPath: 'out.mp4', crf: 20, preset: 'veryfast' });
+    expect(args).not.toContain('-filter_complex');
+    expect(args.join(' ')).toContain('-map 0:v:0');
+  });
+  it('the sound is cut by input seeking with stream copy, in the extract\'s own container', () => {
+    expect(buildAudioCutArgs('/t/audio.m4a', '/t/cut.m4a', { inSec: 10.5, outSec: 20.25 }, 45, 25)).toEqual([
+      '-hide_banner', '-nostats', '-ss', '10.5', '-to', '20.25', '-i', '/t/audio.m4a', '-map', '0:a:0', '-c', 'copy', '-f', 'mp4', '-y', '/t/cut.m4a',
+    ]);
+    // In at 0 and Out at the end leave those sides alone; a .mov stays QuickTime.
+    expect(buildAudioCutArgs('/t/audio.mov', '/t/cut.mov', { inSec: 0, outSec: 45 }, 45, 25)).toEqual([
+      '-hide_banner', '-nostats', '-i', '/t/audio.mov', '-map', '0:a:0', '-c', 'copy', '-f', 'mov', '-y', '/t/cut.mov',
+    ]);
+  });
+  it('isPacketRunOf: the cut must be the song\'s own packets, in order, none missing', () => {
+    const line = (pts: number, size: number, crc: string) => `0, ${pts}, ${pts}, 1024, ${size}, ${crc}`;
+    const whole = ['#tb 0: 1/48000', line(0, 400, '0xa'), line(1024, 401, '0xb'), line(2048, 402, '0xc'), line(3072, 403, '0xd')].join('\n');
+    expect(isPacketRunOf(['#tb 0: 1/48000', line(-192, 401, '0xb'), line(832, 402, '0xc')].join('\n'), whole)).toBe(true);
+    // A changed packet, a skipped one, or an empty cut is refused.
+    expect(isPacketRunOf([line(0, 401, '0xb'), line(1024, 402, '0xX')].join('\n'), whole)).toBe(false);
+    expect(isPacketRunOf([line(0, 401, '0xb'), line(1024, 403, '0xd')].join('\n'), whole)).toBe(false);
+    expect(isPacketRunOf('#tb 0: 1/48000\n', whole)).toBe(false);
   });
 });
