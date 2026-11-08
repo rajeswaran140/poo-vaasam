@@ -470,6 +470,12 @@ describe('In and Out marks', () => {
     fireEvent.keyDown(screen.getByRole('slider', { name: 'Out mark' }), { key: 'ArrowLeft', shiftKey: true });
     expect(onCutChange).toHaveBeenLastCalledWith({ inSec: 10, outSec: 39 });
   });
+  it('a handle arrowed into the other mark stops a second short instead of wiping it out', () => {
+    const onCutChange = withCut({ inSec: 10, outSec: 11 });
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'In mark' }), { key: 'ArrowRight' });
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'Out mark' }), { key: 'ArrowLeft' });
+    expect(onCutChange).not.toHaveBeenCalled();
+  });
   it('clicking a handle does not seek', () => {
     const onSeek = jest.fn();
     render(

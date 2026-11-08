@@ -550,8 +550,16 @@ describe('videoTextRender', () => {
   });
 
   describe('In and Out (the cut)', () => {
+    /** A framecrc listing: packets at these pts (1/48000), each with its own size and checksum. */
+    const listing = (packets: { pts: number; n: number }[]) =>
+      ['#tb 0: 1/48000', '#media_type 0: audio', ...packets.map(({ pts, n }) => `0, ${pts}, ${pts}, 1024, ${300 + n}, 0x${(0xabc000 + n).toString(16)}`)].join('\n') + '\n';
+    /** The song's packets around In = 25 s, and the cut: the same packets, its 0 at 25 s. */
+    const SONG = listing([-1024, 0, 1024, 1198976, 1200000, 1201024].map((pts, n) => ({ pts, n })));
+    const CUT_AT_25 = listing([-1024, 0, 1024].map((pts, i) => ({ pts, n: i + 3 })));
     const withCut = (cut: unknown) => {
       world.project = { ...projectFor(), cut };
+      // The output's sound IS the cut, so it lists the cut's packets too.
+      world.timingFor = (f) => (f === 'audio-cut.m4a' || f === 'output.mp4' ? CUT_AT_25 : SONG);
     };
 
     it('encodes only the segments inside the marks, renumbered, trimming the two the marks fall in', async () => {
@@ -573,7 +581,7 @@ describe('videoTextRender', () => {
       withCut({ inSec: 25, outSec: 42 });
       await render();
       const cutArgs = world.ffArgs.find((a) => a.includes('-ss'))!;
-      expect(cutArgs.slice(0, 8)).toEqual(['-hide_banner', '-nostats', '-ss', '25', '-to', '42', '-i', expect.stringMatching(/audio\.m4a$/)]);
+      expect(cutArgs.slice(0, 10)).toEqual(['-hide_banner', '-nostats', '-seek_timestamp', '1', '-ss', '25', '-to', '42', '-i', expect.stringMatching(/audio\.m4a$/)]);
       expect(cutArgs).toEqual(expect.arrayContaining(['-c', 'copy']));
       const join_ = world.ffArgs.find((a) => a.includes('concat'))!;
       expect(basename(join_[join_.indexOf('-i', join_.indexOf('concat')) + 3])).toBe('audio-cut.m4a');
@@ -583,11 +591,27 @@ describe('videoTextRender', () => {
 
     it('a cut sound that is not a run of the song\'s packets stops before any segment is cut', async () => {
       withCut({ inSec: 25, outSec: 42 });
-      world.timingFor = (f) => (f === 'audio-cut.m4a' ? AUDIO_TIMING.replace('0xdf14c6e3', '0x00000000') : AUDIO_TIMING);
+      world.timingFor = (f) => (f === 'audio-cut.m4a' ? CUT_AT_25.replace('0xabc004', '0x000000') : SONG);
       await render();
       expect(lastError()).toBe(AUDIO_CHANGED);
       expect(world.ffArgs.some((a) => a.includes('segment'))).toBe(false);
       expect(world.invoked).toHaveLength(0);
+    });
+
+    it('a cut sound that is the song\'s packets but starts off In (out of sync) is refused too', async () => {
+      withCut({ inSec: 25, outSec: 42 });
+      // The same packets, but the cut's 0 lands 78 ms after In: what a seek on the wrong clock gives.
+      world.timingFor = (f) => (f === 'audio-cut.m4a' ? listing([-1024 - 3744, -3744, 1024 - 3744].map((pts, i) => ({ pts, n: i + 3 }))) : SONG);
+      await render();
+      expect(lastError()).toBe(AUDIO_CHANGED);
+      expect(world.invoked).toHaveLength(0);
+    });
+
+    it('marks saved off the video\'s frames are put back on them before the cut', async () => {
+      withCut({ inSec: 25.013, outSec: 42 });
+      await render();
+      const cutArgs = world.ffArgs.find((a) => a.includes('-ss'))!;
+      expect(cutArgs[cutArgs.indexOf('-ss') + 1]).toBe('25');
     });
 
     it('marks that do not fit the stored video are refused before any download', async () => {

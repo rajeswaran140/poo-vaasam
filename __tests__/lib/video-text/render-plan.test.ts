@@ -24,6 +24,7 @@ import {
   segmentsForCut,
   buildAudioCutArgs,
   isPacketRunOf,
+  cutStartOnSource,
 } from '@/lib/video-text/render-plan';
 import { VIDEO_CRF } from '@/lib/master-video';
 
@@ -396,14 +397,23 @@ describe('the cut (In and Out)', () => {
     expect(args).not.toContain('-filter_complex');
     expect(args.join(' ')).toContain('-map 0:v:0');
   });
-  it('the sound is cut by input seeking with stream copy, in the extract\'s own container', () => {
+  it('the sound is cut by input seeking on the SOURCE clock (-seek_timestamp 1), with stream copy, in the extract\'s own container', () => {
     expect(buildAudioCutArgs('/t/audio.m4a', '/t/cut.m4a', { inSec: 10.5, outSec: 20.25 }, 45, 25)).toEqual([
-      '-hide_banner', '-nostats', '-ss', '10.5', '-to', '20.25', '-i', '/t/audio.m4a', '-map', '0:a:0', '-c', 'copy', '-f', 'mp4', '-y', '/t/cut.m4a',
+      '-hide_banner', '-nostats', '-seek_timestamp', '1', '-ss', '10.5', '-to', '20.25', '-i', '/t/audio.m4a', '-map', '0:a:0', '-c', 'copy', '-f', 'mp4', '-y', '/t/cut.m4a',
     ]);
     // In at 0 and Out at the end leave those sides alone; a .mov stays QuickTime.
     expect(buildAudioCutArgs('/t/audio.mov', '/t/cut.mov', { inSec: 0, outSec: 45 }, 45, 25)).toEqual([
-      '-hide_banner', '-nostats', '-i', '/t/audio.mov', '-map', '0:a:0', '-c', 'copy', '-f', 'mov', '-y', '/t/cut.mov',
+      '-hide_banner', '-nostats', '-seek_timestamp', '1', '-i', '/t/audio.mov', '-map', '0:a:0', '-c', 'copy', '-f', 'mov', '-y', '/t/cut.mov',
     ]);
+  });
+  it('cutStartOnSource: the cut\'s 0 on the source clock, from the first packet\'s two times', () => {
+    const line = (pts: number, size: number, crc: string) => `0, ${pts}, ${pts}, 1024, ${size}, ${crc}`;
+    const whole = ['#tb 0: 1/48000', line(95904, 180, '0xb'), line(96928, 186, '0xc'), line(97952, 162, '0xd')].join('\n');
+    // Measured on 7.0.2: In 2.0 lands the packet at 95904 at -96 in the cut.
+    expect(cutStartOnSource(['#tb 0: 1/48000', line(-96, 180, '0xb'), line(928, 186, '0xc')].join('\n'), whole)).toBeCloseTo(2, 6);
+    // Not the song's packets, or another time base: no answer.
+    expect(cutStartOnSource(['#tb 0: 1/48000', line(-96, 180, '0xX')].join('\n'), whole)).toBeNull();
+    expect(cutStartOnSource(['#tb 0: 1/44100', line(-96, 180, '0xb')].join('\n'), whole)).toBeNull();
   });
   it('isPacketRunOf: the cut must be the song\'s own packets, in order, none missing', () => {
     const line = (pts: number, size: number, crc: string) => `0, ${pts}, ${pts}, 1024, ${size}, ${crc}`;

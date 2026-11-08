@@ -59,12 +59,12 @@ import {
   audioExtractExtFor,
   buildAudioExtractArgs,
   buildAudioCutArgs,
-  isPacketRunOf,
+  cutStartOnSource,
   segmentsForCut,
   type ChunkTrim,
   type SegmentEntry,
 } from '@/lib/video-text/render-plan';
-import { cutLength, validateCut } from '@/lib/video-text/cut';
+import { cutLength, snapCut, validateCut } from '@/lib/video-text/cut';
 import {
   VIDEO_TEXT_PREFIX,
   chunkOutKey,
@@ -787,7 +787,7 @@ export async function renderVideoText(
       throw new VideoTextFailure('this project has no video to render — upload one first');
     }
     // In and Out, against the stored length the editor set them on (the route checked them too).
-    const cut = project.cut ?? null;
+    let cut = project.cut ?? null;
     const storedDuration = Number(source.durationSec);
     if (cut) {
       const cutProblem = Number.isFinite(storedDuration) ? validateCut(cut, storedDuration) : 'The In and Out marks cannot be read — set them again.';
@@ -846,6 +846,9 @@ export async function renderVideoText(
     const offsetRefusal = startOffsetRefusal(videoStart, video!.fps!);
     if (offsetRefusal) throw new VideoTextFailure(offsetRefusal);
 
+    // Marks saved off this video's frames (an older save) are put back on them.
+    if (cut) cut = snapCut(cut, storedDuration, video!.fps!);
+
     // The cut's sound: the song's own packets from In to Out, nothing re-encoded.
     let expectedAudio = sourceAudio;
     let joinAudioPath = audioPath;
@@ -855,8 +858,15 @@ export async function renderVideoText(
         throw new VideoTextFailure(AUDIO_CHANGED_MESSAGE);
       }
       expectedAudio = audioFingerprint(deps, joinAudioPath);
-      if (!isPacketRunOf(expectedAudio.timing, sourceAudio!.timing)) {
+      const startsAt = cutStartOnSource(expectedAudio.timing, sourceAudio!.timing);
+      if (startsAt === null) {
         console.error('[video-text] cut audio is not a run of the source packets');
+        throw new VideoTextFailure(AUDIO_CHANGED_MESSAGE);
+      }
+      // In sync: the cut's 0 is In on the source's clock (to the millisecond;
+      // the cut is to the sample, In is rounded to 1 ms).
+      if (Math.abs(startsAt - cut.inSec) > 0.002) {
+        console.error(`[video-text] cut audio starts at ${startsAt.toFixed(4)} s on the source, In is ${cut.inSec}`);
         throw new VideoTextFailure(AUDIO_CHANGED_MESSAGE);
       }
     }
