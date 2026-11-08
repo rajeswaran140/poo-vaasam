@@ -425,3 +425,29 @@ describe('Google fonts in the drawing', () => {
     );
   });
 });
+
+describe('size as % of the video height, and moving by hand', () => {
+  const withTrack = (track: TextBlock['track'], own: Record<string, unknown>): TextStyle => ({ ...STYLE, tracks: { [track]: own } });
+  it('heightPct is the letter size as a share of the video height, 1% to 100%', () => {
+    expect(layoutBlock(fakeCtx(), block('lyric', 'Hi'), FRAME, withTrack('lyric', { heightPct: 1 })).fontPx).toBeCloseTo(10.8, 6);
+    expect(layoutBlock(fakeCtx(), block('title', 'Hi'), FRAME, withTrack('title', { heightPct: 100 })).fontPx).toBeCloseTo(1080, 6);
+  });
+  it('an older save (size multiplier) draws exactly as before', () => {
+    expect(layoutBlock(fakeCtx(), block('title', 'Hi'), FRAME, withTrack('title', { size: 1.05 })).fontPx).toBeCloseTo(1080 * 0.075 * 1.05, 9);
+    expect(layoutBlock(fakeCtx(), block('lyric', 'Hi'), FRAME, STYLE).fontPx).toBeCloseTo(54, 9);
+  });
+  it('heightPct wins over an older size multiplier', () => {
+    expect(layoutBlock(fakeCtx(), block('lyric', 'Hi'), FRAME, withTrack('lyric', { size: 2, heightPct: 3 })).fontPx).toBeCloseTo(32.4, 6);
+  });
+  it('an offset moves the text from its alignment by a share of the frame, nothing else changes', () => {
+    const aligned = layoutBlock(fakeCtx(), block('credits', 'a\nb'), FRAME, STYLE);
+    const moved = layoutBlock(fakeCtx(), block('credits', 'a\nb'), FRAME, withTrack('credits', { offset: { x: 0.1, y: -0.25 } }));
+    expect(moved.x).toBeCloseTo(aligned.x + 192, 6);
+    expect(moved.yBaseline.map((y, i) => y - aligned.yBaseline[i])).toEqual([-270, -270]);
+    expect({ ...moved, x: 0, yBaseline: [] }).toEqual({ ...aligned, x: 0, yBaseline: [] });
+  });
+  it('an offset of 0,0 is exactly the alignment', () => {
+    const aligned = layoutBlock(fakeCtx(), block('lyric', 'hello'), FRAME, STYLE);
+    expect(layoutBlock(fakeCtx(), block('lyric', 'hello'), FRAME, withTrack('lyric', { offset: { x: 0, y: 0 } }))).toEqual(aligned);
+  });
+});

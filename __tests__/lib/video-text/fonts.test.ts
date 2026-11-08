@@ -53,3 +53,16 @@ describe('Google fonts', () => {
     expect(st).toMatchObject({ tamilFont: 'g:Pavanam', englishFont: 'g:Lobster' });
   });
 });
+
+describe('heightPct and offset', () => {
+  const ST = { sizeScale: 1, lyricPosition: 'lower' as const };
+  it('an older save shows its size as % of the video height; new saves use heightPct', () => {
+    expect(trackStyleOf('title', ST).heightPct).toBe(7.5);
+    expect(trackStyleOf('lyric', { ...ST, sizeScale: 0.75 }).heightPct).toBe(3.75);
+    expect(trackStyleOf('credits', { ...ST, tracks: { credits: { size: 2 } } }).heightPct).toBe(8);
+    expect(trackStyleOf('credits', { ...ST, tracks: { credits: { size: 2, heightPct: 20 } } }).heightPct).toBe(20);
+  });
+  it('a part not moved by hand has offset 0,0', () => {
+    expect(trackStyleOf('lyric', ST).offset).toEqual({ x: 0, y: 0 });
+  });
+});

@@ -12,7 +12,7 @@ import { googleFontMatches } from '@/components/admin/video-text/GoogleFontSearc
 import { GOOGLE_FONTS } from '@/lib/video-text/google-fonts';
 import type { TrackStyle } from '@/types/videoText';
 
-const base: Required<TrackStyle> = { size: 1, tamilFont: 'noto-sans-tamil', englishFont: 'plain', color: 'white', box: false, fade: false };
+const base: Required<TrackStyle> = { size: 1, heightPct: 7.5, offset: { x: 0, y: 0 }, tamilFont: 'noto-sans-tamil', englishFont: 'plain', color: 'white', box: false, fade: false };
 
 function setup(value: Partial<Required<TrackStyle>> = {}) {
   const onChange = jest.fn();
@@ -61,4 +61,48 @@ it('search: names that start with the words come first; kind narrows it; at most
   expect(googleFontMatches('', 'h').every((f) => f.category === 'h')).toBe(true);
   expect(googleFontMatches('zzzz', '')).toEqual([]);
   expect(googleFontMatches('', '', GOOGLE_FONTS).length).toBe(12);
+});
+
+describe('size 1–100% of the video height, and moving by hand', () => {
+  it('the slider and the number box run 1 to 100 and set heightPct', () => {
+    const { onChange } = setup();
+    const slider = screen.getByLabelText('Size');
+    expect(slider).toHaveAttribute('min', '1');
+    expect(slider).toHaveAttribute('max', '100');
+    fireEvent.change(slider, { target: { value: '42.5' } });
+    expect(onChange).toHaveBeenLastCalledWith({ heightPct: 42.5 });
+    const box = screen.getByLabelText("Title size, % of the video's height");
+    expect(box).toHaveValue(7.5);
+    fireEvent.change(box, { target: { value: '150' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    expect(onChange).toHaveBeenLastCalledWith({ heightPct: 100 });
+    fireEvent.change(box, { target: { value: '0.2' } });
+    fireEvent.blur(box);
+    expect(onChange).toHaveBeenLastCalledWith({ heightPct: 1 });
+  });
+  it('the move boxes set the offset as a share of the frame, and Reset to aligned clears it', () => {
+    const { onChange } = setup({ offset: { x: 0.1, y: -0.05 } });
+    const right = screen.getByLabelText("Title: move right, % of the video's width");
+    expect(right).toHaveValue(10);
+    expect(screen.getByLabelText("Title: move down, % of the video's height")).toHaveValue(-5);
+    fireEvent.change(right, { target: { value: '-12.5' } });
+    fireEvent.keyDown(right, { key: 'Enter' });
+    expect(onChange).toHaveBeenLastCalledWith({ offset: { x: -0.125, y: -0.05 } });
+    fireEvent.click(screen.getByRole('button', { name: 'Reset to aligned' }));
+    expect(onChange).toHaveBeenLastCalledWith({ offset: { x: 0, y: 0 } });
+  });
+  it('an aligned part has no Reset button', () => {
+    setup();
+    expect(screen.queryByRole('button', { name: 'Reset to aligned' })).toBeNull();
+  });
+  it('a typed non-number is dropped, Escape puts the value back', () => {
+    const { onChange } = setup();
+    const right = screen.getByLabelText("Title: move right, % of the video's width");
+    fireEvent.change(right, { target: { value: '' } });
+    fireEvent.blur(right);
+    fireEvent.change(right, { target: { value: '30' } });
+    fireEvent.keyDown(right, { key: 'Escape' });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(right).toHaveValue(0);
+  });
 });

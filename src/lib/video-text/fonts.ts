@@ -60,8 +60,17 @@ export const isEnglishFontId = (id: unknown): id is EnglishFontId =>
   ENGLISH_FONTS.some((f) => f.id === id) || googleFontFor(id, 'latin') !== undefined;
 export const DEFAULT_TAMIL_FONT: TamilFontId = 'noto-sans-tamil';
 export const DEFAULT_ENGLISH_FONT: EnglishFontId = 'plain';
+/** Older saves' size multiplier bounds (still accepted, so an old tab can save). */
 export const TRACK_SIZE_MIN = 0.5;
 export const TRACK_SIZE_MAX = 2;
+/** Letter size, % of the video's height. */
+export const HEIGHT_PCT_MIN = 1;
+export const HEIGHT_PCT_MAX = 100;
+/** Each part's normal size, % of the video's height (what size 1 meant). */
+export const BASE_HEIGHT_PCT: Record<Track, number> = { title: 7.5, lyric: 5, credits: 4 };
+/** How far a part can be moved by hand: the whole frame either way. */
+export const OFFSET_MAX = 1;
+const NO_OFFSET = { x: 0, y: 0 } as const;
 
 export function tamilFont(id: TamilFontId | undefined): FontChoice<TamilFontId> {
   const g = googleFontFor(id, 'tamil');
@@ -86,11 +95,20 @@ export const textColor = (id: TextColorId | undefined) => TEXT_COLORS.find((c) =
 /** Fade in and out over this long (shortened to half a block on very short blocks). */
 export const FADE_SEC = 0.3;
 
-/** A part's effective look: its own settings, else the project's size, the default fonts, white, no box, no fade. */
+/**
+ * A part's effective look: its own settings, else the project's size, the
+ * default fonts, white, no box, no fade, exactly aligned. `heightPct` is the
+ * size used; a save from before it existed gives base × its multiplier.
+ */
 export function trackStyleOf(track: Track, style: TextStyle): Required<TrackStyle> {
   const own = style.tracks?.[track] ?? {};
+  const size = own.size ?? style.sizeScale;
+  // Not rounded: an older save draws at exactly the size it did.
+  const heightPct = own.heightPct ?? BASE_HEIGHT_PCT[track] * size;
   return {
-    size: own.size ?? style.sizeScale,
+    size,
+    heightPct: Math.min(HEIGHT_PCT_MAX, Math.max(HEIGHT_PCT_MIN, heightPct)),
+    offset: own.offset ?? NO_OFFSET,
     tamilFont: tamilFont(own.tamilFont).id,
     englishFont: englishFont(own.englishFont).id,
     color: textColor(own.color).id,

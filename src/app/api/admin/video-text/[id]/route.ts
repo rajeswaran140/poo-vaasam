@@ -1,7 +1,7 @@
 /** GET load / PATCH autosave one Video Text project. PATCH is version-checked. */
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { TEXT_COLOR_IDS, TRACK_SIZE_MAX, TRACK_SIZE_MIN, isEnglishFontId, isTamilFontId } from '@/lib/video-text/fonts';
+import { HEIGHT_PCT_MAX, HEIGHT_PCT_MIN, OFFSET_MAX, TEXT_COLOR_IDS, TRACK_SIZE_MAX, TRACK_SIZE_MIN, isEnglishFontId, isTamilFontId } from '@/lib/video-text/fonts';
 import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { VideoTextRepository } from '@/infrastructure/database/VideoTextRepository';
 import { isValidProjectId } from '@/lib/video-text/keys';
@@ -26,6 +26,10 @@ const placementSchema = z.object({
 
 const trackStyleSchema = z.object({
   size: z.number().min(TRACK_SIZE_MIN).max(TRACK_SIZE_MAX).optional(),
+  heightPct: z.number().min(HEIGHT_PCT_MIN).max(HEIGHT_PCT_MAX).optional(),
+  offset: z
+    .object({ x: z.number().min(-OFFSET_MAX).max(OFFSET_MAX), y: z.number().min(-OFFSET_MAX).max(OFFSET_MAX) })
+    .optional(),
   // A built-in font, or a Google font that has the script (`g:<Family>`).
   tamilFont: z.string().max(80).refine(isTamilFontId, 'not a Tamil font').optional(),
   englishFont: z.string().max(80).refine(isEnglishFontId, 'not an English font').optional(),

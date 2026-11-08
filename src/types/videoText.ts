@@ -27,8 +27,15 @@ export type TextColorId = 'white' | 'yellow' | 'gold' | 'cream';
 
 /** One part's own look. Missing fields fall back (size → TextStyle.sizeScale, fonts → the defaults, white, no box, no fade). */
 export interface TrackStyle {
-  /** 0.5–2, a multiple of the part's base size. */
+  /** Older saves: 0.5–2, a multiple of the part's base size. Read only when heightPct is missing. */
   size?: number;
+  /** Letter size as a percentage of the video's height, 1–100. */
+  heightPct?: number;
+  /**
+   * Moved by hand from where the alignment puts it, as fractions of the
+   * video's width and height (−1 to 1). Missing or 0,0: exactly aligned.
+   */
+  offset?: TextOffset;
   tamilFont?: TamilFontId;
   englishFont?: EnglishFontId;
   color?: TextColorId;
@@ -36,6 +43,11 @@ export interface TrackStyle {
   box?: boolean;
   /** Fade each line in and out (FADE_SEC). */
   fade?: boolean;
+}
+
+export interface TextOffset {
+  x: number;
+  y: number;
 }
 
 export interface TextStyle {

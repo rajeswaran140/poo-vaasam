@@ -13,7 +13,6 @@ export const FONT_FAMILY = '"Noto Sans Tamil", "Noto Sans", sans-serif';
 type MeasureCtx = Pick<CanvasRenderingContext2D, 'measureText' | 'font'>;
 type Frame = { width: number; height: number };
 
-const BASE_FRACTION: Record<TextBlock['track'], number> = { title: 0.075, lyric: 0.05, credits: 0.04 };
 const MAX_LINES: Record<TextBlock['track'], number> = { title: 2, lyric: 2, credits: 8 };
 const MIN_SHRINK = 0.4;
 const LINE_HEIGHT = 1.25;
@@ -146,7 +145,8 @@ export function layoutBlock(
   frame: Frame,
   style: TextStyle,
 ): { fontPx: number; lines: string[]; x: number; yBaseline: number[]; align: CanvasTextAlign } {
-  const basePx = frame.height * BASE_FRACTION[block.track] * trackStyleOf(block.track, style).size;
+  const look = trackStyleOf(block.track, style);
+  const basePx = (frame.height * look.heightPct) / 100;
   const maxLines = MAX_LINES[block.track];
   let fontPx = basePx;
   let lines: string[] = [];
@@ -175,10 +175,13 @@ export function layoutBlock(
       : place.v === 'bottom'
         ? frame.height * (1 - SAFE_MARGIN) - total
         : (frame.height - total) / 2;
-  const yBaseline = lines.map((_, i) => top + lh * (i + 0.5));
+  // Moved by hand: added on top of the alignment, as a share of the frame.
+  const dx = look.offset.x * frame.width;
+  const dy = look.offset.y * frame.height;
+  const yBaseline = lines.map((_, i) => top + lh * (i + 0.5) + dy);
   // Half the stroke (0.06 em) sticks out past a left/right-aligned line's edge.
   const inset = frame.width * SAFE_MARGIN + fontPx * 0.06;
-  const x = place.h === 'left' ? inset : place.h === 'right' ? frame.width - inset : frame.width / 2;
+  const x = (place.h === 'left' ? inset : place.h === 'right' ? frame.width - inset : frame.width / 2) + dx;
   const align: CanvasTextAlign = place.h === 'left' ? 'left' : place.h === 'right' ? 'right' : 'center';
   return { fontPx, lines, x, yBaseline, align };
 }
