@@ -189,6 +189,18 @@ describe('PATCH', () => {
     }
     expect(repo.saveEdits).not.toHaveBeenCalled();
   });
+  it('saves a Google font only where it has the script: Tamil fonts with Tamil, English fonts with English', async () => {
+    repo.saveEdits.mockResolvedValue({ ok: true, version: 4 });
+    const style = { sizeScale: 1, lyricPosition: 'lower', tracks: { title: { tamilFont: 'g:Pavanam', englishFont: 'g:Lobster' } } };
+    expect((await PATCH(req({ edits: { ...edits(), style }, version: 3 }, 'PATCH'), ctx)).status).toBe(200);
+    expect(repo.saveEdits.mock.calls[0][1].style).toEqual(style);
+    repo.saveEdits.mockClear();
+    for (const title of [{ tamilFont: 'g:Lobster' }, { englishFont: 'g:No Such Font' }, { tamilFont: 'g:' }, { englishFont: 'g:' + 'A'.repeat(90) }]) {
+      const bad = { ...edits(), style: { sizeScale: 1, lyricPosition: 'lower', tracks: { title } } };
+      expect((await PATCH(req({ edits: bad, version: 3 }, 'PATCH'), ctx)).status).toBe(400);
+    }
+    expect(repo.saveEdits).not.toHaveBeenCalled();
+  });
   it('400s a placement that is not one of the nine', async () => {
     const bad = { ...edits(), style: { sizeScale: 1, lyricPosition: 'lower', titlePlace: { v: 'up', h: 'left' } } };
     expect((await PATCH(req({ edits: bad, version: 3 }, 'PATCH'), ctx)).status).toBe(400);

@@ -18,8 +18,10 @@ export interface Placement {
 
 export const CENTRE_PLACEMENT: Placement = { v: 'middle', h: 'center' };
 
-export type TamilFontId = 'noto-sans-tamil' | 'noto-serif-tamil' | 'mukta-malar' | 'arima' | 'baloo-thambi-2' | 'kavivanar';
-export type EnglishFontId = 'plain' | 'montserrat' | 'poppins' | 'playfair-display' | 'lora' | 'oswald' | 'dancing-script';
+/** A Google font, by family: `g:Hind Madurai`. Loaded from Google when used (lib/video-text/google-fonts.ts). */
+export type GoogleFontId = `g:${string}`;
+export type TamilFontId = 'noto-sans-tamil' | 'noto-serif-tamil' | 'mukta-malar' | 'arima' | 'baloo-thambi-2' | 'kavivanar' | GoogleFontId;
+export type EnglishFontId = 'plain' | 'montserrat' | 'poppins' | 'playfair-display' | 'lora' | 'oswald' | 'dancing-script' | GoogleFontId;
 
 export type TextColorId = 'white' | 'yellow' | 'gold' | 'cream';
 

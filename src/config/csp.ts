@@ -27,7 +27,7 @@
 /**
  * Build the policy string for a given environment.
  *
- * `scope: 'admin'` appends exactly one directive, `worker-src 'self' blob:`,
+ * `scope: 'admin'` adds the Google font hosts (Video Text tool) and appends `worker-src 'self' blob:`,
  * for the Composition Studio listening test (/admin/music-lab/studio-test):
  * Tone.js builds its clock as `new Worker(blob:…)`, and with no `worker-src`
  * the browser falls back to `script-src`, which has no `blob:`. It is scoped
@@ -47,6 +47,7 @@ export function buildContentSecurityPolicy(
     'https://www.googletagmanager.com',
   ].join(' ');
 
+  const admin = opts.scope === 'admin';
   return [
     "default-src 'self'",
     "base-uri 'self'",
@@ -58,7 +59,9 @@ export function buildContentSecurityPolicy(
     scriptSrc,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https:",
-    "font-src 'self' data:",
+    // /admin also loads Google font files for the Video Text tool
+    // (lib/video-text/google-font-loader.ts); the public pages do not.
+    admin ? "font-src 'self' data: https://fonts.gstatic.com" : "font-src 'self' data:",
     // connect-src: browser-side outbound. Tightened 2026-08-21 — was
     // `'self' https:` which allowed exfil to any HTTPS host if XSS ever landed
     // via `'unsafe-inline'` script-src. Now enumerated to only what the app
@@ -96,7 +99,10 @@ export function buildContentSecurityPolicy(
       'https://*.amazonaws.com ' +
       'https://d2cdoh43143xxa.cloudfront.net ' +
       'https://i.ytimg.com ' +
-      'https://inputtools.google.com',
+      'https://inputtools.google.com' +
+      // /admin: the css2 font lists the Video Text tool reads (fetched as
+      // text and parsed, never applied as a stylesheet).
+      (admin ? ' https://fonts.googleapis.com' : ''),
     "media-src 'self' blob: https:",
     "frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com",
     /**
@@ -123,7 +129,7 @@ export function buildContentSecurityPolicy(
 
 export const contentSecurityPolicy = buildContentSecurityPolicy();
 
-/** The /admin policy: the public one plus `worker-src 'self' blob:`. */
+/** The /admin policy: the public one plus `worker-src 'self' blob:` and the Google font hosts. */
 export const adminContentSecurityPolicy = buildContentSecurityPolicy(process.env.NODE_ENV, {
   scope: 'admin',
 });

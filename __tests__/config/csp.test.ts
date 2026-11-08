@@ -181,10 +181,18 @@ describe('admin scope (Composition Studio Phase 0)', () => {
     expect(buildContentSecurityPolicy('production', { scope: 'public' })).toBe(PUBLIC_PROD_CSP);
   });
 
-  it('adds exactly one directive for /admin', () => {
+  it('adds worker-src and the Google font hosts for /admin, and nothing else', () => {
     expect(buildContentSecurityPolicy('production', { scope: 'admin' })).toBe(
-      `${PUBLIC_PROD_CSP}; worker-src 'self' blob:`
+      `${PUBLIC_PROD_CSP
+        .replace("font-src 'self' data:", "font-src 'self' data: https://fonts.gstatic.com")
+        .replace('https://inputtools.google.com;', 'https://inputtools.google.com https://fonts.googleapis.com;')}; worker-src 'self' blob:`
     );
+  });
+
+  it('the public pages never load Google fonts', () => {
+    const pub = buildContentSecurityPolicy('production');
+    expect(pub).not.toContain('fonts.gstatic.com');
+    expect(pub).not.toContain('fonts.googleapis.com');
   });
 
   it('never adds blob: or wasm-unsafe-eval to script-src', () => {

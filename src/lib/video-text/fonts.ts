@@ -11,15 +11,18 @@
  * could be chosen.
  */
 import type { EnglishFontId, TamilFontId, TextColorId, TextStyle, Track, TrackStyle } from '@/types/videoText';
+import { googleFontFor, type GoogleFont } from './google-fonts';
 
-export interface FontChoice<Id extends string> {
+export interface FontChoice<Id extends string = string> {
   id: Id;
   label: string;
   hint: string;
   /** CSS variable holding the (hashed) family name; null = no font of its own. */
   cssVar: string | null;
-  /** The weight drawn: 700, or 400 for a font with no bold. */
-  weight: 400 | 700;
+  /** The weight drawn: 700, or the font's own weight when it has no bold. */
+  weight: number;
+  /** A Google font: loaded from Google when used, under its own family name (google-font-loader.ts). */
+  google?: GoogleFont;
 }
 
 export const TAMIL_FONTS: readonly FontChoice<TamilFontId>[] = [
@@ -43,13 +46,33 @@ export const ENGLISH_FONTS: readonly FontChoice<EnglishFontId>[] = [
 
 export const TAMIL_FONT_IDS = TAMIL_FONTS.map((f) => f.id) as [TamilFontId, ...TamilFontId[]];
 export const ENGLISH_FONT_IDS = ENGLISH_FONTS.map((f) => f.id) as [EnglishFontId, ...EnglishFontId[]];
+
+/** A Google font as a choice: no CSS variable, drawn under the family the loader registers. */
+const googleChoice = <Id extends string>(id: Id, g: GoogleFont): FontChoice<Id> => ({
+  id, label: g.family, hint: 'Google font', cssVar: null, weight: g.weight, google: g,
+});
+
+/** True for a Tamil font the tool can draw: a built-in one, or a Google font that has Tamil. */
+export const isTamilFontId = (id: unknown): id is TamilFontId =>
+  TAMIL_FONTS.some((f) => f.id === id) || googleFontFor(id, 'tamil') !== undefined;
+/** True for an English font the tool can draw: a built-in one, or a Google font that has English letters. */
+export const isEnglishFontId = (id: unknown): id is EnglishFontId =>
+  ENGLISH_FONTS.some((f) => f.id === id) || googleFontFor(id, 'latin') !== undefined;
 export const DEFAULT_TAMIL_FONT: TamilFontId = 'noto-sans-tamil';
 export const DEFAULT_ENGLISH_FONT: EnglishFontId = 'plain';
 export const TRACK_SIZE_MIN = 0.5;
 export const TRACK_SIZE_MAX = 2;
 
-export const tamilFont = (id: TamilFontId | undefined) => TAMIL_FONTS.find((f) => f.id === id) ?? TAMIL_FONTS[0];
-export const englishFont = (id: EnglishFontId | undefined) => ENGLISH_FONTS.find((f) => f.id === id) ?? ENGLISH_FONTS[0];
+export function tamilFont(id: TamilFontId | undefined): FontChoice<TamilFontId> {
+  const g = googleFontFor(id, 'tamil');
+  if (g && id) return googleChoice(id, g);
+  return TAMIL_FONTS.find((f) => f.id === id) ?? TAMIL_FONTS[0];
+}
+export function englishFont(id: EnglishFontId | undefined): FontChoice<EnglishFontId> {
+  const g = googleFontFor(id, 'latin');
+  if (g && id) return googleChoice(id, g);
+  return ENGLISH_FONTS.find((f) => f.id === id) ?? ENGLISH_FONTS[0];
+}
 
 export const TEXT_COLORS: readonly { id: TextColorId; label: string; css: string }[] = [
   { id: 'white', label: 'White', css: '#ffffff' },

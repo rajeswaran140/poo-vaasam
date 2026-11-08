@@ -34,8 +34,11 @@ describe('per-route Content-Security-Policy', () => {
     }
   );
 
-  it('the admin policy differs from the public one only by worker-src', () => {
-    expect(adminContentSecurityPolicy).toBe(`${contentSecurityPolicy}; worker-src 'self' blob:`);
+  it('the admin policy differs from the public one only by worker-src and the Google font hosts', () => {
+    const expected = contentSecurityPolicy
+      .replace("font-src 'self' data:", "font-src 'self' data: https://fonts.gstatic.com")
+      .replace('https://inputtools.google.com;', 'https://inputtools.google.com https://fonts.googleapis.com;');
+    expect(adminContentSecurityPolicy).toBe(`${expected}; worker-src 'self' blob:`);
   });
 
   it('the admin entry sets only the CSP, so every other header still comes from /:path*', async () => {

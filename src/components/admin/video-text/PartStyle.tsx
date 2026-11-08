@@ -4,7 +4,7 @@
  * One part's look (Title, Lyrics or Credits): size, Tamil font, English font
  * and where it sits, with a sample line written in the chosen fonts.
  */
-import { useId, type ReactNode } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 import {
   ENGLISH_FONTS,
   TAMIL_FONTS,
@@ -16,11 +16,19 @@ import {
   textColor,
   type FontChoice,
 } from '@/lib/video-text/fonts';
+import { GOOGLE_FONTS } from '@/lib/video-text/google-fonts';
+import { googleFamilyName, loadGoogleFont } from '@/lib/video-text/google-font-loader';
+import { GoogleFontSearch } from './GoogleFontSearch';
 import type { EnglishFontId, TamilFontId, TrackStyle } from '@/types/videoText';
+
+/** Google fonts with Tamil that are not already built in (those stay self-hosted). */
+const GOOGLE_TAMIL = GOOGLE_FONTS.filter((f) => f.tamil && !TAMIL_FONTS.some((b) => b.label === f.family));
 
 /** CSS for showing text in these fonts on the page (the DOM can use var(), unlike the canvas). */
 export function cssFontFamily(tamil: FontChoice<string>, english: FontChoice<string>): string {
-  const parts = [english.cssVar ? `var(${english.cssVar})` : '', tamil.cssVar ? `var(${tamil.cssVar})` : ''].filter(Boolean);
+  const one = (c: FontChoice<string>, slot: 'tamil' | 'latin') =>
+    c.google ? googleFamilyName(c.google, slot) : c.cssVar ? `var(${c.cssVar})` : '';
+  const parts = [one(english, 'latin'), one(tamil, 'tamil')].filter(Boolean);
   return [...parts, '"Noto Sans", sans-serif'].join(', ');
 }
 
@@ -41,6 +49,23 @@ export function PartStyle({ label, value, onChange, position }: PartStyleProps) 
   const ids = { size: useId(), tamil: useId(), english: useId(), box: useId(), fade: useId() };
   const ta = tamilFont(value.tamilFont);
   const en = englishFont(value.englishFont);
+  const [searching, setSearching] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  // A chosen Google font downloads now, so the sample (and the preview) show it.
+  useEffect(() => {
+    let live = true;
+    setLoadError(null);
+    const want = [
+      ta.google && loadGoogleFont(ta.google, 'tamil'),
+      en.google && loadGoogleFont(en.google, 'latin'),
+    ].filter(Boolean) as Promise<string>[];
+    Promise.all(want).catch(() => {
+      if (live) setLoadError('This Google font did not load. Check the connection, or pick another font.');
+    });
+    return () => {
+      live = false;
+    };
+  }, [ta.google, en.google]);
   return (
     <fieldset className="min-w-0 rounded-md border border-gray-200 px-3 pb-3 pt-1 dark:border-gray-700" data-testid={`part-${label}`}>
       <legend className="px-1 text-sm font-semibold text-gray-800 dark:text-gray-100">{label}</legend>
@@ -72,11 +97,20 @@ export function PartStyle({ label, value, onChange, position }: PartStyleProps) 
             onChange={(e) => onChange({ tamilFont: e.target.value as TamilFontId })}
             className={SELECT}
           >
-            {TAMIL_FONTS.map((f) => (
-              <option key={f.id} value={f.id} style={{ fontFamily: cssFontFamily(f, englishFont(undefined)) }}>
-                {f.label} — {f.hint}
-              </option>
-            ))}
+            <optgroup label="Built in">
+              {TAMIL_FONTS.map((f) => (
+                <option key={f.id} value={f.id} style={{ fontFamily: cssFontFamily(f, englishFont(undefined)) }}>
+                  {f.label} — {f.hint}
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Google fonts">
+              {GOOGLE_TAMIL.map((f) => (
+                <option key={f.family} value={`g:${f.family}`}>
+                  {f.family}
+                </option>
+              ))}
+            </optgroup>
           </select>
         </div>
 
@@ -95,8 +129,32 @@ export function PartStyle({ label, value, onChange, position }: PartStyleProps) 
                 {f.label} — {f.hint}
               </option>
             ))}
+            {en.google && (
+              <option value={en.id}>
+                {en.label} — Google font
+              </option>
+            )}
           </select>
+          <button
+            type="button"
+            onClick={() => setSearching((v) => !v)}
+            aria-expanded={searching}
+            className="rounded-md border border-gray-300 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+          >
+            More fonts…
+          </button>
         </div>
+
+        {searching && (
+          <GoogleFontSearch
+            label={label}
+            onPick={(id) => {
+              onChange({ englishFont: id });
+              setSearching(false);
+            }}
+            onClose={() => setSearching(false)}
+          />
+        )}
 
         <div role="radiogroup" aria-label={`${label} colour`} className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <span className="text-sm text-gray-700 dark:text-gray-200" aria-hidden="true">
@@ -152,6 +210,11 @@ export function PartStyle({ label, value, onChange, position }: PartStyleProps) 
         >
           {SAMPLE}
         </span>
+        {loadError && (
+          <p role="alert" className="w-full text-xs text-red-600 dark:text-red-400">
+            {loadError}
+          </p>
+        )}
       </div>
     </fieldset>
   );
