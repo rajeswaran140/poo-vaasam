@@ -64,6 +64,12 @@ export const SEGMENT_TARGET_SEC = 20;
 export const REF_PIXEL_RATE = 2560 * 1440 * 24;
 export const REF_ENCODE_SEC_PER_SEC = 4.9;
 const OVERLAY_FACTOR = 1.2;
+/**
+ * With fades: measured 2026-11-08 on the layer's 7.0.2, a 20 s 1440p30 moving
+ * segment with 8 lyric lines took 20.9 s plain-overlaid and 26.6 s fading
+ * (+27%, the dense worst case). 1.2 × 1.27 ≈ 1.53; 1.55 keeps margin.
+ */
+const FADE_OVERLAY_FACTOR = 1.55;
 const CHUNK_ENCODE_BUDGET_SEC = 230;
 const CHUNK_OVERHEAD_SEC = 30;
 const COORDINATOR_WAVES_BUDGET_SEC = 700;
@@ -73,8 +79,12 @@ const LANES = 20; // VIDEO_TEXT_CONCURRENCY in worker/video-text.ts
 
 export type SegmentPlan = { ok: true; targetSec: number; maxSec: number; keyframeEverySec: number } | { ok: false; message: string };
 
-export function segmentPlanFor(v: { width: number; height: number; fps: number; durationSec: number }): SegmentPlan {
-  const secPerSec = REF_ENCODE_SEC_PER_SEC * ((v.width * v.height * v.fps) / REF_PIXEL_RATE) * OVERLAY_FACTOR;
+export function segmentPlanFor(
+  v: { width: number; height: number; fps: number; durationSec: number },
+  opts: { fades?: boolean } = {},
+): SegmentPlan {
+  const factor = opts.fades ? FADE_OVERLAY_FACTOR : OVERLAY_FACTOR;
+  const secPerSec = REF_ENCODE_SEC_PER_SEC * ((v.width * v.height * v.fps) / REF_PIXEL_RATE) * factor;
   const maxSec = Math.min(MAX_SEGMENT_CAP_SEC, Math.floor((CHUNK_ENCODE_BUDGET_SEC / secPerSec) * 10) / 10);
   const fps = Math.round(v.fps * 100) / 100;
   if (maxSec < MIN_SEGMENT_SEC) {
@@ -167,16 +177,32 @@ const r3 = (n: number) => Math.round(n * 1000) / 1000;
  * A block that only touches the segment's edge is left out. A block crossing
  * a cut is listed in both segments, so it shows on both sides of the join.
  */
+export type SegmentOverlay = {
+  id: string;
+  fromSec: number;
+  toSec: number;
+  /**
+   * The block fades: its own start and end relative to THIS segment (either
+   * may lie outside it, for a block crossing a cut) and the fade length.
+   */
+  fade?: { inAt: number; outAt: number; sec: number };
+};
+
 export function overlaysForSegment(
-  blocks: { id: string; startSec: number; endSec: number }[],
+  blocks: { id: string; startSec: number; endSec: number; fadeSec?: number }[],
   seg: { startSec: number; endSec: number },
-): { id: string; fromSec: number; toSec: number }[] {
+): SegmentOverlay[] {
   const len = seg.endSec - seg.startSec;
-  const out: { id: string; fromSec: number; toSec: number }[] = [];
+  const out: SegmentOverlay[] = [];
   for (const b of blocks) {
     const fromSec = r3(Math.max(0, b.startSec - seg.startSec));
     const toSec = r3(Math.min(len, b.endSec - seg.startSec));
-    if (toSec > fromSec) out.push({ id: b.id, fromSec, toSec });
+    if (!(toSec > fromSec)) continue;
+    const o: SegmentOverlay = { id: b.id, fromSec, toSec };
+    if (b.fadeSec && b.fadeSec > 0) {
+      o.fade = { inAt: r3(b.startSec - seg.startSec), outAt: r3(b.endSec - seg.startSec), sec: r3(b.fadeSec) };
+    }
+    out.push(o);
   }
   return out;
 }
@@ -201,22 +227,78 @@ export function overlaysForSegment(
  */
 export function buildChunkArgs(params: {
   segPath: string;
-  overlays: { path: string; fromSec: number; toSec: number }[];
+  overlays: { path: string; fromSec: number; toSec: number; fade?: SegmentOverlay['fade'] }[];
   width: number;
   height: number;
   outPath: string;
   crf: number;
   preset: string;
+  /** The video's frame rate: the fade clips are looped at it. Needed only when a block fades. */
+  fps?: number;
 }): string[] {
   const { segPath, overlays, outPath, crf, preset } = params;
-  const inputs = ['-i', segPath, ...overlays.flatMap((o) => ['-i', o.path])];
+  const fps = params.fps && params.fps > 0 ? params.fps : 25;
+  const inputs: string[] = ['-i', segPath];
+  const filters: string[] = [];
+  const layers: { input: string; enable: [number, number]; eof: 'repeat' | 'pass' }[] = [];
+  let next = 1;
+  for (const o of overlays) {
+    if (!o.fade) {
+      inputs.push('-i', o.path);
+      layers.push({ input: `[${next++}:v]`, enable: [o.fromSec, o.toSec], eof: 'repeat' });
+      continue;
+    }
+    /*
+     * A fading block is up to three layers, each only where it overlaps this
+     * segment: a fade-in clip [a, a+d), the still image [a+d, b-d), a
+     * fade-out clip [b-d, b). The clips repeat the PNG for d plus two frames
+     * (so the last ramp frame exists), are faded on their OWN timeline
+     * (ffmpeg refuses a negative fade start), then shifted to a or b-d —
+     * negative for a block that began in the previous segment.
+     */
+    const { inAt: a, outAt: b, sec: d } = o.fade;
+    // Frames in a fade clip: d plus two, so the last ramp frame exists.
+    const clipFrames = Math.ceil(d * fps) + 2;
+    const win = (lo: number, hi: number): [number, number] | null => {
+      const from = r3(Math.max(o.fromSec, lo));
+      const to = r3(Math.min(o.toSec, hi));
+      return to > from ? [from, to] : null;
+    };
+    const fadeIn = win(a, a + d);
+    const still = win(a + d, b - d);
+    const fadeOut = win(b - d, b);
+    // The PNG is decoded ONCE and repeated in the graph (loop filter): `-loop 1`
+    // would decode the full-frame image again for every clip frame.
+    const clip = (input: number, kind: 'in' | 'out', shift: number) =>
+      // settb=AVTB first: the PNG input's timebase is 1/25, and setpts on it
+      // truncates to whole 1/25 s ticks — at 60 or 29.97 fps the ramp stepped
+      // and even blinked off a frame (review, measured on 7.0.2).
+      `[${input}:v]loop=loop=${clipFrames - 1}:size=1:start=0,settb=AVTB,setpts=N/(${fps}*TB),format=rgba,` +
+      `fade=t=${kind}:st=0:d=${d}:alpha=1,setpts=PTS+(${shift})/TB`;
+    if (fadeIn) {
+      inputs.push('-i', o.path);
+      const label = `[fi${next}]`;
+      filters.push(`${clip(next++, 'in', a)}${label}`);
+      layers.push({ input: label, enable: fadeIn, eof: 'pass' });
+    }
+    if (still) {
+      inputs.push('-i', o.path);
+      layers.push({ input: `[${next++}:v]`, enable: still, eof: 'repeat' });
+    }
+    if (fadeOut) {
+      inputs.push('-i', o.path);
+      const label = `[fo${next}]`;
+      filters.push(`${clip(next++, 'out', r3(b - d))}${label}`);
+      layers.push({ input: label, enable: fadeOut, eof: 'pass' });
+    }
+  }
   let graph: string[] = ['-map', '0:v:0'];
-  if (overlays.length > 0) {
-    const steps = overlays.map((o, i) => {
+  if (layers.length > 0) {
+    const steps = layers.map((l, i) => {
       const from = i === 0 ? '[0:v]' : `[v${i}]`;
-      return `${from}[${i + 1}:v]overlay=0:0:enable='gte(t,${o.fromSec})*lt(t,${o.toSec})':eof_action=repeat[v${i + 1}]`;
+      return `${from}${l.input}overlay=0:0:enable='gte(t,${l.enable[0]})*lt(t,${l.enable[1]})':eof_action=${l.eof}[v${i + 1}]`;
     });
-    graph = ['-filter_complex', steps.join(';'), '-map', `[v${overlays.length}]`];
+    graph = ['-filter_complex', [...filters, ...steps].join(';'), '-map', `[v${layers.length}]`];
   }
   return [
     '-hide_banner', '-nostats',

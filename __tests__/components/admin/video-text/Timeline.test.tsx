@@ -344,3 +344,96 @@ it('a tap that wobbles under 4 px does not move the block; 4 px or more does', (
   fireEvent.pointerUp(b, { pointerId: 1 });
   expect(moved(onChange, 'title')).toMatchObject({ startSec: 10, endSec: 15 });
 });
+
+describe('timeline audit fixes (2026-11-08)', () => {
+  // Three back-to-back lines, as a fresh project lays them out.
+  const tiled = () => [lyric(0, 10, 20), lyric(1, 20, 30), lyric(2, 30, 40)];
+
+  it('a boxed-in line says why it cannot move, and the no-op is not passed on', () => {
+    const { onChange } = setup(tiled());
+    const b = screen.getByRole('slider', { name: /^Lyric 2/ });
+    fireEvent.keyDown(b, { key: 'ArrowRight' });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByTestId('timeline-hint')).toHaveTextContent("Lyric 2 touches its neighbours, so it can't move");
+    fireEvent.pointerDown(b, { button: 0, pointerId: 1, clientX: 100 });
+    fireEvent.pointerMove(b, { pointerId: 1, clientX: 150 });
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('dragging an edge into a touching neighbour moves the shared boundary (rolling edit)', () => {
+    const { onChange } = setup(tiled()); // 10 px/s
+    const b = screen.getByRole('slider', { name: /^Lyric 2/ });
+    const end = within(b).getByTestId('edge-end');
+    fireEvent.pointerDown(end, { button: 0, pointerId: 1, clientX: 300 });
+    fireEvent.pointerMove(b, { pointerId: 1, clientX: 350 });
+    const out = onChange.mock.calls.at(-1)![0] as TextBlock[];
+    expect(out.find((x) => x.id === 'lyric-1')).toMatchObject({ startSec: 20, endSec: 35 });
+    expect(out.find((x) => x.id === 'lyric-2')).toMatchObject({ startSec: 35, endSec: 40 });
+  });
+
+  it('pulling the edge away from the neighbour still leaves a gap', () => {
+    const { onChange } = setup(tiled());
+    const b = screen.getByRole('slider', { name: /^Lyric 2/ });
+    fireEvent.pointerDown(within(b).getByTestId('edge-end'), { button: 0, pointerId: 1, clientX: 300 });
+    fireEvent.pointerMove(b, { pointerId: 1, clientX: 250 });
+    const out = onChange.mock.calls.at(-1)![0] as TextBlock[];
+    expect(out.find((x) => x.id === 'lyric-1')).toMatchObject({ startSec: 20, endSec: 25 });
+    expect(out.find((x) => x.id === 'lyric-2')).toMatchObject({ startSec: 30, endSec: 40 });
+  });
+
+  it('typing an End past the touching neighbour rolls into it too', () => {
+    const { onChange } = setup(tiled());
+    fireEvent.pointerDown(screen.getByRole('slider', { name: /^Lyric 2/ }), { button: 0, pointerId: 1, clientX: 0 });
+    const end = within(screen.getByTestId('block-times')).getByLabelText('End');
+    fireEvent.change(end, { target: { value: '33' } });
+    fireEvent.keyDown(end, { key: 'Enter' });
+    const out = onChange.mock.calls.at(-1)![0] as TextBlock[];
+    expect(out.find((x) => x.id === 'lyric-2')).toMatchObject({ startSec: 33, endSec: 40 });
+  });
+
+  it('the "Stopped at" note names the edge that was stopped', () => {
+    setup([lyric(0, 10, 20), lyric(1, 20, 21)]);
+    fireEvent.pointerDown(screen.getByRole('slider', { name: /^Lyric 1/ }), { button: 0, pointerId: 1, clientX: 0 });
+    const end = within(screen.getByTestId('block-times')).getByLabelText('End');
+    fireEvent.change(end, { target: { value: '25' } });
+    fireEvent.keyDown(end, { key: 'Enter' });
+    expect(screen.getByRole('status')).toHaveTextContent('Stopped at 0:20.5');
+  });
+
+  it('the ruler seeks on a click, not on a pointerdown (a swipe scrolls)', () => {
+    const { onSeek } = setup([lyric(0, 5, 10)]);
+    const ruler = screen.getByTestId('timeline-ruler');
+    fireEvent.pointerDown(ruler, { button: 0, pointerId: 1, clientX: 200 });
+    expect(onSeek).not.toHaveBeenCalled();
+    fireEvent.click(ruler, { clientX: 200 });
+    expect(onSeek).toHaveBeenCalledWith(20);
+  });
+
+  const fakeScroll = () => {
+    const el = screen.getByTestId('timeline-scroller');
+    let left = 0;
+    Object.defineProperty(el, 'clientWidth', { configurable: true, get: () => 600 });
+    Object.defineProperty(el, 'scrollLeft', { configurable: true, get: () => left, set: (v: number) => { left = v; } });
+    return () => left;
+  };
+
+  it('zoom keeps the playhead where it was on screen', () => {
+    setupLong([titleB()], 200); // 600 px fallback over 344 s
+    const scrollLeft = fakeScroll();
+    const onScreen = 200 * (600 / 344);
+    fireEvent.change(screen.getByLabelText('Zoom'), { target: { value: '1' } }); // 40 px/s
+    expect(scrollLeft()).toBeCloseTo(200 * 40 - onScreen, 0);
+  });
+
+  it('the view follows the playhead when it leaves the screen', () => {
+    const onChange = jest.fn();
+    const { rerender } = render(<Timeline blocks={[titleB()]} durationSec={344} playheadSec={0} onChange={onChange} onSeek={jest.fn()} />);
+    const scrollLeft = fakeScroll();
+    fireEvent.change(screen.getByLabelText('Zoom'), { target: { value: '1' } });
+    expect(scrollLeft()).toBe(0);
+    rerender(<Timeline blocks={[titleB()]} durationSec={344} playheadSec={10} onChange={onChange} onSeek={jest.fn()} />);
+    expect(scrollLeft()).toBe(0); // 400 px: still in view
+    rerender(<Timeline blocks={[titleB()]} durationSec={344} playheadSec={100} onChange={onChange} onSeek={jest.fn()} />);
+    expect(scrollLeft()).toBe(4000 - 150);
+  });
+});

@@ -52,6 +52,7 @@ import {
   parseSegmentList,
   buildSegmentArgs,
   overlaysForSegment,
+  type SegmentOverlay,
   buildChunkArgs,
   buildJoinMuxArgs,
   buildAudioHashArgs,
@@ -72,7 +73,8 @@ import {
   segmentKey,
 } from '@/lib/video-text/keys';
 import { isHdrHeader } from '@/lib/master-background';
-import type { RenderState, TextBlock } from '@/types/videoText';
+import type { RenderState, TextBlock, TextStyle } from '@/types/videoText';
+import { fadeSecFor, trackStyleOf } from '@/lib/video-text/fonts';
 
 export const VIDEO_TEXT_CHUNK_FUNCTION = process.env.VIDEO_TEXT_CHUNK_FUNCTION || 'tamilagaval-video-text-chunk';
 /** Chunks in flight at once for one render. */
@@ -561,9 +563,11 @@ interface ChunkSpec {
   renderId: string;
   index: number;
   segKey: string;
-  overlays: { id: string; fromSec: number; toSec: number }[];
+  overlays: SegmentOverlay[];
   width: number;
   height: number;
+  /** The video's frame rate, for fade clips. */
+  fps?: number;
 }
 
 function readChunkSpec(raw: unknown): ChunkSpec | null {
@@ -574,7 +578,12 @@ function readChunkSpec(raw: unknown): ChunkSpec | null {
   if (!Array.isArray(s.overlays)) return null;
   for (const o of s.overlays) {
     if (!o || !isValidProjectId(o.id) || !Number.isFinite(o.fromSec) || !Number.isFinite(o.toSec) || !(o.toSec > o.fromSec)) return null;
+    if (o.fade !== undefined) {
+      const f = o.fade;
+      if (!f || !Number.isFinite(f.inAt) || !Number.isFinite(f.outAt) || !Number.isFinite(f.sec) || !(f.sec > 0) || !(f.outAt > f.inAt)) return null;
+    }
   }
+  if (s.fps !== undefined && !(Number.isFinite(s.fps) && (s.fps as number) > 0 && (s.fps as number) <= 240)) return null;
   // Keys are re-derived, never taken from the event; the one it carries must agree.
   if (s.segKey !== segmentKey(s.projectId as string, s.renderId as string, s.index as number)) return null;
   return s as ChunkSpec;
@@ -597,10 +606,10 @@ export async function renderVideoTextChunk(
     for (const o of spec.overlays) {
       const path = join(dir, `overlay-${o.id}.png`);
       await downloadTo(deps, overlayKey(projectId, renderId, o.id), path);
-      overlays.push({ path, fromSec: o.fromSec, toSec: o.toSec });
+      overlays.push({ path, fromSec: o.fromSec, toSec: o.toSec, ...(o.fade ? { fade: o.fade } : {}) });
     }
     const outPath = join(dir, 'chunk.mp4');
-    const r = deps.ff(buildChunkArgs({ segPath, overlays, width: spec.width, height: spec.height, outPath, crf: CHUNK_CRF, preset: CHUNK_PRESET }));
+    const r = deps.ff(buildChunkArgs({ segPath, overlays, width: spec.width, height: spec.height, outPath, crf: CHUNK_CRF, preset: CHUNK_PRESET, fps: spec.fps }));
     if (r.status !== 0) {
       console.error(`[video-text] chunk ${index} encode failed:`, (r.stderr ?? '').slice(-2000));
       return { ok: false, message: CHUNK_FAILED_MESSAGE };
@@ -720,6 +729,7 @@ function assertTimeForJoin(deps: VideoTextDeps): void {
 
 interface StoredProject {
   blocks?: TextBlock[];
+  style?: TextStyle;
   source?: { key?: string; width?: number; height?: number } | null;
   render?: { renderId?: string | null };
 }
@@ -814,7 +824,12 @@ export async function renderVideoText(
     const offsetRefusal = startOffsetRefusal(videoStart, video!.fps!);
     if (offsetRefusal) throw new VideoTextFailure(offsetRefusal);
 
-    const plan = segmentPlanFor({ width: video!.width, height: video!.height, fps: video!.fps!, durationSec: parseDurationSec(headerLog) ?? 0 });
+    // Fading parts cost more per chunk: plan shorter segments for them.
+    const anyFade = Boolean(project.style) && blocks.some((b) => trackStyleOf(b.track, project.style!).fade);
+    const plan = segmentPlanFor(
+      { width: video!.width, height: video!.height, fps: video!.fps!, durationSec: parseDurationSec(headerLog) ?? 0 },
+      { fades: anyFade },
+    );
     if (!plan.ok) throw new VideoTextFailure(plan.message);
     const listPath = join(dir, 'segments.csv');
     const seg = deps.ff(buildSegmentArgs(srcPath, join(dir, 'segment-%04d.mp4'), listPath, plan.targetSec));
@@ -833,11 +848,17 @@ export async function renderVideoText(
     // ---- encoding
     const total = segments.length;
     await patch({ status: 'encoding', progress: { done: 0, total } });
+    // Blocks of a part set to fade carry their fade length (style read with the blocks, at the claim).
+    const timed = blocks.map((b) => ({
+      ...b,
+      fadeSec: project.style && trackStyleOf(b.track, project.style).fade ? fadeSecFor(b) : 0,
+    }));
     const specs: ChunkSpec[] = segments.map((s, index) => ({
       projectId, renderId, index,
       segKey: segmentKey(projectId, renderId, index),
-      overlays: overlaysForSegment(blocks, s),
+      overlays: overlaysForSegment(timed, s),
       width: video!.width, height: video!.height,
+      fps: video!.fps!,
     }));
     let lastProgressAt = Date.now();
     await encodeChunks(deps, specs, async (done) => {

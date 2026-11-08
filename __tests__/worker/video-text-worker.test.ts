@@ -518,6 +518,26 @@ describe('videoTextRender', () => {
     expect(byIndex[2].overlays).toEqual([{ id: 'cred', fromSec: 0, toSec: 5 }]);
   });
 
+  it('a part set to fade: its blocks carry their fade to the chunks, with the video\'s frame rate', async () => {
+    world.project = { ...projectFor(), style: { sizeScale: 1, lyricPosition: 'lower', tracks: { lyric: { fade: true } } } };
+    await render();
+    const byIndex = [...world.invoked].sort((a, b) => a.index - b.index);
+    expect(byIndex[0].fps).toBe(25);
+    // l1 (18-22) crosses the first cut: both chunks know its true start and end.
+    expect(byIndex[0].overlays).toEqual([
+      { id: 'title', fromSec: 0, toSec: 5 },
+      { id: 'l1', fromSec: 18, toSec: 20, fade: { inAt: 18, outAt: 22, sec: 0.3 } },
+    ]);
+    expect(byIndex[1].overlays[0]).toEqual({ id: 'l1', fromSec: 0, toSec: 2, fade: { inAt: -2, outAt: 2, sec: 0.3 } });
+    // Title and credits do not fade.
+    expect(byIndex[1].overlays[1]).toEqual({ id: 'cred', fromSec: 15, toSec: 20 });
+  });
+
+  it('a project saved before fades existed renders exactly as before (no fade fields)', async () => {
+    await render();
+    for (const spec of world.invoked) for (const o of spec.overlays) expect(o).not.toHaveProperty('fade');
+  });
+
   it('extracts the audio first, joins with the extract, and checks hash AND timing before and after', async () => {
     await render();
     const join_ = world.ffArgs.find((a) => a.includes('concat'))!;
@@ -784,6 +804,29 @@ describe('videoTextChunk', () => {
     const pngInputs = args.filter((_, i) => args[i - 1] === '-i').map((p) => basename(p));
     expect(pngInputs).toEqual(['segment.mp4', 'overlay-l1.png', 'overlay-cred.png']);
     expect(args.join(' ')).toContain("enable='gte(t,15)*lt(t,20)'");
+  });
+
+  it('a fading overlay is drawn with fade clips at the event\'s frame rate', async () => {
+    const res = await handler({
+      videoTextChunk: spec({ fps: 30, overlays: [{ id: 'l1', fromSec: 0, toSec: 2, fade: { inAt: -2, outAt: 2, sec: 0.3 } }] }),
+    } as never);
+    expect(res).toMatchObject({ ok: true });
+    const graph = world.ffArgs.find((a) => a.includes('-preset'))!.join(' ');
+    expect(graph).toContain('fade=t=out:st=0:d=0.3:alpha=1,setpts=PTS+(1.7)/TB');
+    expect(graph).toContain('setpts=N/(30*TB)');
+  });
+
+  it('refuses malformed fade data or frame rate without running ffmpeg', async () => {
+    for (const bad of [
+      { overlays: [{ id: 'l1', fromSec: 0, toSec: 2, fade: { inAt: 0, outAt: 2, sec: 0 } }] },
+      { overlays: [{ id: 'l1', fromSec: 0, toSec: 2, fade: { inAt: 2, outAt: 1, sec: 0.3 } }] },
+      { overlays: [{ id: 'l1', fromSec: 0, toSec: 2, fade: { inAt: 'x', outAt: 2, sec: 0.3 } }] },
+      { fps: -5 },
+      { fps: 1000 },
+    ]) {
+      expect(await handler({ videoTextChunk: spec(bad) } as never)).toMatchObject({ ok: false });
+    }
+    expect(spawnSync).not.toHaveBeenCalled();
   });
 
   it('refuses a segment key that is not the one its index names', async () => {

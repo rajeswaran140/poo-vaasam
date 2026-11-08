@@ -338,3 +338,56 @@ it('ensureFonts checks only the real face, not next/font\'s Arial-based fallback
   expect(check).toHaveBeenCalledWith("700 32px 'notoSansTamil'", 'அ');
   document.documentElement.style.removeProperty('--font-tamil');
 });
+
+describe('colour, box and fade alpha', () => {
+  const rec = () => {
+    const calls: string[] = [];
+    let fill = '';
+    const ctx = {
+      ...fakeCtx(),
+      save() {}, restore() {}, strokeText() {},
+      fillText: (t: string) => calls.push(`text:${t}:${fill}`),
+      beginPath() {}, fill: () => calls.push(`fill:${fill}`),
+      roundRect: (x: number, y: number, w: number, h: number) => calls.push(`box:${Math.round(x)},${Math.round(y)},${Math.round(w)},${Math.round(h)}`),
+      rect() {},
+      set fillStyle(v: string) { fill = v; }, get fillStyle() { return fill; },
+      globalAlpha: 1,
+    } as unknown as CanvasRenderingContext2D & { globalAlpha: number };
+    return { ctx, calls };
+  };
+
+  it('draws in the part\'s colour; white when none is set (old projects)', () => {
+    const a = rec();
+    drawBlock(a.ctx, block('title', 'Hi'), FRAME, STYLE);
+    expect(a.calls).toEqual(['text:Hi:#ffffff']);
+    const b = rec();
+    drawBlock(b.ctx, block('title', 'Hi'), FRAME, { ...STYLE, tracks: { title: { color: 'gold' } } });
+    expect(b.calls).toEqual(['text:Hi:#f2c267']);
+  });
+
+  it('draws the dim box behind the lines first, around the measured text, inside the frame', () => {
+    const r = rec();
+    drawBlock(r.ctx, block('lyric', 'hello'), FRAME, { ...STYLE, tracks: { lyric: { box: true } } });
+    expect(r.calls[1]).toBe('fill:rgba(0,0,0,0.5)');
+    expect(r.calls[2]).toMatch(/^text:hello:/);
+    const [x, y, w, h] = r.calls[0].replace('box:', '').split(',').map(Number);
+    const l = layoutBlock(fakeCtx(), block('lyric', 'hello'), FRAME, STYLE);
+    // 5 chars × 10 px wide (fake), centred, plus stroke and 0.4 em padding each side.
+    expect(w).toBeCloseTo(50 + l.fontPx * 0.12 + 2 * 0.4 * l.fontPx, -1);
+    expect(x + w / 2).toBeCloseTo(FRAME.width / 2, -1);
+    expect(y).toBeGreaterThanOrEqual(0);
+    expect(y + h).toBeLessThanOrEqual(FRAME.height);
+  });
+
+  it('no box unless asked', () => {
+    const r = rec();
+    drawBlock(r.ctx, block('lyric', 'hello'), FRAME, STYLE);
+    expect(r.calls.some((c) => c.startsWith('box:'))).toBe(false);
+  });
+
+  it('always draws fully opaque (fades are applied to the finished image, not per stroke)', () => {
+    const r = rec();
+    drawBlock(r.ctx, block('title', 'Hi'), FRAME, STYLE);
+    expect((r.ctx as unknown as { globalAlpha: number }).globalAlpha).toBe(1);
+  });
+});

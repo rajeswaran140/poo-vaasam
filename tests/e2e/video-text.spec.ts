@@ -366,15 +366,17 @@ test.describe('video text editor (mocked API)', () => {
 
     // Drag the title block's body to the right with the mouse.
     const title = page.getByRole('slider', { name: /^Title: / });
+    // Bring the timeline to the middle of the screen, clear of the sticky header.
+    await title.evaluate((el) => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
     const box = (await title.boundingBox())!;
     const pxPerSec = box.width / 5;
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.down();
     await page.mouse.move(box.x + box.width / 2 + 3 * pxPerSec, box.y + box.height / 2, { steps: 5 });
     await page.mouse.up();
-    const after = await title.getAttribute('aria-valuenow');
-    expect(Number(after)).toBeGreaterThan(2.5);
-    expect(Number(after)).toBeLessThan(3.5);
+    // The block re-renders after the pointer events: wait for it.
+    await expect.poll(async () => Number(await title.getAttribute('aria-valuenow')), { timeout: 5_000 }).toBeGreaterThan(2.5);
+    expect(Number(await title.getAttribute('aria-valuenow'))).toBeLessThan(3.5);
 
     // Typed times: clicking selected it, so the Start box is there.
     const times = page.getByRole('group', { name: 'Times for Title' });
@@ -517,6 +519,111 @@ test.describe('video text editor (mocked API)', () => {
     // Title + 3 lyric lines + credits, each a PNG at the video's exact size.
     expect(pngs).toHaveLength(5);
     for (const p of pngs) expect([p.width, p.height]).toEqual([1280, 720]);
+
+    expect(writes, 'non-GET /api/ requests the mocks did not fulfil').toEqual([]);
+    expect(unexpected, 'requests to the video-text API that the test did not mock').toEqual([]);
+  });
+
+  test('tap to time while the song plays; fade, box and colour show in the preview', async ({ page }) => {
+    test.skip(Boolean(ffmpegMissing), ffmpegMissing || 'ffmpeg missing');
+    const { writes, unexpected, patches } = await mockEditor(page);
+    const { seekTo } = await openEditor(page);
+    const video = page.locator('video');
+    const sliders = page.getByRole('slider', { name: /^Lyric \d: / });
+
+    // ---- Tap to time: start at 6 s, tap three lines and the end, while it plays.
+    await seekTo(6);
+    await page.getByRole('button', { name: 'Tap to time lyrics' }).click();
+    await expect.poll(() => video.evaluate((v: HTMLVideoElement) => !v.paused)).toBe(true);
+    // Wait frame by frame (not expect.poll's growing intervals) so the tap lands on time.
+    const tapAt = async (sec: number) => {
+      await page.waitForFunction((t) => (document.querySelector('video') as HTMLVideoElement).currentTime >= t, sec, { polling: 'raf', timeout: 15_000 });
+      await page.keyboard.press('Space');
+    };
+    await tapAt(7);
+    await tapAt(8.5);
+    await tapAt(10);
+    await expect(page.getByRole('button', { name: 'Tap: last line ends' })).toBeVisible();
+    await tapAt(11.5);
+    await expect(page.getByRole('status').filter({ hasText: 'All lines timed' })).toBeVisible();
+    await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.paused)).toBe(true);
+    // Each line starts within a moment of its tap, and they run back to back.
+    const starts = await sliders.evaluateAll((els) => els.map((e) => Number(e.getAttribute('aria-valuenow'))));
+    expect(starts[0]).toBeGreaterThanOrEqual(7);
+    expect(starts[0]).toBeLessThan(7.6);
+    expect(starts[1]).toBeGreaterThanOrEqual(8.5);
+    expect(starts[2]).toBeGreaterThanOrEqual(10);
+    await expect
+      .poll(() => {
+        const last = patches.at(-1);
+        return last ? JSON.parse(last).edits.blocks.filter((b: { track: string }) => b.track === 'lyric').map((b: { startSec: number }) => b.startSec) : [];
+      }, { timeout: 15_000 })
+      .toEqual(starts);
+
+    // ---- Fade: mid-fade the lyric is fainter than once fully in.
+    const lyrics = page.getByRole('group', { name: 'Lyrics' });
+    await lyrics.getByLabel('Fade in and out').check();
+    /** Strongest alpha in the lower third of the overlay. */
+    const peakAlpha = () =>
+      page.evaluate(() => {
+        const cv = document.querySelector('canvas[aria-hidden="true"]') as HTMLCanvasElement;
+        const ctx = cv.getContext('2d')!;
+        const d = ctx.getImageData(0, Math.floor(cv.height * 0.66), cv.width, Math.floor(cv.height * 0.34)).data;
+        let m = 0;
+        for (let i = 3; i < d.length; i += 4) m = Math.max(m, d[i]);
+        return m;
+      });
+    await seekTo(starts[0] + 0.8); // fully in
+    await expect.poll(peakAlpha, { timeout: 10_000 }).toBeGreaterThan(200);
+    const full = await peakAlpha();
+    await seekTo(starts[0] + 0.1); // a third of the way into the fade (the redraw follows the seek)
+    // The block fades AS ONE image (like the render's ffmpeg fade): a third of
+    // the way in, the most opaque pixel is about a third of full.
+    await expect.poll(peakAlpha, { timeout: 10_000 }).toBeLessThan(full * 0.5);
+    const mid = await peakAlpha();
+    expect(mid).toBeGreaterThan(full * 0.2);
+    expect(mid).toBeLessThan(full * 0.47);
+
+    // ---- Box: a dark, mostly opaque area appears behind the lyric.
+    const darkBoxPixels = () =>
+      page.evaluate(() => {
+        const cv = document.querySelector('canvas[aria-hidden="true"]') as HTMLCanvasElement;
+        const d = cv.getContext('2d')!.getImageData(0, Math.floor(cv.height * 0.66), cv.width, Math.floor(cv.height * 0.34)).data;
+        let n = 0;
+        for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 100 && d[i] < 30 && d[i + 1] < 30 && d[i + 2] < 30) n++;
+        return n;
+      });
+    await seekTo(starts[0] + 0.8); // fully faded in, so the box is at its full 50%
+    await expect.poll(peakAlpha, { timeout: 10_000 }).toBeGreaterThan(200);
+    const before = await darkBoxPixels();
+    await lyrics.getByLabel('Box behind text').check();
+    await expect.poll(darkBoxPixels, { timeout: 10_000 }).toBeGreaterThan(before + 1000);
+
+    // ---- Colour: yellow lyric text.
+    await lyrics.getByRole('radiogroup', { name: 'Lyrics colour' }).getByRole('radio', { name: 'Yellow' }).click();
+    const yellowish = () =>
+      page.evaluate(() => {
+        const cv = document.querySelector('canvas[aria-hidden="true"]') as HTMLCanvasElement;
+        const d = cv.getContext('2d')!.getImageData(0, Math.floor(cv.height * 0.66), cv.width, Math.floor(cv.height * 0.34)).data;
+        let n = 0;
+        for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200 && d[i] > 200 && d[i + 1] > 180 && d[i + 2] < 140) n++;
+        return n;
+      });
+    await expect.poll(yellowish, { timeout: 10_000 }).toBeGreaterThan(50);
+    await page.screenshot({ path: 'test-results/video-text-tap-fade-box.png', fullPage: true });
+
+    await expect
+      .poll(() => {
+        const last = patches.at(-1);
+        return last ? JSON.parse(last).edits.style.tracks?.lyric : null;
+      }, { timeout: 15_000 })
+      .toEqual({ fade: true, box: true, color: 'yellow' });
+
+    await page.setViewportSize({ width: 390, height: 800 });
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), { timeout: 5_000 })
+      .toBeLessThanOrEqual(0);
+    await page.screenshot({ path: 'test-results/video-text-tap-390.png', fullPage: true });
 
     expect(writes, 'non-GET /api/ requests the mocks did not fulfil').toEqual([]);
     expect(unexpected, 'requests to the video-text API that the test did not mock').toEqual([]);

@@ -177,12 +177,66 @@ export function resizeBlock(
   const { prevEnd, nextStart } = neighbours(blocks, target);
   let { startSec, endSec } = target;
   if (edge === 'start') {
-    startSec = r2(clamp(sec, prevEnd, Math.max(prevEnd, endSec - MIN_BLOCK_SEC)));
+    // Already hemmed in (old data with an overlap): leave it rather than make it too short.
+    if (prevEnd > endSec - MIN_BLOCK_SEC + EPS) return blocks;
+    startSec = r2(clamp(sec, prevEnd, endSec - MIN_BLOCK_SEC));
   } else {
     const limit = Math.min(durationSec, nextStart);
-    endSec = r2(clamp(sec, Math.min(limit, startSec + MIN_BLOCK_SEC), limit));
+    if (limit < startSec + MIN_BLOCK_SEC - EPS) return blocks;
+    endSec = r2(clamp(sec, startSec + MIN_BLOCK_SEC, limit));
   }
   return blocks.map((b) => (b.id === id ? { ...b, startSec, endSec } : b));
+}
+
+/**
+ * The timeline's edge drag. Pulling an edge INTO a same-track neighbour it
+ * touches moves the shared boundary (Premiere's rolling edit): this block
+ * grows, the neighbour shrinks, each keeps MIN_BLOCK_SEC. Back-to-back lyric
+ * lines (every fresh project) could otherwise never be lengthened. Any other
+ * drag is resizeBlock: pulling away leaves a gap, as before.
+ */
+export function dragEdge(
+  blocks: TextBlock[],
+  id: string,
+  edge: 'start' | 'end',
+  sec: number,
+  durationSec: number,
+): TextBlock[] {
+  const target = blocks.find((b) => b.id === id);
+  if (!target || !Number.isFinite(sec)) return blocks;
+  const same = trackBlocks(blocks, target.track).filter((b) => b.id !== id);
+  if (edge === 'end' && sec > target.endSec) {
+    const nb = same.find((b) => Math.abs(b.startSec - target.endSec) <= EPS);
+    if (nb) {
+      const lo = target.startSec + MIN_BLOCK_SEC;
+      const hi = nb.endSec - MIN_BLOCK_SEC;
+      if (hi < lo - EPS) return blocks;
+      const at = r2(clamp(sec, lo, hi));
+      return blocks.map((b) => (b.id === id ? { ...b, endSec: at } : b.id === nb.id ? { ...b, startSec: at } : b));
+    }
+  }
+  if (edge === 'start' && sec < target.startSec) {
+    const nb = same.find((b) => Math.abs(b.endSec - target.startSec) <= EPS);
+    if (nb) {
+      const lo = nb.startSec + MIN_BLOCK_SEC;
+      const hi = target.endSec - MIN_BLOCK_SEC;
+      if (hi < lo - EPS) return blocks;
+      const at = r2(clamp(sec, lo, hi));
+      return blocks.map((b) => (b.id === id ? { ...b, startSec: at } : b.id === nb.id ? { ...b, endSec: at } : b));
+    }
+  }
+  return resizeBlock(blocks, id, edge, sec, durationSec);
+}
+
+/** True when both lists give every block the same times and text (a no-op edit). */
+export function sameBlocks(a: TextBlock[], b: TextBlock[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  const byId = new Map(a.map((x) => [x.id, x]));
+  return b.every((y) => {
+    const x = byId.get(y.id);
+    return !!x && x.startSec === y.startSec && x.endSec === y.endSec && x.text === y.text && x.track === y.track;
+  });
 }
 
 /**
@@ -477,4 +531,88 @@ export function validateBlocks(blocks: TextBlock[], durationSec: number): string
     }
   }
   return null;
+}
+
+// ------------------------------------------------------------------ tap to time
+
+/**
+ * Lines after `from` (in time order) must not overlap: push each one after
+ * the previous, keeping its length; if that runs past the end, squeeze them
+ * evenly into what is left. null when not even MIN_BLOCK_SEC each fits.
+ */
+function settleAfter(lyric: TextBlock[], from: number, durationSec: number): TextBlock[] | null {
+  const out = lyric.map((b) => ({ ...b }));
+  for (let j = from + 1; j < out.length; j++) {
+    const prevEnd = out[j - 1].endSec;
+    if (out[j].startSec < prevEnd - EPS) {
+      const len = out[j].endSec - out[j].startSec;
+      out[j] = { ...out[j], startSec: r2(prevEnd), endSec: r2(prevEnd + len) };
+    }
+  }
+  const last = out[out.length - 1];
+  if (out.length > from + 1 && last.endSec > durationSec + EPS) {
+    const tail = out.length - (from + 1);
+    const lo = out[from].endSec;
+    if (durationSec - lo < tail * MIN_BLOCK_SEC - EPS) return null;
+    tile(tail, lo, durationSec).forEach(([s, e], i) => {
+      out[from + 1 + i] = { ...out[from + 1 + i], startSec: s, endSec: e };
+    });
+  }
+  return out;
+}
+
+function withLyrics(blocks: TextBlock[], lyric: TextBlock[]): TextBlock[] {
+  const byId = new Map(lyric.map((b) => [b.id, b]));
+  return blocks.map((b) => byId.get(b.id) ?? b);
+}
+
+/**
+ * Tap to time: lyric line `index` (in time order) starts at `t`. With
+ * `closePrevious` (the previous line was tapped in this session) the
+ * previous line ends at `t`, so sung lines run back to back; otherwise it is
+ * only cut short if it would overlap. The line keeps its length, and later
+ * lines are pushed so none overlaps. null = refused: tapped less than half a
+ * second after the previous line started, or no room left for the rest.
+ */
+export function tapLyric(
+  blocks: TextBlock[],
+  index: number,
+  t: number,
+  durationSec: number,
+  opts: { closePrevious: boolean },
+): TextBlock[] | null {
+  const lyric = trackBlocks(blocks, 'lyric').map((b) => ({ ...b }));
+  if (index < 0 || index >= lyric.length || !Number.isFinite(t)) return null;
+  const at = r2(clamp(t, 0, durationSec - MIN_BLOCK_SEC));
+  if (index > 0) {
+    const prev = lyric[index - 1];
+    if (at < prev.startSec + MIN_BLOCK_SEC - EPS) return null;
+    if (opts.closePrevious || prev.endSec > at) lyric[index - 1] = { ...prev, endSec: at };
+  }
+  const cur = lyric[index];
+  const len = Math.max(MIN_BLOCK_SEC, cur.endSec - cur.startSec);
+  lyric[index] = { ...cur, startSec: at, endSec: r2(Math.min(durationSec, at + len)) };
+  let settled = settleAfter(lyric, index, durationSec);
+  if (!settled) {
+    // Make room by giving this line only the minimum.
+    lyric[index] = { ...lyric[index], endSec: r2(at + MIN_BLOCK_SEC) };
+    settled = settleAfter(lyric, index, durationSec);
+  }
+  return settled ? withLyrics(blocks, settled) : null;
+}
+
+/**
+ * Tap to time, last step (or Stop): lyric line `index` ends at `t` — at least
+ * half a second after it starts. Later lines are pushed if it now overlaps
+ * them. null when `t` is too soon after the line started.
+ */
+export function endLyricAt(blocks: TextBlock[], index: number, t: number, durationSec: number): TextBlock[] | null {
+  const lyric = trackBlocks(blocks, 'lyric').map((b) => ({ ...b }));
+  if (index < 0 || index >= lyric.length || !Number.isFinite(t)) return null;
+  const cur = lyric[index];
+  const at = r2(Math.min(durationSec, t));
+  if (at < cur.startSec + MIN_BLOCK_SEC - EPS) return null;
+  lyric[index] = { ...cur, endSec: at };
+  const settled = settleAfter(lyric, index, durationSec);
+  return settled ? withLyrics(blocks, settled) : null;
 }

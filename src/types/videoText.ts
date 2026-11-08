@@ -21,12 +21,19 @@ export const CENTRE_PLACEMENT: Placement = { v: 'middle', h: 'center' };
 export type TamilFontId = 'noto-sans-tamil' | 'noto-serif-tamil' | 'mukta-malar' | 'arima' | 'baloo-thambi-2' | 'kavivanar';
 export type EnglishFontId = 'plain' | 'montserrat' | 'poppins' | 'playfair-display' | 'lora' | 'oswald' | 'dancing-script';
 
-/** One part's own look. Missing fields fall back (size → TextStyle.sizeScale, fonts → the defaults). */
+export type TextColorId = 'white' | 'yellow' | 'gold' | 'cream';
+
+/** One part's own look. Missing fields fall back (size → TextStyle.sizeScale, fonts → the defaults, white, no box, no fade). */
 export interface TrackStyle {
   /** 0.5–2, a multiple of the part's base size. */
   size?: number;
   tamilFont?: TamilFontId;
   englishFont?: EnglishFontId;
+  color?: TextColorId;
+  /** A dim box behind the lines, for busy or bright pictures. */
+  box?: boolean;
+  /** Fade each line in and out (FADE_SEC). */
+  fade?: boolean;
 }
 
 export interface TextStyle {

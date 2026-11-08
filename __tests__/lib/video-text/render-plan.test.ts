@@ -276,3 +276,76 @@ describe('segmentPlanFor (sizing by how heavy the video is)', () => {
     expect(plan(3840, 2160, 30, 120).ok).toBe(true);
   });
 });
+
+describe('fades in the chunk command', () => {
+  const base = { segPath: 's.mp4', width: 1280, height: 720, outPath: 'o.mp4', crf: 16, preset: 'veryfast', fps: 25 };
+  const graphOf = (args: string[]) => args[args.indexOf('-filter_complex') + 1];
+
+  it('overlaysForSegment carries a fading block\'s own start/end relative to the segment', () => {
+    const ovs = overlaysForSegment([{ id: 'a', startSec: 9.9, endSec: 14.1, fadeSec: 0.3 }, { id: 'b', startSec: 11, endSec: 12 }], { startSec: 10, endSec: 14 });
+    expect(ovs).toEqual([
+      { id: 'a', fromSec: 0, toSec: 4, fade: { inAt: -0.1, outAt: 4.1, sec: 0.3 } },
+      { id: 'b', fromSec: 1, toSec: 2 },
+    ]);
+  });
+
+  it('a block without fade is exactly the old single still overlay', () => {
+    const args = buildChunkArgs({ ...base, overlays: [{ path: 'p.png', fromSec: 1, toSec: 3 }] });
+    expect(graphOf(args)).toBe("[0:v][1:v]overlay=0:0:enable='gte(t,1)*lt(t,3)':eof_action=repeat[v1]");
+  });
+
+  it('a fading block inside the segment: fade-in clip, still, fade-out clip, PNG decoded once per layer', () => {
+    const args = buildChunkArgs({ ...base, overlays: [{ path: 'p.png', fromSec: 1, toSec: 3, fade: { inAt: 1, outAt: 3, sec: 0.3 } }] });
+    expect(args.filter((a) => a === '-loop')).toHaveLength(0); // never -loop 1 (decodes every frame)
+    expect(args.filter((a) => a === 'p.png')).toHaveLength(3);
+    const g = graphOf(args);
+    expect(g).toContain('[1:v]loop=loop=9:size=1:start=0,settb=AVTB,setpts=N/(25*TB),format=rgba,fade=t=in:st=0:d=0.3:alpha=1,setpts=PTS+(1)/TB[fi1]');
+    expect(g).toContain('[3:v]loop=loop=9:size=1:start=0,settb=AVTB,setpts=N/(25*TB),format=rgba,fade=t=out:st=0:d=0.3:alpha=1,setpts=PTS+(2.7)/TB[fo3]');
+    expect(g).toContain("[0:v][fi1]overlay=0:0:enable='gte(t,1)*lt(t,1.3)':eof_action=pass[v1]");
+    expect(g).toContain("[v1][2:v]overlay=0:0:enable='gte(t,1.3)*lt(t,2.7)':eof_action=repeat[v2]");
+    expect(g).toContain("[v2][fo3]overlay=0:0:enable='gte(t,2.7)*lt(t,3)':eof_action=pass[v3]");
+    expect(args[args.indexOf('-map') + 1]).toBe('[v3]');
+  });
+
+  it('fade clips switch to a fine timebase before timing frames (1/25 truncated 60 and 29.97 fps fades)', () => {
+    const args = buildChunkArgs({ ...base, fps: 29.97, overlays: [{ path: 'p.png', fromSec: 1, toSec: 3, fade: { inAt: 1.23, outAt: 2.81, sec: 0.3 } }] });
+    const g = graphOf(args);
+    expect(g).toContain('settb=AVTB,setpts=N/(29.97*TB)');
+    expect(g.indexOf('settb=AVTB')).toBeLessThan(g.indexOf('setpts=N/'));
+  });
+
+  it('a block crossing the cut: the fade-in clip is shifted before 0, the fade-out past the end', () => {
+    const args = buildChunkArgs({ ...base, overlays: [{ path: 'p.png', fromSec: 0, toSec: 4, fade: { inAt: -0.1, outAt: 4.1, sec: 0.3 } }] });
+    const g = graphOf(args);
+    expect(g).toContain('setpts=PTS+(-0.1)/TB[fi1]');
+    expect(g).toContain("enable='gte(t,0)*lt(t,0.2)'");
+    expect(g).toContain("enable='gte(t,3.8)*lt(t,4)'");
+  });
+
+  it('only the layers that overlap this segment are added', () => {
+    // Segment shows only the middle of a long fading block: just the still.
+    const args = buildChunkArgs({ ...base, overlays: [{ path: 'p.png', fromSec: 0, toSec: 4, fade: { inAt: -10, outAt: 20, sec: 0.3 } }] });
+    expect(graphOf(args)).toBe("[0:v][1:v]overlay=0:0:enable='gte(t,0)*lt(t,4)':eof_action=repeat[v1]");
+  });
+
+  it('a block shorter than two fades has no still layer: it fades straight in and out', () => {
+    const args = buildChunkArgs({ ...base, overlays: [{ path: 'p.png', fromSec: 1, toSec: 1.5, fade: { inAt: 1, outAt: 1.5, sec: 0.25 } }] });
+    const g = graphOf(args);
+    expect(g).toContain("enable='gte(t,1)*lt(t,1.25)':eof_action=pass");
+    expect(g).toContain("enable='gte(t,1.25)*lt(t,1.5)':eof_action=pass");
+    expect(g).not.toContain('eof_action=repeat');
+  });
+});
+
+describe('segmentPlanFor with fades', () => {
+  it('plans shorter segments when a part fades, and still fits the budget', () => {
+    const plain = segmentPlanFor({ width: 2560, height: 1440, fps: 30, durationSec: 600 });
+    const faded = segmentPlanFor({ width: 2560, height: 1440, fps: 30, durationSec: 600 }, { fades: true });
+    expect(plain.ok && faded.ok).toBe(true);
+    if (plain.ok && faded.ok) {
+      expect(faded.maxSec).toBeLessThan(plain.maxSec);
+      const secPerSec = 4.9 * ((2560 * 1440 * 30) / (2560 * 1440 * 24)) * 1.55;
+      expect(faded.maxSec * secPerSec).toBeLessThanOrEqual(230 + 1e-6);
+    }
+  });
+});
