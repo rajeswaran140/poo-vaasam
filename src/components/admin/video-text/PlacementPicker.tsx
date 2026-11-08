@@ -49,7 +49,7 @@ export function PlacementPicker({ label, value, onChange }: PlacementPickerProps
   };
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
       <span className="text-sm font-semibold text-gray-800 dark:text-gray-100" aria-hidden="true">
         {label}
       </span>
@@ -82,7 +82,7 @@ export function PlacementPicker({ label, value, onChange }: PlacementPickerProps
           }),
         )}
       </div>
-      <span className="w-24 text-xs text-gray-500 dark:text-gray-400">{placementName(current)}</span>
+      <span className="min-w-0 text-xs text-gray-500 dark:text-gray-400">{placementName(current)}</span>
     </div>
   );
 }

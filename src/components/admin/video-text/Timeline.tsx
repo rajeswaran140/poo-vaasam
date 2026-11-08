@@ -430,7 +430,7 @@ function BlockTimes({
       data-testid="block-times"
       className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-900/60"
     >
-      <span className="max-w-[16rem] truncate text-xs font-semibold text-gray-800 dark:text-gray-100" title={block.text}>
+      <span className="min-w-0 max-w-full truncate text-xs font-semibold text-gray-800 dark:text-gray-100" title={block.text}>
         {name}: {block.text}
       </span>
       <TimeField label="Start" value={block.startSec} onCommit={setStart} />

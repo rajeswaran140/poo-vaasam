@@ -82,10 +82,10 @@ test.describe('video text page', () => {
     await expect(page.getByLabel('Name', { exact: true })).toBeVisible();
 
     await page.setViewportSize({ width: 390, height: 800 });
-    const overflow = await page.evaluate(
-      () => document.documentElement.scrollWidth - document.documentElement.clientWidth
-    );
-    expect(overflow).toBeLessThanOrEqual(0);
+    // The timeline re-measures after a resize (ResizeObserver): wait for it to settle.
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), { timeout: 5_000 })
+      .toBeLessThanOrEqual(0);
 
     await page.getByRole('button', { name: /All projects/ }).click();
     await expect(page.getByRole('button', { name: 'New project' })).toBeVisible();
