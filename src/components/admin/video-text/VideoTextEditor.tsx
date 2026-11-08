@@ -165,9 +165,15 @@ export function VideoTextEditor({
     }
     const kept = new Set(after.map((b) => b.id));
     const gone = before.filter((b) => b.track === 'lyric' && !kept.has(b.id));
-    mem.lyrics = [...(mem.lyrics ?? []), ...gone.map((b) => ({ startSec: b.startSec, endSec: b.endSec }))].slice(-20);
+    mem.lyrics = [...(mem.lyrics ?? []), ...gone.map((b) => ({ startSec: b.startSec, endSec: b.endSec, id: b.id }))].slice(-20);
+    const lyricsBefore = before.filter((b) => b.track === 'lyric');
+    const lyricsAfter = after.some((b) => b.track === 'lyric');
+    // The box was emptied: keep the whole track so a refill (undo/paste) gets its timing back.
+    if (lyricsBefore.length && !lyricsAfter) mem.lyricTrack = lyricsBefore;
+    else if (lyricsAfter) mem.lyricTrack = undefined;
   };
   // Edits after a finished render: Download then says it is the older video.
+  // Reset only when a NEW render is accepted (a failed start keeps the old note).
   const [editedSinceRender, setEditedSinceRender] = useState(false);
   const markEdited = () => setEditedSinceRender(true);
   const setTexts = (patch: Partial<Pick<VideoTextProject, 'titleText' | 'creditsText' | 'lyricsText'>>) => {
@@ -330,6 +336,8 @@ export function VideoTextEditor({
       }
       const source = body.source as SourceInfo;
       if (!mounted.current) return;
+      // Remembered times belong to the old video's length.
+      remembered.current = { lyrics: [] };
       setProject((p) => ({
         ...p,
         source,
@@ -427,7 +435,6 @@ export function VideoTextEditor({
   const makeVideo = () => {
     const source = project.source;
     if (!source) return;
-    setEditedSinceRender(false);
     void job.start({
       prepare: async () => {
         if (isExpired(source)) return EXPIRED;
@@ -480,6 +487,12 @@ export function VideoTextEditor({
   const lockUploadAndRender = uploading || job.running;
   const previewUrl = localUrl ?? remoteUrl;
   const render = job.render;
+  // A new render was accepted (its id appeared): edits before it are in it.
+  const [seenRenderId, setSeenRenderId] = useState(render.renderId);
+  if (render.renderId !== seenRenderId) {
+    setSeenRenderId(render.renderId);
+    setEditedSinceRender(false);
+  }
   // A video uploaded after the render finished makes that output out of date.
   const outputIsStale = Boolean(
     source && render.updatedAt && new Date(source.uploadedAt).getTime() > new Date(render.updatedAt).getTime(),
@@ -491,7 +504,8 @@ export function VideoTextEditor({
   const downloadIsOlder =
     showDownload &&
     (editedSinceRender ||
-      Boolean(render.updatedAt && new Date(initial.updatedAt).getTime() > new Date(render.updatedAt).getTime()));
+      // Saved after the render started: the worker read the blocks before that save.
+      Boolean(render.startedAt && new Date(initial.updatedAt).getTime() > new Date(render.startedAt).getTime()));
 
   return (
     <div className="min-w-0 space-y-6">

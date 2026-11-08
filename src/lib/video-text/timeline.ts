@@ -390,7 +390,13 @@ function syncLyrics(
 
 export type RememberedTimes = Partial<Record<'title' | 'credits', { startSec: number; endSec: number }>> & {
   /** Slots of lyric lines removed recently (oldest first); a line typed back into that gap reuses one. */
-  lyrics?: { startSec: number; endSec: number }[];
+  lyrics?: { startSec: number; endSec: number; id?: string }[];
+  /**
+   * The whole lyric track as it was just before the box was emptied (select
+   * all + delete, cut). Refilling it (undo, paste) matches lines against this
+   * instead of spreading them evenly, so the timing comes back.
+   */
+  lyricTrack?: TextBlock[];
 };
 
 /**
@@ -426,15 +432,23 @@ export function syncTextToBlocks(
   edge('title', title);
   edge('credits', credits);
 
-  const existing = trackBlocks(blocks, 'lyric');
+  const onTrack = trackBlocks(blocks, 'lyric');
+  const restored = onTrack.length === 0 && remembered.lyricTrack?.length ? [...remembered.lyricTrack].sort((a, b) => a.startSec - b.startSec) : null;
+  const existing = restored ?? onTrack;
   if (existing.length === 0) {
     const [from, to] = lyricRegion(title !== undefined, credits !== undefined, durationSec);
     slots(lines.length, from, to, durationSec).forEach(([s, e], i) =>
       out.push({ id: `lyric-${i}`, track: 'lyric', text: lines[i], startSec: s, endSec: e }),
     );
   } else {
-    const used = new Set(blocks.map((b) => b.id));
-    let n = 0;
+    // New ids never reuse one still in play or remembered, so a block that
+    // was selected (or a removed line) is never confused with a new one.
+    const used = new Set([
+      ...blocks.map((b) => b.id),
+      ...existing.map((b) => b.id),
+      ...(remembered.lyrics ?? []).flatMap((r) => (r.id ? [r.id] : [])),
+    ]);
+    let n = Math.max(-1, ...[...used].map((id) => Number(/^lyric-(\d+)$/.exec(id)?.[1] ?? -1))) + 1;
     const makeId = () => {
       let id = `lyric-${n}`;
       while (used.has(id)) id = `lyric-${++n}`;

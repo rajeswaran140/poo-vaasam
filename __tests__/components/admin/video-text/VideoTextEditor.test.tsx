@@ -594,13 +594,65 @@ describe('audit fixes: timing survives text edits, uploads can be cancelled, old
     );
   });
 
-  it('Download is flagged on load when the project was saved after the render', () => {
+  it('Download is flagged on load when edits were saved after the render STARTED (even if it finished later)', () => {
+    // The worker read the blocks at the start; a save during the render is not in the video.
     const doneRender: RenderState = {
-      ...idleRender, renderId: 'r1', status: 'done', outputKey: 'k',
-      outputExpiresAt: '2999-12-08T00:00:00.000Z', updatedAt: '2026-11-08T00:00:00.000Z',
+      ...idleRender, renderId: 'r1', status: 'done', outputKey: 'k', outputExpiresAt: '2999-12-08T00:00:00.000Z',
+      startedAt: '2026-11-08T00:00:00.000Z', updatedAt: '2026-11-08T00:10:00.000Z',
     };
-    render(<VideoTextEditor project={project({ render: doneRender, updatedAt: '2026-11-08T01:00:00.000Z' })} onBack={() => {}} />);
+    render(<VideoTextEditor project={project({ render: doneRender, updatedAt: '2026-11-08T00:05:00.000Z' })} onBack={() => {}} />);
     expect(screen.getByTestId('download-older')).toBeInTheDocument();
+  });
+
+  it('Download is not flagged when the last save came before the render started', () => {
+    const doneRender: RenderState = {
+      ...idleRender, renderId: 'r1', status: 'done', outputKey: 'k', outputExpiresAt: '2999-12-08T00:00:00.000Z',
+      startedAt: '2026-11-08T00:00:00.000Z', updatedAt: '2026-11-08T00:10:00.000Z',
+    };
+    render(<VideoTextEditor project={project({ render: doneRender, updatedAt: '2026-11-07T23:59:00.000Z' })} onBack={() => {}} />);
+    expect(screen.queryByTestId('download-older')).toBeNull();
+  });
+
+  it('a Make video that fails to start keeps the older-video note on the old Download', async () => {
+    const doneRender: RenderState = {
+      ...idleRender, renderId: 'r1', status: 'done', outputKey: 'k', outputExpiresAt: '2999-12-08T00:00:00.000Z',
+      startedAt: '2026-11-08T00:00:00.000Z', updatedAt: '2026-11-08T00:10:00.000Z',
+    };
+    routes['PATCH /api/admin/video-text/p1'] = () => json({ error: 'This project was changed in another tab — reload to see the latest.' }, 409);
+    render(<VideoTextEditor project={project({ titleText: 'Song', blocks: [titleBlock], render: doneRender })} onBack={() => {}} />);
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Song 2' } });
+    expect(screen.getByTestId('download-older')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Make video' }));
+    await waitFor(() => expect(within(screen.getByTestId('make-video')).getByText(/changed in another tab/)).toBeInTheDocument());
+    expect(screen.getByTestId('download-older')).toBeInTheDocument();
+  });
+
+  it('emptying the lyrics box and pasting it back restores every line\'s time', () => {
+    render(<VideoTextEditor project={project({ lyricsText: 'one\ntwo\nthree', blocks: hand })} onBack={() => {}} />);
+    const box = screen.getByLabelText('Lyrics');
+    fireEvent.change(box, { target: { value: '' } });
+    expect(screen.queryAllByRole('slider', { name: /^Lyric \d+:/ })).toHaveLength(0);
+    fireEvent.change(box, { target: { value: 'one\ntwo\nthree' } });
+    expect(screen.getByRole('slider', { name: 'Lyric 1: one' })).toHaveAttribute('aria-valuetext', '0:10.0 to 0:14.0');
+    expect(screen.getByRole('slider', { name: 'Lyric 2: two' })).toHaveAttribute('aria-valuetext', '0:20.0 to 0:26.0');
+    expect(screen.getByRole('slider', { name: 'Lyric 3: three' })).toHaveAttribute('aria-valuetext', '0:30.0 to 0:33.0');
+  });
+
+  it('a new video forgets remembered times: credits typed again go to the default end spot', async () => {
+    routes['PATCH /api/admin/video-text/p1'] = () => json({ version: 4 });
+    routes['POST /api/admin/video-text/p1/upload'] = () => json({ url: 'https://s3', fields: {}, key: 'audio/mastering/video-text/p1/source/n.mp4' });
+    routes['POST /api/admin/video-text/p1/source'] = () =>
+      json({ source: { ...source, durationSec: 400 }, blocks: [], moved: 0, version: 9 });
+    (putToS3 as jest.Mock).mockResolvedValue(undefined);
+    const credits = { id: 'credits', track: 'credits' as const, text: 'C', startSec: 290, endSec: 300 };
+    render(<VideoTextEditor project={project({ creditsText: 'C', blocks: [credits] })} onBack={() => {}} />);
+    fireEvent.change(screen.getByLabelText('Credits'), { target: { value: '' } });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/Choose a video/i), { target: { files: [new File(['x'], 'n.mp4', { type: 'video/mp4' })] } });
+    });
+    await waitFor(() => expect(screen.queryByTestId('timeline-locked')).toBeNull());
+    fireEvent.change(screen.getByLabelText('Credits'), { target: { value: 'C2' } });
+    expect(screen.getByRole('slider', { name: 'Credits: C2' })).toHaveAttribute('aria-valuetext', '6:30.0 to 6:40.0');
   });
 });
 

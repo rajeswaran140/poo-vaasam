@@ -392,3 +392,72 @@ describe('syncTextToBlocks keeps hand-made timing (audit C1/I1)', () => {
     }
   });
 });
+
+describe('syncTextToBlocks: emptied box, ids, duplicates (final review)', () => {
+  const D = 344;
+  const hand: TextBlock[] = [
+    { id: 'lyric-0', track: 'lyric', text: 'Ch', startSec: 30, endSec: 33 },
+    { id: 'lyric-1', track: 'lyric', text: 'V1', startSec: 50, endSec: 52 },
+    { id: 'lyric-2', track: 'lyric', text: 'Ch', startSec: 80, endSec: 90 },
+  ];
+  const t = (lyricsText: string) => ({ titleText: '', creditsText: '', lyricsText });
+
+  it('refilling an emptied box from the remembered track brings every line back to its time', () => {
+    const emptied = syncTextToBlocks(hand, t(''), D);
+    expect(lyrics(emptied)).toEqual([]);
+    const back = syncTextToBlocks(emptied, t('Ch\nV1\nCh'), D, { lyricTrack: hand });
+    expect(lyrics(back).map((b) => [b.text, b.startSec, b.endSec])).toEqual([['Ch', 30, 33], ['V1', 50, 52], ['Ch', 80, 90]]);
+  });
+
+  it('a partly different refill keeps the matching lines and places the rest in gaps', () => {
+    const back = syncTextToBlocks([], t('Ch\nNEW\nCh'), D, { lyricTrack: hand });
+    const l = lyrics(back);
+    expect(l[0]).toMatchObject({ text: 'Ch', startSec: 30, endSec: 33 });
+    expect(l[2]).toMatchObject({ text: 'Ch', startSec: 80, endSec: 90 });
+    expect(l[1]).toMatchObject({ text: 'NEW', startSec: 50, endSec: 52 }); // took V1's slot as an edit
+    expect(validateBlocks(back, D)).toBeNull();
+  });
+
+  it('without a remembered track, a paste into an empty box still spreads evenly', () => {
+    const out = syncTextToBlocks([], t('a\nb'), D);
+    expect(lyrics(out)).toEqual(lyrics(defaultBlocks({ titleText: '', creditsText: '', lyricsText: 'a\nb', durationSec: D })));
+  });
+
+  it('a new line never reuses the id of a removed line', () => {
+    const removed = syncTextToBlocks(hand, t('Ch\nV1'), D); // lyric-2 gone
+    const added = syncTextToBlocks(removed, t('Ch\nV1\nX'), D, { lyrics: [{ startSec: 80, endSec: 90, id: 'lyric-2' }] });
+    const x = lyrics(added).find((b) => b.text === 'X')!;
+    expect(x.id).not.toBe('lyric-2');
+    expect(new Set(added.map((b) => b.id)).size).toBe(added.length);
+  });
+
+  it('fuzz with repeated chorus lines and empty-then-refill: always valid, never duplicate ids, refill restores', () => {
+    let seed = 11;
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
+    const pool = ['Ch', 'Ch', 'V1', 'V2', 'Br', 'Ch'];
+    for (let run = 0; run < 200; run++) {
+      const lines = Array.from({ length: 3 + Math.floor(rnd() * 10) }, () => pool[Math.floor(rnd() * pool.length)]);
+      let b = syncTextToBlocks([], t(lines.join('\n')), D);
+      for (let step = 0; step < 12; step++) {
+        const op = rnd();
+        if (op < 0.15) {
+          // Empty the box, then paste the same text back.
+          const track = lyrics(b);
+          const emptied = syncTextToBlocks(b, t(''), D);
+          const back = syncTextToBlocks(emptied, t(lines.join('\n')), D, { lyricTrack: track });
+          expect(lyrics(back).map((x) => [x.text, x.startSec, x.endSec])).toEqual(track.map((x) => [x.text, x.startSec, x.endSec]));
+          b = back;
+          continue;
+        }
+        const at = Math.floor(rnd() * (lines.length + 1));
+        if (op < 0.5) lines.splice(at, 0, pool[Math.floor(rnd() * pool.length)]);
+        else if (op < 0.8 && lines.length > 1) lines.splice(Math.min(at, lines.length - 1), 1);
+        else if (lines.length) lines[Math.min(at, lines.length - 1)] += 'x';
+        b = syncTextToBlocks(b, t(lines.join('\n')), D);
+        expect(validateBlocks(b, D)).toBeNull();
+        lyricsOk(b);
+        expect(new Set(b.map((x) => x.id)).size).toBe(b.length);
+      }
+    }
+  });
+});
