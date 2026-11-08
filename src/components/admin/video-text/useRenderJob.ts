@@ -217,7 +217,7 @@ export function useRenderJob(projectId: string, initial: RenderState) {
         const { blocks, frame, style, version } = snap;
         const total = blocks.length;
         setPhase({ kind: 'drawing', done: 0, total });
-        await ensureFonts();
+        await ensureFonts(style);
         const pngs = await inBatches(
           blocks,
           (b) => renderBlockPng(b, frame, style),

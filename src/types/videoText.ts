@@ -18,6 +18,17 @@ export interface Placement {
 
 export const CENTRE_PLACEMENT: Placement = { v: 'middle', h: 'center' };
 
+export type TamilFontId = 'noto-sans-tamil' | 'noto-serif-tamil' | 'mukta-malar' | 'arima' | 'baloo-thambi-2' | 'kavivanar';
+export type EnglishFontId = 'plain' | 'montserrat' | 'poppins' | 'playfair-display' | 'lora' | 'oswald' | 'dancing-script';
+
+/** One part's own look. Missing fields fall back (size → TextStyle.sizeScale, fonts → the defaults). */
+export interface TrackStyle {
+  /** 0.5–2, a multiple of the part's base size. */
+  size?: number;
+  tamilFont?: TamilFontId;
+  englishFont?: EnglishFontId;
+}
+
 export interface TextStyle {
   /** 0.75–1.5, default 1. */
   sizeScale: number;
@@ -25,6 +36,8 @@ export interface TextStyle {
   /** Optional: projects saved before placement existed are centred. */
   titlePlace?: Placement;
   creditsPlace?: Placement;
+  /** Per-part size and fonts. Projects saved before this have none: Noto Sans Tamil at sizeScale. */
+  tracks?: Partial<Record<Track, TrackStyle>>;
 }
 
 export interface SourceInfo {

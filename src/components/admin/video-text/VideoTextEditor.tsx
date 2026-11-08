@@ -16,10 +16,12 @@ import { adminFetch } from '@/lib/client-auth';
 import { putToS3 } from '@/lib/mastering-upload-client';
 import { MAX_VIDEO_TEXT_BYTES } from '@/lib/video-text/keys';
 import { syncTextToBlocks, unplacedLineCount, validateBlocks, type RememberedTimes } from '@/lib/video-text/timeline';
-import type { SourceInfo, TextBlock, TextStyle, VideoTextProject } from '@/types/videoText';
+import type { SourceInfo, TextBlock, TextStyle, Track, TrackStyle, VideoTextProject } from '@/types/videoText';
 import { useAutosave, type AutosaveStatus } from './useAutosave';
 import { useRenderJob } from './useRenderJob';
+import { PartStyle } from './PartStyle';
 import { PlacementPicker } from './PlacementPicker';
+import { trackStyleOf } from '@/lib/video-text/fonts';
 import { Timeline } from './Timeline';
 import { TextPreview } from './TextPreview';
 
@@ -131,7 +133,7 @@ export function VideoTextEditor({
   const [nameInput, setNameInput] = useState(initial.name);
   const [playhead, setPlayhead] = useState(0);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const ids = { name: useId(), title: useId(), credits: useId(), lyrics: useId(), lyricsHint: useId(), file: useId(), size: useId() };
+  const ids = { name: useId(), title: useId(), credits: useId(), lyrics: useId(), lyricsHint: useId(), file: useId() };
 
   const job = useRenderJob(initial.id, initial.render);
   const onVersion = useCallback((version: number) => setProject((p) => ({ ...p, version })), []);
@@ -189,6 +191,13 @@ export function VideoTextEditor({
   const setStyle = (patch: Partial<TextStyle>) => {
     markEdited();
     setProject((p) => ({ ...p, style: { ...p.style, ...patch } }));
+  };
+  const setTrackStyle = (track: Track, patch: TrackStyle) => {
+    markEdited();
+    setProject((p) => ({
+      ...p,
+      style: { ...p.style, tracks: { ...p.style.tracks, [track]: { ...p.style.tracks?.[track], ...patch } } },
+    }));
   };
   const onName = (value: string) => {
     setNameInput(value);
@@ -697,54 +706,63 @@ export function VideoTextEditor({
             </p>
           )}
 
-          {/* Style */}
-          <div className="flex min-w-0 flex-wrap items-center gap-x-8 gap-y-3">
-            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-              <label htmlFor={ids.size} className="text-sm font-semibold text-gray-800 dark:text-gray-100">
-                Text size
-              </label>
-              <input
-                id={ids.size}
-                type="range"
-                min={0.75}
-                max={1.5}
-                step={0.05}
-                value={project.style.sizeScale}
-                onChange={(e) => setStyle({ sizeScale: Number(e.target.value) })}
-                className="w-32 min-w-0 max-w-full accent-orange-600"
-              />
-              <span className="w-10 text-xs tabular-nums text-gray-500 dark:text-gray-400">
-                {Math.round(project.style.sizeScale * 100)}%
-              </span>
-            </div>
-            <div role="radiogroup" aria-label="Lyric position" className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-              <span className="text-sm font-semibold text-gray-800 dark:text-gray-100" aria-hidden="true">
-                Lyric position
-              </span>
-              <div className="inline-flex overflow-hidden rounded-md border border-gray-300 dark:border-gray-700">
-                {(['lower', 'middle'] as const).map((pos) => (
-                  <button
-                    key={pos}
-                    type="button"
-                    role="radio"
-                    aria-checked={project.style.lyricPosition === pos}
-                    onClick={() => setStyle({ lyricPosition: pos })}
-                    className={`px-3 py-1.5 text-sm ${
-                      project.style.lyricPosition === pos
-                        ? 'bg-orange-600 text-white'
-                        : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800'
-                    }`}
-                  >
-                    {pos === 'lower' ? 'Lower' : 'Middle'}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <PlacementPicker label="Title" value={project.style.titlePlace} onChange={(p) => setStyle({ titlePlace: p })} />
-            <PlacementPicker
+          {/* Style: each part has its own size, fonts and position */}
+          <div className="min-w-0 space-y-3">
+            <PartStyle
+              label="Title"
+              value={trackStyleOf('title', project.style)}
+              onChange={(patch) => setTrackStyle('title', patch)}
+              position={
+                <PlacementPicker
+                  label="Title"
+                  visibleLabel="Position"
+                  value={project.style.titlePlace}
+                  onChange={(p) => setStyle({ titlePlace: p })}
+                />
+              }
+            />
+            <PartStyle
+              label="Lyrics"
+              value={trackStyleOf('lyric', project.style)}
+              onChange={(patch) => setTrackStyle('lyric', patch)}
+              position={
+                <div role="radiogroup" aria-label="Lyric position" className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="text-sm text-gray-700 dark:text-gray-200" aria-hidden="true">
+                    Position
+                  </span>
+                  <div className="inline-flex overflow-hidden rounded-md border border-gray-300 dark:border-gray-700">
+                    {(['lower', 'middle'] as const).map((pos) => (
+                      <button
+                        key={pos}
+                        type="button"
+                        role="radio"
+                        aria-checked={project.style.lyricPosition === pos}
+                        onClick={() => setStyle({ lyricPosition: pos })}
+                        className={`px-3 py-1.5 text-sm ${
+                          project.style.lyricPosition === pos
+                            ? 'bg-orange-600 text-white'
+                            : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800'
+                        }`}
+                      >
+                        {pos === 'lower' ? 'Lower' : 'Middle'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              }
+            />
+            <PartStyle
               label="Credits"
-              value={project.style.creditsPlace}
-              onChange={(p) => setStyle({ creditsPlace: p })}
+              value={trackStyleOf('credits', project.style)}
+              onChange={(patch) => setTrackStyle('credits', patch)}
+              position={
+                <PlacementPicker
+                  label="Credits"
+                  visibleLabel="Position"
+                  value={project.style.creditsPlace}
+                  onChange={(p) => setStyle({ creditsPlace: p })}
+                />
+              }
             />
           </div>
 

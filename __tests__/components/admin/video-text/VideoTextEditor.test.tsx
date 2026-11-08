@@ -603,3 +603,52 @@ describe('audit fixes: timing survives text edits, uploads can be cancelled, old
     expect(screen.getByTestId('download-older')).toBeInTheDocument();
   });
 });
+
+describe('each part has its own size and fonts', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it('changing the Title size and fonts saves them for the title only', async () => {
+    routes['PATCH /api/admin/video-text/p1'] = () => json({ version: 4 });
+    render(<VideoTextEditor project={project({ titleText: 'Song', blocks: [titleBlock] })} onBack={() => {}} />);
+    const title = within(screen.getByRole('group', { name: 'Title' }));
+    fireEvent.change(title.getByLabelText('Size'), { target: { value: '1.6' } });
+    fireEvent.change(title.getByLabelText('Tamil font'), { target: { value: 'arima' } });
+    fireEvent.change(title.getByLabelText('English font'), { target: { value: 'playfair-display' } });
+    await act(async () => { jest.advanceTimersByTime(800); });
+    const style = bodyOf(calls('PATCH', '/api/admin/video-text/p1').at(-1)![1]).edits.style;
+    expect(style.tracks).toEqual({ title: { size: 1.6, tamilFont: 'arima', englishFont: 'playfair-display' } });
+    expect(style.sizeScale).toBe(1);
+    expect(title.getByText('160%')).toBeInTheDocument();
+  });
+
+  it('an old project shows its saved size on every part, and the default fonts', () => {
+    render(<VideoTextEditor project={project({ style: { sizeScale: 0.75, lyricPosition: 'lower' } })} onBack={() => {}} />);
+    for (const part of ['Title', 'Lyrics', 'Credits']) {
+      const g = within(screen.getByRole('group', { name: part }));
+      expect(g.getByText('75%')).toBeInTheDocument();
+      expect(g.getByLabelText('Tamil font')).toHaveValue('noto-sans-tamil');
+      expect(g.getByLabelText('English font')).toHaveValue('plain');
+    }
+  });
+
+  it('the sample line shows the chosen fonts', () => {
+    render(
+      <VideoTextEditor
+        project={project({ style: { sizeScale: 1, lyricPosition: 'lower', tracks: { credits: { tamilFont: 'kavivanar', englishFont: 'dancing-script' } } } })}
+        onBack={() => {}}
+      />,
+    );
+    const sample = screen.getByTestId('sample-Credits');
+    expect(sample.style.fontFamily).toContain('var(--vt-dancing-script)');
+    expect(sample.style.fontFamily).toContain('var(--font-kavivanar)');
+    expect(sample.style.fontWeight).toBe('400');
+  });
+
+  it('Lyrics keeps its Lower/Middle position inside its own panel', () => {
+    render(<VideoTextEditor project={project()} onBack={() => {}} />);
+    const lyrics = within(screen.getByRole('group', { name: 'Lyrics' }));
+    expect(lyrics.getByRole('radiogroup', { name: 'Lyric position' })).toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'Title' })).getByRole('radiogroup', { name: 'Title position' })).toBeInTheDocument();
+  });
+});

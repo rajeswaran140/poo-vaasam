@@ -62,6 +62,8 @@ it('two start() calls in one tick run one render', async () => {
   expect(posts('/overlays')).toHaveLength(1);
   expect(posts('/render')).toHaveLength(1);
   expect(renderBlockPng).toHaveBeenCalledTimes(1);
+  // The fonts the parts use are loaded first, from the same style the PNGs use.
+  expect(ensureFonts).toHaveBeenCalledWith(expect.objectContaining({ sizeScale: 1 }));
   // F10: the render is claimed for the version the PNGs were drawn from.
   expect(JSON.parse(String(posts('/render')[0][1].body)).version).toBe(7);
 });

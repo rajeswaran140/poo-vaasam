@@ -102,10 +102,14 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref }: Tex
     }
   }, []);
 
-  // Fonts first: a canvas drawn before the Tamil font loads uses a fallback.
+  // Fonts first: a canvas drawn before a font loads uses a fallback. Runs
+  // again when a part's font changes, then redraws in the new font.
+  const fontKey = (['title', 'lyric', 'credits'] as const)
+    .map((t) => `${style.tracks?.[t]?.tamilFont ?? ''}/${style.tracks?.[t]?.englishFont ?? ''}`)
+    .join('|');
   useEffect(() => {
     let cancelled = false;
-    ensureFonts()
+    ensureFonts(latest.current.style)
       .catch(() => undefined) // Make video reports a missing font; the preview just draws.
       .then(() => {
         if (cancelled) return;
@@ -115,7 +119,7 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref }: Tex
     return () => {
       cancelled = true;
     };
-  }, [paint]);
+  }, [paint, fontKey]);
 
   // Text or style changed: redraw at the current time.
   useEffect(() => {

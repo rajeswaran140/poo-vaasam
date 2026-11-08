@@ -162,6 +162,23 @@ describe('PATCH', () => {
     expect((await PATCH(req({ edits: edits(), version: 3 }, 'PATCH'), ctx)).status).toBe(200);
     expect(repo.saveEdits.mock.calls[0][1].style).toEqual({ sizeScale: 1, lyricPosition: 'lower' });
   });
+  it('saves each part\'s own size and fonts', async () => {
+    repo.saveEdits.mockResolvedValue({ ok: true, version: 4 });
+    const style = {
+      sizeScale: 1,
+      lyricPosition: 'lower',
+      tracks: { title: { size: 1.8, tamilFont: 'arima', englishFont: 'playfair-display' }, credits: { size: 0.6, tamilFont: 'kavivanar' } },
+    };
+    expect((await PATCH(req({ edits: { ...edits(), style }, version: 3 }, 'PATCH'), ctx)).status).toBe(200);
+    expect(repo.saveEdits.mock.calls[0][1].style).toEqual(style);
+  });
+  it('400s an unknown font or a size outside 50-200%', async () => {
+    for (const tracks of [{ title: { tamilFont: 'comic-sans' } }, { lyric: { englishFont: 'arial' } }, { credits: { size: 2.5 } }, { title: { size: 0.4 } }]) {
+      const bad = { ...edits(), style: { sizeScale: 1, lyricPosition: 'lower', tracks } };
+      expect((await PATCH(req({ edits: bad, version: 3 }, 'PATCH'), ctx)).status).toBe(400);
+    }
+    expect(repo.saveEdits).not.toHaveBeenCalled();
+  });
   it('400s a placement that is not one of the nine', async () => {
     const bad = { ...edits(), style: { sizeScale: 1, lyricPosition: 'lower', titlePlace: { v: 'up', h: 'left' } } };
     expect((await PATCH(req({ edits: bad, version: 3 }, 'PATCH'), ctx)).status).toBe(400);

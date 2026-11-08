@@ -4,6 +4,8 @@ import {
   wrapLines,
   layoutBlock,
   placementFor,
+  fontStackFor,
+  drawBlock,
   resolveFontFamily,
   ensureFonts,
   renderBlockPng,
@@ -130,7 +132,7 @@ describe('renderBlockPng', () => {
     const blob = await renderBlockPng(block('lyric', 'hi'), { width: 1280, height: 720 }, STYLE);
     expect(blob).toBeInstanceOf(Blob);
     expect(sizes).toEqual([[1280, 720]]);
-    expect(order[0]).toBe('load:700 32px ' + FONT_FAMILY);
+    expect(order[0]).toBe('load:700 32px "Noto Sans Tamil"');
     expect(order.indexOf('getContext')).toBeGreaterThan(0);
     expect(FONT_FAMILY).toContain('Noto Sans Tamil');
   });
@@ -237,4 +239,102 @@ describe('title and credits placement', () => {
     expect(l.x).toBeCloseTo(tall.width * SAFE_MARGIN + l.fontPx * 0.06, 6);
     expect(l.yBaseline.at(-1)! + (l.fontPx * 1.25) / 2).toBeCloseTo(tall.height * (1 - SAFE_MARGIN), 6);
   });
+});
+
+describe('per-part size and fonts', () => {
+  const VARS: Record<string, string> = {
+    '--font-tamil': "'__noto_sans_tamil'",
+    '--vt-arima': "'__arima'",
+    '--font-kavivanar': "'__kavivanar'",
+    '--vt-playfair-display': "'__playfair'",
+    '--vt-montserrat': "'__montserrat'",
+  };
+  let wrap: HTMLDivElement;
+  beforeEach(() => {
+    wrap = document.createElement('div');
+    wrap.setAttribute('data-vt-fonts', '');
+    for (const [k, v] of Object.entries(VARS)) wrap.style.setProperty(k, v);
+    document.body.appendChild(wrap);
+  });
+  afterEach(() => wrap.remove());
+  const withTracks = (tracks: TextStyle['tracks']): TextStyle => ({ ...STYLE, tracks });
+
+  it('a project saved before fonts existed draws with the old stack and size', () => {
+    expect(fontStackFor('title', STYLE)).toEqual({ stack: `'__noto_sans_tamil', "Noto Sans", sans-serif`, weight: 700 });
+    const before = layoutBlock(fakeCtx(), block('title', 'Hi'), FRAME, STYLE);
+    expect(before.fontPx).toBeCloseTo(FRAME.height * 0.075, 6);
+  });
+
+  it('English font first, then the Tamil font, for each part on its own', () => {
+    const st = withTracks({ title: { tamilFont: 'arima', englishFont: 'playfair-display' } });
+    expect(fontStackFor('title', st).stack).toBe(`'__playfair', '__arima', "Noto Sans", sans-serif`);
+    // Other parts keep the default.
+    expect(fontStackFor('lyric', st).stack).toBe(`'__noto_sans_tamil', "Noto Sans", sans-serif`);
+  });
+
+  it('Kavivanar (no bold) draws at weight 400', () => {
+    const st = withTracks({ credits: { tamilFont: 'kavivanar' } });
+    expect(fontStackFor('credits', st)).toEqual({ stack: `'__kavivanar', "Noto Sans", sans-serif`, weight: 400 });
+  });
+
+  it('each part has its own size; the old project-wide size is the fallback', () => {
+    const st: TextStyle = { ...STYLE, sizeScale: 0.9, tracks: { title: { size: 2 }, credits: { size: 0.5 } } };
+    expect(layoutBlock(fakeCtx(), block('title', 'Hi'), FRAME, st).fontPx).toBeCloseTo(FRAME.height * 0.075 * 2, 6);
+    expect(layoutBlock(fakeCtx(), block('credits', 'Hi'), FRAME, st).fontPx).toBeCloseTo(FRAME.height * 0.04 * 0.5, 6);
+    expect(layoutBlock(fakeCtx(), block('lyric', 'Hi'), FRAME, st).fontPx).toBeCloseTo(FRAME.height * 0.05 * 0.9, 6);
+  });
+
+  it('the canvas is drawn with the part\'s own font string (what the PNG and preview both use)', () => {
+    const fonts: string[] = [];
+    const ctx = {
+      ...fakeCtx(),
+      save() {}, restore() {}, strokeText() {}, fillText() {},
+      set font(f: string) { fonts.push(f); }, get font() { return fonts.at(-1) ?? ''; },
+    } as unknown as CanvasRenderingContext2D;
+    drawBlock(ctx, block('title', 'Hi'), FRAME, withTracks({ title: { tamilFont: 'arima', englishFont: 'montserrat', size: 1.5 } }));
+    expect(fonts.at(-1)).toBe(`700 ${FRAME.height * 0.075 * 1.5}px '__montserrat', '__arima', "Noto Sans", sans-serif`);
+  });
+
+  it('ensureFonts loads each chosen family on its own, with a Tamil or Latin sample', async () => {
+    const load = jest.fn(async () => []);
+    const check = jest.fn(() => true);
+    Object.defineProperty(document, 'fonts', { configurable: true, value: { load, check } });
+    await ensureFonts(withTracks({ title: { tamilFont: 'arima', englishFont: 'playfair-display' }, credits: { tamilFont: 'kavivanar' } }));
+    const calls = load.mock.calls.map((c) => (c as unknown as [string, string]).join(' | '));
+    expect(calls).toEqual(expect.arrayContaining([
+      "700 32px '__arima' | அ",
+      "700 32px '__playfair' | Ag",
+      "400 32px '__kavivanar' | அ",
+      "700 32px '__noto_sans_tamil' | அ",
+    ]));
+    expect(calls).toHaveLength(4); // each family once
+  });
+
+  it('a chosen font that failed to load stops Make video with its name', async () => {
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: { load: jest.fn(async () => []), check: (f: string) => !f.includes('__playfair') },
+    });
+    await expect(ensureFonts(withTracks({ lyric: { englishFont: 'playfair-display' } }))).rejects.toThrow(
+      'The English font (Playfair Display) did not load — reload the page and try again.',
+    );
+  });
+
+  it('a chosen font not defined on the page is an error, never a silent fallback', async () => {
+    Object.defineProperty(document, 'fonts', { configurable: true, value: { load: jest.fn(async () => []), check: () => true } });
+    await expect(ensureFonts(withTracks({ title: { tamilFont: 'mukta-malar' } }))).rejects.toThrow(
+      'The Tamil font (Mukta Malar) did not load — reload the page and try again.',
+    );
+  });
+});
+
+it('ensureFonts checks only the real face, not next/font\'s Arial-based fallback (missing on Linux/Android)', async () => {
+  document.documentElement.style.setProperty('--font-tamil', "'notoSansTamil', 'notoSansTamil Fallback'");
+  const load = jest.fn(async () => []);
+  // The browser reports false for any list that includes the errored fallback face.
+  const check = jest.fn((f: string) => !f.includes('Fallback'));
+  Object.defineProperty(document, 'fonts', { configurable: true, value: { load, check } });
+  await expect(ensureFonts()).resolves.toBeUndefined();
+  expect(check).toHaveBeenCalledWith("700 32px 'notoSansTamil'", 'அ');
+  document.documentElement.style.removeProperty('--font-tamil');
 });
