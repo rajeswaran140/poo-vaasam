@@ -332,3 +332,15 @@ describe('whole song or part: stretching title and credits', () => {
     expect(screen.queryByRole('button', { name: 'Whole video' })).toBeNull();
   });
 });
+
+it('a tap that wobbles under 4 px does not move the block; 4 px or more does', () => {
+  const { onChange } = setupLong([titleB()]);
+  const b = screen.getByRole('slider', { name: 'Title: My Song' });
+  fireEvent.pointerDown(b, { button: 0, pointerId: 1, clientX: 100 });
+  fireEvent.pointerMove(b, { pointerId: 1, clientX: 103 });
+  fireEvent.pointerMove(b, { pointerId: 1, clientX: 97 });
+  expect(onChange).not.toHaveBeenCalled();
+  fireEvent.pointerMove(b, { pointerId: 1, clientX: 100 + 10 * (600 / 344) });
+  fireEvent.pointerUp(b, { pointerId: 1 });
+  expect(moved(onChange, 'title')).toMatchObject({ startSec: 10, endSec: 15 });
+});

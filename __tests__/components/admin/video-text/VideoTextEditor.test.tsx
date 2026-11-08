@@ -458,7 +458,7 @@ it('F6: says how many lines do not fit in a very short video', async () => {
   const lines = Array.from({ length: 20 }, (_, i) => `l${i}`).join('\n');
   fireEvent.change(screen.getByLabelText('Lyrics'), { target: { value: lines } });
   expect(screen.getAllByRole('slider', { name: /^Lyric \d+:/ })).toHaveLength(10);
-  expect(screen.getByText("10 lines don't fit in this video — it is too short to show each for half a second.")).toBeInTheDocument();
+  expect(screen.getByText(/^10 lines have no room on the timeline\. Make a gap of at least half a second where they go/)).toBeInTheDocument();
   await waitFor(() => expect(calls('GET', '/api/admin/video-text/p1/source')).toHaveLength(1));
 });
 
@@ -516,3 +516,90 @@ function lastRenderId(): string | undefined {
   const c = calls('POST', '/api/admin/video-text/p1/render').at(-1);
   return c ? bodyOf(c[1]).renderId : undefined;
 }
+
+describe('audit fixes: timing survives text edits, uploads can be cancelled, older downloads are flagged', () => {
+  const hand = [
+    { id: 'lyric-0', track: 'lyric' as const, text: 'one', startSec: 10, endSec: 14 },
+    { id: 'lyric-1', track: 'lyric' as const, text: 'two', startSec: 20, endSec: 26 },
+    { id: 'lyric-2', track: 'lyric' as const, text: 'three', startSec: 30, endSec: 33 },
+  ];
+
+  it('deleting a lyric line leaves every other line at its hand-set time', () => {
+    render(<VideoTextEditor project={project({ lyricsText: 'one\ntwo\nthree', blocks: hand })} onBack={() => {}} />);
+    fireEvent.change(screen.getByLabelText('Lyrics'), { target: { value: 'one\nthree' } });
+    expect(screen.getByRole('slider', { name: 'Lyric 1: one' })).toHaveAttribute('aria-valuetext', '0:10.0 to 0:14.0');
+    expect(screen.getByRole('slider', { name: 'Lyric 2: three' })).toHaveAttribute('aria-valuetext', '0:30.0 to 0:33.0');
+  });
+
+  it('clearing a line and typing it again puts it back at its old time', () => {
+    render(<VideoTextEditor project={project({ lyricsText: 'one\ntwo\nthree', blocks: hand })} onBack={() => {}} />);
+    const box = screen.getByLabelText('Lyrics');
+    fireEvent.change(box, { target: { value: 'one\n\nthree' } });
+    fireEvent.change(box, { target: { value: 'one\nt\nthree' } });
+    expect(screen.getByRole('slider', { name: 'Lyric 2: t' })).toHaveAttribute('aria-valuetext', '0:20.0 to 0:26.0');
+  });
+
+  it('a cleared title typed again keeps its whole-video timing', () => {
+    const whole = { ...titleBlock, startSec: 0, endSec: 344 };
+    render(<VideoTextEditor project={project({ titleText: 'Song', blocks: [whole] })} onBack={() => {}} />);
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'S' } });
+    expect(screen.getByRole('slider', { name: 'Title: S' })).toHaveAttribute('aria-valuetext', '0:00.0 to 5:44.0');
+  });
+
+  it('while a new video uploads: Cancel upload stops it, the timeline is locked, and leaving asks first', async () => {
+    routes['PATCH /api/admin/video-text/p1'] = () => json({ version: 4 });
+    routes['POST /api/admin/video-text/p1/upload'] = () => json({ url: 'https://s3', fields: {}, key: 'audio/mastering/video-text/p1/source/n.mp4' });
+    let signal: AbortSignal | undefined;
+    (putToS3 as jest.Mock).mockImplementation(
+      (_u: string, _f: unknown, _file: File, _p: unknown, s: AbortSignal) =>
+        new Promise((_, reject) => {
+          signal = s;
+          s.addEventListener('abort', () => reject(new Error('Upload cancelled.')));
+        }),
+    );
+    const onBack = jest.fn();
+    const confirm = jest.spyOn(window, 'confirm').mockReturnValue(false);
+    render(<VideoTextEditor project={project({ titleText: 'Song', blocks: [titleBlock] })} onBack={onBack} />);
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(/Choose a video/i), { target: { files: [new File(['x'], 'n.mp4', { type: 'video/mp4' })] } });
+    });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel upload' })).toBeInTheDocument());
+    expect(screen.getByTestId('timeline-locked')).toBeInTheDocument();
+    expect(screen.getByTestId('timeline-wrap')).toHaveAttribute('inert');
+
+    // Leaving mid-upload asks; saying no stays.
+    fireEvent.click(screen.getByRole('button', { name: /All projects/ }));
+    expect(confirm).toHaveBeenCalledWith('The video is still uploading. Leave and stop the upload?');
+    expect(onBack).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel upload' }));
+    expect(signal?.aborted).toBe(true);
+    expect(await screen.findByText('Upload cancelled. Choose the video again to upload it.')).toBeInTheDocument();
+    expect(screen.queryByTestId('timeline-locked')).toBeNull();
+    confirm.mockRestore();
+  });
+
+  it('Download says it is the older video once something changes after the render', () => {
+    const doneRender: RenderState = {
+      ...idleRender, renderId: 'r1', status: 'done', outputKey: 'audio/mastering/video-text/p1/render-r1/output.mp4',
+      outputExpiresAt: '2999-12-08T00:00:00.000Z', updatedAt: '2026-11-08T00:00:00.000Z',
+    };
+    render(<VideoTextEditor project={project({ titleText: 'Song', blocks: [titleBlock], render: doneRender })} onBack={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument();
+    expect(screen.queryByTestId('download-older')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Song 2' } });
+    expect(screen.getByTestId('download-older')).toHaveTextContent(
+      'This is the video made before your latest changes. Press Make video to include them.',
+    );
+  });
+
+  it('Download is flagged on load when the project was saved after the render', () => {
+    const doneRender: RenderState = {
+      ...idleRender, renderId: 'r1', status: 'done', outputKey: 'k',
+      outputExpiresAt: '2999-12-08T00:00:00.000Z', updatedAt: '2026-11-08T00:00:00.000Z',
+    };
+    render(<VideoTextEditor project={project({ render: doneRender, updatedAt: '2026-11-08T01:00:00.000Z' })} onBack={() => {}} />);
+    expect(screen.getByTestId('download-older')).toBeInTheDocument();
+  });
+});

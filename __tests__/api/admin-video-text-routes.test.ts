@@ -203,6 +203,14 @@ describe('source', () => {
     expect(res.status).toBe(400);
     expect(lambdaSend).not.toHaveBeenCalled();
   });
+  it('dates the 30-day deletion from when S3 stored the file, not from the check', async () => {
+    lambdaSend.mockResolvedValue(probePayload({ ok: true, info: { ...info, storedAt: '2026-11-01T10:00:00.000Z' } }));
+    repo.setSource.mockResolvedValue({ ok: true, version: 4, durationSec: 60 });
+    const body = await (await sourcePOST(req({ key }), ctx)).json();
+    expect(body.source.uploadedAt).toBe('2026-11-01T10:00:00.000Z');
+    expect(body.source.expiresAt).toBe('2026-12-01T10:00:00.000Z');
+    expect(body.source).not.toHaveProperty('storedAt');
+  });
   it('probes, stores and returns version', async () => {
     lambdaSend.mockResolvedValue(probePayload({ ok: true, info }));
     repo.setSource.mockResolvedValue({ ok: true, version: 4, durationSec: 60 });

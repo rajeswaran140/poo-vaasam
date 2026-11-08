@@ -25,6 +25,8 @@ import type { TextBlock, Track } from '@/types/videoText';
 const MAX_PX_PER_SEC = 40;
 /** Width of the grab handles a selected thin block gets outside its edges. */
 const OUTSIDE_HANDLE_PX = 10;
+/** Pointer travel before a press on a block becomes a drag. */
+const DRAG_DEAD_ZONE_PX = 4;
 const FALLBACK_WIDTH = 600;
 const LABEL_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300];
 
@@ -162,6 +164,9 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek }:
   const onDragMove = (e: PointerEvent<HTMLElement>) => {
     const d = drag.current;
     if (!d || d.pointerId !== e.pointerId) return;
+    // A tap that wobbles a few px is a tap, not a drag (at fit zoom on a
+    // phone, 3 px can be several seconds).
+    if (!d.base && Math.abs(e.clientX - d.x) < DRAG_DEAD_ZONE_PX) return;
     if (!d.base) {
       const now = latestBlocks.current.find((b) => b.id === d.id);
       if (!now) return;

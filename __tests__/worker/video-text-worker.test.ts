@@ -26,6 +26,12 @@ const getSignedUrl = jest.fn();
 const mockTmpRoot = mkdtempSync(join(jest.requireActual<typeof import('node:os')>('node:os').tmpdir(), 'video-text-worker-test-'));
 jest.mock('node:os', () => ({ ...jest.requireActual('node:os'), tmpdir: () => mockTmpRoot }));
 jest.mock('node:child_process', () => ({ spawnSync: (...a: unknown[]) => spawnSync(...a) }));
+// Free disk space: real by default; a test can pretend the disk is nearly full.
+const mockStatfs = jest.fn();
+jest.mock('node:fs', () => {
+  const actual = jest.requireActual('node:fs');
+  return { ...actual, statfsSync: (...a: unknown[]) => mockStatfs(...a) ?? actual.statfsSync(...a) };
+});
 jest.mock('@aws-sdk/client-s3', () => {
   const cmd = (kind: string) => class { kind = kind; constructor(public input: Record<string, unknown>) {} };
   return {
@@ -70,8 +76,6 @@ const VFR_MESSAGE =
   'This video has a variable frame rate (typical of phone recordings). Export it at a constant frame rate and upload again.';
 const AUDIO_CHANGED = 'the audio changed during the render — nothing was saved';
 const MISSING_PNG = 'some text images did not upload — press Make video again';
-const FEW_KEYFRAMES =
-  'This video has too few keyframes to split — export it again with a keyframe at least every 10 seconds.';
 const OUT_OF_TIME = 'the render ran out of time — try again; if it happens again, use a shorter video';
 const START_OFFSET = "This video's picture does not start at 0:00 — export it again from your editor and upload it.";
 const HDR = 'This video is HDR — export it as SDR (Rec. 709) and upload it again.';
@@ -215,6 +219,18 @@ async function fakeS3(cmd: { kind: string; input: Record<string, unknown> }, opt
 
 async function fakeDdb(cmd: { kind: string; input: Record<string, unknown> }) {
   if (cmd.kind === 'get') return { Item: world.project ?? undefined };
+  if (cmd.kind === 'update' && world.project) {
+    // Evaluate the status part of the condition, and keep the stored status in step.
+    const cond = String(cmd.input.ConditionExpression ?? '');
+    const values = cmd.input.ExpressionAttributeValues as Record<string, unknown>;
+    const render = world.project.render as { status: string };
+    if (/#render\.#st = :st/.test(cond) && render.status !== values[':st']) throw Object.assign(new Error('cond'), { name: 'ConditionalCheckFailedException' });
+    if (/#render\.#st <> :st/.test(cond) && render.status === values[':st']) throw Object.assign(new Error('cond'), { name: 'ConditionalCheckFailedException' });
+    const names = cmd.input.ExpressionAttributeNames as Record<string, string>;
+    for (const m of String(cmd.input.UpdateExpression).matchAll(/#render\.#(\w+) = (:\w+)/g)) {
+      if (names[`#${m[1]}`] === 'status') render.status = values[m[2]] as string;
+    }
+  }
   return {};
 }
 
@@ -296,6 +312,13 @@ describe('videoTextProbe', () => {
     expect(s3Send.mock.calls.filter((c) => c[0].kind === 'get')).toHaveLength(0);
   });
 
+  it('reports when S3 stored the file, so the deletion date counts from the upload', async () => {
+    withHeader(header());
+    s3Send.mockImplementation(async (cmd: { kind: string; input: Record<string, unknown> }) =>
+      cmd.kind === 'head' ? { LastModified: new Date('2026-11-01T10:00:00Z') } : fakeS3(cmd as never));
+    expect(await probe()).toMatchObject({ ok: true, info: { storedAt: '2026-11-01T10:00:00.000Z' } });
+  });
+
   it('F1: a 2:08.14 video is reported as 128.14, not 128.13', async () => {
     withHeader(header({ duration: '00:02:08.14' }));
     expect(await probe()).toMatchObject({ ok: true, info: { durationSec: 128.14 } });
@@ -351,6 +374,23 @@ describe('videoTextProbe', () => {
     expect(await probe()).toEqual({ ok: false, message: HDR });
     withHeader(header({ video: 'h264 (High), yuv420p(tv, bt709, progressive), 1920x1080, 25 fps, 25 tbr, 12800 tbn' }));
     expect(await probe()).toMatchObject({ ok: true });
+  });
+
+  it('refuses an odd frame size (x264 cannot encode it), with what to do', async () => {
+    withHeader(header({ video: 'h264 (High), yuv444p(progressive), 321x241, 25 fps, 25 tbr, 12800 tbn' }));
+    expect(await probe()).toEqual({
+      ok: false,
+      message: 'This video is 321×241; its width and height must be even numbers. Export it at a standard size (for example 1920×1080) and upload again.',
+    });
+  });
+
+  it('refuses at upload a video too heavy for the chunk budget (4K at 60 fps)', async () => {
+    withHeader(header({ video: 'h264 (High), yuv420p(progressive), 3840x2160, 60 fps, 60 tbr, 15360 tbn', duration: '00:02:00.00' }));
+    world.videoFirstPts = 0;
+    expect(await probe()).toEqual({
+      ok: false,
+      message: 'This video is too heavy to render here (3840×2160 at 60 fps). Export it at 1440p and 30 fps or less, and upload again.',
+    });
   });
 
   it('R14: refuses a rotated video, whose header size is not the size it plays at', async () => {
@@ -426,11 +466,46 @@ describe('videoTextRender', () => {
   it('every patch is conditional on the renderId from the event', async () => {
     await render();
     expect(patches().length).toBeGreaterThan(3);
-    for (const p of patches()) {
+    const all = patches();
+    // The first patch claims the render: only while it is still queued.
+    expect(all[0].condition).toBe('#render.#renderId = :renderId AND #render.#st = :st');
+    for (const p of all) {
       expect(p.renderId).toBe(RID);
-      expect(p.condition).toBe('#render.#renderId = :renderId');
+      expect(String(p.condition).startsWith('#render.#renderId = :renderId')).toBe(true);
       expect(p.key).toEqual({ PK: `VIDEOTEXT#${PID}`, SK: 'METADATA' });
     }
+  });
+
+  it('refuses to join when the scratch disk cannot hold the finished video, with a clear message', async () => {
+    mockStatfs.mockReturnValue({ bavail: 1, bsize: 4096 });
+    await render();
+    expect(lastError()).toBe(
+      'the finished video is too large to put together here — export the video at a lower resolution, or use a shorter one',
+    );
+    expect(world.ffArgs.some((a) => a.includes('concat'))).toBe(false);
+    mockStatfs.mockReset();
+  });
+
+  it('a duplicate delivery of a render already under way exits without touching it', async () => {
+    (world.project!.render as { status: string }).status = 'encoding';
+    world.store.set(segmentKey(PID, RID, 0), Buffer.from('SEG')); // the running render's file
+    const res = await render();
+    expect(res).toMatchObject({ ok: false, message: 'this render was already started' });
+    expect(world.invoked).toHaveLength(0);
+    // Only the refused claim was attempted; the stored status is untouched.
+    expect(patches()).toHaveLength(1);
+    expect((world.project!.render as { status: string }).status).toBe('encoding');
+    // It must not delete the running render's files.
+    expect(keysLeft()).toContain(segmentKey(PID, RID, 0));
+  });
+
+  it('a failure never overwrites a render that is already done', async () => {
+    world.chunkReply = () => {
+      (world.project!.render as { status: string }).status = 'done'; // another delivery finished meanwhile
+      return { ok: false, message: 'boom' };
+    };
+    await render();
+    expect((world.project!.render as { status: string }).status).toBe('done');
   });
 
   it('fans out one chunk per segment with that segment\'s overlays, block crossing a cut in both', async () => {
@@ -524,11 +599,24 @@ describe('videoTextRender', () => {
     expect(keysLeft()).toEqual([]);
   });
 
-  it('R8: a segment longer than 2.5 × the target is refused', async () => {
-    world.csv = 'segment-0000.mp4,0.000000,51.000000\n';
+  it('R8: a segment longer than this video\'s chunk budget is refused, naming its keyframe interval', async () => {
+    // 1920×1080 at 25 fps: one chunk can take up to 60 s, target 20 s → keyframes every 40 s.
+    world.csv = 'segment-0000.mp4,0.000000,61.000000\n';
     await render();
-    expect(lastError()).toBe(FEW_KEYFRAMES);
+    expect(lastError()).toBe('This video has too few keyframes to split — export it again with a keyframe at least every 40 seconds.');
     expect(lambdaSend).not.toHaveBeenCalled();
+  });
+
+  it('R8: at 1080p25 a 51 s segment fits the budget and renders', async () => {
+    world.csv = 'segment-0000.mp4,0.000000,45.000000\n';
+    await render();
+    expect(statuses()).toContain('done');
+  });
+
+  it('segments at this video\'s own target length (20 s at 1080p25)', async () => {
+    await render();
+    const seg = world.ffArgs.find((a) => a.includes('segment'))!;
+    expect(seg[seg.indexOf('-segment_time') + 1]).toBe('20');
   });
 
   it('R13 backstop: a source whose picture starts late is refused before segmenting, nothing shifted', async () => {

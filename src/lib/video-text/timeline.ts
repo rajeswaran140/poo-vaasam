@@ -260,63 +260,188 @@ export function clampToDuration(
   return { blocks: out, moved };
 }
 
+/** Index pairs [oldIndex, newIndex] of a longest common subsequence of equal strings, ascending. */
+function lcsPairs(a: string[], b: string[]): Array<[number, number]> {
+  const n = a.length;
+  const m = b.length;
+  // dp[i][j] = LCS length of a[i..] and b[j..]
+  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const out: Array<[number, number]> = [];
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      out.push([i, j]);
+      i++;
+      j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) i++;
+    else j++;
+  }
+  return out;
+}
+
+type Slot = { kind: 'kept'; block: TextBlock } | { kind: 'new'; text: string };
+
 /**
- * Re-key blocks to edited text. Within a track, line i keeps block i's
- * timing (even when its text changed). Extra lines go into the free gap after
- * the previous block; surplus blocks are dropped. If a track has no room for
- * its new lines it is re-tiled evenly.
+ * Lyric lines → blocks, keeping hand-made timing. Lines whose text is
+ * unchanged keep their block (matched by text, so inserting or deleting a line
+ * never shifts the others); an edited line keeps the slot of the line it
+ * replaced; a deleted line leaves its gap. New lines fill the free gap where
+ * they were inserted, or share the previous (else next) block's time when
+ * there is no gap. A line with no room anywhere near is left unplaced
+ * (unplacedLineCount reports it) — the track is never re-tiled.
+ */
+function syncLyrics(
+  existing: TextBlock[],
+  want: string[],
+  makeId: () => string,
+  durationSec: number,
+  removed: { startSec: number; endSec: number }[] = [],
+): TextBlock[] {
+  const pairs = lcsPairs(
+    existing.map((b) => b.text),
+    want,
+  );
+  const slots: Slot[] = [];
+  let oi = 0;
+  let ni = 0;
+  for (const [ao, an] of [...pairs, [existing.length, want.length] as [number, number]]) {
+    // Unmatched run: old [oi, ao), new [ni, an). Pair positionally = edits.
+    const oldRun = existing.slice(oi, ao);
+    const newRun = want.slice(ni, an);
+    newRun.forEach((text, k) =>
+      slots.push(k < oldRun.length ? { kind: 'kept', block: { ...oldRun[k], text } } : { kind: 'new', text }),
+    );
+    if (ao < existing.length) slots.push({ kind: 'kept', block: { ...existing[ao], text: want[an] } });
+    oi = ao + 1;
+    ni = an + 1;
+  }
+
+  const avg = existing.length ? existing.reduce((s, b) => s + (b.endSec - b.startSec), 0) / existing.length : 3;
+  const maxLen = Math.max(5, avg);
+  const out: (TextBlock | null)[] = slots.map((s) => (s.kind === 'kept' ? s.block : null));
+
+  for (let i = 0; i < slots.length; ) {
+    if (slots[i].kind === 'kept') {
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j < slots.length && slots[j].kind === 'new') j++;
+    const k = j - i;
+    const prevIdx = (() => {
+      for (let x = i - 1; x >= 0; x--) if (out[x]) return x;
+      return -1;
+    })();
+    const nextIdx = (() => {
+      for (let x = j; x < out.length; x++) if (out[x]) return x;
+      return -1;
+    })();
+    const prev = prevIdx >= 0 ? out[prevIdx]! : null;
+    const next = nextIdx >= 0 ? out[nextIdx]! : null;
+    const lo = prev ? prev.endSec : 0;
+    const hi = next ? next.startSec : durationSec;
+    const place = (from: number, each: number) => {
+      for (let n = 0; n < k; n++) {
+        const st = r2(from + each * n);
+        const en = n === k - 1 && from + each * k >= hi - EPS ? r2(hi) : r2(from + each * (n + 1));
+        out[i + n] = { id: makeId(), track: 'lyric', text: (slots[i + n] as { text: string }).text, startSec: st, endSec: en };
+      }
+    };
+    const gap = hi - lo;
+    // A single line typed back into a gap a removed line left: its old slot.
+    const ghost =
+      k === 1 ? [...removed].reverse().find((r) => r.startSec >= lo - EPS && r.endSec <= hi + EPS) : undefined;
+    if (ghost) {
+      out[i] = { id: makeId(), track: 'lyric', text: (slots[i] as { text: string }).text, startSec: ghost.startSec, endSec: ghost.endSec };
+    } else if (gap / k >= MIN_BLOCK_SEC) {
+      place(lo, Math.min(gap / k, maxLen));
+    } else if (prev && (hi - prev.startSec) / (k + 1) >= MIN_BLOCK_SEC) {
+      // Share the previous block's time (and the gap) evenly with it.
+      const each = (hi - prev.startSec) / (k + 1);
+      out[prevIdx] = { ...prev, endSec: r2(prev.startSec + each) };
+      place(prev.startSec + each, each);
+    } else if (next && (next.endSec - lo) / (k + 1) >= MIN_BLOCK_SEC) {
+      // No room before: share the next block's time; it keeps its end.
+      const each = (next.endSec - lo) / (k + 1);
+      const nextStart = r2(lo + each * k);
+      // place() stops at hi = old next start; use the new boundary instead.
+      for (let n = 0; n < k; n++) {
+        out[i + n] = {
+          id: makeId(),
+          track: 'lyric',
+          text: (slots[i + n] as { text: string }).text,
+          startSec: r2(lo + each * n),
+          endSec: n === k - 1 ? nextStart : r2(lo + each * (n + 1)),
+        };
+      }
+      out[nextIdx] = { ...next, startSec: nextStart };
+    }
+    // else: no room — these lines stay unplaced.
+    i = j;
+  }
+  return out.filter((b): b is TextBlock => b !== null);
+}
+
+export type RememberedTimes = Partial<Record<'title' | 'credits', { startSec: number; endSec: number }>> & {
+  /** Slots of lyric lines removed recently (oldest first); a line typed back into that gap reuses one. */
+  lyrics?: { startSec: number; endSec: number }[];
+};
+
+/**
+ * Re-key blocks to edited text without disturbing hand-made timing.
+ * - Lyrics: see syncLyrics. The first lines pasted into an empty track are
+ *   spread evenly between the title and the credits, as on a fresh project.
+ * - Title / credits: an existing block keeps its times. A block that was
+ *   cleared and is typed again comes back at `remembered` times when given
+ *   (the editor remembers them), else at the default spot.
  */
 export function syncTextToBlocks(
   blocks: TextBlock[],
   texts: { titleText: string; creditsText: string; lyricsText: string },
   durationSec: number,
+  remembered: RememberedTimes = {},
 ): TextBlock[] {
   if (tooShort(durationSec)) return [];
-  const lines: Record<Track, string[]> = {
-    title: singleLine(texts.titleText),
-    lyric: lyricLines(texts.lyricsText),
-    credits: singleLine(texts.creditsText),
-  };
+  const title = singleLine(texts.titleText)[0];
+  const credits = singleLine(texts.creditsText)[0];
+  const lines = lyricLines(texts.lyricsText);
   const out: TextBlock[] = [];
 
-  for (const track of TRACK_ORDER) {
-    const existing = trackBlocks(blocks, track);
-    const want = lines[track];
-    const used = new Set(existing.map((b) => b.id));
-    const made: TextBlock[] = [];
-    let needRetile = false;
-
-    want.forEach((text, i) => {
-      const old = existing[i];
-      if (old) {
-        made.push({ ...old, text });
-        return;
-      }
-      if (track === 'title') return void made.push(titleBlock(text, durationSec));
-      if (track === 'credits') return void made.push(creditsBlock(text, durationSec));
-      let id = `lyric-${i}`;
-      for (let n = i; used.has(id); n++) id = `lyric-${n + 1}`;
-      used.add(id);
-      const prevEnd = made.length ? made[made.length - 1].endSec : 0;
-      const avg = existing.length
-        ? existing.reduce((s, b) => s + (b.endSec - b.startSec), 0) / existing.length
-        : 3;
-      const len = Math.max(MIN_BLOCK_SEC, Math.min(avg, 5));
-      const end = r2(Math.min(prevEnd + len, durationSec));
-      if (end - prevEnd < MIN_BLOCK_SEC - EPS) needRetile = true;
-      made.push({ id, track, text, startSec: r2(prevEnd), endSec: end });
-    });
-
-    if (needRetile && track === 'lyric') {
-      const [from, to] = lyricRegion(lines.title.length > 0, lines.credits.length > 0, durationSec);
-      // A video too short for every line keeps the lines that fit (unplacedLineCount says how many do not).
-      const placed = slots(made.length, from, to, durationSec);
-      made.splice(placed.length);
-      placed.forEach(([s, e], i) => {
-        made[i] = { ...made[i], startSec: s, endSec: e };
-      });
+  const edge = (track: 'title' | 'credits', text: string | undefined) => {
+    if (text === undefined) return;
+    const old = trackBlocks(blocks, track)[0];
+    if (old) return void out.push({ ...old, text });
+    const mem = remembered[track];
+    if (mem && mem.startSec >= 0 && mem.endSec <= durationSec + EPS && mem.endSec - mem.startSec >= MIN_BLOCK_SEC - EPS) {
+      return void out.push({ id: track, track, text, startSec: mem.startSec, endSec: Math.min(mem.endSec, r2(durationSec)) });
     }
-    out.push(...made);
+    out.push(track === 'title' ? titleBlock(text, durationSec) : creditsBlock(text, durationSec));
+  };
+  edge('title', title);
+  edge('credits', credits);
+
+  const existing = trackBlocks(blocks, 'lyric');
+  if (existing.length === 0) {
+    const [from, to] = lyricRegion(title !== undefined, credits !== undefined, durationSec);
+    slots(lines.length, from, to, durationSec).forEach(([s, e], i) =>
+      out.push({ id: `lyric-${i}`, track: 'lyric', text: lines[i], startSec: s, endSec: e }),
+    );
+  } else {
+    const used = new Set(blocks.map((b) => b.id));
+    let n = 0;
+    const makeId = () => {
+      let id = `lyric-${n}`;
+      while (used.has(id)) id = `lyric-${++n}`;
+      used.add(id);
+      return id;
+    };
+    out.push(...syncLyrics(existing, lines, makeId, durationSec, remembered.lyrics));
   }
   return sorted(out);
 }

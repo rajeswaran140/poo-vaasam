@@ -15,7 +15,7 @@ import { ArrowLeft, Download, Loader2, UploadCloud } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 import { putToS3 } from '@/lib/mastering-upload-client';
 import { MAX_VIDEO_TEXT_BYTES } from '@/lib/video-text/keys';
-import { syncTextToBlocks, unplacedLineCount, validateBlocks } from '@/lib/video-text/timeline';
+import { syncTextToBlocks, unplacedLineCount, validateBlocks, type RememberedTimes } from '@/lib/video-text/timeline';
 import type { SourceInfo, TextBlock, TextStyle, VideoTextProject } from '@/types/videoText';
 import { useAutosave, type AutosaveStatus } from './useAutosave';
 import { useRenderJob } from './useRenderJob';
@@ -80,6 +80,7 @@ function Section({ title, children, testId }: { title?: string; children: ReactN
 type UploadState = { phase: 'idle' } | { phase: 'saving' } | { phase: 'uploading'; pct: number } | { phase: 'checking' };
 
 export const LEAVE_MESSAGE = 'You have unsaved changes. Leave anyway?';
+export const LEAVE_UPLOAD_MESSAGE = 'The video is still uploading. Leave and stop the upload?';
 const HELD_MESSAGE = 'Changes will save when the render starts';
 
 /**
@@ -138,7 +139,11 @@ export function VideoTextEditor({
 
   // Leaving with unsaved edits — pending, held for a render, or failed — asks first.
   const { isDirty } = autosave;
-  const confirmLeave = useCallback(() => !isDirty() || window.confirm(LEAVE_MESSAGE), [isDirty]);
+  const uploadingRef = useRef(false);
+  const confirmLeave = useCallback(() => {
+    if (uploadingRef.current && !window.confirm(LEAVE_UPLOAD_MESSAGE)) return false;
+    return uploadingRef.current || !isDirty() || window.confirm(LEAVE_MESSAGE);
+  }, [isDirty]);
   useEffect(() => {
     if (!leaveGuard) return;
     leaveGuard.current = confirmLeave;
@@ -148,13 +153,43 @@ export function VideoTextEditor({
   }, [leaveGuard, confirmLeave]);
 
   // ---- text → blocks
-  const setTexts = (patch: Partial<Pick<VideoTextProject, 'titleText' | 'creditsText' | 'lyricsText'>>) =>
+  // Times of blocks that text edits removed: a title cleared and retyped, or a
+  // lyric line cleared and typed again, comes back where it was.
+  const remembered = useRef<RememberedTimes>({ lyrics: [] });
+  const remember = (before: TextBlock[], after: TextBlock[]) => {
+    const mem = remembered.current;
+    for (const b of before) {
+      if (b.track === 'title' || b.track === 'credits') mem[b.track] = { startSec: b.startSec, endSec: b.endSec };
+    }
+    const kept = new Set(after.map((b) => b.id));
+    const gone = before.filter((b) => b.track === 'lyric' && !kept.has(b.id));
+    mem.lyrics = [...(mem.lyrics ?? []), ...gone.map((b) => ({ startSec: b.startSec, endSec: b.endSec }))].slice(-20);
+  };
+  // Edits after a finished render: Download then says it is the older video.
+  const [editedSinceRender, setEditedSinceRender] = useState(false);
+  const markEdited = () => setEditedSinceRender(true);
+  const setTexts = (patch: Partial<Pick<VideoTextProject, 'titleText' | 'creditsText' | 'lyricsText'>>) => {
+    markEdited();
     setProject((p) => {
       const next = { ...p, ...patch };
-      return p.source ? { ...next, blocks: syncTextToBlocks(p.blocks, next, p.source.durationSec) } : next;
+      if (!p.source) return next;
+      const blocks = syncTextToBlocks(p.blocks, next, p.source.durationSec, remembered.current);
+      remember(p.blocks, blocks);
+      return { ...next, blocks };
     });
-  const setBlocks = useCallback((blocks: TextBlock[]) => setProject((p) => ({ ...p, blocks })), []);
-  const setStyle = (patch: Partial<TextStyle>) => setProject((p) => ({ ...p, style: { ...p.style, ...patch } }));
+  };
+  const setBlocks = useCallback((blocks: TextBlock[]) => {
+    setEditedSinceRender(true);
+    setProject((p) => {
+      // A line that had no room is placed as soon as a move makes a gap for it.
+      const placeable = p.source && unplacedLineCount(blocks, p) > 0;
+      return { ...p, blocks: placeable ? syncTextToBlocks(blocks, p, p.source!.durationSec, remembered.current) : blocks };
+    });
+  }, []);
+  const setStyle = (patch: Partial<TextStyle>) => {
+    markEdited();
+    setProject((p) => ({ ...p, style: { ...p.style, ...patch } }));
+  };
   const onName = (value: string) => {
     setNameInput(value);
     // The server needs a name; a cleared field keeps the last one until retyped.
@@ -244,16 +279,28 @@ export function VideoTextEditor({
   const [dragging, setDragging] = useState(false);
   const uploadBusy = useRef(false);
   const uploadedFile = useRef<File | null>(null);
-  const uploadAbort = useRef(new AbortController());
+  /** One controller per upload, so Cancel (or leaving) stops only that one. */
+  const uploadAbort = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
-    const abort = uploadAbort.current;
     return () => {
       mounted.current = false;
-      abort.abort(); // leaving the project stops its upload
+      uploadAbort.current?.abort(); // leaving the project stops its upload
     };
   }, []);
+  const cancelUpload = () => uploadAbort.current?.abort();
+  // Closing the tab mid-upload loses the upload: warn.
+  const transferring = upload.phase === 'uploading' || upload.phase === 'checking';
+  useEffect(() => {
+    if (!transferring) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [transferring]);
 
   /** Ask the worker to read the uploaded file; on success the project takes the new length. */
   const confirmSource = useCallback(
@@ -329,6 +376,8 @@ export function VideoTextEditor({
       const saved = await autosave.flush();
       if (!saved.ok) throw new Error(saved.error);
       setUpload({ phase: 'uploading', pct: 0 });
+      const controller = new AbortController();
+      uploadAbort.current = controller;
       const res = await adminFetch(`/api/admin/video-text/${initial.id}/upload`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -342,8 +391,10 @@ export function VideoTextEditor({
         body.fields ?? {},
         named,
         (loaded, total) => mounted.current && setUpload({ phase: 'uploading', pct: total ? Math.round((loaded / total) * 100) : 0 }),
-        uploadAbort.current.signal,
-      );
+        controller.signal,
+      ).catch((err) => {
+        throw controller.signal.aborted ? new Error('Upload cancelled. Choose the video again to upload it.') : err;
+      });
       uploadedFile.current = file;
       setLocalUrl(null); // the effect's cleanup revokes the old one
       await confirmSource(body.key);
@@ -367,6 +418,7 @@ export function VideoTextEditor({
   const makeVideo = () => {
     const source = project.source;
     if (!source) return;
+    setEditedSinceRender(false);
     void job.start({
       prepare: async () => {
         if (isExpired(source)) return EXPIRED;
@@ -415,6 +467,7 @@ export function VideoTextEditor({
 
   const source = project.source;
   const uploading = upload.phase !== 'idle';
+  uploadingRef.current = upload.phase === 'uploading' || upload.phase === 'checking';
   const lockUploadAndRender = uploading || job.running;
   const previewUrl = localUrl ?? remoteUrl;
   const render = job.render;
@@ -425,6 +478,11 @@ export function VideoTextEditor({
   // A video too short for every line keeps the lines that fit; say how many do not.
   const unplaced = source ? unplacedLineCount(project.blocks, project) : 0;
   const showDownload = !job.running && render.status === 'done' && Boolean(render.outputKey) && !outputIsStale;
+  // Saved after the render finished (on load), or edited since in this visit.
+  const downloadIsOlder =
+    showDownload &&
+    (editedSinceRender ||
+      Boolean(render.updatedAt && new Date(initial.updatedAt).getTime() > new Date(render.updatedAt).getTime()));
 
   return (
     <div className="min-w-0 space-y-6">
@@ -491,6 +549,13 @@ export function VideoTextEditor({
               >
                 <div className="h-full rounded-full bg-orange-500 transition-[width]" style={{ width: `${upload.pct}%` }} />
               </div>
+              <button
+                type="button"
+                onClick={cancelUpload}
+                className="text-sm font-medium text-gray-600 underline hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
+              >
+                Cancel upload
+              </button>
             </div>
           ) : upload.phase === 'checking' ? (
             <p className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
@@ -610,17 +675,25 @@ export function VideoTextEditor({
 
           {/* Timeline, with the save status beside it */}
           <SaveStatus status={autosave.status} error={autosave.error} announce={false} testId="timeline-save-status" />
-          <Timeline
-            blocks={project.blocks}
-            durationSec={source.durationSec}
-            playheadSec={playhead}
-            onChange={setBlocks}
-            onSeek={seek}
-          />
+          {uploading && (
+            <p className="text-sm text-gray-600 dark:text-gray-300" data-testid="timeline-locked">
+              Timing is locked while the new video uploads and is checked.
+            </p>
+          )}
+          <div inert={uploading} className={uploading ? 'pointer-events-none opacity-60' : undefined} data-testid="timeline-wrap">
+            <Timeline
+              blocks={project.blocks}
+              durationSec={source.durationSec}
+              playheadSec={playhead}
+              onChange={setBlocks}
+              onSeek={seek}
+            />
+          </div>
           {unplaced > 0 && (
             <p className="text-sm text-amber-700 dark:text-amber-400">
-              {unplaced === 1 ? "1 line doesn't" : `${unplaced} lines don't`} fit in this video — it is too short to show
-              each for half a second.
+              {unplaced === 1 ? '1 line has' : `${unplaced} lines have`} no room on the timeline. Make a gap of at least half
+              a second where {unplaced === 1 ? 'it goes' : 'they go'} (shorten or move a neighbouring line) and{' '}
+              {unplaced === 1 ? 'it' : 'they'} will appear.
             </p>
           )}
 
@@ -708,6 +781,11 @@ export function VideoTextEditor({
                 <Download className="h-4 w-4" aria-hidden="true" />
                 Download
               </button>
+              {downloadIsOlder && (
+                <p className="mt-1 text-sm text-amber-700 dark:text-amber-400" data-testid="download-older">
+                  This is the video made before your latest changes. Press Make video to include them.
+                </p>
+              )}
               {render.outputExpiresAt && (
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Deleted on {formatDay(render.outputExpiresAt)}</p>
               )}

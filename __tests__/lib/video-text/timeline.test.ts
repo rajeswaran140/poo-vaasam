@@ -264,3 +264,131 @@ describe('F1 + F6 property: every 0.01 s length from 0.29 s to 600 s', () => {
     }
   });
 });
+
+describe('syncTextToBlocks keeps hand-made timing (audit C1/I1)', () => {
+  const D = 344;
+  // Hand-timed lyrics: irregular slots with gaps, as Raj would leave them.
+  const hand = (texts: string[], startAt = 10): TextBlock[] => {
+    let t = startAt;
+    return texts.map((text, i) => {
+      const len = 3 + (i % 3); // 3, 4, 5 s
+      const b: TextBlock = { id: `lyric-${i}`, track: 'lyric', text, startSec: t, endSec: t + len };
+      t += len + 1; // 1 s gap
+      return b;
+    });
+  };
+  const sync = (b: TextBlock[], lyricsText: string, extra: Partial<{ titleText: string; creditsText: string }> = {}, mem = {}) =>
+    syncTextToBlocks(b, { titleText: '', creditsText: '', lyricsText, ...extra }, D, mem);
+  const times = (b: TextBlock[]) => lyrics(b).map((x) => [x.text, x.startSec, x.endSec]);
+  const six = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6'];
+
+  it('deleting a middle line leaves its gap; every other line keeps its time', () => {
+    const b = hand(six);
+    const out = sync(b, 'L1\nL3\nL4\nL5\nL6');
+    expect(times(out)).toEqual(times(b).filter(([t]) => t !== 'L2'));
+  });
+
+  it('inserting a line mid-list fills the gap there; nothing after it moves', () => {
+    const b = hand(six);
+    const out = sync(b, 'L1\nL2\nNEW\nL3\nL4\nL5\nL6');
+    const l = lyrics(out);
+    const l2 = get(b, 'lyric-1');
+    const l3 = get(b, 'lyric-2');
+    const ins = l.find((x) => x.text === 'NEW')!;
+    expect(ins.startSec).toBe(l2.endSec);
+    expect(ins.endSec).toBe(l3.startSec); // the 1 s gap
+    for (const old of b) expect(l.find((x) => x.text === old.text)).toMatchObject({ startSec: old.startSec, endSec: old.endSec });
+    expect(validateBlocks(out, D)).toBeNull();
+  });
+
+  it('inserting where there is no gap shares the previous line\'s time; only that line changes', () => {
+    const tight: TextBlock[] = [
+      { id: 'lyric-0', track: 'lyric', text: 'A', startSec: 10, endSec: 14 },
+      { id: 'lyric-1', track: 'lyric', text: 'B', startSec: 14, endSec: 18 },
+    ];
+    const out = sync(tight, 'A\nNEW\nB');
+    expect(times(out)).toEqual([['A', 10, 12], ['NEW', 12, 14], ['B', 14, 18]]);
+  });
+
+  it('adding a line when the last lyric runs to the end of the video does not re-tile the others', () => {
+    const b: TextBlock[] = [
+      { id: 'lyric-0', track: 'lyric', text: 'A', startSec: 5, endSec: 40 },
+      { id: 'lyric-1', track: 'lyric', text: 'B', startSec: 50, endSec: D },
+    ];
+    const out = sync(b, 'A\nB\nC');
+    expect(times(out).slice(0, 1)).toEqual([['A', 5, 40]]);
+    const l = lyrics(out);
+    expect(l[1]).toMatchObject({ text: 'B', startSec: 50 });
+    expect(l[2]).toMatchObject({ text: 'C', endSec: D });
+    expect(validateBlocks(out, D)).toBeNull();
+  });
+
+  it('editing one line keeps its slot; typing letter by letter never moves anything', () => {
+    const b = hand(six);
+    let out = b;
+    for (const typed of ['L3x', 'L3xy', 'L3xyz']) out = sync(out, `L1\nL2\n${typed}\nL4\nL5\nL6`);
+    expect(times(out).map(([, s, e]) => [s, e])).toEqual(times(b).map(([, s, e]) => [s, e]));
+    expect(lyrics(out)[2].text).toBe('L3xyz');
+  });
+
+  it('clearing a line then typing it again puts it back in its old slot', () => {
+    const b = hand(six);
+    const cleared = sync(b, 'L1\nL2\n\nL4\nL5\nL6');
+    const old = get(b, 'lyric-2');
+    // The editor remembers the removed slot and passes it back.
+    const back = sync(cleared, 'L1\nL2\nR\nL4\nL5\nL6', {}, { lyrics: [{ startSec: old.startSec, endSec: old.endSec }] });
+    expect(lyrics(back).find((x) => x.text === 'R')).toMatchObject({ startSec: old.startSec, endSec: old.endSec });
+    // Without the memory it still lands in that gap, starting where L2 ends.
+    const guess = lyrics(sync(cleared, 'L1\nL2\nR\nL4\nL5\nL6')).find((x) => x.text === 'R')!;
+    expect(guess.startSec).toBe(get(b, 'lyric-1').endSec);
+    expect(guess.endSec).toBeLessThanOrEqual(get(b, 'lyric-3').startSec);
+    for (const t of ['L1', 'L2', 'L4', 'L5', 'L6']) {
+      expect(lyrics(back).find((x) => x.text === t)).toMatchObject(lyrics(b).find((x) => x.text === t)!);
+    }
+  });
+
+  it('repeated chorus lines are matched in order', () => {
+    const b = hand(['Ch', 'V1', 'Ch', 'V2', 'Ch']);
+    const out = sync(b, 'Ch\nV1\nCh\nCh'); // V2 deleted
+    expect(times(out)).toEqual([times(b)[0], times(b)[1], times(b)[2], times(b)[4]]);
+  });
+
+  it('pasting into an empty lyric track still spreads the lines evenly', () => {
+    const out = sync([], 'a\nb\nc\nd', { titleText: 'T', creditsText: 'C' });
+    expect(out.filter((x) => x.track === 'lyric')).toEqual(lyrics(defaultBlocks({ titleText: 'T', creditsText: 'C', lyricsText: 'a\nb\nc\nd', durationSec: D })));
+  });
+
+  it('a cleared title comes back at its remembered times, not the default', () => {
+    const b: TextBlock[] = [{ id: 'title', track: 'title', text: 'Song', startSec: 0, endSec: D }];
+    const cleared = sync(b, '', { titleText: '' });
+    expect(cleared).toEqual([]);
+    const back = sync(cleared, '', { titleText: 'S' }, { title: { startSec: 0, endSec: D } });
+    expect(back).toEqual([{ id: 'title', track: 'title', text: 'S', startSec: 0, endSec: D }]);
+    // Without a memory it falls back to the default spot.
+    expect(sync(cleared, '', { titleText: 'S' })[0]).toMatchObject({ startSec: 0, endSec: 5 });
+  });
+
+  it('fuzz: random edits never break validity and never move an unchanged line', () => {
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
+    for (let run = 0; run < 300; run++) {
+      const lines = Array.from({ length: 3 + Math.floor(rnd() * 20) }, (_, i) => `r${run}-${i}`);
+      let b = sync([], lines.join('\n'));
+      for (let step = 0; step < 15; step++) {
+        const before = new Map(lyrics(b).map((x) => [x.text, x]));
+        const op = rnd();
+        const at = Math.floor(rnd() * (lines.length + 1));
+        if (op < 0.4) lines.splice(at, 0, `n${run}-${step}`);
+        else if (op < 0.7 && lines.length > 1) lines.splice(Math.min(at, lines.length - 1), 1);
+        else if (lines.length) lines[Math.min(at, lines.length - 1)] += 'x';
+        b = sync(b, lines.join('\n'));
+        expect(validateBlocks(b, D)).toBeNull();
+        lyricsOk(b);
+        // Lines present before and after, with neighbours that also survived, keep their exact times
+        // unless they were the one neighbour that shared time with an inserted line.
+        const changed = lyrics(b).filter((x) => before.has(x.text) && (before.get(x.text)!.startSec !== x.startSec || before.get(x.text)!.endSec !== x.endSec));
+        expect(changed.length).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+});
