@@ -18,6 +18,7 @@
  */
 
 import { VIDEO_CRF } from '@/lib/master-video';
+import type { Cut } from '@/types/videoText';
 
 /**
  * Target segment length. A 1440p chunk's encode must take at most 40% of the
@@ -233,10 +234,12 @@ export function buildChunkArgs(params: {
   outPath: string;
   crf: number;
   preset: string;
-  /** The video's frame rate: the fade clips are looped at it. Needed only when a block fades. */
+  /** The video's frame rate: the fade clips are looped at it, and a trim is cut half a frame early. */
   fps?: number;
+  /** Keep only the frames from `fromSec` to `toSec` of this segment (a cut's In or Out falls inside it). */
+  trim?: ChunkTrim;
 }): string[] {
-  const { segPath, overlays, outPath, crf, preset } = params;
+  const { segPath, overlays, outPath, crf, preset, trim } = params;
   const fps = params.fps && params.fps > 0 ? params.fps : 25;
   const inputs: string[] = ['-i', segPath];
   const filters: string[] = [];
@@ -293,12 +296,16 @@ export function buildChunkArgs(params: {
     }
   }
   let graph: string[] = ['-map', '0:v:0'];
-  if (layers.length > 0) {
-    const steps = layers.map((l, i) => {
-      const from = i === 0 ? '[0:v]' : `[v${i}]`;
-      return `${from}${l.input}overlay=0:0:enable='gte(t,${l.enable[0]})*lt(t,${l.enable[1]})':eof_action=${l.eof}[v${i + 1}]`;
-    });
-    graph = ['-filter_complex', [...filters, ...steps].join(';'), '-map', `[v${layers.length}]`];
+  const steps = layers.map((l, i) => {
+    const from = i === 0 ? '[0:v]' : `[v${i}]`;
+    return `${from}${l.input}overlay=0:0:enable='gte(t,${l.enable[0]})*lt(t,${l.enable[1]})':eof_action=${l.eof}[v${i + 1}]`;
+  });
+  // The trim comes LAST: the overlays keep the segment's own clock, so a line
+  // crossing In shows on the first kept frame exactly as the preview had it.
+  const trimFilter = trimFilterFor(trim, fps);
+  if (trimFilter) steps.push(`${layers.length === 0 ? '[0:v]' : `[v${layers.length}]`}${trimFilter}[vt]`);
+  if (steps.length > 0) {
+    graph = ['-filter_complex', [...filters, ...steps].join(';'), '-map', trimFilter ? '[vt]' : `[v${layers.length}]`];
   }
   return [
     '-hide_banner', '-nostats',
@@ -310,6 +317,104 @@ export function buildChunkArgs(params: {
     '-fps_mode', 'passthrough',
     '-y', outPath,
   ];
+}
+
+/** Seconds of a segment to keep; a missing side keeps that end. */
+export interface ChunkTrim {
+  fromSec?: number;
+  toSec?: number;
+}
+
+/**
+ * `trim` keeps frames with fromSec - ½ frame ≤ pts < toSec - ½ frame: the
+ * marks are on the frame grid, so that is exactly the frame AT In through the
+ * frame before Out, whatever float noise the timestamps carry. setpts then
+ * starts the chunk at 0, like every other chunk the join concatenates.
+ */
+function trimFilterFor(trim: ChunkTrim | undefined, fps: number): string | null {
+  if (!trim || (trim.fromSec === undefined && trim.toSec === undefined)) return null;
+  const half = 0.5 / fps;
+  const parts: string[] = [];
+  if (trim.fromSec !== undefined && trim.fromSec > 0) parts.push(`start=${r6(trim.fromSec - half)}`);
+  if (trim.toSec !== undefined) parts.push(`end=${r6(trim.toSec - half)}`);
+  if (parts.length === 0) return null;
+  return `trim=${parts.join(':')},setpts=PTS-STARTPTS`;
+}
+
+const r6 = (n: number) => Math.round(n * 1e6) / 1e6;
+
+/**
+ * The segments a cut keeps, renumbered from 0, each with the part of it to
+ * keep: In and Out fall inside at most two of them, the ones between are kept
+ * whole. With no cut every segment is kept whole. A segment that only touches
+ * a mark (within half a frame) is left out.
+ */
+export function segmentsForCut(
+  entries: SegmentEntry[],
+  cut: Cut | null | undefined,
+  fps: number,
+  durationSec: number,
+): { entry: SegmentEntry; trim?: ChunkTrim }[] {
+  if (!cut) return entries.map((entry) => ({ entry }));
+  const half = 0.5 / (fps > 0 ? fps : 25);
+  const toEnd = cut.outSec >= durationSec - half;
+  const out: { entry: SegmentEntry; trim?: ChunkTrim }[] = [];
+  for (const entry of entries) {
+    if (entry.endSec <= cut.inSec + half) continue;
+    if (!toEnd && entry.startSec >= cut.outSec - half) continue;
+    const trim: ChunkTrim = {};
+    if (cut.inSec > entry.startSec + half) trim.fromSec = r3(cut.inSec - entry.startSec);
+    if (!toEnd && cut.outSec < entry.endSec - half) trim.toSec = r3(cut.outSec - entry.startSec);
+    out.push(trim.fromSec === undefined && trim.toSec === undefined ? { entry } : { entry, trim });
+  }
+  return out;
+}
+
+/**
+ * The cut's sound, copied packet for packet from the extracted audio (no
+ * decode). Input seeking with stream copy starts at the packet holding In and
+ * marks the samples before In to be skipped, so the sound lines up with the
+ * first kept frame to the sample (measured on the layer's 7.0.2: first packet
+ * pts -192 at 48 kHz for an In 4 ms into it). Out ends at the packet holding
+ * it. Same container as the extract (audioExtractExtFor).
+ */
+export function buildAudioCutArgs(audioPath: string, outPath: string, cut: Cut, durationSec: number, fps: number): string[] {
+  const half = 0.5 / (fps > 0 ? fps : 25);
+  const format = /\.mov$/i.test(audioPath) ? 'mov' : 'mp4';
+  return [
+    '-hide_banner', '-nostats',
+    ...(cut.inSec > 0 ? ['-ss', String(cut.inSec)] : []),
+    ...(cut.outSec < durationSec - half ? ['-to', String(cut.outSec)] : []),
+    '-i', audioPath,
+    '-map', '0:a:0', '-c', 'copy', '-f', format, '-y', outPath,
+  ];
+}
+
+/**
+ * True when every packet of `part` (a framecrc listing) is the next packet of
+ * `whole`, in order, from some packet on: same size, same checksum. Times are
+ * not compared: the cut shifts them. This is how the cut sound is proved to be
+ * the song's own packets, unchanged and with none dropped.
+ */
+export function isPacketRunOf(part: string, whole: string): boolean {
+  const packets = (framecrc: string) =>
+    framecrc
+      .split(/\r?\n/)
+      .filter((l) => l && !l.startsWith('#'))
+      .map((l) => {
+        const f = l.split(',').map((x) => x.trim());
+        return `${f[4]}:${f[5]}`;
+      });
+  const p = packets(part);
+  const w = packets(whole);
+  if (p.length === 0 || p.length > w.length) return false;
+  for (let start = 0; start + p.length <= w.length; start++) {
+    if (w[start] !== p[0]) continue;
+    let i = 1;
+    while (i < p.length && w[start + i] === p[i]) i++;
+    if (i === p.length) return true;
+  }
+  return false;
 }
 
 /**

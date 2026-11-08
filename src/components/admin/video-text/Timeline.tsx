@@ -19,12 +19,16 @@
  *   "whole song fits" to 40 px/s and keeps the playhead where it was on
  *   screen; while the song plays the view follows the playhead.
  * - It scrolls sideways inside its own box; the page never does.
+ * - In and Out marks (cut.ts): the parts outside them are shaded, and the
+ *   two handles on the ruler drag them (←/→ on a focused one: a frame, Shift
+ *   = 1 s). Setting them is CutMarks, beside the timeline.
  *
  * All the arithmetic (clamping, minimum length, rounding) is timeline.ts.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
 import { dragEdge, moveBlock, sameBlocks } from '@/lib/video-text/timeline';
-import type { TextBlock, Track } from '@/types/videoText';
+import { cutRange, markIn, markOut } from '@/lib/video-text/cut';
+import type { Cut, TextBlock, Track } from '@/types/videoText';
 
 const MAX_PX_PER_SEC = 40;
 /** Width of the grab handles a selected thin block gets outside its edges. */
@@ -102,9 +106,14 @@ export interface TimelineProps {
   playheadSec: number;
   onChange(blocks: TextBlock[]): void;
   onSeek(sec: number): void;
+  /** In and Out; absent or null is the whole video. */
+  cut?: Cut | null;
+  /** The video's frame rate: the marks snap to its frames. */
+  fps?: number;
+  onCutChange?(cut: Cut | null): void;
 }
 
-export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek }: TimelineProps) {
+export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek, cut = null, fps = 25, onCutChange }: TimelineProps) {
   const duration = Math.max(1, durationSec);
   const scroller = useRef<HTMLDivElement>(null);
   const [boxWidth, setBoxWidth] = useState(0);
@@ -266,6 +275,40 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek }:
 
   const playheadX = Math.min(Math.max(0, playheadSec), duration) * pps;
 
+  // ---- In / Out handles
+  const inner = useRef<HTMLDivElement>(null);
+  const markDrag = useRef<{ kind: 'in' | 'out'; pointerId: number } | null>(null);
+  const latestCut = useRef(cut);
+  latestCut.current = cut;
+  const setMark = (kind: 'in' | 'out', sec: number) => {
+    if (!onCutChange) return;
+    const c = latestCut.current;
+    const next = kind === 'in' ? markIn(c, sec, durationSec, fps) : markOut(c, sec, durationSec, fps);
+    if (JSON.stringify(next) !== JSON.stringify(c)) onCutChange(next);
+  };
+  const beginMarkDrag = (e: PointerEvent<HTMLElement>, kind: 'in' | 'out') => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    markDrag.current = { kind, pointerId: e.pointerId };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+  const onMarkMove = (e: PointerEvent<HTMLElement>) => {
+    const d = markDrag.current;
+    const rect = inner.current?.getBoundingClientRect();
+    if (!d || d.pointerId !== e.pointerId || !rect) return;
+    setMark(d.kind, Math.min(durationSec, Math.max(0, (e.clientX - rect.left) / pps)));
+  };
+  const endMarkDrag = (e: PointerEvent<HTMLElement>) => {
+    if (markDrag.current?.pointerId === e.pointerId) markDrag.current = null;
+  };
+  const onMarkKey = (e: KeyboardEvent<HTMLElement>, kind: 'in' | 'out', at: number) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    e.preventDefault();
+    const step = (e.shiftKey ? 1 : 1 / fps) * (e.key === 'ArrowRight' ? 1 : -1);
+    setMark(kind, at + step);
+  };
+  const range = cutRange(cut, durationSec);
+
   return (
     <div className="min-w-0 space-y-2">
       <div className="flex min-w-0">
@@ -283,7 +326,7 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek }:
           className="relative min-w-0 flex-1 overflow-x-auto overscroll-x-contain rounded-md border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-950"
           data-testid="timeline-scroller"
         >
-          <div className="relative" style={{ width: innerWidth }}>
+          <div ref={inner} className="relative" style={{ width: innerWidth }}>
             {/* Ruler: click to seek. */}
             <div
               className="relative h-6 cursor-pointer border-b border-gray-200 dark:border-gray-700"
@@ -378,6 +421,56 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek }:
                   })}
               </div>
             ))}
+
+            {/* In and Out: outside them is shaded (not in the video); the handles sit on the ruler. */}
+            {cut && (
+              <>
+                {range.inSec > 0 && (
+                  <div
+                    className="pointer-events-none absolute top-0 bottom-0 left-0 z-[15] bg-gray-900/45 dark:bg-black/60"
+                    style={{ width: range.inSec * pps }}
+                    data-testid="cut-shade-in"
+                  />
+                )}
+                {range.outSec < durationSec && (
+                  <div
+                    className="pointer-events-none absolute top-0 bottom-0 z-[15] bg-gray-900/45 dark:bg-black/60"
+                    style={{ left: range.outSec * pps, width: Math.max(0, (duration - range.outSec) * pps) }}
+                    data-testid="cut-shade-out"
+                  />
+                )}
+                {(['in', 'out'] as const).map((kind) => {
+                  const at = kind === 'in' ? range.inSec : range.outSec;
+                  return (
+                    <div
+                      key={kind}
+                      role="slider"
+                      tabIndex={0}
+                      aria-label={kind === 'in' ? 'In mark' : 'Out mark'}
+                      aria-valuemin={0}
+                      aria-valuemax={durationSec}
+                      aria-valuenow={at}
+                      aria-valuetext={formatTime(at)}
+                      title={`${kind === 'in' ? 'In' : 'Out'} ${formatTime(at)} — drag to move`}
+                      onPointerDown={(e) => beginMarkDrag(e, kind)}
+                      onPointerMove={onMarkMove}
+                      onPointerUp={endMarkDrag}
+                      onPointerCancel={endMarkDrag}
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => onMarkKey(e, kind, at)}
+                      data-testid={`cut-${kind}`}
+                      className={`absolute top-0 z-30 flex h-6 w-3 cursor-ew-resize touch-none select-none items-center justify-center bg-emerald-600 text-[9px] font-bold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 ${
+                        kind === 'in' ? 'rounded-l' : 'rounded-r'
+                      }`}
+                      // The In flag sits just inside the kept part, the Out flag just after it.
+                      style={{ left: kind === 'in' ? at * pps : at * pps - 12 }}
+                    >
+                      {kind === 'in' ? 'I' : 'O'}
+                    </div>
+                  );
+                })}
+              </>
+            )}
 
             {/* Playhead */}
             <div

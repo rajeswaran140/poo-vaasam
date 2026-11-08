@@ -80,6 +80,16 @@ export interface RenderState {
   updatedAt: string | null;
 }
 
+/**
+ * The part of the video Make video exports, Premiere's In and Out marks.
+ * Times are in the source's seconds, on its frame grid; `outSec` equal to the
+ * video's length means "to the end". Null (or missing) is the whole video.
+ */
+export interface Cut {
+  inSec: number;
+  outSec: number;
+}
+
 export interface VideoTextProject {
   id: string;
   name: string;
@@ -88,6 +98,8 @@ export interface VideoTextProject {
   lyricsText: string;
   blocks: TextBlock[];
   style: TextStyle;
+  /** Optional: projects saved before the cut existed export the whole video. */
+  cut?: Cut | null;
   source: SourceInfo | null;
   render: RenderState;
   version: number;

@@ -58,8 +58,13 @@ import {
   buildAudioHashArgs,
   audioExtractExtFor,
   buildAudioExtractArgs,
+  buildAudioCutArgs,
+  isPacketRunOf,
+  segmentsForCut,
+  type ChunkTrim,
   type SegmentEntry,
 } from '@/lib/video-text/render-plan';
+import { cutLength, validateCut } from '@/lib/video-text/cut';
 import {
   VIDEO_TEXT_PREFIX,
   chunkOutKey,
@@ -73,7 +78,7 @@ import {
   segmentKey,
 } from '@/lib/video-text/keys';
 import { isHdrHeader } from '@/lib/master-background';
-import type { RenderState, TextBlock, TextStyle } from '@/types/videoText';
+import type { Cut, RenderState, TextBlock, TextStyle } from '@/types/videoText';
 import { fadeSecFor, trackStyleOf } from '@/lib/video-text/fonts';
 
 export const VIDEO_TEXT_CHUNK_FUNCTION = process.env.VIDEO_TEXT_CHUNK_FUNCTION || 'tamilagaval-video-text-chunk';
@@ -566,9 +571,13 @@ interface ChunkSpec {
   overlays: SegmentOverlay[];
   width: number;
   height: number;
-  /** The video's frame rate, for fade clips. */
+  /** The video's frame rate, for fade clips and the trim. */
   fps?: number;
+  /** The part of this segment inside the cut's In and Out (only where a mark falls inside it). */
+  trim?: ChunkTrim;
 }
+
+const isSec = (n: unknown) => typeof n === 'number' && Number.isFinite(n) && n >= 0;
 
 function readChunkSpec(raw: unknown): ChunkSpec | null {
   const s = raw as Partial<ChunkSpec> | null;
@@ -584,6 +593,11 @@ function readChunkSpec(raw: unknown): ChunkSpec | null {
     }
   }
   if (s.fps !== undefined && !(Number.isFinite(s.fps) && (s.fps as number) > 0 && (s.fps as number) <= 240)) return null;
+  if (s.trim !== undefined) {
+    const t = s.trim;
+    if (!t || (t.fromSec !== undefined && !isSec(t.fromSec)) || (t.toSec !== undefined && !isSec(t.toSec))) return null;
+    if (t.fromSec !== undefined && t.toSec !== undefined && !(t.toSec > t.fromSec)) return null;
+  }
   // Keys are re-derived, never taken from the event; the one it carries must agree.
   if (s.segKey !== segmentKey(s.projectId as string, s.renderId as string, s.index as number)) return null;
   return s as ChunkSpec;
@@ -609,7 +623,7 @@ export async function renderVideoTextChunk(
       overlays.push({ path, fromSec: o.fromSec, toSec: o.toSec, ...(o.fade ? { fade: o.fade } : {}) });
     }
     const outPath = join(dir, 'chunk.mp4');
-    const r = deps.ff(buildChunkArgs({ segPath, overlays, width: spec.width, height: spec.height, outPath, crf: CHUNK_CRF, preset: CHUNK_PRESET, fps: spec.fps }));
+    const r = deps.ff(buildChunkArgs({ segPath, overlays, width: spec.width, height: spec.height, outPath, crf: CHUNK_CRF, preset: CHUNK_PRESET, fps: spec.fps, trim: spec.trim }));
     if (r.status !== 0) {
       console.error(`[video-text] chunk ${index} encode failed:`, (r.stderr ?? '').slice(-2000));
       return { ok: false, message: CHUNK_FAILED_MESSAGE };
@@ -730,7 +744,8 @@ function assertTimeForJoin(deps: VideoTextDeps): void {
 interface StoredProject {
   blocks?: TextBlock[];
   style?: TextStyle;
-  source?: { key?: string; width?: number; height?: number } | null;
+  cut?: Cut | null;
+  source?: { key?: string; width?: number; height?: number; durationSec?: number } | null;
   render?: { renderId?: string | null };
 }
 
@@ -770,6 +785,13 @@ export async function renderVideoText(
     const blocks = Array.isArray(project.blocks) ? project.blocks : [];
     if (!source?.key || !isVideoTextKeyFor(projectId, source.key) || !source.width || !source.height) {
       throw new VideoTextFailure('this project has no video to render — upload one first');
+    }
+    // In and Out, against the stored length the editor set them on (the route checked them too).
+    const cut = project.cut ?? null;
+    const storedDuration = Number(source.durationSec);
+    if (cut) {
+      const cutProblem = Number.isFinite(storedDuration) ? validateCut(cut, storedDuration) : 'The In and Out marks cannot be read — set them again.';
+      if (cutProblem) throw new VideoTextFailure(cutProblem);
     }
 
     // ---- segmenting
@@ -824,10 +846,27 @@ export async function renderVideoText(
     const offsetRefusal = startOffsetRefusal(videoStart, video!.fps!);
     if (offsetRefusal) throw new VideoTextFailure(offsetRefusal);
 
+    // The cut's sound: the song's own packets from In to Out, nothing re-encoded.
+    let expectedAudio = sourceAudio;
+    let joinAudioPath = audioPath;
+    if (hasAudio && cut) {
+      joinAudioPath = join(dir, `audio-cut${audioExtractExtFor(srcPath)}`);
+      if (deps.ff(buildAudioCutArgs(audioPath, joinAudioPath, cut, storedDuration, video!.fps!)).status !== 0) {
+        throw new VideoTextFailure(AUDIO_CHANGED_MESSAGE);
+      }
+      expectedAudio = audioFingerprint(deps, joinAudioPath);
+      if (!isPacketRunOf(expectedAudio.timing, sourceAudio!.timing)) {
+        console.error('[video-text] cut audio is not a run of the source packets');
+        throw new VideoTextFailure(AUDIO_CHANGED_MESSAGE);
+      }
+    }
+
     // Fading parts cost more per chunk: plan shorter segments for them.
     const anyFade = Boolean(project.style) && blocks.some((b) => trackStyleOf(b.track, project.style!).fade);
+    // Only the cut is encoded, so a long video with a short cut is planned by the cut's length.
+    const fullSec = parseDurationSec(headerLog) ?? 0;
     const plan = segmentPlanFor(
-      { width: video!.width, height: video!.height, fps: video!.fps!, durationSec: parseDurationSec(headerLog) ?? 0 },
+      { width: video!.width, height: video!.height, fps: video!.fps!, durationSec: cut ? Math.min(fullSec, cutLength(cut, storedDuration)) : fullSec },
       { fades: anyFade },
     );
     if (!plan.ok) throw new VideoTextFailure(plan.message);
@@ -837,28 +876,33 @@ export async function renderVideoText(
       console.error('[video-text] segmenting failed:', (seg.stderr ?? '').slice(-2000));
       throw new VideoTextFailure('the video could not be split into parts');
     }
-    const segments = planSegments(parseSegmentList(readFileSync(listPath, 'utf8')), plan.maxSec, plan.keyframeEverySec);
+    const listed = planSegments(parseSegmentList(readFileSync(listPath, 'utf8')), plan.maxSec, plan.keyframeEverySec);
     rmSync(srcPath, { force: true });
-    for (let i = 0; i < segments.length; i++) {
-      const local = join(dir, segments[i].file);
+    // Only the segments inside the cut go on; In and Out trim the two they fall in.
+    const kept = segmentsForCut(listed, cut, video!.fps!, storedDuration);
+    if (kept.length === 0) throw new VideoTextFailure(RENDER_FAILED_MESSAGE);
+    for (const e of listed) if (!kept.some((k) => k.entry === e)) rmSync(join(dir, e.file), { force: true });
+    for (let i = 0; i < kept.length; i++) {
+      const local = join(dir, kept[i].entry.file);
       await uploadFrom(deps, segmentKey(projectId, renderId, i), local);
       rmSync(local, { force: true });
     }
 
     // ---- encoding
-    const total = segments.length;
+    const total = kept.length;
     await patch({ status: 'encoding', progress: { done: 0, total } });
     // Blocks of a part set to fade carry their fade length (style read with the blocks, at the claim).
     const timed = blocks.map((b) => ({
       ...b,
       fadeSec: project.style && trackStyleOf(b.track, project.style).fade ? fadeSecFor(b) : 0,
     }));
-    const specs: ChunkSpec[] = segments.map((s, index) => ({
+    const specs: ChunkSpec[] = kept.map(({ entry, trim }, index) => ({
       projectId, renderId, index,
       segKey: segmentKey(projectId, renderId, index),
-      overlays: overlaysForSegment(timed, s),
+      overlays: overlaysForSegment(timed, entry),
       width: video!.width, height: video!.height,
       fps: video!.fps!,
+      ...(trim ? { trim } : {}),
     }));
     let lastProgressAt = Date.now();
     await encodeChunks(deps, specs, async (done) => {
@@ -888,13 +932,13 @@ export async function renderVideoText(
     const concatListPath = join(dir, 'chunks.txt');
     writeFileSync(concatListPath, chunkPaths.map((p) => `file '${p}'`).join('\n') + '\n');
     const outPath = join(dir, 'output.mp4');
-    const joined = deps.ff(buildJoinMuxArgs({ concatListPath, srcPath: audioPath, outPath, hasAudio }));
+    const joined = deps.ff(buildJoinMuxArgs({ concatListPath, srcPath: joinAudioPath, outPath, hasAudio }));
     if (joined.status !== 0) {
       console.error('[video-text] join failed:', (joined.stderr ?? '').slice(-2000));
       throw new VideoTextFailure('the parts could not be joined');
     }
     // Checked on the local file, before anything is uploaded: a mismatch saves nothing.
-    if (sourceAudio) assertSameAudio(sourceAudio, audioFingerprint(deps, outPath), 'output');
+    if (expectedAudio) assertSameAudio(expectedAudio, audioFingerprint(deps, outPath), 'output');
 
     const outKey = outputKey(projectId, renderId);
     // A ~1 GB upload cut off by the Lambda's kill would write nothing: refuse it now instead.

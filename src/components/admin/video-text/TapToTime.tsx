@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { MIN_BLOCK_SEC, endLyricAt, tapLyric, validateBlocks } from '@/lib/video-text/timeline';
 import type { TextBlock } from '@/types/videoText';
+import { isTyping } from './typing';
 
 type Session = { from: number; next: number; open: number | null; snapshot: TextBlock[] };
 
@@ -24,15 +25,6 @@ export interface TapToTimeProps {
 
 const BUTTON =
   'inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50';
-
-/** Space typed into a field is text, not a tap. Sliders, checkboxes and buttons are not fields. */
-const TEXT_INPUT = /^(text|search|email|url|tel|password|number|date|time|datetime-local|month|week)$/;
-function isTyping(target: EventTarget | null): boolean {
-  const el = target as HTMLElement | null;
-  if (!el) return false;
-  if (el.isContentEditable || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') return true;
-  return el.tagName === 'INPUT' && TEXT_INPUT.test((el as HTMLInputElement).type || 'text');
-}
 
 export function TapToTime({ blocks, durationSec, video, onChange, disabled }: TapToTimeProps) {
   const lyric = blocks.filter((b) => b.track === 'lyric').sort((a, b) => a.startSec - b.startSec);

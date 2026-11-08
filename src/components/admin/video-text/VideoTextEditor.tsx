@@ -16,7 +16,7 @@ import { adminFetch } from '@/lib/client-auth';
 import { putToS3 } from '@/lib/mastering-upload-client';
 import { MAX_VIDEO_TEXT_BYTES } from '@/lib/video-text/keys';
 import { syncTextToBlocks, unplacedLineCount, validateBlocks, type RememberedTimes } from '@/lib/video-text/timeline';
-import type { SourceInfo, TextBlock, TextStyle, Track, TrackStyle, VideoTextProject } from '@/types/videoText';
+import type { Cut, SourceInfo, TextBlock, TextStyle, Track, TrackStyle, VideoTextProject } from '@/types/videoText';
 import { useAutosave, type AutosaveStatus } from './useAutosave';
 import { useRenderJob } from './useRenderJob';
 import { PartStyle } from './PartStyle';
@@ -24,6 +24,8 @@ import { TapToTime } from './TapToTime';
 import { PlacementPicker } from './PlacementPicker';
 import { trackStyleOf } from '@/lib/video-text/fonts';
 import { Timeline } from './Timeline';
+import { validateCut } from '@/lib/video-text/cut';
+import { CutMarks } from './CutMarks';
 import { TextPreview } from './TextPreview';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -195,6 +197,10 @@ export function VideoTextEditor({
       return { ...p, blocks: placeable ? syncTextToBlocks(blocks, p, p.source!.durationSec, remembered.current) : blocks };
     });
   }, []);
+  const setCut = useCallback((cut: Cut | null) => {
+    setEditedSinceRender(true);
+    setProject((p) => ({ ...p, cut }));
+  }, []);
   const setStyle = (patch: Partial<TextStyle>) => {
     markEdited();
     setProject((p) => ({ ...p, style: { ...p.style, ...patch } }));
@@ -344,6 +350,7 @@ export function VideoTextEditor({
         source,
         // Text typed while the file uploaded is newer than what the server fitted.
         blocks: syncTextToBlocks(body.blocks as TextBlock[], p, source.durationSec),
+        cut: (body.cut as Cut | null | undefined) ?? null,
         version: body.version,
       }));
       const moved = Number(body.moved) || 0;
@@ -443,7 +450,7 @@ export function VideoTextEditor({
         if (!saved.ok) return saved.error;
         const { blocks, style } = saved.edits;
         if (blocks.length === 0) return 'Add a title, lyrics or credits first.';
-        const problem = validateBlocks(blocks, source.durationSec);
+        const problem = validateBlocks(blocks, source.durationSec) ?? validateCut(saved.edits.cut, source.durationSec);
         if (problem) return problem;
         return { blocks, style, frame: { width: source.width, height: source.height }, version: saved.version };
       },
@@ -711,8 +718,21 @@ export function VideoTextEditor({
               playheadSec={playhead}
               onChange={setBlocks}
               onSeek={seek}
+              cut={project.cut ?? null}
+              fps={source.fps}
+              onCutChange={setCut}
             />
           </div>
+          <CutMarks
+            cut={project.cut ?? null}
+            durationSec={source.durationSec}
+            fps={source.fps}
+            playheadSec={playhead}
+            onChange={setCut}
+            onSeek={seek}
+            disabled={uploading}
+            video={videoRef}
+          />
           <TapToTime
             blocks={project.blocks}
             durationSec={source.durationSec}

@@ -549,6 +549,69 @@ describe('videoTextRender', () => {
     expect(timed).toEqual(['source.mp4', 'audio.m4a', 'output.mp4']);
   });
 
+  describe('In and Out (the cut)', () => {
+    const withCut = (cut: unknown) => {
+      world.project = { ...projectFor(), cut };
+    };
+
+    it('encodes only the segments inside the marks, renumbered, trimming the two the marks fall in', async () => {
+      withCut({ inSec: 25, outSec: 42 });
+      const res = await render();
+      expect(res).toMatchObject({ ok: true });
+      const byIndex = [...world.invoked].sort((a, b) => a.index - b.index);
+      expect(byIndex.map((e) => e.index)).toEqual([0, 1]);
+      // Chunk 0 is the 20-40 segment: overlays on its own clock, trimmed from 5 s.
+      expect(byIndex[0]).toMatchObject({ segKey: segmentKey(PID, RID, 0), trim: { fromSec: 5 } });
+      expect(byIndex[0].overlays).toEqual([{ id: 'l1', fromSec: 0, toSec: 2 }, { id: 'cred', fromSec: 15, toSec: 20 }]);
+      expect(byIndex[1]).toMatchObject({ trim: { toSec: 2 } });
+      expect(byIndex[1].overlays).toEqual([{ id: 'cred', fromSec: 0, toSec: 5 }]);
+      expect(statuses()).toEqual(['segmenting', 'encoding', 'joining', 'done']);
+      expect(keysLeft()).toEqual([outputKey(PID, RID)]);
+    });
+
+    it('cuts the sound by stream copy, proves it is the song\'s own packets, and joins with it', async () => {
+      withCut({ inSec: 25, outSec: 42 });
+      await render();
+      const cutArgs = world.ffArgs.find((a) => a.includes('-ss'))!;
+      expect(cutArgs.slice(0, 8)).toEqual(['-hide_banner', '-nostats', '-ss', '25', '-to', '42', '-i', expect.stringMatching(/audio\.m4a$/)]);
+      expect(cutArgs).toEqual(expect.arrayContaining(['-c', 'copy']));
+      const join_ = world.ffArgs.find((a) => a.includes('concat'))!;
+      expect(basename(join_[join_.indexOf('-i', join_.indexOf('concat')) + 3])).toBe('audio-cut.m4a');
+      const hashed = world.ffArgs.filter((a) => a.includes('streamhash')).map((a) => basename(a[a.indexOf('-i') + 1]));
+      expect(hashed).toEqual(['source.mp4', 'audio.m4a', 'audio-cut.m4a', 'output.mp4']);
+    });
+
+    it('a cut sound that is not a run of the song\'s packets stops before any segment is cut', async () => {
+      withCut({ inSec: 25, outSec: 42 });
+      world.timingFor = (f) => (f === 'audio-cut.m4a' ? AUDIO_TIMING.replace('0xdf14c6e3', '0x00000000') : AUDIO_TIMING);
+      await render();
+      expect(lastError()).toBe(AUDIO_CHANGED);
+      expect(world.ffArgs.some((a) => a.includes('segment'))).toBe(false);
+      expect(world.invoked).toHaveLength(0);
+    });
+
+    it('marks that do not fit the stored video are refused before any download', async () => {
+      withCut({ inSec: 30, outSec: 50 });
+      await render();
+      expect(lastError()).toBe('The In and Out marks are outside the video — set them again.');
+      expect(world.ffArgs).toHaveLength(0);
+    });
+
+    it('Out at the end of the video: no end trim and no -to', async () => {
+      withCut({ inSec: 25, outSec: 45 });
+      await render();
+      expect(world.ffArgs.find((a) => a.includes('-ss'))).not.toContain('-to');
+      const byIndex = [...world.invoked].sort((a, b) => a.index - b.index);
+      expect(byIndex.map((e) => e.trim)).toEqual([{ fromSec: 5 }, undefined]);
+    });
+
+    it('a project with no marks renders every segment untrimmed, as before', async () => {
+      await render();
+      for (const spec of world.invoked) expect(spec).not.toHaveProperty('trim');
+      expect(world.ffArgs.some((a) => a.includes('-ss'))).toBe(false);
+    });
+  });
+
   it('a chunk that answers ok:false ends in error naming the part, and still deletes every intermediate', async () => {
     world.chunkReply = (e) => {
       if (e.index === 1) return { ok: false, message: 'the encoder failed' };
@@ -814,6 +877,21 @@ describe('videoTextChunk', () => {
     const graph = world.ffArgs.find((a) => a.includes('-preset'))!.join(' ');
     expect(graph).toContain('fade=t=out:st=0:d=0.3:alpha=1,setpts=PTS+(1.7)/TB');
     expect(graph).toContain('setpts=N/(30*TB)');
+  });
+
+  it('a trimmed chunk keeps only its part of the segment, after the overlays', async () => {
+    const res = await handler({ videoTextChunk: spec({ fps: 25, trim: { fromSec: 5 } }) } as never);
+    expect(res).toMatchObject({ ok: true });
+    const args = world.ffArgs.find((a) => a.includes('-preset'))!;
+    expect(args.join(' ')).toContain('[v2]trim=start=4.98,setpts=PTS-STARTPTS[vt]');
+    expect(args[args.indexOf('-map') + 1]).toBe('[vt]');
+  });
+
+  it('refuses a malformed trim without running ffmpeg', async () => {
+    for (const trim of [{ fromSec: -1 }, { fromSec: 'x' }, { fromSec: 5, toSec: 3 }, null]) {
+      expect(await handler({ videoTextChunk: spec({ trim }) } as never)).toMatchObject({ ok: false });
+    }
+    expect(spawnSync).not.toHaveBeenCalled();
   });
 
   it('refuses malformed fade data or frame rate without running ffmpeg', async () => {
