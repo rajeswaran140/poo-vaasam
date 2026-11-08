@@ -13,11 +13,19 @@
  *   on a phone. Between changes only the cheap scaled copy repeats.
  * - The overlay ignores the pointer so the video controls still work.
  * - `ref` exposes the <video> so the timeline can seek it.
+ * - Move text (onMove): a switch over the picture. While it is on, each part
+ *   showing now gets an outlined box over its text that drags (or arrows)
+ *   the part, on top of its alignment. Only the boxes take the pointer, so
+ *   the video controls still work around them; with the switch off nothing
+ *   over the picture can be grabbed by accident.
  */
-import { useCallback, useEffect, useRef, type Ref } from 'react';
-import { drawBlock, ensureFonts } from '@/lib/video-text/draw';
-import { fadeAlphaAt, trackStyleOf } from '@/lib/video-text/fonts';
-import type { TextBlock, TextStyle } from '@/types/videoText';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type Ref } from 'react';
+import { boxRect, drawBlock, ensureFonts, layoutBlock } from '@/lib/video-text/draw';
+import { OFFSET_MAX, fadeAlphaAt, trackStyleOf } from '@/lib/video-text/fonts';
+import type { TextBlock, TextOffset, TextStyle, Track } from '@/types/videoText';
+
+const TRACK_NAME: Record<Track, string> = { title: 'Title', lyric: 'Lyrics', credits: 'Credits' };
+const clampOffset = (n: number) => Math.round(Math.min(OFFSET_MAX, Math.max(-OFFSET_MAX, n)) * 1000) / 1000;
 
 /** Report the time at most this often, so the editor does not re-render at 60 fps. */
 const TIME_STEP_SEC = 1 / 15;
@@ -29,11 +37,15 @@ export interface TextPreviewProps {
   style: TextStyle;
   onTime(sec: number): void;
   ref?: Ref<HTMLVideoElement>;
+  /** Move a part by hand (its offset from the alignment). Without it there is no Move text switch. */
+  onMove?(track: Track, offset: TextOffset): void;
+  /** The playhead, so the move boxes follow the text that shows now. */
+  timeSec?: number;
 }
 
 const activeAt = (blocks: TextBlock[], t: number) => blocks.filter((b) => t >= b.startSec && t < b.endSec);
 
-export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref }: TextPreviewProps) {
+export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMove, timeSec = 0 }: TextPreviewProps) {
   const video = useRef<HTMLVideoElement | null>(null);
   const overlay = useRef<HTMLCanvasElement>(null);
   const offscreen = useRef<HTMLCanvasElement | null>(null);
@@ -199,9 +211,81 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref }: Tex
     return () => ro.disconnect();
   }, [paint]);
 
+  // ---- Move text
+  const [moving, setMoving] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const measure = useRef<CanvasRenderingContext2D | null>(null);
+  const drag = useRef<{ track: Track; pointerId: number; x: number; y: number; from: TextOffset } | null>(null);
+  /** Each showing part's text box, in fractions of the frame (all of a part's showing lines together). */
+  const moveBoxes = (): { track: Track; x: number; y: number; w: number; h: number }[] => {
+    if (!moving || !onMove || typeof document === 'undefined') return [];
+    if (!measure.current) measure.current = document.createElement('canvas').getContext('2d');
+    const ctx = measure.current;
+    if (!ctx) return [];
+    const byTrack = new Map<Track, { x0: number; y0: number; x1: number; y1: number }>();
+    for (const b of activeAt(blocks, timeSec)) {
+      if (!b.text.trim()) continue;
+      const r = boxRect(ctx, layoutBlock(ctx, b, frame, style), frame);
+      const u = byTrack.get(b.track);
+      byTrack.set(b.track, u
+        ? { x0: Math.min(u.x0, r.x), y0: Math.min(u.y0, r.y), x1: Math.max(u.x1, r.x + r.w), y1: Math.max(u.y1, r.y + r.h) }
+        : { x0: r.x, y0: r.y, x1: r.x + r.w, y1: r.y + r.h });
+    }
+    return [...byTrack].map(([track, u]) => ({
+      track,
+      x: u.x0 / frame.width,
+      y: u.y0 / frame.height,
+      w: (u.x1 - u.x0) / frame.width,
+      h: (u.y1 - u.y0) / frame.height,
+    }));
+  };
+  const offsetOf = (track: Track) => trackStyleOf(track, style).offset;
+  const beginMove = (e: PointerEvent<HTMLDivElement>, track: Track) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    drag.current = { track, pointerId: e.pointerId, x: e.clientX, y: e.clientY, from: offsetOf(track) };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+  const onMoveDrag = (e: PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    const rect = box.current?.getBoundingClientRect();
+    if (!d || d.pointerId !== e.pointerId || !rect || !rect.width || !rect.height || !onMove) return;
+    onMove(d.track, {
+      x: clampOffset(d.from.x + (e.clientX - d.x) / rect.width),
+      y: clampOffset(d.from.y + (e.clientY - d.y) / rect.height),
+    });
+  };
+  const endMove = (e: PointerEvent<HTMLDivElement>) => {
+    if (drag.current?.pointerId === e.pointerId) drag.current = null;
+  };
+  const onMoveKey = (e: KeyboardEvent<HTMLDivElement>, track: Track) => {
+    const step = e.shiftKey ? 0.05 : 0.005;
+    const d: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+    const k = d[e.key];
+    if (!k || !onMove) return;
+    e.preventDefault();
+    const o = offsetOf(track);
+    onMove(track, { x: clampOffset(o.x + k[0]), y: clampOffset(o.y + k[1]) });
+  };
+
   const ratio = frame.width / Math.max(1, frame.height);
   return (
+    <div className="min-w-0 space-y-2">
+    {onMove && (
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+          <input type="checkbox" checked={moving} onChange={(e) => setMoving(e.target.checked)} className="h-4 w-4 accent-orange-600" />
+          Move text by dragging it on the picture
+        </label>
+        {moving && (
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            Drag a part&apos;s outlined box, or select it and use the arrow keys (Shift = bigger steps). Pick an alignment to put it back.
+          </span>
+        )}
+      </div>
+    )}
     <div
+      ref={box}
       className="relative mx-auto overflow-hidden rounded-lg bg-black"
       style={{ aspectRatio: `${frame.width} / ${frame.height}`, width: `min(100%, calc(70vh * ${ratio}))` }}
     >
@@ -214,6 +298,23 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref }: Tex
         className="absolute inset-0 h-full w-full"
       />
       <canvas ref={overlay} aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full" />
+      {moveBoxes().map((m) => (
+        <div
+          key={m.track}
+          role="button"
+          tabIndex={0}
+          aria-label={`Move ${TRACK_NAME[m.track]}: drag, or use the arrow keys`}
+          data-testid={`move-${m.track}`}
+          onPointerDown={(e) => beginMove(e, m.track)}
+          onPointerMove={onMoveDrag}
+          onPointerUp={endMove}
+          onPointerCancel={endMove}
+          onKeyDown={(e) => onMoveKey(e, m.track)}
+          className="absolute cursor-move touch-none rounded border-2 border-dashed border-orange-400 bg-orange-400/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+          style={{ left: `${m.x * 100}%`, top: `${m.y * 100}%`, width: `${m.w * 100}%`, height: `${m.h * 100}%` }}
+        />
+      ))}
+    </div>
     </div>
   );
 }

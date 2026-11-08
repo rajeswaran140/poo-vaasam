@@ -664,14 +664,27 @@ describe('each part has its own size and fonts', () => {
     routes['PATCH /api/admin/video-text/p1'] = () => json({ version: 4 });
     render(<VideoTextEditor project={project({ titleText: 'Song', blocks: [titleBlock] })} onBack={() => {}} />);
     const title = within(screen.getByRole('group', { name: 'Title' }));
-    fireEvent.change(title.getByLabelText('Size'), { target: { value: '1.6' } });
+    fireEvent.change(title.getByLabelText('Size'), { target: { value: '12' } });
     fireEvent.change(title.getByLabelText('Tamil font'), { target: { value: 'arima' } });
     fireEvent.change(title.getByLabelText('English font'), { target: { value: 'playfair-display' } });
     await act(async () => { jest.advanceTimersByTime(800); });
     const style = bodyOf(calls('PATCH', '/api/admin/video-text/p1').at(-1)![1]).edits.style;
-    expect(style.tracks).toEqual({ title: { size: 1.6, tamilFont: 'arima', englishFont: 'playfair-display' } });
+    expect(style.tracks).toEqual({ title: { heightPct: 12, tamilFont: 'arima', englishFont: 'playfair-display' } });
     expect(style.sizeScale).toBe(1);
-    expect(title.getByText('160%')).toBeInTheDocument();
+    expect(title.getByLabelText("Title size, % of the video's height")).toHaveValue(12);
+  });
+
+  it('picking an alignment puts a part moved by hand back exactly there', async () => {
+    routes['PATCH /api/admin/video-text/p1'] = () => json({ version: 4 });
+    const style = { sizeScale: 1, lyricPosition: 'lower' as const, tracks: { title: { offset: { x: 0.2, y: 0.1 } }, lyric: { offset: { x: 0, y: -0.1 } } } };
+    render(<VideoTextEditor project={project({ titleText: 'Song', blocks: [titleBlock], style })} onBack={() => {}} />);
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Title position' })).getByRole('radio', { name: 'Top left' }));
+    await act(async () => { jest.advanceTimersByTime(800); });
+    const saved = bodyOf(calls('PATCH', '/api/admin/video-text/p1').at(-1)![1]).edits.style;
+    expect(saved.titlePlace).toEqual({ v: 'top', h: 'left' });
+    expect(saved.tracks.title.offset).toEqual({ x: 0, y: 0 });
+    // Other parts keep their own move.
+    expect(saved.tracks.lyric.offset).toEqual({ x: 0, y: -0.1 });
   });
 
   it('colour, box and fade for the lyrics are saved for the lyrics only', async () => {
@@ -687,11 +700,12 @@ describe('each part has its own size and fonts', () => {
     expect(screen.getByTestId('sample-Lyrics').style.color).toBe('rgb(255, 225, 77)');
   });
 
-  it('an old project shows its saved size on every part, and the default fonts', () => {
+  it('an old project shows its saved size on every part, as % of the video height, and the default fonts', () => {
     render(<VideoTextEditor project={project({ style: { sizeScale: 0.75, lyricPosition: 'lower' } })} onBack={() => {}} />);
-    for (const part of ['Title', 'Lyrics', 'Credits']) {
+    // 75% of each part's normal size: title 7.5 → 5.6, lyrics 5 → 3.8 (3.75), credits 4 → 3.
+    for (const [part, shown] of [['Title', 5.6], ['Lyrics', 3.8], ['Credits', 3]] as const) {
       const g = within(screen.getByRole('group', { name: part }));
-      expect(g.getByText('75%')).toBeInTheDocument();
+      expect(g.getByLabelText(`${part} size, % of the video's height`)).toHaveValue(shown);
       expect(g.getByLabelText('Tamil font')).toHaveValue('noto-sans-tamil');
       expect(g.getByLabelText('English font')).toHaveValue('plain');
     }

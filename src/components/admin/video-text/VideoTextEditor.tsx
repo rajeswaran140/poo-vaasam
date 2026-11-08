@@ -201,9 +201,17 @@ export function VideoTextEditor({
     setEditedSinceRender(true);
     setProject((p) => ({ ...p, cut }));
   }, []);
-  const setStyle = (patch: Partial<TextStyle>) => {
+  /**
+   * Picking an alignment puts the part exactly there: a hand move is cleared.
+   * Moving by hand afterwards starts again from the new alignment.
+   */
+  const align = (track: Track, patch: Partial<TextStyle>) => {
     markEdited();
-    setProject((p) => ({ ...p, style: { ...p.style, ...patch } }));
+    setProject((p) => {
+      const own = p.style.tracks?.[track];
+      const tracks = own?.offset ? { ...p.style.tracks, [track]: { ...own, offset: { x: 0, y: 0 } } } : p.style.tracks;
+      return { ...p, style: { ...p.style, ...patch, ...(tracks ? { tracks } : {}) } };
+    });
   };
   const setTrackStyle = (track: Track, patch: TrackStyle) => {
     markEdited();
@@ -696,6 +704,8 @@ export function VideoTextEditor({
                   blocks={project.blocks}
                   style={project.style}
                   onTime={setPlayhead}
+                  timeSec={playhead}
+                  onMove={(track, offset) => setTrackStyle(track, { offset })}
                 />
               ) : (
                 !previewError && <p className="text-sm text-gray-500 dark:text-gray-400">Loading the video…</p>
@@ -759,7 +769,7 @@ export function VideoTextEditor({
                   label="Title"
                   visibleLabel="Position"
                   value={project.style.titlePlace}
-                  onChange={(p) => setStyle({ titlePlace: p })}
+                  onChange={(p) => align('title', { titlePlace: p })}
                 />
               }
             />
@@ -779,7 +789,7 @@ export function VideoTextEditor({
                         type="button"
                         role="radio"
                         aria-checked={project.style.lyricPosition === pos}
-                        onClick={() => setStyle({ lyricPosition: pos })}
+                        onClick={() => align('lyric', { lyricPosition: pos })}
                         className={`px-3 py-1.5 text-sm ${
                           project.style.lyricPosition === pos
                             ? 'bg-orange-600 text-white'
@@ -802,7 +812,7 @@ export function VideoTextEditor({
                   label="Credits"
                   visibleLabel="Position"
                   value={project.style.creditsPlace}
-                  onChange={(p) => setStyle({ creditsPlace: p })}
+                  onChange={(p) => align('credits', { creditsPlace: p })}
                 />
               }
             />

@@ -449,7 +449,7 @@ test.describe('video text editor (mocked API)', () => {
     expect(loaded.ok).toBe(true);
 
     // Bigger: more ink.
-    await title.getByLabel('Size').fill('1.8');
+    await title.getByLabel('Size', { exact: true }).fill('13.5'); // 1.8 × the title's normal 7.5%
     await expect.poll(inked, { timeout: 15_000 }).toBeGreaterThan(arima);
 
     // English font for the credits; the sample shows it.
@@ -462,7 +462,7 @@ test.describe('video text editor (mocked API)', () => {
         const last = patches.at(-1);
         return last ? JSON.parse(last).edits.style.tracks : null;
       }, { timeout: 15_000 })
-      .toMatchObject({ title: { tamilFont: 'arima', size: 1.8 }, credits: { englishFont: 'playfair-display' } });
+      .toMatchObject({ title: { tamilFont: 'arima', heightPct: 13.5 }, credits: { englishFont: 'playfair-display' } });
 
     expect(fontFiles.filter((f) => !f.startsWith('200')), 'font files that failed').toEqual([]);
     expect(fontFiles.some((f) => /arima/i.test(f) || f.startsWith('200')), 'a font file was fetched').toBe(true);
@@ -725,6 +725,70 @@ test.describe('video text editor (mocked API)', () => {
     await expect(summary).toHaveText(/exports the whole video/);
     await expect(page.getByTestId('cut-shade-in')).toHaveCount(0);
     await expect.poll(lastCut, { timeout: 15_000 }).toBeNull();
+
+    expect(writes, 'non-GET /api/ requests the mocks did not fulfil').toEqual([]);
+    expect(unexpected, 'requests to the video-text API that the test did not mock').toEqual([]);
+  });
+
+  test('size 1-100% of the height, and moving the title by dragging it on the picture; an alignment puts it back', async ({ page }) => {
+    test.skip(Boolean(ffmpegMissing), ffmpegMissing || 'ffmpeg missing');
+    const { writes, unexpected, patches } = await mockEditor(page);
+    const { seekTo } = await openEditor(page);
+    await seekTo(1); // only the title (0-5 s) is on screen
+    await expect.poll(() => opaqueIn(page, 0.3, 0.7, 0.4, 0.6), { timeout: 15_000 }).toBeGreaterThan(0);
+    const lastTitle = () => {
+      const last = patches.at(-1);
+      return last ? JSON.parse(last).edits.style.tracks?.title ?? {} : {};
+    };
+
+    // Size: 30% of the height makes the centred title much taller than at 7.5%.
+    const title = page.getByRole('group', { name: 'Title', exact: true });
+    const tallRows = () =>
+      page.evaluate(() => {
+        const cv = document.querySelector('canvas[aria-hidden="true"]') as HTMLCanvasElement;
+        const d = cv.getContext('2d')!.getImageData(0, 0, cv.width, cv.height).data;
+        let rows = 0;
+        for (let y = 0; y < cv.height; y++) {
+          for (let x = 0; x < cv.width; x++) if (d[(y * cv.width + x) * 4 + 3] > 0) { rows++; break; }
+        }
+        return rows / cv.height;
+      });
+    const before = await tallRows();
+    const sizeBox = title.getByLabel("Title size, % of the video's height");
+    await sizeBox.fill('30');
+    await sizeBox.press('Enter');
+    await expect.poll(tallRows, { timeout: 15_000 }).toBeGreaterThan(before * 2.5);
+    await expect.poll(() => lastTitle().heightPct, { timeout: 15_000 }).toBe(30);
+    await sizeBox.fill('7.5');
+    await sizeBox.press('Enter');
+
+    // Move by dragging on the picture: switch on, drag the title box up and left.
+    await page.getByLabel('Move text by dragging it on the picture').check();
+    const handle = page.getByTestId('move-title');
+    await expect(handle).toBeVisible();
+    const pic = (await page.locator('video').boundingBox())!;
+    const hb = (await handle.boundingBox())!;
+    await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(hb.x + hb.width / 2 - pic.width * 0.3, hb.y + hb.height / 2 - pic.height * 0.3, { steps: 6 });
+    await page.mouse.up();
+    // The title has left the middle band and sits in the top-left area.
+    await expect.poll(() => opaqueIn(page, 0, 1, 0.4, 0.6), { timeout: 15_000 }).toBe(0);
+    await expect.poll(() => opaqueIn(page, 0, 0.5, 0, 0.35), { timeout: 15_000 }).toBeGreaterThan(0);
+    await expect.poll(() => lastTitle().offset?.x ?? 0, { timeout: 15_000 }).toBeLessThan(-0.25);
+    const moved = lastTitle().offset;
+    expect(moved.x).toBeGreaterThan(-0.35);
+    expect(moved.y).toBeLessThan(-0.25);
+    expect(moved.y).toBeGreaterThan(-0.35);
+    // The move fields show it, in % of the frame.
+    expect(Number(await title.getByLabel("Title: move right, % of the video's width").inputValue())).toBeCloseTo(moved.x * 100, 0);
+    await page.screenshot({ path: 'test-results/video-text-move-title.png', fullPage: true });
+
+    // Picking Centre puts it exactly back: middle band again, offset cleared.
+    await page.getByRole('radiogroup', { name: 'Title position' }).getByRole('radio', { name: 'Centre', exact: true }).click();
+    await expect.poll(() => opaqueIn(page, 0.3, 0.7, 0.4, 0.6), { timeout: 15_000 }).toBeGreaterThan(0);
+    await expect.poll(() => lastTitle().offset, { timeout: 15_000 }).toEqual({ x: 0, y: 0 });
+    await expect(title.getByRole('button', { name: 'Reset to aligned' })).toHaveCount(0);
 
     expect(writes, 'non-GET /api/ requests the mocks did not fulfil').toEqual([]);
     expect(unexpected, 'requests to the video-text API that the test did not mock').toEqual([]);
