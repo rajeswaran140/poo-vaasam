@@ -20,6 +20,7 @@ import type { SourceInfo, TextBlock, TextStyle, Track, TrackStyle, VideoTextProj
 import { useAutosave, type AutosaveStatus } from './useAutosave';
 import { useRenderJob } from './useRenderJob';
 import { PartStyle } from './PartStyle';
+import { TapToTime } from './TapToTime';
 import { PlacementPicker } from './PlacementPicker';
 import { trackStyleOf } from '@/lib/video-text/fonts';
 import { Timeline } from './Timeline';
@@ -712,6 +713,13 @@ export function VideoTextEditor({
               onSeek={seek}
             />
           </div>
+          <TapToTime
+            blocks={project.blocks}
+            durationSec={source.durationSec}
+            video={videoRef}
+            onChange={setBlocks}
+            disabled={uploading || job.running}
+          />
           {unplaced > 0 && (
             <p className="text-sm text-amber-700 dark:text-amber-400">
               {unplaced === 1 ? '1 line has' : `${unplaced} lines have`} no room on the timeline. Make a gap of at least half

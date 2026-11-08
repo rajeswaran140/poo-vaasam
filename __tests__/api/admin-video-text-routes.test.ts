@@ -172,6 +172,16 @@ describe('PATCH', () => {
     expect((await PATCH(req({ edits: { ...edits(), style }, version: 3 }, 'PATCH'), ctx)).status).toBe(200);
     expect(repo.saveEdits.mock.calls[0][1].style).toEqual(style);
   });
+  it('saves colour, box and fade per part, and refuses unknown values', async () => {
+    repo.saveEdits.mockResolvedValue({ ok: true, version: 4 });
+    const style = { sizeScale: 1, lyricPosition: 'lower', tracks: { lyric: { color: 'gold', box: true, fade: true } } };
+    expect((await PATCH(req({ edits: { ...edits(), style }, version: 3 }, 'PATCH'), ctx)).status).toBe(200);
+    expect(repo.saveEdits.mock.calls[0][1].style).toEqual(style);
+    for (const lyric of [{ color: 'purple' }, { box: 'yes' }, { fade: 1 }]) {
+      const bad = { ...edits(), style: { sizeScale: 1, lyricPosition: 'lower', tracks: { lyric } } };
+      expect((await PATCH(req({ edits: bad, version: 3 }, 'PATCH'), ctx)).status).toBe(400);
+    }
+  });
   it('400s an unknown font or a size outside 50-200%', async () => {
     for (const tracks of [{ title: { tamilFont: 'comic-sans' } }, { lyric: { englishFont: 'arial' } }, { credits: { size: 2.5 } }, { title: { size: 0.4 } }]) {
       const bad = { ...edits(), style: { sizeScale: 1, lyricPosition: 'lower', tracks } };

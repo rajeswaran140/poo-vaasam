@@ -10,7 +10,7 @@
  * "Plain" adds no English font, which is how text was drawn before fonts
  * could be chosen.
  */
-import type { EnglishFontId, TamilFontId, TextStyle, Track, TrackStyle } from '@/types/videoText';
+import type { EnglishFontId, TamilFontId, TextColorId, TextStyle, Track, TrackStyle } from '@/types/videoText';
 
 export interface FontChoice<Id extends string> {
   id: Id;
@@ -51,12 +51,43 @@ export const TRACK_SIZE_MAX = 2;
 export const tamilFont = (id: TamilFontId | undefined) => TAMIL_FONTS.find((f) => f.id === id) ?? TAMIL_FONTS[0];
 export const englishFont = (id: EnglishFontId | undefined) => ENGLISH_FONTS.find((f) => f.id === id) ?? ENGLISH_FONTS[0];
 
-/** A part's effective look: its own settings, else the project's size and the default fonts. */
+export const TEXT_COLORS: readonly { id: TextColorId; label: string; css: string }[] = [
+  { id: 'white', label: 'White', css: '#ffffff' },
+  { id: 'yellow', label: 'Yellow', css: '#ffe14d' },
+  { id: 'gold', label: 'Gold', css: '#f2c267' },
+  { id: 'cream', label: 'Cream', css: '#fff1d0' },
+];
+export const TEXT_COLOR_IDS = TEXT_COLORS.map((c) => c.id) as [TextColorId, ...TextColorId[]];
+export const textColor = (id: TextColorId | undefined) => TEXT_COLORS.find((c) => c.id === id) ?? TEXT_COLORS[0];
+
+/** Fade in and out over this long (shortened to half a block on very short blocks). */
+export const FADE_SEC = 0.3;
+
+/** A part's effective look: its own settings, else the project's size, the default fonts, white, no box, no fade. */
 export function trackStyleOf(track: Track, style: TextStyle): Required<TrackStyle> {
   const own = style.tracks?.[track] ?? {};
   return {
     size: own.size ?? style.sizeScale,
     tamilFont: tamilFont(own.tamilFont).id,
     englishFont: englishFont(own.englishFont).id,
+    color: textColor(own.color).id,
+    box: own.box ?? false,
+    fade: own.fade ?? false,
   };
 }
+
+/**
+ * How visible a block is at time t (0..1): fully, unless its part fades, then
+ * a linear ramp over FADE_SEC at each end (at most half the block). The
+ * preview draws with this; the render's ffmpeg fade ramps the same way.
+ */
+export function fadeAlphaAt(block: { startSec: number; endSec: number }, fade: boolean, t: number): number {
+  if (t < block.startSec || t >= block.endSec) return 0;
+  if (!fade) return 1;
+  const d = fadeSecFor(block);
+  return Math.max(0, Math.min(1, (t - block.startSec) / d, (block.endSec - t) / d));
+}
+
+/** The fade length for a block: FADE_SEC, or half the block when shorter. */
+export const fadeSecFor = (block: { startSec: number; endSec: number }) =>
+  Math.min(FADE_SEC, (block.endSec - block.startSec) / 2);

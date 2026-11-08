@@ -16,6 +16,7 @@
  */
 import { useCallback, useEffect, useRef, type Ref } from 'react';
 import { drawBlock, ensureFonts } from '@/lib/video-text/draw';
+import { fadeAlphaAt, trackStyleOf } from '@/lib/video-text/fonts';
 import type { TextBlock, TextStyle } from '@/types/videoText';
 
 /** Report the time at most this often, so the editor does not re-render at 60 fps. */
@@ -41,6 +42,7 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref }: Tex
   const lastTime = useRef(-1);
 
   const latest = useRef({ blocks, style, frame, onTime });
+  const layerCanvas = useRef<HTMLCanvasElement | null>(null);
   latest.current = { blocks, style, frame, onTime };
 
   const setVideo = useCallback(
@@ -72,7 +74,9 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref }: Tex
     }
 
     const active = activeAt(bs, t);
-    const key = JSON.stringify([fr.width, fr.height, st, active.map((b) => [b.id, b.text])]);
+    // A fading block is redrawn as its alpha changes (in 2% steps); others only when they change.
+    const alphas = active.map((b) => Math.round(fadeAlphaAt(b, trackStyleOf(b.track, st).fade, t) * 50) / 50);
+    const key = JSON.stringify([fr.width, fr.height, st, active.map((b, i) => [b.id, b.text, alphas[i]])]);
     if (key === drawnKey.current && !resized) return;
 
     const ctx = canvas.getContext('2d');
@@ -86,7 +90,27 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref }: Tex
     const octx = off.getContext('2d');
     if (!octx) return;
     octx.clearRect(0, 0, off.width, off.height);
-    for (const b of active) drawBlock(octx, b, fr, st);
+    active.forEach((b, i) => {
+      if (alphas[i] >= 1) return drawBlock(octx, b, fr, st);
+      // A fading block is drawn whole on its own layer, then faded AS ONE
+      // image — exactly what the render's ffmpeg fade does to the PNG. Drawing
+      // it at partial alpha directly would stack the stroke, fill and shadows
+      // (a third of the way in would look ~80% visible).
+      if (!layerCanvas.current) layerCanvas.current = document.createElement('canvas');
+      const layer = layerCanvas.current;
+      if (layer.width !== fr.width || layer.height !== fr.height) {
+        layer.width = fr.width;
+        layer.height = fr.height;
+      }
+      const lctx = layer.getContext('2d');
+      if (!lctx) return;
+      lctx.clearRect(0, 0, layer.width, layer.height);
+      drawBlock(lctx, b, fr, st);
+      octx.save();
+      octx.globalAlpha = alphas[i];
+      octx.drawImage(layer, 0, 0);
+      octx.restore();
+    });
 
     ctx.clearRect(0, 0, w, h);
     if (active.length > 0) ctx.drawImage(off, 0, 0, w, h);

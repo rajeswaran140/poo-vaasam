@@ -4,7 +4,7 @@
  * cluster (consonant + vowel sign, pulli, etc.) is never split.
  */
 import { CENTRE_PLACEMENT, type Placement, type TextBlock, type TextStyle } from '@/types/videoText';
-import { englishFont, tamilFont, trackStyleOf, type FontChoice } from '@/lib/video-text/fonts';
+import { englishFont, tamilFont, textColor, trackStyleOf, type FontChoice } from '@/lib/video-text/fonts';
 
 export const SAFE_MARGIN = 0.05;
 export const FONT_FAMILY = '"Noto Sans Tamil", "Noto Sans", sans-serif';
@@ -181,21 +181,63 @@ export function layoutBlock(
   return { fontPx, lines, x, yBaseline, align };
 }
 
+/** The dim box behind a block's lines: padding, corner radius and colour. */
+export const BOX = { padX: 0.4, padY: 0.15, radius: 0.2, fill: 'rgba(0,0,0,0.5)' } as const;
+
+/** Where the box goes: around every line (measured), padded, kept inside the frame. */
+export function boxRect(
+  ctx: MeasureCtx,
+  layout: { fontPx: number; lines: string[]; x: number; yBaseline: number[]; align: CanvasTextAlign },
+  frame: Frame,
+): { x: number; y: number; w: number; h: number } {
+  const { fontPx, lines, x, yBaseline, align } = layout;
+  const lh = fontPx * LINE_HEIGHT;
+  const half = (fontPx * 0.12) / 2; // the stroke sticks out this far
+  let left = Infinity;
+  let right = -Infinity;
+  for (const line of lines) {
+    const w = width(ctx, line);
+    const l = align === 'left' ? x : align === 'right' ? x - w : x - w / 2;
+    left = Math.min(left, l - half);
+    right = Math.max(right, l + w + half);
+  }
+  const x0 = Math.max(0, left - fontPx * BOX.padX);
+  const x1 = Math.min(frame.width, right + fontPx * BOX.padX);
+  const y0 = Math.max(0, yBaseline[0] - lh / 2 - fontPx * BOX.padY);
+  const y1 = Math.min(frame.height, yBaseline[yBaseline.length - 1] + lh / 2 + fontPx * BOX.padY);
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+/**
+ * Draw one block, fully opaque. Fades are applied to the finished image as a
+ * whole: by the render's ffmpeg fade on the PNG, and by the preview
+ * compositing a layer at fadeAlphaAt — never by drawing at partial alpha.
+ */
 export function drawBlock(
   ctx: CanvasRenderingContext2D,
   block: TextBlock,
   frame: Frame,
   style: TextStyle,
 ): void {
-  const { fontPx, lines, x, yBaseline, align } = layoutBlock(ctx, block, frame, style);
+  const layout = layoutBlock(ctx, block, frame, style);
+  const { fontPx, lines, x, yBaseline, align } = layout;
+  const look = trackStyleOf(block.track, style);
   ctx.save();
   ctx.font = fontFor(fontPx, block.track, style);
+  if (look.box && lines.length) {
+    const r = boxRect(ctx, layout, frame);
+    ctx.fillStyle = BOX.fill;
+    ctx.beginPath();
+    if (typeof ctx.roundRect === 'function') ctx.roundRect(r.x, r.y, r.w, r.h, fontPx * BOX.radius);
+    else ctx.rect(r.x, r.y, r.w, r.h);
+    ctx.fill();
+  }
   ctx.textAlign = align;
   ctx.textBaseline = 'middle';
   ctx.lineJoin = 'round';
   ctx.lineWidth = fontPx * 0.12;
   ctx.strokeStyle = 'rgba(0,0,0,0.85)';
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = textColor(look.color).css;
   ctx.shadowColor = 'rgba(0,0,0,0.5)';
   ctx.shadowBlur = fontPx * 0.15;
   ctx.shadowOffsetY = fontPx * 0.04;

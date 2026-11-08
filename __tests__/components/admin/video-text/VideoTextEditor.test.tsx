@@ -674,6 +674,19 @@ describe('each part has its own size and fonts', () => {
     expect(title.getByText('160%')).toBeInTheDocument();
   });
 
+  it('colour, box and fade for the lyrics are saved for the lyrics only', async () => {
+    routes['PATCH /api/admin/video-text/p1'] = () => json({ version: 4 });
+    render(<VideoTextEditor project={project()} onBack={() => {}} />);
+    const lyrics = within(screen.getByRole('group', { name: 'Lyrics' }));
+    fireEvent.click(within(lyrics.getByRole('radiogroup', { name: 'Lyrics colour' })).getByRole('radio', { name: 'Yellow' }));
+    fireEvent.click(lyrics.getByLabelText('Box behind text'));
+    fireEvent.click(lyrics.getByLabelText('Fade in and out'));
+    await act(async () => { jest.advanceTimersByTime(800); });
+    const style = bodyOf(calls('PATCH', '/api/admin/video-text/p1').at(-1)![1]).edits.style;
+    expect(style.tracks).toEqual({ lyric: { color: 'yellow', box: true, fade: true } });
+    expect(screen.getByTestId('sample-Lyrics').style.color).toBe('rgb(255, 225, 77)');
+  });
+
   it('an old project shows its saved size on every part, and the default fonts', () => {
     render(<VideoTextEditor project={project({ style: { sizeScale: 0.75, lyricPosition: 'lower' } })} onBack={() => {}} />);
     for (const part of ['Title', 'Lyrics', 'Credits']) {

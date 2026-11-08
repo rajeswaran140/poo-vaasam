@@ -1,6 +1,6 @@
 import {
   lyricLines, defaultBlocks, moveBlock, resizeBlock, clampToDuration, syncTextToBlocks,
-  validateBlocks, MIN_BLOCK_SEC, unplacedLineCount,
+  validateBlocks, MIN_BLOCK_SEC, unplacedLineCount, tapLyric, endLyricAt,
 } from '@/lib/video-text/timeline';
 import { floorCentis } from '@/lib/video-text/keys';
 import type { TextBlock } from '@/types/videoText';
@@ -457,6 +457,74 @@ describe('syncTextToBlocks: emptied box, ids, duplicates (final review)', () => 
         expect(validateBlocks(b, D)).toBeNull();
         lyricsOk(b);
         expect(new Set(b.map((x) => x.id)).size).toBe(b.length);
+      }
+    }
+  });
+});
+
+describe('tap to time', () => {
+  const D = 60;
+  const lines = (n: number): TextBlock[] =>
+    Array.from({ length: n }, (_, i) => ({ id: `lyric-${i}`, track: 'lyric' as const, text: `L${i}`, startSec: 5 + i * 4, endSec: 8 + i * 4 }));
+  const title: TextBlock = { id: 'title', track: 'title', text: 'T', startSec: 0, endSec: 5 };
+  const times = (b: TextBlock[]) => lyrics(b).map((x) => [x.startSec, x.endSec]);
+
+  it('a session of taps lays the lines back to back, each starting at its tap', () => {
+    let b: TextBlock[] = [title, ...lines(3)];
+    b = tapLyric(b, 0, 10.2, D, { closePrevious: false })!;
+    b = tapLyric(b, 1, 13.7, D, { closePrevious: true })!;
+    b = tapLyric(b, 2, 18.05, D, { closePrevious: true })!;
+    b = endLyricAt(b, 2, 21.5, D)!;
+    expect(times(b)).toEqual([[10.2, 13.7], [13.7, 18.05], [18.05, 21.5]]);
+    expect(get(b, 'title')).toEqual(title); // other tracks untouched
+    expect(validateBlocks(b, D)).toBeNull();
+  });
+
+  it('later lines are pushed, never overlapped, keeping their length', () => {
+    const b = tapLyric(lines(3), 0, 20, D, { closePrevious: false })!;
+    expect(times(b)).toEqual([[20, 23], [23, 26], [26, 29]]);
+  });
+
+  it('a tap less than half a second after the previous line started is refused', () => {
+    let b = tapLyric(lines(2), 0, 10, D, { closePrevious: false })!;
+    expect(tapLyric(b, 1, 10.3, D, { closePrevious: true })).toBeNull();
+    b = tapLyric(b, 1, 10.5, D, { closePrevious: true })!;
+    expect(times(b)[0]).toEqual([10, 10.5]);
+  });
+
+  it('starting mid-list without a previous tap only trims the previous line if it overlaps', () => {
+    const b = tapLyric(lines(3), 1, 12, D, { closePrevious: false })!;
+    expect(times(b)[0]).toEqual([5, 8]); // ended before 12: kept
+    const c = tapLyric(lines(3), 1, 6, D, { closePrevious: false })!;
+    expect(times(c)[0]).toEqual([5, 6]); // overlapped: cut at the tap
+  });
+
+  it('near the end, the remaining lines are squeezed in, or the tap is refused if they cannot fit', () => {
+    const b = tapLyric(lines(4), 1, 55, D, { closePrevious: false })!;
+    expect(validateBlocks(b, D)).toBeNull();
+    expect(lyrics(b).at(-1)!.endSec).toBeLessThanOrEqual(D);
+    expect(tapLyric(lines(4), 1, 59.4, D, { closePrevious: false })).toBeNull();
+  });
+
+  it('endLyricAt refuses an end less than half a second after the start', () => {
+    const b = tapLyric(lines(1), 0, 10, D, { closePrevious: false })!;
+    expect(endLyricAt(b, 0, 10.2, D)).toBeNull();
+    expect(times(endLyricAt(b, 0, 12, D)!)).toEqual([[10, 12]]);
+  });
+
+  it('fuzz: any tap sequence keeps the layout valid', () => {
+    let seed = 3;
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
+    for (let run = 0; run < 300; run++) {
+      let b = lines(2 + Math.floor(rnd() * 12));
+      let t = rnd() * 10;
+      const n = lyrics(b).length;
+      for (let k = 0; k < n; k++) {
+        t += rnd() * 4;
+        const next = tapLyric(b, k, t, D, { closePrevious: k > 0 });
+        if (next) b = next;
+        expect(validateBlocks(b, D)).toBeNull();
+        lyricsOk(b);
       }
     }
   });

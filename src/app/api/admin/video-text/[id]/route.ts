@@ -1,7 +1,7 @@
 /** GET load / PATCH autosave one Video Text project. PATCH is version-checked. */
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { ENGLISH_FONT_IDS, TAMIL_FONT_IDS, TRACK_SIZE_MAX, TRACK_SIZE_MIN } from '@/lib/video-text/fonts';
+import { ENGLISH_FONT_IDS, TAMIL_FONT_IDS, TEXT_COLOR_IDS, TRACK_SIZE_MAX, TRACK_SIZE_MIN } from '@/lib/video-text/fonts';
 import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { VideoTextRepository } from '@/infrastructure/database/VideoTextRepository';
 import { isValidProjectId } from '@/lib/video-text/keys';
@@ -27,6 +27,9 @@ const trackStyleSchema = z.object({
   size: z.number().min(TRACK_SIZE_MIN).max(TRACK_SIZE_MAX).optional(),
   tamilFont: z.enum(TAMIL_FONT_IDS).optional(),
   englishFont: z.enum(ENGLISH_FONT_IDS).optional(),
+  color: z.enum(TEXT_COLOR_IDS).optional(),
+  box: z.boolean().optional(),
+  fade: z.boolean().optional(),
 });
 
 const patchSchema = z.object({
