@@ -478,6 +478,55 @@ test.describe('video text editor (mocked API)', () => {
     expect(unexpected, 'requests to the video-text API that the test did not mock').toEqual([]);
   });
 
+  test('Google fonts: a Tamil and an English Google font really load from Google, under the site CSP, and change the drawing', async ({ page }) => {
+    test.skip(Boolean(ffmpegMissing), ffmpegMissing || 'ffmpeg missing');
+    const { writes, unexpected, patches } = await mockEditor(page);
+    const cspErrors: string[] = [];
+    page.on('console', (m) => {
+      if (/Content Security Policy|Refused to/i.test(m.text())) cspErrors.push(m.text());
+    });
+    const googleFiles: string[] = [];
+    page.on('response', (r) => {
+      if (/fonts\.(gstatic|googleapis)\.com/.test(r.url())) googleFiles.push(`${r.status()} ${new URL(r.url()).hostname}`);
+    });
+    const { seekTo } = await openEditor(page);
+    await seekTo(1);
+    const inked = () => opaqueIn(page, 0, 1, 0, 1);
+    await expect.poll(inked, { timeout: 15_000 }).toBeGreaterThan(0);
+    const before = await inked();
+
+    const title = page.getByRole('group', { name: 'Title' });
+    await title.getByLabel('Tamil font').selectOption('g:Pavanam');
+    await expect
+      .poll(() => page.evaluate(() => document.fonts.check('400 32px "vt-g-tamil-pavanam"', 'அ') && [...document.fonts].some((f) => f.family === 'vt-g-tamil-pavanam' && f.status === 'loaded')), { timeout: 20_000 })
+      .toBe(true);
+    await expect.poll(inked, { timeout: 15_000 }).not.toBe(before);
+
+    const credits = page.getByRole('group', { name: 'Credits' });
+    await credits.getByRole('button', { name: 'More fonts…' }).click();
+    await credits.getByLabel('Search Google fonts').fill('Lobster');
+    await credits.getByRole('button', { name: 'Lobster', exact: true }).click();
+    await expect(credits.getByLabel('English font')).toHaveValue('g:Lobster');
+    await expect(page.getByTestId('sample-Credits')).toHaveCSS('font-family', /vt-g-latin-lobster/);
+    await expect
+      .poll(() => page.evaluate(() => [...document.fonts].some((f) => f.family === 'vt-g-latin-lobster' && f.status === 'loaded')), { timeout: 20_000 })
+      .toBe(true);
+
+    await expect
+      .poll(() => {
+        const last = patches.at(-1);
+        return last ? JSON.parse(last).edits.style.tracks : null;
+      }, { timeout: 15_000 })
+      .toMatchObject({ title: { tamilFont: 'g:Pavanam' }, credits: { englishFont: 'g:Lobster' } });
+
+    expect(cspErrors, 'CSP refusals').toEqual([]);
+    expect(googleFiles.filter((f) => !f.startsWith('200')), 'Google requests that failed').toEqual([]);
+    expect(googleFiles.some((f) => f.endsWith('fonts.gstatic.com'))).toBe(true);
+    await page.screenshot({ path: 'test-results/video-text-google-fonts.png', fullPage: true });
+    expect(writes, 'non-GET /api/ requests the mocks did not fulfil').toEqual([]);
+    expect(unexpected, 'requests to the video-text API that the test did not mock').toEqual([]);
+  });
+
   test('Make video: the browser loads the chosen fonts, draws every text image as a real PNG, uploads and finishes', async ({ page }) => {
     test.skip(Boolean(ffmpegMissing), ffmpegMissing || 'ffmpeg missing');
     const { writes, unexpected } = await mockEditor(page);

@@ -5,6 +5,7 @@
  */
 import { CENTRE_PLACEMENT, type Placement, type TextBlock, type TextStyle } from '@/types/videoText';
 import { englishFont, tamilFont, textColor, trackStyleOf, type FontChoice } from '@/lib/video-text/fonts';
+import { googleFamilyName, loadGoogleFont, type FontSlot } from '@/lib/video-text/google-font-loader';
 
 export const SAFE_MARGIN = 0.05;
 export const FONT_FAMILY = '"Noto Sans Tamil", "Noto Sans", sans-serif';
@@ -111,7 +112,8 @@ function cssVarValue(name: string): string {
 }
 
 /** One font's family, or '' when it has none of its own (Plain) or is not defined on this page. */
-function familyOf(choice: FontChoice<string>): string {
+function familyOf(choice: FontChoice<string>, slot: FontSlot): string {
+  if (choice.google) return googleFamilyName(choice.google, slot);
   if (!choice.cssVar) return '';
   // The site-wide Tamil font keeps its old plain-name fallback (resolveFontFamily).
   return cssVarValue(choice.cssVar) || (choice.cssVar === '--font-tamil' ? '"Noto Sans Tamil"' : '');
@@ -122,10 +124,10 @@ function familyOf(choice: FontChoice<string>): string {
  * then the fallbacks. Noto Sans Tamil with Plain gives exactly the stack used
  * before fonts could be chosen.
  */
-export function fontStackFor(track: TextBlock['track'], style: TextStyle): { stack: string; weight: 400 | 700 } {
+export function fontStackFor(track: TextBlock['track'], style: TextStyle): { stack: string; weight: number } {
   const own = trackStyleOf(track, style);
   const ta = tamilFont(own.tamilFont);
-  const families = [familyOf(englishFont(own.englishFont)), familyOf(ta)].filter(Boolean);
+  const families = [familyOf(englishFont(own.englishFont), 'latin'), familyOf(ta, 'tamil')].filter(Boolean);
   return { stack: families.length ? `${families.join(', ')}, "Noto Sans", sans-serif` : FONT_FAMILY, weight: ta.weight };
 }
 
@@ -268,10 +270,18 @@ export async function ensureFonts(style?: TextStyle): Promise<void> {
     const own = trackStyleOf(track, st);
     const ta = tamilFont(own.tamilFont);
     const en = englishFont(own.englishFont);
-    for (const [choice, sample, kind] of [[ta, TAMIL_SAMPLE, 'Tamil'], [en, LATIN_SAMPLE, 'English']] as const) {
-      if (!choice.cssVar) continue; // Plain: no font of its own
+    for (const [choice, sample, kind, slot] of [[ta, TAMIL_SAMPLE, 'Tamil', 'tamil'], [en, LATIN_SAMPLE, 'English', 'latin']] as const) {
+      if (!choice.cssVar && !choice.google) continue; // Plain: no font of its own
       const label = ta.id === 'noto-sans-tamil' && kind === 'Tamil' ? 'Tamil font' : `${kind} font (${choice.label})`;
-      const family = familyOf(choice);
+      if (choice.google) {
+        // From Google, on first use. A failure must stop the render, not draw the fallback.
+        try {
+          await loadGoogleFont(choice.google, slot);
+        } catch {
+          throw new Error(`The ${label} did not load from Google Fonts — check the connection and try again.`);
+        }
+      }
+      const family = familyOf(choice, slot);
       // A chosen font whose variable is missing would silently draw the fallback.
       if (!family) throw new Error(`The ${label} did not load — reload the page and try again.`);
       // Check the real face only. next/font's variable also lists a metric

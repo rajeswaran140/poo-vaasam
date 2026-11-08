@@ -11,6 +11,13 @@ import {
   renderBlockPng,
 } from '@/lib/video-text/draw';
 import type { TextBlock, TextStyle } from '@/types/videoText';
+import * as loader from '@/lib/video-text/google-font-loader';
+
+jest.mock('@/lib/video-text/google-font-loader', () => {
+  const actual = jest.requireActual('@/lib/video-text/google-font-loader');
+  return { ...actual, loadGoogleFont: jest.fn(actual.loadGoogleFont) };
+});
+const loadGoogleFont = loader.loadGoogleFont as jest.Mock;
 
 function fakeCtx() {
   return {
@@ -389,5 +396,32 @@ describe('colour, box and fade alpha', () => {
     const r = rec();
     drawBlock(r.ctx, block('title', 'Hi'), FRAME, STYLE);
     expect((r.ctx as unknown as { globalAlpha: number }).globalAlpha).toBe(1);
+  });
+});
+
+describe('Google fonts in the drawing', () => {
+  const st = (tracks: TextStyle['tracks']): TextStyle => ({ ...STYLE, tracks });
+  it('a Google font draws under its own family, English before Tamil, at the Tamil font\'s weight', () => {
+    const out = fontStackFor('title', st({ title: { tamilFont: 'g:Pavanam', englishFont: 'g:Lobster' } }));
+    expect(out).toEqual({ stack: '"vt-g-latin-lobster", "vt-g-tamil-pavanam", "Noto Sans", sans-serif', weight: 400 });
+  });
+
+  it('ensureFonts loads the Google font first, then checks that face', async () => {
+    const spy = loadGoogleFont.mockResolvedValueOnce('"vt-g-latin-lobster"');
+    const check = jest.fn(() => true);
+    Object.defineProperty(document, 'fonts', { configurable: true, value: { load: jest.fn(async () => []), check } });
+    document.documentElement.style.setProperty('--font-tamil', "'__noto'");
+    await ensureFonts(st({ lyric: { englishFont: 'g:Lobster' } }));
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ family: 'Lobster' }), 'latin');
+    expect(check).toHaveBeenCalledWith('400 32px "vt-g-latin-lobster"', 'Ag');
+    document.documentElement.style.removeProperty('--font-tamil');
+  });
+
+  it('a Google font that will not load stops Make video with its name', async () => {
+    loadGoogleFont.mockRejectedValueOnce(new Error('offline'));
+    Object.defineProperty(document, 'fonts', { configurable: true, value: { load: jest.fn(async () => []), check: () => true } });
+    await expect(ensureFonts(st({ credits: { tamilFont: 'g:Pavanam' } }))).rejects.toThrow(
+      'The Tamil font (Pavanam) did not load from Google Fonts — check the connection and try again.',
+    );
   });
 });
