@@ -13,13 +13,17 @@
  *   the pointer's travel, so a clamp at a neighbour never "sticks".
  * - A focused block: ←/→ nudge 0.1 s (Shift = 1 s); [ and ] move its start or
  *   end to the playhead. A focused edge handle: ←/→ move that edge.
- * - Click the ruler to seek. Zoom runs from "whole song fits" to 40 px/s.
+ * - Pulling an edge into a neighbour it touches moves the shared boundary
+ *   (a rolling edit); pulling it away leaves a gap.
+ * - Click (tap) the ruler to seek; a swipe on it scrolls. Zoom runs from
+ *   "whole song fits" to 40 px/s and keeps the playhead where it was on
+ *   screen; while the song plays the view follows the playhead.
  * - It scrolls sideways inside its own box; the page never does.
  *
  * All the arithmetic (clamping, minimum length, rounding) is timeline.ts.
  */
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
-import { moveBlock, resizeBlock } from '@/lib/video-text/timeline';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
+import { dragEdge, moveBlock, sameBlocks } from '@/lib/video-text/timeline';
 import type { TextBlock, Track } from '@/types/videoText';
 
 const MAX_PX_PER_SEC = 40;
@@ -108,6 +112,16 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek }:
   const drag = useRef<Drag | null>(null);
   const latestBlocks = useRef(blocks);
   latestBlocks.current = blocks;
+  /** Why the last drag or nudge did nothing (a line boxed in by its neighbours). */
+  const [hint, setHint] = useState<string | null>(null);
+
+  /** Pass an edit on only when it changes something: a no-op must not mark the video out of date. */
+  const emit = (next: TextBlock[]) => {
+    if (sameBlocks(latestBlocks.current, next)) return false;
+    setHint(null);
+    onChange(next);
+    return true;
+  };
 
   useEffect(() => {
     const el = scroller.current;
@@ -126,6 +140,38 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek }:
   const [zoom, setZoom] = useState(0);
   const pps = fitPx + (maxPx - fitPx) * zoom;
   const innerWidth = duration * pps;
+
+  // Zoom keeps a time fixed on screen: the playhead when it is in view, else
+  // the middle of the view. Applied after the new width is laid out.
+  const zoomAnchor = useRef<{ sec: number; screenX: number } | null>(null);
+  const changeZoom = (z: number) => {
+    const el = scroller.current;
+    if (el) {
+      const w = el.clientWidth || FALLBACK_WIDTH;
+      const headX = Math.min(Math.max(0, playheadSec), duration) * pps - el.scrollLeft;
+      const screenX = headX >= 0 && headX <= w ? headX : w / 2;
+      zoomAnchor.current = { sec: (el.scrollLeft + screenX) / pps, screenX };
+    }
+    setZoom(z);
+  };
+  useLayoutEffect(() => {
+    const a = zoomAnchor.current;
+    const el = scroller.current;
+    if (!a || !el) return;
+    zoomAnchor.current = null;
+    el.scrollLeft = Math.max(0, a.sec * pps - a.screenX);
+  }, [pps]);
+
+  // Follow the playhead when it leaves the view (playback, Tap to time, a
+  // seek), never while a block is being dragged.
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el || drag.current) return;
+    const w = el.clientWidth;
+    if (!w || innerWidth <= w) return;
+    const x = Math.min(Math.max(0, playheadSec), duration) * pps;
+    if (x < el.scrollLeft || x > el.scrollLeft + w - 8) el.scrollLeft = Math.max(0, x - w * 0.25);
+  }, [playheadSec, pps, innerWidth, duration]);
 
   const ticks = useMemo(() => {
     // Labelled ticks at least 48 px apart; unlabelled second (or 5 s) ticks between.
@@ -174,11 +220,14 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek }:
       d.from = d.mode === 'end' ? now.endSec : now.startSec;
     }
     const sec = d.from + (e.clientX - d.x) / pps;
-    onChange(
-      d.mode === 'move'
-        ? moveBlock(d.base, d.id, sec, durationSec)
-        : resizeBlock(d.base, d.id, d.mode, sec, durationSec),
-    );
+    const next = d.mode === 'move' ? moveBlock(d.base, d.id, sec, durationSec) : dragEdge(d.base, d.id, d.mode, sec, durationSec);
+    if (d.mode === 'move' && sameBlocks(d.base, next) && Math.abs(sec - d.from) >= 0.05) noRoom(d.id);
+    emit(next);
+  };
+
+  const noRoom = (id: string) => {
+    const b = latestBlocks.current.find((x) => x.id === id);
+    if (b) setHint(`${cap(nameOf(b))} touches its neighbours, so it can't move. Drag its edge to make room, or shorten a neighbour.`);
   };
 
   const endDrag = (e: PointerEvent<HTMLElement>) => {
@@ -189,13 +238,13 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek }:
     const step = e.shiftKey ? 1 : 0.1;
     if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
       e.preventDefault();
-      onChange(moveBlock(blocks, b.id, b.startSec + (e.key === 'ArrowRight' ? step : -step), durationSec));
+      if (!emit(moveBlock(blocks, b.id, b.startSec + (e.key === 'ArrowRight' ? step : -step), durationSec))) noRoom(b.id);
     } else if (e.key === '[') {
       e.preventDefault();
-      onChange(resizeBlock(blocks, b.id, 'start', playheadSec, durationSec));
+      emit(dragEdge(blocks, b.id, 'start', playheadSec, durationSec));
     } else if (e.key === ']') {
       e.preventDefault();
-      onChange(resizeBlock(blocks, b.id, 'end', playheadSec, durationSec));
+      emit(dragEdge(blocks, b.id, 'end', playheadSec, durationSec));
     }
   };
 
@@ -205,10 +254,12 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek }:
     e.stopPropagation();
     const step = (e.shiftKey ? 1 : 0.1) * (e.key === 'ArrowRight' ? 1 : -1);
     const at = edge === 'start' ? b.startSec : b.endSec;
-    onChange(resizeBlock(blocks, b.id, edge, at + step, durationSec));
+    emit(dragEdge(blocks, b.id, edge, at + step, durationSec));
   };
 
-  const seekFromRuler = (e: PointerEvent<HTMLDivElement>) => {
+  // A click, not a pointerdown: on a phone a swipe on the ruler scrolls the
+  // timeline (the browser cancels the click) instead of moving the song.
+  const seekFromRuler = (e: MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     onSeek(Math.min(durationSec, Math.max(0, (e.clientX - rect.left) / pps)));
   };
@@ -236,7 +287,7 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek }:
             {/* Ruler: click to seek. */}
             <div
               className="relative h-6 cursor-pointer border-b border-gray-200 dark:border-gray-700"
-              onPointerDown={seekFromRuler}
+              onClick={seekFromRuler}
               data-testid="timeline-ruler"
             >
               {ticks.map((t) => (
@@ -338,6 +389,12 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek }:
         </div>
       </div>
 
+      {hint && (
+        <p role="status" className="text-xs text-amber-700 dark:text-amber-400" data-testid="timeline-hint">
+          {hint}
+        </p>
+      )}
+
       {selectedBlock ? (
         <BlockTimes
           key={selectedBlock.id}
@@ -363,7 +420,7 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek }:
           max={1}
           step={0.01}
           value={zoom}
-          onChange={(e) => setZoom(Number(e.target.value))}
+          onChange={(e) => changeZoom(Number(e.target.value))}
           className="w-40 min-w-0 accent-orange-600"
         />
       </label>
@@ -466,23 +523,22 @@ function BlockTimes({
   // Apply a change; say so when a neighbour or the video's end stopped it short.
   const apply = (next: TextBlock[], wanted: { start?: number; end?: number }) => {
     const after = next.find((b) => b.id === block.id) ?? block;
-    const off =
-      (wanted.start !== undefined && Math.abs(after.startSec - wanted.start) > 0.005) ||
-      (wanted.end !== undefined && Math.abs(after.endSec - wanted.end) > 0.005);
+    const startOff = wanted.start !== undefined && Math.abs(after.startSec - wanted.start) > 0.005;
+    const endOff = wanted.end !== undefined && Math.abs(after.endSec - wanted.end) > 0.005;
     setNote(
-      off
-        ? `Stopped at ${formatTime(wanted.start !== undefined ? after.startSec : after.endSec)}: a block can't overlap its neighbour, run past the end, or be shorter than half a second.`
+      startOff || endOff
+        ? `Stopped at ${formatTime(startOff ? after.startSec : after.endSec)}: a block can't overlap its neighbour, run past the end, or be shorter than half a second.`
         : null,
     );
-    onChange(next);
+    if (!sameBlocks(blocks, next)) onChange(next);
   };
-  const setStart = (sec: number) => apply(resizeBlock(blocks, block.id, 'start', sec, durationSec), { start: sec });
-  const setEnd = (sec: number) => apply(resizeBlock(blocks, block.id, 'end', sec, durationSec), { end: sec });
+  const setStart = (sec: number) => apply(dragEdge(blocks, block.id, 'start', sec, durationSec), { start: sec });
+  const setEnd = (sec: number) => apply(dragEdge(blocks, block.id, 'end', sec, durationSec), { end: sec });
   const moveTo = (sec: number) => apply(moveBlock(blocks, block.id, sec, durationSec), { start: sec });
   /** From 0 to the end of the video. Lyric lines can't: they would cover their neighbours. */
   const wholeVideo = () => {
     const end = Math.floor(durationSec * 100) / 100;
-    const widened = resizeBlock(resizeBlock(blocks, block.id, 'start', 0, durationSec), block.id, 'end', end, durationSec);
+    const widened = dragEdge(dragEdge(blocks, block.id, 'start', 0, durationSec), block.id, 'end', end, durationSec);
     apply(widened, { start: 0, end });
   };
 

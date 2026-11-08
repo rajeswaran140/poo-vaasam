@@ -187,3 +187,31 @@ describe('review fixes', () => {
     expect(screen.getByText(/Line 2 of 2/)).toBeInTheDocument();
   });
 });
+
+describe('timeline audit fixes (2026-11-08)', () => {
+  const space = () => act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', key: ' ', bubbles: true })); });
+
+  it('Space still taps after the Zoom slider (or a checkbox) was used', () => {
+    const { at, times } = setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Tap to time lyrics' }));
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    document.body.appendChild(slider);
+    at(10);
+    fireEvent.keyDown(slider, { code: 'Space', key: ' ' });
+    expect(times()[0]).toBe('10-13');
+    slider.remove();
+  });
+
+  it('the click a focused Tap button fires on Space keyup is not a second tap', () => {
+    const { at, times } = setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Tap to time lyrics' }));
+    at(10); space();
+    at(10.6);
+    fireEvent.click(tapButton(), { detail: 0 }); // the keyup echo of the same press
+    expect(times()[0]).toBe('10-13');
+    expect(screen.getByText(/Line 2 of 3/)).toBeInTheDocument();
+    fireEvent.click(tapButton(), { detail: 1 }); // a real click still taps
+    expect(screen.getByText(/Line 3 of 3/)).toBeInTheDocument();
+  });
+});

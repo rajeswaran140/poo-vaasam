@@ -1,6 +1,6 @@
 import {
   lyricLines, defaultBlocks, moveBlock, resizeBlock, clampToDuration, syncTextToBlocks,
-  validateBlocks, MIN_BLOCK_SEC, unplacedLineCount, tapLyric, endLyricAt,
+  validateBlocks, MIN_BLOCK_SEC, unplacedLineCount, tapLyric, endLyricAt, dragEdge, sameBlocks,
 } from '@/lib/video-text/timeline';
 import { floorCentis } from '@/lib/video-text/keys';
 import type { TextBlock } from '@/types/videoText';
@@ -529,3 +529,53 @@ describe('tap to time', () => {
     }
   });
 });
+
+describe('dragEdge (rolling edit) and resize guards', () => {
+  const L = (id: string, s: number, e: number): TextBlock => ({ id, track: 'lyric', text: id, startSec: s, endSec: e });
+  const row = [L('a', 0, 10), L('b', 10, 20), L('c', 20, 30)];
+
+  it('end into a touching neighbour moves both; the neighbour keeps half a second', () => {
+    expect(get(dragEdge(row, 'b', 'end', 25, 60), 'c')).toMatchObject({ startSec: 25, endSec: 30 });
+    const far = dragEdge(row, 'b', 'end', 40, 60);
+    expect(get(far, 'b').endSec).toBe(29.5);
+    expect(get(far, 'c').startSec).toBe(29.5);
+    expect(validateBlocks(far, 60)).toBeNull();
+  });
+
+  it('start into a touching neighbour moves both', () => {
+    const out = dragEdge(row, 'b', 'start', 4, 60);
+    expect(get(out, 'a')).toMatchObject({ startSec: 0, endSec: 4 });
+    expect(get(out, 'b')).toMatchObject({ startSec: 4, endSec: 20 });
+  });
+
+  it('pulling away, or with a gap, is a plain resize', () => {
+    expect(dragEdge(row, 'b', 'end', 15, 60)).toEqual(resizeBlock(row, 'b', 'end', 15, 60));
+    const gap = [L('a', 0, 8), L('b', 10, 20)];
+    expect(get(dragEdge(gap, 'b', 'start', 2, 60), 'b').startSec).toBe(8);
+  });
+
+  it('fuzz: dragEdge never produces a layout validateBlocks rejects', () => {
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let n = 0; n < 3000; n++) {
+      let blocks = defaultBlocks({ ...base, lyricsText: 'a\nb\nc\nd\ne', durationSec: 60 });
+      for (let k = 0; k < 8; k++) {
+        const t = blocks[Math.floor(rnd() * blocks.length)];
+        blocks = dragEdge(blocks, t.id, rnd() < 0.5 ? 'start' : 'end', r2(rnd() * 70 - 5), 60);
+        expect(validateBlocks(blocks, 60)).toBeNull();
+      }
+    }
+  });
+
+  it('resizeBlock leaves an already-hemmed block alone instead of making it too short', () => {
+    const bad = [L('a', 0, 5.8), L('b', 5, 6)];
+    expect(resizeBlock(bad, 'b', 'start', 5.2, 10)).toBe(bad);
+  });
+
+  it('sameBlocks spots a no-op edit', () => {
+    expect(sameBlocks(row, moveBlock(row, 'b', 15, 60))).toBe(true);
+    expect(sameBlocks(row, dragEdge(row, 'b', 'end', 25, 60))).toBe(false);
+  });
+});
+
+const r2 = (n: number) => Math.round(n * 100) / 100;

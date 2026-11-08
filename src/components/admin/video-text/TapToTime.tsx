@@ -25,6 +25,15 @@ export interface TapToTimeProps {
 const BUTTON =
   'inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50';
 
+/** Space typed into a field is text, not a tap. Sliders, checkboxes and buttons are not fields. */
+const TEXT_INPUT = /^(text|search|email|url|tel|password|number|date|time|datetime-local|month|week)$/;
+function isTyping(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el) return false;
+  if (el.isContentEditable || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') return true;
+  return el.tagName === 'INPUT' && TEXT_INPUT.test((el as HTMLInputElement).type || 'text');
+}
+
 export function TapToTime({ blocks, durationSec, video, onChange, disabled }: TapToTimeProps) {
   const lyric = blocks.filter((b) => b.track === 'lyric').sort((a, b) => a.startSec - b.startSec);
   const [startAt, setStartAt] = useState(0);
@@ -33,6 +42,8 @@ export function TapToTime({ blocks, durationSec, video, onChange, disabled }: Ta
   // The latest values for the Space-key handler.
   const live = useRef({ blocks, session });
   live.current = { blocks, session };
+  /** When Space last tapped: the click a focused button fires on that Space's keyup is not a second tap. */
+  const lastSpaceTap = useRef(0);
 
   const now = () => video.current?.currentTime ?? 0;
 
@@ -126,14 +137,23 @@ export function TapToTime({ blocks, durationSec, video, onChange, disabled }: Ta
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== 'Space' && e.key !== ' ') return;
       if (e.repeat) return e.preventDefault(); // holding Space must not race through lines
-      const el = e.target as HTMLElement | null;
-      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+      if (isTyping(e.target)) return;
       e.preventDefault(); // not the video's play/pause, not a page scroll
+      lastSpaceTap.current = Date.now();
       tap();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [session, tap]);
+
+  // A keyboard click (detail 0) right after a Space tap is that same press,
+  // delivered again by a focused button on keyup in some browsers.
+  const swallowEcho = (e: { detail: number; preventDefault(): void; stopPropagation(): void }) => {
+    if (e.detail === 0 && Date.now() - lastSpaceTap.current < 1000) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  };
 
   if (lyric.length === 0) return null;
 
@@ -188,6 +208,7 @@ export function TapToTime({ blocks, durationSec, video, onChange, disabled }: Ta
       data-testid="tap-to-time"
       role="group"
       aria-label="Tap to time"
+      onClickCapture={swallowEcho}
     >
       <p className="truncate text-sm text-gray-800 dark:text-gray-100" aria-live="polite">
         {session.next < count ? `Line ${session.next + 1} of ${count}: ` : 'Last line: '}

@@ -177,12 +177,66 @@ export function resizeBlock(
   const { prevEnd, nextStart } = neighbours(blocks, target);
   let { startSec, endSec } = target;
   if (edge === 'start') {
-    startSec = r2(clamp(sec, prevEnd, Math.max(prevEnd, endSec - MIN_BLOCK_SEC)));
+    // Already hemmed in (old data with an overlap): leave it rather than make it too short.
+    if (prevEnd > endSec - MIN_BLOCK_SEC + EPS) return blocks;
+    startSec = r2(clamp(sec, prevEnd, endSec - MIN_BLOCK_SEC));
   } else {
     const limit = Math.min(durationSec, nextStart);
-    endSec = r2(clamp(sec, Math.min(limit, startSec + MIN_BLOCK_SEC), limit));
+    if (limit < startSec + MIN_BLOCK_SEC - EPS) return blocks;
+    endSec = r2(clamp(sec, startSec + MIN_BLOCK_SEC, limit));
   }
   return blocks.map((b) => (b.id === id ? { ...b, startSec, endSec } : b));
+}
+
+/**
+ * The timeline's edge drag. Pulling an edge INTO a same-track neighbour it
+ * touches moves the shared boundary (Premiere's rolling edit): this block
+ * grows, the neighbour shrinks, each keeps MIN_BLOCK_SEC. Back-to-back lyric
+ * lines (every fresh project) could otherwise never be lengthened. Any other
+ * drag is resizeBlock: pulling away leaves a gap, as before.
+ */
+export function dragEdge(
+  blocks: TextBlock[],
+  id: string,
+  edge: 'start' | 'end',
+  sec: number,
+  durationSec: number,
+): TextBlock[] {
+  const target = blocks.find((b) => b.id === id);
+  if (!target || !Number.isFinite(sec)) return blocks;
+  const same = trackBlocks(blocks, target.track).filter((b) => b.id !== id);
+  if (edge === 'end' && sec > target.endSec) {
+    const nb = same.find((b) => Math.abs(b.startSec - target.endSec) <= EPS);
+    if (nb) {
+      const lo = target.startSec + MIN_BLOCK_SEC;
+      const hi = nb.endSec - MIN_BLOCK_SEC;
+      if (hi < lo - EPS) return blocks;
+      const at = r2(clamp(sec, lo, hi));
+      return blocks.map((b) => (b.id === id ? { ...b, endSec: at } : b.id === nb.id ? { ...b, startSec: at } : b));
+    }
+  }
+  if (edge === 'start' && sec < target.startSec) {
+    const nb = same.find((b) => Math.abs(b.endSec - target.startSec) <= EPS);
+    if (nb) {
+      const lo = nb.startSec + MIN_BLOCK_SEC;
+      const hi = target.endSec - MIN_BLOCK_SEC;
+      if (hi < lo - EPS) return blocks;
+      const at = r2(clamp(sec, lo, hi));
+      return blocks.map((b) => (b.id === id ? { ...b, startSec: at } : b.id === nb.id ? { ...b, endSec: at } : b));
+    }
+  }
+  return resizeBlock(blocks, id, edge, sec, durationSec);
+}
+
+/** True when both lists give every block the same times and text (a no-op edit). */
+export function sameBlocks(a: TextBlock[], b: TextBlock[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  const byId = new Map(a.map((x) => [x.id, x]));
+  return b.every((y) => {
+    const x = byId.get(y.id);
+    return !!x && x.startSec === y.startSec && x.endSec === y.endSec && x.text === y.text && x.track === y.track;
+  });
 }
 
 /**
