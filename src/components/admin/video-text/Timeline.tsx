@@ -78,9 +78,14 @@ type Drag = {
   id: string;
   mode: 'move' | 'start' | 'end';
   x: number;
-  from: number;
-  base: TextBlock[];
   pointerId: number;
+  /**
+   * Taken at the first pointermove, not at pointerdown: pressing on a block
+   * blurs a Start/End box, and that blur commits a typed time AFTER
+   * pointerdown. Snapshotting then would drop the typed time.
+   */
+  base: TextBlock[] | null;
+  from: number;
 };
 
 export interface TimelineProps {
@@ -97,6 +102,8 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek }:
   const [boxWidth, setBoxWidth] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const drag = useRef<Drag | null>(null);
+  const latestBlocks = useRef(blocks);
+  latestBlocks.current = blocks;
 
   useEffect(() => {
     const el = scroller.current;
@@ -146,14 +153,19 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek }:
     if (e.button !== 0) return;
     e.stopPropagation();
     setSelected(b.id);
-    const from = mode === 'end' ? b.endSec : b.startSec;
-    drag.current = { id: b.id, mode, x: e.clientX, from, base: blocks, pointerId: e.pointerId };
+    drag.current = { id: b.id, mode, x: e.clientX, pointerId: e.pointerId, base: null, from: 0 };
     e.currentTarget.setPointerCapture?.(e.pointerId);
   };
 
   const onDragMove = (e: PointerEvent<HTMLElement>) => {
     const d = drag.current;
     if (!d || d.pointerId !== e.pointerId) return;
+    if (!d.base) {
+      const now = latestBlocks.current.find((b) => b.id === d.id);
+      if (!now) return;
+      d.base = latestBlocks.current;
+      d.from = d.mode === 'end' ? now.endSec : now.startSec;
+    }
     const sec = d.from + (e.clientX - d.x) / pps;
     onChange(
       d.mode === 'move'
@@ -270,7 +282,7 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek }:
                         style={{ left: b.startSec * pps, width: blockPx }}
                       >
                         <span className="pointer-events-none block truncate">{b.text}</span>
-                        {hw > 0 && (['start', 'end'] as const).map((edge) => (
+                        {(['start', 'end'] as const).map((edge) => (
                           <div
                             key={edge}
                             role="slider"
@@ -285,7 +297,10 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek }:
                             // Move/up bubble to the block, which handles every drag.
                             onPointerDown={(e) => beginDrag(e, b, edge)}
                             data-testid={`edge-${edge}`}
-                            style={{ width: hw }}
+                            // Under 16 px the handle is 0 px wide: no pointer target (the body
+                            // moves the block), but it stays mounted so a focused edge keeps
+                            // focus and arrow keys while the block narrows.
+                            style={{ width: hw, pointerEvents: hw > 0 ? undefined : 'none' }}
                             className={`absolute top-0 bottom-0 cursor-ew-resize touch-none hover:bg-black/10 focus:outline-none focus-visible:bg-orange-500/40 dark:hover:bg-white/10 ${edge === 'start' ? 'left-0' : 'right-0'}`}
                           />
                         ))}
@@ -353,6 +368,26 @@ function TimeField({
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const [bad, setBad] = useState(false);
+  // The block's time changed from elsewhere (a drag, a nudge): show it, and
+  // drop a rejected entry rather than leave a stale red box.
+  const [seen, setSeen] = useState(value);
+  if (value !== seen) {
+    setSeen(value);
+    setDraft(null);
+    setBad(false);
+  }
+  // Selecting another block unmounts this box, and a removed input may never
+  // blur: commit a valid typed time on the way out.
+  const pending = useRef<{ draft: string | null; onCommit(sec: number): void }>({ draft, onCommit });
+  pending.current = { draft, onCommit };
+  useEffect(
+    () => () => {
+      const { draft: d, onCommit: commitNow } = pending.current;
+      const sec = d === null ? null : parseTime(d);
+      if (sec !== null) commitNow(sec);
+    },
+    [],
+  );
   const commit = () => {
     if (draft === null) return;
     const sec = parseTime(draft);
@@ -416,7 +451,11 @@ function BlockTimes({
     const off =
       (wanted.start !== undefined && Math.abs(after.startSec - wanted.start) > 0.005) ||
       (wanted.end !== undefined && Math.abs(after.endSec - wanted.end) > 0.005);
-    setNote(off ? 'Stopped at the next block or the end of the video.' : null);
+    setNote(
+      off
+        ? `Stopped at ${formatTime(wanted.start !== undefined ? after.startSec : after.endSec)}: a block can't overlap its neighbour, run past the end, or be shorter than half a second.`
+        : null,
+    );
     onChange(next);
   };
   const setStart = (sec: number) => apply(resizeBlock(blocks, block.id, 'start', sec, durationSec), { start: sec });

@@ -181,9 +181,17 @@ describe('title and credits placement', () => {
   });
 
   it('a saved project with no placement lays out exactly as before (centred)', () => {
-    const l = layoutBlock(fakeCtx(), block('title', 'Hi'), FRAME, STYLE);
-    expect(l.align).toBe('center');
-    expect(l.x).toBe(FRAME.width / 2);
+    for (const track of ['title', 'credits'] as const) {
+      const l = layoutBlock(fakeCtx(), block(track, 'Line one\nLine two'), FRAME, STYLE);
+      expect(l.align).toBe('center');
+      expect(l.x).toBe(FRAME.width / 2);
+      // Vertically centred, as before placement existed.
+      const lh = l.fontPx * 1.25;
+      expect(l.yBaseline[0] - lh / 2).toBeCloseTo((FRAME.height - lh * l.lines.length) / 2, 6);
+      // Explicit Centre is identical to no placement.
+      const key = track === 'title' ? 'titlePlace' : 'creditsPlace';
+      expect(layoutBlock(fakeCtx(), block(track, 'Line one\nLine two'), FRAME, { ...STYLE, [key]: { v: 'middle', h: 'center' } })).toEqual(l);
+    }
   });
 
   it('top-left title: first line at the top safe margin, left-aligned at the left margin', () => {
