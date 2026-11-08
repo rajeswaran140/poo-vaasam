@@ -392,6 +392,19 @@ test.describe('video text editor (mocked API)', () => {
       }, { timeout: 15_000 })
       .toMatchObject({ startSec: 1.5, endSec: 4 });
 
+    // Whole video: the title stays on from start to end, and that is what's saved.
+    await times.getByRole('button', { name: 'Whole video' }).click();
+    await expect(title).toHaveAttribute('aria-valuetext', `0:00.0 to 0:${DURATION}.0`);
+    await expect
+      .poll(() => {
+        const last = patches.at(-1);
+        return last ? JSON.parse(last).edits.blocks.find((b: { id: string }) => b.id === 'title') : null;
+      }, { timeout: 15_000 })
+      .toMatchObject({ startSec: 0, endSec: DURATION });
+    // Mid-song the title is still drawn (top left), alongside the lyric.
+    await seekTo(DURATION / 2);
+    await expect.poll(() => opaqueIn(page, 0, 0.5, 0, 0.25), { timeout: 15_000 }).toBeGreaterThan(0);
+
     // Still no sideways scroll on a phone with the new controls.
     await page.setViewportSize({ width: 390, height: 800 });
     await expect
