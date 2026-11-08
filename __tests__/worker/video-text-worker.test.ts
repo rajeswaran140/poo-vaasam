@@ -692,6 +692,20 @@ describe('videoTextRender', () => {
       expect(s3Send.mock.calls.some((c) => c[0].kind === 'put' && c[0].input.Key === outputKey(PID, RID))).toBe(false);
     });
 
+    it('a segment upload whose connection drops once is tried again and the render finishes', async () => {
+      let dropped = false;
+      s3Override = (cmd) => {
+        if (dropped || cmd.kind !== 'put' || cmd.input.Key !== segmentKey(PID, RID, 0)) return undefined;
+        dropped = true;
+        return Promise.reject(Object.assign(new Error('write EPIPE'), { name: 'TimeoutError', code: 'EPIPE' }));
+      };
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      await render(LAMBDA);
+      expect(dropped).toBe(true);
+      expect(statuses().pop()).toBe('done');
+      warn.mockRestore();
+    });
+
     it('every coordinator S3 call carries an abort signal', async () => {
       await render(LAMBDA);
       expect(statuses().pop()).toBe('done');
@@ -796,6 +810,48 @@ describe('videoTextChunk', () => {
     expect(spawnSync).not.toHaveBeenCalled();
     expect(await handler({ videoTextChunk: spec() } as never)).toMatchObject({ ok: true });
     spy.mockRestore();
+  });
+
+  // 2026-11-08, the first real render: every chunk's upload met a dropped
+  // connection, which the SDK labels TimeoutError and never retries for a
+  // streamed body — so every part failed as "it ran out of time".
+  const dropped = (code = 'ECONNRESET') => Object.assign(new Error(`socket hang up`), { name: 'TimeoutError', code });
+  const chunkPuts = () => s3Send.mock.calls.filter((c) => c[0].kind === 'put' && c[0].input.Key === chunkOutKey(PID, RID, 1));
+
+  it('a dropped connection during the chunk upload is tried again with a fresh stream', async () => {
+    let drops = 2;
+    s3Override = (cmd) => {
+      if (cmd.kind !== 'put' || drops === 0) return undefined;
+      drops--;
+      return Promise.reject(dropped(drops === 1 ? 'ECONNRESET' : 'EPIPE'));
+    };
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const res = await handler({ videoTextChunk: spec() } as never, { getRemainingTimeInMillis: () => 300_000 });
+    expect(res).toEqual({ ok: true, key: chunkOutKey(PID, RID, 1) });
+    expect(chunkPuts()).toHaveLength(3);
+    expect(new Set(chunkPuts().map((c) => c[0].input.Body)).size).toBe(3);
+    expect(world.store.get(chunkOutKey(PID, RID, 1))?.toString()).toBe('CHUNK');
+    warn.mockRestore();
+  });
+
+  it('a connection that keeps dropping fails the chunk as a failure, not as out of time, and logs the code', async () => {
+    s3Override = (cmd) => (cmd.kind === 'put' ? Promise.reject(dropped()) : undefined);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const res = await handler({ videoTextChunk: spec() } as never, { getRemainingTimeInMillis: () => 300_000 });
+    expect(res).toMatchObject({ ok: false });
+    expect((res as { message: string }).message).not.toMatch(/time/);
+    expect(chunkPuts()).toHaveLength(3);
+    expect(error.mock.calls.map((c) => c.join(' ')).join('\n')).toContain('ECONNRESET');
+    warn.mockRestore();
+    error.mockRestore();
+  });
+
+  it('our own deadline stopping the upload is still out of time, and is not retried', async () => {
+    s3Override = (cmd) => (cmd.kind === 'put' ? Promise.reject(timeout()) : undefined);
+    const res = await handler({ videoTextChunk: spec() } as never, { getRemainingTimeInMillis: () => 300_000 });
+    expect(res).toEqual({ ok: false, message: 'it ran out of time' });
+    expect(chunkPuts()).toHaveLength(1);
   });
 
   it('leaves no local scratch behind', async () => {

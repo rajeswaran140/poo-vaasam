@@ -280,7 +280,16 @@ const S3_FINISH_MARGIN_MS = 10_000;
 const UPLOAD_BYTES_PER_SEC = 50 * 1024 * 1024;
 const MIN_UPLOAD_MS = 30_000;
 
+/**
+ * A dropped connection. The SDK names these 'TimeoutError' too (it relabels
+ * ECONNRESET, EPIPE and ETIMEDOUT socket errors), so the code tells them apart
+ * from our own deadline's abort, which carries none of these codes.
+ */
+const RESET_CODES = new Set(['ECONNRESET', 'EPIPE', 'ETIMEDOUT']);
+const isConnectionReset = (err: unknown) => RESET_CODES.has(String((err as { code?: unknown })?.code ?? ''));
+
 const isAbort = (err: unknown) => {
+  if (isConnectionReset(err)) return false;
   const name = (err as { name?: string })?.name;
   return name === 'TimeoutError' || name === 'AbortError';
 };
@@ -316,7 +325,35 @@ async function downloadTo(deps: VideoTextDeps, key: string, path: string): Promi
   });
 }
 
+/** Tries of one upload when the connection drops under it. */
+export const UPLOAD_ATTEMPTS = 3;
+
+/**
+ * ⚠️ WHY the retry (2026-11-08, the first real render). Every chunk's upload
+ * failed on Lambda with a dropped connection: ffmpeg runs synchronously, so
+ * for the whole encode nothing reads the S3 connections left idle by the
+ * downloads, and the upload is then sent on one that is already gone. The SDK
+ * retries ordinary requests, but never one whose body is a stream, so a
+ * dropped connection failed the part at once — and, relabelled TimeoutError,
+ * it read as "it ran out of time". Here the upload is tried again, with a
+ * fresh stream, on a fresh connection.
+ */
 async function uploadFrom(deps: VideoTextDeps, key: string, path: string): Promise<void> {
+  // One turn of the event loop first: a close that arrived during the encode
+  // is processed, and the SDK drops that connection instead of reusing it.
+  await new Promise((r) => setImmediate(r));
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await uploadOnce(deps, key, path);
+      return;
+    } catch (err) {
+      if (!isConnectionReset(err) || attempt >= UPLOAD_ATTEMPTS) throw err;
+      console.warn(`[video-text] upload of ${key} dropped (${(err as { code?: string }).code}), try ${attempt + 1} of ${UPLOAD_ATTEMPTS}`);
+    }
+  }
+}
+
+async function uploadOnce(deps: VideoTextDeps, key: string, path: string): Promise<void> {
   const body = createReadStream(path);
   // A send that fails before reading leaves the stream's open pending; the
   // scratch is deleted next, and that open's ENOENT, unheard, would be an
@@ -574,7 +611,8 @@ export async function renderVideoTextChunk(
   } catch (err) {
     // Here a VideoTextFailure only comes from a bounded S3 transfer: out of time too.
     if (isOutOfTime(err) || err instanceof VideoTextFailure) return { ok: false, message: 'it ran out of time' };
-    console.error(`[video-text] chunk ${index} failed:`, err instanceof Error ? err.message : String(err));
+    const e = err as { name?: string; code?: string; message?: string };
+    console.error(`[video-text] chunk ${index} failed: ${e?.name ?? 'Error'}${e?.code ? ` (${e.code})` : ''}:`, err instanceof Error ? err.message : String(err));
     return { ok: false, message: CHUNK_FAILED_MESSAGE };
   } finally {
     rmSync(dir, { recursive: true, force: true });
