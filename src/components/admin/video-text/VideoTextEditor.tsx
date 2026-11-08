@@ -19,6 +19,7 @@ import { syncTextToBlocks, unplacedLineCount, validateBlocks } from '@/lib/video
 import type { SourceInfo, TextBlock, TextStyle, VideoTextProject } from '@/types/videoText';
 import { useAutosave, type AutosaveStatus } from './useAutosave';
 import { useRenderJob } from './useRenderJob';
+import { PlacementPicker } from './PlacementPicker';
 import { Timeline } from './Timeline';
 import { TextPreview } from './TextPreview';
 
@@ -625,7 +626,7 @@ export function VideoTextEditor({
 
           {/* Style */}
           <div className="flex min-w-0 flex-wrap items-center gap-x-8 gap-y-3">
-            <div className="flex items-center gap-3">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
               <label htmlFor={ids.size} className="text-sm font-semibold text-gray-800 dark:text-gray-100">
                 Text size
               </label>
@@ -637,13 +638,13 @@ export function VideoTextEditor({
                 step={0.05}
                 value={project.style.sizeScale}
                 onChange={(e) => setStyle({ sizeScale: Number(e.target.value) })}
-                className="w-32 accent-orange-600"
+                className="w-32 min-w-0 max-w-full accent-orange-600"
               />
               <span className="w-10 text-xs tabular-nums text-gray-500 dark:text-gray-400">
                 {Math.round(project.style.sizeScale * 100)}%
               </span>
             </div>
-            <div role="radiogroup" aria-label="Lyric position" className="flex items-center gap-3">
+            <div role="radiogroup" aria-label="Lyric position" className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
               <span className="text-sm font-semibold text-gray-800 dark:text-gray-100" aria-hidden="true">
                 Lyric position
               </span>
@@ -666,6 +667,12 @@ export function VideoTextEditor({
                 ))}
               </div>
             </div>
+            <PlacementPicker label="Title" value={project.style.titlePlace} onChange={(p) => setStyle({ titlePlace: p })} />
+            <PlacementPicker
+              label="Credits"
+              value={project.style.creditsPlace}
+              onChange={(p) => setStyle({ creditsPlace: p })}
+            />
           </div>
 
           {/* Make video */}

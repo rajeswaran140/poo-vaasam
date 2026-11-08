@@ -82,10 +82,10 @@ test.describe('video text page', () => {
     await expect(page.getByLabel('Name', { exact: true })).toBeVisible();
 
     await page.setViewportSize({ width: 390, height: 800 });
-    const overflow = await page.evaluate(
-      () => document.documentElement.scrollWidth - document.documentElement.clientWidth
-    );
-    expect(overflow).toBeLessThanOrEqual(0);
+    // The timeline re-measures after a resize (ResizeObserver): wait for it to settle.
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), { timeout: 5_000 })
+      .toBeLessThanOrEqual(0);
 
     await page.getByRole('button', { name: /All projects/ }).click();
     await expect(page.getByRole('button', { name: 'New project' })).toBeVisible();
@@ -163,9 +163,8 @@ test.describe('video text editor (mocked API)', () => {
     };
   }
 
-  test('renders the tracks, draws the title, nudges a block, and never calls the real API', async ({ page }, testInfo) => {
-    test.skip(Boolean(ffmpegMissing), ffmpegMissing || 'ffmpeg missing');
-
+  /** Mocks every video-text API call and the clip; records PATCH bodies. */
+  async function mockEditor(page: Page) {
     const writes = await guardApiWrites(page);
     const unexpected: string[] = [];
     const patches: string[] = [];
@@ -206,6 +205,52 @@ test.describe('video text editor (mocked API)', () => {
         body: body.subarray(start, end + 1),
       });
     });
+
+    return { writes, unexpected, patches };
+  }
+
+  /** Opens the fixture project and waits for the video to be seekable. */
+  async function openEditor(page: Page) {
+    await page.goto('/admin/video-text');
+    await page.locator('ul li button').first().click();
+    await expect(page.getByRole('button', { name: /All projects/ })).toBeVisible({ timeout: 30_000 });
+    const video = page.locator('video');
+    await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.readyState), { timeout: 30_000 }).toBeGreaterThanOrEqual(2);
+    const seekTo = (sec: number) =>
+      video.evaluate(
+        (v: HTMLVideoElement, t: number) =>
+          new Promise<void>((resolve) => {
+            v.addEventListener('seeked', () => resolve(), { once: true });
+            v.currentTime = t;
+          }),
+        sec
+      );
+    return { seekTo };
+  }
+
+  /** Non-transparent overlay pixels inside the box [x0,x1)×[y0,y1), as fractions of its size. */
+  const opaqueIn = (page: Page, x0: number, x1: number, y0: number, y1: number) =>
+    page.evaluate(
+      ([a, b, c, d]) => {
+        const cv = document.querySelector('canvas[aria-hidden="true"]') as HTMLCanvasElement | null;
+        const ctx = cv?.getContext('2d');
+        if (!cv || !ctx || !cv.width || !cv.height) return 0;
+        const px = Math.floor(cv.width * a);
+        const py = Math.floor(cv.height * c);
+        const w = Math.max(1, Math.floor(cv.width * b) - px);
+        const h = Math.max(1, Math.floor(cv.height * d) - py);
+        const data = ctx.getImageData(px, py, w, h).data;
+        let n = 0;
+        for (let i = 3; i < data.length; i += 4) if (data[i] > 0) n++;
+        return n;
+      },
+      [x0, x1, y0, y1]
+    );
+
+  test('renders the tracks, draws the title, nudges a block, and never calls the real API', async ({ page }, testInfo) => {
+    test.skip(Boolean(ffmpegMissing), ffmpegMissing || 'ffmpeg missing');
+
+    const { writes, unexpected, patches } = await mockEditor(page);
 
     await page.goto('/admin/video-text');
     await page.locator('ul li button').first().click();
@@ -293,5 +338,68 @@ test.describe('video text editor (mocked API)', () => {
     expect(writes, 'non-GET /api/ requests the mocks did not fulfil').toEqual([]);
     expect(unexpected, 'requests to the video-text API that the test did not mock').toEqual([]);
     testInfo.annotations.push({ type: 'patches', description: String(patches.length) });
+  });
+
+  test('title position moves the drawn title; the title block drags and takes typed times', async ({ page }) => {
+    test.skip(Boolean(ffmpegMissing), ffmpegMissing || 'ffmpeg missing');
+    const { writes, unexpected, patches } = await mockEditor(page);
+    const { seekTo } = await openEditor(page);
+    await seekTo(1); // only the title (0-5 s) is on screen
+
+    // Default: centred, so the middle band has the title and the top-left corner is empty.
+    await expect.poll(() => opaqueIn(page, 0.3, 0.7, 0.4, 0.6), { timeout: 15_000 }).toBeGreaterThan(0);
+    expect(await opaqueIn(page, 0, 0.5, 0, 0.25)).toBe(0);
+
+    // Top left: the title moves into the top-left quarter and leaves the middle and the right.
+    const titleGrid = page.getByRole('radiogroup', { name: 'Title position' });
+    await titleGrid.getByRole('radio', { name: 'Top left' }).click();
+    await expect(titleGrid.getByRole('radio', { name: 'Top left' })).toHaveAttribute('aria-checked', 'true');
+    await expect.poll(() => opaqueIn(page, 0, 0.5, 0, 0.25), { timeout: 15_000 }).toBeGreaterThan(0);
+    await expect.poll(() => opaqueIn(page, 0, 1, 0.4, 0.6), { timeout: 15_000 }).toBe(0);
+    expect(await opaqueIn(page, 0.75, 1, 0, 1)).toBe(0);
+    await page.screenshot({ path: 'test-results/video-text-title-top-left.png', fullPage: true });
+
+    // The saved style carries the placement.
+    await expect
+      .poll(() => patches.some((b) => JSON.parse(b).edits.style.titlePlace?.v === 'top'), { timeout: 15_000 })
+      .toBe(true);
+
+    // Drag the title block's body to the right with the mouse.
+    const title = page.getByRole('slider', { name: /^Title: / });
+    const box = (await title.boundingBox())!;
+    const pxPerSec = box.width / 5;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 3 * pxPerSec, box.y + box.height / 2, { steps: 5 });
+    await page.mouse.up();
+    const after = await title.getAttribute('aria-valuenow');
+    expect(Number(after)).toBeGreaterThan(2.5);
+    expect(Number(after)).toBeLessThan(3.5);
+
+    // Typed times: clicking selected it, so the Start box is there.
+    const times = page.getByRole('group', { name: 'Times for Title' });
+    await expect(times).toBeVisible();
+    await times.getByLabel('Start').fill('0:01.5');
+    await times.getByLabel('Start').press('Enter');
+    await expect(title).toHaveAttribute('aria-valuenow', '1.5');
+    await times.getByLabel('End').fill('0:04');
+    await times.getByLabel('End').press('Enter');
+    await expect(title).toHaveAttribute('aria-valuetext', '0:01.5 to 0:04.0');
+    await expect
+      .poll(() => {
+        const last = patches.at(-1);
+        return last ? JSON.parse(last).edits.blocks.find((b: { id: string }) => b.id === 'title') : null;
+      }, { timeout: 15_000 })
+      .toMatchObject({ startSec: 1.5, endSec: 4 });
+
+    // Still no sideways scroll on a phone with the new controls.
+    await page.setViewportSize({ width: 390, height: 800 });
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), { timeout: 5_000 })
+      .toBeLessThanOrEqual(0);
+    await page.screenshot({ path: 'test-results/video-text-position-390.png', fullPage: true });
+
+    expect(writes, 'non-GET /api/ requests the mocks did not fulfil').toEqual([]);
+    expect(unexpected, 'requests to the video-text API that the test did not mock').toEqual([]);
   });
 });

@@ -148,6 +148,24 @@ describe('PATCH', () => {
     expect((await PATCH(req({ edits: edits(many), version: 3 }, 'PATCH'), ctx)).status).toBe(400);
     const longBlock = { ...block('b1', 0, 5), text: 'x'.repeat(501) };
     expect((await PATCH(req({ edits: edits([longBlock]), version: 3 }, 'PATCH'), ctx)).status).toBe(400);
+  });  it('saves title and credits placement', async () => {
+    repo.saveEdits.mockResolvedValue({ ok: true, version: 4 });
+    const placed = {
+      ...edits(),
+      style: { sizeScale: 1, lyricPosition: 'lower', titlePlace: { v: 'top', h: 'left' }, creditsPlace: { v: 'bottom', h: 'right' } },
+    };
+    expect((await PATCH(req({ edits: placed, version: 3 }, 'PATCH'), ctx)).status).toBe(200);
+    expect(repo.saveEdits.mock.calls[0][1].style).toEqual(placed.style);
+  });
+  it('still saves a style with no placement (projects saved before it existed)', async () => {
+    repo.saveEdits.mockResolvedValue({ ok: true, version: 4 });
+    expect((await PATCH(req({ edits: edits(), version: 3 }, 'PATCH'), ctx)).status).toBe(200);
+    expect(repo.saveEdits.mock.calls[0][1].style).toEqual({ sizeScale: 1, lyricPosition: 'lower' });
+  });
+  it('400s a placement that is not one of the nine', async () => {
+    const bad = { ...edits(), style: { sizeScale: 1, lyricPosition: 'lower', titlePlace: { v: 'up', h: 'left' } } };
+    expect((await PATCH(req({ edits: bad, version: 3 }, 'PATCH'), ctx)).status).toBe(400);
+    expect(repo.saveEdits).not.toHaveBeenCalled();
   });
 });
 

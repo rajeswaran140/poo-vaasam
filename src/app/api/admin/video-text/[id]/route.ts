@@ -17,6 +17,11 @@ const blockSchema = z.object({
   endSec: z.number().finite(),
 });
 
+const placementSchema = z.object({
+  v: z.enum(['top', 'middle', 'bottom']),
+  h: z.enum(['left', 'center', 'right']),
+});
+
 const patchSchema = z.object({
   version: z.number().int().min(0),
   edits: z.object({
@@ -28,6 +33,8 @@ const patchSchema = z.object({
     style: z.object({
       sizeScale: z.number().min(0.75).max(1.5),
       lyricPosition: z.enum(['lower', 'middle']),
+      titlePlace: placementSchema.optional(),
+      creditsPlace: placementSchema.optional(),
     }),
   }),
 });
