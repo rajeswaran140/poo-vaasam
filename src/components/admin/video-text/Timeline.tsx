@@ -23,6 +23,10 @@ import { moveBlock, resizeBlock } from '@/lib/video-text/timeline';
 import type { TextBlock, Track } from '@/types/videoText';
 
 const MAX_PX_PER_SEC = 40;
+/** Width of the grab handles a selected thin block gets outside its edges. */
+const OUTSIDE_HANDLE_PX = 10;
+/** Pointer travel before a press on a block becomes a drag. */
+const DRAG_DEAD_ZONE_PX = 4;
 const FALLBACK_WIDTH = 600;
 const LABEL_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300];
 
@@ -160,6 +164,9 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek }:
   const onDragMove = (e: PointerEvent<HTMLElement>) => {
     const d = drag.current;
     if (!d || d.pointerId !== e.pointerId) return;
+    // A tap that wobbles a few px is a tap, not a drag (at fit zoom on a
+    // phone, 3 px can be several seconds).
+    if (!d.base && Math.abs(e.clientX - d.x) < DRAG_DEAD_ZONE_PX) return;
     if (!d.base) {
       const now = latestBlocks.current.find((b) => b.id === d.id);
       if (!now) return;
@@ -278,7 +285,7 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek }:
                         onPointerMove={onDragMove}
                         onPointerUp={endDrag}
                         onPointerCancel={endDrag}
-                        className={`absolute top-1 bottom-1 cursor-grab touch-none select-none overflow-hidden rounded border px-2 text-[11px] leading-8 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 ${TRACK_STYLE[b.track]} ${isSel ? 'z-10 ring-2 ring-orange-500 dark:ring-orange-400' : ''}`}
+                        className={`absolute top-1 bottom-1 cursor-grab touch-none select-none rounded border px-2 text-[11px] leading-8 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 ${TRACK_STYLE[b.track]} ${isSel ? 'z-10 ring-2 ring-orange-500 dark:ring-orange-400' : ''}`}
                         style={{ left: b.startSec * pps, width: blockPx }}
                       >
                         <span className="pointer-events-none block truncate">{b.text}</span>
@@ -297,11 +304,22 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek }:
                             // Move/up bubble to the block, which handles every drag.
                             onPointerDown={(e) => beginDrag(e, b, edge)}
                             data-testid={`edge-${edge}`}
-                            // Under 16 px the handle is 0 px wide: no pointer target (the body
-                            // moves the block), but it stays mounted so a focused edge keeps
-                            // focus and arrow keys while the block narrows.
-                            style={{ width: hw, pointerEvents: hw > 0 ? undefined : 'none' }}
-                            className={`absolute top-0 bottom-0 cursor-ew-resize touch-none hover:bg-black/10 focus:outline-none focus-visible:bg-orange-500/40 dark:hover:bg-white/10 ${edge === 'start' ? 'left-0' : 'right-0'}`}
+                            // Under 16 px there is no room inside: an unselected block's handles
+                            // are 0 px (the body moves it); a SELECTED one gets handles just
+                            // outside its edges, so a thin block can still be stretched.
+                            // Always mounted, so a focused edge keeps focus and arrow keys.
+                            style={
+                              hw > 0
+                                ? { width: hw }
+                                : isSel
+                                  ? { width: OUTSIDE_HANDLE_PX, [edge === 'start' ? 'left' : 'right']: -OUTSIDE_HANDLE_PX }
+                                  : { width: 0, pointerEvents: 'none' }
+                            }
+                            className={`absolute top-0 bottom-0 cursor-ew-resize touch-none focus:outline-none focus-visible:bg-orange-500/40 ${
+                              hw === 0 && isSel
+                                ? `bg-orange-500 ${edge === 'start' ? 'rounded-l' : 'rounded-r'}`
+                                : `hover:bg-black/10 dark:hover:bg-white/10 ${edge === 'start' ? 'left-0' : 'right-0'}`
+                            }`}
                           />
                         ))}
                       </div>
@@ -461,6 +479,12 @@ function BlockTimes({
   const setStart = (sec: number) => apply(resizeBlock(blocks, block.id, 'start', sec, durationSec), { start: sec });
   const setEnd = (sec: number) => apply(resizeBlock(blocks, block.id, 'end', sec, durationSec), { end: sec });
   const moveTo = (sec: number) => apply(moveBlock(blocks, block.id, sec, durationSec), { start: sec });
+  /** From 0 to the end of the video. Lyric lines can't: they would cover their neighbours. */
+  const wholeVideo = () => {
+    const end = Math.floor(durationSec * 100) / 100;
+    const widened = resizeBlock(resizeBlock(blocks, block.id, 'start', 0, durationSec), block.id, 'end', end, durationSec);
+    apply(widened, { start: 0, end });
+  };
 
   return (
     <div
@@ -484,6 +508,11 @@ function BlockTimes({
         <button type="button" className={SMALL_BUTTON} onClick={() => moveTo(playheadSec)}>
           Move to playhead
         </button>
+        {block.track !== 'lyric' && (
+          <button type="button" className={SMALL_BUTTON} onClick={wholeVideo}>
+            Whole video
+          </button>
+        )}
       </div>
       {note && (
         <p role="status" className="w-full text-xs text-amber-700 dark:text-amber-400">

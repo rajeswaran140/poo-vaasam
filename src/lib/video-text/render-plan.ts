@@ -49,6 +49,56 @@ import { VIDEO_CRF } from '@/lib/master-video';
  */
 export const SEGMENT_TARGET_SEC = 20;
 
+/**
+ * Segment sizing by how heavy the video is (audit 2026-11-08). The 4.9 s/s
+ * figure is 1440p at about 24 fps; cost scales with pixels × frames. A 60 fps
+ * or 4K video at a fixed 20 s would run out of the chunk's 300 s, so:
+ * - maxSec: the longest segment one chunk can encode, with overlays (+20%), in
+ *   CHUNK_ENCODE_BUDGET_SEC (300 s less margin, download and upload);
+ * - targetSec: half of that (at most 20 s), leaving room for the segment muxer
+ *   running past the target to the next keyframe;
+ * - refused when even an 8 s segment does not fit, or when the waves of
+ *   chunks (VIDEO_TEXT_CONCURRENCY at a time) would not finish inside the
+ *   coordinator's 900 s.
+ */
+export const REF_PIXEL_RATE = 2560 * 1440 * 24;
+export const REF_ENCODE_SEC_PER_SEC = 4.9;
+const OVERLAY_FACTOR = 1.2;
+const CHUNK_ENCODE_BUDGET_SEC = 230;
+const CHUNK_OVERHEAD_SEC = 30;
+const COORDINATOR_WAVES_BUDGET_SEC = 700;
+export const MIN_SEGMENT_SEC = 8;
+const MAX_SEGMENT_CAP_SEC = 60;
+const LANES = 20; // VIDEO_TEXT_CONCURRENCY in worker/video-text.ts
+
+export type SegmentPlan = { ok: true; targetSec: number; maxSec: number; keyframeEverySec: number } | { ok: false; message: string };
+
+export function segmentPlanFor(v: { width: number; height: number; fps: number; durationSec: number }): SegmentPlan {
+  const secPerSec = REF_ENCODE_SEC_PER_SEC * ((v.width * v.height * v.fps) / REF_PIXEL_RATE) * OVERLAY_FACTOR;
+  const maxSec = Math.min(MAX_SEGMENT_CAP_SEC, Math.floor((CHUNK_ENCODE_BUDGET_SEC / secPerSec) * 10) / 10);
+  const fps = Math.round(v.fps * 100) / 100;
+  if (maxSec < MIN_SEGMENT_SEC) {
+    return {
+      ok: false,
+      message: `This video is too heavy to render here (${v.width}×${v.height} at ${fps} fps). Export it at 1440p and 30 fps or less, and upload again.`,
+    };
+  }
+  const targetSec = Math.floor(Math.min(SEGMENT_TARGET_SEC, maxSec / 2) * 10) / 10;
+  const chunks = Math.ceil(v.durationSec / targetSec);
+  const waves = Math.ceil(chunks / LANES);
+  const perChunk = targetSec * 1.25 * secPerSec + CHUNK_OVERHEAD_SEC;
+  if (waves * perChunk > COORDINATOR_WAVES_BUDGET_SEC) {
+    return {
+      ok: false,
+      message: `This video is too long for its size to render in one go (${v.width}×${v.height} at ${fps} fps). Export it at a lower resolution or frame rate, and upload again.`,
+    };
+  }
+  return { ok: true, targetSec, maxSec, keyframeEverySec: Math.max(2, Math.floor(maxSec - targetSec)) };
+}
+
+export const fewKeyframesMessage = (everySec: number) =>
+  `This video has too few keyframes to split — export it again with a keyframe at least every ${everySec} seconds.`;
+
 /** Same quality as every other render here (VIDEO_CRF in master-video.ts). */
 export const CHUNK_CRF = VIDEO_CRF;
 /** Same preset as every other render here: a slower one is what does not fit. */

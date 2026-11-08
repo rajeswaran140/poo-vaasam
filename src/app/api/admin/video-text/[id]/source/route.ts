@@ -31,7 +31,7 @@ const PREVIEW_URL_TTL_SECONDS = 60 * 60;
 const schema = z.object({ key: z.string().min(1).max(1024) });
 
 type ProbeResult =
-  | { ok: true; info: { width: number; height: number; fps: number; durationSec: number; hasAudio: boolean } }
+  | { ok: true; info: { width: number; height: number; fps: number; durationSec: number; hasAudio: boolean; storedAt?: string } }
   | { ok: false; message?: string; retryable?: boolean };
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -127,15 +127,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: message || UNREADABLE }, { status: 422 });
     }
 
-    const now = new Date().toISOString();
+    // The 30-day rule counts from when S3 stored the file, not from this
+    // check: re-attaching an older upload must not show a later deletion date.
+    const { storedAt, ...info } = probe.info;
+    const stored = storedAt && !Number.isNaN(Date.parse(storedAt)) ? new Date(storedAt).toISOString() : new Date().toISOString();
     // Floored BEFORE the blocks are fitted (R4): the blocks, the stored row and
     // the answer all carry the same length.
     const source: SourceInfo = {
       key,
-      ...probe.info,
-      durationSec: floorCentis(probe.info.durationSec),
-      uploadedAt: now,
-      expiresAt: expiresAtFrom(now),
+      ...info,
+      durationSec: floorCentis(info.durationSec),
+      uploadedAt: stored,
+      expiresAt: expiresAtFrom(stored),
     };
 
     // Re-fit existing text to the new length; a fresh project gets default timing.

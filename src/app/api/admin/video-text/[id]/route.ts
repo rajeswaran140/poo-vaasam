@@ -1,6 +1,7 @@
 /** GET load / PATCH autosave one Video Text project. PATCH is version-checked. */
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { ENGLISH_FONT_IDS, TAMIL_FONT_IDS, TRACK_SIZE_MAX, TRACK_SIZE_MIN } from '@/lib/video-text/fonts';
 import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { VideoTextRepository } from '@/infrastructure/database/VideoTextRepository';
 import { isValidProjectId } from '@/lib/video-text/keys';
@@ -22,6 +23,12 @@ const placementSchema = z.object({
   h: z.enum(['left', 'center', 'right']),
 });
 
+const trackStyleSchema = z.object({
+  size: z.number().min(TRACK_SIZE_MIN).max(TRACK_SIZE_MAX).optional(),
+  tamilFont: z.enum(TAMIL_FONT_IDS).optional(),
+  englishFont: z.enum(ENGLISH_FONT_IDS).optional(),
+});
+
 const patchSchema = z.object({
   version: z.number().int().min(0),
   edits: z.object({
@@ -35,6 +42,9 @@ const patchSchema = z.object({
       lyricPosition: z.enum(['lower', 'middle']),
       titlePlace: placementSchema.optional(),
       creditsPlace: placementSchema.optional(),
+      tracks: z
+        .object({ title: trackStyleSchema.optional(), lyric: trackStyleSchema.optional(), credits: trackStyleSchema.optional() })
+        .optional(),
     }),
   }),
 });

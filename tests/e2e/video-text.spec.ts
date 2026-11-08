@@ -392,12 +392,131 @@ test.describe('video text editor (mocked API)', () => {
       }, { timeout: 15_000 })
       .toMatchObject({ startSec: 1.5, endSec: 4 });
 
+    // Whole video: the title stays on from start to end, and that is what's saved.
+    await times.getByRole('button', { name: 'Whole video' }).click();
+    await expect(title).toHaveAttribute('aria-valuetext', `0:00.0 to 0:${DURATION}.0`);
+    await expect
+      .poll(() => {
+        const last = patches.at(-1);
+        return last ? JSON.parse(last).edits.blocks.find((b: { id: string }) => b.id === 'title') : null;
+      }, { timeout: 15_000 })
+      .toMatchObject({ startSec: 0, endSec: DURATION });
+    // Mid-song the title is still drawn (top left), alongside the lyric.
+    await seekTo(DURATION / 2);
+    await expect.poll(() => opaqueIn(page, 0, 0.5, 0, 0.25), { timeout: 15_000 }).toBeGreaterThan(0);
+
     // Still no sideways scroll on a phone with the new controls.
     await page.setViewportSize({ width: 390, height: 800 });
     await expect
       .poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), { timeout: 5_000 })
       .toBeLessThanOrEqual(0);
     await page.screenshot({ path: 'test-results/video-text-position-390.png', fullPage: true });
+
+    expect(writes, 'non-GET /api/ requests the mocks did not fulfil').toEqual([]);
+    expect(unexpected, 'requests to the video-text API that the test did not mock').toEqual([]);
+  });
+
+  test('each part takes its own size and fonts; the chosen fonts really load and change the drawing', async ({ page }) => {
+    test.skip(Boolean(ffmpegMissing), ffmpegMissing || 'ffmpeg missing');
+    const { writes, unexpected, patches } = await mockEditor(page);
+    const fontFiles: string[] = [];
+    page.on('response', (r) => {
+      if (/\.woff2(\?|$)/.test(r.url())) fontFiles.push(`${r.status()} ${r.url().split('/').pop()}`);
+    });
+    const { seekTo } = await openEditor(page);
+    await seekTo(1); // the title is on screen
+
+    /** A cheap fingerprint of the drawn overlay: opaque pixel count over the whole frame. */
+    const inked = () => opaqueIn(page, 0, 1, 0, 1);
+    await expect.poll(inked, { timeout: 15_000 }).toBeGreaterThan(0);
+    const plain = await inked();
+
+    const title = page.getByRole('group', { name: 'Title' });
+    await title.getByLabel('Tamil font').selectOption('arima');
+    await expect.poll(inked, { timeout: 15_000 }).not.toBe(plain);
+    const arima = await inked();
+
+    // The Arima face really loaded (not a fallback), from this site.
+    const loaded = await page.evaluate(() => {
+      const wrap = document.querySelector('[data-vt-fonts]')!;
+      const fam = getComputedStyle(wrap).getPropertyValue('--vt-arima').trim();
+      // The real face (first name); the list's Arial-based fallback errors on Linux.
+      return { fam, ok: document.fonts.check(`700 32px ${fam.split(',')[0]}`, 'அ') };
+    });
+    expect(loaded.fam).not.toBe('');
+    expect(loaded.ok).toBe(true);
+
+    // Bigger: more ink.
+    await title.getByLabel('Size').fill('1.8');
+    await expect.poll(inked, { timeout: 15_000 }).toBeGreaterThan(arima);
+
+    // English font for the credits; the sample shows it.
+    const credits = page.getByRole('group', { name: 'Credits' });
+    await credits.getByLabel('English font').selectOption('playfair-display');
+    await expect(page.getByTestId('sample-Credits')).toHaveCSS('font-family', /playfair|__/i);
+
+    await expect
+      .poll(() => {
+        const last = patches.at(-1);
+        return last ? JSON.parse(last).edits.style.tracks : null;
+      }, { timeout: 15_000 })
+      .toMatchObject({ title: { tamilFont: 'arima', size: 1.8 }, credits: { englishFont: 'playfair-display' } });
+
+    expect(fontFiles.filter((f) => !f.startsWith('200')), 'font files that failed').toEqual([]);
+    expect(fontFiles.some((f) => /arima/i.test(f) || f.startsWith('200')), 'a font file was fetched').toBe(true);
+    await page.screenshot({ path: 'test-results/video-text-fonts.png', fullPage: true });
+
+    await page.setViewportSize({ width: 390, height: 800 });
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), { timeout: 5_000 })
+      .toBeLessThanOrEqual(0);
+    await page.screenshot({ path: 'test-results/video-text-fonts-390.png', fullPage: true });
+
+    expect(writes, 'non-GET /api/ requests the mocks did not fulfil').toEqual([]);
+    expect(unexpected, 'requests to the video-text API that the test did not mock').toEqual([]);
+  });
+
+  test('Make video: the browser loads the chosen fonts, draws every text image as a real PNG, uploads and finishes', async ({ page }) => {
+    test.skip(Boolean(ffmpegMissing), ffmpegMissing || 'ffmpeg missing');
+    const { writes, unexpected } = await mockEditor(page);
+    // Layered on top of mockEditor's routes (later routes win; fallback() hands back).
+    let renderId: string | null = null;
+    const pngs: { size: number; width: number; height: number }[] = [];
+    await page.route('https://tamil-web-media.s3.amazonaws.com/e2e-mock-upload/**', async (route) => {
+      const body = route.request().postDataBuffer() ?? Buffer.alloc(0);
+      const at = body.indexOf(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+      if (at >= 0) pngs.push({ size: body.length, width: body.readUInt32BE(at + 16), height: body.readUInt32BE(at + 20) });
+      // Cross-origin, like S3: the browser needs the CORS header to see the 204.
+      return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*' } });
+    });
+    await page.route('**/api/admin/video-text/**', async (route) => {
+      const req = route.request();
+      const path = new URL(req.url()).pathname;
+      const json = (b: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
+      if (path.endsWith('/overlays') && req.method() === 'POST') {
+        const sent = JSON.parse(req.postData() ?? '{}');
+        renderId = sent.renderId;
+        return json({ uploads: sent.blockIds.map((blockId: string) => ({ blockId, url: 'https://tamil-web-media.s3.amazonaws.com/e2e-mock-upload/png', fields: { key: `k/${blockId}.png` }, key: `k/${blockId}.png` })) });
+      }
+      if (path.endsWith('/render') && req.method() === 'POST') return json({ status: 'queued' }, 202);
+      if (path.endsWith(`/${ID}`) && req.method() === 'GET' && renderId) {
+        return json({ project: { ...project(), render: { renderId, status: 'done', progress: null, outputKey: 'k/out.mp4', outputExpiresAt: new Date(Date.now() + 864e5).toISOString(), error: null, startedAt: new Date().toISOString(), updatedAt: new Date(Date.now() + 1000).toISOString() } } });
+      }
+      return route.fallback();
+    });
+
+    await openEditor(page);
+    // A non-default font on two parts, so the font check covers the new faces too.
+    await page.getByRole('group', { name: 'Title' }).getByLabel('Tamil font').selectOption('arima');
+    await page.getByRole('group', { name: 'Credits' }).getByLabel('English font').selectOption('playfair-display');
+
+    await page.getByRole('button', { name: 'Make video' }).click();
+    await expect(page.getByRole('button', { name: 'Download' })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('make-video')).not.toContainText('did not load');
+
+    // Title + 3 lyric lines + credits, each a PNG at the video's exact size.
+    expect(pngs).toHaveLength(5);
+    for (const p of pngs) expect([p.width, p.height]).toEqual([1280, 720]);
 
     expect(writes, 'non-GET /api/ requests the mocks did not fulfil').toEqual([]);
     expect(unexpected, 'requests to the video-text API that the test did not mock').toEqual([]);

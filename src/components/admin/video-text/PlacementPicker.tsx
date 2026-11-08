@@ -18,12 +18,15 @@ export function placementName(p: Placement): string {
 }
 
 export interface PlacementPickerProps {
+  /** The part's name; the grid is announced as "<label> position". */
   label: string;
+  /** Text shown beside the grid (defaults to the label). */
+  visibleLabel?: string;
   value: Placement | undefined;
   onChange(p: Placement): void;
 }
 
-export function PlacementPicker({ label, value, onChange }: PlacementPickerProps) {
+export function PlacementPicker({ label, visibleLabel, value, onChange }: PlacementPickerProps) {
   const current = value ?? CENTRE_PLACEMENT;
 
   const onKey = (e: KeyboardEvent<HTMLButtonElement>) => {
@@ -50,8 +53,8 @@ export function PlacementPicker({ label, value, onChange }: PlacementPickerProps
 
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-      <span className="text-sm font-semibold text-gray-800 dark:text-gray-100" aria-hidden="true">
-        {label}
+      <span className="text-sm text-gray-700 dark:text-gray-200" aria-hidden="true">
+        {visibleLabel ?? label}
       </span>
       <div
         role="radiogroup"

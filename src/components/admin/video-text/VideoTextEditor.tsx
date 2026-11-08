@@ -15,11 +15,13 @@ import { ArrowLeft, Download, Loader2, UploadCloud } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 import { putToS3 } from '@/lib/mastering-upload-client';
 import { MAX_VIDEO_TEXT_BYTES } from '@/lib/video-text/keys';
-import { syncTextToBlocks, unplacedLineCount, validateBlocks } from '@/lib/video-text/timeline';
-import type { SourceInfo, TextBlock, TextStyle, VideoTextProject } from '@/types/videoText';
+import { syncTextToBlocks, unplacedLineCount, validateBlocks, type RememberedTimes } from '@/lib/video-text/timeline';
+import type { SourceInfo, TextBlock, TextStyle, Track, TrackStyle, VideoTextProject } from '@/types/videoText';
 import { useAutosave, type AutosaveStatus } from './useAutosave';
 import { useRenderJob } from './useRenderJob';
+import { PartStyle } from './PartStyle';
 import { PlacementPicker } from './PlacementPicker';
+import { trackStyleOf } from '@/lib/video-text/fonts';
 import { Timeline } from './Timeline';
 import { TextPreview } from './TextPreview';
 
@@ -80,6 +82,7 @@ function Section({ title, children, testId }: { title?: string; children: ReactN
 type UploadState = { phase: 'idle' } | { phase: 'saving' } | { phase: 'uploading'; pct: number } | { phase: 'checking' };
 
 export const LEAVE_MESSAGE = 'You have unsaved changes. Leave anyway?';
+export const LEAVE_UPLOAD_MESSAGE = 'The video is still uploading. Leave and stop the upload?';
 const HELD_MESSAGE = 'Changes will save when the render starts';
 
 /**
@@ -130,7 +133,7 @@ export function VideoTextEditor({
   const [nameInput, setNameInput] = useState(initial.name);
   const [playhead, setPlayhead] = useState(0);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const ids = { name: useId(), title: useId(), credits: useId(), lyrics: useId(), lyricsHint: useId(), file: useId(), size: useId() };
+  const ids = { name: useId(), title: useId(), credits: useId(), lyrics: useId(), lyricsHint: useId(), file: useId() };
 
   const job = useRenderJob(initial.id, initial.render);
   const onVersion = useCallback((version: number) => setProject((p) => ({ ...p, version })), []);
@@ -138,7 +141,11 @@ export function VideoTextEditor({
 
   // Leaving with unsaved edits — pending, held for a render, or failed — asks first.
   const { isDirty } = autosave;
-  const confirmLeave = useCallback(() => !isDirty() || window.confirm(LEAVE_MESSAGE), [isDirty]);
+  const uploadingRef = useRef(false);
+  const confirmLeave = useCallback(() => {
+    if (uploadingRef.current && !window.confirm(LEAVE_UPLOAD_MESSAGE)) return false;
+    return uploadingRef.current || !isDirty() || window.confirm(LEAVE_MESSAGE);
+  }, [isDirty]);
   useEffect(() => {
     if (!leaveGuard) return;
     leaveGuard.current = confirmLeave;
@@ -148,13 +155,56 @@ export function VideoTextEditor({
   }, [leaveGuard, confirmLeave]);
 
   // ---- text → blocks
-  const setTexts = (patch: Partial<Pick<VideoTextProject, 'titleText' | 'creditsText' | 'lyricsText'>>) =>
+  // Times of blocks that text edits removed: a title cleared and retyped, or a
+  // lyric line cleared and typed again, comes back where it was.
+  const remembered = useRef<RememberedTimes>({ lyrics: [] });
+  const remember = (before: TextBlock[], after: TextBlock[]) => {
+    const mem = remembered.current;
+    for (const b of before) {
+      if (b.track === 'title' || b.track === 'credits') mem[b.track] = { startSec: b.startSec, endSec: b.endSec };
+    }
+    const kept = new Set(after.map((b) => b.id));
+    const gone = before.filter((b) => b.track === 'lyric' && !kept.has(b.id));
+    mem.lyrics = [...(mem.lyrics ?? []), ...gone.map((b) => ({ startSec: b.startSec, endSec: b.endSec, id: b.id }))].slice(-20);
+    const lyricsBefore = before.filter((b) => b.track === 'lyric');
+    const lyricsAfter = after.some((b) => b.track === 'lyric');
+    // The box was emptied: keep the whole track so a refill (undo/paste) gets its timing back.
+    if (lyricsBefore.length && !lyricsAfter) mem.lyricTrack = lyricsBefore;
+    else if (lyricsAfter) mem.lyricTrack = undefined;
+  };
+  // Edits after a finished render: Download then says it is the older video.
+  // Reset only when a NEW render is accepted (a failed start keeps the old note).
+  const [editedSinceRender, setEditedSinceRender] = useState(false);
+  const markEdited = () => setEditedSinceRender(true);
+  const setTexts = (patch: Partial<Pick<VideoTextProject, 'titleText' | 'creditsText' | 'lyricsText'>>) => {
+    markEdited();
     setProject((p) => {
       const next = { ...p, ...patch };
-      return p.source ? { ...next, blocks: syncTextToBlocks(p.blocks, next, p.source.durationSec) } : next;
+      if (!p.source) return next;
+      const blocks = syncTextToBlocks(p.blocks, next, p.source.durationSec, remembered.current);
+      remember(p.blocks, blocks);
+      return { ...next, blocks };
     });
-  const setBlocks = useCallback((blocks: TextBlock[]) => setProject((p) => ({ ...p, blocks })), []);
-  const setStyle = (patch: Partial<TextStyle>) => setProject((p) => ({ ...p, style: { ...p.style, ...patch } }));
+  };
+  const setBlocks = useCallback((blocks: TextBlock[]) => {
+    setEditedSinceRender(true);
+    setProject((p) => {
+      // A line that had no room is placed as soon as a move makes a gap for it.
+      const placeable = p.source && unplacedLineCount(blocks, p) > 0;
+      return { ...p, blocks: placeable ? syncTextToBlocks(blocks, p, p.source!.durationSec, remembered.current) : blocks };
+    });
+  }, []);
+  const setStyle = (patch: Partial<TextStyle>) => {
+    markEdited();
+    setProject((p) => ({ ...p, style: { ...p.style, ...patch } }));
+  };
+  const setTrackStyle = (track: Track, patch: TrackStyle) => {
+    markEdited();
+    setProject((p) => ({
+      ...p,
+      style: { ...p.style, tracks: { ...p.style.tracks, [track]: { ...p.style.tracks?.[track], ...patch } } },
+    }));
+  };
   const onName = (value: string) => {
     setNameInput(value);
     // The server needs a name; a cleared field keeps the last one until retyped.
@@ -244,16 +294,28 @@ export function VideoTextEditor({
   const [dragging, setDragging] = useState(false);
   const uploadBusy = useRef(false);
   const uploadedFile = useRef<File | null>(null);
-  const uploadAbort = useRef(new AbortController());
+  /** One controller per upload, so Cancel (or leaving) stops only that one. */
+  const uploadAbort = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
-    const abort = uploadAbort.current;
     return () => {
       mounted.current = false;
-      abort.abort(); // leaving the project stops its upload
+      uploadAbort.current?.abort(); // leaving the project stops its upload
     };
   }, []);
+  const cancelUpload = () => uploadAbort.current?.abort();
+  // Closing the tab mid-upload loses the upload: warn.
+  const transferring = upload.phase === 'uploading' || upload.phase === 'checking';
+  useEffect(() => {
+    if (!transferring) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [transferring]);
 
   /** Ask the worker to read the uploaded file; on success the project takes the new length. */
   const confirmSource = useCallback(
@@ -274,6 +336,8 @@ export function VideoTextEditor({
       }
       const source = body.source as SourceInfo;
       if (!mounted.current) return;
+      // Remembered times belong to the old video's length.
+      remembered.current = { lyrics: [] };
       setProject((p) => ({
         ...p,
         source,
@@ -329,6 +393,8 @@ export function VideoTextEditor({
       const saved = await autosave.flush();
       if (!saved.ok) throw new Error(saved.error);
       setUpload({ phase: 'uploading', pct: 0 });
+      const controller = new AbortController();
+      uploadAbort.current = controller;
       const res = await adminFetch(`/api/admin/video-text/${initial.id}/upload`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -342,8 +408,10 @@ export function VideoTextEditor({
         body.fields ?? {},
         named,
         (loaded, total) => mounted.current && setUpload({ phase: 'uploading', pct: total ? Math.round((loaded / total) * 100) : 0 }),
-        uploadAbort.current.signal,
-      );
+        controller.signal,
+      ).catch((err) => {
+        throw controller.signal.aborted ? new Error('Upload cancelled. Choose the video again to upload it.') : err;
+      });
       uploadedFile.current = file;
       setLocalUrl(null); // the effect's cleanup revokes the old one
       await confirmSource(body.key);
@@ -415,9 +483,16 @@ export function VideoTextEditor({
 
   const source = project.source;
   const uploading = upload.phase !== 'idle';
+  uploadingRef.current = upload.phase === 'uploading' || upload.phase === 'checking';
   const lockUploadAndRender = uploading || job.running;
   const previewUrl = localUrl ?? remoteUrl;
   const render = job.render;
+  // A new render was accepted (its id appeared): edits before it are in it.
+  const [seenRenderId, setSeenRenderId] = useState(render.renderId);
+  if (render.renderId !== seenRenderId) {
+    setSeenRenderId(render.renderId);
+    setEditedSinceRender(false);
+  }
   // A video uploaded after the render finished makes that output out of date.
   const outputIsStale = Boolean(
     source && render.updatedAt && new Date(source.uploadedAt).getTime() > new Date(render.updatedAt).getTime(),
@@ -425,6 +500,12 @@ export function VideoTextEditor({
   // A video too short for every line keeps the lines that fit; say how many do not.
   const unplaced = source ? unplacedLineCount(project.blocks, project) : 0;
   const showDownload = !job.running && render.status === 'done' && Boolean(render.outputKey) && !outputIsStale;
+  // Saved after the render finished (on load), or edited since in this visit.
+  const downloadIsOlder =
+    showDownload &&
+    (editedSinceRender ||
+      // Saved after the render started: the worker read the blocks before that save.
+      Boolean(render.startedAt && new Date(initial.updatedAt).getTime() > new Date(render.startedAt).getTime()));
 
   return (
     <div className="min-w-0 space-y-6">
@@ -491,6 +572,13 @@ export function VideoTextEditor({
               >
                 <div className="h-full rounded-full bg-orange-500 transition-[width]" style={{ width: `${upload.pct}%` }} />
               </div>
+              <button
+                type="button"
+                onClick={cancelUpload}
+                className="text-sm font-medium text-gray-600 underline hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
+              >
+                Cancel upload
+              </button>
             </div>
           ) : upload.phase === 'checking' ? (
             <p className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
@@ -610,68 +698,85 @@ export function VideoTextEditor({
 
           {/* Timeline, with the save status beside it */}
           <SaveStatus status={autosave.status} error={autosave.error} announce={false} testId="timeline-save-status" />
-          <Timeline
-            blocks={project.blocks}
-            durationSec={source.durationSec}
-            playheadSec={playhead}
-            onChange={setBlocks}
-            onSeek={seek}
-          />
+          {uploading && (
+            <p className="text-sm text-gray-600 dark:text-gray-300" data-testid="timeline-locked">
+              Timing is locked while the new video uploads and is checked.
+            </p>
+          )}
+          <div inert={uploading} className={uploading ? 'pointer-events-none opacity-60' : undefined} data-testid="timeline-wrap">
+            <Timeline
+              blocks={project.blocks}
+              durationSec={source.durationSec}
+              playheadSec={playhead}
+              onChange={setBlocks}
+              onSeek={seek}
+            />
+          </div>
           {unplaced > 0 && (
             <p className="text-sm text-amber-700 dark:text-amber-400">
-              {unplaced === 1 ? "1 line doesn't" : `${unplaced} lines don't`} fit in this video — it is too short to show
-              each for half a second.
+              {unplaced === 1 ? '1 line has' : `${unplaced} lines have`} no room on the timeline. Make a gap of at least half
+              a second where {unplaced === 1 ? 'it goes' : 'they go'} (shorten or move a neighbouring line) and{' '}
+              {unplaced === 1 ? 'it' : 'they'} will appear.
             </p>
           )}
 
-          {/* Style */}
-          <div className="flex min-w-0 flex-wrap items-center gap-x-8 gap-y-3">
-            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-              <label htmlFor={ids.size} className="text-sm font-semibold text-gray-800 dark:text-gray-100">
-                Text size
-              </label>
-              <input
-                id={ids.size}
-                type="range"
-                min={0.75}
-                max={1.5}
-                step={0.05}
-                value={project.style.sizeScale}
-                onChange={(e) => setStyle({ sizeScale: Number(e.target.value) })}
-                className="w-32 min-w-0 max-w-full accent-orange-600"
-              />
-              <span className="w-10 text-xs tabular-nums text-gray-500 dark:text-gray-400">
-                {Math.round(project.style.sizeScale * 100)}%
-              </span>
-            </div>
-            <div role="radiogroup" aria-label="Lyric position" className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-              <span className="text-sm font-semibold text-gray-800 dark:text-gray-100" aria-hidden="true">
-                Lyric position
-              </span>
-              <div className="inline-flex overflow-hidden rounded-md border border-gray-300 dark:border-gray-700">
-                {(['lower', 'middle'] as const).map((pos) => (
-                  <button
-                    key={pos}
-                    type="button"
-                    role="radio"
-                    aria-checked={project.style.lyricPosition === pos}
-                    onClick={() => setStyle({ lyricPosition: pos })}
-                    className={`px-3 py-1.5 text-sm ${
-                      project.style.lyricPosition === pos
-                        ? 'bg-orange-600 text-white'
-                        : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800'
-                    }`}
-                  >
-                    {pos === 'lower' ? 'Lower' : 'Middle'}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <PlacementPicker label="Title" value={project.style.titlePlace} onChange={(p) => setStyle({ titlePlace: p })} />
-            <PlacementPicker
+          {/* Style: each part has its own size, fonts and position */}
+          <div className="min-w-0 space-y-3">
+            <PartStyle
+              label="Title"
+              value={trackStyleOf('title', project.style)}
+              onChange={(patch) => setTrackStyle('title', patch)}
+              position={
+                <PlacementPicker
+                  label="Title"
+                  visibleLabel="Position"
+                  value={project.style.titlePlace}
+                  onChange={(p) => setStyle({ titlePlace: p })}
+                />
+              }
+            />
+            <PartStyle
+              label="Lyrics"
+              value={trackStyleOf('lyric', project.style)}
+              onChange={(patch) => setTrackStyle('lyric', patch)}
+              position={
+                <div role="radiogroup" aria-label="Lyric position" className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="text-sm text-gray-700 dark:text-gray-200" aria-hidden="true">
+                    Position
+                  </span>
+                  <div className="inline-flex overflow-hidden rounded-md border border-gray-300 dark:border-gray-700">
+                    {(['lower', 'middle'] as const).map((pos) => (
+                      <button
+                        key={pos}
+                        type="button"
+                        role="radio"
+                        aria-checked={project.style.lyricPosition === pos}
+                        onClick={() => setStyle({ lyricPosition: pos })}
+                        className={`px-3 py-1.5 text-sm ${
+                          project.style.lyricPosition === pos
+                            ? 'bg-orange-600 text-white'
+                            : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800'
+                        }`}
+                      >
+                        {pos === 'lower' ? 'Lower' : 'Middle'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              }
+            />
+            <PartStyle
               label="Credits"
-              value={project.style.creditsPlace}
-              onChange={(p) => setStyle({ creditsPlace: p })}
+              value={trackStyleOf('credits', project.style)}
+              onChange={(patch) => setTrackStyle('credits', patch)}
+              position={
+                <PlacementPicker
+                  label="Credits"
+                  visibleLabel="Position"
+                  value={project.style.creditsPlace}
+                  onChange={(p) => setStyle({ creditsPlace: p })}
+                />
+              }
             />
           </div>
 
@@ -708,6 +813,11 @@ export function VideoTextEditor({
                 <Download className="h-4 w-4" aria-hidden="true" />
                 Download
               </button>
+              {downloadIsOlder && (
+                <p className="mt-1 text-sm text-amber-700 dark:text-amber-400" data-testid="download-older">
+                  This is the video made before your latest changes. Press Make video to include them.
+                </p>
+              )}
               {render.outputExpiresAt && (
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Deleted on {formatDay(render.outputExpiresAt)}</p>
               )}

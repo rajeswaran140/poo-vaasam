@@ -27,7 +27,7 @@
  * master-worker.ts so this module does not import it back.
  */
 
-import { createReadStream, createWriteStream, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createReadStream, createWriteStream, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, statfsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
@@ -45,6 +45,8 @@ import { GetCommand, UpdateCommand, type DynamoDBDocumentClient } from '@aws-sdk
 import { InvokeCommand, type LambdaClient } from '@aws-sdk/client-lambda';
 import {
   SEGMENT_TARGET_SEC,
+  segmentPlanFor,
+  fewKeyframesMessage,
   CHUNK_CRF,
   CHUNK_PRESET,
   parseSegmentList,
@@ -92,8 +94,8 @@ export const VFR_MESSAGE =
   'This video has a variable frame rate (typical of phone recordings). Export it at a constant frame rate and upload again.';
 export const MISSING_PNG_MESSAGE = 'some text images did not upload — press Make video again';
 export const AUDIO_CHANGED_MESSAGE = 'the audio changed during the render — nothing was saved';
-export const FEW_KEYFRAMES_MESSAGE =
-  'This video has too few keyframes to split — export it again with a keyframe at least every 10 seconds.';
+/** The message at the reference size (1440p24); other sizes say their own interval. */
+export const FEW_KEYFRAMES_MESSAGE = fewKeyframesMessage(10);
 export const OUT_OF_TIME_MESSAGE = 'the render ran out of time — try again; if it happens again, use a shorter video';
 export const CHUNK_ONLY_MESSAGE = 'this function only renders video-text chunks';
 const ROTATED_MESSAGE =
@@ -119,7 +121,17 @@ export interface VideoTextDeps {
   table: string;
   /** When this invocation is killed (Date.now() ms); Infinity without a Lambda clock. */
   deadline: () => number;
+  /** Free bytes on the scratch disk holding `dir` (tests stub it). */
+  freeBytes?: (dir: string) => number;
 }
+
+const freeBytesOf = (deps: VideoTextDeps, dir: string) => {
+  if (deps.freeBytes) return deps.freeBytes(dir);
+  const st = statfsSync(dir);
+  return Number(st.bavail) * Number(st.bsize);
+};
+export const TOO_BIG_TO_JOIN_MESSAGE =
+  'the finished video is too large to put together here — export the video at a lower resolution, or use a shorter one';
 
 /** A failure whose message is for the operator, written as-is. */
 class VideoTextFailure extends Error {}
@@ -358,9 +370,22 @@ const projectKey = (id: string) => ({ PK: `VIDEOTEXT#${id}`, SK: 'METADATA' });
  * error. Written here because the repository's client module is not part of
  * this bundle.
  */
-async function patchRender(deps: VideoTextDeps, projectId: string, renderId: string, fields: Partial<RenderState>): Promise<void> {
+async function patchRender(
+  deps: VideoTextDeps,
+  projectId: string,
+  renderId: string,
+  fields: Partial<RenderState>,
+  /** Also require the render's status: `is` it (a claim), or `not` it (never overwrite done). */
+  when?: { is?: RenderState['status']; not?: RenderState['status'] },
+): Promise<boolean> {
   const names: Record<string, string> = { '#render': 'render', '#renderId': 'renderId', '#updatedAt': 'updatedAt' };
   const values: Record<string, unknown> = { ':renderId': renderId, ':patchedAt': new Date().toISOString() };
+  let condition = '#render.#renderId = :renderId';
+  if (when?.is || when?.not) {
+    names['#st'] = 'status';
+    values[':st'] = when.is ?? when.not;
+    condition += when.is ? ' AND #render.#st = :st' : ' AND #render.#st <> :st';
+  }
   const sets: string[] = [];
   let i = 0;
   for (const [field, value] of Object.entries(fields)) {
@@ -376,19 +401,40 @@ async function patchRender(deps: VideoTextDeps, projectId: string, renderId: str
       TableName: deps.table,
       Key: projectKey(projectId),
       UpdateExpression: `SET ${sets.join(', ')}`,
-      ConditionExpression: '#render.#renderId = :renderId',
+      ConditionExpression: condition,
       ExpressionAttributeNames: names,
       ExpressionAttributeValues: values,
     }));
+    return true;
   } catch (err) {
-    if ((err as { name?: string })?.name === 'ConditionalCheckFailedException') return;
+    if ((err as { name?: string })?.name === 'ConditionalCheckFailedException') return false;
     throw err;
   }
 }
 
 // ------------------------------------------------------------------ probe
 
-type ProbeInfo = { width: number; height: number; fps: number; durationSec: number; hasAudio: boolean };
+type ProbeInfo = {
+  width: number;
+  height: number;
+  fps: number;
+  durationSec: number;
+  hasAudio: boolean;
+  /** When S3 stored the file (the 30-day rule counts from this), if it could be read. */
+  storedAt?: string;
+};
+
+/** The object's LastModified; null if it cannot be read (the caller then uses "now"). */
+async function storedAtOf(deps: VideoTextDeps, key: string): Promise<string | null> {
+  try {
+    const head = await bounded(deps, (abortSignal) =>
+      deps.s3.send(new HeadObjectCommand({ Bucket: deps.bucket, Key: key }), { abortSignal }));
+    const at = (head as { LastModified?: Date })?.LastModified;
+    return at instanceof Date && !Number.isNaN(at.getTime()) ? at.toISOString() : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Why a header cannot be rendered here, or null. Shared by the probe and the render's re-read. */
 function refusalFor(video: VideoStreamInfo | null): string | null {
@@ -401,6 +447,9 @@ function refusalFor(video: VideoStreamInfo | null): string | null {
   }
   if (video.hdr) return HDR_MESSAGE;
   if (video.rotated) return ROTATED_MESSAGE;
+  if (video.width % 2 !== 0 || video.height % 2 !== 0) {
+    return `This video is ${video.width}×${video.height}; its width and height must be even numbers. Export it at a standard size (for example 1920×1080) and upload again.`;
+  }
   if (video.fps === null || video.tbr === null || Math.abs(video.fps - video.tbr) > VFR_TOLERANCE * video.tbr) return VFR_MESSAGE;
   return null;
 }
@@ -447,9 +496,19 @@ export async function probeVideoText(
     if (offsetRefusal) return { ok: false, message: offsetRefusal };
     const durationSec = parseDurationSec(log);
     if (durationSec === null) return { ok: false, message: 'The length of this video could not be read. Export it again and upload again.' };
+    const plan = segmentPlanFor({ width: video!.width, height: video!.height, fps: video!.fps!, durationSec });
+    if (!plan.ok) return { ok: false, message: plan.message };
+    const storedAt = await storedAtOf(deps, key);
     return {
       ok: true,
-      info: { width: video!.width, height: video!.height, fps: video!.fps!, durationSec: floorCentis(durationSec), hasAudio: hasAudioStream(log) },
+      info: {
+        width: video!.width,
+        height: video!.height,
+        fps: video!.fps!,
+        durationSec: floorCentis(durationSec),
+        hasAudio: hasAudioStream(log),
+        ...(storedAt ? { storedAt } : {}),
+      },
     };
   } catch (err) {
     if (isOutOfTime(err)) return { ok: false, message: 'reading the video took too long — try again', retryable: true };
@@ -529,9 +588,9 @@ export async function renderVideoTextChunk(
  * times are used as listed: R13 guarantees the picture starts at 0, so the
  * source's presentation times are the blocks' timeline.
  */
-export function planSegments(entries: SegmentEntry[]): SegmentEntry[] {
+export function planSegments(entries: SegmentEntry[], maxSec = MAX_SEGMENT_SEC, keyframeEverySec = 10): SegmentEntry[] {
   if (entries.length === 0) throw new VideoTextFailure(RENDER_FAILED_MESSAGE);
-  if (entries.some((e) => e.endSec - e.startSec > MAX_SEGMENT_SEC)) throw new VideoTextFailure(FEW_KEYFRAMES_MESSAGE);
+  if (entries.some((e) => e.endSec - e.startSec > maxSec)) throw new VideoTextFailure(fewKeyframesMessage(keyframeEverySec));
   return entries;
 }
 
@@ -666,7 +725,15 @@ export async function renderVideoText(
     }
 
     // ---- segmenting
-    await patch({ status: 'segmenting', progress: null, error: null });
+    // Claim: only the first delivery of this render moves it off `queued`. A
+    // duplicate event (async delivery is at-least-once) or a retry exits here,
+    // before it can share the scratch prefix or overwrite the result.
+    const claimed = await patchRender(deps, projectId, renderId, { status: 'segmenting', progress: null, error: null }, { is: 'queued' });
+    if (!claimed) {
+      current = false;
+      console.error('[video-text] render already started by another delivery', projectId, renderId);
+      return { ok: false, message: 'this render was already started' };
+    }
     // R1: the route cannot know the browser's PNG uploads finished; check every one before any work.
     for (const b of blocks) {
       try {
@@ -709,13 +776,15 @@ export async function renderVideoText(
     const offsetRefusal = startOffsetRefusal(videoStart, video!.fps!);
     if (offsetRefusal) throw new VideoTextFailure(offsetRefusal);
 
+    const plan = segmentPlanFor({ width: video!.width, height: video!.height, fps: video!.fps!, durationSec: parseDurationSec(headerLog) ?? 0 });
+    if (!plan.ok) throw new VideoTextFailure(plan.message);
     const listPath = join(dir, 'segments.csv');
-    const seg = deps.ff(buildSegmentArgs(srcPath, join(dir, 'segment-%04d.mp4'), listPath, SEGMENT_TARGET_SEC));
+    const seg = deps.ff(buildSegmentArgs(srcPath, join(dir, 'segment-%04d.mp4'), listPath, plan.targetSec));
     if (seg.status !== 0) {
       console.error('[video-text] segmenting failed:', (seg.stderr ?? '').slice(-2000));
       throw new VideoTextFailure('the video could not be split into parts');
     }
-    const segments = planSegments(parseSegmentList(readFileSync(listPath, 'utf8')));
+    const segments = planSegments(parseSegmentList(readFileSync(listPath, 'utf8')), plan.maxSec, plan.keyframeEverySec);
     rmSync(srcPath, { force: true });
     for (let i = 0; i < segments.length; i++) {
       const local = join(dir, segments[i].file);
@@ -753,6 +822,10 @@ export async function renderVideoText(
       await downloadTo(deps, chunkOutKey(projectId, renderId, i), p);
       chunkPaths.push(p);
     }
+    // The join writes a file about as big as all the chunks together; check
+    // the disk can take it before spending the time (the chunks are already on it).
+    const chunkBytes = chunkPaths.reduce((sum, p) => sum + statSync(p).size, 0);
+    if (freeBytesOf(deps, dir) < chunkBytes * 1.05 + 64 * 1024 * 1024) throw new VideoTextFailure(TOO_BIG_TO_JOIN_MESSAGE);
     const concatListPath = join(dir, 'chunks.txt');
     writeFileSync(concatListPath, chunkPaths.map((p) => `file '${p}'`).join('\n') + '\n');
     const outPath = join(dir, 'output.mp4');
@@ -778,7 +851,8 @@ export async function renderVideoText(
     else console.error('[video-text] render failed:', err instanceof Error ? err.message : String(err));
     if (current) {
       try {
-        await patch({ status: 'error', error: message });
+        // Never turn a finished render into an error.
+        await patchRender(deps, projectId, renderId, { status: 'error', error: message }, { not: 'done' });
       } catch (patchErr) {
         console.error('[video-text] could not write the render error:', patchErr instanceof Error ? patchErr.message : String(patchErr));
       }

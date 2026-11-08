@@ -9,6 +9,7 @@
  * floating-point noise in an `enable=` time.
  */
 import {
+  segmentPlanFor,
   SEGMENT_TARGET_SEC,
   CHUNK_CRF,
   CHUNK_PRESET,
@@ -223,5 +224,55 @@ describe('audioExtractExtFor', () => {
     expect(audioExtractExtFor('/tmp/src.mp4')).toBe('.m4a');
     expect(audioExtractExtFor('/tmp/src.MOV')).toBe('.mov');
     expect(audioExtractExtFor('/tmp/src')).toBe('.m4a');
+  });
+});
+
+describe('segmentPlanFor (sizing by how heavy the video is)', () => {
+  const plan = (w: number, h: number, fps: number, durationSec: number) => segmentPlanFor({ width: w, height: h, fps, durationSec });
+
+  it('1440p24 (the measured reference): about 20 s segments', () => {
+    expect(plan(2560, 1440, 24, 600)).toEqual({ ok: true, targetSec: 19.5, maxSec: 39.1, keyframeEverySec: 19 });
+  });
+
+  it('vertical 1080×1920 at 25 fps (Raj\'s songs): 20 s target, generous keyframe allowance', () => {
+    expect(plan(1080, 1920, 25, 354)).toEqual({ ok: true, targetSec: 20, maxSec: 60, keyframeEverySec: 40 });
+  });
+
+  it('1440p60: shorter segments so each chunk still fits', () => {
+    const p = plan(2560, 1440, 60, 300);
+    expect(p.ok).toBe(true);
+    if (p.ok) {
+      expect(p.targetSec).toBeLessThan(8);
+      expect(p.maxSec).toBeGreaterThanOrEqual(8);
+    }
+  });
+
+  it('every accepted plan keeps one chunk inside the 300 s function and the waves inside 900 s', () => {
+    for (const [w, h] of [[1280, 720], [1920, 1080], [1080, 1920], [2560, 1440], [3840, 2160]]) {
+      for (const fps of [24, 25, 30, 50, 60]) {
+        for (const d of [60, 344, 600]) {
+          const p = plan(w, h, fps, d);
+          if (!p.ok) continue;
+          const secPerSec = 4.9 * ((w * h * fps) / (2560 * 1440 * 24)) * 1.2;
+          expect(p.maxSec * secPerSec).toBeLessThanOrEqual(230 + 1e-6);
+          const waves = Math.ceil(Math.ceil(d / p.targetSec) / 20);
+          expect(waves * (p.targetSec * 1.25 * secPerSec + 30)).toBeLessThanOrEqual(700);
+        }
+      }
+    }
+  });
+
+  it('refuses 4K at 60 fps as too heavy, with what to export instead', () => {
+    expect(plan(3840, 2160, 60, 120)).toEqual({
+      ok: false,
+      message: 'This video is too heavy to render here (3840×2160 at 60 fps). Export it at 1440p and 30 fps or less, and upload again.',
+    });
+  });
+
+  it('refuses a long 4K30 song as too long for its size, but takes a short one', () => {
+    const long = plan(3840, 2160, 30, 600);
+    expect(long.ok).toBe(false);
+    if (!long.ok) expect(long.message).toMatch(/too long for its size/);
+    expect(plan(3840, 2160, 30, 120).ok).toBe(true);
   });
 });

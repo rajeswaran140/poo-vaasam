@@ -4,6 +4,7 @@
  * cluster (consonant + vowel sign, pulli, etc.) is never split.
  */
 import { CENTRE_PLACEMENT, type Placement, type TextBlock, type TextStyle } from '@/types/videoText';
+import { englishFont, tamilFont, trackStyleOf, type FontChoice } from '@/lib/video-text/fonts';
 
 export const SAFE_MARGIN = 0.05;
 export const FONT_FAMILY = '"Noto Sans Tamil", "Noto Sans", sans-serif';
@@ -102,7 +103,36 @@ export function resolveFontFamily(): string {
   return v ? `${v}, "Noto Sans", sans-serif` : FONT_FAMILY;
 }
 
-const fontFor = (px: number) => `700 ${px}px ${resolveFontFamily()}`;
+/** The value of a font CSS variable, read where the editor defines them ([data-vt-fonts]) or on <html>. */
+function cssVarValue(name: string): string {
+  if (typeof document === 'undefined') return '';
+  const el = document.querySelector('[data-vt-fonts]') ?? document.documentElement;
+  return getComputedStyle(el).getPropertyValue(name).trim();
+}
+
+/** One font's family, or '' when it has none of its own (Plain) or is not defined on this page. */
+function familyOf(choice: FontChoice<string>): string {
+  if (!choice.cssVar) return '';
+  // The site-wide Tamil font keeps its old plain-name fallback (resolveFontFamily).
+  return cssVarValue(choice.cssVar) || (choice.cssVar === '--font-tamil' ? '"Noto Sans Tamil"' : '');
+}
+
+/**
+ * A part's font stack: its English font (Latin only), then its Tamil font,
+ * then the fallbacks. Noto Sans Tamil with Plain gives exactly the stack used
+ * before fonts could be chosen.
+ */
+export function fontStackFor(track: TextBlock['track'], style: TextStyle): { stack: string; weight: 400 | 700 } {
+  const own = trackStyleOf(track, style);
+  const ta = tamilFont(own.tamilFont);
+  const families = [familyOf(englishFont(own.englishFont)), familyOf(ta)].filter(Boolean);
+  return { stack: families.length ? `${families.join(', ')}, "Noto Sans", sans-serif` : FONT_FAMILY, weight: ta.weight };
+}
+
+const fontFor = (px: number, track: TextBlock['track'], style: TextStyle) => {
+  const { stack, weight } = fontStackFor(track, style);
+  return `${weight} ${px}px ${stack}`;
+};
 
 /**
  * `yBaseline[i]` is the vertical middle of line i: `drawBlock` sets
@@ -114,13 +144,13 @@ export function layoutBlock(
   frame: Frame,
   style: TextStyle,
 ): { fontPx: number; lines: string[]; x: number; yBaseline: number[]; align: CanvasTextAlign } {
-  const basePx = frame.height * BASE_FRACTION[block.track] * style.sizeScale;
+  const basePx = frame.height * BASE_FRACTION[block.track] * trackStyleOf(block.track, style).size;
   const maxLines = MAX_LINES[block.track];
   let fontPx = basePx;
   let lines: string[] = [];
   for (let step = 0; ; step++) {
     fontPx = basePx * Math.max(1 - 0.05 * step, MIN_SHRINK);
-    ctx.font = fontFor(fontPx);
+    ctx.font = fontFor(fontPx, block.track, style);
     // The stroke widens each glyph run by lineWidth (0.12 em); keep it inside the margin.
     const maxWidth = frame.width * (1 - 2 * SAFE_MARGIN) - fontPx * 0.12;
     const r = wrapLines(ctx, block.text, maxWidth, maxLines);
@@ -159,7 +189,7 @@ export function drawBlock(
 ): void {
   const { fontPx, lines, x, yBaseline, align } = layoutBlock(ctx, block, frame, style);
   ctx.save();
-  ctx.font = fontFor(fontPx);
+  ctx.font = fontFor(fontPx, block.track, style);
   ctx.textAlign = align;
   ctx.textBaseline = 'middle';
   ctx.lineJoin = 'round';
@@ -179,12 +209,40 @@ export function drawBlock(
 /** A Tamil letter: without sample text, load()/check() only cover the Latin range of a subset font. */
 const TAMIL_SAMPLE = 'அ';
 
-export async function ensureFonts(): Promise<void> {
+/** Latin letters, for the English fonts. */
+const LATIN_SAMPLE = 'Ag';
+
+/**
+ * Load, and check, every font the parts use — each family on its own, so a
+ * loaded English face cannot vouch for a Tamil face that is still missing.
+ * Without a style: the default Tamil font (as before fonts could be chosen).
+ */
+export async function ensureFonts(style?: TextStyle): Promise<void> {
   if (typeof document === 'undefined' || !document.fonts) return;
-  const font = `700 32px ${resolveFontFamily()}`;
-  await document.fonts.load(font, TAMIL_SAMPLE);
-  if (!document.fonts.check(font, TAMIL_SAMPLE)) {
-    throw new Error('The Tamil font did not load — reload the page and try again.');
+  // Without a style: the default Tamil font, as before fonts could be chosen.
+  const st: TextStyle = style ?? { sizeScale: 1, lyricPosition: 'lower' };
+  const checks = new Map<string, { sample: string; label: string }>();
+  for (const track of ['title', 'lyric', 'credits'] as const) {
+    const own = trackStyleOf(track, st);
+    const ta = tamilFont(own.tamilFont);
+    const en = englishFont(own.englishFont);
+    for (const [choice, sample, kind] of [[ta, TAMIL_SAMPLE, 'Tamil'], [en, LATIN_SAMPLE, 'English']] as const) {
+      if (!choice.cssVar) continue; // Plain: no font of its own
+      const label = ta.id === 'noto-sans-tamil' && kind === 'Tamil' ? 'Tamil font' : `${kind} font (${choice.label})`;
+      const family = familyOf(choice);
+      // A chosen font whose variable is missing would silently draw the fallback.
+      if (!family) throw new Error(`The ${label} did not load — reload the page and try again.`);
+      // Check the real face only. next/font's variable also lists a metric
+      // fallback ("x Fallback", a local() Arial) that is in error wherever
+      // Arial is not installed (Linux, Android): checking the whole list then
+      // fails although the font itself is loaded.
+      const primary = family.split(',')[0].trim();
+      checks.set(`${choice.weight} 32px ${primary}`, { sample, label });
+    }
+  }
+  for (const [font, { sample, label }] of checks) {
+    await document.fonts.load(font, sample);
+    if (!document.fonts.check(font, sample)) throw new Error(`The ${label} did not load — reload the page and try again.`);
   }
 }
 
@@ -193,7 +251,7 @@ export async function renderBlockPng(
   frame: Frame,
   style: TextStyle,
 ): Promise<Blob> {
-  await ensureFonts();
+  await ensureFonts(style);
   if (typeof OffscreenCanvas !== 'undefined') {
     const canvas = new OffscreenCanvas(frame.width, frame.height);
     const ctx = canvas.getContext('2d');

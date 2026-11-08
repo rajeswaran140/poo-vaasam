@@ -275,3 +275,72 @@ describe('Start / End boxes', () => {
     expect(screen.getByRole('slider', { name: 'Title: My Song' })).toHaveAttribute('aria-valuetext', '0:00.0 to 0:07.0');
   });
 });
+
+describe('whole song or part: stretching title and credits', () => {
+  function Host({ initial }: { initial: TextBlock[] }) {
+    const [blocks, setBlocks] = React.useState<TextBlock[]>(initial);
+    return <Timeline blocks={blocks} durationSec={344} playheadSec={0} onChange={setBlocks} onSeek={() => {}} />;
+  }
+  const pps = 600 / 344;
+
+  it('a selected thin block gets 10 px handles outside its edges; unselected ones stay 0 px', () => {
+    render(<Host initial={[titleB(), creditsB(334, 344)]} />);
+    const title = screen.getByRole('slider', { name: 'Title: My Song' });
+    expect(within(title).getByTestId('edge-end')).toHaveStyle({ width: '0px', pointerEvents: 'none' });
+    focus(title);
+    expect(within(title).getByTestId('edge-end')).toHaveStyle({ width: '10px', right: '-10px' });
+    expect(within(title).getByTestId('edge-start')).toHaveStyle({ width: '10px', left: '-10px' });
+    const credits = screen.getByRole('slider', { name: 'Credits: Music: R' });
+    expect(within(credits).getByTestId('edge-start')).toHaveStyle({ width: '4px' }); // 10 s ≈ 17 px
+  });
+
+  it('dragging the outside end handle of the thin title stretches it to the end of the song', () => {
+    render(<Host initial={[titleB()]} />);
+    const title = screen.getByRole('slider', { name: 'Title: My Song' });
+    focus(title);
+    const end = within(title).getByTestId('edge-end');
+    fireEvent.pointerDown(end, { button: 0, pointerId: 1, clientX: 50 });
+    fireEvent.pointerMove(title, { pointerId: 1, clientX: 50 + 400 * pps }); // far past the end
+    fireEvent.pointerUp(title, { pointerId: 1 });
+    expect(title).toHaveAttribute('aria-valuetext', '0:00.0 to 5:44.0');
+  });
+
+  it('Whole video sets the title to the full song, and the credits too', () => {
+    render(<Host initial={[titleB(), creditsB(334, 344)]} />);
+    focus(screen.getByRole('slider', { name: 'Title: My Song' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Whole video' }));
+    expect(screen.getByRole('slider', { name: 'Title: My Song' })).toHaveAttribute('aria-valuetext', '0:00.0 to 5:44.0');
+    expect(screen.queryByRole('status')).toBeNull();
+    focus(screen.getByRole('slider', { name: 'Credits: Music: R' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Whole video' }));
+    expect(screen.getByRole('slider', { name: 'Credits: Music: R' })).toHaveAttribute('aria-valuetext', '0:00.0 to 5:44.0');
+  });
+
+  it('after Whole video, a part can be set again with the Start/End boxes', () => {
+    render(<Host initial={[titleB()]} />);
+    focus(screen.getByRole('slider', { name: 'Title: My Song' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Whole video' }));
+    const end = within(screen.getByTestId('block-times')).getByLabelText('End');
+    fireEvent.change(end, { target: { value: '1:30' } });
+    fireEvent.keyDown(end, { key: 'Enter' });
+    expect(screen.getByRole('slider', { name: 'Title: My Song' })).toHaveAttribute('aria-valuetext', '0:00.0 to 1:30.0');
+  });
+
+  it('lyric lines have no Whole video button', () => {
+    render(<Host initial={[lyric(0, 10, 20)]} />);
+    focus(screen.getByRole('slider', { name: /^Lyric 1/ }));
+    expect(screen.queryByRole('button', { name: 'Whole video' })).toBeNull();
+  });
+});
+
+it('a tap that wobbles under 4 px does not move the block; 4 px or more does', () => {
+  const { onChange } = setupLong([titleB()]);
+  const b = screen.getByRole('slider', { name: 'Title: My Song' });
+  fireEvent.pointerDown(b, { button: 0, pointerId: 1, clientX: 100 });
+  fireEvent.pointerMove(b, { pointerId: 1, clientX: 103 });
+  fireEvent.pointerMove(b, { pointerId: 1, clientX: 97 });
+  expect(onChange).not.toHaveBeenCalled();
+  fireEvent.pointerMove(b, { pointerId: 1, clientX: 100 + 10 * (600 / 344) });
+  fireEvent.pointerUp(b, { pointerId: 1 });
+  expect(moved(onChange, 'title')).toMatchObject({ startSec: 10, endSec: 15 });
+});
