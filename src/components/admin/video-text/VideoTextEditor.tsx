@@ -19,6 +19,7 @@ import { syncTextToBlocks, unplacedLineCount, validateBlocks } from '@/lib/video
 import type { SourceInfo, TextBlock, TextStyle, VideoTextProject } from '@/types/videoText';
 import { useAutosave, type AutosaveStatus } from './useAutosave';
 import { useRenderJob } from './useRenderJob';
+import { PlacementPicker } from './PlacementPicker';
 import { Timeline } from './Timeline';
 import { TextPreview } from './TextPreview';
 
@@ -666,6 +667,12 @@ export function VideoTextEditor({
                 ))}
               </div>
             </div>
+            <PlacementPicker label="Title" value={project.style.titlePlace} onChange={(p) => setStyle({ titlePlace: p })} />
+            <PlacementPicker
+              label="Credits"
+              value={project.style.creditsPlace}
+              onChange={(p) => setStyle({ creditsPlace: p })}
+            />
           </div>
 
           {/* Make video */}

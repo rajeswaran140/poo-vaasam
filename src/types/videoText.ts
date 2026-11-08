@@ -10,10 +10,21 @@ export interface TextBlock {
   endSec: number;
 }
 
+/** Where a title or credits block sits on the picture, inside the safe margin. */
+export interface Placement {
+  v: 'top' | 'middle' | 'bottom';
+  h: 'left' | 'center' | 'right';
+}
+
+export const CENTRE_PLACEMENT: Placement = { v: 'middle', h: 'center' };
+
 export interface TextStyle {
   /** 0.75–1.5, default 1. */
   sizeScale: number;
   lyricPosition: 'lower' | 'middle';
+  /** Optional: projects saved before placement existed are centred. */
+  titlePlace?: Placement;
+  creditsPlace?: Placement;
 }
 
 export interface SourceInfo {

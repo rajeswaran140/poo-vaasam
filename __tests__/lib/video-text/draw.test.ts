@@ -3,6 +3,7 @@ import {
   FONT_FAMILY,
   wrapLines,
   layoutBlock,
+  placementFor,
   resolveFontFamily,
   ensureFonts,
   renderBlockPng,
@@ -166,5 +167,66 @@ describe('resolveFontFamily / ensureFonts', () => {
     await ensureFonts();
     expect(load).toHaveBeenCalledWith(expect.stringContaining('700 32px'), 'அ');
     expect(check).toHaveBeenCalledWith(expect.stringContaining('700 32px'), 'அ');
+  });
+});
+
+describe('title and credits placement', () => {
+  const inset = (fontPx: number) => FRAME.width * SAFE_MARGIN + fontPx * 0.06;
+
+  it('placementFor: title and credits default to centre; lyrics follow lyricPosition', () => {
+    expect(placementFor('title', STYLE)).toEqual({ v: 'middle', h: 'center' });
+    expect(placementFor('credits', STYLE)).toEqual({ v: 'middle', h: 'center' });
+    expect(placementFor('lyric', STYLE)).toEqual({ v: 'bottom', h: 'center' });
+    expect(placementFor('lyric', { ...STYLE, lyricPosition: 'middle' })).toEqual({ v: 'middle', h: 'center' });
+  });
+
+  it('a saved project with no placement lays out exactly as before (centred)', () => {
+    const l = layoutBlock(fakeCtx(), block('title', 'Hi'), FRAME, STYLE);
+    expect(l.align).toBe('center');
+    expect(l.x).toBe(FRAME.width / 2);
+  });
+
+  it('top-left title: first line at the top safe margin, left-aligned at the left margin', () => {
+    const style: TextStyle = { ...STYLE, titlePlace: { v: 'top', h: 'left' } };
+    const l = layoutBlock(fakeCtx(), block('title', 'Line one\nLine two'), FRAME, style);
+    expect(l.align).toBe('left');
+    expect(l.x).toBeCloseTo(inset(l.fontPx), 6);
+    const lh = l.fontPx * 1.25;
+    expect(l.yBaseline[0] - lh / 2).toBeCloseTo(FRAME.height * SAFE_MARGIN, 6);
+  });
+
+  it('bottom-right credits: last line ends at the bottom safe margin, right-aligned', () => {
+    const style: TextStyle = { ...STYLE, creditsPlace: { v: 'bottom', h: 'right' } };
+    const l = layoutBlock(fakeCtx(), block('credits', 'a\nb\nc'), FRAME, style);
+    expect(l.align).toBe('right');
+    expect(l.x).toBeCloseTo(FRAME.width - inset(l.fontPx), 6);
+    const lh = l.fontPx * 1.25;
+    expect(l.yBaseline.at(-1)! + lh / 2).toBeCloseTo(FRAME.height * (1 - SAFE_MARGIN), 6);
+  });
+
+  it('a full-width left-aligned line, stroke included, stays inside the right safe margin', () => {
+    const ctx = fakeCtx();
+    const style: TextStyle = { ...STYLE, titlePlace: { v: 'middle', h: 'left' } };
+    const l = layoutBlock(ctx, block('title', 'x'.repeat(400)), FRAME, style);
+    for (const line of l.lines) {
+      const right = l.x + ctx.measureText(line).width + l.fontPx * 0.06;
+      expect(right).toBeLessThanOrEqual(FRAME.width * (1 - SAFE_MARGIN) + 1e-6);
+    }
+  });
+
+  it('title placement never moves the lyrics or the credits', () => {
+    const style: TextStyle = { ...STYLE, titlePlace: { v: 'top', h: 'right' } };
+    const lyricBefore = layoutBlock(fakeCtx(), block('lyric', 'hello'), FRAME, STYLE);
+    expect(layoutBlock(fakeCtx(), block('lyric', 'hello'), FRAME, style)).toEqual(lyricBefore);
+    const creditsBefore = layoutBlock(fakeCtx(), block('credits', 'c'), FRAME, STYLE);
+    expect(layoutBlock(fakeCtx(), block('credits', 'c'), FRAME, style)).toEqual(creditsBefore);
+  });
+
+  it('vertical frame (1080×1920): bottom-left stays inside both margins', () => {
+    const tall = { width: 1080, height: 1920 };
+    const style: TextStyle = { ...STYLE, creditsPlace: { v: 'bottom', h: 'left' } };
+    const l = layoutBlock(fakeCtx(), block('credits', 'Music\nWords'), tall, style);
+    expect(l.x).toBeCloseTo(tall.width * SAFE_MARGIN + l.fontPx * 0.06, 6);
+    expect(l.yBaseline.at(-1)! + (l.fontPx * 1.25) / 2).toBeCloseTo(tall.height * (1 - SAFE_MARGIN), 6);
   });
 });

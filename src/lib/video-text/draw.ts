@@ -3,7 +3,7 @@
  * `drawBlock`, so they match exactly. Wrapping uses Intl.Segmenter so a Tamil
  * cluster (consonant + vowel sign, pulli, etc.) is never split.
  */
-import type { TextBlock, TextStyle } from '@/types/videoText';
+import { CENTRE_PLACEMENT, type Placement, type TextBlock, type TextStyle } from '@/types/videoText';
 
 export const SAFE_MARGIN = 0.05;
 export const FONT_FAMILY = '"Noto Sans Tamil", "Noto Sans", sans-serif';
@@ -23,6 +23,15 @@ function segments(text: string, granularity: 'word' | 'grapheme'): string[] {
   }
   // Fallback: spaces for words; code points for graphemes (best effort).
   return granularity === 'word' ? text.split(/(\s+)/).filter(Boolean) : Array.from(text);
+}
+
+/**
+ * Where a block sits. Lyrics follow lyricPosition (always centred across);
+ * title and credits use their own placement, centred when none is saved.
+ */
+export function placementFor(track: TextBlock['track'], style: TextStyle): Placement {
+  if (track === 'lyric') return { v: style.lyricPosition === 'lower' ? 'bottom' : 'middle', h: 'center' };
+  return (track === 'title' ? style.titlePlace : style.creditsPlace) ?? CENTRE_PLACEMENT;
 }
 
 const width = (ctx: MeasureCtx, s: string) => ctx.measureText(s).width;
@@ -104,7 +113,7 @@ export function layoutBlock(
   block: TextBlock,
   frame: Frame,
   style: TextStyle,
-): { fontPx: number; lines: string[]; x: number; yBaseline: number[] } {
+): { fontPx: number; lines: string[]; x: number; yBaseline: number[]; align: CanvasTextAlign } {
   const basePx = frame.height * BASE_FRACTION[block.track] * style.sizeScale;
   const maxLines = MAX_LINES[block.track];
   let fontPx = basePx;
@@ -127,14 +136,19 @@ export function layoutBlock(
 
   const lh = fontPx * LINE_HEIGHT;
   const total = lh * lines.length;
-  let top: number;
-  if (block.track === 'lyric' && style.lyricPosition === 'lower') {
-    top = frame.height * (1 - SAFE_MARGIN) - total;
-  } else {
-    top = (frame.height - total) / 2;
-  }
+  const place = placementFor(block.track, style);
+  const top =
+    place.v === 'top'
+      ? frame.height * SAFE_MARGIN
+      : place.v === 'bottom'
+        ? frame.height * (1 - SAFE_MARGIN) - total
+        : (frame.height - total) / 2;
   const yBaseline = lines.map((_, i) => top + lh * (i + 0.5));
-  return { fontPx, lines, x: frame.width / 2, yBaseline };
+  // Half the stroke (0.06 em) sticks out past a left/right-aligned line's edge.
+  const inset = frame.width * SAFE_MARGIN + fontPx * 0.06;
+  const x = place.h === 'left' ? inset : place.h === 'right' ? frame.width - inset : frame.width / 2;
+  const align: CanvasTextAlign = place.h === 'left' ? 'left' : place.h === 'right' ? 'right' : 'center';
+  return { fontPx, lines, x, yBaseline, align };
 }
 
 export function drawBlock(
@@ -143,10 +157,10 @@ export function drawBlock(
   frame: Frame,
   style: TextStyle,
 ): void {
-  const { fontPx, lines, x, yBaseline } = layoutBlock(ctx, block, frame, style);
+  const { fontPx, lines, x, yBaseline, align } = layoutBlock(ctx, block, frame, style);
   ctx.save();
   ctx.font = fontFor(fontPx);
-  ctx.textAlign = 'center';
+  ctx.textAlign = align;
   ctx.textBaseline = 'middle';
   ctx.lineJoin = 'round';
   ctx.lineWidth = fontPx * 0.12;

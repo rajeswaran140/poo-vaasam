@@ -4,7 +4,11 @@
  * The Video Text timeline: Title, Lyrics and Credits rows under a seconds
  * ruler, Premiere-style.
  *
- * - Drag a block's body to move it, its 8 px edges to change start or end.
+ * - Drag a block's body to move it, its edges to change start or end. Edge
+ *   handles shrink on narrow blocks and vanish under 16 px, so a short block
+ *   (the 5 s title on a whole-song view) can always be moved.
+ * - Click a block to select it: Start/End boxes under the tracks take a typed
+ *   time, and buttons set either edge (or move the block) to the playhead.
  *   Every drag is computed from the blocks as they were at pointerdown plus
  *   the pointer's travel, so a clamp at a neighbour never "sticks".
  * - A focused block: ←/→ nudge 0.1 s (Shift = 1 s); [ and ] move its start or
@@ -40,6 +44,32 @@ export function formatTime(sec: number): string {
   const m = Math.floor(tenths / 600);
   const s = (tenths % 600) / 10;
   return `${m}:${s.toFixed(1).padStart(4, '0')}`;
+}
+
+/**
+ * "12.5", "0:12.5", "1:05", "1:02:03" → seconds; null when it isn't a time.
+ * The inverse of formatTime.
+ */
+export function parseTime(input: string): number | null {
+  const t = input.trim();
+  if (!/^\d+(:\d{1,2}){0,2}(\.\d*)?$/.test(t) && !/^\d*\.\d+$/.test(t)) return null;
+  const parts = t.split(':');
+  const secPart = Number(parts.pop());
+  if (!Number.isFinite(secPart) || (parts.length > 0 && secPart >= 60)) return null;
+  let total = secPart;
+  let mult = 60;
+  while (parts.length) {
+    const n = Number(parts.pop());
+    if (parts.length > 0 && n >= 60) return null;
+    total += n * mult;
+    mult *= 60;
+  }
+  return Math.round(total * 100) / 100;
+}
+
+/** Edge handle width for a block this many px wide: 8 px, 4 px under 32 px, none under 16 px. */
+export function handleWidth(blockPx: number): number {
+  return blockPx >= 32 ? 8 : blockPx >= 16 ? 4 : 0;
 }
 
 const tickLabel = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
@@ -97,6 +127,7 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek }:
 
   // Keep a selection that still exists.
   const selectedId = blocks.some((b) => b.id === selected) ? selected : null;
+  const selectedBlock = blocks.find((b) => b.id === selectedId) ?? null;
 
   const lyricNumber = useMemo(() => {
     const m = new Map<string, number>();
@@ -216,6 +247,8 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek }:
                   .map((b) => {
                     const name = nameOf(b);
                     const isSel = b.id === selectedId;
+                    const blockPx = Math.max(2, (b.endSec - b.startSec) * pps);
+                    const hw = handleWidth(blockPx);
                     return (
                       <div
                         key={b.id}
@@ -234,10 +267,10 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek }:
                         onPointerUp={endDrag}
                         onPointerCancel={endDrag}
                         className={`absolute top-1 bottom-1 cursor-grab touch-none select-none overflow-hidden rounded border px-2 text-[11px] leading-8 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 ${TRACK_STYLE[b.track]} ${isSel ? 'z-10 ring-2 ring-orange-500 dark:ring-orange-400' : ''}`}
-                        style={{ left: b.startSec * pps, width: Math.max(2, (b.endSec - b.startSec) * pps) }}
+                        style={{ left: b.startSec * pps, width: blockPx }}
                       >
                         <span className="pointer-events-none block truncate">{b.text}</span>
-                        {(['start', 'end'] as const).map((edge) => (
+                        {hw > 0 && (['start', 'end'] as const).map((edge) => (
                           <div
                             key={edge}
                             role="slider"
@@ -251,7 +284,9 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek }:
                             onFocus={(e) => e.stopPropagation()}
                             // Move/up bubble to the block, which handles every drag.
                             onPointerDown={(e) => beginDrag(e, b, edge)}
-                            className={`absolute top-0 bottom-0 w-2 cursor-ew-resize touch-none hover:bg-black/10 focus:outline-none focus-visible:bg-orange-500/40 dark:hover:bg-white/10 ${edge === 'start' ? 'left-0' : 'right-0'}`}
+                            data-testid={`edge-${edge}`}
+                            style={{ width: hw }}
+                            className={`absolute top-0 bottom-0 cursor-ew-resize touch-none hover:bg-black/10 focus:outline-none focus-visible:bg-orange-500/40 dark:hover:bg-white/10 ${edge === 'start' ? 'left-0' : 'right-0'}`}
                           />
                         ))}
                       </div>
@@ -270,6 +305,22 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek }:
         </div>
       </div>
 
+      {selectedBlock ? (
+        <BlockTimes
+          key={selectedBlock.id}
+          block={selectedBlock}
+          name={cap(nameOf(selectedBlock))}
+          blocks={blocks}
+          durationSec={durationSec}
+          playheadSec={playheadSec}
+          onChange={onChange}
+        />
+      ) : (
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          Drag a block to move it, or click it to type its start and end times.
+        </p>
+      )}
+
       <label className="flex min-w-0 items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
         <span>Zoom</span>
         <input
@@ -283,6 +334,123 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek }:
           className="w-40 min-w-0 accent-orange-600"
         />
       </label>
+    </div>
+  );
+}
+
+const SMALL_BUTTON =
+  'rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800';
+
+/** One time box: shows the block's time, commits a typed one on Enter or blur. */
+function TimeField({
+  label,
+  value,
+  onCommit,
+}: {
+  label: string;
+  value: number;
+  onCommit(sec: number): void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const [bad, setBad] = useState(false);
+  const commit = () => {
+    if (draft === null) return;
+    const sec = parseTime(draft);
+    if (sec === null) {
+      setBad(true);
+      return;
+    }
+    setBad(false);
+    setDraft(null);
+    onCommit(sec);
+  };
+  return (
+    <label className="flex items-center gap-1.5 text-xs font-medium text-gray-700 dark:text-gray-200">
+      <span>{label}</span>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={draft ?? formatTime(value)}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          setBad(false);
+        }}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commit();
+          } else if (e.key === 'Escape') {
+            setDraft(null);
+            setBad(false);
+          }
+        }}
+        aria-invalid={bad || undefined}
+        className={`w-20 rounded-md border px-2 py-1 text-xs tabular-nums dark:bg-gray-900 ${
+          bad ? 'border-red-500' : 'border-gray-300 dark:border-gray-700'
+        }`}
+      />
+    </label>
+  );
+}
+
+function BlockTimes({
+  block,
+  name,
+  blocks,
+  durationSec,
+  playheadSec,
+  onChange,
+}: {
+  block: TextBlock;
+  name: string;
+  blocks: TextBlock[];
+  durationSec: number;
+  playheadSec: number;
+  onChange(blocks: TextBlock[]): void;
+}) {
+  const [note, setNote] = useState<string | null>(null);
+  // Apply a change; say so when a neighbour or the video's end stopped it short.
+  const apply = (next: TextBlock[], wanted: { start?: number; end?: number }) => {
+    const after = next.find((b) => b.id === block.id) ?? block;
+    const off =
+      (wanted.start !== undefined && Math.abs(after.startSec - wanted.start) > 0.005) ||
+      (wanted.end !== undefined && Math.abs(after.endSec - wanted.end) > 0.005);
+    setNote(off ? 'Stopped at the next block or the end of the video.' : null);
+    onChange(next);
+  };
+  const setStart = (sec: number) => apply(resizeBlock(blocks, block.id, 'start', sec, durationSec), { start: sec });
+  const setEnd = (sec: number) => apply(resizeBlock(blocks, block.id, 'end', sec, durationSec), { end: sec });
+  const moveTo = (sec: number) => apply(moveBlock(blocks, block.id, sec, durationSec), { start: sec });
+
+  return (
+    <div
+      role="group"
+      aria-label={`Times for ${name}`}
+      data-testid="block-times"
+      className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-900/60"
+    >
+      <span className="max-w-[16rem] truncate text-xs font-semibold text-gray-800 dark:text-gray-100" title={block.text}>
+        {name}: {block.text}
+      </span>
+      <TimeField label="Start" value={block.startSec} onCommit={setStart} />
+      <TimeField label="End" value={block.endSec} onCommit={setEnd} />
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className={SMALL_BUTTON} onClick={() => setStart(playheadSec)}>
+          Start at playhead
+        </button>
+        <button type="button" className={SMALL_BUTTON} onClick={() => setEnd(playheadSec)}>
+          End at playhead
+        </button>
+        <button type="button" className={SMALL_BUTTON} onClick={() => moveTo(playheadSec)}>
+          Move to playhead
+        </button>
+      </div>
+      {note && (
+        <p role="status" className="w-full text-xs text-amber-700 dark:text-amber-400">
+          {note}
+        </p>
+      )}
     </div>
   );
 }

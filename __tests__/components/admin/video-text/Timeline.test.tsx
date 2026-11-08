@@ -4,7 +4,20 @@
  * arithmetic lives in timeline.ts (moveBlock / resizeBlock); this pins that
  * the keys reach it with the right numbers and that a neighbour stops a move.
  */
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within, act } from '@testing-library/react';
+
+// jsdom has no PointerEvent: without it fireEvent drops button/clientX/pointerId.
+if (typeof window !== 'undefined' && !('PointerEvent' in window)) {
+  class PointerEventPolyfill extends MouseEvent {
+    pointerId: number;
+    constructor(type: string, init: PointerEventInit = {}) {
+      super(type, init);
+      this.pointerId = init.pointerId ?? 0;
+    }
+  }
+  (window as unknown as { PointerEvent: unknown }).PointerEvent = PointerEventPolyfill;
+}
+const focus = (el: HTMLElement) => act(() => el.focus());
 import { Timeline } from '@/components/admin/video-text/Timeline';
 import type { TextBlock } from '@/types/videoText';
 
@@ -68,4 +81,131 @@ it('the edge handles are separately labelled', () => {
 it('has a zoom slider', () => {
   setup([lyric(0, 5, 10)]);
   expect(screen.getByLabelText('Zoom')).toHaveAttribute('type', 'range');
+});
+
+// ── Narrow blocks, typed times, playhead buttons ────────────────────────────
+import { parseTime, handleWidth, formatTime } from '@/components/admin/video-text/Timeline';
+
+const titleB = (s = 0, e = 5): TextBlock => ({ id: 'title', track: 'title', text: 'My Song', startSec: s, endSec: e });
+const creditsB = (s: number, e: number): TextBlock => ({ id: 'credits', track: 'credits', text: 'Music: R', startSec: s, endSec: e });
+
+function setupLong(blocks: TextBlock[], playheadSec = 0, durationSec = 344) {
+  const onChange = jest.fn();
+  render(<Timeline blocks={blocks} durationSec={durationSec} playheadSec={playheadSec} onChange={onChange} onSeek={jest.fn()} />);
+  return { onChange };
+}
+
+describe('parseTime', () => {
+  it.each([
+    ['12.5', 12.5],
+    ['0:12.5', 12.5],
+    ['1:05', 65],
+    ['5:44.0', 344],
+    ['1:02:03', 3723],
+    ['.5', 0.5],
+    [' 7 ', 7],
+  ])('%s → %s', (input, sec) => expect(parseTime(input)).toBe(sec));
+
+  it.each(['', 'abc', '1:65', '-3', '1::2', '12s', '1:2:3:4'])('rejects %p', (input) => {
+    expect(parseTime(input)).toBeNull();
+  });
+
+  it('reads back everything formatTime writes', () => {
+    for (const s of [0, 0.1, 9.9, 59.9, 60, 65.3, 343.9]) expect(parseTime(formatTime(s))).toBe(s);
+  });
+});
+
+describe('narrow blocks', () => {
+  it('handleWidth: 8 px, 4 px under 32 px, none under 16 px', () => {
+    expect(handleWidth(50)).toBe(8);
+    expect(handleWidth(32)).toBe(8);
+    expect(handleWidth(31)).toBe(4);
+    expect(handleWidth(16)).toBe(4);
+    expect(handleWidth(15.9)).toBe(0);
+  });
+
+  it('a 5 s title on a whole 5:44 song has no edge handles, so a drag moves it', () => {
+    // jsdom width 0 → 600 px fallback → 1.74 px/s → the title is ~9 px wide.
+    const { onChange } = setupLong([titleB()]);
+    const b = screen.getByRole('slider', { name: 'Title: My Song' });
+    expect(within(b).queryByTestId('edge-start')).toBeNull();
+    expect(within(b).queryByTestId('edge-end')).toBeNull();
+    const pps = 600 / 344;
+    fireEvent.pointerDown(b, { button: 0, pointerId: 1, clientX: 100 });
+    fireEvent.pointerMove(b, { pointerId: 1, clientX: 100 + 20 * pps });
+    fireEvent.pointerUp(b, { pointerId: 1 });
+    expect(moved(onChange, 'title')).toMatchObject({ startSec: 20, endSec: 25 });
+  });
+
+  it('a wide block keeps 8 px handles, and dragging the body still moves it', () => {
+    const { onChange } = setup([lyric(0, 5, 10)]); // 60 s → 10 px/s → 50 px
+    const b = screen.getByRole('slider', { name: /^Lyric 1/ });
+    expect(within(b).getByTestId('edge-start')).toHaveStyle({ width: '8px' });
+    fireEvent.pointerDown(b, { button: 0, pointerId: 1, clientX: 100 });
+    fireEvent.pointerMove(b, { pointerId: 1, clientX: 130 });
+    expect(moved(onChange, 'lyric-0')).toMatchObject({ startSec: 8, endSec: 13 });
+  });
+});
+
+describe('Start / End boxes', () => {
+  it('appear for the clicked block, with its times', () => {
+    setupLong([titleB(), creditsB(334, 344)]);
+    expect(screen.queryByTestId('block-times')).toBeNull();
+    fireEvent.pointerDown(screen.getByRole('slider', { name: 'Credits: Music: R' }), { button: 0, pointerId: 1, clientX: 0 });
+    const panel = screen.getByRole('group', { name: 'Times for Credits' });
+    expect(within(panel).getByLabelText('Start')).toHaveValue('5:34.0');
+    expect(within(panel).getByLabelText('End')).toHaveValue('5:44.0');
+  });
+
+  it('typing a start time and pressing Enter moves that edge', () => {
+    const { onChange } = setupLong([titleB()]);
+    focus(screen.getByRole('slider', { name: 'Title: My Song' }));
+    const start = within(screen.getByTestId('block-times')).getByLabelText('Start');
+    fireEvent.change(start, { target: { value: '0:02.5' } });
+    fireEvent.keyDown(start, { key: 'Enter' });
+    expect(moved(onChange, 'title')).toMatchObject({ startSec: 2.5, endSec: 5 });
+  });
+
+  it('typing an end time commits on blur', () => {
+    const { onChange } = setupLong([titleB()]);
+    focus(screen.getByRole('slider', { name: 'Title: My Song' }));
+    const end = within(screen.getByTestId('block-times')).getByLabelText('End');
+    fireEvent.change(end, { target: { value: '8' } });
+    fireEvent.blur(end);
+    expect(moved(onChange, 'title')).toMatchObject({ startSec: 0, endSec: 8 });
+  });
+
+  it('a time that is not a time is marked and changes nothing', () => {
+    const { onChange } = setupLong([titleB()]);
+    focus(screen.getByRole('slider', { name: 'Title: My Song' }));
+    const start = within(screen.getByTestId('block-times')).getByLabelText('Start');
+    fireEvent.change(start, { target: { value: 'soon' } });
+    fireEvent.keyDown(start, { key: 'Enter' });
+    expect(start).toHaveAttribute('aria-invalid', 'true');
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.keyDown(start, { key: 'Escape' });
+    expect(start).toHaveValue('0:00.0');
+    expect(start).not.toHaveAttribute('aria-invalid');
+  });
+
+  it('Move to playhead keeps the length; Start/End at playhead set one edge', () => {
+    const { onChange } = setupLong([titleB()], 12);
+    focus(screen.getByRole('slider', { name: 'Title: My Song' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Move to playhead' }));
+    expect(moved(onChange, 'title')).toMatchObject({ startSec: 12, endSec: 17 });
+    fireEvent.click(screen.getByRole('button', { name: 'End at playhead' }));
+    expect(moved(onChange, 'title')).toMatchObject({ startSec: 0, endSec: 12 });
+    fireEvent.click(screen.getByRole('button', { name: 'Start at playhead' }));
+    // 12 s is past the 5 s end: the start stops half a second before it, and says so.
+    expect(moved(onChange, 'title')).toMatchObject({ startSec: 4.5, endSec: 5 });
+    expect(screen.getByRole('status')).toHaveTextContent('Stopped at the next block or the end of the video.');
+  });
+
+  it('moving credits past the end of the video stops at the end, and says so', () => {
+    const { onChange } = setupLong([creditsB(300, 310)], 340);
+    focus(screen.getByRole('slider', { name: 'Credits: Music: R' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Move to playhead' }));
+    expect(moved(onChange, 'credits')).toMatchObject({ startSec: 334, endSec: 344 });
+    expect(screen.getByRole('status')).toHaveTextContent('Stopped');
+  });
 });

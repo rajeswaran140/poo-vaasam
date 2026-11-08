@@ -117,6 +117,24 @@ describe('autosave', () => {
     expect(bodyOf(calls('PATCH', '/api/admin/video-text/p1')[1][1]).version).toBe(4);
   });
 
+  it('choosing a title and credits position saves it, keeping the other style settings', async () => {
+    routes['PATCH /api/admin/video-text/p1'] = () => json({ version: 4 });
+    render(<VideoTextEditor project={project({ titleText: 'Song', blocks: [titleBlock] })} onBack={() => {}} />);
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Title position' })).getByRole('radio', { name: 'Top left' }));
+    fireEvent.click(
+      within(screen.getByRole('radiogroup', { name: 'Credits position' })).getByRole('radio', { name: 'Bottom centre' }),
+    );
+    await act(async () => { jest.advanceTimersByTime(800); });
+    const patches = calls('PATCH', '/api/admin/video-text/p1');
+    expect(patches).toHaveLength(1);
+    expect(bodyOf(patches[0][1]).edits.style).toEqual({
+      sizeScale: 1,
+      lyricPosition: 'lower',
+      titlePlace: { v: 'top', h: 'left' },
+      creditsPlace: { v: 'bottom', h: 'center' },
+    });
+  });
+
   it('leaving the editor inside the 800 ms window still saves', async () => {
     routes['PATCH /api/admin/video-text/p1'] = () => json({ version: 4 });
     const { unmount } = render(<VideoTextEditor project={project()} onBack={() => {}} />);
@@ -171,6 +189,24 @@ describe('Make video', () => {
     expect(bodyOf(calls('POST', '/api/admin/video-text/p1/render')[0][1]).version).toBe(3);
     expect(bodyOf(calls('POST', '/api/admin/video-text/p1/overlays')[0][1])).toEqual({ renderId, blockIds: ['title'] });
     expect(putToS3).toHaveBeenCalledTimes(1);
+  });
+
+  it('the burned-in text images are drawn with the chosen title position', async () => {
+    const placed = () =>
+      project({ titleText: 'Song', blocks: [titleBlock], style: { sizeScale: 1, lyricPosition: 'lower', titlePlace: { v: 'top', h: 'right' } } });
+    routes['POST /api/admin/video-text/p1/overlays'] = (init) =>
+      json({ uploads: bodyOf(init).blockIds.map((blockId: string) => ({ blockId, url: 'https://s3', fields: {}, key: `k-${blockId}` })) });
+    routes['POST /api/admin/video-text/p1/render'] = () => json({ status: 'queued' }, 202);
+    routes['GET /api/admin/video-text/p1'] = () =>
+      json({ project: { ...placed(), render: { ...idleRender, renderId: lastRenderId(), status: 'done', outputKey: 'k' } } });
+    render(<VideoTextEditor project={placed()} onBack={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Make video' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument());
+    expect(renderBlockPng).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'title' }),
+      { width: 2560, height: 1440 },
+      expect.objectContaining({ titlePlace: { v: 'top', h: 'right' } }),
+    );
   });
 
   it('a render error appears under Make video', async () => {
