@@ -39,6 +39,8 @@ import {
   sweepCost,
   canAfford,
   type CaptionTrack,
+  idBatches,
+  youtubeApiError,
 } from '@/lib/caption-policy';
 import { amplifyEnv } from './lib/amplify-env';
 
@@ -106,14 +108,18 @@ async function main() {
   // touch, so paging the whole uploads list to rediscover them is waste.
   // videos.list resolves titles for the output at 1 unit per 50 ids.
   if (ids) {
-    const r = await (await fetch(
-      `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${ids.join(',')}&key=${key}`
-    )).json();
-    pages = 1;
-    const titleOf = new Map<string, string>(
-      ((r.items ?? []) as Array<{ id: string; snippet: { title: string } }>)
-        .map((i) => [i.id, i.snippet.title])
-    );
+    // videos.list takes at most 50 ids; more is an ERROR, which once read as
+    // "not found" for all 59 asked for and swept nothing (2026-11-09).
+    const titleOf = new Map<string, string>();
+    for (const batch of idBatches(ids)) {
+      const r = await (await fetch(
+        `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${batch.join(',')}&key=${key}`
+      )).json();
+      const err = youtubeApiError(r);
+      if (err) throw new Error(`videos.list failed (${err}) — nothing was swept`);
+      pages += 1;
+      for (const i of (r.items ?? []) as Array<{ id: string; snippet: { title: string } }>) titleOf.set(i.id, i.snippet.title);
+    }
     const missing = ids.filter((id) => !titleOf.has(id));
     if (missing.length > 0) {
       // Loudly, rather than silently sweeping fewer videos than asked for.
@@ -128,6 +134,8 @@ async function main() {
     const r = await (await fetch(
       `https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails,snippet&playlistId=${UPLOADS_PLAYLIST}&maxResults=50&key=${key}${page ? `&pageToken=${page}` : ''}`
     )).json();
+    const err = youtubeApiError(r);
+    if (err) throw new Error(`playlistItems failed (${err}) — nothing was swept`);
     pages += 1;
     for (const i of r.items ?? []) {
       videos.push({ id: i.contentDetails.videoId, title: i.snippet.title });
@@ -159,6 +167,14 @@ async function main() {
       `https://www.googleapis.com/youtube/v3/captions?part=snippet&videoId=${v.id}`,
       { headers: H }
     )).json();
+    // An error (quota, auth) is NOT "no captions": stop rather than report a
+    // video clean that was never read. What ran before this is printed above.
+    const listErr = youtubeApiError(listed);
+    if (listErr) {
+      console.error(`\nSTOPPED at ${v.id}: captions.list failed (${listErr}).`);
+      console.error(`${apply ? `deleted ${deleted} track(s) before stopping` : 'dry run — nothing changed'}; videos after this one were NOT checked.`);
+      process.exit(3);
+    }
     const tracks: CaptionTrack[] = (listed.items ?? []).map(
       (t: { id: string; snippet: { trackKind: string; language: string } }) => ({
         id: t.id, trackKind: t.snippet.trackKind, language: t.snippet.language,

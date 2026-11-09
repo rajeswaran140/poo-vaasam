@@ -91,3 +91,28 @@ export function sweepCost(videos: number, deletes: number, playlistPages: number
 export function canAfford(videos: number, playlistPages: number, unitsAvailable: number): boolean {
   return sweepCost(videos, videos, playlistPages) <= unitsAvailable;
 }
+
+/** The most ids `videos.list` takes in one call. More returns an error, not a partial list. */
+export const VIDEOS_LIST_MAX_IDS = 50;
+
+/** `ids` split into calls `videos.list` will accept, in order. */
+export function idBatches(ids: readonly string[], size = VIDEOS_LIST_MAX_IDS): string[][] {
+  const out: string[][] = [];
+  for (let i = 0; i < ids.length; i += size) out.push(ids.slice(i, i + size));
+  return out;
+}
+
+/**
+ * The error in a YouTube API response body, or null.
+ *
+ * Read before trusting `items`: an error body has no `items`, and reading
+ * that as an empty list is how a failed call turned into "not found on this
+ * channel" (videos.list) or "no captions" (captions.list) — a clean report
+ * for videos nobody checked.
+ */
+export function youtubeApiError(body: unknown): string | null {
+  const err = (body as { error?: { code?: number; message?: string; errors?: Array<{ reason?: string }> } } | null)?.error;
+  if (!err) return null;
+  const reason = err.errors?.[0]?.reason;
+  return [err.code, reason, err.message].filter((x) => x !== undefined && x !== '').join(' ') || 'unknown error';
+}
