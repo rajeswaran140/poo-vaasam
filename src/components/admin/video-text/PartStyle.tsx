@@ -274,7 +274,7 @@ export function PartStyle({ label, value, onChange, position }: PartStyleProps) 
 }
 
 /** A small number box: shows `value`, commits a typed number (kept to range) on Enter or leaving the box. */
-function NumberBox({
+export function NumberBox({
   id,
   label,
   value,

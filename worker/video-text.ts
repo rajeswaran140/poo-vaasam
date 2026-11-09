@@ -80,6 +80,7 @@ import {
 import { isHdrHeader } from '@/lib/master-background';
 import type { Cut, RenderState, TextBlock, TextStyle } from '@/types/videoText';
 import { fadeSecFor, trackStyleOf } from '@/lib/video-text/fonts';
+import { LOGO_OVERLAY_ID, logoShown } from '@/lib/video-text/logo';
 
 export const VIDEO_TEXT_CHUNK_FUNCTION = process.env.VIDEO_TEXT_CHUNK_FUNCTION || 'tamilagaval-video-text-chunk';
 /** Chunks in flight at once for one render. */
@@ -805,10 +806,12 @@ export async function renderVideoText(
       return { ok: false, message: 'this render was already started' };
     }
     // R1: the route cannot know the browser's PNG uploads finished; check every one before any work.
-    for (const b of blocks) {
+    // The logo (when this project shows it) is one more full-frame PNG, on for the whole video.
+    const withLogo = logoShown(project.style);
+    for (const id of [...blocks.map((b) => b.id), ...(withLogo ? [LOGO_OVERLAY_ID] : [])]) {
       try {
         await bounded(deps, (abortSignal) =>
-          deps.s3.send(new HeadObjectCommand({ Bucket: deps.bucket, Key: overlayKey(projectId, renderId, b.id) }), { abortSignal }));
+          deps.s3.send(new HeadObjectCommand({ Bucket: deps.bucket, Key: overlayKey(projectId, renderId, id) }), { abortSignal }));
       } catch (err) {
         // Out of time is not a missing image.
         if (err instanceof VideoTextFailure) throw err;
@@ -906,10 +909,12 @@ export async function renderVideoText(
       ...b,
       fadeSec: project.style && trackStyleOf(b.track, project.style).fade ? fadeSecFor(b) : 0,
     }));
+    // First, so it lies UNDER the text (as in the preview). Endless on purpose: each segment clips it to its own length.
+    const logoSpan = { id: LOGO_OVERLAY_ID, startSec: 0, endSec: Number.POSITIVE_INFINITY, fadeSec: 0 };
     const specs: ChunkSpec[] = kept.map(({ entry, trim }, index) => ({
       projectId, renderId, index,
       segKey: segmentKey(projectId, renderId, index),
-      overlays: overlaysForSegment(timed, entry),
+      overlays: overlaysForSegment(withLogo ? [logoSpan, ...timed] : timed, entry),
       width: video!.width, height: video!.height,
       fps: video!.fps!,
       ...(trim ? { trim } : {}),

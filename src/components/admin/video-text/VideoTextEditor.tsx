@@ -16,10 +16,13 @@ import { adminFetch } from '@/lib/client-auth';
 import { putToS3 } from '@/lib/mastering-upload-client';
 import { MAX_VIDEO_TEXT_BYTES } from '@/lib/video-text/keys';
 import { syncTextToBlocks, unplacedLineCount, validateBlocks, type RememberedTimes } from '@/lib/video-text/timeline';
-import type { Cut, SourceInfo, TextBlock, TextStyle, Track, TrackStyle, VideoTextProject } from '@/types/videoText';
+import type { Cut, SourceInfo, TextBlock, LogoStyle, TextStyle, Track, TrackStyle, VideoTextProject } from '@/types/videoText';
 import { useAutosave, type AutosaveStatus } from './useAutosave';
 import { useRenderJob } from './useRenderJob';
 import { PartStyle } from './PartStyle';
+import { LogoPanel } from './LogoPanel';
+import { useSavedLogo } from './useSavedLogo';
+import { logoShown } from '@/lib/video-text/logo';
 import { TapToTime } from './TapToTime';
 import { PlacementPicker } from './PlacementPicker';
 import { trackStyleOf } from '@/lib/video-text/fonts';
@@ -139,6 +142,8 @@ export function VideoTextEditor({
   const ids = { name: useId(), title: useId(), credits: useId(), lyrics: useId(), lyricsHint: useId(), file: useId() };
 
   const job = useRenderJob(initial.id, initial.render);
+  const savedLogo = useSavedLogo();
+  const logoImage = savedLogo.state.kind === 'ready' ? savedLogo.state.image : null;
   const onVersion = useCallback((version: number) => setProject((p) => ({ ...p, version })), []);
   const autosave = useAutosave(project, onVersion, { hold: job.startingUp });
 
@@ -219,6 +224,10 @@ export function VideoTextEditor({
       ...p,
       style: { ...p.style, tracks: { ...p.style.tracks, [track]: { ...p.style.tracks?.[track], ...patch } } },
     }));
+  };
+  const setLogoStyle = (patch: LogoStyle) => {
+    markEdited();
+    setProject((p) => ({ ...p, style: { ...p.style, logo: { ...p.style.logo, ...patch } } }));
   };
   const onName = (value: string) => {
     setNameInput(value);
@@ -457,10 +466,14 @@ export function VideoTextEditor({
         const saved = await autosave.flush();
         if (!saved.ok) return saved.error;
         const { blocks, style } = saved.edits;
-        if (blocks.length === 0) return 'Add a title, lyrics or credits first.';
+        const withLogo = logoShown(style);
+        if (blocks.length === 0 && !withLogo) return 'Add a title, lyrics or credits first.';
+        // The logo as saved now: replaced in another tab since this one opened → the new one.
+        const logo = withLogo ? await savedLogo.latest() : null;
+        if (typeof logo === 'string') return logo;
         const problem = validateBlocks(blocks, source.durationSec) ?? validateCut(saved.edits.cut, source.durationSec);
         if (problem) return problem;
-        return { blocks, style, frame: { width: source.width, height: source.height }, version: saved.version };
+        return { blocks, style, frame: { width: source.width, height: source.height }, version: saved.version, logo };
       },
     });
   };
@@ -705,7 +718,8 @@ export function VideoTextEditor({
                   style={project.style}
                   onTime={setPlayhead}
                   timeSec={playhead}
-                  onMove={(track, offset) => setTrackStyle(track, { offset })}
+                  onMove={(target, offset) => (target === 'logo' ? setLogoStyle({ offset }) : setTrackStyle(target, { offset }))}
+                  logo={logoImage}
                 />
               ) : (
                 !previewError && <p className="text-sm text-gray-500 dark:text-gray-400">Loading the video…</p>
@@ -817,6 +831,16 @@ export function VideoTextEditor({
               }
             />
           </div>
+
+          <LogoPanel
+            style={project.style}
+            onChange={setLogoStyle}
+            logo={savedLogo.state}
+            onUpload={(f) => void savedLogo.upload(f)}
+            uploading={savedLogo.uploading}
+            uploadError={savedLogo.uploadError}
+            disabled={job.running}
+          />
 
           {/* Make video */}
           <div className="min-w-0" data-testid="make-video">
