@@ -118,7 +118,7 @@ export async function buildVideoRequest(tree: VideoRequestTree, shot: Shot): Pro
 
 export type GenJobRepo = Pick<
   VisualStoryRepository,
-  'transitionGenJob' | 'touchGenJob' | 'putCandidate' | 'releaseShotVideo' | 'getGenJob' | 'settleGenJob'
+  'transitionGenJob' | 'touchGenJob' | 'putCandidate' | 'releaseShotVideo' | 'getGenJob' | 'settleGenJob' | 'chooseClipIfPicture'
 >;
 
 export interface AdvanceDeps {
@@ -303,7 +303,19 @@ export async function advanceGenJob(
       } catch (err) {
         console.error('visual-story video job: clip copy failed', job.jobId, errName(err));
       }
-      if (copied) return endJob(repo, vsId, current, ['running'], 'succeeded', true);
+      if (copied) {
+        const ended = await endJob(repo, vsId, current, ['running'], 'succeeded', true);
+        // The clip was made to move this shot: show it instead of its picture
+        // (never over a clip the admin chose). Without this a render quietly
+        // used the pictures (audit 2026-11-09). A failure only leaves the
+        // choice to the admin.
+        try {
+          await repo.chooseClipIfPicture(vsId, job.sceneOrder, job.shotOrder, candIdForJob(job.jobId));
+        } catch (err) {
+          console.error('visual-story video job: choosing the clip failed', job.jobId, errName(err));
+        }
+        return ended;
+      }
 
       if (current.copyFailures >= VIDEO_COPY_MAX_FAILURES) {
         return endJob(repo, vsId, current, ['running'], 'failed', true, { code: 'upstream', error: COPY_FAILED_ERROR });

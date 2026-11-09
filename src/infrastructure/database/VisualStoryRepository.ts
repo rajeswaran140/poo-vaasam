@@ -1225,6 +1225,38 @@ export class VisualStoryRepository {
     }
   }
 
+  /**
+   * A finished clip becomes the shot's choice when the shot shows nothing or a
+   * picture (STILL) — the clip was made to move that shot. A clip the admin
+   * chose is never replaced. Conditioned on the choice read here, so a pick
+   * made meanwhile wins. false when nothing changed (or the shot is gone).
+   */
+  async chooseClipIfPicture(vsId: string, sceneOrder: number, shotOrder: number, candId: string): Promise<boolean> {
+    try {
+      const shot = await DynamoDBOperations.get({ PK: vsPk(vsId), SK: shotSk(sceneOrder, shotOrder) });
+      if (!shot) return false;
+      const prev = (shot.selectedCandidateId as string | null | undefined) ?? null;
+      if (prev === candId) return false;
+      if (prev === null) return await this.selectCandidateIfNone(vsId, sceneOrder, shotOrder, candId);
+      const chosen = await DynamoDBOperations.get({ PK: vsPk(vsId), SK: candSk(sceneOrder, shotOrder, prev) });
+      if (chosen && chosen.mode !== 'STILL') return false;
+      try {
+        await DynamoDBOperations.update({
+          key: { PK: vsPk(vsId), SK: shotSk(sceneOrder, shotOrder) },
+          updateExpression: 'SET selectedCandidateId = :c',
+          expressionAttributeValues: { ':c': candId, ':prev': prev },
+          conditionExpression: 'attribute_exists(PK) AND selectedCandidateId = :prev',
+        });
+        return true;
+      } catch (error) {
+        if (isConditionFailure(error)) return false;
+        throw error;
+      }
+    } catch (error) {
+      fail(error);
+    }
+  }
+
   async putDraft(vsId: string, draft: StoryboardDraft): Promise<void> {
     try {
       await DynamoDBOperations.put({ PK: vsPk(vsId), SK: draftSk(draft.draftId), ...draft });
