@@ -277,6 +277,10 @@ export function VideoTextEditor({
   // The link lasts an hour and timing 40 lines can take longer: once it
   // expires every seek fails. Fetch a new link and carry on from the same
   // spot. An error on a link under a minute old is not an expiry — say so.
+  // Also used by the preview's hidden copy (the freeze's frame), which may
+  // first load long after the link was made.
+  const linkErrorRef = useRef<() => void>(() => undefined);
+  const onPreviewLinkError = useCallback(() => linkErrorRef.current(), []);
   useEffect(() => {
     const v = videoRef.current;
     if (!v || !remoteUrl || localUrl) return;
@@ -298,6 +302,7 @@ export function VideoTextEditor({
         (err) => !cancelled && setPreviewError(err instanceof Error ? err.message : String(err)),
       );
     };
+    linkErrorRef.current = onError;
     const onLoaded = () => {
       if (resumeAt.current === null) return;
       v.currentTime = resumeAt.current;
@@ -729,6 +734,7 @@ export function VideoTextEditor({
                   logo={logoImage}
                   freezeSec={project.freeze?.atSec ?? null}
                   fps={source.fps}
+                  onLinkError={onPreviewLinkError}
                 />
               ) : (
                 !previewError && <p className="text-sm text-gray-500 dark:text-gray-400">Loading the video…</p>

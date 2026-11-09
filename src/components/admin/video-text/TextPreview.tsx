@@ -50,13 +50,17 @@ export interface TextPreviewProps {
   freezeSec?: number | null;
   /** The video's frame rate, to find the frozen frame. */
   fps?: number;
+  /** The hidden copy could not load the link (expired): the editor fetches a fresh one. */
+  onLinkError?(): void;
   /** The playhead, so the move boxes follow the text that shows now. */
   timeSec?: number;
 }
 
 const activeAt = (blocks: TextBlock[], t: number) => blocks.filter((b) => t >= b.startSec && t < b.endSec);
 
-export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMove, timeSec = 0, logo = null, freezeSec = null, fps = 25 }: TextPreviewProps) {
+export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMove, timeSec = 0, logo = null, freezeSec = null, fps = 25, onLinkError }: TextPreviewProps) {
+  const linkError = useRef(onLinkError);
+  linkError.current = onLinkError;
   const video = useRef<HTMLVideoElement | null>(null);
   const overlay = useRef<HTMLCanvasElement>(null);
   const offscreen = useRef<HTMLCanvasElement | null>(null);
@@ -206,12 +210,15 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMov
       if (Math.abs(sv.currentTime - target) < 1e-4 && sv.readyState >= 2) grab();
       else sv.currentTime = target;
     };
+    const failed = () => linkError.current?.();
+    sv.addEventListener('error', failed);
     sv.addEventListener('seeked', grab);
     if (sv.readyState >= 1) seekIt();
     else sv.addEventListener('loadedmetadata', seekIt, { once: true });
     return () => {
       cancelled = true;
       sv.removeEventListener('seeked', grab);
+      sv.removeEventListener('error', failed);
       sv.removeEventListener('loadedmetadata', seekIt);
     };
   }, [freezeSec, fps, videoUrl, frame.width, frame.height, paint]);
