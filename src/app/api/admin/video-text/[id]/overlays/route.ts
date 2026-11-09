@@ -12,6 +12,8 @@ export const dynamic = 'force-dynamic';
 
 const UPLOAD_URL_TTL_SECONDS = 60 * 60;
 const MAX_OVERLAY_BYTES = 5 * 1024 * 1024;
+/** The logo's PNG is photographic: a big logo on a 4K frame measured 5.3 MB (2026-11-09). */
+const MAX_LOGO_OVERLAY_BYTES = 25 * 1024 * 1024;
 const MAX_OVERLAYS = 400;
 
 const schema = z.object({
@@ -54,7 +56,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         const { url, fields } = await S3Operations.getSignedUploadPost(
           key,
           'image/png',
-          MAX_OVERLAY_BYTES,
+          blockId === LOGO_OVERLAY_ID ? MAX_LOGO_OVERLAY_BYTES : MAX_OVERLAY_BYTES,
           UPLOAD_URL_TTL_SECONDS
         );
         return { blockId, url, fields, key };

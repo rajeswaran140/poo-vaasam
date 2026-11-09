@@ -135,5 +135,7 @@ describe('logo overlay upload', () => {
       `audio/mastering/video-text/${ID}/render-r1/overlay-b1.png`,
       `audio/mastering/video-text/${ID}/render-r1/overlay-${LOGO_OVERLAY_ID}.png`,
     ]);
+    // Text PNGs keep 5 MB; the photographic logo frame gets 25 MB (a big logo at 4K is 5.3 MB).
+    expect(presignPost.mock.calls.map((c) => c[2])).toEqual([5 * 1024 * 1024, 25 * 1024 * 1024]);
   });
 });

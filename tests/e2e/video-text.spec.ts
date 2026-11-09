@@ -179,6 +179,8 @@ test.describe('video text editor (mocked API)', () => {
       if (rest === '' && method === 'GET') return json(route, { projects: [project()] });
       if (rest === ID && method === 'GET') return json(route, { project: project() });
       if (rest === `${ID}/source` && method === 'GET') return json(route, { url: CLIP_URL });
+      // The saved logo: none, unless a test layers its own route on top.
+      if (rest === 'logo' && method === 'GET') return json(route, { logo: null });
       if (rest === ID && method === 'PATCH') {
         patches.push(req.postData() ?? '');
         const sent = JSON.parse(req.postData() ?? '{}');
@@ -573,6 +575,46 @@ test.describe('video text editor (mocked API)', () => {
     expect(unexpected, 'requests to the video-text API that the test did not mock').toEqual([]);
   });
 
+  test('logo: the saved logo shows in its corner when ticked, moves by keys, and a corner puts it back', async ({ page }) => {
+    test.skip(Boolean(ffmpegMissing), ffmpegMissing || 'ffmpeg missing');
+    const { writes, unexpected, patches } = await mockEditor(page);
+    // A 1×1 solid red PNG stands in for the logo, served cross-origin like S3.
+    const RED = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==', 'base64');
+    const LOGO_URL = 'https://tamil-web-media.s3.amazonaws.com/e2e-mock-logo/logo.png';
+    await page.route(LOGO_URL, (route) =>
+      route.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: RED }));
+    await page.route('**/api/admin/video-text/logo', (route) =>
+      route.request().method() === 'GET'
+        ? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ logo: { key: 'audio/mastering/video-text-logo/1_a.png', contentType: 'image/png', width: 1, height: 1, uploadedAt: new Date().toISOString(), url: LOGO_URL } }) })
+        : route.fallback());
+    const { seekTo } = await openEditor(page);
+    await seekTo(30); // no text showing, so any pixel drawn is the logo
+
+    const panel = page.getByTestId('logo-panel');
+    await expect(panel.getByTestId('logo-thumb')).toBeVisible();
+    expect(await opaqueIn(page, 0.8, 0.95, 0.8, 0.95)).toBe(0);
+    await panel.getByLabel('Show the logo on this video').check();
+    // Bottom right by default, 10% of the height: inside the 5% margin.
+    await expect.poll(() => opaqueIn(page, 0.85, 0.95, 0.85, 0.95)).toBeGreaterThan(0);
+    expect(await opaqueIn(page, 0.05, 0.15, 0.05, 0.15)).toBe(0);
+
+    await page.getByLabel('Move text by dragging it on the picture').check();
+    await page.getByTestId('move-logo').focus();
+    await page.keyboard.press('Shift+ArrowUp');
+    await expect(panel.getByLabel("Logo: move down, % of the video's height")).toHaveValue('-5');
+
+    await panel.getByRole('radio', { name: 'Top left' }).click();
+    await expect.poll(() => opaqueIn(page, 0.05, 0.15, 0.05, 0.15)).toBeGreaterThan(0);
+    expect(await opaqueIn(page, 0.85, 0.95, 0.85, 0.95)).toBe(0);
+    await expect(panel.getByRole('button', { name: 'Reset to corner' })).toHaveCount(0);
+
+    await expect.poll(() => patches.some((b) => JSON.parse(b).edits?.style?.logo?.corner === 'top-left'), { timeout: 15_000 }).toBe(true);
+    const last = JSON.parse(patches[patches.length - 1]).edits.style.logo;
+    expect(last).toMatchObject({ show: true, corner: 'top-left', offset: { x: 0, y: 0 } });
+    expect(writes, 'non-GET /api/ requests the mocks did not fulfil').toEqual([]);
+    expect(unexpected, 'requests to the video-text API that the test did not mock').toEqual([]);
+  });
+
   test('tap to time while the song plays; fade, box and colour show in the preview', async ({ page }) => {
     test.skip(Boolean(ffmpegMissing), ffmpegMissing || 'ffmpeg missing');
     const { writes, unexpected, patches } = await mockEditor(page);
@@ -766,6 +808,8 @@ test.describe('video text editor (mocked API)', () => {
     await page.getByLabel('Move text by dragging it on the picture').check();
     const handle = page.getByTestId('move-title');
     await expect(handle).toBeVisible();
+    // The mouse can only drag what is on screen: ticking the switch may leave the picture scrolled off.
+    await handle.scrollIntoViewIfNeeded();
     const pic = (await page.locator('video').boundingBox())!;
     const hb = (await handle.boundingBox())!;
     await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
