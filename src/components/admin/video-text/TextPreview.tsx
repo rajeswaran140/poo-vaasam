@@ -247,10 +247,11 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMov
       w: (u.x1 - u.x0) / frame.width,
       h: (u.y1 - u.y0) / frame.height,
     }));
+    // First, so the text boxes stack above it: where they overlap, a drag takes the text.
     const look = logoStyleOf(style);
     if (logo && look.show) {
       const r = logoRect(logo, frame, look);
-      boxes.push({ track: 'logo', x: r.x / frame.width, y: r.y / frame.height, w: r.w / frame.width, h: r.h / frame.height });
+      boxes.unshift({ track: 'logo', x: r.x / frame.width, y: r.y / frame.height, w: r.w / frame.width, h: r.h / frame.height });
     }
     return boxes;
   };

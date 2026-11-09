@@ -12,7 +12,7 @@
 
 import { test, expect, type Page, type Route } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, statSync } from 'node:fs';
+import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { defaultBlocks } from '../../src/lib/video-text/timeline';
 import { adminCredentials, NO_CREDS_REASON } from '../support/admin-credentials';
@@ -581,11 +581,13 @@ test.describe('video text editor (mocked API)', () => {
     // A 1×1 solid red PNG stands in for the logo, served cross-origin like S3.
     const RED = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==', 'base64');
     const LOGO_URL = 'https://tamil-web-media.s3.amazonaws.com/e2e-mock-logo/logo.png';
+    // A real logo can be swapped in locally (E2E_LOGO_FILE, a PNG) to check the drawn PNG by eye.
+    const LOGO = process.env.E2E_LOGO_FILE ? readFileSync(process.env.E2E_LOGO_FILE) : RED;
     await page.route(LOGO_URL, (route) =>
-      route.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: RED }));
+      route.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: LOGO }));
     await page.route('**/api/admin/video-text/logo', (route) =>
       route.request().method() === 'GET'
-        ? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ logo: { key: 'audio/mastering/video-text-logo/1_a.png', contentType: 'image/png', width: 1, height: 1, uploadedAt: new Date().toISOString(), url: LOGO_URL } }) })
+        ? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ logo: { key: 'audio/mastering/video-text-logo/1_a.png', contentType: 'image/png', width: LOGO.readUInt32BE(16), height: LOGO.readUInt32BE(20), uploadedAt: new Date().toISOString(), url: LOGO_URL } }) })
         : route.fallback());
     const { seekTo } = await openEditor(page);
     await seekTo(30); // no text showing, so any pixel drawn is the logo
@@ -611,6 +613,40 @@ test.describe('video text editor (mocked API)', () => {
     await expect.poll(() => patches.some((b) => JSON.parse(b).edits?.style?.logo?.corner === 'top-left'), { timeout: 15_000 }).toBe(true);
     const last = JSON.parse(patches[patches.length - 1]).edits.style.logo;
     expect(last).toMatchObject({ show: true, corner: 'top-left', offset: { x: 0, y: 0 } });
+
+    // Make video: the browser draws the logo's PNG at the frame size and uploads it as `_logo`.
+    let renderId: string | null = null;
+    const uploaded: Record<string, Buffer> = {};
+    await page.route('https://tamil-web-media.s3.amazonaws.com/e2e-mock-upload/**', async (route) => {
+      const body = route.request().postDataBuffer() ?? Buffer.alloc(0);
+      const id = /\/e2e-mock-upload\/(.+)$/.exec(route.request().url())![1];
+      const at = body.indexOf(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+      const end = body.indexOf(Buffer.from('IEND'), at);
+      if (at >= 0 && end > at) uploaded[id] = body.subarray(at, end + 8);
+      return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*' } });
+    });
+    await page.route('**/api/admin/video-text/**', async (route) => {
+      const req = route.request();
+      const path = new URL(req.url()).pathname;
+      const json = (b: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
+      if (path.endsWith('/overlays') && req.method() === 'POST') {
+        const sent = JSON.parse(req.postData() ?? '{}');
+        renderId = sent.renderId;
+        return json({ uploads: sent.blockIds.map((blockId: string) => ({ blockId, url: `https://tamil-web-media.s3.amazonaws.com/e2e-mock-upload/${blockId}`, fields: {}, key: `k/${blockId}.png` })) });
+      }
+      if (path.endsWith('/render') && req.method() === 'POST') return json({ status: 'queued' }, 202);
+      if (path.endsWith(`/${ID}`) && req.method() === 'GET' && renderId) {
+        return json({ project: { ...project(), render: { renderId, status: 'done', progress: null, outputKey: 'k/out.mp4', outputExpiresAt: new Date(Date.now() + 864e5).toISOString(), error: null, startedAt: new Date().toISOString(), updatedAt: new Date(Date.now() + 1000).toISOString() } } });
+      }
+      return route.fallback();
+    });
+    await page.getByRole('button', { name: 'Make video' }).click();
+    await expect(page.getByRole('button', { name: 'Download' })).toBeVisible({ timeout: 30_000 });
+    const logoPng = uploaded['_logo'];
+    expect(logoPng, 'the logo PNG was uploaded').toBeTruthy();
+    expect([logoPng.readUInt32BE(16), logoPng.readUInt32BE(20)]).toEqual([1280, 720]);
+    expect(Object.keys(uploaded)).toHaveLength(6); // title + 3 lyrics + credits + logo
+    if (process.env.E2E_SAVE_LOGO_PNG) writeFileSync(process.env.E2E_SAVE_LOGO_PNG, logoPng);
     expect(writes, 'non-GET /api/ requests the mocks did not fulfil').toEqual([]);
     expect(unexpected, 'requests to the video-text API that the test did not mock').toEqual([]);
   });

@@ -909,8 +909,8 @@ export async function renderVideoText(
       ...b,
       fadeSec: project.style && trackStyleOf(b.track, project.style).fade ? fadeSecFor(b) : 0,
     }));
-    // First, so it lies UNDER the text (as in the preview). Past the end on purpose: each segment clips it.
-    const logoSpan = { id: LOGO_OVERLAY_ID, startSec: 0, endSec: fullSec + 1, fadeSec: 0 };
+    // First, so it lies UNDER the text (as in the preview). Endless on purpose: each segment clips it to its own length.
+    const logoSpan = { id: LOGO_OVERLAY_ID, startSec: 0, endSec: Number.POSITIVE_INFINITY, fadeSec: 0 };
     const specs: ChunkSpec[] = kept.map(({ entry, trim }, index) => ({
       projectId, renderId, index,
       segKey: segmentKey(projectId, renderId, index),

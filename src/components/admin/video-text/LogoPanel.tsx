@@ -81,7 +81,8 @@ export function LogoPanel({ style, onChange, logo, onUpload, uploading, uploadEr
           </div>
         )}
 
-        {ready && (
+        {/* Also when the logo failed to load, so a saved "show" can always be switched off. */}
+        {(ready || (look.show && logo.kind !== 'loading')) && (
           <label htmlFor={ids.show} className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
             <input
               id={ids.show}

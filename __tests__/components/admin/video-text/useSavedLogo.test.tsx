@@ -62,3 +62,29 @@ it('refuses a wrong type or an oversize file before uploading', async () => {
   expect(result.current.uploadError).toMatch(/PNG, JPG or WebP/);
   expect(putToS3).not.toHaveBeenCalled();
 });
+
+it('latest(): the logo as saved now — a replace in another tab is fetched; unchanged reuses the image', async () => {
+  let saved = SAVED;
+  mockedFetch.mockImplementation(async () => json({ logo: saved }));
+  const { result } = renderHook(() => useSavedLogo());
+  await waitFor(() => expect(result.current.state.kind).toBe('ready'));
+  expect(fetch).toHaveBeenCalledTimes(1);
+  let got: unknown;
+  await act(async () => { got = await result.current.latest(); });
+  expect(got).toMatchObject({ key: 'k.png' });
+  expect(fetch).toHaveBeenCalledTimes(1); // same key: no second download
+  saved = { ...SAVED, key: 'replaced.png', url: 'https://s3/replaced' };
+  await act(async () => { got = await result.current.latest(); });
+  expect(got).toMatchObject({ key: 'replaced.png' });
+  expect(fetch).toHaveBeenLastCalledWith('https://s3/replaced');
+  expect(result.current.state.kind === 'ready' && result.current.state.logo.key).toBe('replaced.png');
+});
+
+it('latest(): a message, not an image, when the logo is gone or cannot be read', async () => {
+  mockedFetch.mockResolvedValue(json({ logo: null }));
+  const { result } = renderHook(() => useSavedLogo());
+  await waitFor(() => expect(result.current.state.kind).toBe('none'));
+  await expect(result.current.latest()).resolves.toMatch(/No logo is saved/);
+  mockedFetch.mockResolvedValue(json({ error: 'x' }, 502));
+  await expect(result.current.latest()).resolves.toMatch(/could not be loaded/);
+});

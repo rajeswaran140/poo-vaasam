@@ -529,6 +529,19 @@ describe('videoTextRender', () => {
     expect(byIndex[2].overlays[0]).toEqual({ id: '_logo', fromSec: 0, toSec: 5 });
   });
 
+  it('a logo-only project (no text) renders: the logo on every chunk, nothing else', async () => {
+    world.project = { ...projectFor(), blocks: [], style: { sizeScale: 1, lyricPosition: 'lower', logo: { show: true } } };
+    world.store.set(overlayKey(PID, RID, '_logo'), Buffer.from('PNG'));
+    await render();
+    expect((world.project!.render as { status: string }).status).toBe('done');
+    const byIndex = [...world.invoked].sort((a, b) => a.index - b.index);
+    expect(byIndex.map((e) => e.overlays)).toEqual([
+      [{ id: '_logo', fromSec: 0, toSec: 20 }],
+      [{ id: '_logo', fromSec: 0, toSec: 20 }],
+      [{ id: '_logo', fromSec: 0, toSec: 5 }],
+    ]);
+  });
+
   it('the logo shown but its PNG missing fails before any chunk', async () => {
     world.project = { ...projectFor(), style: { sizeScale: 1, lyricPosition: 'lower', logo: { show: true } } };
     await render();
@@ -593,6 +606,19 @@ describe('videoTextRender', () => {
       expect(byIndex[1].overlays).toEqual([{ id: 'cred', fromSec: 0, toSec: 5 }]);
       expect(statuses()).toEqual(['segmenting', 'encoding', 'joining', 'done']);
       expect(keysLeft()).toEqual([outputKey(PID, RID)]);
+    });
+
+    it('the logo rides on the kept segments only, whole length, under the text; the trim cuts it with them', async () => {
+      withCut({ inSec: 25, outSec: 42 });
+      world.project = { ...world.project!, style: { sizeScale: 1, lyricPosition: 'lower', logo: { show: true } } };
+      world.store.set(overlayKey(PID, RID, '_logo'), Buffer.from('PNG'));
+      expect(await render()).toMatchObject({ ok: true });
+      const byIndex = [...world.invoked].sort((a, b) => a.index - b.index);
+      expect(byIndex.map((e) => e.index)).toEqual([0, 1]);
+      expect(byIndex[0]).toMatchObject({ trim: { fromSec: 5 } });
+      expect(byIndex[0].overlays).toEqual([{ id: '_logo', fromSec: 0, toSec: 20 }, { id: 'l1', fromSec: 0, toSec: 2 }, { id: 'cred', fromSec: 15, toSec: 20 }]);
+      expect(byIndex[1]).toMatchObject({ trim: { toSec: 2 } });
+      expect(byIndex[1].overlays).toEqual([{ id: '_logo', fromSec: 0, toSec: 5 }, { id: 'cred', fromSec: 0, toSec: 5 }]);
     });
 
     it('cuts the sound by stream copy, proves it is the song\'s own packets, and joins with it', async () => {

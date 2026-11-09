@@ -58,3 +58,9 @@ it('size and opacity boxes commit typed numbers in range', () => {
   fireEvent.blur(op);
   expect(onChange).toHaveBeenLastCalledWith({ opacity: 0.45 });
 });
+
+it('a saved "show" with a logo that failed to load can still be switched off', () => {
+  const { onChange } = setup({ ...base, logo: { show: true } }, { kind: 'error', message: 'The saved logo could not be loaded' });
+  fireEvent.click(screen.getByLabelText('Show the logo on this video'));
+  expect(onChange).toHaveBeenCalledWith({ show: false });
+});

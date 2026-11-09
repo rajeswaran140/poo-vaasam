@@ -73,9 +73,9 @@ it('arrow keys on a box move it 0.5%, Shift 5%', () => {
 
 describe('the logo', () => {
   const logo = { image: {} as never, width: 200, height: 100, key: 'k' };
-  const show = (style: TextStyle) => {
+  const show = (style: TextStyle, timeSec = 30) => {
     const onMove = jest.fn();
-    render(<TextPreview videoUrl="x.mp4" frame={{ width: 1920, height: 1080 }} blocks={blocks} style={style} onTime={jest.fn()} timeSec={30} onMove={onMove} logo={logo} />);
+    render(<TextPreview videoUrl="x.mp4" frame={{ width: 1920, height: 1080 }} blocks={blocks} style={style} onTime={jest.fn()} timeSec={timeSec} onMove={onMove} logo={logo} />);
     fireEvent.click(screen.getByLabelText('Move text by dragging it on the picture'));
     return onMove;
   };
@@ -92,6 +92,12 @@ describe('the logo', () => {
     const onMove = show({ sizeScale: 1, lyricPosition: 'lower', logo: { show: true, offset: { x: 0.02, y: 0 } } });
     fireEvent.keyDown(screen.getByTestId('move-logo'), { key: 'ArrowUp', shiftKey: true });
     expect(onMove).toHaveBeenLastCalledWith('logo', { x: 0.02, y: -0.05 });
+  });
+
+  it('the logo box comes before the text boxes, so a text part on top of it is still the one dragged', () => {
+    show({ sizeScale: 1, lyricPosition: 'lower', logo: { show: true } }, 1); // the title shows at 1 s
+    const ids = Array.from(document.querySelectorAll('[data-testid^="move-"]')).map((e) => e.getAttribute('data-testid'));
+    expect(ids).toEqual(['move-logo', 'move-title']);
   });
 
   it('hidden: no logo box', () => {

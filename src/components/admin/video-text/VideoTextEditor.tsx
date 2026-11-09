@@ -467,11 +467,13 @@ export function VideoTextEditor({
         if (!saved.ok) return saved.error;
         const { blocks, style } = saved.edits;
         const withLogo = logoShown(style);
-        if (withLogo && !logoImage) return 'The logo is not loaded — upload it again, or untick "Show the logo on this video".';
         if (blocks.length === 0 && !withLogo) return 'Add a title, lyrics or credits first.';
+        // The logo as saved now: replaced in another tab since this one opened → the new one.
+        const logo = withLogo ? await savedLogo.latest() : null;
+        if (typeof logo === 'string') return logo;
         const problem = validateBlocks(blocks, source.durationSec) ?? validateCut(saved.edits.cut, source.durationSec);
         if (problem) return problem;
-        return { blocks, style, frame: { width: source.width, height: source.height }, version: saved.version, logo: withLogo ? logoImage : null };
+        return { blocks, style, frame: { width: source.width, height: source.height }, version: saved.version, logo };
       },
     });
   };

@@ -65,30 +65,48 @@ export function useSavedLogo() {
     };
   }, []);
 
+  const current = useRef<LogoState>(state);
+  current.current = state;
+
+  /** The saved logo as the server has it now: the image is fetched again only when it was replaced. */
+  const fetchSaved = useCallback(async (): Promise<LogoState> => {
+    const res = await adminFetch('/api/admin/video-text/logo');
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body?.error || LOAD_FAILED);
+    const logo = body?.logo as (SavedLogo & { url: string }) | null;
+    if (!logo) return { kind: 'none' };
+    const had = current.current;
+    if (had.kind === 'ready' && had.logo.key === logo.key) return { kind: 'ready', logo, image: had.image };
+    const img = await fetch(logo.url);
+    if (!img.ok) throw new Error(LOAD_FAILED);
+    const image = await decode(await img.blob());
+    return { kind: 'ready', logo, image: { image, width: image.width, height: image.height, key: logo.key } };
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const res = await adminFetch('/api/admin/video-text/logo');
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body?.error || LOAD_FAILED);
-        const logo = body?.logo as (SavedLogo & { url: string }) | null;
-        if (!logo) {
-          if (!cancelled) setState({ kind: 'none' });
-          return;
-        }
-        const img = await fetch(logo.url);
-        if (!img.ok) throw new Error(LOAD_FAILED);
-        const image = await decode(await img.blob());
-        if (!cancelled) setState({ kind: 'ready', logo, image: { image, width: image.width, height: image.height, key: logo.key } });
-      } catch {
-        if (!cancelled) setState({ kind: 'error', message: LOAD_FAILED });
-      }
-    })();
+    fetchSaved().then(
+      (next) => !cancelled && setState(next),
+      () => !cancelled && setState({ kind: 'error', message: LOAD_FAILED }),
+    );
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [fetchSaved]);
+
+  /**
+   * For Make video: the logo as saved NOW (replaced in another tab → the new
+   * one), or a message that stops the render.
+   */
+  const latest = useCallback(async (): Promise<LogoImage | string> => {
+    try {
+      const next = await fetchSaved();
+      if (live.current) setState(next);
+      return next.kind === 'ready' ? next.image : 'No logo is saved any more — upload it again, or untick "Show the logo on this video".';
+    } catch {
+      return 'The logo could not be loaded — check the connection and press Make video again.';
+    }
+  }, [fetchSaved]);
 
   /** Upload `file` as THE logo (replacing any saved one). */
   const upload = useCallback(async (file: File) => {
@@ -130,5 +148,5 @@ export function useSavedLogo() {
     }
   }, []);
 
-  return { state, upload, uploading, uploadError };
+  return { state, upload, uploading, uploadError, latest };
 }
