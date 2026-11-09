@@ -91,3 +91,19 @@ describe('re-upload at another frame rate, and marks saved off frames', () => {
     expect(snapCut({ inSec: 25, outSec: 45 }, 45, 25)).toEqual({ inSec: 25, outSec: 45 });
   });
 });
+
+describe('NTSC frame rates (shown rounded: 23.98, 29.97, 59.94)', () => {
+  it.each([
+    [23.98, 24000 / 1001],
+    [29.97, 30000 / 1001],
+    [59.94, 60000 / 1001],
+  ])('at %s a mark pressed on a frame lands on that frame, late in a song too', (shown, real) => {
+    const wrong: number[] = [];
+    for (let frame = Math.round(60 * real); frame < Math.round(300 * real); frame += 7) {
+      const pressed = (frame + 0.25) / real; // the playhead, inside that frame
+      const named = Math.round(snapToFrame(pressed, shown) * real);
+      if (named !== frame) wrong.push(frame);
+    }
+    expect(wrong).toEqual([]);
+  });
+});
