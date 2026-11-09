@@ -15,6 +15,8 @@ import {
   canAfford,
   COST_CAPTIONS_LIST,
   COST_CAPTIONS_DELETE,
+  idBatches,
+  youtubeApiError,
   type CaptionTrack,
 } from '@/lib/caption-policy';
 
@@ -84,5 +86,29 @@ describe('quota, because reading 50 as 1 cost a whole day once', () => {
     // It must not be fooled by the no-deletions case fitting.
     expect(sweepCost(10, 0, 1)).toBe(501);
     expect(canAfford(10, 1, 501)).toBe(false);
+  });
+});
+
+describe('idBatches (videos.list takes at most 50 ids)', () => {
+  const ids = Array.from({ length: 59 }, (_, i) => `v${i}`);
+  it('splits 59 ids into 50 + 9, keeping order', () => {
+    const b = idBatches(ids);
+    expect(b.map((x) => x.length)).toEqual([50, 9]);
+    expect(b.flat()).toEqual(ids);
+  });
+  it('50 or fewer is one call; none is no call', () => {
+    expect(idBatches(ids.slice(0, 50))).toHaveLength(1);
+    expect(idBatches([])).toEqual([]);
+  });
+});
+
+describe('youtubeApiError', () => {
+  it('names the error in an error body', () => {
+    expect(youtubeApiError({ error: { code: 400, message: 'Too many ids', errors: [{ reason: 'badRequest' }] } })).toBe('400 badRequest Too many ids');
+    expect(youtubeApiError({ error: { code: 403, errors: [{ reason: 'quotaExceeded' }] } })).toBe('403 quotaExceeded');
+  });
+  it('is null for a good body, even an empty one', () => {
+    expect(youtubeApiError({ items: [] })).toBeNull();
+    expect(youtubeApiError({})).toBeNull();
   });
 });
