@@ -5328,7 +5328,8 @@ One full music video for a released song, from the lyrics to the finished MP4, w
 2. **Paste the lyrics → Draft storyboard.** Claude writes one shot per part of the song (1–15 s each), fitted to the song's length. Then **Check storyboard** (a few cents) and fix what it lists.
 3. **Pictures.** **Pictures for every shot** ($0.02 each), and **Upload picture** your own for the shots that matter most — free, and closest to the story you have in mind.
 4. **Choose what moves.** Every shot can be a **clip** ($0.08 a second) or stay a **picture** (free slow zoom). Make clips one by hand first, then **Videos for every shot**. **Continue from clip N** carries the last frame of one clip into the next for a smooth cut.
-5. **Render video** joins everything with the song (free). Then, if you want text, open the MP4 in **Video Text** for the title, lyrics, credits and logo.
+5. **Choose each clip.** ⚠️ A clip made with a shot's **Make video** button or with **Videos for every shot** is *not* chosen for you — the shot keeps showing its picture, and the render uses the picture (checked 9 Nov 2026). On each shot, tap the finished clip so the timeline reads **▶ Clip**. (**Video from your pictures → Make the video** does choose its clips.)
+6. **Render video** joins everything with the song (free). Then, if you want text, open the MP4 in **Video Text** for the title, lyrics, credits and logo.
 
 **What a 4-minute song costs:** every shot a clip is about **$19–20** (240 s × $0.08), plus about $0.50 of pictures and any retries; half clips, half pictures is about **$10**. Raise the story's **Budget** first — the server will not spend past it.
 
