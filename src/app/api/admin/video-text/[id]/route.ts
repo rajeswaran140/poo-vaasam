@@ -7,6 +7,7 @@ import { VideoTextRepository } from '@/infrastructure/database/VideoTextReposito
 import { isValidProjectId } from '@/lib/video-text/keys';
 import { validateBlocks } from '@/lib/video-text/timeline';
 import { validateCut } from '@/lib/video-text/cut';
+import { LOGO_CORNERS, LOGO_HEIGHT_PCT_MAX, LOGO_HEIGHT_PCT_MIN, LOGO_OPACITY_MAX, LOGO_OPACITY_MIN } from '@/lib/video-text/logo';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -38,6 +39,16 @@ const trackStyleSchema = z.object({
   fade: z.boolean().optional(),
 });
 
+const offsetSchema = z.object({ x: z.number().min(-OFFSET_MAX).max(OFFSET_MAX), y: z.number().min(-OFFSET_MAX).max(OFFSET_MAX) });
+
+const logoStyleSchema = z.object({
+  show: z.boolean().optional(),
+  corner: z.enum(LOGO_CORNERS).optional(),
+  heightPct: z.number().min(LOGO_HEIGHT_PCT_MIN).max(LOGO_HEIGHT_PCT_MAX).optional(),
+  opacity: z.number().min(LOGO_OPACITY_MIN).max(LOGO_OPACITY_MAX).optional(),
+  offset: offsetSchema.optional(),
+});
+
 const patchSchema = z.object({
   version: z.number().int().min(0),
   edits: z.object({
@@ -54,6 +65,7 @@ const patchSchema = z.object({
       tracks: z
         .object({ title: trackStyleSchema.optional(), lyric: trackStyleSchema.optional(), credits: trackStyleSchema.optional() })
         .optional(),
+      logo: logoStyleSchema.optional(),
     }),
     // Missing from tabs opened before the cut existed: those keep the stored marks.
     cut: z.object({ inSec: z.number().finite().min(0), outSec: z.number().finite().min(0) }).nullable().optional(),

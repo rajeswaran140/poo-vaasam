@@ -59,6 +59,31 @@ export interface TextStyle {
   creditsPlace?: Placement;
   /** Per-part size and fonts. Projects saved before this have none: Noto Sans Tamil at sizeScale. */
   tracks?: Partial<Record<Track, TrackStyle>>;
+  /** The saved logo burned in over the whole video. Missing: no logo. */
+  logo?: LogoStyle;
+}
+
+export type LogoCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
+/** How this project shows the one saved logo. Missing fields fall back (lib/video-text/logo.ts). */
+export interface LogoStyle {
+  show?: boolean;
+  corner?: LogoCorner;
+  /** The logo's height as a percentage of the video's height, 1–100. */
+  heightPct?: number;
+  /** 0.1–1. */
+  opacity?: number;
+  /** Moved by hand from its corner, as fractions of the video's width and height (−1 to 1). */
+  offset?: TextOffset;
+}
+
+/** The one logo every project can use (uploaded once, reused). */
+export interface SavedLogo {
+  key: string;
+  contentType: string;
+  width: number;
+  height: number;
+  uploadedAt: string;
 }
 
 export interface SourceInfo {

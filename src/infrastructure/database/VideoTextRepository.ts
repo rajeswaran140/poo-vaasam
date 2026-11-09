@@ -15,6 +15,7 @@ import { floorCentis, isValidProjectId } from '@/lib/video-text/keys';
 import type {
   Cut,
   RenderState,
+  SavedLogo,
   SourceInfo,
   TextBlock,
   VideoTextProject,
@@ -335,6 +336,34 @@ export class VideoTextRepository {
       });
     } catch (error) {
       if (isConditionFailure(error)) return;
+      handleDynamoDBError(error);
+    }
+  }
+}
+
+/**
+ * The one saved logo every Video Text project can use: PK=`VIDEOTEXTLOGO`,
+ * SK=`METADATA`. Not on the project index (no GSI1), and not a `VIDEOTEXT#`
+ * key, so it can never be read as a project.
+ */
+const LOGO_KEY = { PK: 'VIDEOTEXTLOGO', SK: 'METADATA' };
+
+export class VideoTextLogoRepository {
+  async get(): Promise<SavedLogo | null> {
+    try {
+      const item = (await DynamoDBOperations.get(LOGO_KEY)) as Record<string, unknown> | null | undefined;
+      if (!item) return null;
+      const { key, contentType, width, height, uploadedAt } = item as unknown as SavedLogo;
+      return { key, contentType, width, height, uploadedAt };
+    } catch (error) {
+      handleDynamoDBError(error);
+    }
+  }
+
+  async set(logo: SavedLogo): Promise<void> {
+    try {
+      await DynamoDBOperations.put({ ...LOGO_KEY, ...logo });
+    } catch (error) {
       handleDynamoDBError(error);
     }
   }

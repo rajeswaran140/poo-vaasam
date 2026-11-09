@@ -22,9 +22,13 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type Ref } from 'react';
 import { boxRect, drawBlock, ensureFonts, layoutBlock } from '@/lib/video-text/draw';
 import { OFFSET_MAX, fadeAlphaAt, trackStyleOf } from '@/lib/video-text/fonts';
+import { drawLogo, logoRect, logoStyleOf } from '@/lib/video-text/logo';
 import type { TextBlock, TextOffset, TextStyle, Track } from '@/types/videoText';
+import type { LogoImage } from './useSavedLogo';
 
-const TRACK_NAME: Record<Track, string> = { title: 'Title', lyric: 'Lyrics', credits: 'Credits' };
+/** What a move box moves: a text part, or the logo. */
+export type MoveTarget = Track | 'logo';
+const TRACK_NAME: Record<MoveTarget, string> = { title: 'Title', lyric: 'Lyrics', credits: 'Credits', logo: 'Logo' };
 const clampOffset = (n: number) => Math.round(Math.min(OFFSET_MAX, Math.max(-OFFSET_MAX, n)) * 1000) / 1000;
 
 /** Report the time at most this often, so the editor does not re-render at 60 fps. */
@@ -37,15 +41,17 @@ export interface TextPreviewProps {
   style: TextStyle;
   onTime(sec: number): void;
   ref?: Ref<HTMLVideoElement>;
-  /** Move a part by hand (its offset from the alignment). Without it there is no Move text switch. */
-  onMove?(track: Track, offset: TextOffset): void;
+  /** Move a part (or the logo) by hand: its offset from the alignment. Without it there is no Move text switch. */
+  onMove?(target: MoveTarget, offset: TextOffset): void;
+  /** The saved logo, drawn when the style shows it (under the text, as in the render). */
+  logo?: LogoImage | null;
   /** The playhead, so the move boxes follow the text that shows now. */
   timeSec?: number;
 }
 
 const activeAt = (blocks: TextBlock[], t: number) => blocks.filter((b) => t >= b.startSec && t < b.endSec);
 
-export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMove, timeSec = 0 }: TextPreviewProps) {
+export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMove, timeSec = 0, logo = null }: TextPreviewProps) {
   const video = useRef<HTMLVideoElement | null>(null);
   const overlay = useRef<HTMLCanvasElement>(null);
   const offscreen = useRef<HTMLCanvasElement | null>(null);
@@ -53,9 +59,9 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMov
   const fontsReady = useRef(false);
   const lastTime = useRef(-1);
 
-  const latest = useRef({ blocks, style, frame, onTime });
+  const latest = useRef({ blocks, style, frame, onTime, logo });
   const layerCanvas = useRef<HTMLCanvasElement | null>(null);
-  latest.current = { blocks, style, frame, onTime };
+  latest.current = { blocks, style, frame, onTime, logo };
 
   const setVideo = useCallback(
     (el: HTMLVideoElement | null) => {
@@ -72,7 +78,8 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMov
     const canvas = overlay.current;
     // Nothing to draw over until the video has a frame (HAVE_CURRENT_DATA).
     if (!v || !canvas || !fontsReady.current || v.readyState < 2) return;
-    const { blocks: bs, style: st, frame: fr } = latest.current;
+    const { blocks: bs, style: st, frame: fr, logo: lg } = latest.current;
+    const showLogo = Boolean(lg) && logoStyleOf(st).show;
     const t = v.currentTime;
 
     // Size the visible canvas to its displayed box, in device pixels.
@@ -88,7 +95,7 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMov
     const active = activeAt(bs, t);
     // A fading block is redrawn as its alpha changes (in 2% steps); others only when they change.
     const alphas = active.map((b) => Math.round(fadeAlphaAt(b, trackStyleOf(b.track, st).fade, t) * 50) / 50);
-    const key = JSON.stringify([fr.width, fr.height, st, active.map((b, i) => [b.id, b.text, alphas[i]])]);
+    const key = JSON.stringify([fr.width, fr.height, st, showLogo ? lg!.key : null, active.map((b, i) => [b.id, b.text, alphas[i]])]);
     if (key === drawnKey.current && !resized) return;
 
     const ctx = canvas.getContext('2d');
@@ -102,6 +109,8 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMov
     const octx = off.getContext('2d');
     if (!octx) return;
     octx.clearRect(0, 0, off.width, off.height);
+    // The logo first, UNDER the text: the render lays its PNG first too.
+    if (showLogo) drawLogo(octx, lg!.image, fr, logoStyleOf(st));
     active.forEach((b, i) => {
       if (alphas[i] >= 1) return drawBlock(octx, b, fr, st);
       // A fading block is drawn whole on its own layer, then faded AS ONE
@@ -125,7 +134,7 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMov
     });
 
     ctx.clearRect(0, 0, w, h);
-    if (active.length > 0) ctx.drawImage(off, 0, 0, w, h);
+    if (active.length > 0 || showLogo) ctx.drawImage(off, 0, 0, w, h);
     drawnKey.current = key;
   }, []);
 
@@ -160,7 +169,7 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMov
   // Text or style changed: redraw at the current time.
   useEffect(() => {
     paint();
-  }, [blocks, style, frame.width, frame.height, paint]);
+  }, [blocks, style, frame.width, frame.height, logo, paint]);
 
   // While playing, follow every frame; otherwise follow seeks.
   useEffect(() => {
@@ -215,9 +224,9 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMov
   const [moving, setMoving] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const measure = useRef<CanvasRenderingContext2D | null>(null);
-  const drag = useRef<{ track: Track; pointerId: number; x: number; y: number; from: TextOffset } | null>(null);
+  const drag = useRef<{ track: MoveTarget; pointerId: number; x: number; y: number; from: TextOffset } | null>(null);
   /** Each showing part's text box, in fractions of the frame (all of a part's showing lines together). */
-  const moveBoxes = (): { track: Track; x: number; y: number; w: number; h: number }[] => {
+  const moveBoxes = (): { track: MoveTarget; x: number; y: number; w: number; h: number }[] => {
     if (!moving || !onMove || typeof document === 'undefined') return [];
     if (!measure.current) measure.current = document.createElement('canvas').getContext('2d');
     const ctx = measure.current;
@@ -231,16 +240,22 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMov
         ? { x0: Math.min(u.x0, r.x), y0: Math.min(u.y0, r.y), x1: Math.max(u.x1, r.x + r.w), y1: Math.max(u.y1, r.y + r.h) }
         : { x0: r.x, y0: r.y, x1: r.x + r.w, y1: r.y + r.h });
     }
-    return [...byTrack].map(([track, u]) => ({
+    const boxes: { track: MoveTarget; x: number; y: number; w: number; h: number }[] = [...byTrack].map(([track, u]) => ({
       track,
       x: u.x0 / frame.width,
       y: u.y0 / frame.height,
       w: (u.x1 - u.x0) / frame.width,
       h: (u.y1 - u.y0) / frame.height,
     }));
+    const look = logoStyleOf(style);
+    if (logo && look.show) {
+      const r = logoRect(logo, frame, look);
+      boxes.push({ track: 'logo', x: r.x / frame.width, y: r.y / frame.height, w: r.w / frame.width, h: r.h / frame.height });
+    }
+    return boxes;
   };
-  const offsetOf = (track: Track) => trackStyleOf(track, style).offset;
-  const beginMove = (e: PointerEvent<HTMLDivElement>, track: Track) => {
+  const offsetOf = (track: MoveTarget) => (track === 'logo' ? logoStyleOf(style).offset : trackStyleOf(track, style).offset);
+  const beginMove = (e: PointerEvent<HTMLDivElement>, track: MoveTarget) => {
     if (e.button !== 0) return;
     e.preventDefault();
     drag.current = { track, pointerId: e.pointerId, x: e.clientX, y: e.clientY, from: offsetOf(track) };
@@ -258,7 +273,7 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMov
   const endMove = (e: PointerEvent<HTMLDivElement>) => {
     if (drag.current?.pointerId === e.pointerId) drag.current = null;
   };
-  const onMoveKey = (e: KeyboardEvent<HTMLDivElement>, track: Track) => {
+  const onMoveKey = (e: KeyboardEvent<HTMLDivElement>, track: MoveTarget) => {
     const step = e.shiftKey ? 0.05 : 0.005;
     const d: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
     const k = d[e.key];

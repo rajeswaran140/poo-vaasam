@@ -70,3 +70,32 @@ it('arrow keys on a box move it 0.5%, Shift 5%', () => {
   fireEvent.keyDown(box, { key: 'ArrowDown', shiftKey: true });
   expect(onMove).toHaveBeenLastCalledWith('title', { x: 0.1, y: 0.05 });
 });
+
+describe('the logo', () => {
+  const logo = { image: {} as never, width: 200, height: 100, key: 'k' };
+  const show = (style: TextStyle) => {
+    const onMove = jest.fn();
+    render(<TextPreview videoUrl="x.mp4" frame={{ width: 1920, height: 1080 }} blocks={blocks} style={style} onTime={jest.fn()} timeSec={30} onMove={onMove} logo={logo} />);
+    fireEvent.click(screen.getByLabelText('Move text by dragging it on the picture'));
+    return onMove;
+  };
+
+  it('shown: gets its own box over where it sits (bottom right by default), even with no text showing', () => {
+    show({ sizeScale: 1, lyricPosition: 'lower', logo: { show: true } });
+    const box = screen.getByTestId('move-logo');
+    // 10% of 1080 = 108 high, 216 wide, inside the 5% margin.
+    expect(parseFloat(box.style.left)).toBeCloseTo(((1920 * 0.95 - 216) / 1920) * 100);
+    expect(parseFloat(box.style.top)).toBeCloseTo(((1080 * 0.95 - 108) / 1080) * 100);
+  });
+
+  it('arrow keys move the logo, not a text part', () => {
+    const onMove = show({ sizeScale: 1, lyricPosition: 'lower', logo: { show: true, offset: { x: 0.02, y: 0 } } });
+    fireEvent.keyDown(screen.getByTestId('move-logo'), { key: 'ArrowUp', shiftKey: true });
+    expect(onMove).toHaveBeenLastCalledWith('logo', { x: 0.02, y: -0.05 });
+  });
+
+  it('hidden: no logo box', () => {
+    show({ sizeScale: 1, lyricPosition: 'lower', logo: { show: false } });
+    expect(screen.queryByTestId('move-logo')).toBeNull();
+  });
+});

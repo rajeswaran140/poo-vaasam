@@ -518,6 +518,24 @@ describe('videoTextRender', () => {
     expect(byIndex[2].overlays).toEqual([{ id: 'cred', fromSec: 0, toSec: 5 }]);
   });
 
+  it('the logo: its PNG is checked first, then laid on every chunk for the whole segment, under the text', async () => {
+    world.project = { ...projectFor(), style: { sizeScale: 1, lyricPosition: 'lower', logo: { show: true } } };
+    world.store.set(overlayKey(PID, RID, '_logo'), Buffer.from('PNG'));
+    await render();
+    expect((world.project!.render as { status: string }).status).toBe('done');
+    const byIndex = [...world.invoked].sort((a, b) => a.index - b.index);
+    expect(byIndex[0].overlays).toEqual([{ id: '_logo', fromSec: 0, toSec: 20 }, { id: 'title', fromSec: 0, toSec: 5 }, { id: 'l1', fromSec: 18, toSec: 20 }]);
+    expect(byIndex[1].overlays[0]).toEqual({ id: '_logo', fromSec: 0, toSec: 20 });
+    expect(byIndex[2].overlays[0]).toEqual({ id: '_logo', fromSec: 0, toSec: 5 });
+  });
+
+  it('the logo shown but its PNG missing fails before any chunk', async () => {
+    world.project = { ...projectFor(), style: { sizeScale: 1, lyricPosition: 'lower', logo: { show: true } } };
+    await render();
+    expect(lastError()).toBe(MISSING_PNG);
+    expect(lambdaSend).not.toHaveBeenCalled();
+  });
+
   it('a part set to fade: its blocks carry their fade to the chunks, with the video\'s frame rate', async () => {
     world.project = { ...projectFor(), style: { sizeScale: 1, lyricPosition: 'lower', tracks: { lyric: { fade: true } } } };
     await render();

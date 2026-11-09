@@ -1,10 +1,11 @@
-/** POST — presigned S3 POSTs for a render's text PNGs, one per block. */
+/** POST — presigned S3 POSTs for a render's text PNGs, one per block (and one for the logo when it shows). */
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
 import { S3Operations } from '@/infrastructure/storage/s3-client';
 import { VideoTextRepository } from '@/infrastructure/database/VideoTextRepository';
 import { isValidProjectId, overlayKey } from '@/lib/video-text/keys';
+import { LOGO_OVERLAY_ID, logoShown } from '@/lib/video-text/logo';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -40,7 +41,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!project) return NextResponse.json({ error: 'Project not found.' }, { status: 404 });
 
     // Only keys for blocks that exist: stops the client presigning arbitrary keys.
+    // The logo's PNG too, when this project shows the logo.
     const known = new Set(project.blocks.map((b) => b.id));
+    if (logoShown(project.style)) known.add(LOGO_OVERLAY_ID);
     if (!blockIds.every((b) => isValidProjectId(b) && known.has(b))) {
       return NextResponse.json({ error: 'Some text blocks are not in this project — reload and try again.' }, { status: 400 });
     }

@@ -132,3 +132,27 @@ Raj asked for a cut so one upload can give a short part as well as the full song
 - **Sound is still never re-encoded.** It is cut from the extracted audio by input seeking with stream copy (`-ss In -to Out -c copy`), which starts at the packet holding In and marks the samples before it to be skipped (measured: first packet pts −192 at 48 kHz for an In 4 ms into it). The worker proves the cut is a contiguous run of the song's own packets (same size and checksum, none missing) and that the output's audio is exactly the cut's, hash and timing.
 - A re-upload keeps marks that fit the new video, runs an Out past the new end to the end, and drops marks whose In is past it.
 - **Not included:** turning a 16:9 video vertical. Mastering already makes the vertical and the short.
+
+## Logo watermark (added 2026-11-09)
+
+Raj: "implement watermark option on each video, I can upload the logo". He chose
+**burned into new videos** (not YouTube's channel watermark) and **one logo, reused**.
+
+- **One saved logo** (PNG/JPG/WebP, ≤ 5 MB): uploaded once from the Logo section,
+  stored at `audio/mastering/video-text-logo/` (outside the 30-day video-text folder, so
+  it is kept; private like the rest of `audio/mastering/`), its details in DynamoDB at
+  `PK=VIDEOTEXTLOGO, SK=METADATA` (not a `VIDEOTEXT#` key, not on the project index).
+  Replacing it changes the logo in every video made from then on.
+- **Per project** (`style.logo`): show or not (default off), corner (default bottom
+  right), size 1–100% of the video's height (default 10), opacity 10–100% (default 80),
+  and a hand move on top of the corner (drag or arrow keys on the preview, or the
+  right/down boxes; picking a corner or "Reset to corner" clears it).
+- **Drawing:** like the text, the browser draws the logo into a full-frame PNG
+  (`renderLogoPng`, same `drawLogo` the preview uses). It is uploaded as overlay
+  `_logo`, and the worker lays it **first** (under the text) on every chunk for the
+  whole segment, so it covers the whole export, or the part between In and Out.
+  The worker never reads the logo file itself.
+- **My calls:** a very wide logo is scaled down to fit inside the safe margin; the
+  logo sits under the text where they overlap; a project with only the logo (no
+  text) can still be exported.
+- Mastering and Studio renders stay clean: the logo is only in Video Text exports.
