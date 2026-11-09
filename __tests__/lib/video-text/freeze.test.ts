@@ -44,3 +44,36 @@ it('extracts the frame with an accurate seek half a frame early', () => {
   expect(a).toEqual(expect.arrayContaining(['-frames:v', '1', '/f.png']));
   expect(buildFreezeFrameArgs('/s.mp4', '/f.png', 0, 25)).toContain('0.000000');
 });
+
+describe('audit fixes', () => {
+  it('snaps the printed NTSC rates to the real ones', () => {
+    const { exactFps } = jest.requireActual('@/lib/video-text/freeze');
+    expect(exactFps(23.98)).toBeCloseTo(24000 / 1001, 9);
+    expect(exactFps(29.97)).toBeCloseTo(30000 / 1001, 9);
+    expect(exactFps(59.94)).toBeCloseTo(60000 / 1001, 9);
+    expect(exactFps(25)).toBe(25);
+    expect(exactFps(24)).toBe(24);
+    expect(exactFps(0)).toBe(25);
+  });
+  it('at 23.98 fps the frame showing late in a song is counted on the real grid', () => {
+    // At 119.98 s the real grid (24000/1001) shows frame 2876 (starts 119.953 s);
+    // a 23.98 grid would say 2877 — the next frame, not the one on screen.
+    expect(frameAt(119.98, 23.98)).toBe(2876);
+    expect(freezeAt(119.98, 300, 23.98)).toEqual({ atSec: 119.953 });
+  });
+  it('a stored start rounded down to the ms still names its own frame (round, not floor)', () => {
+    const { frameOfStart } = jest.requireActual('@/lib/video-text/freeze');
+    expect(frameOfStart(0.033, 30)).toBe(1);
+    expect(frameOfStart(14.967, 30)).toBe(449);
+    expect(frameOfStart(119.995, 23.98)).toBe(2877);
+    for (const fps of [24, 30, 60, 29.97, 23.98]) {
+      for (let k = 0; k < 2000; k += 7) expect(frameOfStart(freezeAt(seekTimeFor(k, fps), 1e6, fps).atSec, fps)).toBe(k);
+    }
+  });
+  it('freezing the last frame never stores a start equal to the video length', () => {
+    for (const [d, fps] of [[2.87, 29.97], [1.46, 23.98]] as const) {
+      const f = freezeAt(d, d, fps);
+      expect(validateFreeze(f, d)).toBeNull();
+    }
+  });
+});

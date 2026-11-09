@@ -10,13 +10,33 @@
  */
 import type { Freeze } from '@/types/videoText';
 
-const fpsOr = (fps: number) => (Number.isFinite(fps) && fps > 0 ? fps : 25);
+/**
+ * The video's real frame rate. The probe stores what ffmpeg prints, so the
+ * NTSC rates arrive rounded (23.98, 29.97, 59.94); on a rounded grid the frame
+ * count drifts off the real one as the video goes on (at 23.98 it is off by a
+ * frame within the first minute). Snap them to 24000/1001 etc.
+ */
+export function exactFps(fps: number): number {
+  if (!Number.isFinite(fps) || fps <= 0) return 25;
+  for (const base of [24, 30, 60, 48, 120]) {
+    const ntsc = (base * 1000) / 1001;
+    if (Math.abs(fps - ntsc) < 0.006) return ntsc;
+  }
+  return fps;
+}
+const fpsOr = exactFps;
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
 
-/** The index of the frame showing at `sec`. */
+/** The index of the frame showing at a playhead time `sec` (floored: the frame that has started). */
 export function frameAt(sec: number, fps: number): number {
   return Math.max(0, Math.floor(Math.max(0, sec) * fpsOr(fps) + 1e-3));
 }
+
+/**
+ * The frame a STORED start time names (atSec is rounded to 1 ms, so it can sit
+ * just before its frame's true start: round, never floor).
+ */
+export const frameOfStart = (atSec: number, fps: number) => Math.max(0, Math.round(Math.max(0, atSec) * fpsOr(fps)));
 
 /** The start of frame `index`, in seconds (1 ms). */
 export const frameStart = (index: number, fps: number) => r3(Math.max(0, index) / fpsOr(fps));
@@ -32,7 +52,10 @@ export const lastFrame = (durationSec: number, fps: number) => Math.max(0, Math.
 
 /** A freeze on the frame showing at `sec` (kept on the video). */
 export function freezeAt(sec: number, durationSec: number, fps: number): Freeze {
-  return { atSec: frameStart(Math.min(frameAt(sec, fps), lastFrame(durationSec, fps)), fps) };
+  let index = Math.min(frameAt(sec, fps), lastFrame(durationSec, fps));
+  // Rounding to 1 ms can push the last frame's start onto the stored length; the frame before it then.
+  while (index > 0 && frameStart(index, fps) >= durationSec) index--;
+  return { atSec: frameStart(index, fps) };
 }
 
 /** Why this freeze cannot be exported, or null. `durationSec` is the stored video length. */
@@ -46,7 +69,7 @@ export function validateFreeze(freeze: Freeze | null | undefined, durationSec: n
 /** A freeze fitted to a new video (a re-upload): kept on its frames when it still fits, else dropped. */
 export function fitFreezeToDuration(freeze: Freeze | null | undefined, durationSec: number, fps: number): Freeze | null {
   if (!freeze || !Number.isFinite(freeze.atSec) || freeze.atSec >= durationSec) return null;
-  return freezeAt(freeze.atSec + 0.5 / fpsOr(fps), durationSec, fps);
+  return freezeAt(seekTimeFor(frameOfStart(freeze.atSec, fps), fps), durationSec, fps);
 }
 
 /**

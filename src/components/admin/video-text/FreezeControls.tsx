@@ -7,8 +7,9 @@
  * The arithmetic is lib/video-text/freeze.ts; the worker takes the frame.
  */
 import type { RefObject } from 'react';
-import { frameAt, freezeAt, lastFrame, seekTimeFor } from '@/lib/video-text/freeze';
-import type { Freeze } from '@/types/videoText';
+import { frameAt, frameOfStart, freezeAt, lastFrame, seekTimeFor } from '@/lib/video-text/freeze';
+import { cutRange } from '@/lib/video-text/cut';
+import type { Cut, Freeze } from '@/types/videoText';
 import { formatMark } from './CutMarks';
 
 const SMALL_BUTTON =
@@ -24,9 +25,12 @@ export interface FreezeControlsProps {
   disabled?: boolean;
   /** The preview's video: the frame is read from its clock, and stepping pauses it. */
   video?: RefObject<HTMLVideoElement | null>;
+  /** In and Out, to say when the freeze falls outside the exported part. */
+  cut?: Cut | null;
 }
 
-export function FreezeControls({ freeze, durationSec, fps, playheadSec, onChange, onSeek, disabled, video }: FreezeControlsProps) {
+export function FreezeControls({ freeze, durationSec, fps, playheadSec, onChange, onSeek, disabled, video, cut = null }: FreezeControlsProps) {
+  const range = cutRange(cut, durationSec);
   const now = () => {
     const t = video?.current?.currentTime;
     return typeof t === 'number' && Number.isFinite(t) ? t : playheadSec;
@@ -55,7 +59,7 @@ export function FreezeControls({ freeze, durationSec, fps, playheadSec, onChange
         </button>
         {freeze && (
           <>
-            <button type="button" className={SMALL_BUTTON} onClick={() => onSeek(seekTimeFor(frameAt(freeze.atSec, fps), fps))}>
+            <button type="button" className={SMALL_BUTTON} onClick={() => onSeek(seekTimeFor(frameOfStart(freeze.atSec, fps), fps))}>
               Go to freeze
             </button>
             <button type="button" className={SMALL_BUTTON} onClick={() => onChange(null)} disabled={disabled}>
@@ -69,6 +73,8 @@ export function FreezeControls({ freeze, durationSec, fps, playheadSec, onChange
           <>
             The picture freezes on the frame at <span className="font-semibold tabular-nums">{formatMark(freeze.atSec)}</span> and holds
             it to the end. The song keeps playing.
+            {cut && freeze.atSec >= range.outSec && <> It is after Out, so the exported part is not frozen.</>}
+            {cut && freeze.atSec <= range.inSec && <> It is at or before In, so the whole exported part is frozen.</>}
           </>
         ) : (
           <>No freeze: the video plays to the end. To hold a frame (e.g. the last frame of a short clip), step to it and press Freeze here.</>

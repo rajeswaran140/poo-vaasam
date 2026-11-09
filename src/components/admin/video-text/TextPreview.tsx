@@ -25,7 +25,7 @@ import { OFFSET_MAX, fadeAlphaAt, trackStyleOf } from '@/lib/video-text/fonts';
 import { drawLogo, logoRect, logoStyleOf } from '@/lib/video-text/logo';
 import type { TextBlock, TextOffset, TextStyle, Track } from '@/types/videoText';
 import type { LogoImage } from './useSavedLogo';
-import { frameAt, seekTimeFor } from '@/lib/video-text/freeze';
+import { frameAt, frameOfStart, seekTimeFor } from '@/lib/video-text/freeze';
 
 /** What a move box moves: a text part, or the logo. */
 export type MoveTarget = Track | 'logo';
@@ -94,7 +94,7 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMov
     // The held frame covers the moving picture from the freeze on.
     if (still.current) {
       const f = latestFreeze.current;
-      still.current.style.visibility = f !== null && stillReady.current && frameAt(v.currentTime, latestFps.current) >= frameAt(f, latestFps.current) ? 'visible' : 'hidden';
+      still.current.style.visibility = f !== null && stillReady.current && frameAt(v.currentTime, latestFps.current) >= frameOfStart(f, latestFps.current) ? 'visible' : 'hidden';
     }
     const showLogo = Boolean(lg) && logoStyleOf(st).show;
     const t = v.currentTime;
@@ -193,7 +193,7 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMov
       return;
     }
     let cancelled = false;
-    const target = seekTimeFor(frameAt(freezeSec, fps), fps);
+    const target = seekTimeFor(frameOfStart(freezeSec, fps), fps);
     const grab = () => {
       if (cancelled) return;
       canvas.width = frame.width;
@@ -367,7 +367,7 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMov
       {freezeSec !== null && (
         <>
           {/* A second copy of the video, only to grab the frozen frame from. */}
-          <video ref={stillVideo} src={videoUrl} muted playsInline preload="auto" aria-hidden="true" tabIndex={-1} className="pointer-events-none absolute h-px w-px opacity-0" />
+          <video ref={stillVideo} src={videoUrl} muted playsInline preload="metadata" aria-hidden="true" tabIndex={-1} className="pointer-events-none absolute h-px w-px opacity-0" />
           <canvas ref={still} aria-hidden="true" data-testid="freeze-still" className="pointer-events-none absolute inset-0 h-full w-full" style={{ visibility: 'hidden' }} />
         </>
       )}
@@ -389,6 +389,29 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMov
         />
       ))}
     </div>
+    {freezeSec !== null && (
+      // The held frame covers the video's own controls from the freeze on: play and pause from here too.
+      <div className="flex min-w-0 items-center justify-center gap-3" data-testid="freeze-transport">
+        <button
+          type="button"
+          onClick={() => {
+            const v = video.current;
+            if (!v) return;
+            if (v.paused) void v.play().catch(() => undefined);
+            else v.pause();
+          }}
+          className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+        >
+          Play / Pause
+        </button>
+        <span className="text-xs tabular-nums text-gray-600 dark:text-gray-300">{formatClock(timeSec)}</span>
+      </div>
+    )}
     </div>
   );
 }
+
+const formatClock = (sec: number) => {
+  const s = Math.max(0, sec);
+  return `${Math.floor(s / 60)}:${(s % 60).toFixed(2).padStart(5, '0')}`;
+};

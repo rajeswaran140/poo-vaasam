@@ -776,6 +776,7 @@ export function VideoTextEditor({
             onSeek={seek}
             disabled={uploading}
             video={videoRef}
+            cut={project.cut ?? null}
           />
           <TapToTime
             blocks={project.blocks}

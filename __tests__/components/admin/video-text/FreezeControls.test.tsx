@@ -40,3 +40,17 @@ it('with a freeze: says where, goes to it, removes it; pressing on the same fram
   fireEvent.click(screen.getByRole('button', { name: 'Remove freeze' }));
   expect(onChange).toHaveBeenCalledWith(null);
 });
+
+it('Go to freeze lands on the frozen frame even when its stored start was rounded down (30 fps)', () => {
+  const onSeek = jest.fn();
+  render(<FreezeControls freeze={{ atSec: 0.033 }} durationSec={60} fps={30} playheadSec={0} onChange={jest.fn()} onSeek={onSeek} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Go to freeze' }));
+  expect(onSeek).toHaveBeenCalledWith(1.5 / 30);
+});
+
+it('says when the freeze is outside the exported part', () => {
+  const { rerender } = render(<FreezeControls freeze={{ atSec: 50 }} durationSec={60} fps={25} playheadSec={0} onChange={jest.fn()} onSeek={jest.fn()} cut={{ inSec: 10, outSec: 40 }} />);
+  expect(screen.getByTestId('freeze-summary')).toHaveTextContent('after Out');
+  rerender(<FreezeControls freeze={{ atSec: 5 }} durationSec={60} fps={25} playheadSec={0} onChange={jest.fn()} onSeek={jest.fn()} cut={{ inSec: 10, outSec: 40 }} />);
+  expect(screen.getByTestId('freeze-summary')).toHaveTextContent('whole exported part is frozen');
+});
