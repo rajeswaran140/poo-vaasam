@@ -159,6 +159,19 @@ export function assembleFades(params: {
   return { fadeIn, fadeOut };
 }
 
+/**
+ * How much of the song's real ending a whole-second window leaves out: a
+ * story covers whole seconds, so a 4:00.70 song's whole-song story ends at
+ * 4:00 and lost its last 0.7 s (plus a fade). The worker holds the last shot
+ * that much longer and plays the song to its end. 0 for an excerpt (a window
+ * ending a second or more before the song) or an unknown length.
+ */
+export function assembleTailSec(params: { windowEndSec: number; songSec: number | null }): number {
+  if (params.songSec === null) return 0;
+  const gap = params.songSec - params.windowEndSec;
+  return gap > 0 && gap < 1 ? Math.round(gap * 1000) / 1000 : 0;
+}
+
 /** Join the segments by copy and lay the master's window under them. */
 export function buildAssembleJoinArgs(params: {
   listPath: string;

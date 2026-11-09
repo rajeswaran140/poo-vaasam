@@ -130,6 +130,7 @@ import {
   ASSEMBLE_FPS,
   STILL_SOURCE_SCALE,
   assembleFades,
+  assembleTailSec,
   assembleFrameSize,
   assemblyKindOf,
   buildAssembleConcatList,
@@ -2072,7 +2073,9 @@ async function assembleStory(
   }
   const vsId = spec.vsId as string;
   const renderId = spec.renderId as string;
-  const failRender = async (message: string) => {
+  const failRender = async (asked: string) => {
+    // An ffmpeg killed for time fails like a bad file; say what really happened.
+    const message = asked !== OUT_OF_TIME && remainingMs() < ASSEMBLE_RESERVE_MS ? OUT_OF_TIME : asked;
     await transitionStoryRender(vsId, renderId, ['queued', 'running'], 'failed', { error: message }).catch((err) =>
       console.error('[master-worker] could not record the failed render:', err instanceof Error ? err.name : 'error'));
     return { ok: false };
@@ -2096,8 +2099,9 @@ async function assembleStory(
   }
   if (!claimed) return { ok: false };
 
-  const { audioKey, aspect, start, end, shots } = plan;
-  const windowSec = end - start;
+  const { audioKey, aspect, start, end } = plan;
+  let shots = plan.shots;
+  let windowSec = end - start;
   const size = assembleFrameSize(aspect);
   // A run the Lambda killed skipped its `finally`; a warm container would
   // otherwise carry its segments into this one's 4 GB.
@@ -2118,6 +2122,13 @@ async function assembleStory(
     const songSec = parseSourceInfo(`${header.stdout ?? ''}${header.stderr ?? ''}`)?.durationSec ?? null;
     if (songSec !== null && end > songSec + 0.5) {
       return await failRender('The story\'s part of the song runs past the end of the song.');
+    }
+    // A whole-second window short of the song's real end: hold the last shot
+    // to the end and play the song out, unfaded (audit 2026-11-09).
+    const tail = assembleTailSec({ windowEndSec: end, songSec });
+    if (tail > 0 && shots.length > 0) {
+      shots = shots.map((sh, i) => (i === shots.length - 1 ? { ...sh, durationSec: sh.durationSec + tail } : sh));
+      windowSec = Math.round((windowSec + tail) * 1000) / 1000;
     }
 
     const segments: string[] = [];
@@ -2158,7 +2169,7 @@ async function assembleStory(
     if (remainingMs() < ASSEMBLE_RESERVE_MS) return await failRender(OUT_OF_TIME);
     const listPath = join(dir, 'segments.txt');
     writeFileSync(listPath, buildAssembleConcatList(segments));
-    const fades = assembleFades({ windowStartSec: start, windowEndSec: end, songSec });
+    const fades = assembleFades({ windowStartSec: start, windowEndSec: start + windowSec, songSec });
     const joined = ff(buildAssembleJoinArgs({ listPath, audioPath, outPath, windowStartSec: start, windowSec, ...fades }));
     if (joined.status !== 0) return await failRender('The render failed joining the shots. Please try again.');
     // The segments are in the finished file now; free their space before the upload.

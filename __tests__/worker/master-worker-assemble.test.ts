@@ -232,3 +232,47 @@ describe('a bad event touches no file', () => {
     expect(send).not.toHaveBeenCalled();
   });
 });
+
+describe('a whole-song window keeps the song\'s real ending (audit 2026-11-09)', () => {
+  /** A 4:00.70 master: the story's whole-second window ends at 240. */
+  const header = HEADER.replace('00:04:00.00', '00:04:00.70');
+  const wholeSong = () => assemble({ windowStartSec: 0, windowEndSec: 240, shots: [
+    ...Array.from({ length: 16 }, (_, i) => ({ sceneOrder: 1, shotOrder: i + 1, key: CLIP, durationSec: 15 })),
+  ] });
+  beforeEach(() => {
+    spawnSync.mockImplementation((_cmd: string, args: string[]) =>
+      args.length === 3 && args[2].includes('master.wav')
+        ? { status: 1, stdout: '', stderr: header }
+        : { status: 0, stdout: '', stderr: '' });
+  });
+
+  it('the song runs to 4:00.70 under the last shot, with no fade and no cut', async () => {
+    await handler({ assemble: wholeSong() } as never);
+    const join = ffArgs().find((a) => a.includes('concat'))!;
+    const at = join.indexOf(join.find((x) => x.endsWith('master.wav'))!);
+    expect(join.slice(at - 5, at)).toEqual(['-ss', '0.000', '-t', '240.7', '-i']);
+    expect(join).not.toContain('-af');
+    // The last shot holds 0.7 s longer (frame-exact at 25 fps); the others are unchanged.
+    const clips = ffArgs().filter((a) => a.some((x) => x.includes('tpad=stop_mode=clone')));
+    expect(clips).toHaveLength(16);
+    expect(clips[0][clips[0].indexOf('-frames:v') + 1]).toBe('375');
+    expect(clips[15][clips[15].indexOf('-frames:v') + 1]).toBe('393');
+  });
+
+  it('an excerpt that ends a second or more before the song still fades and is not stretched', async () => {
+    await handler({ assemble: assemble() } as never); // 30–60 of a 4:00.70 song
+    const join = ffArgs().find((a) => a.includes('concat'))!;
+    expect(join[join.indexOf('-af') + 1]).toBe('afade=t=in:st=0:d=0.6,afade=t=out:st=27.000:d=3');
+  });
+});
+
+it('a shot that fails because the worker is out of time says so (not "please try again")', async () => {
+  let left = 14 * 60_000;
+  spawnSync.mockImplementation((_cmd: string, args: string[]) => {
+    if (args.length === 3 && args[2].includes('master.wav')) return { status: 1, stdout: '', stderr: HEADER };
+    if (args.some((x) => x.includes('tpad='))) { left = 10_000; return { status: 255, stdout: '', stderr: 'killed' }; }
+    return { status: 0, stdout: '', stderr: '' };
+  });
+  await handler({ assemble: assemble() } as never, { getRemainingTimeInMillis: () => left } as never);
+  expect(String(updates()[1].ExpressionAttributeValues[':error'])).toContain('ran out of time');
+});

@@ -7,6 +7,7 @@
  */
 import {
   shotsShowingPictureWithClip,
+  assembleTailSec,
   ASSEMBLE_CODEC_ARGS,
   assembleFrameSize,
   assemblyKindOf,
@@ -148,5 +149,17 @@ describe('shotsShowingPictureWithClip (audit 2026-11-09: a made clip left unused
   });
   it('a picture with no clip, nothing chosen, or a chosen clip is not named', () => {
     expect(shotsShowingPictureWithClip([sh(1, 'p1'), sh(2, null)], [cd('p1', 1, '.jpg'), cd('c2', 2, '.mp4')])).toEqual([]);
+  });
+});
+
+describe('assembleTailSec', () => {
+  it('the part of a second a whole-second window leaves off the song', () => {
+    expect(assembleTailSec({ windowEndSec: 240, songSec: 240.7 })).toBe(0.7);
+    expect(assembleTailSec({ windowEndSec: 240, songSec: 240.0004 })).toBe(0);
+  });
+  it('0 for an excerpt, an exact end, or an unknown length', () => {
+    expect(assembleTailSec({ windowEndSec: 60, songSec: 240.7 })).toBe(0);
+    expect(assembleTailSec({ windowEndSec: 240, songSec: 240 })).toBe(0);
+    expect(assembleTailSec({ windowEndSec: 240, songSec: null })).toBe(0);
   });
 });
