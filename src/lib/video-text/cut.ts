@@ -12,11 +12,13 @@
  *   is not in the video; one crossing a mark shows for the part inside.
  */
 import type { Cut } from '@/types/videoText';
+import { exactFps } from './freeze';
 
 export const MIN_CUT_SEC = 1;
 
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
-const fpsOr = (fps: number) => (Number.isFinite(fps) && fps > 0 ? fps : 25);
+/** The frame rate as the video really runs (23.98 → 24000/1001, …; not a number → 25). */
+const fpsOr = exactFps;
 
 /** The nearest frame start, in seconds (rounded to 1 ms). */
 export function snapToFrame(sec: number, fps: number): number {
