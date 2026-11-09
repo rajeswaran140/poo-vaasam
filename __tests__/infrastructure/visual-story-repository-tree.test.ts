@@ -79,6 +79,16 @@ beforeEach(() => {
 });
 
 describe('loadTree', () => {
+  it('lists the draft jobs (so the draft panel can follow one after a reload), apart from the drafts', async () => {
+    mockQuery.mockResolvedValue({ Items: [
+      { PK, SK: 'METADATA', vsId: VS, title: 't', budgetUsdCap: 1, spentUsd: 0, reservedUsd: 0 },
+      { PK, SK: draftJobSk('dj_1'), jobId: 'dj_1', status: 'running' },
+      { PK, SK: draftSk('dr_1'), draftId: 'dr_1' },
+    ] });
+    const tree = await repo.loadTree(VS);
+    expect(tree!.draftJobs.map((j) => j.jobId)).toEqual(['dj_1']);
+    expect(tree!.drafts.map((d) => d.draftId)).toEqual(['dr_1']);
+  });
   it('returns null when the story does not exist', async () => {
     mockQuery.mockResolvedValue({ Items: [] });
     expect(await repo.loadTree(VS)).toBeNull();

@@ -106,6 +106,26 @@ beforeEach(() => {
   mockSend.mockResolvedValue({ StatusCode: 202 });
 });
 
+describe('one draft at a time (audit 2026-11-09: a reload paid for a second draft)', () => {
+  it('a draft already being made ⇒ 409 with its jobId, nothing reserved or invoked', async () => {
+    repo.listDraftJobs.mockResolvedValue([{ jobId: JOB, status: 'running', createdAt: new Date().toISOString(), updatedAt: 't', reservedUsd: RESERVE }]);
+    const res = await draftPOST(mk({ lyrics: LYRICS }), ctx());
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error).toBe('A draft is already being made. It shows here when it is ready.');
+    expect(body.data).toEqual({ jobId: JOB });
+    expect(repo.reserve).not.toHaveBeenCalled();
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+  it('a finished or failed draft does not block a new one', async () => {
+    repo.listDraftJobs.mockResolvedValue([
+      { jobId: JOB, status: 'done', createdAt: 't', updatedAt: 't', reservedUsd: RESERVE },
+      { jobId: 'dj_1700000000001_abcdef12', status: 'failed', createdAt: 't', updatedAt: 't', reservedUsd: RESERVE },
+    ]);
+    expect((await draftPOST(mk({ lyrics: LYRICS }), ctx())).status).toBe(202);
+  });
+});
+
 describe('POST draft (enqueue only)', () => {
   it('no bearer is 401; nothing reserved or invoked', async () => {
     expect((await draftPOST(mk({ lyrics: LYRICS }, false), ctx())).status).toBe(401);

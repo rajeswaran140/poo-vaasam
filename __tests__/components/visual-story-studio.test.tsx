@@ -281,14 +281,14 @@ describe('Studio — draft panel', () => {
     await waitFor(() => expect(calls(`/draft/${draft.draftId}/apply`)).toHaveLength(1));
   });
 
-  it('while the job runs: "about a minute" copy, the button stays disabled, a second click sends nothing', async () => {
+  it('while the job runs: the timing copy, the button stays disabled, a second click sends nothing', async () => {
     jest.useFakeTimers();
     try {
       draftJob({
         polls: [json({ success: true, status: 'running' }), json({ success: true, status: 'done', result: { draftId: draft.draftId } })],
       });
       await drafted();
-      expect(await screen.findByText('Drafting… this takes about a minute.')).toBeInTheDocument();
+      expect(await screen.findByText('A draft is being made — about a minute, up to about 7 minutes for a whole song. It shows here when it is ready.')).toBeInTheDocument();
       const button = screen.getByRole('button', { name: 'Drafting…' });
       expect(button).toBeDisabled();
       fireEvent.click(button);
@@ -297,7 +297,7 @@ describe('Studio — draft panel', () => {
         await jest.advanceTimersByTimeAsync(5000);
       });
       expect(await screen.findByText('Draft shot one')).toBeInTheDocument();
-      expect(screen.queryByText('Drafting… this takes about a minute.')).not.toBeInTheDocument();
+      expect(screen.queryByText('A draft is being made — about a minute, up to about 7 minutes for a whole song. It shows here when it is ready.')).not.toBeInTheDocument();
       expect(calls('/draft')).toHaveLength(1);
     } finally {
       jest.useRealTimers();

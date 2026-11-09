@@ -975,6 +975,7 @@ export class VisualStoryRepository {
     characters: Character[];
     candidates: Candidate[];
     drafts: StoryboardDraft[];
+    draftJobs: DraftJob[];
     genJobs: GenJob[];
     renders: RenderJob[];
   } | null> {
@@ -994,6 +995,7 @@ export class VisualStoryRepository {
         characters: by('CHAR#').map((i) => stripKeys<Character>(i)),
         candidates: by('CAND#').map((i) => stripKeys<Candidate>(i)),
         drafts: by('DRAFT#').map((i) => stripKeys<StoryboardDraft>(i)),
+        draftJobs: by('DRAFTJOB#').map((i) => stripKeys<DraftJob>(i)),
         genJobs: by('GENJOB#').map((i) => stripKeys<GenJob>(i)),
         renders: by('RENDER#').map((i) => stripKeys<RenderJob>(i)),
       };

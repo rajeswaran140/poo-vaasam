@@ -69,6 +69,15 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     if (!story) return fail('That story no longer exists.', 404);
     // A dead job's hold must not cause a false 402 (never throws).
     await sweepStaleDraftJobs(repo, vsId);
+    // One at a time: a reload mid-draft used to make a second, paid one
+    // (audit 2026-11-09). The panel follows the running one instead.
+    const live = (await repo.listDraftJobs(vsId)).find((j) => j.status === 'queued' || j.status === 'running');
+    if (live) {
+      return NextResponse.json(
+        { success: false, error: 'A draft is already being made. It shows here when it is ready.', data: { jobId: live.jobId } },
+        { status: 409 }
+      );
+    }
     // A longer window may write more tokens, so it reserves more.
     reserveUsd = draftReserveUsd(lyrics, story.windowEndSec - story.windowStartSec);
     reserved = await repo.reserve(vsId, reserveUsd);

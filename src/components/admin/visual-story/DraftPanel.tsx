@@ -5,7 +5,7 @@
  * → preview with the total against the window → Apply. Apply REPLACES the
  * current storyboard, so it asks first.
  *
- * A draft takes about a minute, so it runs on the background worker (R14):
+ * A draft takes about a minute (up to ~7 for a whole song), so it runs on the background worker (R14):
  * POST starts a job (202 { jobId }), the panel polls the job route with
  * pollJob() until done/failed (cap 12 minutes), then reloads the tree — the new
  * draft and the spend come from the server. The button stays disabled while a
@@ -31,6 +31,8 @@ interface Props {
   shotCount: number;
   /** The newest persisted draft, if any. */
   lastDraft: StoryboardDraft | null;
+  /** A draft job still being made (from the tree): followed on load, never paid for again. */
+  liveJobId?: string | null;
   /** Reload the tree (spend) after a draft request settles. */
   onChanged: () => void;
   /** The apply route returns the whole new tree. */
@@ -47,7 +49,7 @@ const when = (iso: string) => {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' });
 };
 
-export function DraftPanel({ vsId, windowSec, sceneCount, shotCount, lastDraft, onChanged, onApplied }: Props) {
+export function DraftPanel({ vsId, windowSec, sceneCount, shotCount, lastDraft, liveJobId = null, onChanged, onApplied }: Props) {
   const [lyrics, setLyrics] = useState('');
   const [pending, setPending] = useState(false);
   const inFlight = useRef(false);
@@ -72,8 +74,12 @@ export function DraftPanel({ vsId, windowSec, sceneCount, shotCount, lastDraft, 
   const draft = lastDraft && lastDraft.draftId !== appliedId ? lastDraft : null;
   const isFresh = !!draft && draft.draftId === freshId;
 
-  const requestDraft = async () => {
-    if (inFlight.current || !lyrics.trim()) return;
+  /**
+   * Start a draft (lyrics) or follow one already being made (jobId): either
+   * way the panel waits for it and reloads the tree when it ends.
+   */
+  const run = async (start: { lyrics: string } | { jobId: string }) => {
+    if (inFlight.current) return;
     inFlight.current = true;
     setPending(true);
     setError(null);
@@ -81,17 +87,26 @@ export function DraftPanel({ vsId, windowSec, sceneCount, shotCount, lastDraft, 
     const ctrl = new AbortController();
     abort.current = ctrl;
     try {
-      const res = await adminFetch(`/api/admin/visual-story/${vsId}/draft`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lyrics }),
-      });
-      const body = await res.json().catch(() => null);
-      if (!res.ok || !body?.success || !body?.data?.jobId) {
-        setError(body?.error || `Could not draft the storyboard (HTTP ${res.status}).`);
-        return;
+      let jobId: string;
+      if ('jobId' in start) {
+        jobId = start.jobId;
+      } else {
+        const res = await adminFetch(`/api/admin/visual-story/${vsId}/draft`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lyrics: start.lyrics }),
+        });
+        const body = await res.json().catch(() => null);
+        // 409 with a jobId: one is already running (another tab, or before a reload) — follow it.
+        if (res.status === 409 && body?.data?.jobId) {
+          jobId = String(body.data.jobId);
+        } else if (!res.ok || !body?.success || !body?.data?.jobId) {
+          setError(body?.error || `Could not draft the storyboard (HTTP ${res.status}).`);
+          return;
+        } else {
+          jobId = String(body.data.jobId);
+        }
       }
-      const jobId = String(body.data.jobId);
       const result = await pollJob<{ draftId: string }>({
         fetchStatus: (signal) => adminFetch(`/api/admin/visual-story/${vsId}/draft/jobs/${jobId}`, { signal }),
         signal: ctrl.signal,
@@ -117,6 +132,16 @@ export function DraftPanel({ vsId, windowSec, sceneCount, shotCount, lastDraft, 
       }
     }
   };
+
+  const requestDraft = () => {
+    if (lyrics.trim()) void run({ lyrics });
+  };
+
+  // A draft still being made when the page loaded (reload, another tab): follow it.
+  useEffect(() => {
+    if (liveJobId) void run({ jobId: liveJobId });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveJobId]);
 
   const apply = async () => {
     if (!draft || applyInFlight.current) return;
@@ -168,8 +193,11 @@ export function DraftPanel({ vsId, windowSec, sceneCount, shotCount, lastDraft, 
       </button>
       {pending && (
         <p role="status" className="text-sm text-gray-700 dark:text-gray-300">
-          Drafting… this takes about a minute.
+          A draft is being made — about a minute, up to about 7 minutes for a whole song. It shows here when it is ready.
         </p>
+      )}
+      {!pending && (
+        <p className="text-xs text-gray-600 dark:text-gray-400">About a minute for a short part, up to about 7 minutes for a whole song.</p>
       )}
       {error && (
         <p role="alert" className="text-sm text-red-600 dark:text-red-400">
