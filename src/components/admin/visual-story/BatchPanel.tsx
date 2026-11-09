@@ -46,9 +46,30 @@ function shotsWithoutClip(shots: Shot[], candidates: Candidate[], genJobs: GenJo
 /** A first frame is pinned, or the chosen picture is a still that can be. */
 const hasStartPicture = (s: Shot, candidates: Candidate[]) => !!s.firstFrameCandidateId || firstFrameToPin(s, candidates) !== null;
 
-/** Shots a clip can be made for now: no clip, a picture to start from, and a prompt (the route refuses an empty one). */
+const inOrder = (shots: Shot[]) => [...shots].sort((a, b) => a.sceneOrder - b.sceneOrder || a.shotOrder - b.shotOrder);
+const moving = (s: Shot) => s.mode !== 'STILL';
+
+/**
+ * Moving shots that continue from the clip before them (both moving, chain
+ * ticked). Their clip starts from that clip's last frame, so "Make the video"
+ * under Your pictures makes them one after another; a batch would make them
+ * from their own picture and they would be paid for twice (audit 2026-11-09).
+ */
+export function chainedShots(shots: Shot[]): Shot[] {
+  const list = inOrder(shots);
+  return list.filter((s, i) => moving(s) && !!s.chainFromPrevious && i > 0 && moving(list[i - 1]));
+}
+
+/**
+ * Shots a clip can be made for now: set to Moving, not chained, no clip, a
+ * picture to start from, and a prompt (the route refuses an empty one). A
+ * shot set to Still stays a picture — the batch never pays to animate it.
+ */
 export function shotsNeedingVideo(shots: Shot[], candidates: Candidate[], genJobs: GenJob[]): Shot[] {
-  return shotsWithoutClip(shots, candidates, genJobs).filter((s) => s.visualPrompt.trim() && hasStartPicture(s, candidates));
+  const chained = new Set(chainedShots(shots));
+  return shotsWithoutClip(shots, candidates, genJobs).filter(
+    (s) => moving(s) && !chained.has(s) && s.visualPrompt.trim() && hasStartPicture(s, candidates)
+  );
 }
 
 /** The chosen picture to pin as the clip's first frame, or null when none is needed. */
@@ -96,7 +117,10 @@ export function BatchPanel({ vsId, story, shots, candidates, genJobs, onChanged 
 
   const pictureShots = shotsNeedingPicture(shots, candidates);
   const videoShots = shotsNeedingVideo(shots, candidates, genJobs);
-  const needPictureFirst = shotsWithoutClip(shots, candidates, genJobs).filter((s) => !hasStartPicture(s, candidates)).length;
+  const withoutClip = shotsWithoutClip(shots, candidates, genJobs);
+  const needPictureFirst = withoutClip.filter((s) => moving(s) && !hasStartPicture(s, candidates)).length;
+  const stillCount = withoutClip.filter((s) => !moving(s)).length;
+  const chainedCount = chainedShots(shots).filter((s) => withoutClip.includes(s)).length;
   const priceOf = (kind: Kind, list: Shot[]) =>
     list.reduce((n, s) => n + estimateCostUsd('grok', kind === 'pictures' ? 'STILL' : 'HERO', s.durationSec), 0);
   const picturePrice = priceOf('pictures', pictureShots);
@@ -238,6 +262,18 @@ export function BatchPanel({ vsId, story, shots, candidates, genJobs, onChanged 
       {pictureShots.length === 0 && <p className="text-sm text-gray-600 dark:text-gray-400">Every shot has a picture.</p>}
       {needPictureFirst > 0 && (
         <p className="text-sm text-gray-600 dark:text-gray-400">{needPictureFirst === 1 ? '1 shot needs a picture before its clip.' : `${needPictureFirst} shots need a picture before their clips.`}</p>
+      )}
+      {stillCount > 0 && (
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          {stillCount === 1 ? '1 shot is set to Still and stays a picture' : `${stillCount} shots are set to Still and stay pictures`}
+          {' — set a row to Moving under Your pictures to animate it.'}
+        </p>
+      )}
+      {chainedCount > 0 && (
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          {chainedCount === 1 ? '1 shot continues from the clip before it' : `${chainedCount} shots continue from the clip before them`}
+          {' — Make the video under Your pictures makes those in order.'}
+        </p>
       )}
       {confirming && !running && confirmBox(confirming)}
       {running && (

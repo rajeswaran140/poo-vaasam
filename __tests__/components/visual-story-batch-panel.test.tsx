@@ -135,9 +135,9 @@ describe('videos for every shot', () => {
       return undefined;
     });
     const shots = [
-      shot(1, 1, 8, { selectedCandidateId: 'cd_v' }), // already has a clip: skipped
-      shot(1, 2, 7, { selectedCandidateId: 'cd_p' }), // chosen picture, not yet the first frame: pinned first
-      shot(2, 1, 6, { selectedCandidateId: 'cd_q', firstFrameCandidateId: 'cd_q' }), // already pinned
+      shot(1, 1, 8, { mode: 'HERO', selectedCandidateId: 'cd_v' }), // already has a clip: skipped
+      shot(1, 2, 7, { mode: 'HERO', selectedCandidateId: 'cd_p' }), // chosen picture, not yet the first frame: pinned first
+      shot(2, 1, 6, { mode: 'HERO', selectedCandidateId: 'cd_q', firstFrameCandidateId: 'cd_q' }), // already pinned
     ];
     const cands = [cand('cd_v', 1, 1, 'HERO'), cand('cd_p', 1, 2, 'STILL'), cand('cd_q', 2, 1, 'STILL')];
     const { onChanged } = setup(shots, cands);
@@ -165,7 +165,7 @@ describe('videos for every shot', () => {
   it('skips a shot whose clip is already rendering', () => {
     routes(() => undefined);
     setup(
-      [shot(1, 1, 8, { selectedCandidateId: 'cd_a' }), shot(1, 2, 7, { selectedCandidateId: 'cd_b' })],
+      [shot(1, 1, 8, { mode: 'HERO', selectedCandidateId: 'cd_a' }), shot(1, 2, 7, { mode: 'HERO', selectedCandidateId: 'cd_b' })],
       [cand('cd_a', 1, 1, 'STILL'), cand('cd_b', 1, 2, 'STILL')],
       [{ jobId: 'gj_x', status: 'running', sceneOrder: 1, shotOrder: 1 } as GenJob]
     );
@@ -175,7 +175,7 @@ describe('videos for every shot', () => {
   it('will not start over the budget cap', () => {
     routes(() => undefined);
     setup(
-      [shot(1, 1, 15, { selectedCandidateId: 'cd_a' }), shot(1, 2, 15, { selectedCandidateId: 'cd_b' })],
+      [shot(1, 1, 15, { mode: 'HERO', selectedCandidateId: 'cd_a' }), shot(1, 2, 15, { mode: 'HERO', selectedCandidateId: 'cd_b' })],
       [cand('cd_a', 1, 1, 'STILL'), cand('cd_b', 1, 2, 'STILL')],
       [],
       { ...story, budgetUsdCap: 2 } as VisualStory
@@ -203,7 +203,7 @@ describe('videos for every shot', () => {
   });
 });
 
-const withPictures = (list: Shot[]) => list.map((s) => ({ ...s, selectedCandidateId: `cd_${s.sceneOrder}${s.shotOrder}` }));
+const withPictures = (list: Shot[]) => list.map((s) => ({ ...s, mode: 'HERO' as const, selectedCandidateId: `cd_${s.sceneOrder}${s.shotOrder}` }));
 const pics = (list: Shot[]) => list.map((s) => cand(`cd_${s.sceneOrder}${s.shotOrder}`, s.sceneOrder, s.shotOrder, 'STILL'));
 
 describe('review fixes', () => {
@@ -251,7 +251,7 @@ describe('review fixes', () => {
   it('leaves out shots with no chosen picture or no prompt, and says how many need a picture', () => {
     routes(() => undefined);
     setup(
-      [shot(1, 1, 8, { selectedCandidateId: 'cd_a' }), shot(1, 2, 7), shot(1, 3, 6, { selectedCandidateId: 'cd_c', visualPrompt: '  ' })],
+      [shot(1, 1, 8, { mode: 'HERO', selectedCandidateId: 'cd_a' }), shot(1, 2, 7, { mode: 'HERO' }), shot(1, 3, 6, { mode: 'HERO', selectedCandidateId: 'cd_c', visualPrompt: '  ' })],
       [cand('cd_a', 1, 1, 'STILL'), cand('cd_c', 1, 3, 'STILL')]
     );
     expect(screen.getByRole('button', { name: 'Videos for every shot (1 shot · $0.64)' })).toBeInTheDocument();
@@ -269,5 +269,40 @@ describe('review fixes', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     await flush();
     expect(screen.getByText(/Scene 1, shot 1: The connection dropped; the clip may have started/)).toBeInTheDocument();
+  });
+});
+
+describe('videos for every shot respects Still / Moving (audit 2026-11-09)', () => {
+  it('a shot set to Still stays a picture: not counted, not priced, and the panel says how many', () => {
+    routes(() => undefined);
+    setup(
+      [shot(1, 1, 8, { mode: 'HERO', selectedCandidateId: 'cd_a' }), shot(1, 2, 7, { mode: 'STILL', selectedCandidateId: 'cd_b' })],
+      [cand('cd_a', 1, 1, 'STILL'), cand('cd_b', 1, 2, 'STILL')]
+    );
+    expect(screen.getByRole('button', { name: 'Videos for every shot (1 shot · $0.64)' })).toBeInTheDocument();
+    expect(screen.getByText(/1 shot is set to Still and stays a picture/)).toBeInTheDocument();
+  });
+  it('a moving shot that continues from the clip before it is left to Make the video, which makes them in order', () => {
+    routes(() => undefined);
+    setup(
+      [
+        shot(1, 1, 8, { mode: 'HERO', selectedCandidateId: 'cd_a' }),
+        shot(1, 2, 7, { mode: 'HERO', selectedCandidateId: 'cd_b', chainFromPrevious: true }),
+      ],
+      [cand('cd_a', 1, 1, 'STILL'), cand('cd_b', 1, 2, 'STILL')]
+    );
+    expect(screen.getByRole('button', { name: 'Videos for every shot (1 shot · $0.64)' })).toBeInTheDocument();
+    expect(screen.getByText(/1 shot continues from the clip before it/)).toBeInTheDocument();
+  });
+  it('a chained shot after a Still shot is an ordinary moving shot and is counted', () => {
+    routes(() => undefined);
+    setup(
+      [
+        shot(1, 1, 8, { mode: 'STILL', selectedCandidateId: 'cd_a' }),
+        shot(1, 2, 7, { mode: 'HERO', selectedCandidateId: 'cd_b', chainFromPrevious: true }),
+      ],
+      [cand('cd_a', 1, 1, 'STILL'), cand('cd_b', 1, 2, 'STILL')]
+    );
+    expect(screen.getByRole('button', { name: 'Videos for every shot (1 shot · $0.56)' })).toBeInTheDocument();
   });
 });
