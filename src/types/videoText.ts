@@ -127,6 +127,14 @@ export interface Cut {
   outSec: number;
 }
 
+/**
+ * A freeze: from `atSec` to the end the picture holds the frame at `atSec`
+ * (on the video's frame grid) while the sound plays on. Null or missing: none.
+ */
+export interface Freeze {
+  atSec: number;
+}
+
 export interface VideoTextProject {
   id: string;
   name: string;
@@ -137,6 +145,8 @@ export interface VideoTextProject {
   style: TextStyle;
   /** Optional: projects saved before the cut existed export the whole video. */
   cut?: Cut | null;
+  /** Optional: projects saved before freezes existed have none. */
+  freeze?: Freeze | null;
   source: SourceInfo | null;
   render: RenderState;
   version: number;

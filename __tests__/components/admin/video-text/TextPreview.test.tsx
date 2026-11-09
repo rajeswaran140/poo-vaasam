@@ -105,3 +105,21 @@ describe('the logo', () => {
     expect(screen.queryByTestId('move-logo')).toBeNull();
   });
 });
+
+describe('the freeze still', () => {
+  it('an expired link on the hidden copy asks the editor for a fresh one', () => {
+    const onLinkError = jest.fn();
+    render(<TextPreview videoUrl="x.mp4" frame={{ width: 1920, height: 1080 }} blocks={blocks} style={STYLE} onTime={jest.fn()} freezeSec={2} fps={25} onLinkError={onLinkError} />);
+    const hidden = document.querySelectorAll('video')[1];
+    expect(hidden).toBeTruthy();
+    fireEvent.error(hidden);
+    expect(onLinkError).toHaveBeenCalledTimes(1);
+  });
+  it('a frozen preview gets its own Play / Pause (the still covers the video controls); none without a freeze', () => {
+    const { unmount } = render(<TextPreview videoUrl="x.mp4" frame={{ width: 1920, height: 1080 }} blocks={blocks} style={STYLE} onTime={jest.fn()} freezeSec={2} />);
+    expect(screen.getByRole('button', { name: 'Play / Pause' })).toBeInTheDocument();
+    unmount();
+    render(<TextPreview videoUrl="x.mp4" frame={{ width: 1920, height: 1080 }} blocks={blocks} style={STYLE} onTime={jest.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Play / Pause' })).toBeNull();
+  });
+});

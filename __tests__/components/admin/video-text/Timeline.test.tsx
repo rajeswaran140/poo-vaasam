@@ -485,3 +485,14 @@ describe('In and Out marks', () => {
     expect(onSeek).not.toHaveBeenCalled();
   });
 });
+
+describe('the freeze band', () => {
+  it('shades from the freeze to the end; none without a freeze', () => {
+    const { rerender } = render(<Timeline blocks={[]} durationSec={60} playheadSec={0} onChange={jest.fn()} onSeek={jest.fn()} freezeSec={15} />);
+    const band = screen.getByTestId('freeze-shade');
+    expect(band).toHaveTextContent('Frozen');
+    expect(band.getAttribute('title')).toMatch(/0:15/);
+    rerender(<Timeline blocks={[]} durationSec={60} playheadSec={0} onChange={jest.fn()} onSeek={jest.fn()} freezeSec={null} />);
+    expect(screen.queryByTestId('freeze-shade')).toBeNull();
+  });
+});

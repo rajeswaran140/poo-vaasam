@@ -156,3 +156,23 @@ Raj: "implement watermark option on each video, I can upload the logo". He chose
   logo sits under the text where they overlap; a project with only the logo (no
   text) can still be exported.
 - Mastering and Studio renders stay clean: the logo is only in Video Text exports.
+
+## Freeze (added 2026-11-09)
+
+Raj: hold a frame "while the audio continues", e.g. a 15 s Grok clip of a boy walking
+should freeze on its last frame instead of looping, so one $3+ clip can carry a whole
+song. He chose **one freeze, held to the end**.
+
+- `project.freeze = { atSec }` (null/missing: none), the START of the held frame on the
+  video's frame grid (1 ms). The held frame is the one SHOWING at the playhead
+  (floored, not rounded): a loop restarting at 15.00 s shows its first frame at 15.00 s.
+- Editor: Freeze controls under In/Out: ◀ 1 frame / 1 frame ▶ (pause, seek to the
+  frame's middle), Freeze here, Go to freeze, Remove freeze. The timeline shades the
+  frozen part; the preview shows the frame (grabbed from a hidden second copy of the
+  video) from the freeze on.
+- Worker: takes the frame from the source with an accurate seek half a frame early
+  (`buildFreezeFrameArgs`, exact on 7.0.2 at 25 and 29.97 fps), uploads it as overlay
+  `_freeze`, and lays it FIRST (under logo and text) from its time to the end. Sound
+  untouched. A re-upload keeps a freeze that fits (on the new frames), else drops it.
+- Verified on the layer's ffmpeg: frames before unchanged (~50 dB), every frame after
+  equals the held frame (~46 dB vs 22 dB for the moving picture), frame count exact.

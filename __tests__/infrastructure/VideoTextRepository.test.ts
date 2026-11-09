@@ -119,6 +119,18 @@ describe('saveEdits', () => {
     expect(r).toEqual({ ok: true, version: 4 });
   });
 
+  it('writes the freeze only when the edits carry it (an older tab keeps the stored one)', async () => {
+    mockUpdate.mockResolvedValueOnce({ version: 4 });
+    await repo.saveEdits('abc', { ...edits, freeze: { atSec: 14.96 } }, 3);
+    let a = arg();
+    expect(a.updateExpression).toContain('#freeze = :freeze');
+    expect(a.expressionAttributeValues[':freeze']).toEqual({ atSec: 14.96 });
+    mockUpdate.mockResolvedValueOnce({ version: 5 });
+    await repo.saveEdits('abc', edits, 4);
+    a = mockUpdate.mock.calls[1][0] as typeof a;
+    expect(a.updateExpression).not.toContain('#freeze');
+  });
+
   it('answers conflict when the row exists at another version', async () => {
     mockUpdate.mockRejectedValueOnce(ccf());
     mockGet.mockResolvedValueOnce({ id: 'abc', version: 9 });
@@ -155,11 +167,20 @@ describe('setSource', () => {
     );
   });
 
+  it('stores the fitted freeze with the new video (null clears it)', async () => {
+    mockUpdate.mockResolvedValueOnce({ version: 5 });
+    await repo.setSource('abc', src, [], null, { atSec: 3 });
+    expect(arg().expressionAttributeValues[':freeze']).toEqual({ atSec: 3 });
+    mockUpdate.mockResolvedValueOnce({ version: 6 });
+    await repo.setSource('abc', src, []);
+    expect((mockUpdate.mock.calls[1][0] as ReturnType<typeof arg>).expressionAttributeValues[':freeze']).toBeNull();
+  });
+
   it('F4: refuses while a fresh render is in flight (same rule as startRender)', async () => {
     const now = Date.parse('2026-11-07T12:00:00.000Z');
     mockUpdate.mockRejectedValueOnce(ccf());
     mockGet.mockResolvedValueOnce({ PK: 'VIDEOTEXT#abc', SK: 'METADATA', id: 'abc' });
-    expect(await repo.setSource('abc', src, [], null, now)).toEqual({ ok: false, reason: 'rendering' });
+    expect(await repo.setSource('abc', src, [], null, null, now)).toEqual({ ok: false, reason: 'rendering' });
     const a = arg();
     expect(a.expressionAttributeValues[':staleBefore']).toBe(new Date(now - RENDER_STALE_MS).toISOString());
     expect(a.expressionAttributeNames).toMatchObject({ '#status': 'status', '#updatedAt': 'updatedAt' });

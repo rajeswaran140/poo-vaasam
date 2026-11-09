@@ -437,3 +437,41 @@ describe('In and Out (the cut)', () => {
     expect((await (await sourcePOST(req({ key }), ctx)).json()).cut).toBeNull();
   });
 });
+
+describe('the freeze', () => {
+  const key = `audio/mastering/video-text/${ID}/source/b.mp4`;
+  it('PATCH saves a freeze inside the video, clears it with null, and leaves it alone when missing', async () => {
+    repo.saveEdits.mockResolvedValue({ ok: true, version: 4 });
+    let res = await PATCH(req({ edits: { ...edits(), freeze: { atSec: 14.96 } }, version: 3 }, 'PATCH'), ctx);
+    expect(res.status).toBe(200);
+    expect(repo.saveEdits.mock.calls[0][1].freeze).toEqual({ atSec: 14.96 });
+    res = await PATCH(req({ edits: { ...edits(), freeze: null }, version: 3 }, 'PATCH'), ctx);
+    expect(repo.saveEdits.mock.calls[1][1].freeze).toBeNull();
+    res = await PATCH(req({ edits: edits(), version: 3 }, 'PATCH'), ctx);
+    expect(repo.saveEdits.mock.calls[2][1]).not.toHaveProperty('freeze');
+  });
+  it('PATCH 400s a freeze at or past the end, or negative', async () => {
+    for (const freeze of [{ atSec: 60 }, { atSec: 75 }, { atSec: -1 }]) {
+      expect((await PATCH(req({ edits: { ...edits(), freeze }, version: 3 }, 'PATCH'), ctx)).status).toBe(400);
+    }
+    expect(repo.saveEdits).not.toHaveBeenCalled();
+  });
+  it('render 400s a stored freeze that no longer fits, without claiming', async () => {
+    repo.get.mockResolvedValue(project({ freeze: { atSec: 61 } }));
+    const res = await renderPOST(req({ renderId: 'r1', version: 3 }), ctx);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/freeze is outside the video/);
+    expect(repo.startRender).not.toHaveBeenCalled();
+  });
+  it('a re-upload keeps a freeze that fits (on the new frames) and drops one past the new end', async () => {
+    lambdaSend.mockResolvedValue(probePayload({ ok: true, info: { width: 1920, height: 1080, fps: 30, durationSec: 30, hasAudio: true } }));
+    repo.setSource.mockResolvedValue({ ok: true, version: 4, durationSec: 30 });
+    repo.get.mockResolvedValue(project({ freeze: { atSec: 14.96 } }));
+    let body = await (await sourcePOST(req({ key }), ctx)).json();
+    expect(body.freeze).toEqual({ atSec: 14.967 });
+    expect(repo.setSource.mock.calls[0][4]).toEqual({ atSec: 14.967 });
+    repo.get.mockResolvedValue(project({ freeze: { atSec: 40 } }));
+    body = await (await sourcePOST(req({ key }), ctx)).json();
+    expect(body.freeze).toBeNull();
+  });
+});

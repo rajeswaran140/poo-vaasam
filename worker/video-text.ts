@@ -27,7 +27,7 @@
  * master-worker.ts so this module does not import it back.
  */
 
-import { createReadStream, createWriteStream, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, statfsSync, writeFileSync } from 'node:fs';
+import { createReadStream, createWriteStream, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, statfsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
@@ -78,9 +78,13 @@ import {
   segmentKey,
 } from '@/lib/video-text/keys';
 import { isHdrHeader } from '@/lib/master-background';
-import type { Cut, RenderState, TextBlock, TextStyle } from '@/types/videoText';
+import type { Cut, Freeze, RenderState, TextBlock, TextStyle } from '@/types/videoText';
 import { fadeSecFor, trackStyleOf } from '@/lib/video-text/fonts';
 import { LOGO_OVERLAY_ID, logoShown } from '@/lib/video-text/logo';
+import { buildFreezeFrameArgs, validateFreeze } from '@/lib/video-text/freeze';
+
+/** The overlay id of the held frame (the worker makes it; block ids are UUIDs, never this). */
+export const FREEZE_OVERLAY_ID = '_freeze';
 
 export const VIDEO_TEXT_CHUNK_FUNCTION = process.env.VIDEO_TEXT_CHUNK_FUNCTION || 'tamilagaval-video-text-chunk';
 /** Chunks in flight at once for one render. */
@@ -746,6 +750,7 @@ interface StoredProject {
   blocks?: TextBlock[];
   style?: TextStyle;
   cut?: Cut | null;
+  freeze?: Freeze | null;
   source?: { key?: string; width?: number; height?: number; durationSec?: number } | null;
   render?: { renderId?: string | null };
 }
@@ -793,6 +798,11 @@ export async function renderVideoText(
     if (cut) {
       const cutProblem = Number.isFinite(storedDuration) ? validateCut(cut, storedDuration) : 'The In and Out marks cannot be read — set them again.';
       if (cutProblem) throw new VideoTextFailure(cutProblem);
+    }
+    const freeze = project.freeze ?? null;
+    if (freeze) {
+      const freezeProblem = Number.isFinite(storedDuration) ? validateFreeze(freeze, storedDuration) : 'The freeze cannot be read — set it again.';
+      if (freezeProblem) throw new VideoTextFailure(freezeProblem);
     }
 
     // ---- segmenting
@@ -848,6 +858,20 @@ export async function renderVideoText(
     // R13 backstop: the probe refused this at upload; a source replaced since must not slip through.
     const offsetRefusal = startOffsetRefusal(videoStart, video!.fps!);
     if (offsetRefusal) throw new VideoTextFailure(offsetRefusal);
+
+    // The freeze: the held frame, taken from the source at full quality, becomes
+    // one more full-frame overlay (`_freeze`) from its time to the end, under
+    // the logo and the text. The editor never draws it; the worker does.
+    if (freeze) {
+      const framePath = join(dir, 'freeze.png');
+      const grab = deps.ff(buildFreezeFrameArgs(srcPath, framePath, freeze.atSec, video!.fps!));
+      if (grab.status !== 0 || !existsSync(framePath) || statSync(framePath).size === 0) {
+        console.error('[video-text] freeze frame failed:', (grab.stderr ?? '').slice(-1000));
+        throw new VideoTextFailure('the frame to freeze on could not be read from the video — set the freeze again');
+      }
+      await uploadFrom(deps, overlayKey(projectId, renderId, FREEZE_OVERLAY_ID), framePath);
+      rmSync(framePath, { force: true });
+    }
 
     // Marks saved off this video's frames (an older save) are put back on them.
     if (cut) cut = snapCut(cut, storedDuration, video!.fps!);
@@ -911,10 +935,12 @@ export async function renderVideoText(
     }));
     // First, so it lies UNDER the text (as in the preview). Endless on purpose: each segment clips it to its own length.
     const logoSpan = { id: LOGO_OVERLAY_ID, startSec: 0, endSec: Number.POSITIVE_INFINITY, fadeSec: 0 };
+    // The held frame: lowest of all, from its frame to the end.
+    const freezeSpan = freeze ? { id: FREEZE_OVERLAY_ID, startSec: freeze.atSec, endSec: Number.POSITIVE_INFINITY, fadeSec: 0 } : null;
     const specs: ChunkSpec[] = kept.map(({ entry, trim }, index) => ({
       projectId, renderId, index,
       segKey: segmentKey(projectId, renderId, index),
-      overlays: overlaysForSegment(withLogo ? [logoSpan, ...timed] : timed, entry),
+      overlays: overlaysForSegment([...(freezeSpan ? [freezeSpan] : []), ...(withLogo ? [logoSpan] : []), ...timed], entry),
       width: video!.width, height: video!.height,
       fps: video!.fps!,
       ...(trim ? { trim } : {}),
