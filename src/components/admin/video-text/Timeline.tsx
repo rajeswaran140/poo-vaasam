@@ -111,9 +111,11 @@ export interface TimelineProps {
   /** The video's frame rate: the marks snap to its frames. */
   fps?: number;
   onCutChange?(cut: Cut | null): void;
+  /** Where the picture freezes (to the end); absent or null: no freeze. */
+  freezeSec?: number | null;
 }
 
-export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek, cut = null, fps = 25, onCutChange }: TimelineProps) {
+export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek, cut = null, fps = 25, onCutChange, freezeSec = null }: TimelineProps) {
   const duration = Math.max(1, durationSec);
   const scroller = useRef<HTMLDivElement>(null);
   const [boxWidth, setBoxWidth] = useState(0);
@@ -434,6 +436,18 @@ export function Timeline({ blocks, durationSec, playheadSec, onChange, onSeek, c
                   })}
               </div>
             ))}
+
+            {/* The freeze: from its frame to the end the picture holds still (the text still moves). */}
+            {freezeSec !== null && freezeSec < durationSec && (
+              <div
+                className="pointer-events-none absolute top-0 bottom-0 z-[14] border-l-2 border-sky-500 bg-sky-400/15 dark:bg-sky-500/20"
+                style={{ left: freezeSec * pps, width: Math.max(0, (duration - freezeSec) * pps) }}
+                title={`Picture frozen from ${formatTime(freezeSec)}`}
+                data-testid="freeze-shade"
+              >
+                <span className="absolute left-1 top-0.5 text-[10px] font-medium text-sky-700 dark:text-sky-300">Frozen</span>
+              </div>
+            )}
 
             {/* In and Out: outside them is shaded (not in the video); the handles sit on the ruler. */}
             {cut && (

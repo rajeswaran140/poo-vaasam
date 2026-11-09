@@ -216,7 +216,7 @@ test.describe('video text editor (mocked API)', () => {
     await page.goto('/admin/video-text');
     await page.locator('ul li button').first().click();
     await expect(page.getByRole('button', { name: /All projects/ })).toBeVisible({ timeout: 30_000 });
-    const video = page.locator('video');
+    const video = page.getByTestId('preview-video');
     await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.readyState), { timeout: 30_000 }).toBeGreaterThanOrEqual(2);
     const seekTo = (sec: number) =>
       video.evaluate(
@@ -234,7 +234,7 @@ test.describe('video text editor (mocked API)', () => {
   const opaqueIn = (page: Page, x0: number, x1: number, y0: number, y1: number) =>
     page.evaluate(
       ([a, b, c, d]) => {
-        const cv = document.querySelector('canvas[aria-hidden="true"]') as HTMLCanvasElement | null;
+        const cv = document.querySelector('[data-testid="text-overlay"]') as HTMLCanvasElement | null;
         const ctx = cv?.getContext('2d');
         if (!cv || !ctx || !cv.width || !cv.height) return 0;
         const px = Math.floor(cv.width * a);
@@ -267,7 +267,7 @@ test.describe('video text editor (mocked API)', () => {
     for (let i = 0; i < 3; i++) await expect(lyricBlocks.nth(i)).toBeVisible();
 
     // Seek to ~1 s: the title is on screen, so the overlay canvas has pixels.
-    const video = page.locator('video');
+    const video = page.getByTestId('preview-video');
     await expect(video).toBeVisible();
     const blocks = project().blocks;
     const lyrics = blocks.filter((b) => b.track === 'lyric');
@@ -293,7 +293,7 @@ test.describe('video text editor (mocked API)', () => {
     const opaque = (fromY: number, toY: number) =>
       page.evaluate(
         ([a, b]) => {
-          const c = document.querySelector('canvas[aria-hidden="true"]') as HTMLCanvasElement | null;
+          const c = document.querySelector('[data-testid="text-overlay"]') as HTMLCanvasElement | null;
           const ctx = c?.getContext('2d');
           if (!c || !ctx || !c.width || !c.height) return 0;
           const y0 = Math.floor(c.height * a);
@@ -575,6 +575,58 @@ test.describe('video text editor (mocked API)', () => {
     expect(unexpected, 'requests to the video-text API that the test did not mock').toEqual([]);
   });
 
+  test('freeze: step to a frame, freeze it; the preview holds that frame from there on, and it is saved', async ({ page }) => {
+    test.skip(Boolean(ffmpegMissing), ffmpegMissing || 'ffmpeg missing');
+    const { writes, unexpected, patches } = await mockEditor(page);
+    const { seekTo } = await openEditor(page);
+    await seekTo(2);
+    const controls = page.getByTestId('freeze-controls');
+    await controls.getByRole('button', { name: 'Forward 1 frame' }).click();
+    await controls.getByRole('button', { name: 'Freeze here' }).click();
+    await expect(page.getByTestId('freeze-summary')).toContainText('0:02.04');
+    await expect(page.getByTestId('freeze-shade')).toBeVisible();
+    await expect.poll(() => patches.some((b) => JSON.parse(b).edits?.freeze?.atSec === 2.04), { timeout: 15_000 }).toBe(true);
+
+    const still = page.getByTestId('freeze-still');
+    // Holding frame 51 (2.04 s): it has a picture, hidden before the freeze, shown after.
+    await expect.poll(() => still.evaluate((c: HTMLCanvasElement) => {
+      const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+      let n = 0;
+      for (let i = 3; i < d.length; i += 400) if (d[i] > 0) n++;
+      return n;
+    }), { timeout: 15_000 }).toBeGreaterThan(0);
+    await seekTo(1);
+    await expect.poll(() => still.evaluate((c) => getComputedStyle(c).visibility)).toBe('hidden');
+    await seekTo(8);
+    await expect.poll(() => still.evaluate((c) => getComputedStyle(c).visibility)).toBe('visible');
+    // The held picture is the frame at 2.04 s, not the one playing at 8 s.
+    const same = await page.evaluate(async () => {
+      const c = document.querySelector('[data-testid="freeze-still"]') as HTMLCanvasElement;
+      const v = document.createElement('video');
+      v.src = (document.querySelector('video') as HTMLVideoElement).src;
+      v.muted = true;
+      await new Promise((r) => v.addEventListener('loadeddata', r, { once: true }));
+      const grab = async (t: number) => {
+        await new Promise<void>((r) => { v.addEventListener('seeked', () => r(), { once: true }); v.currentTime = t; });
+        const k = document.createElement('canvas');
+        k.width = c.width; k.height = c.height;
+        k.getContext('2d')!.drawImage(v, 0, 0, k.width, k.height);
+        return k.getContext('2d')!.getImageData(0, 0, k.width, k.height).data;
+      };
+      const held = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+      const diff = (a: Uint8ClampedArray, b: Uint8ClampedArray) => { let s = 0; for (let i = 0; i < a.length; i += 16) s += Math.abs(a[i] - b[i]); return s / (a.length / 16); };
+      return { atFreeze: diff(held, await grab(2.06)), at8: diff(held, await grab(8.02)) };
+    });
+    expect(same.atFreeze).toBeLessThan(1);
+    expect(same.at8).toBeGreaterThan(same.atFreeze + 1);
+
+    await controls.getByRole('button', { name: 'Remove freeze' }).click();
+    await expect(page.getByTestId('freeze-shade')).toHaveCount(0);
+    await expect.poll(() => JSON.parse(patches[patches.length - 1]).edits.freeze, { timeout: 15_000 }).toBeNull();
+    expect(writes, 'non-GET /api/ requests the mocks did not fulfil').toEqual([]);
+    expect(unexpected, 'requests to the video-text API that the test did not mock').toEqual([]);
+  });
+
   test('logo: the saved logo shows in its corner when ticked, moves by keys, and a corner puts it back', async ({ page }) => {
     test.skip(Boolean(ffmpegMissing), ffmpegMissing || 'ffmpeg missing');
     const { writes, unexpected, patches } = await mockEditor(page);
@@ -655,7 +707,7 @@ test.describe('video text editor (mocked API)', () => {
     test.skip(Boolean(ffmpegMissing), ffmpegMissing || 'ffmpeg missing');
     const { writes, unexpected, patches } = await mockEditor(page);
     const { seekTo } = await openEditor(page);
-    const video = page.locator('video');
+    const video = page.getByTestId('preview-video');
     const sliders = page.getByRole('slider', { name: /^Lyric \d: / });
 
     // ---- Tap to time: start at 6 s, tap three lines and the end, while it plays.
@@ -693,7 +745,7 @@ test.describe('video text editor (mocked API)', () => {
     /** Strongest alpha in the lower third of the overlay. */
     const peakAlpha = () =>
       page.evaluate(() => {
-        const cv = document.querySelector('canvas[aria-hidden="true"]') as HTMLCanvasElement;
+        const cv = document.querySelector('[data-testid="text-overlay"]') as HTMLCanvasElement;
         const ctx = cv.getContext('2d')!;
         const d = ctx.getImageData(0, Math.floor(cv.height * 0.66), cv.width, Math.floor(cv.height * 0.34)).data;
         let m = 0;
@@ -714,7 +766,7 @@ test.describe('video text editor (mocked API)', () => {
     // ---- Box: a dark, mostly opaque area appears behind the lyric.
     const darkBoxPixels = () =>
       page.evaluate(() => {
-        const cv = document.querySelector('canvas[aria-hidden="true"]') as HTMLCanvasElement;
+        const cv = document.querySelector('[data-testid="text-overlay"]') as HTMLCanvasElement;
         const d = cv.getContext('2d')!.getImageData(0, Math.floor(cv.height * 0.66), cv.width, Math.floor(cv.height * 0.34)).data;
         let n = 0;
         for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 100 && d[i] < 30 && d[i + 1] < 30 && d[i + 2] < 30) n++;
@@ -730,7 +782,7 @@ test.describe('video text editor (mocked API)', () => {
     await lyrics.getByRole('radiogroup', { name: 'Lyrics colour' }).getByRole('radio', { name: 'Yellow' }).click();
     const yellowish = () =>
       page.evaluate(() => {
-        const cv = document.querySelector('canvas[aria-hidden="true"]') as HTMLCanvasElement;
+        const cv = document.querySelector('[data-testid="text-overlay"]') as HTMLCanvasElement;
         const d = cv.getContext('2d')!.getImageData(0, Math.floor(cv.height * 0.66), cv.width, Math.floor(cv.height * 0.34)).data;
         let n = 0;
         for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200 && d[i] > 200 && d[i + 1] > 180 && d[i + 2] < 140) n++;
@@ -760,7 +812,7 @@ test.describe('video text editor (mocked API)', () => {
     test.skip(Boolean(ffmpegMissing), ffmpegMissing || 'ffmpeg missing');
     const { writes, unexpected, patches } = await mockEditor(page);
     const { seekTo } = await openEditor(page);
-    const video = page.locator('video');
+    const video = page.getByTestId('preview-video');
     const summary = page.getByTestId('cut-summary');
     await expect(summary).toHaveText(/exports the whole video/);
     const lastCut = () => {
@@ -823,7 +875,7 @@ test.describe('video text editor (mocked API)', () => {
     const title = page.getByRole('group', { name: 'Title', exact: true });
     const tallRows = () =>
       page.evaluate(() => {
-        const cv = document.querySelector('canvas[aria-hidden="true"]') as HTMLCanvasElement;
+        const cv = document.querySelector('[data-testid="text-overlay"]') as HTMLCanvasElement;
         const d = cv.getContext('2d')!.getImageData(0, 0, cv.width, cv.height).data;
         let rows = 0;
         for (let y = 0; y < cv.height; y++) {
@@ -846,7 +898,7 @@ test.describe('video text editor (mocked API)', () => {
     await expect(handle).toBeVisible();
     // The mouse can only drag what is on screen: ticking the switch may leave the picture scrolled off.
     await handle.scrollIntoViewIfNeeded();
-    const pic = (await page.locator('video').boundingBox())!;
+    const pic = (await page.getByTestId('preview-video').boundingBox())!;
     const hb = (await handle.boundingBox())!;
     await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
     await page.mouse.down();

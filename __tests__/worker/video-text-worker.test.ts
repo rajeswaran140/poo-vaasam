@@ -152,6 +152,7 @@ const projectFor = (o: Partial<{ hasAudio: boolean; renderId: string }> = {}) =>
 
 const outPathOf = (args: string[]) => args[args.length - 1];
 
+let freezeGrabFails = false;
 function fakeFfmpeg(_bin: string, args: string[]) {
   world.ffArgs.push(args);
   const j = args.join(' ');
@@ -172,6 +173,11 @@ function fakeFfmpeg(_bin: string, args: string[]) {
   }
   if (j.includes('-map 0:a:0 -c copy -f')) {
     writeFileSync(outPathOf(args), 'AUDIO');
+    return { status: 0, stdout: '', stderr: '' };
+  }
+  if (j.includes('-frames:v 1') && args[args.length - 1].endsWith('freeze.png')) {
+    if (freezeGrabFails) return { status: 1, stdout: '', stderr: 'grab failed' };
+    writeFileSync(args[args.length - 1], 'FROZEN-PNG');
     return { status: 0, stdout: '', stderr: '' };
   }
   if (j.includes('-preset')) {
@@ -244,6 +250,7 @@ async function fakeLambda(cmd: { input: Record<string, unknown> }) {
 }
 
 beforeEach(() => {
+  freezeGrabFails = false;
   world = {
     project: projectFor(),
     store: new Map(),
@@ -547,6 +554,64 @@ describe('videoTextRender', () => {
     await render();
     expect(lastError()).toBe(MISSING_PNG);
     expect(lambdaSend).not.toHaveBeenCalled();
+  });
+
+describe('the freeze', () => {
+    const withFreeze = (atSec: number, style: Record<string, unknown> = {}) => {
+      world.project = { ...projectFor(), freeze: { atSec }, style: { sizeScale: 1, lyricPosition: 'lower', ...style } };
+    };
+    it('takes the frame from the source at its time and uploads it as the `_freeze` overlay', async () => {
+      withFreeze(14.96);
+      let uploadedFreeze: string | undefined;
+      s3Override = (cmd) => {
+        if (cmd.kind === 'put' && String(cmd.input.Key).endsWith('overlay-_freeze.png')) uploadedFreeze = String(cmd.input.Key);
+        return undefined;
+      };
+      await render();
+      expect((world.project!.render as { status: string }).status).toBe('done');
+      const grab = world.ffArgs.find((a) => a.join(' ').includes('-frames:v 1'))!;
+      expect(grab.slice(grab.indexOf('-ss'), grab.indexOf('-ss') + 2)).toEqual(['-ss', '14.940000']);
+      expect(basename(grab[grab.indexOf('-i') + 1])).toBe('source.mp4');
+      expect(uploadedFreeze).toBe(overlayKey(PID, RID, '_freeze'));
+      expect(keysLeft()).toEqual([outputKey(PID, RID)]); // cleaned up with the other intermediates
+    });
+
+    it('lies under everything from its frame to the end: freeze, then logo, then text', async () => {
+      withFreeze(14.96, { logo: { show: true } });
+      world.store.set(overlayKey(PID, RID, '_logo'), Buffer.from('PNG'));
+      await render();
+      const byIndex = [...world.invoked].sort((a, b) => a.index - b.index);
+      expect(byIndex[0].overlays).toEqual([
+        { id: '_freeze', fromSec: 14.96, toSec: 20 },
+        { id: '_logo', fromSec: 0, toSec: 20 },
+        { id: 'title', fromSec: 0, toSec: 5 },
+        { id: 'l1', fromSec: 18, toSec: 20 },
+      ]);
+      expect(byIndex[1].overlays.slice(0, 2)).toEqual([{ id: '_freeze', fromSec: 0, toSec: 20 }, { id: '_logo', fromSec: 0, toSec: 20 }]);
+      expect(byIndex[2].overlays[0]).toEqual({ id: '_freeze', fromSec: 0, toSec: 5 });
+    });
+
+    it('a freeze outside the stored video is refused before any download', async () => {
+      withFreeze(45);
+      await render();
+      expect(lastError()).toMatch(/freeze is outside the video/);
+      expect(world.ffArgs).toEqual([]);
+    });
+
+    it('a frame that cannot be read fails the render with a clear message, before any chunk', async () => {
+      withFreeze(10);
+      freezeGrabFails = true;
+      await render();
+      expect(lastError()).toMatch(/frame to freeze on could not be read/);
+      expect(lambdaSend).not.toHaveBeenCalled();
+      expect(keysLeft()).toEqual([]);
+    });
+
+    it('no freeze: no frame taken and no freeze layer, as before', async () => {
+      await render();
+      expect(world.ffArgs.some((a) => a.join(' ').includes('-frames:v 1'))).toBe(false);
+      for (const spec of world.invoked) expect(spec.overlays.some((o) => o.id === '_freeze')).toBe(false);
+    });
   });
 
   it('a part set to fade: its blocks carry their fade to the chunks, with the video\'s frame rate', async () => {

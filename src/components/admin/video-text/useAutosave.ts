@@ -27,6 +27,7 @@ export const AUTOSAVE_DELAY_MS = 800;
 
 export type Edits = Pick<VideoTextProject, 'name' | 'titleText' | 'creditsText' | 'lyricsText' | 'blocks' | 'style'> & {
   cut: VideoTextProject['cut'];
+  freeze: VideoTextProject['freeze'];
 };
 
 export const editsOf = (p: VideoTextProject): Edits => ({
@@ -37,6 +38,7 @@ export const editsOf = (p: VideoTextProject): Edits => ({
   blocks: p.blocks,
   style: p.style,
   cut: p.cut ?? null,
+  freeze: p.freeze ?? null,
 });
 
 /** `held`: edits are waiting for the render start-up to finish (see `hold`). */

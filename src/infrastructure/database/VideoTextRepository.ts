@@ -14,6 +14,7 @@ import { DynamoDBOperations, handleDynamoDBError } from './dynamodb-client';
 import { floorCentis, isValidProjectId } from '@/lib/video-text/keys';
 import type {
   Cut,
+  Freeze,
   RenderState,
   SavedLogo,
   SourceInfo,
@@ -139,7 +140,7 @@ export class VideoTextRepository {
     id: string,
     edits: Pick<
       VideoTextProject,
-      'name' | 'titleText' | 'creditsText' | 'lyricsText' | 'blocks' | 'style' | 'cut'
+      'name' | 'titleText' | 'creditsText' | 'lyricsText' | 'blocks' | 'style' | 'cut' | 'freeze'
     >,
     expectedVersion: number
   ): Promise<{ ok: true; version: number } | { ok: false; reason: 'conflict' | 'missing' }> {
@@ -152,6 +153,7 @@ export class VideoTextRepository {
           'SET #name = :name, #titleText = :titleText, #creditsText = :creditsText,' +
           ' #lyricsText = :lyricsText, #blocks = :blocks, #style = :style,' +
           (edits.cut !== undefined ? ' #cut = :cut,' : '') +
+          (edits.freeze !== undefined ? ' #freeze = :freeze,' : '') +
           ' #version = :next, #updatedAt = :now, GSI1SK = :now',
         conditionExpression: 'attribute_exists(PK) AND #version = :expected',
         expressionAttributeNames: {
@@ -162,6 +164,7 @@ export class VideoTextRepository {
           '#blocks': 'blocks',
           '#style': 'style',
           ...(edits.cut !== undefined ? { '#cut': 'cut' } : {}),
+          ...(edits.freeze !== undefined ? { '#freeze': 'freeze' } : {}),
           '#version': 'version',
           '#updatedAt': 'updatedAt',
         },
@@ -173,6 +176,7 @@ export class VideoTextRepository {
           ':blocks': edits.blocks,
           ':style': edits.style,
           ...(edits.cut !== undefined ? { ':cut': edits.cut } : {}),
+          ...(edits.freeze !== undefined ? { ':freeze': edits.freeze } : {}),
           ':next': next,
           ':now': now,
           ':expected': expectedVersion,
@@ -204,6 +208,7 @@ export class VideoTextRepository {
     source: SourceInfo,
     blocks: TextBlock[],
     cut: Cut | null = null,
+    freeze: Freeze | null = null,
     now: number = Date.now()
   ): Promise<
     { ok: true; version: number; durationSec: number } | { ok: false; reason: 'missing' | 'rendering' }
@@ -216,7 +221,7 @@ export class VideoTextRepository {
       const attrs = await DynamoDBOperations.update({
         key: keyOf(id),
         updateExpression:
-          'SET #source = :source, #blocks = :blocks, #cut = :cut, #render = :render, #updatedAt = :now, GSI1SK = :now,' +
+          'SET #source = :source, #blocks = :blocks, #cut = :cut, #freeze = :freeze, #render = :render, #updatedAt = :now, GSI1SK = :now,' +
           ' #version = #version + :one',
         // Never create a project by attaching a source to one that does not exist.
         conditionExpression: `attribute_exists(PK) AND ${RENDER_SLOT_FREE}`,
@@ -225,6 +230,7 @@ export class VideoTextRepository {
           '#source': 'source',
           '#blocks': 'blocks',
           '#cut': 'cut',
+          '#freeze': 'freeze',
           '#version': 'version',
         },
         expressionAttributeValues: {
@@ -233,6 +239,7 @@ export class VideoTextRepository {
           ':source': stored,
           ':blocks': blocks,
           ':cut': cut,
+          ':freeze': freeze,
           ':render': idleRender(),
           ':now': stamp,
         },

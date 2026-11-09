@@ -25,6 +25,7 @@ import { OFFSET_MAX, fadeAlphaAt, trackStyleOf } from '@/lib/video-text/fonts';
 import { drawLogo, logoRect, logoStyleOf } from '@/lib/video-text/logo';
 import type { TextBlock, TextOffset, TextStyle, Track } from '@/types/videoText';
 import type { LogoImage } from './useSavedLogo';
+import { frameAt, seekTimeFor } from '@/lib/video-text/freeze';
 
 /** What a move box moves: a text part, or the logo. */
 export type MoveTarget = Track | 'logo';
@@ -45,13 +46,17 @@ export interface TextPreviewProps {
   onMove?(target: MoveTarget, offset: TextOffset): void;
   /** The saved logo, drawn when the style shows it (under the text, as in the render). */
   logo?: LogoImage | null;
+  /** The freeze: from this time the picture shows the frame at it (the render's held frame). */
+  freezeSec?: number | null;
+  /** The video's frame rate, to find the frozen frame. */
+  fps?: number;
   /** The playhead, so the move boxes follow the text that shows now. */
   timeSec?: number;
 }
 
 const activeAt = (blocks: TextBlock[], t: number) => blocks.filter((b) => t >= b.startSec && t < b.endSec);
 
-export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMove, timeSec = 0, logo = null }: TextPreviewProps) {
+export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMove, timeSec = 0, logo = null, freezeSec = null, fps = 25 }: TextPreviewProps) {
   const video = useRef<HTMLVideoElement | null>(null);
   const overlay = useRef<HTMLCanvasElement>(null);
   const offscreen = useRef<HTMLCanvasElement | null>(null);
@@ -59,6 +64,13 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMov
   const fontsReady = useRef(false);
   const lastTime = useRef(-1);
 
+  const still = useRef<HTMLCanvasElement>(null);
+  const stillVideo = useRef<HTMLVideoElement>(null);
+  const stillReady = useRef(false);
+  const latestFreeze = useRef<number | null>(freezeSec);
+  latestFreeze.current = freezeSec;
+  const latestFps = useRef(fps);
+  latestFps.current = fps;
   const latest = useRef({ blocks, style, frame, onTime, logo });
   const layerCanvas = useRef<HTMLCanvasElement | null>(null);
   latest.current = { blocks, style, frame, onTime, logo };
@@ -79,6 +91,11 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMov
     // Nothing to draw over until the video has a frame (HAVE_CURRENT_DATA).
     if (!v || !canvas || !fontsReady.current || v.readyState < 2) return;
     const { blocks: bs, style: st, frame: fr, logo: lg } = latest.current;
+    // The held frame covers the moving picture from the freeze on.
+    if (still.current) {
+      const f = latestFreeze.current;
+      still.current.style.visibility = f !== null && stillReady.current && frameAt(v.currentTime, latestFps.current) >= frameAt(f, latestFps.current) ? 'visible' : 'hidden';
+    }
     const showLogo = Boolean(lg) && logoStyleOf(st).show;
     const t = v.currentTime;
 
@@ -165,6 +182,39 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMov
       cancelled = true;
     };
   }, [paint, fontKey]);
+
+  // The freeze moved (or the video changed): grab its frame from a second, hidden copy of the video.
+  useEffect(() => {
+    stillReady.current = false;
+    const sv = stillVideo.current;
+    const canvas = still.current;
+    if (!sv || !canvas || freezeSec === null) {
+      paint();
+      return;
+    }
+    let cancelled = false;
+    const target = seekTimeFor(frameAt(freezeSec, fps), fps);
+    const grab = () => {
+      if (cancelled) return;
+      canvas.width = frame.width;
+      canvas.height = frame.height;
+      canvas.getContext('2d')?.drawImage(sv, 0, 0, frame.width, frame.height);
+      stillReady.current = true;
+      paint();
+    };
+    const seekIt = () => {
+      if (Math.abs(sv.currentTime - target) < 1e-4 && sv.readyState >= 2) grab();
+      else sv.currentTime = target;
+    };
+    sv.addEventListener('seeked', grab);
+    if (sv.readyState >= 1) seekIt();
+    else sv.addEventListener('loadedmetadata', seekIt, { once: true });
+    return () => {
+      cancelled = true;
+      sv.removeEventListener('seeked', grab);
+      sv.removeEventListener('loadedmetadata', seekIt);
+    };
+  }, [freezeSec, fps, videoUrl, frame.width, frame.height, paint]);
 
   // Text or style changed: redraw at the current time.
   useEffect(() => {
@@ -307,13 +357,21 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMov
     >
       <video
         ref={setVideo}
+        data-testid="preview-video"
         src={videoUrl}
         controls
         playsInline
         preload="metadata"
         className="absolute inset-0 h-full w-full"
       />
-      <canvas ref={overlay} aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full" />
+      {freezeSec !== null && (
+        <>
+          {/* A second copy of the video, only to grab the frozen frame from. */}
+          <video ref={stillVideo} src={videoUrl} muted playsInline preload="auto" aria-hidden="true" tabIndex={-1} className="pointer-events-none absolute h-px w-px opacity-0" />
+          <canvas ref={still} aria-hidden="true" data-testid="freeze-still" className="pointer-events-none absolute inset-0 h-full w-full" style={{ visibility: 'hidden' }} />
+        </>
+      )}
+      <canvas ref={overlay} aria-hidden="true" data-testid="text-overlay" className="pointer-events-none absolute inset-0 h-full w-full" />
       {moveBoxes().map((m) => (
         <div
           key={m.track}

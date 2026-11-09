@@ -16,11 +16,13 @@ import { adminFetch } from '@/lib/client-auth';
 import { putToS3 } from '@/lib/mastering-upload-client';
 import { MAX_VIDEO_TEXT_BYTES } from '@/lib/video-text/keys';
 import { syncTextToBlocks, unplacedLineCount, validateBlocks, type RememberedTimes } from '@/lib/video-text/timeline';
-import type { Cut, SourceInfo, TextBlock, LogoStyle, TextStyle, Track, TrackStyle, VideoTextProject } from '@/types/videoText';
+import type { Cut, Freeze, SourceInfo, TextBlock, LogoStyle, TextStyle, Track, TrackStyle, VideoTextProject } from '@/types/videoText';
 import { useAutosave, type AutosaveStatus } from './useAutosave';
 import { useRenderJob } from './useRenderJob';
 import { PartStyle } from './PartStyle';
 import { LogoPanel } from './LogoPanel';
+import { FreezeControls } from './FreezeControls';
+import { validateFreeze } from '@/lib/video-text/freeze';
 import { useSavedLogo } from './useSavedLogo';
 import { logoShown } from '@/lib/video-text/logo';
 import { TapToTime } from './TapToTime';
@@ -202,6 +204,10 @@ export function VideoTextEditor({
       return { ...p, blocks: placeable ? syncTextToBlocks(blocks, p, p.source!.durationSec, remembered.current) : blocks };
     });
   }, []);
+  const setFreeze = useCallback((freeze: Freeze | null) => {
+    setEditedSinceRender(true);
+    setProject((p) => ({ ...p, freeze }));
+  }, []);
   const setCut = useCallback((cut: Cut | null) => {
     setEditedSinceRender(true);
     setProject((p) => ({ ...p, cut }));
@@ -368,6 +374,7 @@ export function VideoTextEditor({
         // Text typed while the file uploaded is newer than what the server fitted.
         blocks: syncTextToBlocks(body.blocks as TextBlock[], p, source.durationSec),
         cut: (body.cut as Cut | null | undefined) ?? null,
+        freeze: (body.freeze as Freeze | null | undefined) ?? null,
         version: body.version,
       }));
       const moved = Number(body.moved) || 0;
@@ -471,7 +478,7 @@ export function VideoTextEditor({
         // The logo as saved now: replaced in another tab since this one opened → the new one.
         const logo = withLogo ? await savedLogo.latest() : null;
         if (typeof logo === 'string') return logo;
-        const problem = validateBlocks(blocks, source.durationSec) ?? validateCut(saved.edits.cut, source.durationSec);
+        const problem = validateBlocks(blocks, source.durationSec) ?? validateCut(saved.edits.cut, source.durationSec) ?? validateFreeze(saved.edits.freeze, source.durationSec);
         if (problem) return problem;
         return { blocks, style, frame: { width: source.width, height: source.height }, version: saved.version, logo };
       },
@@ -720,6 +727,8 @@ export function VideoTextEditor({
                   timeSec={playhead}
                   onMove={(target, offset) => (target === 'logo' ? setLogoStyle({ offset }) : setTrackStyle(target, { offset }))}
                   logo={logoImage}
+                  freezeSec={project.freeze?.atSec ?? null}
+                  fps={source.fps}
                 />
               ) : (
                 !previewError && <p className="text-sm text-gray-500 dark:text-gray-400">Loading the video…</p>
@@ -745,6 +754,7 @@ export function VideoTextEditor({
               cut={project.cut ?? null}
               fps={source.fps}
               onCutChange={setCut}
+              freezeSec={project.freeze?.atSec ?? null}
             />
           </div>
           <CutMarks
@@ -753,6 +763,16 @@ export function VideoTextEditor({
             fps={source.fps}
             playheadSec={playhead}
             onChange={setCut}
+            onSeek={seek}
+            disabled={uploading}
+            video={videoRef}
+          />
+          <FreezeControls
+            freeze={project.freeze ?? null}
+            durationSec={source.durationSec}
+            fps={source.fps}
+            playheadSec={playhead}
+            onChange={setFreeze}
             onSeek={seek}
             disabled={uploading}
             video={videoRef}
