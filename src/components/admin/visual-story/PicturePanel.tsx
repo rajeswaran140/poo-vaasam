@@ -39,7 +39,7 @@ import { estimateCostUsd } from '@/services/video/cost';
 import { clipRowSeconds, readClipDuration } from '@/lib/visual-story-clip-length';
 import { candIdForJob, OWN_CLIP_PROMPT } from '@/types/visualStory';
 import type { Candidate, GenJob, Scene, Shot, VisualStory } from '@/types/visualStory';
-import { RaiseBudgetButton, shotKey, Thumb, usd } from './ui-utils';
+import { RaiseBudgetButton, shotKey, Thumb, usd, VideoThumb } from './ui-utils';
 
 const DEFAULT_SECONDS = 8;
 /** A shot needs a prompt; for a picture it says how the picture should move. */
@@ -231,7 +231,7 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
       }
       for (const [i, file] of files.entries()) {
         if (!mounted.current) break;
-        const n = `clip ${i + 1} of ${files.length}`;
+        const n = `clip ${i + 1} of ${files.length} (${file.name})`;
         setProgress(`Reading ${n}…`);
         const len = clipRowSeconds(await readClipDuration(file));
         if (!len.ok) {
@@ -536,9 +536,14 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
               const clip = ownClipOf(s);
               return (
                 <li key={shotKey(s)} className="flex flex-wrap items-start gap-3 rounded-md border border-gray-200 p-2 text-sm dark:border-gray-700">
-                  <span aria-hidden className="flex h-14 w-14 items-center justify-center rounded bg-gray-100 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-400">
-                    MP4
-                  </span>
+                  {clip ? (
+                    // Playable, so the order of the clips can be checked before the render.
+                    <VideoThumb s3Key={clip.s3Key} label={`${name} preview`} />
+                  ) : (
+                    <span aria-hidden className="flex h-14 w-14 items-center justify-center rounded bg-gray-100 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+                      MP4
+                    </span>
+                  )}
                   <div className="min-w-0 flex-1 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium text-gray-900 dark:text-gray-100">{name}</span>

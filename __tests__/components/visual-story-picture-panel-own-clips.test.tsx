@@ -112,13 +112,19 @@ it('a clip too long, or one whose length cannot be read, is refused before anyth
 });
 
 it('a clip row shows its length, costs nothing, is never sent to Grok, and is chosen for the render', async () => {
-  routes((u, i) => (u.endsWith('/render') && i?.method === 'POST' ? json({ success: true, data: { renderId: 'rd_1' } }, 202) : undefined));
+  routes((u, i) => {
+    if (u.startsWith('/api/admin/mastering/download')) return json({ success: true, url: 'https://s3/play' });
+    return u.endsWith('/render') && i?.method === 'POST' ? json({ success: true, data: { renderId: 'rd_1' } }, 202) : undefined;
+  });
   // Row 1 your clip (not yet chosen), row 2 a still picture.
   setup({
     shots: [ownRow(1, 10, { selectedCandidateId: null }), shot(2, 8)],
     candidates: [cand(1, 'HERO', 'cd_own1', 'mp4'), cand(2, 'STILL', 'cd_p2', 'jpg')],
   });
   expect(screen.getByText('10 s · your clip (free)')).toBeInTheDocument();
+  // A playable preview, so the clips' order can be checked before rendering.
+  await flush();
+  expect(screen.getByLabelText('Clip 1 preview')).toHaveAttribute('src', 'https://s3/play');
   expect(screen.queryByLabelText('Seconds for clip 1')).not.toBeInTheDocument();
   expect(screen.queryByLabelText('How clip 1 plays')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Make the video (0 moving · $0.00)' }));
