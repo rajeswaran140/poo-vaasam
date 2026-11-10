@@ -101,22 +101,22 @@ describe('getGenJob', () => {
 });
 
 describe('transitionGenJob', () => {
-  it('terminal transition sends the status condition and REMOVEs the index keys', async () => {
+  it('terminal transition sends the status condition and KEEPS the index keys (settle drops them)', async () => {
     mockUpdate.mockResolvedValueOnce({ PK: 'p', SK: 's', ...job({ status: 'succeeded' }) });
     const out = await repo.transitionGenJob(VS, JOB, ['running'], 'succeeded', { providerTaskId: 't1' });
     const p = mockUpdate.mock.calls[0][0];
     expect(p.key).toEqual({ PK: vsPk(VS), SK: genJobSk(JOB) });
     expect(p.conditionExpression).toBe('attribute_exists(PK) AND #s IN (:from0)');
     expect(p.updateExpression).toMatch(/^SET .*#providerTaskId = :providerTaskId/);
-    expect(p.updateExpression).toMatch(/ REMOVE GSI1PK, GSI1SK$/);
+    expect(p.updateExpression).not.toContain('REMOVE');
     expect(p.expressionAttributeValues).toMatchObject({ ':to': 'succeeded', ':from0': 'running' });
     expect(out?.status).toBe('succeeded');
   });
 
-  it.each(['failed', 'cancelled'] as const)('removes the index on %s', async (to) => {
+  it.each(['failed', 'cancelled'] as const)('keeps the index on %s (an unsettled job must stay findable)', async (to) => {
     await repo.transitionGenJob(VS, JOB, ['submitted', 'running'], to);
     const p = mockUpdate.mock.calls[0][0];
-    expect(p.updateExpression).toContain('REMOVE GSI1PK, GSI1SK');
+    expect(p.updateExpression).not.toContain('REMOVE');
     expect(p.conditionExpression).toContain(':from0, :from1');
   });
 
@@ -154,7 +154,7 @@ describe('settleGenJob (Ruling V10)', () => {
     expect(mockTransact).toHaveBeenCalledTimes(1);
     const [jobOp, metaOp] = mockTransact.mock.calls[0][0];
     expect(jobOp.Update.Key).toEqual({ PK: vsPk(VS), SK: genJobSk(JOB) });
-    expect(jobOp.Update.UpdateExpression).toBe('SET settledAt = :now, billedUsd = :b');
+    expect(jobOp.Update.UpdateExpression).toBe('SET settledAt = :now, billedUsd = :b REMOVE GSI1PK, GSI1SK');
     expect(jobOp.Update.ConditionExpression).toBe('attribute_exists(PK) AND attribute_not_exists(settledAt)');
     expect(jobOp.Update.ExpressionAttributeValues).toEqual({ ':now': expect.any(String), ':b': 0.4 });
     expect(metaOp.Update.Key).toEqual({ PK: vsPk(VS), SK: 'METADATA' });
@@ -175,19 +175,59 @@ describe('settleGenJob (Ruling V10)', () => {
     expect(await repo.settleGenJob(VS, JOB, { reservedUsd: 0.4, billedUsd: 0.4 })).toBe(false);
   });
 
-  it('story missing ⇒ logged, false', async () => {
+  it('story missing ⇒ logged, false, and the orphan job is stamped and dropped from the index', async () => {
     const log = jest.spyOn(console, 'error').mockImplementation(() => {});
     mockTransact.mockRejectedValueOnce(cancelled(['None', 'ConditionalCheckFailed']));
     expect(await repo.settleGenJob(VS, JOB, { reservedUsd: 0.4, billedUsd: 0.4 })).toBe(false);
     expect(log).toHaveBeenCalled();
+    const p = mockUpdate.mock.calls[0][0];
+    expect(p.key).toEqual({ PK: vsPk(VS), SK: genJobSk(JOB) });
+    expect(p.updateExpression).toBe('SET settledAt = :now REMOVE GSI1PK, GSI1SK');
+    expect(p.conditionExpression).toBe('attribute_exists(PK) AND attribute_not_exists(settledAt)');
     log.mockRestore();
   });
 
-  it('any other cancellation (e.g. a write conflict) is thrown, never taken as settled', async () => {
-    mockTransact.mockRejectedValueOnce(cancelled(['TransactionConflict', 'None']));
+  it('story missing and the orphan drop fails ⇒ still false, never thrown', async () => {
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockTransact.mockRejectedValueOnce(cancelled(['None', 'ConditionalCheckFailed']));
+    mockUpdate.mockRejectedValueOnce(new Error('ddb down'));
+    expect(await repo.settleGenJob(VS, JOB, { reservedUsd: 0.4, billedUsd: 0.4 })).toBe(false);
+    log.mockRestore();
+  });
+
+  it.each([
+    ['TransactionConflict', 'None'],
+    ['None', 'TransactionConflict'],
+    ['None', 'ThrottlingError'],
+  ])('a write conflict or throttle (%s, %s) is retried, then settles', async (a, b) => {
+    mockTransact.mockRejectedValueOnce(cancelled([a, b]));
+    expect(await repo.settleGenJob(VS, JOB, { reservedUsd: 0.4, billedUsd: 0.4 })).toBe(true);
+    expect(mockTransact).toHaveBeenCalledTimes(2);
+  });
+
+  it('a conflict that lands after the first try committed reads as already settled (no double count)', async () => {
+    mockTransact
+      .mockRejectedValueOnce(cancelled(['TransactionConflict', 'None']))
+      .mockRejectedValueOnce(cancelled(['ConditionalCheckFailed', 'None']));
+    expect(await repo.settleGenJob(VS, JOB, { reservedUsd: 0.4, billedUsd: 0.4 })).toBe(false);
+  });
+
+  it('a conflict on every try is thrown after 3 attempts, never taken as settled', async () => {
+    mockTransact.mockRejectedValue(cancelled(['TransactionConflict', 'None']));
     await expect(repo.settleGenJob(VS, JOB, { reservedUsd: 0.4, billedUsd: 0.4 })).rejects.toMatchObject({
       name: 'DynamoDBError',
     });
+    expect(mockTransact).toHaveBeenCalledTimes(3);
+    mockTransact.mockReset();
+    mockTransact.mockResolvedValue(undefined);
+  });
+
+  it('any other cancellation is thrown at once, never retried or taken as settled', async () => {
+    mockTransact.mockRejectedValueOnce(cancelled(['ValidationError', 'None']));
+    await expect(repo.settleGenJob(VS, JOB, { reservedUsd: 0.4, billedUsd: 0.4 })).rejects.toMatchObject({
+      name: 'DynamoDBError',
+    });
+    expect(mockTransact).toHaveBeenCalledTimes(1);
   });
 
   it('other storage errors are wrapped', async () => {

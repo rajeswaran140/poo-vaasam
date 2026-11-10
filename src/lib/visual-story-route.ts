@@ -35,6 +35,37 @@ export function limitMutation(
   return rl.allowed ? null : rateLimitedResponse(rl);
 }
 
+const usd = (n: number) => `$${n.toFixed(2)}`;
+
+/**
+ * The refusal for a `reserve` that returned false, built from a FRESH read of
+ * the story (the pre-reserve copy can be stale and contradict itself). Says
+ * what the action costs, what is free, and where the rest went: spent, and
+ * held for work still running. reserve also refuses when the cap changed under
+ * it; if the fresh read has room, that was the cause → 409 "try again", not 402.
+ */
+export async function overBudget(
+  repo: Pick<VisualStoryRepository, 'findById'>,
+  vsId: string,
+  costUsd: number
+): Promise<Response> {
+  let story: VisualStory | null = null;
+  try {
+    story = await repo.findById(vsId, { consistentRead: true });
+  } catch {
+    /* fall through to the plain message */
+  }
+  if (!story) return fail("This would go over the story's budget.", 402);
+  const { budgetUsdCap: cap, spentUsd: spent, reservedUsd: held } = story;
+  const free = Math.max(0, cap - (story.committedUsd ?? spent + held));
+  if (free + 1e-9 >= costUsd) return fail('The budget changed just now. Try again.', 409);
+  // Round the cost UP and the room DOWN, so the two shown never look equal.
+  const needs = Math.ceil(costUsd * 100 - 1e-6) / 100;
+  const left = Math.floor(free * 100 + 1e-6) / 100;
+  const where = held >= 0.005 ? `${usd(spent)} spent, ${usd(held)} held for work still running` : `${usd(spent)} spent`;
+  return fail(`This needs ${usd(needs)}, but only ${usd(left)} of the ${usd(cap)} budget is left (${where}).`, 402);
+}
+
 export function mapError(err: unknown) {
   if (err instanceof CapBelowCommittedError) return fail(err.message, 409);
   if (err instanceof NotFoundError) return fail('That item no longer exists.', 404);

@@ -26,7 +26,7 @@ import { settleQuietly } from '@/services/video/storyboard-job';
 import { estimateCostUsd } from '@/services/video/cost';
 import { candIdForJob, isVsId, newId } from '@/types/visualStory';
 import type { GenJob } from '@/types/visualStory';
-import { fail, limitMutation, mapError } from '@/lib/visual-story-route';
+import { fail, limitMutation, mapError, overBudget } from '@/lib/visual-story-route';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -116,13 +116,7 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     } catch (err) {
       return mapError(err);
     }
-    if (!reserved) {
-      const { spentUsd, budgetUsdCap } = tree.story;
-      return fail(
-        `This would go over the story's budget ($${spentUsd.toFixed(2)} of $${budgetUsdCap.toFixed(2)}).`,
-        402
-      );
-    }
+    if (!reserved) return overBudget(repo, vsId, est);
 
     // From here a reservation is held.
     const now = new Date().toISOString();
@@ -194,7 +188,8 @@ export async function POST(request: NextRequest, { params }: Ctx) {
       try {
         await repo.settleGenJob(vsId, jobId, { reservedUsd: est, billedUsd });
       } catch (err) {
-        // The job is terminal with its billed amount stored: the next advance settles it.
+        // The job is terminal with its billed amount stored and stays in the in-flight
+        // index until settled: its poll or "Check rendering videos" settles it.
         console.error('visual-story video: settle failed', jobId, errName(err));
       }
     }

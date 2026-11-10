@@ -63,6 +63,16 @@ describe('POST reconcile', () => {
     expect(mockAdvance).not.toHaveBeenCalled();
   });
 
+  it('a finished job whose settle failed is still listed, so the sweep advances (settles) it (audit K1)', async () => {
+    now.mockReturnValue(1_000_000);
+    const owed = { vsId: VS, job: { ...job(4, 'succeeded'), billedUsd: 0.48 } };
+    repo.listInflight.mockResolvedValue([owed]);
+    mockAdvance.mockImplementation(async (_r, _p, _vs, j) => ({ ...j, settledAt: 't' }));
+    const res = await POST(post());
+    expect(mockAdvance).toHaveBeenCalledWith(repo, provider, VS, owed.job);
+    expect(await res.json()).toEqual({ success: true, data: { checked: 1, finished: 1, stillRunning: 0 } });
+  });
+
   it('advances every in-flight job once, sequentially, and reports the counts', async () => {
     now.mockReturnValue(1_000_000);
     repo.listInflight.mockResolvedValue(inflight(1, 2, 3));

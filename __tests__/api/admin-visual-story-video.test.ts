@@ -10,6 +10,7 @@ jest.mock('@/lib/auth-helper', () => ({
 
 const repo = {
   loadTree: jest.fn(),
+  findById: jest.fn(),
   reserve: jest.fn(),
   settle: jest.fn(),
   settleGenJob: jest.fn(),
@@ -264,12 +265,44 @@ describe('POST video — money paths', () => {
 
   it('reserve false ⇒ 402 with the spend copy; no job, no submit, no settle', async () => {
     repo.reserve.mockResolvedValueOnce(false);
+    repo.findById.mockResolvedValueOnce(tree().story);
     const res = await POST(mk(), sctx());
     expect(res.status).toBe(402);
-    expect((await res.json()).error).toBe("This would go over the story's budget ($39.90 of $40.00).");
+    expect((await res.json()).error).toBe(
+      'This needs $0.48, but only $0.10 of the $40.00 budget is left ($39.90 spent).'
+    );
+    expect(repo.findById).toHaveBeenCalledWith(VS, { consistentRead: true });
     expect(repo.createGenJob).not.toHaveBeenCalled();
     expect(provider.submit).not.toHaveBeenCalled();
     expect(repo.settle).not.toHaveBeenCalled();
+  });
+
+  it('402 copy is built from a FRESH read and names what is held for work still running', async () => {
+    repo.reserve.mockResolvedValueOnce(false);
+    // The tree said $39.90 spent; since then $0.40 more was reserved by another clip.
+    repo.findById.mockResolvedValueOnce({ ...tree().story, spentUsd: 39.5, reservedUsd: 0.4, committedUsd: 39.9 });
+    const res = await POST(mk(), sctx());
+    expect(res.status).toBe(402);
+    expect((await res.json()).error).toBe(
+      'This needs $0.48, but only $0.10 of the $40.00 budget is left ($39.50 spent, $0.40 held for work still running).'
+    );
+  });
+
+  it('reserve false but the fresh read has room (the cap changed under it) ⇒ 409 try again, not 402', async () => {
+    repo.reserve.mockResolvedValueOnce(false);
+    repo.findById.mockResolvedValueOnce({ ...tree().story, budgetUsdCap: 50 });
+    const res = await POST(mk(), sctx());
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('The budget changed just now. Try again.');
+    expect(repo.createGenJob).not.toHaveBeenCalled();
+  });
+
+  it('reserve false and the fresh read fails ⇒ still a plain 402', async () => {
+    repo.reserve.mockResolvedValueOnce(false);
+    repo.findById.mockRejectedValueOnce(new Error('ddb down'));
+    const res = await POST(mk(), sctx());
+    expect(res.status).toBe(402);
+    expect((await res.json()).error).toBe("This would go over the story's budget.");
   });
 
   it('submit rate_limit ⇒ 429, job failed with code+error, settled unbilled once', async () => {

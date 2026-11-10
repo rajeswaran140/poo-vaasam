@@ -64,6 +64,10 @@ const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
 
 /** Delete fan-out: bounded so a large story does not burst the table's write capacity. */
 const DELETE_CONCURRENCY = 10;
+/** settle / settleGenJob try this many times on a write conflict (and settleGenJob on a throttle), ~0.1–0.45 s in all. */
+const SETTLE_ATTEMPTS = 3;
+const SETTLE_BACKOFF_MS = 50;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** DynamoDB TransactWriteItems accepts at most 100 operations. */
 export const MAX_TRANSACT_ITEMS = 100;
@@ -225,9 +229,10 @@ export class VisualStoryRepository {
     }
   }
 
-  async findById(vsId: string): Promise<VisualStory | null> {
+  /** `consistentRead`: see a write that just returned (the over-budget message reads after a refused reserve). */
+  async findById(vsId: string, opts: { consistentRead?: boolean } = {}): Promise<VisualStory | null> {
     try {
-      const item = await DynamoDBOperations.get(metaKey(vsId));
+      const item = await DynamoDBOperations.get(metaKey(vsId), opts.consistentRead ? { consistentRead: true } : {});
       return item ? toStory(item) : null;
     } catch (error) {
       fail(error);
@@ -389,21 +394,31 @@ export class VisualStoryRepository {
    * Conditional on the story existing: a story deleted mid-call raises
    * NotFoundError (callers log and swallow it) instead of an ADD upserting a
    * stub METADATA row with only money counters.
+   *
+   * A TransactionConflictException (METADATA is held by a clip's settleGenJob
+   * transaction at that moment) is retried up to SETTLE_ATTEMPTS times: DynamoDB
+   * rejected the write without applying it, and the SDK does not retry this
+   * code. Nothing else is retried — a timeout may have applied the ADD.
    */
   async settle(vsId: string, args: { reservedUsd: number; billedUsd: number }): Promise<void> {
     const r = round6(args.reservedUsd);
     const b = round6(args.billedUsd);
     try {
-      try {
-        await DynamoDBOperations.update({
-          key: metaKey(vsId),
-          updateExpression: 'ADD reservedUsd :negR, spentUsd :b, committedUsd :delta',
-          expressionAttributeValues: { ':negR': -r, ':b': b, ':delta': round6(b - r) },
-          conditionExpression: 'attribute_exists(PK)',
-        });
-      } catch (error) {
-        if (isConditionFailure(error)) throw new NotFoundError(`settle: visual story ${vsId} not found`);
-        throw error;
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await DynamoDBOperations.update({
+            key: metaKey(vsId),
+            updateExpression: 'ADD reservedUsd :negR, spentUsd :b, committedUsd :delta',
+            expressionAttributeValues: { ':negR': -r, ':b': b, ':delta': round6(b - r) },
+            conditionExpression: 'attribute_exists(PK)',
+          });
+          return;
+        } catch (error) {
+          if (isConditionFailure(error)) throw new NotFoundError(`settle: visual story ${vsId} not found`);
+          const conflict = (error as { name?: string } | null)?.name === 'TransactionConflictException';
+          if (!conflict || attempt >= SETTLE_ATTEMPTS) throw error;
+        }
+        await sleep(SETTLE_BACKOFF_MS * attempt * (0.5 + Math.random()));
       }
     } catch (error) {
       fail(error);
@@ -708,7 +723,9 @@ export class VisualStoryRepository {
   /**
    * Conditional transition (same contract as `transitionDraftJob`): the updated
    * job, or null when the job is gone or not in one of `from`. A terminal `to`
-   * also drops the row from the in-flight index.
+   * does NOT drop the row from the in-flight index: settleGenJob does that in
+   * the same transaction that moves the money, so a job whose settle failed
+   * stays where reconcile finds it (audit 2026-11-09, K1).
    */
   async transitionGenJob(
     vsId: string,
@@ -728,11 +745,10 @@ export class VisualStoryRepository {
         sets.push(`#${f} = :${f}`);
       }
       from.forEach((st, i) => (values[`:from${i}`] = st));
-      const terminal = to === 'succeeded' || to === 'failed' || to === 'cancelled';
       try {
         const item = await DynamoDBOperations.update({
           key: { PK: vsPk(vsId), SK: genJobSk(jobId) },
-          updateExpression: `SET ${sets.join(', ')}${terminal ? ' REMOVE GSI1PK, GSI1SK' : ''}`,
+          updateExpression: `SET ${sets.join(', ')}`,
           expressionAttributeNames: names,
           expressionAttributeValues: values,
           conditionExpression: `attribute_exists(PK) AND #s IN (${from.map((_, i) => `:from${i}`).join(', ')})`,
@@ -750,14 +766,19 @@ export class VisualStoryRepository {
   /**
    * Settle a video job's reservation exactly once (Ruling V10): ONE
    * transaction that stamps GENJOB# `settledAt`/`billedUsd` (only if not yet
-   * settled) and moves the story's money as `settle` does. Repeatable: a
-   * crash between a won terminal transition and this call is finished by the
-   * next advance, and a second call is a no-op.
+   * settled), drops the row from the in-flight index, and moves the story's
+   * money as `settle` does. Repeatable: until it commits the job stays in the
+   * index, so reconcile (or the job's own poll) finishes it; a second call is
+   * a no-op.
+   *
+   * A write conflict or throttle (several clips settling against the same
+   * METADATA row at once) is retried up to SETTLE_ATTEMPTS times; safe
+   * because the settledAt condition makes a repeat return false.
    *
    * true = settled now. false = already settled (the settledAt condition), or
-   * the story is gone (logged). Any other cancellation — e.g. a write conflict
-   * with a concurrent touch — is thrown, never taken as "settled", so the
-   * caller can retry rather than strand the reservation.
+   * the story is gone (logged; the orphan job is stamped and dropped from the
+   * index so it cannot keep "Check rendering videos" lit). Anything else is
+   * thrown, never taken as "settled", so a later advance retries it.
    */
   async settleGenJob(
     vsId: string,
@@ -767,41 +788,79 @@ export class VisualStoryRepository {
     const r = round6(args.reservedUsd);
     const b = round6(args.billedUsd);
     try {
-      try {
-        await DynamoDBOperations.transactWrite([
-          {
-            Update: {
-              Key: { PK: vsPk(vsId), SK: genJobSk(jobId) },
-              UpdateExpression: 'SET settledAt = :now, billedUsd = :b',
-              // attribute_exists(PK): never upsert a stub row for a job that is gone.
-              ConditionExpression: 'attribute_exists(PK) AND attribute_not_exists(settledAt)',
-              ExpressionAttributeValues: { ':now': new Date().toISOString(), ':b': b },
-            },
-          },
-          {
-            Update: {
-              Key: metaKey(vsId),
-              UpdateExpression: 'ADD reservedUsd :negR, spentUsd :b, committedUsd :delta',
-              ConditionExpression: 'attribute_exists(PK)',
-              ExpressionAttributeValues: { ':negR': -r, ':b': b, ':delta': round6(b - r) },
-            },
-          },
-        ]);
-        return true;
-      } catch (error) {
-        const reasons = (error as { name?: string; CancellationReasons?: Array<{ Code?: string }> } | null);
-        if (reasons?.name === 'TransactionCanceledException' && Array.isArray(reasons.CancellationReasons)) {
-          const [jobReason, storyReason] = reasons.CancellationReasons.map((c) => c?.Code);
-          if (jobReason === 'ConditionalCheckFailed') return false;
-          if (storyReason === 'ConditionalCheckFailed') {
-            console.error('visual-story settleGenJob: story not found', vsId, jobId);
-            return false;
-          }
+      for (let attempt = 1; ; attempt++) {
+        const outcome = await this.trySettleGenJob(vsId, jobId, r, b);
+        if (outcome !== 'retry') return outcome;
+        if (attempt >= SETTLE_ATTEMPTS) {
+          throw Object.assign(new Error('settleGenJob: still conflicting after retries'), {
+            name: 'TransactionConflict',
+          });
         }
-        throw error;
+        await sleep(SETTLE_BACKOFF_MS * attempt * (0.5 + Math.random()));
       }
     } catch (error) {
       fail(error);
+    }
+  }
+
+  /** One settle transaction: true/false as settleGenJob, 'retry' on a conflict or throttle; anything else throws. */
+  private async trySettleGenJob(vsId: string, jobId: string, r: number, b: number): Promise<boolean | 'retry'> {
+    try {
+      await DynamoDBOperations.transactWrite([
+        {
+          Update: {
+            Key: { PK: vsPk(vsId), SK: genJobSk(jobId) },
+            UpdateExpression: 'SET settledAt = :now, billedUsd = :b REMOVE GSI1PK, GSI1SK',
+            // attribute_exists(PK): never upsert a stub row for a job that is gone.
+            ConditionExpression: 'attribute_exists(PK) AND attribute_not_exists(settledAt)',
+            ExpressionAttributeValues: { ':now': new Date().toISOString(), ':b': b },
+          },
+        },
+        {
+          Update: {
+            Key: metaKey(vsId),
+            UpdateExpression: 'ADD reservedUsd :negR, spentUsd :b, committedUsd :delta',
+            ConditionExpression: 'attribute_exists(PK)',
+            ExpressionAttributeValues: { ':negR': -r, ':b': b, ':delta': round6(b - r) },
+          },
+        },
+      ]);
+      return true;
+    } catch (error) {
+      const reasons = (error as { name?: string; CancellationReasons?: Array<{ Code?: string }> } | null);
+      if (reasons?.name === 'TransactionCanceledException' && Array.isArray(reasons.CancellationReasons)) {
+        const [jobReason, storyReason] = reasons.CancellationReasons.map((c) => c?.Code);
+        if (jobReason === 'ConditionalCheckFailed') return false;
+        if (storyReason === 'ConditionalCheckFailed') {
+          console.error('visual-story settleGenJob: story not found', vsId, jobId);
+          await this.dropOrphanGenJob(vsId, jobId);
+          return false;
+        }
+        if ([jobReason, storyReason].some((c) => c === 'TransactionConflict' || c === 'ThrottlingError')) {
+          return 'retry';
+        }
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * The story is gone but its job row survived the (non-atomic) delete: stamp
+   * it settled — there is no money left to move — and drop it from the
+   * in-flight index. Best effort: a failure is logged and the next sweep retries.
+   */
+  private async dropOrphanGenJob(vsId: string, jobId: string): Promise<void> {
+    try {
+      await DynamoDBOperations.update({
+        key: { PK: vsPk(vsId), SK: genJobSk(jobId) },
+        updateExpression: 'SET settledAt = :now REMOVE GSI1PK, GSI1SK',
+        conditionExpression: 'attribute_exists(PK) AND attribute_not_exists(settledAt)',
+        expressionAttributeValues: { ':now': new Date().toISOString() },
+      });
+    } catch (error) {
+      if (!isConditionFailure(error)) {
+        console.error('visual-story settleGenJob: orphan drop failed', jobId, error instanceof Error ? error.name : 'error');
+      }
     }
   }
 
@@ -863,7 +922,10 @@ export class VisualStoryRepository {
     }
   }
 
-  /** Every non-terminal video job across all stories (sparse GSI1, paginated). */
+  /**
+   * Every video job that still owes work, across all stories (sparse GSI1,
+   * paginated): non-terminal, or terminal with its settle not yet committed.
+   */
   async listInflight(): Promise<Array<{ vsId: string; job: GenJob }>> {
     try {
       const out: Array<{ vsId: string; job: GenJob }> = [];

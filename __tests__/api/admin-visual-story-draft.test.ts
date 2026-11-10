@@ -204,7 +204,9 @@ describe('POST draft (enqueue only)', () => {
     repo.reserve.mockResolvedValueOnce(false);
     const res = await draftPOST(mk({ lyrics: LYRICS }), ctx());
     expect(res.status).toBe(402);
-    expect((await res.json()).error).toBe("This would go over the story's budget ($39.95 of $40.00).");
+    expect((await res.json()).error).toBe(
+      `This needs $${(Math.ceil(RESERVE * 100 - 1e-6) / 100).toFixed(2)}, but only $0.05 of the $40.00 budget is left ($39.95 spent).`
+    );
     expect(repo.createDraftJob).not.toHaveBeenCalled();
     expect(mockSend).not.toHaveBeenCalled();
     expect(repo.settle).not.toHaveBeenCalled();
