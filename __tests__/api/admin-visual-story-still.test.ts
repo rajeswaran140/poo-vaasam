@@ -10,6 +10,7 @@ jest.mock('@/lib/auth-helper', () => ({
 
 const repo = {
   loadTree: jest.fn(),
+  findById: jest.fn(),
   reserve: jest.fn(),
   settle: jest.fn(),
   putCandidate: jest.fn(),
@@ -177,9 +178,12 @@ describe('POST still — money paths', () => {
 
   it('reserve false ⇒ 402 with spend copy; provider never called, nothing settled', async () => {
     repo.reserve.mockResolvedValueOnce(false);
+    repo.findById.mockResolvedValueOnce(tree().story);
     const res = await stillPOST(mk(), sctx());
     expect(res.status).toBe(402);
-    expect((await res.json()).error).toBe("This would go over the story's budget ($39.99 of $40.00).");
+    expect((await res.json()).error).toBe(
+      'This needs $0.02, but only $0.01 of the $40.00 budget is left ($39.99 spent).'
+    );
     expect(mockGenerate).not.toHaveBeenCalled();
     expect(repo.settle).not.toHaveBeenCalled();
     expect(mockUpload).not.toHaveBeenCalled();

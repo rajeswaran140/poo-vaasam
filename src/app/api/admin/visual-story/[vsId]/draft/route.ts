@@ -31,7 +31,7 @@ import { VisualStoryRepository } from '@/infrastructure/database/VisualStoryRepo
 import { draftReserveUsd } from '@/services/video/cost';
 import { settleQuietly, sweepStaleDraftJobs, type StoryboardJobEvent } from '@/services/video/storyboard-job';
 import { draftRequestSchema, isVsId, newId, type DraftJob } from '@/types/visualStory';
-import { fail, limitMutation, mapError } from '@/lib/visual-story-route';
+import { fail, limitMutation, mapError, overBudget } from '@/lib/visual-story-route';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -84,12 +84,7 @@ export async function POST(request: NextRequest, { params }: Ctx) {
   } catch (err) {
     return mapError(err);
   }
-  if (!reserved) {
-    return fail(
-      `This would go over the story's budget ($${story.spentUsd.toFixed(2)} of $${story.budgetUsdCap.toFixed(2)}).`,
-      402
-    );
-  }
+  if (!reserved) return overBudget(repo, vsId, reserveUsd);
 
   // From here a reservation is held: it is released here on every failure path,
   // or handed to the worker (which settles it) once the invoke is accepted.

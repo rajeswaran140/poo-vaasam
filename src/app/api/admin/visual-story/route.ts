@@ -68,7 +68,8 @@ export async function GET(request: NextRequest) {
         return { ...story, shotCount: null };
       }
     });
-    // Drives the "Check rendering videos (N)" button; a failed count hides it, never the list.
+    // Drives the "Check rendering videos (N)" button: clips still rendering, plus any
+    // finished clip whose money is not settled yet. A failed count hides it, never the list.
     let inflightCount = 0;
     try {
       inflightCount = (await repo.listInflight()).length;

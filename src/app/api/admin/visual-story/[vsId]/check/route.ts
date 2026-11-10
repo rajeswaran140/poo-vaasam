@@ -28,7 +28,7 @@ import {
   type CheckJobEvent,
 } from '@/services/video/check-job';
 import { checkRequestSchema, isVsId, newId, type StoryCheck } from '@/types/visualStory';
-import { fail, limitMutation, mapError } from '@/lib/visual-story-route';
+import { fail, limitMutation, mapError, overBudget } from '@/lib/visual-story-route';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -77,14 +77,12 @@ export async function POST(request: NextRequest, { params }: Ctx) {
   const lyrics = parsed.data.lyrics || undefined;
 
   const repo = new VisualStoryRepository();
-  let story;
   let event: CheckJobEvent;
   let reserveUsd: number;
   let shotsHash: string;
   try {
     const tree = await repo.loadTree(vsId);
     if (!tree) return fail('That story no longer exists.', 404);
-    story = tree.story;
     if (tree.shots.length === 0) return fail('Add some shots first: there is nothing to check yet.', 400);
     if ((await sweepStaleChecks(repo, vsId)).some(isCheckInFlight)) {
       return fail('A check is already running. Wait for it to finish.', 409);
@@ -96,12 +94,7 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     if (Buffer.byteLength(JSON.stringify(event)) > MAX_CHECK_EVENT_BYTES) {
       return fail('This storyboard is too long to check in one go.', 413);
     }
-    if (!(await repo.reserve(vsId, reserveUsd))) {
-      return fail(
-        `This would go over the story's budget ($${story.spentUsd.toFixed(2)} of $${story.budgetUsdCap.toFixed(2)}).`,
-        402
-      );
-    }
+    if (!(await repo.reserve(vsId, reserveUsd))) return overBudget(repo, vsId, reserveUsd);
   } catch (err) {
     return mapError(err);
   }

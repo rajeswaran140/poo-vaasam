@@ -353,6 +353,34 @@ describe('settle', () => {
     await expect(repo.settle(VS, { reservedUsd: 0.02, billedUsd: 0.02 })).rejects.toBeInstanceOf(NotFoundError);
     expect(store.size).toBe(0);
   });
+
+  const conflict = () => Object.assign(new Error('held by a transaction'), { name: 'TransactionConflictException' });
+
+  it('a TransactionConflictException (a clip settle holds METADATA) is retried and applied once', async () => {
+    const id = await seedReserved(0.02);
+    const calls = mockUpdate.mock.calls.length;
+    mockUpdate.mockRejectedValueOnce(conflict());
+    await repo.settle(id, { reservedUsd: 0.02, billedUsd: 0.02 });
+    expect(mockUpdate.mock.calls.length - calls).toBe(2);
+    expect(meta(id)).toMatchObject({ reservedUsd: 0, spentUsd: 0.02, committedUsd: 0.02 });
+  });
+
+  it('a conflict on every try is thrown after 3 attempts', async () => {
+    const id = await seedReserved(0.02);
+    const calls = mockUpdate.mock.calls.length;
+    mockUpdate.mockRejectedValueOnce(conflict()).mockRejectedValueOnce(conflict()).mockRejectedValueOnce(conflict());
+    await expect(repo.settle(id, { reservedUsd: 0.02, billedUsd: 0 })).rejects.toMatchObject({ name: 'TransactionConflictException' });
+    expect(mockUpdate.mock.calls.length - calls).toBe(3);
+    expect(meta(id)).toMatchObject({ reservedUsd: 0.02 });
+  });
+
+  it('any other error (e.g. a timeout that may have applied the ADD) is never retried', async () => {
+    const id = await seedReserved(0.02);
+    const calls = mockUpdate.mock.calls.length;
+    mockUpdate.mockRejectedValueOnce(Object.assign(new Error('t'), { name: 'TimeoutError' }));
+    await expect(repo.settle(id, { reservedUsd: 0.02, billedUsd: 0 })).rejects.toMatchObject({ name: 'TimeoutError' });
+    expect(mockUpdate.mock.calls.length - calls).toBe(1);
+  });
 });
 
 describe('countShots', () => {

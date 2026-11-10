@@ -20,7 +20,7 @@ import { estimateCostUsd } from '@/services/video/cost';
 import { candidateKey } from '@/lib/visual-story-storage';
 import { isVsId, newId } from '@/types/visualStory';
 import type { Candidate, Character, Shot } from '@/types/visualStory';
-import { chooseIfNone, fail, limitMutation, mapError } from '@/lib/visual-story-route';
+import { chooseIfNone, fail, limitMutation, mapError, overBudget } from '@/lib/visual-story-route';
 import { withStyle } from '@/lib/visual-story-style';
 
 export const runtime = 'nodejs';
@@ -79,13 +79,7 @@ export async function POST(request: NextRequest, { params }: Ctx) {
   } catch (err) {
     return mapError(err);
   }
-  if (!reserved) {
-    const { spentUsd, budgetUsdCap } = tree.story;
-    return fail(
-      `This would go over the story's budget ($${spentUsd.toFixed(2)} of $${budgetUsdCap.toFixed(2)}).`,
-      402
-    );
-  }
+  if (!reserved) return overBudget(repo, vsId, est);
 
   // From here a reservation is held: exactly one settle, whatever happens.
   const shot = tree.shots.find((s) => s.sceneOrder === sceneOrder && s.shotOrder === shotOrder)!;
