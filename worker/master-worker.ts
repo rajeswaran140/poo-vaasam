@@ -146,6 +146,7 @@ import { RENDER_MAX_QUEUE_MS } from '@/lib/visual-story-render';
 import {
   ASPECT_RATIOS,
   MAX_SHOT_SEC,
+  MAX_OWN_CLIP_SEC,
   MAX_WINDOW_SEC,
   MIN_SHOT_SEC,
   MIN_WINDOW_SEC,
@@ -2040,7 +2041,9 @@ function readAssembly(spec: NonNullable<MasterEvent['assemble']>, vsId: string):
     };
     if (!Number.isInteger(sh.sceneOrder) || !Number.isInteger(sh.shotOrder)) return bad('A shot in the render is malformed.');
     if (!isAssemblyShotKey(sh.key, vsId)) return bad(`${shotLabel(sh)}: that file cannot be used in the video.`);
-    if (!Number.isInteger(sh.durationSec) || sh.durationSec < MIN_SHOT_SEC || sh.durationSec > MAX_SHOT_SEC) {
+    // A clip may run to MAX_OWN_CLIP_SEC (the owner's own uploaded clip keeps its length); a still stays within MAX_SHOT_SEC.
+    const maxSec = assemblyKindOf(sh.key) === 'clip' ? MAX_OWN_CLIP_SEC : MAX_SHOT_SEC;
+    if (!Number.isInteger(sh.durationSec) || sh.durationSec < MIN_SHOT_SEC || sh.durationSec > maxSec) {
       return bad(`${shotLabel(sh)} has a length this renderer does not accept.`);
     }
     shots.push(sh);

@@ -28,7 +28,16 @@ export const MIN_WINDOW_SEC = 30;
  */
 export const MAX_WINDOW_SEC = 420;
 export const MIN_SHOT_SEC = 1;
+/** The longest clip Grok makes, so the longest shot it is asked for. */
 export const MAX_SHOT_SEC = 15;
+/**
+ * The longest shot the store accepts: a row holding the admin's own uploaded
+ * clip takes that clip's length, which may exceed what Grok makes. Grok is
+ * never asked for more than MAX_SHOT_SEC (the video route refuses).
+ */
+export const MAX_OWN_CLIP_SEC = 60;
+/** The visual prompt a row holding the admin's own clip carries; it is never sent to Grok. */
+export const OWN_CLIP_PROMPT = 'Your own clip.';
 
 // ---------------------------------------------------------------------------
 // Persisted shapes (as returned to the admin UI)
@@ -314,7 +323,7 @@ export type SceneInput = z.infer<typeof sceneInputSchema>;
 
 export const shotInputSchema = z.object({
   mode: z.enum(SHOT_MODES),
-  durationSec: z.number().int().min(MIN_SHOT_SEC).max(MAX_SHOT_SEC),
+  durationSec: z.number().int().min(MIN_SHOT_SEC).max(MAX_OWN_CLIP_SEC),
   visualPrompt: z.string().trim().min(1, 'A visual prompt is required').max(2000),
   negativePrompt: z.string().trim().max(1000),
   charIds: z.array(z.string()).max(14),

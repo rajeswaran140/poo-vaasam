@@ -122,6 +122,18 @@ describe('POST render', () => {
     expect(lambdaSend).not.toHaveBeenCalled();
   });
 
+  it('a clip may run past 15 s (your own upload); a picture may not', async () => {
+    const story = { ...tree().story, windowStartSec: 0, windowEndSec: 28 };
+    repo.loadTree.mockResolvedValue(tree({ story, shots: [shot(1, 1, 20, 'cd_1700000000000_aaaaaa'), shot(1, 2, 8, 'cd_1700000000000_bbbbbb')] }));
+    expect((await POST(mk(), ctx())).status).toBe(202);
+    jest.clearAllMocks();
+    repo.loadTree.mockResolvedValue(tree({ story, shots: [shot(1, 1, 8, 'cd_1700000000000_aaaaaa'), shot(1, 2, 20, 'cd_1700000000000_bbbbbb')] }));
+    const res = await POST(mk(), ctx());
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('Scene 1, shot 2 is 20 s; a picture can last at most 15 s. Shorten it.');
+    expect(repo.createRender).not.toHaveBeenCalled();
+  });
+
   it('refuses a render too long for the worker, saying what to change', async () => {
     const n = 300;
     const shots = Array.from({ length: n }, (_, i) => shot(1, i + 1, 1, `cd_1700000000000_s${String(i).padStart(5, '0')}`));

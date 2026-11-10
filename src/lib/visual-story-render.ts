@@ -10,12 +10,14 @@
 
 import type { VisualStoryRepository } from '@/infrastructure/database/VisualStoryRepository';
 import {
+  assemblyKindOf,
   estimateAssembleSec,
   isAssemblyShotKey,
   MAX_ASSEMBLE_SEC,
   shotLabel,
   type AssemblyShot,
 } from '@/lib/visual-story-assemble';
+import { MAX_OWN_CLIP_SEC, MAX_SHOT_SEC } from '@/types/visualStory';
 import type { Candidate, RenderJob, Shot, VisualStory } from '@/types/visualStory';
 
 /**
@@ -52,6 +54,11 @@ export function planStoryRender(tree: {
     if (!cand) return { ok: false, message: `${label} has no picture or clip chosen yet.` };
     if (!isAssemblyShotKey(cand.s3Key, story.vsId)) {
       return { ok: false, message: `${label}: that file cannot be used in the video. Choose another picture or clip.` };
+    }
+    // Only a clip (your own upload) may run past Grok's length; the worker refuses a longer still.
+    const maxSec = assemblyKindOf(cand.s3Key) === 'clip' ? MAX_OWN_CLIP_SEC : MAX_SHOT_SEC;
+    if (shot.durationSec > maxSec) {
+      return { ok: false, message: `${label} is ${shot.durationSec} s; a picture can last at most ${MAX_SHOT_SEC} s. Shorten it.` };
     }
     out.push({ sceneOrder: shot.sceneOrder, shotOrder: shot.shotOrder, key: cand.s3Key, durationSec: shot.durationSec });
   }

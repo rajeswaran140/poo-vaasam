@@ -25,6 +25,19 @@ const REF_EXTS = ['jpg', 'png', 'webp'] as const;
 /** A picture the admin uploads to a shot: the types Grok takes as a first frame. */
 export const ACCEPTED_PICTURE_TYPES = ['image/jpeg', 'image/png'] as const;
 
+/**
+ * The admin's own clip for a shot (e.g. one made in Grok outside the studio).
+ * MP4 only: what Grok exports, and what assembly reads as a clip by extension.
+ */
+export const ACCEPTED_CLIP_TYPES = ['video/mp4'] as const;
+/** A 60 s 1080p clip at a generous bitrate fits easily; S3 enforces it on upload. */
+export const MAX_CLIP_BYTES = 200 * 1024 * 1024;
+
+/** The stored extension for an accepted clip type, else null. */
+export function clipExtensionFor(contentType: string): 'mp4' | null {
+  return contentType === 'video/mp4' ? 'mp4' : null;
+}
+
 /** The stored extension for an accepted shot-picture type, else null. */
 export function pictureExtensionFor(contentType: string): 'jpg' | 'png' | null {
   switch (contentType) {
@@ -86,10 +99,16 @@ export function isRefKeyFor(key: unknown, vsId: string, charId: string): boolean
  * uploaded shot picture: the server minted the key, the client only echoes it.
  */
 export function parseUploadedPictureKey(key: unknown, vsId: string): { candId: string; ext: 'jpg' | 'png' } | null {
+  const up = parseUploadedKey(key, vsId);
+  return up && up.ext !== 'mp4' ? { candId: up.candId, ext: up.ext } : null;
+}
+
+/** As parseUploadedPictureKey, but also an uploaded clip (`mp4`). */
+export function parseUploadedKey(key: unknown, vsId: string): { candId: string; ext: 'jpg' | 'png' | 'mp4' } | null {
   if (typeof key !== 'string' || key.length > 1024 || !isVsId(vsId)) return null;
   const prefix = `${VISUAL_STORY_PREFIX}${vsId}/candidates/`;
   if (!key.startsWith(prefix)) return null;
-  const m = /^([^/.]+)\.(jpg|png)$/.exec(key.slice(prefix.length));
+  const m = /^([^/.]+)\.(jpg|png|mp4)$/.exec(key.slice(prefix.length));
   if (!m || !isCandId(m[1])) return null;
-  return { candId: m[1], ext: m[2] as 'jpg' | 'png' };
+  return { candId: m[1], ext: m[2] as 'jpg' | 'png' | 'mp4' };
 }

@@ -11,6 +11,8 @@ import {
   ACCEPTED_PICTURE_TYPES,
   pictureExtensionFor,
   parseUploadedPictureKey,
+  parseUploadedKey,
+  clipExtensionFor,
 } from '@/lib/visual-story-storage';
 import { isMasteringKey } from '@/lib/mastering-storage';
 
@@ -111,5 +113,24 @@ describe('uploaded shot pictures', () => {
       expect(parseUploadedPictureKey(k, VS)).toBeNull();
     }
     expect(parseUploadedPictureKey(candidateKey(VS, CD, 'jpg'), '../x')).toBeNull();
+  });
+});
+
+describe('your own clips', () => {
+  it('MP4 is the only clip type', () => {
+    expect(clipExtensionFor('video/mp4')).toBe('mp4');
+    for (const t of ['video/quicktime', 'video/webm', 'image/jpeg', '']) expect(clipExtensionFor(t)).toBeNull();
+  });
+  it('parseUploadedKey takes a picture or a clip key of THIS story, nothing else', () => {
+    expect(parseUploadedKey(candidateKey(VS, CD, 'mp4'), VS)).toEqual({ candId: CD, ext: 'mp4' });
+    expect(parseUploadedKey(candidateKey(VS, CD, 'jpg'), VS)).toEqual({ candId: CD, ext: 'jpg' });
+    for (const k of [
+      candidateKey('vs_1700000000001_zzzzzz99', CD, 'mp4'),
+      `audio/mastering/visual-story/${VS}/candidates/${CD}.webm`,
+      `audio/mastering/visual-story/${VS}/candidates/../${CD}.mp4`,
+      `audio/mastering/visual-story/${VS}/candidates/${CD}.mp4.jpg`,
+    ]) {
+      expect(parseUploadedKey(k, VS)).toBeNull();
+    }
   });
 });

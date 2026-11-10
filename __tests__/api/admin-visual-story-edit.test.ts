@@ -186,8 +186,8 @@ describe('shots', () => {
     expect(repo.putShot).not.toHaveBeenCalled();
     expect((await shotsPOST(mk({ ...create, charIds: [CH] }), ctx())).status).toBe(201);
   });
-  it('update with durationSec 16 is 400, 0 and 2.5 too', async () => {
-    for (const d of [16, 0, 2.5]) {
+  it('update with durationSec 61 (past your-own-clip 60 s) is 400, 0 and 2.5 too', async () => {
+    for (const d of [61, 0, 2.5]) {
       const res = await shotsPOST(mk({ op: 'update', sceneOrder: 1, shotOrder: 1, durationSec: d }), ctx());
       expect(res.status).toBe(400);
     }

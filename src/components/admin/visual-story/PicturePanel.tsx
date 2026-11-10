@@ -19,6 +19,11 @@
  * another; the others are started together. Paid requests go one at a
  * time through the shot routes (visual-story-runner), so the budget cap holds.
  * Errors render here.
+ *
+ * Your own clips: an MP4 the owner made elsewhere (e.g. in Grok) becomes a row
+ * of its own, marked by OWN_CLIP_PROMPT. It keeps the clip's own length (read
+ * in the browser), is never sent to Grok, costs nothing, and "Fit" leaves its
+ * seconds alone. A later moving row may still continue from it.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -31,9 +36,10 @@ import { grabLastFrame } from '@/lib/visual-story-last-frame';
 import { candidateKey } from '@/lib/visual-story-keys';
 import { followClips, postWithRetry, STOPPED, type Started } from '@/lib/visual-story-runner';
 import { estimateCostUsd } from '@/services/video/cost';
-import { candIdForJob } from '@/types/visualStory';
+import { clipRowSeconds, readClipDuration } from '@/lib/visual-story-clip-length';
+import { candIdForJob, OWN_CLIP_PROMPT } from '@/types/visualStory';
 import type { Candidate, GenJob, Scene, Shot, VisualStory } from '@/types/visualStory';
-import { RaiseBudgetButton, shotKey, Thumb, usd } from './ui-utils';
+import { RaiseBudgetButton, shotKey, Thumb, usd, VideoThumb } from './ui-utils';
 
 const DEFAULT_SECONDS = 8;
 /** A shot needs a prompt; for a picture it says how the picture should move. */
@@ -42,6 +48,8 @@ const SCENE_HEADING = 'Your pictures';
 const START_GAP_MS = 3000;
 
 const isMoving = (s: Shot) => s.mode !== 'STILL';
+/** A row holding the owner's own uploaded clip. */
+const isOwn = (s: Shot) => s.visualPrompt === OWN_CLIP_PROMPT;
 const of = (s: Pick<Shot, 'sceneOrder' | 'shotOrder'>) => (c: Pick<Candidate, 'sceneOrder' | 'shotOrder'>) =>
   c.sceneOrder === s.sceneOrder && c.shotOrder === s.shotOrder;
 const newest = (list: Candidate[]) => [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
@@ -92,7 +100,7 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
   const pictureScenes = scenes.filter((sc) => sc.heading === SCENE_HEADING).map((sc) => sc.order);
   const ownsStory = shots.every((s) => pictureScenes.includes(s.sceneOrder));
   const rows = [...shots].sort((a, b) => a.sceneOrder - b.sceneOrder || a.shotOrder - b.shotOrder);
-  const nameOf = (s: Shot) => `Picture ${rows.indexOf(s) + 1}`;
+  const nameOf = (s: Shot) => `${isOwn(s) ? 'Clip' : 'Picture'} ${rows.indexOf(s) + 1}`;
   const windowSec = story.windowEndSec - story.windowStartSec;
   const total = rows.reduce((n, s) => n + s.durationSec, 0);
   const picOf = (s: Shot) => {
@@ -100,18 +108,20 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
     return sel?.mode === 'STILL' ? sel : newest(candidates.filter((c) => of(s)(c) && c.mode === 'STILL'));
   };
   const clipOf = (s: Shot) => newest(candidates.filter((c) => of(s)(c) && c.mode !== 'STILL'));
+  /** The owner's uploaded clip for an own-clip row. */
+  const ownClipOf = (s: Shot) => newest(candidates.filter((c) => of(s)(c) && c.mode !== 'STILL' && c.providerId === 'upload'));
   const jobNow = (s: Shot) => genJobs.find((j) => of(s)(j) && (j.status === 'submitted' || j.status === 'running'));
   const rendersNow = (s: Shot) => !!jobNow(s);
   const prevOf = (s: Shot) => rows[rows.indexOf(s) - 1];
   /** Continues from the previous row's clip: both moving, and the owner asked for it. */
-  const chained = (s: Shot) => !!s.chainFromPrevious && isMoving(s) && !!prevOf(s) && isMoving(prevOf(s)!);
+  const chained = (s: Shot) => !isOwn(s) && !!s.chainFromPrevious && isMoving(s) && !!prevOf(s) && isMoving(prevOf(s)!);
   /**
    * A chained row's clip is current only while it was made from the previous
    * row's current clip (chainedFromCandId); once that clip is re-made — or is
    * about to be — the chained clip is made again from the new last frame.
    */
   const needsClip = (s: Shot): boolean => {
-    if (!isMoving(s) || rendersNow(s)) return false;
+    if (isOwn(s) || !isMoving(s) || rendersNow(s)) return false;
     if (!clipOf(s)) return true;
     if (!chained(s)) return false;
     const prev = prevOf(s)!;
@@ -119,7 +129,7 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
   };
   const toAnimate = rows.filter(needsClip);
   const price = toAnimate.reduce((n, s) => n + estimateCostUsd('grok', 'HERO', s.durationSec), 0);
-  const missing = rows.filter((s) => !picOf(s) && !chained(s));
+  const missing = rows.filter((s) => (isOwn(s) ? !ownClipOf(s) : !picOf(s) && !chained(s)));
   const fits = total === windowSec;
   const after = story.spentUsd + story.reservedUsd + price;
   const overCap = after > story.budgetUsdCap + 1e-9;
@@ -138,14 +148,18 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
     return r.ok;
   };
 
-  /** Upload one picture to a shot; the new still's id. */
-  const uploadTo = async (target: Pick<Shot, 'sceneOrder' | 'shotOrder'>, file: File): Promise<{ ok: true; candId?: string } | { ok: false; error: string }> => {
+  /** Upload one picture (or one of your own clips) to a shot; the new candidate's id. */
+  const uploadTo = async (
+    target: Pick<Shot, 'sceneOrder' | 'shotOrder'>,
+    file: File,
+    onProgress: (loaded: number, total: number) => void = () => {}
+  ): Promise<{ ok: true; candId?: string } | { ok: false; error: string }> => {
     const url = `${base}/shots/${shotKey(target)}/upload`;
     const presign = await post(url, { op: 'presign', contentType: file.type, size: file.size });
     if (!presign.ok) return { ok: false, error: presign.error };
     const p = presign.data as { uploadUrl: string; fields: Record<string, string>; key: string };
     try {
-      await putToS3(p.uploadUrl, p.fields, file, () => {}, abort.current.signal);
+      await putToS3(p.uploadUrl, p.fields, file, onProgress, abort.current.signal);
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : 'The upload failed.' };
     }
@@ -195,16 +209,71 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
     }
   };
 
+  /** Each clip becomes a row of its own, at the clip's own length, in the order picked. */
+  const addClips = async (files: File[]) => {
+    if (busy || files.length === 0) return;
+    setBusy(true);
+    setError(null);
+    setSummary(null);
+    setFailures([]);
+    stop.current = false;
+    const failed: string[] = [];
+    try {
+      let sceneOrder = pictureScenes.length ? Math.max(...pictureScenes) : 0;
+      if (!sceneOrder) {
+        const r = await post(`${base}/scenes`, { op: 'create', heading: SCENE_HEADING, summary: '' });
+        const order = r.ok ? Number((r.data?.scene as { order?: number } | undefined)?.order) : NaN;
+        if (!r.ok || !order) {
+          setError(r.ok ? 'Could not add the clips.' : r.error);
+          return;
+        }
+        sceneOrder = order;
+      }
+      for (const [i, file] of files.entries()) {
+        if (!mounted.current) break;
+        const n = `clip ${i + 1} of ${files.length} (${file.name})`;
+        setProgress(`Reading ${n}…`);
+        const len = clipRowSeconds(await readClipDuration(file));
+        if (!len.ok) {
+          failed.push(`${file.name}: ${len.error}`);
+          continue;
+        }
+        const made = await post(`${base}/shots`, { op: 'create', sceneOrder, mode: 'HERO', durationSec: len.seconds, visualPrompt: OWN_CLIP_PROMPT });
+        const created = made.ok ? (made.data?.shot as Pick<Shot, 'sceneOrder' | 'shotOrder'> | undefined) : undefined;
+        if (!created) {
+          failed.push(`${file.name}: ${made.ok ? 'Could not add it.' : made.error}`);
+          continue;
+        }
+        const up = await uploadTo(created, file, (done, all) => setProgress(`Uploading ${n}… ${all ? Math.round((done / all) * 100) : 0}%`));
+        if (!up.ok) failed.push(`${file.name}: ${up.error}`);
+      }
+    } finally {
+      if (mounted.current) {
+        setFailures(failed);
+        setProgress(null);
+        setBusy(false);
+        changed.current();
+      }
+    }
+  };
+
   const fit = async () => {
-    const next = fitDurations(rows.map((s) => s.durationSec), windowSec);
+    // Your own clips keep their length; the pictures share what is left.
+    const flexible = rows.filter((s) => !isOwn(s));
+    const fixedSec = rows.reduce((n, s) => n + (isOwn(s) ? s.durationSec : 0), 0);
+    const next = flexible.length ? fitDurations(flexible.map((s) => s.durationSec), windowSec - fixedSec) : null;
     if (!next) {
-      setError(`${rows.length} pictures cannot fill ${windowSec} s at ${MIN_FIT_SEC}-${MAX_FIT_SEC} s each. Add or remove pictures.`);
+      setError(
+        fixedSec
+          ? `Your clips take ${fixedSec} s, so ${flexible.length} picture${flexible.length === 1 ? '' : 's'} must fill ${windowSec - fixedSec} s at ${MIN_FIT_SEC}-${MAX_FIT_SEC} s each. Add or remove pictures.`
+          : `${rows.length} pictures cannot fill ${windowSec} s at ${MIN_FIT_SEC}-${MAX_FIT_SEC} s each. Add or remove pictures.`
+      );
       return;
     }
     setBusy(true);
     stop.current = false;
     try {
-      for (const [i, s] of rows.entries()) {
+      for (const [i, s] of flexible.entries()) {
         if (next[i] !== s.durationSec && !(await update(s, { durationSec: next[i] }))) break;
       }
     } finally {
@@ -381,7 +450,11 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
       // 3. Choose what each shot shows: its clip when moving, its picture when still.
       setProgress('Choosing each picture and clip…');
       for (const s of rows) {
-        const want = isMoving(s) ? (made.get(shotKey(s)) ?? clipOf(s)?.candId) : picOf(s)?.candId;
+        const want = isOwn(s)
+          ? ownClipOf(s)?.candId
+          : isMoving(s)
+            ? (made.get(shotKey(s)) ?? clipOf(s)?.candId)
+            : picOf(s)?.candId;
         if (!want) {
           failed.push(`${nameOf(s)}: ${isMoving(s) ? 'it has no clip yet.' : 'it has no picture yet.'}`);
           ready = false;
@@ -421,7 +494,7 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
     <section aria-label="Video from your pictures" className="space-y-3 rounded-lg border border-gray-200 p-4 dark:border-gray-700">
       <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Video from your pictures</h2>
       <p className="text-sm text-gray-600 dark:text-gray-400">
-        Add your pictures in order, set each one&apos;s seconds, and choose Moving (Grok animates it from your picture) or Still (a slow zoom). Then make the whole video in one go.
+        Add your pictures in order, set each one&apos;s seconds, and choose Moving (Grok animates it from your picture) or Still (a slow zoom). You can also add clips you made yourself: each keeps its own length. Then make the whole video in one go.
       </p>
       <label className="block text-sm text-gray-700 dark:text-gray-300">
         Add pictures (JPEG or PNG, free)
@@ -438,12 +511,58 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
           className="mt-1 block text-sm"
         />
       </label>
+      <label className="block text-sm text-gray-700 dark:text-gray-300">
+        Add your own clips (MP4, free; each keeps its own length, sound is not used)
+        <input
+          type="file"
+          multiple
+          accept="video/mp4"
+          disabled={busy}
+          onChange={(e) => {
+            const list = Array.from(e.target.files ?? []);
+            e.target.value = '';
+            void addClips(list);
+          }}
+          className="mt-1 block text-sm"
+        />
+      </label>
 
       {rows.length > 0 && (
         <ol aria-label="Your pictures" className="space-y-2">
           {rows.map((s) => {
             const name = nameOf(s);
             const p = picOf(s);
+            if (isOwn(s)) {
+              const clip = ownClipOf(s);
+              return (
+                <li key={shotKey(s)} className="flex flex-wrap items-start gap-3 rounded-md border border-gray-200 p-2 text-sm dark:border-gray-700">
+                  {clip ? (
+                    // Playable, so the order of the clips can be checked before the render.
+                    <VideoThumb s3Key={clip.s3Key} label={`${name} preview`} />
+                  ) : (
+                    <span aria-hidden className="flex h-14 w-14 items-center justify-center rounded bg-gray-100 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+                      MP4
+                    </span>
+                  )}
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-gray-900 dark:text-gray-100">{name}</span>
+                      <span className="text-gray-700 dark:text-gray-300">{`${s.durationSec} s · your clip (free)`}</span>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        aria-label={`Remove ${name.toLowerCase()}`}
+                        onClick={() => void remove(s)}
+                        className="text-blue-700 hover:underline disabled:opacity-50 dark:text-blue-400"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    {!clip && <p className="text-red-600 dark:text-red-400">{`${name} has no clip yet. Remove it and add the clip again.`}</p>}
+                  </div>
+                </li>
+              );
+            }
             return (
               <li key={shotKey(s)} className="flex flex-wrap items-start gap-3 rounded-md border border-gray-200 p-2 text-sm dark:border-gray-700">
                 {p ? <Thumb s3Key={p.s3Key} alt={name} aspect={story.aspectRatio} small /> : <span className="h-14 w-14 rounded bg-gray-100 dark:bg-gray-800" />}

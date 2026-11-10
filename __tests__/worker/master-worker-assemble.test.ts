@@ -202,6 +202,15 @@ it('refuses a window that runs past the end of the song', async () => {
   expect(String(updates()[1].ExpressionAttributeValues[':error'])).toContain('past the end of the song');
 });
 
+it('a clip longer than Grok makes (your own upload, up to 60 s) renders at its own length', async () => {
+  const res = await handler({
+    assemble: assemble({ shots: [{ sceneOrder: 1, shotOrder: 1, key: CLIP, durationSec: 22 }, { sceneOrder: 1, shotOrder: 2, key: STILL, durationSec: 8 }] }),
+  } as never);
+  expect(res).toMatchObject({ ok: true });
+  const clipSeg = ffArgs().find((a) => a.includes('-frames:v') && a.some((x) => x.includes('.mp4')) && a.includes('-an'));
+  expect(clipSeg?.[clipSeg.indexOf('-frames:v') + 1]).toBe('550');
+});
+
 it('does nothing when the render was already cleared (claim lost)', async () => {
   send.mockRejectedValueOnce(Object.assign(new Error('c'), { name: 'ConditionalCheckFailedException' }));
   const res = await handler({ assemble: assemble() } as never);
@@ -216,7 +225,9 @@ describe('a bad event touches no file', () => {
     ['a shot from another story', { shots: [{ sceneOrder: 1, shotOrder: 1, key: 'audio/mastering/visual-story/vs_1700000000000_zzzzzz/candidates/cd_1.mp4', durationSec: 12 }] }],
     ['a shot outside the workspace', { shots: [{ sceneOrder: 1, shotOrder: 1, key: 'images/x.jpg', durationSec: 12 }] }],
     ['shots that do not fill the window', { shots: [{ sceneOrder: 1, shotOrder: 1, key: CLIP, durationSec: 6 }] }],
-    ['a shot over 15 s', { shots: [{ sceneOrder: 1, shotOrder: 1, key: CLIP, durationSec: 12.5 }] }],
+    ['a shot of a fraction of a second', { shots: [{ sceneOrder: 1, shotOrder: 1, key: CLIP, durationSec: 12.5 }] }],
+    ['a still over 15 s', { shots: [{ sceneOrder: 1, shotOrder: 1, key: STILL, durationSec: 16 }, { sceneOrder: 1, shotOrder: 2, key: CLIP, durationSec: 14 }] }],
+    ['a clip over 60 s', { windowStartSec: 0, windowEndSec: 61, shots: [{ sceneOrder: 1, shotOrder: 1, key: CLIP, durationSec: 61 }] }],
     ['an unknown shape', { aspectRatio: '4:3' }],
   ])('%s → failed, no download', async (_l, over) => {
     const res = await handler({ assemble: assemble(over) } as never);
