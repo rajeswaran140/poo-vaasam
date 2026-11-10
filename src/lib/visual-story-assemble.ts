@@ -72,6 +72,27 @@ export function shotLabel(s: Pick<AssemblyShot, 'sceneOrder' | 'shotOrder'>): st
   return `Scene ${s.sceneOrder}, shot ${s.shotOrder}`;
 }
 
+/**
+ * Shots whose chosen item is a picture although a clip exists for them, by
+ * label in story order — so the render panel can say a clip that was paid
+ * for is not in the video (the admin may want the picture; it is a note).
+ */
+export function shotsShowingPictureWithClip(
+  shots: { sceneOrder: number; shotOrder: number; selectedCandidateId: string | null }[],
+  candidates: { candId: string; sceneOrder: number; shotOrder: number; s3Key: string }[]
+): string[] {
+  const on = (s: { sceneOrder: number; shotOrder: number }) => (c: { sceneOrder: number; shotOrder: number }) =>
+    c.sceneOrder === s.sceneOrder && c.shotOrder === s.shotOrder;
+  return [...shots]
+    .sort((a, b) => a.sceneOrder - b.sceneOrder || a.shotOrder - b.shotOrder)
+    .filter((s) => {
+      const chosen = s.selectedCandidateId ? candidates.find((c) => c.candId === s.selectedCandidateId) : undefined;
+      if (!chosen || assemblyKindOf(chosen.s3Key) !== 'still') return false;
+      return candidates.some((c) => on(s)(c) && assemblyKindOf(c.s3Key) === 'clip');
+    })
+    .map(shotLabel);
+}
+
 /** A clip segment: exactly durationSec × 25 frames, sound dropped. */
 export function buildClipSegmentArgs(params: {
   srcPath: string;
@@ -136,6 +157,19 @@ export function assembleFades(params: {
   const fadeIn = params.windowStartSec > 0;
   const fadeOut = params.songSec === null || params.windowEndSec < params.songSec - 0.5;
   return { fadeIn, fadeOut };
+}
+
+/**
+ * How much of the song's real ending a whole-second window leaves out: a
+ * story covers whole seconds, so a 4:00.70 song's whole-song story ends at
+ * 4:00 and lost its last 0.7 s (plus a fade). The worker holds the last shot
+ * that much longer and plays the song to its end. 0 for an excerpt (a window
+ * ending a second or more before the song) or an unknown length.
+ */
+export function assembleTailSec(params: { windowEndSec: number; songSec: number | null }): number {
+  if (params.songSec === null) return 0;
+  const gap = params.songSec - params.windowEndSec;
+  return gap > 0 && gap < 1 ? Math.round(gap * 1000) / 1000 : 0;
 }
 
 /** Join the segments by copy and lay the master's window under them. */

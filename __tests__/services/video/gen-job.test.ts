@@ -60,6 +60,7 @@ const repo = {
   releaseShotVideo: jest.fn(),
   getGenJob: jest.fn(),
   settleGenJob: jest.fn(),
+  chooseClipIfPicture: jest.fn(),
 };
 
 const provider = {
@@ -91,6 +92,7 @@ beforeEach(() => {
   repo.putCandidate.mockResolvedValue(undefined);
   repo.releaseShotVideo.mockResolvedValue(true);
   repo.settleGenJob.mockResolvedValue(true);
+  repo.chooseClipIfPicture.mockResolvedValue(true);
   mockUpload.mockResolvedValue({ key: KEY });
   fetchImpl.mockResolvedValue(okResponse());
 });
@@ -614,5 +616,30 @@ describe('I3 — settlement is atomic and repeatable (Ruling V10)', () => {
     const j = job({ status: 'failed', billedUsd: 0 });
     expect(await advance(j)).toBe(j);
     expectReleased();
+  });
+});
+
+describe('a finished clip is chosen for its shot (audit 2026-11-09: renders came out as slideshows)', () => {
+  it('a copied clip → chooseClipIfPicture for that shot and candidate, and the job still succeeds', async () => {
+    provider.poll.mockResolvedValue(succeeded);
+    const out = await advance(job());
+    expect(out.status).toBe('succeeded');
+    expect(repo.chooseClipIfPicture).toHaveBeenCalledTimes(1);
+    expect(repo.chooseClipIfPicture).toHaveBeenCalledWith(VS, 1, 2, CAND);
+  });
+  it('a failed choose is logged and swallowed: the clip is saved and billed as normal', async () => {
+    provider.poll.mockResolvedValue(succeeded);
+    repo.chooseClipIfPicture.mockRejectedValue(new Error('ddb'));
+    const out = await advance(job());
+    expect(out.status).toBe('succeeded');
+    expect(repo.settleGenJob).toHaveBeenCalledTimes(1);
+  });
+  it('no choose when the copy fails, or the clip failed or was moderated', async () => {
+    provider.poll.mockResolvedValue(succeeded);
+    fetchImpl.mockResolvedValue({ ok: false, status: 403, arrayBuffer: async () => new ArrayBuffer(0) });
+    await advance(job());
+    provider.poll.mockResolvedValue({ ok: true, state: 'failed', code: 'content_policy', error: 'x', billed: true });
+    await advance(job());
+    expect(repo.chooseClipIfPicture).not.toHaveBeenCalled();
   });
 });

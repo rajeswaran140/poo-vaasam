@@ -19,7 +19,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { adminFetch } from '@/lib/client-auth';
-import type { Candidate, Character, GenJob, RenderJob, Scene, Shot, StoryboardDraft, VisualStory } from '@/types/visualStory';
+import type { Candidate, Character, DraftJob, GenJob, RenderJob, Scene, Shot, StoryboardDraft, VisualStory } from '@/types/visualStory';
 import { SceneRail } from './SceneRail';
 import { ShotGrid } from './ShotGrid';
 import { shotKey } from './ui-utils';
@@ -44,6 +44,8 @@ export interface StoryTree {
   characters: Character[];
   candidates: Candidate[];
   drafts: StoryboardDraft[];
+  /** Draft jobs; a queued|running one is followed by the draft panel after a reload. */
+  draftJobs?: DraftJob[];
   /** Video jobs; a submitted|running one resumes polling in its shot card. */
   genJobs?: GenJob[];
   /** Assemblies of the timeline (Phase 6); the newest shows in the render panel. */
@@ -148,6 +150,7 @@ export function Studio({ vsId }: { vsId: string }) {
       sceneCount={scenes.length}
       shotCount={shots.length}
       lastDraft={lastDraft}
+      liveJobId={(tree.draftJobs ?? []).find((j) => j.status === 'queued' || j.status === 'running')?.jobId ?? null}
       onChanged={refresh}
       onApplied={applied}
     />

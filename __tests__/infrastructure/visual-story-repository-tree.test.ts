@@ -79,6 +79,16 @@ beforeEach(() => {
 });
 
 describe('loadTree', () => {
+  it('lists the draft jobs (so the draft panel can follow one after a reload), apart from the drafts', async () => {
+    mockQuery.mockResolvedValue({ Items: [
+      { PK, SK: 'METADATA', vsId: VS, title: 't', budgetUsdCap: 1, spentUsd: 0, reservedUsd: 0 },
+      { PK, SK: draftJobSk('dj_1'), jobId: 'dj_1', status: 'running' },
+      { PK, SK: draftSk('dr_1'), draftId: 'dr_1' },
+    ] });
+    const tree = await repo.loadTree(VS);
+    expect(tree!.draftJobs.map((j) => j.jobId)).toEqual(['dj_1']);
+    expect(tree!.drafts.map((d) => d.draftId)).toEqual(['dr_1']);
+  });
   it('returns null when the story does not exist', async () => {
     mockQuery.mockResolvedValue({ Items: [] });
     expect(await repo.loadTree(VS)).toBeNull();
@@ -210,6 +220,47 @@ describe('simple writes', () => {
     expect(await repo.selectCandidateIfNone(VS, 1, 2, 'cd_9')).toBe(false);
     mockUpdate.mockRejectedValueOnce(new Error('boom'));
     await expect(repo.selectCandidateIfNone(VS, 1, 2, 'cd_9')).rejects.toThrow();
+  });
+
+  describe('chooseClipIfPicture (a finished clip replaces a chosen picture, never a chosen clip)', () => {
+    const cond = () => Object.assign(new Error('cond'), { name: 'ConditionalCheckFailedException' });
+    const shot = (sel: string | null) => ({ PK, SK: shotSk(1, 2), selectedCandidateId: sel });
+    const cand = (candId: string, mode: string) => ({ PK, SK: candSk(1, 2, candId), candId, mode });
+
+    it('nothing chosen → chosen, with the nothing-chosen condition', async () => {
+      mockGet.mockResolvedValueOnce(shot(null));
+      expect(await repo.chooseClipIfPicture(VS, 1, 2, 'cd_clip')).toBe(true);
+      expect(mockUpdate.mock.calls[0][0].conditionExpression).toContain('attribute_not_exists(selectedCandidateId)');
+    });
+    it('a picture (STILL) chosen → the clip replaces it, conditioned on that picture still being chosen', async () => {
+      mockGet.mockResolvedValueOnce(shot('cd_pic')).mockResolvedValueOnce(cand('cd_pic', 'STILL'));
+      expect(await repo.chooseClipIfPicture(VS, 1, 2, 'cd_clip')).toBe(true);
+      const p = mockUpdate.mock.calls[0][0];
+      expect(p.key).toEqual({ PK, SK: shotSk(1, 2) });
+      expect(p.updateExpression).toBe('SET selectedCandidateId = :c');
+      expect(p.expressionAttributeValues).toEqual({ ':c': 'cd_clip', ':prev': 'cd_pic' });
+      expect(p.conditionExpression).toBe('attribute_exists(PK) AND selectedCandidateId = :prev');
+    });
+    it('another clip already chosen → left alone (the admin picked it)', async () => {
+      mockGet.mockResolvedValueOnce(shot('cd_other')).mockResolvedValueOnce(cand('cd_other', 'HERO'));
+      expect(await repo.chooseClipIfPicture(VS, 1, 2, 'cd_clip')).toBe(false);
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
+    it('this clip already chosen, or the shot is gone → false, no write', async () => {
+      mockGet.mockResolvedValueOnce(shot('cd_clip'));
+      expect(await repo.chooseClipIfPicture(VS, 1, 2, 'cd_clip')).toBe(false);
+      mockGet.mockResolvedValueOnce(undefined);
+      expect(await repo.chooseClipIfPicture(VS, 1, 2, 'cd_clip')).toBe(false);
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
+    it('the choice changed meanwhile (condition fails) → false; other errors throw', async () => {
+      mockGet.mockResolvedValueOnce(shot('cd_pic')).mockResolvedValueOnce(cand('cd_pic', 'STILL'));
+      mockUpdate.mockRejectedValueOnce(cond());
+      expect(await repo.chooseClipIfPicture(VS, 1, 2, 'cd_clip')).toBe(false);
+      mockGet.mockResolvedValueOnce(shot('cd_pic')).mockResolvedValueOnce(cand('cd_pic', 'STILL'));
+      mockUpdate.mockRejectedValueOnce(new Error('boom'));
+      await expect(repo.chooseClipIfPicture(VS, 1, 2, 'cd_clip')).rejects.toThrow();
+    });
   });
 
   it('putDraft / getDraft round-trip through the draft key', async () => {

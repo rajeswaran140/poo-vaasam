@@ -975,6 +975,7 @@ export class VisualStoryRepository {
     characters: Character[];
     candidates: Candidate[];
     drafts: StoryboardDraft[];
+    draftJobs: DraftJob[];
     genJobs: GenJob[];
     renders: RenderJob[];
   } | null> {
@@ -994,6 +995,7 @@ export class VisualStoryRepository {
         characters: by('CHAR#').map((i) => stripKeys<Character>(i)),
         candidates: by('CAND#').map((i) => stripKeys<Candidate>(i)),
         drafts: by('DRAFT#').map((i) => stripKeys<StoryboardDraft>(i)),
+        draftJobs: by('DRAFTJOB#').map((i) => stripKeys<DraftJob>(i)),
         genJobs: by('GENJOB#').map((i) => stripKeys<GenJob>(i)),
         renders: by('RENDER#').map((i) => stripKeys<RenderJob>(i)),
       };
@@ -1214,6 +1216,38 @@ export class VisualStoryRepository {
           expressionAttributeValues: { ':c': candId, ':nullT': 'NULL' },
           conditionExpression:
             'attribute_exists(PK) AND (attribute_not_exists(selectedCandidateId) OR attribute_type(selectedCandidateId, :nullT))',
+        });
+        return true;
+      } catch (error) {
+        if (isConditionFailure(error)) return false;
+        throw error;
+      }
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  /**
+   * A finished clip becomes the shot's choice when the shot shows nothing or a
+   * picture (STILL) — the clip was made to move that shot. A clip the admin
+   * chose is never replaced. Conditioned on the choice read here, so a pick
+   * made meanwhile wins. false when nothing changed (or the shot is gone).
+   */
+  async chooseClipIfPicture(vsId: string, sceneOrder: number, shotOrder: number, candId: string): Promise<boolean> {
+    try {
+      const shot = await DynamoDBOperations.get({ PK: vsPk(vsId), SK: shotSk(sceneOrder, shotOrder) });
+      if (!shot) return false;
+      const prev = (shot.selectedCandidateId as string | null | undefined) ?? null;
+      if (prev === candId) return false;
+      if (prev === null) return await this.selectCandidateIfNone(vsId, sceneOrder, shotOrder, candId);
+      const chosen = await DynamoDBOperations.get({ PK: vsPk(vsId), SK: candSk(sceneOrder, shotOrder, prev) });
+      if (chosen && chosen.mode !== 'STILL') return false;
+      try {
+        await DynamoDBOperations.update({
+          key: { PK: vsPk(vsId), SK: shotSk(sceneOrder, shotOrder) },
+          updateExpression: 'SET selectedCandidateId = :c',
+          expressionAttributeValues: { ':c': candId, ':prev': prev },
+          conditionExpression: 'attribute_exists(PK) AND selectedCandidateId = :prev',
         });
         return true;
       } catch (error) {

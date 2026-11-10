@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
 import { delay } from '@/lib/poll-job';
-import { estimateAssembleSec, MAX_ASSEMBLE_SEC } from '@/lib/visual-story-assemble';
+import { estimateAssembleSec, MAX_ASSEMBLE_SEC, shotsShowingPictureWithClip } from '@/lib/visual-story-assemble';
 import type { Candidate, RenderJob, Shot, VisualStory } from '@/types/visualStory';
 import { usePlayUrl } from './ui-utils';
 
@@ -113,6 +113,7 @@ export function RenderPanel({ vsId, story, shots, candidates, renders, onChanged
   );
   const missing = shots.length - chosen.length;
   const inFlight = current?.status === 'queued' || current?.status === 'running';
+  const unusedClips = shotsShowingPictureWithClip(shots, candidates);
   const ready = shots.length > 0 && missing === 0 && total === windowSec && estimate <= MAX_ASSEMBLE_SEC;
 
   const start = async () => {
@@ -155,6 +156,13 @@ export function RenderPanel({ vsId, story, shots, candidates, renders, onChanged
       {shots.length > 0 && total !== windowSec && (
         <p className="text-sm text-amber-800 dark:text-amber-300">
           {`The shots add up to ${mmss(total)} of the song's ${mmss(windowSec)}.`}
+        </p>
+      )}
+      {unusedClips.length > 0 && (
+        <p className="text-sm text-amber-800 dark:text-amber-300">
+          {`${unusedClips.length === 1 ? unusedClips[0] : `${unusedClips.slice(0, -1).join(', ')} and ${unusedClips[unusedClips.length - 1]}`} ${
+            unusedClips.length === 1 ? 'shows its picture, but it has a clip' : 'show their pictures, but have clips'
+          }. Choose the clip on ${unusedClips.length === 1 ? 'that shot' : 'those shots'} if ${unusedClips.length === 1 ? 'it' : 'they'} should move.`}
         </p>
       )}
       <div className="flex flex-wrap items-center gap-3">

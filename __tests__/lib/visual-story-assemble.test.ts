@@ -6,6 +6,8 @@
  * key outside the story reaching the worker, and a render too long to finish.
  */
 import {
+  shotsShowingPictureWithClip,
+  assembleTailSec,
   ASSEMBLE_CODEC_ARGS,
   assembleFrameSize,
   assemblyKindOf,
@@ -133,5 +135,31 @@ describe('estimateAssembleSec', () => {
 
   it('charges a still more than a clip of the same length', () => {
     expect(estimateAssembleSec(shots(1, 10, '.jpg'))).toBeGreaterThan(estimateAssembleSec(shots(1, 10, '.mp4')));
+  });
+});
+
+describe('shotsShowingPictureWithClip (audit 2026-11-09: a made clip left unused)', () => {
+  const C = 'audio/mastering/visual-story/vs_1/candidates';
+  const sh = (shotOrder: number, sel: string | null) => ({ sceneOrder: 1, shotOrder, selectedCandidateId: sel });
+  const cd = (candId: string, shotOrder: number, ext: string) => ({ candId, sceneOrder: 1, shotOrder, s3Key: `${C}/${candId}${ext}` });
+  it('names shots whose chosen item is a picture while a clip exists for them, in order', () => {
+    const shots = [sh(2, 'p2'), sh(1, 'p1'), sh(3, 'c3')];
+    const cands = [cd('p1', 1, '.jpg'), cd('c1', 1, '.mp4'), cd('p2', 2, '.png'), cd('p3', 3, '.jpg'), cd('c3', 3, '.mp4')];
+    expect(shotsShowingPictureWithClip(shots, cands)).toEqual(['Scene 1, shot 1']);
+  });
+  it('a picture with no clip, nothing chosen, or a chosen clip is not named', () => {
+    expect(shotsShowingPictureWithClip([sh(1, 'p1'), sh(2, null)], [cd('p1', 1, '.jpg'), cd('c2', 2, '.mp4')])).toEqual([]);
+  });
+});
+
+describe('assembleTailSec', () => {
+  it('the part of a second a whole-second window leaves off the song', () => {
+    expect(assembleTailSec({ windowEndSec: 240, songSec: 240.7 })).toBe(0.7);
+    expect(assembleTailSec({ windowEndSec: 240, songSec: 240.0004 })).toBe(0);
+  });
+  it('0 for an excerpt, an exact end, or an unknown length', () => {
+    expect(assembleTailSec({ windowEndSec: 60, songSec: 240.7 })).toBe(0);
+    expect(assembleTailSec({ windowEndSec: 240, songSec: 240 })).toBe(0);
+    expect(assembleTailSec({ windowEndSec: 240, songSec: null })).toBe(0);
   });
 });

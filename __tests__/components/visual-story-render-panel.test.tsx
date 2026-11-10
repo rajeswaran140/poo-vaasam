@@ -124,3 +124,12 @@ it('starts one render however fast the button is pressed twice', async () => {
   await act(async () => { fireEvent.click(button); fireEvent.click(button); });
   expect(mockFetch.mock.calls.filter(([u, init]) => String(u).endsWith('/render') && init?.method === 'POST')).toHaveLength(1);
 });
+
+it('names a shot that shows its picture although it has a clip, and still lets the render start', () => {
+  routes();
+  const shots = [shot(1, 15, 'cd_a'), { ...shot(2, 15, 'cd_b') }];
+  const cands = [cand('cd_a', '.mp4'), { ...cand('cd_b', '.jpg'), shotOrder: 2 }, { ...cand('cd_c', '.mp4'), shotOrder: 2 }];
+  render(<RenderPanel vsId={VS} story={story} shots={shots} candidates={cands} renders={[]} onChanged={jest.fn()} />);
+  expect(screen.getByText(/Scene 1, shot 2 shows its picture, but it has a clip\. Choose the clip on that shot if it should move\./)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Render video' })).toBeEnabled();
+});

@@ -4214,13 +4214,31 @@ Practical consequences:
     slug: 'what-it-costs-to-run',
     title: 'What TamilAgaval costs to run — and how to tell, in a shared account',
     category: 'Publishing',
-    updatedAt: '2026-09-22T18:30:00Z',
+    updatedAt: '2026-11-09T18:00:00Z',
     body: `# What TamilAgaval costs to run
 
 **About \$6-7 a month**, measured 1-19 September 2026. The channel's whole
 runtime — the Lambdas that master audio, the table that stores every job, the
 CDN that serves the songs — comes to **under fifteen cents**. Everything else is
 Amplify rebuilding the site.
+
+## Update 9 Nov 2026 — measured again
+
+**October 2026: about \$7.60** (≈ \$8.60 with tax), resource by resource:
+
+| what | October | notes |
+|---|---|---|
+| Amplify (the website) | \$5.06 | about half building (32 builds), half serving the site |
+| S3 | ~\$1.45 | media 38 GB, audio masters 9 GB, backup copies 53 GB in Deep Archive (~5¢) |
+| Route 53 (tamilagaval.com) | ~\$0.55 | |
+| EventBridge connection secret | ~\$0.40 | the scheduled jobs |
+| Lambda | \$0.11 | the work itself is inside the free allowance; only cross-region bytes are billed |
+| DynamoDB | \$0.03 | |
+| CloudFront | \$0 | free allowance |
+
+**November will be higher, about \$15**: 36 site builds in the first 9 days (the Video Text work). Builds are still what moves this bill — each runs the full test suite. It falls back to about \$7–8 when merges slow down. All Video Text exports over 3 days came to about 9¢ in total.
+
+**SES dedicated-IP pool deleted 9 Nov 2026.** The \$15 a month "SES" line was a managed dedicated-IP pool (\`ses-emails\`, us-east-1) that had never had an IP and had sent nothing in 90 days — it came from the console's "get started" wizard in May 2026. TamilAgaval's order and contact mail goes through SES in ca-central-1 and never used it. The December bill should show no dedicated-IP line.
 
 ## ⚠️ The bill that stopped the site — read this first
 
@@ -5207,35 +5225,78 @@ Phase 2 will not touch this page's connect/disconnect flow — only add to it.
   },
   {
     slug: 'video-text',
-    title: 'Video Text — a title, lyrics and credits on a finished video',
+    title: 'Video Text — title, lyrics, credits, logo, In/Out and freeze on a finished video',
     category: 'Music Lab',
-    updatedAt: '2026-11-07T18:00:00Z',
+    updatedAt: '2026-11-09T18:00:00Z',
     body: `# Video Text
 
-**Video Text** (\`/admin/video-text\`, in the Sound section of the sidebar) adds a title, the lyrics and the credits to a song video you have already finished, and gives you back an MP4 with the text burned in. It is its own page: the Mastering page and Visual Story Studio still make clean videos with no text.
+**Video Text** (\`/admin/video-text\`, in the Sound section of the sidebar) adds a title, the lyrics, the credits and your logo to a song video you have already finished, and gives you back an MP4 with them burned in. It is its own page: the Mastering page and Visual Story Studio still make clean videos with no text.
 
 ## The flow
 
 1. **New project.** Give it a name. The list shows every project with when it was last edited and whether its video is ready; the address keeps \`?p=…\` so a reload opens the same project.
-2. **Upload the MP4** (or MOV) you downloaded — drag it onto the box or choose it. **Videos up to 1 GB** can be used. When it has been checked the page reads, for example, "Video: 1440p · 5:44 · deleted on 7 Dec 2026".
-3. **Type the title and credits, and paste the lyrics** — one line per lyric line. Each line becomes a block on the timeline. The title starts at 0–5 s, the credits cover the last 10 s, and the lyric lines are spread evenly in between.
-4. **Line the lyrics up with the singing.** Play the preview — the text is drawn on it exactly as it will be burned in. Drag a block to move it, or drag its edges to change when it starts and ends. Click the ruler to jump there. With a block selected, ← / → nudge it 0.1 s (hold Shift for 1 s), and [ / ] move its start or end to the playhead. The zoom slider stretches the timeline.
-5. **Text size and Lyric position** (Lower or Middle) are the only style controls.
-6. **Make video.** The page draws each text block, uploads it, and the worker burns them in. The button shows the stage and the time so far, for example "Encoding 7/18 · 2:14". The picture size and frame rate stay the same, and the **audio is copied untouched**. If it fails, the reason shows under the button.
-7. **Download** the finished MP4.
+2. **Upload the MP4** (or MOV) — drag it onto the box or choose it. **Videos up to 1 GB.** When it has been checked the page reads, for example, "Video: 1440p · 5:44 · deleted on 7 Dec 2026".
+3. **Type the title and credits, and paste the lyrics** — one line per lyric line. Each line becomes a block on the timeline. The title starts at 0–5 s, the credits cover the last 10 s, and the lyric lines are spread evenly in between until you time them.
+4. **Time the lyrics** (next section).
+5. **Style each part** — Title, Lyrics and Credits each have their own look (below), and the **Logo** section adds your watermark.
+6. **Optional: In and Out, and Freeze** (below).
+7. **Make video.** The page draws each text layer, uploads it, and the worker burns them in. The button shows the stage and the time so far, for example "Encoding 7/18 · 2:14". The picture size and frame rate stay the same, and the **audio is copied untouched**. If it fails, the reason shows under the button.
+8. **Download** the finished MP4. If you edit after a video is made, the page says the download is the older version.
 
 Everything saves as you go ("Saved" at the top). If the same project is open in another tab, the page says so instead of overwriting it — reload to see the latest. You can keep editing while a video is being made; the changes are for the next one.
 
+## Timing the lyrics
+
+- **Tap to time lyrics.** Put the playhead just before the first line you want to time, press **Tap to time lyrics**, and tap **Space** (or the big button) as each line begins. Each tap starts the next line and ends the one before; after the last line one more tap ends it. **Stop** ends the open line where the song is (lines you did not tap keep their times); **Cancel** puts every line back as it was.
+- **Fine-tune on the timeline.** Drag a block to move it, or drag its edges to change when it starts and ends. Click the ruler to jump there. With a block selected, ← / → nudge it 0.1 s (hold Shift for 1 s), and [ / ] move its start or end to the playhead. The **Zoom** slider stretches the timeline.
+- The preview draws the text exactly as it will be burned in.
+
+## The look of each part
+
+Title, Lyrics and Credits each have:
+
+- **Size** — 1 to 100% of the video's height, by slider or typed number.
+- **Tamil font** — Noto Sans Tamil, Noto Serif Tamil, Mukta Malar, Arima, Baloo Thambi 2, Kavivanar, or any Google font with Tamil letters.
+- **English font** — Plain, Montserrat, Poppins, Playfair Display, Lora, Oswald, Dancing Script, or **More fonts…** to search every Google font. English letters, digits and punctuation use the English font; Tamil letters use the Tamil font. A sample line shows both.
+- **Colour** — White, Yellow, Gold or Cream.
+- **Box behind text** and **Fade in and out**.
+- **Position** — a 3 × 3 grid (top, middle, bottom by left, centre, right) for Title and Credits; **Lower** or **Middle** for Lyrics.
+- **Move** — nudge the part by hand, in % of the video's width (→ right) and height (↓ down); **Reset to aligned** puts it back. You can also drag the text on the preview.
+
+## Logo watermark
+
+Upload your logo **once** (PNG, JPG or WebP, up to 5 MB; a PNG with a see-through background looks best) — every project can then use it. **Replace logo…** changes it for every video made from then on.
+
+Per project: **Show the logo on this video**, then pick a **Corner**, the **Logo size** (% of the video's height), **Opacity** (100 = solid) and **Move** to nudge it; **Reset to corner** puts it back. You can drag it on the preview too. The logo sits **under** the text, so a lyric line passing over it stays readable.
+
+## In and Out — export only part of the video
+
+**Mark In** (key **I**) and **Mark Out** (key **O**) at the playhead, like Premiere. **Go to In** (Shift + I), **Go to Out** (Shift + O) and **Clear In and Out**. **Make video** then exports only the part between the marks. Marks sit exactly on a frame, also on 23.976 fps clips (fixed 9 Nov 2026). The text stays where it is on the song's timeline: a line outside the marks is not in the video, and one crossing a mark shows for the part inside.
+
+## Freeze — hold one frame to the end
+
+For a short clip under a whole song (for example one 15 s Grok clip): from a chosen frame to the end of the video, the picture holds still while the song keeps playing. One clip can carry a full song, so you pay for one generation instead of many.
+
+1. Step to the frame with **◀ 1 frame** / **1 frame ▶** (the video pauses), or play and pause near it first.
+2. Press **Freeze here**. The timeline shades the frozen part ("Frozen"), and the preview gets its own **Play / Pause** and time so you can check it.
+3. **Go to freeze** jumps back to that frame; **Remove freeze** undoes it. Press **Freeze here** on another frame to move it.
+
+The worker takes that exact frame from your video and holds it under the logo and the text. If the freeze is after **Out**, the panel says the exported part is not frozen; if it is at or before **In**, the whole export is still. A freeze costs nothing extra to render.
+
+## A lyric video of a song you already released
+
+The same song and audio, with the words on screen over new pictures — a different format from the original, which reaches people searching for the song's lyrics and fans who want to sing along. Make the visuals (a Grok clip with **Freeze**, or Visual Story Studio for a full story), render it with the song in Mastering, then add the lyrics here. Put **"Lyric Video"** in the title and link the original in the description and the pinned comment.
+
 ## Deleted after 30 days
 
-The uploaded video, the finished video and every in-between file are **deleted 30 days after they were written**, by a storage rule. The page shows the date. The project itself — title, lyrics, credits, timings, size and position — is kept with no expiry. When the upload has been deleted, upload the same video again: the timing is kept, and lines past the end of a shorter video are moved inside it (the page says how many).
+The uploaded video, the finished video and every in-between file are **deleted 30 days after they were written**, by a storage rule. The page shows the date. The project itself — title, lyrics, credits, timings, styles, marks and freeze — is kept with no expiry. When the upload has been deleted, upload the same video again: the timing is kept, lines past the end of a shorter video are moved inside it, and a freeze past the new end is removed (set it again).
 `,
   },
   {
     slug: 'visual-story-studio-plan',
     title: 'Visual Story Studio — storyboards, stills and video clips',
     category: 'Visual Story',
-    updatedAt: '2026-11-05T12:00:00Z',
+    updatedAt: '2026-11-09T18:00:00Z',
     body: `# Visual Story Studio
 
 The studio turns one of your saved masters into a storyboard for a music video: scenes, shots, characters, and a still picture and a video clip for each shot — then **Render video** joins every shot's chosen picture or clip with the song into the finished MP4. Storyboards and stills cost pennies, so you can plan the whole video before real money is spent on clips. The step-by-step guide is in the repo at \`docs/VISUAL_STORY_STUDIO.md\`; the design is in \`docs/superpowers/specs/2026-09-11-visual-story-studio-design.md\`.
@@ -5245,19 +5306,34 @@ The studio turns one of your saved masters into a storyboard for a music video: 
 **Finding your way.** The story list shows each story as a card: first picture, shape and length, how many shots are ready, and **Video ready** once rendered. In a story, the **steps** under the title (Storyboard → Fill the song → Choose pictures or clips → Render video) tick off and mark the next one, and the **song timeline** shows every shot in order with its chosen picture (or **▶ Clip**) and an amber **Choose** where nothing is chosen — press a shot to open it. Shot previews are large and in the story's shape; the chosen one reads **✓ Chosen**.
 
 1. **Create a story from a saved master.** Pick the master and the part of the song you want to film: a window of **30 seconds to 7 minutes** (420 s), in whole seconds, inside the finished song — most whole songs fit. Choose the shape once — **16:9** (landscape) or **9:16** (vertical). The shape cannot be changed afterwards. Optionally give it a **Style** — one line such as "warm cinematic film, golden-hour light, 35mm". The Style is added to every picture and clip and given to the storyboard draft, so the look stays the same from shot to shot. Change it any time with **Edit style** under the title (leave it empty for none); pictures and clips already made keep their look.
-2. **Let Claude draft the storyboard.** Paste the lyrics and press **Draft storyboard**. Claude proposes characters, scenes and shots that fit your window. The draft runs in the background and takes **about a minute** for a short window, up to **7 minutes** for a whole song — the button stays disabled until it is done, then the new draft appears. The lyrics are used for that one request and are **not stored** anywhere — paste them again if you want a second draft. Look the draft over, then apply it — applying **replaces** the current storyboard (scenes, shots and their stills), so you are asked first. The button shows the most the draft can cost — ≈$0.15 for a short window, up to about $0.32 for a whole song, which writes more — and that much is held while it runs; a real draft costs less, and only that counts toward the story total.
+2. **Let Claude draft the storyboard.** Paste the lyrics and press **Draft storyboard**. Claude proposes characters, scenes and shots that fit your window. The draft runs in the background and takes **about a minute** for a short window, up to **7 minutes** for a whole song — the button stays disabled until it is done, then the new draft appears. One draft at a time: after a reload the panel picks up the draft still being made instead of paying for another. The lyrics are used for that one request and are **not stored** anywhere — paste them again if you want a second draft. Look the draft over, then apply it — applying **replaces** the current storyboard (scenes, shots and their stills), so you are asked first. The button shows the most the draft can cost — ≈$0.15 for a short window, up to about $0.32 for a whole song, which writes more — and that much is held while it runs; a real draft costs less, and only that counts toward the story total.
    **Check the storyboard before you spend.** Once there are shots, press **Check storyboard** (above the shots). Claude reads every shot and lists problems with a **Try:** fix: a character drawn differently between shots or not ticked on a shot that shows them (their photo would not be sent), shots that would come out the same, anything that invites words or logos in the picture, a prompt that fights the style or shape, real people or political symbols. Paste the lyrics (optional, not stored) to also check scenes against the words. It changes nothing — press **Scene X, shot Y** to open a shot and fix it. It costs a few cents (the button shows the most), takes about a minute, one at a time; after you edit, the last check says it is out of date.
    **Video from your pictures.** Instead of drafting, press **Add pictures** and pick several JPEG/PNG files: each becomes a shot, in order. Set each one's seconds and choose **Still** (slow zoom, free) or **Moving** (Grok animates it from your picture, $0.08 a second; **How it moves** says how). **Fit to N s** makes the total match the song. **Make the video** confirms the price, makes the moving clips, chooses everything and starts the render — one finished video. Tick **Continue from picture N's clip** on a moving row to start it from the last frame of the clip before it, for a smooth cut (those rows are made one after another).
-   **Every shot at once.** Under the check, **Pictures for every shot** makes one picture for each shot without one, and **Videos for every shot** makes a clip for each shot that has a chosen picture but no clip, starting from that picture. Each button shows the shot count and total and confirms first; it stops at the budget cap, names any shot that fails, and **Stop** halts it. Try a clip or two by hand first — you see the batch only after it is made.
+   **Every shot at once.** Under the check, **Pictures for every shot** makes one picture for each shot without one, and **Videos for every shot** makes a clip for each shot **set to Moving** that has a chosen picture but no clip, starting from that picture. Shots set to Still stay pictures, and shots that continue from the clip before them are left to **Make the video** (the panel says how many of each). A finished clip becomes the shot's choice by itself. Each button shows the shot count and total and confirms first; it stops at the budget cap, names any shot that fails, and **Stop** halts it. Try a clip or two by hand first — you see the batch only after it is made.
 3. **Edit by hand.** Add scenes and shots. **Delete scene** (in the scene list) and **Delete shot** (in the shot panel) each ask first, and remove the stills that belong to them too. For a shot you can change what it should show, how long it lasts (1 to 15 seconds), its negative prompt, and which characters appear. You can add characters. **Rename** (beside the title) changes the story's title, and **Delete story** removes the story with all its shots, pictures and clips after a confirm (money already spent is not refunded); it is refused while a draft or a clip is still being made ("Wait for the draft to finish first."). **What you cannot do yet:** there is no reorder of scenes or shots, scenes cannot be renamed once added, and characters cannot be edited or deleted. The bottom bar shows how much of your window the shots fill; they must fill it exactly before the later rendering step. On a phone, **Edit** takes you down to the shot panel, and the bottom bar sits at the end of the page with a one-line summary (spent, seconds filled, shots chosen) pinned to the bottom of the screen.
 4. **Add reference photos for a character.** They are private — kept in the media bucket in a folder that the public website cannot read. Reference photos are sent to Grok with a shot's **video clip** (which is then made at 720p), so the characters look the same from clip to clip. They do not yet influence still pictures: a still is made from the shot's text plus the names and descriptions of the characters in it. The negative prompt is not used yet, by stills or clips.
 5. **Make still pictures with Grok.** Each shot has a **Generate still ($0.02)** button. Before it runs you see the price and what the story total will be afterwards, and you confirm. Each confirm makes one candidate picture for that shot. A shot's first picture is chosen for you; tap another picture to choose it instead.
 
 6. **Make a video clip for a shot.** Press **Make video (6 s · $0.48)** (the label shows the shot's length and price), then confirm. The card says **"Rendering… about 1–3 minutes"** and the clip appears when ready. **Cancel** asks first: "Grok may still charge for this clip, and it won't be kept" — a cancelled clip is always counted as spent. **Check again** looks once more if the card stopped watching; **Check rendering videos (N)** on the story list checks every clip still rendering. The clip starts from the shot's **chosen picture** when that is a still or your upload; **Use as first frame** on another still starts it from that one instead (**First frame** in the shot panel, with **Clear** to go back to the chosen picture). **Upload picture** adds your own JPEG or PNG (up to 10 MB, e.g. a thumbnail) to a shot for free. It shows as **Yours** next to the stills and can be picked or used as the first frame. Use a picture already in the story's shape (crop a 16:9 thumbnail to 9:16 for a vertical story), and one without text: a title on it will likely warp once it moves. Every clip tells Grok that no one sings, speaks or moves their lips (it cannot sync mouths to the song); if one still does, make it again. A clip that starts from a picture sends only that picture (it already shows the characters) and is made at 1080p; a shot with no chosen picture sends its characters' photos instead, at 720p. A video can't be made for a shot without a prompt, and only one video per shot at a time. While a clip renders you can't delete or reorder shots, delete scenes, apply a draft or delete the story ("Wait for the video to finish first.").
 
-7. **Render the video.** The **Render video** panel under the title joins every shot's chosen picture or clip, in order, with the song. It needs a picture or clip chosen for every shot and the shots to add up exactly to the story's length; the panel says what is missing. Pictures get a slow zoom; clips play as made, without their own sound. The panel says how long it takes (a 3-minute mix takes about 4–5 minutes) and you can keep working. The song fades in and out only where the story starts or ends inside the song. When done, the video plays in the panel with **Download video**. A render too long for the worker is refused with what to change (fewer, longer shots, or more clips in place of pictures). One render at a time, and the story can't be deleted while it runs. Rendering costs nothing from the budget.
+7. **Render the video.** The **Render video** panel under the title joins every shot's chosen picture or clip, in order, with the song. A story that covers the whole song plays the song to its very end (the last shot holds for the final part of a second). It needs a picture or clip chosen for every shot and the shots to add up exactly to the story's length; the panel says what is missing. Pictures get a slow zoom; clips play as made, without their own sound. The panel says how long it takes (a 3-minute mix takes about 4–5 minutes) and you can keep working. The song fades in and out only where the story starts or ends inside the song. When done, the video plays in the panel with **Download video**. A render too long for the worker is refused with what to change (fewer, longer shots, or more clips in place of pictures). One render at a time, and the story can't be deleted while it runs. Rendering costs nothing from the budget.
 
 **Before your first clip, raise the story's budget** in the bottom bar — older stories may have only $1. Each shot card shows what a clip of that shot costs: every clip is $0.08 a second, whatever the shot's mode. When a picture or clip would go over the budget, its message has a **Raise budget** button that takes you to the **Budget** field.
+
+## A whole song, start to finish
+
+One full music video for a released song, from the lyrics to the finished MP4, without leaving the portal:
+
+1. **New story** from the song's saved master, window = the whole song (up to 7 minutes), shape 16:9. Add a **Style** line so every shot shares one look.
+2. **Paste the lyrics → Draft storyboard.** Claude writes one shot per part of the song (1–15 s each), fitted to the song's length. Then **Check storyboard** (a few cents) and fix what it lists.
+3. **Pictures.** **Pictures for every shot** ($0.02 each), and **Upload picture** your own for the shots that matter most — free, and closest to the story you have in mind.
+4. **Choose what moves.** Every shot can be a **clip** ($0.08 a second) or stay a **picture** (free slow zoom): set each row to **Moving** or **Still** under **Your pictures** (a drafted storyboard marks most shots Still and only the key moments Moving). Make a clip or two by hand first, then **Videos for every shot** — it makes clips only for shots set to Moving. **Continue from clip N** carries the last frame of one clip into the next for a smooth cut; **Make the video** under Your pictures makes those rows in order.
+5. **Check what each shot shows.** A finished clip is chosen for its shot automatically (unless you had already chosen another clip there), so the timeline reads **▶ Clip**. If a shot still shows its picture while it has a clip, the **Render video** panel names it — tap the clip on that shot if it should move.
+6. **Render video** joins everything with the song (free). Then, if you want text, open the MP4 in **Video Text** for the title, lyrics, credits and logo.
+
+**What a 4-minute song costs:** every shot a clip is about **$19–20** (240 s × $0.08), plus about $0.50 of pictures and any retries; half clips, half pictures is about **$10**. Raise the story's **Budget** first — the server will not spend past it.
+
+**Before trusting the price:** after the first few clips, compare the xAI console's charges with the story's spent total (the Phase 4 exit check below). No full-song story has been rendered yet; the first one is also the first timing of a long render on the worker.
 
 ## What stops a runaway bill
 
@@ -5289,6 +5365,60 @@ The Grok key is stored and stills and clips work. Kept here in case it ever need
 The new key works on the next press; there is nothing to rebuild or redeploy. If it still says not configured, check the parameter name and that its type is SecureString.
 
 **Phase 4 exit check.** After your first short test clip, compare the xAI console's usage with the story's spent total. When they agree, the prices are confirmed (\`GROK_RATES_VERIFIED_AT\` in the code stays empty until then).
+`,
+  },
+  {
+    slug: 'bringing-listeners-back-to-older-songs',
+    title: 'Bringing listeners back to older songs',
+    category: 'Growth',
+    updatedAt: '2026-11-09T18:00:00Z',
+    body: `# Bringing listeners back to older songs
+
+Ways to get more listeners — and more subscribers — on songs already released, **without editing a published video**. Titles, descriptions, thumbnails and the videos themselves stay as they are; everything here adds something new around them, or is done by hand in Studio.
+
+## Why a top song fades: நீ சிரிச்ச நேரம் தான் (GXLu3Y7FghU)
+
+Measured 9 Nov 2026 from YouTube Analytics:
+
+| | first month (11 Jun – 8 Jul) | last 28 days (12 Oct – 8 Nov) |
+|---|---|---|
+| views | 36,842 | 3,706 |
+| from **suggested videos** | **16,807** (46%) | **108** (3%) |
+| from playlists | 13,088 | 1,826 |
+| from subscribers' home and feed | 3,990 | 1,285 |
+| new subscribers | **177** | **3** |
+| average % watched | 45.5% | **58.8%** |
+
+- **At launch YouTube showed the song beside big Tamil love-song videos from other channels**, including a 30-minute love-song compilation. That sent nearly 17,000 people who had never heard the channel, and they are who subscribed.
+- **That stopped by September.** It is the usual life of a song: a few strong weeks of suggestions, then a long tail.
+- **Today's listeners mostly already subscribe** — they arrive from playlists and their feed — so new subscribers are near zero even while people keep listening.
+- **The song itself is holding up**: people watch more of it than ever (58.8%, about 3:34 a view).
+
+So the lever is **new people**, not changes to the song.
+
+## What reaches new people
+
+1. **A new Short from the song.** A new upload, so the original stays as it is; the release tools cut a vertical Short from any master with the window picker. Link it to the full song.
+2. **A lyric video** — the same song and audio with the words on screen over new pictures (see the Video Text guide under Music Lab). It reaches people searching for the lyrics and fans who want to sing along. Put "Lyric Video" in the title and link the original.
+3. **A full music video** from the lyrics in Visual Story Studio (see the Visual Story Studio guide → "A whole song, start to finish").
+4. **A love-song album (jukebox)** — several finished songs joined into one long video, with each song's name and start time in the description. Long love-song compilations are where this audience listens, and the evidence above is that one sent viewers to this channel. For Valentine's Day release around **1–5 February**, when searches build. An event release does not count against the 1–2 songs a week. The release tools make one song per video today, so a jukebox render has to be checked or added first.
+
+## What keeps them
+
+- **Playlists.** About half of an older song's views come from playlists. Every song should sit in "All Songs" and its category playlist, and a song in parts gets its own series playlist (for example 🌸 ஐந்திணைப் பாடல்கள், PLBqp4KFY61Do, created 9 Nov 2026). Checked 9 Nov 2026: 16 songs were added to All Songs, 4 Shorts to the Shorts playlist, and நல்லதோர் வீணை செய்தே to Heritage.
+- **Replies to comments.** A reply from the artist is what brings a commenter back. On 9 Nov 2026 there were 102 viewer comments with no reply, on 48 videos.
+- **Pinned comments** in the three-part pattern: a callback to a lyric line, a question about which line they liked, and a link to the matching playlist. Every public full song had a channel comment on 9 Nov 2026 (whether each is pinned cannot be read from the API).
+- **Community posts** — a line from a song, a poll, the story behind a song — each linking back to a released song.
+
+## Done by hand in Studio
+
+**End screens and cards** pointing at a series playlist or a related song are among YouTube's strongest links, but they are edits to the video, so they are made by hand, never by a script.
+
+## Not on this list
+
+- New lyrics or a new recording of a released song: it needs new vocals (Suno v6, see the quality note) and competes with the original.
+- Changing a title, thumbnail or description because a number looks weak.
+- Ranking songs to promote: which songs go in a Short, a lyric video or an album is chosen by hand.
 `,
   },
   {
