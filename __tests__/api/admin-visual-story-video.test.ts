@@ -184,6 +184,24 @@ describe('POST video — auth, lookup, guards', () => {
     expect(provider.submit).not.toHaveBeenCalled();
   });
 
+  it('a row holding your own clip is never sent to Grok ⇒ 400, nothing reserved', async () => {
+    repo.loadTree.mockResolvedValueOnce(tree({ shots: [shot(1, 2, { visualPrompt: 'Your own clip.' })] }));
+    const res = await POST(mk(), sctx());
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('This row holds your own clip. Upload the clip again instead.');
+    expect(repo.reserve).not.toHaveBeenCalled();
+    expect(provider.submit).not.toHaveBeenCalled();
+  });
+
+  it('a shot longer than Grok makes (15 s) ⇒ 400, nothing reserved', async () => {
+    repo.loadTree.mockResolvedValueOnce(tree({ shots: [shot(1, 2, { durationSec: 16 })] }));
+    const res = await POST(mk(), sctx());
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('Grok makes clips of up to 15 s. Shorten this shot first.');
+    expect(repo.reserve).not.toHaveBeenCalled();
+    expect(provider.submit).not.toHaveBeenCalled();
+  });
+
   it.each(['submitted', 'running'])('second press while a job is %s ⇒ 409, no reserve, no submit', async (status) => {
     repo.loadTree.mockResolvedValueOnce(tree({ genJobs: [job({ status })] }));
     const res = await POST(mk(), sctx());

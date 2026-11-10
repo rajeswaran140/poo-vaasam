@@ -8,7 +8,7 @@
  */
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { adminFetch } from '@/lib/client-auth';
-import { BatchPanel } from '@/components/admin/visual-story/BatchPanel';
+import { BatchPanel, shotsNeedingPicture } from '@/components/admin/visual-story/BatchPanel';
 import type { Candidate, GenJob, Shot, VisualStory } from '@/types/visualStory';
 
 jest.mock('@/lib/client-auth', () => ({ adminFetch: jest.fn() }));
@@ -304,5 +304,14 @@ describe('videos for every shot respects Still / Moving (audit 2026-11-09)', () 
       [cand('cd_a', 1, 1, 'STILL'), cand('cd_b', 1, 2, 'STILL')]
     );
     expect(screen.getByRole('button', { name: 'Videos for every shot (1 shot · $0.56)' })).toBeInTheDocument();
+  });
+});
+
+describe('your own clips', () => {
+  it('a row holding your own clip is never counted for Pictures for every shot', () => {
+    const base = { sceneOrder: 1, mode: 'HERO', durationSec: 8, startSec: 0, negativePrompt: '', charIds: [], selectedCandidateId: null } as const;
+    const own = { ...base, shotOrder: 1, visualPrompt: 'Your own clip.' } as unknown as Shot;
+    const plain = { ...base, shotOrder: 2, visualPrompt: 'A lamp' } as unknown as Shot;
+    expect(shotsNeedingPicture([own, plain], [])).toEqual([plain]);
   });
 });

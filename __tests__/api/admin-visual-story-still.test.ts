@@ -134,6 +134,14 @@ describe('POST still — auth and lookup', () => {
     expect((await stillPOST(mk(), sctx('001-009'))).status).toBe(404);
     expect(repo.reserve).not.toHaveBeenCalled();
   });
+
+  it('a row holding your own clip needs no Grok picture ⇒ 400, nothing reserved', async () => {
+    repo.loadTree.mockResolvedValueOnce(tree({ shots: [shot(1, 1), shot(1, 2, { visualPrompt: 'Your own clip.' })] }));
+    const res = await stillPOST(mk(), sctx());
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('This row holds your own clip; it needs no picture.');
+    expect(repo.reserve).not.toHaveBeenCalled();
+  });
 });
 
 describe('POST still — money paths', () => {

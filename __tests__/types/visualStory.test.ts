@@ -52,8 +52,11 @@ describe('shotInputSchema', () => {
   it('accepts a valid shot', () => {
     expect(shotInputSchema.safeParse(shot).success).toBe(true);
   });
-  it.each([0, 16, 2.5])('rejects durationSec %s', (d) => {
+  it.each([0, 61, 2.5])('rejects durationSec %s', (d) => {
     expect(shotInputSchema.safeParse({ ...shot, durationSec: d }).success).toBe(false);
+  });
+  it('accepts up to 60 s (a row holding your own clip takes its length; Grok is capped at 15 by the video route)', () => {
+    expect(shotInputSchema.safeParse({ ...shot, durationSec: 60 }).success).toBe(true);
   });
   it('rejects more than 14 characters and an unknown mode', () => {
     expect(shotInputSchema.safeParse({ ...shot, charIds: Array(15).fill('ch_1793000000000_abc123') }).success).toBe(false);

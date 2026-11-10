@@ -1,5 +1,5 @@
 /** @jest-environment node */
-/** Uploading your own picture to a shot: it becomes a free STILL candidate. */
+/** Uploading your own picture (a free STILL candidate) or your own MP4 clip (a free HERO candidate) to a shot. */
 
 import { NextRequest } from 'next/server';
 
@@ -33,7 +33,7 @@ import { POST } from '@/app/api/admin/visual-story/[vsId]/shots/[shotKey]/upload
 import * as auth from '@/lib/auth-helper';
 import { VisualStoryRepository } from '@/infrastructure/database/VisualStoryRepository';
 import { __resetVisualStoryRateLimitForTests } from '@/lib/visual-story-rate-limit';
-import { candidateKey, refKey, MAX_REF_BYTES } from '@/lib/visual-story-storage';
+import { candidateKey, refKey, MAX_CLIP_BYTES, MAX_REF_BYTES } from '@/lib/visual-story-storage';
 
 const requireAdmin = auth.requireAdmin as jest.Mock;
 const VS = 'vs_1700000000000_abcdef12';
@@ -109,12 +109,22 @@ describe('presign', () => {
     const body = await (await POST(mk({ op: 'presign', contentType: 'image/png' }), ctx())).json();
     expect(body.key.endsWith('.png')).toBe(true);
   });
-  it('refuses WebP, GIF and non-images', async () => {
-    for (const t of ['image/webp', 'image/gif', 'video/mp4', 'application/pdf']) {
+  it('refuses WebP, GIF, MOV and other files', async () => {
+    for (const t of ['image/webp', 'image/gif', 'video/quicktime', 'application/pdf']) {
       const res = await POST(mk({ op: 'presign', contentType: t }), ctx());
       expect(res.status).toBe(400);
-      expect((await res.json()).error).toMatch(/JPEG or PNG/);
+      expect((await res.json()).error).toBe('Upload a JPEG or PNG picture, or an MP4 clip.');
     }
+    expect(mockPresign).not.toHaveBeenCalled();
+  });
+  it('an MP4 clip gets an .mp4 key and the clip size limit', async () => {
+    const body = await (await POST(mk({ op: 'presign', contentType: 'video/mp4', size: 50_000_000 }), ctx())).json();
+    expect(body.key).toMatch(new RegExp(`^audio/mastering/visual-story/${VS}/candidates/cd_\\d+_[a-z0-9]{8}\\.mp4$`));
+    expect(mockPresign).toHaveBeenCalledWith(body.key, 'video/mp4', MAX_CLIP_BYTES, 3600, 1);
+  });
+  it('refuses a clip over the clip limit, and a picture over the picture limit', async () => {
+    expect((await POST(mk({ op: 'presign', contentType: 'video/mp4', size: MAX_CLIP_BYTES + 1 }), ctx())).status).toBe(400);
+    expect((await POST(mk({ op: 'presign', contentType: 'image/jpeg', size: MAX_REF_BYTES + 1 }), ctx())).status).toBe(400);
     expect(mockPresign).not.toHaveBeenCalled();
   });
   it('refuses a declared size over the cap', async () => {
@@ -159,8 +169,9 @@ describe('confirm', () => {
   });
   it('400 for a key that is not a picture key of this story, and never heads S3', async () => {
     for (const key of [
-      candidateKey(VS, CD, 'mp4'),
+      `audio/mastering/visual-story/${VS}/candidates/${CD}.webp`,
       candidateKey('vs_1700000000001_zzzzzz99', CD, 'jpg'),
+      candidateKey('vs_1700000000001_zzzzzz99', CD, 'mp4'),
       refKey(VS, CH, 'png'),
       'audio/mastering/other.wav',
       '',
@@ -185,6 +196,23 @@ describe('confirm', () => {
     );
     expect((await POST(mk({ op: 'confirm', key }), ctx())).status).toBe(409);
     expect(mockLength).not.toHaveBeenCalled();
+    expect(repo.putCandidate).not.toHaveBeenCalled();
+  });
+  it('an uploaded MP4 becomes a free HERO candidate (your clip), chosen for the shot, never billed', async () => {
+    const key = candidateKey(VS, CD, 'mp4');
+    mockLength.mockResolvedValueOnce(MAX_REF_BYTES + 1); // bigger than a picture may be
+    const res = await POST(mk({ op: 'confirm', key }), ctx());
+    expect(res.status).toBe(201);
+    expect(repo.putCandidate.mock.calls[0][1]).toMatchObject({
+      candId: CD, sceneOrder: 1, shotOrder: 2, jobId: null, providerId: 'upload', mode: 'HERO', s3Key: key, costUsd: 0,
+    });
+    expect(repo.selectCandidateIfNone).toHaveBeenCalledWith(VS, 1, 2, CD);
+    expect(repo.reserve).not.toHaveBeenCalled();
+    expect(repo.settle).not.toHaveBeenCalled();
+  });
+  it('a clip over the clip limit is refused at confirm', async () => {
+    mockLength.mockResolvedValueOnce(MAX_CLIP_BYTES + 1);
+    expect((await POST(mk({ op: 'confirm', key: candidateKey(VS, CD, 'mp4') }), ctx())).status).toBe(400);
     expect(repo.putCandidate).not.toHaveBeenCalled();
   });
   it('400 when the file is missing, empty or over the cap; 502 when S3 cannot be checked', async () => {

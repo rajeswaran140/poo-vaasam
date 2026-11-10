@@ -24,7 +24,7 @@ import { getVideoProvider, type SubmitResult, type VideoGenRequest } from '@/ser
 import { buildVideoRequest } from '@/services/video/gen-job';
 import { settleQuietly } from '@/services/video/storyboard-job';
 import { estimateCostUsd } from '@/services/video/cost';
-import { candIdForJob, isVsId, newId } from '@/types/visualStory';
+import { candIdForJob, isVsId, MAX_SHOT_SEC, newId, OWN_CLIP_PROMPT } from '@/types/visualStory';
 import type { GenJob } from '@/types/visualStory';
 import { fail, limitMutation, mapError, overBudget } from '@/lib/visual-story-route';
 
@@ -76,6 +76,11 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     shot = tree.shots.find((s) => s.sceneOrder === sceneOrder && s.shotOrder === shotOrder);
     if (!shot) return fail('That shot no longer exists.', 404);
     if (!shot.visualPrompt.trim()) return fail('Write a visual prompt first.', 400);
+    // A row holding the admin's own uploaded clip is never sent to Grok.
+    if (shot.visualPrompt === OWN_CLIP_PROMPT) return fail('This row holds your own clip. Upload the clip again instead.', 400);
+    if (shot.durationSec > MAX_SHOT_SEC) {
+      return fail(`Grok makes clips of up to ${MAX_SHOT_SEC} s. Shorten this shot first.`, 400);
+    }
     // Fast path only: two presses can both read an empty list. The lock below decides.
     const busy = tree.genJobs.some(
       (j) =>

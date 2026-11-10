@@ -2,6 +2,8 @@
  * POST /api/admin/visual-story/[vsId]/shots/[shotKey]/upload — the admin's own
  * picture for a shot (e.g. a thumbnail). It becomes a free STILL candidate, so
  * it can be chosen, or pinned with "Use as first frame" for the next clip.
+ * Or the admin's own MP4 clip (e.g. made in Grok outside the studio): a free
+ * HERO candidate (providerId 'upload'), chosen for the shot, never billed.
  *   { op: 'presign', contentType, size? } → { uploadUrl, fields, key }
  *   { op: 'confirm', key }                → 201 { candidate } (200 if already added)
  *
@@ -20,9 +22,11 @@ import { S3Operations } from '@/infrastructure/storage/s3-client';
 import { isVsId, newId } from '@/types/visualStory';
 import type { Candidate } from '@/types/visualStory';
 import {
+  MAX_CLIP_BYTES,
   MAX_REF_BYTES,
   candidateKey,
-  parseUploadedPictureKey,
+  clipExtensionFor,
+  parseUploadedKey,
   pictureExtensionFor,
 } from '@/lib/visual-story-storage';
 import { chooseIfNone, fail, limitMutation, mapError } from '@/lib/visual-story-route';
@@ -75,17 +79,18 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     }
 
     if (input.op === 'presign') {
-      const ext = pictureExtensionFor(input.contentType);
-      if (!ext) return fail('Upload a JPEG or PNG picture.', 400);
-      if (typeof input.size === 'number' && input.size > MAX_REF_BYTES) {
-        return fail(`File too large — the limit is ${MAX_REF_BYTES / (1024 * 1024)}MB.`, 400);
+      const ext = pictureExtensionFor(input.contentType) ?? clipExtensionFor(input.contentType);
+      if (!ext) return fail('Upload a JPEG or PNG picture, or an MP4 clip.', 400);
+      const limit = ext === 'mp4' ? MAX_CLIP_BYTES : MAX_REF_BYTES;
+      if (typeof input.size === 'number' && input.size > limit) {
+        return fail(`File too large — the limit is ${limit / (1024 * 1024)}MB.`, 400);
       }
       const key = candidateKey(vsId, newId('cd'), ext);
       try {
         const { url, fields } = await S3Operations.getSignedUploadPost(
           key,
           input.contentType,
-          MAX_REF_BYTES,
+          limit,
           UPLOAD_URL_TTL_SECONDS,
           1
         );
@@ -97,8 +102,10 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     }
 
     // confirm
-    const pic = parseUploadedPictureKey(input.key, vsId);
+    const pic = parseUploadedKey(input.key, vsId);
     if (!pic) return fail('That file does not belong to this story.', 400);
+    const isClip = pic.ext === 'mp4';
+    const limit = isClip ? MAX_CLIP_BYTES : MAX_REF_BYTES;
     const existing = tree.candidates.find((c) => c.candId === pic.candId);
     if (existing) {
       const same =
@@ -115,7 +122,7 @@ export async function POST(request: NextRequest, { params }: Ctx) {
       return fail('Could not check the upload.', 502);
     }
     if (size === null) return fail('The upload did not arrive. Try again.', 400);
-    if (size < 1 || size > MAX_REF_BYTES) return fail('That file is empty or too large.', 400);
+    if (size < 1 || size > limit) return fail('That file is empty or too large.', 400);
 
     const candidate: Candidate = {
       candId: pic.candId,
@@ -124,7 +131,7 @@ export async function POST(request: NextRequest, { params }: Ctx) {
       jobId: null,
       providerId: 'upload',
       providerTaskId: null,
-      mode: 'STILL',
+      mode: isClip ? 'HERO' : 'STILL',
       s3Key: input.key,
       costUsd: 0,
       createdAt: new Date().toISOString(),

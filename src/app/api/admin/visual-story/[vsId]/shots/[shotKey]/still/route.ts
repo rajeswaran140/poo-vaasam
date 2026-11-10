@@ -18,7 +18,7 @@ import { S3Operations } from '@/infrastructure/storage/s3-client';
 import { generateStillImage, type ImageResult } from '@/services/video/image-providers';
 import { estimateCostUsd } from '@/services/video/cost';
 import { candidateKey } from '@/lib/visual-story-storage';
-import { isVsId, newId } from '@/types/visualStory';
+import { isVsId, newId, OWN_CLIP_PROMPT } from '@/types/visualStory';
 import type { Candidate, Character, Shot } from '@/types/visualStory';
 import { chooseIfNone, fail, limitMutation, mapError, overBudget } from '@/lib/visual-story-route';
 import { withStyle } from '@/lib/visual-story-style';
@@ -74,6 +74,7 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     if (!tree) return fail('That story no longer exists.', 404);
     const found = tree.shots.find((s) => s.sceneOrder === sceneOrder && s.shotOrder === shotOrder);
     if (!found) return fail('That shot no longer exists.', 404);
+    if (found.visualPrompt === OWN_CLIP_PROMPT) return fail('This row holds your own clip; it needs no picture.', 400);
     est = estimateCostUsd('grok', 'STILL', found.durationSec);
     reserved = await repo.reserve(vsId, est);
   } catch (err) {

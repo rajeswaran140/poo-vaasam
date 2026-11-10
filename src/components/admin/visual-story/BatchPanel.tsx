@@ -19,6 +19,7 @@ import { useEffect, useRef, useState } from 'react';
 import { delay } from '@/lib/poll-job';
 import { followClips, postWithRetry, shotLabel as label, STOPPED, type Started } from '@/lib/visual-story-runner';
 import { estimateCostUsd } from '@/services/video/cost';
+import { OWN_CLIP_PROMPT } from '@/types/visualStory';
 import type { Candidate, GenJob, Shot, VisualStory } from '@/types/visualStory';
 import { RaiseBudgetButton, shotKey, usd } from './ui-utils';
 
@@ -33,9 +34,9 @@ const plural = (n: number) => `${n} shot${n === 1 ? '' : 's'}`;
 const of = (s: Pick<Shot, 'sceneOrder' | 'shotOrder'>) => (c: Pick<Candidate, 'sceneOrder' | 'shotOrder'>) =>
   c.sceneOrder === s.sceneOrder && c.shotOrder === s.shotOrder;
 
-/** Shots with no still picture yet. */
+/** Shots with no still picture yet. A row holding the admin's own clip needs none. */
 export function shotsNeedingPicture(shots: Shot[], candidates: Candidate[]): Shot[] {
-  return shots.filter((s) => !candidates.some((c) => of(s)(c) && c.mode === 'STILL'));
+  return shots.filter((s) => s.visualPrompt !== OWN_CLIP_PROMPT && !candidates.some((c) => of(s)(c) && c.mode === 'STILL'));
 }
 
 /** Shots with no clip yet and none rendering (picture or not). */
