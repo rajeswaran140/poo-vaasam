@@ -24,6 +24,10 @@
  * of its own, marked by OWN_CLIP_PROMPT. It keeps the clip's own length (read
  * in the browser), is never sent to Grok, costs nothing, and "Fit" leaves its
  * seconds alone. A later moving row may still continue from it.
+ *
+ * Keeping faces: each moving picture lists who is in it (the story's
+ * Characters, all ticked on a new row). Their reference photos go to Grok with
+ * the picture, so the couple keeps the same faces from clip to clip.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -38,7 +42,7 @@ import { followClips, postWithRetry, STOPPED, type Started } from '@/lib/visual-
 import { estimateCostUsd } from '@/services/video/cost';
 import { clipRowSeconds, readClipDuration } from '@/lib/visual-story-clip-length';
 import { candIdForJob, OWN_CLIP_PROMPT } from '@/types/visualStory';
-import type { Candidate, GenJob, Scene, Shot, VisualStory } from '@/types/visualStory';
+import type { Candidate, Character, GenJob, Scene, Shot, VisualStory } from '@/types/visualStory';
 import { RaiseBudgetButton, shotKey, Thumb, usd, VideoThumb } from './ui-utils';
 
 const DEFAULT_SECONDS = 8;
@@ -61,10 +65,12 @@ interface Props {
   shots: Shot[];
   candidates: Candidate[];
   genJobs: GenJob[];
+  /** The story's people; their photos keep the faces the same in every clip. */
+  characters?: Character[];
   onChanged: () => void;
 }
 
-export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, onChanged }: Props) {
+export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, characters = [], onChanged }: Props) {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -190,7 +196,11 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
       for (const [i, file] of files.entries()) {
         if (!mounted.current) break;
         setProgress(`Adding picture ${i + 1} of ${files.length}…`);
-        const made = await post(`${base}/shots`, { op: 'create', sceneOrder, mode: 'STILL', durationSec: DEFAULT_SECONDS, visualPrompt: DEFAULT_MOTION });
+        // Everyone is in a new picture until the owner unticks them.
+        const made = await post(`${base}/shots`, {
+          op: 'create', sceneOrder, mode: 'STILL', durationSec: DEFAULT_SECONDS, visualPrompt: DEFAULT_MOTION,
+          charIds: characters.map((c) => c.charId).slice(0, 14),
+        });
         const created = made.ok ? (made.data?.shot as Pick<Shot, 'sceneOrder' | 'shotOrder'> | undefined) : undefined;
         if (!created) {
           failed.push(`${file.name}: ${made.ok ? 'Could not add it.' : made.error}`);
@@ -496,6 +506,15 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
       <p className="text-sm text-gray-600 dark:text-gray-400">
         Add your pictures in order, set each one&apos;s seconds, and choose Moving (Grok animates it from your picture) or Still (a slow zoom). You can also add clips you made yourself: each keeps its own length. Then make the whole video in one go.
       </p>
+      {characters.length === 0 ? (
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          To keep the same faces in every clip, add the people (for example the husband and the wife) in the Characters tab, each with a few clear face photos. New pictures then include them.
+        </p>
+      ) : (
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          Each moving picture sends Grok the face photos of the people ticked in it, so their faces stay the same from clip to clip. Untick anyone who is not in that picture. A clip with face photos is made at 720p (Grok&apos;s limit for them); with nobody ticked it is made at 1080p.
+        </p>
+      )}
       <label className="block text-sm text-gray-700 dark:text-gray-300">
         Add pictures (JPEG or PNG, free)
         <input
@@ -621,6 +640,28 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
                         className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1 dark:border-gray-600 dark:bg-gray-800"
                       />
                     </label>
+                  )}
+                  {isMoving(s) && characters.length > 0 && (
+                    <fieldset className="flex flex-wrap items-center gap-3 text-gray-700 dark:text-gray-300">
+                      <legend className="sr-only">{`Who is in ${name.toLowerCase()}`}</legend>
+                      <span>In this picture:</span>
+                      {characters.map((c) => (
+                        <label key={c.charId} className="flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            aria-label={`${c.name} is in ${name.toLowerCase()}`}
+                            checked={s.charIds.includes(c.charId)}
+                            disabled={busy}
+                            onChange={(e) => {
+                              const next = e.target.checked ? [...s.charIds, c.charId] : s.charIds.filter((id) => id !== c.charId);
+                              void update(s, { charIds: next }).then(() => changed.current());
+                            }}
+                          />
+                          {c.name}
+                          {(c.refImageKeys ?? []).length === 0 && <span className="text-amber-700 dark:text-amber-400">(no photos yet)</span>}
+                        </label>
+                      ))}
+                    </fieldset>
                   )}
                   {isMoving(s) && prevOf(s) && isMoving(prevOf(s)!) && (
                     <label className="flex items-center gap-2 text-gray-700 dark:text-gray-300">

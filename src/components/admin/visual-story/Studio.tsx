@@ -185,6 +185,7 @@ export function Studio({ vsId }: { vsId: string }) {
       shots={shots}
       candidates={candidates}
       genJobs={tree.genJobs ?? []}
+      characters={characters}
       onChanged={refresh}
     />
   );
