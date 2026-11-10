@@ -106,3 +106,24 @@ it('without characters it says how to keep the faces the same, and asks nothing 
   expect(screen.getByText(/To keep the same faces in every clip, add the people/)).toBeInTheDocument();
   expect(screen.queryByText('In this picture:')).not.toBeInTheDocument();
 });
+
+it('one click puts everyone in every moving picture that is missing someone', async () => {
+  routes(() => undefined);
+  // Picture 1 has nobody (added before the characters), 2 has the wife only, 3 is still, 4 has both.
+  setup({
+    shots: [shot(1, { charIds: [] }), shot(2, { charIds: [WIFE] }), shot(3, { mode: 'STILL', charIds: [] }), shot(4)],
+    candidates: [pic(1), pic(2), pic(3), pic(4)],
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Put everyone in every moving picture (2 to update)' }));
+  await flush();
+  expect(calls().map((x) => x.body)).toEqual([
+    { op: 'update', sceneOrder: 1, shotOrder: 1, charIds: [HUS, WIFE] },
+    { op: 'update', sceneOrder: 1, shotOrder: 2, charIds: [WIFE, HUS] },
+  ]);
+});
+
+it('no button when every moving picture already has everyone', () => {
+  routes(() => undefined);
+  setup();
+  expect(screen.queryByRole('button', { name: /Put everyone/ })).not.toBeInTheDocument();
+});

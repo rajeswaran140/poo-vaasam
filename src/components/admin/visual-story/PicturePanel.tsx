@@ -143,6 +143,9 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
   const workSec = estimateAssembleSec(rows.map((s) => ({ key: isMoving(s) ? 'clip.mp4' : 'picture.jpg', durationSec: s.durationSec })));
   const tooLong = workSec > MAX_ASSEMBLE_SEC;
   const canMake = rows.length > 0 && fits && missing.length === 0 && !tooLong && !busy;
+  // Moving pictures missing someone (e.g. added before the characters existed).
+  const everyone = characters.map((c) => c.charId).slice(0, 14);
+  const missingPeople = rows.filter((s) => isMoving(s) && !isOwn(s) && everyone.some((id) => !s.charIds.includes(id)));
 
   const update = async (s: Shot, fields: Record<string, unknown>) => {
     setError(null);
@@ -285,6 +288,21 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
     try {
       for (const [i, s] of flexible.entries()) {
         if (next[i] !== s.durationSec && !(await update(s, { durationSec: next[i] }))) break;
+      }
+    } finally {
+      if (mounted.current) setBusy(false);
+      changed.current();
+    }
+  };
+
+  /** Tick every character in every moving picture, in one go. */
+  const tickEveryone = async () => {
+    setBusy(true);
+    setError(null);
+    stop.current = false;
+    try {
+      for (const s of missingPeople) {
+        if (!mounted.current || !(await update(s, { charIds: [...new Set([...s.charIds, ...everyone])] }))) break;
       }
     } finally {
       if (mounted.current) setBusy(false);
@@ -514,6 +532,16 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
         <p className="text-sm text-gray-600 dark:text-gray-400">
           Each moving picture sends Grok the face photos of the people ticked in it, so their faces stay the same from clip to clip. Untick anyone who is not in that picture. A clip with face photos is made at 720p (Grok&apos;s limit for them); with nobody ticked it is made at 1080p.
         </p>
+      )}
+      {missingPeople.length > 0 && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void tickEveryone()}
+          className="rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-700 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300"
+        >
+          {`Put everyone in every moving picture (${missingPeople.length} to update)`}
+        </button>
       )}
       <label className="block text-sm text-gray-700 dark:text-gray-300">
         Add pictures (JPEG or PNG, free)
