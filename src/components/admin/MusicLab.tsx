@@ -10,7 +10,7 @@
  * variants) and the rest is the human's call. Attempts list newest-first.
  */
 
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { FlaskConical, Loader2, Plus, Trash2, Lightbulb } from 'lucide-react';
 import { adminFetch } from '@/lib/client-auth';
 import { MediaUploadField } from '@/components/admin/MediaUploadField';
@@ -56,14 +56,18 @@ export function MusicLab() {
   // True when the insights feed hit the server cap — insights then cover only
   // the most-recent slice, so we say so instead of understating silently.
   const [truncated, setTruncated] = useState(false);
+  // The insights feed failed to load: say so, rather than showing "0 logged".
+  const [feedFailed, setFeedFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The brief whose attempts were asked for last; an older reply is dropped.
+  const wantedBrief = useRef('');
 
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
         const [briefsRes, gensRes] = await Promise.all([
-          adminFetch('/api/admin/briefs?limit=500'),
+          adminFetch('/api/admin/briefs?limit=200'), // the server's cap
           // The WHOLE log (paged server-side), so insights reflect every attempt
           // — not a silent 200-row slice.
           adminFetch('/api/admin/generations?all=true'),
@@ -76,6 +80,8 @@ export function MusicLab() {
           if (gensRes.ok && gensBody.success) {
             setAllGenerations(gensBody.data ?? []);
             setTruncated(Boolean(gensBody.truncated));
+          } else {
+            setFeedFailed(true);
           }
         }
       } catch (err) {
@@ -127,6 +133,7 @@ export function MusicLab() {
   }, []);
 
   const loadGenerations = useCallback(async (briefId: string) => {
+    wantedBrief.current = briefId;
     if (!briefId) {
       setGenerations([]);
       return;
@@ -136,12 +143,13 @@ export function MusicLab() {
     try {
       const res = await adminFetch(`/api/admin/generations?briefId=${encodeURIComponent(briefId)}`);
       const body = await res.json().catch(() => ({}));
+      if (wantedBrief.current !== briefId) return; // another brief was picked meanwhile
       if (!res.ok || !body.success) throw new Error(body.error || `HTTP ${res.status}`);
       setGenerations(body.data ?? []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (wantedBrief.current === briefId) setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoadingGens(false);
+      if (wantedBrief.current === briefId) setLoadingGens(false);
     }
   }, []);
 
@@ -171,7 +179,13 @@ export function MusicLab() {
       )}
 
       {/* Insights — derived from ALL logged generations */}
-      <InsightsPanel report={insights} />
+      {feedFailed ? (
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-900 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-200">
+          Insights could not load the logged generations. Reload the page to try again.
+        </div>
+      ) : (
+        <InsightsPanel report={insights} />
+      )}
 
       {/* Brief picker */}
       <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">

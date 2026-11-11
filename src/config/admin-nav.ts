@@ -42,6 +42,7 @@ import {
   Wallet,
   Clapperboard,
   Type,
+  Headphones,
 } from 'lucide-react';
 import { FEATURES } from '@/config/features';
 
@@ -275,6 +276,15 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     icon: NotebookPen,
     matchMode: 'prefix',
     keywords: ['ml', 'scratch'],
+  },
+  {
+    href: '/admin/music-lab/studio-test',
+    title: 'Studio listening test',
+    subtitle: 'Blind A/B of the virtual instruments against the real stem',
+    section: 'Music Lab',
+    icon: Headphones,
+    matchMode: 'prefix',
+    keywords: ['ml', 'instruments', 'listening', 'studio'],
   },
   {
     href: '/admin/mastering',
