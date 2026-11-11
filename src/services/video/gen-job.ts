@@ -56,13 +56,18 @@ export interface VideoRequestTree {
 
 /**
  * The provider request for one shot: the shot's prompt plus its cast
- * ("Name: description") and, as short-lived signed URLs, EITHER a first frame
- * OR the cast's reference photos. The first frame is the pinned STILL, else
- * the shot's chosen picture when that is a STILL of this shot (an upload
- * counts). A clip that starts from a picture sends it alone — the picture
- * already shows the cast, and xAI documents image and reference_images
- * separately, never together. Without one, each cast line is tagged with the
- * `<IMAGE_n>` references that show them. Never carries an abort signal (R10).
+ * ("Name: description"), and as short-lived signed URLs a first frame (when
+ * there is one) AND the cast's reference photos. The first frame is the pinned
+ * STILL, else the shot's chosen picture when that is a STILL of this shot (an
+ * upload counts). Each cast line is tagged with the `<IMAGE_n>` references
+ * that show them.
+ *
+ * The references go WITH a first frame too: started from a picture alone,
+ * Grok re-invents the faces as people move and turn, so the couple stops
+ * looking like themselves from clip to clip (owner, 2026-11-10). xAI accepts
+ * `image` + `reference_images` in one request — tested 2026-11-10 on a real
+ * picture: the man kept his moustache and face for 15 s, where the clip from
+ * the picture alone lost both by 5 s. Never carries an abort signal (R10).
  */
 export async function buildVideoRequest(tree: VideoRequestTree, shot: Shot): Promise<VideoGenRequest> {
   const cast = shot.charIds
@@ -81,7 +86,7 @@ export async function buildVideoRequest(tree: VideoRequestTree, shot: Shot): Pro
   const refKeys: string[] = [];
   const castLines = cast.map((c) => {
     const tags: string[] = [];
-    for (const key of firstFrame ? [] : (c.refImageKeys ?? [])) {
+    for (const key of c.refImageKeys ?? []) {
       if (refKeys.length >= MAX_REFERENCE_IMAGES) break;
       tags.push(`<IMAGE_${refKeys.length}>`);
       refKeys.push(key);
