@@ -42,6 +42,32 @@ Instead of a draft (or beside one), **Video from your pictures** builds the stor
 - Grok makes at most 15 s per clip, so a long video is always several clips joined; the render joins them into one video.
 - Known gap: a clip made for 8 s on a row later set to 15 s holds its last frame for the extra 7 s (shorter cuts it); re-make that clip from the shot card.
 
+### 2b-ter. From your own pictures, step by step
+
+The full path for a video made from your own pictures, with the same people in every clip. Worked through on the first real one (a children's folk dance, 2026-11-11). Do the steps in this order.
+
+1. **Master the song first.** A story starts from a **saved master**: Sound Engineering → master the song → save it. Then **Visual Story → New from master**. Choose the part of the song: for a full-song video, choose the **whole song**, because a story's part of the song **cannot be changed** later. Choose the shape (16:9 or 9:16). Set the **budget**: clips are about $1.20 per 15 s as the studio counts them, so allow about $1.30 for every 15 s of moving video.
+2. **Set the Style.** Under the title, **Style: none set** → **Set style** → paste one line that describes the look of your pictures (light, colours, place, mood; under 300 characters) → **Save style**. Typing alone does not save it: the top line must read "Style: …".
+3. **Add the people, before the pictures.** Open the **Characters** tab → add each person (for example "Dance teacher") with a short description of their hair, jewellery and clothes. Leave out a clothing colour that changes between pictures. Then use the **photo button on that person's card** to add 1–4 face photos. Do not use **Add pictures** for face photos: that makes a picture row, not a face photo.
+   - **A good face photo:** square, about **1024 × 1024** (768–2048 works), JPG or PNG under 10 MB; head and shoulders, face about half the picture; even light; plain or blurred background with **no other people**; the same hair and jewellery as in the pictures. Close crops from your own pictures work well.
+4. **Add your pictures.** In **Video from your pictures**, **Add pictures**. Use the story's shape: **1920 × 1080** for 16:9 (a square picture loses its top and bottom). **Order matters**: rows play top to bottom, and there is no reorder yet; to move a picture to the end, **Remove** it and add it again. Keep each person's **clothes the same** from picture to picture, or group pictures by outfit so it changes only once.
+5. **Set every row.** **Moving**, **15 s** (Grok's most per clip), and its own **How it moves** prompt. Paste the prompt, check that the new text shows, then **click outside the box**: that is what saves it. Writing the prompt:
+   - describe the **pose already in that picture** and how it moves on from there, plus a slow camera move;
+   - end with: "Keep all faces, clothing and background exactly as in the picture. No singing, no lip-sync, no talking, no text, no scene changes.";
+   - leave out the shape ("16:9") and place names that fight the picture;
+   - **avoid fast spins**: a spin is where Grok most often redraws clothes (a maroon half-saree turned green halfway through one).
+6. **Tick who is in each picture.** Each Moving row shows **In this picture:** with a tick per person. **Put everyone in every moving picture (N to update)** ticks them all at once; it appears only while some Moving row is missing someone, so set rows to Moving first. Their face photos then go to Grok with the picture, and the clip is made at **720p**.
+7. **"Continue from picture N's clip": usually leave it off.** A ticked row starts from the **last frame of the clip before it** and **ignores its own picture**. Use it only for a row with no picture of its own, to carry straight on from the clip before. With your own picture on every row, leave it unticked on every row.
+8. **The total must match the song.** **Total N s of M s** must read the same number twice, or **Make the video** stays greyed out. **Fit to M s** cannot help when there are too few rows (15 s each at most): add rows instead. Example: 60 s = 4 rows of 15 s; 171 s = 11 rows of 15 s + one of 6 s.
+9. **Make the video.** Press **Make the video (N moving · $X)** **once** and confirm. Keep the page open. The clips are made together (about 2–3 minutes for four), then the render joins them with the song (about 2 minutes for a minute of video). The finished video plays in **Render video** with **Download video**.
+10. **Check the clips.** Play each clip. Re-make one that went wrong from its shot (it costs again). The render is free, so re-render after any change.
+
+**A video longer than one story.** A story's part of the song is fixed. To extend it, make a **new story** over the longer part (for example the whole song), add the first story's **downloaded finished video as your own clip** (free; your own clips can be up to 60 s, MP4 under 200 MB), then add pictures for the rest.
+
+**What it really costs (2026-11-11).** xAI's own usage figures: a 15 s clip with face photos at 720p is about **$2.13**, and a 15 s clip from a picture alone at 1080p is about **$3.76**. The studio counts **$1.20** for both, so its prices and budget totals are about 2–3× low until the rate card is corrected; check the xAI console.
+
+**If the render says "The render failed. Please try again."** The first real render failed when saving the finished video ("socket hang up"). Fixed 2026-11-11 (#441, worker deployed): the save now retries on a dropped connection. Press **Try again**; the clips are reused, so it costs nothing.
+
 ### 2c. Every shot at once
 Below the check, **Every shot** has two buttons; each shows how many shots and the total, and confirms with the story total first.
 - **Pictures for every shot** makes one picture ($0.02) for each shot that has none. The first picture of a shot is chosen for it.
