@@ -28,6 +28,7 @@ jest.mock('@aws-sdk/client-ssm', () => ({
   GetParameterCommand: class { constructor(public input: unknown) {} },
 }));
 const mockRmSync = jest.fn();
+const mockDestroy = jest.fn();
 const mockWriteFileSync = jest.fn();
 const mockStatSync = jest.fn(() => ({ size: 123456 }));
 jest.mock('node:fs', () => ({
@@ -36,7 +37,7 @@ jest.mock('node:fs', () => ({
   readFileSync: () => Buffer.from('MASTERED-WAV-BYTES'),
   rmSync: (...a: unknown[]) => mockRmSync(...a),
   statSync: (...a: unknown[]) => mockStatSync(...a),
-  createReadStream: (p: string) => ({ stream: p }),
+  createReadStream: (p: string) => ({ stream: p, on() { return this; }, destroy: mockDestroy }),
   readdirSync: () => mockReaddir(),
 }));
 const mockReaddir = jest.fn((): string[] => []);
@@ -122,7 +123,8 @@ it('renders each shot in order, joins them over the window, uploads, and marks t
 
 it('streams the upload instead of reading a large video into memory', async () => {
   await handler({ assemble: assemble() } as never);
-  expect(put()?.input.Body).toEqual({ stream: '/tmp/master-test/story.mp4' });
+  expect((put()?.input.Body as { stream: string }).stream).toBe('/tmp/master-test/story.mp4');
+  expect(mockDestroy).toHaveBeenCalled(); // the stream is closed after the send
   expect(put()?.input.ContentLength).toBe(123456);
 });
 
@@ -286,4 +288,42 @@ it('a shot that fails because the worker is out of time says so (not "please try
   });
   await handler({ assemble: assemble() } as never, { getRemainingTimeInMillis: () => left } as never);
   expect(String(updates()[1].ExpressionAttributeValues[':error'])).toContain('ran out of time');
+});
+
+describe('a dropped connection under the upload (first real render, 2026-11-11)', () => {
+  const reset = (code: string) => Object.assign(new Error('socket hang up'), { code });
+  const puts = () => s3Send.mock.calls.map((c) => c[0] as { input: Record<string, unknown> }).filter((c) => 'Body' in c.input);
+
+  it('tries the upload again with a fresh stream, and the render is done', async () => {
+    let n = 0;
+    s3Send.mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'Body' in cmd.input
+        ? (++n === 1 ? Promise.reject(reset('ECONNRESET')) : Promise.resolve({}))
+        : Promise.resolve({ Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) } }));
+    const res = await handler({ assemble: assemble() } as never);
+    expect(res).toMatchObject({ ok: true });
+    expect(puts()).toHaveLength(2);
+    expect(puts()[0].input.Body).not.toBe(puts()[1].input.Body); // a new stream each try
+    expect(statuses()).toEqual(['running', 'done']);
+  });
+
+  it('gives up after three dropped tries and fails the render', async () => {
+    s3Send.mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'Body' in cmd.input
+        ? Promise.reject(reset('EPIPE'))
+        : Promise.resolve({ Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) } }));
+    const res = await handler({ assemble: assemble() } as never);
+    expect(res).toMatchObject({ ok: false });
+    expect(puts()).toHaveLength(3);
+    expect(statuses()).toEqual(['running', 'failed']);
+  });
+
+  it('does not retry an error that is not a dropped connection', async () => {
+    s3Send.mockImplementation((cmd: { input: Record<string, unknown> }) =>
+      'Body' in cmd.input
+        ? Promise.reject(Object.assign(new Error('Access Denied'), { name: 'AccessDenied' }))
+        : Promise.resolve({ Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) } }));
+    await handler({ assemble: assemble() } as never);
+    expect(puts()).toHaveLength(1);
+  });
 });

@@ -2064,6 +2064,45 @@ const ASSEMBLE_RESERVE_MS = 90_000;
 const OUT_OF_TIME =
   'The render ran out of time. Use fewer, longer shots, or clips in place of some pictures (a picture takes longer than a clip).';
 
+/**
+ * A dropped connection. The SDK relabels these socket errors, so the code is
+ * what tells them apart ("socket hang up" carries ECONNRESET).
+ */
+const RENDER_RESET_CODES = new Set(['ECONNRESET', 'EPIPE', 'ETIMEDOUT']);
+const isDroppedConnection = (err: unknown) => RENDER_RESET_CODES.has(String((err as { code?: unknown })?.code ?? ''));
+/** Tries of the finished video's upload when the connection drops under it. */
+export const RENDER_UPLOAD_ATTEMPTS = 3;
+
+/**
+ * ⚠️ WHY the retry (2026-11-11, the first real story render): ffmpeg runs
+ * synchronously, so for the whole join nothing reads the S3 connections left
+ * idle by the downloads, and the upload went out on one already closed —
+ * "socket hang up". The SDK retries ordinary requests but never one whose body
+ * is a stream. Same cause and cure as Video Text's chunk upload (#426): one
+ * event-loop turn first, then up to three tries, each with a fresh stream.
+ */
+async function uploadRenderedFile(bucket: string, key: string, path: string): Promise<void> {
+  await new Promise((r) => setImmediate(r));
+  for (let attempt = 1; ; attempt++) {
+    const body = createReadStream(path);
+    // A send that fails before reading leaves the stream's open pending; the
+    // scratch is deleted next, and that open's ENOENT, unheard, would crash
+    // the container. The send sees real read errors through its own listener.
+    body.on('error', () => {});
+    try {
+      await s3.send(new PutObjectCommand({
+        Bucket: bucket, Key: key, Body: body, ContentLength: statSync(path).size, ContentType: 'video/mp4',
+      }));
+      return;
+    } catch (err) {
+      if (!isDroppedConnection(err) || attempt >= RENDER_UPLOAD_ATTEMPTS) throw err;
+      console.warn(`[master-worker] render upload dropped (${(err as { code?: string }).code}), try ${attempt + 1} of ${RENDER_UPLOAD_ATTEMPTS}`);
+    } finally {
+      body.destroy();
+    }
+  }
+}
+
 async function assembleStory(
   spec: NonNullable<MasterEvent['assemble']>,
   bucket: string,
@@ -2183,13 +2222,12 @@ async function assembleStory(
 
     const key = renderKey(vsId, renderId);
     // Streamed, not read whole: seven minutes of 1080p can be ~1 GB.
-    await s3.send(new PutObjectCommand({
-      Bucket: bucket, Key: key, Body: createReadStream(outPath), ContentLength: statSync(outPath).size, ContentType: 'video/mp4',
-    }));
+    await uploadRenderedFile(bucket, key, outPath);
     const done = await transitionStoryRender(vsId, renderId, ['running'], 'done', { s3Key: key });
     return { ok: done, s3Key: key };
   } catch (err) {
-    console.error('[master-worker] assemble failed:', err instanceof Error ? err.message : String(err));
+    const e = err as { name?: string; code?: string };
+    console.error(`[master-worker] assemble failed: ${e?.name ?? 'Error'}${e?.code ? ` (${e.code})` : ''}:`, err instanceof Error ? err.message : String(err));
     return await failRender('The render failed. Please try again.');
   } finally {
     rmSync(dir, { recursive: true, force: true });
