@@ -70,7 +70,7 @@ async function selectBrief() {
 
 it('loads briefs and reveals the capture form on selection', async () => {
   await selectBrief();
-  expect(mockedFetch).toHaveBeenCalledWith('/api/admin/briefs?limit=500');
+  expect(mockedFetch).toHaveBeenCalledWith('/api/admin/briefs?limit=200');
   // Insights feed pulls the whole log, not a capped slice.
   expect(mockedFetch).toHaveBeenCalledWith('/api/admin/generations?all=true');
   // Generations are fetched for the chosen brief.
@@ -303,4 +303,42 @@ it('attaches server-measured loudness to the POST when the measure-fn payload is
   await waitFor(() => expect(posted).toHaveLength(1));
   const body = JSON.parse(posted[0].body as string);
   expect(body.loudness).toMatchObject({ lufs: -11, badge: '+3 LU hot', verdict: 'clip-risk' });
+});
+
+describe('audit 2026-11-11', () => {
+  const BRIEF2 = { ...BRIEF, id: 'brief_2', analysis: { ...BRIEF.analysis, song_titles: ['இரண்டாம்'] } };
+  const gen = (id: string, briefId: string) => ({
+    id, briefId, engine: 'suno', verdict: 'failed', createdAt: '2026-06-24T10:00:00.000Z', scores: {}, settings: {}, stemRevisions: [], notes: `note ${id}`,
+  });
+
+  it('switching briefs quickly never shows the earlier brief’s attempts', async () => {
+    let releaseFirst: (v: unknown) => void = () => {};
+    routeFetch((url) => {
+      if (url.startsWith('/api/admin/briefs')) return ok([BRIEF, BRIEF2]);
+      if (url.includes('briefId=brief_1')) return new Promise((r) => { releaseFirst = r; }).then(() => ok([gen('gen_a', 'brief_1')]));
+      if (url.includes('briefId=brief_2')) return ok([gen('gen_b', 'brief_2')]);
+      return undefined;
+    });
+    render(<MusicLab />);
+    const select = await screen.findByLabelText('Brief');
+    fireEvent.change(select, { target: { value: 'brief_1' } });
+    fireEvent.change(select, { target: { value: 'brief_2' } });
+    await screen.findByText('note gen_b');
+    releaseFirst(undefined);
+    await new Promise((r) => setTimeout(r, 0));
+    await waitFor(() => expect(screen.queryByText('note gen_a')).not.toBeInTheDocument());
+    expect(screen.getByText('note gen_b')).toBeInTheDocument();
+  });
+
+  it('says so when the attempts feed fails, instead of showing 0 logged', async () => {
+    routeFetch((url) => (url.includes('all=true') ? { ok: false, status: 502, json: async () => ({ success: false, error: 'Failed to list generations.' }) } : undefined));
+    render(<MusicLab />);
+    expect(await screen.findByText(/Insights could not load/)).toBeInTheDocument();
+  });
+
+  it('asks for no more briefs than the server returns', async () => {
+    render(<MusicLab />);
+    await screen.findByLabelText('Brief');
+    expect(mockedFetch.mock.calls.map(([u]) => String(u))).toContain('/api/admin/briefs?limit=200');
+  });
 });

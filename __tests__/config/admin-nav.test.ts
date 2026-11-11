@@ -78,3 +78,13 @@ describe('Video Text nav entry', () => {
     expect(existsSync(join(process.cwd(), 'src/app/(admin)/admin/video-text/page.tsx'))).toBe(true);
   });
 });
+
+describe('Studio listening test', () => {
+  const entry = ADMIN_NAV_ITEMS.find((i) => i.href === '/admin/music-lab/studio-test');
+  it('is in the Music Lab section of the sidebar and has a real page', () => {
+    expect(entry?.title).toBe('Studio listening test');
+    expect(entry?.section).toBe('Music Lab');
+    expect(isSidebarVisible(entry!)).toBe(true);
+    expect(existsSync(join(process.cwd(), 'src/app/(admin)/admin/music-lab/studio-test/page.tsx'))).toBe(true);
+  });
+});
