@@ -9,6 +9,7 @@ import {
   contentSecurityPolicy,
   strictTransportSecurity,
 } from "./src/config/csp";
+import { imageRemotePatterns } from "./src/config/image-hosts";
 
 // Vanity URLs: serve a content item at a pretty path, and 301 its /content/<id>
 // URL to the pretty one. Keep in sync with src/config/vanity-paths.ts (next.config
@@ -128,24 +129,10 @@ const nextConfig: NextConfig = {
     // Thumbnails and cover art are immutable for the life of a video id, so
     // re-deriving them every minute only burns optimizer invocations.
     minimumCacheTTL: 604800, // 7 days
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: '**.amazonaws.com',
-      },
-      {
-        protocol: 'https',
-        hostname: 'i.ytimg.com',
-      },
-      {
-        // Media now serves from CloudFront (MEDIA_BASE_URL); without this the
-        // next/image optimizer 400s on every CDN image (video thumbnails on
-        // /videos, covers) → blank/black. Wildcard so a distribution swap
-        // doesn't reintroduce the breakage.
-        protocol: 'https',
-        hostname: '**.cloudfront.net',
-      },
-    ],
+    // Our media CDN (from MEDIA_BASE_URL, so a distribution swap follows the
+    // env), the bucket itself, and YouTube thumbnails. Never a wildcard: anyone
+    // can make a *.amazonaws.com or *.cloudfront.net host (see image-hosts.ts).
+    remotePatterns: imageRemotePatterns(),
   },
 
   // Security headers

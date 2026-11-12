@@ -34,6 +34,12 @@ let warnedMissingSecret = false;
 function getSecret(): string {
   const secret = process.env.TWITCH_STATE_SECRET;
   if (secret && secret.length > 0) return secret;
+  // The repo is public, so the default below is public too: in production a
+  // state signed with it proves nothing. Refuse instead (connect answers 502,
+  // the callback treats every state as tampered).
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('TWITCH_STATE_SECRET is not set');
+  }
   if (!warnedMissingSecret) {
     console.warn(
       '[twitch-oauth-state] TWITCH_STATE_SECRET is not set — using an insecure development default. Set it in SSM for production.'
