@@ -81,6 +81,32 @@ def load_16k_mono(path):
     return mono.numpy()
 
 
+ACTIVITY_HOP_SEC = 0.1
+
+
+def vocal_activity(path):
+    """Loudness of the vocal stem every 0.1 s, in whole dBFS.
+
+    The recogniser misses whole verses of singing (on a 4:06 song it heard
+    nothing for 41 s while the vocal was plainly there), but the stem's loudness
+    still shows WHERE the singing is. The site uses it to keep unheard lines out
+    of the music breaks. Raw numbers only; the threshold is decided in
+    src/lib/vocal-activity.ts, where it is tested.
+    """
+    import numpy as np
+    import soundfile
+
+    data, rate = soundfile.read(path, dtype="float32", always_2d=True)
+    mono = data.mean(axis=1)
+    hop = int(rate * ACTIVITY_HOP_SEC)
+    frames = len(mono) // hop
+    if frames == 0:
+        return []
+    rms = np.sqrt(np.mean(mono[: frames * hop].reshape(frames, hop) ** 2, axis=1))
+    db = 20 * np.log10(np.maximum(rms, 1e-6))
+    return [int(round(x)) for x in db]
+
+
 def recognise(path):
     """Word-level recognition. vad_filter stays FALSE: with it on, a stem full
     of singing returned zero segments (VAD_MUST_BE_DISABLED)."""
@@ -135,6 +161,7 @@ def lambda_handler(event, _context):
     vocal = separate_vocal(wav)
     timings["separateSec"] = round(time.time() - t, 1)
     log(f"vocal separated in {timings['separateSec']}s")
+    activity = vocal_activity(vocal)
 
     t = time.time()
     words = recognise(vocal)
@@ -146,6 +173,7 @@ def lambda_handler(event, _context):
         "separated": True,
         "model": os.environ.get("WHISPER_MODEL", "small"),
         "words": words,
+        "activity": {"hopSec": ACTIVITY_HOP_SEC, "db": activity},
         "timings": timings,
     }
     s3.put_object(
