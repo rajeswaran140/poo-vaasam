@@ -1,0 +1,13 @@
+# CPU-only torch: the CUDA wheels are ~2 GB larger and Lambda has no GPU.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.5.1+cpu
+torchaudio==2.5.1+cpu
+demucs==4.0.1
+faster-whisper==1.1.0
+soundfile==0.12.1
+# A static ffmpeg binary for extracting audio from the project's video.
+imageio-ffmpeg==0.5.1
+# faster-whisper 1.1.0 imports requests, which huggingface-hub 1.x+ no longer
+# pulls in; keep the hub on 0.x (what faster-whisper 1.1.0 was released against).
+huggingface-hub==0.26.5
+requests==2.32.3

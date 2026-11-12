@@ -1,0 +1,21 @@
+# CodeBuild: build the lyric-timing image and push it to ECR.
+# The dev box cannot build it (3-4 GB image, little free disk), so AWS does.
+version: 0.2
+env:
+  variables:
+    AWS_ACCOUNT: "975050319109"
+    REGION: "ca-central-1"
+    ECR_REPO: "tamilagaval-lyric-timing"
+phases:
+  pre_build:
+    commands:
+      - REGISTRY="${AWS_ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com"
+      - IMAGE_TAG="${IMAGE_TAG:-v1}"
+      - aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$REGISTRY"
+  build:
+    commands:
+      - docker build -t "${REGISTRY}/${ECR_REPO}:${IMAGE_TAG}" .
+  post_build:
+    commands:
+      - docker push "${REGISTRY}/${ECR_REPO}:${IMAGE_TAG}"
+      - docker images "${REGISTRY}/${ECR_REPO}"
