@@ -21,6 +21,20 @@ describe('twitch/oauth-state', () => {
     else process.env.TWITCH_STATE_SECRET = originalSecret;
   });
 
+  describe('production without the secret', () => {
+    const env = process.env as Record<string, string | undefined>;
+    const originalNodeEnv = env.NODE_ENV;
+    afterEach(() => { env.NODE_ENV = originalNodeEnv; });
+
+    it('refuses to mint and rejects every state, since the dev default is public', () => {
+      const { token } = mintOAuthState(); // signed with the test secret
+      delete process.env.TWITCH_STATE_SECRET;
+      env.NODE_ENV = 'production';
+      expect(() => mintOAuthState()).toThrow('TWITCH_STATE_SECRET is not set');
+      expect(verifyOAuthState(token)).toBeNull();
+    });
+  });
+
   describe('sign / verify roundtrip', () => {
     it('mint → verify returns the same payload shape', () => {
       const { token, payload } = mintOAuthState();
