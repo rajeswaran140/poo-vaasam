@@ -225,6 +225,13 @@ describe('shots', () => {
       const res = await shotsPOST(mk(lengths(14.9, 15.1)), ctx());
       expect(res.status).toBe(409);
     });
+    it('refuses while a clip is being made, writing nothing', async () => {
+      repo.loadTree.mockResolvedValue(tree({ genJobs: [{ jobId: 'gj_1', sceneOrder: 1, shotOrder: 1, status: 'running' }] }));
+      const res = await shotsPOST(mk(lengths(14.9, 15.1)), ctx());
+      expect(res.status).toBe(409);
+      expect((await res.json()).error).toBe('Wait for the video to finish first.');
+      expect(repo.setShotLengths).not.toHaveBeenCalled();
+    });
     it('refuses lengths that are not tenths', async () => {
       repo.loadTree.mockResolvedValue(tree());
       expect((await shotsPOST(mk(lengths(14.95, 15.05)), ctx())).status).toBe(400);

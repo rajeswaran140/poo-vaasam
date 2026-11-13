@@ -72,6 +72,8 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     if (!tree) return fail('That story no longer exists.', 404);
 
     if (input.op === 'lengths') {
+      // A clip being made would land at the length its row had before the fit.
+      if (hasRenderingVideo(tree)) return failRendering();
       const changed = () => fail('The rows changed while fitting. Fit again.', 409);
       const key = (s: { sceneOrder: number; shotOrder: number }) => `${s.sceneOrder}#${s.shotOrder}`;
       const named = new Set(input.lengths.map(key));
