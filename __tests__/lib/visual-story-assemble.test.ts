@@ -13,6 +13,8 @@ import {
   assemblyKindOf,
   isAssemblyShotKey,
   buildClipSegmentArgs,
+  segmentFrames,
+  assemblyShotProblem,
   buildAssembleJoinArgs,
   buildAssembleConcatList,
   assembleFades,
@@ -51,7 +53,7 @@ describe('what may be assembled', () => {
 });
 
 describe('a clip segment', () => {
-  const args = buildClipSegmentArgs({ srcPath: '/t/c.mp4', outPath: '/t/s.mp4', durationSec: 6, aspect: '9:16' });
+  const args = buildClipSegmentArgs({ srcPath: '/t/c.mp4', outPath: '/t/s.mp4', frames: 150, aspect: '9:16' });
 
   it('is exactly durationSec × 25 frames, with its sound dropped', () => {
     expect(args[args.indexOf('-frames:v') + 1]).toBe('150');
@@ -114,6 +116,42 @@ describe('stills and labels', () => {
   });
   it('names a shot the way the studio does', () => {
     expect(shotLabel({ sceneOrder: 2, shotOrder: 3 })).toBe('Scene 2, shot 3');
+  });
+});
+
+describe('rows in tenths render frame-exact (2026-11-13)', () => {
+  it('takes each shot\'s frames from the running total, so tenths never drift off the song', () => {
+    expect(segmentFrames([14.9, 15, 13.2])).toEqual([373, 375, 330]);
+    expect(segmentFrames([14.9, 15, 13.2]).reduce((a, b) => a + b, 0)).toBe(Math.round(43.1 * 25));
+    // Rounding each 0.1 s row alone (2.5 → 3) would drift to 90 frames.
+    expect(segmentFrames(Array(30).fill(0.1)).reduce((a, b) => a + b, 0)).toBe(75);
+    expect(Math.min(...segmentFrames(Array(30).fill(0.1)))).toBeGreaterThanOrEqual(1);
+  });
+  it('slows a clip with setpts before the 25 fps step, and pads to the row', () => {
+    const args = buildClipSegmentArgs({ srcPath: '/t/c.mp4', outPath: '/t/s.mp4', frames: 380, playbackRate: 0.921, aspect: '16:9' });
+    const vf = args[args.indexOf('-vf') + 1];
+    expect(vf).toContain('setpts=PTS/0.921');
+    expect(vf.indexOf('setpts=PTS/0.921')).toBeLessThan(vf.indexOf('fps=25'));
+    expect(vf).toContain('tpad=stop_mode=clone:stop_duration=15.2');
+    expect(args[args.indexOf('-frames:v') + 1]).toBe('380');
+  });
+  it('does not touch the speed of a clip at its own pace', () => {
+    const args = buildClipSegmentArgs({ srcPath: '/t/c.mp4', outPath: '/t/s.mp4', frames: 330, aspect: '16:9' });
+    expect(args[args.indexOf('-vf') + 1]).not.toContain('setpts');
+  });
+  it('the worker accepts tenths and a speed from 0.88 up to 1, nothing else', () => {
+    const key = `audio/mastering/visual-story/vs_1700000000000_abcdef12/candidates/cd_1.mp4`;
+    const ok = { sceneOrder: 1, shotOrder: 1, key, durationSec: 14.9 };
+    expect(assemblyShotProblem(ok)).toBeNull();
+    expect(assemblyShotProblem({ ...ok, playbackRate: 0.921 })).toBeNull();
+    expect(assemblyShotProblem({ ...ok, durationSec: 14.95 })).toBe('Scene 1, shot 1 has a length this renderer does not accept.');
+    for (const r of [0.87, 1, 1.2, Number.NaN]) {
+      expect(assemblyShotProblem({ ...ok, playbackRate: r })).toBe('Scene 1, shot 1 has a speed this renderer does not accept.');
+    }
+  });
+  it('estimates more work for a slowed clip', () => {
+    const k = 'a.mp4';
+    expect(estimateAssembleSec([{ key: k, durationSec: 15, playbackRate: 0.9 }])).toBeGreaterThan(estimateAssembleSec([{ key: k, durationSec: 15 }]));
   });
 });
 

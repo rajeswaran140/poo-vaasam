@@ -122,6 +122,33 @@ describe('POST render', () => {
     expect(lambdaSend).not.toHaveBeenCalled();
   });
 
+  it('a 14 s clip in a 15.2 s row plays at 92.1 %; in a 13.8 s row it is trimmed, at its own pace', async () => {
+    const story = { ...tree().story, windowStartSec: 0, windowEndSec: 29 };
+    const clip14 = (id: string) => ({ ...cand(id, '.mp4'), durationSec: 14 });
+    repo.loadTree.mockResolvedValue(tree({
+      story,
+      shots: [shot(1, 1, 15.2, 'cd_1700000000000_aaaaaa'), shot(1, 2, 13.8, 'cd_1700000000000_bbbbbb')],
+      candidates: [clip14('cd_1700000000000_aaaaaa'), clip14('cd_1700000000000_bbbbbb')],
+    }));
+    expect((await POST(mk(), ctx())).status).toBe(202);
+    const [a, b] = sentEvent().assemble.shots;
+    expect(a).toMatchObject({ durationSec: 15.2, playbackRate: 0.921 });
+    expect(b.durationSec).toBe(13.8);
+    expect(b).not.toHaveProperty('playbackRate');
+  });
+
+  it('rows in tenths whose float sum is 179.99999… fill a 3-minute window', async () => {
+    const story = { ...tree().story, windowStartSec: 0, windowEndSec: 180 };
+    const ids = [...Array(13)].map((_, i) => `cd_1700000000000_${String(i).padStart(6, 'a')}`);
+    const durs = [...Array(12)].map(() => 13.9).concat(13.2);
+    repo.loadTree.mockResolvedValue(tree({
+      story,
+      shots: durs.map((d, i) => shot(1, i + 1, d, ids[i])),
+      candidates: ids.map((id) => cand(id, '.mp4')),
+    }));
+    expect((await POST(mk(), ctx())).status).toBe(202);
+  });
+
   it('a clip may run past 15 s (your own upload); a picture may not', async () => {
     const story = { ...tree().story, windowStartSec: 0, windowEndSec: 28 };
     repo.loadTree.mockResolvedValue(tree({ story, shots: [shot(1, 1, 20, 'cd_1700000000000_aaaaaa'), shot(1, 2, 8, 'cd_1700000000000_bbbbbb')] }));

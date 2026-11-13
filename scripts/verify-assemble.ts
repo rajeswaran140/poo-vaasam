@@ -27,6 +27,7 @@ import {
   buildAssembleConcatList,
   buildAssembleJoinArgs,
   buildClipSegmentArgs,
+  segmentFrames,
   stillMotionFor,
 } from '../src/lib/visual-story-assemble';
 import { buildComposeArgs } from '../src/lib/master-video';
@@ -46,10 +47,10 @@ function aspectOf(file: string): number | undefined {
 }
 
 /** One segment, exactly as the worker builds it. Returns seconds taken. */
-function segment(src: string, durationSec: number, aspect: AspectRatio, index: number, out: string): number {
+function segment(src: string, frames: number, aspect: AspectRatio, index: number, out: string, playbackRate?: number): number {
   const t0 = Date.now();
   if (assemblyKindOf(src) === 'clip') {
-    ff(buildClipSegmentArgs({ srcPath: src, outPath: out, durationSec, aspect }).slice(1));
+    ff(buildClipSegmentArgs({ srcPath: src, outPath: out, frames, playbackRate, aspect }).slice(1));
   } else {
     const frame = p(`frame${index}.ppm`);
     const coverAspect = aspectOf(src);
@@ -57,7 +58,7 @@ function segment(src: string, durationSec: number, aspect: AspectRatio, index: n
       ? buildComposeArgs({ coverPath: src, framePath: frame, height: 1080, coverAspect, sourceScale: STILL_SOURCE_SCALE })
       : buildShortComposeArgs({ coverPath: src, framePath: frame, coverAspect, sourceScale: STILL_SOURCE_SCALE })).slice(1));
     ff(buildMotionSegmentArgs({
-      framePath: frame, seconds: durationSec, outPath: out, motion: stillMotionFor(index),
+      framePath: frame, seconds: frames / ASSEMBLE_FPS, outPath: out, motion: stillMotionFor(index),
       size: assembleFrameSize(aspect), fps: ASSEMBLE_FPS, codecArgs: ASSEMBLE_CODEC_ARGS, inputFilter: STILL_TO_BT709,
     }).slice(1));
     rmSync(frame, { force: true });
@@ -84,9 +85,12 @@ ff(['-f', 'lavfi', '-i', 'testsrc2=s=1920x1080', '-frames:v', '1', '-y', p('d-st
 ff(['-f', 'lavfi', '-i', 'testsrc2=s=1024x1024', '-frames:v', '1', '-y', p('e-square.png')]);
 
 const SHOTS = ['a-1080-24fps-sound.mp4', 'b-720-short.mp4', 'c-1080-long.mp4', 'd-still.jpg', 'e-square.png'];
-const SHOT_SEC = 6;
+// Rows in tenths (2026-11-13), the 5 s clip slowed to fill a 5.6 s row (5 / 5.6 = 0.893).
+const SHOT_SECS = [6.3, 5.6, 6, 6.3, 5.8];
+const RATES: Array<number | undefined> = [undefined, 0.893, undefined, undefined, undefined];
+const FRAMES = segmentFrames(SHOT_SECS);
 const WINDOW_START = 10;
-const WINDOW = SHOTS.length * SHOT_SEC;
+const WINDOW = 30;
 
 let failed = false;
 const rows: string[] = [];
@@ -95,7 +99,7 @@ for (const aspect of ['16:9', '9:16'] as AspectRatio[]) {
   const times: string[] = [];
   SHOTS.forEach((name, i) => {
     const out = p(`seg${i}.mp4`);
-    times.push(`${name.split('-')[0]} ${segment(p(name), SHOT_SEC, aspect, i, out).toFixed(1)}s`);
+    times.push(`${name.split('-')[0]} ${segment(p(name), FRAMES[i], aspect, i, out, RATES[i]).toFixed(1)}s`);
     segPaths.push(out);
   });
   writeFileSync(p('list.txt'), buildAssembleConcatList(segPaths));
@@ -119,9 +123,9 @@ for (const aspect of ['16:9', '9:16'] as AspectRatio[]) {
 // ---- cost: one minute of each kind, 16:9 -----------------------------------
 ff(['-f', 'lavfi', '-i', 'testsrc2=s=1920x1080:r=24', '-t', '15', '-c:v', 'libx264', '-preset', 'fast',
   '-pix_fmt', 'yuv420p', '-y', p('grok15.mp4')]);
-const clipMin = [0, 1, 2, 3].reduce((n, i) => n + segment(p('grok15.mp4'), 15, '16:9', i, p(`cost-c${i}.mp4`)), 0);
-const stillMin = [0, 1, 2, 3].reduce((n, i) => n + segment(p('d-still.jpg'), 15, '16:9', i, p(`cost-s${i}.mp4`)), 0);
-const oneSec = segment(p('d-still.jpg'), 1, '16:9', 0, p('cost-1s.mp4'));
+const clipMin = [0, 1, 2, 3].reduce((n, i) => n + segment(p('grok15.mp4'), 375, '16:9', i, p(`cost-c${i}.mp4`)), 0);
+const stillMin = [0, 1, 2, 3].reduce((n, i) => n + segment(p('d-still.jpg'), 375, '16:9', i, p(`cost-s${i}.mp4`)), 0);
+const oneSec = segment(p('d-still.jpg'), 25, '16:9', 0, p('cost-1s.mp4'));
 
 console.log(execFileSync(FFMPEG, ['-version']).toString().split('\n')[0]);
 console.log(rows.join('\n'));

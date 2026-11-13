@@ -17,7 +17,8 @@ import {
   shotLabel,
   type AssemblyShot,
 } from '@/lib/visual-story-assemble';
-import { MAX_OWN_CLIP_SEC, MAX_SHOT_SEC } from '@/types/visualStory';
+import { MAX_OWN_CLIP_SEC, MAX_SHOT_SEC, sameSec } from '@/types/visualStory';
+import { clipFitFor } from '@/lib/visual-story-clip-fit';
 import type { Candidate, RenderJob, Shot, VisualStory } from '@/types/visualStory';
 
 /**
@@ -60,12 +61,18 @@ export function planStoryRender(tree: {
     if (shot.durationSec > maxSec) {
       return { ok: false, message: `${label} is ${shot.durationSec} s; a picture can last at most ${MAX_SHOT_SEC} s. Shorten it.` };
     }
-    out.push({ sceneOrder: shot.sceneOrder, shotOrder: shot.shotOrder, key: cand.s3Key, durationSec: shot.durationSec });
+    const next: AssemblyShot = { sceneOrder: shot.sceneOrder, shotOrder: shot.shotOrder, key: cand.s3Key, durationSec: shot.durationSec };
+    // A made clip a little short of its row plays slower (to 88 %) rather than freezing its last frame.
+    if (assemblyKindOf(cand.s3Key) === 'clip' && typeof cand.durationSec === 'number') {
+      const fit = clipFitFor(cand.durationSec, shot.durationSec);
+      if (fit.kind === 'slow') next.playbackRate = fit.rate;
+    }
+    out.push(next);
   }
 
   const windowSec = story.windowEndSec - story.windowStartSec;
   const total = out.reduce((n, s) => n + s.durationSec, 0);
-  if (total !== windowSec) {
+  if (!sameSec(total, windowSec)) {
     return {
       ok: false,
       message: `The shots add up to ${mmss(total)}, but the story covers ${mmss(windowSec)} of the song. ` +

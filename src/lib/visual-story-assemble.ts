@@ -19,7 +19,8 @@
  */
 
 import { MOTION_SOURCE_SCALE, type ShortMotion } from '@/lib/master-short';
-import type { AspectRatio } from '@/types/visualStory';
+import { MAX_OWN_CLIP_SEC, MAX_SHOT_SEC, MIN_SHOT_SEC, isTenth, type AspectRatio } from '@/types/visualStory';
+import { MIN_PLAYBACK_RATE } from '@/lib/visual-story-clip-fit';
 
 export const ASSEMBLE_FPS = 25;
 
@@ -65,6 +66,8 @@ export interface AssemblyShot {
   shotOrder: number;
   key: string;
   durationSec: number;
+  /** A made clip a little short of its row plays this much slower (0.88–1, visual-story-clip-fit.ts). */
+  playbackRate?: number;
 }
 
 /** "Scene 2, shot 3" — how a failure names the shot it happened on. */
@@ -93,25 +96,61 @@ export function shotsShowingPictureWithClip(
     .map(shotLabel);
 }
 
-/** A clip segment: exactly durationSec × 25 frames, sound dropped. */
+/**
+ * Each shot's frame count, from the running total of row seconds: shot i
+ * covers round(start_i × 25) to round(end_i × 25). Rows are in tenths, which
+ * are not whole frames; rounding each row alone would drift off the song.
+ */
+export function segmentFrames(durations: readonly number[]): number[] {
+  // In whole hundredths: a float running total drifts (43.1 × 25 comes out 1077.4999…).
+  let centis = 0;
+  let at = 0;
+  return durations.map((d) => {
+    centis += Math.round(d * 100);
+    const end = Math.round((centis * ASSEMBLE_FPS) / 100);
+    const n = Math.max(1, end - at);
+    at += n;
+    return n;
+  });
+}
+
+/** Why the worker refuses one shot of the event, or null. Re-checked there, not trusted from the route. */
+export function assemblyShotProblem(sh: AssemblyShot): string | null {
+  const maxSec = assemblyKindOf(sh.key) === 'clip' ? MAX_OWN_CLIP_SEC : MAX_SHOT_SEC;
+  if (!Number.isFinite(sh.durationSec) || !isTenth(sh.durationSec) || sh.durationSec < MIN_SHOT_SEC || sh.durationSec > maxSec) {
+    return `${shotLabel(sh)} has a length this renderer does not accept.`;
+  }
+  if (sh.playbackRate !== undefined) {
+    const r = sh.playbackRate;
+    if (typeof r !== 'number' || !Number.isFinite(r) || r < MIN_PLAYBACK_RATE || r >= 1 || assemblyKindOf(sh.key) !== 'clip') {
+      return `${shotLabel(sh)} has a speed this renderer does not accept.`;
+    }
+  }
+  return null;
+}
+
+/** A clip segment: exactly `frames` frames, sound dropped, slowed by playbackRate when given. */
 export function buildClipSegmentArgs(params: {
   srcPath: string;
   outPath: string;
-  durationSec: number;
+  frames: number;
+  playbackRate?: number;
   aspect: AspectRatio;
 }): string[] {
   const { width, height } = assembleFrameSize(params.aspect);
-  const frames = Math.round(params.durationSec * ASSEMBLE_FPS);
+  const frames = params.frames;
+  const seconds = Math.round((frames / ASSEMBLE_FPS) * 1000) / 1000;
+  const slow = params.playbackRate !== undefined && params.playbackRate < 1 ? `setpts=PTS/${params.playbackRate},` : '';
   return [
     '-hide_banner', '-nostats',
     '-i', params.srcPath,
     '-an', '-sn', '-dn',
     '-vf',
-    `scale=trunc(iw*sar/2)*2:ih,setsar=1,fps=${ASSEMBLE_FPS},` +
+    `scale=trunc(iw*sar/2)*2:ih,setsar=1,${slow}fps=${ASSEMBLE_FPS},` +
       `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},setsar=1,` +
       // A clip a second short (Grok rounds) holds its last frame rather than
       // shortening the video under the song.
-      `tpad=stop_mode=clone:stop_duration=${params.durationSec}`,
+      `tpad=stop_mode=clone:stop_duration=${seconds}`,
     '-frames:v', String(frames),
     ...ASSEMBLE_CODEC_ARGS,
     '-y', params.outPath,
@@ -227,11 +266,13 @@ export const ASSEMBLE_COST = {
  */
 export const MAX_ASSEMBLE_SEC = 600;
 
-export function estimateAssembleSec(shots: ReadonlyArray<{ key: string; durationSec: number }>): number {
+export function estimateAssembleSec(shots: ReadonlyArray<{ key: string; durationSec: number; playbackRate?: number }>): number {
   let total = 0;
   for (const s of shots) {
     const kind = assemblyKindOf(s.key);
     total += ASSEMBLE_COST.perShotSec + s.durationSec * (kind === 'clip' ? ASSEMBLE_COST.clipPerSec : ASSEMBLE_COST.stillPerSec);
+    // A slowed clip re-times more frames than it had.
+    if (kind === 'clip' && s.playbackRate) total += s.durationSec * (1 / s.playbackRate - 1) * ASSEMBLE_COST.clipPerSec;
     total += s.durationSec * ASSEMBLE_COST.joinPerSec;
   }
   return Math.round(total);
