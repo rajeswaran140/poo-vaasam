@@ -75,9 +75,9 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     if (parsed.data.op === 'align') {
       const sensor = await readJson<LyricTimingWords>(keys.words);
       if (!sensor) return fail('Press Listen to the song first.', 409);
-      // Lines past the window are dropped anyway; a little room after it keeps a
-      // line sung across the window's end from being refused for want of space.
-      const durationSec = Math.min(Number(sensor.durationSec) || story.windowEndSec + 30, story.windowEndSec + 30);
+      // Timed over the whole song (whole-song lyrics are normal, e.g. from Video Text);
+      // linesInWindow keeps the lines that start inside the story's part.
+      const durationSec = Number(sensor.durationSec) > 0 ? Number(sensor.durationSec) : story.windowEndSec;
       const result = timeLyricLines(parsed.data.lyricsText, { ...sensor, durationSec });
       if (!result.ok) return fail(result.error, 422);
       const lines = linesInWindow(result.lines, story.windowStartSec, story.windowEndSec);

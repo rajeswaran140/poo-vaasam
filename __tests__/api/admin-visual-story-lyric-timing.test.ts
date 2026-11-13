@@ -122,3 +122,16 @@ it('404s an unknown or malformed story, and needs a bearer token', async () => {
   expect((await POST(post({ op: 'start' }, false), ctx())).status).toBe(401);
   expect(send).not.toHaveBeenCalled();
 });
+
+it('times whole-song lyrics for a story that covers only part of the song (review 2026-11-13)', async () => {
+  // The window ends at 60 s; the song runs 200 s and its last lines are sung long after.
+  const late = [150, 160, 170, 180, 190].flatMap((t, i) => [
+    { start: t, end: t + 1, word: `late${i}` }, { start: t + 1, end: t + 2, word: 'line' },
+  ]);
+  store.set(`${BASE}.words.json`, JSON.stringify({ ...words, words: [...words.words, ...late] }));
+  const lyrics = ['one line', 'two line', ...[0, 1, 2, 3, 4].map((i) => `late${i} line`)].join('\n');
+  const res = await POST(post({ op: 'align', lyricsText: lyrics }), ctx());
+  expect(res.status).toBe(200);
+  const body = await res.json();
+  expect(body.lines.map((l: { text: string }) => l.text)).toEqual(['one line', 'two line']);
+});
