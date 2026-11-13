@@ -59,6 +59,19 @@ export function wordSimilarity(a: string, b: string): number {
 }
 
 export function alignLinesToWords(lines: string[], heard: AsrWord[]): WordAlignedLine[] {
+  // Songs repeat words (every chorus), so the same pair is compared many times
+  // over the n×m table; each comparison costs regexes, bigram maps and an edit
+  // distance. Cached per call: 2.7 s → well under a second on a 4-minute song.
+  const memo = new Map<string, number>();
+  const sim = (a: string, b: string) => {
+    const k = `${a}\u0001${b}`;
+    let v = memo.get(k);
+    if (v === undefined) {
+      v = wordSimilarity(a, b);
+      memo.set(k, v);
+    }
+    return v;
+  };
   const lyric: { text: string; line: number }[] = [];
   lines.forEach((l, i) => tokensOf(l).forEach((t) => lyric.push({ text: t, line: i })));
   const words = heard
@@ -74,18 +87,18 @@ export function alignLinesToWords(lines: string[], heard: AsrWord[]): WordAligne
   for (let j = 1; j <= m; j++) { score[0][j] = score[0][j - 1] + SKIP_HEARD; move[0][j] = 3; }
   for (let i = 1; i <= n; i++) {
     for (let j = 1; j <= m; j++) {
-      let best = score[i - 1][j - 1] + pairScore(wordSimilarity(lyric[i - 1].text, words[j - 1].text));
+      let best = score[i - 1][j - 1] + pairScore(sim(lyric[i - 1].text, words[j - 1].text));
       let how = 1;
       const a = score[i - 1][j] + SKIP_LYRIC;
       if (a > best) { best = a; how = 2; }
       const b = score[i][j - 1] + SKIP_HEARD;
       if (b > best) { best = b; how = 3; }
       if (i >= 2) {
-        const c = score[i - 2][j - 1] + pairScore(wordSimilarity(lyric[i - 2].text + lyric[i - 1].text, words[j - 1].text)) - JOIN_COST;
+        const c = score[i - 2][j - 1] + pairScore(sim(lyric[i - 2].text + lyric[i - 1].text, words[j - 1].text)) - JOIN_COST;
         if (c > best) { best = c; how = 4; }
       }
       if (j >= 2) {
-        const d = score[i - 1][j - 2] + pairScore(wordSimilarity(lyric[i - 1].text, words[j - 2].text + words[j - 1].text)) - JOIN_COST;
+        const d = score[i - 1][j - 2] + pairScore(sim(lyric[i - 1].text, words[j - 2].text + words[j - 1].text)) - JOIN_COST;
         if (d > best) { best = d; how = 5; }
       }
       score[i][j] = best;
@@ -104,19 +117,19 @@ export function alignLinesToWords(lines: string[], heard: AsrWord[]): WordAligne
     const how = move[i][j];
     if (how === 1) {
       slot[i - 1] = words[j - 1];
-      if (wordSimilarity(lyric[i - 1].text, words[j - 1].text) >= HEARD) partner[i - 1] = words[j - 1];
+      if (sim(lyric[i - 1].text, words[j - 1].text) >= HEARD) partner[i - 1] = words[j - 1];
       i--; j--;
     } else if (how === 4) {
       slot[i - 2] = words[j - 1];
       slot[i - 1] = words[j - 1];
-      if (wordSimilarity(lyric[i - 2].text + lyric[i - 1].text, words[j - 1].text) >= HEARD) {
+      if (sim(lyric[i - 2].text + lyric[i - 1].text, words[j - 1].text) >= HEARD) {
         partner[i - 2] = words[j - 1];
         partner[i - 1] = words[j - 1];
       }
       i -= 2; j--;
     } else if (how === 5) {
       slot[i - 1] = { start: words[j - 2].start, end: words[j - 1].end };
-      if (wordSimilarity(lyric[i - 1].text, words[j - 2].text + words[j - 1].text) >= HEARD) {
+      if (sim(lyric[i - 1].text, words[j - 2].text + words[j - 1].text) >= HEARD) {
         partner[i - 1] = { start: words[j - 2].start, end: words[j - 1].end };
       }
       i--; j -= 2;

@@ -154,3 +154,22 @@ it('asks for a listen first, and explains an unusable result', async () => {
 it('refuses a malformed request', async () => {
   expect((await POST(post({ op: 'nope' }), ctx())).status).toBe(400);
 });
+
+it('clamps line ends to the stored video length, so a line sung to the very end is never refused', async () => {
+  // The worker's length is the audio's, unrounded and a hair longer than the stored 60.00 s.
+  store.set(`${BASE}.words.json`, JSON.stringify({ durationSec: 60.2071, words: [
+    { start: 10, end: 11, word: 'one' }, { start: 11, end: 12, word: 'line' },
+    { start: 57.5, end: 58.5, word: 'two' }, { start: 58.5, end: 60.2, word: 'line' },
+  ] }));
+  const res = await POST(post({ op: 'align', lyricsText: 'one line\ntwo line' }), ctx());
+  const { lines } = await res.json();
+  expect(lines[1].endSec).toBeLessThanOrEqual(60);
+});
+
+it('a failure written within the same second as the start still counts (whole-second worker clock)', async () => {
+  const startedAt = new Date().toISOString();
+  store.set(`${BASE}.started.json`, JSON.stringify({ startedAt }));
+  const sameSecond = startedAt.replace(/\.\d{3}Z$/, '.000Z');
+  store.set(`${BASE}.error.json`, JSON.stringify({ error: 'boom', at: sameSecond }));
+  expect(await (await GET(get(), ctx())).json()).toEqual({ status: 'error', error: expect.stringMatching(/failed/) });
+});

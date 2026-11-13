@@ -387,6 +387,7 @@ export function VideoTextEditor({
         blocks: syncTextToBlocks(body.blocks as TextBlock[], p, source.durationSec),
         cut: (body.cut as Cut | null | undefined) ?? null,
         freeze: (body.freeze as Freeze | null | undefined) ?? null,
+        endTitles: (body.endTitles as EndTitles | null | undefined) ?? null,
         version: body.version,
       }));
       const moved = Number(body.moved) || 0;
@@ -812,6 +813,7 @@ export function VideoTextEditor({
             video={videoRef}
             hasLogo={Boolean(logoImage)}
             hasCredits={project.creditsText.trim().length > 0}
+            cut={project.cut ?? null}
           />
           <AutoTime
             projectId={initial.id}

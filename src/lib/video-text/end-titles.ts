@@ -27,16 +27,43 @@ type Size = { width: number; height: number };
 export function validateEndTitles(end: EndTitles | null | undefined, durationSec: number): string | null {
   if (!end) return null;
   if (!Number.isFinite(end.atSec) || end.atSec < 0) return 'The end titles need a start time.';
-  if (end.atSec > durationSec - END_TITLES_FADE_SEC) {
+  // A hair of tolerance: 128.01 − 1 is 127.00999…, and a start stored as 127.01 must pass.
+  if (end.atSec > durationSec - END_TITLES_FADE_SEC + 1e-6) {
     return 'The end titles start too close to the end of the video. Start them at least a second before it ends.';
   }
   return null;
 }
 
+/** The latest start that leaves a second for the fade, in whole hundredths (rounded DOWN, so it always validates). */
+const latestStart = (durationSec: number) => Math.max(0, Math.floor((durationSec - END_TITLES_FADE_SEC) * 100 + 1e-6) / 100);
+
 /** End titles at the playhead, kept a fade's length before the end, on the given screen. */
 export function endTitlesAt(sec: number, durationSec: number, background: EndTitles['background'] = 'black'): EndTitles {
-  const max = Math.max(0, durationSec - END_TITLES_FADE_SEC);
-  return { atSec: Math.round(Math.min(max, Math.max(0, sec)) * 100) / 100, background };
+  const at = Math.round(Math.max(0, sec) * 100) / 100;
+  return { atSec: Math.min(latestStart(durationSec), at), background };
+}
+
+/**
+ * End titles after a new video is attached: kept when they still leave room
+ * for the fade, else dropped. Without this a SHORTER re-upload left them past
+ * the new end, and every save (they ride along with each autosave) was refused.
+ */
+export function fitEndTitlesToDuration(end: EndTitles | null | undefined, durationSec: number): EndTitles | null {
+  if (!end) return null;
+  return validateEndTitles(end, durationSec) === null ? end : null;
+}
+
+/**
+ * How In and Out change what the export shows of the end titles, or null when
+ * they are fully inside it. The preview plays the whole source, so this is
+ * the only place the difference is said.
+ */
+export function endTitlesCutNote(end: EndTitles | null | undefined, range: { inSec: number; outSec: number }): string | null {
+  if (!end) return null;
+  if (end.atSec >= range.outSec) return 'The end titles start after Out, so the exported part does not show them.';
+  if (range.outSec - end.atSec < END_TITLES_FADE_SEC) return 'Out comes before the fade finishes, so the export ends half-faded.';
+  if (end.atSec + END_TITLES_FADE_SEC <= range.inSec) return 'The end titles start before In, so the whole exported part is the end screen.';
+  return null;
 }
 
 /** The screen colour, and the credits' colour on it (every text colour is light, so white gets dark text). */

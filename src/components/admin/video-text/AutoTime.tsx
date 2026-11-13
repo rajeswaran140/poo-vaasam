@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
 import { applyTimedLines, linesAndVerses, type TimedLine } from '@/lib/video-text/lyric-timing';
-import { validateBlocks } from '@/lib/video-text/timeline';
+import { sameBlocks, validateBlocks } from '@/lib/video-text/timeline';
 import type { TextBlock } from '@/types/videoText';
 
 export interface AutoTimeProps {
@@ -44,102 +44,138 @@ export function AutoTime({ projectId, sourceKey, durationSec, lyricsText, blocks
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ unheard: number[]; total: number } | null>(null);
   const [snapshot, setSnapshot] = useState<TextBlock[] | null>(null);
-  const live = useRef({ blocks, lyricsText });
-  live.current = { blocks, lyricsText };
+  const live = useRef({ blocks, lyricsText, disabled });
+  live.current = { blocks, lyricsText, disabled };
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = useRef(true);
-  useEffect(() => () => {
-    mounted.current = false;
-    if (timer.current) clearTimeout(timer.current);
+  /** The current run: a new start or a new video bumps it, and any older loop or reply stops. */
+  const run = useRef(0);
+  /** The blocks the last timing put on the timeline; Undo is offered only while they are unchanged. */
+  const applied = useRef<TextBlock[] | null>(null);
+  useEffect(() => {
+    // Set on every mount, not just in the initial value: React's development
+    // double-mount runs this cleanup once, and a flag left false would make
+    // every reply look like it arrived after unmount (caught by the E2E test).
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (timer.current) clearTimeout(timer.current);
+    };
   }, []);
 
-  const base = `/api/admin/video-text/${projectId}/lyric-timing`;
+  // Any edit after the timing (a moved block, a changed line) ends the Undo:
+  // putting the old timeline back would throw that newer work away.
+  useEffect(() => {
+    if (snapshot && applied.current && !sameBlocks(blocks, applied.current)) {
+      setSnapshot(null);
+      applied.current = null;
+    }
+  }, [blocks, snapshot]);
 
-  const align = useCallback(async () => {
+  const base = `/api/admin/video-text/${projectId}/lyric-timing`;
+  const current = (token: number) => mounted.current && token === run.current;
+
+  const align = useCallback(async (token: number) => {
     setPhase('aligning');
     setError(null);
+    const sent = live.current.lyricsText;
     try {
       const res = await adminFetch(base, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ op: 'align', lyricsText: live.current.lyricsText }),
+        body: JSON.stringify({ op: 'align', lyricsText: sent }),
       });
       const body = await res.json().catch(() => ({}));
+      if (!current(token)) return;
       if (!res.ok) throw new Error(body?.error || 'Could not time the lines. Try again.');
+      // Timed against the lyrics as they were sent: edited since, the times
+      // would land on the wrong words, so nothing changes and it says so.
+      if (live.current.lyricsText !== sent) {
+        throw new Error('The lyrics changed while the lines were being timed, so nothing was changed. Press the button again (it takes about a second).');
+      }
+      if (live.current.disabled) {
+        throw new Error('Nothing was changed while a video uploads or renders. Press the button again when it has finished.');
+      }
       const lines = body.lines as TimedLine[];
       const before = live.current.blocks;
       const next = applyTimedLines(before, lines, makeId);
       const problem = validateBlocks(next, durationSec);
       if (problem) throw new Error(problem);
-      if (!mounted.current) return;
+      applied.current = next;
       setSnapshot(before);
       onChange(next);
       setResult({ unheard: lines.flatMap((l, i) => (l.heard ? [] : [i + 1])), total: lines.length });
     } catch (err) {
-      if (mounted.current) setError(err instanceof Error ? err.message : 'Could not time the lines. Try again.');
+      if (current(token)) setError(err instanceof Error ? err.message : 'Could not time the lines. Try again.');
     } finally {
-      if (mounted.current) setPhase('idle');
+      if (current(token)) setPhase('idle');
     }
   }, [base, durationSec, onChange]);
 
-  const poll = useCallback(async () => {
+  const poll = useCallback(async (token: number) => {
     try {
       const res = await adminFetch(base);
       const body = await res.json().catch(() => ({}));
-      if (!mounted.current) return;
+      if (!current(token)) return;
       if (!res.ok) throw new Error(body?.error || 'Could not check automatic timing.');
       if (body.status === 'running') {
         setPhase('running');
-        timer.current = setTimeout(() => void poll(), pollMs);
+        timer.current = setTimeout(() => void poll(token), pollMs);
         return;
       }
       if (body.status === 'ready') {
         setReady(true);
-        await align();
+        await align(token);
         return;
       }
       if (body.status === 'error') setError(body.error);
       setPhase('idle');
     } catch (err) {
-      if (!mounted.current) return;
+      if (!current(token)) return;
       setError(err instanceof Error ? err.message : 'Could not check automatic timing.');
       setPhase('idle');
     }
   }, [align, base, pollMs]);
 
-  // On open (and after a new upload): pick up a run already listening, or note
-  // that this video was listened to before, without changing any timing.
+  // On open (and after a new upload): forget the old video's run, then pick up
+  // a run already listening, or note that this video was listened to before,
+  // without changing any timing.
   useEffect(() => {
-    let cancelled = false;
+    const token = ++run.current;
+    if (timer.current) clearTimeout(timer.current);
+    setPhase('idle');
     setReady(false);
     setResult(null);
     setSnapshot(null);
+    applied.current = null;
     setError(null);
     void (async () => {
       try {
         const res = await adminFetch(base);
         const body = await res.json().catch(() => ({}));
-        if (cancelled || !mounted.current || !res.ok) return;
+        if (!current(token) || !res.ok) return;
         if (body.status === 'ready') setReady(true);
         if (body.status === 'running') {
           setPhase('running');
-          timer.current = setTimeout(() => void poll(), pollMs);
+          timer.current = setTimeout(() => void poll(token), pollMs);
         }
       } catch {
         /* the button still works; it reports its own errors */
       }
     })();
     return () => {
-      cancelled = true;
       if (timer.current) clearTimeout(timer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-check only when the video changes
   }, [base, sourceKey]);
 
   const start = async () => {
+    // One loop at a time: a press supersedes any check still in flight.
+    const token = ++run.current;
+    if (timer.current) clearTimeout(timer.current);
     setError(null);
     setResult(null);
-    if (ready) return void align();
+    if (ready) return void align(token);
     setPhase('starting');
     try {
       const res = await adminFetch(base, {
@@ -148,15 +184,16 @@ export function AutoTime({ projectId, sourceKey, durationSec, lyricsText, blocks
         body: JSON.stringify({ op: 'start' }),
       });
       const body = await res.json().catch(() => ({}));
+      if (!current(token)) return;
       if (!res.ok) throw new Error(body?.error || 'Automatic timing could not be started. Try again.');
       if (body.status === 'ready') {
         setReady(true);
-        return void align();
+        return void align(token);
       }
       setPhase('running');
-      timer.current = setTimeout(() => void poll(), pollMs);
+      timer.current = setTimeout(() => void poll(token), pollMs);
     } catch (err) {
-      if (!mounted.current) return;
+      if (!current(token)) return;
       setError(err instanceof Error ? err.message : 'Automatic timing could not be started. Try again.');
       setPhase('idle');
     }
@@ -166,6 +203,7 @@ export function AutoTime({ projectId, sourceKey, durationSec, lyricsText, blocks
     if (!snapshot) return;
     onChange(snapshot);
     setSnapshot(null);
+    applied.current = null;
     setResult(null);
   };
 

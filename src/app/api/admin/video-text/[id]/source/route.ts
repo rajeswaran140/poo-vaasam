@@ -17,6 +17,7 @@ import { expiresAtFrom, floorCentis, isValidProjectId, isVideoTextKeyFor } from 
 import { clampToDuration, defaultBlocks } from '@/lib/video-text/timeline';
 import type { SourceInfo } from '@/types/videoText';
 import { fitCutToDuration } from '@/lib/video-text/cut';
+import { fitEndTitlesToDuration } from '@/lib/video-text/end-titles';
 import { fitFreezeToDuration } from '@/lib/video-text/freeze';
 
 export const runtime = 'nodejs';
@@ -161,13 +162,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const cut = fitCutToDuration(project.cut, source.durationSec, source.fps);
     // So is the freeze (on the new video's frames), when it is still inside it.
     const freeze = fitFreezeToDuration(project.freeze, source.durationSec, source.fps);
-    const saved = await repo.setSource(id, source, blocks, cut, freeze);
+    // And the end titles, when they still leave a second for the fade; otherwise
+    // every later save would be refused (they ride along with each autosave).
+    const endTitles = fitEndTitlesToDuration(project.endTitles, source.durationSec);
+    const saved = await repo.setSource(id, source, blocks, cut, freeze, Date.now(), endTitles);
     if (!saved.ok) {
       return saved.reason === 'missing'
         ? NextResponse.json({ error: 'Project not found.' }, { status: 404 })
         : NextResponse.json({ error: RENDER_RUNNING }, { status: 409 });
     }
-    return NextResponse.json({ source: { ...source, durationSec: saved.durationSec }, blocks, moved, cut, freeze, version: saved.version });
+    return NextResponse.json({ source: { ...source, durationSec: saved.durationSec }, blocks, moved, cut, freeze, endTitles, version: saved.version });
   } catch (err) {
     console.error('[api/video-text/source] failed:', err instanceof Error ? err.message : String(err));
     return NextResponse.json({ error: 'Could not check the video.' }, { status: 502 });

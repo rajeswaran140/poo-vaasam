@@ -181,6 +181,8 @@ test.describe('video text editor (mocked API)', () => {
       if (rest === `${ID}/source` && method === 'GET') return json(route, { url: CLIP_URL });
       // The saved logo: none, unless a test layers its own route on top.
       if (rest === 'logo' && method === 'GET') return json(route, { logo: null });
+      // Automatic lyric timing: never listened to, unless a test layers its own route on top.
+      if (rest === `${ID}/lyric-timing` && method === 'GET') return json(route, { status: 'idle' });
       if (rest === ID && method === 'PATCH') {
         patches.push(req.postData() ?? '');
         const sent = JSON.parse(req.postData() ?? '{}');
@@ -804,6 +806,143 @@ test.describe('video text editor (mocked API)', () => {
       .toBeLessThanOrEqual(0);
     await page.screenshot({ path: 'test-results/video-text-tap-390.png', fullPage: true });
 
+    expect(writes, 'non-GET /api/ requests the mocks did not fulfil').toEqual([]);
+    expect(unexpected, 'requests to the video-text API that the test did not mock').toEqual([]);
+  });
+
+  test('automatic lyric timing: listens, times every line, names the unheard ones, and Undo puts the old timing back', async ({ page }) => {
+    test.skip(Boolean(ffmpegMissing), ffmpegMissing || 'ffmpeg missing');
+    const { writes, unexpected, patches } = await mockEditor(page);
+    // The lyric-timing API: idle, then listening, then ready; align returns
+    // times for the three fixture lines (the middle one "not heard").
+    let phase: 'idle' | 'running' | 'ready' = 'idle';
+    const aligned: string[] = [];
+    const calls: string[] = [];
+    await page.route('**/api/admin/video-text/**/lyric-timing', async (route) => {
+      const req = route.request();
+      calls.push(`${req.method()} ${req.postData() ?? ''} (${phase})`);
+      const json = (b: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
+      if (req.method() === 'GET') {
+        if (phase === 'running') phase = 'ready'; // the second check finds it done
+        return json(phase === 'ready' ? { status: 'ready' } : phase === 'running' ? { status: 'running', startedAt: 't' } : { status: 'idle' });
+      }
+      const body = JSON.parse(req.postData() ?? '{}');
+      if (body.op === 'start') {
+        phase = 'running';
+        return json({ status: 'running', startedAt: 't' }, 202);
+      }
+      if (body.op === 'align') {
+        aligned.push(body.lyricsText);
+        const lines = body.lyricsText.split('\n').filter((l: string) => l.trim());
+        return json({ lines: lines.map((text: string, i: number) => ({ text, startSec: 12 + i * 6, endSec: 16 + i * 6, heard: i !== 1 })) });
+      }
+      return json({ error: 'unexpected' }, 400);
+    });
+    await openEditor(page);
+    const sliders = page.getByRole('slider', { name: /^Lyric \d: / });
+    const before = await sliders.evaluateAll((els) => els.map((e) => Number(e.getAttribute('aria-valuenow'))));
+
+    await page.getByRole('button', { name: 'Time lyrics automatically' }).click();
+    await expect(page.getByRole('button', { name: 'Listening to the song…' })).toBeVisible();
+    // The editor polls every 10 s; the lines move once the listen is done.
+    try {
+      await expect.poll(() => sliders.evaluateAll((els) => els.map((e) => Number(e.getAttribute('aria-valuenow')))), { timeout: 30_000 }).toEqual([12, 18, 24]);
+    } catch (err) {
+      throw new Error(`${err instanceof Error ? err.message : err}\nlyric-timing calls: ${JSON.stringify(calls)}`);
+    }
+    expect(aligned).toEqual([lyricsText]);
+    await expect(page.getByTestId('auto-time').getByRole('status')).toContainText('1 were not heard clearly');
+    await expect(page.getByTestId('auto-time').getByRole('status')).toContainText('line 2.');
+    // Saved: the next PATCH carries the new lyric times.
+    await expect.poll(() => {
+      const last = patches.at(-1);
+      return last ? JSON.parse(last).edits.blocks.filter((b: { track: string }) => b.track === 'lyric').map((b: { startSec: number }) => b.startSec) : [];
+    }, { timeout: 15_000 }).toEqual([12, 18, 24]);
+
+    await page.getByRole('button', { name: 'Undo automatic timing' }).click();
+    await expect.poll(() => sliders.evaluateAll((els) => els.map((e) => Number(e.getAttribute('aria-valuenow'))))).toEqual(before);
+    expect(writes, 'non-GET /api/ requests the mocks did not fulfil').toEqual([]);
+    expect(unexpected, 'requests to the video-text API that the test did not mock').toEqual([]);
+  });
+
+  test('end titles: start at the playhead; the preview fades to black, then white, and it is saved', async ({ page }) => {
+    test.skip(Boolean(ffmpegMissing), ffmpegMissing || 'ffmpeg missing');
+    const { writes, unexpected, patches } = await mockEditor(page);
+    const { seekTo } = await openEditor(page);
+    /** The overlay's RGBA at the centre of the picture. */
+    const centre = () =>
+      page.evaluate(() => {
+        const cv = document.querySelector('[data-testid="text-overlay"]') as HTMLCanvasElement;
+        const d = cv.getContext('2d')!.getImageData(Math.floor(cv.width * 0.5), Math.floor(cv.height * 0.12), 1, 1).data;
+        return [d[0], d[1], d[2], d[3]];
+      });
+
+    await seekTo(30);
+    const controls = page.getByTestId('end-titles-controls');
+    await controls.getByRole('button', { name: 'Start end titles here' }).click();
+    await expect(controls).toContainText('From 0:30.00 to the end');
+    await expect.poll(() => patches.some((b) => JSON.parse(b).edits?.endTitles?.atSec === 30 && JSON.parse(b).edits.endTitles.background === 'black'), { timeout: 15_000 }).toBe(true);
+
+    // Before the start: no end screen. Half-way into the 1 s fade: partly covered. After: solid black.
+    await seekTo(25);
+    await expect.poll(async () => (await centre())[3]).toBe(0);
+    await seekTo(30.5);
+    await expect.poll(async () => (await centre())[3], { timeout: 10_000 }).toBeGreaterThan(80);
+    expect((await centre())[3]).toBeLessThan(200);
+    await seekTo(33);
+    await expect.poll(centre, { timeout: 10_000 }).toEqual([0, 0, 0, 255]);
+
+    await controls.getByRole('radio', { name: 'White' }).click();
+    await expect.poll(centre, { timeout: 10_000 }).toEqual([255, 255, 255, 255]);
+    await expect.poll(() => JSON.parse(patches.at(-1) ?? '{}').edits?.endTitles, { timeout: 15_000 }).toEqual({ atSec: 30, background: 'white' });
+
+    await controls.getByRole('button', { name: 'Remove end titles' }).click();
+    await expect.poll(async () => (await centre())[3], { timeout: 10_000 }).toBe(0);
+    await expect.poll(() => JSON.parse(patches.at(-1) ?? '{}').edits?.endTitles, { timeout: 15_000 }).toBeNull();
+    expect(writes, 'non-GET /api/ requests the mocks did not fulfil').toEqual([]);
+    expect(unexpected, 'requests to the video-text API that the test did not mock').toEqual([]);
+  });
+
+  test('Make video with end titles uploads one more full-size layer, opaque', async ({ page }) => {
+    test.skip(Boolean(ffmpegMissing), ffmpegMissing || 'ffmpeg missing');
+    const { writes, unexpected } = await mockEditor(page);
+    let renderId: string | null = null;
+    let blockIds: string[] = [];
+    const pngs: { id: string; width: number; height: number; colourType: number }[] = [];
+    await page.route('https://tamil-web-media.s3.amazonaws.com/e2e-mock-upload/**', async (route) => {
+      const body = route.request().postDataBuffer() ?? Buffer.alloc(0);
+      const at = body.indexOf(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+      const id = /k\/([^.]+)\.png/.exec(body.toString('latin1'))?.[1] ?? '?';
+      if (at >= 0) pngs.push({ id, width: body.readUInt32BE(at + 16), height: body.readUInt32BE(at + 20), colourType: body[at + 25] });
+      return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*' } });
+    });
+    await page.route('**/api/admin/video-text/**', async (route) => {
+      const req = route.request();
+      const path = new URL(req.url()).pathname;
+      const json = (b: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
+      if (path.endsWith('/overlays') && req.method() === 'POST') {
+        const sent = JSON.parse(req.postData() ?? '{}');
+        renderId = sent.renderId;
+        blockIds = sent.blockIds;
+        return json({ uploads: sent.blockIds.map((blockId: string) => ({ blockId, url: 'https://tamil-web-media.s3.amazonaws.com/e2e-mock-upload/png', fields: { key: `k/${blockId}.png` }, key: `k/${blockId}.png` })) });
+      }
+      if (path.endsWith('/render') && req.method() === 'POST') return json({ status: 'queued' }, 202);
+      if (path.endsWith(`/${ID}`) && req.method() === 'GET' && renderId) {
+        return json({ project: { ...project(), endTitles: { atSec: 30, background: 'black' }, render: { renderId, status: 'done', progress: null, outputKey: 'k/out.mp4', outputExpiresAt: new Date(Date.now() + 864e5).toISOString(), error: null, startedAt: new Date().toISOString(), updatedAt: new Date(Date.now() + 1000).toISOString() } } });
+      }
+      return route.fallback();
+    });
+
+    const { seekTo } = await openEditor(page);
+    await seekTo(30);
+    await page.getByTestId('end-titles-controls').getByRole('button', { name: 'Start end titles here' }).click();
+    await page.getByRole('button', { name: 'Make video' }).click();
+    await expect(page.getByRole('button', { name: 'Download' })).toBeVisible({ timeout: 30_000 });
+
+    expect(blockIds).toContain('_end');
+    // Title + 3 lyrics + credits + the end titles, every one at the video's size.
+    expect(pngs).toHaveLength(6);
+    for (const p of pngs) expect([p.width, p.height]).toEqual([1280, 720]);
     expect(writes, 'non-GET /api/ requests the mocks did not fulfil').toEqual([]);
     expect(unexpected, 'requests to the video-text API that the test did not mock').toEqual([]);
   });

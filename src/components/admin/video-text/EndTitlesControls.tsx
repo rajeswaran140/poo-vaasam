@@ -8,8 +8,9 @@
  * lib/video-text/end-titles.ts.
  */
 import type { RefObject } from 'react';
-import { END_TITLES_FADE_SEC, endTitlesAt, validateEndTitles } from '@/lib/video-text/end-titles';
-import type { EndTitles } from '@/types/videoText';
+import { END_TITLES_FADE_SEC, endTitlesAt, endTitlesCutNote, validateEndTitles } from '@/lib/video-text/end-titles';
+import { cutRange } from '@/lib/video-text/cut';
+import type { Cut, EndTitles } from '@/types/videoText';
 import { formatMark } from './CutMarks';
 
 const SMALL_BUTTON =
@@ -28,22 +29,27 @@ export interface EndTitlesControlsProps {
   hasLogo: boolean;
   /** Whether there are credits to show. */
   hasCredits: boolean;
+  /** In and Out: the start keeps a second before Out, and the panel says what the export will show. */
+  cut?: Cut | null;
 }
 
-export function EndTitlesControls({ endTitles, durationSec, playheadSec, onChange, onSeek, disabled, video, hasLogo, hasCredits }: EndTitlesControlsProps) {
+export function EndTitlesControls({ endTitles, durationSec, playheadSec, onChange, onSeek, disabled, video, hasLogo, hasCredits, cut = null }: EndTitlesControlsProps) {
+  const range = cutRange(cut, durationSec);
   const now = () => {
     const t = video?.current?.currentTime;
     return typeof t === 'number' && Number.isFinite(t) ? t : playheadSec;
   };
   const background = endTitles?.background ?? 'black';
   const startHere = () => {
-    const next = endTitlesAt(now(), durationSec, background);
+    // With Out set, the fade must finish before it: the export ends at Out.
+    const next = endTitlesAt(now(), Math.min(durationSec, range.outSec), background);
     if (next.atSec !== endTitles?.atSec || next.background !== endTitles?.background) onChange(next);
   };
   const setBackground = (bg: 'black' | 'white') => {
     if (endTitles && bg !== background) onChange({ ...endTitles, background: bg });
   };
   const problem = validateEndTitles(endTitles, durationSec);
+  const cutNote = problem ? null : endTitlesCutNote(endTitles, range);
 
   return (
     <div className="min-w-0 space-y-1" data-testid="end-titles-controls">
@@ -85,6 +91,7 @@ export function EndTitlesControls({ endTitles, durationSec, playheadSec, onChang
       {endTitles && !hasLogo && !hasCredits && (
         <p className="text-sm text-amber-700 dark:text-amber-400">There is no logo or credits yet, so the end titles are a plain screen. Add credits above, or upload a logo.</p>
       )}
+      {cutNote && <p className="text-sm text-amber-700 dark:text-amber-400">{cutNote}</p>}
       {problem && <p className="text-sm text-red-700 dark:text-red-400">{problem}</p>}
     </div>
   );
