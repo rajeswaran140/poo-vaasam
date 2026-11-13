@@ -142,8 +142,8 @@ describe('videos for every shot', () => {
     const cands = [cand('cd_v', 1, 1, 'HERO'), cand('cd_p', 1, 2, 'STILL'), cand('cd_q', 2, 1, 'STILL')];
     const { onChanged } = setup(shots, cands);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Videos for every shot (2 shots · $1.04)' }));
-    expect(screen.getByText('Make a video clip for each of 2 shots for $1.04?')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Videos for every shot (2 shots · $3.27)' }));
+    expect(screen.getByText('Make a video clip for each of 2 shots for $3.27?')).toBeInTheDocument();
     expect(screen.getByText(/starts from the shot's chosen picture/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     await flush();
@@ -169,7 +169,7 @@ describe('videos for every shot', () => {
       [cand('cd_a', 1, 1, 'STILL'), cand('cd_b', 1, 2, 'STILL')],
       [{ jobId: 'gj_x', status: 'running', sceneOrder: 1, shotOrder: 1 } as GenJob]
     );
-    expect(screen.getByRole('button', { name: 'Videos for every shot (1 shot · $0.56)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Videos for every shot (1 shot · $1.76)' })).toBeInTheDocument();
   });
 
   it('will not start over the budget cap', () => {
@@ -254,7 +254,7 @@ describe('review fixes', () => {
       [shot(1, 1, 8, { mode: 'HERO', selectedCandidateId: 'cd_a' }), shot(1, 2, 7, { mode: 'HERO' }), shot(1, 3, 6, { mode: 'HERO', selectedCandidateId: 'cd_c', visualPrompt: '  ' })],
       [cand('cd_a', 1, 1, 'STILL'), cand('cd_c', 1, 3, 'STILL')]
     );
-    expect(screen.getByRole('button', { name: 'Videos for every shot (1 shot · $0.64)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Videos for every shot (1 shot · $2.01)' })).toBeInTheDocument();
     expect(screen.getByText('1 shot needs a picture before its clip.')).toBeInTheDocument();
   });
 
@@ -279,7 +279,7 @@ describe('videos for every shot respects Still / Moving (audit 2026-11-09)', () 
       [shot(1, 1, 8, { mode: 'HERO', selectedCandidateId: 'cd_a' }), shot(1, 2, 7, { mode: 'STILL', selectedCandidateId: 'cd_b' })],
       [cand('cd_a', 1, 1, 'STILL'), cand('cd_b', 1, 2, 'STILL')]
     );
-    expect(screen.getByRole('button', { name: 'Videos for every shot (1 shot · $0.64)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Videos for every shot (1 shot · $2.01)' })).toBeInTheDocument();
     expect(screen.getByText(/1 shot is set to Still and stays a picture/)).toBeInTheDocument();
   });
   it('a moving shot that continues from the clip before it is left to Make the video, which makes them in order', () => {
@@ -291,7 +291,7 @@ describe('videos for every shot respects Still / Moving (audit 2026-11-09)', () 
       ],
       [cand('cd_a', 1, 1, 'STILL'), cand('cd_b', 1, 2, 'STILL')]
     );
-    expect(screen.getByRole('button', { name: 'Videos for every shot (1 shot · $0.64)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Videos for every shot (1 shot · $2.01)' })).toBeInTheDocument();
     expect(screen.getByText(/1 shot continues from the clip before it/)).toBeInTheDocument();
   });
   it('a chained shot after a Still shot is an ordinary moving shot and is counted', () => {
@@ -303,7 +303,7 @@ describe('videos for every shot respects Still / Moving (audit 2026-11-09)', () 
       ],
       [cand('cd_a', 1, 1, 'STILL'), cand('cd_b', 1, 2, 'STILL')]
     );
-    expect(screen.getByRole('button', { name: 'Videos for every shot (1 shot · $0.56)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Videos for every shot (1 shot · $1.76)' })).toBeInTheDocument();
   });
 });
 

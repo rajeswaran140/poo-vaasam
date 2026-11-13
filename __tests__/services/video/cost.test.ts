@@ -6,6 +6,9 @@ import {
   RATE_CARDS,
   SONNET_USD_PER_MTOK,
   GROK_RATES_VERIFIED_AT,
+  grokVideoCostUsd,
+  grokVideoResolution,
+  usdFromXaiTicks,
 } from '@/services/video/cost';
 
 describe('estimateCostUsd', () => {
@@ -14,12 +17,9 @@ describe('estimateCostUsd', () => {
     expect(estimateCostUsd('grok', 'STILL', 1)).toBeCloseTo(0.02, 10);
   });
 
-  it('prices Grok motion per second (lite model)', () => {
-    expect(estimateCostUsd('grok', 'MOTION', 5)).toBeCloseTo(0.1, 10);
-  });
-
-  it('prices Grok hero per second (full model)', () => {
-    expect(estimateCostUsd('grok', 'HERO', 15)).toBeCloseTo(1.2, 10);
+  it('without the shot, prices a clip at the 1080p ceiling ($0.25/s), never the old $0.08', () => {
+    expect(estimateCostUsd('grok', 'HERO', 15)).toBeCloseTo(3.75, 10);
+    expect(estimateCostUsd('grok', 'MOTION', 5)).toBeCloseTo(1.25, 10);
   });
 
   it('is free for the fake provider', () => {
@@ -40,8 +40,8 @@ describe('draftCostUsd', () => {
 describe('cost constants', () => {
   it('exposes the rate card, draft estimate and budget cap', () => {
     expect(RATE_CARDS.grok.STILL).toEqual({ flatUsd: 0.02, perSecondUsd: 0 });
-    expect(RATE_CARDS.grok.MOTION).toEqual({ flatUsd: 0, perSecondUsd: 0.02 });
-    expect(RATE_CARDS.grok.HERO).toEqual({ flatUsd: 0, perSecondUsd: 0.08 });
+    expect(RATE_CARDS.grok.MOTION).toEqual({ flatUsd: 0, perSecondUsd: 0.25 });
+    expect(RATE_CARDS.grok.HERO).toEqual({ flatUsd: 0, perSecondUsd: 0.25 });
     expect(DRAFT_ESTIMATE_USD).toBe(0.15);
     expect(SONNET_USD_PER_MTOK).toEqual({ input: 3, output: 15 });
     expect(DEFAULT_BUDGET_USD_CAP).toBe(40);
@@ -86,5 +86,28 @@ describe('draftReserveUsd (M1: bounded by the lyrics length and the window)', ()
     expect(draftLabelUsd('x'.repeat(8000), 30, 0.01)).toBeCloseTo(cost(5500, 6000), 10);
     // A seven-minute window reserves more than the flat estimate, and says so.
     expect(draftLabelUsd('x'.repeat(8000), 420)).toBeCloseTo(cost(5500, 20000), 10);
+  });
+});
+
+describe('grokVideoCostUsd (measured from xAI usage on real clips, 2026-11-10 to 11-13)', () => {
+  it('matches each real charge to the cent', () => {
+    // 1080p (no faces), first frame only
+    expect(grokVideoCostUsd({ durationSec: 15, referenceCount: 0, hasFirstFrame: true })).toBeCloseTo(3.76, 6);
+    expect(grokVideoCostUsd({ durationSec: 12, referenceCount: 0, hasFirstFrame: true })).toBeCloseTo(3.01, 6);
+    // 720p (faces sent): 2 faces + first frame = 3 images; 3 faces + frame = 4
+    expect(grokVideoCostUsd({ durationSec: 15, referenceCount: 2, hasFirstFrame: true })).toBeCloseTo(2.13, 6);
+    expect(grokVideoCostUsd({ durationSec: 14, referenceCount: 3, hasFirstFrame: true })).toBeCloseTo(2.0, 6);
+  });
+  it('a clip with faces is 720p, without them 1080p (one rule for the request and the price)', () => {
+    expect(grokVideoResolution(0)).toBe('1080p');
+    expect(grokVideoResolution(1)).toBe('720p');
+  });
+});
+
+describe('usdFromXaiTicks', () => {
+  it('reads xAI\'s own charge (1e10 ticks = $1), or null when it is not a sane amount', () => {
+    expect(usdFromXaiTicks(37_600_000_000)).toBeCloseTo(3.76, 6);
+    expect(usdFromXaiTicks(0)).toBe(0);
+    for (const bad of [undefined, null, -1, Number.NaN, '376', 2e12]) expect(usdFromXaiTicks(bad)).toBeNull();
   });
 });

@@ -22,7 +22,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
 import { pollJob } from '@/lib/poll-job';
-import { estimateCostUsd } from '@/services/video/cost';
 import type { GenJob, VisualStory } from '@/types/visualStory';
 import { RaiseBudgetButton, usd } from './ui-utils';
 
@@ -77,13 +76,15 @@ interface Props {
   shotKey: string;
   label: string;
   durationSec: number;
+  /** What one clip for this shot costs (clipPriceUsd). */
+  priceUsd: number;
   story: VisualStory;
   /** This shot's video jobs from the tree. */
   jobs: GenJob[];
   onChanged: () => void;
 }
 
-export function VideoControls({ vsId, shotKey, label, durationSec, story, jobs, onChanged }: Props) {
+export function VideoControls({ vsId, shotKey, label, durationSec, priceUsd, story, jobs, onChanged }: Props) {
   const [confirming, setConfirming] = useState(false);
   const [starting, setStarting] = useState(false);
   // The job this card is polling (or gave up polling after the cap).
@@ -110,7 +111,7 @@ export function VideoControls({ vsId, shotKey, label, durationSec, story, jobs, 
     };
   }, []);
 
-  const price = estimateCostUsd('grok', 'HERO', Math.ceil(durationSec));
+  const price = priceUsd;
   const after = story.spentUsd + story.reservedUsd + price;
   const overCap = after > story.budgetUsdCap + 1e-9;
   const running = jobs.find(inflight) ?? null;

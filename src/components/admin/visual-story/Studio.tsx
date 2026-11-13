@@ -202,6 +202,7 @@ export function Studio({ vsId }: { vsId: string }) {
       story={story}
       shots={shots}
       candidates={candidates}
+      characters={characters}
       genJobs={tree.genJobs ?? []}
       onChanged={refresh}
     />
@@ -284,7 +285,15 @@ export function Studio({ vsId }: { vsId: string }) {
         </aside>
       </div>
 
-      <SpendBar key={story.budgetUsdCap} vsId={vsId} story={story} shots={shots} onChanged={refresh} />
+      <SpendBar
+        key={story.budgetUsdCap}
+        vsId={vsId}
+        story={story}
+        shots={shots}
+        characters={characters}
+        candidates={candidates}
+        onChanged={refresh}
+      />
     </div>
   );
 }

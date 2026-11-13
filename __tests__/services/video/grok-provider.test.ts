@@ -49,7 +49,9 @@ describe('GrokProvider', () => {
   it('identity and cost', () => {
     expect(p.id).toBe('grok');
     expect(p.model).toBe('grok-imagine-video-1.5');
-    expect(p.estimateCostUsd({ ...base, durationSec: 5 })).toBeCloseTo(0.4);
+    // 1080p with no images: 5 × $0.25. With a first frame and 2 faces: 720p, 6 × $0.14 + 3 images × $0.01.
+    expect(p.estimateCostUsd({ ...base, durationSec: 5 })).toBeCloseTo(1.25, 6);
+    expect(p.estimateCostUsd({ ...base, firstFrameUrl: 'f', referenceImageUrls: ['a', 'b'] })).toBeCloseTo(0.87, 6);
   });
 
   it('isConfigured false for empty or dummy key', async () => {
@@ -70,7 +72,7 @@ describe('GrokProvider', () => {
     expect(init.headers['Content-Type']).toBe('application/json');
     expect(init.headers.Authorization).toBe('Bearer xai-secret');
     expect(JSON.parse(init.body)).toEqual(buildGrokVideoBody(base));
-    expect(r).toEqual({ ok: true, providerTaskId: 'req-1', estimatedCostUsd: expect.closeTo(0.48) });
+    expect(r).toEqual({ ok: true, providerTaskId: 'req-1', estimatedCostUsd: expect.closeTo(1.5) }); // 6 s at 1080p, no images
   });
 
   it('never forwards the client signal', async () => {
@@ -181,6 +183,14 @@ describe('GrokProvider', () => {
         ok: true, state: 'succeeded', actualCostUsd: null,
         assets: [{ kind: 'video', url: 'https://v/x.mp4', contentType: 'video/mp4' }],
       });
+    });
+    it('done carries xAI\'s own charge from usage.cost_in_usd_ticks', async () => {
+      fetchMock.mockResolvedValue(res(200, { status: 'done', video: { url: 'https://v/x.mp4' }, usage: { cost_in_usd_ticks: 37_600_000_000 } }));
+      const r = await p.poll('a');
+      expect(r).toMatchObject({ ok: true, state: 'succeeded' });
+      expect((r as { actualCostUsd: number }).actualCostUsd).toBeCloseTo(3.76, 6);
+      fetchMock.mockResolvedValue(res(200, { status: 'done', respect_moderation: false, video: { url: 'u' }, usage: { cost_in_usd_ticks: 1e10 } }));
+      expect(await p.poll('a')).toMatchObject({ state: 'failed', billed: true, actualCostUsd: 1 });
     });
     it('done without url -> terminal billed bad_response failure', async () => {
       fetchMock.mockResolvedValue(res(200, { status: 'done' }));

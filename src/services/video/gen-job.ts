@@ -10,12 +10,12 @@ import { withStyle } from '@/lib/visual-story-style';
 // Type-only: the repository value-imports VIDEO_STALE_MS from here.
 import type { VisualStoryRepository } from '@/infrastructure/database/VisualStoryRepository';
 import { candidateKey } from '@/lib/visual-story-storage';
+import { selectVideoInputs } from '@/lib/visual-story-video-inputs';
 import { candIdForJob } from '@/types/visualStory';
 import type { Candidate, Character, GenJob, GenJobStatus, Shot, VisualStory } from '@/types/visualStory';
 import type { PollResult, VideoGenerationProvider, VideoGenRequest } from '@/services/video/providers/types';
 
-/** xAI accepts at most this many `reference_images`. */
-export const MAX_REFERENCE_IMAGES = 14;
+export { MAX_REFERENCE_IMAGES } from '@/lib/visual-story-video-inputs';
 /** A video job (and its per-shot VIDLOCK#) not finished after this long is ended / taken over (Rulings V4, V5). */
 export const VIDEO_STALE_MS = 60 * 60_000;
 /** Signed URLs handed to xAI live this long. */
@@ -70,27 +70,11 @@ export interface VideoRequestTree {
  * the picture alone lost both by 5 s. Never carries an abort signal (R10).
  */
 export async function buildVideoRequest(tree: VideoRequestTree, shot: Shot): Promise<VideoGenRequest> {
-  const cast = shot.charIds
-    .map((id) => tree.characters.find((c) => c.charId === id))
-    .filter((c): c is Character => !!c);
+  const { cast, firstFrame, refKeysByCast, refKeys } = selectVideoInputs(tree, shot);
 
-  const stillOfShot = (candId: string | null | undefined) =>
-    candId
-      ? tree.candidates.find(
-          (c) => c.candId === candId && c.sceneOrder === shot.sceneOrder && c.shotOrder === shot.shotOrder && c.mode === 'STILL'
-        )
-      : undefined;
-  const firstFrame = stillOfShot(shot.firstFrameCandidateId) ?? stillOfShot(shot.selectedCandidateId);
-
-  // Cap before signing, so the <IMAGE_n> indices match the URLs sent.
-  const refKeys: string[] = [];
-  const castLines = cast.map((c) => {
-    const tags: string[] = [];
-    for (const key of c.refImageKeys ?? []) {
-      if (refKeys.length >= MAX_REFERENCE_IMAGES) break;
-      tags.push(`<IMAGE_${refKeys.length}>`);
-      refKeys.push(key);
-    }
+  let n = 0;
+  const castLines = cast.map((c, i) => {
+    const tags = refKeysByCast[i].map(() => `<IMAGE_${n++}>`);
     const desc = c.description.trim();
     const line = desc ? `${c.name}: ${desc}` : c.name;
     return tags.length ? `${line} (shown in ${tags.join(', ')})` : line;
@@ -180,9 +164,11 @@ async function endJob(
   from: GenJobStatus[],
   to: 'succeeded' | 'failed',
   billed: boolean,
-  fields?: { code: string; error: string }
+  fields?: { code: string; error: string },
+  /** The provider's own charge; absent/null → bill the reservation (over-record). */
+  actualUsd?: number | null
 ): Promise<GenJob> {
-  const billedUsd = billed ? job.reservedUsd : 0;
+  const billedUsd = billed ? (actualUsd ?? job.reservedUsd) : 0;
   const moved = await repo.transitionGenJob(vsId, job.jobId, from, to, { ...fields, billedUsd });
   if (!moved) {
     console.info('visual-story video job: transition lost; not settling', job.jobId, to);
@@ -202,7 +188,9 @@ async function copyClip(
   job: GenJob,
   url: string,
   fetchImpl: typeof fetch,
-  signal: AbortSignal
+  signal: AbortSignal,
+  /** xAI's own charge for this clip; null → the hold (what the job will bill too). */
+  actualUsd: number | null = null
 ): Promise<void> {
   const res = await fetchImpl(url, { signal });
   if (!res.ok) throw new Error(`clip fetch ${res.status}`);
@@ -220,7 +208,7 @@ async function copyClip(
     providerTaskId: job.providerTaskId,
     mode: 'HERO',
     s3Key,
-    costUsd: job.reservedUsd,
+    costUsd: actualUsd ?? job.reservedUsd,
     // The length it was made for, so a later change of the row's seconds shows it is out of date.
     ...(typeof job.durationSec === 'number' ? { durationSec: job.durationSec } : {}),
     createdAt: new Date().toISOString(),
@@ -239,7 +227,8 @@ async function copyClip(
  *   succeeded → record the copy attempt FIRST (touch with copyFailed: a
  *   platform kill mid-copy still counts), copy the clip to private storage
  *   within the advance's deadline (VIDEO_ADVANCE_DEADLINE_MS), THEN
- *   running → succeeded, settled billed (the reservation); a failed copy stays
+ *   running → succeeded, settled billed (xAI's own charge from the poll, else
+ *   the reservation); a failed copy stays
  *   running (never stale-ended: the clip exists), and the
  *   VIDEO_COPY_MAX_FAILURES-th attempt → failed, settled billed;
  *   failed → failed, settled billed or not per Grok's `billed`.
@@ -294,11 +283,11 @@ export async function advanceGenJob(
     if (poll.ok && poll.state === 'succeeded') {
       const video = poll.assets.find((a) => a.kind === 'video');
       if (!video) {
-        return endJob(repo, vsId, job, ['running'], 'failed', true, { code: 'bad_response', error: NO_CLIP_ERROR });
+        return endJob(repo, vsId, job, ['running'], 'failed', true, { code: 'bad_response', error: NO_CLIP_ERROR }, poll.actualCostUsd);
       }
       // Enough attempts already counted (e.g. ten platform kills mid-copy).
       if (job.copyFailures >= VIDEO_COPY_MAX_FAILURES) {
-        return endJob(repo, vsId, job, ['running'], 'failed', true, { code: 'upstream', error: COPY_FAILED_ERROR });
+        return endJob(repo, vsId, job, ['running'], 'failed', true, { code: 'upstream', error: COPY_FAILED_ERROR }, poll.actualCostUsd);
       }
       // Count the attempt BEFORE copying: a kill mid-copy still counts. On a
       // successful copy the success transition makes copyFailures irrelevant.
@@ -306,13 +295,13 @@ export async function advanceGenJob(
       current = { ...job, attempts: job.attempts + 1, copyFailures: job.copyFailures + 1, lastPolledAt: polledAt };
       let copied = false;
       try {
-        await copyClip(repo, vsId, job, video.url, fetchImpl, deadlineSignal(copyBudgetMs(pollMs)));
+        await copyClip(repo, vsId, job, video.url, fetchImpl, deadlineSignal(copyBudgetMs(pollMs)), poll.actualCostUsd);
         copied = true;
       } catch (err) {
         console.error('visual-story video job: clip copy failed', job.jobId, errName(err));
       }
       if (copied) {
-        const ended = await endJob(repo, vsId, current, ['running'], 'succeeded', true);
+        const ended = await endJob(repo, vsId, current, ['running'], 'succeeded', true, undefined, poll.actualCostUsd);
         // The clip was made to move this shot: show it instead of its picture
         // (never over a clip the admin chose). Without this a render quietly
         // used the pictures (audit 2026-11-09). A failure only leaves the
@@ -326,13 +315,13 @@ export async function advanceGenJob(
       }
 
       if (current.copyFailures >= VIDEO_COPY_MAX_FAILURES) {
-        return endJob(repo, vsId, current, ['running'], 'failed', true, { code: 'upstream', error: COPY_FAILED_ERROR });
+        return endJob(repo, vsId, current, ['running'], 'failed', true, { code: 'upstream', error: COPY_FAILED_ERROR }, poll.actualCostUsd);
       }
       // Grok finished the clip: keep retrying the copy, even past the hour —
       // VIDEO_COPY_MAX_FAILURES bounds this path, not the stale end.
       return current;
     } else if (poll.ok && poll.state === 'failed') {
-      return endJob(repo, vsId, job, ['running'], 'failed', poll.billed, { code: poll.code, error: poll.error });
+      return endJob(repo, vsId, job, ['running'], 'failed', poll.billed, { code: poll.code, error: poll.error }, poll.actualCostUsd);
     } else {
       // pending | running | a poll error (network, auth, 404): record the poll only.
       await repo.touchGenJob(vsId, job.jobId);

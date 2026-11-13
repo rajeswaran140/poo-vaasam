@@ -47,6 +47,8 @@ import * as auth from '@/lib/auth-helper';
 import { VisualStoryRepository } from '@/infrastructure/database/VisualStoryRepository';
 import { __resetVisualStoryRateLimitForTests } from '@/lib/visual-story-rate-limit';
 import { candIdForJob, isGenJobId } from '@/types/visualStory';
+import { GrokProvider } from '@/services/video/providers/grok';
+import type { VideoGenRequest } from '@/services/video/providers/types';
 
 const requireAdmin = auth.requireAdmin as jest.Mock;
 const VS = 'vs_1700000000000_abcdef12';
@@ -152,6 +154,8 @@ beforeEach(() => {
   );
   mockSign.mockImplementation(async (key: string) => signed(key));
   provider.isConfigured.mockResolvedValue(true);
+  // The real provider's price: what xAI charges for exactly these inputs.
+  provider.estimateCostUsd.mockImplementation((req: VideoGenRequest) => new GrokProvider().estimateCostUsd(req));
   provider.submit.mockResolvedValue({ ok: true, providerTaskId: 'req-123', estimatedCostUsd: 0.48 });
 });
 
@@ -197,7 +201,7 @@ describe('POST video — auth, lookup, guards', () => {
     repo.loadTree.mockResolvedValueOnce(tree({ shots: [shot(1, 2, { durationSec: 5.2 })] }));
     const res = await POST(mk(), sctx());
     expect(res.status).toBe(202);
-    expect(repo.reserve).toHaveBeenCalledWith(VS, 0.48);
+    expect(repo.reserve).toHaveBeenCalledWith(VS, 1.5); // 1080p, no images: 6 × $0.25
     expect(repo.createGenJob.mock.calls[0][1].durationSec).toBe(6);
     expect(provider.submit.mock.calls[0][0].durationSec).toBe(6);
   });
@@ -239,13 +243,13 @@ describe('POST video — auth, lookup, guards', () => {
 });
 
 describe('POST video — money paths', () => {
-  it('happy path: reserves $0.48 for 6 s, creates the job, submits without a signal, 202 with jobId', async () => {
+  it('happy path: reserves $0.87 for 6 s (720p with faces: 6 × $0.14 + 3 images × $0.01), creates the job, submits without a signal, 202 with jobId', async () => {
     const req = mk();
     const res = await POST(req, sctx());
     expect(res.status).toBe(202);
 
     expect(repo.reserve).toHaveBeenCalledTimes(1);
-    expect(repo.reserve).toHaveBeenCalledWith(VS, 0.48);
+    expect(repo.reserve).toHaveBeenCalledWith(VS, 0.87);
 
     expect(repo.createGenJob).toHaveBeenCalledTimes(1);
     const [vsArg, created] = repo.createGenJob.mock.calls[0];
@@ -258,7 +262,7 @@ describe('POST video — money paths', () => {
       status: 'submitted',
       providerId: 'grok',
       providerTaskId: null,
-      reservedUsd: 0.48,
+      reservedUsd: 0.87,
       candId: candIdForJob(created.jobId),
       attempts: 0,
       copyFailures: 0,
@@ -301,7 +305,7 @@ describe('POST video — money paths', () => {
     const res = await POST(mk(), sctx());
     expect(res.status).toBe(402);
     expect((await res.json()).error).toBe(
-      'This needs $0.48, but only $0.10 of the $40.00 budget is left ($39.90 spent).'
+      'This needs $0.87, but only $0.10 of the $40.00 budget is left ($39.90 spent).'
     );
     expect(repo.findById).toHaveBeenCalledWith(VS, { consistentRead: true });
     expect(repo.createGenJob).not.toHaveBeenCalled();
@@ -316,7 +320,7 @@ describe('POST video — money paths', () => {
     const res = await POST(mk(), sctx());
     expect(res.status).toBe(402);
     expect((await res.json()).error).toBe(
-      'This needs $0.48, but only $0.10 of the $40.00 budget is left ($39.50 spent, $0.40 held for work still running).'
+      'This needs $0.87, but only $0.10 of the $40.00 budget is left ($39.50 spent, $0.40 held for work still running).'
     );
   });
 
@@ -352,7 +356,7 @@ describe('POST video — money paths', () => {
       billedUsd: 0,
     });
     expect(repo.settleGenJob).toHaveBeenCalledTimes(1);
-    expect(repo.settleGenJob).toHaveBeenCalledWith(VS, jobId, { reservedUsd: 0.48, billedUsd: 0 });
+    expect(repo.settleGenJob).toHaveBeenCalledWith(VS, jobId, { reservedUsd: 0.87, billedUsd: 0 });
     expect(repo.settle).not.toHaveBeenCalled();
   });
 
@@ -367,7 +371,7 @@ describe('POST video — money paths', () => {
     provider.submit.mockResolvedValueOnce({ ok: false, code, error: 'x' });
     expect((await POST(mk(), sctx())).status).toBe(status);
     expect(repo.settleGenJob).toHaveBeenCalledTimes(1);
-    expect(repo.settleGenJob).toHaveBeenCalledWith(VS, expect.any(String), { reservedUsd: 0.48, billedUsd: 0 });
+    expect(repo.settleGenJob).toHaveBeenCalledWith(VS, expect.any(String), { reservedUsd: 0.87, billedUsd: 0 });
   });
 
   const AMBIGUOUS = "Grok didn't answer in time; it may still have been charged.";
@@ -387,10 +391,10 @@ describe('POST video — money paths', () => {
     expect(repo.transitionGenJob).toHaveBeenCalledWith(VS, jobId, ['submitted'], 'failed', {
       code: 'upstream',
       error: AMBIGUOUS,
-      billedUsd: 0.48,
+      billedUsd: 0.87,
     });
     expect(repo.settleGenJob).toHaveBeenCalledTimes(1);
-    expect(repo.settleGenJob).toHaveBeenCalledWith(VS, jobId, { reservedUsd: 0.48, billedUsd: 0.48 });
+    expect(repo.settleGenJob).toHaveBeenCalledWith(VS, jobId, { reservedUsd: 0.87, billedUsd: 0.87 });
     expect(repo.settle).not.toHaveBeenCalled();
     // settled before the lock is released
     expect(repo.settleGenJob.mock.invocationCallOrder[0]).toBeLessThan(repo.releaseShotVideo.mock.invocationCallOrder[0]);
@@ -430,7 +434,7 @@ describe('POST video — money paths', () => {
     expect(res.status).toBe(500);
     expect(provider.submit).not.toHaveBeenCalled();
     expect(repo.settle).toHaveBeenCalledTimes(1);
-    expect(repo.settle).toHaveBeenCalledWith(VS, { reservedUsd: 0.48, billedUsd: 0 });
+    expect(repo.settle).toHaveBeenCalledWith(VS, { reservedUsd: 0.87, billedUsd: 0 });
     spy.mockRestore();
   });
 

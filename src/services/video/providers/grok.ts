@@ -6,7 +6,7 @@
  * never returned; network failures log only the error name.
  */
 import { getXaiApiKey } from '@/services/video/credentials';
-import { estimateCostUsd } from '@/services/video/cost';
+import { grokVideoCostUsd, grokVideoResolution, usdFromXaiTicks } from '@/services/video/cost';
 import type {
   PollResult,
   SubmitResult,
@@ -29,7 +29,7 @@ export function buildGrokVideoBody(req: VideoGenRequest): Record<string, unknown
     prompt: req.prompt,
     duration: req.durationSec,
     aspect_ratio: req.aspectRatio,
-    resolution: refs.length > 0 ? '720p' : '1080p',
+    resolution: grokVideoResolution(refs.length),
     generate_audio: false,
   };
   if (req.firstFrameUrl) body.image = { url: req.firstFrameUrl };
@@ -101,8 +101,13 @@ export class GrokProvider implements VideoGenerationProvider {
     return (await configuredKey()) !== null;
   }
 
+  /** Exactly what xAI charges for this request (resolution + images sent). */
   estimateCostUsd(req: VideoGenRequest): number {
-    return estimateCostUsd('grok', 'HERO', req.durationSec);
+    return grokVideoCostUsd({
+      durationSec: req.durationSec,
+      referenceCount: (req.referenceImageUrls ?? []).slice(0, MAX_REFERENCES).length,
+      hasFirstFrame: !!req.firstFrameUrl,
+    });
   }
 
   async submit(req: VideoGenRequest): Promise<SubmitResult> {
@@ -129,9 +134,11 @@ export class GrokProvider implements VideoGenerationProvider {
     const j = r.json;
     switch (j.status) {
       case 'done': {
+        // xAI's own charge for this request; null → the caller bills the reservation.
+        const actualCostUsd = usdFromXaiTicks(j.usage?.cost_in_usd_ticks);
         if (j.respect_moderation === false || j.video?.respect_moderation === false) {
           return {
-            ok: true, state: 'failed', code: 'content_policy', billed: true,
+            ok: true, state: 'failed', code: 'content_policy', billed: true, actualCostUsd,
             error: 'The clip was blocked by the provider’s content filter.',
           };
         }
@@ -139,12 +146,12 @@ export class GrokProvider implements VideoGenerationProvider {
         if (typeof url !== 'string' || !url) {
           // done is terminal at xAI and already charged: settle as a billed failure.
           return {
-            ok: true, state: 'failed', code: 'bad_response', billed: true,
+            ok: true, state: 'failed', code: 'bad_response', billed: true, actualCostUsd,
             error: 'The video finished but no clip came back; it was still charged.',
           };
         }
         return {
-          ok: true, state: 'succeeded', actualCostUsd: null,
+          ok: true, state: 'succeeded', actualCostUsd,
           assets: [{ kind: 'video', url, contentType: 'video/mp4' }],
         };
       }

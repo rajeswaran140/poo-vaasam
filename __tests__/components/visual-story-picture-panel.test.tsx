@@ -126,9 +126,9 @@ it('animates only the moving picture, chooses its clip, then renders', async () 
     return undefined;
   });
   const { onChanged } = setup({ shots: [shot(1, 8, { mode: 'HERO' }), shot(2, 8)] });
-  fireEvent.click(screen.getByRole('button', { name: 'Make the video (1 moving · $0.64)' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Make the video (1 moving · $2.01)' }));
   const dialog = screen.getByRole('dialog');
-  expect(within(dialog).getByText('Animate 1 picture for $0.64, then render the whole video?')).toBeInTheDocument();
+  expect(within(dialog).getByText('Animate 1 picture for $2.01, then render the whole video?')).toBeInTheDocument();
   fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm' }));
   await flush();
   await flush();
@@ -333,7 +333,7 @@ describe('chaining: continue from the previous picture\'s clip', () => {
     // Picture 2 continues from picture 1, so it needs no picture of its own.
     setup({ shots: [shot(1, 8, { mode: 'HERO', firstFrameCandidateId: 'cd_p1' }), shot(2, 8, { mode: 'HERO', chainFromPrevious: true, selectedCandidateId: null })], candidates: [pic(1)] });
     expect(screen.getByText('Starts where picture 1 ends.')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Make the video (2 moving · $1.28)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Make the video (2 moving · $4.02)' }));
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     for (let k = 0; k < 4; k++) await flush();
 
@@ -416,7 +416,7 @@ describe('chaining review fixes', () => {
       candidates: [pic(1), clip(1, V1, 't1'), clip(1, V1B, 't3'), clip(2, 'cd_1700000000006_eeeeeeee', 't2')],
     });
     expect(screen.getByText('Will be made again, to start where picture 1 now ends.')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Make the video (1 moving · $0.64)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Make the video (1 moving · $2.01)' }));
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     for (let k = 0; k < 3; k++) await flush();
     // The frame is taken from the clip's stored key, not a rebuilt one.

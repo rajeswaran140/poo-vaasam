@@ -48,7 +48,8 @@ export type SubmitResult =
 export type PollResult =
   | { ok: true; state: 'pending' | 'running' }
   | { ok: true; state: 'succeeded'; assets: ProviderAsset[]; actualCostUsd: number | null }
-  | { ok: true; state: 'failed'; code: VideoErrorCode; error: string; billed: boolean }
+  /** `actualCostUsd`: the provider's own charge for a billed failure, when it reports one. */
+  | { ok: true; state: 'failed'; code: VideoErrorCode; error: string; billed: boolean; actualCostUsd?: number | null }
   | { ok: false; code: VideoErrorCode; error: string };
 
 export interface VideoGenerationProvider {
