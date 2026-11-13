@@ -15,6 +15,7 @@ const repo = {
   putShot: jest.fn(),
   deleteShot: jest.fn(),
   reorderShots: jest.fn(),
+  setShotLengths: jest.fn(),
   putCharacter: jest.fn(),
   addCharacterRef: jest.fn(),
   removeCharacterRef: jest.fn(),
@@ -42,7 +43,7 @@ import { POST as uploadPOST } from '@/app/api/admin/visual-story/[vsId]/characte
 import * as auth from '@/lib/auth-helper';
 import { VisualStoryRepository } from '@/infrastructure/database/VisualStoryRepository';
 import { __resetVisualStoryRateLimitForTests } from '@/lib/visual-story-rate-limit';
-import { InvalidReorderError, NotFoundError } from '@/infrastructure/database/VisualStoryRepository';
+import { InvalidReorderError, NotFoundError, ShotsChangedError } from '@/infrastructure/database/VisualStoryRepository';
 import { refKey, MAX_REF_BYTES } from '@/lib/visual-story-storage';
 
 const requireAdmin = auth.requireAdmin as jest.Mock;
@@ -193,6 +194,43 @@ describe('shots', () => {
     }
     expect(repo.putShot).not.toHaveBeenCalled();
   });
+  describe("op 'lengths' (Fit to the lyrics: every row at once)", () => {
+    const lengths = (a: number, b: number) => ({ op: 'lengths', lengths: [
+      { sceneOrder: 1, shotOrder: 1, durationSec: a },
+      { sceneOrder: 1, shotOrder: 2, durationSec: b },
+    ] });
+    it('saves a set that names every shot and tiles the window, in one write', async () => {
+      repo.loadTree
+        .mockResolvedValueOnce(tree())
+        .mockResolvedValueOnce(tree({ shots: [shot(1, 1, 14.9), shot(1, 2, 15.1)] }));
+      const res = await shotsPOST(mk(lengths(14.9, 15.1)), ctx());
+      expect(res.status).toBe(200);
+      expect(repo.setShotLengths).toHaveBeenCalledTimes(1);
+      expect(repo.setShotLengths).toHaveBeenCalledWith(VS, lengths(14.9, 15.1).lengths);
+      expect((await res.json()).data.tiling.tiles).toBe(true);
+    });
+    it('refuses a set missing a shot, or one that does not fill the window, writing nothing', async () => {
+      repo.loadTree.mockResolvedValue(tree());
+      const missing = { op: 'lengths', lengths: [{ sceneOrder: 1, shotOrder: 1, durationSec: 30 }] };
+      for (const body of [missing, lengths(10, 10)]) {
+        const res = await shotsPOST(mk(body), ctx());
+        expect(res.status).toBe(409);
+        expect((await res.json()).error).toBe('The rows changed while fitting. Fit again.');
+      }
+      expect(repo.setShotLengths).not.toHaveBeenCalled();
+    });
+    it('a shot gone during the write is the same 409', async () => {
+      repo.loadTree.mockResolvedValue(tree());
+      repo.setShotLengths.mockRejectedValueOnce(new ShotsChangedError());
+      const res = await shotsPOST(mk(lengths(14.9, 15.1)), ctx());
+      expect(res.status).toBe(409);
+    });
+    it('refuses lengths that are not tenths', async () => {
+      repo.loadTree.mockResolvedValue(tree());
+      expect((await shotsPOST(mk(lengths(14.95, 15.05)), ctx())).status).toBe(400);
+    });
+  });
+
   it('update accepts seconds in tenths (14.9)', async () => {
     repo.loadTree.mockResolvedValue(tree());
     const res = await shotsPOST(mk({ op: 'update', sceneOrder: 1, shotOrder: 1, durationSec: 14.9 }), ctx());

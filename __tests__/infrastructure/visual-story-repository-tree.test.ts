@@ -30,6 +30,7 @@ import {
   VisualStoryRepository,
   DraftTooLargeError,
   InvalidReorderError,
+  ShotsChangedError,
   NotFoundError,
   vsPk,
   sceneSk,
@@ -372,6 +373,27 @@ describe('deleteScene', () => {
     mockQuery.mockResolvedValue({ Items: items });
     await repo.deleteScene(VS, 1);
     expect(mockDelete).toHaveBeenCalledTimes(161);
+  });
+});
+
+describe('setShotLengths', () => {
+  it('sets every row\'s seconds in one transaction, each only if the shot still exists', async () => {
+    await repo.setShotLengths(VS, [
+      { sceneOrder: 1, shotOrder: 1, durationSec: 14.9 },
+      { sceneOrder: 1, shotOrder: 2, durationSec: 15.1 },
+    ]);
+    expect(mockTransact).toHaveBeenCalledTimes(1);
+    const items = mockTransact.mock.calls[0][0];
+    expect(items).toHaveLength(2);
+    expect(items[0].Update).toMatchObject({
+      Key: { PK, SK: shotSk(1, 1) },
+      ConditionExpression: 'attribute_exists(PK)',
+      ExpressionAttributeValues: { ':d': 14.9 },
+    });
+  });
+  it('a cancelled transaction (a shot gone meanwhile) is ShotsChangedError, nothing half-written', async () => {
+    mockTransact.mockRejectedValueOnce(Object.assign(new Error('cancelled'), { name: 'TransactionCanceledException' }));
+    await expect(repo.setShotLengths(VS, [{ sceneOrder: 1, shotOrder: 1, durationSec: 5 }])).rejects.toBeInstanceOf(ShotsChangedError);
   });
 });
 
