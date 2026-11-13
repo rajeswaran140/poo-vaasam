@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
     if (!master.savedAt) return fail('Save this master in the library first.', 400);
     if (!master.masterKey) return fail("This master hasn't finished mastering.", 400);
     if (master.editedDurationSec == null) {
-      return fail('This master has no recorded length. Re-open it in Mastering and save it again.', 400);
+      return fail('This master has no recorded length. Master the song again in Mastering, then pick it here.', 400);
     }
     if (input.windowEndSec > master.editedDurationSec) {
       return fail(`The window ends after the song does (song is ${mss(master.editedDurationSec)}).`, 400);

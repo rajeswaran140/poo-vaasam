@@ -224,7 +224,7 @@ describe('POST create', () => {
     const res = await post(VALID);
     expect(res.status).toBe(400);
     expect(await err(res)).toBe(
-      'This master has no recorded length. Re-open it in Mastering and save it again.'
+      'This master has no recorded length. Master the song again in Mastering, then pick it here.'
     );
   });
   it('400 when the window ends after the song (m:ss)', async () => {
