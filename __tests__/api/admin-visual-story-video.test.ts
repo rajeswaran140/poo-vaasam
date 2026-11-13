@@ -193,6 +193,15 @@ describe('POST video — auth, lookup, guards', () => {
     expect(provider.submit).not.toHaveBeenCalled();
   });
 
+  it('a row in tenths (5.2 s) asks Grok for whole seconds rounded up: reserves and records 6 s', async () => {
+    repo.loadTree.mockResolvedValueOnce(tree({ shots: [shot(1, 2, { durationSec: 5.2 })] }));
+    const res = await POST(mk(), sctx());
+    expect(res.status).toBe(202);
+    expect(repo.reserve).toHaveBeenCalledWith(VS, 0.48);
+    expect(repo.createGenJob.mock.calls[0][1].durationSec).toBe(6);
+    expect(provider.submit.mock.calls[0][0].durationSec).toBe(6);
+  });
+
   it('a shot longer than Grok makes (15 s) ⇒ 400, nothing reserved', async () => {
     repo.loadTree.mockResolvedValueOnce(tree({ shots: [shot(1, 2, { durationSec: 16 })] }));
     const res = await POST(mk(), sctx());
@@ -588,6 +597,11 @@ describe('buildVideoRequest', () => {
     expect(req.aspectRatio).toBe('9:16');
     expect(req.durationSec).toBe(6);
     expect(req.signal).toBeUndefined();
+  });
+
+  it('asks for whole seconds, rounded up, for a row in tenths', async () => {
+    const req = await buildVideoRequest(t(), shot(1, 2, { durationSec: 5.2 }) as never);
+    expect(req.durationSec).toBe(6);
   });
 
   it('no cast ⇒ the bare shot prompt, no references, no first frame', async () => {

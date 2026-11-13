@@ -505,8 +505,20 @@ describe('audit 2026-11-13: Stop during a chained run, and a clip whose row chan
     routes(() => undefined);
     setup({ shots: [shot(1, 11, { mode: 'HERO', selectedCandidateId: 'cd_v1' }), shot(2, 5)], candidates: [pic(1), clipFor(1, 8), pic(2)] });
     expect(screen.queryByText('Clip made')).not.toBeInTheDocument();
-    expect(screen.getByText('Its clip was made for 8 s. Make the video makes it again for 11 s, or set the seconds back to 8.')).toBeInTheDocument();
+    expect(screen.getByText('Its clip is 8 s; this row needs it slower than 88 %. Make the video makes it again for 11 s, or shorten the row to 9 s or less.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Make the video \(1 moving/ })).toBeInTheDocument();
+  });
+
+  it('a made clip a little short of its row plays slower and stays made and free (14 s clip, 15.2 s row)', () => {
+    routes(() => undefined);
+    setup({ shots: [shot(1, 15.2, { mode: 'HERO', selectedCandidateId: 'cd_v1' }), shot(2, 5)], candidates: [pic(1), clipFor(1, 14), pic(2)] });
+    expect(screen.getByText('Clip made')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Make the video \(0 moving/ })).toBeInTheDocument();
+  });
+  it('a made clip longer than its row is trimmed and stays made (14 s clip, 13.2 s row)', () => {
+    routes(() => undefined);
+    setup({ shots: [shot(1, 13.2, { mode: 'HERO', selectedCandidateId: 'cd_v1' }), shot(2, 5)], candidates: [pic(1), clipFor(1, 14), pic(2)] });
+    expect(screen.getByText('Clip made')).toBeInTheDocument();
   });
 
   it('a made clip with matching seconds stays made and free', () => {

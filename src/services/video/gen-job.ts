@@ -110,7 +110,8 @@ export async function buildVideoRequest(tree: VideoRequestTree, shot: Shot): Pro
   return {
     prompt,
     mode: 'HERO',
-    durationSec: shot.durationSec,
+    // Grok makes whole seconds: a row in tenths gets the next whole second, and the render trims it.
+    durationSec: Math.ceil(shot.durationSec),
     aspectRatio: tree.story.aspectRatio,
     ...(firstFrameUrl ? { firstFrameUrl } : {}),
     ...(referenceImageUrls.length ? { referenceImageUrls } : {}),

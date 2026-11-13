@@ -110,7 +110,7 @@ export function VideoControls({ vsId, shotKey, label, durationSec, story, jobs, 
     };
   }, []);
 
-  const price = estimateCostUsd('grok', 'HERO', durationSec);
+  const price = estimateCostUsd('grok', 'HERO', Math.ceil(durationSec));
   const after = story.spentUsd + story.reservedUsd + price;
   const overCap = after > story.budgetUsdCap + 1e-9;
   const running = jobs.find(inflight) ?? null;

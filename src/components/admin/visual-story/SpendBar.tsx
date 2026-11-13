@@ -62,7 +62,7 @@ export function SpendBar({ vsId, story, shots, onChanged }: Props) {
   const tiles = totalSec === windowSec;
   const chosen = shots.filter((s) => s.selectedCandidateId).length;
   // Every clip is made at the video rate, whatever the shot's mode.
-  const allClipsUsd = shots.reduce((t, s) => t + estimateCostUsd('grok', 'HERO', s.durationSec), 0);
+  const allClipsUsd = shots.reduce((t, s) => t + estimateCostUsd('grok', 'HERO', Math.ceil(s.durationSec)), 0);
   const cap = story.budgetUsdCap;
   const pct = (n: number) => (cap > 0 ? Math.min(100, (n / cap) * 100) : 100);
 
