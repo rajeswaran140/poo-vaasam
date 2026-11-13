@@ -220,6 +220,8 @@ async function copyClip(
     mode: 'HERO',
     s3Key,
     costUsd: job.reservedUsd,
+    // The length it was made for, so a later change of the row's seconds shows it is out of date.
+    ...(typeof job.durationSec === 'number' ? { durationSec: job.durationSec } : {}),
     createdAt: new Date().toISOString(),
   });
 }

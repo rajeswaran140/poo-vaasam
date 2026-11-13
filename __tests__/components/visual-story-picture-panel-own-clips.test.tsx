@@ -167,3 +167,12 @@ it('a clip row whose upload never arrived blocks the video and says so', () => {
   expect(screen.getByText('Clip 1 has no clip yet. Remove it and add the clip again.')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /Make the video/ })).toBeDisabled();
 });
+
+it('removing your own clip asks first, and says it is your upload', async () => {
+  routes(() => undefined);
+  setup({ shots: [ownRow(1, 10), shot(2, 8)], candidates: [cand(1, 'HERO', 'cd_own1', 'mp4'), cand(2, 'STILL', 'cd_p2', 'jpg')] });
+  fireEvent.click(screen.getByRole('button', { name: 'Remove clip 1' }));
+  await flush();
+  expect(calls()).toEqual([]);
+  expect(screen.getByText('Remove clip 1? Your uploaded clip is taken out of this story.')).toBeInTheDocument();
+});

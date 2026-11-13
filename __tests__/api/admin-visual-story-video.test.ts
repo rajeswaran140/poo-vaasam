@@ -254,6 +254,8 @@ describe('POST video — money paths', () => {
       attempts: 0,
       copyFailures: 0,
       lastPolledAt: null,
+      // The length asked for, copied onto the clip so a later seconds change shows it out of date.
+      durationSec: 6,
       createdAt: expect.any(String),
       updatedAt: expect.any(String),
     });

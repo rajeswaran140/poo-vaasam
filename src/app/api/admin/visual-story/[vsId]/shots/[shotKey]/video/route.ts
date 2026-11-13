@@ -137,6 +137,7 @@ export async function POST(request: NextRequest, { params }: Ctx) {
       attempts: 0,
       copyFailures: 0,
       lastPolledAt: null,
+      durationSec: shot.durationSec,
       createdAt: now,
       updatedAt: now,
     };

@@ -111,6 +111,12 @@ export interface Candidate {
   s3Key: string;
   posterKey?: string;
   costUsd: number;
+  /**
+   * A made clip's length in seconds (the row's length it was made for). Absent
+   * on stills, uploads and clips made before 2026-11-13. A row whose seconds
+   * no longer match is out of date: the render would freeze or cut the clip.
+   */
+  durationSec?: number;
   createdAt: string;
 }
 
@@ -191,6 +197,8 @@ export interface GenJob {
   billedUsd?: number;
   /** Set by the one settle of this job's reservation (Ruling V10). */
   settledAt?: string;
+  /** The clip length asked for (the row's seconds when the clip was started); copied onto its candidate. */
+  durationSec?: number;
   createdAt: string;
   updatedAt: string;
 }

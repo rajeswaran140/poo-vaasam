@@ -236,12 +236,59 @@ describe('review fixes', () => {
     expect(screen.getByRole('button', { name: /Make the video/ })).toBeDisabled();
   });
 
-  it('a row can be removed', async () => {
+  it('a row can be removed, after a yes', async () => {
     routes(() => undefined);
     setup({ shots: [shot(1, 8), shot(2, 8, { selectedCandidateId: null })], candidates: [pic(1)] });
     fireEvent.click(screen.getByRole('button', { name: 'Remove picture 2' }));
     await flush();
+    expect(calls()).toEqual([]);
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, remove picture 2' }));
+    await flush();
     expect(calls()).toEqual([{ url: `/api/admin/visual-story/${VS}/shots`, body: { op: 'delete', sceneOrder: 1, shotOrder: 2 } }]);
+  });
+
+  describe('Remove asks first (audit 2026-11-13: one tap deleted paid clips)', () => {
+    const grokClip = (shotOrder: number, candId: string): Candidate => ({ ...pic(shotOrder, 'HERO', candId), providerId: 'grok', jobId: 'gj_x', costUsd: 2 });
+
+    it('one tap deletes nothing, and Keep closes the question', async () => {
+      routes(() => undefined);
+      setup();
+      fireEvent.click(screen.getByRole('button', { name: 'Remove picture 1' }));
+      expect(screen.getByText('Remove picture 1? Its picture is deleted.')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Keep' }));
+      await flush();
+      expect(screen.queryByText(/Remove picture 1\?/)).not.toBeInTheDocument();
+      expect(calls()).toEqual([]);
+    });
+
+    it('says when paid clips go with the row, and that they cost again', () => {
+      routes(() => undefined);
+      setup({ shots: [shot(1, 8, { mode: 'HERO' }), shot(2, 8)], candidates: [pic(1), grokClip(1, 'cd_c1'), grokClip(1, 'cd_c2'), pic(2)] });
+      fireEvent.click(screen.getByRole('button', { name: 'Remove picture 1' }));
+      expect(
+        screen.getByText('Remove picture 1? Its picture and the 2 clips made for it are deleted. Those clips were paid for; making them again costs again.')
+      ).toBeInTheDocument();
+    });
+
+    it('one paid clip reads in the singular', () => {
+      routes(() => undefined);
+      setup({ shots: [shot(1, 8, { mode: 'HERO' }), shot(2, 8)], candidates: [pic(1), grokClip(1, 'cd_c1'), pic(2)] });
+      fireEvent.click(screen.getByRole('button', { name: 'Remove picture 1' }));
+      expect(
+        screen.getByText('Remove picture 1? Its picture and the clip made for it are deleted. That clip was paid for; making it again costs again.')
+      ).toBeInTheDocument();
+    });
+
+    it('a failed remove says so in that row', async () => {
+      routes((u) => (u.endsWith('/shots') ? json({ success: false, error: 'A clip is still being made.' }, 409) : undefined));
+      setup();
+      fireEvent.click(screen.getByRole('button', { name: 'Remove picture 2' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Yes, remove picture 2' }));
+      await flush();
+      const row = screen.getByRole('alert');
+      expect(row).toHaveTextContent('Could not remove picture 2:');
+      expect(within(screen.getAllByRole('listitem')[1]).getByRole('alert')).toBe(row);
+    });
   });
 
   it('Stop is not offered while pictures upload', async () => {
@@ -413,5 +460,96 @@ describe('chaining review fixes', () => {
     expect(screen.getByRole('alert')).toHaveTextContent("over the story's budget");
     expect(calls().filter((x) => x.url.endsWith('/upload'))).toHaveLength(2); // presign + confirm once, then the 402 stops it
     expect(calls().filter((x) => x.url.endsWith('/video'))).toHaveLength(1);
+  });
+});
+
+describe('audit 2026-11-13: Stop during a chained run, and a clip whose row changed length', () => {
+  const JA = 'gj_1700000000001_aaaaaaaa';
+  const clipFor = (shotOrder: number, durationSec?: number): Candidate => ({
+    ...pic(shotOrder, 'HERO', `cd_v${shotOrder}`), providerId: 'grok', jobId: 'gj_x', ...(durationSec !== undefined ? { durationSec } : {}),
+  });
+
+  it('Stop is shown while a clip is being made, and pressing it starts no more clips and does not render', async () => {
+    let status = 'running';
+    routes((u, i) => {
+      if (u.endsWith('/video') && i?.method === 'POST') return json({ success: true, data: { jobId: JA } }, 202);
+      if (u.includes('/video-jobs/')) return json({ success: true, data: { jobId: JA, status } });
+      if (u.endsWith('/render') && i?.method === 'POST') return json({ success: true, data: { renderId: 'rd_1' } }, 202);
+      return undefined;
+    });
+    setup({
+      shots: [
+        shot(1, 8, { mode: 'HERO', firstFrameCandidateId: 'cd_p1' }),
+        shot(2, 8, { mode: 'HERO', chainFromPrevious: true, selectedCandidateId: null }),
+      ],
+      candidates: [pic(1)],
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Make the video/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await act(async () => { await jest.advanceTimersByTimeAsync(100); });
+    // Clip 1 is being made: Stop is there, with the true story about leaving.
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
+    expect(screen.getByText(/If you leave, clips already started still finish, but no more start/)).toBeInTheDocument();
+    expect(screen.queryByText(/keep rendering even if you leave/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    expect(screen.getByText(/Stopping: the clips being made now finish/)).toBeInTheDocument();
+    status = 'succeeded';
+    for (let k = 0; k < 4; k++) await flush();
+    const posted = calls().map((x) => x.url.replace(`/api/admin/visual-story/${VS}`, ''));
+    expect(posted.filter((u) => u.endsWith('/video'))).toEqual(['/shots/001-001/video']);
+    expect(posted).not.toContain('/render');
+    expect(screen.getByRole('status')).toHaveTextContent('Not rendered');
+  });
+
+  it('a made clip whose row now has different seconds is out of date: no "Clip made", it says so, and it is priced again', () => {
+    routes(() => undefined);
+    setup({ shots: [shot(1, 11, { mode: 'HERO', selectedCandidateId: 'cd_v1' }), shot(2, 5)], candidates: [pic(1), clipFor(1, 8), pic(2)] });
+    expect(screen.queryByText('Clip made')).not.toBeInTheDocument();
+    expect(screen.getByText('Its clip was made for 8 s. Make the video makes it again for 11 s, or set the seconds back to 8.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Make the video \(1 moving/ })).toBeInTheDocument();
+  });
+
+  it('a made clip with matching seconds stays made and free', () => {
+    routes(() => undefined);
+    setup({ shots: [shot(1, 8, { mode: 'HERO', selectedCandidateId: 'cd_v1' }), shot(2, 8)], candidates: [pic(1), clipFor(1, 8), pic(2)] });
+    expect(screen.getByText('Clip made')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Make the video \(0 moving/ })).toBeInTheDocument();
+  });
+
+  it('Fit leaves a row with a made clip at its length and fits the rest', async () => {
+    routes(() => undefined);
+    setup({
+      shots: [shot(1, 8, { mode: 'HERO', selectedCandidateId: 'cd_v1' }), shot(2, 8)],
+      candidates: [pic(1), clipFor(1, 8), pic(2)],
+      story: { ...story, windowEndSec: 20 } as VisualStory,
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Fit to 20 s' }));
+    await flush();
+    expect(calls().map((x) => x.body)).toEqual([{ op: 'update', sceneOrder: 1, shotOrder: 2, durationSec: 12 }]);
+  });
+
+  it('Fit also keeps older clips with no recorded length', async () => {
+    routes(() => undefined);
+    setup({
+      shots: [shot(1, 8, { mode: 'HERO', selectedCandidateId: 'cd_v1' }), shot(2, 8)],
+      candidates: [pic(1), clipFor(1), pic(2)],
+      story: { ...story, windowEndSec: 20 } as VisualStory,
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Fit to 20 s' }));
+    await flush();
+    expect(calls().map((x) => x.body)).toEqual([{ op: 'update', sceneOrder: 1, shotOrder: 2, durationSec: 12 }]);
+  });
+
+  it('when made clips leave too little room, Fit says so plainly', async () => {
+    routes(() => undefined);
+    setup({
+      shots: [shot(1, 8, { mode: 'HERO', selectedCandidateId: 'cd_v1' }), shot(2, 8)],
+      candidates: [pic(1), clipFor(1, 8), pic(2)],
+      story: { ...story, windowEndSec: 40 } as VisualStory,
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Fit to 40 s' }));
+    await flush();
+    expect(calls()).toEqual([]);
+    expect(screen.getByRole('alert')).toHaveTextContent('Your clips and the clips already made take 8 s, so 1 picture must fill 32 s');
   });
 });
