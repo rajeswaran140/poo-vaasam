@@ -82,7 +82,7 @@ or "♪ music" for a break.
 - **Breaks.** A break is a gap of ≥ 4 s between one line's end and the next line's start, plus the
   intro before line 1 and the tail after the last line. A cut anywhere inside a break is fine. Inside
   singing, a cut may only land on a line start. The 4 s figure is my call: பூவும்'s longest gap inside a
-  verse is 0.8 s and its shortest real break is 17.6 s, so anything from 2 to 10 would do.
+  verse is 0.8 s and its shortest real break is 18.1 s, so anything from 2 to 10 would do.
 - **Lead.** A cut lands on the frame at or just before the line's first sung word (25 fps). Whether
   to lead by a frame or two is left to the builder; look at it in a render.
 
@@ -117,8 +117,8 @@ balances them. **பூவும், 0–3:00 → 16 rows** (13 with singing, 3 
 | 15 | 2:38.5–2:49.9 | 11.4 | 34–36 |
 | 16 | 2:49.9–3:00.0 | 10.1 | music |
 
-Grok bills by the second, so 16 rows cost about the same as today's 13 (182 s of clip). They cost a
-little more only because each clip is rounded up to whole seconds (§6). A "shorter rows (1–2 lines
+Grok bills by the second. Today's 13 clips are 180 s. 16 rows, each rounded up to whole seconds
+(§6), come to about 187 s, roughly 4 % more. A "shorter rows (1–2 lines
 each)" choice gives about 26 rows for the same window. That is my call as an option, not the
 default.
 
@@ -150,8 +150,10 @@ motion). Rows that cannot fit are marked "needs a new clip", and Raj sees that b
 | 12 | 2:36.2–2:49.9 | 13.7 | 33–36 | trim 0.3 s |
 | 13 | 2:49.9–3:00.0 | 10.1 | music | 12 s, trim 1.9 s |
 
-Trimming alone cannot fit this story. The clips total 182 s against 180 s of window, which leaves no
-room to move cuts later, so the slow-down is what makes it work. The slowest row plays at 92 %.
+Trimming alone cannot fit this story. The clips total exactly 180 s, the same as the window, so any
+cut that moves earlier must be paid back by a row that runs longer than its clip. With trim only,
+**9 of the 13 rows would need a new clip** (about $18 of Grok at 720p). With the slow-down floor at
+88 %, all 13 fit and the slowest row plays at 92 %.
 
 **Chained rows.** If a row was made "Continue from…" the previous clip's last frame, trimming the
 previous clip would make a visible jump at the seam. The fitter does not trim a clip that a chained
@@ -166,9 +168,10 @@ row continues from; it may only slow it. If that cannot fit, the row is marked "
 - **Grok clips are asked for in whole seconds:** `ceil(row seconds)`, which is still ≤ 15. The render
   trims the rest. The price shown is for the whole seconds asked for.
 - **Out of date (changes #451's rule).** A clip is out of date only when the row needs it slower than
-  88 %, or for a chained clip that would now be trimmed. A shorter row just trims. Clips with no
-  stored length (made before 2026-11-13) are taken as `round(row seconds)` at fit time. The ffprobe
-  backfill offered earlier would make that exact; doing it is my recommendation, not a requirement.
+  88 %, or for a chained clip that would now be trimmed. A shorter row just trims. **Phase 1
+  requirement:** the fitter uses each clip's real length. Clips made before 2026-11-13 have no stored
+  length, so phase 1 includes an ffprobe backfill of `Candidate.durationSec` (or an ffprobe at fit
+  time). A Grok clip shorter than asked would otherwise turn a planned trim into a freeze.
 - **Render.** Each row's frame range comes from the running total, `round(startSec × 25)` to
   `round(endSec × 25)`, not from rounding each row on its own, so 16 rows of tenths never drift off
   the song. A slowed row uses a time stretch (`setpts`) instead of today's clone-pad freeze. Stills
@@ -212,6 +215,9 @@ row continues from; it may only slow it. If that cannot fit, the row is marked "
 
 ## 10. Left to the builder
 
+- Grid points inside a break must be clamped to at most the next line's start. The prototype's 0.1 s
+  grid rounded 2:21.96 up to 2:22.0, which is 0.02 s inside line 27. The §5.2 table shows that row
+  as music by hand.
 - The dynamic programming's exact cost function (the prototype uses the squared distance from each
   row's target), its grid, and tie-breaks.
 - Where the shared lyric-timing helpers live; the route shape (likely
@@ -223,9 +229,16 @@ row continues from; it may only slow it. If that cannot fit, the row is marked "
 
 1. Is storing the lyric lines on each row OK? (It changes the "hash only" rule in the original spec.)
 2. Should rows be allowed to play their clip a little slower (to 88 %) so a made clip fits, or should
-   they only trim?
-3. For new stories, should the default be fewer, longer rows (16 for பூவும்) or one to two lines a row
+   they only trim? (Trim only means 9 of பூவும்'s 13 clips need remaking, about $18.)
+3. Prompts from the lyrics (§7, your "listen, then make it from the lyrics, context and pictures")
+   is phase 3, behind the timing fix. Do you want it sooner?
+4. For new stories, should the default be fewer, longer rows (16 for பூவும்) or one to two lines a row
    (about 26)?
+
+**Clock check:** the story's master WAV and the Video Text source MP4 are both exactly 246.0 s
+(ffprobe, 2026-11-13). The Video Text video is the same master, so the line times in the tables
+should hold on the story's audio. Phase 1 re-times on the WAV itself and confirms this before any
+result is trusted.
 
 Prototype numbers: `fit-dp.py` in the session scratchpad, using the saved timings from Video Text
 project `be313bc9…` (50 of 50 lines).
