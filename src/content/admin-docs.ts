@@ -5407,7 +5407,7 @@ The uploaded video, the finished video and every in-between file are **deleted 3
     slug: 'visual-story-studio-plan',
     title: 'Visual Story Studio — storyboards, stills and video clips',
     category: 'Visual Story',
-    updatedAt: '2026-11-11T22:00:00Z',
+    updatedAt: '2026-11-13T16:10:00Z',
     body: `# Visual Story Studio
 
 The studio turns one of your saved masters into a storyboard for a music video: scenes, shots, characters, and a still picture and a video clip for each shot — then **Render video** joins every shot's chosen picture or clip with the song into the finished MP4. Storyboards and stills cost pennies, so you can plan the whole video before real money is spent on clips. The step-by-step guide is in the repo at \`docs/VISUAL_STORY_STUDIO.md\`; the design is in \`docs/superpowers/specs/2026-09-11-visual-story-studio-design.md\`.
@@ -5454,7 +5454,7 @@ The full path for a video made from your own pictures, with the same people in e
 2. **Set the Style.** Under the title, **Style: none set** → **Set style** → paste one line that describes the look of your pictures (light, colours, place, mood; under 300 characters) → **Save style**. Typing alone does not save it: the top line must read "Style: …".
 3. **Add the people, before the pictures.** Open the **Characters** tab → add each person (for example "Dance teacher") with a short description of their hair, jewellery and clothes. Leave out a clothing colour that changes between pictures. Then use the **photo button on that person's card** to add 1–4 face photos. Do not use **Add pictures** for face photos: that makes a picture row, not a face photo.
    - **A good face photo:** square, about **1024 × 1024** (768–2048 works), JPG or PNG under 10 MB; head and shoulders, face about half the picture; even light; plain or blurred background with **no other people**; the same hair and jewellery as in the pictures. Close crops from your own pictures work well.
-4. **Add your pictures.** In **Video from your pictures**, **Add pictures**. Use the story's shape: **1920 × 1080** for 16:9 (a square picture loses its top and bottom). **Order matters**: rows play top to bottom, and there is no reorder yet; to move a picture to the end, **Remove** it and add it again. Keep each person's **clothes the same** from picture to picture, or group pictures by outfit so it changes only once.
+4. **Add your pictures.** In **Video from your pictures**, **Add pictures**. Use the story's shape: **1920 × 1080** for 16:9 (a square picture loses its top and bottom). **Order matters**: rows play top to bottom, and there is no reorder yet; to move a picture to the end, **Remove** it and add it again. ⚠️ Removing a row also deletes the clip made for it, so move pictures **before** you make the video. Keep each person's **clothes the same** from picture to picture, or group pictures by outfit so it changes only once.
 5. **Set every row.** **Moving**, **15 s** (Grok's most per clip), and its own **How it moves** prompt. Paste the prompt, check that the new text shows, then **click outside the box**: that is what saves it. Writing the prompt:
    - describe the **pose already in that picture** and how it moves on from there, plus a slow camera move;
    - end with: "Keep all faces, clothing and background exactly as in the picture. No singing, no lip-sync, no talking, no text, no scene changes.";

@@ -83,6 +83,9 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
   const [making, setMaking] = useState(false);
   // Bumped when a save fails, so the seconds boxes show the saved value again.
   const [nonce, setNonce] = useState(0);
+  // The row whose Remove is waiting for a yes (shotKey), and a remove that failed.
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState<{ key: string; message: string } | null>(null);
   const stop = useRef(false);
   const mounted = useRef(true);
   const abort = useRef<AbortController>(new AbortController());
@@ -316,11 +319,87 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
     stop.current = false;
     try {
       const r = await post(`${base}/shots`, { op: 'delete', sceneOrder: s.sceneOrder, shotOrder: s.shotOrder });
-      if (!r.ok) setError(`${nameOf(s)}: ${r.error}`);
+      if (!r.ok) setRemoveError({ key: shotKey(s), message: r.error });
     } finally {
       if (mounted.current) setBusy(false);
       changed.current();
     }
+  };
+
+  /** Paid Grok clips this row holds (the owner's uploads are free). */
+  const paidClipsOf = (s: Shot) => candidates.filter((c) => of(s)(c) && c.mode !== 'STILL' && c.providerId !== 'upload');
+
+  /**
+   * Remove asks first: deleting a row deletes everything in it, paid clips
+   * included, and they cannot be brought back (audit 2026-11-13: one tap on
+   * the small link threw away clips that then had to be paid for again).
+   */
+  const removeButton = (s: Shot, name: string) => (
+    <button
+      type="button"
+      disabled={busy || removing === shotKey(s)}
+      aria-label={`Remove ${name.toLowerCase()}`}
+      onClick={() => {
+        setRemoveError(null);
+        setRemoving(shotKey(s));
+      }}
+      className="min-h-11 min-w-11 text-blue-700 hover:underline disabled:opacity-50 lg:min-h-0 lg:min-w-0 dark:text-blue-400"
+    >
+      Remove
+    </button>
+  );
+
+  /** What Remove deletes, said plainly, in the row itself. */
+  const removeMessage = (s: Shot, name: string): string => {
+    if (isOwn(s)) return `Remove ${name.toLowerCase()}? Your uploaded clip is taken out of this story.`;
+    const paid = paidClipsOf(s).length;
+    const pictures = candidates.filter((c) => of(s)(c) && c.mode === 'STILL').length;
+    const what = [
+      pictures ? (pictures === 1 ? 'its picture' : `its ${pictures} pictures`) : '',
+      paid ? (paid === 1 ? 'the clip made for it' : `the ${paid} clips made for it`) : '',
+    ].filter(Boolean);
+    const lead = `Remove ${name.toLowerCase()}?`;
+    if (!what.length) return lead;
+    const deleted = `${what.join(' and ')} ${what.length > 1 || pictures > 1 || paid > 1 ? 'are' : 'is'} deleted.`;
+    const repay = paid ? ` ${paid === 1 ? 'That clip was' : 'Those clips were'} paid for; making ${paid === 1 ? 'it' : 'them'} again costs again.` : '';
+    return `${lead} ${deleted.charAt(0).toUpperCase()}${deleted.slice(1)}${repay}`;
+  };
+
+  const removeConfirm = (s: Shot, name: string) => {
+    const key = shotKey(s);
+    const failed = removeError?.key === key ? removeError.message : null;
+    if (removing !== key && !failed) return null;
+    return (
+      <div role={failed ? 'alert' : undefined} className="w-full space-y-2 rounded-md border border-red-200 bg-red-50 p-2 text-sm dark:border-red-900 dark:bg-red-950">
+        {failed ? (
+          <p className="text-red-700 dark:text-red-300">{`Could not remove ${name.toLowerCase()}: ${failed}`}</p>
+        ) : (
+          <>
+            <p className="text-gray-900 dark:text-gray-100">{removeMessage(s, name)}</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setRemoving(null);
+                  void remove(s);
+                }}
+                className="min-h-11 rounded-md bg-red-600 px-3 py-1 font-medium text-white hover:bg-red-700 disabled:opacity-50 lg:min-h-0"
+              >
+                {`Yes, remove ${name.toLowerCase()}`}
+              </button>
+              <button
+                type="button"
+                onClick={() => setRemoving(null)}
+                className="min-h-11 rounded-md border border-gray-300 px-3 py-1 text-gray-800 hover:bg-gray-100 lg:min-h-0 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+              >
+                Keep
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    );
   };
 
   /** Grab the previous clip's last frame, upload it to `s`, pin it, and start `s`'s clip. */
@@ -595,16 +674,9 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium text-gray-900 dark:text-gray-100">{name}</span>
                       <span className="text-gray-700 dark:text-gray-300">{`${s.durationSec} s · your clip (free)`}</span>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        aria-label={`Remove ${name.toLowerCase()}`}
-                        onClick={() => void remove(s)}
-                        className="text-blue-700 hover:underline disabled:opacity-50 dark:text-blue-400"
-                      >
-                        Remove
-                      </button>
+                      {removeButton(s, name)}
                     </div>
+                    {removeConfirm(s, name)}
                     {!clip && <p className="text-red-600 dark:text-red-400">{`${name} has no clip yet. Remove it and add the clip again.`}</p>}
                   </div>
                 </li>
@@ -642,16 +714,9 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
                       <option value="moving">{`Moving (${usd(estimateCostUsd('grok', 'HERO', s.durationSec))})`}</option>
                     </select>
                     {isMoving(s) && clipOf(s) && !needsClip(s) && <span className="text-green-700 dark:text-green-400">Clip made</span>}
-                    <button
-                      type="button"
-                      disabled={busy}
-                      aria-label={`Remove ${name.toLowerCase()}`}
-                      onClick={() => void remove(s)}
-                      className="text-blue-700 hover:underline disabled:opacity-50 dark:text-blue-400"
-                    >
-                      Remove
-                    </button>
+                    {removeButton(s, name)}
                   </div>
+                  {removeConfirm(s, name)}
                   {isMoving(s) && (
                     <label className="block text-gray-700 dark:text-gray-300">
                       How it moves

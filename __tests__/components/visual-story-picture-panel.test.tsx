@@ -236,12 +236,59 @@ describe('review fixes', () => {
     expect(screen.getByRole('button', { name: /Make the video/ })).toBeDisabled();
   });
 
-  it('a row can be removed', async () => {
+  it('a row can be removed, after a yes', async () => {
     routes(() => undefined);
     setup({ shots: [shot(1, 8), shot(2, 8, { selectedCandidateId: null })], candidates: [pic(1)] });
     fireEvent.click(screen.getByRole('button', { name: 'Remove picture 2' }));
     await flush();
+    expect(calls()).toEqual([]);
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, remove picture 2' }));
+    await flush();
     expect(calls()).toEqual([{ url: `/api/admin/visual-story/${VS}/shots`, body: { op: 'delete', sceneOrder: 1, shotOrder: 2 } }]);
+  });
+
+  describe('Remove asks first (audit 2026-11-13: one tap deleted paid clips)', () => {
+    const grokClip = (shotOrder: number, candId: string): Candidate => ({ ...pic(shotOrder, 'HERO', candId), providerId: 'grok', jobId: 'gj_x', costUsd: 2 });
+
+    it('one tap deletes nothing, and Keep closes the question', async () => {
+      routes(() => undefined);
+      setup();
+      fireEvent.click(screen.getByRole('button', { name: 'Remove picture 1' }));
+      expect(screen.getByText('Remove picture 1? Its picture is deleted.')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Keep' }));
+      await flush();
+      expect(screen.queryByText(/Remove picture 1\?/)).not.toBeInTheDocument();
+      expect(calls()).toEqual([]);
+    });
+
+    it('says when paid clips go with the row, and that they cost again', () => {
+      routes(() => undefined);
+      setup({ shots: [shot(1, 8, { mode: 'HERO' }), shot(2, 8)], candidates: [pic(1), grokClip(1, 'cd_c1'), grokClip(1, 'cd_c2'), pic(2)] });
+      fireEvent.click(screen.getByRole('button', { name: 'Remove picture 1' }));
+      expect(
+        screen.getByText('Remove picture 1? Its picture and the 2 clips made for it are deleted. Those clips were paid for; making them again costs again.')
+      ).toBeInTheDocument();
+    });
+
+    it('one paid clip reads in the singular', () => {
+      routes(() => undefined);
+      setup({ shots: [shot(1, 8, { mode: 'HERO' }), shot(2, 8)], candidates: [pic(1), grokClip(1, 'cd_c1'), pic(2)] });
+      fireEvent.click(screen.getByRole('button', { name: 'Remove picture 1' }));
+      expect(
+        screen.getByText('Remove picture 1? Its picture and the clip made for it are deleted. That clip was paid for; making it again costs again.')
+      ).toBeInTheDocument();
+    });
+
+    it('a failed remove says so in that row', async () => {
+      routes((u) => (u.endsWith('/shots') ? json({ success: false, error: 'A clip is still being made.' }, 409) : undefined));
+      setup();
+      fireEvent.click(screen.getByRole('button', { name: 'Remove picture 2' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Yes, remove picture 2' }));
+      await flush();
+      const row = screen.getByRole('alert');
+      expect(row).toHaveTextContent('Could not remove picture 2:');
+      expect(within(screen.getAllByRole('listitem')[1]).getByRole('alert')).toBe(row);
+    });
   });
 
   it('Stop is not offered while pictures upload', async () => {
