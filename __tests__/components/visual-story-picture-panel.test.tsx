@@ -602,3 +602,16 @@ describe('review 2026-11-13: a clip the next row continues from stays whole seco
   });
 });
 
+describe('review 2026-11-14: a re-made clip is priced with the picture it starts from', () => {
+  const clipFor = (shotOrder: number, durationSec: number): Candidate => ({
+    ...pic(shotOrder, 'HERO', `cd_v${shotOrder}`), providerId: 'grok', jobId: 'gj_x', durationSec,
+  });
+  it('a row showing an out-of-date clip is priced with its picture (pinned before the clip is asked for)', () => {
+    routes(() => undefined);
+    // 8 s row, its clip made for 5 s (too short even slowed): made again, starting from picture 1.
+    setup({ shots: [shot(1, 8, { mode: 'HERO', selectedCandidateId: 'cd_v1' }), shot(2, 8)], candidates: [pic(1), clipFor(1, 5), pic(2)] });
+    // 1080p, no faces: 8 × $0.25 + $0.01 for the picture.
+    expect(screen.getByRole('button', { name: /Make the video \(1 moving · \$2\.01\)/ })).toBeInTheDocument();
+  });
+});
+

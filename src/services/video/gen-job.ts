@@ -169,6 +169,11 @@ async function endJob(
   actualUsd?: number | null
 ): Promise<GenJob> {
   const billedUsd = billed ? (actualUsd ?? job.reservedUsd) : 0;
+  // xAI's own figure is recorded even when it beats the hold (the spend is real), but it means the
+  // price rule has drifted and the story may now be past its cap: say so where it will be seen.
+  if (billed && typeof actualUsd === 'number' && actualUsd > job.reservedUsd + 1e-6) {
+    console.error('visual-story video job: xAI charged more than was held', job.jobId, actualUsd, job.reservedUsd);
+  }
   const moved = await repo.transitionGenJob(vsId, job.jobId, from, to, { ...fields, billedUsd });
   if (!moved) {
     console.info('visual-story video job: transition lost; not settling', job.jobId, to);

@@ -161,8 +161,9 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
     return needsClip(prev) || s.chainedFromCandId !== clipOf(prev)?.candId;
   };
   const toAnimate = rows.filter(needsClip);
-  // A chained row gets its first frame (the previous clip's end) just before its clip.
-  const priceOf = (s: Shot) => clipPriceUsd({ characters, candidates }, s, { assumeFirstFrame: chained(s) });
+  // Every clip starts from a frame sent with it: a chained row's (the previous clip's end) and a
+  // row's own picture are both pinned just before its clip, so price that frame too.
+  const priceOf = (s: Shot) => clipPriceUsd({ characters, candidates }, s, { assumeFirstFrame: chained(s) || !!picOf(s) });
   const price = toAnimate.reduce((n, s) => n + priceOf(s), 0);
   const missing = rows.filter((s) => (isOwn(s) ? !ownClipOf(s) : !picOf(s) && !chained(s)));
   const fits = sameSec(total, windowSec);

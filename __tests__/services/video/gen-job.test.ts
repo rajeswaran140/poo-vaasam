@@ -574,6 +574,17 @@ describe('I3 — settlement is atomic and repeatable (Ruling V10)', () => {
     expect(repo.putCandidate.mock.calls[0][1].costUsd).toBe(0.48);
   });
 
+  it('says so loudly when xAI charged more than was held (the story may now be over its cap)', async () => {
+    provider.poll.mockResolvedValue({ ...succeeded, actualCostUsd: 0.9 }); // the hold is 0.48
+    await advance(job());
+    expect(console.error).toHaveBeenCalledWith('visual-story video job: xAI charged more than was held', JOB, 0.9, 0.48);
+  });
+  it('is quiet when xAI charged the hold or less', async () => {
+    provider.poll.mockResolvedValue({ ...succeeded, actualCostUsd: 0.48 });
+    await advance(job());
+    expect(console.error).not.toHaveBeenCalledWith('visual-story video job: xAI charged more than was held', expect.anything(), expect.anything(), expect.anything());
+  });
+
   it('settles BEFORE releasing the lock', async () => {
     provider.poll.mockResolvedValue(succeeded);
     await advance(job());
