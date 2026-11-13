@@ -123,7 +123,7 @@ export function BatchPanel({ vsId, story, shots, candidates, genJobs, onChanged 
   const stillCount = withoutClip.filter((s) => !moving(s)).length;
   const chainedCount = chainedShots(shots).filter((s) => withoutClip.includes(s)).length;
   const priceOf = (kind: Kind, list: Shot[]) =>
-    list.reduce((n, s) => n + estimateCostUsd('grok', kind === 'pictures' ? 'STILL' : 'HERO', s.durationSec), 0);
+    list.reduce((n, s) => n + estimateCostUsd('grok', kind === 'pictures' ? 'STILL' : 'HERO', Math.ceil(s.durationSec)), 0);
   const picturePrice = priceOf('pictures', pictureShots);
   const videoPrice = priceOf('videos', videoShots);
 

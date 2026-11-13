@@ -105,6 +105,11 @@ describe('runCheckJob', () => {
     expect(repo.settle).toHaveBeenCalledWith(VS, { reservedUsd: RESERVED, billedUsd: 0 });
   });
 
+  it('accepts shots whose seconds are in tenths', async () => {
+    const tenths = { ...event, input: { ...input, scenes: [{ ...input.scenes[0], shots: [{ ...input.scenes[0].shots[0], durationSec: 14.9 }] }] } };
+    await runCheckJob(tenths);
+    expect(mockCheck).toHaveBeenCalled();
+  });
   it('refuses a malformed storyboard without a paid call', async () => {
     const bad = { ...event, input: { ...input, scenes: [{ ...input.scenes[0], shots: [{ ...input.scenes[0].shots[0], visualPrompt: 'x'.repeat(2001) }] }] } };
     await runCheckJob(bad);

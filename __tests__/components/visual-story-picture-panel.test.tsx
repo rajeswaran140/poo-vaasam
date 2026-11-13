@@ -505,8 +505,20 @@ describe('audit 2026-11-13: Stop during a chained run, and a clip whose row chan
     routes(() => undefined);
     setup({ shots: [shot(1, 11, { mode: 'HERO', selectedCandidateId: 'cd_v1' }), shot(2, 5)], candidates: [pic(1), clipFor(1, 8), pic(2)] });
     expect(screen.queryByText('Clip made')).not.toBeInTheDocument();
-    expect(screen.getByText('Its clip was made for 8 s. Make the video makes it again for 11 s, or set the seconds back to 8.')).toBeInTheDocument();
+    expect(screen.getByText('Its clip is 8 s; this row needs it slower than 88 %. Make the video makes it again for 11 s, or shorten the row to 9 s or less.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Make the video \(1 moving/ })).toBeInTheDocument();
+  });
+
+  it('a made clip a little short of its row plays slower and stays made and free (14 s clip, 15.2 s row)', () => {
+    routes(() => undefined);
+    setup({ shots: [shot(1, 15.2, { mode: 'HERO', selectedCandidateId: 'cd_v1' }), shot(2, 5)], candidates: [pic(1), clipFor(1, 14), pic(2)] });
+    expect(screen.getByText('Clip made')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Make the video \(0 moving/ })).toBeInTheDocument();
+  });
+  it('a made clip longer than its row is trimmed and stays made (14 s clip, 13.2 s row)', () => {
+    routes(() => undefined);
+    setup({ shots: [shot(1, 13.2, { mode: 'HERO', selectedCandidateId: 'cd_v1' }), shot(2, 5)], candidates: [pic(1), clipFor(1, 14), pic(2)] });
+    expect(screen.getByText('Clip made')).toBeInTheDocument();
   });
 
   it('a made clip with matching seconds stays made and free', () => {
@@ -526,6 +538,23 @@ describe('audit 2026-11-13: Stop during a chained run, and a clip whose row chan
     fireEvent.click(screen.getByRole('button', { name: 'Fit to 20 s' }));
     await flush();
     expect(calls().map((x) => x.body)).toEqual([{ op: 'update', sceneOrder: 1, shotOrder: 2, durationSec: 12 }]);
+  });
+
+  it('Fit to the song still works after a lyrics fit left a made row in tenths (13.2 s)', async () => {
+    routes(() => undefined);
+    setup({
+      shots: [shot(1, 13.2, { mode: 'HERO', selectedCandidateId: 'cd_v1' }), shot(2, 8), shot(3, 8)],
+      candidates: [pic(1), clipFor(1, 14), pic(2), pic(3)],
+      story: { ...story, windowEndSec: 30 } as VisualStory,
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Fit to 30 s' }));
+    await flush();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    // 16.8 s left for two pictures: whole seconds, with the tenth on the last.
+    const after = [13.2, 8, 8];
+    for (const c of calls()) after[c.body.shotOrder - 1] = c.body.durationSec;
+    expect(Math.round(after.reduce((a, b) => a + b, 0) * 10) / 10).toBe(30);
+    expect(after.slice(1)).toEqual([8, 8.8]);
   });
 
   it('Fit also keeps older clips with no recorded length', async () => {
@@ -553,3 +582,23 @@ describe('audit 2026-11-13: Stop during a chained run, and a clip whose row chan
     expect(screen.getByRole('alert')).toHaveTextContent('Your clips and the clips already made take 8 s, so 1 picture must fill 32 s');
   });
 });
+
+describe('review 2026-11-13: a clip the next row continues from stays whole seconds', () => {
+  it('rounds tenths typed into a row the next row continues from (its clip cannot be trimmed)', async () => {
+    routes(() => undefined);
+    setup({ shots: [shot(1, 8, { mode: 'HERO' }), shot(2, 8, { mode: 'HERO', chainFromPrevious: true })] });
+    const field = screen.getByLabelText('Seconds for picture 1');
+    fireEvent.change(field, { target: { value: '9.4' } });
+    await act(async () => { fireEvent.blur(field); });
+    expect(calls()[0].body).toMatchObject({ op: 'update', shotOrder: 1, durationSec: 9 });
+  });
+  it('keeps tenths on a row nothing continues from', async () => {
+    routes(() => undefined);
+    setup({ shots: [shot(1, 8, { mode: 'HERO' }), shot(2, 8, { mode: 'HERO' })] });
+    const field = screen.getByLabelText('Seconds for picture 1');
+    fireEvent.change(field, { target: { value: '9.4' } });
+    await act(async () => { fireEvent.blur(field); });
+    expect(calls()[0].body).toMatchObject({ op: 'update', shotOrder: 1, durationSec: 9.4 });
+  });
+});
+

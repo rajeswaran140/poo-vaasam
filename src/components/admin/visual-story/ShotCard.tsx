@@ -183,7 +183,7 @@ export function ShotCard({ vsId, shot, story, characters, candidates, jobs, sele
       )}
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-        <span>{`${shot.durationSec} s · clip ${usd(estimateCostUsd('grok', 'HERO', shot.durationSec))}`}</span>
+        <span>{`${shot.durationSec} s · clip ${usd(estimateCostUsd('grok', 'HERO', Math.ceil(shot.durationSec)))}`}</span>
         <button type="button" onClick={onEdit} className="min-h-11 min-w-11 text-blue-700 hover:underline lg:min-h-0 lg:min-w-0 dark:text-blue-400">
           Edit
         </button>

@@ -116,7 +116,7 @@ export async function POST(request: NextRequest, { params }: Ctx) {
       if (!(await provider.isConfigured())) return fail('Grok video generation is not configured.', 503);
       // Signed before reserving: a signing failure must not strand a reservation.
       videoReq = await buildVideoRequest(tree, shot);
-      est = estimateCostUsd('grok', 'HERO', shot.durationSec);
+      est = estimateCostUsd('grok', 'HERO', Math.ceil(shot.durationSec));
       reserved = await repo.reserve(vsId, est);
     } catch (err) {
       return mapError(err);
@@ -137,7 +137,7 @@ export async function POST(request: NextRequest, { params }: Ctx) {
       attempts: 0,
       copyFailures: 0,
       lastPolledAt: null,
-      durationSec: shot.durationSec,
+      durationSec: Math.ceil(shot.durationSec),
       createdAt: now,
       updatedAt: now,
     };

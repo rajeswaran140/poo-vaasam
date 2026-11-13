@@ -138,6 +138,8 @@ import {
   buildClipSegmentArgs,
   STILL_TO_BT709,
   isAssemblyShotKey,
+  assemblyShotProblem,
+  segmentFrames,
   shotLabel,
   stillMotionFor,
 } from '@/lib/visual-story-assemble';
@@ -145,12 +147,10 @@ import { renderKey } from '@/lib/visual-story-storage';
 import { RENDER_MAX_QUEUE_MS } from '@/lib/visual-story-render';
 import {
   ASPECT_RATIOS,
-  MAX_SHOT_SEC,
-  MAX_OWN_CLIP_SEC,
   MAX_WINDOW_SEC,
-  MIN_SHOT_SEC,
   MIN_WINDOW_SEC,
   isRenderId,
+  sameSec,
   isVsId,
   type AspectRatio,
   type RenderStatus,
@@ -2015,7 +2015,7 @@ async function transitionStoryRender(
   }
 }
 
-type AssembleShot = { sceneOrder: number; shotOrder: number; key: string; durationSec: number };
+type AssembleShot = { sceneOrder: number; shotOrder: number; key: string; durationSec: number; playbackRate?: number };
 
 /** The event's timeline, re-checked; a message for the operator when it is not one we render. */
 function readAssembly(spec: NonNullable<MasterEvent['assemble']>, vsId: string):
@@ -2036,19 +2036,18 @@ function readAssembly(spec: NonNullable<MasterEvent['assemble']>, vsId: string):
   if (!Array.isArray(spec.shots) || spec.shots.length === 0 || spec.shots.length > 1000) return bad('The render has no shots.');
   const shots: AssembleShot[] = [];
   for (const raw of spec.shots as Array<Record<string, unknown>>) {
-    const sh = {
+    const sh: AssembleShot = {
       sceneOrder: Number(raw?.sceneOrder), shotOrder: Number(raw?.shotOrder), key: raw?.key as string, durationSec: Number(raw?.durationSec),
+      ...(raw?.playbackRate !== undefined ? { playbackRate: Number(raw.playbackRate) } : {}),
     };
     if (!Number.isInteger(sh.sceneOrder) || !Number.isInteger(sh.shotOrder)) return bad('A shot in the render is malformed.');
     if (!isAssemblyShotKey(sh.key, vsId)) return bad(`${shotLabel(sh)}: that file cannot be used in the video.`);
-    // A clip may run to MAX_OWN_CLIP_SEC (the owner's own uploaded clip keeps its length); a still stays within MAX_SHOT_SEC.
-    const maxSec = assemblyKindOf(sh.key) === 'clip' ? MAX_OWN_CLIP_SEC : MAX_SHOT_SEC;
-    if (!Number.isInteger(sh.durationSec) || sh.durationSec < MIN_SHOT_SEC || sh.durationSec > maxSec) {
-      return bad(`${shotLabel(sh)} has a length this renderer does not accept.`);
-    }
+    // Tenths, within the kind's limit (a clip may run to MAX_OWN_CLIP_SEC), and a speed of 0.88–1 on a clip only.
+    const problem = assemblyShotProblem(sh);
+    if (problem) return bad(problem);
     shots.push(sh);
   }
-  if (shots.reduce((n, sh) => n + sh.durationSec, 0) !== windowSec) {
+  if (!sameSec(shots.reduce((n, sh) => n + sh.durationSec, 0), windowSec)) {
     return bad('The shots do not fill the story\'s part of the song.');
   }
   return { ok: true, audioKey, aspect: spec.aspectRatio as AspectRatio, start, end, shots };
@@ -2175,6 +2174,8 @@ async function assembleStory(
 
     const segments: string[] = [];
     let stills = 0;
+    // Frames from the running total (after the tail joined the last shot), so rows in tenths never drift.
+    const frames = segmentFrames(shots.map((sh) => sh.durationSec));
     for (const [i, sh] of shots.entries()) {
       if (remainingMs() < ASSEMBLE_RESERVE_MS) return await failRender(OUT_OF_TIME);
       const label = shotLabel(sh);
@@ -2185,7 +2186,7 @@ async function assembleStory(
       const obj = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: sh.key }));
       writeFileSync(src, await obj.Body!.transformToByteArray());
       if (assemblyKindOf(sh.key) === 'clip') {
-        if (ff(buildClipSegmentArgs({ srcPath: src, outPath: seg, durationSec: sh.durationSec, aspect })).status !== 0) {
+        if (ff(buildClipSegmentArgs({ srcPath: src, outPath: seg, frames: frames[i], playbackRate: sh.playbackRate, aspect })).status !== 0) {
           return await failRender(`${label}: the clip could not be read.`);
         }
       } else {
@@ -2195,7 +2196,7 @@ async function assembleStory(
           : buildShortComposeArgs({ coverPath: src, framePath: frame, coverAspect, sourceScale: STILL_SOURCE_SCALE }));
         if (composed.status !== 0) return await failRender(`${label}: the picture could not be read.`);
         const moved = ff(buildMotionSegmentArgs({
-          framePath: frame, seconds: sh.durationSec, outPath: seg, motion: stillMotionFor(stills++),
+          framePath: frame, seconds: frames[i] / ASSEMBLE_FPS, outPath: seg, motion: stillMotionFor(stills++),
           size, fps: ASSEMBLE_FPS, codecArgs: ASSEMBLE_CODEC_ARGS,
           // RGB to the BT.709 the file is tagged with — see STILL_TO_BT709.
           inputFilter: STILL_TO_BT709,

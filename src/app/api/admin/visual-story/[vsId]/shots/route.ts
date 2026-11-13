@@ -4,6 +4,8 @@
  *   { op: 'update', sceneOrder, shotOrder, …any shot field, firstFrameCandidateId (a STILL of this shot, or null to clear) }
  *   { op: 'delete', sceneOrder, shotOrder }
  *   { op: 'reorder', sceneOrder, order: [current shotOrders in the new sequence] }
+ *   { op: 'lengths', lengths: [{ sceneOrder, shotOrder, durationSec }] } — every row's seconds at once
+ *     (Fit to the lyrics): must name exactly the story's shots and tile its window, or 409 and nothing written
  * Every response carries the shots with recomputed startSec and whether they
  * tile the story's window. Orders are 1-based.
  */
@@ -11,8 +13,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helper';
-import { VisualStoryRepository } from '@/infrastructure/database/VisualStoryRepository';
-import { isVsId, shotInputSchema } from '@/types/visualStory';
+import { ShotsChangedError, VisualStoryRepository } from '@/infrastructure/database/VisualStoryRepository';
+import { isVsId, shotInputSchema, tilesWindow } from '@/types/visualStory';
 import type { Shot } from '@/types/visualStory';
 import { fail, failRendering, hasRenderingVideo, limitMutation, mapError, timelineOf } from '@/lib/visual-story-route';
 
@@ -38,6 +40,13 @@ const bodySchema = z.discriminatedUnion('op', [
   }),
   z.object({ op: z.literal('delete'), sceneOrder: ord, shotOrder: ord }),
   z.object({ op: z.literal('reorder'), sceneOrder: ord, order: z.array(ord).min(1).max(100) }),
+  z.object({
+    op: z.literal('lengths'),
+    lengths: z
+      .array(z.object({ sceneOrder: ord, shotOrder: ord, durationSec: shotInputSchema.shape.durationSec }))
+      .min(1)
+      .max(100),
+  }),
 ]);
 
 export async function POST(request: NextRequest, { params }: Ctx) {
@@ -61,6 +70,28 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     const repo = new VisualStoryRepository();
     const tree = await repo.loadTree(vsId);
     if (!tree) return fail('That story no longer exists.', 404);
+
+    if (input.op === 'lengths') {
+      // A clip being made would land at the length its row had before the fit.
+      if (hasRenderingVideo(tree)) return failRendering();
+      const changed = () => fail('The rows changed while fitting. Fit again.', 409);
+      const key = (s: { sceneOrder: number; shotOrder: number }) => `${s.sceneOrder}#${s.shotOrder}`;
+      const named = new Set(input.lengths.map(key));
+      // Exactly the story's shots, once each, and the new seconds fill the window.
+      if (named.size !== input.lengths.length || named.size !== tree.shots.length || !tree.shots.every((s) => named.has(key(s)))) {
+        return changed();
+      }
+      if (!tilesWindow(input.lengths, tree.story.windowEndSec - tree.story.windowStartSec)) return changed();
+      try {
+        await repo.setShotLengths(vsId, input.lengths);
+      } catch (err) {
+        if (err instanceof ShotsChangedError) return changed();
+        throw err;
+      }
+      const fresh = (await repo.loadTree(vsId)) ?? tree;
+      return NextResponse.json({ success: true, data: timelineOf(fresh.story, fresh.shots) });
+    }
+
     if (!tree.scenes.some((s) => s.order === input.sceneOrder)) {
       return fail('That scene no longer exists.', 404);
     }

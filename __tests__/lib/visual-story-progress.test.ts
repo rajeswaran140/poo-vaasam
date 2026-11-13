@@ -53,6 +53,13 @@ describe('storySteps', () => {
 });
 
 describe('edge cases', () => {
+  it('rows in tenths whose float sum is 29.999999… fill the song (Fit to the lyrics)', () => {
+    const tenths = [0.1, 16.1, 13.8].map((d, i) => shot(i + 1, d, 'pic'));
+    expect(tenths.reduce((n, s) => n + s.durationSec, 0)).not.toBe(30);
+    const p = storyProgress({ story, shots: tenths, candidates: [cand('pic', 'STILL')] });
+    expect(p.filledSec).toBe(30);
+    expect(storySteps(p)[1].state).toBe('done');
+  });
   it('an over-filled song is not done, and says by how much', () => {
     const steps = storySteps(storyProgress({ story, shots: [shot(1, 40, null)], candidates: [] }));
     expect(steps[1]).toMatchObject({ state: 'current', detail: '0:40 of 0:30' });

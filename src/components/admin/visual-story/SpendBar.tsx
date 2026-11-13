@@ -14,6 +14,7 @@
 import { useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
 import { estimateCostUsd } from '@/services/video/cost';
+import { sameSec } from '@/types/visualStory';
 import type { Shot, VisualStory } from '@/types/visualStory';
 import { BUDGET_INPUT_ID, usd } from './ui-utils';
 
@@ -58,11 +59,11 @@ export function SpendBar({ vsId, story, shots, onChanged }: Props) {
   };
 
   const windowSec = story.windowEndSec - story.windowStartSec;
-  const totalSec = shots.reduce((t, s) => t + s.durationSec, 0);
-  const tiles = totalSec === windowSec;
+  const totalSec = Math.round(shots.reduce((t, s) => t + s.durationSec, 0) * 100) / 100;
+  const tiles = sameSec(totalSec, windowSec);
   const chosen = shots.filter((s) => s.selectedCandidateId).length;
   // Every clip is made at the video rate, whatever the shot's mode.
-  const allClipsUsd = shots.reduce((t, s) => t + estimateCostUsd('grok', 'HERO', s.durationSec), 0);
+  const allClipsUsd = shots.reduce((t, s) => t + estimateCostUsd('grok', 'HERO', Math.ceil(s.durationSec)), 0);
   const cap = story.budgetUsdCap;
   const pct = (n: number) => (cap > 0 ? Math.min(100, (n / cap) * 100) : 100);
 

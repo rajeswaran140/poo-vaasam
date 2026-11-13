@@ -34,7 +34,7 @@ export function storyProgress(tree: {
   return {
     shotCount: tree.shots.length,
     readyCount: tree.shots.filter((s) => chosenOf(s) !== null).length,
-    filledSec: tree.shots.reduce((n, s) => n + s.durationSec, 0),
+    filledSec: Math.round(tree.shots.reduce((n, s) => n + s.durationSec, 0) * 100) / 100,
     windowSec: tree.story.windowEndSec - tree.story.windowStartSec,
     render: !latest
       ? 'none'

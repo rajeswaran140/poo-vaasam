@@ -36,12 +36,13 @@ import { putToS3 } from '@/lib/mastering-upload-client';
 import { delay } from '@/lib/poll-job';
 import { estimateAssembleSec, MAX_ASSEMBLE_SEC } from '@/lib/visual-story-assemble';
 import { fitDurations, MAX_FIT_SEC, MIN_FIT_SEC } from '@/lib/visual-story-fit';
+import { clipFitFor, maxRowSecFor } from '@/lib/visual-story-clip-fit';
 import { grabLastFrame } from '@/lib/visual-story-last-frame';
 import { candidateKey } from '@/lib/visual-story-keys';
 import { followClips, postWithRetry, STOPPED, type Started } from '@/lib/visual-story-runner';
 import { estimateCostUsd } from '@/services/video/cost';
 import { clipRowSeconds, readClipDuration } from '@/lib/visual-story-clip-length';
-import { candIdForJob, OWN_CLIP_PROMPT } from '@/types/visualStory';
+import { candIdForJob, OWN_CLIP_PROMPT, roundTenth, sameSec } from '@/types/visualStory';
 import type { Candidate, Character, GenJob, Scene, Shot, VisualStory } from '@/types/visualStory';
 import { RaiseBudgetButton, shotKey, Thumb, usd, VideoThumb } from './ui-utils';
 
@@ -132,26 +133,37 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
    * about to be — the chained clip is made again from the new last frame.
    */
   /**
-   * The made clip's length, when it no longer matches the row: the render would
-   * freeze its last frame (row longer) or cut it (row shorter). Only clips made
-   * since lengths were recorded (2026-11-13) can be checked.
+   * The made clip's length, when the row can no longer use it: the row needs it
+   * slower than 88 %, or would cut a clip the next row continues from
+   * (visual-story-clip-fit.ts; a shorter row just trims). Only clips made since
+   * lengths were recorded (2026-11-13) can be checked this way.
    */
+  const nextOf = (s: Shot) => rows[rows.indexOf(s) + 1];
+  const clipFitOfRow = (s: Shot) => {
+    const len = clipOf(s)?.durationSec;
+    const next = nextOf(s);
+    return clipFitFor(typeof len === 'number' ? len : null, s.durationSec, { continuedFrom: !!next && chained(next) });
+  };
   const staleLengthOf = (s: Shot): number | null => {
     const len = clipOf(s)?.durationSec;
-    return typeof len === 'number' && len !== s.durationSec ? len : null;
+    return typeof len === 'number' && clipFitOfRow(s).kind === 'stale' ? len : null;
   };
+  const staleNote = (s: Shot, len: number) =>
+    s.durationSec < len
+      ? `Its clip is ${len} s and the next row continues from its last frame, so it cannot be cut to ${s.durationSec} s. Make the video makes it again, or set the seconds back to ${len}.`
+      : `Its clip is ${len} s; this row needs it slower than 88 %. Make the video makes it again for ${Math.ceil(s.durationSec)} s, or shorten the row to ${maxRowSecFor(len)} s or less.`;
   const needsClip = (s: Shot): boolean => {
     if (isOwn(s) || !isMoving(s) || rendersNow(s)) return false;
     if (!clipOf(s)) return true;
-    if (staleLengthOf(s) !== null) return true;
+    if (clipFitOfRow(s).kind === 'stale') return true;
     if (!chained(s)) return false;
     const prev = prevOf(s)!;
     return needsClip(prev) || s.chainedFromCandId !== clipOf(prev)?.candId;
   };
   const toAnimate = rows.filter(needsClip);
-  const price = toAnimate.reduce((n, s) => n + estimateCostUsd('grok', 'HERO', s.durationSec), 0);
+  const price = toAnimate.reduce((n, s) => n + estimateCostUsd('grok', 'HERO', Math.ceil(s.durationSec)), 0);
   const missing = rows.filter((s) => (isOwn(s) ? !ownClipOf(s) : !picOf(s) && !chained(s)));
-  const fits = total === windowSec;
+  const fits = sameSec(total, windowSec);
   const after = story.spentUsd + story.reservedUsd + price;
   const overCap = after > story.budgetUsdCap + 1e-9;
   // The worker's own limit, checked before anything is paid (clips assemble faster than stills).
@@ -290,12 +302,20 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
     // clip freezes it, shrinking it cuts it); the rest share what is left.
     const keeps = (s: Shot) => isOwn(s) || (isMoving(s) && !!clipOf(s) && !needsClip(s));
     const flexible = rows.filter((s) => !keeps(s));
-    const fixedSec = rows.reduce((n, s) => n + (keeps(s) ? s.durationSec : 0), 0);
-    const next = flexible.length ? fitDurations(flexible.map((s) => s.durationSec), windowSec - fixedSec) : null;
+    const fixedSec = roundTenth(rows.reduce((n, s) => n + (keeps(s) ? s.durationSec : 0), 0));
+    // Rows a lyrics fit left in tenths: fit the rest in whole seconds, and give the leftover tenths to the last.
+    const leftSec = roundTenth(windowSec - fixedSec);
+    const wholeLeft = Math.floor(leftSec);
+    const spare = roundTenth(leftSec - wholeLeft);
+    let next = flexible.length ? fitDurations(flexible.map((s) => s.durationSec), wholeLeft) : null;
+    if (next && spare > 0) {
+      const last = next.length - 1;
+      next = next[last] + spare <= MAX_FIT_SEC ? next.map((d, i) => (i === last ? roundTenth(d + spare) : d)) : null;
+    }
     if (!next) {
       setError(
         fixedSec
-          ? `${rows.some((s) => keeps(s) && !isOwn(s)) ? 'Your clips and the clips already made' : 'Your clips'} take ${fixedSec} s, so ${flexible.length} picture${flexible.length === 1 ? '' : 's'} must fill ${windowSec - fixedSec} s at ${MIN_FIT_SEC}-${MAX_FIT_SEC} s each. Add or remove pictures.`
+          ? `${rows.some((s) => keeps(s) && !isOwn(s)) ? 'Your clips and the clips already made' : 'Your clips'} take ${fixedSec} s, so ${flexible.length} picture${flexible.length === 1 ? '' : 's'} must fill ${leftSec} s at ${MIN_FIT_SEC}-${MAX_FIT_SEC} s each. Add or remove pictures.`
           : `${rows.length} pictures cannot fill ${windowSec} s at ${MIN_FIT_SEC}-${MAX_FIT_SEC} s each. Add or remove pictures.`
       );
       return;
@@ -304,7 +324,7 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
     stop.current = false;
     try {
       for (const [i, s] of flexible.entries()) {
-        if (next[i] !== s.durationSec && !(await update(s, { durationSec: next[i] }))) break;
+        if (!sameSec(next[i], s.durationSec) && !(await update(s, { durationSec: next[i] }))) break;
       }
     } finally {
       if (mounted.current) setBusy(false);
@@ -708,13 +728,16 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
                       type="number"
                       min={MIN_FIT_SEC}
                       max={MAX_FIT_SEC}
+                      step={0.1}
                       aria-label={`Seconds for ${name.toLowerCase()}`}
                       defaultValue={s.durationSec}
                       key={`${shotKey(s)}-${s.durationSec}-${nonce}`}
                       disabled={busy}
                       onBlur={(e) => {
-                        const v = Math.round(Number(e.target.value));
-                        if (v >= MIN_FIT_SEC && v <= MAX_FIT_SEC && v !== s.durationSec) void update(s, { durationSec: v }).then(() => changed.current());
+                        // A clip the next row continues from is never trimmed, and Grok makes whole seconds.
+                        const next = nextOf(s);
+                        const v = next && chained(next) ? Math.round(Number(e.target.value)) : roundTenth(Number(e.target.value));
+                        if (v >= MIN_FIT_SEC && v <= MAX_FIT_SEC && !sameSec(v, s.durationSec)) void update(s, { durationSec: v }).then(() => changed.current());
                       }}
                       className="w-16 rounded-md border border-gray-300 px-2 py-1 dark:border-gray-600 dark:bg-gray-800"
                     />
@@ -727,12 +750,12 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
                       className="rounded-md border border-gray-300 px-2 py-1 dark:border-gray-600 dark:bg-gray-800"
                     >
                       <option value="still">Still (slow zoom, free)</option>
-                      <option value="moving">{`Moving (${usd(estimateCostUsd('grok', 'HERO', s.durationSec))})`}</option>
+                      <option value="moving">{`Moving (${usd(estimateCostUsd('grok', 'HERO', Math.ceil(s.durationSec)))})`}</option>
                     </select>
                     {isMoving(s) && clipOf(s) && !needsClip(s) && <span className="text-green-700 dark:text-green-400">Clip made</span>}
                     {isMoving(s) && staleLengthOf(s) !== null && (
                       <span className="text-amber-700 dark:text-amber-400">
-                        {`Its clip was made for ${staleLengthOf(s)} s. Make the video makes it again for ${s.durationSec} s, or set the seconds back to ${staleLengthOf(s)}.`}
+                        {staleNote(s, staleLengthOf(s)!)}
                       </span>
                     )}
                     {removeButton(s, name)}

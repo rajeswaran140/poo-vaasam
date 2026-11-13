@@ -92,6 +92,14 @@ export class CapBelowCommittedError extends VisualStoryDomainError {
 }
 
 /** `newOrder` is not a permutation of the scene's shots (map to 400). */
+/** A row named in a lengths write no longer exists: nothing was written (map to 409). */
+export class ShotsChangedError extends VisualStoryDomainError {
+  constructor() {
+    super('The rows changed while fitting. Fit again.');
+    this.name = 'ShotsChangedError';
+  }
+}
+
 export class InvalidReorderError extends VisualStoryDomainError {
   constructor(message: string) {
     super(message);
@@ -1176,6 +1184,32 @@ export class VisualStoryRepository {
           .map((i) => ({ PK: i.PK, SK: i.SK }))
       );
     } catch (error) {
+      fail(error);
+    }
+  }
+
+  /**
+   * Set many rows' seconds at once (Fit to the lyrics), in one transaction:
+   * every shot must still exist, or nothing is written.
+   */
+  async setShotLengths(
+    vsId: string,
+    lengths: Array<{ sceneOrder: number; shotOrder: number; durationSec: number }>
+  ): Promise<void> {
+    if (lengths.length > MAX_TRANSACT_ITEMS) throw new DraftTooLargeError(lengths.length, 'reorder');
+    try {
+      await DynamoDBOperations.transactWrite(
+        lengths.map((l) => ({
+          Update: {
+            Key: { PK: vsPk(vsId), SK: shotSk(l.sceneOrder, l.shotOrder) },
+            UpdateExpression: 'SET durationSec = :d',
+            ConditionExpression: 'attribute_exists(PK)',
+            ExpressionAttributeValues: { ':d': l.durationSec },
+          },
+        }))
+      );
+    } catch (error) {
+      if ((error as { name?: string } | null)?.name === 'TransactionCanceledException') throw new ShotsChangedError();
       fail(error);
     }
   }
