@@ -10,7 +10,7 @@
  * failures into indistinguishable "no data yet" empty states.
  */
 
-import { BetaAnalyticsDataClient } from '@google-analytics/data';
+import { BetaAnalyticsDataClient, protos } from '@google-analytics/data';
 
 let cachedClient: BetaAnalyticsDataClient | null = null;
 
@@ -25,6 +25,39 @@ export function isGA4Configured(): boolean {
  * JSON and passes it inline so we never write the plaintext to disk on the
  * Lambda filesystem.
  */
+/**
+ * The longest one GA4 report may take. The admin pages fetch GA4 at request
+ * time beside DynamoDB and YouTube; with no limit, a GA4 report that never
+ * answers (2026-11-13: runReport hung > 6 min while auth was fine) held the
+ * whole page until CloudFront returned 504, so /admin would not open at all.
+ * A late report now fails like any other GA4 error: the page shows its
+ * "unavailable" state and everything else renders. 6 s: two reports run a
+ * fallback query after a failure, so the worst case is 12 s, inside the 30 s
+ * request ceiling.
+ */
+export const GA4_REPORT_TIMEOUT_MS = 6_000;
+
+type RunReportRequest = protos.google.analytics.data.v1beta.IRunReportRequest;
+type RunReportResponse = protos.google.analytics.data.v1beta.IRunReportResponse;
+
+/**
+ * client.runReport with a hard deadline. The library's own `timeout` is passed
+ * too (and its retries turned off), but the race is what guarantees the page:
+ * it rejects on time even if the library keeps waiting.
+ */
+export function boundedRunReport(
+  client: Pick<BetaAnalyticsDataClient, 'runReport'>,
+  request: RunReportRequest,
+  ms: number = GA4_REPORT_TIMEOUT_MS
+): Promise<[RunReportResponse, ...unknown[]]> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`GA4 report timed out after ${ms} ms`)), ms);
+  });
+  const call = client.runReport(request, { timeout: ms, retry: null });
+  return Promise.race([call, deadline]).finally(() => clearTimeout(timer));
+}
+
 function getClient(): BetaAnalyticsDataClient | null {
   if (cachedClient) return cachedClient;
   const encoded = process.env.GA4_SERVICE_ACCOUNT_KEY;
@@ -102,7 +135,7 @@ export async function fetchSubscribeClicksBySource(
   const dateRanges = [{ startDate: `${daysBack}daysAgo`, endDate: 'today' }];
 
   try {
-    const [res] = await client.runReport({
+    const [res] = await boundedRunReport(client, {
       property,
       dateRanges,
       dimensions: [{ name: 'customEvent:source' }],
@@ -125,7 +158,7 @@ export async function fetchSubscribeClicksBySource(
     // dashboard can still show the running total.
     if (/INVALID_ARGUMENT|customEvent/i.test(error)) {
       try {
-        const [res] = await client.runReport({
+        const [res] = await boundedRunReport(client, {
           property,
           dateRanges,
           metrics: [{ name: 'eventCount' }],
@@ -187,7 +220,7 @@ async function fetchEventBreakdown(
   const dateRanges = [{ startDate: `${daysBack}daysAgo`, endDate: 'today' }];
 
   try {
-    const [res] = await client.runReport({
+    const [res] = await boundedRunReport(client, {
       property,
       dateRanges,
       dimensions: [{ name: `customEvent:${paramName}` }],
@@ -207,7 +240,7 @@ async function fetchEventBreakdown(
     const error = errMessage(err);
     if (/INVALID_ARGUMENT|customEvent/i.test(error)) {
       try {
-        const [res] = await client.runReport({
+        const [res] = await boundedRunReport(client, {
           property,
           dateRanges,
           metrics: [{ name: 'eventCount' }],
@@ -252,7 +285,7 @@ export async function fetchTrafficSnapshot(daysBack = 28): Promise<Result<Traffi
   if (!client || !property) return { ok: false, error: 'GA4 client not initialised' };
 
   try {
-    const [res] = await client.runReport({
+    const [res] = await boundedRunReport(client, {
       property,
       dateRanges: [{ startDate: `${daysBack}daysAgo`, endDate: 'today' }],
       metrics: [
@@ -359,7 +392,7 @@ export async function fetchTrafficTimeseries(daysBack = 28): Promise<Result<Traf
   const property = propertyPath();
   if (!client || !property) return { ok: false, error: 'GA4 client not initialised' };
   try {
-    const [res] = await client.runReport({
+    const [res] = await boundedRunReport(client, {
       property,
       dateRanges: [{ startDate: `${daysBack}daysAgo`, endDate: 'today' }],
       dimensions: [{ name: 'date' }],
@@ -397,7 +430,7 @@ export async function fetchTopPages(daysBack = 28, limit = 15): Promise<Result<P
   const property = propertyPath();
   if (!client || !property) return { ok: false, error: 'GA4 client not initialised' };
   try {
-    const [res] = await client.runReport({
+    const [res] = await boundedRunReport(client, {
       property,
       dateRanges: [{ startDate: `${daysBack}daysAgo`, endDate: 'today' }],
       dimensions: [{ name: 'pagePath' }, { name: 'pageTitle' }],
@@ -438,7 +471,7 @@ export async function fetchByDimension(
   const property = propertyPath();
   if (!client || !property) return { ok: false, error: 'GA4 client not initialised' };
   try {
-    const [res] = await client.runReport({
+    const [res] = await boundedRunReport(client, {
       property,
       dateRanges: [{ startDate: `${daysBack}daysAgo`, endDate: 'today' }],
       dimensions: [{ name: dimension }],
