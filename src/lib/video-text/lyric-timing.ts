@@ -123,3 +123,12 @@ export function lyricTimingKeys(projectId: string, sourceKey: string) {
   const prefix = `audio/mastering/lyric-timing/${projectId}/${base}`;
   return { words: `${prefix}.words.json`, error: `${prefix}.error.json`, started: `${prefix}.started.json` };
 }
+
+/**
+ * The same three files for a Visual Story's song: keyed by the story and its
+ * master audio, so editing the lyrics re-aligns for free and a different
+ * master is listened to afresh.
+ */
+export function storyLyricTimingKeys(vsId: string, audioKey: string) {
+  return lyricTimingKeys(`vs/${vsId}`, audioKey);
+}
