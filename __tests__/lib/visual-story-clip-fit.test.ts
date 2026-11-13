@@ -15,6 +15,9 @@ describe('clipFitFor', () => {
   it('is exact to the hundredth', () => {
     expect(clipFitFor(14, 14)).toEqual({ kind: 'exact' });
     expect(clipFitFor(14.004, 14)).toEqual({ kind: 'exact' });
+    // Grok's files run a frame long (14.04 s for 14 s): within one 25 fps frame is exact.
+    expect(clipFitFor(14.04, 14)).toEqual({ kind: 'exact' });
+    expect(clipFitFor(14.04, 13.9)).toEqual({ kind: 'trim', trimSec: 0.14 });
   });
   it('never trims a clip a chained row continues from (the seam would jump)', () => {
     expect(clipFitFor(14, 13.2, { continuedFrom: true })).toEqual({ kind: 'stale' });

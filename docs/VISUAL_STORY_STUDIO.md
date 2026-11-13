@@ -160,6 +160,17 @@ The Claude draft does not run on the website itself (Amplify stops any request a
 
 A render is refused if it would take more than about 10 minutes of the worker's 15 (`MAX_ASSEMBLE_SEC`, 600 s): a picture takes about a second of work per second of video, a clip about 0.6. So seven minutes of pictures only is refused; mix in clips, or use longer shots. The limit can rise once a real all-pictures render has been timed on the Lambda.
 
+## Fit to the lyrics (2026-11-13, phase 1)
+
+Design: `docs/superpowers/specs/2026-11-13-fit-to-lyrics-design.md`; plan: `docs/superpowers/plans/2026-11-13-fit-to-lyrics-phase-1.md`.
+
+- **Timing.** `/api/admin/visual-story/[vsId]/lyric-timing` (GET status; POST `start`; POST `align` with the pasted lyrics) runs the same `tamilagaval-lyric-timing` worker as Video Text on the story's `audioKey`. Words are cached at `audio/mastering/lyric-timing/vs/<vsId>/<audio base>.words.json`, so editing the lyrics re-aligns for free. Lines come back in window time (`linesInWindow`). The pasted lyrics are not stored.
+- **Fitting.** `fitKeepRows` (`src/lib/visual-story-lyric-fit.ts`) keeps the rows' count and order and moves the cuts: inside singing only on a line start floored to the tenth, inside a music break (a gap of ≥ 4 s) anywhere. Exact dynamic programming on a 0.1 s grid; each row aims at its clip's length.
+- **One clip rule.** `clipFitFor` (`src/lib/visual-story-clip-fit.ts`): within a frame is exact; a shorter row trims; a longer row plays the clip slower down to **88 %**; past that, or a trim of a clip the next row continues from, the clip is out of date. A clip with no recorded length (made before 2026-11-13) is never trimmed or slowed on a guess. `scripts/visual-story-clip-lengths.ts` records the real lengths (dry run by default, `--write` to apply).
+- **Saving.** `op: 'lengths'` on the shots route writes every row's seconds in one transaction; it is refused (409) unless it names exactly the story's shots and fills the window.
+- **Seconds in tenths.** `Shot.durationSec` accepts 0.1 s steps; totals compare to the hundredth (`sameSec`). Grok is asked for `ceil(seconds)`, priced and reserved at that.
+- **Render.** Each shot's frames come from the running total (`segmentFrames`), so tenths never drift; a slowed clip carries `playbackRate` (0.88–1) and is re-timed with `setpts` instead of freezing its last frame. Checked on ffmpeg 7.0.2 with `scripts/verify-assemble.ts` (750/750 frames, rows in tenths, a clip at 0.893). Needs the master worker deployed.
+
 ## When Grok isn't connected
 
 Symptom: **Generate still** reports that Grok image generation is not configured. Storyboarding, the Claude draft, editing and reference photos still work.

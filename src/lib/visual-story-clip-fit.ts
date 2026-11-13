@@ -24,6 +24,8 @@ export type ClipFit =
   | { kind: 'stale' };
 
 const cents = (n: number) => Math.round(n * 100);
+/** One frame at 25 fps, plus rounding: a difference this small is no trim or slow-down. */
+const EXACT_WITHIN_CENTIS = 5;
 
 export function clipFitFor(
   clipSec: number | null,
@@ -34,7 +36,8 @@ export function clipFitFor(
   if (clipSec === null) return Number.isInteger(Math.round(rowSec * 1e6) / 1e6) ? { kind: 'exact' } : { kind: 'stale' };
   const c = cents(clipSec);
   const r = cents(rowSec);
-  if (c === r) return { kind: 'exact' };
+  // Within a frame (25 fps) is exact: Grok's files run a frame long (14.04 s for 14 s).
+  if (Math.abs(c - r) <= EXACT_WITHIN_CENTIS) return { kind: 'exact' };
   if (r < c) return opts.continuedFrom ? { kind: 'stale' } : { kind: 'trim', trimSec: (c - r) / 100 };
   const rate = Math.round((clipSec / rowSec) * 1000) / 1000;
   return rate >= minRate ? { kind: 'slow', rate } : { kind: 'stale' };
