@@ -20,7 +20,10 @@ describe('clipFitFor', () => {
     expect(clipFitFor(14.04, 13.9)).toEqual({ kind: 'trim', trimSec: 0.14 });
   });
   it('never trims a clip a chained row continues from (the seam would jump)', () => {
-    expect(clipFitFor(14, 13.2, { continuedFrom: true })).toEqual({ kind: 'stale' });
+    expect(clipFitFor(14, 12.9, { continuedFrom: true })).toEqual({ kind: 'stale' });
+    // Under a second is what Grok's whole seconds leave (a 13.2 s row gets a 14 s clip): trimmed, or it would be
+    // made again, and paid for, on every run.
+    expect(clipFitFor(14, 13.2, { continuedFrom: true })).toEqual({ kind: 'trim', trimSec: 0.8 });
     expect(clipFitFor(14, 15.2, { continuedFrom: true })).toEqual({ kind: 'slow', rate: 0.921 });
   });
   it('never trims or slows a clip whose length is unknown', () => {

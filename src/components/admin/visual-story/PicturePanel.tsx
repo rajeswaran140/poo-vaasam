@@ -726,7 +726,9 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
                       key={`${shotKey(s)}-${s.durationSec}-${nonce}`}
                       disabled={busy}
                       onBlur={(e) => {
-                        const v = roundTenth(Number(e.target.value));
+                        // A clip the next row continues from is never trimmed, and Grok makes whole seconds.
+                        const next = nextOf(s);
+                        const v = next && chained(next) ? Math.round(Number(e.target.value)) : roundTenth(Number(e.target.value));
                         if (v >= MIN_FIT_SEC && v <= MAX_FIT_SEC && !sameSec(v, s.durationSec)) void update(s, { durationSec: v }).then(() => changed.current());
                       }}
                       className="w-16 rounded-md border border-gray-300 px-2 py-1 dark:border-gray-600 dark:bg-gray-800"

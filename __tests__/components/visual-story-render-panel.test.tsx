@@ -133,3 +133,10 @@ it('names a shot that shows its picture although it has a clip, and still lets t
   expect(screen.getByText(/Scene 1, shot 2 shows its picture, but it has a clip\. Choose the clip on that shot if it should move\./)).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Render video' })).toBeEnabled();
 });
+
+it('rows in tenths whose float sum is 30.000000000000004 can render (Fit to the lyrics)', () => {
+  const tenths = [shot(1, 0.1, 'cd_a'), shot(2, 16.1, 'cd_b'), shot(3, 13.8, 'cd_a')];
+  render(<RenderPanel vsId={VS} story={story} shots={tenths} candidates={CANDS} renders={[]} onChanged={jest.fn()} />);
+  expect(screen.getByRole('button', { name: 'Render video' })).toBeEnabled();
+  expect(screen.queryByText(/The shots add up to/)).not.toBeInTheDocument();
+});

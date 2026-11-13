@@ -7,7 +7,7 @@
  *
  * Two exceptions:
  *  - a clip a chained row continues from (its last frame is the next clip's
- *    first) is never trimmed: the seam would jump;
+ *    first) is trimmed by less than a second at most: more would jump at the seam;
  *  - a clip whose length is unknown (made before 2026-11-13) is never trimmed
  *    or slowed on a guess: it fits only a whole-second row, as before.
  *
@@ -38,7 +38,9 @@ export function clipFitFor(
   const r = cents(rowSec);
   // Within a frame (25 fps) is exact: Grok's files run a frame long (14.04 s for 14 s).
   if (Math.abs(c - r) <= EXACT_WITHIN_CENTIS) return { kind: 'exact' };
-  if (r < c) return opts.continuedFrom ? { kind: 'stale' } : { kind: 'trim', trimSec: (c - r) / 100 };
+  // A clip the next row continues from may lose only what Grok's whole seconds leave (under a second):
+  // more would jump at the seam; refusing that much would re-make a 13.2 s row's 14 s clip forever.
+  if (r < c) return opts.continuedFrom && c - r >= 100 ? { kind: 'stale' } : { kind: 'trim', trimSec: (c - r) / 100 };
   const rate = Math.round((clipSec / rowSec) * 1000) / 1000;
   return rate >= minRate ? { kind: 'slow', rate } : { kind: 'stale' };
 }

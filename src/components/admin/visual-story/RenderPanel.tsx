@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
 import { delay } from '@/lib/poll-job';
 import { estimateAssembleSec, MAX_ASSEMBLE_SEC, shotsShowingPictureWithClip } from '@/lib/visual-story-assemble';
+import { sameSec } from '@/types/visualStory';
 import type { Candidate, RenderJob, Shot, VisualStory } from '@/types/visualStory';
 import { usePlayUrl } from './ui-utils';
 
@@ -107,14 +108,14 @@ export function RenderPanel({ vsId, story, shots, candidates, renders, onChanged
 
   const chosen = shots.filter((s) => s.selectedCandidateId && candidates.some((c) => c.candId === s.selectedCandidateId));
   const windowSec = story.windowEndSec - story.windowStartSec;
-  const total = shots.reduce((n, s) => n + s.durationSec, 0);
+  const total = Math.round(shots.reduce((n, s) => n + s.durationSec, 0) * 100) / 100;
   const estimate = estimateAssembleSec(
     chosen.map((s) => ({ key: candidates.find((c) => c.candId === s.selectedCandidateId)!.s3Key, durationSec: s.durationSec }))
   );
   const missing = shots.length - chosen.length;
   const inFlight = current?.status === 'queued' || current?.status === 'running';
   const unusedClips = shotsShowingPictureWithClip(shots, candidates);
-  const ready = shots.length > 0 && missing === 0 && total === windowSec && estimate <= MAX_ASSEMBLE_SEC;
+  const ready = shots.length > 0 && missing === 0 && sameSec(total, windowSec) && estimate <= MAX_ASSEMBLE_SEC;
 
   const start = async () => {
     if (startingRef.current || inFlight) return;
@@ -153,7 +154,7 @@ export function RenderPanel({ vsId, story, shots, candidates, renders, onChanged
           {`${missing} of ${shots.length} ${shots.length === 1 ? 'shot needs' : 'shots need'} a picture or clip chosen.`}
         </p>
       )}
-      {shots.length > 0 && total !== windowSec && (
+      {shots.length > 0 && !sameSec(total, windowSec) && (
         <p className="text-sm text-amber-800 dark:text-amber-300">
           {`The shots add up to ${mmss(total)} of the song's ${mmss(windowSec)}.`}
         </p>

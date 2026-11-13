@@ -565,3 +565,23 @@ describe('audit 2026-11-13: Stop during a chained run, and a clip whose row chan
     expect(screen.getByRole('alert')).toHaveTextContent('Your clips and the clips already made take 8 s, so 1 picture must fill 32 s');
   });
 });
+
+describe('review 2026-11-13: a clip the next row continues from stays whole seconds', () => {
+  it('rounds tenths typed into a row the next row continues from (its clip cannot be trimmed)', async () => {
+    routes(() => undefined);
+    setup({ shots: [shot(1, 8, { mode: 'HERO' }), shot(2, 8, { mode: 'HERO', chainFromPrevious: true })] });
+    const field = screen.getByLabelText('Seconds for picture 1');
+    fireEvent.change(field, { target: { value: '9.4' } });
+    await act(async () => { fireEvent.blur(field); });
+    expect(calls()[0].body).toMatchObject({ op: 'update', shotOrder: 1, durationSec: 9 });
+  });
+  it('keeps tenths on a row nothing continues from', async () => {
+    routes(() => undefined);
+    setup({ shots: [shot(1, 8, { mode: 'HERO' }), shot(2, 8, { mode: 'HERO' })] });
+    const field = screen.getByLabelText('Seconds for picture 1');
+    fireEvent.change(field, { target: { value: '9.4' } });
+    await act(async () => { fireEvent.blur(field); });
+    expect(calls()[0].body).toMatchObject({ op: 'update', shotOrder: 1, durationSec: 9.4 });
+  });
+});
+
