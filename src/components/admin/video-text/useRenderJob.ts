@@ -25,6 +25,7 @@ import { adminFetch } from '@/lib/client-auth';
 import { putToS3 } from '@/lib/mastering-upload-client';
 import { ensureFonts, renderBlockPng } from '@/lib/video-text/draw';
 import { LOGO_OVERLAY_ID, logoStyleOf, renderLogoPng } from '@/lib/video-text/logo';
+import { END_TITLES_OVERLAY_ID, renderEndTitlesPng } from '@/lib/video-text/end-titles';
 import type { LogoImage } from './useSavedLogo';
 import type { RenderState, RenderStatus, TextBlock, TextStyle, VideoTextProject } from '@/types/videoText';
 
@@ -57,6 +58,8 @@ export interface RenderSnapshot {
   version: number;
   /** The saved logo, when this project shows it: one more PNG, on for the whole video. */
   logo?: LogoImage | null;
+  /** End titles: one more PNG, black with the logo and credits, over everything from atSec. */
+  endTitles?: { atSec: number; background?: 'black' | 'white'; creditsText: string; logo: LogoImage | null } | null;
 }
 
 export interface RenderInput {
@@ -218,8 +221,8 @@ export function useRenderJob(projectId: string, initial: RenderState) {
       try {
         const snap = await input.prepare();
         if (typeof snap === 'string') throw new Error(snap);
-        const { blocks, frame, style, version, logo } = snap;
-        const total = blocks.length + (logo ? 1 : 0);
+        const { blocks, frame, style, version, logo, endTitles } = snap;
+        const total = blocks.length + (logo ? 1 : 0) + (endTitles ? 1 : 0);
         setPhase({ kind: 'drawing', done: 0, total });
         await ensureFonts(style);
         const pngs = await inBatches(
@@ -228,13 +231,14 @@ export function useRenderJob(projectId: string, initial: RenderState) {
           (n) => mounted.current && setPhase({ kind: 'drawing', done: n, total }),
         );
         const logoPng = logo ? await renderLogoPng(logo.image, frame, logoStyleOf(style)) : null;
-        if (logoPng && mounted.current) setPhase({ kind: 'drawing', done: total, total });
+        const endPng = endTitles ? await renderEndTitlesPng(frame, endTitles.creditsText, style, endTitles.logo?.image ?? null, endTitles.background) : null;
+        if ((logoPng || endPng) && mounted.current) setPhase({ kind: 'drawing', done: total, total });
 
         const renderId = newRenderId();
         const res = await adminFetch(`/api/admin/video-text/${projectId}/overlays`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ renderId, blockIds: [...blocks.map((b) => b.id), ...(logoPng ? [LOGO_OVERLAY_ID] : [])] }),
+          body: JSON.stringify({ renderId, blockIds: [...blocks.map((b) => b.id), ...(logoPng ? [LOGO_OVERLAY_ID] : []), ...(endPng ? [END_TITLES_OVERLAY_ID] : [])] }),
         });
         const body = await res.json().catch(() => ({}));
         if (!res.ok || !Array.isArray(body?.uploads)) {
@@ -243,6 +247,7 @@ export function useRenderJob(projectId: string, initial: RenderState) {
         const uploads = body.uploads as Array<{ blockId: string; url: string; fields: Record<string, string> }>;
         const pngFor = new Map(blocks.map((b, i) => [b.id, pngs[i]]));
         if (logoPng) pngFor.set(LOGO_OVERLAY_ID, logoPng);
+        if (endPng) pngFor.set(END_TITLES_OVERLAY_ID, endPng);
         setPhase({ kind: 'uploading', done: 0, total: uploads.length });
         const signal = new AbortController().signal;
         await inBatches(

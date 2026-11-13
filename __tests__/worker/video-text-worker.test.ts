@@ -556,6 +556,41 @@ describe('videoTextRender', () => {
     expect(lambdaSend).not.toHaveBeenCalled();
   });
 
+describe('the end titles', () => {
+  const withEnd = (atSec: number, style: Record<string, unknown> = {}) => {
+    world.project = { ...projectFor(), endTitles: { atSec }, style: { sizeScale: 1, lyricPosition: 'lower', ...style } };
+  };
+
+  it('lays the black end-titles frame LAST, from its start to the end, fading in only', async () => {
+    withEnd(41, { logo: { show: true } });
+    world.store.set(overlayKey(PID, RID, '_logo'), Buffer.from('PNG'));
+    world.store.set(overlayKey(PID, RID, '_end'), Buffer.from('PNG'));
+    await render();
+    expect((world.project!.render as { status: string }).status).toBe('done');
+    const byIndex = [...world.invoked].sort((a, b) => a.index - b.index);
+    // Not in the chunks before it starts.
+    expect(byIndex[0].overlays.some((o: { id: string }) => o.id === '_end')).toBe(false);
+    expect(byIndex[1].overlays.some((o: { id: string }) => o.id === '_end')).toBe(false);
+    // On top of everything in the last chunk (40-45 s), fading in at 41 s; its fade-out lies past the video.
+    const last = byIndex[2].overlays;
+    expect(last[last.length - 1]).toEqual({ id: '_end', fromSec: 1, toSec: 5, fade: { inAt: 1, outAt: 65, sec: 1 } });
+  });
+
+  it('needs its PNG uploaded, like every other layer', async () => {
+    withEnd(41);
+    await render();
+    expect(lastError()).toBe(MISSING_PNG);
+    expect(lambdaSend).not.toHaveBeenCalled();
+  });
+
+  it('end titles too close to the end are refused before any download', async () => {
+    withEnd(44.5);
+    await render();
+    expect(lastError()).toMatch(/too close to the end/);
+    expect(world.ffArgs).toEqual([]);
+  });
+});
+
 describe('the freeze', () => {
     const withFreeze = (atSec: number, style: Record<string, unknown> = {}) => {
       world.project = { ...projectFor(), freeze: { atSec }, style: { sizeScale: 1, lyricPosition: 'lower', ...style } };

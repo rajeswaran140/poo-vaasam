@@ -140,7 +140,7 @@ export class VideoTextRepository {
     id: string,
     edits: Pick<
       VideoTextProject,
-      'name' | 'titleText' | 'creditsText' | 'lyricsText' | 'blocks' | 'style' | 'cut' | 'freeze'
+      'name' | 'titleText' | 'creditsText' | 'lyricsText' | 'blocks' | 'style' | 'cut' | 'freeze' | 'endTitles'
     >,
     expectedVersion: number
   ): Promise<{ ok: true; version: number } | { ok: false; reason: 'conflict' | 'missing' }> {
@@ -154,6 +154,7 @@ export class VideoTextRepository {
           ' #lyricsText = :lyricsText, #blocks = :blocks, #style = :style,' +
           (edits.cut !== undefined ? ' #cut = :cut,' : '') +
           (edits.freeze !== undefined ? ' #freeze = :freeze,' : '') +
+          (edits.endTitles !== undefined ? ' #endTitles = :endTitles,' : '') +
           ' #version = :next, #updatedAt = :now, GSI1SK = :now',
         conditionExpression: 'attribute_exists(PK) AND #version = :expected',
         expressionAttributeNames: {
@@ -165,6 +166,7 @@ export class VideoTextRepository {
           '#style': 'style',
           ...(edits.cut !== undefined ? { '#cut': 'cut' } : {}),
           ...(edits.freeze !== undefined ? { '#freeze': 'freeze' } : {}),
+          ...(edits.endTitles !== undefined ? { '#endTitles': 'endTitles' } : {}),
           '#version': 'version',
           '#updatedAt': 'updatedAt',
         },
@@ -177,6 +179,7 @@ export class VideoTextRepository {
           ':style': edits.style,
           ...(edits.cut !== undefined ? { ':cut': edits.cut } : {}),
           ...(edits.freeze !== undefined ? { ':freeze': edits.freeze } : {}),
+          ...(edits.endTitles !== undefined ? { ':endTitles': edits.endTitles } : {}),
           ':next': next,
           ':now': now,
           ':expected': expectedVersion,

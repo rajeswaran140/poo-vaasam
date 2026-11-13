@@ -5225,9 +5225,9 @@ Phase 2 will not touch this page's connect/disconnect flow — only add to it.
   },
   {
     slug: 'video-text',
-    title: 'Video Text — title, lyrics, credits, logo, In/Out and freeze on a finished video',
+    title: 'Video Text — title, lyrics, credits, logo, In/Out, freeze and end titles on a finished video',
     category: 'Music Lab',
-    updatedAt: '2026-11-12T23:30:00Z',
+    updatedAt: '2026-11-13T02:00:00Z',
     body: `# Video Text
 
 **Video Text** (\`/admin/video-text\`, in the Sound section of the sidebar) adds a title, the lyrics, the credits and your logo to a song video you have already finished, and gives you back an MP4 with them burned in. It is its own page: the Mastering page and Visual Story Studio still make clean videos with no text.
@@ -5239,7 +5239,7 @@ Phase 2 will not touch this page's connect/disconnect flow — only add to it.
 3. **Type the title and credits, and paste the lyrics** — one line per lyric line. Each line becomes a block on the timeline. The title starts at 0–5 s, the credits cover the last 10 s, and the lyric lines are spread evenly in between until you time them.
 4. **Time the lyrics**: automatically, by tapping, or both (next section).
 5. **Style each part** — Title, Lyrics and Credits each have their own look (below), and the **Logo** section adds your watermark.
-6. **Optional: In and Out, and Freeze** (below).
+6. **Optional: In and Out, Freeze, and End titles** (below).
 7. **Make video.** The page draws each text layer, uploads it, and the worker burns them in. The button shows the stage and the time so far, for example "Encoding 7/18 · 2:14". The picture size and frame rate stay the same, and the **audio is copied untouched**. If it fails, the reason shows under the button.
 8. **Download** the finished MP4. If you edit after a video is made, the page says the download is the older version.
 
@@ -5277,6 +5277,21 @@ Per project: **Show the logo on this video**, then pick a **Corner**, the **Logo
 ## In and Out — export only part of the video
 
 **Mark In** (key **I**) and **Mark Out** (key **O**) at the playhead, like Premiere. **Go to In** (Shift + I), **Go to Out** (Shift + O) and **Clear In and Out**. **Make video** then exports only the part between the marks. Marks sit exactly on a frame, also on 23.976 fps clips (fixed 9 Nov 2026). The text stays where it is on the song's timeline: a line outside the marks is not in the video, and one crossing a mark shows for the part inside.
+
+## End titles — a black or white screen with your logo and credits
+
+Like a film's end titles: from a moment you choose to the end of the video, the picture fades to **black or white** over 1 second, and your **logo** (first line, large, in the middle) and the **credits** (the next line, centred under it) show on that screen while the song plays on. The video keeps its length.
+
+1. Type the credits in the **Credits** box (several lines are fine, for example "Lyrics: …" on one line and "Music: …" on the next). The end titles use the credits part's own font, size and colour.
+2. Put the playhead where the ending should start, usually where the last music begins, and press **Start end titles here** (under the timeline). The panel then reads, for example, "From 3:56.42 to the end".
+3. Play it in the preview: it shows the fade and the black screen exactly as the video will.
+4. Choose **Black** or **White** beside it. On black the credits keep their own colour; on white they are drawn in dark text so they stay readable.
+5. **Go to end titles** jumps there; **Remove end titles** turns them off. Press **Start end titles here** again at another moment to move them.
+
+- The logo is your saved logo, shown even if the corner logo is turned off. With no logo saved, the credits sit in the middle on their own.
+- The screen covers everything under it, so the corner logo, the normal credits line and any lyric line all disappear behind it. You do not need to move or delete them.
+- They must start at least a second before the video ends (room for the fade).
+- With **Out** set earlier than the end titles, the exported part does not reach them.
 
 ## Freeze — hold one frame to the end
 

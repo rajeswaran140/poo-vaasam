@@ -12,6 +12,7 @@ import { isValidProjectId } from '@/lib/video-text/keys';
 import { validateBlocks } from '@/lib/video-text/timeline';
 import { validateCut } from '@/lib/video-text/cut';
 import { validateFreeze } from '@/lib/video-text/freeze';
+import { validateEndTitles } from '@/lib/video-text/end-titles';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         { status: 410 }
       );
     }
-    const problem = validateBlocks(project.blocks, project.source.durationSec) ?? validateCut(project.cut, project.source.durationSec) ?? validateFreeze(project.freeze, project.source.durationSec);
+    const problem = validateBlocks(project.blocks, project.source.durationSec) ?? validateCut(project.cut, project.source.durationSec) ?? validateFreeze(project.freeze, project.source.durationSec) ?? validateEndTitles(project.endTitles, project.source.durationSec);
     if (problem) return NextResponse.json({ error: problem }, { status: 400 });
 
     // Conditional on the version too: a save that lands between the read and

@@ -26,6 +26,7 @@ import { drawLogo, logoRect, logoStyleOf } from '@/lib/video-text/logo';
 import type { TextBlock, TextOffset, TextStyle, Track } from '@/types/videoText';
 import type { LogoImage } from './useSavedLogo';
 import { frameAt, frameOfStart, seekTimeFor } from '@/lib/video-text/freeze';
+import { drawEndTitles, endTitlesAlphaAt } from '@/lib/video-text/end-titles';
 
 /** What a move box moves: a text part, or the logo. */
 export type MoveTarget = Track | 'logo';
@@ -54,11 +55,15 @@ export interface TextPreviewProps {
   onLinkError?(): void;
   /** The playhead, so the move boxes follow the text that shows now. */
   timeSec?: number;
+  /** End titles: from atSec the picture fades to black with the logo and credits (as the render's top layer). */
+  endTitles?: { atSec: number; background?: 'black' | 'white' } | null;
+  /** The credits text shown on the end titles. */
+  creditsText?: string;
 }
 
 const activeAt = (blocks: TextBlock[], t: number) => blocks.filter((b) => t >= b.startSec && t < b.endSec);
 
-export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMove, timeSec = 0, logo = null, freezeSec = null, fps = 25, onLinkError }: TextPreviewProps) {
+export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMove, timeSec = 0, logo = null, freezeSec = null, fps = 25, onLinkError, endTitles = null, creditsText = '' }: TextPreviewProps) {
   const linkError = useRef(onLinkError);
   linkError.current = onLinkError;
   const video = useRef<HTMLVideoElement | null>(null);
@@ -75,9 +80,9 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMov
   latestFreeze.current = freezeSec;
   const latestFps = useRef(fps);
   latestFps.current = fps;
-  const latest = useRef({ blocks, style, frame, onTime, logo });
+  const latest = useRef({ blocks, style, frame, onTime, logo, endTitles, creditsText });
   const layerCanvas = useRef<HTMLCanvasElement | null>(null);
-  latest.current = { blocks, style, frame, onTime, logo };
+  latest.current = { blocks, style, frame, onTime, logo, endTitles, creditsText };
 
   const setVideo = useCallback(
     (el: HTMLVideoElement | null) => {
@@ -94,7 +99,7 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMov
     const canvas = overlay.current;
     // Nothing to draw over until the video has a frame (HAVE_CURRENT_DATA).
     if (!v || !canvas || !fontsReady.current || v.readyState < 2) return;
-    const { blocks: bs, style: st, frame: fr, logo: lg } = latest.current;
+    const { blocks: bs, style: st, frame: fr, logo: lg, endTitles: end, creditsText: credits } = latest.current;
     // The held frame covers the moving picture from the freeze on.
     if (still.current) {
       const f = latestFreeze.current;
@@ -116,7 +121,9 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMov
     const active = activeAt(bs, t);
     // A fading block is redrawn as its alpha changes (in 2% steps); others only when they change.
     const alphas = active.map((b) => Math.round(fadeAlphaAt(b, trackStyleOf(b.track, st).fade, t) * 50) / 50);
-    const key = JSON.stringify([fr.width, fr.height, st, showLogo ? lg!.key : null, active.map((b, i) => [b.id, b.text, alphas[i]])]);
+    // The end titles fade in over a second, redrawn in 2% steps like a fading block.
+    const endAlpha = Math.round(endTitlesAlphaAt(end, t) * 50) / 50;
+    const key = JSON.stringify([fr.width, fr.height, st, showLogo ? lg!.key : null, active.map((b, i) => [b.id, b.text, alphas[i]]), endAlpha, endAlpha > 0 ? [credits, lg?.key ?? null, end?.background ?? 'black'] : null]);
     if (key === drawnKey.current && !resized) return;
 
     const ctx = canvas.getContext('2d');
@@ -154,8 +161,27 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMov
       octx.restore();
     });
 
+    // The end titles on top of everything, as the render lays their PNG last.
+    if (endAlpha > 0) {
+      if (!layerCanvas.current) layerCanvas.current = document.createElement('canvas');
+      const layer = layerCanvas.current;
+      if (layer.width !== fr.width || layer.height !== fr.height) {
+        layer.width = fr.width;
+        layer.height = fr.height;
+      }
+      const lctx = layer.getContext('2d');
+      if (lctx) {
+        lctx.clearRect(0, 0, layer.width, layer.height);
+        drawEndTitles(lctx, fr, credits ?? '', st, lg?.image ?? null, end?.background);
+        octx.save();
+        octx.globalAlpha = endAlpha;
+        octx.drawImage(layer, 0, 0);
+        octx.restore();
+      }
+    }
+
     ctx.clearRect(0, 0, w, h);
-    if (active.length > 0 || showLogo) ctx.drawImage(off, 0, 0, w, h);
+    if (active.length > 0 || showLogo || endAlpha > 0) ctx.drawImage(off, 0, 0, w, h);
     drawnKey.current = key;
   }, []);
 

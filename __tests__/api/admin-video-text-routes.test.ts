@@ -330,6 +330,40 @@ describe('overlays', () => {
   });
 });
 
+describe('end titles', () => {
+  it('PATCH saves end titles inside the video, clears them with null, and leaves them alone when missing', async () => {
+    repo.saveEdits.mockResolvedValue({ ok: true, version: 4 });
+    let res = await PATCH(req({ edits: { ...edits(), endTitles: { atSec: 50 } }, version: 3 }, 'PATCH'), ctx);
+    expect(res.status).toBe(200);
+    expect(repo.saveEdits.mock.calls[0][1].endTitles).toEqual({ atSec: 50 });
+    res = await PATCH(req({ edits: { ...edits(), endTitles: null }, version: 3 }, 'PATCH'), ctx);
+    expect(repo.saveEdits.mock.calls[1][1].endTitles).toBeNull();
+    res = await PATCH(req({ edits: edits(), version: 3 }, 'PATCH'), ctx);
+    expect(repo.saveEdits.mock.calls[2][1]).not.toHaveProperty('endTitles');
+  });
+  it('PATCH 400s end titles with no room for the fade, or negative', async () => {
+    for (const endTitles of [{ atSec: 59.5 }, { atSec: 75 }, { atSec: -1 }]) {
+      expect((await PATCH(req({ edits: { ...edits(), endTitles }, version: 3 }, 'PATCH'), ctx)).status).toBe(400);
+    }
+    expect(repo.saveEdits).not.toHaveBeenCalled();
+  });
+  it('presigns the end-titles PNG only for a project that has end titles', async () => {
+    let res = await overlaysPOST(req({ renderId: 'r1', blockIds: ['b1', '_end'] }), ctx);
+    expect(res.status).toBe(400);
+    repo.get.mockResolvedValue(project({ endTitles: { atSec: 50 } }));
+    res = await overlaysPOST(req({ renderId: 'r1', blockIds: ['b1', '_end'] }), ctx);
+    expect(res.status).toBe(200);
+    expect(presignPost.mock.calls.find((c) => String(c[0]).endsWith('overlay-_end.png'))?.[2]).toBe(25 * 1024 * 1024);
+  });
+  it('render 400s stored end titles that no longer fit, without claiming', async () => {
+    repo.get.mockResolvedValue(project({ endTitles: { atSec: 59.8 } }));
+    const res = await renderPOST(req({ renderId: 'r1', version: 3 }), ctx);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/too close to the end/);
+    expect(repo.startRender).not.toHaveBeenCalled();
+  });
+});
+
 describe('render', () => {
   it('410s an expired source', async () => {
     repo.get.mockResolvedValue(project({ source: source({ expiresAt: '2000-01-01T00:00:00.000Z' }) }));

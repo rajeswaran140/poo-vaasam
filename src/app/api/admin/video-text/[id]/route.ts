@@ -8,6 +8,7 @@ import { isValidProjectId } from '@/lib/video-text/keys';
 import { validateBlocks } from '@/lib/video-text/timeline';
 import { validateCut } from '@/lib/video-text/cut';
 import { validateFreeze } from '@/lib/video-text/freeze';
+import { validateEndTitles } from '@/lib/video-text/end-titles';
 import { LOGO_CORNERS, LOGO_HEIGHT_PCT_MAX, LOGO_HEIGHT_PCT_MIN, LOGO_OPACITY_MAX, LOGO_OPACITY_MIN } from '@/lib/video-text/logo';
 
 export const runtime = 'nodejs';
@@ -72,6 +73,8 @@ const patchSchema = z.object({
     cut: z.object({ inSec: z.number().finite().min(0), outSec: z.number().finite().min(0) }).nullable().optional(),
     // Missing from tabs opened before freezes existed: those keep the stored freeze.
     freeze: z.object({ atSec: z.number().finite().min(0) }).nullable().optional(),
+    // Missing from tabs opened before end titles existed: those keep the stored ones.
+    endTitles: z.object({ atSec: z.number().finite().min(0), background: z.enum(['black', 'white']).optional() }).nullable().optional(),
   }),
 });
 
@@ -121,6 +124,8 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
     if (cutProblem) return NextResponse.json({ error: cutProblem }, { status: 400 });
     const freezeProblem = project.source ? validateFreeze(edits.freeze, project.source.durationSec) : null;
     if (freezeProblem) return NextResponse.json({ error: freezeProblem }, { status: 400 });
+    const endProblem = project.source ? validateEndTitles(edits.endTitles, project.source.durationSec) : null;
+    if (endProblem) return NextResponse.json({ error: endProblem }, { status: 400 });
 
     const saved = await repo.saveEdits(id, edits, version);
     if (!saved.ok) {

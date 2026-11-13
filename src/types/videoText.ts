@@ -135,6 +135,13 @@ export interface Freeze {
   atSec: number;
 }
 
+/** End titles: from atSec the picture fades to black and the logo and credits show centred (lib/video-text/end-titles.ts). */
+export interface EndTitles {
+  atSec: number;
+  /** The screen the picture fades to. Missing: black. */
+  background?: 'black' | 'white';
+}
+
 export interface VideoTextProject {
   id: string;
   name: string;
@@ -147,6 +154,8 @@ export interface VideoTextProject {
   cut?: Cut | null;
   /** Optional: projects saved before freezes existed have none. */
   freeze?: Freeze | null;
+  /** Optional: projects saved before end titles existed have none. */
+  endTitles?: EndTitles | null;
   source: SourceInfo | null;
   render: RenderState;
   version: number;

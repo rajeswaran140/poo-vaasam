@@ -16,17 +16,19 @@ import { adminFetch } from '@/lib/client-auth';
 import { putToS3 } from '@/lib/mastering-upload-client';
 import { MAX_VIDEO_TEXT_BYTES } from '@/lib/video-text/keys';
 import { syncTextToBlocks, unplacedLineCount, validateBlocks, type RememberedTimes } from '@/lib/video-text/timeline';
-import type { Cut, Freeze, SourceInfo, TextBlock, LogoStyle, TextStyle, Track, TrackStyle, VideoTextProject } from '@/types/videoText';
+import type { EndTitles, Cut, Freeze, SourceInfo, TextBlock, LogoStyle, TextStyle, Track, TrackStyle, VideoTextProject } from '@/types/videoText';
 import { useAutosave, type AutosaveStatus } from './useAutosave';
 import { useRenderJob } from './useRenderJob';
 import { PartStyle } from './PartStyle';
 import { LogoPanel } from './LogoPanel';
 import { FreezeControls } from './FreezeControls';
 import { validateFreeze } from '@/lib/video-text/freeze';
+import { validateEndTitles } from '@/lib/video-text/end-titles';
 import { useSavedLogo } from './useSavedLogo';
 import { logoShown } from '@/lib/video-text/logo';
 import { TapToTime } from './TapToTime';
 import { AutoTime } from './AutoTime';
+import { EndTitlesControls } from './EndTitlesControls';
 import { PlacementPicker } from './PlacementPicker';
 import { trackStyleOf } from '@/lib/video-text/fonts';
 import { Timeline } from './Timeline';
@@ -208,6 +210,10 @@ export function VideoTextEditor({
   const setFreeze = useCallback((freeze: Freeze | null) => {
     setEditedSinceRender(true);
     setProject((p) => ({ ...p, freeze }));
+  }, []);
+  const setEndTitles = useCallback((endTitles: EndTitles | null) => {
+    setEditedSinceRender(true);
+    setProject((p) => ({ ...p, endTitles }));
   }, []);
   const setCut = useCallback((cut: Cut | null) => {
     setEditedSinceRender(true);
@@ -480,13 +486,22 @@ export function VideoTextEditor({
         if (!saved.ok) return saved.error;
         const { blocks, style } = saved.edits;
         const withLogo = logoShown(style);
-        if (blocks.length === 0 && !withLogo) return 'Add a title, lyrics or credits first.';
+        if (blocks.length === 0 && !withLogo && !saved.edits.endTitles) return 'Add a title, lyrics or credits first.';
         // The logo as saved now: replaced in another tab since this one opened → the new one.
         const logo = withLogo ? await savedLogo.latest() : null;
         if (typeof logo === 'string') return logo;
-        const problem = validateBlocks(blocks, source.durationSec) ?? validateCut(saved.edits.cut, source.durationSec) ?? validateFreeze(saved.edits.freeze, source.durationSec);
+        const end = saved.edits.endTitles ?? null;
+        const problem =
+          validateBlocks(blocks, source.durationSec) ??
+          validateCut(saved.edits.cut, source.durationSec) ??
+          validateFreeze(saved.edits.freeze, source.durationSec) ??
+          validateEndTitles(end, source.durationSec);
         if (problem) return problem;
-        return { blocks, style, frame: { width: source.width, height: source.height }, version: saved.version, logo };
+        // The end titles show the saved logo even when the corner logo is off.
+        // With no logo saved at all, the end titles show the credits alone.
+        const endLogo = logo ?? (end && savedLogo.state.kind === 'ready' ? savedLogo.state.image : null);
+        const endTitles = end ? { atSec: end.atSec, background: end.background ?? 'black', creditsText: saved.edits.creditsText, logo: endLogo ?? null } : null;
+        return { blocks, style, frame: { width: source.width, height: source.height }, version: saved.version, logo, endTitles };
       },
     });
   };
@@ -736,6 +751,8 @@ export function VideoTextEditor({
                   freezeSec={project.freeze?.atSec ?? null}
                   fps={source.fps}
                   onLinkError={onPreviewLinkError}
+                  endTitles={project.endTitles ?? null}
+                  creditsText={project.creditsText}
                 />
               ) : (
                 !previewError && <p className="text-sm text-gray-500 dark:text-gray-400">Loading the video…</p>
@@ -784,6 +801,17 @@ export function VideoTextEditor({
             disabled={uploading}
             video={videoRef}
             cut={project.cut ?? null}
+          />
+          <EndTitlesControls
+            endTitles={project.endTitles ?? null}
+            durationSec={source.durationSec}
+            playheadSec={playhead}
+            onChange={setEndTitles}
+            onSeek={seek}
+            disabled={uploading}
+            video={videoRef}
+            hasLogo={Boolean(logoImage)}
+            hasCredits={project.creditsText.trim().length > 0}
           />
           <AutoTime
             projectId={initial.id}
