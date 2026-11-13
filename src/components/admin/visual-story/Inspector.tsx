@@ -11,7 +11,7 @@
 
 import { useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
-import { MAX_SHOT_SEC, MIN_SHOT_SEC } from '@/types/visualStory';
+import { isTenth, MAX_SHOT_SEC, MIN_SHOT_SEC } from '@/types/visualStory';
 import type { Candidate, Character, Shot } from '@/types/visualStory';
 import { Thumb } from './ui-utils';
 
@@ -42,7 +42,7 @@ export function Inspector({ vsId, shot, characters, candidates, onChanged }: Pro
   }
 
   const durNum = Number(duration);
-  const durOk = Number.isInteger(durNum) && durNum >= MIN_SHOT_SEC && durNum <= MAX_SHOT_SEC;
+  const durOk = isTenth(durNum) && durNum >= MIN_SHOT_SEC && durNum <= MAX_SHOT_SEC;
   const canSave = prompt.trim() !== '' && durOk && !busy;
 
   const toggle = (id: string) => setCharIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -147,9 +147,9 @@ export function Inspector({ vsId, shot, characters, candidates, onChanged }: Pro
       </label>
       <label className="block text-sm text-gray-700 dark:text-gray-300">
         {`Duration (${MIN_SHOT_SEC}–${MAX_SHOT_SEC} s)`}
-        <input type="number" min={MIN_SHOT_SEC} max={MAX_SHOT_SEC} step={1} value={duration} onChange={(e) => setDuration(e.target.value)} className={field} />
+        <input type="number" min={MIN_SHOT_SEC} max={MAX_SHOT_SEC} step={0.1} value={duration} onChange={(e) => setDuration(e.target.value)} className={field} />
       </label>
-      {!durOk && <p className="text-sm text-red-600 dark:text-red-400">{`A shot lasts ${MIN_SHOT_SEC}–${MAX_SHOT_SEC} whole seconds.`}</p>}
+      {!durOk && <p className="text-sm text-red-600 dark:text-red-400">{`A shot lasts ${MIN_SHOT_SEC}–${MAX_SHOT_SEC} seconds, in tenths (like 12.4).`}</p>}
       <fieldset className="space-y-1">
         <legend className="text-sm text-gray-700 dark:text-gray-300">Characters</legend>
         {characters.length === 0 && <p className="text-xs text-gray-600 dark:text-gray-400">No characters yet.</p>}

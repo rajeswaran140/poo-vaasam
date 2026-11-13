@@ -331,7 +331,11 @@ export type SceneInput = z.infer<typeof sceneInputSchema>;
 
 export const shotInputSchema = z.object({
   mode: z.enum(SHOT_MODES),
-  durationSec: z.number().int().min(MIN_SHOT_SEC).max(MAX_OWN_CLIP_SEC),
+  durationSec: z
+    .number()
+    .min(MIN_SHOT_SEC)
+    .max(MAX_OWN_CLIP_SEC)
+    .refine((n) => Math.abs(n * 10 - Math.round(n * 10)) < 1e-6, 'Seconds go in tenths, like 12.4'),
   visualPrompt: z.string().trim().min(1, 'A visual prompt is required').max(2000),
   negativePrompt: z.string().trim().max(1000),
   charIds: z.array(z.string()).max(14),
@@ -360,17 +364,24 @@ export const checkRequestSchema = z.object({
 // Timeline helpers
 // ---------------------------------------------------------------------------
 
-/** startSec per shot, cumulative from 0 (shots already in scene→shot order). */
+/** Row seconds are stored in tenths (12.4 s); a cut on a sung line needs finer than whole seconds. */
+export const roundTenth = (n: number): number => Math.round(n * 10) / 10;
+export const isTenth = (n: number): boolean => Number.isFinite(n) && Math.abs(n * 10 - Math.round(n * 10)) < 1e-6;
+/** Two lengths are the same to the hundredth: float sums of tenths are never compared with ===. */
+export const sameSec = (a: number, b: number): boolean => Math.round(a * 100) === Math.round(b * 100);
+const hundredth = (n: number) => Math.round(n * 100) / 100;
+
+/** startSec per shot, cumulative from 0 (shots already in scene→shot order), to the hundredth. */
 export function deriveStartSecs(shots: { durationSec: number }[]): number[] {
   let t = 0;
   return shots.map((s) => {
-    const start = t;
+    const start = hundredth(t);
     t += s.durationSec;
     return start;
   });
 }
 
-/** True when the shots exactly tile the window. */
+/** True when the shots exactly tile the window (to the hundredth). */
 export function tilesWindow(shots: { durationSec: number }[], windowSec: number): boolean {
-  return shots.reduce((sum, s) => sum + s.durationSec, 0) === windowSec;
+  return sameSec(shots.reduce((sum, s) => sum + s.durationSec, 0), windowSec);
 }

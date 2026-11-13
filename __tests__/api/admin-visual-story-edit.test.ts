@@ -186,12 +186,18 @@ describe('shots', () => {
     expect(repo.putShot).not.toHaveBeenCalled();
     expect((await shotsPOST(mk({ ...create, charIds: [CH] }), ctx())).status).toBe(201);
   });
-  it('update with durationSec 61 (past your-own-clip 60 s) is 400, 0 and 2.5 too', async () => {
-    for (const d of [61, 0, 2.5]) {
+  it('update with durationSec 61 (past your-own-clip 60 s) is 400, 0, 0.9 and 14.95 too', async () => {
+    for (const d of [61, 0, 0.9, 14.95]) {
       const res = await shotsPOST(mk({ op: 'update', sceneOrder: 1, shotOrder: 1, durationSec: d }), ctx());
       expect(res.status).toBe(400);
     }
     expect(repo.putShot).not.toHaveBeenCalled();
+  });
+  it('update accepts seconds in tenths (14.9)', async () => {
+    repo.loadTree.mockResolvedValue(tree());
+    const res = await shotsPOST(mk({ op: 'update', sceneOrder: 1, shotOrder: 1, durationSec: 14.9 }), ctx());
+    expect(res.status).toBe(200);
+    expect(repo.putShot).toHaveBeenCalledWith(VS, expect.objectContaining({ shotOrder: 1, durationSec: 14.9 }));
   });
   it('update saves chainFromPrevious, and refuses a non-boolean', async () => {
     repo.loadTree.mockResolvedValue(tree());

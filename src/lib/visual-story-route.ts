@@ -81,7 +81,7 @@ export function timelineOf(story: Pick<VisualStory, 'windowStartSec' | 'windowEn
   return {
     shots: shots.map((s, n) => ({ ...s, startSec: starts[n] })),
     tiling: {
-      totalSec: shots.reduce((sum, s) => sum + s.durationSec, 0),
+      totalSec: Math.round(shots.reduce((sum, s) => sum + s.durationSec, 0) * 100) / 100,
       windowSec,
       tiles: tilesWindow(shots, windowSec),
     },

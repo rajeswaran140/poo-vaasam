@@ -74,7 +74,7 @@ export function checkPayloadOk(e: CheckJobEvent): boolean {
         (s) =>
           isInt(s?.shotOrder) &&
           typeof s.startSec === 'number' &&
-          isInt(s.durationSec) &&
+          typeof s.durationSec === 'number' && Number.isFinite(s.durationSec) && s.durationSec > 0 &&
           isStr(s.mode, 10) &&
           isStr(s.visualPrompt, 2000) &&
           Array.isArray(s.characters) &&

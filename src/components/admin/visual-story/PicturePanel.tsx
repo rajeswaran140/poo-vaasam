@@ -41,7 +41,7 @@ import { candidateKey } from '@/lib/visual-story-keys';
 import { followClips, postWithRetry, STOPPED, type Started } from '@/lib/visual-story-runner';
 import { estimateCostUsd } from '@/services/video/cost';
 import { clipRowSeconds, readClipDuration } from '@/lib/visual-story-clip-length';
-import { candIdForJob, OWN_CLIP_PROMPT } from '@/types/visualStory';
+import { candIdForJob, OWN_CLIP_PROMPT, roundTenth, sameSec } from '@/types/visualStory';
 import type { Candidate, Character, GenJob, Scene, Shot, VisualStory } from '@/types/visualStory';
 import { RaiseBudgetButton, shotKey, Thumb, usd, VideoThumb } from './ui-utils';
 
@@ -151,7 +151,7 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
   const toAnimate = rows.filter(needsClip);
   const price = toAnimate.reduce((n, s) => n + estimateCostUsd('grok', 'HERO', s.durationSec), 0);
   const missing = rows.filter((s) => (isOwn(s) ? !ownClipOf(s) : !picOf(s) && !chained(s)));
-  const fits = total === windowSec;
+  const fits = sameSec(total, windowSec);
   const after = story.spentUsd + story.reservedUsd + price;
   const overCap = after > story.budgetUsdCap + 1e-9;
   // The worker's own limit, checked before anything is paid (clips assemble faster than stills).
@@ -708,13 +708,14 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
                       type="number"
                       min={MIN_FIT_SEC}
                       max={MAX_FIT_SEC}
+                      step={0.1}
                       aria-label={`Seconds for ${name.toLowerCase()}`}
                       defaultValue={s.durationSec}
                       key={`${shotKey(s)}-${s.durationSec}-${nonce}`}
                       disabled={busy}
                       onBlur={(e) => {
-                        const v = Math.round(Number(e.target.value));
-                        if (v >= MIN_FIT_SEC && v <= MAX_FIT_SEC && v !== s.durationSec) void update(s, { durationSec: v }).then(() => changed.current());
+                        const v = roundTenth(Number(e.target.value));
+                        if (v >= MIN_FIT_SEC && v <= MAX_FIT_SEC && !sameSec(v, s.durationSec)) void update(s, { durationSec: v }).then(() => changed.current());
                       }}
                       className="w-16 rounded-md border border-gray-300 px-2 py-1 dark:border-gray-600 dark:bg-gray-800"
                     />
