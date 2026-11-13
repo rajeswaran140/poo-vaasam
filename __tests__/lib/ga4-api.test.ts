@@ -227,3 +227,39 @@ describe('fetchYouTubeOpens', () => {
     if (!out.ok) expect(out.error).toMatch(/PERMISSION_DENIED/);
   });
 });
+
+describe('report deadline (2026-11-13: a hung GA4 report made /admin return 504)', () => {
+  beforeEach(() => {
+    process.env.GA4_PROPERTY_ID = '123';
+    process.env.GA4_SERVICE_ACCOUNT_KEY = validKey;
+  });
+  afterEach(() => jest.useRealTimers());
+
+  it('fails a report that never answers after GA4_REPORT_TIMEOUT_MS, instead of hanging the page', async () => {
+    jest.useFakeTimers();
+    runReport.mockImplementation(() => new Promise(() => {}));
+    const { fetchTrafficSnapshot: snap, GA4_REPORT_TIMEOUT_MS } = await import('@/lib/ga4-api');
+    const out = snap(7);
+    await jest.advanceTimersByTimeAsync(GA4_REPORT_TIMEOUT_MS);
+    await expect(out).resolves.toEqual({ ok: false, error: `GA4 report timed out after ${GA4_REPORT_TIMEOUT_MS} ms` });
+  });
+
+  it('passes the library its own timeout and turns its retries off', async () => {
+    runReport.mockResolvedValue([{ rows: [] }]);
+    const { fetchTrafficSnapshot: snap, GA4_REPORT_TIMEOUT_MS } = await import('@/lib/ga4-api');
+    await snap(7);
+    expect(runReport).toHaveBeenCalledWith(expect.any(Object), { timeout: GA4_REPORT_TIMEOUT_MS, retry: null });
+  });
+
+  it('a report with a fallback query stays inside the 30 s request ceiling when both hang', async () => {
+    jest.useFakeTimers();
+    runReport.mockImplementation(() => new Promise(() => {}));
+    const { fetchSubscribeClicksBySource: clicks, GA4_REPORT_TIMEOUT_MS } = await import('@/lib/ga4-api');
+    let settled = false;
+    const out = clicks(28).then((r) => ((settled = true), r));
+    await jest.advanceTimersByTimeAsync(GA4_REPORT_TIMEOUT_MS * 2);
+    expect(settled).toBe(true);
+    expect((await out).ok).toBe(false);
+    expect(GA4_REPORT_TIMEOUT_MS * 2).toBeLessThan(30_000);
+  });
+});
