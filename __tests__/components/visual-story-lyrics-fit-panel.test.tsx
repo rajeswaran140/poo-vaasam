@@ -56,9 +56,9 @@ beforeEach(() => {
 });
 afterEach(() => jest.useRealTimers());
 
-function setup() {
+function setup(over: { shots?: Shot[]; candidates?: Candidate[] } = {}) {
   const onChanged = jest.fn();
-  render(<LyricsFitPanel vsId={VS} story={story} shots={shots} candidates={candidates} onChanged={onChanged} />);
+  render(<LyricsFitPanel vsId={VS} story={story} shots={over.shots ?? shots} candidates={over.candidates ?? candidates} onChanged={onChanged} />);
   return { onChanged };
 }
 
@@ -104,4 +104,16 @@ it('says to listen first, inside the panel, and saves nothing', async () => {
   await flush();
   expect(screen.getByRole('alert')).toHaveTextContent('Press Listen to the song first.');
   expect(posts().filter((p) => p.url.endsWith('/shots'))).toEqual([]);
+});
+
+it('reads the newest clip made for a row, as the pictures panel does, even before it is chosen', async () => {
+  // Every row still shows its picture (chosen at Make the video); the clips are made.
+  const pics: Candidate[] = shots.map((s) => ({ ...candidates[0], candId: `cd_p${s.shotOrder}`, shotOrder: s.shotOrder, mode: 'STILL', providerId: 'upload', s3Key: `k/cd_p${s.shotOrder}.png`, durationSec: undefined }));
+  setup({ shots: shots.map((s) => ({ ...s, selectedCandidateId: `cd_p${s.shotOrder}` })), candidates: [...pics, ...candidates] });
+  await flush();
+  fireEvent.change(screen.getByLabelText(/Lyrics/), { target: { value: LYRICS } });
+  fireEvent.click(screen.getByRole('button', { name: 'Fit the rows' }));
+  await flush();
+  expect(screen.queryByText('picture')).not.toBeInTheDocument();
+  expect(screen.queryByText('needs a new clip')).not.toBeInTheDocument();
 });

@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
 import { assemblyKindOf } from '@/lib/visual-story-assemble';
 import { fitKeepRows, type FitRowIn, type FitRowOut, type WindowLine } from '@/lib/visual-story-lyric-fit';
+import { OWN_CLIP_PROMPT } from '@/types/visualStory';
 import type { Candidate, Shot, VisualStory } from '@/types/visualStory';
 
 interface Props {
@@ -127,16 +128,30 @@ export function LyricsFitPanel({ vsId, story, shots, candidates, onChanged }: Pr
   };
 
   /** What each row brings to the fitter: its chosen clip's length, and whether the next row continues from it. */
+  /**
+   * The clip a row will show, read as the pictures panel reads it: on a moving
+   * row, its newest clip (Make the video chooses it); otherwise the chosen item.
+   */
+  const clipOf = (s: Shot): Candidate | undefined => {
+    const mine = candidates.filter((c) => c.sceneOrder === s.sceneOrder && c.shotOrder === s.shotOrder);
+    const chosen = mine.find((c) => c.candId === s.selectedCandidateId);
+    if (chosen && assemblyKindOf(chosen.s3Key) === 'clip') return chosen;
+    if (s.mode === 'STILL') return undefined;
+    return mine
+      .filter((c) => c.mode !== 'STILL' && assemblyKindOf(c.s3Key) === 'clip')
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  };
   const rowInputs = (): FitRowIn[] =>
     rows.map((s, i) => {
-      const chosen = candidates.find((c) => c.candId === s.selectedCandidateId);
-      const isClip = !!chosen && assemblyKindOf(chosen.s3Key) === 'clip';
+      const clip = clipOf(s);
       const next = rows[i + 1];
       return {
-        clipSec: isClip && typeof chosen!.durationSec === 'number' ? chosen!.durationSec : null,
-        isClip,
-        isOwn: isClip && chosen!.providerId === 'upload',
-        continuedFrom: !!next && !!next.chainFromPrevious && next.mode !== 'STILL' && s.mode !== 'STILL',
+        clipSec: clip && typeof clip.durationSec === 'number' ? clip.durationSec : null,
+        isClip: !!clip,
+        isOwn: !!clip && clip.providerId === 'upload',
+        // Same rule as the pictures panel's chained(): both moving, the next asked for it, and not an own clip.
+        continuedFrom:
+          !!next && !!next.chainFromPrevious && next.mode !== 'STILL' && s.mode !== 'STILL' && next.visualPrompt !== OWN_CLIP_PROMPT,
         currentSec: s.durationSec,
       };
     });
