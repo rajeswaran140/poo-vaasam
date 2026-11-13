@@ -355,6 +355,25 @@ describe('end titles', () => {
     expect(res.status).toBe(200);
     expect(presignPost.mock.calls.find((c) => String(c[0]).endsWith('overlay-_end.png'))?.[2]).toBe(25 * 1024 * 1024);
   });
+  it('a re-upload keeps end titles that fit and drops ones past the new end (so saving keeps working)', async () => {
+    const key = `audio/mastering/video-text/${ID}/source/c.mp4`;
+    lambdaSend.mockResolvedValue(probePayload({ ok: true, info: { width: 1920, height: 1080, fps: 30, durationSec: 30, hasAudio: true } }));
+    repo.setSource.mockResolvedValue({ ok: true, version: 4, durationSec: 30 });
+    repo.get.mockResolvedValue(project({ endTitles: { atSec: 25, background: 'white' } }));
+    let body = await (await sourcePOST(req({ key }), ctx)).json();
+    expect(body.endTitles).toEqual({ atSec: 25, background: 'white' });
+    expect(repo.setSource.mock.calls[0][6]).toEqual({ atSec: 25, background: 'white' });
+    repo.get.mockResolvedValue(project({ endTitles: { atSec: 50 } }));
+    body = await (await sourcePOST(req({ key }), ctx)).json();
+    expect(body.endTitles).toBeNull();
+    expect(repo.setSource.mock.calls[1][6]).toBeNull();
+  });
+  it('presigns up to 400 text blocks plus the logo and the end titles', async () => {
+    const blocks = Array.from({ length: 400 }, (_, i) => ({ id: `b${i}`, track: 'lyric', text: 'x', startSec: i * 0.1, endSec: i * 0.1 + 0.05 }));
+    repo.get.mockResolvedValue(project({ blocks, endTitles: { atSec: 50 }, style: { sizeScale: 1, lyricPosition: 'lower', logo: { show: true } } }));
+    const res = await overlaysPOST(req({ renderId: 'r1', blockIds: [...blocks.map((b) => b.id), '_logo', '_end'] }), ctx);
+    expect(res.status).toBe(200);
+  });
   it('render 400s stored end titles that no longer fit, without claiming', async () => {
     repo.get.mockResolvedValue(project({ endTitles: { atSec: 59.8 } }));
     const res = await renderPOST(req({ renderId: 'r1', version: 3 }), ctx);

@@ -17,7 +17,7 @@ import { requireAdmin, requireBearer, authErrorResponse } from '@/lib/auth-helpe
 import { VideoTextRepository } from '@/infrastructure/database/VideoTextRepository';
 import { S3Operations } from '@/infrastructure/storage/s3-client';
 import { awsConfig } from '@/lib/aws-config';
-import { isValidProjectId, isVideoTextKeyFor } from '@/lib/video-text/keys';
+import { floorCentis, isValidProjectId, isVideoTextKeyFor } from '@/lib/video-text/keys';
 import { lyricTimingKeys, timeLyricLines, type LyricTimingWords } from '@/lib/video-text/lyric-timing';
 import type { VideoTextProject } from '@/types/videoText';
 
@@ -52,7 +52,11 @@ async function statusFor(keys: ReturnType<typeof lyricTimingKeys>, now = Date.no
   const started = await readJson<{ startedAt: string }>(keys.started);
   const failed = await readJson<{ error?: string; at?: string }>(keys.error);
   // An error written by THIS run (after its start) wins; an older one is history.
-  if (failed && (!started || (failed.at ?? '') >= started.startedAt)) {
+  // Compared as times with a few seconds' slack: the worker writes whole seconds
+  // and its clock is not ours, so a fast failure could look older than its start.
+  const failedAt = Date.parse(failed?.at ?? '');
+  const startedAt = started ? Date.parse(started.startedAt) : NaN;
+  if (failed && (!started || !Number.isFinite(failedAt) || failedAt >= startedAt - 5000)) {
     return { status: 'error', error: 'Automatic timing failed for this video. Try again, or tap to time the lines.' };
   }
   if (started) {
@@ -117,7 +121,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (parsed.data.op === 'align') {
       const sensor = await readJson<LyricTimingWords>(keys.words);
       if (!sensor) return NextResponse.json({ error: 'The video has not been listened to yet. Press Time lyrics automatically.' }, { status: 409 });
-      const result = timeLyricLines(parsed.data.lyricsText, sensor);
+      // The worker's length is the audio's, unrounded; the editor checks against the
+      // stored video length (floored to 0.01 s). Clamp to the shorter, so a line
+      // running to the very end is never refused for a hundredth of a second.
+      const durationSec = floorCentis(Math.min(Number(sensor.durationSec) || source.durationSec, source.durationSec));
+      const result = timeLyricLines(parsed.data.lyricsText, { ...sensor, durationSec });
       if (!result.ok) return NextResponse.json({ error: result.error }, { status: 422 });
       return NextResponse.json({ lines: result.lines });
     }

@@ -252,7 +252,7 @@ export function TextPreview({ videoUrl, frame, blocks, style, onTime, ref, onMov
   // Text or style changed: redraw at the current time.
   useEffect(() => {
     paint();
-  }, [blocks, style, frame.width, frame.height, logo, paint]);
+  }, [blocks, style, frame.width, frame.height, logo, endTitles, creditsText, paint]);
 
   // While playing, follow every frame; otherwise follow seeks.
   useEffect(() => {

@@ -15,7 +15,8 @@ const UPLOAD_URL_TTL_SECONDS = 60 * 60;
 const MAX_OVERLAY_BYTES = 5 * 1024 * 1024;
 /** The logo's PNG is photographic: a big logo on a 4K frame measured 5.3 MB (2026-11-09). */
 const MAX_LOGO_OVERLAY_BYTES = 25 * 1024 * 1024;
-const MAX_OVERLAYS = 400;
+// 400 text blocks (the PATCH limit) + the logo + the end titles.
+const MAX_OVERLAYS = 402;
 
 const schema = z.object({
   renderId: z.string(),

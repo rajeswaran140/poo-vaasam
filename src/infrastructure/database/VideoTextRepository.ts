@@ -12,7 +12,7 @@
 
 import { DynamoDBOperations, handleDynamoDBError } from './dynamodb-client';
 import { floorCentis, isValidProjectId } from '@/lib/video-text/keys';
-import type {
+import type { EndTitles,
   Cut,
   Freeze,
   RenderState,
@@ -212,7 +212,8 @@ export class VideoTextRepository {
     blocks: TextBlock[],
     cut: Cut | null = null,
     freeze: Freeze | null = null,
-    now: number = Date.now()
+    now: number = Date.now(),
+    endTitles: EndTitles | null = null
   ): Promise<
     { ok: true; version: number; durationSec: number } | { ok: false; reason: 'missing' | 'rendering' }
   > {
@@ -224,7 +225,7 @@ export class VideoTextRepository {
       const attrs = await DynamoDBOperations.update({
         key: keyOf(id),
         updateExpression:
-          'SET #source = :source, #blocks = :blocks, #cut = :cut, #freeze = :freeze, #render = :render, #updatedAt = :now, GSI1SK = :now,' +
+          'SET #source = :source, #blocks = :blocks, #cut = :cut, #freeze = :freeze, #endTitles = :endTitles, #render = :render, #updatedAt = :now, GSI1SK = :now,' +
           ' #version = #version + :one',
         // Never create a project by attaching a source to one that does not exist.
         conditionExpression: `attribute_exists(PK) AND ${RENDER_SLOT_FREE}`,
@@ -234,6 +235,7 @@ export class VideoTextRepository {
           '#blocks': 'blocks',
           '#cut': 'cut',
           '#freeze': 'freeze',
+          '#endTitles': 'endTitles',
           '#version': 'version',
         },
         expressionAttributeValues: {
@@ -241,6 +243,7 @@ export class VideoTextRepository {
           ':one': 1,
           ':source': stored,
           ':blocks': blocks,
+          ':endTitles': endTitles,
           ':cut': cut,
           ':freeze': freeze,
           ':render': idleRender(),

@@ -1,4 +1,4 @@
-import { drawEndTitles, endTitlesAlphaAt, endTitlesAt, endTitlesSpan, validateEndTitles, END_LOGO_HEIGHT } from '@/lib/video-text/end-titles';
+import { drawEndTitles, endTitlesAlphaAt, endTitlesAt, endTitlesCutNote, endTitlesSpan, fitEndTitlesToDuration, validateEndTitles, END_LOGO_HEIGHT } from '@/lib/video-text/end-titles';
 import { overlaysForSegment } from '@/lib/video-text/render-plan';
 import type { TextStyle } from '@/types/videoText';
 
@@ -95,5 +95,26 @@ describe('drawEndTitles', () => {
     const [, , , y, , h] = b.calls.find((c) => c[0] === 'drawImage') as [string, unknown, number, number, number, number];
     expect(y + h / 2).toBeCloseTo(540);
     expect(b.calls.some((c) => c[0] === 'fillText')).toBe(false);
+  });
+});
+
+describe('audit fixes', () => {
+  it('Start end titles here never stores a start the server refuses (128.01 s, 64.02 s, 256.01 s videos)', () => {
+    for (const d of [128.01, 64.02, 256.01, 60, 246]) {
+      const e = endTitlesAt(d, d);
+      expect(validateEndTitles(e, d)).toBeNull();
+    }
+  });
+  it('a re-upload keeps end titles that still fit and drops ones past the new end', () => {
+    expect(fitEndTitlesToDuration({ atSec: 50, background: 'white' }, 60)).toEqual({ atSec: 50, background: 'white' });
+    expect(fitEndTitlesToDuration({ atSec: 50 }, 30)).toBeNull();
+    expect(fitEndTitlesToDuration(null, 30)).toBeNull();
+  });
+  it('says how In and Out change what the export shows', () => {
+    const end = { atSec: 50 };
+    expect(endTitlesCutNote(end, { inSec: 0, outSec: 60 })).toBeNull();
+    expect(endTitlesCutNote(end, { inSec: 0, outSec: 45 })).toMatch(/after Out/);
+    expect(endTitlesCutNote(end, { inSec: 0, outSec: 50.5 })).toMatch(/half-faded/);
+    expect(endTitlesCutNote(end, { inSec: 52, outSec: 60 })).toMatch(/whole exported part is the end screen/);
   });
 });

@@ -24,12 +24,18 @@ const timed = [
   { text: 'two line', startSec: 20, endSec: 22, heard: false },
 ];
 
+const host: { setLyrics?: (s: string) => void; setSource?: (s: string) => void; setBlocks?: (b: TextBlock[]) => void } = {};
 function setup(initial: TextBlock[] = start) {
   function Host() {
     const [blocks, setBlocks] = React.useState(initial);
+    const [lyrics, setLyrics] = React.useState(LYRICS);
+    const [source, setSource] = React.useState('k1');
+    host.setLyrics = setLyrics;
+    host.setSource = setSource;
+    host.setBlocks = setBlocks;
     return (
       <>
-        <AutoTime projectId="p1" sourceKey="k1" durationSec={60} lyricsText={LYRICS} blocks={blocks} onChange={setBlocks} pollMs={1000} />
+        <AutoTime projectId="p1" sourceKey={source} durationSec={60} lyricsText={lyrics} blocks={blocks} onChange={setBlocks} pollMs={1000} />
         <ul>{blocks.filter((b) => b.track === 'lyric').map((b) => <li key={b.id} data-testid={b.text}>{`${b.startSec}-${b.endSec}`}</li>)}</ul>
       </>
     );
@@ -128,4 +134,60 @@ it('shows nothing until there are lyrics', () => {
   fetchMock.mockResolvedValue(json({ status: 'idle' }));
   render(<AutoTime projectId="p1" sourceKey="k1" durationSec={60} lyricsText="   " blocks={[]} onChange={jest.fn()} />);
   expect(screen.queryByTestId('auto-time')).not.toBeInTheDocument();
+});
+
+describe('audit fixes', () => {
+  it('lyrics edited while the lines are being timed: nothing is applied, and it says why', async () => {
+    let release: (() => void) | null = null;
+    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(String(init.body)) : null;
+      if (!body) return json({ status: 'ready' });
+      await new Promise<void>((r) => { release = r; });
+      return json({ lines: timed });
+    });
+    setup();
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: 'Time lyrics automatically (about a second)' }));
+    await flush();
+    act(() => host.setLyrics!('one line fixed\ntwo line'));
+    await act(async () => { release!(); await jest.advanceTimersByTimeAsync(10); });
+    expect(screen.getByRole('alert')).toHaveTextContent('lyrics changed while the lines were being timed');
+    expect(screen.getByTestId('one line')).toHaveTextContent('5-6');
+  });
+
+  it('Undo is withdrawn once the timeline is edited after the timing', async () => {
+    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(String(init.body)) : null;
+      return body ? json({ lines: timed }) : json({ status: 'ready' });
+    });
+    setup();
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: 'Time lyrics automatically (about a second)' }));
+    await flush();
+    expect(screen.getByRole('button', { name: 'Undo automatic timing' })).toBeInTheDocument();
+    // A hand edit: move the first line.
+    act(() => host.setBlocks!([start[0], { id: 'a', track: 'lyric', text: 'one line', startSec: 11, endSec: 12 }, { id: 'b', track: 'lyric', text: 'two line', startSec: 20, endSec: 22 }]));
+    await flush();
+    expect(screen.queryByRole('button', { name: 'Undo automatic timing' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('one line')).toHaveTextContent('11-12');
+  });
+
+  it('a new video while listening frees the button, and the old run never applies', async () => {
+    let video = 'k1';
+    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(String(init.body)) : null;
+      if (body?.op === 'start') return json({ status: 'running', startedAt: 't' }, 202);
+      if (body?.op === 'align') return json({ lines: timed });
+      return json(video === 'k1' ? { status: 'running', startedAt: 't' } : { status: 'idle' });
+    });
+    setup();
+    await flush();
+    expect(screen.getByRole('button', { name: 'Listening to the song…' })).toBeDisabled();
+    video = 'k2';
+    act(() => host.setSource!('k2'));
+    await flush();
+    await flush();
+    expect(screen.getByRole('button', { name: 'Time lyrics automatically' })).toBeEnabled();
+    expect(screen.getByTestId('one line')).toHaveTextContent('5-6');
+  });
 });

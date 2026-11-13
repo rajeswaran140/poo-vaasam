@@ -906,7 +906,8 @@ export async function renderVideoText(
     }
 
     // Fading parts cost more per chunk: plan shorter segments for them.
-    const anyFade = Boolean(project.style) && blocks.some((b) => trackStyleOf(b.track, project.style!).fade);
+    // The end titles' full-frame fade costs like any other fade.
+    const anyFade = Boolean(endTitles) || (Boolean(project.style) && blocks.some((b) => trackStyleOf(b.track, project.style!).fade));
     // Only the cut is encoded, so a long video with a short cut is planned by the cut's length.
     const fullSec = parseDurationSec(headerLog) ?? 0;
     const plan = segmentPlanFor(
