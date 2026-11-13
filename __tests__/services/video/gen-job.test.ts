@@ -211,6 +211,18 @@ describe('advanceGenJob', () => {
     expect(out.status).toBe('succeeded');
   });
 
+  it("records the clip's length on its candidate, so a later change of the row's seconds shows it is out of date", async () => {
+    provider.poll.mockResolvedValue(succeeded);
+    await advance(job({ durationSec: 8 }));
+    expect(repo.putCandidate.mock.calls[0][1]).toEqual(expect.objectContaining({ candId: CAND, durationSec: 8 }));
+  });
+
+  it('a job from before lengths were recorded saves a candidate without one', async () => {
+    provider.poll.mockResolvedValue(succeeded);
+    await advance(job());
+    expect(repo.putCandidate.mock.calls[0][1]).not.toHaveProperty('durationSec');
+  });
+
   it('a second advance after success does nothing', async () => {
     provider.poll.mockResolvedValue(succeeded);
     const first = await advance(job());

@@ -81,6 +81,8 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
   const [rendering, setRendering] = useState(false);
   // Stop is offered only while the video is being made (not during uploads or Fit).
   const [making, setMaking] = useState(false);
+  // Stop pressed during Make the video: the clip being made finishes, nothing new starts.
+  const [stopping, setStopping] = useState(false);
   // Bumped when a save fails, so the seconds boxes show the saved value again.
   const [nonce, setNonce] = useState(0);
   // The row whose Remove is waiting for a yes (shotKey), and a remove that failed.
@@ -129,9 +131,19 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
    * row's current clip (chainedFromCandId); once that clip is re-made — or is
    * about to be — the chained clip is made again from the new last frame.
    */
+  /**
+   * The made clip's length, when it no longer matches the row: the render would
+   * freeze its last frame (row longer) or cut it (row shorter). Only clips made
+   * since lengths were recorded (2026-11-13) can be checked.
+   */
+  const staleLengthOf = (s: Shot): number | null => {
+    const len = clipOf(s)?.durationSec;
+    return typeof len === 'number' && len !== s.durationSec ? len : null;
+  };
   const needsClip = (s: Shot): boolean => {
     if (isOwn(s) || !isMoving(s) || rendersNow(s)) return false;
     if (!clipOf(s)) return true;
+    if (staleLengthOf(s) !== null) return true;
     if (!chained(s)) return false;
     const prev = prevOf(s)!;
     return needsClip(prev) || s.chainedFromCandId !== clipOf(prev)?.candId;
@@ -274,14 +286,16 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
   };
 
   const fit = async () => {
-    // Your own clips keep their length; the pictures share what is left.
-    const flexible = rows.filter((s) => !isOwn(s));
-    const fixedSec = rows.reduce((n, s) => n + (isOwn(s) ? s.durationSec : 0), 0);
+    // Your own clips and clips already made keep their length (stretching a made
+    // clip freezes it, shrinking it cuts it); the rest share what is left.
+    const keeps = (s: Shot) => isOwn(s) || (isMoving(s) && !!clipOf(s) && !needsClip(s));
+    const flexible = rows.filter((s) => !keeps(s));
+    const fixedSec = rows.reduce((n, s) => n + (keeps(s) ? s.durationSec : 0), 0);
     const next = flexible.length ? fitDurations(flexible.map((s) => s.durationSec), windowSec - fixedSec) : null;
     if (!next) {
       setError(
         fixedSec
-          ? `Your clips take ${fixedSec} s, so ${flexible.length} picture${flexible.length === 1 ? '' : 's'} must fill ${windowSec - fixedSec} s at ${MIN_FIT_SEC}-${MAX_FIT_SEC} s each. Add or remove pictures.`
+          ? `${rows.some((s) => keeps(s) && !isOwn(s)) ? 'Your clips and the clips already made' : 'Your clips'} take ${fixedSec} s, so ${flexible.length} picture${flexible.length === 1 ? '' : 's'} must fill ${windowSec - fixedSec} s at ${MIN_FIT_SEC}-${MAX_FIT_SEC} s each. Add or remove pictures.`
           : `${rows.length} pictures cannot fill ${windowSec} s at ${MIN_FIT_SEC}-${MAX_FIT_SEC} s each. Add or remove pictures.`
       );
       return;
@@ -442,6 +456,7 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
     setConfirming(false);
     setBusy(true);
     setMaking(true);
+    setStopping(false);
     setSummary(null);
     setError(null);
     setOverBudget(false);
@@ -589,6 +604,7 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
         setProgress(null);
         setRendering(false);
         setMaking(false);
+        setStopping(false);
         setBusy(false);
         changed.current();
       }
@@ -714,6 +730,11 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
                       <option value="moving">{`Moving (${usd(estimateCostUsd('grok', 'HERO', s.durationSec))})`}</option>
                     </select>
                     {isMoving(s) && clipOf(s) && !needsClip(s) && <span className="text-green-700 dark:text-green-400">Clip made</span>}
+                    {isMoving(s) && staleLengthOf(s) !== null && (
+                      <span className="text-amber-700 dark:text-amber-400">
+                        {`Its clip was made for ${staleLengthOf(s)} s. Make the video makes it again for ${s.durationSec} s, or set the seconds back to ${staleLengthOf(s)}.`}
+                      </span>
+                    )}
                     {removeButton(s, name)}
                   </div>
                   {removeConfirm(s, name)}
@@ -835,14 +856,27 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
       {progress && (
         <p className="flex flex-wrap items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
           <span>{progress}</span>
-          {rendering ? (
-            <span className="text-gray-600 dark:text-gray-400">The clips keep rendering even if you leave this page.</span>
-          ) : (
-            making && (
-              <button type="button" onClick={() => (stop.current = true)} className="text-blue-700 hover:underline dark:text-blue-400">
+          {/* Stop is offered for the whole run (audit 2026-11-13: it was hidden while
+              each chained clip was made, so later paid clips could not be stopped). */}
+          {making &&
+            (stopping ? (
+              <span className="text-gray-600 dark:text-gray-400">Stopping: the clips being made now finish (they are paid for), then no more start.</span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  stop.current = true;
+                  setStopping(true);
+                }}
+                className="min-h-11 text-blue-700 hover:underline lg:min-h-0 dark:text-blue-400"
+              >
                 Stop
               </button>
-            )
+            ))}
+          {rendering && !stopping && (
+            <span className="text-gray-600 dark:text-gray-400">
+              Keep this page open. If you leave, clips already started still finish, but no more start and the video is not rendered.
+            </span>
           )}
         </p>
       )}
