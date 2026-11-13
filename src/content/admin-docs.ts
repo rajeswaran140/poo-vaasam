@@ -52,6 +52,97 @@ export function formatDocUpdatedAt(iso: string): string {
 
 export const ADMIN_DOCS: AdminDoc[] = [
   {
+    slug: 'admin-504-ga4-2026-11-13',
+    title: 'Admin would not open — HTTP 504 from a stuck Google Analytics report (resolved 2026-11-13)',
+    category: 'Operations',
+    updatedAt: '2026-11-13T15:40:00Z',
+    body: `# Admin would not open — "took too long to respond, HTTP ERROR 504"
+
+> ✅ **Resolved 2026-11-13 15:05 UTC** by PR **#449** (Amplify build **849**).
+> Raj confirmed he could open the admin again.
+> ⚠️ **Google Analytics was still not answering when this was written.** The
+> dashboard opens anyway; only its traffic numbers show **—** until Google recovers.
+
+## What you saw
+
+Opening **tamilagaval.com/admin** showed Chrome's *"This page isn't working —
+tamilagaval.com took too long to respond. HTTP ERROR 504"*.
+
+## What it was NOT
+
+- **Not the login.** Signing in worked the whole time (the user pool and your
+  admin user were checked: enabled, confirmed, unchanged since April).
+- **Not a deploy.** Nothing had been deployed since build 848 at 12:06 UTC.
+- **Not the site being down.** The public site, the login page and the other
+  admin pages answered normally.
+
+## What actually happened
+
+The admin **home page** (the dashboard you land on after login) builds itself on
+the server. Before showing anything it fetches, all at once: content counts, recent
+content, the YouTube subscriber count, and **three Google Analytics reports**
+(users in 7 days, audio plays, subscribe clicks).
+
+At about **14:21 UTC** Google Analytics stopped answering report requests. Google's
+sign-in still worked in under half a second, but the report call itself just hung:
+for 60, 80, 90, 131, 295, 367 and once 706 seconds. It hung the same way from the
+dev server, and over both of Google's connection types (gRPC and plain HTTPS), so
+the problem was on Google's side.
+
+Our code had **no time limit** on those reports. The server waited for them,
+CloudFront gave up after 30 seconds, and you got the 504. The same wait affected
+**Songs** and **YouTube** in admin, which also show GA4 numbers.
+
+Once, at 15:01, Google answered with **RESOURCE_EXHAUSTED ("check quota")**
+instead of hanging. So Google's side was under quota pressure, but it is **not
+confirmed** whether quota caused the hang or the hung requests used up the quota.
+
+## Timeline (UTC, 13 Nov 2026)
+
+| Time | What happened |
+|---|---|
+| 14:21 | Google Analytics reports start hanging |
+| 14:22–15:01 | 7 admin page loads time out ("Request timed out") |
+| before 14:25 | Raj reports the 504 |
+| 14:25–14:45 | Cause found: login, AWS and the deploy ruled out; GA4 reports hang from two places |
+| 14:48 | Fix committed, after testing it against the stuck Google service |
+| 14:50 | Pushed; PR #449 opened; its checks then passed |
+| 14:56 | Merged; build 849 started |
+| 15:05 | Build 849 live |
+| 15:10 | First reports after the fix stop at 6 s as designed; Raj opens the admin |
+
+## The fix (PR #449)
+
+Every Google Analytics report now has a **6-second limit**. If Google doesn't
+answer in time, that one number is skipped and the rest of the page loads.
+Two reports try a second, simpler query after a failure, so the worst case is
+about 12 seconds, well inside the 30-second limit.
+
+## What you will see while Google is slow
+
+- The admin home opens after about **6–8 seconds** instead of straight away.
+- **Users · 7d**, **Audio plays · 28d** and **Subscribe clicks · 28d** show **—**.
+  The **Subscribers** tile (from YouTube) and everything below it work normally.
+- Nothing needs to be done: the numbers come back by themselves when Google recovers.
+
+## If it happens again
+
+1. **Does the login page open?** If yes, the site is up; the problem is something
+   the page waits for after login.
+2. Pages that don't use Google Analytics, such as **/admin/mastering** and
+   **/admin/video-text**, open directly.
+3. For Claude: the server logs are in CloudWatch, group
+   \`/aws/amplify/d3rkmepk4popv0\`. Search for \`Request timed out\` and \`[ga4-api]\`.
+   A plain \`curl\` gets **403** from the scraper block; test with a browser user agent.
+   \`scripts/.tmp/ga4test.ts\` runs one GA4 report with the site's own key.
+
+## The lesson
+
+Anything the admin pages fetch from an outside service while they build must have
+a time limit, so one slow service can only blank its own box, never the whole page.
+`,
+  },
+  {
     slug: 'amplify-build-outage-2026-10-20',
     title: 'Website builds failing — Amplify cannot assume its IAM role (resolved 2026-10-21)',
     category: 'Operations',
