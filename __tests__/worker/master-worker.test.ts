@@ -1655,6 +1655,20 @@ Output #0, null, to 'pipe:':
     expect(patched()).toMatchObject({ status: 'done', target: -14 });
   });
 
+  it('records the length of a master with no trim, fade or join (it was left null)', async () => {
+    // 2026-11-12: a song mastered with no edit had editedDurationSec null, and
+    // the Visual Story Studio refused it as having "no recorded length".
+    // 21 of 140 saved masters were affected. Pass 1's header says 6:05.30.
+    await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14 });
+    expect(patched().edit).toBeNull();
+    expect(patched().editedDurationSec).toBeCloseTo(365.3, 1);
+  });
+
+  it('an edited master still records the EDITED length, not the source length', async () => {
+    await handler({ jobId: 'j1', s3Key: SRC_KEY, target: -14, edit: { trimStartSec: 12, trimEndSec: 200, fadeInSec: 0, fadeOutSec: 4, curve: 'qsin' } } as never);
+    expect(patched().editedDurationSec).toBeCloseTo(188, 1);
+  });
+
   it('records the normalization type from PASS 2, not from pass 1 or 3', async () => {
     // The regression guard for PR #79. Passes 1 and 3 both say "linear" here;
     // only pass 2 knows a linear gain was refused. Reading either of the others

@@ -3219,7 +3219,10 @@ export const handler = async (event: MasterEvent, context?: { getRemainingTimeIn
         target,
         edit: isNoOpEdit(edit) ? null : edit,
         join: joinSpec,
-        editedDurationSec: editedDuration,
+        // With no trim, fade or join the master is as long as what came in:
+        // record that length too (it was left null, and the Visual Story Studio
+        // then refused the song as having "no recorded length").
+        editedDurationSec: editedDuration ?? source?.durationSec ?? null,
         mp3Key: bedMp3Key,
         mp3Lufs: bedMp3Lufs,
         mp3Tp: bedMp3Tp,
@@ -3321,7 +3324,8 @@ export const handler = async (event: MasterEvent, context?: { getRemainingTimeIn
       // The seam, stored so the report and the Studio can state what was
       // assembled without re-deriving it from the audio.
       join: joinSpec,
-      editedDurationSec: editedDuration,
+      // With no trim, fade or join, the length of what came in (pass 1 read it).
+      editedDurationSec: editedDuration ?? source?.durationSec ?? null,
       mp3Key,
       mp3Lufs,
       mp3Tp,
