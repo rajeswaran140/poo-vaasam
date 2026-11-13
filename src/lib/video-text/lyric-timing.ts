@@ -10,7 +10,8 @@
  *
  * Pure: no I/O, safe to import from the browser and the route alike.
  */
-import { alignLyrics, verifyRoundTrip } from '@/lib/caption-alignment';
+import { verifyRoundTrip } from '@/lib/caption-alignment';
+import { alignLinesToWords } from '@/lib/word-alignment';
 import { wordsToCues, type AsrWord } from '@/lib/local-asr-clock';
 import { activeSpans, placeInSinging, type VocalActivity } from '@/lib/vocal-activity';
 import { MIN_BLOCK_SEC } from '@/lib/video-text/timeline';
@@ -65,16 +66,18 @@ export function timeLyricLines(lyricsText: string, sensor: LyricTimingWords): Ly
     return { ok: false, error: 'No singing was heard in this video, so the lines could not be timed. Tap to time them instead.' };
   }
   const cards = lines.map((l) => [l]);
-  const aligned = alignLyrics(cards, cues);
+  // Word by word, not line to chunk: each line starts at its own first heard word.
+  const aligned = alignLinesToWords(lines, sensor.words);
   // Never a machine word on screen: his text exactly, or nothing.
-  if (!verifyRoundTrip(aligned.cues, cards)) {
+  if (!verifyRoundTrip(aligned, cards)) {
     return { ok: false, error: 'The timing did not keep your lines exactly as written, so it was not used. Tap to time them instead.' };
   }
   const spans = sensor.activity ? activeSpans(sensor.activity) : [];
-  // No captionShapeProblem here: it guards YouTube caption files (e.g. captions
-  // that stop well before the song ends), but in Video Text a long instrumental
-  // ending is normal, the result shows on the timeline at once, and Undo is one press.
-  const placed = placeInSinging(aligned.cues, spans, { verseStarts });
+  const placed = placeInSinging(aligned, spans, { verseStarts }).map((c, i) => {
+    // A heard line clears a second after its last heard word, unless the next line comes first.
+    const lastEnd = aligned[i].lastWordEndSec;
+    return lastEnd === null ? c : { ...c, endMs: Math.min(c.endMs, Math.round((lastEnd + 1) * 1000)) };
+  });
 
   const duration = sensor.durationSec;
   const out: TimedLine[] = [];
