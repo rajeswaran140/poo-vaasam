@@ -5227,7 +5227,7 @@ Phase 2 will not touch this page's connect/disconnect flow — only add to it.
     slug: 'video-text',
     title: 'Video Text — title, lyrics, credits, logo, In/Out and freeze on a finished video',
     category: 'Music Lab',
-    updatedAt: '2026-11-09T18:00:00Z',
+    updatedAt: '2026-11-12T23:30:00Z',
     body: `# Video Text
 
 **Video Text** (\`/admin/video-text\`, in the Sound section of the sidebar) adds a title, the lyrics, the credits and your logo to a song video you have already finished, and gives you back an MP4 with them burned in. It is its own page: the Mastering page and Visual Story Studio still make clean videos with no text.
@@ -5237,7 +5237,7 @@ Phase 2 will not touch this page's connect/disconnect flow — only add to it.
 1. **New project.** Give it a name. The list shows every project with when it was last edited and whether its video is ready; the address keeps \`?p=…\` so a reload opens the same project.
 2. **Upload the MP4** (or MOV) — drag it onto the box or choose it. **Videos up to 1 GB.** When it has been checked the page reads, for example, "Video: 1440p · 5:44 · deleted on 7 Dec 2026".
 3. **Type the title and credits, and paste the lyrics** — one line per lyric line. Each line becomes a block on the timeline. The title starts at 0–5 s, the credits cover the last 10 s, and the lyric lines are spread evenly in between until you time them.
-4. **Time the lyrics** (next section).
+4. **Time the lyrics**: automatically, by tapping, or both (next section).
 5. **Style each part** — Title, Lyrics and Credits each have their own look (below), and the **Logo** section adds your watermark.
 6. **Optional: In and Out, and Freeze** (below).
 7. **Make video.** The page draws each text layer, uploads it, and the worker burns them in. The button shows the stage and the time so far, for example "Encoding 7/18 · 2:14". The picture size and frame rate stay the same, and the **audio is copied untouched**. If it fails, the reason shows under the button.
@@ -5247,6 +5247,11 @@ Everything saves as you go ("Saved" at the top). If the same project is open in 
 
 ## Timing the lyrics
 
+- **Time lyrics automatically.** Press it once the video is uploaded and the lyrics are pasted. The page listens to the singing (about 6 minutes for a 4-minute song; you can keep working) and then places every line where it is sung. **Your words are never changed**; only their times are. When it finishes it says, for example, "Timed 50 lines. 24 were not heard clearly … check these first: lines 2, 6, 10 …": those lines were placed in the singing between the lines it did hear, so check them first and drag any that are off. **Undo automatic timing** puts the timeline back as it was in one press.
+  - **Keep a blank line between verses.** A verse after a blank line is placed at the first singing after a music break, which is where verses start. Without the blank lines a verse opening can land at the end of the previous hook.
+  - **Edit and re-time for free.** The song is only listened to once per uploaded video. Fix a word and press the button again (it then reads "about a second"); a new upload is listened to again.
+  - No line is placed in a music break, and each line clears about a second after its singing ends.
+  - If it fails or takes longer than 16 minutes, it says so and leaves your timing alone; **Tap to time** still works.
 - **Tap to time lyrics.** Put the playhead just before the first line you want to time, press **Tap to time lyrics**, and tap **Space** (or the big button) as each line begins. Each tap starts the next line and ends the one before; after the last line one more tap ends it. **Stop** ends the open line where the song is (lines you did not tap keep their times); **Cancel** puts every line back as it was.
 - **Fine-tune on the timeline.** Drag a block to move it, or drag its edges to change when it starts and ends. Click the ruler to jump there. With a block selected, ← / → nudge it 0.1 s (hold Shift for 1 s), and [ / ] move its start or end to the playhead. The **Zoom** slider stretches the timeline.
 - The preview draws the text exactly as it will be burned in.

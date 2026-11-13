@@ -26,6 +26,7 @@ import { validateFreeze } from '@/lib/video-text/freeze';
 import { useSavedLogo } from './useSavedLogo';
 import { logoShown } from '@/lib/video-text/logo';
 import { TapToTime } from './TapToTime';
+import { AutoTime } from './AutoTime';
 import { PlacementPicker } from './PlacementPicker';
 import { trackStyleOf } from '@/lib/video-text/fonts';
 import { Timeline } from './Timeline';
@@ -783,6 +784,15 @@ export function VideoTextEditor({
             disabled={uploading}
             video={videoRef}
             cut={project.cut ?? null}
+          />
+          <AutoTime
+            projectId={initial.id}
+            sourceKey={source.key}
+            durationSec={source.durationSec}
+            lyricsText={project.lyricsText}
+            blocks={project.blocks}
+            onChange={setBlocks}
+            disabled={uploading || job.running}
           />
           <TapToTime
             blocks={project.blocks}

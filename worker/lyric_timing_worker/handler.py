@@ -137,7 +137,31 @@ def duration_of(wav):
     return info.frames / float(info.samplerate)
 
 
-def lambda_handler(event, _context):
+def lambda_handler(event, context):
+    """Run, and on any failure leave an error file the site can read, so the
+    editor says it failed instead of waiting out the 16-minute stale limit."""
+    try:
+        return run(event)
+    except Exception as err:  # noqa: BLE001 - every failure must reach the page
+        log(f"failed: {type(err).__name__}: {err}")
+        error_key = event.get("errorKey")
+        if error_key:
+            try:
+                s3.put_object(
+                    Bucket=event["bucket"],
+                    Key=error_key,
+                    Body=json.dumps({"error": f"{type(err).__name__}: {str(err)[:300]}",
+                                     "at": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())}).encode("utf-8"),
+                    ContentType="application/json",
+                )
+            except Exception as put_err:  # noqa: BLE001
+                log(f"could not write the error file: {put_err}")
+        raise
+    finally:
+        clean()
+
+
+def run(event):
     bucket = event["bucket"]
     source_key = event["sourceKey"]
     words_key = event["wordsKey"]
@@ -182,7 +206,6 @@ def lambda_handler(event, _context):
         Body=json.dumps(body, ensure_ascii=False).encode("utf-8"),
         ContentType="application/json",
     )
-    clean()
     summary = {"ok": True, "words": len(words), "durationSec": round(duration, 1), "timings": timings}
     log(json.dumps(summary))
     return summary
