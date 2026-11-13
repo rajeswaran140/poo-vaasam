@@ -302,12 +302,20 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
     // clip freezes it, shrinking it cuts it); the rest share what is left.
     const keeps = (s: Shot) => isOwn(s) || (isMoving(s) && !!clipOf(s) && !needsClip(s));
     const flexible = rows.filter((s) => !keeps(s));
-    const fixedSec = rows.reduce((n, s) => n + (keeps(s) ? s.durationSec : 0), 0);
-    const next = flexible.length ? fitDurations(flexible.map((s) => s.durationSec), windowSec - fixedSec) : null;
+    const fixedSec = roundTenth(rows.reduce((n, s) => n + (keeps(s) ? s.durationSec : 0), 0));
+    // Rows a lyrics fit left in tenths: fit the rest in whole seconds, and give the leftover tenths to the last.
+    const leftSec = roundTenth(windowSec - fixedSec);
+    const wholeLeft = Math.floor(leftSec);
+    const spare = roundTenth(leftSec - wholeLeft);
+    let next = flexible.length ? fitDurations(flexible.map((s) => s.durationSec), wholeLeft) : null;
+    if (next && spare > 0) {
+      const last = next.length - 1;
+      next = next[last] + spare <= MAX_FIT_SEC ? next.map((d, i) => (i === last ? roundTenth(d + spare) : d)) : null;
+    }
     if (!next) {
       setError(
         fixedSec
-          ? `${rows.some((s) => keeps(s) && !isOwn(s)) ? 'Your clips and the clips already made' : 'Your clips'} take ${fixedSec} s, so ${flexible.length} picture${flexible.length === 1 ? '' : 's'} must fill ${windowSec - fixedSec} s at ${MIN_FIT_SEC}-${MAX_FIT_SEC} s each. Add or remove pictures.`
+          ? `${rows.some((s) => keeps(s) && !isOwn(s)) ? 'Your clips and the clips already made' : 'Your clips'} take ${fixedSec} s, so ${flexible.length} picture${flexible.length === 1 ? '' : 's'} must fill ${leftSec} s at ${MIN_FIT_SEC}-${MAX_FIT_SEC} s each. Add or remove pictures.`
           : `${rows.length} pictures cannot fill ${windowSec} s at ${MIN_FIT_SEC}-${MAX_FIT_SEC} s each. Add or remove pictures.`
       );
       return;
@@ -316,7 +324,7 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
     stop.current = false;
     try {
       for (const [i, s] of flexible.entries()) {
-        if (next[i] !== s.durationSec && !(await update(s, { durationSec: next[i] }))) break;
+        if (!sameSec(next[i], s.durationSec) && !(await update(s, { durationSec: next[i] }))) break;
       }
     } finally {
       if (mounted.current) setBusy(false);

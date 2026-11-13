@@ -540,6 +540,23 @@ describe('audit 2026-11-13: Stop during a chained run, and a clip whose row chan
     expect(calls().map((x) => x.body)).toEqual([{ op: 'update', sceneOrder: 1, shotOrder: 2, durationSec: 12 }]);
   });
 
+  it('Fit to the song still works after a lyrics fit left a made row in tenths (13.2 s)', async () => {
+    routes(() => undefined);
+    setup({
+      shots: [shot(1, 13.2, { mode: 'HERO', selectedCandidateId: 'cd_v1' }), shot(2, 8), shot(3, 8)],
+      candidates: [pic(1), clipFor(1, 14), pic(2), pic(3)],
+      story: { ...story, windowEndSec: 30 } as VisualStory,
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Fit to 30 s' }));
+    await flush();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    // 16.8 s left for two pictures: whole seconds, with the tenth on the last.
+    const after = [13.2, 8, 8];
+    for (const c of calls()) after[c.body.shotOrder - 1] = c.body.durationSec;
+    expect(Math.round(after.reduce((a, b) => a + b, 0) * 10) / 10).toBe(30);
+    expect(after.slice(1)).toEqual([8, 8.8]);
+  });
+
   it('Fit also keeps older clips with no recorded length', async () => {
     routes(() => undefined);
     setup({
