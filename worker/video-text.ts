@@ -78,10 +78,11 @@ import {
   segmentKey,
 } from '@/lib/video-text/keys';
 import { isHdrHeader } from '@/lib/master-background';
-import type { Cut, Freeze, RenderState, TextBlock, TextStyle } from '@/types/videoText';
+import type { EndTitles, Cut, Freeze, RenderState, TextBlock, TextStyle } from '@/types/videoText';
 import { fadeSecFor, trackStyleOf } from '@/lib/video-text/fonts';
 import { LOGO_OVERLAY_ID, logoShown } from '@/lib/video-text/logo';
 import { buildFreezeFrameArgs, validateFreeze } from '@/lib/video-text/freeze';
+import { END_TITLES_OVERLAY_ID, endTitlesSpan, validateEndTitles } from '@/lib/video-text/end-titles';
 
 /** The overlay id of the held frame (the worker makes it; block ids are UUIDs, never this). */
 export const FREEZE_OVERLAY_ID = '_freeze';
@@ -751,6 +752,7 @@ interface StoredProject {
   style?: TextStyle;
   cut?: Cut | null;
   freeze?: Freeze | null;
+  endTitles?: EndTitles | null;
   source?: { key?: string; width?: number; height?: number; durationSec?: number } | null;
   render?: { renderId?: string | null };
 }
@@ -804,6 +806,11 @@ export async function renderVideoText(
       const freezeProblem = Number.isFinite(storedDuration) ? validateFreeze(freeze, storedDuration) : 'The freeze cannot be read — set it again.';
       if (freezeProblem) throw new VideoTextFailure(freezeProblem);
     }
+    const endTitles = project.endTitles ?? null;
+    if (endTitles) {
+      const endProblem = Number.isFinite(storedDuration) ? validateEndTitles(endTitles, storedDuration) : 'The end titles cannot be read — set them again.';
+      if (endProblem) throw new VideoTextFailure(endProblem);
+    }
 
     // ---- segmenting
     // Claim: only the first delivery of this render moves it off `queued`. A
@@ -818,7 +825,7 @@ export async function renderVideoText(
     // R1: the route cannot know the browser's PNG uploads finished; check every one before any work.
     // The logo (when this project shows it) is one more full-frame PNG, on for the whole video.
     const withLogo = logoShown(project.style);
-    for (const id of [...blocks.map((b) => b.id), ...(withLogo ? [LOGO_OVERLAY_ID] : [])]) {
+    for (const id of [...blocks.map((b) => b.id), ...(withLogo ? [LOGO_OVERLAY_ID] : []), ...(endTitles ? [END_TITLES_OVERLAY_ID] : [])]) {
       try {
         await bounded(deps, (abortSignal) =>
           deps.s3.send(new HeadObjectCommand({ Bucket: deps.bucket, Key: overlayKey(projectId, renderId, id) }), { abortSignal }));
@@ -937,10 +944,13 @@ export async function renderVideoText(
     const logoSpan = { id: LOGO_OVERLAY_ID, startSec: 0, endSec: Number.POSITIVE_INFINITY, fadeSec: 0 };
     // The held frame: lowest of all, from its frame to the end.
     const freezeSpan = freeze ? { id: FREEZE_OVERLAY_ID, startSec: freeze.atSec, endSec: Number.POSITIVE_INFINITY, fadeSec: 0 } : null;
+    // Fades in over a second from its start; ends past the video so it never fades out.
+    const endSpan = endTitles ? endTitlesSpan(endTitles, storedDuration) : null;
     const specs: ChunkSpec[] = kept.map(({ entry, trim }, index) => ({
       projectId, renderId, index,
       segKey: segmentKey(projectId, renderId, index),
-      overlays: overlaysForSegment([...(freezeSpan ? [freezeSpan] : []), ...(withLogo ? [logoSpan] : []), ...timed], entry),
+      // The end titles LAST, so their black frame covers the picture, the logo and the text.
+      overlays: overlaysForSegment([...(freezeSpan ? [freezeSpan] : []), ...(withLogo ? [logoSpan] : []), ...timed, ...(endSpan ? [endSpan] : [])], entry),
       width: video!.width, height: video!.height,
       fps: video!.fps!,
       ...(trim ? { trim } : {}),
