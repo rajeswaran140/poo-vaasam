@@ -230,3 +230,14 @@ describe('registry', () => {
     expect(getVideoProvider('grok')).toBeInstanceOf(GrokProvider);
   });
 });
+
+describe('720p story setting', () => {
+  it('asks for 720p with no faces when the request says 720p, and prices it the same way', () => {
+    const r = { ...base, firstFrameUrl: 'https://s3/f.jpg', quality: '720p' as const };
+    expect(buildGrokVideoBody(r).resolution).toBe('720p');
+    expect(new GrokProvider().estimateCostUsd(r)).toBeCloseTo(0.14 * 6 + 0.01, 6);
+  });
+  it('without it, a picture-only clip stays 1080p', () => {
+    expect(buildGrokVideoBody({ ...base, quality: '1080p' }).resolution).toBe('1080p');
+  });
+});

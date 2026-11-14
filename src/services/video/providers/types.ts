@@ -21,6 +21,7 @@ export interface VideoGenRequest {
   aspectRatio: AspectRatio;
   referenceImageUrls?: string[];   // short-lived signed S3 URLs
   firstFrameUrl?: string;          // a STILL candidate pinned as the opening frame
+  quality?: '720p' | '1080p';      // the story's clip quality; omitted = 1080p where allowed
   seed?: number;
   signal?: AbortSignal;
 }

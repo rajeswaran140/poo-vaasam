@@ -28,6 +28,7 @@ import {
   type GenJobStatus,
   type RenderJob,
   type RenderStatus,
+  type ClipQuality,
   type Scene,
   type Shot,
   type StoryboardDraft,
@@ -191,6 +192,8 @@ function toStory(item: Record<string, any>): VisualStory {
     windowEndSec: item.windowEndSec,
     // Stories made before Style existed have none.
     style: typeof item.style === 'string' ? item.style : '',
+    // Stories made before the setting existed are 1080p.
+    clipQuality: item.clipQuality === '720p' ? '720p' : '1080p',
     budgetUsdCap: item.budgetUsdCap,
     spentUsd: item.spentUsd ?? 0,
     reservedUsd: item.reservedUsd ?? 0,
@@ -217,6 +220,7 @@ export class VisualStoryRepository {
         windowStartSec: input.windowStartSec,
         windowEndSec: input.windowEndSec,
         style: input.style ?? '',
+        clipQuality: '1080p',
         budgetUsdCap: round6(input.budgetUsdCap ?? DEFAULT_BUDGET_USD_CAP),
         spentUsd: 0,
         reservedUsd: 0,
@@ -289,7 +293,7 @@ export class VisualStoryRepository {
    */
   async patch(
     vsId: string,
-    fields: { title?: string; status?: VisualStoryStatus; budgetUsdCap?: number; style?: string }
+    fields: { title?: string; status?: VisualStoryStatus; budgetUsdCap?: number; style?: string; clipQuality?: ClipQuality }
   ): Promise<void> {
     try {
       const names: Record<string, string> = { '#updatedAt': 'updatedAt' };
@@ -309,6 +313,11 @@ export class VisualStoryRepository {
         names['#style'] = 'style';
         values[':style'] = fields.style;
         sets.push('#style = :style');
+      }
+      if (fields.clipQuality !== undefined) {
+        names['#clipQuality'] = 'clipQuality';
+        values[':clipQuality'] = fields.clipQuality;
+        sets.push('#clipQuality = :clipQuality');
       }
       if (fields.budgetUsdCap !== undefined) {
         names['#cap'] = 'budgetUsdCap';

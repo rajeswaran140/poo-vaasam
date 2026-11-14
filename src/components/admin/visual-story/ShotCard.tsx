@@ -61,7 +61,7 @@ export function ShotCard({ vsId, shot, story, characters, candidates, jobs, sele
   const [confirming, setConfirming] = useState(false);
   const [pending, setPending] = useState(false);
   // Resolution and images as the clip would be sent now (faces → 720p).
-  const clipPrice = clipPriceUsd({ characters, candidates }, shot);
+  const clipPrice = clipPriceUsd({ characters, candidates, clipQuality: story.clipQuality }, shot);
   const [picking, setPicking] = useState(false);
   const [pinning, setPinning] = useState(false);
   const [uploading, setUploading] = useState(false);

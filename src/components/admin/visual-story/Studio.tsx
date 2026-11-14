@@ -34,6 +34,7 @@ import { SpendBar } from './SpendBar';
 import { StoryActions } from './StoryActions';
 import { RenderPanel } from './RenderPanel';
 import { StyleField } from './StyleField';
+import { ClipQualityField } from './ClipQualityField';
 import { StepsBar } from './StepsBar';
 import { TimelineStrip } from './TimelineStrip';
 import { storyProgress } from '@/lib/visual-story-progress';
@@ -223,6 +224,7 @@ export function Studio({ vsId }: { vsId: string }) {
         />
         <p className="text-sm text-gray-600 dark:text-gray-400">{`${story.aspectRatio} · ${story.status}`}</p>
         <StyleField vsId={vsId} style={story.style ?? ''} onChanged={refresh} />
+        <ClipQualityField vsId={vsId} quality={story.clipQuality ?? '1080p'} onChanged={refresh} />
       </header>
       <StepsBar progress={storyProgress({ story, shots, candidates, renders: tree.renders ?? [] })} />
       <TimelineStrip

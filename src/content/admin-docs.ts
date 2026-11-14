@@ -5446,6 +5446,8 @@ One full music video for a released song, from the lyrics to the finished MP4, w
 
 **What a 4-minute song costs:** every shot a clip is about **$34** with faces ticked (240 s × $0.14) or **$60** without (240 s × $0.25), plus about $0.50 of pictures and any retries; half clips, half pictures is about **$17–30**. The default $40 budget will not cover a whole song of clips. Raise the story's **Budget** first — the server will not spend past it.
 
+**Clip quality** (under Style) sets every clip to **1080p** (sharpest, $0.25/s) or **720p** (cheaper, $0.14/s, so a 4-minute song of clips is about $34 even without faces). A clip with faces ticked is 720p either way; clips already made keep theirs.
+
 **Before trusting the price:** after the first few clips, compare the xAI console's charges with the story's spent total (the Phase 4 exit check below). No full-song story has been rendered yet; the first one is also the first timing of a long render on the worker.
 
 ## From your own pictures, step by step

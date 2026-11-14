@@ -66,7 +66,7 @@ export function SpendBar({ vsId, story, shots, characters, candidates, onChanged
   const chosen = shots.filter((s) => s.selectedCandidateId).length;
   // Every clip is made at the video rate, whatever the shot's mode: 720p with
   // faces ticked, 1080p without, each from a starting picture.
-  const allClipsUsd = shots.reduce((t, s) => t + clipPriceUsd({ characters, candidates }, s, { assumeFirstFrame: true }), 0);
+  const allClipsUsd = shots.reduce((t, s) => t + clipPriceUsd({ characters, candidates, clipQuality: story.clipQuality }, s, { assumeFirstFrame: true }), 0);
   const cap = story.budgetUsdCap;
   const pct = (n: number) => (cap > 0 ? Math.min(100, (n / cap) * 100) : 100);
 

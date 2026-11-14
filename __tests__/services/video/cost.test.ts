@@ -111,3 +111,15 @@ describe('usdFromXaiTicks', () => {
     for (const bad of [undefined, null, -1, Number.NaN, '376', 2e12]) expect(usdFromXaiTicks(bad)).toBeNull();
   });
 });
+
+describe('720p for any clip (story setting, 2026-11-14)', () => {
+  it('a story set to 720p makes every clip at 720p, faces or not', () => {
+    expect(grokVideoResolution(0, '720p')).toBe('720p');
+    expect(grokVideoResolution(0, '1080p')).toBe('1080p');
+    expect(grokVideoResolution(2, '1080p')).toBe('720p');
+  });
+  it('prices a 720p clip without faces at $0.14/s + images (7 s + picture = $0.99)', () => {
+    expect(grokVideoCostUsd({ durationSec: 7, referenceCount: 0, hasFirstFrame: true, quality: '720p' })).toBeCloseTo(0.99, 6);
+    expect(grokVideoCostUsd({ durationSec: 7, referenceCount: 0, hasFirstFrame: true })).toBeCloseTo(1.76, 6);
+  });
+});

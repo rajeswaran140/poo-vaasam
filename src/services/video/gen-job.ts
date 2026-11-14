@@ -49,7 +49,7 @@ export const NO_LIP_MOVEMENT =
 /** The parts of `loadTree` a video request needs. */
 export interface VideoRequestTree {
   /** `style` is optional only for callers built before Style existed. */
-  story: Pick<VisualStory, 'aspectRatio'> & { style?: string };
+  story: Pick<VisualStory, 'aspectRatio'> & { style?: string; clipQuality?: VisualStory['clipQuality'] };
   characters: Character[];
   candidates: Candidate[];
 }
@@ -99,6 +99,7 @@ export async function buildVideoRequest(tree: VideoRequestTree, shot: Shot): Pro
     aspectRatio: tree.story.aspectRatio,
     ...(firstFrameUrl ? { firstFrameUrl } : {}),
     ...(referenceImageUrls.length ? { referenceImageUrls } : {}),
+    ...(tree.story.clipQuality === '720p' ? { quality: '720p' as const } : {}),
   };
 }
 

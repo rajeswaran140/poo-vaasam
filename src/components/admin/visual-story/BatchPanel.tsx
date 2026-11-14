@@ -132,7 +132,7 @@ export function BatchPanel({ vsId, story, shots, candidates, characters, genJobs
         (kind === 'pictures'
           ? estimateCostUsd('grok', 'STILL', s.durationSec)
           : // Every batch clip starts from its picture (shotsNeedingVideo), pinned first if need be.
-            clipPriceUsd({ characters, candidates }, s, { assumeFirstFrame: true })),
+            clipPriceUsd({ characters, candidates, clipQuality: story.clipQuality }, s, { assumeFirstFrame: true })),
       0
     );
   const picturePrice = priceOf('pictures', pictureShots);
