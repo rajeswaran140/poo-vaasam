@@ -14,7 +14,7 @@ jest.mock('@anthropic-ai/sdk', () => ({
   }),
 }));
 
-import { generateStoryboard, SYSTEM_PROMPT } from '@/services/ai/storyboarder';
+import { generateStoryboard, maxScenesFor, SYSTEM_PROMPT } from '@/services/ai/storyboarder';
 import type { StoryboardDraft } from '@/types/visualStory';
 
 const originalEnv = process.env.ANTHROPIC_API_KEY;
@@ -236,4 +236,51 @@ it('tells the model the story\'s style, and not to repeat it in every prompt', a
   create.mockResolvedValue(toolResponse(board([15], [15])));
   await generateStoryboard(req);
   expect(create.mock.calls[0][0].messages[0].content).not.toContain('Visual style');
+});
+
+describe('scene count (a 5:24 song drafted 13+ scenes and was refused, 2026-11-14)', () => {
+  const scenes = (n: number, perScene: number[]) => ({
+    characters: [],
+    scenes: Array.from({ length: n }, (_, i) => ({
+      heading: `Scene ${i + 1}`,
+      summary: 'A scene.',
+      shots: perScene.map((d) => shot(d, { characterNames: [] })),
+    })),
+  });
+
+  it('accepts more than 12 scenes on a long window', async () => {
+    // 18 scenes x 18 s = 324 s, the new song's length.
+    create.mockResolvedValue(toolResponse(scenes(18, [9, 9])));
+    const r = await generateStoryboard({ ...req, windowSec: 324 });
+    expect(r).toMatchObject({ ok: true });
+    if (r.ok) expect(r.data.scenes).toHaveLength(17);
+  });
+
+  it('folds scenes past the limit into the last kept scene, keeping every shot in order', async () => {
+    create.mockResolvedValue(toolResponse(scenes(20, [6, 4])));
+    const r = await generateStoryboard({ ...req, windowSec: 200 });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.data.scenes).toHaveLength(12);
+    expect(r.data.scenes[11].heading).toBe('Scene 12');
+    expect(r.data.scenes[11].shots).toHaveLength(2 * 9);
+    expect(durations(r)).toHaveLength(40);
+    expect(durations(r).reduce((a, b) => a + b, 0)).toBe(200);
+  });
+
+  it('tells Claude the scene limit for this window', async () => {
+    create.mockResolvedValue(toolResponse(scenes(2, [9, 9])));
+    await generateStoryboard({ ...req, windowSec: 324 });
+    expect(create.mock.calls[0][0].messages[0].content).toContain('Group the shots into at most 17 scenes.');
+    expect(SYSTEM_PROMPT).not.toContain('1-12 scenes');
+  });
+});
+
+describe('maxScenesFor', () => {
+  it('is 12 up to 4 minutes, then one more scene per 20 s', () => {
+    expect(maxScenesFor(30)).toBe(12);
+    expect(maxScenesFor(240)).toBe(12);
+    expect(maxScenesFor(324)).toBe(17);
+    expect(maxScenesFor(420)).toBe(21);
+  });
 });

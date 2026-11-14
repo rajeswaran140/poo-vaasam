@@ -25,6 +25,21 @@ export function targetShotCount(windowSec: number): number {
   return Math.max(1, Math.round(windowSec / 7));
 }
 
+/**
+ * The most scenes a draft keeps: 12 up to a 4-minute window, then one more per
+ * 20 s (a 5:24 song drafted 13+ and was refused outright, 2026-11-14).
+ */
+export function maxScenesFor(windowSec: number): number {
+  return Math.max(12, Math.ceil(windowSec / 20));
+}
+
+/** Scenes past the limit join the last kept scene, shots in order: a long draft is never thrown away for this. */
+function foldScenes(data: StoryboardOutput, max: number): void {
+  if (data.scenes.length <= max) return;
+  const extra = data.scenes.splice(max);
+  data.scenes[max - 1].shots.push(...extra.flatMap((s) => s.shots));
+}
+
 export const SYSTEM_PROMPT = `You are a film storyboard artist. Given song lyrics, a window length in seconds and an aspect ratio, you design a visual storyboard by calling the ${TOOL_NAME} tool. Provide your entire answer as the tool's arguments — do not write any prose.
 
 EVERY SONG IS ITS OWN WORLD:
@@ -35,7 +50,7 @@ EVERY SONG IS ITS OWN WORLD:
 SHOTS:
 - Use shots averaging about 7 seconds (5-10 s); a long window gets more shots, not longer ones. Aim for the shot count the request gives.
 - Keep each visual prompt under 50 words: one clear picture, not a paragraph.
-- Group shots into 1-12 scenes, each with a short heading and a one-or-two sentence summary, following the emotional arc of the lyrics.
+- Group shots into scenes (the user message gives the most allowed), each with a short heading and a one-or-two sentence summary, following the emotional arc of the lyrics.
 - Each shot has an integer durationSec between 1 and 15, a mode (STILL by default; MOTION only where movement carries the moment; HERO sparingly for the single most important shot), a concrete visualPrompt describing what the camera sees, and the names of the characters present.
 - The durations of ALL shots, across all scenes, MUST add up to exactly the window length in seconds. Check your arithmetic before answering.
 - Compose every shot for the requested aspect ratio (9:16 is tall and vertical: stack subjects, favour close and medium framing; 16:9 is wide: use depth and horizontal composition).
@@ -140,6 +155,7 @@ export async function generateStoryboard(
     `Window length: ${windowSec} seconds (shot durations must sum to exactly ${windowSec}).`,
     // Bounds the output: ~250 tokens a shot must fit draftMaxOutputTokens.
     `Aim for about ${targetShotCount(windowSec)} shots.`,
+    `Group the shots into at most ${maxScenesFor(windowSec)} scenes.`,
     // Owners often paste the whole song for a short window; the window still sets the length.
     `The lyrics may cover more than the window: picture the part that fits, and keep the total at ${windowSec} seconds.`,
     `Aspect ratio: ${aspectRatio}`,
@@ -219,6 +235,8 @@ export async function generateStoryboard(
     console.error('[ai/storyboarder] tool output failed schema validation:', parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
     return { ok: false, code: 'bad_response', error: 'The AI returned an incomplete storyboard. Please try again.', usage };
   }
+
+  foldScenes(parsed.data, maxScenesFor(windowSec));
 
   const shotsSec = parsed.data.scenes.flatMap((s) => s.shots.map((x) => x.durationSec));
   if (!repairTiling(parsed.data, windowSec)) {
