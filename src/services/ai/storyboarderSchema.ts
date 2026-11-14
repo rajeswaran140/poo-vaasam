@@ -31,7 +31,9 @@ export const storyboardCharacterSchema = z.object({
 
 export const storyboardOutputSchema = z.object({
   characters: z.array(storyboardCharacterSchema).max(6).default([]),
-  scenes: z.array(storyboardSceneSchema).min(1).max(12),
+  // No upper bound here: a long song needs more scenes, and the drafter folds
+  // any past maxScenesFor(window) into the last one instead of refusing the draft.
+  scenes: z.array(storyboardSceneSchema).min(1),
 });
 export type StoryboardOutput = z.infer<typeof storyboardOutputSchema>;
 
