@@ -40,7 +40,7 @@ import { clipFitFor, maxRowSecFor } from '@/lib/visual-story-clip-fit';
 import { grabLastFrame } from '@/lib/visual-story-last-frame';
 import { candidateKey } from '@/lib/visual-story-keys';
 import { followClips, postWithRetry, STOPPED, type Started } from '@/lib/visual-story-runner';
-import { estimateCostUsd } from '@/services/video/cost';
+import { clipPriceUsd } from '@/lib/visual-story-video-inputs';
 import { clipRowSeconds, readClipDuration } from '@/lib/visual-story-clip-length';
 import { candIdForJob, OWN_CLIP_PROMPT, roundTenth, sameSec } from '@/types/visualStory';
 import type { Candidate, Character, GenJob, Scene, Shot, VisualStory } from '@/types/visualStory';
@@ -161,7 +161,10 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
     return needsClip(prev) || s.chainedFromCandId !== clipOf(prev)?.candId;
   };
   const toAnimate = rows.filter(needsClip);
-  const price = toAnimate.reduce((n, s) => n + estimateCostUsd('grok', 'HERO', Math.ceil(s.durationSec)), 0);
+  // Every clip starts from a frame sent with it: a chained row's (the previous clip's end) and a
+  // row's own picture are both pinned just before its clip, so price that frame too.
+  const priceOf = (s: Shot) => clipPriceUsd({ characters, candidates }, s, { assumeFirstFrame: chained(s) || !!picOf(s) });
+  const price = toAnimate.reduce((n, s) => n + priceOf(s), 0);
   const missing = rows.filter((s) => (isOwn(s) ? !ownClipOf(s) : !picOf(s) && !chained(s)));
   const fits = sameSec(total, windowSec);
   const after = story.spentUsd + story.reservedUsd + price;
@@ -750,7 +753,7 @@ export function PicturePanel({ vsId, story, scenes, shots, candidates, genJobs, 
                       className="rounded-md border border-gray-300 px-2 py-1 dark:border-gray-600 dark:bg-gray-800"
                     >
                       <option value="still">Still (slow zoom, free)</option>
-                      <option value="moving">{`Moving (${usd(estimateCostUsd('grok', 'HERO', Math.ceil(s.durationSec)))})`}</option>
+                      <option value="moving">{`Moving (${usd(priceOf(s))})`}</option>
                     </select>
                     {isMoving(s) && clipOf(s) && !needsClip(s) && <span className="text-green-700 dark:text-green-400">Clip made</span>}
                     {isMoving(s) && staleLengthOf(s) !== null && (

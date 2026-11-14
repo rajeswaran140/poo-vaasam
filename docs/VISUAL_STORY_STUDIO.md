@@ -32,7 +32,7 @@ Once a story has shots, **Check storyboard** sits above them. Press it before yo
 ### 2b-bis. Video from your pictures
 Instead of a draft (or beside one), **Video from your pictures** builds the story from your own pictures.
 - **Add pictures** takes several JPEG or PNG files at once; each becomes a shot, in order (a new story gets a scene called "Your pictures"). Free.
-- Each row: the picture, its **seconds** (1-15), and **Still** (a slow zoom in the render, free) or **Moving** (Grok animates it starting from your picture, $0.08 a second). A moving row has **How it moves**, a short prompt (pre-filled: gentle, natural movement, keep the picture as it is).
+- Each row: the picture, its **seconds** (1-15), and **Still** (a slow zoom in the render, free) or **Moving** (Grok animates it starting from your picture, $0.14–$0.25 a second). A moving row has **How it moves**, a short prompt (pre-filled: gentle, natural movement, keep the picture as it is).
 - **Total N s of M s** must match the story's length; **Fit to M s** scales the rows (1-15 s each). Your own clips and clips already made keep their length, because stretching a made clip freezes its last frame and shrinking it cuts it.
 - Changing the seconds of a row whose clip is made (clips made from 2026-11-13 on record their length) marks the clip out of date: the row says *Its clip was made for 8 s…*, and **Make the video** makes it again at the new length, priced, unless you set the seconds back.
 - **Stop** shows for the whole of **Make the video**. While clips are being made it lets them finish (they are already paid for) and starts no more; nothing renders. Keep the page open: leaving it also starts no more clips and does not render, though clips already started still finish.
@@ -73,7 +73,7 @@ The full path for a video made from your own pictures, with the same people in e
 ### 2c. Every shot at once
 Below the check, **Every shot** has two buttons; each shows how many shots and the total, and confirms with the story total first.
 - **Pictures for every shot** makes one picture ($0.02) for each shot that has none. The first picture of a shot is chosen for it.
-- **Videos for every shot** makes a clip ($0.08 a second) for each shot that has a chosen picture, no clip and none rendering; a shot with no picture is left out and counted ("N shots need a picture before their clips"). Each clip starts from that picture (a chosen still is set as the first frame first). You see the clips only after they are made, so try one or two by hand first.
+- **Videos for every shot** makes a clip ($0.14–$0.25 a second) for each shot that has a chosen picture, no clip and none rendering; a shot with no picture is left out and counted ("N shots need a picture before their clips"). Each clip starts from that picture (a chosen still is set as the first frame first). You see the clips only after they are made, so try one or two by hand first.
 - One shot at a time through the same routes as the shot cards, so the budget cap holds. Over the cap it stops and offers **Raise budget**; a shot that fails is named and the rest go on; **Stop** finishes the current shot and starts no more; once every clip has started there is nothing to stop, so it is hidden while they render. Clips already started keep rendering after Stop or leaving the page — open their scenes to see them.
 
 ### 3. Edit
@@ -107,7 +107,7 @@ Press **Make video (6 s · $0.48)** on a shot (the label shows that shot's lengt
 - A clip that has not finished after **1 hour** is ended and its price is counted as spent.
 - Clips are private; they are previewed through the admin only.
 
-**Before your first clip:** raise the story's **budget** in the bottom bar. Stories made earlier may have only $1, and a clip over the budget is refused. Each shot card shows what a clip of that shot costs: every clip is $0.08 a second, whatever the shot's mode. When a picture or clip would go over the budget, its message has a **Raise budget** button that takes you to the **Budget** field.
+**Before your first clip:** raise the story's **budget** in the bottom bar. Stories made earlier may have only $1, and a clip over the budget is refused. Each shot card shows what a clip of that shot costs, priced by `clipPriceUsd` from exactly what will be sent: $0.25/s at 1080p (no faces), $0.14/s at 720p (faces ticked), + $0.01 per image, seconds rounded up. When a picture or clip would go over the budget, its message has a **Raise budget** button that takes you to the **Budget** field.
 
 ### 6. Render the video
 The **Render video** panel under the title joins every shot's chosen picture or clip, in order, with the song's part the story covers, into one MP4.
@@ -131,15 +131,15 @@ The story's render covers the story's window. To play its clips under a **whole 
 | Claude storyboard draft | a few cents (the button shows a ≈$0.15 planning figure) |
 | Claude storyboard check | a few cents (the button shows the most it can cost) |
 | Grok still picture | $0.02 each |
-| Video clip | $0.08 per second (6 s = $0.48) |
+| Video clip | $0.25/s at 1080p, $0.14/s at 720p (faces ticked), + $0.01 per image sent; seconds rounded up (6 s, 2 faces + picture = $0.87). Settled at xAI's own `cost_in_usd_ticks` when it reports one. |
 
 - **Hard budget per story**, default $40. Change it with the **Budget** field in the bottom bar. The server refuses any generation that would exceed it. A budget of **0** freezes the story. You cannot set it lower than what is already spent or held for a running request; that refusal shows next to the field.
 - A picture the content filter **refused is still charged** ($0.02 — xAI bills it) and counts toward the story total. A picture that fails for any other reason (Grok busy, timeout, not configured) is not charged.
 - A draft that fails before Claude answers is not charged; one whose answer was unusable is charged for the tokens used.
 - A rate limit (20 requests a minute) applies to the studio's actions.
 - A clip is charged when Grok finishes it, including one its content filter refused. A clip that fails or expires is not charged, and a clear refusal is not charged; if Grok doesn't answer in time, the clip's cost is counted because Grok may still make it. A cancelled clip is **always counted**, and so is one still unfinished after an hour or one that finished but could not be saved after 10 tries.
-- A 30 s Short costs about **$2.40 for one full pass** (30 s × $0.08); every retry costs again.
-- A 3-minute video is about $14 if every shot is a clip, about $7–8 half clips and half pictures, plus retries. Rendering it is free.
+- A 30 s Short costs about **$4.20–7.50 for one full pass** (30 s × $0.14–0.25); every retry costs again.
+- A 3-minute video is about $25–45 if every shot is a clip, about $13–23 half clips and half pictures, plus retries. Rendering it is free.
 
 ## Where files live
 

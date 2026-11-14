@@ -19,8 +19,9 @@ import { useEffect, useRef, useState } from 'react';
 import { delay } from '@/lib/poll-job';
 import { followClips, postWithRetry, shotLabel as label, STOPPED, type Started } from '@/lib/visual-story-runner';
 import { estimateCostUsd } from '@/services/video/cost';
+import { clipPriceUsd } from '@/lib/visual-story-video-inputs';
 import { OWN_CLIP_PROMPT } from '@/types/visualStory';
-import type { Candidate, GenJob, Shot, VisualStory } from '@/types/visualStory';
+import type { Candidate, Character, GenJob, Shot, VisualStory } from '@/types/visualStory';
 import { RaiseBudgetButton, shotKey, usd } from './ui-utils';
 
 /** Gap between paid requests, within the 20-a-minute route limit. */
@@ -85,12 +86,14 @@ interface Props {
   story: VisualStory;
   shots: Shot[];
   candidates: Candidate[];
+  /** The cast: a row with faces ticked is made at 720p, which prices differently. */
+  characters: Character[];
   genJobs: GenJob[];
   /** Reload the tree (pictures, clips, spend). */
   onChanged: () => void;
 }
 
-export function BatchPanel({ vsId, story, shots, candidates, genJobs, onChanged }: Props) {
+export function BatchPanel({ vsId, story, shots, candidates, characters, genJobs, onChanged }: Props) {
   const [confirming, setConfirming] = useState<Kind | null>(null);
   const [running, setRunning] = useState<Kind | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
@@ -123,7 +126,15 @@ export function BatchPanel({ vsId, story, shots, candidates, genJobs, onChanged 
   const stillCount = withoutClip.filter((s) => !moving(s)).length;
   const chainedCount = chainedShots(shots).filter((s) => withoutClip.includes(s)).length;
   const priceOf = (kind: Kind, list: Shot[]) =>
-    list.reduce((n, s) => n + estimateCostUsd('grok', kind === 'pictures' ? 'STILL' : 'HERO', Math.ceil(s.durationSec)), 0);
+    list.reduce(
+      (n, s) =>
+        n +
+        (kind === 'pictures'
+          ? estimateCostUsd('grok', 'STILL', s.durationSec)
+          : // Every batch clip starts from its picture (shotsNeedingVideo), pinned first if need be.
+            clipPriceUsd({ characters, candidates }, s, { assumeFirstFrame: true })),
+      0
+    );
   const picturePrice = priceOf('pictures', pictureShots);
   const videoPrice = priceOf('videos', videoShots);
 

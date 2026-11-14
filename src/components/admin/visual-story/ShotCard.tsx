@@ -20,6 +20,7 @@ import { useRef, useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
 import { putToS3 } from '@/lib/mastering-upload-client';
 import { estimateCostUsd } from '@/services/video/cost';
+import { clipPriceUsd } from '@/lib/visual-story-video-inputs';
 import type { Candidate, Character, GenJob, Shot, VisualStory } from '@/types/visualStory';
 import { formatMss } from './WindowPicker';
 import { RaiseBudgetButton, Thumb, VideoThumb, shotKey, usd } from './ui-utils';
@@ -59,6 +60,8 @@ interface Props {
 export function ShotCard({ vsId, shot, story, characters, candidates, jobs, selected, onEdit, onChanged }: Props) {
   const [confirming, setConfirming] = useState(false);
   const [pending, setPending] = useState(false);
+  // Resolution and images as the clip would be sent now (faces → 720p).
+  const clipPrice = clipPriceUsd({ characters, candidates }, shot);
   const [picking, setPicking] = useState(false);
   const [pinning, setPinning] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -183,7 +186,7 @@ export function ShotCard({ vsId, shot, story, characters, candidates, jobs, sele
       )}
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-        <span>{`${shot.durationSec} s · clip ${usd(estimateCostUsd('grok', 'HERO', Math.ceil(shot.durationSec)))}`}</span>
+        <span>{`${shot.durationSec} s · clip ${usd(clipPrice)}`}</span>
         <button type="button" onClick={onEdit} className="min-h-11 min-w-11 text-blue-700 hover:underline lg:min-h-0 lg:min-w-0 dark:text-blue-400">
           Edit
         </button>
@@ -251,6 +254,7 @@ export function ShotCard({ vsId, shot, story, characters, candidates, jobs, sele
         shotKey={key}
         label={label}
         durationSec={shot.durationSec}
+        priceUsd={clipPrice}
         story={story}
         jobs={jobs}
         onChanged={onChanged}

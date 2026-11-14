@@ -90,8 +90,8 @@ describe('Studio — shot cards', () => {
     routes();
     render(<Studio vsId={VS} />);
     const c = await card('Shot 1.2');
-    // Every clip is made at the $0.08/s video rate, whatever the shot's mode: 28 s = $2.24.
-    expect(within(c).getByText('28 s · clip $2.24')).toBeInTheDocument();
+    // No faces and no picture yet: 1080p, 28 s × $0.25 = $7.00 (xAI's real rate, not the old $0.08/s).
+    expect(within(c).getByText('28 s · clip $7.00')).toBeInTheDocument();
     expect(within(c).queryByText('STILL')).not.toBeInTheDocument();
     expect(c).not.toHaveTextContent(/estimate/);
     expect(within(c).getByText('Prompt 1.2')).toBeInTheDocument();
@@ -198,8 +198,8 @@ describe('Studio — spend and tiling', () => {
   it('says what all the shots would cost as clips, and no longer promises a render', async () => {
     routes();
     render(<Studio vsId={VS} />);
-    // 30 + 28 = 58 s × $0.08 = $4.64.
-    expect(await screen.findByText('All 2 shots as clips: about $4.64')).toBeInTheDocument();
+    // Each from a picture, no faces (1080p): (30 × $0.25 + $0.01) + (28 × $0.25 + $0.01) = $14.52.
+    expect(await screen.findByText('All 2 shots as clips: about $14.52')).toBeInTheDocument();
     expect(screen.getByRole('contentinfo', { name: 'Spend and timeline' })).not.toHaveTextContent(/render/);
   });
 
@@ -529,7 +529,7 @@ describe('Studio — video clips', () => {
     mode: 'HERO', s3Key: `audio/mastering/visual-story/${VS}/candidates/${VCD}.mp4`, costUsd: 0.48, createdAt: '2026-11-05',
   };
 
-  /** Shot 1.1 lasts 6 s, so its clip costs 6 × $0.08 = $0.48. */
+  /** Shot 1.1 lasts 6 s with no faces or picture: 1080p, 6 × $0.25 = $1.50. */
   function vtree(over: { jobs?: unknown[]; candidates?: unknown[]; firstFrame?: string; spentUsd?: number } = {}) {
     const t = tree({ spentUsd: over.spentUsd });
     t.shots = [
@@ -563,18 +563,18 @@ describe('Studio — video clips', () => {
   const polls = () => mockFetch.mock.calls.filter(([u, i]) => u === jobUrl && !i?.method);
 
   async function startVideo(c: HTMLElement) {
-    fireEvent.click(within(c).getByRole('button', { name: 'Make video (6 s · $0.48)' }));
+    fireEvent.click(within(c).getByRole('button', { name: 'Make video (6 s · $1.50)' }));
     fireEvent.click(within(within(c).getByRole('dialog')).getByRole('button', { name: 'Confirm' }));
   }
 
-  it('confirm shows the $0.48 price and the story total after this call; nothing is sent yet', async () => {
+  it('confirm shows the $1.50 price and the story total after this call; nothing is sent yet', async () => {
     videoRoutes();
     render(<Studio vsId={VS} />);
     const c = await card('Shot 1.1');
-    fireEvent.click(within(c).getByRole('button', { name: 'Make video (6 s · $0.48)' }));
+    fireEvent.click(within(c).getByRole('button', { name: 'Make video (6 s · $1.50)' }));
     const dialog = within(c).getByRole('dialog');
-    expect(dialog).toHaveTextContent('$0.48');
-    expect(dialog).toHaveTextContent('Story total after this: $0.90 of $40.00');
+    expect(dialog).toHaveTextContent('$1.50');
+    expect(dialog).toHaveTextContent('Story total after this: $1.92 of $40.00');
     expect(calls('/video')).toHaveLength(0);
   });
 
@@ -597,7 +597,7 @@ describe('Studio — video clips', () => {
     videoRoutes({ start: () => pending.promise });
     render(<Studio vsId={VS} />);
     const c = await card('Shot 1.1');
-    fireEvent.click(within(c).getByRole('button', { name: 'Make video (6 s · $0.48)' }));
+    fireEvent.click(within(c).getByRole('button', { name: 'Make video (6 s · $1.50)' }));
     const confirm = within(within(c).getByRole('dialog')).getByRole('button', { name: 'Confirm' });
     act(() => {
       confirm.click();
@@ -631,7 +631,7 @@ describe('Studio — video clips', () => {
       });
       expect(polls()).toHaveLength(2);
       await waitFor(() => expect(within(c).queryByText('Rendering… about 1–3 minutes')).not.toBeInTheDocument());
-      expect(within(c).getByRole('button', { name: 'Make video (6 s · $0.48)' })).toBeEnabled();
+      expect(within(c).getByRole('button', { name: 'Make video (6 s · $1.50)' })).toBeEnabled();
       expect(c.querySelector('video')).not.toBeNull();
       await act(async () => {
         await jest.advanceTimersByTimeAsync(20_000);
@@ -665,7 +665,7 @@ describe('Studio — video clips', () => {
     expect(await within(c).findByText(msg)).toBeInTheDocument();
     expect(screen.getAllByText(msg)).toHaveLength(1);
     expect(within(await card('Shot 1.2')).queryByText(msg)).not.toBeInTheDocument();
-    await waitFor(() => expect(within(c).getByRole('button', { name: 'Make video (6 s · $0.48)' })).toBeEnabled());
+    await waitFor(() => expect(within(c).getByRole('button', { name: 'Make video (6 s · $1.50)' })).toBeEnabled());
   });
 
   it('a 402 from the make-video route renders inside the card', async () => {
@@ -896,7 +896,7 @@ describe('Studio — video clips', () => {
     render(<Studio vsId={VS} />);
     const c = await card('Shot 1.1');
     expect(within(c).getByText(`Last clip failed: ${msg}`)).toBeInTheDocument();
-    expect(within(c).getByRole('button', { name: 'Make video (6 s · $0.48)' })).toBeEnabled();
+    expect(within(c).getByRole('button', { name: 'Make video (6 s · $1.50)' })).toBeEnabled();
     expect(polls()).toHaveLength(0);
   });
 

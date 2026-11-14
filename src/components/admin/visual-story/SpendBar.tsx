@@ -13,9 +13,9 @@
 
 import { useState } from 'react';
 import { adminFetch } from '@/lib/client-auth';
-import { estimateCostUsd } from '@/services/video/cost';
 import { sameSec } from '@/types/visualStory';
-import type { Shot, VisualStory } from '@/types/visualStory';
+import { clipPriceUsd } from '@/lib/visual-story-video-inputs';
+import type { Candidate, Character, Shot, VisualStory } from '@/types/visualStory';
 import { BUDGET_INPUT_ID, usd } from './ui-utils';
 
 const MAX_BUDGET_USD = 500;
@@ -24,10 +24,12 @@ interface Props {
   vsId: string;
   story: VisualStory;
   shots: Shot[];
+  characters: Character[];
+  candidates: Candidate[];
   onChanged: () => void;
 }
 
-export function SpendBar({ vsId, story, shots, onChanged }: Props) {
+export function SpendBar({ vsId, story, shots, characters, candidates, onChanged }: Props) {
   const [budget, setBudget] = useState(String(story.budgetUsdCap));
   const [saving, setSaving] = useState(false);
   const [budgetError, setBudgetError] = useState<string | null>(null);
@@ -62,8 +64,9 @@ export function SpendBar({ vsId, story, shots, onChanged }: Props) {
   const totalSec = Math.round(shots.reduce((t, s) => t + s.durationSec, 0) * 100) / 100;
   const tiles = sameSec(totalSec, windowSec);
   const chosen = shots.filter((s) => s.selectedCandidateId).length;
-  // Every clip is made at the video rate, whatever the shot's mode.
-  const allClipsUsd = shots.reduce((t, s) => t + estimateCostUsd('grok', 'HERO', Math.ceil(s.durationSec)), 0);
+  // Every clip is made at the video rate, whatever the shot's mode: 720p with
+  // faces ticked, 1080p without, each from a starting picture.
+  const allClipsUsd = shots.reduce((t, s) => t + clipPriceUsd({ characters, candidates }, s, { assumeFirstFrame: true }), 0);
   const cap = story.budgetUsdCap;
   const pct = (n: number) => (cap > 0 ? Math.min(100, (n / cap) * 100) : 100);
 

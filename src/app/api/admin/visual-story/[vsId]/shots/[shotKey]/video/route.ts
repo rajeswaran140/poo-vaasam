@@ -23,7 +23,6 @@ import { VisualStoryRepository } from '@/infrastructure/database/VisualStoryRepo
 import { getVideoProvider, type SubmitResult, type VideoGenRequest } from '@/services/video/providers';
 import { buildVideoRequest } from '@/services/video/gen-job';
 import { settleQuietly } from '@/services/video/storyboard-job';
-import { estimateCostUsd } from '@/services/video/cost';
 import { candIdForJob, isVsId, MAX_SHOT_SEC, newId, OWN_CLIP_PROMPT } from '@/types/visualStory';
 import type { GenJob } from '@/types/visualStory';
 import { fail, limitMutation, mapError, overBudget } from '@/lib/visual-story-route';
@@ -116,7 +115,8 @@ export async function POST(request: NextRequest, { params }: Ctx) {
       if (!(await provider.isConfigured())) return fail('Grok video generation is not configured.', 503);
       // Signed before reserving: a signing failure must not strand a reservation.
       videoReq = await buildVideoRequest(tree, shot);
-      est = estimateCostUsd('grok', 'HERO', Math.ceil(shot.durationSec));
+      // Priced from the request itself: resolution and images exactly as sent.
+      est = provider.estimateCostUsd(videoReq);
       reserved = await repo.reserve(vsId, est);
     } catch (err) {
       return mapError(err);

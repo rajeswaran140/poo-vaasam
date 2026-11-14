@@ -195,7 +195,7 @@ describe('advanceGenJob', () => {
       providerTaskId: 'req-1',
       mode: 'HERO',
       s3Key: KEY,
-      costUsd: 0.48,
+      costUsd: 0.9,
       createdAt: expect.any(String),
     });
 
@@ -206,7 +206,7 @@ describe('advanceGenJob', () => {
     expect(repo.transitionGenJob.mock.calls[0].slice(0, 4)).toEqual([VS, JOB, ['running'], 'succeeded']);
 
     expect(repo.settleGenJob).toHaveBeenCalledTimes(1);
-    expect(repo.settleGenJob).toHaveBeenCalledWith(VS, JOB, { reservedUsd: 0.48, billedUsd: 0.48 }); // reserved, not actualCostUsd
+    expect(repo.settleGenJob).toHaveBeenCalledWith(VS, JOB, { reservedUsd: 0.48, billedUsd: 0.9 }); // xAI's own charge, not the hold
     expectReleased();
     expect(out.status).toBe('succeeded');
   });
@@ -296,10 +296,10 @@ describe('advanceGenJob', () => {
     expect(repo.transitionGenJob).toHaveBeenCalledWith(VS, JOB, ['running'], 'failed', {
       code: 'upstream',
       error: COPY_FAILED_ERROR,
-      billedUsd: 0.48,
+      billedUsd: 0.9,
     });
     expect(repo.settleGenJob).toHaveBeenCalledTimes(1);
-    expect(repo.settleGenJob).toHaveBeenCalledWith(VS, JOB, { reservedUsd: 0.48, billedUsd: 0.48 });
+    expect(repo.settleGenJob).toHaveBeenCalledWith(VS, JOB, { reservedUsd: 0.48, billedUsd: 0.9 });
     expectReleased();
     expect(out.status).toBe('failed');
     expect(out.error).toBe(COPY_FAILED_ERROR);
@@ -413,7 +413,7 @@ describe('advanceGenJob', () => {
       expect(repo.transitionGenJob).toHaveBeenCalledWith(VS, JOB, ['running'], 'failed', {
         code: 'upstream',
         error: COPY_FAILED_ERROR,
-        billedUsd: 0.48,
+        billedUsd: 0.9,
       });
       expect(repo.settleGenJob).toHaveBeenCalledTimes(1);
       expect(out.error).toBe(COPY_FAILED_ERROR);
@@ -524,9 +524,9 @@ describe('I1 — a killed copy still counts; one advance fits a 22 s deadline', 
     expect(repo.transitionGenJob).toHaveBeenCalledWith(VS, JOB, ['running'], 'failed', {
       code: 'upstream',
       error: COPY_FAILED_ERROR,
-      billedUsd: 0.48,
+      billedUsd: 0.9,
     });
-    expect(repo.settleGenJob).toHaveBeenCalledWith(VS, JOB, { reservedUsd: 0.48, billedUsd: 0.48 });
+    expect(repo.settleGenJob).toHaveBeenCalledWith(VS, JOB, { reservedUsd: 0.48, billedUsd: 0.9 });
     expect(out.status).toBe('failed');
     expect(out.error).toBe(COPY_FAILED_ERROR);
   });
@@ -539,7 +539,7 @@ describe('I1 — a killed copy still counts; one advance fits a 22 s deadline', 
     expect(repo.transitionGenJob).toHaveBeenCalledWith(VS, JOB, ['running'], 'failed', {
       code: 'upstream',
       error: COPY_FAILED_ERROR,
-      billedUsd: 0.48,
+      billedUsd: 0.9,
     });
     expect(repo.settleGenJob).toHaveBeenCalledTimes(1);
     expect(out.error).toBe(COPY_FAILED_ERROR);
@@ -567,6 +567,24 @@ describe('I1 — a killed copy still counts; one advance fits a 22 s deadline', 
 });
 
 describe('I3 — settlement is atomic and repeatable (Ruling V10)', () => {
+  it('without xAI\'s figure, a finished clip bills the hold (over-record, never under)', async () => {
+    provider.poll.mockResolvedValue({ ...succeeded, actualCostUsd: null });
+    await advance(job());
+    expect(repo.settleGenJob).toHaveBeenCalledWith(VS, JOB, { reservedUsd: 0.48, billedUsd: 0.48 });
+    expect(repo.putCandidate.mock.calls[0][1].costUsd).toBe(0.48);
+  });
+
+  it('says so loudly when xAI charged more than was held (the story may now be over its cap)', async () => {
+    provider.poll.mockResolvedValue({ ...succeeded, actualCostUsd: 0.9 }); // the hold is 0.48
+    await advance(job());
+    expect(console.error).toHaveBeenCalledWith('visual-story video job: xAI charged more than was held', JOB, 0.9, 0.48);
+  });
+  it('is quiet when xAI charged the hold or less', async () => {
+    provider.poll.mockResolvedValue({ ...succeeded, actualCostUsd: 0.48 });
+    await advance(job());
+    expect(console.error).not.toHaveBeenCalledWith('visual-story video job: xAI charged more than was held', expect.anything(), expect.anything(), expect.anything());
+  });
+
   it('settles BEFORE releasing the lock', async () => {
     provider.poll.mockResolvedValue(succeeded);
     await advance(job());
@@ -577,7 +595,7 @@ describe('I3 — settlement is atomic and repeatable (Ruling V10)', () => {
     provider.poll.mockResolvedValue(succeeded);
     const out = await advance(job());
     expect(out.settledAt).toEqual(expect.any(String));
-    expect(out.billedUsd).toBe(0.48);
+    expect(out.billedUsd).toBe(0.9);
   });
 
   it('a kill after the won transition but before the settle: the next advance settles exactly once; a further one does nothing', async () => {

@@ -23,8 +23,10 @@ describe.each([
     expect(text).toMatch(/text[^.]*(warp|scrambl)/i);
   });
 
-  it('says a clip costs $0.08 a second whatever the mode, and names Raise budget', () => {
-    expect(text).toMatch(/\$0\.08 a second, whatever the shot's mode/);
+  it('gives xAI\'s real clip prices (not the old $0.08), and names Raise budget', () => {
+    expect(text).not.toMatch(/\$0\.08 a second/);
+    expect(text).toMatch(/\$0\.25/);
+    expect(text).toMatch(/\$0\.14/);
     expect(text).toContain('Raise budget');
   });
 
