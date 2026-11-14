@@ -44,6 +44,9 @@ export const OWN_CLIP_PROMPT = 'Your own clip.';
 // ---------------------------------------------------------------------------
 
 /** METADATA item of a visual story. */
+export const CLIP_QUALITIES = ['1080p', '720p'] as const;
+export type ClipQuality = (typeof CLIP_QUALITIES)[number];
+
 export interface VisualStory {
   vsId: string;
   masterJobId: string;
@@ -57,6 +60,8 @@ export interface VisualStory {
   windowEndSec: number;
   /** The look every picture and clip asks for (visual-story-style.ts); '' = none. */
   style: string;
+  /** Clip resolution for every clip: '720p' is cheaper ($0.14/s vs $0.25/s); a clip with faces is 720p either way. */
+  clipQuality: ClipQuality;
   budgetUsdCap: number;
   spentUsd: number;
   reservedUsd: number;

@@ -423,3 +423,20 @@ describe('style', () => {
     expect(p.conditionExpression).toBe('attribute_exists(PK)');
   });
 });
+
+describe('clip quality (720p for any clip, 2026-11-14)', () => {
+  it('reads a story without the setting as 1080p, and a saved 720p as 720p', async () => {
+    store.set(`VSTORY#${VS}|METADATA`, { PK: `VSTORY#${VS}`, SK: 'METADATA', vsId: VS, title: 't' });
+    expect((await repo.findById(VS))!.clipQuality).toBe('1080p');
+    store.set(`VSTORY#${VS}|METADATA`, { PK: `VSTORY#${VS}`, SK: 'METADATA', vsId: VS, title: 't', clipQuality: '720p' });
+    expect((await repo.findById(VS))!.clipQuality).toBe('720p');
+  });
+  it('patches the clip quality alone, guarded only by existence', async () => {
+    store.set(`VSTORY#${VS}|METADATA`, { PK: `VSTORY#${VS}`, SK: 'METADATA', committedUsd: 0 });
+    await repo.patch(VS, { clipQuality: '720p' });
+    const p = mockUpdate.mock.calls[0][0];
+    expect(p.updateExpression).toContain('#clipQuality = :clipQuality');
+    expect(p.expressionAttributeValues[':clipQuality']).toBe('720p');
+    expect(p.conditionExpression).toBe('attribute_exists(PK)');
+  });
+});

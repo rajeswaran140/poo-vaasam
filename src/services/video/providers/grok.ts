@@ -29,7 +29,7 @@ export function buildGrokVideoBody(req: VideoGenRequest): Record<string, unknown
     prompt: req.prompt,
     duration: req.durationSec,
     aspect_ratio: req.aspectRatio,
-    resolution: grokVideoResolution(refs.length),
+    resolution: grokVideoResolution(refs.length, req.quality),
     generate_audio: false,
   };
   if (req.firstFrameUrl) body.image = { url: req.firstFrameUrl };
@@ -107,6 +107,7 @@ export class GrokProvider implements VideoGenerationProvider {
       durationSec: req.durationSec,
       referenceCount: (req.referenceImageUrls ?? []).slice(0, MAX_REFERENCES).length,
       hasFirstFrame: !!req.firstFrameUrl,
+      quality: req.quality,
     });
   }
 

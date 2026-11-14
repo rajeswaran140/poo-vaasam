@@ -608,6 +608,13 @@ describe('buildVideoRequest', () => {
     expect(req.durationSec).toBe(6);
   });
 
+  it('asks for 720p when the story is set to 720p, and says nothing otherwise', async () => {
+    const base = tree();
+    const low = { ...base, story: { ...base.story, clipQuality: '720p' } } as unknown as Parameters<typeof buildVideoRequest>[0];
+    expect((await buildVideoRequest(low, base.shots[0] as never)).quality).toBe('720p');
+    expect((await buildVideoRequest(t(), base.shots[0] as never)).quality).toBeUndefined();
+  });
+
   it('no cast ⇒ the bare shot prompt, no references, no first frame', async () => {
     const req = await buildVideoRequest(t(), tree().shots[0] as never);
     expect(req.prompt).toBe(`A lamp on a window sill at dusk\n\n${NO_LIP_MOVEMENT}`);

@@ -40,3 +40,9 @@ describe('selectVideoInputs', () => {
     expect(got.firstFrame).toBeUndefined();
   });
 });
+
+describe('clipPriceUsd with the story set to 720p', () => {
+  it('prices a picture-only clip at 720p (6 s + picture = $0.85)', () => {
+    expect(clipPriceUsd({ characters: [], candidates: [still('cd_p')], clipQuality: '720p' }, shot({ selectedCandidateId: 'cd_p' }))).toBeCloseTo(0.85, 6);
+  });
+});

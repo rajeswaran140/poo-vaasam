@@ -422,3 +422,18 @@ describe('PATCH style — whitespace', () => {
     expect(repo.patch).toHaveBeenLastCalledWith(VS, { style: '' });
   });
 });
+
+describe('PATCH clipQuality (720p for any clip, 2026-11-14)', () => {
+  beforeEach(() => {
+    repo.findById.mockResolvedValue({ vsId: VS, committedUsd: 0, budgetUsdCap: 40 });
+  });
+  it('saves 720p or 1080p', async () => {
+    expect((await PATCH(req('PATCH', { clipQuality: '720p' }), ctx())).status).toBe(200);
+    expect(repo.patch).toHaveBeenLastCalledWith(VS, { clipQuality: '720p' });
+    expect((await PATCH(req('PATCH', { clipQuality: '1080p' }), ctx())).status).toBe(200);
+    expect(repo.patch).toHaveBeenLastCalledWith(VS, { clipQuality: '1080p' });
+  });
+  it('refuses any other value', async () => {
+    expect((await PATCH(req('PATCH', { clipQuality: '4k' }), ctx())).status).toBe(400);
+  });
+});

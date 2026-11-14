@@ -7,7 +7,7 @@
  */
 
 import { grokVideoCostUsd } from '@/services/video/cost';
-import type { Candidate, Character, Shot } from '@/types/visualStory';
+import type { Candidate, Character, ClipQuality, Shot } from '@/types/visualStory';
 
 /** xAI accepts at most this many `reference_images`. */
 export const MAX_REFERENCE_IMAGES = 14;
@@ -15,6 +15,8 @@ export const MAX_REFERENCE_IMAGES = 14;
 export interface VideoInputsTree {
   characters: Character[];
   candidates: Candidate[];
+  /** The story's clip quality (720p prices every clip at 720p). */
+  clipQuality?: ClipQuality;
 }
 
 export interface VideoInputs {
@@ -67,5 +69,6 @@ export function clipPriceUsd(tree: VideoInputsTree, shot: Shot, opts: { assumeFi
     durationSec: Math.ceil(shot.durationSec),
     referenceCount: refKeys.length,
     hasFirstFrame: !!firstFrame || !!opts.assumeFirstFrame,
+    quality: tree.clipQuality,
   });
 }

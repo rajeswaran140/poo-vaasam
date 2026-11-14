@@ -1,7 +1,7 @@
 /**
  * /api/admin/visual-story/[vsId]
  *   GET    → { success, data: tree }
- *   PATCH  { title?, status?, budgetUsdCap?, style? }
+ *   PATCH  { title?, status?, budgetUsdCap?, style?, clipQuality? }
  *   DELETE → removes the whole partition (refused while a clip renders, a draft runs or the video renders)
  */
 
@@ -15,7 +15,7 @@ import {
   NotFoundError,
   CapBelowCommittedError,
 } from '@/infrastructure/database/VisualStoryRepository';
-import { isVsId } from '@/types/visualStory';
+import { CLIP_QUALITIES, isVsId } from '@/types/visualStory';
 import { failRendering, hasRenderingVideo } from '@/lib/visual-story-route';
 import { sweepStaleDraftJobs } from '@/services/video/storyboard-job';
 import { isCheckInFlight, sweepStaleChecks } from '@/services/video/check-job';
@@ -36,6 +36,7 @@ const patchSchema = z
     budgetUsdCap: z.number().min(0).max(500).optional(),
     // '' clears it.
     style: styleSchema.optional(),
+    clipQuality: z.enum(CLIP_QUALITIES).optional(),
   })
   .strict()
   .refine((v) => Object.keys(v).length > 0, { message: 'Nothing to change' });

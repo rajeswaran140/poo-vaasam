@@ -101,6 +101,7 @@ Press **Make video (6 s · $0.48)** on a shot (the label shows that shot's lengt
 - **First frame:** a clip starts from the shot's **chosen picture** when that is a still or your upload. **Use as first frame** on another still starts it from that one instead; the shot panel shows **First frame** with the picture and a **Clear** button to go back to the chosen picture. A clip that starts from a picture also sends the photos of the characters in the shot (so their faces hold while they move; xAI accepts both together, tested 2026-11-10) and is then made at 720p; with no characters in the shot it sends the picture alone, at 1080p. With no chosen still, the characters' photos are sent alone, at 720p.
 - **Upload picture:** adds your own JPEG or PNG (up to 10 MB, e.g. a thumbnail) to a shot for free. It shows as **Yours** next to the stills and can be picked or used as the first frame. Use a picture already in the story's shape (crop a 16:9 thumbnail to 9:16 for a vertical story), and one without text: a title on it will likely warp once it moves.
 - **Character photos** of the characters in a shot are sent to Grok too. A clip that uses them is made at **720p** (without photos it is 1080p).
+- **Clip quality** (under Style): **1080p** (sharpest, $0.25/s) or **720p** (cheaper, $0.14/s) for every clip. A clip with faces ticked is 720p either way. Clips already made keep theirs; every price in the studio follows the setting.
 - A video **can't be made for a shot without a prompt** ("Write a visual prompt first.").
 - **One video per shot at a time** ("A video is already rendering for this shot."). Other shots can render at the same time.
 - While any clip is rendering you can't delete or reorder shots, delete scenes, apply a draft, or delete the story. You see "Wait for the video to finish first." Wait, or cancel the clip.
@@ -131,7 +132,7 @@ The story's render covers the story's window. To play its clips under a **whole 
 | Claude storyboard draft | a few cents (the button shows a ≈$0.15 planning figure) |
 | Claude storyboard check | a few cents (the button shows the most it can cost) |
 | Grok still picture | $0.02 each |
-| Video clip | $0.25/s at 1080p, $0.14/s at 720p (faces ticked), + $0.01 per image sent; seconds rounded up (6 s, 2 faces + picture = $0.87). Settled at xAI's own `cost_in_usd_ticks` when it reports one. |
+| Video clip | $0.25/s at 1080p, $0.14/s at 720p (faces ticked, or Clip quality set to 720p), + $0.01 per image sent; seconds rounded up (6 s, 2 faces + picture = $0.87). Settled at xAI's own `cost_in_usd_ticks` when it reports one. |
 
 - **Hard budget per story**, default $40. Change it with the **Budget** field in the bottom bar. The server refuses any generation that would exceed it. A budget of **0** freezes the story. You cannot set it lower than what is already spent or held for a running request; that refusal shows next to the field.
 - A picture the content filter **refused is still charged** ($0.02 — xAI bills it) and counts toward the story total. A picture that fails for any other reason (Grok busy, timeout, not configured) is not charged.

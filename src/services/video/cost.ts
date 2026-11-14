@@ -41,11 +41,11 @@ export type GrokVideoResolution = '720p' | '1080p';
 
 /**
  * xAI makes a clip with reference images (the cast's faces) at 720p at most;
- * without them the studio asks for 1080p. One rule for the request body AND
- * the price, so the two can never disagree.
+ * without them the studio asks for 1080p, unless the story is set to 720p
+ * (cheaper). One rule for the request body AND the price, so the two can never disagree.
  */
-export function grokVideoResolution(referenceCount: number): GrokVideoResolution {
-  return referenceCount > 0 ? '720p' : '1080p';
+export function grokVideoResolution(referenceCount: number, quality: GrokVideoResolution = '1080p'): GrokVideoResolution {
+  return referenceCount > 0 || quality === '720p' ? '720p' : '1080p';
 }
 
 /**
@@ -66,12 +66,14 @@ export interface GrokVideoInputs {
   /** Reference images sent (already capped at the provider's limit). */
   referenceCount: number;
   hasFirstFrame: boolean;
+  /** The story's clip quality; omitted = 1080p where allowed. */
+  quality?: GrokVideoResolution;
 }
 
 /** What xAI charges for one clip with these inputs. */
-export function grokVideoCostUsd({ durationSec, referenceCount, hasFirstFrame }: GrokVideoInputs): number {
+export function grokVideoCostUsd({ durationSec, referenceCount, hasFirstFrame, quality }: GrokVideoInputs): number {
   const images = referenceCount + (hasFirstFrame ? 1 : 0);
-  const usd = GROK_VIDEO_USD_PER_SEC[grokVideoResolution(referenceCount)] * durationSec + GROK_INPUT_IMAGE_USD * images;
+  const usd = GROK_VIDEO_USD_PER_SEC[grokVideoResolution(referenceCount, quality)] * durationSec + GROK_INPUT_IMAGE_USD * images;
   return Math.round(usd * 1e6) / 1e6;
 }
 
